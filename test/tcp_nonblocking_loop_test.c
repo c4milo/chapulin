@@ -484,7 +484,8 @@ int main(void) {
                      " sends nothing; the server takes secp256r1 only when x25519 is not"
                      " listed; each end refuses a message before a key change that does not"
                      " end its record; each end sends nothing after the peer's fatal alert"
-                     " and answers a 3-byte one with decode_error\n",
+                     " and answers a 3-byte one with decode_error; the server refuses a"
+                     " client's NewSessionTicket\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

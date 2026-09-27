@@ -241,6 +241,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     r->hs.t = &r->t;
+    r->t.server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)
     // The description a failure carries when no handler chose a more
     // specific one, seeded the way srv_handshake seeds it.
     r->hs.alert = ALERT_DECODE_ERROR;

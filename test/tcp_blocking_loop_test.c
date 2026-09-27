@@ -429,7 +429,8 @@ int main(void) {
                      " message before a key change ends its record, a retried ClientHello"
                      " included, and refuse one byte after it with unexpected_message; each"
                      " reads the peer's fatal alert, in the clear or protected, and sends"
-                     " nothing after it, and answers a 3-byte alert with decode_error\n");
+                     " nothing after it, and answers a 3-byte alert with decode_error; the"
+                     " server refuses a client's NewSessionTicket\n");
         return 0;
     }
     (void)fprintf(stderr, "tcp_blocking_loop: %d failures\n", failures);

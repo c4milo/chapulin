@@ -160,6 +160,40 @@ static void server_reads_alert(int answer, const uint8_t *alert, size_t n) {
     CHECK(to_client.len - sent_before_alert == want);
 }
 
+// ch_srv_accept's session reads a client's NewSessionTicket after the
+// handshake. RFC 9846 §4.7.1 gives the message to the server alone
+// (rfc9846.txt:3194-3196), so the server refuses it as a message out of
+// order, with unexpected_message (rfc9846.txt:1054-1058), under its
+// application write key. The ticket goes under the client's application
+// write secret, which hsf_complete wrote in answer_flight.
+static void server_reads_client_ticket(void) {
+    memset(&to_server, 0, sizeof to_server);
+    memset(&to_client, 0, sizeof to_client);
+    answered = 0;
+    finished_extra = 0;
+    queue_client_hello(0);
+    ch_cfg scfg;
+    server_config(&scfg, server_recv);
+    static ch_tls server;
+    CHECK(ch_srv_accept(&server, &scfg) == CH_OK);
+    // ticket_lifetime 3600, ticket_age_add 7, no nonce, a one-byte ticket
+    // and no extensions: a NewSessionTicket a client would take.
+    static const uint8_t ticket[18] = {
+        HS_NEW_SESSION_TICKET, 0, 0, 14, 0, 0, 0x0e, 0x10, 0, 0, 0, 7, 0, 0, 1, 't', 0, 0};
+    rec_dir app;
+    rec_dir_init(&app, cli_t.wr_secret);
+    uint8_t rec[64];
+    size_t len = 0;
+    CHECK(rec_seal(&app, REC_HANDSHAKE, ticket, sizeof ticket, rec, sizeof rec, &len) == 0);
+    CHECK(put(&to_server, rec, len) == 0);
+    size_t before = to_client.len;
+    uint8_t out[16];
+    CHECK(ch_read(&server, out, sizeof out) == CH_EPROTO);
+    CHECK(server.state == CH_ST_FAILED);
+    CHECK(ch_alert_sent(&server) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&server) == 0);
+    CHECK(to_client.len - before == CH_ALERT_RECORD_LEN);
+}
+
 static void test_handshake_alerts(void) {
     static const uint8_t alert[3] = {2, ALERT_HANDSHAKE_FAILURE, 0};
     for (size_t n = 2; n <= 3; n++) {
@@ -169,6 +203,7 @@ static void test_handshake_alerts(void) {
         server_reads_alert(1, alert, n);
         server_reads_alert(2, alert, n);
     }
+    server_reads_client_ticket();
 }
 
 #endif

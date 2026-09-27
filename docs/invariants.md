@@ -1337,7 +1337,18 @@ last `ROLE=server` stub, as the entry said it would.
   2 and 255, the `handshake_post` harness proves illegal_parameter is the
   only alert the parser writes, and
   `inv14-key-update-illegal-value-unexpected` requires `bin/unit` to fail
-  when it answers unexpected_message. Every server entry,
+  when it answers unexpected_message. A server's `ch_read` refuses a
+  NewSessionTicket with unexpected_message, because RFC 9846 §4.7.1
+  gives the message to the server to send (rfc9846.txt:3194-3196) and §4
+  refuses one out of order (rfc9846.txt:1054-1058); each server entry
+  sets `ch_tls.server`, so a `ROLE=both` object tells its sessions apart.
+  `bin/tcp_blocking_loop_test` and `bin/tcp_nonblocking_loop_test` send
+  one to `ch_srv_accept`'s and `ch_srv_record_init`'s sessions and require
+  unexpected_message and no `on_ticket` call, and
+  `inv14-server-takes-client-ticket`,
+  `inv14-srv-accept-leaves-session-unmarked` and
+  `inv14-srv-record-init-leaves-session-unmarked` each require one of
+  them to fail. Every server entry,
   `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init`, and the
   boot check `ch_srv_check`, refuses with `CH_EINVAL` and sends nothing a
   configuration with a provisioned identity its flight could not sign

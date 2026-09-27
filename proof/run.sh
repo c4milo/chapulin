@@ -1612,8 +1612,9 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # stubbed beside them (INV-39): 894 properties, 84 s, 1.60 GB on a loaded
 # machine. With tlsi_fail recording the alert it chooses and choosing none
 # after the peer's fatal alert (docs/decisions.md 75): 906 properties,
-# 45 s, 2.64 GB. The weight is 3 because the peaks above pass the fast
-# tier's 2 GB default.
+# 45 s, 2.64 GB. With ch_srv_accept marking its session a server's
+# (INV-14): 912 properties, 38 s, 2.64 GB. The weight is 3 because the
+# peaks above pass the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c

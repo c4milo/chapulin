@@ -1,0 +1,11 @@
+invariant: INV-14
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: ch_srv_record_init no longer marks its session as a server's, so the
+  session's ch_read takes a client's NewSessionTicket as a client would.
+  bin/tcp_nonblocking_loop_test requires ch_srv_record_init's session to
+  refuse one with unexpected_message.
+
+--- old
+    r->t.server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)
+--- new

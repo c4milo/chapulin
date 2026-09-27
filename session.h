@@ -274,7 +274,9 @@ typedef struct {
     // session id, so one dummy change_cipher_spec record is owed
     // (rfc9846.txt:6401-6403). sni_len is how many bytes of server_name the handshake
     // copied into cfg.sni_buf, and 0 when the client sent none or the name did not fit.
-    // The server also writes psk_selected, which every build declares above.
+    // The server also writes psk_selected, which every build declares above. server, which a
+    // TCP build declares, is 1 in a session ch_srv_accept or ch_srv_record_init started and 0
+    // in a ROLE=both object's client sessions; ch_read reads it (handshake_post.c).
     uint8_t session_id[32];
     uint8_t session_id_len;
     uint16_t suite;
@@ -282,6 +284,9 @@ typedef struct {
     uint16_t sigalg;
     uint8_t hrr_sent;
     uint8_t compat_ccs;
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    uint8_t server;
+#endif
     size_t sni_len;
 #endif
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_ROLE_SERVER)
@@ -342,8 +347,7 @@ typedef struct {
     // QUIC carries no close_notify, and RFC 9001 §4.8 treats every TLS
     // alert as fatal (rfc9001.txt:888-893).
     uint8_t read_closed;
-    // The fatal alert the peer sent, 0 for none (alert.h). A QUIC build
-    // declares none: QUIC carries no alert record (RFC 9001 §4.8).
+    // The fatal alert the peer sent, 0 for none (alert.h); QUIC carries no alert record.
     uint8_t alert_received;
     // How many TLS KeyUpdate messages this client has sent. A
     // TRANSPORT=quic-nonblocking build does not declare it: RFC 9001 §6 forbids the
@@ -409,9 +413,8 @@ static inline size_t tls_hash_len(const ch_tls *t) {
 // keys exist, nothing at all once they are wiped.
 int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
 
-// Alert (best effort), wipe all key material, mark the session failed.
-// It records the alert in alert_sent. After the peer's fatal alert,
-// alert_received, it sends and records none (RFC 9846 §6.2).
+// Alert (best effort), wipe all key material, mark the session failed. It records the alert in
+// alert_sent; after the peer's fatal alert, alert_received, it sends and records none (§6.2).
 void tlsi_fail(ch_tls *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on

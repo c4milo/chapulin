@@ -85,12 +85,11 @@ static void server_reads_handshake_alert(ch_record *client, ch_record *server, c
     CHECK(records_pushed == pushed);
 }
 
-// After the handshake: the peer's alert under its application write key,
-// read by the other end's ch_read. A fatal one calls no cfg.send, and a
-// 3-byte one sends decode_error through cfg.send, once.
-static void read_alert_after_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
-                                       const ch_cfg *scfg, int server_reads, const uint8_t *alert,
-                                       size_t n) {
+// A connected pair whose records go through tcp_nonblocking_close_tests.h's
+// wires, with every send counted: the client's into to_server, the
+// server's into held.
+static void connect_pair_on_wires(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                  const ch_cfg *scfg) {
     io_calls = 0;
     (void)run_handshake(client, server, ccfg, scfg);
     CHECK(ch_record_state(client) == CH_ST_CONNECTED);
@@ -103,6 +102,15 @@ static void read_alert_after_handshake(ch_record *client, ch_record *server, con
     client->t.cfg.recv = held_recv;
     server->t.cfg.send = server_send;
     server->t.cfg.recv = server_recv;
+}
+
+// After the handshake: the peer's alert under its application write key,
+// read by the other end's ch_read. A fatal one calls no cfg.send, and a
+// 3-byte one sends decode_error through cfg.send, once.
+static void read_alert_after_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                       const ch_cfg *scfg, int server_reads, const uint8_t *alert,
+                                       size_t n) {
+    connect_pair_on_wires(client, server, ccfg, scfg);
     ch_record *reader = server_reads ? server : client;
     size_t len = 0;
     if (server_reads) {
@@ -127,6 +135,33 @@ static void read_alert_after_handshake(ch_record *client, ch_record *server, con
     CHECK(io_calls == 0);
 }
 
+// A client's NewSessionTicket, read by the server after the handshake. RFC
+// 9846 §4.7.1 gives the message to the server alone (rfc9846.txt:3194-3196),
+// so the server refuses it as a message out of order, with
+// unexpected_message (rfc9846.txt:1054-1058), where a client takes the
+// server's (tcp_nonblocking_read_tests.h). The server's on_ticket, set here
+// on purpose, sees nothing.
+static void server_reads_client_ticket(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                       const ch_cfg *scfg) {
+    connect_pair_on_wires(client, server, ccfg, scfg);
+    uint8_t ticket[32];
+    size_t ticket_len = build_ticket(ticket, sizeof ticket);
+    size_t len = 0;
+    CHECK(rec_seal(&client->t.wr, REC_HANDSHAKE, ticket, ticket_len, to_server.bytes, WIRE_MAX,
+                   &len) == 0);
+    to_server.len = len;
+    tickets_seen = 0;
+    server->t.cfg.on_ticket = count_ticket;
+    uint8_t got[16];
+    CHECK(ch_read(&server->t, got, sizeof got) == CH_EPROTO);
+    CHECK(tickets_seen == 0 && ch_record_state(server) == CH_ST_FAILED);
+    CHECK(ch_alert_sent(&server->t) == ALERT_UNEXPECTED_MESSAGE && server_sends == 1);
+    CHECK(held.len == CH_ALERT_RECORD_LEN);
+    ch_record_close(client);
+    ch_record_close(server);
+    CHECK(io_calls == 0);
+}
+
 static void test_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg,
                         const ch_cfg *scfg) {
     static const uint8_t alert[3] = {2, ALERT_BAD_CERTIFICATE, 0};
@@ -140,6 +175,7 @@ static void test_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg
         read_alert_after_handshake(client, server, ccfg, scfg, 0, alert, n);
         read_alert_after_handshake(client, server, ccfg, scfg, 1, alert, n);
     }
+    server_reads_client_ticket(client, server, ccfg, scfg);
     expect_refusal = 0;
 }
 

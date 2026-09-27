@@ -165,6 +165,7 @@ int srv_config_ok(const ch_cfg *cfg) {
 int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
+    t->server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)
     if (!srv_config_ok(cfg)) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;

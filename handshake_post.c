@@ -189,6 +189,21 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
     return CH_OK;
 }
 
+// One NewSessionTicket. RFC 9846 §4.7.1 gives the message to the server to
+// send (rfc9846.txt:3194-3196), so a client's session takes it and a
+// server's refuses it as a message out of the order §4 defines, with the
+// unexpected_message the caller set (rfc9846.txt:1054-1058). A ROLE=both
+// object holds sessions of both sides, and each server entry marks its
+// own (session.h).
+static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len) {
+#ifdef CH_ROLE_SERVER
+    if (t->server != 0) {
+        return CH_EPROTO;
+    }
+#endif
+    return handle_ticket(t, body, msg_len);
+}
+
 // One KeyUpdate of msg_len bytes at body, which ends_input says is the
 // last message of its record. request_update has two values, and RFC
 // 9846 §4.7.3 ends the connection on any other with illegal_parameter
@@ -239,7 +254,7 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
         const uint8_t *body = pt + off + 4;
         int rc = CH_EPROTO; // any other message type
         if (type == HS_NEW_SESSION_TICKET) {
-            rc = handle_ticket(t, body, msg_len);
+            rc = take_ticket(t, body, msg_len);
         } else if (type == HS_KEY_UPDATE) {
             rc = take_key_update(t, body, msg_len, off + 4 + msg_len == n, alert);
         }
