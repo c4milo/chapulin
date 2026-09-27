@@ -180,7 +180,12 @@ Home: github.com/c4milo.
   same way, so one image links one object of each transport
   (docs/decisions.md 56 and 61). The Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
-  `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62).
+  `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62). Each
+  public header declares a call only under the defines of the objects
+  that define it, by role and by transport, so a program that calls one
+  its object lacks fails to compile rather than to link;
+  `test/zig-consumer/matches.zig` refuses a `ch_` declaration the object
+  neither exports nor imports (INV-36).
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
@@ -354,7 +359,9 @@ Home: github.com/c4milo.
   integrity-protected cookie, the dummy change_cipher_spec a client's
   non-empty session id obliges, KeyUpdate receipt, and a binder checked
   in constant time over the truncated ClientHello before it accepts one
-  of its own tickets (docs/server.md, "Resumption").
+  of its own tickets (docs/server.md, "Resumption"). Both roles: the
+  message before each key change ends its record, or the connection ends
+  with unexpected_message (RFC 9846 §5.1, INV-39).
 - Write all prose — README, docs, comments, commit messages — in active
   voice with plain words, following Google's Technical Writing One and
   Two: short sentences with one idea each, terms defined before use,
