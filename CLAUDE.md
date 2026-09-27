@@ -152,7 +152,10 @@ Home: github.com/c4milo.
   ticket `on_ticket` hands over, `ch_ticket_obfuscated_age` and the
   seven-day cap; `cfg.h` includes it and `handshake_post.c` defines its
   one call) ← `tls.[ch]`
-  (public API) ← demo/test mains. Firmware takes everything below
+  (public API) with `alert.h` (`ch_alert_sent` and `ch_alert_received`:
+  the alert a failure chose and the peer's fatal alert; `tls.h` and
+  `quic.h` include it, and `tls.c` and `quic.c` define its calls) ←
+  demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
   project takes the same object through `build.zig`, whose options are
   the Makefile's variables, as the module `chapulin`: the Zig API below,
@@ -342,7 +345,8 @@ Home: github.com/c4milo.
   Never assume host endianness; emit and read multi-byte values
   byte-by-byte.
 - Operational errors (bad peer input, short buffers, I/O failure) return
-  `ch_err` codes and fail closed — alert, wipe keys, dead session.
+  `ch_err` codes and fail closed — alert, wipe keys, dead session. A
+  session that reads the peer's fatal alert sends none (RFC 9846 §6.2).
   `CH_ASSERT` is for programmer-error invariants only, seeded at contract
   points, never in per-byte paths.
 - Record size discipline: the client always sends `record_size_limit`
