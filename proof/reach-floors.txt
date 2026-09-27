@@ -86,7 +86,7 @@ epoch 34.4
 handshake_record 87.3
 hello_build 76.9
 hkdf 52.3
-hybrid_secret 16.9
+hybrid_secret 16.6
 key_share 21.9
 keysched 87.0
 p256_mul 86.7
@@ -135,7 +135,7 @@ softmul 91.3
 # arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
 # before, already under the 56.5 recorded here.
 webpki_cert 56.1
-webpki_chain 80.7
+webpki_chain 79.6
 webpki_ext 40.0
 webpki_ext_one 51.4
 webpki_ext_walk 54.8
