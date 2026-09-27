@@ -1087,20 +1087,34 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # joined the file unreached here (docs/decisions.md 65), on an arm64 macOS
 # development machine: 1250 properties, 217 s at 3.8 GB with one other
 # proof running, 212 s at 5.6 GB beside a differential run, and 217 s at
-# 6.2 GB alone. fast:7 covers the highest of those peaks.
+# 6.2 GB alone. fast:7 covers the highest of those peaks. Re-measured when
+# read_certificate_head took its cap as a parameter, CH_WEBPKI_CERT_MAX
+# from the call this harness proves: 1250 properties, 205 s, 4.7 GB at a
+# load average of 3 to 6.
 launch fast:7 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 # webpki_cert_key proves webpki_read_certificate_key, the reader a leaf
-# pinned with no anchor goes through, over the same bytes and the same
-# stubs, with x509_skip real for the fields it frames after the key: its
-# pointers land inside the certificate as webpki_cert's do, the
-# extensions reader never runs, and the fields it does not write keep the
-# caller's values. Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l, alone): 1316 properties, 180 s, 4.2 GB, and 176 s at
-# 4.4 GB beside a differential run; 55 s at 3.2 GB before the reader
-# framed those fields. An assert of 0 at its CH_OK tail fails that one
-# assert (210 s, 4.7 GB, beside a cover run), so the tail is reached.
-# inv05-webpki-leaf-key-reads-extensions fails it.
-launch fast:5 full webpki_cert_key 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# pinned with no anchor goes through, over the same stubs, with x509_skip
+# real for the fields it frames after the key, and over a certificate of
+# any n bytes up to one past CH_WEBPKI_LEAF_PIN_CERT_MAX, the cap under
+# pins alone (docs/decisions.md 65): its pointers land inside the
+# certificate as webpki_cert's do, the extensions reader never runs, and
+# the fields it does not write keep the caller's values. The certificate
+# is a heap object of exactly n bytes, as in record_whole_len, because
+# cbmc 6.11 gives each read at a symbolic offset into a fixed-size array
+# clauses in proportion to the array's length, with --arrays-uf-always or
+# without it. At this bound a fixed array of
+# CH_WEBPKI_LEAF_PIN_CERT_MAX + 1 bytes proved 1304 properties in 754 s
+# with kissat at 9.1 GB over 78 million clauses, more than webpki_pin's
+# 7.4 GB, whose kissat address space on the nightly runner grew to its
+# 13 GB cap. The heap object's formula has 0.8 million clauses.
+# Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l,
+# load average 3 to 4 on a 10-core arm64 macOS machine): 1318
+# properties, 109 s, 0.44 GB. An assert at the CH_OK tail that n is under
+# CH_WEBPKI_LEAF_PIN_CERT_MAX fails that one assert (1 of 1319, 112 s,
+# 0.31 GB), so a certificate at the cap reaches the tail. Over a fixed
+# array one past CH_WEBPKI_CERT_MAX it proved 1316 properties in 180 s at
+# 4.2 GB. inv05-webpki-leaf-key-reads-extensions fails it.
+launch fast full webpki_cert_key 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
 launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
@@ -1165,14 +1179,21 @@ launch fast full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH
 # webpki.c is real over a 30-byte list, five one-byte entries, one past
 # the walk's CH_WEBPKI_FLIGHT_ENTRIES. Pins alone store only the leaf, so
 # no count caps the framing loop, and the global unwind of 6 covers its
-# four entries after the leaf and the test that ends it.
-# webpki_read_certificate_key is a stub to what webpki_cert_key proves,
-# and SHA-256 a stub that records what it hashed. Under run.sh (cbmc
-# 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l): 1269 properties,
-# 77 s, 1.6 GB, measured when the loop lost the count cap; 1280
-# properties, 38 s and 1.7 GB over 24 bytes before that. An assert at the
-# CH_OK tail that five one-byte entries are refused fails, so the tail is
-# reached with a list past the old cap.
+# four entries after the leaf and the test that ends it. Each entry's cap
+# is CH_WEBPKI_LEAF_PIN_CERT_MAX, far longer than any entry a 30-byte list
+# holds: the cap is one compare in webpki_read_entry, which webpki_pin
+# proves on both sides of CH_WEBPKI_SPKI_MAX, and test/webpki_leaf_pins.h
+# holds both sides of this one. webpki_read_certificate_key is a stub to what
+# webpki_cert_key proves, and SHA-256 a stub that records what it hashed.
+# Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l):
+# 1269 properties, 77 s, 1.6 GB, measured when the loop lost the count
+# cap; 1280 properties, 38 s and 1.7 GB over 24 bytes before that. An
+# assert at the CH_OK tail that five one-byte entries are refused fails,
+# so the tail is reached with a list past the old cap. Re-measured when
+# the entry cap and the stub's certificate cap moved from
+# CH_WEBPKI_CERT_MAX to CH_WEBPKI_LEAF_PIN_CERT_MAX, at a load average of
+# 3 to 8: 1269 properties, 46 s, 1.2 GB; an assert of 0 at the CH_OK
+# tail fails that one assert (1 of 1270, 64 s, 3.9 GB).
 launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c

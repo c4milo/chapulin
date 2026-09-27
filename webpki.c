@@ -7,8 +7,9 @@
 // reading and its alert convention. webpki_read_entry, the framing of
 // one entry, is here too, because webpki_pin.c reads a raw public key's
 // one entry with it, and so is webpki_read_leaf_entry, the framing of a
-// whole list with no cap on its entry count, which webpki_pin.c reads a
-// leaf pinned without anchors with.
+// whole list with no cap on its entry count and the pins-alone cap on
+// each entry, which webpki_pin.c reads a leaf pinned without anchors
+// with.
 //
 // Every byte here is public: a certificate the peer sent, a Name, a
 // public key and the caller's own anchors. The code is variable time
@@ -97,19 +98,22 @@ static int read_entries(const uint8_t *list, size_t list_len, certificate_list *
 
 // Frames every entry the way read_entries does, but stores only entry 0,
 // so no CH_WEBPKI_FLIGHT_ENTRIES cap applies: each later entry is framed
-// and then skipped, and list_len alone bounds how many there are.
+// and then skipped, and list_len alone bounds how many there are. Each
+// entry may take CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a
+// Certificate message can carry, where the walk takes CH_WEBPKI_CERT_MAX
+// (docs/decisions.md 65).
 int webpki_read_leaf_entry(const uint8_t *list, size_t list_len, const uint8_t **leaf,
                            size_t *leaf_len, uint8_t *alert) {
     rbuf r;
     rb_init(&r, list, list_len);
-    int rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, leaf, leaf_len, alert);
+    int rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, leaf, leaf_len, alert);
     if (rc != CH_OK) {
         return rc;
     }
     while (rb_left(&r) > 0) {
         const uint8_t *cert = NULL;
         size_t cert_len = 0;
-        rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, &cert, &cert_len, alert);
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, &cert, &cert_len, alert);
         if (rc != CH_OK) {
             return rc;
         }

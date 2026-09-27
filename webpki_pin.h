@@ -60,8 +60,9 @@ int webpki_verify_raw_key(const uint8_t *list, size_t list_len, const ch_cfg *cf
 // A Certificate message's CertificateEntry list under the X.509 type, for
 // a configuration with SPKI pins and no anchors (docs/decisions.md 65):
 // every entry framed as the walk frames it, with no cap on their count
-// (webpki_read_leaf_entry), and the leaf, entry 0, read only as far as its
-// key (webpki_read_certificate_key).
+// and CH_WEBPKI_LEAF_PIN_CERT_MAX in place of the walk's
+// CH_WEBPKI_CERT_MAX on each (webpki_read_leaf_entry), and the leaf,
+// entry 0, read only as far as its key (webpki_read_certificate_key).
 // One of cfg's pins must name the leaf's whole SubjectPublicKeyInfo; a pin
 // on any other entry names nothing here. On CH_OK out carries the leaf's
 // key, with path_entries 1, the leaf alone, and anchor_index 0. The caller

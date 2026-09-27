@@ -2170,10 +2170,23 @@ does nothing more.
       names, because there is no anchor, clock or hostname to check them
       against. Every entry is framed by the walk's own framing, but only
       the leaf is kept, so pins alone take any number of entries the
-      message holds, where the walk takes `CH_WEBPKI_FLIGHT_ENTRIES`. This
-      entry first kept the walk's cap of 4, which refused the QUIC Interop
-      Runner's amplificationlimit chain, a leaf under eight intermediates,
-      though no entry past the leaf is read. The leaf
+      message holds, where the walk takes `CH_WEBPKI_FLIGHT_ENTRIES`. For
+      the same reason every entry, the leaf included, may take
+      `CH_WEBPKI_LEAF_PIN_CERT_MAX` bytes, 16375, the largest certificate
+      one entry carries in the 0x4000-byte message body every handshake
+      reader admits, where the walk holds each certificate to
+      `CH_WEBPKI_CERT_MAX`, 3072 bytes.
+      The walk parses up to three certificates and verifies their
+      signatures; pins alone parse only the leaf, and only as far as its
+      key. This entry first kept both of the walk's caps, which refused
+      the QUIC Interop Runner's amplificationlimit chain, a leaf of 5,514
+      bytes under eight intermediates, though no entry past the leaf is
+      read and the twenty 250-byte subjectAltName entries that make the
+      leaf that large are not read either. The webpki_cert_key proof
+      covers the reader to one byte past the new cap. The receive buffer
+      bounds the message as well, so a caller whose server sends a
+      Certificate message larger than `CH_TRUST_MIN_RXBUF` sizes
+      `cfg.buf_len` to hold all of it. The leaf
       is read only as far as its key, by `webpki_cert.c`'s own field
       readers. The fields after the key are skipped as whole TLVs, so
       each container still ends where its fields end (INV-25), and their

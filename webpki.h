@@ -44,6 +44,16 @@
 // exponent, 4 + 15 + 4 + 1 + 4 + 4 + 1 + 512 + 5. It bounds the one
 // entry of an RFC 7250 raw public key (webpki_pin.h).
 #define CH_WEBPKI_SPKI_MAX 550
+// The largest certificate one Certificate message can carry. Under SPKI
+// pins alone it bounds the leaf and every entry after it, in place of
+// CH_WEBPKI_CERT_MAX, which the walk keeps (docs/decisions.md 65). Every
+// handshake reader refuses a message body over 0x4000 bytes
+// (handshake_record.h), and the body spends 1 byte on the empty
+// certificate_request_context, 3 on the list length, and 3 and 2 on the
+// entry's length and its empty extensions vector.
+#define CH_WEBPKI_LEAF_PIN_CERT_MAX 16375
+_Static_assert(CH_WEBPKI_LEAF_PIN_CERT_MAX == 0x4000 - 1 - 3 - 3 - 2,
+               "one entry at CH_WEBPKI_LEAF_PIN_CERT_MAX fills a 0x4000-byte message body");
 
 // Public-key algorithm of a decoded SubjectPublicKeyInfo.
 #define WEBPKI_KEY_RSA 1  // rsaEncryption, exponent 65537
@@ -182,13 +192,15 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
 int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *cert_len,
                       uint8_t *alert);
 
-// A whole CertificateEntry list, each entry framed as the walk frames it:
-// 1 to CH_WEBPKI_CERT_MAX bytes and an empty extensions vector, the
-// entries filling the list exactly. Unlike the walk it stores no entry
-// after the leaf, so it takes any number of entries the list holds, not
-// CH_WEBPKI_FLIGHT_ENTRIES at most. Returns CH_OK with *leaf and
-// *leaf_len naming entry 0, and reads no entry's content. Otherwise
-// CH_EPROTO, with *alert as webpki_read_entry sets it, which is
+// A whole CertificateEntry list, each entry framed as the walk frames it
+// but under the pins-alone cap: 1 to CH_WEBPKI_LEAF_PIN_CERT_MAX bytes
+// and an empty extensions vector, the entries filling the list exactly.
+// Unlike the walk it stores no entry after the leaf, so it takes any
+// number of entries the list holds, not CH_WEBPKI_FLIGHT_ENTRIES at most,
+// and an entry of any size a Certificate message can carry, not
+// CH_WEBPKI_CERT_MAX at most. Returns CH_OK with *leaf and *leaf_len
+// naming entry 0, and reads no entry's content. Otherwise CH_EPROTO,
+// with *alert as webpki_read_entry sets it, which is
 // ALERT_BAD_CERTIFICATE for an empty list.
 // webpki_verify_leaf_pin reads a chain with it (webpki_pin.h). Defined in
 // webpki.c.
@@ -211,7 +223,7 @@ int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, we
                              uint8_t *alert);
 
 // One certificate read only as far as its key: the Certificate SEQUENCE,
-// of at most CH_WEBPKI_CERT_MAX bytes and filling cert, and its
+// of at most CH_WEBPKI_LEAF_PIN_CERT_MAX bytes and filling cert, and its
 // TBSCertificate's fields through subjectPublicKeyInfo, each under the
 // reader webpki_parse_certificate hands it to: version 3, serialNumber,
 // signature, issuer, validity, subject and subjectPublicKeyInfo. The

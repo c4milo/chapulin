@@ -106,24 +106,25 @@ inductive Step where
   | unknownCa
   deriving DecidableEq, Repr
 
-/-- One `CertificateEntry`: a u24 certificate length, the certificate,
-and a u16 extensions vector this mode requires to be empty. Reads at
-most `fuel - 1` entries, so a list with more refuses. -/
-def entriesFrom : Nat → ByteArray → Nat → List ByteArray → Option (List ByteArray)
+/-- One `CertificateEntry`: a u24 certificate length from 1 to `certMax`,
+the certificate, and a u16 extensions vector this mode requires to be
+empty. Reads at most `fuel - 1` entries, so a list with more refuses. -/
+def entriesFrom (certMax : Nat) :
+    Nat → ByteArray → Nat → List ByteArray → Option (List ByteArray)
   | 0, _, _, _ => none
   | fuel + 1, b, off, acc =>
     if off == b.size then (if acc.isEmpty then none else some acc.reverse)
     else if b.size < off + 3 then none
     else
       let len := 65536 * b[off]!.toNat + 256 * b[off + 1]!.toNat + b[off + 2]!.toNat
-      if len == 0 || certificateMax < len || b.size < off + 5 + len then none
+      if len == 0 || certMax < len || b.size < off + 5 + len then none
       else if b[off + 3 + len]! != 0 || b[off + 4 + len]! != 0 then none
-      else entriesFrom fuel b (off + 5 + len) (slice b (off + 3) len :: acc)
+      else entriesFrom certMax fuel b (off + 5 + len) (slice b (off + 3) len :: acc)
 
 /-- The CertificateEntry list: 1 to `flightEntries` entries of at most
 `certificateMax` bytes each, filling the list exactly. -/
 def readEntries? (list : ByteArray) : Option (List ByteArray) :=
-  entriesFrom (flightEntries + 1) list 0 []
+  entriesFrom certificateMax (flightEntries + 1) list 0 []
 
 /-- `notBefore ≤ now ≤ notAfter`, both ends inclusive (RFC 5280
 §4.1.2.5). -/

@@ -1,0 +1,14 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_auth_test
+reason: under pins alone the list framing refuses an entry after the
+  leaf of exactly CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a
+  Certificate message carries, so the last accepted size moves one byte
+  short of the one docs/decisions.md 65 names. Entries over the walk's
+  cap still pass; test/webpki_leaf_pins.h's rows with an entry at the cap
+  after the leaf, which want it accepted, object.
+
+--- old
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, &cert, &cert_len, alert);
+--- new
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX - 1, &cert, &cert_len, alert);

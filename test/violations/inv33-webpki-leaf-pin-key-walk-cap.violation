@@ -1,0 +1,15 @@
+invariant: INV-33
+file: webpki_cert.c
+catches: webpki_auth_test
+reason: under pins alone the key reader holds the leaf to the walk's
+  CH_WEBPKI_CERT_MAX of 3072 bytes, though a Certificate message carries
+  a leaf up to CH_WEBPKI_LEAF_PIN_CERT_MAX and the reader reads it only
+  as far as its key. The QUIC Interop Runner's amplificationlimit leaf,
+  5,514 bytes under a pinned key, fails with bad_certificate.
+  test/webpki_leaf_pins.h's leaf_over_cert_max rows, which want the
+  corpus leaf of 5,558 bytes accepted, object.
+
+--- old
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {
+--- new
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_CERT_MAX, &r, out)) {

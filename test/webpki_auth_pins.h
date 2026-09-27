@@ -102,14 +102,17 @@ static void message_list(const uint8_t *message, size_t message_len, rbuf *list)
     CHECK(!list->err);
 }
 
-// Entry index of a Certificate message, framed as the walk frames it.
+// Entry index of a Certificate message, each entry framed up to
+// CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a message carries, so
+// the corpus leaf over the walk's CH_WEBPKI_CERT_MAX frames too. This
+// finds entries; the call under test judges them.
 static int message_entry(const uint8_t *message, size_t message_len, size_t index,
                          const uint8_t **cert, size_t *cert_len) {
     rbuf r;
     message_list(message, message_len, &r);
     uint8_t alert = ALERT_BAD_CERTIFICATE;
     for (size_t i = 0; i <= index; i++) {
-        if (webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, cert, cert_len, &alert) != CH_OK) {
+        if (webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, cert, cert_len, &alert) != CH_OK) {
             return 0;
         }
     }

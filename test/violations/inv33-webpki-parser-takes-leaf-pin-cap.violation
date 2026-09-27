@@ -1,0 +1,14 @@
+invariant: INV-33
+file: webpki_cert.c
+catches: webpki_cert_test
+reason: the full parser the walk reads each certificate with takes
+  CH_WEBPKI_LEAF_PIN_CERT_MAX, the cap of the reader pins alone use, in
+  place of CH_WEBPKI_CERT_MAX, so it parses certificates past the bound
+  the webpki_cert proof covers. test/webpki_cert_mutants.h's and
+  test/webpki_cert_key_mutants.h's rows, which want a certificate of 3073
+  bytes refused by the parser, object.
+
+--- old
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_CERT_MAX, &r, out)) {
+--- new
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {

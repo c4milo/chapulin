@@ -32,6 +32,12 @@
 //    and the client reads no clock and takes a hostname only as the
 //    server_name to send. Such a pin names a leaf key, so it breaks when
 //    the operator rotates that key; RFC 7858 §4.2 asks for a backup pin.
+//    Pins alone take a Certificate message of any number of entries,
+//    each of up to 16375 bytes, the most one entry holds in the 16 KiB
+//    body a handshake message may take, where CH_MIN_RXBUF holds the message
+//    the walk takes, four entries of up to 3072 bytes. A caller whose
+//    server sends a larger message sizes buf_len to hold all of it
+//    (docs/decisions.md 65).
 //
 // ch_connect returns CH_EINVAL before it sends a byte when any of those
 // rules fails, when now_seconds is 0 in a configuration with anchors,

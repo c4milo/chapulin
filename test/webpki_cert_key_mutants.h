@@ -11,8 +11,9 @@
 // What it skips it still frames, so each container ends where its fields
 // end (INV-25): one byte past the extensions inside the TBSCertificate,
 // or past the signature inside the Certificate, is refused, and so is a
-// TBSCertificate with no extensions field. CH_WEBPKI_CERT_MAX holds as for
-// the full parser.
+// TBSCertificate with no extensions field. Its size cap is
+// CH_WEBPKI_LEAF_PIN_CERT_MAX, the largest certificate a Certificate
+// message carries, where the full parser keeps CH_WEBPKI_CERT_MAX.
 //
 // Included by test/webpki_cert_test.c after webpki_cert_mutants.h, whose
 // base leaf and splice helpers it reads.
@@ -130,13 +131,19 @@ static void test_key_frames(void) {
     KEY_UNSUPPORTED(mutant, n);
 }
 
-// CH_WEBPKI_CERT_MAX: 3072 bytes read, 3073 refused.
+// CH_WEBPKI_LEAF_PIN_CERT_MAX, the largest certificate a Certificate
+// message carries: 16375 bytes read, 16376 refused. A certificate one
+// byte past the walk's CH_WEBPKI_CERT_MAX, which the full parser refuses,
+// is read.
 static void test_key_size_bound(void) {
-    static uint8_t big[CH_WEBPKI_CERT_MAX + 1];
-    size_t n = padded_leaf(big, CH_WEBPKI_CERT_MAX);
+    static uint8_t big[CH_WEBPKI_LEAF_PIN_CERT_MAX + 1];
+    size_t n = padded_leaf(big, CH_WEBPKI_LEAF_PIN_CERT_MAX);
     KEY_OK(big, n);
-    n = padded_leaf(big, CH_WEBPKI_CERT_MAX + 1);
+    n = padded_leaf(big, CH_WEBPKI_LEAF_PIN_CERT_MAX + 1);
     KEY_BAD(big, n);
+    n = padded_leaf(big, CH_WEBPKI_CERT_MAX + 1);
+    EXPECT_BAD(big, n, 0);
+    KEY_OK(big, n);
 }
 
 static void test_key_mutants(void) {

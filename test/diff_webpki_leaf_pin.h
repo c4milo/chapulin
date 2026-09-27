@@ -16,6 +16,12 @@
 //     leaf's pin, so a change after the key, which the rule never reads,
 //     is compared as accepted
 //
+// The leaf_over_cert_max row's leaf is over the walk's CH_WEBPKI_CERT_MAX,
+// which pins alone do not apply. The r2 leaf rebuilt at
+// CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, their cap, at one byte more, and at
+// one byte past CH_WEBPKI_CERT_MAX is compared as entry 0 and as the
+// entry after the r2 leaf.
+//
 // A pin on an entry's key is taken over what webpki_read_certificate_key
 // reads, or is a pin on nothing when that reader refuses the entry.
 //
@@ -84,15 +90,16 @@ static void diff_leaf_compare(const uint8_t *list, size_t list_len, uint8_t (*pi
     expect(cmd, want);
 }
 
-// Entry index of list, framed as the walk frames it. Returns 0 when the
-// list holds fewer entries or frames none there.
+// Entry index of list, framed as pins alone frame it, each entry up to
+// CH_WEBPKI_LEAF_PIN_CERT_MAX bytes. Returns 0 when the list holds fewer
+// entries or frames none there.
 static int diff_leaf_entry(const uint8_t *list, size_t list_len, size_t index, const uint8_t **cert,
                            size_t *cert_len) {
     rbuf r;
     rb_init(&r, list, list_len);
     uint8_t alert = ALERT_BAD_CERTIFICATE;
     for (size_t i = 0; i <= index; i++) {
-        if (webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, cert, cert_len, &alert) != CH_OK) {
+        if (webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, cert, cert_len, &alert) != CH_OK) {
             return 0;
         }
     }
@@ -220,6 +227,84 @@ static void diff_leaf_row(const webpki_corpus_chain *row) {
     diff_leaf_bytes(list, list_len);
 }
 
+// The r2 leaf rebuilt at size bytes, the bytes the spec's r2LeafOfSize
+// builds: its TBSCertificate fields through the key, then an extensions
+// [3] TLV holding a SEQUENCE of zero bytes, which
+// webpki_read_certificate_key frames and does not read, then its
+// signatureAlgorithm and signature. Every header it writes takes the
+// four-byte form, which holds from 256 zero bytes up.
+static size_t diff_leaf_of_size(uint8_t *out, size_t cap, size_t size) {
+    const uint8_t *leaf = NULL;
+    size_t leaf_len = 0;
+    webpki_cert parsed;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    if (!diff_leaf_entry(webpki_corpus_message_r2 + 8, sizeof webpki_corpus_message_r2 - 8, 0,
+                         &leaf, &leaf_len) ||
+        webpki_read_certificate_key(leaf, leaf_len, &parsed, &alert) != CH_OK) {
+        die("webpki_leaf: the r2 leaf does not read");
+    }
+    size_t fields_len = (size_t)(parsed.spki_tlv - parsed.tbs) + parsed.spki_tlv_len;
+    const uint8_t *tail = parsed.tbs + parsed.tbs_len;
+    size_t tail_len = leaf_len - (size_t)(tail - leaf);
+    if (size < 16 + fields_len + tail_len + 256 || size > cap) {
+        die("webpki_leaf: a rebuilt leaf size outside the driver's bounds");
+    }
+    size_t zeros = size - 16 - fields_len - tail_len;
+    wbuf w;
+    wb_init(&w, out, cap);
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(size - 4));
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(fields_len + 8 + zeros));
+    wb_bytes(&w, parsed.tbs, fields_len);
+    wb_u8(&w, 0xa3);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(4 + zeros));
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)zeros);
+    for (size_t i = 0; i < zeros; i++) {
+        wb_u8(&w, 0);
+    }
+    wb_bytes(&w, tail, tail_len);
+    if (w.err || w.len != size) {
+        die("webpki_leaf: a rebuilt leaf of the wrong size");
+    }
+    return w.len;
+}
+
+// The r2 leaf rebuilt at each side of the pins-alone cap and one byte
+// past the walk's cap, each as entry 0 and as the entry after the r2
+// leaf, under the r2 leaf's pin.
+static void diff_leaf_sizes(void) {
+    static uint8_t big[CH_WEBPKI_LEAF_PIN_CERT_MAX + 1];
+    static uint8_t list[DIFF_PIN_LIST_MAX];
+    const uint8_t *r2_list = webpki_corpus_message_r2 + 8;
+    size_t r2_list_len = sizeof webpki_corpus_message_r2 - 8;
+    const uint8_t *leaf = NULL;
+    size_t leaf_len = 0;
+    uint8_t pins[1][SHA256_LEN];
+    diff_leaf_entry_pin(r2_list, r2_list_len, 0, pins[0]);
+    if (!diff_leaf_entry(r2_list, r2_list_len, 0, &leaf, &leaf_len)) {
+        die("webpki_leaf: the r2 list does not frame");
+    }
+    static const size_t sizes[3] = {CH_WEBPKI_LEAF_PIN_CERT_MAX, CH_WEBPKI_LEAF_PIN_CERT_MAX + 1,
+                                    CH_WEBPKI_CERT_MAX + 1};
+    for (size_t i = 0; i < 3; i++) {
+        size_t big_len = diff_leaf_of_size(big, sizeof big, sizes[i]);
+        wbuf w;
+        wb_init(&w, list, sizeof list);
+        diff_pin_entry(&w, big, big_len, 0);
+        diff_leaf_compare(list, w.len, pins, 1);
+        wb_init(&w, list, sizeof list);
+        diff_pin_entry(&w, leaf, leaf_len, 0);
+        diff_pin_entry(&w, big, big_len, 0);
+        diff_leaf_compare(list, w.len, pins, 1);
+    }
+}
+
 static void diff_webpki_leaf_pin(void) {
     for (size_t i = 0; i < sizeof webpki_corpus_chains / sizeof webpki_corpus_chains[0]; i++) {
         diff_leaf_row(&webpki_corpus_chains[i]);
@@ -227,6 +312,7 @@ static void diff_webpki_leaf_pin(void) {
     for (size_t i = 0; i < sizeof webpki_capture_chains / sizeof webpki_capture_chains[0]; i++) {
         diff_leaf_row(&webpki_capture_chains[i]);
     }
+    diff_leaf_sizes();
     (void)printf("diff: webpki_leaf: %ld rows (%ld accepted), C == spec\n", diff_leaf_rows,
                  diff_leaf_accepted);
 }

@@ -17,9 +17,10 @@
 //
 // Layered, the webpki_pin pattern. webpki_read_certificate_key is a stub
 // to what webpki_cert_key proves: CH_OK or CH_EPROTO with one of two
-// alerts, and on CH_OK a SubjectPublicKeyInfo TLV of at most SPKI_MAX
-// bytes inside the certificate and a key of one of three algorithms and
-// at most CH_WEBPKI_KEY_MAX bytes inside that TLV. SHA-256 is a contract
+// alerts, and on CH_OK a certificate of at most
+// CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, a SubjectPublicKeyInfo TLV of at most
+// SPKI_MAX bytes inside it, and a key of one of three algorithms and at
+// most CH_WEBPKI_KEY_MAX bytes inside that TLV. SHA-256 is a contract
 // stub that records what it hashed and the digest it answered.
 // webpki_read_leaf_entry and webpki_read_entry (webpki.c), rbuf and
 // ct_memeq are real. The raw and path calls in webpki_pin.c are in the
@@ -27,9 +28,11 @@
 //
 // The list is short so the framing loop stays small: 30 bytes hold five
 // one-byte entries, one past the walk's CH_WEBPKI_FLIGHT_ENTRIES, which
-// pins alone accept because they store no entry after the leaf. So the
-// key the call copies is at most 25 bytes here; the copy is copy_key's,
-// whose bounds webpki_pin checks at the raw key's full bound.
+// pins alone accept because they store no entry after the leaf. So every
+// entry here is far shorter than CH_WEBPKI_LEAF_PIN_CERT_MAX, whose one
+// compare in webpki_read_entry webpki_pin proves at the raw key's cap,
+// and the key the call copies is at most 25 bytes; the copy is
+// copy_key's, whose bounds webpki_pin checks at the raw key's full bound.
 #include "harness.h"
 
 #include <string.h>
@@ -84,7 +87,7 @@ int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, webpki_cer
     }
     size_t spki_off = nondet_size_t();
     size_t spki_len = nondet_size_t();
-    __CPROVER_assume(cert_len <= CH_WEBPKI_CERT_MAX && spki_len <= cert_len &&
+    __CPROVER_assume(cert_len <= CH_WEBPKI_LEAF_PIN_CERT_MAX && spki_len <= cert_len &&
                      spki_off <= cert_len - spki_len && spki_len <= SPKI_MAX);
     size_t key_off = nondet_size_t();
     size_t key_len = nondet_size_t();

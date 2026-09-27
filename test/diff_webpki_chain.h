@@ -448,7 +448,15 @@ static void diff_webpki_chain(void) {
     // The impostor anchor of the anchor_key_mismatch row is the key every
     // row's anchor is swapped for: a P-384 key no corpus certificate is
     // signed under.
-    const webpki_corpus_anchor *other = &webpki_corpus_chains[minted - 2].anchors[0];
+    const webpki_corpus_anchor *other = NULL;
+    for (size_t i = 0; i < minted; i++) {
+        if (strcmp(webpki_corpus_chains[i].name, "anchor_key_mismatch") == 0) {
+            other = &webpki_corpus_chains[i].anchors[0];
+        }
+    }
+    if (other == NULL) {
+        die("webpki_chain: no anchor_key_mismatch row in the corpus");
+    }
     for (size_t i = 0; i < minted; i++) {
         diff_chain_row(&webpki_corpus_chains[i], i, other);
     }

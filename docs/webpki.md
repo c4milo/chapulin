@@ -533,9 +533,14 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
 - **A chain under pins alone** has no anchor, clock or hostname to check
   it against, so a pin must name the leaf's key and no other key counts.
   Every entry is framed as the walk frames it, but only the leaf is kept,
-  so the walk's `CH_WEBPKI_FLIGHT_ENTRIES` does not cap the count: the
-  16 KiB handshake message cap and the receive buffer do. The leaf,
-  entry 0, is read only as far as its SubjectPublicKeyInfo
+  so the walk's `CH_WEBPKI_FLIGHT_ENTRIES` does not cap the count and
+  its `CH_WEBPKI_CERT_MAX` does not cap the size: the 16 KiB handshake
+  message cap and the receive buffer do. Every entry, the leaf included,
+  may take `CH_WEBPKI_LEAF_PIN_CERT_MAX` bytes, 16375, the most one entry
+  holds in a message body of 0x4000 bytes. A caller whose server sends a
+  Certificate message larger than `CH_TRUST_MIN_RXBUF`, such as a large
+  leaf or a long chain, sizes `cfg.buf_len` to hold the whole message.
+  The leaf, entry 0, is read only as far as its SubjectPublicKeyInfo
   (`webpki_read_certificate_key`):
   version, serial number, signature algorithm, issuer, validity, subject
   and key, each by the reader the walk uses, the dates for their shape
@@ -567,7 +572,9 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   a root: `bad_certificate`, `CH_EAUTH`. A leaf under pins alone the key
   reader refuses: `unsupported_certificate` for a key or signature
   algorithm the mode does not admit, `bad_certificate` for malformed DER,
-  both `CH_EPROTO`. A CertificateVerify the pinned leaf key did not make:
+  both `CH_EPROTO`. A chain under pins alone with an entry over
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX`: `bad_certificate`, `CH_EPROTO`. A
+  CertificateVerify the pinned leaf key did not make:
   `decrypt_error`, `CH_EAUTH`. A `server_certificate_type` in
   EncryptedExtensions the client did not offer, or naming a type it did
   not list, is refused there, before any Certificate arrives.
@@ -603,7 +610,8 @@ measured inputs, and the formula is given.
 
 | constant | value | where it comes from |
 | --- | --- | --- |
-| `CH_WEBPKI_CERT_MAX` | 3072 | measured: the largest captured certificate is the 2104 B S3 leaf |
+| `CH_WEBPKI_CERT_MAX` | 3072 | measured: the largest captured certificate is the 2104 B S3 leaf; the walk's cap, which pins alone do not apply |
+| `CH_WEBPKI_LEAF_PIN_CERT_MAX` | 16375 | derived: `0x4000 - 1 - 3 - 3 - 2`, one entry filling the largest Certificate message body; every entry's cap under pins alone |
 | `CH_WEBPKI_CHAIN_MAX` | 3 | measured: the Let's Encrypt capture needs 3 (leaf, YE2, Root YE, then the ISRG Root X2 anchor); the other three need 2 |
 | `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4; the walk's cap, which pins alone do not apply |
 | `CH_TRUST_MIN_RXBUF` | 12338 B | derived: `4 * (3072 + 5) + 8 + 22`, the largest Certificate message plus the record that completes it |
@@ -620,6 +628,17 @@ measured. `CH_WEBPKI_CHAIN_MAX` of 3 admits one two-intermediate
 hierarchy; each further entry is one more signature an unauthenticated
 peer can force before any anchor is consulted, and one more certificate
 in the formula least likely to converge.
+
+`CH_WEBPKI_LEAF_PIN_CERT_MAX` is not a measurement. Pins alone parse the
+leaf only as far as its key and parse no other entry, so the message
+bounds them rather than a margin over captured chains: the handshake
+reader refuses a body over 0x4000 bytes, and the body spends 9 bytes on
+the empty certificate_request_context, the list length, and one entry's
+length and empty extensions vector. The QUIC Interop Runner's
+amplificationlimit case sends a leaf of 5,514 bytes, twenty 250-byte
+names in its subjectAltName, which the walk refuses and pins alone take
+(`docs/decisions.md` 65). The webpki_cert_key proof covers the key
+reader to one byte past the cap.
 
 The ClientHello this mode sends carries a `server_name` extension of up
 to 262 bytes, an ALPN extension of up to 270, three groups with a key
@@ -647,9 +666,13 @@ the two-name offer an HTTP caller sends.
 
 `CH_WEBPKI_FLIGHT_ENTRIES` is sized separately from the walk, because a
 server may append entries the walk never reads and every captured chain
-does. Pins alone store only the leaf, so they apply no count cap, and a
-caller whose server sends a longer chain sizes the receive buffer to
-hold its whole Certificate message. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` uses for the ca
+does. Pins alone store only the leaf, so they apply no count cap, and
+they cap each entry at `CH_WEBPKI_LEAF_PIN_CERT_MAX` rather than
+`CH_WEBPKI_CERT_MAX`. A caller whose server sends a longer chain or a
+larger certificate sizes the receive buffer to hold its whole
+Certificate message: at most a 4-byte header and a body of 0x4000
+bytes, and over TCP the 22 bytes of the record that completes it,
+16,410 bytes in all. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` uses for the ca
 mode, widened from 2 entries to 4: the message's 8 bytes of framing, the
 cap + 5 per entry, and the 22 bytes of the record that completes the
 message — its header, its inner content type and its AEAD tag — which
@@ -718,9 +741,9 @@ Read this list as part of the profile, not as a list of future work.
 
 `test/gen_webpki_corpus.py` runs every corpus chain through `openssl verify
 -purpose sslserver -verify_hostname` as an oracle, and fails unless the
-disagreements are exactly the eight it expects. openssl agrees on 22 of 30
-corpus chains. Six of the eight disagreements are rows where this mode refuses what
-openssl accepts. Five of them are the table below: each is a rule that would
+disagreements are exactly the nine it expects. openssl agrees on 22 of 31
+corpus chains. Seven of the nine disagreements are rows where this mode refuses what
+openssl accepts. Six of them are the table below: each is a rule that would
 otherwise rot unnoticed, so each carries a `test/violations/` mutant.
 
 | case | openssl | this mode | why |
@@ -730,8 +753,9 @@ otherwise rot unnoticed, so each carries a `test/violations/` mutant.
 | SHA-1 signature | accepts | refuses | web PKI retired SHA-1 in 2017 |
 | RSA-1024 leaf | accepts | refuses | below the modulus floor |
 | critical `nameConstraints` | accepts | refuses | openssl implements them; this mode does not, and RFC 5280 requires refusing what it cannot honour |
+| leaf over `CH_WEBPKI_CERT_MAX` | accepts | refuses | the walk caps each certificate at 3072 bytes; SPKI pins alone take it (`docs/decisions.md` 65) |
 
-The sixth is `leaf_asserts_ca`: the leaf's basicConstraints asserts CA, which
+The seventh is `leaf_asserts_ca`: the leaf's basicConstraints asserts CA, which
 this mode refuses and openssl, under `-purpose sslserver`, does not read. The
 rows where openssl refuses what this mode accepts are `not_after_boundary`
 and `issuer_not_after_boundary`: at `now_seconds` equal to a certificate's
@@ -818,10 +842,10 @@ What is proved, what is tested, and at what bounds. The rule
   chains the walk accepts, and `spec/lean/Spec/Webpki.lean` states that
   property instead.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
-  carry real extension bulk and test the bounds. A generated corpus of 30
+  carry real extension bulk and test the bounds. A generated corpus of 31
   chains — 11 positive (the four shapes above, a P-384 leaf, one wildcard
   match, the two leaf validity boundaries, the two issuer validity boundaries
-  and a re-keyed intermediate), 19 negative taking one rule each — is
+  and a re-keyed intermediate), 20 negative taking one rule each — is
   small, offline and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
   both into exact RFC 9846 §4.5.1 `Certificate` message bytes, so a test feeds
   the parser what the wire would. `test/webpki_auth_vectors.h` adds a

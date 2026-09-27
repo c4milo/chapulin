@@ -165,12 +165,22 @@ static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *
     return CH_OK;
 }
 
-// The Certificate SEQUENCE's header, whose length must fill cert, and
-// the TBSCertificate's, with out->tbs and out->tbs_len naming its
-// content. Leaves r after the TBSCertificate, at the outer
-// signatureAlgorithm.
-static int read_certificate_head(const uint8_t *cert, size_t cert_len, rbuf *r, webpki_cert *out) {
-    if (cert_len > CH_WEBPKI_CERT_MAX) {
+// x509_read_len reads a length of at most two octets, so it reads the
+// content length of a Certificate SEQUENCE at either cap, whose header
+// is 4 bytes.
+_Static_assert(CH_WEBPKI_CERT_MAX <= CH_WEBPKI_LEAF_PIN_CERT_MAX &&
+                   CH_WEBPKI_LEAF_PIN_CERT_MAX - 4 <= 0xffff,
+               "x509_read_len reads a Certificate SEQUENCE's length at both caps");
+
+// The Certificate SEQUENCE's header, whose length must fill cert, of at
+// most cert_max bytes, and the TBSCertificate's, with out->tbs and
+// out->tbs_len naming its content. Leaves r after the TBSCertificate, at
+// the outer signatureAlgorithm. webpki_parse_certificate passes the
+// walk's CH_WEBPKI_CERT_MAX, and webpki_read_certificate_key passes
+// CH_WEBPKI_LEAF_PIN_CERT_MAX, the cap under pins alone.
+static int read_certificate_head(const uint8_t *cert, size_t cert_len, size_t cert_max, rbuf *r,
+                                 webpki_cert *out) {
+    if (cert_len > cert_max) {
         return 0;
     }
     rb_init(r, cert, cert_len);
@@ -190,7 +200,7 @@ static int read_certificate_head(const uint8_t *cert, size_t cert_len, rbuf *r, 
 int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, webpki_cert *out,
                                 uint8_t *alert) {
     rbuf r;
-    if (!read_certificate_head(cert, cert_len, &r, out)) {
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {
         return CH_EPROTO;
     }
     rbuf t;
@@ -218,7 +228,7 @@ int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, webpki_cer
 int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
                              uint8_t *alert) {
     rbuf r;
-    if (!read_certificate_head(cert, cert_len, &r, out)) {
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_CERT_MAX, &r, out)) {
         return CH_EPROTO;
     }
     const uint8_t *sigalg_tlv = NULL;

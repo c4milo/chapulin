@@ -1,0 +1,15 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_auth_test
+reason: under pins alone the list framing holds every entry after the
+  leaf to the walk's CH_WEBPKI_CERT_MAX, though it stores none of them
+  and a Certificate message carries an entry up to
+  CH_WEBPKI_LEAF_PIN_CERT_MAX. A server whose chain carries a large
+  certificate after its pinned leaf fails with bad_certificate.
+  test/webpki_leaf_pins.h's rows with the corpus leaf over
+  CH_WEBPKI_CERT_MAX after the r2 leaf, which want it accepted, object.
+
+--- old
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, &cert, &cert_len, alert);
+--- new
+        rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, &cert, &cert_len, alert);

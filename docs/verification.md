@@ -1598,16 +1598,26 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Proves:** `webpki_read_certificate_key`, the reader a leaf pinned
   with no anchor goes through (`docs/decisions.md` entry 65), over any
   bytes, with [webpki_cert](#webpki_cert)'s four reader stubs:
+  - it reads no byte outside the certificate, a heap object of exactly
+    its length, so a read one past the end fails a bounds check at any
+    length;
   - it returns `CH_OK` or `CH_EPROTO` with one of the two alerts;
-  - a success keeps the alert, is at most `CH_WEBPKI_CERT_MAX` bytes,
-    and puts tbs inside the certificate; issuer, subject and the
+  - a success keeps the alert, is at most `CH_WEBPKI_LEAF_PIN_CERT_MAX`
+    bytes, and puts tbs inside the certificate; issuer, subject and the
     SubjectPublicKeyInfo TLV inside tbs; and the key inside that TLV;
   - on every return, the extensions reader never ran and the fields the
     call does not write are untouched.
 
-  Asserting 0 at the success tail fails, so the tail is reached.
-- **Bound:** certificates ≤ 3,073 B, the real bound and the first length
-  refused.
+  Asserting at the success tail that the length is under
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX` fails, so a certificate at the cap
+  reaches the tail.
+- **Bound:** certificates ≤ 16,376 B: `CH_WEBPKI_LEAF_PIN_CERT_MAX`, the
+  real bound, which one entry of the largest Certificate message holds,
+  and the first length refused. cbmc gives each read at a symbolic offset
+  into a fixed-size array clauses in proportion to its length, so a
+  fixed array of that size made 78 million clauses and a 9.1 GB solve;
+  the certificate is a heap object of symbolic size instead, 0.8 million
+  clauses and 0.44 GB.
 
 #### webpki_chain
 
@@ -1688,8 +1698,15 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     pins, and returns that key with a path of the leaf alone.
 - **Bound:** lists ≤ 30 B, which hold five one-byte entries, one past
   the walk's `CH_WEBPKI_FLIGHT_ENTRIES`; pins alone store only the leaf,
-  so they cap no count. The key copy it shares with the raw rule is
-  proved at the raw rule's full bound, in [webpki_pin](#webpki_pin).
+  so they cap no count. Every entry of so short a list is far shorter
+  than `CH_WEBPKI_LEAF_PIN_CERT_MAX`, the cap pins alone put on each
+  entry: that cap is one compare in `webpki_read_entry`, which
+  [webpki_pin](#webpki_pin) proves on both sides of its own cap, and
+  `test/webpki_leaf_pins.h` tests on both sides of this one. The key
+  reader's stub admits a certificate up to that cap, which
+  [webpki_cert_key](#webpki_cert_key) proves. The key copy it shares
+  with the raw rule is proved at the raw rule's full bound, in
+  [webpki_pin](#webpki_pin).
 - **Not proved:** which digests match. `Spec.WebpkiPin.verifyLeafPin_ok`
   states the rule over the real SHA-256, and
   `test/diff_webpki_leaf_pin.h` compares the two.

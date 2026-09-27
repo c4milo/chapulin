@@ -1,0 +1,16 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_chain_test
+reason: the walk frames an entry up to CH_WEBPKI_LEAF_PIN_CERT_MAX, the
+  cap pins alone take, in place of its own CH_WEBPKI_CERT_MAX, so an
+  entry past the certificate the walk stops at passes unread at any size
+  a message carries, and CH_TRUST_MIN_RXBUF, which counts four entries at
+  CH_WEBPKI_CERT_MAX, no longer holds the largest message the walk
+  accepts. test/webpki_chain_test.c's entry size rows, which want a
+  trailing entry of 3073 bytes and the corpus leaf over the cap refused,
+  object.
+
+--- old
+        int rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, &out->cert[out->count],
+--- new
+        int rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, &out->cert[out->count],

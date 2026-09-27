@@ -45,8 +45,11 @@
 #include "webpki.h"
 #include "webpki_corpus.h"
 
-// Room for one byte past the certificate cap.
-#define DIFF_CERT_MAX (CH_WEBPKI_CERT_MAX + 1)
+// Room for one byte past the largest certificate a Certificate message
+// carries, CH_WEBPKI_LEAF_PIN_CERT_MAX: the corpus leaf over
+// CH_WEBPKI_CERT_MAX, which SPKI pins alone take, is compared too, and
+// both sides refuse it here.
+#define DIFF_CERT_MAX (CH_WEBPKI_LEAF_PIN_CERT_MAX + 1)
 #define DIFF_CERT_LINE_MAX (2 * DIFF_CERT_MAX + 32)
 #define DIFF_CERT_REPLY_MAX (2 * CH_WEBPKI_KEY_MAX + 256)
 // Bytes changed one at a time in each certificate other than the r2 pair.
@@ -451,7 +454,7 @@ static void diff_cert_random_list(void) {
     }
     size_t validity = rng_below(4) == 0 ? rng_below(DIFF_CERT_VALIDITY_COUNT) : 0;
     size_t n = diff_cert_frame(cert, list, at, validity);
-    if (n > DIFF_CERT_MAX) {
+    if (n > CH_WEBPKI_CERT_MAX + 1) {
         return; // over the cap: the corpus rows compare that refusal
     }
     diff_cert_compare(cert, n, arm);

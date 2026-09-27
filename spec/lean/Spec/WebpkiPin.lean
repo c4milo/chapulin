@@ -30,7 +30,9 @@ reported, or of the anchor that ended it.
 anchors, an X.509 chain passes when a pin names the key of its first
 entry, the leaf, which is read only as far as that key. It frames every
 entry as the walk does but keeps only the leaf, so no count caps the
-entries (`readLeafEntries?`). It answers the
+entries, and each entry may take `leafPinCertificateMax` bytes, the
+largest a Certificate message can carry, where the walk takes
+`certificateMax` (`readLeafEntries?`). It answers the
 key, `unpinned` when no pin names it, or `rejected` for every `CH_EPROTO`
 the C returns, the framing and the leaf's DER alike, as the walk's
 differential reports them; the unit tests pin each alert.
@@ -44,6 +46,14 @@ open Spec.Bytes Spec.X509 Spec.WebpkiSpki Spec.WebpkiSigalg Spec.WebpkiCert Spec
 accepts, an RSA key of `modulusMax` bytes, and so the largest raw
 public key entry. -/
 def spkiMax : Nat := 550
+
+/-- `CH_WEBPKI_LEAF_PIN_CERT_MAX`: the largest certificate one
+Certificate message can carry, the cap on every entry under pins alone
+in place of `certificateMax` (docs/decisions.md 65). A handshake message
+body is at most 0x4000 bytes, and 9 of them are the empty
+certificate_request_context's length byte, the list's u24 length, and
+the entry's u24 length and empty u16 extensions vector. -/
+def leafPinCertificateMax : Nat := 0x4000 - 1 - 3 - 3 - 2
 
 /-- RFC 7858 §4.2: a pin names `spki` when it equals the SHA-256 of those
 bytes, the whole DER SubjectPublicKeyInfo. -/
@@ -133,13 +143,13 @@ def readTbsKey? (tbs : ByteArray) : Option (Range × KeyAlg × ByteArray) := do
   some (⟨o6, o7 - o6⟩, keyAlg, key)
 
 /-- A certificate read only as far as its key (RFC 5280 §4.1): at most
-`certificateMax` bytes, one Certificate SEQUENCE filling them, and
+`leafPinCertificateMax` bytes, one Certificate SEQUENCE filling them, and
 `readTbsKey?` over its TBSCertificate's content, then a signatureAlgorithm
 SEQUENCE and a signature BIT STRING framed and not read, which must fill
 the Certificate. The SubjectPublicKeyInfo TLV's bytes, the bytes a pin
 hashes, then the key's algorithm and the key. -/
 def certificateKey? (cert : ByteArray) : Option (ByteArray × KeyAlg × ByteArray) := do
-  guard (cert.size ≤ certificateMax)
+  guard (cert.size ≤ leafPinCertificateMax)
   let (_, body, bodyEnd) ← readTlvAt cert 0 0x30
   guard (bodyEnd == cert.size)
   let (_, tbs, tbsEnd) ← readTlvAt body 0 0x30
@@ -165,12 +175,13 @@ def LeafVerdict.name : LeafVerdict → String
   | .unpinned => "unpinned"
 
 /-- The CertificateEntry list under pins alone: every entry framed as
-`readEntries?` frames it, with no `flightEntries` cap, because the rule
-keeps only the leaf (docs/decisions.md 65). An entry takes at least six
-bytes, so one more fuel than the list has bytes reads every entry the
-list can hold. -/
+`readEntries?` frames it, with no `flightEntries` cap and with
+`leafPinCertificateMax` in place of `certificateMax`, because the rule
+keeps only the leaf and reads it only as far as its key
+(docs/decisions.md 65). An entry takes at least six bytes, so one more
+fuel than the list has bytes reads every entry the list can hold. -/
 def readLeafEntries? (list : ByteArray) : Option (List ByteArray) :=
-  entriesFrom (list.size + 1) list 0 []
+  entriesFrom leafPinCertificateMax (list.size + 1) list 0 []
 
 /-- A CertificateEntry list under the X.509 type and SPKI pins alone
 (RFC 7858 §4.2 and docs/decisions.md 65): every entry framed as the walk
@@ -186,13 +197,25 @@ def verifyLeafPin (pins : List ByteArray) (list : ByteArray) : LeafVerdict :=
     | none => .rejected
   | _ => .rejected
 
+/-- The r2 leaf rebuilt at `size` bytes, its extensions replaced by zero
+bytes, which `certificateKey?` frames and does not read. From 256 zero
+bytes up, every header around them takes the four-byte form, so the
+leaf is `size` bytes for any size at least 256 bytes past that frame. -/
+def r2LeafOfSize (size : Nat) : ByteArray :=
+  let zeros := fun (n : Nat) => ByteArray.mk (Array.replicate n 0)
+  let frame := (r2LeafWith (zeros 256)).size - 256
+  r2LeafWith (zeros (size - frame))
+
 /-- The r2 chain under pins alone: accepted with a pin on its leaf's key,
 also with the leaf under eight copies of the intermediate, past the
 walk's `flightEntries`; refused with a pin on the intermediate's key or
 on nothing, refused with the entries swapped, where the leaf's pin names
 entry 1, and refused for a framing the walk refuses, on the ninth entry
 too. `certificateKey?` reads the leaf's key where `certificateSpki?`
-does. -/
+does. The leaf rebuilt at `leafPinCertificateMax` bytes, and an entry
+after the leaf at that size, are accepted, and at one byte more both are
+refused; a leaf one byte over `certificateMax`, which the walk's
+`readEntries?` refuses, is accepted. -/
 def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
   let entry := fun (cert : ByteArray) => natToBytesBE cert.size 3 ++ cert ++ ByteArray.mk #[0, 0]
   let chain := entry r2Leaf ++ entry r2Issuer
@@ -200,6 +223,9 @@ def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
   let issuerPin := match certificateSpki? 1 r2Issuer with
     | some b => Spec.Sha256.sha256 b
     | none => other
+  let atCap := r2LeafOfSize leafPinCertificateMax
+  let overCap := r2LeafOfSize (leafPinCertificateMax + 1)
+  let overWalk := r2LeafOfSize (certificateMax + 1)
   (certificateKey? r2Leaf).map (·.1) == some leafSpki &&
     (verifyLeafPin [other, leafPin] chain).name == "ok" &&
     (verifyLeafPin [issuerPin] chain).name == "unpinned" &&
@@ -208,7 +234,15 @@ def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
     (verifyLeafPin [leafPin] (chain ++ ByteArray.mk #[0])).name == "rejected" &&
     (verifyLeafPin [leafPin] nine).name == "ok" &&
     (verifyLeafPin [leafPin] (nine ++ ByteArray.mk #[0])).name == "rejected" &&
-    (verifyLeafPin [leafPin] ByteArray.empty).name == "rejected"
+    (verifyLeafPin [leafPin] ByteArray.empty).name == "rejected" &&
+    atCap.size == leafPinCertificateMax && overCap.size == leafPinCertificateMax + 1 &&
+    (certificateKey? atCap).map (·.1) == some leafSpki && (certificateKey? overCap).isNone &&
+    (verifyLeafPin [leafPin] (entry atCap)).name == "ok" &&
+    (verifyLeafPin [leafPin] (entry overCap)).name == "rejected" &&
+    (verifyLeafPin [leafPin] (entry r2Leaf ++ entry atCap)).name == "ok" &&
+    (verifyLeafPin [leafPin] (entry r2Leaf ++ entry overCap)).name == "rejected" &&
+    (verifyLeafPin [leafPin] (entry overWalk)).name == "ok" &&
+    (readEntries? (entry overWalk)).isNone
 
 set_option compiler.extract_closed false in
 /-- The corpus r2 leaf's SubjectPublicKeyInfo framed as one raw entry:

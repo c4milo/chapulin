@@ -5,10 +5,12 @@
 // The corpus half reads each row's RFC 9846 §4.5.1 Certificate message
 // and parses every entry, the leaf with is_ca = 0 and each later entry
 // with is_ca = 1. A row whose rule belongs to this parser must fail at
-// its one broken entry with ALERT_UNSUPPORTED_CERTIFICATE, and every
-// other entry, including those of the rows whose rule belongs to the
-// walk, the clock or the hostname, must parse. The four captured public
-// chains must parse whole. The mutant half is test/webpki_cert_mutants.h.
+// its one broken entry with the alert its rule names:
+// ALERT_UNSUPPORTED_CERTIFICATE for a profile rule, ALERT_BAD_CERTIFICATE
+// for the leaf over CH_WEBPKI_CERT_MAX. Every other entry, including
+// those of the rows whose rule belongs to the walk, the clock or the
+// hostname, must parse. The four captured public chains must parse whole.
+// The mutant half is test/webpki_cert_mutants.h.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI so the RSA-4096 keys in
 // the captures pass webpki_read_spki's modulus size check, as they do in the
@@ -79,13 +81,15 @@ static int read_flight(const uint8_t *message, size_t message_len, flight *f) {
 }
 
 // Framing the entries again with put_entry reproduces the message's
-// list byte for byte, so read_flight dropped and invented nothing.
+// list byte for byte, so read_flight dropped and invented nothing. An
+// entry is at most CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a
+// Certificate message carries.
 static void check_reframed(const flight *f, const uint8_t *message, size_t message_len) {
-    static uint8_t entry[CH_WEBPKI_CERT_MAX + 5];
+    static uint8_t entry[CH_WEBPKI_LEAF_PIN_CERT_MAX + 5];
     size_t at = HANDSHAKE_HEADER_LEN + LIST_HEADER_LEN;
     for (size_t i = 0; i < f->count; i++) {
-        if (f->cert_len[i] > CH_WEBPKI_CERT_MAX) {
-            (void)fprintf(stderr, "FAIL entry %zu is over CH_WEBPKI_CERT_MAX\n", i);
+        if (f->cert_len[i] > CH_WEBPKI_LEAF_PIN_CERT_MAX) {
+            (void)fprintf(stderr, "FAIL entry %zu is over CH_WEBPKI_LEAF_PIN_CERT_MAX\n", i);
             failures++;
             return;
         }
@@ -124,43 +128,48 @@ static void check_accepted(const webpki_cert *c, const uint8_t *cert, size_t cer
     }
 }
 
-// The corpus rows whose rule is this parser's, and the entry that
-// breaks it: the leaf, or the intermediate for the two issuer rules.
+// The corpus rows whose rule is this parser's, the entry that breaks it,
+// the leaf or the intermediate for the two issuer rules, and the alert
+// the parser answers it with.
 typedef struct {
     const char *name;
     size_t entry;
+    uint8_t alert;
 } refused_row;
 
 static const refused_row refused_rows[] = {
-    {"no_subject_alt_name",            0},
-    {"key_usage_no_digital_signature", 0},
-    {"no_server_auth_eku",             0},
-    {"leaf_asserts_ca",                0},
-    {"sha1_signature",                 0},
-    {"rsa_1024_leaf",                  0},
-    {"critical_name_constraints",      1},
-    {"intermediate_not_ca",            1},
+    {"no_subject_alt_name",            0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"key_usage_no_digital_signature", 0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"no_server_auth_eku",             0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"leaf_asserts_ca",                0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"sha1_signature",                 0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"rsa_1024_leaf",                  0, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"critical_name_constraints",      1, ALERT_UNSUPPORTED_CERTIFICATE},
+    {"intermediate_not_ca",            1, ALERT_UNSUPPORTED_CERTIFICATE},
+    // A leaf over CH_WEBPKI_CERT_MAX, which pins alone take.
+    {"leaf_over_cert_max",             0, ALERT_BAD_CERTIFICATE        },
 };
 #define REFUSED_ROW_COUNT (sizeof refused_rows / sizeof refused_rows[0])
-#define NO_ENTRY CH_WEBPKI_FLIGHT_ENTRIES
 
-static size_t refused_entry(const char *name) {
+// The refused_rows row a corpus row names, or NULL when this parser
+// accepts every entry of it.
+static const refused_row *refused_row_named(const char *name) {
     for (size_t i = 0; i < REFUSED_ROW_COUNT; i++) {
         if (strcmp(refused_rows[i].name, name) == 0) {
-            return refused_rows[i].entry;
+            return &refused_rows[i];
         }
     }
-    return NO_ENTRY;
+    return NULL;
 }
 
 // Parses entry i of a row's flight into *c and requires the verdict the
 // row names for it. Returns 1 when the entry was accepted.
-static int check_entry(const webpki_corpus_chain *row, const flight *f, size_t i, size_t refused_at,
-                       webpki_cert *c) {
+static int check_entry(const webpki_corpus_chain *row, const flight *f, size_t i,
+                       const refused_row *refused, webpki_cert *c) {
     uint8_t alert = ALERT_BAD_CERTIFICATE;
     int rc = webpki_parse_certificate(f->cert[i], f->cert_len[i], i > 0, c, &alert);
-    if (i == refused_at) {
-        CHECK(rc == CH_EPROTO && alert == ALERT_UNSUPPORTED_CERTIFICATE);
+    if (refused != NULL && i == refused->entry) {
+        CHECK(rc == CH_EPROTO && alert == refused->alert);
         return 0;
     }
     if (rc != CH_OK || alert != ALERT_BAD_CERTIFICATE) {
@@ -180,15 +189,15 @@ static int check_entry(const webpki_corpus_chain *row, const flight *f, size_t i
 static size_t check_row(const webpki_corpus_chain *row, flight *f) {
     CHECK(read_flight(row->message, row->message_len, f));
     check_reframed(f, row->message, row->message_len);
-    size_t refused_at = refused_entry(row->name);
-    int names_chain = refused_at == NO_ENTRY && strcmp(row->name, "issuer_name_mismatch") != 0;
+    const refused_row *refused = refused_row_named(row->name);
+    int names_chain = refused == NULL && strcmp(row->name, "issuer_name_mismatch") != 0;
     size_t accepted = 0;
     webpki_cert previous;
     memset(&previous, 0, sizeof previous);
     for (size_t i = 0; i < f->count; i++) {
         webpki_cert c;
         memset(&c, 0, sizeof c);
-        accepted += (size_t)check_entry(row, f, i, refused_at, &c);
+        accepted += (size_t)check_entry(row, f, i, refused, &c);
         if (names_chain && i > 0) {
             CHECK(previous.issuer_len == c.subject_len &&
                   memcmp(previous.issuer, c.subject, c.subject_len) == 0);
@@ -222,7 +231,7 @@ static void test_corpus(void) {
         entries += f.count;
     }
     CHECK(refused == REFUSED_ROW_COUNT);
-    CHECK(entries == 75); // every entry of the 30 corpus chains
+    CHECK(entries == 77); // every entry of the 31 corpus chains
 }
 
 static const uint8_t leaf_host[] = "s3.example.test";

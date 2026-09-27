@@ -10,9 +10,11 @@
 // verdict, so a signature the leaf key did not make is refused with
 // decrypt_error; a pin on the intermediate, on the row's anchor key or on
 // nothing is refused with bad_certificate. Through webpki_verify_leaf_pin
-// directly: leaves the walk refuses for a name, an extension or a date
-// are accepted, a key or a signature algorithm the reader refuses is not,
-// only entry 0 counts, and the framing refuses what the walk refuses.
+// directly: leaves the walk refuses for a name, an extension, a date or
+// their size are accepted, a key or a signature algorithm the reader
+// refuses is not, only entry 0 counts, the framing refuses what the
+// walk's framing refuses but for the count and the size of the entries,
+// and CH_WEBPKI_LEAF_PIN_CERT_MAX bounds every entry.
 //
 // Included by test/webpki_auth_test.c after webpki_auth_pins.h, whose
 // helpers it reads.
@@ -57,21 +59,27 @@ static void test_leaf_pin_flight(const webpki_auth_vector *v) {
     check_refusal("no pin without anchors", rc, h.alert, CH_EAUTH, ALERT_BAD_CERTIFICATE);
 }
 
-// webpki_verify_leaf_pin over one Certificate message's list, under one
-// pin, with the caller's bad_certificate seeded. Returns the code and
-// leaves the alert in *alert.
-static int leaf_pin_call(const uint8_t *message, size_t message_len, const uint8_t *pin,
-                         uint8_t *alert) {
+// webpki_verify_leaf_pin over one CertificateEntry list, under one pin,
+// with the caller's bad_certificate seeded. Returns the code and leaves
+// the alert in *alert.
+static int leaf_pin_list_call(const uint8_t *list, size_t list_len, const uint8_t *pin,
+                              uint8_t *alert) {
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.spki_pins = pin;
     cfg.spki_pin_count = 1;
     webpki_leaf_info leaf;
     *alert = ALERT_BAD_CERTIFICATE;
+    return webpki_verify_leaf_pin(list, list_len, &cfg, &leaf, alert);
+}
+
+// The same over one Certificate message's list.
+static int leaf_pin_call(const uint8_t *message, size_t message_len, const uint8_t *pin,
+                         uint8_t *alert) {
     rbuf list;
     message_list(message, message_len, &list);
     size_t list_len = rb_left(&list);
-    return webpki_verify_leaf_pin(rb_bytes(&list, list_len), list_len, &cfg, &leaf, alert);
+    return leaf_pin_list_call(rb_bytes(&list, list_len), list_len, pin, alert);
 }
 
 // The verdict under a pin on a corpus row's leaf, read by the same reader
@@ -95,8 +103,8 @@ static int corpus_leaf_pin(const char *name, uint8_t *alert) {
 }
 
 // The leaf is read only as far as its key. Rows the walk refuses for the
-// leaf's name, extensions or dates pass under a pin on its key; a row
-// whose leaf key the reader refuses does not, and its alert is the
+// leaf's name, extensions, dates or size pass under a pin on its key; a
+// row whose leaf key the reader refuses does not, and its alert is the
 // reader's.
 static void test_leaf_read_as_far_as_its_key(void) {
     static const char *const accepted[] = {
@@ -108,6 +116,7 @@ static void test_leaf_read_as_far_as_its_key(void) {
         "not_yet_valid",
         "hostname_mismatch",
         "intermediate_not_ca",
+        "leaf_over_cert_max",
     };
     uint8_t alert = 0;
     for (size_t i = 0; i < sizeof accepted / sizeof accepted[0]; i++) {
@@ -179,16 +188,23 @@ static void test_leaf_pin_framing(void) {
     check_refusal("leaf one byte short", rc, alert, CH_EPROTO, ALERT_BAD_CERTIFICATE);
 }
 
-// The r2 leaf under count - 1 copies of the r2 intermediate, the last of
-// them with an extensions vector of extensions_len bytes, cut short by
-// cut bytes; the call's code, with the alert in *alert.
-static int leaf_under_entries(size_t count, size_t extensions_len, size_t cut, uint8_t *alert) {
+// The leaf of the row named leaf_row under count - 1 copies of the r2
+// intermediate, the last of them with an extensions vector of
+// extensions_len bytes, cut short by cut bytes, under a pin on the r2
+// leaf's key, which every leaf here carries; the call's code, with the
+// alert in *alert.
+static int leaf_under_entries(const char *leaf_row, size_t count, size_t extensions_len, size_t cut,
+                              uint8_t *alert) {
     const webpki_corpus_chain *r2 = chain_named("r2");
+    const webpki_corpus_chain *row = chain_named(leaf_row);
+    if (r2 == NULL || row == NULL) {
+        return CH_EINVAL;
+    }
     const uint8_t *leaf = NULL;
     size_t leaf_len = 0;
     const uint8_t *issuer = NULL;
     size_t issuer_len = 0;
-    CHECK(message_entry(r2->message, r2->message_len, 0, &leaf, &leaf_len));
+    CHECK(message_entry(row->message, row->message_len, 0, &leaf, &leaf_len));
     CHECK(message_entry(r2->message, r2->message_len, 1, &issuer, &issuer_len));
     uint8_t pin[SHA256_LEN];
     CHECK(entry_pin(r2->message, r2->message_len, 0, pin));
@@ -210,47 +226,143 @@ static int leaf_under_entries(size_t count, size_t extensions_len, size_t cut, u
 // one entry past it passes, and so do nine, a leaf under the eight
 // intermediates the QUIC Interop Runner's amplificationlimit case sends.
 // Every entry is still framed: the ninth refuses an extensions vector and
-// a list one byte short, and an entry after the leaf passes at
-// CH_WEBPKI_CERT_MAX bytes and fails one byte over.
+// a list one byte short.
 static void test_leaf_pin_entry_count(void) {
+    uint8_t alert = 0;
+    int rc = leaf_under_entries("r2", CH_WEBPKI_FLIGHT_ENTRIES + 1, 0, 0, &alert);
+    check_refusal("one entry past the walk's cap", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+    rc = leaf_under_entries("r2", 9, 0, 0, &alert);
+    check_refusal("a leaf under eight intermediates", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+    rc = leaf_under_entries("r2", 9, 1, 0, &alert);
+    check_refusal("extension on the ninth entry", rc, alert, CH_EPROTO,
+                  ALERT_UNSUPPORTED_EXTENSION);
+    rc = leaf_under_entries("r2", 9, 0, 1, &alert);
+    check_refusal("ninth entry one byte short", rc, alert, CH_EPROTO, ALERT_BAD_CERTIFICATE);
+}
+
+// The largest list the size rows frame: the r2 leaf, then an entry one
+// byte past CH_WEBPKI_LEAF_PIN_CERT_MAX.
+#define LEAF_PIN_LIST_MAX (2 * ((size_t)CH_WEBPKI_LEAF_PIN_CERT_MAX + 6))
+
+// The r2 leaf rebuilt at size bytes into out: its TBSCertificate fields
+// through the key, an extensions [3] TLV holding a SEQUENCE of zero
+// bytes, which webpki_read_certificate_key frames and does not read, then
+// its signatureAlgorithm and signature. Every header it writes takes the
+// four-byte form, which holds from 256 zero bytes up. These are the bytes
+// spec/lean/Spec/WebpkiPin.lean's r2LeafOfSize builds. Returns size, or 0
+// when the r2 leaf does not read.
+static size_t r2_leaf_of_size(uint8_t *out, size_t cap, size_t size) {
     const webpki_corpus_chain *r2 = chain_named("r2");
-    if (r2 == NULL) {
+    const uint8_t *leaf = NULL;
+    size_t leaf_len = 0;
+    webpki_cert parsed;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    int found = r2 != NULL && message_entry(r2->message, r2->message_len, 0, &leaf, &leaf_len) &&
+                webpki_read_certificate_key(leaf, leaf_len, &parsed, &alert) == CH_OK;
+    CHECK(found);
+    if (!found) {
+        return 0;
+    }
+    size_t fields_len = (size_t)(parsed.spki_tlv - parsed.tbs) + parsed.spki_tlv_len;
+    const uint8_t *tail = parsed.tbs + parsed.tbs_len;
+    size_t tail_len = leaf_len - (size_t)(tail - leaf);
+    int fits = size >= 16 + fields_len + tail_len + 256;
+    CHECK(fits);
+    if (!fits) {
+        return 0;
+    }
+    size_t zeros = size - 16 - fields_len - tail_len;
+    wbuf w;
+    wb_init(&w, out, cap);
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(size - 4));
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(fields_len + 8 + zeros));
+    wb_bytes(&w, parsed.tbs, fields_len);
+    wb_u8(&w, 0xa3);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)(4 + zeros));
+    wb_u8(&w, 0x30);
+    wb_u8(&w, 0x82);
+    wb_u16(&w, (uint16_t)zeros);
+    for (size_t i = 0; i < zeros; i++) {
+        wb_u8(&w, 0);
+    }
+    wb_bytes(&w, tail, tail_len);
+    CHECK(!w.err && w.len == size);
+    return w.len;
+}
+
+// The verdict on a list whose entry 0 is leaf and, when after_len is not
+// 0, whose entry 1 is the after_len bytes at after, under a pin on the r2
+// leaf's key, which every leaf here carries.
+static int leaf_then(const uint8_t *leaf, size_t leaf_len, const uint8_t *after, size_t after_len,
+                     uint8_t *alert) {
+    const webpki_corpus_chain *r2 = chain_named("r2");
+    uint8_t pin[SHA256_LEN];
+    pin_of_nothing(pin);
+    CHECK(r2 != NULL && entry_pin(r2->message, r2->message_len, 0, pin));
+    static uint8_t list[LEAF_PIN_LIST_MAX];
+    wbuf w;
+    wb_init(&w, list, sizeof list);
+    put_entry(&w, leaf, leaf_len, 0);
+    if (after_len > 0) {
+        put_entry(&w, after, after_len, 0);
+    }
+    CHECK(!w.err);
+    return leaf_pin_list_call(list, w.len, pin, alert);
+}
+
+// CH_WEBPKI_LEAF_PIN_CERT_MAX, the largest certificate a Certificate
+// message carries, bounds every entry under pins alone in place of the
+// walk's CH_WEBPKI_CERT_MAX (docs/decisions.md 65). The corpus leaf over
+// CH_WEBPKI_CERT_MAX passes under the eight intermediates the QUIC
+// Interop Runner's amplificationlimit case sends, and as the entry after
+// the r2 leaf. The r2 leaf rebuilt at the cap passes as entry 0 and as
+// the entry after the r2 leaf, and one byte longer it is refused in both
+// places. Filler after the leaf passes at the cap and is refused one
+// byte over it.
+static void test_leaf_pin_entry_size(void) {
+    const webpki_corpus_chain *r2 = chain_named("r2");
+    const webpki_corpus_chain *large = chain_named("leaf_over_cert_max");
+    if (r2 == NULL || large == NULL) {
         return;
     }
     uint8_t alert = 0;
-    int rc = leaf_under_entries(CH_WEBPKI_FLIGHT_ENTRIES + 1, 0, 0, &alert);
-    check_refusal("one entry past the walk's cap", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
-    rc = leaf_under_entries(9, 0, 0, &alert);
-    check_refusal("a leaf under eight intermediates", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
-    rc = leaf_under_entries(9, 1, 0, &alert);
-    check_refusal("extension on the ninth entry", rc, alert, CH_EPROTO,
-                  ALERT_UNSUPPORTED_EXTENSION);
-    rc = leaf_under_entries(9, 0, 1, &alert);
-    check_refusal("ninth entry one byte short", rc, alert, CH_EPROTO, ALERT_BAD_CERTIFICATE);
-
+    int rc = leaf_under_entries("leaf_over_cert_max", 9, 0, 0, &alert);
+    check_refusal("the large leaf under eight intermediates", rc, alert, CH_OK,
+                  ALERT_BAD_CERTIFICATE);
     const uint8_t *leaf = NULL;
     size_t leaf_len = 0;
+    const uint8_t *large_leaf = NULL;
+    size_t large_len = 0;
     CHECK(message_entry(r2->message, r2->message_len, 0, &leaf, &leaf_len));
-    uint8_t pin[SHA256_LEN];
-    CHECK(entry_pin(r2->message, r2->message_len, 0, pin));
-    static const uint8_t filler[CH_WEBPKI_CERT_MAX + 1] = {0};
-    static uint8_t list[PIN_MESSAGE_MAX];
-    static uint8_t message[PIN_MESSAGE_MAX];
-    for (size_t len = CH_WEBPKI_CERT_MAX; len <= CH_WEBPKI_CERT_MAX + 1; len++) {
-        wbuf w;
-        wb_init(&w, list, sizeof list);
-        put_entry(&w, leaf, leaf_len, 0);
-        put_entry(&w, filler, len, 0);
-        size_t message_len = certificate_message(message, list, w.len);
-        rc = leaf_pin_call(message, message_len, pin, &alert);
-        if (len == CH_WEBPKI_CERT_MAX) {
-            check_refusal("entry after the leaf at the cap", rc, alert, CH_OK,
-                          ALERT_BAD_CERTIFICATE);
-        } else {
-            check_refusal("entry after the leaf one byte over", rc, alert, CH_EPROTO,
-                          ALERT_BAD_CERTIFICATE);
-        }
-    }
+    CHECK(message_entry(large->message, large->message_len, 0, &large_leaf, &large_len));
+    CHECK(large_len > CH_WEBPKI_CERT_MAX);
+    rc = leaf_then(leaf, leaf_len, large_leaf, large_len, &alert);
+    check_refusal("the large leaf after the leaf", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+
+    static uint8_t big[CH_WEBPKI_LEAF_PIN_CERT_MAX + 1];
+    size_t big_len = r2_leaf_of_size(big, sizeof big, CH_WEBPKI_LEAF_PIN_CERT_MAX);
+    rc = leaf_then(big, big_len, NULL, 0, &alert);
+    check_refusal("a leaf at the cap", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+    rc = leaf_then(leaf, leaf_len, big, big_len, &alert);
+    check_refusal("an entry at the cap after the leaf", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+    big_len = r2_leaf_of_size(big, sizeof big, CH_WEBPKI_LEAF_PIN_CERT_MAX + 1);
+    rc = leaf_then(big, big_len, NULL, 0, &alert);
+    check_refusal("a leaf one byte over the cap", rc, alert, CH_EPROTO, ALERT_BAD_CERTIFICATE);
+    rc = leaf_then(leaf, leaf_len, big, big_len, &alert);
+    check_refusal("an entry one byte over the cap after the leaf", rc, alert, CH_EPROTO,
+                  ALERT_BAD_CERTIFICATE);
+
+    static const uint8_t filler[CH_WEBPKI_LEAF_PIN_CERT_MAX + 1] = {0};
+    rc = leaf_then(leaf, leaf_len, filler, CH_WEBPKI_LEAF_PIN_CERT_MAX, &alert);
+    check_refusal("filler at the cap after the leaf", rc, alert, CH_OK, ALERT_BAD_CERTIFICATE);
+    rc = leaf_then(leaf, leaf_len, filler, CH_WEBPKI_LEAF_PIN_CERT_MAX + 1, &alert);
+    check_refusal("filler one byte over the cap after the leaf", rc, alert, CH_EPROTO,
+                  ALERT_BAD_CERTIFICATE);
 }
 
 static void test_leaf_pins(void) {
@@ -261,6 +373,7 @@ static void test_leaf_pins(void) {
     test_leaf_is_entry_zero();
     test_leaf_pin_framing();
     test_leaf_pin_entry_count();
+    test_leaf_pin_entry_size();
 }
 
 #endif

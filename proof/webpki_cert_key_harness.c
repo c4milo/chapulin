@@ -1,11 +1,12 @@
-// Proves: webpki_read_certificate_key (webpki_cert.c) is memory-safe and
-// UB-free over any bytes up to one past CH_WEBPKI_CERT_MAX, and its
-// result contract holds. It is the reader a leaf pinned with no anchor
-// goes through (webpki_pin.h, docs/decisions.md 65), which reads a
-// certificate only as far as its key. It returns CH_OK or CH_EPROTO. A
-// refusal leaves the alert at the caller's ALERT_BAD_CERTIFICATE or sets
+// Proves: webpki_read_certificate_key (webpki_cert.c) reads no byte
+// outside cert[0..n) and is UB-free for every n up to one past
+// CH_WEBPKI_LEAF_PIN_CERT_MAX and every byte cert holds, and its result
+// contract holds. It is the reader a leaf pinned with no anchor goes
+// through (webpki_pin.h, docs/decisions.md 65), which reads a certificate
+// only as far as its key. It returns CH_OK or CH_EPROTO. A refusal leaves
+// the alert at the caller's ALERT_BAD_CERTIFICATE or sets
 // ALERT_UNSUPPORTED_CERTIFICATE. On CH_OK the alert is untouched, the
-// length is at most CH_WEBPKI_CERT_MAX, and:
+// length is at most CH_WEBPKI_LEAF_PIN_CERT_MAX, and:
 //
 //   - tbs lies inside the certificate; issuer, subject and the
 //     SubjectPublicKeyInfo TLV lie inside tbs; the key lies inside that
@@ -24,7 +25,19 @@
 // (buf.c) and ct_memeq (ct.c) are real, x509_skip among them, which frames
 // the extensions, the outer signatureAlgorithm and the signature the
 // reader skips unread.
+//
+// cert is a heap object of exactly n bytes, so a read at cert[n] is a
+// bounds failure whatever n is, as in record_whole_len. The heap is the
+// harness's, not the library's: CBMC gives the object n unconstrained
+// bytes. cbmc 6.11 gives each read at a symbolic offset into a fixed-size
+// array clauses in proportion to the array's length, with
+// --arrays-uf-always or without it, so a fixed array of
+// CH_WEBPKI_LEAF_PIN_CERT_MAX + 1 bytes made a formula of 78 million
+// clauses, about 4,700 a byte. The heap object's formula has 0.8
+// million.
 #include "harness.h"
+
+#include <stdlib.h>
 
 #include "buf.h"
 #include "handshake_message.h"
@@ -48,10 +61,10 @@ static int unwritten_equal(const webpki_cert *a, const webpki_cert *b) {
 }
 
 int main(void) {
-    static uint8_t cert[CH_WEBPKI_CERT_MAX + 1];
-    fill_nondet(cert, sizeof cert);
     size_t n = nondet_size_t();
-    __CPROVER_assume(n <= sizeof cert);
+    __CPROVER_assume(n <= CH_WEBPKI_LEAF_PIN_CERT_MAX + 1);
+    uint8_t *cert = malloc(n);
+    __CPROVER_assume(cert != NULL);
     webpki_cert out;
     __CPROVER_havoc_object(&out);
     const webpki_cert before = out;
@@ -64,10 +77,12 @@ int main(void) {
     if (rc != CH_OK) {
         __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE || alert == ALERT_UNSUPPORTED_CERTIFICATE,
                          "key: a refusal names one of the two alerts");
+        free(cert);
         return 0;
     }
     __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE, "key: success keeps the alert");
-    __CPROVER_assert(n <= CH_WEBPKI_CERT_MAX, "key: success is at most CH_WEBPKI_CERT_MAX");
+    __CPROVER_assert(n <= CH_WEBPKI_LEAF_PIN_CERT_MAX,
+                     "key: success is at most CH_WEBPKI_LEAF_PIN_CERT_MAX");
     __CPROVER_assert(inside(cert, n, out.tbs, out.tbs_len), "key: tbs inside the certificate");
     __CPROVER_assert(inside(out.tbs, out.tbs_len, out.issuer, out.issuer_len) &&
                          out.issuer_len >= 2,
@@ -85,5 +100,6 @@ int main(void) {
                      "key: sigalg is one of the four");
     __CPROVER_assert(out.spki.alg >= WEBPKI_KEY_RSA && out.spki.alg <= WEBPKI_KEY_P384,
                      "key: the key algorithm is one of the three");
+    free(cert);
     return 0;
 }

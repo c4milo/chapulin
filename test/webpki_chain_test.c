@@ -7,10 +7,10 @@
 // recorded verdict: CH_OK for the 11 positive rows and the 4 positive
 // captures, and for each negative row the return code and the alert
 // webpki.h names for its rule. The bounds half reframes corpus entries
-// into new CertificateEntry lists: a trailing entry of junk, an entry
-// one byte over CH_WEBPKI_CERT_MAX, a fifth entry, a chain that would
-// need a fourth certificate, and a non-empty per-entry extensions
-// vector on the leaf's entry and on a trailing one.
+// into new CertificateEntry lists: a trailing entry of junk, one byte
+// over CH_WEBPKI_CERT_MAX or the corpus leaf over it, a fifth entry, a
+// chain that would need a fourth certificate, and a non-empty per-entry
+// extensions vector on the leaf's entry and on a trailing one.
 // test/webpki_chain_path.h checks the path the walk reports.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI: ch_cfg carries the
@@ -75,6 +75,8 @@ static const verdict verdicts[] = {
     {"corrupt_signature",              CH_EAUTH,  ALERT_BAD_CERTIFICATE        },
     // the entries run out before an anchor verifies
     {"anchor_key_mismatch",            CH_EAUTH,  ALERT_UNKNOWN_CA             },
+    // an entry over CH_WEBPKI_CERT_MAX, which pins alone take
+    {"leaf_over_cert_max",             CH_EPROTO, ALERT_BAD_CERTIFICATE        },
 };
 #define VERDICT_COUNT (sizeof verdicts / sizeof verdicts[0])
 
@@ -372,7 +374,8 @@ static void test_trailing_entry_unread(void) {
 
 // CH_WEBPKI_CERT_MAX bounds every entry, read or not. A trailing entry
 // at the cap is framed and never parsed; one byte more refuses the
-// message before any certificate is parsed.
+// message before any certificate is parsed, and so does the corpus leaf
+// over the cap, which SPKI pins alone take (docs/decisions.md 65).
 static void test_entry_size_boundary(void) {
     static uint8_t junk[CH_WEBPKI_CERT_MAX + 1];
     const webpki_corpus_chain *aws = row_named(ROW_AWS, "aws");
@@ -384,6 +387,12 @@ static void test_entry_size_boundary(void) {
     e.cert_len[2] = CH_WEBPKI_CERT_MAX;
     CHECK(walk_framed(aws, &e, &alert) == CH_OK);
     e.cert_len[2] = CH_WEBPKI_CERT_MAX + 1;
+    alert = 0;
+    CHECK(walk_framed(aws, &e, &alert) == CH_EPROTO && alert == ALERT_BAD_CERTIFICATE);
+    entries large = row_entries(row_named(30, "leaf_over_cert_max"));
+    CHECK(large.count == 2 && large.cert_len[0] > CH_WEBPKI_CERT_MAX);
+    e.cert[2] = large.cert[0];
+    e.cert_len[2] = large.cert_len[0];
     alert = 0;
     CHECK(walk_framed(aws, &e, &alert) == CH_EPROTO && alert == ALERT_BAD_CERTIFICATE);
 }

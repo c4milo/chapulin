@@ -127,6 +127,19 @@ def impostor_ext(minter):
 RSA_LEAF_KU = "digitalSignature,keyEncipherment"
 NAME_CONSTRAINTS = "nameConstraints=critical,permitted;DNS:.example.test\n"
 
+
+def long_dns_name(index):
+    """A 250-byte DNS name: three 63-byte labels, the first carrying the
+    index, a 45-byte label, and example.test."""
+    first = f"n{index:02d}".ljust(63, "a")
+    return ".".join([first, "b" * 63, "c" * 63, "d" * 45, "example.test"])
+
+
+# The subjectAltName of the leaf over CH_WEBPKI_CERT_MAX: the corpus host,
+# then twenty 250-byte names, the names the QUIC Interop Runner's
+# amplificationlimit leaf carries in count and size.
+LARGE_LEAF_SAN = ",".join(["DNS:" + HOST] + [f"DNS:{long_dns_name(i)}" for i in range(20)])
+
 # (label, key, subject, issuer label or None, extensions, digest), in
 # issuing order. The serial is the position in this list plus one.
 CERTS = [
@@ -178,6 +191,10 @@ CERTS = [
     ("int_aws_rsa2048_rekey", "int_aws_rsa2048_v2", SUBJECT["int_aws_rsa2048"], "int_aws_rsa2048",
      intermediate_ext(0), "sha256"),
     ("leaf_aws_rekey", "leaf_rsa2048", "/CN=" + HOST, "int_aws_rsa2048_rekey", leaf_ext(RSA_LEAF_KU), "sha256"),
+    # A leaf over the walk's CH_WEBPKI_CERT_MAX of 3072 bytes, carried
+    # there by its subjectAltName, which SPKI pins alone take
+    # (docs/decisions.md 65).
+    ("leaf_r2_large", "leaf_p256", "/CN=" + HOST, "int_r2_p256", leaf_ext(san=LARGE_LEAF_SAN), "sha256"),
 ]
 
 AWS = ["leaf_aws", "int_aws_rsa2048", "root_aws_rsa2048_cross"]
@@ -292,9 +309,14 @@ CHAINS = [
     chain("corrupt_signature", ["leaf_aws_corrupt", "int_aws_rsa2048", "root_aws_rsa2048_cross"],
           ["root_aws_rsa2048"], "corrupt_signature",
           "corrupt_signature: the aws leaf with the last byte of its signature flipped."),
+    chain("leaf_over_cert_max", ["leaf_r2_large", "int_r2_p256"], ["root_p384"], "leaf_over_cert_max",
+          "leaf_over_cert_max: the r2 shape with a leaf over CH_WEBPKI_CERT_MAX, carried there\n"
+          "by twenty 250-byte dNSNames after s3.example.test, the shape of the QUIC Interop\n"
+          "Runner's amplificationlimit leaf. The walk refuses the entry for its size, and SPKI\n"
+          "pins alone take it (docs/decisions.md 65)."),
 ]
 
-# Rows where openssl verify's verdict is not this mode's. Five are
+# Rows where openssl verify's verdict is not this mode's. Six are
 # docs/webpki.md's table, where openssl accepts what this mode refuses.
 # That section records the other three after the table. leaf_asserts_ca:
 # openssl reads no basicConstraints on a leaf under -purpose sslserver.
@@ -304,8 +326,8 @@ CHAINS = [
 # docs/webpki.md's "Validity" keeps.
 EXPECTED_DISAGREEMENTS = {
     "no_subject_alt_name", "key_usage_no_digital_signature", "sha1_signature",
-    "rsa_1024_leaf", "critical_name_constraints", "leaf_asserts_ca", "not_after_boundary",
-    "issuer_not_after_boundary",
+    "rsa_1024_leaf", "critical_name_constraints", "leaf_over_cert_max", "leaf_asserts_ca",
+    "not_after_boundary", "issuer_not_after_boundary",
 }
 
 CAPTURE_ANCHORS = ["AmazonRootCA1", "SFSRootCAG2", "GTSRootR1", "GTSRootR4", "ISRGRootX2"]

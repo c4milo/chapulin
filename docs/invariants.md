@@ -1606,8 +1606,11 @@ last `ROLE=server` stub, as the entry said it would.
   as far as its SubjectPublicKeyInfo, and CertificateVerify then verifies
   under that key (docs/decisions.md 65). A pin on any other entry or on a
   root names nothing there and is refused with bad_certificate, the list
-  framing refuses what the walk's refuses, and a leaf key or signature
-  algorithm the reader refuses is unsupported_certificate. A
+  framing refuses what the walk's refuses but for the entry count and
+  the entry size, where it takes any count and every entry up to
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX` bytes, and a leaf key or signature
+  algorithm the reader refuses is unsupported_certificate. The walk
+  keeps `CH_WEBPKI_FLIGHT_ENTRIES` and `CH_WEBPKI_CERT_MAX`. A
   `TRANSPORT=quic-nonblocking` client applies the same rules, because
   `ch_quic_init` checks the configuration with `webpki_cfg_ok` and the
   QUIC step table calls the same `hsa_server_auth` (docs/decisions.md
@@ -1621,9 +1624,13 @@ last `ROLE=server` stub, as the entry said it would.
   each under the arm the walk parsed it under, then that anchor's key.
   With no anchors `webpki_server_key` calls `webpki_verify_leaf_pin`,
   which frames every entry with `webpki_read_leaf_entry`, the walk's own
-  framing without its `CH_WEBPKI_FLIGHT_ENTRIES` cap, because it keeps
-  only the leaf, reads entry 0 with `webpki_read_certificate_key`, which stops
-  after the SubjectPublicKeyInfo, and hashes that TLV alone.
+  framing without its `CH_WEBPKI_FLIGHT_ENTRIES` cap and with
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX`, the largest entry a Certificate message
+  holds, in place of `CH_WEBPKI_CERT_MAX`, because it keeps only the
+  leaf; reads entry 0 with `webpki_read_certificate_key`, which stops
+  after the SubjectPublicKeyInfo and passes the same cap to
+  `read_certificate_head`, where `webpki_parse_certificate` passes
+  `CH_WEBPKI_CERT_MAX`; and hashes that TLV alone.
   `webpki_spki_pinned` compares every pin through `ct_memeq` and does not
   stop at the first match. The key every rule accepts is the one
   `check_certificate_verify` verifies the signature under.
@@ -1651,9 +1658,17 @@ last `ROLE=server` stub, as the entry said it would.
   verdict, a signature the leaf key did not make included, and refuses a
   pin on the intermediate, the anchor's key or nothing with
   bad_certificate; it accepts leaves the walk refuses for a name, an
-  extension or a date, refuses a refused key, counts entry 0 alone,
-  accepts five and nine entries, past the walk's cap, and refuses the
-  walk's framing faults on every entry, the ninth included.
+  extension, a date or their size, refuses a refused key, counts entry 0
+  alone, accepts five and nine entries, past the walk's cap, and refuses
+  the walk's framing faults on every entry, the ninth included. The
+  corpus leaf over `CH_WEBPKI_CERT_MAX`, 5,558 bytes, passes as the
+  leaf, under eight intermediates and after the r2 leaf; the r2 leaf
+  rebuilt at `CH_WEBPKI_LEAF_PIN_CERT_MAX` bytes passes as entry 0 and
+  after the leaf, and one byte longer is refused in both places.
+  bin/webpki_chain_test refuses that corpus leaf under the walk, as the
+  leaf and as a trailing entry, and bin/webpki_cert_test holds the key
+  reader to both sides of `CH_WEBPKI_LEAF_PIN_CERT_MAX` and the full
+  parser to both sides of `CH_WEBPKI_CERT_MAX`.
   bin/webpki_loop_tcp_nonblocking runs a leaf
   pin and an intermediate pin against this tree's tcp-nonblocking
   server, and test/e2e.sh against `openssl s_server`. The webpki_leaf_pin
@@ -1661,9 +1676,12 @@ last `ROLE=server` stub, as the entry said it would.
   that the key reader runs once and on entry 0, and that an accepted list
   hashed the leaf's SubjectPublicKeyInfo and returns its key; the
   webpki_cert_key harness proves that reader never calls the
-  extensions reader. spec/lean/Spec/WebpkiPin.lean models the rule as
-  `verifyLeafPin` and proves it sound, and the differential compares it
-  with the C on the `webpki_leaf` op. Over QUIC, bin/quic_loop_webpki
+  extensions reader, over any certificate up to one byte past
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX`. spec/lean/Spec/WebpkiPin.lean models the
+  rule as `verifyLeafPin` with `leafPinCertificateMax` and proves it
+  sound, and the differential compares it with the C on the
+  `webpki_leaf` op, the corpus leaf over `CH_WEBPKI_CERT_MAX` and the r2
+  leaf rebuilt on both sides of the pins-alone cap included. Over QUIC, bin/quic_loop_webpki
   runs the chain rules against this tree's QUIC server
   (test/quic_loop_pins.h): a pin on the leaf, the intermediate or the
   anchor accepted, the last of `CH_SPKI_PIN_MAX` pins accepted, and a pin
@@ -1672,15 +1690,16 @@ last `ROLE=server` stub, as the entry said it would.
   a pin on the leaf accepted and its ticket resumed under that pin alone,
   and a pin on the intermediate, the root or nothing refused. That server
   sends no raw public key, so the raw rule runs end to end over TCP
-  alone. Nineteen `inv33-` violations guard the rules.
+  alone. Twenty-five `inv33-` violations guard the rules.
   inv33-quic-pins-ignored-on-chain and inv33-quic-pins-alone-leaf-refused
   change a QUIC build alone, which no TCP test sees, and require
   bin/quic_loop_webpki to fail.
 - **Violation.** A PR accepts a raw key or a chain on the name alone,
   counts a certificate the walk never read, compares a pin with a key
   other than the one the walk or the reader returned, lets a pin on a CA
-  key pass under pins alone, or skips CertificateVerify under the pinned
-  leaf key.
+  key pass under pins alone, skips CertificateVerify under the pinned
+  leaf key, holds pins alone to the walk's `CH_WEBPKI_CERT_MAX`, or lets
+  the walk take `CH_WEBPKI_LEAF_PIN_CERT_MAX`.
 - docs/server.md names INV-30 to INV-32 for server rules it plans, so
   this entry takes the next number after them.
 

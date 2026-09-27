@@ -1,0 +1,14 @@
+invariant: INV-33
+file: webpki_cert.c
+catches: webpki_auth_test
+reason: under pins alone the key reader refuses a leaf of exactly
+  CH_WEBPKI_LEAF_PIN_CERT_MAX bytes, the largest a Certificate message
+  carries, so the last accepted size moves one byte short of the one
+  docs/decisions.md 65 names. The corpus leaf of 5,558 bytes still
+  passes; test/webpki_leaf_pins.h's row for the r2 leaf rebuilt at the
+  cap, which wants it accepted, objects.
+
+--- old
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {
+--- new
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX - 1, &r, out)) {

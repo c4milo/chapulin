@@ -9,10 +9,10 @@ reason: under pins alone the key read for the pin comes from the chain's
   rows, which want bad_certificate, object.
 
 --- old
-        rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, &cert, &cert_len, alert);
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, &cert, &cert_len, alert);
         if (rc != CH_OK) {
 --- new
-        rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, leaf, leaf_len, alert);
+        rc = webpki_read_entry(&r, CH_WEBPKI_LEAF_PIN_CERT_MAX, leaf, leaf_len, alert);
         (void)cert;
         (void)cert_len;
         if (rc != CH_OK) {
