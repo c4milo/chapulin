@@ -1,8 +1,11 @@
 # Porting chapulin to a platform
 
-chapulin makes no assumption about your core beyond C11 and libc. That leaves
-you four decisions. Three have safe defaults you can take without reading
-further; the fourth, entropy, has no default and cannot have one.
+chapulin makes no assumption about your core beyond C11, libc and a `size_t`
+of at least 32 bits. `ct.h` refuses a build with a narrower `size_t`, such as
+one for a 16-bit MSP430, because counts the code keeps in a `size_t` would
+truncate. That leaves you four decisions. Three have safe defaults you can
+take without reading further; the fourth, entropy, has no default and cannot
+have one.
 
 This document covers what you decide and, more usefully, what you can check.
 Every claim below is something you can reproduce on your own target rather than

@@ -1,0 +1,12 @@
+invariant: INV-10
+file: ct.h
+catches: test/size-floor.sh
+reason: ct.h stops refusing a size_t narrower than 32 bits. On a 16-bit
+  target such as msp430, records_before_key_update's cast keeps only the
+  low bits of the records an AES-GCM write key has left, up to 2^24 - 1,
+  so ch_write sends a KeyUpdate every 65536 records. test/size-floor.sh,
+  which requires ct.h to stop compiling for msp430, objects.
+
+--- old
+_Static_assert(SIZE_MAX >= 0xFFFFFFFFU, "chapulin needs a size_t of at least 32 bits");
+--- new

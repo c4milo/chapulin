@@ -806,6 +806,12 @@ last `ROLE=server` stub, as the entry said it would.
     `inv10-aes-gcm-ceiling-past-epoch-cap`,
     `inv10-chacha-under-aes-gcm-ceiling` and
     `inv10-aes-gcm-seal-past-ceiling`.
+  - The count of records a key has left, up to 2^24 - 1, sits in a
+    `size_t`, so `ct.h` refuses any build whose `size_t` has fewer than
+    32 bits. `test/size-floor.sh`, run by `make lint-size-floor`, requires
+    `ct.h` to stop compiling for msp430, whose `size_t` is 16 bits, and to
+    compile for armv7m. `inv10-size-t-floor-dropped` removes the refusal,
+    and the script objects.
 - **Violation.** A PR resets a sequence counter from the handshake
   layer to "fix" a desync, and a nonce repeats under one key. Or it
   moves an AES-GCM write key to its next key at the ceiling without the

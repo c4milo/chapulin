@@ -7,6 +7,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// chapulin needs a size_t of at least 32 bits, and every CI lane has one.
+// A narrower size_t would truncate counts the code keeps in one, such as
+// the records an AES-GCM write key has left, up to 2^24 - 1 (tls_write.c),
+// so a build for such a target stops here. test/size-floor.sh checks that
+// a 16-bit target fails here and a 32-bit one compiles.
+_Static_assert(SIZE_MAX >= 0xFFFFFFFFU, "chapulin needs a size_t of at least 32 bits");
+
 // 1 if a[0..n) == b[0..n), 0 otherwise. Time depends only on n.
 uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n);
 

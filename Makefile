@@ -3552,7 +3552,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -3761,6 +3761,13 @@ lint-toolchain:
 .PHONY: lint-pins
 lint-pins:
 	@python3 tools/toolchain-pins.py
+
+# ct.h's size_t floor: refused at a 16-bit target, compiled at a 32-bit one
+# (test/size-floor.sh). CLANG_RV is the clang the codegen lints already use,
+# which can target both.
+.PHONY: lint-size-floor
+lint-size-floor:
+	@./test/size-floor.sh "$(CLANG_RV)"
 
 # .clang-tidy disables bugprone-signed-bitwise because the signed arithmetic
 # here is deliberate and CBMC proves the class the check approximates. That

@@ -17,8 +17,8 @@ that the answer is at most `cap`. C11 §7.20.3 sets the least `SIZE_MAX` at 6553
 `limit + REC_OVERHEAD` is 16406 at the largest `limit`, and 16406 needs 15
 bits.
 
-The model takes these facts from the C, which `tls_write.c`, `cfg.h` and
-`record.h` state:
+The model takes these facts from the C, which `tls_write.c`, `cfg.h`,
+`ct.h` and `record.h` state:
 
 - `record_plaintext_max` answers the smaller of `peer_limit` and `CH_TX_PT`,
   and `cfg.h` asserts that `CH_TX_PT` is 512 to 16384. So `limit` is at most
@@ -28,7 +28,8 @@ The model takes these facts from the C, which `tls_write.c`, `cfg.h` and
 - `records_before_key_update` gives `room`. Under AES-GCM it computes
   `last - seq` in `uint64_t` when `seq < last`, where `last` is
   `REC_AES_GCM_RECORDS_MAX - 1`, and answers 0 otherwise. So `room` is 0 to
-  2^24 - 1, which a `size_t` of 24 bits or more holds unchanged. Under
+  2^24 - 1, which a `size_t` of 24 bits or more holds unchanged, and
+  `ct.h` refuses any build whose `size_t` has fewer than 32 bits. Under
   ChaCha20-Poly1305 it answers `SIZE_MAX`. Every theorem here takes any
   `room`, so none of them depends on what the cast to `size_t` keeps.
 - A build without `-DCH_SUITE_AES_GCM` has no `room` and no

@@ -31,6 +31,8 @@ static size_t records_before_key_update(const ch_tls *t) {
         return SIZE_MAX;
     }
     uint64_t last = REC_AES_GCM_RECORDS_MAX - 1;
+    // At most 2^24 - 1, which the cast keeps whole: ct.h refuses a size_t
+    // of fewer than 32 bits.
     return t->wr.seq < last ? (size_t)(last - t->wr.seq) : 0;
 }
 
