@@ -127,6 +127,10 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
 // It divides once. The overhead is counted per record rather than taken
 // as cap's remainder after the division, because gcc turns a remainder
 // into a second division, which lint-wide-multiply counts.
+//
+// No sum or product here wraps a size_t, whatever its width, for a limit
+// of 1 to 16384: spec/lean/Spec/TlsWrite.lean's recordsFill_fits proves
+// each is below 2^w when cap is, for every w of 15 bits or more.
 static size_t records_fill(size_t cap, size_t limit, size_t *records) {
     size_t whole = cap / (limit + REC_OVERHEAD);
     size_t in_whole = whole * limit;
@@ -150,10 +154,10 @@ static size_t records_fill(size_t cap, size_t limit, size_t *records) {
 // under the next key it counts at most the REC_AES_GCM_RECORDS_MAX - 1
 // records that go out before that key's own KeyUpdate (tls.h).
 //
-// No product here overflows. The records cap carries are more than room,
-// and every one but the last is whole, so room whole records fit in cap.
-// rest carries more than REC_AES_GCM_RECORDS_MAX - 1 records only when it
-// holds that many whole ones, so their plaintext is less than rest.
+// No sum or product here wraps a size_t, whatever its width:
+// spec/lean/Spec/TlsWrite.lean's fillAcrossKeyUpdate_fits proves each is at
+// most cap. The records cap carries are more than room, and every one but
+// the last is whole, so room whole records fit in cap.
 static size_t fill_across_key_update(size_t cap, size_t limit, size_t room) {
     size_t left = cap - room * (limit + REC_OVERHEAD);
     size_t rest = left > CH_KEY_UPDATE_RECORD_LEN ? left - CH_KEY_UPDATE_RECORD_LEN : 0;
@@ -166,7 +170,10 @@ static size_t fill_across_key_update(size_t cap, size_t limit, size_t room) {
 }
 #endif
 
-// tls.h states the contract.
+// tls.h states the contract. spec/lean/Spec/TlsWrite.lean models this
+// function and its two helpers, writableLen_le_cap proves that the answer
+// is at most cap, and test/diff_writable_len.h compares the model with
+// this code.
 size_t ch_writable_len(const ch_tls *t, size_t cap) {
     size_t limit = record_plaintext_max(t);
     if (limit == 0) {

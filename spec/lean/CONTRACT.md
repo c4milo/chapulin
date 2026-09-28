@@ -12,11 +12,12 @@ The Lean spec is a differential oracle for the C stack. Rules:
    Lean computes an argument-free definition, and every closed term the
    compiler lifts out of a body, when the program starts. A
    `selftest : Bool` made every start of `diffspec` run P-384's
-   signatures, 11 seconds before the first request. Most check the RFC's published vectors; Record, Drbg, and X509
-   have no third-party vectors and their selftests are structural
-   (framing, nonce construction, rekeying, mint/parse round trips) —
-   the differential and, for Record, the planned RFC 8448 trace replay
-   carry the known-answer weight there.
+   signatures, 11 seconds before the first request. Most check the
+   RFC's published vectors; Record, Drbg, X509 and TlsWrite have no
+   third-party vectors and their selftests are structural (framing,
+   nonce construction, rekeying, mint/parse round trips, the rows the
+   C's own tests state) — the differential and, for Record, the planned
+   RFC 8448 trace replay carry the known-answer weight there.
 
 ```
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
@@ -95,6 +96,25 @@ Spec.Record.open?     : (trafficSecret : ByteArray) → (seq : Nat) →
                         -- `rec_open <secret> <seq> <record>` →
                         -- `ok <ctype> <content>` / `ERR rec_open reject`.
 Spec.Record.nextSecret : (secret : ByteArray) → ByteArray             -- RFC 9846 §7.2 "traffic upd"
+Spec.TlsWrite.recordsFill : (cap limit : Nat) → RecordsFill
+                        -- tls_write.c's records_fill, written from the C
+                        -- (below), with one `let` per C local: whole,
+                        -- in_whole, overhead and with_one_more, then the
+                        -- count and the plaintext it returns.
+Spec.TlsWrite.fillAcrossKeyUpdate : (cap limit room : Nat) → FillAcross
+                        -- fill_across_key_update: left, rest, the count and
+                        -- plaintext records_fill returns for rest, cut to
+                        -- REC_AES_GCM_RECORDS_MAX - 1 records, and
+                        -- room * limit + after.
+Spec.TlsWrite.writableLen : (cap limit room : Nat) → Nat
+                        -- ch_writable_len at the limit record_plaintext_max
+                        -- answers and the room records_before_key_update
+                        -- answers: 0 at a limit of 0, else records_fill's
+                        -- answer, or fill_across_key_update's when the count
+                        -- passes room. SIZE_MAX stands for the room of a build
+                        -- with no AES-GCM suite. Line op:
+                        -- `writable_len <cap> <limit> <room>` → `<plaintext>`,
+                        -- every number in decimal.
 Spec.X25519.scalarMult : (scalar point : ByteArray) → ByteArray        -- RFC 7748 §5, Nat mod 2^255-19
 Spec.X25519.base       : (scalar : ByteArray) → ByteArray              -- point = 9
 Spec.P256.pubKey?     : (d : Nat) → Option ByteArray                   -- FIPS 186-4 §D.1.2.3, X‖Y 64 bytes
@@ -567,6 +587,34 @@ rule that a commit may run only after the server Finished — that last
 one is message order, which `CH_ASSERT(h->server_finished_ok)` enforces
 in the C and `Spec.Handshake` models as a trace property.
 
+## TlsWrite models the C
+
+`Spec/TlsWrite.lean` breaks rule 1 on purpose. Its three functions are
+`tls_write.c`'s `records_fill`, `fill_across_key_update` and
+`ch_writable_len`, written from the C with one `let` per C local, not
+from an RFC. Its theorems are about that arithmetic: no sum or product
+the C computes wraps a `size_t` of 15 bits or more, and the answer is at
+most `cap`. Those are claims about the C's own intermediate values, which
+no RFC names, so the model must compute the same values in the same
+order.
+
+Rule 1 keeps one misreading of an RFC from making both sides agree. Here
+there is no RFC text to misread. The model is exact arithmetic over
+`Nat`, and the C computes the same operations modulo `2^w`. The theorems
+prove that every value is below `2^w`, so at every width of 15 bits or
+more the two give the same answer, as long as the model's operations are
+the C's. `test/diff_writable_len.h` checks that at 64 bits, in `bin/diff`
+and, under `SUITE=aesgcm` at `CH_TX_PT=16384`, in `bin/diff_webpki_aes`,
+so an error in the transcription fails a row. The violation
+`inv38-writable-len-last-record-no-overhead` changes one sum in
+`records_fill` and requires `bin/diff` to fail.
+
+What the model does not state is what the answer means: that it is the
+most plaintext `ch_write` sends in `cap` bytes. The CBMC harnesses
+`writable_len` and `writable_len_suite` prove that at their bounds,
+against the real `ch_write`, and `bin/unit` and
+`test/key_limit_cases.h` test it.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -868,6 +916,20 @@ Spec.Handshake, over every accepting trace (both modes unless noted):
                                   after it is covered by `connected_stable`
   accepts_of_flight               the converse: a flight that reaches `connected` accepts
   hrr_at_most_one                 at most one HelloRetryRequest (§4.2.4)
+Spec.TlsWrite, over tls_write.c's arithmetic (docs/verification.md, writable_len_suite):
+  recordsFill_fits                for every width w ≥ 15, cap < 2^w and 1 ≤ limit ≤ 16384:
+                                  limit + 22, whole * limit, whole + 1 and
+                                  (whole + 1) * 22 are below 2^w
+  recordsFill_fill_le             records_fill's answer is at most cap
+  recordsFill_records             its count is whole or whole + 1
+  fillAcrossKeyUpdate_fits        when room is below that count: room * (limit + 22),
+                                  the clamp's (2^24 - 1) * limit when the clamp runs,
+                                  and the answer room * limit + after are at most cap
+  writableLen_le_cap              ch_writable_len's answer is at most cap, at every
+                                  limit and room
+  writableLen_of_cap_le_room      at a room of cap or more, SIZE_MAX among them, the
+                                  answer is records_fill's, the answer of a build
+                                  with no AES-GCM suite
 ```
 
 Size lemmas (`Poly.mac_size`, `ChaCha.block_size`, `Aead.seal_size`,
@@ -923,6 +985,7 @@ means the module's selftest plus the differential oracle carry it;
 | HandshakeParser | 15 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid, 65 secp256r1), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group, and a retry in the two-group build names secp256r1 or carries a cookie; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under every offer; an accepted ALPN selection is an index into the offered protocols; an accepted server_certificate_type names a type the ClientHello offered; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
+| TlsWrite | 6 | `ch_writable_len`'s arithmetic, modeled from the C: every sum and product `records_fill` and `fill_across_key_update` compute fits a `size_t` of every width of 15 bits or more, at every `cap`, every limit from 1 to 16384 and every room; the answer is at most `cap`; a room of `cap` or more, `SIZE_MAX` among them, counts no KeyUpdate. That the answer is the most `ch_write` sends in `cap` bytes stays with CBMC's `writable_len` and `writable_len_suite`, at their bounds, and the tests |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
 | Hkdf | 5 | output lengths, schedule wiring and secret sizes; derivations vector-checked |
 | Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |

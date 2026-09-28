@@ -957,6 +957,16 @@ last `ROLE=server` stub, as the entry said it would.
     sequence number below the ceiling, the KeyUpdate record included.
     `inv38-whole-len-one-byte-short` and
     `inv38-writable-len-overhead-short` require each to fail.
+  - Lean theorem: `spec/lean/Spec/TlsWrite.lean` models
+    `ch_writable_len`, `records_fill` and `fill_across_key_update` with
+    one `let` per C local, and proves that no sum or product they
+    compute wraps a `size_t` of 15 bits or more (`recordsFill_fits`,
+    `fillAcrossKeyUpdate_fits`) and that the answer is at most `cap`
+    (`writableLen_le_cap`), at every `cap`, every limit from 1 to 16384
+    and every room. `test/diff_writable_len.h` holds the model to the C
+    in `bin/diff` and, under `SUITE=aesgcm` at `CH_TX_PT=16384`, in
+    `bin/diff_webpki_aes`. `inv38-writable-len-last-record-no-overhead`
+    requires `bin/diff` to fail.
   - `bin/unit` sweeps every `cap` up to three records and one byte at
     limits of 63, 200 and `CH_TX_PT`, checks the answer at `SIZE_MAX`,
     and checks that `ch_close` and a KeyUpdate answer send 24 and 27

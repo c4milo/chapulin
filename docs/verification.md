@@ -719,6 +719,8 @@ The entries are grouped by area:
   `ch_export`, and `tlsi_config_ok`. Tests cover them. The one-suite
   build compiles no AES-GCM ceiling, so this harness reads none;
   [writable_len_suite](#writable_len_suite) proves the build that does.
+  That no unsigned sum or product in `records_fill` wraps is Lean's
+  `recordsFill_fits`, which that entry states.
 
 #### writable_len_suite
 
@@ -741,12 +743,36 @@ The entries are grouped by area:
 
   The two claims sit in two harnesses because each costs a division, and
   in one formula they returned no verdict in 14 minutes.
-- **Not proved:** that no unsigned product on the KeyUpdate path wraps.
-  C defines unsigned wrap, so the checks this page lists do not look for
-  it; `tls_write.c` states why none wraps, and `test/key_limit_cases.h`
-  checks the answer at `SIZE_MAX` on the host. With
-  `--unsigned-overflow-check`, `writable_len_suite_any` returned no verdict
-  in 10 minutes, on 64 bits and on 32.
+- **Not proved by CBMC:** that no unsigned sum or product on the
+  KeyUpdate path wraps. C defines unsigned wrap, so the checks this page
+  lists do not look for it, and with `--unsigned-overflow-check`,
+  `writable_len_suite_any` returned no verdict in 10 minutes, on 64 bits
+  and on 32. [`spec/lean/Spec/TlsWrite.lean`](../spec/lean/Spec/TlsWrite.lean)
+  proves it in Lean instead, over a model of `ch_writable_len`,
+  `records_fill` and `fill_across_key_update` with one `let` per C local:
+  - `recordsFill_fits`: for every width `w` of 15 bits or more, every
+    `cap` below `2^w` and every limit from 1 to 16384, each sum and
+    product `records_fill` computes is below `2^w`;
+  - `fillAcrossKeyUpdate_fits`: when `room` is below the count
+    `records_fill` returns for `cap`, each product and sum
+    `fill_across_key_update` computes is at most `cap`, its answer
+    included;
+  - `writableLen_le_cap`: the answer is at most `cap`, at every limit and
+    every `room`, `SIZE_MAX` for a ChaCha20-Poly1305 key among them.
+
+  15 bits is the least width the proofs need, because `limit +
+  REC_OVERHEAD` is 16406 at the largest limit, and C gives every `size_t`
+  16 bits or more. An unsigned value below `2^w` is exact in a `size_t` of
+  `w` bits, so at every such width each C operation gives the value the
+  model's matching `let` gives. The theorems are about the model. Two
+  things tie it to the C: it has one `let` per C local, in the C's order,
+  for a reader to check against `tls_write.c`; and
+  `test/diff_writable_len.h` compares it with `ch_writable_len` at 64
+  bits, in `bin/diff` at the default `CH_TX_PT` and in
+  `bin/diff_webpki_aes`, which `make diff-webpki` builds under
+  `-DCH_SUITE_AES_GCM` at `CH_TX_PT=16384`.
+  `inv38-writable-len-last-record-no-overhead` is an edit to
+  `records_fill` that `bin/diff` refuses.
 
   `rec_seal`, `io_send_all` and `hspost_send_key_update` are stubbed to
   their contracts: a sealed record is `REC_OVERHEAD` bytes longer than
@@ -2331,18 +2357,26 @@ computes:
   the certificate signature verify over RSA PKCS#1 v1.5, P-256 and
   P-384, the one-certificate parser with its extension walk, the Time
   reader, hostname matching, the chain walk, and SPKI pins with RFC 7250
-  raw public keys.
+  raw public keys;
+- the plaintext `ch_writable_len` lets one `ch_write` seal into `cap`
+  bytes of records.
 
 It follows the RFC text and never the C, because a differential oracle
-only works when a shared misreading cannot make both sides agree.
+only works when a shared misreading cannot make both sides agree. The
+one exception is `Spec/TlsWrite.lean`, which models `ch_writable_len`
+from `tls_write.c` line by line: its theorems bound that code's own
+intermediate values, which no RFC states.
+[`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
+safe.
 
 ### What `make diff` runs
 
 `make diff` builds the spec, runs its selftests, and then drives
 comparisons between the C and the spec over a pipe, from a fixed seed:
 
-1. 20,731 random-input comparisons, the SHA-384 rows of HMAC, HKDF,
-   `expand_label` and the key schedule included.
+1. 21,636 random-input comparisons, the SHA-384 rows of HMAC, HKDF,
+   `expand_label` and the key schedule included, and 799 rows of
+   `ch_writable_len`'s arithmetic.
 2. The `TRANSPORT=quic-nonblocking` rows, 731 over the AES-128 and
    AES-256 blocks, the Initial keys, AES-128-GCM, AES-256-GCM and GHASH,
    three times:
@@ -2357,7 +2391,11 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose
-parsers take other arms, and the nightly runs them.
+parsers take other arms, and the nightly runs them. `make diff-webpki`
+builds a second binary under `-DCH_SUITE_AES_GCM` at `CH_TX_PT=16384`,
+where the AES instructions exist, and only there do the
+`ch_writable_len` rows take limits up to 2^14 and cross an AES-GCM
+key's KeyUpdate record.
 
 The spec depends on Mathlib, so run `lake exe cache get` inside
 `spec/lean/` once after clone to download Mathlib's compiled files.

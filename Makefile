@@ -2897,7 +2897,11 @@ endif
 # (docs/decisions.md entry 53), so a ServerHello selecting either one
 # meets the model's two-groups token here and nowhere else. It builds a
 # second binary under -DCH_SUITE_AES_GCM, the client that offers two
-# suites (entry 45), where the AES instructions exist.
+# suites (entry 45), where the AES instructions exist. That binary also
+# takes CH_TX_PT=16384, TX_RECORD's ceiling (entry 71), so
+# test/diff_writable_len.h compares ch_writable_len at record limits up to
+# 2^14 and across an AES-GCM key's KeyUpdate record. No other row reads
+# CH_TX_PT.
 # The build links pem.c, x509.c and x509_ca.c too, which the webpki
 # object does not package, because test/diff_x509.h drives them.
 .PHONY: diff-webpki
@@ -2912,7 +2916,7 @@ else
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS)
 	./bin/diff_webpki
 ifneq ($(AES_HW_PROBE),)
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
@@ -4004,13 +4008,17 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -I.)
 	# The AES-GCM key-usage ceiling (docs/decisions.md 78): tls_write.c's
 	# KeyUpdate step and record.c's refusal compile only under
-	# -DCH_SUITE_AES_GCM, and so does the tcp-blocking loop that writes
-	# across the ceiling with test/key_limit_cases.h. The AES=extern
-	# defines name a suite build no instruction flag has to turn on.
+	# -DCH_SUITE_AES_GCM, and so do the tcp-blocking loop that writes
+	# across the ceiling with test/key_limit_cases.h and the AES-GCM rows
+	# of test/diff_writable_len.h, which bin/diff_webpki_aes runs. The
+	# AES=extern defines name a suite build no instruction flag has to
+	# turn on.
 	@$(call TIDY_EACH,tls_write.c record.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -I.)
 	@$(call TIDY_EACH,test/tcp_blocking_key_limit_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I.)
+	@$(call TIDY_EACH,test/diff_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I.)
 	# The ticket epoch test, once per non-blocking transport it is built
 	# for, under the CA mode it refuses to build without.
 	@$(call TIDY_EACH,test/ticket_epoch_test.c, \

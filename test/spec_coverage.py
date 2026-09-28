@@ -44,7 +44,7 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 # test/diff_test.c.
 SRCS = """ct.c sha256.c sha512.c sha512_compress.c sha3.c mlkem.c mlkem_poly.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
 p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c webpki_cert.c webpki.c buf.c record.c keysched.c io.c handshake_message.c
-handshake_parser.c handshake_parser_ee.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c
+handshake_parser.c handshake_parser_ee.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c
 quic.c quic_config.c quic_initial.c quic_keys.c quic_packet.c quic_retry.c quic_step.c aes.c gcm.c""".split()
 
 # Sources this leg names but cannot compile. webpki.c reads
@@ -69,7 +69,7 @@ DRIVERS = ["diff_test.c", "diff_driver.h", "diff_hash.h", "diff_hash384.h", "dif
            "diff_mlkem.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
            "diff_sha512.h", "diff_p384.h", "diff_rsa_pkcs1.h", "diff_webpki.h", "diff_webpki_sigalg.h", "diff_webpki_cert.h", "diff_webpki_chain.h",
            "diff_webpki_pin.h", "diff_webpki_leaf_pin.h", "diff_x509.h",
-           "diff_x509_bounds.h",
+           "diff_x509_bounds.h", "diff_writable_len.h",
            "diff_x509_chain.h", "drbg_test.c",
            "handshake_sequence_test.c", "handshake_sequence_server.h"]
 

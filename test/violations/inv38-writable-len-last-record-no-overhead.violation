@@ -1,0 +1,15 @@
+invariant: INV-38
+file: tls_write.c
+catches: diff
+builds: bin/diff
+reason: records_fill pays the overhead of the whole records and not of the
+  last record, so when cap ends in part of a record, ch_writable_len
+  answers up to 22 bytes more plaintext than cap holds. The Lean theorems
+  bound spec/lean/Spec/TlsWrite.lean's model by cap, and the model no
+  longer computes what the C computes, so test/diff_writable_len.h's rows
+  object: the proofs would be about code that no longer ships.
+
+--- old
+    size_t overhead = (whole + 1) * REC_OVERHEAD;
+--- new
+    size_t overhead = whole * REC_OVERHEAD;

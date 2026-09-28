@@ -7,6 +7,7 @@ import Spec.Aes
 import Spec.Gcm
 import Spec.Aead
 import Spec.Record
+import Spec.TlsWrite
 import Spec.X25519
 import Spec.Weierstrass
 import Spec.P256

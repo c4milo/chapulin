@@ -68,6 +68,7 @@ def selftestAll (_ : Unit) : String :=
     ("gcm", Spec.Gcm.selftest),
     ("aead", Spec.Aead.selftest),
     ("record", Spec.Record.selftest),
+    ("tls_write", Spec.TlsWrite.selftest),
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("rsa", Spec.Rsa.selftest),
@@ -323,6 +324,15 @@ def dispatch : List String → Option String
     let s ← hexArg? secret
     guard (s.size == 32)
     return emit (Spec.Record.nextSecret s)
+  -- ch_writable_len at the limit record_plaintext_max answers and the room
+  -- records_before_key_update answers, SIZE_MAX for a ChaCha20-Poly1305 key
+  -- and for a build with no AES-GCM suite. Every number is decimal, and so
+  -- is the reply.
+  | ["writable_len", cap, limit, room] => do
+    let c ← cap.toNat?
+    let l ← limit.toNat?
+    let r ← room.toNat?
+    return toString (Spec.TlsWrite.writableLen c l r)
   | ["handshake_sequence", mode, letters] => do
     let m ← match mode with
       | "psk" => some Spec.Handshake.Mode.psk

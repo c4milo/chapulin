@@ -41,6 +41,7 @@
 #include "diff_webpki_chain.h"
 #include "diff_webpki_pin.h"
 #include "diff_webpki_sigalg.h"
+#include "diff_writable_len.h"
 #include "diff_x25519.h"
 #include "diff_x509.h"
 
@@ -102,6 +103,7 @@ int main(int argc, char **argv) {
     diff_hs_encrypted_exts();
     diff_hs_certificate();
     diff_hs_certificate_verify();
+    diff_writable_len();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

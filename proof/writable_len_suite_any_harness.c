@@ -4,12 +4,13 @@
 // included. It is proof/writable_len_harness.c's first claim, over the
 // build where that path compiles.
 //
-// Not proved: that no unsigned product on that path wraps. C defines
-// unsigned wrap, so the checks run.sh turns on do not look for it, and
-// tls_write.c states why no product there wraps. With
-// --unsigned-overflow-check this formula returned no verdict in 10
-// minutes, on 64 bits and on 32; test/key_limit_cases.h checks the answer
-// at SIZE_MAX on the host.
+// Not proved here: that no unsigned sum or product on that path wraps. C
+// defines unsigned wrap, so the checks run.sh turns on do not look for it,
+// and with --unsigned-overflow-check this formula returned no verdict in
+// 10 minutes, on 64 bits and on 32. spec/lean/Spec/TlsWrite.lean proves it
+// for every size_t of 15 bits or more (recordsFill_fits and
+// fillAcrossKeyUpdate_fits), over a model of ch_writable_len and its two
+// helpers that test/diff_writable_len.h compares with this code.
 //
 // proof/writable_len_suite_harness.c proves the answer against the real
 // ch_write at a bound. The two claims are apart because each costs a
