@@ -667,7 +667,7 @@ ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
 seeded `std.Random` per side, and whose program defines no
 `ch_rand_bytes`, so its link shows the object imports none.
 
-Eleven mutants in `test/violations/` break the API, the module, the
+Twelve mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script
 catches each. INV-36 names them. The script also catches
 `inv38-zig-writable-len-skips-key-update`, which stops `ch_writable_len`

@@ -1,0 +1,18 @@
+invariant: INV-36
+file: chapulin_record.zig
+catches: test/zig-build-check.sh
+reason: write sizes its output in Zig, at records of the smaller of
+  CH_TX_PT and peerLimit, each REC_OVERHEAD bytes longer, where it must
+  ask ch_writable_len. That rule leaves out the KeyUpdate record ch_write
+  sends at an AES-GCM write key's ceiling, so a write across it passes
+  the check with an output 27 bytes short, and ch_write fails the session
+  after sealing part of pt. The h2 and tx-record loops pass it, and the
+  SUITE=aesgcm loop's write across the ceiling objects.
+
+--- old
+            if (pt.len > self.writableLen(output.len)) return error.Cap;
+--- new
+            const limit: usize = @min(self.peerLimit(), c.CH_TX_PT);
+            const records = if (limit == 0) 0 else (pt.len + limit - 1) / limit;
+            const overhead: usize = c.REC_OVERHEAD;
+            if (pt.len + records * overhead > output.len) return error.Cap;

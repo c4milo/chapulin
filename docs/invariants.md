@@ -1205,7 +1205,7 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Eleven more break the API, the module, the public headers or
+  to fail. Twelve more break the API, the module, the public headers or
   the reverse check in `matches.zig`, and `test/zig-build-check.sh`
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
@@ -1213,6 +1213,10 @@ last `ROLE=server` stub, as the entry said it would.
   leaves `ch_cfg.ticket_age_ms` at 0 in `Client.toCfg`, so a stale ticket
   resumes; `inv36-zig-api-write-seals-part` seals the part of `pt` that
   fits where `write` must refuse it whole;
+  `inv36-zig-api-write-sizes-without-key-update` sizes `write`'s output
+  in Zig rather than through `ch_writable_len`, without the KeyUpdate
+  record, which only the `SUITE=aesgcm` loop's write across the ceiling
+  notices;
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
   `inv36-zig-api-close-without-notify` closes without a close_notify;
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
