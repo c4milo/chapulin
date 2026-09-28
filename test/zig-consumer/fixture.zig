@@ -6,6 +6,7 @@
 const std = @import("std");
 const chapulin = @import("chapulin");
 const corpus = @import("corpus");
+const hooks = @import("hooks.zig");
 const c = chapulin.c;
 
 const has_webpki = @hasField(c.ch_cfg, "anchors");
@@ -27,6 +28,23 @@ pub fn clientRandom() if (has_rand_session) ?std.Random else void {
 
 fn serverRandom() if (has_rand_session) ?std.Random else void {
     return if (has_rand_session) server_stream.random() else {};
+}
+
+/// Where every source of random bytes here stands: the image's byte
+/// counter under RAND=extern, and each side's stream under RAND=session.
+pub const Draws = struct { counter: u8, client: std.Random.DefaultPrng, server: std.Random.DefaultPrng };
+
+pub fn draws() Draws {
+    return .{ .counter = hooks.next, .client = client_stream, .server = server_stream };
+}
+
+/// Sets every source back to where draws found it, so a handshake started
+/// again from fresh sessions draws the same bytes and sends the same
+/// messages, of the same lengths.
+pub fn rewind(to: Draws) void {
+    hooks.next = to.counter;
+    client_stream = to.client;
+    server_stream = to.server;
 }
 
 /// The corpus row the chain comes from, whose verdict is "ok".

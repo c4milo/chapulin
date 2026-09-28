@@ -798,7 +798,8 @@ last `ROLE=server` stub, as the entry said it would.
     while the peer reads on, one write of three records sends one
     KeyUpdate, and at the cap the write fails; ChaCha20 sends none at the
     same sequence numbers. `bin/aes_suite_test` holds `rec_seal`'s
-    refusal to its exact boundary.
+    refusal to its exact boundary. `test/zig-consumer/loop_key_limit.zig`
+    has each end write across the ceiling through the Zig API (INV-36).
   - Violations: `inv10-aes-gcm-ceiling-no-key-update`,
     `inv10-aes-gcm-ceiling-rekey-unsent`,
     `inv10-aes-gcm-ceiling-one-record-late`,
@@ -969,6 +970,12 @@ last `ROLE=server` stub, as the entry said it would.
     byte costs a KeyUpdate record too, and one record before it the
     first record does not. `inv38-writable-len-skips-key-update`
     requires `bin/tcp_blocking_key_limit` to fail.
+  - `test/zig-consumer/loop_key_limit.zig` holds the Zig API's
+    `writableLen` to the same rows two records before the ceiling, and
+    `write` to refusing whole an output one byte short of the records it
+    seals, the KeyUpdate record among them.
+    `inv38-zig-writable-len-skips-key-update`, the same edit, requires
+    `test/zig-build-check.sh` to fail.
 - **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
   buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
   send size rather than lower it, or truncates a record the receive
@@ -1154,8 +1161,9 @@ last `ROLE=server` stub, as the entry said it would.
   `chapulin_quic.zig` into a directory of the configuration's own, roots
   the module there, and adds the object to it with `addObjectFile`.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
-  builds the default object, the four colibri links and stompy's
-  `TX_RECORD=16384` object both ways and compares their sources, defines
+  builds the default object, the four colibri links, stompy's
+  `TX_RECORD=16384` object and a `SUITE=aesgcm` record-mode object both
+  ways and compares their sources, defines
   and exports, links `test/build_test.c` against each Zig object under
   make's defines, and links two Zig objects of different transports into
   one image and runs it. It builds `test/zig-consumer`, a Zig project
@@ -1168,7 +1176,11 @@ last `ROLE=server` stub, as the entry said it would.
   error of every code, and compiles every declaration the object has;
   `loop.zig` runs a client and a server
   of each `ROLE=both` object against each other through the API alone,
-  in record mode and over QUIC (`docs/zig.md`, "How it is checked"); and
+  in record mode and over QUIC (`docs/zig.md`, "How it is checked"), and
+  under `SUITE=aesgcm` has each side write across its AES-GCM write key's
+  ceiling, where `writableLen` must count the KeyUpdate record to the
+  byte and `write` must refuse whole an output one byte short of the
+  records it seals; and
   `pair.zig` imports the modules of two transports and starts a client on
   each through its API. Where `chapulin.c` leaves out `x509_ca.h` or
   `drbg.h`, the script translates that header with `zig translate-c`
@@ -1215,7 +1227,8 @@ last `ROLE=server` stub, as the entry said it would.
   `chapulin.c` runs the comparison; and
   `inv36-header-pubkey-from-pem-outside-ca` declares `ch_pubkey_from_pem`
   outside a CA build, which the script's translation of `x509_ca.h`
-  refuses for the default object.
+  refuses for the default object. The script also catches
+  `inv38-zig-writable-len-skips-key-update` (INV-38).
   The slot's `std.crypto.secureZero` has no mutant of its own. Storing
   null leaves an optional's payload undefined, and what Zig 0.16.0
   writes there depends on the backend: LLVM wrote zeros in every mode

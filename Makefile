@@ -1433,7 +1433,7 @@ endif
 
 # nmedit reads its list from a file, which sits beside the object it
 # edits, so two variants linked at once never read each other's list:
-# test/zig-build-check.sh builds its five objects at once.
+# test/zig-build-check.sh builds its objects at once.
 $(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP) $(PIN_STAMP_FORCE)
 	ld -r -o $@ $(LIB_OBJS)
 ifeq ($(shell uname),Darwin)
@@ -2846,9 +2846,10 @@ check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemk
             $(if $(AES_HW_PROBE),bin/tlsserver_aes) bin/tlsserver_aes_extern bin/tlsclient_webpki_aes_extern
 	$(MAKE) ct-widemul-check
 	# check's lint-zig-build holds build.zig to make over the default
-	# object and the four colibri links. This holds it over every
-	# lib-check leg's configuration too, so every value of every axis
-	# meets build.zig. It took 37 s with only those five objects built.
+	# object, the four colibri links, stompy's and a SUITE=aesgcm
+	# record-mode object. This holds it over every lib-check leg's
+	# configuration too, so every value of every axis meets build.zig.
+	# It took 29 s with only those seven objects built.
 	+ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
 	./test/qemu-m3.sh
 	+./test/e2e.sh
@@ -3555,15 +3556,20 @@ lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers l
 # tests, test/localize-check.sh compares the localizer with llvm-objcopy
 # -G and nmedit -s over objects of both formats, and
 # test/zig-build-check.sh builds the default object, the four colibri
-# links and stompy's both ways and requires the same sources, defines,
-# exports and build record, builds test/zig-consumer against each object
-# through the module the package exports for it and runs the API's unit
-# tests and, for each ROLE=both object, a client and a server through the
-# API, then links two Zig objects of different transports into one image
-# and runs it. check-slow runs the last over every lib-check leg's
-# configuration. With every object and program built the script takes
-# 4 to 5 s on an M-series Mac, and 41 s with no Zig build
-# (docs/decisions.md 73).
+# links, stompy's and a SUITE=aesgcm record-mode object both ways and
+# requires the same sources, defines, exports and build record, builds
+# test/zig-consumer against each object through the module the package
+# exports for it and runs the API's unit tests and, for each ROLE=both
+# object, a client and a server through the API, across an AES-GCM write
+# key's ceiling under SUITE=aesgcm, then links two Zig objects of
+# different transports into one image and runs it. check-slow runs the
+# last over every lib-check leg's configuration. With every object and
+# program built the script takes 5 s on an M-series Mac, 20 to 23 s
+# after an edit to cfg.h, and 44 to 45 s with no Zig build
+# (docs/decisions.md 73). The SUITE=aesgcm object added 2 to 5 s to the
+# second and under 3 s to the others, at load averages of 18 to 37, and
+# nothing measurable to make -j8 check after that edit: 79 to 81 s with
+# the object and without it, at load averages of 18 to 56.
 #
 # The two scripts build from every library source and header, the Zig
 # sources, the Makefile and git's file list, with zig, $(CC), the LLVM

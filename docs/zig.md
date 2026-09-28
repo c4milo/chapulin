@@ -589,9 +589,9 @@ through `cfg.buf`, and passes `cfg.io`, the hook's address, and
 ## How it is checked
 
 `make lint-zig-build` runs `test/zig-build-check.sh`, which builds
-`test/zig-consumer` against the default object, colibri's four objects
-and stompy's (`TX_RECORD=16384`), each through the module alone
-(INV-36):
+`test/zig-consumer` against the default object, colibri's four objects,
+stompy's (`TX_RECORD=16384`) and a record-mode `ROLE=both` object under
+`SUITE=aesgcm AES=hw`, each through the module alone (INV-36):
 
 - `matches.zig` requires `chapulin.c` to declare every export, to
   declare no `ch_` function the object neither exports nor imports (`nm
@@ -635,7 +635,19 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
     sealed, whose alert `recordOut` returns once, and a server that
     refuses a first message in the clear and a client Finished sealed,
     whose alert `outputLen` counts. The other side reads each one as its
-    peer's fatal alert and sends nothing back.
+    peer's fatal alert and sends nothing back;
+  - under `SUITE=aesgcm`, each side's write across its AES-GCM write
+    key's ceiling (docs/decisions.md 78), under each AES-GCM suite in
+    turn (`loop_key_limit.zig`). No call sets a sequence number, so the
+    test writes the writer's write sequence number and the reader's read
+    sequence number, two records below the ceiling, into `record.t`.
+    `writableLen` counts the KeyUpdate record to the byte for the record
+    that crosses the ceiling and for none before it. One write across it
+    seals exactly one 27-byte KeyUpdate record among its records and
+    counts it, and one byte less of `output` is refused whole. The reader
+    reads the plaintext on both sides of the KeyUpdate and sends nothing,
+    neither side reports an alert, and the next write goes out under the
+    next key.
 
   Over QUIC:
   - a handshake at each level, with `keysReady` checked at each step;
@@ -657,4 +669,7 @@ seeded `std.Random` per side, and whose program defines no
 
 Eleven mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script
-catches each. INV-36 names them.
+catches each. INV-36 names them. The script also catches
+`inv38-zig-writable-len-skips-key-update`, which stops `ch_writable_len`
+counting the KeyUpdate record (INV-38): the `SUITE=aesgcm` loop's
+`writableLen` rows fail.

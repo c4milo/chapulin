@@ -51,8 +51,9 @@ fn assertFail(cond: [*:0]const u8, file: [*:0]const u8, line: c_int) callconv(.c
 /// Not a generator: a byte counter every object draws from, so both ends
 /// of a loop draw different key shares and a failure replays exactly. It
 /// never writes an all-zero draw of more than one byte, which every draw
-/// site in the library checks (INV-4).
-var next: u8 = 1;
+/// site in the library checks (INV-4). fixture.zig saves and restores it
+/// for a loop step that runs one flight twice.
+pub var next: u8 = 1;
 
 fn randBytes(p: [*]u8, n: usize) callconv(.c) void {
     for (p[0..n]) |*byte| {

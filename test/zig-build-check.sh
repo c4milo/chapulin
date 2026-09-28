@@ -2,8 +2,9 @@
 # Builds the packaged object both ways, with make and with build.zig, and
 # requires the two to agree (docs/decisions.md 69). make lint-zig-build
 # runs it in check with no argument, over the default object, the four
-# colibri links and stompy's. check-slow runs it with --roster, which adds
-# the configuration of every lib-check leg in check.
+# colibri links, stompy's and a SUITE=aesgcm record-mode object. check-slow
+# runs it with --roster, which adds the configuration of every lib-check
+# leg in check.
 #
 # The Zig build runs in bin/zig/consumer/package, a copy of exactly the
 # files build.zig.zon's .paths names, because that is what a dependent
@@ -45,7 +46,9 @@
 #     declaration the object has, compiled.
 #   - for a ROLE=both object, loop.zig, which runs a client and a server of
 #     the object against each other through the API, over the r2 chain of
-#     test/webpki_corpus.h, which the script copies beside it.
+#     test/webpki_corpus.h, which the script copies beside it. Under
+#     SUITE=aesgcm its record-mode loop also has each side write across
+#     its AES-GCM write key's ceiling (loop_key_limit.zig).
 #
 # matches.zig reads only the headers chapulin.c is translated from, and
 # build.zig translates x509_ca.h and drbg.h only for an object that
@@ -68,7 +71,7 @@
 #
 # Each configuration builds both objects and compares them in a process
 # of its own, as many at once as the machine has cores. With every object
-# and program built, the six take 5.1 s on an M-series Mac.
+# and program built, the seven take 5.1 to 5.3 s on an M-series Mac.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -93,9 +96,14 @@ link_flags=()
 # statements it makes, which make takes in CFLAGS and build.zig as options.
 # The first is the default object; the next four are the ones colibri
 # links: its HTTP/2 client and server objects, and its QUIC object under
-# the two trust modes its checks and its interop runner use. The last is
+# the two trust modes its checks and its interop runner use. Then comes
 # stompy's, colibri's TCP object at TX_RECORD=16384 (docs/decisions.md 71
-# and 73).
+# and 73). The last is a record-mode ROLE=both object under SUITE=aesgcm,
+# whose loop writes across each AES-GCM write key's ceiling
+# (docs/decisions.md 78). It takes AES=hw, as the QUIC rows do: build.zig
+# adds the AES and carry-less multiply features to the target, and the
+# M-series Macs and CI's x86_64 runner have both. AES=extern would need a
+# ch_aes_block that encrypts, and hooks.zig's stops the program.
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -103,6 +111,7 @@ configs=(
     "quic|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
+    "record-aes-hw|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw|CH_NATIVE_AES"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once.

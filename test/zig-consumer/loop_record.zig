@@ -7,39 +7,41 @@
 //! as the client's fatal alert and does not answer, and each side's
 //! handshake failure before and after its write key, whose alert record the
 //! other side reads. At TX_RECORD=16384 the records carry CH_TX_PT bytes
-//! each.
+//! each. Under SUITE=aesgcm, loop_key_limit.zig then has each side write
+//! across its AES-GCM write key's ceiling.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
+const key_limit = @import("loop_key_limit.zig");
 const c = chapulin.c;
 const check = fixture.check;
 const record = chapulin.record;
 
 /// colibri's receive length (docs/zig.md).
 const receive_len = 20_480;
-var client: record.Client(receive_len) = undefined;
-var server: record.Server(receive_len) = undefined;
+pub var client: record.Client(receive_len) = undefined;
+pub var server: record.Server(receive_len) = undefined;
 var sni_buf: [255]u8 = undefined;
 
 /// Bytes one side wrote and the other has not read.
-const Pipe = struct {
+pub const Pipe = struct {
     bytes: [1 << 17]u8 = undefined,
     len: usize = 0,
     off: usize = 0,
 
     /// The room after what the pipe holds.
-    fn free(p: *Pipe) []u8 {
+    pub fn free(p: *Pipe) []u8 {
         return p.bytes[p.len..];
     }
-    fn pending(p: *Pipe) []u8 {
+    pub fn pending(p: *Pipe) []u8 {
         return p.bytes[p.off..p.len];
     }
     /// Marks n more bytes written into free().
-    fn push(p: *Pipe, n: usize) void {
+    pub fn push(p: *Pipe, n: usize) void {
         p.len += n;
     }
     /// Marks n bytes of pending() read, and starts over once all are.
-    fn pop(p: *Pipe, n: usize) void {
+    pub fn pop(p: *Pipe, n: usize) void {
         p.off += n;
         if (p.off == p.len) {
             p.off = 0;
@@ -47,8 +49,8 @@ const Pipe = struct {
         }
     }
 };
-var to_server: Pipe = .{};
-var to_client: Pipe = .{};
+pub var to_server: Pipe = .{};
+pub var to_client: Pipe = .{};
 
 const http11 = "http/1.1";
 const client_alpn = [_]c.ch_alpn_protocol{ chapulin.alpnProtocol("h2"), chapulin.alpnProtocol(http11) };
@@ -56,8 +58,13 @@ const server_alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(http11)};
 /// The server's clock, which it writes into tickets and judges them by.
 const server_now = 1_700_000_000;
 
-fn clientValues() chapulin.Client {
+pub fn clientValues() chapulin.Client {
     return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom() };
+}
+
+/// The server each handshake below runs against.
+pub fn serverValues() chapulin.Server {
+    return fixture.server(&server_alpn, server_now);
 }
 
 /// Moves what the client staged into the server, and what the server
@@ -79,10 +86,10 @@ fn serverToClient() !void {
 /// One handshake between fresh sessions. The client is connected once
 /// recordOut has handed its Finished over, and what the server writes
 /// after that, the ticket, is read with read.
-fn handshake(values: chapulin.Client) !void {
+pub fn handshake(server_values: chapulin.Server, values: chapulin.Client) !void {
     to_server = .{};
     to_client = .{};
-    try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
+    try server.init(server_values, &sni_buf);
     try client.init(values);
     for (0..4) |_| {
         _ = try clientToServer();
@@ -98,7 +105,7 @@ var reply: [256]u8 = undefined;
 /// Reads everything wire holds through reader's read, one record at a
 /// time, and returns the plaintext and the number of records that
 /// carried some.
-fn drain(reader: anytype, wire: *Pipe) !struct { []const u8, usize } {
+pub fn drain(reader: anytype, wire: *Pipe) !struct { []const u8, usize } {
     var got: usize = 0;
     var records: usize = 0;
     while (true) {
@@ -186,7 +193,7 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
     var values = clientValues();
     values.ticket = &ticket;
     values.ticket_age_ms = 1000;
-    try handshake(values);
+    try handshake(serverValues(), values);
     try check(client.pskSelected() and server.pskSelected(), "the ticket did not resume");
     // The next ticket sits in the slot, and recordClose zeroes it.
     _ = try drain(&client, &to_client);
@@ -206,9 +213,9 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
 /// An anchor that did not sign the chain, a clock of 0 beside anchors,
 /// a server output one byte short of its flight, and a record header
 /// whose length no peer may send.
-fn refusals(flight_len: usize) !void {
+fn refusals() !void {
     if (@hasField(c.ch_cfg, "anchors")) {
-        try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
+        try server.init(serverValues(), &sni_buf);
         try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom() });
         to_server = .{};
         to_client = .{};
@@ -220,15 +227,22 @@ fn refusals(flight_len: usize) !void {
         try clientAlertReachesServer(48, record.alert_record_len);
         try check(client.init(.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom() }) == error.Invalid, "a clock of 0 was accepted");
     }
-    try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
-    try client.init(clientValues());
-    to_server = .{};
-    to_server.push(try client.recordOut(to_server.free()));
+    // The server's first flight twice, from the same draws: once whole, to
+    // learn its length, and once into an output one byte short of it. The
+    // length changes with the draws, because DER writes the r and s of the
+    // flight's ECDSA signature in as few bytes as each value needs, with a
+    // zero byte in front of a value whose top bit is set.
+    const start = fixture.draws();
+    try startPair();
+    try serverAnswersHello();
+    const flight_len = to_client.pending().len;
+    fixture.rewind(start);
+    try startPair();
     var short: [8192]u8 = undefined;
     const refused = server.recordIn(to_server.pending(), short[0 .. flight_len - 1]);
     try check(refused == error.Io and server.recordState() == .failed, "a flight that did not fit was not refused");
 
-    try handshake(clientValues());
+    try handshake(serverValues(), clientValues());
     const oversize = [_]u8{ 0x17, 0x03, 0x03, 0xff, 0xff };
     const waiting = try client.read(oversize[0..4], &received, &reply);
     try check(waiting.consumed == 0 and waiting.pt_len == 0, "read took a part of a header");
@@ -267,7 +281,7 @@ fn serverAlertReachesClient(alert: u8) !void {
 
 /// Fresh sessions, with the ClientHello in to_server and nothing sent yet.
 fn startPair() !void {
-    try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
+    try server.init(serverValues(), &sni_buf);
     try client.init(clientValues());
     to_server = .{};
     to_client = .{};
@@ -287,14 +301,15 @@ fn serverAnswersHello() !void {
 /// alert_record_len bytes, and the other side reads it.
 fn failureAlerts() !void {
     // The client, before its key: the ServerHello selects a suite the
-    // client did not offer. Its cipher_suite follows the record and message
-    // headers, legacy_version, random and the empty legacy_session_id_echo.
+    // client did not offer, TLS_AES_128_CCM_SHA256, which no build offers.
+    // Its cipher_suite follows the record and message headers,
+    // legacy_version, random and the empty legacy_session_id_echo.
     try startPair();
     try serverAnswersHello();
     const suite_at = c.REC_HDR + 4 + 2 + 32 + 1;
     const flight = to_client.pending();
     try check(flight[suite_at] == 0x13 and flight[suite_at + 1] == 0x03, "the ServerHello's cipher_suite is not ChaCha20 where the test looks");
-    flight[suite_at + 1] = 0x01;
+    flight[suite_at + 1] = 0x04;
     try check(serverToClient() == error.Proto, "the client took a suite it did not offer");
     const refused_hello = client.alertSent() orelse return error.NoAlertSent;
     try clientAlertReachesServer(refused_hello, c.REC_HDR + 2);
@@ -326,7 +341,7 @@ fn failureAlerts() !void {
 }
 
 pub fn run() !void {
-    try handshake(clientValues());
+    try handshake(serverValues(), clientValues());
     const alpn_ok = std.mem.eql(u8, client.alpnSelected() orelse "", http11) and std.mem.eql(u8, server.alpnSelected() orelse "", http11);
     try check(alpn_ok, "ALPN did not select http/1.1 on both ends");
     try check(std.mem.eql(u8, server.sni() orelse "", fixture.hostname()), "the server did not report the hostname");
@@ -337,14 +352,9 @@ pub fn run() !void {
     try exporter();
     try closeBothWays();
     try resumeTicket(&taken);
-
-    // The server's first flight, whose length the refusal below cuts.
-    try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
-    try client.init(clientValues());
-    to_server = .{};
-    to_client = .{};
-    const flight_len = try clientToServer();
-    try refusals(flight_len);
+    try refusals();
     try failureAlerts();
-    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, both closes, four refusals and each side's failure alert on each side of its write key\n", .{ c.CH_TX_PT, payload.len });
+    try key_limit.run();
+    const across = if (key_limit.runs) ", and each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
+    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, both closes, four refusals and each side's failure alert on each side of its write key{s}\n", .{ c.CH_TX_PT, payload.len, across });
 }

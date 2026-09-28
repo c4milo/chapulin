@@ -1,0 +1,15 @@
+invariant: INV-38
+file: tls_write.c
+catches: test/zig-build-check.sh
+reason: inv38-writable-len-skips-key-update's edit, with the Zig API as
+  the catcher: ch_writable_len does not count the KeyUpdate record ch_write
+  sends when a write crosses an AES-GCM key's ceiling, so writableLen
+  answers 27 bytes too many there, and write hands ch_write an output one
+  KeyUpdate record short instead of refusing it whole. The record-aes-hw
+  object's loop, which holds writableLen to the byte at the ceiling,
+  objects.
+
+--- old
+    size_t rest = left > CH_KEY_UPDATE_RECORD_LEN ? left - CH_KEY_UPDATE_RECORD_LEN : 0;
+--- new
+    size_t rest = left;
