@@ -1300,10 +1300,18 @@ last `ROLE=server` stub, as the entry said it would.
   whose null argument cppcheck reports only by joining it to a callee
   read from the build directory, caught by `test/lint-cppcheck.sh`; and
   `inv37-wycheproof-vector-flipped` edits the vector generator and no C
-  source, caught by `test/wycheproof.sh`. Every other lint violation in
-  that directory runs through its lint's stamp too, since each catch
-  script calls the stamped make target, so each of those mutants shows
-  its lint's key sees the edit.
+  source, caught by `test/wycheproof.sh`. Those catch scripts run one
+  lint alone, without `lint-toolchain`, so `lint-tidy` and `lint-cppcheck`
+  each fail on a checker whose `--version` is not the pin, before they
+  read a stamp (`REQUIRE_PINNED`). `test/pinned-checkers.sh`, run by
+  `make lint-pinned-checkers`, hands each lint an older and a newer
+  stand-in and requires each run to fail and name the pin;
+  `inv37-tidy-takes-unpinned-checker` and
+  `inv37-cppcheck-takes-unpinned-checker` remove the check, and the
+  script objects. Every other lint violation in that directory runs
+  through its lint's stamp too, since each catch script calls the stamped
+  make target, so each of those mutants shows its lint's key sees the
+  edit.
 - **Violation.** A PR adds a stamp whose inputs leave out a file the
   check reads, for one a script the check sources or a header outside
   the pathspec, or a tool whose version string does not change. The

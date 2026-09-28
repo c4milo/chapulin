@@ -156,6 +156,14 @@ REQUIRE_MATHLIB = @[ -f $(MATHLIB_OLEAN) ] || { echo "$(1): $(MATHLIB_OLEAN) is 
 # while skipping a linter hides a verdict that was already available.
 # Usage: $(call REQUIRE,name,how to install it)
 REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
+# A lint can run without lint-toolchain: a violation's catch script runs
+# one lint alone. So a lint that runs a pinned checker checks the version
+# itself, first, before it reads a stamp or runs the checker. Another
+# version's verdict does not count: clang-tidy 18, for one, rejects
+# .clang-tidy, runs none of its checks and exits 0. test/pinned-checkers.sh
+# checks that both lints fail on another version.
+# Usage: $(call REQUIRE_PINNED,lint,checker,ERE its --version matches,the pin)
+REQUIRE_PINNED = @"$(2)" --version 2>/dev/null | grep -qE '$(3)' || { echo "$(1): $(2) is $$("$(2)" --version 2>/dev/null | head -1), and the pin is $(4) (tools/toolchain.env)"; exit 1; }
 
 SHELLCHECK ?= shellcheck
 
@@ -3552,7 +3560,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -3731,7 +3739,8 @@ lint-invariants-run:
 # moved. A version this does
 # not recognise is a stop, not a warning: CLAUDE.md forbids adapting code or
 # suppressions to an older checker, and the same rule makes a silent newer
-# one just as wrong.
+# one just as wrong. lint-tidy and lint-cppcheck also check their own
+# checker (REQUIRE_PINNED), because a catch script runs them without this.
 .PHONY: lint-toolchain
 lint-toolchain:
 	@rc=0; \
@@ -3761,6 +3770,15 @@ lint-toolchain:
 .PHONY: lint-pins
 lint-pins:
 	@python3 tools/toolchain-pins.py
+
+# lint-tidy and lint-cppcheck fail on a checker at another version
+# (REQUIRE_PINNED): each gets a stand-in that reports an older one and a
+# newer one, and must fail and name the pin (test/pinned-checkers.sh). The
+# stand-ins need no LLVM and no cppcheck, and the recipe starts with + so
+# the lints the script runs share this make's job slots.
+.PHONY: lint-pinned-checkers
+lint-pinned-checkers:
+	+@./test/pinned-checkers.sh
 
 # ct.h's size_t floor: refused at a 16-bit target, compiled at a 32-bit one
 # (test/size-floor.sh). CLANG_RV is the clang the codegen lints already use,
@@ -3861,6 +3879,7 @@ lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
+	$(call REQUIRE_PINNED,lint-tidy,$(CLANG_TIDY),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
 	@mkdir -p bin && : > $(TIDY_PASSES)
 	# webpki.c, the three webpki test mains and the webpki example read
 	# ch_cfg fields that exist only under -DCH_TRUST_WEBPKI, so this
@@ -4105,6 +4124,7 @@ lint-cppcheck:
 ifeq ($(CPPCHECK),)
 	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in tools/toolchain.env)
 else
+	$(call REQUIRE_PINNED,lint-cppcheck,$(CPPCHECK),^Cppcheck $(subst .,\.,$(CPPCHECK_VERSION))$$,Cppcheck $(CPPCHECK_VERSION))
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
 	# would need function-pointer casts, which is worse.

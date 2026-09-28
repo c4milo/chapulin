@@ -1,0 +1,13 @@
+invariant: INV-37
+file: Makefile
+catches: test/pinned-checkers.sh
+reason: lint-cppcheck stops checking that its cppcheck is the pinned
+  version. A catch script runs lint-cppcheck alone, without
+  lint-toolchain, which does not read cppcheck's version either, so any
+  cppcheck on PATH gives the verdict. test/pinned-checkers.sh hands
+  lint-cppcheck an older and a newer stand-in and requires it to stop on
+  the pin.
+
+--- old
+	$(call REQUIRE_PINNED,lint-cppcheck,$(CPPCHECK),^Cppcheck $(subst .,\.,$(CPPCHECK_VERSION))$$,Cppcheck $(CPPCHECK_VERSION))
+--- new

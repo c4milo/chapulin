@@ -1,0 +1,13 @@
+invariant: INV-37
+file: Makefile
+catches: test/pinned-checkers.sh
+reason: lint-tidy stops checking that its clang-tidy is the pinned
+  version. A catch script runs lint-tidy alone, without lint-toolchain,
+  so on a runner whose clang-tidy is 18 it takes that version's verdict:
+  clang-tidy 18 rejects .clang-tidy, runs none of its checks and exits 0
+  on broken code. test/pinned-checkers.sh hands lint-tidy an older and a
+  newer stand-in and requires it to stop on the pin.
+
+--- old
+	$(call REQUIRE_PINNED,lint-tidy,$(CLANG_TIDY),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
+--- new
