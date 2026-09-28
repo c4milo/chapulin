@@ -248,7 +248,6 @@ jobs:
       # development machine resolve the same pins from the same line. The
       # version numbers used to sit in this block and nowhere else, which
       # meant they applied on CI and not locally.
-      CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
       SHELLCHECK: /home/runner/shellcheck-inst/shellcheck
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -343,29 +342,11 @@ jobs:
           version: ${{ env.OPENSSL_VERSION }}
           sha256: ${{ env.OPENSSL_SHA256 }}
 
-      - name: Cache cppcheck install
-        id: cppcheck-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Install cppcheck (pinned)
+        uses: ./.github/actions/install-cppcheck
         with:
-          path: ~/cppcheck-inst
-          key: cppcheck-${{ runner.os }}-${{ env.CPPCHECK_VERSION }}-inst
-
-      - name: Build and install cppcheck at the development version
-        if: steps.cppcheck-cache.outputs.cache-hit != 'true'
-        # The tarball is checked against the pinned hash before it is
-        # unpacked. Install into a cached prefix with FILESDIR baked to
-        # that prefix, so cppcheck finds std.cfg and the other cfg files
-        # at runtime.
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/cppcheck.tar.gz" "https://github.com/danmar/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz"
-          echo "$CPPCHECK_SHA256  $RUNNER_TEMP/cppcheck.tar.gz" | sha256sum -c -
-          tar xzf "$RUNNER_TEMP/cppcheck.tar.gz"
-          cmake -S "cppcheck-$CPPCHECK_VERSION" -B cppcheck-build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$HOME/cppcheck-inst" \
-            -DFILESDIR="$HOME/cppcheck-inst/share/Cppcheck" >/dev/null
-          cmake --build cppcheck-build -j"$(nproc)" >/dev/null
-          cmake --install cppcheck-build >/dev/null
+          version: ${{ env.CPPCHECK_VERSION }}
+          sha256: ${{ env.CPPCHECK_SHA256 }}
 
       - name: Cache shellcheck
         id: shellcheck-cache

@@ -1,0 +1,33 @@
+# Builds the pinned cppcheck into ~/cppcheck-inst, cached by version, and
+# exports its path as CPPCHECK, the variable the Makefile reads. The
+# runner has no cppcheck, and lint-cppcheck fails without one, so every
+# job that runs lint-cppcheck, directly or as a violation's catch target,
+# takes this action. The pin values come from the job's env via
+# ./.github/actions/load-pins: version is CPPCHECK_VERSION and sha256 is
+# CPPCHECK_SHA256, which the tarball is checked against before it is
+# unpacked.
+name: install-cppcheck
+description: Build the pinned cppcheck into ~/cppcheck-inst and export CPPCHECK
+inputs:
+  version:
+    description: The cppcheck release (CPPCHECK_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the source tarball (CPPCHECK_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/cppcheck-inst
+        key: cppcheck-${{ runner.os }}-${{ inputs.version }}-inst
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - shell: bash
+      run: echo "CPPCHECK=$HOME/cppcheck-inst/bin/cppcheck" >> "$GITHUB_ENV"

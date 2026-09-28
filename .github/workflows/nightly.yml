@@ -218,11 +218,25 @@ jobs:
         # The five INV-16 violations whose catch target is a codegen lint
         # (test/lint-wide-multiply.sh, test/lint-runtime-symbols.sh) need
         # the pinned clang and llvm-nm, as the check job has.
+        # inv37-tidy-header-finding names test/lint-tidy.sh, which needs
+        # the pinned clang-tidy. Without it the Makefile finds the
+        # runner's clang-tidy 18, which rejects .clang-tidy's
+        # ExcludeHeaderFilterRegex key, runs none of its checks, and exits
+        # 0 on the broken header.
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
           sha256: ${{ env.LLVM_SH_SHA256 }}
           llvm: "true"
+          clang-tidy: "true"
+      - name: Install cppcheck (pinned)
+        # inv37-cppcheck-cross-file-null names test/lint-cppcheck.sh, and
+        # the runner has no cppcheck, so without this the script fails on
+        # unedited source and violations.py reports ERROR.
+        uses: ./.github/actions/install-cppcheck
+        with:
+          version: ${{ env.CPPCHECK_VERSION }}
+          sha256: ${{ env.CPPCHECK_SHA256 }}
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
         # arguments, and the Makefile resolves that check's gcc through

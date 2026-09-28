@@ -4103,7 +4103,7 @@ endif
 
 lint-cppcheck:
 ifeq ($(CPPCHECK),)
-	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in .github/workflows/check.yml)
+	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in tools/toolchain.env)
 else
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
