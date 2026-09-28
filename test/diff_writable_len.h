@@ -50,8 +50,6 @@
 #define DIFF_WRITABLE_RANDOM_CAPS 16
 
 static long diff_writable_rows;
-static long diff_writable_aes_rows;
-static long diff_writable_key_update_rows;
 
 // The session every row asks about.
 static ch_tls diff_writable_session;
@@ -122,6 +120,9 @@ static void diff_writable_limits(void) {
 }
 
 #ifdef CH_SUITE_AES_GCM
+
+static long diff_writable_aes_rows;
+static long diff_writable_key_update_rows;
 
 // Compares cap under the session's AES-GCM key, and counts the row when
 // the KeyUpdate record changed the answer: the answer for the same cap
