@@ -141,6 +141,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make suite-check
+      # The AES=hw binaries on the Arm instructions under gcc, which no
+      # other CI job builds (test/platforms.mk, aes-hw-check).
+      - run: make aes-hw-check
 
   m3:
     # Cortex-M3 as a supported platform: the cross-check roster on

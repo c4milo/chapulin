@@ -37,6 +37,22 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 	$(MAKE) wycheproof
 
 
+# The AES=hw binaries alone, for CI's linux arm64 job. check runs them in
+# CI on x86-64 alone, and on the development machine's Apple silicon
+# under clang, so this is where gcc's Arm AES and PMULL paths (aes_hw.c,
+# ghash_hw.c) are built and run, under the flags AES_HW_PROBE found:
+# -march=armv8-a+crypto on a gcc whose default target has neither. On CI
+# the probe must find them, or a runner without the instructions would
+# skip in silence.
+.PHONY: aes-hw-check
+aes-hw-check: $(AES_HW_BINS)
+ifeq ($(AES_HW_BINS),)
+	$(call REQUIRE_ON_CI,AES=hw instructions)
+	@echo "SKIP aes-hw-check: $(CC) has no AES instructions and no flag turns them on"
+else
+	@set -e; for b in $(AES_HW_BINS); do echo "== $$b ($(or $(AES_HW_CFLAGS),no flag))"; ./$$b; done
+endif
+
 
 # The Cortex-M3 lane: the cross-check suite roster, built with the Arm
 # GNU toolchain (newlib + rdimon semihosting) and run one binary at a
