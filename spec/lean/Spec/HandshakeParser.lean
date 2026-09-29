@@ -32,8 +32,8 @@ offers five signature schemes instead of one (`SignatureOffer`), it
 lists two groups, X25519MLKEM768 then x25519, with a key share for each
 (`Kex.twoGroups`), and under
 SUITE=aesgcm it offers three cipher suites, TLS_CHACHA20_POLY1305_SHA256,
-then TLS_AES_128_GCM_SHA256, then TLS_AES_256_GCM_SHA384
-(`SuiteOffer.chachaAndAes`).
+TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384, in the build's order
+or the caller's (`SuiteOffer.chachaAndAes`).
 
 Where the RFC fixes the alert, `Alert` names it. Where the RFC states
 a MUST but names no alert, the verdict is `Alert.unspecified` and the
@@ -132,37 +132,41 @@ def knownExtension (t : Nat) : Bool :=
 /-! ## Profile constants -/
 
 /-- CipherSuite TLS_CHACHA20_POLY1305_SHA256 = `{0x13,0x03}`
-(RFC 9846 appendix B.4). Every client build offers it, and offers it
-first. -/
+(RFC 9846 appendix B.4). Every client build can offer it, and every one
+but the SUITE=aesgcm TRUST=webpki client offers it alone. -/
 def chacha20Poly1305Sha256 : Nat := 0x1303
 
 /-- CipherSuite TLS_AES_128_GCM_SHA256 = `{0x13,0x01}` (RFC 9846
-appendix B.4). The SUITE=aesgcm TRUST=webpki client offers it second,
-after TLS_CHACHA20_POLY1305_SHA256; no other client build offers it. -/
+appendix B.4). The SUITE=aesgcm TRUST=webpki client can offer it; no
+other client build does. -/
 def aes128GcmSha256 : Nat := 0x1301
 
 /-- CipherSuite TLS_AES_256_GCM_SHA384 = `{0x13,0x02}` (RFC 9846
-appendix B.4). The SUITE=aesgcm TRUST=webpki client offers it third,
-after TLS_AES_128_GCM_SHA256; no other client build offers it. -/
+appendix B.4). The SUITE=aesgcm TRUST=webpki client can offer it; no
+other client build does. -/
 def aes256GcmSha384 : Nat := 0x1302
 
 /--
-The cipher suites the build's ClientHello offers in cipher_suites (RFC
-9846 §4.2.2). The Makefile's SUITE and TRUST variables fix them at build
-time, so exactly one of these is live in a library object.
+The cipher suites the build's ClientHello can offer in cipher_suites (RFC
+9846 §4.2.2), which are the ones a ServerHello may carry. The Makefile's
+SUITE and TRUST variables fix them at build time, so exactly one of these
+is live in a library object. The order the hello lists them in is not
+modeled, nor a caller's list that offers fewer (docs/decisions.md 80):
+the C handshake holds a message to that list, not the parser.
 -/
 inductive SuiteOffer
   /-- Every client build but the one below: TLS_CHACHA20_POLY1305_SHA256
   alone. -/
   | chacha
   /-- The SUITE=aesgcm TRUST=webpki client: TLS_CHACHA20_POLY1305_SHA256,
-  then TLS_AES_128_GCM_SHA256, then TLS_AES_256_GCM_SHA384
-  (docs/decisions.md entries 45 and 58). -/
+  TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 (docs/decisions.md
+  entries 45, 58 and 80). -/
   | chachaAndAes
 deriving BEq
 
-/-- The CipherSuite code points the build's ClientHello lists in
-cipher_suites (RFC 9846 §4.2.2), in the order it lists them. -/
+/-- The CipherSuite code points the build's ClientHello can list in
+cipher_suites (RFC 9846 §4.2.2). The parser reads only whether a suite is
+among them. -/
 def SuiteOffer.cipherSuites : SuiteOffer → List Nat
   | .chacha => [chacha20Poly1305Sha256]
   | .chachaAndAes => [chacha20Poly1305Sha256, aes128GcmSha256, aes256GcmSha384]
@@ -531,8 +535,10 @@ RFC 9846 §4.2.3, read down the struct:
 * `cipher_suite`: profile — one of `suiteOffer.cipherSuites`, since
   §4.2.3 makes a suite that was not offered an illegal_parameter, and
   §4.2.4 repeats the rule for a HelloRetryRequest. Every client build
-  offers TLS_CHACHA20_POLY1305_SHA256, and the SUITE=aesgcm TRUST=webpki
-  client also offers TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384. §4.2.4 also requires a
+  can offer TLS_CHACHA20_POLY1305_SHA256, and the SUITE=aesgcm TRUST=webpki
+  client TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 too. A caller's
+  list that offers fewer is the handshake's check, which one message
+  cannot make. §4.2.4 also requires a
   ServerHello after a HelloRetryRequest to carry the retry's suite. That
   turns on whether a retry happened, which one message cannot show, so
   the suite travels out in the fields and the caller checks it;

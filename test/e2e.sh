@@ -1248,17 +1248,23 @@ WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
     expect_fail webpki-secp256r1-require-pq -2 "$DIR/err_wp_secp256r1_require" \
     env REQUIRE_PQ=1 ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_SECP256R1" "$WEBPKI_ANCHOR" -
 
-# --- The web PKI client that offers both cipher suites (docs/decisions.md
-# entry 45). A server that accepts TLS_AES_128_GCM_SHA256 alone selects
-# it, and the client keys every record with it. The ChaCha20 chain server
-# selects ChaCha20, the first suite the client lists. The legs run once
-# per client binary: bin/tlsclient_webpki_aes runs AES on the
-# instructions and exists only where the compiler has them, and
-# bin/tlsclient_webpki_aes_extern runs it through ch_aes_block, which
-# test/aes_extern_hook.c answers, on every host (docs/decisions.md 68).
-# $1 is the client and $2 the label each leg carries.
+# --- The web PKI client that offers the three cipher suites
+# (docs/decisions.md entries 45, 58 and 80). A server that accepts
+# TLS_AES_128_GCM_SHA256 alone selects it, and the client keys every
+# record with it. The ChaCha20 chain server selects ChaCha20, which the
+# client lists. An s_server that holds all three follows the client's
+# order, OpenSSL's default for TLS 1.3, so it selects the suite the
+# client lists first: its build's first, and TLS_AES_128_GCM_SHA256 for a
+# client whose WEBPKI_SUITES list, ch_cfg.cipher_suites, puts that suite
+# first. The legs run once per client binary: bin/tlsclient_webpki_aes
+# runs AES on the instructions and exists only where the compiler has
+# them, and bin/tlsclient_webpki_aes_extern runs it through ch_aes_block,
+# which test/aes_extern_hook.c answers, on every host (docs/decisions.md
+# 68). $1 is the client, $2 the label each leg carries and $3 the code
+# point the client's build lists first: TLS_AES_256_GCM_SHA384 on AES=hw
+# and TLS_CHACHA20_POLY1305_SHA256 on AES=extern.
 webpki_aes_legs() {
-    local client=$1 tag=$2
+    local client=$1 tag=$2 first=$3
     start_server -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_AES=$SRV_PORT
     MSG='dos suites'
@@ -1305,10 +1311,30 @@ webpki_aes_legs() {
         cat "$DIR/err_$tag-256-resume"
         exit 1
     fi
+    start_server -tls1_3 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_ALL=$SRV_PORT
+    MSG='orden del cliente'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect "$tag-order" "etneilc led nedro" "$DIR/err_$tag-order" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_ALL" "$WEBPKI_ANCHOR" -
+    grep -q "^suite $first$" "$DIR/err_$tag-order" || {
+        echo "FAIL e2e $tag-order: client did not report $first, the suite its build lists first"
+        cat "$DIR/err_$tag-order"
+        exit 1
+    }
+    MSG='lista propia'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW WEBPKI_SUITES=1301,1303 \
+        expect "$tag-list" "aiporp atsil" "$DIR/err_$tag-list" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_ALL" "$WEBPKI_ANCHOR" -
+    grep -q "^suite 0x1301$" "$DIR/err_$tag-list" || {
+        echo "FAIL e2e $tag-list: client did not report TLS_AES_128_GCM_SHA256, its list's first"
+        cat "$DIR/err_$tag-list"
+        exit 1
+    }
 }
 if [ -x ./bin/tlsclient_webpki_aes ]; then
-    webpki_aes_legs ./bin/tlsclient_webpki_aes webpki-aes
-    AES_SUITE_LEG=" + webpki-aes x4"
+    webpki_aes_legs ./bin/tlsclient_webpki_aes webpki-aes 0x1302
+    AES_SUITE_LEG=" + webpki-aes x6"
 else
     AES_SUITE_LEG=""
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
@@ -1317,18 +1343,23 @@ fi
     echo "FAIL e2e webpki-aes-extern: bin/tlsclient_webpki_aes_extern is absent; make check-slow builds it"
     exit 1
 }
-webpki_aes_legs ./bin/tlsclient_webpki_aes_extern webpki-aes-extern
-AES_SUITE_LEG="$AES_SUITE_LEG + webpki-aes-extern x4"
+webpki_aes_legs ./bin/tlsclient_webpki_aes_extern webpki-aes-extern 0x1303
+AES_SUITE_LEG="$AES_SUITE_LEG + webpki-aes-extern x6"
 
 # --- This tree's SUITE=aesgcm server against s_client restricted to one
 # suite at a time, a full handshake and then the ticket it issued resumed
-# (docs/decisions.md 58). The server's default order prefers ChaCha20, so
-# each s_client offer is what names the suite. The legs run once per
-# server binary, bin/tlsserver_aes on the AES instructions where the
-# compiler has them and bin/tlsserver_aes_extern through the hook on
-# every host. $1 is the server and $2 the label each leg carries. ---
+# (docs/decisions.md 58). Each of those offers names one suite, so the
+# server has one to select. Then s_client offers all three,
+# TLS_AES_128_GCM_SHA256 first, and the server ignores that order and
+# selects the first of its default one (docs/decisions.md 80). The legs
+# run once per server binary, bin/tlsserver_aes on the AES instructions
+# where the compiler has them and bin/tlsserver_aes_extern through the
+# hook on every host. $1 is the server, $2 the label each leg carries and
+# $3 the suite the server's default order puts first:
+# TLS_AES_256_GCM_SHA384 on AES=hw and TLS_CHACHA20_POLY1305_SHA256 on
+# AES=extern. ---
 chsrv_aes_legs() {
-    local server=$1 tag=$2
+    local server=$1 tag=$2 first=$3
     CHSRV_BIN=$server start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
     PORT_CHSRV_AES=$SRV_PORT
     CHSRV_AES_LOG=$SRV_LOG
@@ -1352,10 +1383,24 @@ chsrv_aes_legs() {
             fi
         done
     done
+    label="$tag-default-order"
+    printf '%s\n' 'una suite' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_CHSRV_AES" -tls1_3 \
+        -ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256 \
+        -ign_eof > "$DIR/$label.log" 2>&1 || {
+        echo "FAIL $label: s_client exited nonzero"
+        cat "$DIR/$label.log" "$CHSRV_AES_LOG"
+        exit 1
+    }
+    if ! grep -q "^New, TLSv1.3, Cipher is $first" "$DIR/$label.log" ||
+        ! grep -q "^etius anu$" "$DIR/$label.log"; then
+        echo "FAIL $label: want $first, the first suite of the server's default order"
+        cat "$DIR/$label.log" "$CHSRV_AES_LOG"
+        exit 1
+    fi
 }
 if [ -x ./bin/tlsserver_aes ]; then
-    chsrv_aes_legs ./bin/tlsserver_aes chsrv-aes
-    CHSRV_AES_LEG=" + chapulin server aesgcm x6"
+    chsrv_aes_legs ./bin/tlsserver_aes chsrv-aes TLS_AES_256_GCM_SHA384
+    CHSRV_AES_LEG=" + chapulin server aesgcm x7"
 else
     CHSRV_AES_LEG=""
     echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
@@ -1364,7 +1409,7 @@ fi
     echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make check-slow builds it"
     exit 1
 }
-chsrv_aes_legs ./bin/tlsserver_aes_extern chsrv-aes-extern
-CHSRV_AES_LEG="$CHSRV_AES_LEG + chapulin server aesgcm AES=extern x6"
+chsrv_aes_legs ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256
+CHSRV_AES_LEG="$CHSRV_AES_LEG + chapulin server aesgcm AES=extern x7"
 
 echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"

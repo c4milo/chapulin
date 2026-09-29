@@ -74,12 +74,14 @@ Home: github.com/c4milo.
   refused (`handshake_groups.[ch]`, docs/decisions.md 53 and 63).
   ch_cfg.require_pq drops x25519 and secp256r1 from both lists and
   restores the fail-closed pairing (docs/decisions.md 39). Under SUITE=aesgcm it lists
-  TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 after ChaCha20
-  (CH_CLIENT_AES_SUITES), runs the key schedule at the hash of the suite
-  the ServerHello selected, keys every record direction and every QUIC
-  Handshake and 1-RTT packet with that suite, and ch_tls.suite reports it
-  (docs/decisions.md 45 and 58); a raw or ca client refuses
-  SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
+  TLS_AES_256_GCM_SHA384, then TLS_AES_128_GCM_SHA256, then ChaCha20 on
+  AES=hw with CH_NATIVE_AES, ChaCha20 first on any other build, or the
+  order ch_cfg.cipher_suites names (CH_CLIENT_AES_SUITES), runs the key
+  schedule at the hash of the suite the ServerHello selected, keys every
+  record direction and every QUIC Handshake and 1-RTT packet with that
+  suite, and ch_tls.suite reports it (docs/decisions.md 45, 58 and 80); a
+  server of the same build prefers the same default order, and a raw or
+  ca client refuses SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
   a DER SubjectPublicKeyInfo) it offers RFC 7250 raw public keys in
   server_certificate_type, then X.509, and ch_tls.server_cert_type
   reports the server's choice: a raw key needs a pin that names it, a

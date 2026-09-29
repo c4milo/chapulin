@@ -1,0 +1,14 @@
+invariant: INV-7
+file: webpki_cfg.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: ch_connect takes a ch_cfg.cipher_suites list that names a code
+  point the build does not hold, here TLS_AES_128_CCM_SHA256, and the hello
+  offers a suite this client holds no cipher for. A server that selects it
+  then meets a refusal a configuration check should have made before a
+  byte left (webpki_cfg.h).
+
+--- old
+        if (suite_hash_len(cfg->cipher_suites[i]) == 0 || suite_repeats(cfg, i)) {
+--- new
+        if (suite_repeats(cfg, i)) {

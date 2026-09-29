@@ -448,8 +448,11 @@ int main(void) {
     test_webpki_p256_share_refusals();
     test_webpki_p256_group_rules();
     test_webpki_p256_wipes();
-#ifdef CH_CLIENT_AES_SUITES
     test_webpki_suites_hello();
+#ifdef CH_CLIENT_AES_SUITES
+    test_webpki_suite_list();
+    test_webpki_suite_parser();
+    test_webpki_suite_list_takes_back();
     test_webpki_suite_aes();
     test_webpki_suite_refusals();
     test_webpki_suite_psk_hash();

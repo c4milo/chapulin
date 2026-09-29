@@ -126,14 +126,13 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // ticket to resume through srv_select_auth (srv_resume.h). It writes sel
 // whole and sends nothing.
 //
-// The preference order is a build constant and not configuration. The
-// suite order is the one RFC 9846 §9.1 lists (rfc9846.txt:4540-4543)
-// with ChaCha20-Poly1305 first; today it is the only suite this build
-// holds, because the only AES in this tree is the software S-box table
-// in aes.c, which is admitted for QUIC Initial keys because those
-// are public and which would leak a TLS traffic key through cache
-// timing. So this build does not meet §9.1's cipher suite requirement
-// and does not claim to. The group order is srv_kex_group's:
+// The suite order is cfg.srv.cipher_suites when the caller names one,
+// and otherwise suite.h's suite_default_order (docs/decisions.md 80):
+// AES-256-GCM, AES-128-GCM, then ChaCha20 in a build on AES=hw that
+// defines CH_NATIVE_AES, and ChaCha20, AES-128-GCM, then AES-256-GCM in
+// every other SUITE=aesgcm build. A build without that suite holds
+// ChaCha20 alone and does not meet §9.1's cipher suite requirement
+// (rfc9846.txt:4540-4543). The group order is srv_kex_group's:
 // X25519MLKEM768 whenever the client listed it, and x25519 otherwise
 // (docs/decisions.md 54). The signature scheme order is
 // docs/server.md's, and a scheme whose identity slot srv_identity_live

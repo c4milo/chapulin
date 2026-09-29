@@ -26,7 +26,9 @@
 // CH_ALPN_MAX protocols; transport parameters of 1 to
 // CH_TRANSPORT_PARAMS_MAX bytes; on_level_ready; the buffer floor; and
 // no epoch callback. The age and the lifetime take any value their types
-// hold.
+// hold. Under SUITE=aesgcm, quic_config_webpki_suite adds the client's
+// suite list: no list and no count, or 1 to SUITE_HELD_COUNT suites the
+// build holds, none repeated, with no entry read past that cap.
 //
 // Three callees are contract stubs, each proven by its own harness.
 // webpki_hostname_ok asserts it may read the name and answers 1 only for
@@ -71,6 +73,7 @@ static int resumption_called;
 static int resumption_verdict;
 
 uint64_t nondet_u64(void);
+uint16_t nondet_u16(void);
 
 int webpki_hostname_ok(const uint8_t *host, size_t host_len) {
     __CPROVER_assert(__CPROVER_r_ok(host, host_len), "hostname_ok: the name is readable");
@@ -241,12 +244,56 @@ static int transport_holds(void) {
            cfg.epoch_store == NULL && quic_version_derived(cfg.quic_original_version);
 }
 
+#ifdef CH_CLIENT_AES_SUITES
+// quic_config_webpki_suite: the client's suite list, any code points in an
+// array that holds SUITE_HELD_COUNT of them, beside a count of any size, so
+// the formula shows the rule reads no entry past the cap before it refuses
+// the count.
+static uint16_t suites[SUITE_HELD_COUNT];
+
+static void havoc_suites(void) {
+    for (size_t i = 0; i < SUITE_HELD_COUNT; i++) {
+        suites[i] = nondet_u16();
+    }
+    cfg.cipher_suites = (nondet_u8() & 1) ? suites : NULL;
+    cfg.cipher_suite_count = nondet_size_t();
+}
+
+// The suite half, as webpki_cfg.h states it, with the three code points
+// written out here: no list and no count, or 1 to SUITE_HELD_COUNT suites
+// the build holds, none repeating another.
+static int suites_hold(void) {
+    if (cfg.cipher_suites == NULL) {
+        return cfg.cipher_suite_count == 0;
+    }
+    if (cfg.cipher_suite_count < 1 || cfg.cipher_suite_count > SUITE_HELD_COUNT) {
+        return 0;
+    }
+    for (size_t i = 0; i < cfg.cipher_suite_count; i++) {
+        uint16_t s = cfg.cipher_suites[i];
+        if (s != SUITE_CHACHA20_POLY1305_SHA256 && s != SUITE_AES_128_GCM_SHA256 &&
+            s != SUITE_AES_256_GCM_SHA384) {
+            return 0;
+        }
+        for (size_t j = 0; j < i; j++) {
+            if (cfg.cipher_suites[j] == s) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+#endif
+
 int main(void) {
     memset(&t, 0, sizeof t);
     memset(&cfg, 0, sizeof cfg);
     fill_nondet(hostname, sizeof hostname);
     havoc_trust();
     havoc_transport();
+#ifdef CH_CLIENT_AES_SUITES
+    havoc_suites();
+#endif
     t.cfg = cfg;
     int rc = quic_config_ok(&t, &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "the verdict is CH_OK or CH_EINVAL");
@@ -254,6 +301,9 @@ int main(void) {
         __CPROVER_assert(trust_holds(), "CH_OK keeps the webpki trust rules");
         __CPROVER_assert(transport_holds(), "CH_OK keeps the QUIC transport rules");
         __CPROVER_assert(ticket_age_holds(), "CH_OK keeps the ticket age rule");
+#ifdef CH_CLIENT_AES_SUITES
+        __CPROVER_assert(suites_hold(), "CH_OK keeps the client suite rule");
+#endif
     }
     return 0;
 }

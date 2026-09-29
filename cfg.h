@@ -232,8 +232,7 @@ _Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
 #define CH_EPOCH_UNTRUSTED 4 // not an allowed date, or too far ahead
 
 #ifdef CH_TRUST_WEBPKI
-// ch_trust_anchor, the anchor and pin caps and the certificate types, and the rules of the
-// ch_cfg fields only this build has.
+// ch_trust_anchor, the anchor and pin caps, the certificate types and the webpki field rules.
 #include "webpki_cfg.h"
 #endif
 
@@ -377,16 +376,13 @@ typedef struct {
     void *epoch_io;
     uint32_t ticket_epoch;
 
-    // Refuse a session whose key exchange was not post-quantum: the handshake fails closed
-    // unless ch_tls.group is CH_GROUP_X25519MLKEM768 once it accepts the ServerHello. A
-    // KEX=pq TRUST=webpki build also offers x25519 (docs/decisions.md 39), and the flag
-    // drops x25519 from its hello. A classic build offers x25519 alone, so no handshake
-    // it runs can satisfy the flag; ch_connect rejects such a config with CH_EINVAL
-    // before it sends a byte, as it rejects epoch callbacks outside a CA build.
+    // Refuse a key exchange that is not post-quantum: the handshake fails closed unless
+    // ch_tls.group is CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
+    // (docs/decisions.md 39). A classic raw or ca build offers x25519 alone and refuses the flag.
     int require_pq;
 
 #ifdef CH_TRUST_WEBPKI
-    // Web PKI trust (TRUST=webpki): webpki_cfg.h states the rules of these eight fields.
+    // Web PKI trust, and a SUITE=aesgcm client's suite order: webpki_cfg.h states the rules.
     const ch_trust_anchor *anchors;
     size_t anchor_count;
     const uint8_t *hostname;
@@ -395,6 +391,10 @@ typedef struct {
     const uint8_t *ticket_binding;
     const uint8_t *spki_pins;
     size_t spki_pin_count;
+#ifdef CH_SUITE_AES_GCM
+    const uint16_t *cipher_suites;
+    size_t cipher_suite_count;
+#endif
 #endif
 
 // The same two fields serve all three builds; ch_connect, ch_quic_init or ch_srv_accept

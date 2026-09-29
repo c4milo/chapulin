@@ -38,6 +38,14 @@
 //    the walk takes, four entries of up to 3072 bytes. A caller whose
 //    server sends a larger message sizes buf_len to hold all of it
 //    (docs/decisions.md 65).
+//  - cipher_suites: cipher_suite_count code points, under SUITE=aesgcm
+//    alone: the suites the ClientHello offers, in the caller's order of
+//    preference. NULL with a count of 0 offers suite.h's
+//    suite_default_order. A list holds 1 to SUITE_HELD_COUNT suites, each
+//    one of the three that build holds and none repeating another, and it
+//    may leave a suite out. A count without a list, or a list without a
+//    count, is a field missing. The client takes back only a suite it
+//    offered (docs/decisions.md 80).
 //
 // ch_connect returns CH_EINVAL before it sends a byte when any of those
 // rules fails, when now_seconds is 0 in a configuration with anchors,

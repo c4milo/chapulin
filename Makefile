@@ -456,7 +456,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/quic_token_tests.h test/quic_retry_tests.h test/quic_version_tests.h test/srv_quic_version_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
-         test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h
+         test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h \
+         test/webpki_loop_order.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -1917,7 +1918,8 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 AES_EXTERN_SRCS := aes_extern.c test/aes_extern_hook.c
 AES_EXTERN_DEPS := $(AES_EXTERN_SRCS) quic_aes_soft.c
 AES_EXTERN_BINS := bin/quic_test_extern bin/aes_suite_test_extern bin/quic_suite_test_extern \
-                   bin/webpki_loop_aes_extern bin/quic_loop_aes_extern bin/tcp_blocking_key_limit
+                   bin/webpki_loop_aes_extern bin/quic_loop_aes_extern bin/tcp_blocking_key_limit \
+                   bin/webpki_session_aes_extern
 # FIPS 197, SP 800-38D and RFC 9001 Appendix A through the hook, AES-256
 # included, and what aes_extern.c writes into round_keys at the exact
 # bound (test_extern_layout).
@@ -2272,6 +2274,16 @@ bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) aes.c $(A
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
 	  -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+# The same main on the AES=extern suite object, through
+# test/aes_extern_hook.c, on every host. Its ClientHello lists ChaCha20
+# first where bin/webpki_session_aes lists AES-256-GCM first
+# (docs/decisions.md 80). The rule sits below WEBPKI_TEST_SRCS for the
+# reason bin/webpki_loop_aes_extern's does.
+bin/webpki_session_aes_extern: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_DEPS) \
+                               gcm.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/webpki_session_test.c \
+	  $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_SRCS) gcm.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.

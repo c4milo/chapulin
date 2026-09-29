@@ -111,6 +111,7 @@ for a `@compileError` declaration too.
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
+| `Client.cipher_suites` | `ch_cfg.cipher_suites` (SUITE=aesgcm TRUST=webpki) |
 | `suite` | `ch_tls.suite` |
 | `exportKeyingMaterial` | `ch_export` (EXPORTER=on) |
 | `hookContext` | `ch_keylog` (KEYLOG=on) |
@@ -170,6 +171,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
 | `require_pq`, false by default | `require_pq` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
+| `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
@@ -266,7 +268,7 @@ and the sessions draw from the image's `ch_rand_bytes`.
 
 - `Group`: `ch_tls.group`'s code points, `x25519`, `x25519mlkem768`,
   `secp256r1`.
-- `Suite`: `ch_tls.suite`'s and `srv.cipher_suites`' code points.
+- `Suite`: `ch_tls.suite`'s, `cipher_suites`' and `srv.cipher_suites`' code points.
 - `State`: `start`, `connected`, `closed`, `failed`.
 - `CertType`: `x509`, `raw_public_key`.
 - `buildMatches()`: `ch_build_matches` over the object's own record,
@@ -346,7 +348,12 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `replyLen()` | the bytes the last `read` wrote into `reply`, which a failed read also sets | none |
 
 A client in an object without SUITE=aesgcm offers ChaCha20 alone and
-writes no `ch_tls.suite`, so its `suite()` stays null.
+writes no `ch_tls.suite`, so its `suite()` stays null. A SUITE=aesgcm
+TRUST=webpki client offers three, in the order `Client.cipher_suites`
+names or, when it is empty, in the build's order: AES-256-GCM first in an
+object built `AES=hw` with `CH_NATIVE_AES`, and ChaCha20 first in any
+other (docs/decisions.md 80). The API probes no CPU; a program that
+probes its own passes the order it chose.
 
 A record session's `keyUpdate` is reserved: no C call starts a
 record-mode KeyUpdate, so it is a `@compileError` that says so. `write`

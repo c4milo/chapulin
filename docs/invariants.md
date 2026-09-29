@@ -656,25 +656,31 @@ last `ROLE=server` stub, as the entry said it would.
   schemes (decisions.md 36), several application protocols (37), two
   groups with a key share for each and secp256r1 listed after them with
   none (39, 53, 63), under `SUITE=aesgcm`
-  three cipher suites (45, 58), and in a resuming hello the ticket and the
+  three cipher suites (45, 58, 80), and in a resuming hello the ticket and the
   certificate path beside it (55), so the server may resume or
-  authenticate with its chain in the same connection. There a ServerHello selects either shared
+  authenticate with its chain in the same connection. The three suites
+  go in the build's order, AES-256-GCM, AES-128-GCM, then ChaCha20 on
+  `AES=hw` with `CH_NATIVE_AES` and ChaCha20, AES-128-GCM, then
+  AES-256-GCM on every other suite build, or in the caller's
+  `ch_cfg.cipher_suites`, which names 1 to 3 suites the build holds,
+  none twice. There a ServerHello selects either shared
   group, or the hybrid alone under `ch_cfg.require_pq`, and a
   HelloRetryRequest may ask for a cookie, for secp256r1, or for both; after
   a retry that names secp256r1 the ServerHello must select it. It carries
-  ChaCha20, AES-128-GCM or AES-256-GCM, and the same one as a retry
-  before it. A
+  a suite the hello listed, and the same one as a retry before it. A
   server role selects rather than offers, and its group order is fixed
   (decisions.md 54, 63): X25519MLKEM768 whenever the client lists it,
   x25519 when the client lists x25519 and not the hybrid, secp256r1 only
   when the client lists neither, and a HelloRetryRequest that names the
   group when the hello carried no share for it, so a hello that lists the
   hybrid and shares x25519 alone is asked for the hybrid rather than
-  answered over x25519. Its suite order is ChaCha20, then
-  AES-128-GCM, then AES-256-GCM, and it selects the first of them the
-  client listed, or the first of `ch_srv_cfg.cipher_suites` when the
-  caller names an order (decisions.md 58). It never selects a suite the
-  client did not list.
+  answered over x25519. Its suite order is the one its build's client
+  offers in, AES-256-GCM, AES-128-GCM, then ChaCha20 on `AES=hw` with
+  `CH_NATIVE_AES` and ChaCha20, AES-128-GCM, then AES-256-GCM on every
+  other suite build, and it selects the first of them the client listed,
+  or the first of `ch_srv_cfg.cipher_suites` when the caller names an
+  order (decisions.md 58, 80). It never selects a suite the client did
+  not list.
 - **Mechanism.** Absence of selection code; the TRUST build flag picks
   the sigalg of a raw or ca build at compile time, never at runtime.
   The QUIC version rules sit in two places: `quic_version.h`'s
@@ -690,11 +696,19 @@ last `ROLE=server` stub, as the entry said it would.
   that names any group but secp256r1; `hsg_selected_group_ok` holds the
   ServerHello to the group of a share the hello it answers carried. The
   three-suite offer is the `CH_CLIENT_AES_SUITES`
-  arms of `handshake_message.c` and `handshake_parser.c`, and
+  arms of `handshake_message.c` and `handshake_parser.c`: the hello
+  writes the suites `hs_offered_suites` names, the caller's list or
+  `suite.h`'s `suite_default_order`, `webpki_cfg.c` holds the caller's
+  list to the build's suites, and `hsf_read_server_hello` holds a retry
+  or a ServerHello to the listed ones (`hs_suite_offered`).
   `handshake_state.suite` records the suite a retry or ServerHello
   named. The server's choice is `srv_first_offered_suite` in `suite.h`,
-  which walks the server's order and takes the first suite the parsed
-  offer holds, and `srv_parse_client_hello` reads `cipher_suites` once. The resuming offer is the `CH_TRUST_WEBPKI` arm of
+  which walks the server's order, `suite_default_order` unless the
+  caller names one, and takes the first suite the parsed
+  offer holds, and `srv_parse_client_hello` reads `cipher_suites` once.
+  `SUITE_AES_FIRST` in `suite.h` marks the build whose default order puts
+  AES-256-GCM first; the build's defines decide it, and nothing probes
+  the CPU at run time. The resuming offer is the `CH_TRUST_WEBPKI` arm of
   `handshake_message.c`, which writes `signature_algorithms` and
   `server_certificate_type` in every hello and `pre_shared_key` last,
   and a raw or ca hello offers a ticket alone.
@@ -741,7 +755,33 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/srv_flight_test_aes` fails on it; `bin/webpki_loop_aes` feeds the
   server h3spec's offer, `TLS_AES_256_GCM_SHA384`,
   `TLS_AES_128_GCM_SHA256` and `TLS_AES_128_CCM_SHA256`, and requires
-  AES-128-GCM.
+  AES-256-GCM, and `bin/webpki_loop_aes_extern` requires AES-128-GCM.
+  The two orders (decisions.md 80): `bin/webpki_session_test`,
+  `bin/webpki_session_aes` and `bin/webpki_session_aes_extern` hold the
+  hello's cipher_suites bytes to each build's default, and
+  `test/webpki_loop_order.h` feeds the server a hello that lists the
+  three suites in each of their six orders, in the three webpki loop
+  builds, and requires the first suite of the server's default order.
+  The caller's list meets each rule at its edge in
+  `bin/webpki_session_aes`, `bin/webpki_loop_aes` and
+  `bin/quic_loop_aes`: one, two and three suites are offered as listed,
+  and a fourth entry, an unheld code point, a repeat and a count without
+  its list are `CH_EINVAL`; a ServerHello or a retry that names a suite
+  the list left out is illegal_parameter. `hello_build_suite` proves the
+  builder over every list shape, and `quic_config_webpki_suite` proves
+  that `ch_quic_init` takes a list only in the shape webpki_cfg.h states.
+  Eight mutants require a test to fail:
+  `inv07-client-default-order-chacha-first`,
+  `inv07-srv-default-order-chacha-first`,
+  `inv07-extern-default-order-aes-first`,
+  `inv07-default-order-aes128-first`,
+  `inv07-client-list-admits-unheld-suite`,
+  `inv07-client-list-admits-repeat`, `inv07-client-offer-ignores-list`
+  and `inv07-client-takes-unlisted-suite`. `test/e2e.sh` has OpenSSL's
+  `s_server` select AES-256-GCM from the `AES=hw` client, ChaCha20 from
+  the `AES=extern` one and AES-128-GCM from either under
+  `WEBPKI_SUITES=1301,1303`, and has this tree's server select its own
+  first suite from an `s_client` that lists AES-128-GCM first.
   `handshake_parser_suite` proves an accepted message carries an
   offered suite. `bin/webpki_resume_test`'s mock server refuses a hello
   with no `signature_algorithms` with handshake_failure, as dns.google
@@ -762,8 +802,9 @@ last `ROLE=server` stub, as the entry said it would.
   `s_client`, and the webpki client against an OpenSSL server that holds
   P-256 alone.
 - **Violation.** A PR accepts a second cipher suite value in
-  ServerHello and downgrade surface exists again, or a QUIC packet call
-  admits a packet in a version its level does not admit.
+  ServerHello and downgrade surface exists again, takes back a suite
+  the caller's `ch_cfg.cipher_suites` left out of the hello, or lets a
+  QUIC packet call admit a packet in a version its level does not admit.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ### INV-8 — no legacy protocol

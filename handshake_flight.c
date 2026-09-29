@@ -155,13 +155,13 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
 #endif
 
 #ifdef CH_SUITE_AES_GCM
-// Stores the suite a HelloRetryRequest or ServerHello named. The parser
-// accepted it as one this client offered; what is left is RFC 9846
-// §4.2.4's rule that the ServerHello repeat the retry's suite
-// (rfc9846.txt:1489-1491). Returns CH_EPROTO when it does not, an
-// illegal_parameter the caller writes.
+// Stores the suite a HelloRetryRequest or ServerHello named, once it is
+// one the hello listed (hs_suite_offered) and, in a ServerHello, the
+// retry's suite, which §4.2.4 requires (rfc9846.txt:1489-1491). Returns
+// CH_EPROTO when it is not, an illegal_parameter the caller writes.
 static int take_suite(handshake_state *h, const server_hello_info *info) {
-    if (!info->hrr && h->suite != 0 && info->suite != h->suite) {
+    if (!hs_suite_offered(&h->t->cfg, info->suite) ||
+        (!info->hrr && h->suite != 0 && info->suite != h->suite)) {
         return CH_EPROTO;
     }
     h->suite = info->suite;

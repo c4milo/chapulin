@@ -1,0 +1,12 @@
+invariant: INV-7
+file: suite.h
+catches: webpki_loop_aes_extern
+reason: an AES=extern build takes the AES-first default order that only a
+  build on AES=hw with CH_NATIVE_AES may take (docs/decisions.md 80). Under
+  AES=extern GHASH runs on gcm.c's portable multiply and nothing measures
+  the peripheral, so both ends must keep ChaCha20 first.
+
+--- old
+#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+--- new
+#if defined(CH_SUITE_AES_GCM)

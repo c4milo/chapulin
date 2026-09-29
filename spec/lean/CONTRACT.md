@@ -147,13 +147,15 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer
                         -- one-group build's accepted retry carries a cookie
                         -- and twoGroups' carries a cookie or names secp256r1
                         -- (§4.2.4, §4.3.8).
-                        -- suiteOffer names the cipher_suites list the
-                        -- ClientHello sends (§4.2.2). chacha lists TLS_CHACHA20_POLY1305_SHA256 (0x1303)
+                        -- suiteOffer names the suites the ClientHello
+                        -- can list in cipher_suites (§4.2.2). chacha is TLS_CHACHA20_POLY1305_SHA256 (0x1303)
                         -- alone, the offer of every client build but one.
                         -- chachaAndAes, the SUITE=aesgcm TRUST=webpki
-                        -- client (docs/decisions.md entries 45 and 58),
-                        -- lists 0x1303, then TLS_AES_128_GCM_SHA256
-                        -- (0x1301), then TLS_AES_256_GCM_SHA384 (0x1302).
+                        -- client (docs/decisions.md entries 45, 58 and 80),
+                        -- adds TLS_AES_128_GCM_SHA256 (0x1301) and
+                        -- TLS_AES_256_GCM_SHA384 (0x1302). The order the
+                        -- hello lists them in, and a caller's list that
+                        -- offers fewer, are the C handshake's to check.
                         -- A ServerHello
                         -- or HelloRetryRequest may carry any listed suite,
                         -- and both report it. Whether a ServerHello carries

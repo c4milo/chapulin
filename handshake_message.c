@@ -117,6 +117,21 @@ static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
     wb_patch16(w, psk);
 }
 
+#ifdef CH_CLIENT_AES_SUITES
+// cipher_suites (RFC 9846 §4.2.2), in the client's order of preference
+// (rfc9846.txt:1271-1274): the list hs_offered_suites names, the
+// caller's or suite.h's suite_default_order (docs/decisions.md 80). The
+// count is at most SUITE_HELD_COUNT, so the length cast is in range.
+static void write_cipher_suites(wbuf *w, const ch_cfg *cfg) {
+    size_t count = 0;
+    const uint16_t *suites = hs_offered_suites(cfg, &count);
+    wb_u16(w, (uint16_t)(2 * count));
+    for (size_t i = 0; i < count; i++) {
+        wb_u16(w, suites[i]);
+    }
+}
+#endif
+
 #ifdef CH_KEX_TWO_GROUPS
 // supported_groups and key_share for the build that offers two groups
 // (docs/decisions.md entries 53 and 63). supported_groups lists the
@@ -191,13 +206,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_bytes(&w, random32, 32);
     wb_u8(&w, 0); // empty legacy_session_id: no middlebox compat needed
 #ifdef CH_CLIENT_AES_SUITES
-    // ChaCha20 first, the order srv_select prefers for the reason it
-    // states, then AES-128-GCM and AES-256-GCM (docs/decisions.md 45 and
-    // 58).
-    wb_u16(&w, 6);
-    wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
-    wb_u16(&w, SUITE_AES_128_GCM_SHA256);
-    wb_u16(&w, SUITE_AES_256_GCM_SHA384);
+    write_cipher_suites(&w, cfg);
 #else
     wb_u16(&w, 2); // one suite
     wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);

@@ -9,6 +9,6 @@ reason: a ServerHello may carry a different suite from the HelloRetryRequest
   the retry.
 
 --- old
-    if (!info->hrr && h->suite != 0 && info->suite != h->suite) {
+        (!info->hrr && h->suite != 0 && info->suite != h->suite)) {
 --- new
-    if (0) {
+        0) {

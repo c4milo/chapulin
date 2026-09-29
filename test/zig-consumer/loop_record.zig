@@ -303,12 +303,15 @@ fn failureAlerts() !void {
     // The client, before its key: the ServerHello selects a suite the
     // client did not offer, TLS_AES_128_CCM_SHA256, which no build offers.
     // Its cipher_suite follows the record and message headers,
-    // legacy_version, random and the empty legacy_session_id_echo.
+    // legacy_version, random and the empty legacy_session_id_echo, and
+    // holds the suite the server's default order picked: ChaCha20, or
+    // AES-256-GCM on AES=hw (docs/decisions.md 80).
     try startPair();
     try serverAnswersHello();
     const suite_at = c.REC_HDR + 4 + 2 + 32 + 1;
     const flight = to_client.pending();
-    try check(flight[suite_at] == 0x13 and flight[suite_at + 1] == 0x03, "the ServerHello's cipher_suite is not ChaCha20 where the test looks");
+    const picked = std.mem.readInt(u16, flight[suite_at..][0..2], .big);
+    try check(picked == c.SUITE_CHACHA20_POLY1305_SHA256 or picked == c.SUITE_AES_256_GCM_SHA384, "the ServerHello's cipher_suite is not a default pick where the test looks");
     flight[suite_at + 1] = 0x04;
     try check(serverToClient() == error.Proto, "the client took a suite it did not offer");
     const refused_hello = client.alertSent() orelse return error.NoAlertSent;

@@ -81,7 +81,9 @@ Other targets:
   statement that the peripheral behind it runs in constant time
   (decision 68). The Makefile writes neither statement, `ct.h` refuses
   the suite without the one its `AES` value needs, and nothing in this
-  tree can check either.
+  tree can check either. The `AES=hw` build offers and prefers
+  `TLS_AES_256_GCM_SHA384`, then `TLS_AES_128_GCM_SHA256`, then ChaCha20,
+  and the `AES=extern` build keeps ChaCha20 first (decision 80).
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

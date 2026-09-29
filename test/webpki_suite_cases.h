@@ -1,18 +1,18 @@
-// The cipher suites a SUITE=aesgcm TRUST=webpki client offers
-// (docs/decisions.md entries 45 and 58): TLS_CHACHA20_POLY1305_SHA256
-// first, then TLS_AES_128_GCM_SHA256, then TLS_AES_256_GCM_SHA384. The
-// rows run against the mock server
-// in test/webpki_session_test.c, which bin/webpki_session_aes builds
-// with the suite define. A handshake that reaches the mock's one bad
-// certificate entry ends in bad_certificate under the handshake keys,
-// so that alert is the evidence both sides keyed the same AEAD.
-// Included by that file after the mock.
+// The cipher suites a TRUST=webpki client offers, in its order
+// (docs/decisions.md entries 45, 58 and 80), and under SUITE=aesgcm the
+// caller's own order, ch_cfg.cipher_suites. The rows run against the mock
+// server in test/webpki_session_test.c, which bin/webpki_session_test
+// builds without the suite, bin/webpki_session_aes with it on AES=hw and
+// bin/webpki_session_aes_extern with it on AES=extern. A handshake that
+// reaches the mock's one bad certificate entry ends in bad_certificate
+// under the handshake keys, so that alert is the evidence both sides
+// keyed the same AEAD. Included by that file after the mock.
 #ifndef CH_TEST_WEBPKI_SUITE_CASES_H
 #define CH_TEST_WEBPKI_SUITE_CASES_H
-#ifdef CH_CLIENT_AES_SUITES
 
 // The cipher_suites vector of a captured hello equals want: the bytes
-// after the legacy_version, the random and the legacy_session_id.
+// after the legacy_version, the random and the legacy_session_id. want
+// starts with the vector's length, so a longer vector does not match.
 static int hello_suites_are(const uint8_t *hello, size_t n, const uint8_t *want, size_t want_len) {
     rbuf r;
     rb_init(&r, hello, n);
@@ -22,13 +22,163 @@ static int hello_suites_are(const uint8_t *hello, size_t n, const uint8_t *want,
     return !r.err && suites != NULL && memcmp(suites, want, want_len) == 0;
 }
 
-// The hello lists the three suites, ChaCha20 first and AES-256-GCM last.
+// The hello lists the build's default order, written out here from the
+// build's defines rather than read from suite.h: AES-256-GCM, AES-128-GCM
+// and ChaCha20 on AES=hw with CH_NATIVE_AES, ChaCha20, AES-128-GCM and
+// AES-256-GCM on AES=extern, and ChaCha20 alone without the suite.
 static void test_webpki_suites_hello(void) {
-    static const uint8_t three[] = {0x00, 0x06, 0x13, 0x03, 0x13, 0x01, 0x13, 0x02};
+#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+    static const uint8_t want[] = {0x00, 0x06, 0x13, 0x02, 0x13, 0x01, 0x13, 0x03};
+#elif defined(CH_SUITE_AES_GCM)
+    static const uint8_t want[] = {0x00, 0x06, 0x13, 0x03, 0x13, 0x01, 0x13, 0x02};
+#else
+    static const uint8_t want[] = {0x00, 0x02, 0x13, 0x03};
+#endif
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
     CHECK(sends_client_hello(&cfg));
-    CHECK(hello_suites_are(s.hello, s.hello_len, three, sizeof three));
+    CHECK(hello_suites_are(s.hello, s.hello_len, want, sizeof want));
+}
+
+#ifdef CH_CLIENT_AES_SUITES
+// Whether ch_connect sent a hello over cfg whose cipher_suites vector
+// equals want.
+static int offers(ch_cfg *cfg, const uint16_t *list, size_t count, const uint8_t *want,
+                  size_t want_len) {
+    const mock_server *s = cfg->io;
+    cfg->cipher_suites = list;
+    cfg->cipher_suite_count = count;
+    return sends_client_hello(cfg) && hello_suites_are(s->hello, s->hello_len, want, want_len);
+}
+
+// The caller's list, ch_cfg.cipher_suites, at the edge of each rule. One
+// suite, two and three are offered as listed, in the caller's order, and
+// three distinct suites are the longest list taken. ch_connect refuses,
+// before a byte leaves, a fourth entry, a code point the build does not
+// hold, a repeat, a count without its list and a list without its count.
+static void test_webpki_suite_list(void) {
+    static const uint16_t list[4] = {SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256,
+                                     SUITE_AES_256_GCM_SHA384, SUITE_AES_128_GCM_SHA256};
+    static const uint8_t one[] = {0x00, 0x02, 0x13, 0x01};
+    static const uint8_t two[] = {0x00, 0x04, 0x13, 0x01, 0x13, 0x03};
+    static const uint8_t three[] = {0x00, 0x06, 0x13, 0x01, 0x13, 0x03, 0x13, 0x02};
+    static const uint8_t aes256_alone[] = {0x00, 0x02, 0x13, 0x02};
+    mock_server s;
+    ch_cfg cfg = valid_cfg(&s);
+    CHECK(offers(&cfg, list, 1, one, sizeof one));
+    cfg = valid_cfg(&s);
+    CHECK(offers(&cfg, list, 2, two, sizeof two));
+    cfg = valid_cfg(&s);
+    CHECK(offers(&cfg, list, 3, three, sizeof three));
+    cfg = valid_cfg(&s);
+    CHECK(offers(&cfg, list + 2, 1, aes256_alone, sizeof aes256_alone));
+
+    static const uint16_t unheld[] = {SUITE_AES_128_GCM_SHA256, 0x1304};
+    static const uint16_t repeat[] = {SUITE_AES_256_GCM_SHA384, SUITE_AES_256_GCM_SHA384};
+    cfg = valid_cfg(&s);
+    cfg.cipher_suites = list;
+    cfg.cipher_suite_count = 4;
+    CHECK(refused(&cfg));
+    cfg.cipher_suites = unheld;
+    cfg.cipher_suite_count = 2;
+    CHECK(refused(&cfg));
+    cfg.cipher_suites = repeat;
+    CHECK(refused(&cfg));
+    cfg.cipher_suites = NULL;
+    CHECK(refused(&cfg));
+    cfg.cipher_suites = list;
+    cfg.cipher_suite_count = 0;
+    CHECK(refused(&cfg));
+}
+
+// A ServerHello body that names suite, over an x25519 share, with no
+// handshake header, as hsp_parse_server_hello takes it.
+static size_t server_hello_body(uint8_t *out, size_t cap, uint16_t suite) {
+    wbuf w;
+    wb_init(&w, out, cap);
+    wb_u16(&w, 0x0303);
+    for (int i = 0; i < 32; i++) {
+        wb_u8(&w, 0x42);
+    }
+    wb_u8(&w, 0); // legacy_session_id_echo
+    wb_u16(&w, suite);
+    wb_u8(&w, 0);
+    size_t exts = wb_mark(&w, 2);
+    wb_u16(&w, EXT_SUPPORTED_VERSIONS);
+    wb_u16(&w, 2);
+    wb_u16(&w, TLS13);
+    wb_u16(&w, EXT_KEY_SHARE);
+    wb_u16(&w, 2 + 2 + X25519_LEN);
+    wb_u16(&w, CH_GROUP_X25519);
+    wb_u16(&w, X25519_LEN);
+    for (int i = 0; i < X25519_LEN; i++) {
+        wb_u8(&w, 0x09);
+    }
+    wb_patch16(&w, exts);
+    return w.err ? 0 : w.len;
+}
+
+// The parser alone holds a ServerHello to the three suites this client
+// can offer, before the flight holds it to the ones the hello listed
+// (hs_suite_offered): each of the three parses and is reported, and
+// TLS_AES_128_CCM_SHA256, which no build holds, is refused.
+static void test_webpki_suite_parser(void) {
+    static const uint16_t held[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
+                                    SUITE_AES_256_GCM_SHA384};
+    uint8_t body[128];
+    server_hello_info info;
+    for (size_t i = 0; i < 3; i++) {
+        size_t n = server_hello_body(body, sizeof body, held[i]);
+        memset(&info, 0, sizeof info);
+        CHECK(n > 0 && hsp_parse_server_hello(body, n, &info, 0) == CH_OK);
+        CHECK(info.suite == held[i]);
+    }
+    size_t n = server_hello_body(body, sizeof body, 0x1304);
+    memset(&info, 0, sizeof info);
+    CHECK(n > 0 && hsp_parse_server_hello(body, n, &info, 0) == CH_EPROTO);
+}
+
+// The client takes back only a suite its hello listed. With AES-128-GCM
+// listed alone, a ServerHello that names ChaCha20 or AES-256-GCM, which
+// the build holds, and a retry that names ChaCha20 are each an
+// illegal_parameter abort before any key exists, and the retry gets no
+// second hello (rfc9846.txt:1373-1376, 1484-1485). A ServerHello that
+// names AES-128-GCM completes the key exchange under it.
+static void test_webpki_suite_list_takes_back(void) {
+    static const uint16_t aes128[] = {SUITE_AES_128_GCM_SHA256};
+    mock_server s;
+    ch_tls t;
+    ch_cfg cfg = valid_cfg(&s);
+    cfg.cipher_suites = aes128;
+    cfg.cipher_suite_count = 1;
+    s.answer = 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
+
+    cfg = valid_cfg(&s);
+    cfg.cipher_suites = aes128;
+    cfg.cipher_suite_count = 1;
+    s.answer = 1;
+    s.suite = SUITE_AES_256_GCM_SHA384;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
+
+    cfg = valid_cfg(&s);
+    cfg.cipher_suites = aes128;
+    cfg.cipher_suite_count = 1;
+    s.answer = 1;
+    s.retry = 1;
+    s.retry_cookie = 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.hrr_len > 0 && s.retry_hello_len == 0);
+
+    cfg = valid_cfg(&s);
+    cfg.cipher_suites = aes128;
+    cfg.cipher_suite_count = 1;
+    s.answer = 1;
+    s.suite = SUITE_AES_128_GCM_SHA256;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_BAD_CERTIFICATE && t.suite == SUITE_AES_128_GCM_SHA256);
 }
 
 // A ServerHello that selects AES-128-GCM: the client keys both

@@ -383,6 +383,11 @@ int main(int argc, char **argv) {
 #ifdef CH_TRUST_WEBPKI
     setup_alpn(&cfg);
 #endif
+#ifdef CH_CLIENT_AES_SUITES
+    if (setup_suites(&cfg) != 0) {
+        return 2;
+    }
+#endif
 #ifdef CH_TRUST_CA
     if (argc == 7) {
         g_epoch_path = argv[6];

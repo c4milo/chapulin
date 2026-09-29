@@ -25,15 +25,55 @@
 #define SUITE_AES_128_GCM_SHA256 0x1301
 #define SUITE_AES_256_GCM_SHA384 0x1302
 
-// A SUITE=aesgcm TRUST=webpki client offers all three suites, ChaCha20
-// first, then AES-128-GCM, then AES-256-GCM, and runs the one the
-// ServerHello selects (docs/decisions.md 45 and 58). A SUITE=aesgcm
-// server selects in the same order unless ch_srv_cfg.cipher_suites names
-// another (srv_select). A raw or ca client offers ChaCha20 alone, and
+// A SUITE=aesgcm TRUST=webpki client offers all three suites and runs the
+// one the ServerHello selects (docs/decisions.md 45 and 58). It offers
+// them in suite_default_order below, or in the order ch_cfg.cipher_suites
+// names (webpki_cfg.h). A SUITE=aesgcm server selects in
+// suite_default_order unless ch_srv_cfg.cipher_suites names another
+// (srv_select). A raw or ca client offers ChaCha20 alone, and
 // handshake_message.c refuses the define for one that carries no server
 // role.
 #if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
 #define CH_CLIENT_AES_SUITES
+#endif
+
+// The suites this build holds, SUITE_HELD_COUNT of them, in the order its
+// client offers them and its server prefers them when the caller names no
+// order (docs/decisions.md 80). SUITE_AES_FIRST marks a -DCH_SUITE_AES_GCM
+// build on AES=hw that defines CH_NATIVE_AES: its AES-GCM runs on the AES
+// instructions and the carry-less multiply, which the build asserted run
+// in constant time (ct.h), and it puts TLS_AES_256_GCM_SHA384 first, then
+// TLS_AES_128_GCM_SHA256, then ChaCha20. AES-256 comes first to align
+// with NSA's CNSA 2.0 suite, which requires AES-256 and SHA-384, though
+// every handshake proof covers SHA-256 and the SHA-384 schedule is
+// proved in its own harnesses alone. Every other suite build,
+// AES=extern among them, keeps ChaCha20 first, which runs in constant
+// time by construction, then AES-128-GCM, then AES-256-GCM
+// (docs/decisions.md 58). A build without the define holds ChaCha20
+// alone. Nothing here asks the CPU what it has: a caller that learns it
+// at run time names its own order in ch_cfg.cipher_suites or
+// ch_srv_cfg.cipher_suites.
+#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+#define SUITE_AES_FIRST
+#endif
+#ifdef CH_SUITE_AES_GCM
+#define SUITE_HELD_COUNT 3
+#else
+#define SUITE_HELD_COUNT 1
+#endif
+// Declared for its two readers alone: a server role, and the client that
+// offers more than one suite (handshake_message.h). Each arm defines the
+// whole array, so no directive sits inside an initializer.
+#if defined(CH_ROLE_SERVER) || defined(CH_CLIENT_AES_SUITES)
+#ifdef SUITE_AES_FIRST
+static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {
+    SUITE_AES_256_GCM_SHA384, SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
+#elif defined(CH_SUITE_AES_GCM)
+static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {
+    SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256, SUITE_AES_256_GCM_SHA384};
+#else
+static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {SUITE_CHACHA20_POLY1305_SHA256};
+#endif
 #endif
 
 // The longest AEAD key any suite fixes: ChaCha20-Poly1305 and AES-256-GCM
@@ -77,7 +117,8 @@ static inline int suite_runs_aes_gcm(uint16_t suite) {
 // RFC 9846 §9.1 names three suites (rfc9846.txt:4540-4543). A build
 // without -DCH_SUITE_AES_GCM holds TLS_CHACHA20_POLY1305_SHA256 alone and
 // does not meet section 9.1. A -DCH_SUITE_AES_GCM build holds all three
-// and selects in the order srv_select states, ChaCha20 first.
+// and selects in suite_default_order above unless ch_srv_cfg.cipher_suites
+// names another order.
 #define SRV_SUITE_CHACHA20_POLY1305 0x01
 #ifdef CH_SUITE_AES_GCM
 #define SRV_SUITE_AES_128_GCM 0x02

@@ -12,23 +12,39 @@
 
 #include "srv_flight_tests.h"
 
-// Which suite srv_select picks, in a build that has two. The preference
-// is ChaCha20 whenever the client offers it: both suites meet the
-// profile, and ChaCha20 is constant time by construction where AES is
-// constant time because the build said so (srv_flight.c states it).
+// Which suite srv_select picks by its default order, in a build that has
+// three (docs/decisions.md 80). bin/srv_flight_test_aes builds on AES=hw
+// with CH_NATIVE_AES, whose order is AES-256-GCM, AES-128-GCM, then
+// ChaCha20. The expectations read the build's defines rather than
+// suite.h, so a build on AES=extern would expect ChaCha20 first.
 //
 // It runs only under -DCH_SUITE_AES_GCM. A build with one suite has
 // nothing to choose between, and SRV_SUITE_AES_128_GCM is not declared
 // there at all.
 static void test_flight_select_suite(void) {
     selection sel;
+#if defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+    const uint16_t first_of_three = SUITE_AES_256_GCM_SHA384;
+    const uint16_t first_of_two = SUITE_AES_128_GCM_SHA256;
+#else
+    const uint16_t first_of_three = SUITE_CHACHA20_POLY1305_SHA256;
+    const uint16_t first_of_two = SUITE_CHACHA20_POLY1305_SHA256;
+#endif
 
-    // Both offered: the one that needs no statement about the hardware.
+    // All three offered: the first suite of the build's order, at the
+    // hash it fixes.
     flight_reset();
+    offer_x25519();
+    flight_hello.suites =
+        SRV_SUITE_CHACHA20_POLY1305 | SRV_SUITE_AES_128_GCM | SRV_SUITE_AES_256_GCM;
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
+    CHECK(sel.suite == first_of_three && sel.hash_len == suite_hash_len(first_of_three));
+
+    // ChaCha20 and AES-128-GCM: the first of those two in the order.
     offer_x25519();
     flight_hello.suites = SRV_SUITE_CHACHA20_POLY1305 | SRV_SUITE_AES_128_GCM;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
-    CHECK(sel.suite == SUITE_CHACHA20_POLY1305_SHA256);
+    CHECK(sel.suite == first_of_two);
     CHECK(sel.hash_len == SHA256_LEN);
 
     // AES alone: selected, which is the whole point of carrying it. A

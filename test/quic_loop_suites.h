@@ -12,7 +12,9 @@
 // header protection (RFC 9001 §5.3, §5.4.3), the Initial packets
 // AES-128-GCM under their public keys, and a 1-RTT key update keeps the
 // suite (§6.1). TLS_AES_256_GCM_SHA384 runs its key schedule and the
-// ticket's PSK on SHA-384 too.
+// ticket's PSK on SHA-384 too. A last row runs the client's own order,
+// ch_cfg.cipher_suites, through ch_quic_init's refusals and one
+// handshake.
 #ifndef CH_TEST_QUIC_LOOP_SUITES_H
 #define CH_TEST_QUIC_LOOP_SUITES_H
 #ifdef CH_SUITE_AES_GCM
@@ -78,10 +80,50 @@ static void check_quic_suite(uint16_t suite) {
     CHECK(kept.psk_len == suite_hash_len(suite));
 }
 
+// The client's own order over QUIC, ch_cfg.cipher_suites, which
+// ch_quic_init checks as ch_connect does (webpki_cfg.h): a code point the
+// build does not hold, a repeat and a fourth entry are each CH_EINVAL,
+// and three distinct suites are taken. A client that lists AES-128-GCM
+// alone gets it from a server whose default order puts another suite
+// first, and its 1-RTT keys agree (docs/decisions.md 80).
+static void check_quic_client_order(void) {
+    static const uint16_t unheld[] = {0x1304};
+    static const uint16_t repeat[] = {SUITE_CHACHA20_POLY1305_SHA256,
+                                      SUITE_CHACHA20_POLY1305_SHA256};
+    static const uint16_t four[] = {SUITE_AES_256_GCM_SHA384, SUITE_AES_128_GCM_SHA256,
+                                    SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_256_GCM_SHA384};
+    static const uint16_t aes128[] = {SUITE_AES_128_GCM_SHA256};
+    static ch_quic probe;
+    ch_cfg ccfg;
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    ccfg.cipher_suites = unheld;
+    ccfg.cipher_suite_count = 1;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    ccfg.cipher_suites = repeat;
+    ccfg.cipher_suite_count = 2;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    ccfg.cipher_suites = four;
+    ccfg.cipher_suite_count = 4;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    ccfg.cipher_suite_count = 3;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_OK);
+    ch_quic_close(&probe);
+
+    ch_cfg scfg;
+    webpki_server(&scfg, ticket_key);
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    ccfg.cipher_suites = aes128;
+    ccfg.cipher_suite_count = 1;
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.suite == SUITE_AES_128_GCM_SHA256 && server.t.suite == SUITE_AES_128_GCM_SHA256);
+    check_keys_agree();
+}
+
 static void test_quic_suites(void) {
     check_quic_suite(SUITE_CHACHA20_POLY1305_SHA256);
     check_quic_suite(SUITE_AES_128_GCM_SHA256);
     check_quic_suite(SUITE_AES_256_GCM_SHA384);
+    check_quic_client_order();
 }
 
 #endif // CH_SUITE_AES_GCM

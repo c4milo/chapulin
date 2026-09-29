@@ -843,7 +843,7 @@ The entries are grouped by area:
 
 #### hello_build
 
-- **Harnesses:** `hello_build` (fast), `hello_build_webpki` (fast)
+- **Harnesses:** `hello_build` (fast), `hello_build_webpki` (fast), `hello_build_suite` (fast)
 - **Proves:**
   - the ClientHello builder writes nothing outside the caller's buffer
     at any capacity, for every cookie and PSK identity a caller may
@@ -859,8 +859,16 @@ The entries are grouped by area:
     hybrid one alone, against that build's `CH_HELLO_MAX` of 2,396.
     There the bound is tight: the assertion moved to `CH_HELLO_MAX - 1`
     fails.
+  - `hello_build_suite` is the same harness under `-DCH_TRUST_WEBPKI
+    -DCH_SUITE_AES_GCM`: cipher_suites in `suite.h`'s default order or
+    as a caller's list of 1 to `SUITE_HELD_COUNT` code points of any
+    value (`docs/decisions.md` entry 80), and a ticket whose binder is
+    SHA-256's or SHA-384's, against that build's `CH_HELLO_MAX`, where
+    the bound is tight too. A probe that asserts no hello over a
+    three-suite list is built fails, and so does one for a SHA-384
+    binder, so both arms are reached.
 - **Bound:** capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤
-  128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each.
+  128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each, 3 cipher suites.
 - **Not proved:** that `pre_shared_key` is the last extension.
   `test/session_cfg_tests.h` and `test/webpki_session_cases.h` test it.
   The assertion over the hello's last bytes gave kissat a formula that
@@ -1436,8 +1444,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 #### quic_config_webpki
 
-- **Harness:** `quic_config_webpki` (fast)
-- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only.
+- **Harnesses:** `quic_config_webpki` (fast), `quic_config_webpki_suite` (fast)
+- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only, and
+  `quic_config_webpki_suite` under `SUITE=aesgcm` too.
 - **Proves:** `ch_quic_init`'s configuration rules under `TRUST=webpki`,
   which are `webpki_cfg_ok`'s, SPKI pins included, plus RFC 9001's
   (`docs/decisions.md` entry 64). `quic_config_ok`:
@@ -1454,7 +1463,13 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds; 1 to
     `CH_ALPN_MAX` protocols; the transport parameters; `on_level_ready`;
     the buffer floor; an original version `quic_version_derived` admits;
-    and no epoch callback.
+    and no epoch callback;
+  - in `quic_config_webpki_suite`, answers `CH_OK` only when the
+    client's `cipher_suites` is unset with a count of 0, or holds 1 to
+    `SUITE_HELD_COUNT` suites the build holds with none repeated, and
+    reads no suite past that cap whatever the count says
+    (`docs/decisions.md` entry 80). Narrowing the harness's rule to two
+    suites fails the formula, so the cap it admits is exact.
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.

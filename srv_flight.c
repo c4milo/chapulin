@@ -104,17 +104,10 @@ static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
            ch->alpn_selected == CH_ALPN_NONE;
 }
 
-// The default order: ChaCha20, constant time by construction, before
-// AES-GCM, constant time because the build asserted this part's
-// instructions are (ct.h, INV-26); AES-128-GCM before AES-256-GCM,
-// because the handshake proofs cover SHA-256 (docs/decisions.md 58). A
-// build without CH_SUITE_AES_GCM holds no AES suite, so srv_suite_bit
-// answers 0 for both and the walk below passes over them.
-static const uint16_t default_suites[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
-                                          SUITE_AES_256_GCM_SHA384};
-
-// The first suite in cfg.srv.cipher_suites, or in the order above when
-// that is unset, that the client offered; 0 when there is none.
+// The first suite in cfg.srv.cipher_suites that the client offered, or,
+// when that is unset, the first in suite_default_order, the order suite.h
+// states for this build and its client offers in (docs/decisions.md 80);
+// 0 when there is none.
 static uint16_t select_suite(const ch_cfg *cfg, uint8_t offered) {
 #ifdef CH_SUITE_AES_GCM
     if (cfg->srv.cipher_suites != NULL) {
@@ -124,8 +117,7 @@ static uint16_t select_suite(const ch_cfg *cfg, uint8_t offered) {
 #else
     (void)cfg;
 #endif
-    return srv_first_offered_suite(default_suites, sizeof default_suites / sizeof default_suites[0],
-                                   offered);
+    return srv_first_offered_suite(suite_default_order, SUITE_HELD_COUNT, offered);
 }
 
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {

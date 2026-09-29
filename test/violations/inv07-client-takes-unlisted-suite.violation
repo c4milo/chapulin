@@ -1,0 +1,14 @@
+invariant: INV-7
+file: handshake_flight.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: a client whose ch_cfg.cipher_suites left a suite out takes that
+  suite back from a ServerHello or a HelloRetryRequest, because the parser
+  accepts every suite the build holds. RFC 9846 sections 4.2.3 and 4.2.4
+  make a suite the hello did not list an illegal_parameter abort.
+
+--- old
+    if (!hs_suite_offered(&h->t->cfg, info->suite) ||
+        (!info->hrr && h->suite != 0 && info->suite != h->suite)) {
+--- new
+    if ((!info->hrr && h->suite != 0 && info->suite != h->suite)) {

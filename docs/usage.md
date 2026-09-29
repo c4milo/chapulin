@@ -97,6 +97,27 @@ config that offered none fails it with `unsupported_extension`.
 [`docs/decisions.md`](decisions.md) entry 37 says why this mode
 negotiates here and nowhere else.
 
+Built with `SUITE=aesgcm`, the same client offers three cipher suites,
+and `ch_tls.suite` reports the one the server selected. It offers them
+in its build's order: `TLS_AES_256_GCM_SHA384`, `TLS_AES_128_GCM_SHA256`,
+then `TLS_CHACHA20_POLY1305_SHA256` when the build takes `AES=hw` and
+defines `CH_NATIVE_AES`, and ChaCha20 first in every other build. Name
+another order, or leave a suite out, with `ch_cfg.cipher_suites`:
+
+```c
+static const uint16_t suites[] = {SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
+cfg.cipher_suites = suites;
+cfg.cipher_suite_count = 2;   // 1 to 3 suites the build holds, none twice
+```
+
+`ch_connect` returns `CH_EINVAL` for a code point the build does not
+hold, a repeat, a fourth entry, a count without a list or a list without
+a count. A server that selects a suite the list left out fails the
+handshake with `illegal_parameter`. Nothing in chapulin asks the CPU what
+it has; a program that does passes the order it chose.
+[`docs/decisions.md`](decisions.md) entry 80 says why the default order
+depends on the build.
+
 `ch_tls.group` reports the key-exchange group the ServerHello selected:
 `CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until
 the handshake accepts the ServerHello's key_share. Set
@@ -283,8 +304,10 @@ against it. Built with
 `SUITE=aesgcm` it also selects `TLS_AES_128_GCM_SHA256`, which RFC 9846
 section 9.1 makes mandatory to implement, and `TLS_AES_256_GCM_SHA384`, over
 all three transports, QUIC included, and `ch_srv_cfg.cipher_suites` sets the
-order ([`docs/decisions.md`](decisions.md) entry 58); the default build
-selects ChaCha20 alone and does not meet that section.
+order ([`docs/decisions.md`](decisions.md) entry 58). With no order set it
+prefers the order its build's client offers in, AES-256-GCM first under
+`AES=hw` with `CH_NATIVE_AES` and ChaCha20 first otherwise (entry 80). The
+default build selects ChaCha20 alone and does not meet that section.
 [`docs/aes_suite.md`](aes_suite.md) states what the suite rests on and
 what it still owes.
 

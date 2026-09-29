@@ -15,7 +15,10 @@ The scope has landed, and the work went past it:
   keys its records with it (e591002).
 - A `SUITE=aesgcm TRUST=webpki` client offers it beside ChaCha20
   (`docs/decisions.md` entry 45), the decision "Negotiation" below left
-  open.
+  open. A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
+  AES-256-GCM, then AES-128-GCM, then ChaCha20 in both roles, and a
+  caller may name a client's order in `ch_cfg.cipher_suites`
+  (`docs/decisions.md` entry 80).
 - `TLS_AES_256_GCM_SHA384` joined it in both roles, the key schedule runs
   at the selected suite's hash, and QUIC protects its Handshake and 1-RTT
   packets with the suite (`docs/decisions.md` entry 58). The build

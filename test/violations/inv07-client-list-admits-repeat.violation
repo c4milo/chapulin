@@ -1,0 +1,14 @@
+invariant: INV-7
+file: webpki_cfg.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: ch_connect takes a ch_cfg.cipher_suites list that names one suite
+  twice, because the repeat check compares each entry with none before it,
+  and the hello offers the server that suite twice. webpki_cfg.h holds a
+  list to distinct suites, which is also what keeps it at most
+  SUITE_HELD_COUNT long.
+
+--- old
+        if (cfg->cipher_suites[i] == cfg->cipher_suites[j]) {
+--- new
+        if (cfg->cipher_suites[i] == cfg->cipher_suites[j] && j > i) {

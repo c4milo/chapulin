@@ -271,6 +271,47 @@ static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
     return SHA256_LEN;
 }
 
+#ifdef CH_CLIENT_AES_SUITES
+// The cipher suites cfg's ClientHello offers, in its order, with their
+// number in *count: cfg->cipher_suites when the caller named a list, and
+// suite_default_order (suite.h) when it named none. ch_connect,
+// ch_record_init and ch_quic_init hold a list to 1 to SUITE_HELD_COUNT
+// suites this build holds, none repeated (webpki_cfg.h). The hello writes
+// these and the handshake takes no other suite back (RFC 9846 §4.2.3,
+// rfc9846.txt:1373-1376). Public: the hello lists them in the clear.
+static inline const uint16_t *hs_offered_suites(const ch_cfg *cfg, size_t *count) {
+    if (cfg->cipher_suites != NULL) {
+        *count = cfg->cipher_suite_count;
+        return cfg->cipher_suites;
+    }
+    *count = SUITE_HELD_COUNT;
+    return suite_default_order;
+}
+#endif
+
+#ifdef CH_SUITE_AES_GCM
+// Whether the ClientHello cfg builds listed suite: one hs_offered_suites
+// names in a CH_CLIENT_AES_SUITES build, and ChaCha20 in every other.
+// RFC 9846 makes a ServerHello or a HelloRetryRequest that names another
+// suite an illegal_parameter abort (rfc9846.txt:1373-1376, 1484-1485). A
+// predicate over public values.
+static inline int hs_suite_offered(const ch_cfg *cfg, uint16_t suite) {
+#ifdef CH_CLIENT_AES_SUITES
+    size_t count = 0;
+    const uint16_t *offered = hs_offered_suites(cfg, &count);
+    for (size_t i = 0; i < count; i++) {
+        if (offered[i] == suite) {
+            return 1;
+        }
+    }
+    return 0;
+#else
+    (void)cfg;
+    return suite == SUITE_CHACHA20_POLY1305_SHA256;
+#endif
+}
+#endif
+
 // Builds a complete ClientHello handshake message (header included). In
 // PSK mode (cfg->psk set) the pre_shared_key extension comes last with a
 // zeroed binder as long as the PSK's hash, hs_psk_hash_len: the binder
@@ -298,7 +339,9 @@ static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
 // secp256r1 one over the P256_POINT_LEN bytes at p256_pub: the retry
 // hello a HelloRetryRequest naming secp256r1 asks for, which reads
 // neither ek nor pub. p256_pub is NULL in every other hello. With
-// cfg->require_pq set it lists and shares the hybrid alone.
+// cfg->require_pq set it lists and shares the hybrid alone. A
+// CH_CLIENT_AES_SUITES build lists the cipher suites hs_offered_suites
+// names, in that order, and every other build lists ChaCha20 alone.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
 #ifdef CH_KEX_HYBRID
                              const uint8_t ek[MLKEM_EK_LEN],

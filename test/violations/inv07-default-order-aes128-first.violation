@@ -1,0 +1,13 @@
+invariant: INV-7
+file: suite.h
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: the AES-first default order puts AES-128-GCM ahead of AES-256-GCM,
+  where docs/decisions.md 80 puts AES-256-GCM first for CNSA 2.0, which
+  requires AES-256 and SHA-384. The hello's cipher_suites bytes must list
+  AES-256-GCM first.
+
+--- old
+    SUITE_AES_256_GCM_SHA384, SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
+--- new
+    SUITE_AES_128_GCM_SHA256, SUITE_AES_256_GCM_SHA384, SUITE_CHACHA20_POLY1305_SHA256};

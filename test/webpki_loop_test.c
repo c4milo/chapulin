@@ -24,6 +24,10 @@
 // whose leaf the walk refuses for its size, the leaf_over_cert_max row,
 // and that leaf's key verifies CertificateVerify.
 //
+// In every build it feeds the server a ClientHello that lists the three
+// suites in each of their orders and checks the one the server's default
+// order selects (test/webpki_loop_order.h, docs/decisions.md 80).
+//
 // Built at TX_RECORD=16384 as bin/webpki_loop_tx_record, it also sends
 // application records of CH_TX_PT bytes each way
 // (test/webpki_loop_tx_record.h, docs/decisions.md 71). Built with
@@ -364,6 +368,7 @@ static void test_pins_alone_large_leaf(void) {
           ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR);
 }
 
+#include "webpki_loop_order.h"
 #include "webpki_loop_suites.h"
 #include "webpki_loop_tx_record.h"
 
@@ -409,6 +414,7 @@ int main(void) {
                                  ALERT_UNKNOWN_CA);
     test_pins_alone();
     test_pins_alone_large_leaf();
+    check_offer_orders();
 #ifdef CH_SUITE_AES_GCM
     check_suites();
 #endif

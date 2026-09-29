@@ -79,8 +79,9 @@ typedef struct {
     size_t cookie_len;
 #ifdef CH_SUITE_AES_GCM
     // The cipher_suite the message carried, which the parser accepts
-    // only when this client offered it: TLS_CHACHA20_POLY1305_SHA256,
-    // or an AES-GCM suite from a CH_CLIENT_AES_SUITES build. A
+    // only when this client can offer it: TLS_CHACHA20_POLY1305_SHA256,
+    // or an AES-GCM suite from a CH_CLIENT_AES_SUITES build, whose
+    // caller's list the flight checks it against (hs_suite_offered). A
     // build with one suite has no field: the parser accepts one value.
     uint16_t suite;
 #endif

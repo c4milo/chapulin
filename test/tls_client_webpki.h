@@ -1,6 +1,7 @@
 // The TRUST=webpki arm of test/tls_client.c: the anchor, the SPKI pins,
-// the hostname, the clock and the ALPN offer it reads from its arguments
-// and the environment, and the lines e2e.sh asserts on once connected.
+// the hostname, the clock, the ALPN offer and under SUITE=aesgcm the suite
+// order it reads from its arguments and the environment, and the lines
+// e2e.sh asserts on once connected.
 // Included by that file under CH_TRUST_WEBPKI, after unhex.
 #ifndef CH_TEST_TLS_CLIENT_WEBPKI_H
 #define CH_TEST_TLS_CLIENT_WEBPKI_H
@@ -120,6 +121,41 @@ static void setup_alpn(ch_cfg *cfg) {
     cfg->alpn_protocols = g_alpn;
     cfg->alpn_count = count;
 }
+
+#ifdef CH_CLIENT_AES_SUITES
+// WEBPKI_SUITES carries the client's own suite order, ch_cfg.cipher_suites,
+// as four-digit hex code points, comma separated: "1301,1303". Unset or
+// empty leaves the build's order. One entry more than a list may hold is
+// read, so ch_connect is what refuses a list that long.
+static uint16_t g_suites[SUITE_HELD_COUNT + 1];
+
+static int setup_suites(ch_cfg *cfg) {
+    const char *list = getenv("WEBPKI_SUITES");
+    if (list == NULL || list[0] == '\0') {
+        return 0;
+    }
+    char text[64];
+    (void)snprintf(text, sizeof text, "%s", list);
+    size_t count = 0;
+    for (char *code = text; code != NULL; count++) {
+        char *comma = strchr(code, ',');
+        if (comma != NULL) {
+            *comma = '\0';
+        }
+        uint8_t wire[2];
+        if (count == SUITE_HELD_COUNT + 1 || unhex(code, wire, sizeof wire) != sizeof wire) {
+            (void)fprintf(stderr, "webpki: WEBPKI_SUITES holds up to %d four-digit hex suites\n",
+                          SUITE_HELD_COUNT + 1);
+            return -1;
+        }
+        g_suites[count] = (uint16_t)((wire[0] << 8) | wire[1]);
+        code = comma != NULL ? comma + 1 : NULL;
+    }
+    cfg->cipher_suites = g_suites;
+    cfg->cipher_suite_count = count;
+    return 0;
+}
+#endif
 
 // The lines e2e asserts against: the certificate type the server chose,
 // and the protocol it selected, by name, or "none" when it sent no ALPN

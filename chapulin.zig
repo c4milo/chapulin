@@ -32,6 +32,9 @@ const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
 // TRANSPORT=quic-nonblocking: every session names its original version in
 // ch_cfg (cfg.h), and quic.Version is the type that names one.
 const has_quic = @hasField(c.ch_cfg, "quic_original_version");
+// A client that offers more than one suite (SUITE=aesgcm TRUST=webpki)
+// takes an order of its own in ch_cfg.cipher_suites (webpki_cfg.h).
+const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
 // RAND=session: each session names its own source of random bytes in
 // ch_cfg (cfg.h), where every other build draws from the image's
 // ch_rand_bytes.
@@ -168,6 +171,9 @@ const ClientValues = struct {
     /// it 0, which init refuses with error.Invalid, so a configuration that
     /// names no version fails where C refuses it. void in every other build.
     quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
+    /// Suites to offer, most preferred first, empty for the build's order:
+    /// cipher_suites, cipher_suite_count.
+    cipher_suites: if (has_client_suite_order) []const Suite else void = if (has_client_suite_order) &.{} else {},
     /// The session's source of random bytes, under RAND=session alone:
     /// rand_bytes and rand_io, through the copy the session's init stores
     /// (attachRandom). null leaves rand_bytes NULL, which init refuses with
@@ -221,6 +227,10 @@ const ClientValues = struct {
         }
         cfg.require_pq = @intFromBool(values.require_pq);
         if (has_quic) cfg.quic_original_version = quicVersionCode(values.quic_version);
+        if (has_client_suite_order) {
+            cfg.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
+            cfg.cipher_suite_count = values.cipher_suites.len;
+        }
         return cfg;
     }
 };
@@ -401,7 +411,7 @@ pub const Group = enum(u16) {
     _,
 };
 
-/// ch_tls.suite's and srv.cipher_suites' code points (suite.h).
+/// ch_tls.suite's, cipher_suites' and srv.cipher_suites' code points (suite.h).
 pub const Suite = enum(u16) {
     chacha20_poly1305_sha256 = c.SUITE_CHACHA20_POLY1305_SHA256,
     aes_128_gcm_sha256 = c.SUITE_AES_128_GCM_SHA256,

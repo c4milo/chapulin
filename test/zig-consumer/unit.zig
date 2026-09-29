@@ -129,6 +129,20 @@ test "Client.toCfg under TRUST=webpki: pins alone, with and without a server nam
     try expectFields(c.ch_cfg, want, (chapulin.Client{ .trust = .{ .pins = .{ .pins = &pins, .server_name = "dns.example" } } }).toCfg());
 }
 
+test "Client.toCfg under SUITE=aesgcm TRUST=webpki: the suite order, empty for the build's own" {
+    if (!has_client or !@hasField(c.ch_cfg, "cipher_suites")) return error.SkipZigTest;
+    const suites = [_]chapulin.Suite{ .aes_128_gcm_sha256, .chacha20_poly1305_sha256 };
+    var values: chapulin.Client = .{ .trust = .{ .pins = .{ .pins = &pins } } };
+    var want = std.mem.zeroes(c.ch_cfg);
+    want.spki_pins = @ptrCast(&pins);
+    want.spki_pin_count = 2;
+    try expectFields(c.ch_cfg, want, values.toCfg());
+    values.cipher_suites = &suites;
+    want.cipher_suites = @ptrCast(&suites);
+    want.cipher_suite_count = 2;
+    try expectFields(c.ch_cfg, want, values.toCfg());
+}
+
 test "Client.toCfg under a raw or ca mode: both pins, and a ticket in their place" {
     if (!has_client or has_webpki) return error.SkipZigTest;
     const key = [_]u8{0x11} ** 64;

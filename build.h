@@ -57,10 +57,10 @@
 //   CH_TRANSPORT_TCP_NONBLOCKING
 //                          ch_tls, and adds ch_record
 //   CH_SUITE_AES_GCM       ch_cfg, ch_tls, ch_ticket, ch_record, ch_quic
-//                          and CH_TX_STAGE: a server's suite order,
-//                          SHA-384's secrets and PSK, a webpki hello's
-//                          two more suites and longer binder, and each
-//                          QUIC key set's suite
+//                          and CH_TX_STAGE: a server's and a webpki
+//                          client's suite order, SHA-384's secrets and
+//                          PSK, a webpki hello's two more suites and
+//                          longer binder, and each QUIC key set's suite
 //   CH_ROLE_SERVER         ch_cfg, ch_tls and CH_TX_STAGE, and adds
 //                          ch_rsa_priv
 //   CH_EXPORTER            ch_tls

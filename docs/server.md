@@ -673,16 +673,17 @@ before the patch lands than after.
 | Parameter | Values, in the server's preference order | Why |
 |---|---|---|
 | Version | TLS 1.3 (0x0304) only | §4.3.1, `rfc9846.txt:1734-1738`, selects from `supported_versions` alone. |
-| Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_128_GCM_SHA256` (0x1301), then `TLS_AES_256_GCM_SHA384` (0x1302) | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. AES-128-GCM comes before AES-256-GCM for the second reason: its schedule is SHA-256, the hash every handshake proof covers (`docs/decisions.md` entry 58). |
+| Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_128_GCM_SHA256` (0x1301), then `TLS_AES_256_GCM_SHA384` (0x1302); on `AES=hw` with `CH_NATIVE_AES`, 0x1302, then 0x1301, then 0x1303 | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. AES-128-GCM comes before AES-256-GCM for the second reason: its schedule is SHA-256, the hash every handshake proof covers (`docs/decisions.md` entry 58). A build on `AES=hw` that asserts its instructions' timing puts AES-GCM first, since AES-128-GCM there ran faster than ChaCha20 at every size `docs/quic.md` measured, and AES-256-GCM first of the two for CNSA 2.0, which requires AES-256 and SHA-384 (`docs/decisions.md` entry 80). The client of each build offers the same order. |
 | Hash | SHA-256 with 0x1303 and 0x1301, SHA-384 with 0x1302 | `rfc9846.txt:4055-4056` binds the hash to the suite. The section above states the cost. |
 | Group | X25519MLKEM768 (0x11ec), then x25519 (0x001d), then secp256r1 (0x0017) | The hybrid first, for every client that lists it ("Key exchange" below, `docs/decisions.md` entry 54). X25519 is the §9.1 SHOULD at `rfc9846.txt:4549-4550`. secp256r1, the §9.1 MUST at `:4548-4549`, comes last, only for a client that lists neither of the others, and runs over the constant-time `p256_ecdh.[ch]` (`docs/decisions.md` entry 63). |
 | Signature scheme | `ecdsa_secp256r1_sha256` (0x0403), then `rsa_pss_rsae_sha256` (0x0804) | Both are §9.1 CertificateVerify obligations at `rfc9846.txt:4545-4547`. The selected scheme picks which provisioned identity signs. |
 | Key exchange mode | `psk_dhe_ke` when a PSK is selected, certificate authentication otherwise | `rfc9846.txt:1150-1152` requires selecting a mode the client listed. |
 | ALPN | the caller's list, or none | The server cannot know which protocol the endpoint speaks. |
 
-The preference order is the default, and `ch_srv_cfg.cipher_suites`
-replaces it: a host with an AES accelerator names the order it wants, and a
-list may leave a suite out (`docs/decisions.md` entry 58).
+The preference order is the default, `suite_default_order` in `suite.h`, and
+`ch_srv_cfg.cipher_suites` replaces it: a caller that learns at run time what
+its CPU has names the order it wants, and a list may leave a suite out
+(`docs/decisions.md` entries 58 and 80). Nothing in this tree probes a CPU.
 
 Runtime selection is unavoidable here and it is worth saying why. A build axis
 cannot carry the suite: a conformant client may offer AES-128-GCM alone, so the

@@ -107,8 +107,9 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // it. Under CH_KEX_TWO_GROUPS a retry that names secp256r1 goes to
 // hsg_take_retry, which draws the P-256 key pair the retry hello
 // carries (handshake_groups.h). Under CH_SUITE_AES_GCM it writes
-// h->suite from the message, after checking that a ServerHello repeats a
-// retry's suite. On a ServerHello
+// h->suite from the message, after checking that the hello listed the
+// suite (hs_suite_offered) and that a ServerHello repeats a retry's
+// suite. On a ServerHello
 // it hashes the raw message.
 //
 // Requires a whole message to be readable; see the transport note at
@@ -131,8 +132,10 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // HelloRetryRequest that carries neither a cookie nor a group, which
 // changes nothing this client offered and which RFC 9846 §4.2.4 makes an
 // illegal_parameter abort (rfc9846.txt:1467-1469), and under
-// CH_SUITE_AES_GCM a ServerHello whose suite is not the retry's (§4.2.4,
-// rfc9846.txt:1489-1491). It also returns
+// CH_SUITE_AES_GCM a message that names a suite the hello did not list,
+// which a caller's ch_cfg.cipher_suites can narrow (§4.2.3,
+// rfc9846.txt:1373-1376), and a ServerHello whose suite is not the
+// retry's (§4.2.4, rfc9846.txt:1489-1491). It also returns
 // what hsr_next_msg returns: CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP
 // under TRANSPORT=tcp-blocking, and CH_EPROTO or CH_EINVAL under
 // CH_TRANSPORT_QUIC_NONBLOCKING. On every failure the transcript may already hold

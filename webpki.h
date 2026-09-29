@@ -349,8 +349,9 @@ int webpki_match_san(const uint8_t *san, size_t san_len, const uint8_t *host, si
 
 // Whether cfg meets every configuration rule of this mode: the anchors,
 // hostname and clock, or SPKI pins alone (webpki_cfg.h); the PSK fields
-// (webpki_ticket.h); both pin slots unset; and the ALPN offer. Reads the
-// caller's configuration alone. Defined in webpki_cfg.c.
+// (webpki_ticket.h); both pin slots unset; the ALPN offer; and under
+// SUITE=aesgcm the suite list (webpki_cfg.h). Reads the caller's
+// configuration alone. Defined in webpki_cfg.c.
 int webpki_cfg_ok(const ch_cfg *cfg);
 
 #endif

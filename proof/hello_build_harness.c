@@ -96,6 +96,24 @@ int main(void) {
     cfg.alpn_count = nondet_size_t();
     __CPROVER_assume(cfg.alpn_count <= CH_ALPN_MAX);
 #endif
+#ifdef CH_CLIENT_AES_SUITES
+    // hello_build_suite: cipher_suites in each shape ch_connect admits
+    // (webpki_cfg.h), NULL with a count of 0 for suite.h's default order,
+    // or a list of 1 to SUITE_HELD_COUNT code points, any values, since
+    // the builder copies them unread. And a ticket of either hash:
+    // hs_psk_hash_len reads psk_len, so the binder is SHA256_LEN or
+    // SHA384_LEN bytes, the second being CH_HELLO_SHA384_BINDER_MAX's term.
+    static uint16_t suites[SUITE_HELD_COUNT];
+    for (size_t i = 0; i < SUITE_HELD_COUNT; i++) {
+        suites[i] = nondet_u16();
+    }
+    if (nondet_u8() & 1) {
+        cfg.cipher_suites = suites;
+        cfg.cipher_suite_count = nondet_size_t();
+        __CPROVER_assume(cfg.cipher_suite_count >= 1 && cfg.cipher_suite_count <= SUITE_HELD_COUNT);
+    }
+    cfg.psk_len = (nondet_u8() & 1) ? SHA384_LEN : SHA256_LEN;
+#endif
 
     size_t cookie_len = nondet_size_t();
     __CPROVER_assume(cookie_len <= HSP_COOKIE_MAX);

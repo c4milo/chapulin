@@ -88,10 +88,12 @@ static int parse_retry_group(rbuf *e, server_hello_info *info) {
 #endif
 
 #ifdef CH_SUITE_AES_GCM
-// Whether this client's ClientHello offered suite: ChaCha20 always, and
+// Whether this client's ClientHello can offer suite: ChaCha20 always, and
 // the two AES-GCM suites from the client that offers all three
 // (CH_CLIENT_AES_SUITES). RFC 9846 §4.2.3 makes any other suite an
-// illegal_parameter abort (rfc9846.txt:1373-1376).
+// illegal_parameter abort (rfc9846.txt:1373-1376). A caller's
+// ch_cfg.cipher_suites can offer fewer, and hsf_read_server_hello holds
+// the suite to the ones the hello listed (hs_suite_offered).
 static int suite_offered(uint16_t suite) {
 #ifdef CH_CLIENT_AES_SUITES
     return suite == SUITE_CHACHA20_POLY1305_SHA256 || suite == SUITE_AES_128_GCM_SHA256 ||

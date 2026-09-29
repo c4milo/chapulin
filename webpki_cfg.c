@@ -13,6 +13,7 @@
 #ifdef CH_TRUST_WEBPKI
 
 #include "ct.h"
+#include "suite.h"
 #include "webpki_ticket.h"
 
 // The anchor rule: 1 to CH_WEBPKI_ANCHOR_MAX anchors, each carrying a
@@ -131,10 +132,49 @@ static int alpn_ok(const ch_cfg *cfg) {
     return 1;
 }
 
+#ifdef CH_CLIENT_AES_SUITES
+// Whether entry i repeats a suite an earlier entry already names. A
+// repeat offers the server one suite twice.
+static int suite_repeats(const ch_cfg *cfg, size_t i) {
+    for (size_t j = 0; j < i; j++) {
+        if (cfg->cipher_suites[i] == cfg->cipher_suites[j]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// The client suite rule: no list offers suite.h's suite_default_order,
+// so a NULL list with a count of 0 passes. A list is 1 to
+// SUITE_HELD_COUNT code points, each one this build holds and none
+// repeating another. The count is checked before an entry is read. A
+// count without a list, or a list without a count, is a config with a
+// field missing.
+static int client_suites_ok(const ch_cfg *cfg) {
+    if (cfg->cipher_suites == NULL) {
+        return cfg->cipher_suite_count == 0;
+    }
+    if (cfg->cipher_suite_count == 0 || cfg->cipher_suite_count > SUITE_HELD_COUNT) {
+        return 0;
+    }
+    for (size_t i = 0; i < cfg->cipher_suite_count; i++) {
+        if (suite_hash_len(cfg->cipher_suites[i]) == 0 || suite_repeats(cfg, i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+#endif
+
 // Every rule above holds, and the PSK fields are unset or present a
 // ticket bound to this configuration, which webpki_resumption_ok checks
 // after the rules it needs (webpki_ticket.h).
 int webpki_cfg_ok(const ch_cfg *cfg) {
+#ifdef CH_CLIENT_AES_SUITES
+    if (!client_suites_ok(cfg)) {
+        return 0;
+    }
+#endif
     return spki_pins_ok(cfg) && trust_ok(cfg) && webpki_resumption_ok(cfg) &&
            pin_slots_unset(cfg) && alpn_ok(cfg);
 }

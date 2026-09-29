@@ -771,7 +771,9 @@ does nothing more.
     and AES is constant time because the build asserted it
     (`CH_NATIVE_AES`). The client keys every record direction with the
     suite the ServerHello selected, a ServerHello after a retry must repeat
-    the retry's suite, and `ch_tls.suite` reports the one that ran.
+    the retry's suite, and `ch_tls.suite` reports the one that ran. Entry
+    80 puts the AES-GCM suites first in a build on `AES=hw` with
+    `CH_NATIVE_AES`, and lets a caller name the client's order.
 
     Cost: a negotiation surface, the AES sources in the object, and the
     build's statement about its hardware. `ct.h` refuses the suite without
@@ -1506,7 +1508,9 @@ does nothing more.
       the order: a host whose AES instructions outrun its ChaCha20, or one
       that wants AES-256's margin, names the order it wants, and a list
       may leave a suite out. Every server init refuses a code point the
-      build does not hold.
+      build does not hold. Entry 80 orders both roles AES-256-GCM, then
+      AES-128-GCM, then ChaCha20 in a build on `AES=hw` with
+      `CH_NATIVE_AES`, where h3spec's offer then selects AES-256-GCM.
     - **The key log takes the secret's length.** `ch_keylog` gains
       `secret_len`, because a SHA-384 secret is 48 bytes and the NSS
       format writes all of them.
@@ -3551,3 +3555,120 @@ does nothing more.
     rule that says which versions a build derives, and it admits version 1
     alone, so every switch is refused. Version 2's keys come next, and then
     the server's choice and the version in tickets and tokens.
+
+80. **A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
+    AES-256-GCM, then AES-128-GCM, then ChaCha20, and a caller may set a
+    client's order.** Entries 45 and 58 put ChaCha20 first in both roles:
+    a `SUITE=aesgcm TRUST=webpki` client offered
+    `TLS_CHACHA20_POLY1305_SHA256`, then `TLS_AES_128_GCM_SHA256`, then
+    `TLS_AES_256_GCM_SHA384`, and a server with no
+    `ch_srv_cfg.cipher_suites` preferred the same order. A server that
+    follows the client's order then selects ChaCha20 when both ends have
+    the AES instructions. stompy measured the cost through colibri's h11
+    client, over the TCP object built `SUITE=aesgcm AES=hw` at 0adcf33, on
+    one Apple M1 core in OrbStack with 5 MiB PUTs to MinIO: 1 ms of CPU
+    per MB and 935 MB/s over 8 connections in cleartext, and 5 ms of CPU
+    per MB and 150 MB/s, the same from 1 to 8 connections, over TLS.
+    MinIO's Go server follows the client's order, so it selected 0x1303.
+    The server role showed the same effect: against Go's client, on an AMD
+    EPYC 7763 runner with the AES instructions, colibri's server over the
+    object at 0adcf33 selected 0x1303. Camilo decided on 2026-09-29
+    ([#180](https://github.com/c4milo/chapulin/issues/180)). This entry
+    amends entry 45's offer and the order bullet of entry 58.
+
+    - **The default order, chosen at build time, the same in both
+      roles.** A `SUITE=aesgcm` build on `AES=hw` that defines
+      `CH_NATIVE_AES` offers, as a client, and prefers, as a server,
+      `TLS_AES_256_GCM_SHA384`, then `TLS_AES_128_GCM_SHA256`, then
+      `TLS_CHACHA20_POLY1305_SHA256`. The build asserted that its AES
+      instructions and its carry-less multiply run in constant time
+      (entry 50), and AES-128-GCM on them outran ChaCha20-Poly1305 at
+      every size docs/quic.md measured, on arm64 and on x86-64. Every
+      other build keeps entry 58's order, ChaCha20 first, `AES=extern`
+      included: GHASH runs there on `gcm.c`'s portable multiply, and
+      nothing in this tree measures a peripheral. `suite.h` states the
+      order once, as `suite_default_order`, and `SUITE_AES_FIRST` marks
+      the build that takes the AES-first one; the ClientHello and
+      `srv_select` read that one definition. `ch_srv_cfg.cipher_suites`
+      still overrides the server's default.
+    - **AES-256-GCM first.** Camilo chose AES-256-GCM ahead of
+      AES-128-GCM to align chapulin with NSA's CNSA 2.0 suite, which
+      requires AES-256 and SHA-384. Entry 58 put AES-128-GCM first
+      because every handshake proof covers the SHA-256 schedule, and that
+      stays true: the SHA-384 schedule has only its own harnesses
+      (`transcript384`, `keysched384` and the `hkdf384` ones). The
+      AES-256 rows of `bin/webpki_loop_aes`, `bin/quic_loop_aes` and
+      `test/e2e.sh` run it through whole handshakes. On `AES=hw`, a
+      default handshake with this tree's server, or with any server that
+      follows the client's order and holds AES-256-GCM, now runs the
+      SHA-384 schedule, and its tickets carry 48-byte PSKs.
+    - **The caller's order.** A client that offers more than one suite
+      (`CH_CLIENT_AES_SUITES`) takes `ch_cfg.cipher_suites` and
+      `ch_cfg.cipher_suite_count`, with the element type and the count
+      convention of `ch_srv_cfg.cipher_suites`. NULL with a count of 0
+      offers the build's default. `ch_connect`, `ch_record_init` and
+      `ch_quic_init` return `CH_EINVAL` for a list that names a suite the
+      build does not hold, repeats a suite, or is longer than the
+      `SUITE_HELD_COUNT` suites the build holds (`webpki_cfg.h`). The
+      ClientHello offers exactly the caller's list, in its order. The
+      parser still takes any suite the build holds, so
+      `hsf_read_server_hello` refuses a ServerHello or a HelloRetryRequest
+      that names a suite the list left out, with illegal_parameter
+      (`rfc9846.txt:1373-1376`, `rfc9846.txt:1484-1485`). The Zig API
+      gains `values.Client.cipher_suites`, which forwards to the C field
+      and is gated with `@hasField`, as the server's is. `chapulin.hpp`
+      exposes no suite order for either role and gains none.
+    - **No CPU probe.** Nothing in this tree asks a CPU what it has
+      (CLAUDE.md). colibri probes the CPU in Zig and passes an order
+      through `values.Client.cipher_suites` and
+      `values.Server.cipher_suites`.
+    - **The check.** `bin/webpki_session_test`, `bin/webpki_session_aes`
+      and `bin/webpki_session_aes_extern` hold the ClientHello's
+      cipher_suites bytes to each build's default, and the last two hold
+      the caller's list to each rule's edge and to the suites the client
+      takes back. `test/webpki_loop_order.h` feeds this tree's server a
+      hello that lists the three suites in each of their six orders, in
+      the three webpki loop builds, and requires the first suite of the
+      server's default order; `bin/webpki_loop_aes`,
+      `bin/webpki_loop_aes_extern` and `bin/quic_loop_aes` run the
+      caller's list end to end. `test/e2e.sh` has OpenSSL's `s_server`,
+      which follows the client's order, select AES-256-GCM from the
+      `AES=hw` client, ChaCha20 from the `AES=extern` one and
+      AES-128-GCM from either under `WEBPKI_SUITES=1301,1303`, and has
+      `s_client` offer AES-128-GCM first to this tree's server, which
+      selects its own first suite. The `hello_build_suite` proof holds the
+      builder to `CH_HELLO_MAX` over every list shape, and
+      `quic_config_webpki_suite` proves the list rule. Eight mutants in
+      `test/violations/` break the new rules, and each is caught.
+
+    Rejected, both on 2026-09-29:
+
+    - **A CPU probe in chapulin.** An arm64 core cannot read its ID
+      registers from EL0 without the operating system's help, so a probe
+      needs per-OS code, and the bare-metal lanes have no OS to ask.
+      Whether a build has the AES instructions stays the compiler's
+      answer at build time.
+    - **A probe function the caller supplies.** It would move no rule into
+      chapulin that a caller's order does not already carry, and it would
+      add a callback to every configuration. A caller runs its own probe
+      and passes the order it chose.
+
+    Cost: `ch_cfg` gains a pointer and a count in a `SUITE=aesgcm
+    TRUST=webpki` build, 16 bytes on arm64, and every struct that holds a
+    copy grows with it. Measured by `bench/sram.sh` and the same `sizeof`
+    probes run on the tree before this change: `ch_tls` from 3,352 to
+    3,368 bytes, the `ROLE=both TRUST=webpki` tcp-nonblocking `ch_record`
+    from 4,896 to 4,912 and its QUIC `ch_quic` from 5,544 to 5,560. No
+    stack peak moved. On `AES=hw` a default handshake runs AES-256-GCM,
+    fourteen rounds a block where AES-128-GCM runs ten, and the SHA-384
+    key schedule; this tree has not measured what that costs. The fast
+    proof tier gains two formulas, `hello_build_suite` (659
+    properties, 131 s, 0.17 GB) and `quic_config_webpki_suite` (705
+    properties, 6 s, 0.14 GB), and `make check` one binary,
+    `bin/webpki_session_aes_extern`.
+
+    Gain: on a host whose build asserts the AES instructions, a chapulin
+    client gets AES-GCM from a server that follows the client's order,
+    and a chapulin server gives it to a client that offers it, with no
+    call to make. A caller that learns at run time what its CPU has sets
+    either order through the Zig API.

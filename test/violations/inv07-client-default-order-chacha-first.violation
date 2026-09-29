@@ -1,0 +1,18 @@
+invariant: INV-7
+file: handshake_message.h
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: a client on AES=hw with CH_NATIVE_AES offers ChaCha20 first when
+  its caller names no order, the order docs/decisions.md 80 replaced, so a
+  server that follows the client's order, as MinIO's does, keeps running
+  ChaCha20 on a host whose AES-GCM is faster. The hello's cipher_suites
+  bytes must list AES-256-GCM, AES-128-GCM and ChaCha20 in that order.
+
+--- old
+    *count = SUITE_HELD_COUNT;
+    return suite_default_order;
+--- new
+    static const uint16_t chacha_first[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
+                                            SUITE_AES_256_GCM_SHA384};
+    *count = SUITE_HELD_COUNT;
+    return chacha_first;

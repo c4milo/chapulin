@@ -1,0 +1,15 @@
+invariant: INV-7
+file: handshake_message.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: the ClientHello writes the build's default order whatever
+  ch_cfg.cipher_suites names, so a caller that probed its CPU and asked for
+  another order, or left a suite out, offers what it did not ask for. The
+  hello's cipher_suites bytes must be the caller's list, in its order.
+
+--- old
+    const uint16_t *suites = hs_offered_suites(cfg, &count);
+--- new
+    (void)cfg;
+    count = SUITE_HELD_COUNT;
+    const uint16_t *suites = suite_default_order;

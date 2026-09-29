@@ -1,0 +1,15 @@
+invariant: INV-7
+file: srv_flight.c
+catches: srv_flight_test_aes
+reason: a server on AES=hw with CH_NATIVE_AES walks ChaCha20 first when its
+  caller names no order, the order docs/decisions.md 80 replaced, so a
+  client that offers all three suites gets ChaCha20 where the server's
+  default order names AES-256-GCM. The flight test's hello offers all
+  three and expects AES-256-GCM.
+
+--- old
+    return srv_first_offered_suite(suite_default_order, SUITE_HELD_COUNT, offered);
+--- new
+    static const uint16_t chacha_first[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
+                                            SUITE_AES_256_GCM_SHA384};
+    return srv_first_offered_suite(chacha_first, 3, offered);

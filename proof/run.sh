@@ -1014,6 +1014,20 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # proof, returned no verdict in nine minutes at 5.7 GB of kissat, so it is
 # not here and the tests hold that order.
 launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
+# hello_build_suite: the same builder in the SUITE=aesgcm TRUST=webpki
+# client, whose cipher_suites are suite.h's default order or a caller's
+# list of 1 to SUITE_HELD_COUNT code points, and whose ticket may carry a
+# SHA-384 binder (docs/decisions.md 80). -DCH_AES_HW and -DCH_NATIVE_AES
+# answer ct.h's refusal of the suite define; the builder runs no cipher,
+# so no AES source is compiled. main.1 is the loop that fills the list and
+# write_cipher_suites.0 the loop that writes it, each at most three
+# suites. Measured (cbmc 6.11.0, kissat, PROVE_ONLY=hello_build_suite
+# PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro): 659 properties, 131 s,
+# 0.17 GB. A probe asserting that no hello over a three-suite list is
+# built fails, and so does one asserting that no hello with a SHA-384
+# binder is built, so both arms are reached. The sufficiency assertion is
+# tight here too: moved to CH_HELLO_MAX - 1 it fails.
+launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
@@ -1734,6 +1748,17 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # at both caps, or a presented ticket fails each, so the formula reaches
 # all three. inv14-webpki-cfg-resumption-first fails it.
 launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING quic_config.c webpki_cfg.c
+# quic_config_webpki_suite: the same rules in the SUITE=aesgcm build,
+# which add the client's suite list, ch_cfg.cipher_suites: any code points
+# in an array of SUITE_HELD_COUNT beside a count of any size, so the
+# formula shows the rule reads no entry past the cap before it refuses the
+# count (docs/decisions.md 80). The global unwind of 9 bounds its loops,
+# which run at most three times. Measured the same way: 705 properties,
+# 6 s, 0.14 GB, and quic_config_webpki's own line, re-run beside it, 594
+# properties, 5 s, 0.13 GB. A probe asserting that no three-suite list is
+# taken fails, and the harness's rule narrowed to two suites fails the
+# suite assertion, so the cap the code admits is exact.
+launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,

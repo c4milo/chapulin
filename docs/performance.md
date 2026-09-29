@@ -31,8 +31,8 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `ROLE=server`** (2048 buffer) | **4032** | **3872** |
 | `ch_tls` under `ROLE=server SUITE=aesgcm` | 2272 | — |
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4320** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3352 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15690** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3368 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15706** | — |
 
 ### Peak stack
 
@@ -100,13 +100,15 @@ encapsulation pruned from the call graph (`STACK_PRUNE=srv_kex_share`).
 column. A suite build with `AES=extern` can run on a device with an AES
 peripheral ([`docs/decisions.md`](decisions.md) 68), and no script here
 measures one on a device target yet. Its session struct is 288 bytes
-larger than the same `ROLE=server` build without the suite, and 288
+larger than the same `ROLE=server` build without the suite, and 304
 larger for `TRUST=webpki`:
 
 - the transcript runs a SHA-512 context beside SHA-256's;
 - the traffic secrets take SHA-384's 48 bytes;
 - a webpki hello lists two more suites
-  ([`docs/decisions.md`](decisions.md) 58).
+  ([`docs/decisions.md`](decisions.md) 58);
+- a webpki client's configuration holds the caller's suite order, a
+  pointer and a count ([`docs/decisions.md`](decisions.md) 80).
 
 ### The receive buffer
 
