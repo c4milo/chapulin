@@ -3560,7 +3560,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -5225,14 +5225,16 @@ endif
 # The second half is what makes vendoring worth its megabyte: a citation
 # to an RFC the tree does not carry fails here, so a new citation brings
 # its document with it instead of pointing at a file only its author had.
+# It reads the files git lists, tracked or untracked but not ignored, so
+# the RFC citations in tools/node_modules' own documentation are not the
+# tree's.
 .PHONY: lint-rfcs
 lint-rfcs:
-	@command -v shasum >/dev/null || { echo "lint-rfcs: shasum is missing"; exit 1; }
-	@cd docs/rfcs && shasum -a 256 -c SHA256SUMS >/dev/null \
+	@cd docs/rfcs && $(SHA256) -c SHA256SUMS >/dev/null \
 	  || { echo "lint-rfcs: a vendored RFC does not match SHA256SUMS; line citations are measured against those bytes"; exit 1; }
 	@rc=0; \
-	cited=$$(grep -rhoE 'rfc[0-9]{3,5}\.txt' --include='*.c' --include='*.h' --include='*.md' --include='*.sh' . \
-	  | sort -u); \
+	cited=$$(git ls-files -z --cached --others --exclude-standard -- '*.c' '*.h' '*.md' '*.sh' \
+	  | xargs -0 grep -hoE 'rfc[0-9]{3,5}\.txt' | sort -u); \
 	[ -n "$$cited" ] || { echo "lint-rfcs: no citation found at all, so this target would check nothing"; exit 1; }; \
 	for f in $$cited; do \
 	  [ -f "docs/rfcs/$$f" ] || { echo "lint-rfcs: the tree cites $$f by line number and docs/rfcs/ does not carry it"; rc=1; }; \
