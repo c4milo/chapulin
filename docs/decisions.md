@@ -3632,12 +3632,13 @@ does nothing more.
       and is gated with `@hasField`, as the server's is. `chapulin.hpp`
       exposes no suite order for either role and gains none.
     - **No CPU probe.** Nothing in this tree asks a CPU what it has
-      (CLAUDE.md). A caller that wants another order passes it through
-      `values.Client.cipher_suites` and `values.Server.cipher_suites`.
-      colibri takes the build-time default: its decision 97 picks the
+      (CLAUDE.md), and neither does colibri: its decision 97 picks the
       chapulin object from the build target's features, so an `AES=hw`
-      object exists only for a target with the AES instructions, and it
-      probes nothing.
+      object exists only for a target with the AES instructions. colibri's
+      callers probe the CPU when they want a choice at run time, and pass
+      an order that colibri forwards through `values.Client.cipher_suites`
+      and `values.Server.cipher_suites`. Without one, the build-time
+      default holds.
     - **The check.** `bin/webpki_session_test`, `bin/webpki_session_aes`
       and `bin/webpki_session_aes_extern` hold the ClientHello's
       cipher_suites bytes to each build's default, and the last two hold
