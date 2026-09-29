@@ -114,10 +114,11 @@ const server_add = srv_srcs ++ [_][]const u8{ "rsa_sign.c", "p256_sign.c" } ++ p
 
 // PUBLIC_TRANSPORT and PUBLIC_ROLE's lists.
 const public_quic = [_][]const u8{
-    "ch_quic_init",       "ch_quic_initial_keys", "ch_quic_crypto_in",          "ch_quic_crypto_out",
-    "ch_quic_seal",       "ch_quic_seal_close",   "ch_quic_open",               "ch_quic_retry_ok",
-    "ch_quic_key_update", "ch_quic_key_phase",    "ch_quic_drop_previous_keys", "ch_quic_discard",
-    "ch_quic_state",      "ch_quic_alert",        "ch_quic_error_code",         "ch_quic_close",
+    "ch_quic_init",               "ch_quic_initial_keys",       "ch_quic_crypto_in",  "ch_quic_crypto_out",
+    "ch_quic_switch_version",     "ch_quic_negotiated_version", "ch_quic_seal",       "ch_quic_seal_close",
+    "ch_quic_open",               "ch_quic_retry_ok",           "ch_quic_key_update", "ch_quic_key_phase",
+    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_alert",
+    "ch_quic_error_code",         "ch_quic_close",
 };
 /// The client's ticket age call, which every client object exports over
 /// every transport.
@@ -140,10 +141,10 @@ const public_srv_tcp_blocking = [_][]const u8{ "ch_srv_accept", "ch_srv_check" }
 /// The packet calls quic.h declares for either role, which a ROLE=server
 /// QUIC object exports without the client's driver.
 const public_quic_either_role = [_][]const u8{
-    "ch_quic_initial_keys", "ch_quic_seal",       "ch_quic_seal_close", "ch_quic_open",
-    "ch_quic_retry_ok",     "ch_quic_key_update", "ch_quic_key_phase",  "ch_quic_drop_previous_keys",
-    "ch_quic_discard",      "ch_quic_state",      "ch_quic_alert",      "ch_quic_error_code",
-    "ch_quic_close",
+    "ch_quic_initial_keys",       "ch_quic_negotiated_version", "ch_quic_seal",       "ch_quic_seal_close",
+    "ch_quic_open",               "ch_quic_retry_ok",           "ch_quic_key_update", "ch_quic_key_phase",
+    "ch_quic_drop_previous_keys", "ch_quic_discard",            "ch_quic_state",      "ch_quic_alert",
+    "ch_quic_error_code",         "ch_quic_close",
 } ++ public_alert;
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.

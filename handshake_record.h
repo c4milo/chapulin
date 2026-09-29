@@ -179,7 +179,7 @@ int hsr_fetch_record(handshake_state *h);
 // (rfc9001.txt:501-504).
 //
 // Requires n bytes readable at p, and p outside cfg.buf. Requires the
-// caller's contract on CRYPTO bytes, which cfg.h states: each level's
+// caller's contract on CRYPTO bytes, which quic_cfg.h states: each level's
 // bytes arrive once and in order, so these bytes continue the stream
 // the last call left. This function stores no stream offset and cannot
 // tell a retransmission from new data.

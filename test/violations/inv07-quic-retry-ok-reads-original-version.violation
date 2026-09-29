@@ -1,0 +1,18 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_retry_ok checks every Retry under the session's
+  original version instead of the version the packet names, so a Retry
+  in another version validates, where RFC 9369 section 4.1 makes a
+  client ignore it (rfc9369.txt:221-222). test/quic_version_tests.h
+  requires 0 for a tag minted in version 1 and named as any other
+  version.
+
+--- old
+    if (version != q->t.cfg.quic_original_version) {
+        return 0;
+    }
+    return quic_retry_ok(version, pseudo, n, tag);
+--- new
+    (void)version;
+    return quic_retry_ok(q->t.cfg.quic_original_version, pseudo, n, tag);

@@ -1,0 +1,13 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version takes a switch to the version the session
+  already negotiated, which spends the one switch RFC 9369 section 4.1
+  allows on no change. test/quic_version_tests.h requires CH_EINVAL for
+  a switch to version 1 in a version 1 session.
+
+--- old
+    if (!switch_open(q) || !quic_version_derived(version) ||
+        version == q->t.quic_negotiated_version) {
+--- new
+    if (!switch_open(q) || !quic_version_derived(version)) {

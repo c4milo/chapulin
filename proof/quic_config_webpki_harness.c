@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "quic_config.h"
+#include "quic_version.h"
 #include "webpki.h"
 #include "webpki_ticket.h"
 
@@ -198,6 +199,7 @@ static void havoc_transport(void) {
     cfg.on_level_ready = (nondet_u8() & 1) ? level_ready : NULL;
     cfg.buf = (nondet_u8() & 1) ? rxbuf : NULL;
     cfg.buf_len = nondet_size_t();
+    cfg.quic_original_version = nondet_u32();
 }
 
 // The trust half of the contract, as webpki_cfg.h states it.
@@ -228,13 +230,15 @@ static int ticket_age_holds(void) {
            (cfg.ticket_lifetime_s == 0 || cfg.ticket_age_ms <= lifetime_ms);
 }
 
-// The transport half, as quic.h states it.
+// The transport half, as quic.h states it. The original version is held
+// to quic_version_derived, the one rule that says which versions this
+// build derives keys for.
 static int transport_holds(void) {
     return cfg.alpn_protocols != NULL && cfg.alpn_count >= 1 && cfg.alpn_count <= CH_ALPN_MAX &&
            cfg.transport_params != NULL && cfg.transport_params_len >= 1 &&
            cfg.transport_params_len <= CH_TRANSPORT_PARAMS_MAX && cfg.on_level_ready != NULL &&
            cfg.buf != NULL && cfg.buf_len >= CH_MIN_RXBUF && cfg.epoch_load == NULL &&
-           cfg.epoch_store == NULL;
+           cfg.epoch_store == NULL && quic_version_derived(cfg.quic_original_version);
 }
 
 int main(void) {

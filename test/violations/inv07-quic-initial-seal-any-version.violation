@@ -1,0 +1,19 @@
+invariant: INV-7
+file: quic_initial.c
+catches: quic_test
+builds: bin/quic_test
+reason: quic_initial_seal derives an Initial key for a version this
+  build holds no salt or labels for and seals under version 1's, so a
+  packet goes out under keys its version does not name.
+  test/quic_initial_tests.h requires CH_EINVAL with nothing written for
+  four such versions.
+
+--- old
+    // A version this build derives no keys for has no salt and no labels
+    // here, so it is refused before anything is derived.
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    // The send key of RFC 9001 §5.2, under the caller's own endpoint.
+--- new
+    // The send key of RFC 9001 §5.2, under the caller's own endpoint.

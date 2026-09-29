@@ -17,7 +17,7 @@
 // packet leaves room either side of that bound. The seal's output buffer
 // holds a whole packet of the header and payload below.
 //
-// Three properties beside memory safety. First, a refusal writes neither
+// Four properties beside memory safety. First, a refusal writes neither
 // output: the harness poisons the output buffer, calls, and compares.
 // That is the promise both entries make, and the reason every length
 // check runs before the first write. Second, a successful open reports a
@@ -25,7 +25,10 @@
 // the open ask aes_public_key_initial for different endpoints, which the
 // stub records and main() compares. The endpoint the harness passes is
 // unconstrained, so that third property runs for a client, for a server
-// and for the values aes_public_key_initial refuses.
+// and for the values aes_public_key_initial refuses. Fourth, the QUIC
+// version is unconstrained, and both entries refuse one
+// quic_version_derived does not admit with CH_EINVAL before they build a
+// key, which the stub's call count shows.
 //
 // The eight calls quic_initial.c makes are contract stubs
 // (proof/quic_initial_stubs.h), which states what the composition gives
@@ -69,8 +72,11 @@ int main(void) {
     size_t pn_len = nondet_size_t();
     uint64_t pn = nondet_u64();
     // Unconstrained too: a client, a server, or a value neither name
-    // covers, which both entries refuse.
+    // covers, which both entries refuse. The version is any value, and
+    // one this build derives no keys for is refused before the key.
     uint8_t endpoint = nondet_u8();
+    uint32_t version = nondet_u32();
+    int derived = quic_version_derived(version);
 
     size_t hdr_len = nondet_size_t();
     size_t pt_len = nondet_size_t();
@@ -83,10 +89,16 @@ int main(void) {
         out[i] = PROOF_POISON;
     }
     size_t out_len = PROOF_POISON;
-    int rc = quic_initial_seal(endpoint, dcid, dcid_len, pn, pn_len, hdr, hdr_len, pt, pt_len, out,
-                               cap, &out_len);
+    size_t calls = stub_initial_calls;
+    int rc = quic_initial_seal(endpoint, version, dcid, dcid_len, pn, pn_len, hdr, hdr_len, pt,
+                               pt_len, out, cap, &out_len);
     uint8_t seal_endpoint = stub_last_endpoint;
-    __CPROVER_assert(seal_endpoint == endpoint, "seal: the caller's own endpoint, unchanged");
+    if (derived) {
+        __CPROVER_assert(seal_endpoint == endpoint, "seal: the caller's own endpoint, unchanged");
+    } else {
+        __CPROVER_assert(rc == CH_EINVAL && stub_initial_calls == calls,
+                         "seal: an underived version is refused before a key is built");
+    }
     __CPROVER_assert(rc == CH_OK || rc == CH_ECAP || rc == CH_EINVAL,
                      "seal: one of the three documented codes");
     if (rc != CH_OK) {
@@ -117,16 +129,21 @@ int main(void) {
     uint64_t got_pn = PROOF_POISON;
     size_t got_pt_len = PROOF_POISON;
     dcid_len = nondet_size_t();
-    rc = quic_initial_open(endpoint, dcid, dcid_len, pkt, pkt_len, pn_off, largest_pn, &got_pn,
-                           &got_pt_len);
+    calls = stub_initial_calls;
+    rc = quic_initial_open(endpoint, version, dcid, dcid_len, pkt, pkt_len, pn_off, largest_pn,
+                           &got_pn, &got_pt_len);
     // RFC 9001 §5.2 gives each endpoint its own Initial secret, so the
     // endpoint a caller seals under is never the one it opens under. It
     // holds for either role, because endpoint is unconstrained; for a
     // value neither name covers, peer_endpoint returns it unchanged and
     // this assertion is the one case where the two agree.
-    if (endpoint == CH_QUIC_ENDPOINT_CLIENT || endpoint == CH_QUIC_ENDPOINT_SERVER) {
+    if (derived && (endpoint == CH_QUIC_ENDPOINT_CLIENT || endpoint == CH_QUIC_ENDPOINT_SERVER)) {
         __CPROVER_assert(seal_endpoint != stub_last_endpoint,
                          "the two directions derive different endpoints' keys");
+    }
+    if (!derived) {
+        __CPROVER_assert(rc == CH_EINVAL && stub_initial_calls == calls,
+                         "open: an underived version is refused before a key is built");
     }
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD || rc == CH_EINVAL,
                      "open: one of the three documented codes");

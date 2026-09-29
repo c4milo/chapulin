@@ -20,6 +20,7 @@
 #include "quic_initial.h"
 #include "quic_packet.h"
 #include "quic_retry.h"
+#include "quic_version.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
 #endif
@@ -82,6 +83,9 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     q->hs.t = &q->t;
     q->hs.alert = ALERT_DECODE_ERROR;
     q->endpoint = CH_QUIC_ENDPOINT_CLIENT;
+    // quic_config_ok admitted this version, so every key the session
+    // derives is one this build holds the salt and labels for.
+    q->t.quic_negotiated_version = cfg->quic_original_version;
 #ifdef CH_TRUST_WEBPKI
     // The hash every ticket this session receives is bound to, taken now
     // so the binding does not depend on the caller's hostname and anchor
@@ -215,15 +219,56 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
     }
     return CH_OK;
 }
+
+// Whether this client session can still switch versions: it is live, waits
+// for the first ServerHello, has not switched, and has taken no CRYPTO byte
+// from the server at any level. The server sends every CRYPTO frame in the
+// negotiated version, so the first one fixes it (rfc9369.txt:236-244).
+//
+// t.pt_len says whether a byte arrived. ch_quic_crypto_in feeds every byte
+// it takes into cfg.buf through hsr_feed, which raises t.pt_len; bytes at a
+// later level are refused whole while q->rx_level is CH_LEVEL_INITIAL; and
+// the one step that consumes a byte here, the ServerHello step, moves
+// q->step on or fails the session. So t.pt_len is 0 here exactly when no
+// server byte arrived.
+static int switch_open(const ch_quic *q) {
+    return q->endpoint == CH_QUIC_ENDPOINT_CLIENT && q->t.state == CH_ST_START &&
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0 &&
+           q->t.quic_negotiated_version == q->t.cfg.quic_original_version;
+}
+
+int ch_quic_switch_version(ch_quic *q, uint32_t version) {
+    if (!switch_open(q) || !quic_version_derived(version) ||
+        version == q->t.quic_negotiated_version) {
+        return CH_EINVAL;
+    }
+    q->t.quic_negotiated_version = version;
+    return CH_OK;
+}
 #endif // CH_ROLE_SERVER
+
+uint32_t ch_quic_negotiated_version(const ch_quic *q) {
+    return q->t.quic_negotiated_version;
+}
+
+// Whether a packet at level may carry version: the negotiated version at
+// every level, and at the Initial level the original version too, which
+// RFC 9369 §4.1 admits there and drops at the other two
+// (rfc9369.txt:246-259). Both are public values read off the wire.
+static int version_ok(const ch_quic *q, uint8_t level, uint32_t version) {
+    if (version == q->t.quic_negotiated_version) {
+        return 1;
+    }
+    return level == CH_LEVEL_INITIAL && version == q->t.cfg.quic_original_version;
+}
 
 // One packet, at a level whose write bit q->levels_ready holds. The two
 // seal entries share it and differ only in the session state each admits
 // and in what ch_quic_seal_close wipes after it.
-static int seal_at_level(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                         size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                         size_t *out_len) {
-    if (level > CH_LEVEL_APPLICATION ||
+static int seal_at_level(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                         const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                         uint8_t *out, size_t cap, size_t *out_len) {
+    if (level > CH_LEVEL_APPLICATION || !version_ok(q, level, version) ||
         (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) == 0) {
         return CH_EINVAL;
     }
@@ -248,21 +293,22 @@ static int seal_at_level(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, 
     // other one's for the open (quic_initial.h, rfc9001.txt:1057-1061).
     // CH_QUIC_SELF is this session's role, because these two calls are
     // the one place in this file that does read a side.
-    int rc = quic_initial_seal(CH_QUIC_SELF(q), q->initial_dcid, q->initial_dcid_len, pn, pn_len,
-                               hdr, hdr_len, pt, pt_len, out, cap, out_len);
+    int rc = quic_initial_seal(CH_QUIC_SELF(q), version, q->initial_dcid, q->initial_dcid_len, pn,
+                               pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
     if (rc == CH_OK) {
         q->initial_sealed++;
     }
     return rc;
 }
 
-int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                 size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                 size_t *out_len) {
+int ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                 const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out,
+                 size_t cap, size_t *out_len) {
     if (session_dead(q)) {
         return CH_EINVAL;
     }
-    return seal_at_level(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+    return seal_at_level(q, level, version, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap,
+                         out_len);
 }
 
 // The Initial packet carries a GCM tag and the other two levels a
@@ -277,15 +323,16 @@ _Static_assert(GCM_TAG == AEAD_TAG, "every level's packet carries a 16-byte tag"
 // right after it seals, so the bit it clears is what refuses a second
 // call at that level (docs/decisions.md 57). A refusal and a short
 // buffer seal nothing, so both leave the keys for the call that does.
-int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                       size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                       size_t *out_len) {
+int ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                       const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                       uint8_t *out, size_t cap, size_t *out_len) {
     // Written so no sum of caller lengths can wrap past the bound.
     if (q->t.state != CH_ST_FAILED || hdr_len > CH_QUIC_CLOSE_MAX ||
         pt_len > CH_QUIC_CLOSE_MAX - hdr_len || CH_QUIC_CLOSE_MAX - hdr_len - pt_len < AEAD_TAG) {
         return CH_EINVAL;
     }
-    int rc = seal_at_level(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+    int rc =
+        seal_at_level(q, level, version, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
     if (rc == CH_OK) {
         quic_wipe_write_keys(q, level);
     }
@@ -297,9 +344,9 @@ int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, co
 // the module's CH_QUIC_DISCARD, because that packet is never passed to
 // the AEAD and §6.6 counts only packets that fail authentication
 // (rfc9001.txt:1823-1827).
-static int open_at_level(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                         uint64_t largest_pn, uint64_t current_phase_lowest_pn, uint8_t *key_set,
-                         uint64_t *pn, size_t *pt_len) {
+static int open_at_level(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,
+                         size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
+                         uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
     if (level == CH_LEVEL_APPLICATION) {
         return quic_packet_open_application(q->app_rx, &q->app_hp_rx, q->key_phase, pkt, pkt_len,
                                             pn_off, largest_pn, current_phase_lowest_pn, key_set,
@@ -310,14 +357,14 @@ static int open_at_level(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len
         return quic_packet_open_handshake(&q->handshake_rx, &q->handshake_hp_rx, pkt, pkt_len,
                                           pn_off, largest_pn, pn, pt_len);
     }
-    return quic_initial_open(CH_QUIC_SELF(q), q->initial_dcid, q->initial_dcid_len, pkt, pkt_len,
-                             pn_off, largest_pn, pn, pt_len);
+    return quic_initial_open(CH_QUIC_SELF(q), version, q->initial_dcid, q->initial_dcid_len, pkt,
+                             pkt_len, pn_off, largest_pn, pn, pt_len);
 }
 
-int ch_quic_open(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                 uint64_t largest_pn, uint64_t current_phase_lowest_pn, uint8_t *key_set,
-                 uint64_t *pn, size_t *pt_len) {
-    if (session_dead(q) || level > CH_LEVEL_APPLICATION ||
+int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,
+                 size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
+                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
+    if (session_dead(q) || level > CH_LEVEL_APPLICATION || !version_ok(q, level, version) ||
         (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_READ)) == 0) {
         return CH_EINVAL;
     }
@@ -336,8 +383,8 @@ int ch_quic_open(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t
         // rfc9001.txt:1280-1281). No field of q changes at all.
         return CH_QUIC_DISCARD;
     }
-    int rc = open_at_level(q, level, pkt, pkt_len, pn_off, largest_pn, current_phase_lowest_pn,
-                           key_set, pn, pt_len);
+    int rc = open_at_level(q, level, version, pkt, pkt_len, pn_off, largest_pn,
+                           current_phase_lowest_pn, key_set, pn, pt_len);
     if (rc != CH_QUIC_DISCARD) {
         return rc;
     }
@@ -352,26 +399,29 @@ int ch_quic_open(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t
     return CH_QUIC_DISCARD;
 }
 
-uint8_t ch_quic_retry_ok(const ch_quic *q, const uint8_t *pseudo, size_t n,
+uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo, size_t n,
                          const uint8_t tag[GCM_TAG]) {
-    // The key and the nonce are the ones RFC 9001 §5.8 prints, so no
-    // session field enters the computation.
-    (void)q;
-    return quic_retry_ok(pseudo, n, tag);
+    // A client ignores a Retry in any version but the original
+    // (rfc9369.txt:221-222). The key and the nonce are the ones the
+    // version prints, so no other session field enters the computation.
+    if (version != q->t.cfg.quic_original_version) {
+        return 0;
+    }
+    return quic_retry_ok(version, pseudo, n, tag);
 }
 
 int ch_quic_key_update(ch_quic *q) {
     if (q->t.state != CH_ST_CONNECTED) {
         return CH_EINVAL;
     }
-    quic_keys_update(q->t.wr_secret, &q->app_tx);
+    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.quic_negotiated_version);
     q->key_phase ^= 1;
     // The moves copy key sets and derive nothing; the one derivation
     // below leaves t.rd_secret naming the new next set again, which is
-    // the invariant session.h states.
+    // the invariant quic_session.h states.
     q->app_rx[CH_QUIC_KEY_PREVIOUS] = q->app_rx[CH_QUIC_KEY_CURRENT];
     q->app_rx[CH_QUIC_KEY_CURRENT] = q->app_rx[CH_QUIC_KEY_NEXT];
-    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT]);
+    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], q->t.quic_negotiated_version);
     return CH_OK;
 }
 

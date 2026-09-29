@@ -178,25 +178,34 @@ int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
     return rc;
 }
 
+// The session the step runs over, declared here so the key stubs below
+// can read the version it negotiated.
+static ch_quic q;
+
 // quic_keys.c's three derivations. Each writes the one set it is handed
 // and nothing else; quic_keys_update also advances the secret in place,
-// which is the invariant session.h states.
-void quic_keys_init(quic_keys *k, const uint8_t secret[SHA256_LEN]) {
+// which is the invariant quic_session.h states. Each is handed the
+// session's negotiated version, the one every Handshake and 1-RTT key is
+// derived under.
+void quic_keys_init(quic_keys *k, uint32_t version, const uint8_t secret[SHA256_LEN]) {
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "keys: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version, "keys: the negotiated version");
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "keys: secret readable");
     fill_nondet(k->key, sizeof k->key);
     fill_nondet(k->iv, sizeof k->iv);
 }
 
-void quic_hp_key_init(quic_hp_key *h, const uint8_t secret[SHA256_LEN]) {
+void quic_hp_key_init(quic_hp_key *h, uint32_t version, const uint8_t secret[SHA256_LEN]) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "keys: header key writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version, "keys: the negotiated version");
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "keys: secret readable");
     fill_nondet(h->key, sizeof h->key);
 }
 
-void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
+void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "update: secret writable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "update: set writable");
+    __CPROVER_assert(version == q.t.quic_negotiated_version, "update: the negotiated version");
     fill_nondet(secret, SHA256_LEN);
     fill_nondet(k->key, sizeof k->key);
     fill_nondet(k->iv, sizeof k->iv);
@@ -205,7 +214,6 @@ void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
 #include "quic_step.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
-static ch_quic q;
 
 // cfg.on_level_ready. quic_step.h has a step fire it twice for the one
 // level it installed; ch_quic_init refuses a NULL, so a step may call
@@ -249,6 +257,7 @@ int main(void) {
     q.hs.alert = nondet_u8();
     q.hs.server_finished_ok = nondet_u8();
     q.t.alpn_selected = nondet_u8();
+    q.t.quic_negotiated_version = nondet_u32();
     // Whether the ServerHello selected the PSK, which an earlier step
     // wrote: 0 or 1, the two values hsf_accept_server_hello writes.
     q.t.psk_selected = nondet_u8() & 1;
@@ -271,6 +280,7 @@ int main(void) {
     uint64_t was_failures = q.open_failures;
     uint64_t was_sealed = q.initial_sealed;
     uint8_t was_phase = q.key_phase;
+    uint32_t was_version = q.t.quic_negotiated_version;
 
     int rc = hsq_advance(&q);
 
@@ -281,6 +291,8 @@ int main(void) {
     __CPROVER_assert(q.open_failures == was_failures && q.initial_sealed == was_sealed &&
                          q.key_phase == was_phase,
                      "a step touches none of the packet calls' fields");
+    __CPROVER_assert(q.t.quic_negotiated_version == was_version,
+                     "a step writes no version: ch_quic_switch_version alone does");
     if (was_step > HSQ_STEP_COMPLETE) {
         __CPROVER_assert(rc == CH_EPROTO, "a step number no step wrote kills the session");
         __CPROVER_assert(q.hs.alert == ALERT_UNEXPECTED_MESSAGE, "and names unexpected_message");

@@ -16,7 +16,7 @@
 
 // Wipes every secret, the write keys of every level included, and clears
 // every bit of q->levels_ready and the two fields that say how many bytes
-// are staged and unread. session.h lists the same names beside the
+// are staged and unread. quic_session.h lists the same names beside the
 // invariant they serve. ch_quic_close calls it.
 void quic_wipe(ch_quic *q);
 

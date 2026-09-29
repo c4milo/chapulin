@@ -3532,14 +3532,22 @@ does nothing more.
       configuration that forgot it.
 
     Cost: a version argument on each packet call, fields for the original
-    and the negotiated version, and a version in each ticket.
-    bench/sram.sh measures the growth when the interface lands.
+    and the negotiated version, and a version in each ticket. The two
+    version fields grow `ch_quic` in colibri's object, `ROLE=both
+    TRUST=webpki TRANSPORT=quic-nonblocking`, from 5,072 to 5,080 bytes on
+    arm64, and from 5,544 to 5,560 under `SUITE=aesgcm`, measured by
+    bench/sram.sh; the TCP sessions docs/performance.md measures do not
+    change.
 
     Gain: colibri can negotiate version 2 in both roles, as the interop
     runner's v2 case asks, and chapulin enforces every rule that §4.1 and
     §5 state for the keys, tickets and tokens it holds.
 
-    Status: this entry and the two RFCs land first. The interface, version
-    2's keys, the client's switch, the server's choice and the version in
-    tickets and tokens land in the commits that follow. Until the
-    interface lands, a QUIC object derives version 1's keys only.
+    Status: this entry and the two RFCs landed first, and the interface
+    has landed: `ch_cfg.quic_original_version`, the version argument on the
+    packet calls and on the two Retry calls, `ch_quic_switch_version` and
+    `ch_quic_negotiated_version`, with every rule above that version 1
+    alone can reach. `quic_version.h`'s `quic_version_derived` is the one
+    rule that says which versions a build derives, and it admits version 1
+    alone, so every switch is refused. Version 2's keys come next, and then
+    the server's choice and the version in tickets and tokens.

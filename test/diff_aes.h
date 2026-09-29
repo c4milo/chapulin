@@ -86,7 +86,7 @@ static void diff_quic_initial_keys(void) {
             rng_fill(dcid, dcid_len);
             aes_public_key k;
             uint8_t endpoint = client ? CH_QUIC_ENDPOINT_CLIENT : CH_QUIC_ENDPOINT_SERVER;
-            if (aes_public_key_initial(&k, dcid, dcid_len, endpoint) != CH_OK) {
+            if (aes_public_key_initial(&k, CH_QUIC_VERSION_1, dcid, dcid_len, endpoint) != CH_OK) {
                 (void)fprintf(stderr, "diff: aes_public_key_initial refused %zu bytes\n", dcid_len);
                 exit(1);
             }

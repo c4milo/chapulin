@@ -27,7 +27,7 @@
 
 // Every secret the session holds except the write keys, the read bits,
 // and the two fields that say how many bytes are staged and unread.
-// session.h lists the same names beside the invariant they serve, so
+// quic_session.h lists the same names beside the invariant they serve, so
 // INV-17's claim that every failure path wipes can be checked against
 // that list.
 static void wipe_all_but_write_keys(ch_quic *q) {

@@ -11,8 +11,9 @@
 //   hsf_build_client_hello    a message length up to the caller's cap,
 //                             or 0 with ALERT_INTERNAL_ERROR, which is
 //                             what handshake_flight.h states.
-//   quic_initial_seal,        CH_EINVAL past CH_QUIC_DCID_MAX without
-//   quic_initial_open         reading the connection ID, which is what
+//   quic_initial_seal,        CH_EINVAL for a version quic_version_derived
+//   quic_initial_open         refuses and past CH_QUIC_DCID_MAX, without
+//                             reading the connection ID, which is what
 //                             quic_initial.h states; otherwise as the
 //                             two quic_packet calls below.
 //   quic_packet_seal          CH_EINVAL, CH_ECAP below the whole packet,
@@ -20,7 +21,9 @@
 //   quic_packet_open_*        CH_QUIC_DISCARD, or CH_OK with a
 //                             plaintext inside the packet and, at 1-RTT,
 //                             a key set that is a named index.
-//   quic_retry_ok             1 or 0, over a readable pseudo-packet.
+//   quic_retry_ok             0 for a version quic_version_derived
+//                             refuses, and otherwise 1 or 0, over a
+//                             readable pseudo-packet.
 //   quic_keys_update          the secret and the set rewritten.
 //   the two §6.6 questions    quic_packet.c's own arithmetic, repeated
 //                             so the limit paths are inside the formula.
@@ -36,6 +39,8 @@
 // quic_keys proves the key update.
 #ifndef CH_PROOF_QUIC_DRIVER_STUBS_H
 #define CH_PROOF_QUIC_DRIVER_STUBS_H
+
+#include "quic_version.h"
 
 // The two flight handlers ch_quic_init calls.
 void hsf_begin(handshake_state *h) {
@@ -59,10 +64,11 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
 }
 
 // The two Initial calls take the stored Destination Connection ID
-// rather than a key (quic_initial.h), and refuse a length past
-// CH_QUIC_DCID_MAX before they read a byte.
-static int dcid_ok(const uint8_t *dcid, size_t dcid_len) {
-    if (dcid_len > CH_QUIC_DCID_MAX) {
+// rather than a key (quic_initial.h), and refuse a version this build
+// derives no keys for and a length past CH_QUIC_DCID_MAX before they read
+// a byte.
+static int initial_inputs_ok(uint32_t version, const uint8_t *dcid, size_t dcid_len) {
+    if (!quic_version_derived(version) || dcid_len > CH_QUIC_DCID_MAX) {
         return 0;
     }
     __CPROVER_assert(dcid_len == 0 || __CPROVER_r_ok(dcid, dcid_len), "initial: dcid readable");
@@ -88,10 +94,10 @@ static int seal_result(const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, si
     return CH_OK;
 }
 
-int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint64_t pn,
-                      size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                      size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
-    if (!dcid_ok(dcid, dcid_len)) {
+int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    if (!initial_inputs_ok(version, dcid, dcid_len)) {
         return CH_EINVAL;
     }
     (void)pn;
@@ -128,10 +134,10 @@ static int open_result(uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t *pn
     return CH_OK;
 }
 
-int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint8_t *pkt,
-                      size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                      size_t *pt_len) {
-    if (!dcid_ok(dcid, dcid_len)) {
+int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                      uint64_t *pn, size_t *pt_len) {
+    if (!initial_inputs_ok(version, dcid, dcid_len)) {
         return CH_EINVAL;
     }
     (void)largest_pn;
@@ -173,13 +179,18 @@ int quic_confidentiality_limit_reached(uint64_t sealed) {
     return sealed + 1 >= QUIC_CONFIDENTIALITY_LIMIT;
 }
 
-uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG]) {
+uint8_t quic_retry_ok(uint32_t version, const uint8_t *pseudo, size_t n,
+                      const uint8_t tag[GCM_TAG]) {
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pseudo, n), "retry: pseudo-packet readable");
     __CPROVER_assert(__CPROVER_r_ok(tag, GCM_TAG), "retry: tag readable");
+    if (!quic_version_derived(version)) {
+        return 0;
+    }
     return nondet_u8() & 1;
 }
 
-void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
+void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
+    (void)version;
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "update: secret writable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "update: set writable");
     fill_nondet(secret, SHA256_LEN);

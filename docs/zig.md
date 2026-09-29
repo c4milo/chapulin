@@ -169,6 +169,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, and `ticket_binding` under TRUST=webpki |
 | `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
 | `require_pq`, false by default | `require_pq` |
+| `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
@@ -222,6 +223,7 @@ hello still offers the certificate path, so that costs a full handshake
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `require_server_name` | `srv.require_server_name` |
 | `cipher_suites`, empty for the default order | `srv.cipher_suites`, `srv.cipher_suite_count` |
+| `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, as for a client: the Version field of the client's first Initial packet |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
@@ -480,6 +482,8 @@ each init zeroes it before the C init call.
   produces, one buffer per level, and `written`, which `cryptoIn` adds
   to and never resets.
 - `Opened`: `pn`, `pt_len` and `key_set`.
+- `Version`: `v1` and `v2`, the Version field values `quic_cfg.h` names,
+  and any other `u32`, which C refuses where it derives no keys.
 - `TokenCheck`: `.retry` with the connection IDs the token carried,
   `.not_retry` or `.invalid`.
 
@@ -501,15 +505,17 @@ arrived there, the client's ticket slot and the server's current
 | `Client.takeTicket()`, `Server.sni()` | as in record mode | none |
 | `keysReady(level, direction)` | the bit `CH_QUIC_LEVEL_BIT` names in `ch_quic.levels_ready` | none |
 | `peerTransportParams()` | the body `on_transport_params` copied, null before it arrives | Cap, when it was longer than `peer_params` |
-| `seal`, `sealClose` | `ch_quic_seal`, `ch_quic_seal_close`; return the packet's length | Invalid, Cap |
-| `open(level, pkt, pn_off, largest_pn, current_phase_lowest_pn)` | `ch_quic_open`, in place | Invalid, Discard, AeadLimit |
-| `retryOk(pseudo, tag)` | `ch_quic_retry_ok` | none |
+| `seal(level, version, pn, pn_len, hdr, pt, out)`, `sealClose(...)` | `ch_quic_seal`, `ch_quic_seal_close`; return the packet's length | Invalid, Cap |
+| `open(level, version, pkt, pn_off, largest_pn, current_phase_lowest_pn)` | `ch_quic_open`, in place | Invalid, Discard, AeadLimit |
+| `retryOk(version, pseudo, tag)` | `ch_quic_retry_ok` | none |
+| `Client.switchVersion(version)` | `ch_quic_switch_version` | Invalid |
+| `negotiatedVersion()` | `ch_quic_negotiated_version` | none |
 | `keyUpdate()`, `keyPhase()`, `dropPreviousKeys()`, `discard(level)` | `ch_quic_key_update`, `ch_quic_key_phase`, `ch_quic_drop_previous_keys`, `ch_quic_discard` | Invalid for `keyUpdate` and `discard` |
 | `state()`, `alert()`, `errorCode()` | `ch_quic_state`, `ch_quic_alert`, `ch_quic_error_code` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `quic.t` (alert.h): `alertSent` answers what `alert` answers, and `alertReceived` is null, because QUIC carries no alert record | none |
 | `close()` | `ch_quic_close`, then the ticket slot zeroed | none |
 | `alpnSelected()`, `group()`, `suite()`, `pskSelected()`, `serverCertType()` | as in record mode | none |
-| `quic.retryTag(pseudo, tag)` | `ch_srv_quic_retry_tag` | none |
+| `quic.retryTag(version, pseudo, tag)` | `ch_srv_quic_retry_tag` | Invalid |
 | `quic.tokenMint(key, address, cids, issued_seconds, out)` | `ch_srv_quic_token_mint`; returns the token's length | Invalid, Cap |
 | `quic.tokenCheck(key, token, address, now_seconds, lifetime_seconds)` | `ch_srv_quic_token_check` | Invalid |
 

@@ -41,13 +41,13 @@ static void check_keys_agree_after_update(void) {
     static const uint8_t pt[24] = {'u', 'p', 'd', 'a', 't', 'e'};
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr, pt, sizeof pt, pkt,
-                       sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 6, 2, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, pkt, pkt_len, 1, 5, 0, &key_set, &pn,
-                       &pt_len) == CH_OK);
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, pkt, pkt_len, 1, 5, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_NEXT && pn == 6 && pt_len == sizeof pt);
 }
 

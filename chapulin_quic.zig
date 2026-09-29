@@ -11,7 +11,7 @@ const has_quic = @hasDecl(c, "ch_quic_initial_keys");
 const has_client = @hasDecl(c, "ch_quic_init");
 const has_server = @hasDecl(c, "ch_srv_quic_init");
 
-/// The encryption levels (cfg.h).
+/// The encryption levels (quic_cfg.h).
 pub const Level = if (has_quic) enum(u8) {
     initial = c.CH_LEVEL_INITIAL,
     handshake = c.CH_LEVEL_HANDSHAKE,
@@ -21,11 +21,21 @@ pub const Level = if (has_quic) enum(u8) {
 /// How many levels there are: CH_LEVEL_APPLICATION + 1.
 pub const level_count: usize = if (has_quic) c.CH_LEVEL_APPLICATION + 1 else @compileError("quic.level_count needs TRANSPORT=quic-nonblocking");
 
-/// The direction of a level's keys (cfg.h).
+/// The direction of a level's keys (quic_cfg.h).
 pub const Direction = if (has_quic) enum(u8) {
     read = c.CH_KEY_READ,
     write = c.CH_KEY_WRITE,
 } else @compileError("quic.Direction needs TRANSPORT=quic-nonblocking");
+
+/// A QUIC Version field value (quic_cfg.h): the original version a
+/// chapulin.Client or chapulin.Server names, and the version each packet
+/// call and switchVersion take. Any other value converts too, and C
+/// decides whether it derives that version's keys.
+pub const Version = if (has_quic) enum(u32) {
+    v1 = c.CH_QUIC_VERSION_1,
+    v2 = c.CH_QUIC_VERSION_2,
+    _,
+} else @compileError("quic.Version needs TRANSPORT=quic-nonblocking");
 
 /// The 1-RTT receive key set ch_quic_open reports (quic_keys.h).
 pub const KeySet = if (has_quic) enum(u8) {
@@ -67,10 +77,12 @@ fn serverOf(comptime receive_len: usize) type {
     return Session(.server, receive_len);
 }
 
-/// ch_srv_quic_retry_tag: the Retry integrity tag over pseudo (RFC 9001 §5.8).
+/// ch_srv_quic_retry_tag: the Retry integrity tag over pseudo (RFC 9001 §5.8)
+/// under version's key and nonce, the original version a Retry is sent in.
+/// error.Invalid for a version the object derives no keys for.
 pub const retryTag = if (has_server) retryTagOf else @compileError("quic.retryTag needs a QUIC server role");
-fn retryTagOf(pseudo: []const u8, tag: *[c.GCM_TAG]u8) void {
-    c.ch_srv_quic_retry_tag(pseudo.ptr, pseudo.len, tag);
+fn retryTagOf(version: Version, pseudo: []const u8, tag: *[c.GCM_TAG]u8) error{Invalid}!void {
+    return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_retry_tag(@intFromEnum(version), pseudo.ptr, pseudo.len, tag));
 }
 
 /// ch_srv_quic_token_mint: a Retry token for the client at address.
@@ -135,6 +147,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         pub const cryptoOut = if (side == .client) cryptoOutClient else @compileError("a server writes its CRYPTO bytes from cryptoIn");
         /// Moves the latest ticket out and zeroes the slot.
         pub const takeTicket = if (side == .client) takeTicketClient else @compileError("a server receives no ticket");
+        /// ch_quic_switch_version: makes version the negotiated version, once,
+        /// before the first CRYPTO byte from the server is delivered.
+        pub const switchVersion = if (side == .client) switchVersionClient else @compileError("RFC 9369 section 4.1 gives the version switch to a client");
         /// The server_name the client sent: sni_buf[0..ch_tls.sni_len], null when 0.
         pub const sni = if (side == .server) sniServer else @compileError("a client sends server_name and reports none");
         /// ch_tls.suite, null while 0.
@@ -201,6 +216,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return n;
         }
 
+        fn switchVersionClient(self: *Self, version: Version) error{Invalid}!void {
+            return chapulin.fromCode(error{Invalid}, c.ch_quic_switch_version(&self.quic, @intFromEnum(version)));
+        }
+
         fn takeTicketClient(self: *Self) ?chapulin.Ticket {
             const taken = self.ticket;
             self.zeroTicketSlot();
@@ -253,36 +272,46 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         }
 
         /// ch_quic_seal: one packet, hdr.len + pt.len + 16 bytes, into out.
-        /// error.Invalid includes RFC 9001 §6.6's confidentiality limit: once
-        /// a key set has sealed its limit, ch_quic_seal refuses every later
-        /// packet under it until keyUpdate writes a new set (quic.h). It is
-        /// not an error a retry clears.
-        pub fn seal(self: *Self, level: Level, pn: u64, pn_len: usize, hdr: []const u8, pt: []const u8, out: []u8) error{ Invalid, Cap }!usize {
+        /// version is the packet's Version field, the negotiated version at
+        /// .application. error.Invalid includes a version level does not
+        /// admit and RFC 9001 §6.6's confidentiality limit: once a key set
+        /// has sealed its limit, ch_quic_seal refuses every later packet
+        /// under it until keyUpdate writes a new set (quic.h). It is not an
+        /// error a retry clears.
+        pub fn seal(self: *Self, level: Level, version: Version, pn: u64, pn_len: usize, hdr: []const u8, pt: []const u8, out: []u8) error{ Invalid, Cap }!usize {
             var n: usize = 0;
-            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_quic_seal(&self.quic, @intFromEnum(level), pn, pn_len, hdr.ptr, hdr.len, pt.ptr, pt.len, out.ptr, out.len, &n));
+            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_quic_seal(&self.quic, @intFromEnum(level), @intFromEnum(version), pn, pn_len, hdr.ptr, hdr.len, pt.ptr, pt.len, out.ptr, out.len, &n));
             return n;
         }
 
         /// ch_quic_seal_close: the one packet a failed session sends at
         /// level, carrying the caller's CONNECTION_CLOSE.
-        pub fn sealClose(self: *Self, level: Level, pn: u64, pn_len: usize, hdr: []const u8, pt: []const u8, out: []u8) error{ Invalid, Cap }!usize {
+        pub fn sealClose(self: *Self, level: Level, version: Version, pn: u64, pn_len: usize, hdr: []const u8, pt: []const u8, out: []u8) error{ Invalid, Cap }!usize {
             var n: usize = 0;
-            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_quic_seal_close(&self.quic, @intFromEnum(level), pn, pn_len, hdr.ptr, hdr.len, pt.ptr, pt.len, out.ptr, out.len, &n));
+            try chapulin.fromCode(error{ Invalid, Cap }, c.ch_quic_seal_close(&self.quic, @intFromEnum(level), @intFromEnum(version), pn, pn_len, hdr.ptr, hdr.len, pt.ptr, pt.len, out.ptr, out.len, &n));
             return n;
         }
 
-        /// ch_quic_open: unprotects pkt in place.
-        pub fn open(self: *Self, level: Level, pkt: []u8, pn_off: usize, largest_pn: u64, current_phase_lowest_pn: u64) error{ Invalid, Discard, AeadLimit }!Opened {
+        /// ch_quic_open: unprotects pkt in place. version is the packet's
+        /// Version field, the negotiated version at .application.
+        pub fn open(self: *Self, level: Level, version: Version, pkt: []u8, pn_off: usize, largest_pn: u64, current_phase_lowest_pn: u64) error{ Invalid, Discard, AeadLimit }!Opened {
             var key_set: u8 = 0;
             var pn: u64 = 0;
             var pt_len: usize = 0;
-            try chapulin.fromCode(error{ Invalid, Discard, AeadLimit }, c.ch_quic_open(&self.quic, @intFromEnum(level), pkt.ptr, pkt.len, pn_off, largest_pn, current_phase_lowest_pn, &key_set, &pn, &pt_len));
+            try chapulin.fromCode(error{ Invalid, Discard, AeadLimit }, c.ch_quic_open(&self.quic, @intFromEnum(level), @intFromEnum(version), pkt.ptr, pkt.len, pn_off, largest_pn, current_phase_lowest_pn, &key_set, &pn, &pt_len));
             return .{ .pn = pn, .pt_len = pt_len, .key_set = @enumFromInt(key_set) };
         }
 
-        /// ch_quic_retry_ok: whether tag is the Retry integrity tag of pseudo.
-        pub fn retryOk(self: *const Self, pseudo: []const u8, tag: *const [c.GCM_TAG]u8) bool {
-            return c.ch_quic_retry_ok(&self.quic, pseudo.ptr, pseudo.len, tag) != 0;
+        /// ch_quic_retry_ok: whether tag is the Retry integrity tag of pseudo
+        /// in version, which is false for any version but the original.
+        pub fn retryOk(self: *const Self, version: Version, pseudo: []const u8, tag: *const [c.GCM_TAG]u8) bool {
+            return c.ch_quic_retry_ok(&self.quic, @intFromEnum(version), pseudo.ptr, pseudo.len, tag) != 0;
+        }
+
+        /// ch_quic_negotiated_version: the version every Handshake and 1-RTT
+        /// packet carries, the original one until a client's switchVersion.
+        pub fn negotiatedVersion(self: *const Self) Version {
+            return @enumFromInt(c.ch_quic_negotiated_version(&self.quic));
         }
 
         /// ch_quic_key_update.

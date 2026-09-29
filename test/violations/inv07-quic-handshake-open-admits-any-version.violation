@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_open opens a Handshake packet in a version the
+  connection did not negotiate, which RFC 9369 section 4.1 makes an
+  endpoint drop (rfc9369.txt:256-259). test/quic_version_tests.h opens
+  the server's Handshake packet in four other versions and requires
+  CH_EINVAL with the packet and the failure count unchanged.
+
+--- old
+    if (session_dead(q) || level > CH_LEVEL_APPLICATION || !version_ok(q, level, version) ||
+        (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_READ)) == 0) {
+--- new
+    if (session_dead(q) || level > CH_LEVEL_APPLICATION ||
+        (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_READ)) == 0) {

@@ -185,7 +185,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h handshake_groups.h quic.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
+        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
         alert.h
@@ -453,7 +453,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/webpki_auth_vectors.h test/webpki_auth_pins.h test/webpki_leaf_pins.h test/webpki_chain_path.h \
          test/diff_webpki_chain.h test/diff_webpki_pin.h test/diff_webpki_leaf_pin.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
-         test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
+         test/quic_token_tests.h test/quic_retry_tests.h test/quic_version_tests.h test/srv_quic_version_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
          test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h
@@ -616,6 +616,7 @@ TRANSPORT_DEF := -DCH_TRANSPORT_QUIC_NONBLOCKING
 TRANSPORT_FILTER := $(QUIC_REPLACED) $(QUIC_PENDING)
 TRANSPORT_ADD := $(QUIC_SRCS)
 PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
+                    ch_quic_switch_version ch_quic_negotiated_version \
                     ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
                     ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
@@ -714,13 +715,14 @@ TRANSPORT_ADD := $(filter-out quic_step.c,$(TRANSPORT_ADD))
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 # What this object exports: the server's five calls, the boot check, the
 # packet calls quic.h declares for either role, and alert.h's two calls,
-# which every object exports. Not ch_quic_init,
-# ch_quic_crypto_in or ch_quic_crypto_out, which are the client's driver;
-# not ch_read, ch_write or ch_close, which are record-layer calls RFC 9001
-# section 4.1.3 removes with the record layer.
+# which every object exports. Not ch_quic_init, ch_quic_crypto_in,
+# ch_quic_crypto_out or ch_quic_switch_version, which are the client's
+# driver; not ch_read, ch_write or ch_close, which are record-layer calls
+# RFC 9001 section 4.1.3 removes with the record layer.
 PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_srv_quic_token_mint ch_srv_quic_token_check ch_srv_check \
-               ch_quic_initial_keys ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
+               ch_quic_initial_keys ch_quic_negotiated_version \
+               ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
                ch_alert_sent ch_alert_received

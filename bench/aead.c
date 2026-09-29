@@ -263,7 +263,8 @@ static void set_up(void) {
     fill_random(nonce, sizeof nonce);
     uint8_t dcid[8];
     fill_random(dcid, sizeof dcid);
-    if (aes_public_key_initial(&aes_key, dcid, sizeof dcid, CH_QUIC_ENDPOINT_CLIENT) != CH_OK) {
+    if (aes_public_key_initial(&aes_key, CH_QUIC_VERSION_1, dcid, sizeof dcid,
+                               CH_QUIC_ENDPOINT_CLIENT) != CH_OK) {
         fail("aes_public_key_initial failed");
     }
 }

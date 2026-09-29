@@ -7,7 +7,11 @@
 // that writes nothing.
 //
 // The direction byte is unconstrained rather than one of the two the
-// header names, so the refusal arm is proven over every other value.
+// header names, so the refusal arm is proven over every other value. The
+// QUIC version is unconstrained too, rather than one quic_version_derived
+// admits, which aes.h asks of a caller: every value selects a salt, a key
+// and labels this file holds, so each read stays inside them whatever
+// the caller passed.
 //
 // Aliasing: quic_packet.c will pass the sample buffer as the output of
 // the §5.4.3 mask and gcm.c reuses its counter block, so both block
@@ -42,13 +46,13 @@ int main(void) {
     size_t dcid_len = nondet_size_t();
     __CPROVER_assume(dcid_len <= sizeof dcid);
     uint8_t endpoint = nondet_u8();
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, endpoint);
+    int rc = aes_public_key_initial(&k, nondet_u32(), dcid, dcid_len, endpoint);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "initial: one of the two documented codes");
 
     // The first length past the cap. The header says the call reads no
     // connection ID there, so the pointer is NULL and any read is a
     // proof failure.
-    __CPROVER_assert(aes_public_key_initial(&k, NULL, CH_QUIC_DCID_MAX + 1,
+    __CPROVER_assert(aes_public_key_initial(&k, nondet_u32(), NULL, CH_QUIC_DCID_MAX + 1,
                                             CH_QUIC_ENDPOINT_CLIENT) == CH_EINVAL,
                      "initial: one past the cap refuses");
 
@@ -71,7 +75,7 @@ int main(void) {
     fill_nondet(out, sizeof out);
     aes_encrypt_block_hp(&k, out, out);
 
-    aes_public_key_retry(&k);
+    aes_public_key_retry(&k, nondet_u32());
     fill_nondet(in, sizeof in);
     aes_encrypt_block(&k, in, out);
     return 0;

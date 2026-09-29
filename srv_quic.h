@@ -11,9 +11,12 @@
 //
 // The packet calls are quic.h's and are not repeated here: ch_quic_seal,
 // ch_quic_seal_close, ch_quic_open, ch_quic_discard, ch_quic_key_update,
-// ch_quic_close and the three readers serve either role, because they take
-// key sets and bytes and read no side. What a server replaces is the
-// driver, because a server waits where a client speaks.
+// ch_quic_close, ch_quic_negotiated_version and the three readers serve
+// either role, because they take key sets, versions and bytes and read no
+// side. ch_quic_switch_version does not: RFC 9369 section 4.1 gives the
+// switch to a client, and quic.h declares it beside the client's driver.
+// What a server replaces is the driver, because a server waits where a
+// client speaks.
 //
 // The Retry token is not repeated here either: ch_srv_quic_token_mint and
 // ch_srv_quic_token_check are quic_token.h's, which this header includes.
@@ -51,8 +54,11 @@
 //
 // Returns CH_EINVAL for every configuration ch_srv_accept refuses
 // (srv.h), and additionally when cfg.srv.on_crypto_out is NULL, because a
-// server whose flight reaches nobody completes no handshake. Nothing was
-// sent and the session is dead.
+// server whose flight reaches nobody completes no handshake, and when
+// cfg.quic_original_version, the Version field of the client's first
+// Initial packet, is one this build derives no keys for (quic_version.h),
+// 0 included. Nothing was sent and the session is dead. On CH_OK the
+// negotiated version is the original one (ch_quic_negotiated_version).
 //
 // Requires: q and cfg are not NULL, and cfg outlives the session.
 int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
@@ -86,10 +92,17 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
 // pseudo-packet the caller built, which is the server half of what
 // ch_quic_retry_ok checks. The caller decides whether to send a Retry and
 // builds the pseudo-packet; the token inside it is the one
-// ch_srv_quic_token_mint wrote, or one of the caller's own.
+// ch_srv_quic_token_mint wrote, or one of the caller's own. version is the
+// Version field of the Retry, which a server sends in the original version
+// (RFC 9369 section 4.1, rfc9369.txt:221-222), and it chooses the key and
+// the nonce. The call takes no session, so it cannot check that version is
+// the original one: the caller passes cfg.quic_original_version.
 //
 // Requires: n bytes readable at pseudo, GCM_TAG bytes writable at tag.
-void ch_srv_quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t *tag);
+//
+// Returns CH_OK and writes GCM_TAG bytes. Returns CH_EINVAL and writes
+// nothing when this build derives no keys for version (quic_version.h).
+int ch_srv_quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t *tag);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

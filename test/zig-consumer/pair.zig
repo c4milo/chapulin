@@ -111,6 +111,7 @@ fn startQuic() u8 {
     if (!ticketAgeAdds(quic)) return failed("quic", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
     var values = clientValues(quic);
     values.alpn = &alpn;
+    values.quic_version = .v1;
     quic_client.init(values, &params, &quic_peer_params) catch return failed("quic", "quic.Client.init refused a client");
     const n = quic_client.cryptoOut(.initial, &quic_flight) catch 0;
     quic_client.close();

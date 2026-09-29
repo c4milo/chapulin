@@ -1,0 +1,14 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_init leaves the negotiated version at 0 instead of the
+  original version, so every Handshake and 1-RTT packet in the version
+  the client sent is refused and ch_quic_negotiated_version reports a
+  version no packet carries. test/quic_version_tests.h requires the
+  original version after init.
+
+--- old
+    q->t.quic_negotiated_version = cfg->quic_original_version;
+#ifdef CH_TRUST_WEBPKI
+--- new
+#ifdef CH_TRUST_WEBPKI

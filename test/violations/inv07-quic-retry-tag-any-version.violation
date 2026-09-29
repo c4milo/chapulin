@@ -1,0 +1,18 @@
+invariant: INV-7
+file: quic_retry.c
+catches: srv_quic_test
+reason: quic_retry_tag mints a Retry tag in a version this build
+  derives no keys for, under version 1's key and nonce, so
+  ch_srv_quic_retry_tag answers CH_OK for a version whose tag it cannot
+  compute. test/srv_quic_version_tests.h requires CH_EINVAL and no tag
+  byte written.
+
+--- old
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    aes_public_key k;
+    aes_public_key_retry(&k, version);
+--- new
+    aes_public_key k;
+    aes_public_key_retry(&k, version);

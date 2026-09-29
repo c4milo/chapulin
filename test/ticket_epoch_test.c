@@ -147,6 +147,7 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     cfg->alpn_count = 1;
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
+    cfg->quic_original_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
 #else
     cfg->send = fail_send;

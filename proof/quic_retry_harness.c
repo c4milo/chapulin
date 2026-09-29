@@ -7,6 +7,12 @@
 // tag differing in two bytes or more is not proved here; ct_harness
 // proves ct_memeq over its whole domain.
 //
+// The QUIC version is any value. For one quic_version_derived refuses,
+// quic_retry_tag returns CH_EINVAL and writes no tag byte, and
+// quic_retry_ok answers 0 to the genuine tag; for one it admits, both
+// behave as above, and the aes_public_key_retry stub asserts the version
+// it is handed is one quic_retry.c admitted.
+//
 // The two entries are the server's and the client's halves of RFC 9001
 // §5.8, so the harness drives both: main() mints a tag and hands it
 // straight to the check, which is what a chapulin server and a chapulin
@@ -35,6 +41,7 @@
 
 #include "aes_public_key.h"
 #include "gcm.h"
+#include "quic_version.h"
 
 // The pseudo-packet bound this formula runs to.
 #define RETRY_PSEUDO_MAX 64
@@ -64,8 +71,10 @@ static void stub_key_init(void) {
     }
 }
 
-void aes_public_key_retry(aes_public_key *k) {
+void aes_public_key_retry(aes_public_key *k, uint32_t version) {
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes_public_key_retry: key writable");
+    __CPROVER_assert(quic_version_derived(version),
+                     "aes_public_key_retry: a version quic_retry.c admitted");
     stub_key_init();
     *k = stub_key;
 }
@@ -132,18 +141,37 @@ int main(void) {
 
     uint8_t want[GCM_TAG];
     stub_tag_of(pseudo, n, want);
-    __CPROVER_assert(quic_retry_ok(pseudo, n, want) == 1, "a genuine Retry tag validates");
+    uint32_t version = nondet_u32();
+    int derived = quic_version_derived(version);
+    __CPROVER_assert(quic_retry_ok(version, pseudo, n, want) == derived,
+                     "a genuine Retry tag validates in a derived version and in no other");
+
+    // A version the build derives no keys for mints nothing.
+    uint8_t minted[GCM_TAG];
+    uint8_t before[GCM_TAG];
+    fill_nondet(minted, sizeof minted);
+    for (size_t i = 0; i < GCM_TAG; i++) {
+        before[i] = minted[i];
+    }
+    int rc = quic_retry_tag(version, pseudo, n, minted);
+    if (!derived) {
+        __CPROVER_assert(rc == CH_EINVAL, "an underived version is refused");
+        for (size_t i = 0; i < GCM_TAG; i++) {
+            __CPROVER_assert(minted[i] == before[i], "a refused version writes no tag byte");
+        }
+        return 0;
+    }
 
     // The server's half: the tag it mints over the same pseudo-packet.
     // Both assertions matter. The first holds the minted bytes to the
     // model of §5.8 rather than to whatever the check recomputes, and the
     // second is the round trip a real connection runs.
-    uint8_t minted[GCM_TAG];
-    quic_retry_tag(pseudo, n, minted);
+    __CPROVER_assert(rc == CH_OK, "a derived version mints");
     for (size_t i = 0; i < GCM_TAG; i++) {
         __CPROVER_assert(minted[i] == want[i], "the minted tag is the tag §5.8 fixes");
     }
-    __CPROVER_assert(quic_retry_ok(pseudo, n, minted) == 1, "a minted Retry tag validates");
+    __CPROVER_assert(quic_retry_ok(version, pseudo, n, minted) == 1,
+                     "a minted Retry tag validates");
 
     // One tag byte different, at any position and by any nonzero amount.
     // RFC 9000 §17.2.5.2 makes the client discard that Retry packet.
@@ -156,7 +184,7 @@ int main(void) {
     __CPROVER_assume(at < GCM_TAG);
     __CPROVER_assume(delta != 0);
     forged[at] = (uint8_t)(forged[at] ^ delta);
-    __CPROVER_assert(quic_retry_ok(pseudo, n, forged) == 0,
+    __CPROVER_assert(quic_retry_ok(version, pseudo, n, forged) == 0,
                      "a tag that differs in one byte does not");
     return 0;
 }

@@ -22,7 +22,8 @@
 #include "quic_packet.h"
 
 #if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
-#error "test/quic_suite_test.c runs the QUIC suite build: -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM"
+#error                                                                                             \
+    "test/quic_suite_test.c runs the QUIC suite build: -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM"
 #endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -93,8 +94,9 @@ static const suite_vector aes256 = {
     .hp = "5f51f89ee1dd407f85d88ca579ac0dc0d1e465c71010a35377222b2947a8b1f2",
     .packet = "5a00b95c2dd07b0c0b0ed208dae015c7374177bf4a3dde5022392eb56ceeacc1918a17df656f85df326a"
               "df",
-    .next_secret = "6e397c6afe2d45e0d61ca2e77436761b71c995e80f0c9e93db42ec1b8d2574aebd8d58f70791b880"
-                   "094865c2cb99d1ef",
+    .next_secret =
+        "6e397c6afe2d45e0d61ca2e77436761b71c995e80f0c9e93db42ec1b8d2574aebd8d58f70791b880"
+        "094865c2cb99d1ef",
     .next_key = "2c4bc1a5004cd2ea1eda301611d67095c437e57e4e8846b06a93b65e7be8e680",
 };
 
@@ -116,8 +118,8 @@ static void test_suite_vector(const suite_vector *v) {
     secret_of(v->hash_len, secret);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, secret, v->suite);
-    quic_hp_key_init_suite(&h, secret, v->suite);
+    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, v->suite);
     CHECK(k.suite == v->suite && h.suite == v->suite && k.sealed == 0);
     CHECK(eq_hex(k.key, v->key_len, v->key));
     CHECK(eq_hex(k.iv, AEAD_NONCE, v->iv));
@@ -141,7 +143,7 @@ static void test_suite_vector(const suite_vector *v) {
     CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == 5 && pt_len == sizeof pt);
     CHECK(memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
 
-    quic_keys_update(secret, &k);
+    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
     CHECK(eq_hex(secret, v->hash_len, v->next_secret));
     CHECK(eq_hex(k.key, v->key_len, v->next_key));
     CHECK(k.suite == v->suite && k.sealed == 0);
@@ -156,8 +158,8 @@ static void test_confidentiality_limit(void) {
     secret_of(sizeof secret, secret);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, secret, SUITE_AES_256_GCM_SHA384);
-    quic_hp_key_init_suite(&h, secret, SUITE_AES_256_GCM_SHA384);
+    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, SUITE_AES_256_GCM_SHA384);
     uint8_t pkt[64];
     size_t pkt_len = 0;
     k.sealed = QUIC_CONFIDENTIALITY_LIMIT - 2;
@@ -167,7 +169,7 @@ static void test_confidentiality_limit(void) {
     CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr, pt, sizeof pt, pkt,
                            sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(k.sealed == QUIC_CONFIDENTIALITY_LIMIT - 1);
-    quic_keys_update(secret, &k);
+    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
     CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, 7, 2, hdr, sizeof hdr, pt, sizeof pt, pkt,
                            sizeof pkt, &pkt_len) == CH_OK);
 
@@ -175,8 +177,8 @@ static void test_confidentiality_limit(void) {
     secret_of(sizeof chacha_secret, chacha_secret);
     quic_keys c;
     quic_hp_key ch;
-    quic_keys_init_suite(&c, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
-    quic_hp_key_init_suite(&ch, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
+    quic_keys_init_suite(&c, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
+    quic_hp_key_init_suite(&ch, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
     c.sealed = QUIC_CONFIDENTIALITY_LIMIT;
     CHECK(quic_packet_seal(&c, &ch, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt, sizeof pt, pkt,
                            sizeof pkt, &pkt_len) == CH_OK);

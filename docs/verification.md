@@ -295,8 +295,10 @@ The entries are grouped by area:
   the aliasing shape the callers use (`in == out`) and at every
   Destination Connection ID length RFC 9000 §17.2 admits. It also covers
   the first length past the cap, where the call refuses without reading
-  the pointer. HKDF is stubbed to its contract (`proof/aes_stubs.h`),
-  which the three `hkdf` harnesses prove.
+  the pointer. The QUIC version the constructors choose a salt, labels
+  and a Retry key by is any value, not only one the callers admit. HKDF
+  is stubbed to its contract (`proof/aes_stubs.h`), which the three
+  `hkdf` harnesses prove.
 - **Bound:** connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B); the rest of the
   domain is fixed-size.
 
@@ -1268,7 +1270,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Harness:** `quic_keys` (fast)
 - **Proves:** `quic_keys_init`, `quic_hp_key_init` and
   `quic_keys_update` read and write only inside their buffers and commit
-  no undefined behavior, for any traffic secret. `quic_keys_update`
+  no undefined behavior, for any traffic secret and any QUIC version, the
+  value that chooses their labels. `quic_keys_update`
   writes the next secret back over the caller's buffer and derives the
   key set from it, so the same 32 bytes are an input and an output of
   one call, and the harness covers that aliasing. HKDF is a contract
@@ -1306,10 +1309,13 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   only inside their buffers, commit no undefined behavior, and answer
   one of the codes their header documents, over unconstrained
   connection-ID, packet-number, header, payload, capacity and packet
-  lengths. Two properties beside safety:
+  lengths and any QUIC version. Three properties beside safety:
   - a refusal writes neither output;
   - a successful open reports a plaintext length inside the packet it
-    was handed.
+    was handed;
+  - a version `quic_version_derived` refuses is refused with `CH_EINVAL`
+    before a key is built, and the key constructor is handed only a
+    version it admits.
 
   The eight calls the two entries make are stubbed to their contracts
   (`proof/quic_initial_stubs.h`). [aes](#aes) and the three [gcm](#gcm)
@@ -1326,9 +1332,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 - **Harness:** `quic_retry` (fast)
 - **Proves:** `quic_retry_ok` reads only inside the pseudo-packet and the
-  tag it is handed and commits no undefined behavior. It answers 1 for
-  the tag `gcm_seal` computed over that pseudo-packet, and 0 for a tag
-  that differs in one byte, at any position and by any nonzero amount.
+  tag it is handed and commits no undefined behavior. For any QUIC
+  version `quic_version_derived` admits it answers 1 for the tag
+  `gcm_seal` computed over that pseudo-packet, and 0 for a tag that
+  differs in one byte, at any position and by any nonzero amount; for any
+  other version `quic_retry_tag` returns `CH_EINVAL` and writes no tag
+  byte, and `quic_retry_ok` answers 0 to the genuine tag.
   `gcm_seal` and `aes_public_key_retry` are contract stubs the harness
   defines. The `gcm_seal` stub asserts what RFC 9001 §5.8 fixes at this
   one call site: the key `aes_public_key_retry` wrote, the nonce §5.8
@@ -1366,9 +1375,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 #### quic_driver
 
 - **Harness:** `quic_driver` (fast)
-- **Proves:** `quic.c`'s sixteen public entries and its input loop are
-  safe and free of undefined behavior over any saved state and any
-  caller argument:
+- **Proves:** `quic.c`'s eighteen public entries and its input loop are
+  safe and free of undefined behavior over any saved state, any saved
+  QUIC version and any caller argument:
   - the unread window stays inside `cfg.buf`;
   - `CH_EINVAL` changes nothing and names one of the three refusals
     `quic.h` lists;
@@ -1380,9 +1389,20 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   - a dead session seals and opens no packet through `ch_quic_seal` and
     `ch_quic_open`;
   - `ch_quic_seal_close` seals only for a failed session at a level
-    whose write bit is set, wipes that level's write keys and clears its
-    bit, and refuses a second call at that level (`docs/decisions.md`
-    entry 57).
+    whose write bit is set, in a version that level admits, wipes that
+    level's write keys and clears its bit, and refuses a second call at
+    that level (`docs/decisions.md` entry 57);
+  - `ch_quic_init` refuses an original version `quic_version_derived`
+    does not admit and starts the negotiated version at the one it
+    admits;
+  - a packet call refuses a version its level does not admit, and an
+    open refused so counts no failure and changes no bit or state;
+  - `ch_quic_retry_ok` answers 0 in any version but the original;
+  - `ch_quic_switch_version` succeeds only for a live client session that
+    waits for the ServerHello with no server byte taken, has not
+    switched, and is given a different version this build derives; it
+    writes that version and nothing else, and refuses the next switch
+    (`docs/decisions.md` entry 79).
 
   The QUIC arm of `handshake_record.c` and all of `quic_config.c` in a
   raw build are compiled in, and [quic_config_webpki](#quic_config_webpki)
@@ -1401,7 +1421,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   - consumes its message, and raises the step or waits for the retry
     hello;
   - never raises `t.state`;
-  - touches no packet counter;
+  - touches no packet counter and writes no version;
+  - derives every key under the session's negotiated version;
   - stages nothing on an error;
   - at the Finished step, stages the client Finished at the Handshake
     level, moves to 1-RTT, reports that level in both directions, and
@@ -1432,7 +1453,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     took or no PSK; with `resumption` set, a ticket age no older than
     the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds; 1 to
     `CH_ALPN_MAX` protocols; the transport parameters; `on_level_ready`;
-    the buffer floor; and no epoch callback.
+    the buffer floor; an original version `quic_version_derived` admits;
+    and no epoch callback.
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
@@ -1449,7 +1471,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Proves:** the QUIC key derivations and packet protection, over each
   of the three suites:
   - the three §5.1 derivations and the §6.1 update derive at the suite's
-    hash and key length;
+    hash and key length, under one of the four labels of the QUIC version
+    they were given;
   - the mask, the seal and the Handshake open run the cipher the key
     set's suite names, at its key length;
   - the seal counts and refuses under AES-GCM's §6.6 limit alone.

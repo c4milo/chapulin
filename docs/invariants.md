@@ -641,8 +641,16 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-7 — no negotiation
 
-- **Claim.** One cipher suite and one version per build, and in the raw
-  and ca modes one group and one signature algorithm. The client offers
+- **Claim.** One cipher suite and one TLS version, 1.3, per build, and in
+  the raw and ca modes one group and one signature algorithm. A
+  `TRANSPORT=quic-nonblocking` build's QUIC version is the caller's value,
+  like the encryption level: every packet call takes the version of the
+  packet beside its level, and chapulin chooses neither (decisions.md 79).
+  It derives the keys of the versions `quic_version_derived` admits,
+  version 1 alone today; it refuses an original version it does not derive,
+  a packet in a version its level does not admit, and a Retry in any
+  version but the original, and a client switches to another version once,
+  before the server's first CRYPTO byte. The client offers
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
@@ -669,6 +677,12 @@ last `ROLE=server` stub, as the entry said it would.
   client did not list.
 - **Mechanism.** Absence of selection code; the TRUST build flag picks
   the sigalg of a raw or ca build at compile time, never at runtime.
+  The QUIC version rules sit in two places: `quic_version.h`'s
+  `quic_version_derived`, which `ch_quic_init`, `ch_srv_quic_init`,
+  `ch_quic_switch_version`, `ch_srv_quic_retry_tag` and the Initial and
+  Retry derivations ask, and `quic.c`'s `version_ok`, which the three
+  packet calls ask before they read a byte: the negotiated version at every
+  level, and the original one at the Initial level too.
   The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
   `handshake_message.c`, `handshake_parser.c` and `handshake_flight.c`,
   with `handshake_groups.c`. A raw or ca parser refuses a
@@ -686,7 +700,25 @@ last `ROLE=server` stub, as the entry said it would.
   and a raw or ca hello offers a ticket alone.
 - **Check.** The differential (`inv07-second-cipher-suite.violation`)
   and handshake_sequence assert the reject on any ServerHello that picks
-  another suite or group. `bin/webpki_session_test` drives the
+  another suite or group. The QUIC version rules are tested through the
+  public calls: `bin/quic_driver_test` (`test/quic_version_tests.h`)
+  refuses 0, version 2 and two versions no RFC this build carries defines
+  at init, at the switch, at each packet call at the Initial and the
+  Handshake level and at `ch_quic_retry_ok`, and opens an Initial packet in
+  the original version; `bin/srv_quic_test` and `bin/srv_quic_both_test`
+  (`test/srv_quic_version_tests.h`) refuse them at `ch_srv_quic_init` and
+  `ch_srv_quic_retry_tag` and refuse a server session's switch;
+  `bin/quic_loop_test` refuses a 1-RTT packet in version 2 at both ends;
+  and `bin/quic_test` refuses them at the two Initial derivations and the
+  Retry tag. The `quic_driver` harness proves the refusals over any saved
+  version and any version a caller passes, the switch's six conditions
+  and its one success included, and the `quic_initial`, `quic_retry`,
+  `quic_step` and `quic_config_webpki` harnesses prove their files' share.
+  Eleven `inv07-quic-` and `inv07-srv-quic-` violations each drop one rule,
+  and a test fails on each. The switch's other conditions, a server
+  session, a failed session, a second switch and one after a server byte,
+  refuse every switch in a build that derives one version, so their
+  mutants wait for version 2's keys. `bin/webpki_session_test` drives the
   two-group offer against a mock server, and four mutants require it to
   fail: a hello that lists x25519 without its share, a parser that takes
   a retry naming a shared group, and `require_pq` keeping x25519 in the
@@ -730,7 +762,8 @@ last `ROLE=server` stub, as the entry said it would.
   `s_client`, and the webpki client against an OpenSSL server that holds
   P-256 alone.
 - **Violation.** A PR accepts a second cipher suite value in
-  ServerHello and downgrade surface exists again.
+  ServerHello and downgrade surface exists again, or a QUIC packet call
+  admits a packet in a version its level does not admit.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ### INV-8 — no legacy protocol
@@ -1558,9 +1591,12 @@ last `ROLE=server` stub, as the entry said it would.
   entries whose frames and bytes pass the room the handshake header's
   3-byte length leaves. The flight's own refusal of such an identity
   returns `CH_EAUTH` with internal_error, never `CH_EINVAL`
-  (docs/decisions.md 74). INV-38 states the refusals of a `CH_TX_PT` or
-  a `record_size_limit` out of range, and INV-39 the refusal of a
-  message before a key change that does not end its record.
+  (docs/decisions.md 74). `ch_quic_init` and `ch_srv_quic_init` refuse
+  with `CH_EINVAL`, and send nothing, an original QUIC version this build
+  derives no keys for, 0 among them; INV-7 states the version rules. INV-38
+  states the refusals of a `CH_TX_PT` or a `record_size_limit` out of
+  range, and INV-39 the refusal of a message before a key change that
+  does not end its record.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -2585,8 +2621,9 @@ last `ROLE=server` stub, as the entry said it would.
 
   What the compiler refuses, in any source that does not include
   `aes_public_key.h`: declaring an `aes_public_key`, declaring an array of
-  them, assigning one, and writing a field of one. `quic.h` declares no
-  member of that type, so `q->initial_tx.key.round_keys` names nothing.
+  them, assigning one, and writing a field of one. `quic_session.h`, which
+  declares `ch_quic`, declares no member of that type, so
+  `q->initial_tx.key.round_keys` names nothing.
 
   What the Semgrep rule reads, in two branches. The family is `aes_`,
   `gcm_` and `ch_aes_`; the third is there because an `AES=extern`

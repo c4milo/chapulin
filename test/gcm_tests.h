@@ -286,7 +286,7 @@ static const uint8_t A2_CRYPTO_FRAME[245] = {
 // compared directly rather than only the tag.
 static void test_appendix_a2_initial(void) {
     aes_public_key k;
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
 
     uint8_t aad[GCM_TEST_MAX];
@@ -347,7 +347,7 @@ static const uint8_t RETRY_NONCE[AES_IV] = {0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63,
 // carry it, which is exactly what the pseudo-packet is for.
 static void test_appendix_a4_retry(void) {
     aes_public_key k;
-    aes_public_key_retry(&k);
+    aes_public_key_retry(&k, CH_QUIC_VERSION_1);
 
     // The pseudo-packet: one length byte, the original Destination
     // Connection ID, and the 20 Retry bytes before the tag.

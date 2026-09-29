@@ -75,7 +75,7 @@
 // before the handshake completes, answers CH_EPROTO, or CH_EINVAL where its
 // header says so, and changes nothing. Every other code leaves the session
 // dead, but those a header names as leaving it live: CH_ECAP for a caller's
-// own short buffer, CH_RECORD_AGAIN and CH_QUIC_DISCARD.
+// own short buffer, CH_RECORD_AGAIN and quic_cfg.h's CH_QUIC_DISCARD.
 #define CH_OK 0
 #define CH_EIO (-1)     // transport failed or closed under us, or a server's sink refused
 #define CH_EPROTO (-2)  // peer broke the protocol, or the session cannot take the call
@@ -271,53 +271,10 @@ typedef struct {
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-// A TRANSPORT=quic-nonblocking build runs this client over QUIC's CRYPTO frames and protects QUIC
-// packets with the keys the handshake produces (RFC 9001, docs/quic.md). It has no record
-// layer: §4.1.3 takes the unprotected content of TLS handshake records as the content of
-// CRYPTO frames and uses no TLS record protection (rfc9001.txt:462-464).
-//
-// One caller contract holds for every call that takes CRYPTO bytes, and nothing checks it
-// at run time: the caller delivers each level's bytes once and in order, and never
-// re-delivers bytes chapulin has consumed. A retransmitted CRYPTO frame is a duplicate the
-// caller drops, and chapulin stores no CRYPTO stream offset to tell one from new data. The
-// two result codes below sit beside CH_EINVAL above, both int. The CH_QUIC_ prefix says
-// neither has a meaning on the TCP transports, and ch_quic_open alone returns either.
-//
-// CH_QUIC_DISCARD leaves the session live, as CH_RECORD_AGAIN above does, for a packet the
-// caller drops: one that failed to authenticate, which RFC 9001 §5.5
-// says does not necessarily indicate a protocol error or an attack (rfc9001.txt:1373-1376),
-// or one too short to hold a header protection sample, which §5.4.2 discards
-// (rfc9001.txt:1280-1281). Only the first raises ch_quic's open_failures, and quic.h states
-// both cases in full. INV-13 carries the code.
-//
-// CH_QUIC_AEAD_LIMIT ends that tolerance: §6.6 makes an endpoint close and process no
-// further packets once failed authentications exceed the AEAD's integrity limit
-// (rfc9001.txt:1823-1827). A call that carries open_failures past it leaves the session
-// dead.
-#define CH_QUIC_DISCARD (-7)
-#define CH_QUIC_AEAD_LIMIT (-8)
-
-// The encryption levels, in the order the handshake reaches them (RFC 9001 §4.1.3,
-// rfc9001.txt:455-460). CH_LEVEL_APPLICATION is QUIC's 1-RTT level; this build offers no
-// 0-RTT, so no level names it. The values are compared, never used as an index into a key
-// field.
-#define CH_LEVEL_INITIAL 0
-#define CH_LEVEL_HANDSHAKE 1
-#define CH_LEVEL_APPLICATION 2
-
-// The direction on_level_ready reports: read opens what the peer sent, write protects what
-// this caller sends, and RFC 9001 §5.1 gives each level separate secrets per direction
-// (rfc9001.txt:1010-1012). A direction is not an endpoint, and aes.h holds the two
-// endpoint names beside the derivation that reads them. CH_QUIC_DCID_MAX caps §5.2's other
-// input and sizes ch_quic's initial_dcid: a version 1 connection ID is at most 20 bytes and
-// may be empty (rfc9000.txt:4991-4998, rfc9001.txt:1098-1100).
-#define CH_KEY_READ 0
-#define CH_KEY_WRITE 1
-#define CH_QUIC_DCID_MAX 20
-
-// quic_keys.h holds the three 1-RTT receive key set names and their count
-// CH_QUIC_KEY_SETS, and quic.h includes it, so ch_quic_open's key_set output has a name.
-
+// The two result codes ch_quic_open adds, the encryption levels, the key directions, the
+// connection ID cap, the QUIC version numbers and the CRYPTO bytes contract of a
+// TRANSPORT=quic-nonblocking build.
+#include "quic_cfg.h"
 #endif
 // Largest encoded transport-parameters body this tree writes into extension 0x39 (RFC 9001
 // §8.2, rfc9001.txt:1922-1924), in either direction, and declared outside the QUIC guard
@@ -456,6 +413,16 @@ typedef struct {
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The original version: RFC 9368's QUIC version of the very first packet the client sends
+    // (rfc9368.txt:130-131), CH_QUIC_VERSION_1 or CH_QUIC_VERSION_2 (quic_cfg.h). Both roles
+    // set it: a client to the version it sends first, and a server to the Version field of the
+    // client's first Initial packet, which the caller reads before ch_srv_quic_init. Required:
+    // both init calls return CH_EINVAL, and send nothing, for 0 and for a version this build
+    // derives no keys for, which is every version but CH_QUIC_VERSION_1 (docs/decisions.md 79).
+    // The session's negotiated version starts at this value (ch_quic_negotiated_version), and
+    // a Retry is checked against this one alone.
+    uint32_t quic_original_version;
+
     // The caller's own encoded QUIC transport parameters, the body of the
     // quic_transport_parameters extension. The ClientHello copies these bytes unread into
     // extension 0x39 (RFC 9001 §8.2, rfc9001.txt:1922-1924); chapulin reads none of them,

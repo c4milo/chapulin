@@ -71,16 +71,22 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // Both calls below take the Destination Connection ID rather than a
 // key, and each derives the one direction's key it needs on its own
 // stack. aes_public_key_initial does that derivation: the shared secret
-// is HKDF-Extract over the printed salt
-// 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a and dcid
-// (rfc9001.txt:1051-1055, rfc9001.txt:1066), then one label per
+// is HKDF-Extract over the printed salt of the QUIC version the call is
+// given, 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a in version 1, and
+// dcid (rfc9001.txt:1051-1055, rfc9001.txt:1066), then one label per
 // endpoint, "client in" and "server in" (rfc9001.txt:1057-1061). RFC
-// 9001 Appendix A.1 is the vector for both endpoints
+// 9001 Appendix A.1 is the version 1 vector for both endpoints
 // (rfc9001.txt:2352-2377).
+//
+// version, the second argument of both, is the Version field of the
+// packet's long header, and it chooses the salt and the three §5.1
+// labels (quic_version.h). Both calls refuse a version this build derives
+// no keys for, quic_version_derived's answer, before they derive or
+// write anything; aes_public_key_initial takes no other.
 //
 // Which label each entry derives under follows from endpoint, the first
 // argument of both, which says which endpoint the caller is:
-// CH_QUIC_ENDPOINT_CLIENT or CH_QUIC_ENDPOINT_SERVER (cfg.h). The seal
+// CH_QUIC_ENDPOINT_CLIENT or CH_QUIC_ENDPOINT_SERVER (aes.h). The seal
 // derives that endpoint's secret and the open derives the other one's,
 // because RFC 9001 §5.2 gives each endpoint its own and each reads what
 // the other wrote. So a client passes CH_QUIC_ENDPOINT_CLIENT at both
@@ -115,10 +121,11 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // and initial_dcid_len, and ch_quic_initial_keys bounds the length
 // before it stores them.
 //
-// Both calls return CH_EINVAL and write nothing when dcid_len is above
+// Both calls return CH_EINVAL and write nothing when version is one
+// this build derives no keys for, when dcid_len is above
 // CH_QUIC_DCID_MAX, the RFC 9000 §17.2 cap on a version 1 connection
-// ID, or when endpoint is neither of the two cfg.h names. Both check
-// both before they derive or write anything.
+// ID, or when endpoint is neither of the two aes.h names. Both check all
+// three before they derive or write anything.
 
 // Protects one Initial packet under the send key and writes the whole
 // packet into out: the header copied from hdr, the sealed payload after
@@ -162,9 +169,10 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // hdr_len + pt_len + GCM_TAG. *out_len is not written either, so the
 // caller sizes its own buffer from that sum and calls again.
 //
-// Returns CH_EINVAL and writes nothing when endpoint is neither cfg.h
-// name, when dcid_len is above CH_QUIC_DCID_MAX, when pn_len is 0 or
-// above QUIC_PN_MAX_LEN, when hdr_len is below pn_len, or when
+// Returns CH_EINVAL and writes nothing when version is one this build
+// derives no keys for, when endpoint is neither aes.h name, when dcid_len
+// is above CH_QUIC_DCID_MAX, when pn_len is 0 or above QUIC_PN_MAX_LEN,
+// when hdr_len is below pn_len, or when
 // pn_len + pt_len is below
 // QUIC_PN_MAX_LEN. The last refusal keeps the
 // sample inside out: the sample starts QUIC_PN_MAX_LEN bytes past the
@@ -195,9 +203,9 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // encrypted packets under one key (rfc9001.txt:1812-1813), and ch_quic
 // counts what it seals at this level in initial_sealed and refuses the
 // 2^23rd before it calls here.
-int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint64_t pn,
-                      size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                      size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
+int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
 
 // Removes header protection, recovers the packet number and removes
 // packet protection from one Initial packet, in place in pkt. The three
@@ -241,11 +249,12 @@ int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
 // number. The caller reads byte 0 of pkt for the packet number length
 // and the reserved bits, and feeds *pn to the next call's largest_pn.
 //
-// Returns CH_EINVAL and writes nothing when endpoint is neither cfg.h
-// name or when dcid_len is above CH_QUIC_DCID_MAX, both of which it
-// checks before it reads a byte of pkt.
+// Returns CH_EINVAL and writes nothing when version is one this build
+// derives no keys for, when endpoint is neither aes.h name or when
+// dcid_len is above CH_QUIC_DCID_MAX, all three of which it checks before
+// it reads a byte of pkt.
 //
-// Returns CH_QUIC_DISCARD (cfg.h) in two cases, writes neither output
+// Returns CH_QUIC_DISCARD (quic_cfg.h) in two cases, writes neither output
 // and leaves the session alive. The two cases differ in what the caller
 // then counts, so they are stated apart.
 //
@@ -272,9 +281,9 @@ int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
 // No other return code exists for this call. It raises no counter
 // itself: the §6.6 counts are per connection and live in ch_quic
 // (docs/quic.md, "What the mode does not do").
-int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint8_t *pkt,
-                      size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                      size_t *pt_len);
+int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                      uint64_t *pn, size_t *pt_len);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

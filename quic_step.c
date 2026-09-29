@@ -26,14 +26,17 @@ static void announce_level(ch_quic *q, uint8_t level) {
 }
 
 // The Handshake level's four keys, from the two handshake traffic
-// secrets hsf_derive_handshake_secrets wrote. The header protection key
-// of each direction is written once here and never again, which is
-// §5.4's rule (rfc9001.txt:1172-1174).
+// secrets hsf_derive_handshake_secrets wrote, under the negotiated
+// version's labels, which no call changes once a server byte arrived
+// (ch_quic_switch_version). The header protection key of each direction
+// is written once here and never again, which is §5.4's rule
+// (rfc9001.txt:1172-1174).
 static void install_handshake_keys(ch_quic *q) {
-    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, q->hs.s_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_rx, q->hs.s_hs, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->handshake_tx, q->hs.c_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_tx, q->hs.c_hs, q->t.suite);
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.s_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_rx, version, q->hs.s_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(&q->handshake_tx, version, q->hs.c_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_tx, version, q->hs.c_hs, q->t.suite);
     announce_level(q, CH_LEVEL_HANDSHAKE);
 }
 
@@ -41,18 +44,20 @@ static void install_handshake_keys(ch_quic *q) {
 // wrote into t.wr_secret and t.rd_secret. The last call advances
 // t.rd_secret once with the "quic ku" label and writes the next receive
 // set from it, so that set exists before any packet arrives under it
-// and t.rd_secret afterwards names it, which is the invariant session.h
-// states and ch_quic_key_update depends on. app_rx[CH_QUIC_KEY_PREVIOUS]
-// stays zero until the first ch_quic_key_update.
+// and t.rd_secret afterwards names it, which is the invariant
+// quic_session.h states and ch_quic_key_update depends on.
+// app_rx[CH_QUIC_KEY_PREVIOUS] stays zero until the first
+// ch_quic_key_update.
 static void install_application_keys(ch_quic *q) {
-    QUIC_KEYS_INIT_SUITE(&q->app_tx, q->t.wr_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_tx, q->t.wr_secret, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->app_rx[CH_QUIC_KEY_CURRENT], q->t.rd_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_rx, q->t.rd_secret, q->t.suite);
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(&q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_rx, version, q->t.rd_secret, q->t.suite);
     // The next set starts as the current one, so the update derives it
     // under the suite that set records.
     q->app_rx[CH_QUIC_KEY_NEXT] = q->app_rx[CH_QUIC_KEY_CURRENT];
-    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT]);
+    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
     announce_level(q, CH_LEVEL_APPLICATION);
 }
 

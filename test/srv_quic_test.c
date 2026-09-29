@@ -160,18 +160,20 @@ static void test_initial_seal_uses_the_server_labels(void) {
     CHECK(unhex(A3_PAYLOAD_HEX, pt) == sizeof pt);
     CHECK(unhex(A3_PACKET_HEX, want) == sizeof want);
 
-    // The side ch_srv_quic_init gives a session, which a ROLE=both build
-    // reads and a ROLE=server build fixes.
+    // The side and the versions ch_srv_quic_init gives a session, which a
+    // ROLE=both build reads for the side and a ROLE=server build fixes.
     ch_quic q;
     memset(&q, 0, sizeof q);
     q.t.state = CH_ST_START;
     q.endpoint = CH_QUIC_ENDPOINT_SERVER;
+    q.t.cfg.quic_original_version = CH_QUIC_VERSION_1;
+    q.t.quic_negotiated_version = CH_QUIC_VERSION_1;
     CHECK(ch_quic_initial_keys(&q, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
 
     static uint8_t out[A3_PACKET];
     size_t out_len = 0;
-    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, out,
-                       sizeof out, &out_len) == CH_OK);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr, sizeof hdr,
+                       pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof out);
     CHECK(memcmp(out, want, sizeof want) == 0);
 }
@@ -240,6 +242,7 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
     client_cfg.alpn_count = 1;
     client_cfg.transport_params = client_params;
     client_cfg.transport_params_len = sizeof client_params;
+    client_cfg.quic_original_version = CH_QUIC_VERSION_1;
     client_cfg.on_level_ready = level_ready;
     client_cfg.server_pubkey = rsa_sign_2048_n;
     client_cfg.server_pubkey_len = sizeof rsa_sign_2048_n;
@@ -255,17 +258,17 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_seal(&server, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
-                       pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
+                       sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(pkt_len == sizeof want && memcmp(pkt, want, sizeof want) == 0);
-    CHECK(ch_quic_open(&client, CH_LEVEL_INITIAL, pkt, pkt_len, A3_HDR_LEN - A3_PN_LEN, 0, 0,
-                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(&client, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
+                       A3_HDR_LEN - A3_PN_LEN, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == A3_PN && pt_len == sizeof pt);
 
-    CHECK(ch_quic_seal(&client, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
-                       pkt, sizeof pkt, &pkt_len) == CH_OK);
-    CHECK(ch_quic_open(&server, CH_LEVEL_INITIAL, pkt, pkt_len, A3_HDR_LEN - A3_PN_LEN, 0, 0,
-                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_seal(&client, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, A3_PN, A3_PN_LEN, hdr,
+                       sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_open(&server, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len,
+                       A3_HDR_LEN - A3_PN_LEN, 0, 0, &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == A3_PN && pt_len == sizeof pt);
 }
 #endif
@@ -349,6 +352,9 @@ static void test_client_hello_ends_level(const ch_cfg *cfg, const uint8_t *hello
 // The count bound on that round, which needs the round's helpers.
 #include "srv_quic_retry_count_tests.h"
 
+// The version rules, which read seen and CHECK above.
+#include "srv_quic_version_tests.h"
+
 int main(void) {
     // The client's side of the wire: one hello, built the way a QUIC
     // client builds one, carrying the transport parameters RFC 9001
@@ -380,6 +386,7 @@ int main(void) {
     memset(server_params, 0x5c, sizeof server_params);
     cfg.transport_params = server_params;
     cfg.transport_params_len = sizeof server_params;
+    cfg.quic_original_version = CH_QUIC_VERSION_1;
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.on_crypto_out = sink;
     provision(&cfg);
@@ -432,6 +439,8 @@ int main(void) {
     test_quic_token();
     test_ngtcp2_retry();
     test_retry_extension_count();
+    test_server_init_versions(&cfg);
+    test_retry_tag_versions(&cfg);
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

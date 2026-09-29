@@ -1,0 +1,13 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version switches to a version this build derives
+  no keys for, so every Initial packet after it is refused and the
+  handshake cannot finish. test/quic_version_tests.h requires CH_EINVAL
+  for 0, version 2 and two versions no RFC this build carries defines.
+
+--- old
+    if (!switch_open(q) || !quic_version_derived(version) ||
+        version == q->t.quic_negotiated_version) {
+--- new
+    if (!switch_open(q) || version == q->t.quic_negotiated_version) {

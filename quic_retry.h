@@ -23,6 +23,12 @@
 // it sends, and quic_retry_ok, which a client calls to check the tag it
 // received. quic_retry_ok calls quic_retry_tag, so one gcm_seal serves
 // both and no second copy of §5.8 can drift from the first.
+//
+// Both take the QUIC version of the Retry packet first, because each
+// version prints its own key and nonce: RFC 9001 §5.8 version 1's and
+// RFC 9369 §3.3.3 version 2's (rfc9369.txt:176-188). aes.c holds the key
+// and this file the nonce. Both refuse a version this build derives no
+// keys for (quic_version.h) before they build a key.
 #ifndef CH_QUIC_RETRY_H
 #define CH_QUIC_RETRY_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -35,16 +41,17 @@
 
 // Recomputes the Retry Integrity Tag over the caller's Retry
 // Pseudo-Packet and reports whether it equals tag. RFC 9001 §5.8 fixes
-// every input (rfc9001.txt:1496-1507): the key K is the 128-bit constant
-// 0xbe0c690b9f66575a1d766b54e368c84e, which aes_public_key_retry writes;
-// the nonce N is the 96-bit constant 0x461599d35d632bf2239825bb, which
-// quic_retry.c holds, because aes.h leaves the iv field of a Retry
-// key zero; the plaintext is empty; and the associated data is the whole
-// pseudo-packet. So the computation is one gcm_seal over an empty
-// plaintext, then one ct_memeq over GCM_TAG bytes.
+// every input for version 1 (rfc9001.txt:1496-1507): the key K is the
+// 128-bit constant 0xbe0c690b9f66575a1d766b54e368c84e, which
+// aes_public_key_retry writes; the nonce N is the 96-bit constant
+// 0x461599d35d632bf2239825bb, which quic_retry.c holds, because aes.h
+// leaves the iv field of a Retry key zero; the plaintext is empty; and
+// the associated data is the whole pseudo-packet. So the computation is
+// one gcm_seal over an empty plaintext, then one ct_memeq over GCM_TAG
+// bytes.
 //
-// Requires: pseudo points at n readable bytes and tag at GCM_TAG
-// readable bytes.
+// Requires: version is the Retry packet's Version field; pseudo points
+// at n readable bytes and tag at GCM_TAG readable bytes.
 //
 // pseudo is the Retry Pseudo-Packet of RFC 9001 Figure 8
 // (rfc9001.txt:1514-1529), which the caller builds: it takes the Retry
@@ -61,15 +68,16 @@
 // diagnosis. RFC 9001
 // Appendix A.4 is the vector (rfc9001.txt:2490-2498).
 //
-// Returns 1 for a matching tag and 0 otherwise, through ct_memeq. It is
-// not a ch_err and CH_OK has no meaning here, which is why the return
+// Returns 1 for a matching tag and 0 otherwise, through ct_memeq, and 0
+// without computing a tag for a version this build derives no keys for.
+// It is not a ch_err and CH_OK has no meaning here, which is why the return
 // type is uint8_t and not the int every ch_err-returning call in this
 // tree uses: a caller cannot compare it against CH_OK without the
 // compiler saying so, and a caller that did would accept exactly the
 // forged Retry packets RFC 9000 §17.2.5.2 makes it discard.
 // ch_quic_retry_ok forwards this value unchanged.
 //
-// The time this call takes depends on n alone. It
+// The time this call takes depends on n and version alone. It
 // touches no session state, so a 0 fails nothing by itself: RFC 9000
 // §17.2.5.2 makes a client discard a Retry packet whose tag cannot be
 // validated (rfc9000.txt:5407-5411), and discarding it is the caller's
@@ -94,7 +102,8 @@
 // one Retry. lint-stack measures that frame against STACK_BUDGET. The
 // frame is not wiped: every byte of that key is printed in the RFC, so
 // there is no secret to wipe.
-uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG]);
+uint8_t quic_retry_ok(uint32_t version, const uint8_t *pseudo, size_t n,
+                      const uint8_t tag[GCM_TAG]);
 
 // Computes the Retry Integrity Tag over the caller's Retry
 // Pseudo-Packet and writes it to tag. A server sends what this writes.
@@ -103,7 +112,9 @@ uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG
 // associated data for both endpoints (rfc9001.txt:1496-1507), so the
 // two entries run one gcm_seal and quic_retry_ok calls this one.
 //
-// Requires: pseudo points at n readable bytes and tag at GCM_TAG
+// Requires: version is the Version field of the Retry packet, which a
+// server sends in the original version (rfc9369.txt:221-222); pseudo
+// points at n readable bytes and tag at GCM_TAG
 // writable bytes. pseudo is the Retry Pseudo-Packet of RFC 9001 Figure
 // 8, which the server builds the same way the paragraph above describes
 // for a client: one byte holding the length of the Original Destination
@@ -115,7 +126,9 @@ uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG
 // client accepts and no diagnosis. RFC 9001 Appendix A.4 is the vector
 // (rfc9001.txt:2490-2498).
 //
-// Writes GCM_TAG bytes and cannot fail, so it returns nothing.
+// Returns CH_OK and writes GCM_TAG bytes. Returns CH_EINVAL and writes
+// nothing when this build derives no keys for version, which is the
+// refusal quic_retry_ok answers 0 for; no other code is returned.
 //
 // It decides nothing about the Retry packet it tags. Whether to send a
 // Retry at all is the caller's address validation policy, which RFC
@@ -125,12 +138,12 @@ uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG
 // they own every other transport decision; quic.h's opening comment
 // draws the same line for the client's packet calls.
 //
-// The time this call takes depends on n alone. Like quic_retry_ok it
+// The time this call takes depends on n and version alone. Like quic_retry_ok it
 // expands the printed key into one aes_public_key on its own stack
 // frame and stores nothing, and lint-stack measures that frame against
 // STACK_BUDGET. The frame is not wiped: every byte of that key is
 // printed in the RFC, so there is no secret to wipe.
-void quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]);
+int quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

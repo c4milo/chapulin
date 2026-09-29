@@ -26,6 +26,15 @@
 // for the one CONNECTION_CLOSE ch_quic_seal_close seals there
 // (docs/decisions.md 57); assert_dead and drive_close state the rules.
 //
+// The QUIC version rules of docs/decisions.md 79 run over any saved
+// versions and any version a caller passes: ch_quic_init refuses an
+// original version quic_version_derived does not admit and starts the
+// negotiated version at the one it admits; a packet call refuses a
+// version its level does not admit and changes nothing; ch_quic_retry_ok
+// answers 0 in any version but the original; and ch_quic_switch_version
+// succeeds only under all six of its conditions, writes the version it
+// was given, and refuses every call after its one success.
+//
 // Bounds. CH_PROOF_RXBUF is 12, the value handshake_record's own
 // harness uses, so every state this leg drives is inside the window
 // that proof discharges. CH_TX_STAGE keeps the build's own 1141,
@@ -156,6 +165,7 @@ static void havoc_session(void) {
     q.rx_level = nondet_u8();
     q.tx_level = nondet_u8();
     q.alert = nondet_u8();
+    q.endpoint = nondet_u8();
     q.key_phase = nondet_u8();
     q.levels_ready = nondet_u8();
     q.error_code = nondet_u64();
@@ -176,6 +186,8 @@ static void havoc_session(void) {
     q.hs.alert = nondet_u8();
     q.hs.t = &q.t;
     q.t.cfg = cfg;
+    q.t.cfg.quic_original_version = nondet_u32();
+    q.t.quic_negotiated_version = nondet_u32();
     uint8_t state = nondet_u8();
     __CPROVER_assume(state <= CH_ST_FAILED);
     q.t.state = state;
@@ -302,110 +314,37 @@ static void drive_crypto_out(void) {
     assert_window();
 }
 
-static void drive_packets(void) {
-    uint8_t pkt[CH_PROOF_RXBUF];
-    uint8_t out[CH_PROOF_RXBUF + 4 + GCM_TAG];
-    uint8_t hdr[4];
-    uint8_t tag[GCM_TAG];
-    size_t out_len = 0;
-    uint64_t pn = 0;
-    size_t pt_len = 0;
-    uint8_t key_set = 0;
-    fill_nondet(pkt, sizeof pkt);
-    fill_nondet(hdr, sizeof hdr);
-    fill_nondet(tag, sizeof tag);
+// The packet calls, over the state and the helpers above.
+#include "quic_driver_packets.h"
 
-    uint8_t level = nondet_u8();
-    size_t cap = nondet_size_t();
-    __CPROVER_assume(cap <= sizeof out);
-    uint64_t was_sealed = q.initial_sealed;
-    int live = q.t.state != CH_ST_CLOSED && q.t.state != CH_ST_FAILED;
-    int rc = ch_quic_seal(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pkt,
-                          sizeof pkt, out, cap, &out_len);
-    __CPROVER_assert(rc == CH_OK || q.initial_sealed == was_sealed,
-                     "RFC 9001 6.6: a seal that did not happen counts nowhere");
-    __CPROVER_assert(rc == CH_EINVAL || live,
-                     "a dead session seals only through ch_quic_seal_close");
-
-    level = nondet_u8();
-    size_t pkt_len = nondet_size_t();
-    size_t pn_off = nondet_size_t();
-    __CPROVER_assume(pkt_len <= sizeof pkt && pn_off <= pkt_len);
+// ch_quic_switch_version over any saved state and any version. It
+// succeeds only when every condition quic.h lists holds, writes the
+// version it was given and nothing else, and refuses a second switch.
+static void drive_switch(void) {
+    uint32_t version = nondet_u32();
+    uint32_t was_version = q.t.quic_negotiated_version;
     uint8_t was_state = q.t.state;
-    uint64_t was_failures = q.open_failures;
+    uint8_t was_step = q.step;
     uint8_t was_ready = q.levels_ready;
-    rc = ch_quic_open(&q, level, pkt, pkt_len, pn_off, nondet_u64(), nondet_u64(), &key_set, &pn,
-                      &pt_len);
-    __CPROVER_assert(rc == CH_EINVAL || live, "a dead session opens no packet");
-    // The same quic_fail drive_crypto_in's failures run, so this checks
-    // the bits it leaves and assert_dead there checks the bytes: a second
-    // assert_dead here took the formula from 0.97 to 1.54 GB.
-    if (rc == CH_QUIC_AEAD_LIMIT) {
-        __CPROVER_assert(q.levels_ready == (uint8_t)(was_ready & WRITE_BITS),
-                         "the integrity limit keeps exactly the write bits it found");
-    }
-    if (rc == CH_OK) {
-        __CPROVER_assert(key_set < CH_QUIC_KEY_SETS, "the set that opened it is a named index");
-        __CPROVER_assert(pt_len <= pkt_len, "the plaintext is inside the packet");
-        __CPROVER_assert(level != CH_LEVEL_APPLICATION || was_state == CH_ST_CONNECTED,
-                         "RFC 9001 5.7: no 1-RTT packet before the handshake completes");
-    }
-    if (pn_off > pkt_len || pkt_len - pn_off < QUIC_PN_MAX_LEN + QUIC_HP_SAMPLE_LEN) {
-        __CPROVER_assert(q.open_failures == was_failures,
-                         "RFC 9001 5.4.2: a packet too short to sample counts nowhere");
-    }
-    (void)ch_quic_retry_ok(&q, pkt, sizeof pkt, tag);
-    (void)ch_quic_key_update(&q);
-    ch_quic_drop_previous_keys(&q);
-    (void)ch_quic_discard(&q, nondet_u8());
-    (void)ch_quic_key_phase(&q);
-    (void)ch_quic_alert(&q);
-    (void)ch_quic_state(&q);
-    (void)ch_quic_error_code(&q);
-}
-
-// ch_quic_seal_close over any saved state. It seals only for a failed
-// session at a level whose write bit is set; that one seal wipes the
-// level's write keys and clears its bit and no other, a second call at
-// that level is refused, and no call changes the session state.
-static void drive_close(void) {
-    uint8_t pt[CH_PROOF_RXBUF];
-    uint8_t out[CH_PROOF_RXBUF + 4 + GCM_TAG];
-    uint8_t hdr[4];
-    size_t out_len = 0;
-    fill_nondet(pt, sizeof pt);
-    fill_nondet(hdr, sizeof hdr);
-    uint8_t level = nondet_u8();
-    size_t cap = nondet_size_t();
-    size_t pt_len = nondet_size_t();
-    __CPROVER_assume(cap <= sizeof out && pt_len <= sizeof pt);
-    uint8_t was_state = q.t.state;
-    uint8_t was_ready = q.levels_ready;
-    int rc = ch_quic_seal_close(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pt,
-                                pt_len, out, cap, &out_len);
-    __CPROVER_assert(q.t.state == was_state, "a close changes no session state");
+    size_t was_len = q.t.pt_len;
+    int rc = ch_quic_switch_version(&q, version);
+    __CPROVER_assert(q.t.state == was_state && q.step == was_step && q.levels_ready == was_ready &&
+                         q.t.pt_len == was_len,
+                     "a switch changes no field but the negotiated version");
     if (rc != CH_OK) {
-        __CPROVER_assert(rc == CH_EINVAL || rc == CH_ECAP, "a refused close has two codes");
-        __CPROVER_assert(q.levels_ready == was_ready, "a refused close clears no bit");
+        __CPROVER_assert(rc == CH_EINVAL && q.t.quic_negotiated_version == was_version,
+                         "a refused switch changes nothing");
         return;
     }
-    __CPROVER_assert(was_state == CH_ST_FAILED, "only a failed session seals a close");
-    __CPROVER_assert(level <= CH_LEVEL_APPLICATION &&
-                         (was_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) != 0,
-                     "a close goes out only at a level whose write bit was set");
-    __CPROVER_assert(q.levels_ready ==
-                         (uint8_t)(was_ready & (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)),
-                     "the close clears that level's write bit and no other bit");
-    __CPROVER_assert(write_keys_zero(level), "the close wipes that level's write keys");
-    __CPROVER_assert(out_len == sizeof hdr + pt_len + GCM_TAG, "the close is one whole packet");
-    fill_nondet(pt, sizeof pt);
-    fill_nondet(hdr, sizeof hdr);
-    cap = nondet_size_t();
-    pt_len = nondet_size_t();
-    __CPROVER_assume(cap <= sizeof out && pt_len <= sizeof pt);
-    rc = ch_quic_seal_close(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pt, pt_len,
-                            out, cap, &out_len);
-    __CPROVER_assert(rc == CH_EINVAL, "a second close at the same level is refused");
+    __CPROVER_assert(q.endpoint == CH_QUIC_ENDPOINT_CLIENT && was_state == CH_ST_START &&
+                         was_step == HSQ_STEP_AWAIT_SERVER_HELLO && was_len == 0,
+                     "a live client that has taken no server CRYPTO byte switches");
+    __CPROVER_assert(was_version == q.t.cfg.quic_original_version && version != was_version &&
+                         quic_version_derived(version),
+                     "once, to a different version this build derives");
+    __CPROVER_assert(q.t.quic_negotiated_version == version, "the switch writes the version");
+    __CPROVER_assert(ch_quic_switch_version(&q, nondet_u32()) == CH_EINVAL,
+                     "a second switch is refused");
 }
 
 // The configuration ch_quic_init judges. Three fields vary, one per
@@ -436,12 +375,17 @@ int main(void) {
     cfg.on_level_ready = (nondet_u8() & 1) ? NULL : level_ready;
     cfg.transport_params_len = (nondet_u8() & 1) ? 0 : sizeof params;
     cfg.buf_len = (nondet_u8() & 1) ? 1 : sizeof buf;
+    cfg.quic_original_version = nondet_u32();
     int rc = ch_quic_init(&q, &cfg);
     if (rc != CH_OK) {
         __CPROVER_assert(rc == CH_EINVAL, "ch_quic_init has one refusal code");
         __CPROVER_assert(q.t.state == CH_ST_FAILED, "a refused config leaves a dead session");
         __CPROVER_assert(q.tx_len == 0, "a refused config stages nothing");
     } else {
+        __CPROVER_assert(quic_version_derived(cfg.quic_original_version),
+                         "an accepted config names a version this build derives");
+        __CPROVER_assert(q.t.quic_negotiated_version == cfg.quic_original_version,
+                         "the negotiated version starts at the original one");
         __CPROVER_assert(q.t.state == CH_ST_START, "an accepted config starts the handshake");
         __CPROVER_assert(q.step == HSQ_STEP_AWAIT_SERVER_HELLO, "the first step waits on the SH");
         __CPROVER_assert(q.tx_level == CH_LEVEL_INITIAL && q.rx_level == CH_LEVEL_INITIAL,
@@ -489,6 +433,9 @@ int main(void) {
     havoc_write_keys();
     drive_close();
     assert_window();
+
+    havoc_session();
+    drive_switch();
 
     ch_quic_close(&q);
     __CPROVER_assert(q.t.state == CH_ST_CLOSED, "close ends the session");

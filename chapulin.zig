@@ -29,6 +29,9 @@ const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
+// TRANSPORT=quic-nonblocking: every session names its original version in
+// ch_cfg (cfg.h), and quic.Version is the type that names one.
+const has_quic = @hasField(c.ch_cfg, "quic_original_version");
 // RAND=session: each session names its own source of random bytes in
 // ch_cfg (cfg.h), where every other build draws from the image's
 // ch_rand_bytes.
@@ -160,6 +163,11 @@ const ClientValues = struct {
     ticket_age_ms: u64 = 0,
     /// Refuse a key exchange other than X25519MLKEM768: require_pq.
     require_pq: bool = false,
+    /// The QUIC version of the first Initial packet, under
+    /// TRANSPORT=quic-nonblocking alone: quic_original_version. null leaves
+    /// it 0, which init refuses with error.Invalid, so a configuration that
+    /// names no version fails where C refuses it. void in every other build.
+    quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     /// The session's source of random bytes, under RAND=session alone:
     /// rand_bytes and rand_io, through the copy the session's init stores
     /// (attachRandom). null leaves rand_bytes NULL, which init refuses with
@@ -212,9 +220,16 @@ const ClientValues = struct {
             if (has_webpki) cfg.ticket_binding = &ticket.ticket.binding;
         }
         cfg.require_pq = @intFromBool(values.require_pq);
+        if (has_quic) cfg.quic_original_version = quicVersionCode(values.quic_version);
         return cfg;
     }
 };
+
+/// ch_cfg.quic_original_version for a value's quic_version: the version's
+/// code, or 0 for null, which both QUIC init calls refuse.
+fn quicVersionCode(version: ?quic.Version) u32 {
+    return if (version) |v| @intFromEnum(v) else 0;
+}
 
 fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
     cfg.spki_pins = if (pins.len == 0) null else @ptrCast(pins.ptr);
@@ -323,6 +338,10 @@ const ServerValues = struct {
     require_server_name: bool = false,
     /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
     cipher_suites: if (has_suite_order) []const Suite else void = if (has_suite_order) &.{} else {},
+    /// The Version field of the client's first Initial packet, under
+    /// TRANSPORT=quic-nonblocking alone, as Client.quic_version is:
+    /// quic_original_version. void in every other build.
+    quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     /// The session's source of random bytes, under RAND=session alone, as
     /// Client.random is. check draws from it too, for the RSA-PSS salt.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
@@ -358,6 +377,7 @@ const ServerValues = struct {
             cfg.srv.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
             cfg.srv.cipher_suite_count = values.cipher_suites.len;
         }
+        if (has_quic) cfg.quic_original_version = quicVersionCode(values.quic_version);
         return cfg;
     }
 

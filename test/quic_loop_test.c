@@ -147,6 +147,7 @@ static void server_config(ch_cfg *cfg) {
     cfg->alpn_count = 2;
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
+    cfg->quic_original_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_crypto_out = sink;
@@ -173,6 +174,7 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
     cfg->alpn_count = 1;
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
+    cfg->quic_original_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
     cfg->on_ticket = keep_ticket;
 #ifdef CH_RAND_SESSION
@@ -255,18 +257,29 @@ static void take_ticket(void) {
 
 // The 1-RTT keys agree: a short-header packet the server seals, with an
 // empty connection ID and a two-byte packet number, opens at the client.
+// Both ends negotiated version 1, and a 1-RTT packet in version 2 is one
+// RFC 9369 section 4.1 makes each end drop: the seal is refused, and the
+// open is refused before the packet is read or a failure counted.
 static void check_keys_agree(void) {
     static const uint8_t hdr[3] = {0x41, 0x00, 0x05};
     static const uint8_t pt[24] = {'r', 'e', 's', 'u', 'm', 'e', 'd'};
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt, sizeof pt, pkt,
-                       sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_negotiated_version(&client) == CH_QUIC_VERSION_1 &&
+          ch_quic_negotiated_version(&server) == CH_QUIC_VERSION_1);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, 5, 2, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 5, 2, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, pkt, pkt_len, 1, 0, 0, &key_set, &pn,
-                       &pt_len) == CH_OK);
+    uint64_t failures_before = client.open_failures;
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, pkt, pkt_len, 1, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_EINVAL);
+    CHECK(client.open_failures == failures_before && pn == 0);
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, pkt, pkt_len, 1, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
     CHECK(pn == 5 && pt_len == sizeof pt && memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
 }
 

@@ -5,6 +5,7 @@
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "handshake_post.h"
+#include "quic_version.h"
 #include "rand_draw.h"
 
 #ifdef CH_TRUST_WEBPKI
@@ -70,13 +71,18 @@ static int alpn_ok(const ch_cfg *cfg) {
 }
 #endif
 
-// The two rules this transport adds to its trust mode's: RFC 9001 §8.2
+// The three rules this transport adds to its trust mode's: RFC 9001 §8.2
 // makes an endpoint that sends no transport parameters a protocol
-// violation (rfc9001.txt:1929-1936), and a caller that never learns a
-// level is usable can protect no packet.
+// violation (rfc9001.txt:1929-1936), a caller that never learns a level
+// is usable can protect no packet, and a session whose original version
+// this build derives no keys for can protect none either. That last rule
+// is quic_version_derived's, which 0 never passes, so a configuration
+// that names no version is refused rather than read as version 1
+// (docs/decisions.md 79).
 static int transport_config_ok(const ch_cfg *cfg) {
     return cfg->transport_params != NULL && cfg->transport_params_len > 0 &&
-           cfg->transport_params_len <= CH_TRANSPORT_PARAMS_MAX && cfg->on_level_ready != NULL;
+           cfg->transport_params_len <= CH_TRANSPORT_PARAMS_MAX && cfg->on_level_ready != NULL &&
+           quic_version_derived(cfg->quic_original_version);
 }
 
 #ifdef CH_TRUST_WEBPKI

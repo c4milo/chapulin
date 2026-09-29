@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic_config.c
+catches: quic_driver_test
+reason: ch_quic_init takes a configuration that names no original
+  version, or one this build derives no keys for, and the session then
+  derives Initial keys under a version the caller never named, which
+  docs/decisions.md 79 rejects. test/quic_version_tests.h requires
+  CH_EINVAL for 0, version 2 and two versions no RFC this build carries
+  defines.
+
+--- old
+           cfg->transport_params_len <= CH_TRANSPORT_PARAMS_MAX && cfg->on_level_ready != NULL &&
+           quic_version_derived(cfg->quic_original_version);
+--- new
+           cfg->transport_params_len <= CH_TRANSPORT_PARAMS_MAX && cfg->on_level_ready != NULL;

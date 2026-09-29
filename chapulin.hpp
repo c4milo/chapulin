@@ -12,11 +12,11 @@
 // object exports ch_connect, ch_read, ch_write, ch_writable_len and
 // ch_close, and Session forwards them. A TRANSPORT=quic-nonblocking object
 // exports none of the five and
-// sixteen ch_quic_ entries instead, so Quic forwards those, and Config
-// takes no Io and gains the transport parameters and the two QUIC
-// callbacks. One transport compiles per build, so one of the two classes
-// exists at a time. Both forward alert.h's two calls, which every object
-// exports.
+// eighteen ch_quic_ entries instead, so Quic forwards those, and Config
+// takes no Io and gains the original version, the transport parameters and
+// the two QUIC callbacks. One transport compiles per build, so one of the
+// two classes exists at a time. Both forward alert.h's two calls, which
+// every object exports.
 #ifndef CHAPULIN_HPP
 #define CHAPULIN_HPP
 
@@ -51,7 +51,7 @@ enum class Status : int {
     again = CH_RECORD_AGAIN,
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-    // The two codes a TRANSPORT=quic-nonblocking object adds (cfg.h). discard leaves
+    // The two codes a TRANSPORT=quic-nonblocking object adds (quic_cfg.h). discard leaves
     // the session live: RFC 9001 §5.5 says a packet that fails to
     // unprotect is not necessarily an attack. aead_limit is RFC 9001
     // §6.6's integrity limit, which ends the session.
@@ -121,6 +121,15 @@ struct Io {
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// A QUIC Version field value (quic_cfg.h): the original version
+// Config::original_version() names and the version each packet call and
+// Quic::switch_version() take. Any other value casts in, and C decides
+// whether it derives that version's keys.
+enum class QuicVersion : uint32_t {
+    v1 = CH_QUIC_VERSION_1,
+    v2 = CH_QUIC_VERSION_2,
+};
+
 // Result of a TRANSPORT=quic-nonblocking call that writes bytes into the caller's
 // buffer: Quic::crypto_out and Quic::seal. size counts the bytes written
 // and is meaningful only when ok(). A Status::cap result means the buffer
@@ -216,6 +225,15 @@ class Config {
     // The context both callbacks above are handed (ch_cfg.io).
     Config &context(void *ctx) {
         cfg_.io = ctx;
+        return *this;
+    }
+
+    // The version of the client's first Initial packet
+    // (ch_cfg.quic_original_version), which a client sends in and a server
+    // reads off that packet. Required: both init calls refuse a Config
+    // without one, and one whose keys the object does not derive.
+    Config &original_version(QuicVersion version) {
+        cfg_.quic_original_version = static_cast<uint32_t>(version);
         return *this;
     }
 #else
@@ -563,7 +581,7 @@ class Session {
 };
 #else
 // A QUIC session owns its ch_quic and closes it — wiping every key set —
-// when it is destroyed. It forwards the sixteen ch_quic_ entries and
+// when it is destroyed. It forwards the eighteen ch_quic_ entries and
 // alert.h's two calls and adds nothing else: chapulin owns every key and
 // the caller owns packet numbers, acknowledgments, loss recovery and
 // streams (docs/quic.md).
@@ -607,16 +625,30 @@ class Quic {
         result.value = ch_quic_crypto_out(&quic_, level, into.data, into.size, &result.size);
         return result;
     }
+
+    // Makes version the negotiated version, once, before the first CRYPTO
+    // byte from the server is delivered (RFC 9369 section 4.1).
+    Status switch_version(QuicVersion version) {
+        return static_cast<Status>(ch_quic_switch_version(&quic_, static_cast<uint32_t>(version)));
+    }
 #endif
 
-    // Protects one packet into into: hdr carries the packet number field
-    // the caller encoded, pn_len says how many of its last bytes those
-    // are, and pn is that same number.
-    Written seal(uint8_t level, uint64_t pn, size_t pn_len, ConstBytes hdr, ConstBytes pt,
-                 Bytes into) {
+    // The version every Handshake and 1-RTT packet carries: the original
+    // one until a client's switch_version().
+    QuicVersion negotiated_version() const {
+        return static_cast<QuicVersion>(ch_quic_negotiated_version(&quic_));
+    }
+
+    // Protects one packet into into: version is the packet's Version
+    // field, the negotiated version at the 1-RTT level; hdr carries the
+    // packet number field the caller encoded, pn_len says how many of its
+    // last bytes those are, and pn is that same number.
+    Written seal(uint8_t level, QuicVersion version, uint64_t pn, size_t pn_len, ConstBytes hdr,
+                 ConstBytes pt, Bytes into) {
         Written result;
-        result.value = ch_quic_seal(&quic_, level, pn, pn_len, hdr.data, hdr.size, pt.data, pt.size,
-                                    into.data, into.size, &result.size);
+        result.value =
+            ch_quic_seal(&quic_, level, static_cast<uint32_t>(version), pn, pn_len, hdr.data,
+                         hdr.size, pt.data, pt.size, into.data, into.size, &result.size);
         return result;
     }
 
@@ -624,31 +656,35 @@ class Quic {
     // level, then wipes that level's write keys. close_frame is one
     // CONNECTION_CLOSE frame and nothing else; a second call at the same
     // level is refused.
-    Written seal_close(uint8_t level, uint64_t pn, size_t pn_len, ConstBytes hdr,
-                       ConstBytes close_frame, Bytes into) {
+    Written seal_close(uint8_t level, QuicVersion version, uint64_t pn, size_t pn_len,
+                       ConstBytes hdr, ConstBytes close_frame, Bytes into) {
         Written result;
-        result.value =
-            ch_quic_seal_close(&quic_, level, pn, pn_len, hdr.data, hdr.size, close_frame.data,
-                               close_frame.size, into.data, into.size, &result.size);
+        result.value = ch_quic_seal_close(&quic_, level, static_cast<uint32_t>(version), pn, pn_len,
+                                          hdr.data, hdr.size, close_frame.data, close_frame.size,
+                                          into.data, into.size, &result.size);
         return result;
     }
 
     // Removes header protection, recovers the packet number and removes
-    // packet protection, in place in packet. On ok() the unprotected
-    // header sits at the front and the plaintext follows it.
-    Opened open(uint8_t level, Bytes packet, size_t pn_off, uint64_t largest_pn,
-                uint64_t current_phase_lowest_pn) {
+    // packet protection, in place in packet. version is the packet's
+    // Version field, the negotiated version at the 1-RTT level. On ok() the
+    // unprotected header sits at the front and the plaintext follows it.
+    Opened open(uint8_t level, QuicVersion version, Bytes packet, size_t pn_off,
+                uint64_t largest_pn, uint64_t current_phase_lowest_pn) {
         Opened result;
-        result.value = ch_quic_open(&quic_, level, packet.data, packet.size, pn_off, largest_pn,
-                                    current_phase_lowest_pn, &result.key_set, &result.packet_number,
-                                    &result.plaintext_len);
+        result.value = ch_quic_open(&quic_, level, static_cast<uint32_t>(version), packet.data,
+                                    packet.size, pn_off, largest_pn, current_phase_lowest_pn,
+                                    &result.key_set, &result.packet_number, &result.plaintext_len);
         return result;
     }
 
-    // Whether a Retry packet's integrity tag validates. False means the
-    // caller discards the packet; it is not a session error.
-    bool retry_ok(ConstBytes pseudo, const uint8_t (&tag)[GCM_TAG]) const {
-        return ch_quic_retry_ok(&quic_, pseudo.data, pseudo.size, tag) != 0;
+    // Whether a Retry packet's integrity tag validates in version, the
+    // Retry's Version field. False means the caller discards the packet,
+    // and any version but the original one is false; it is not a session
+    // error.
+    bool retry_ok(QuicVersion version, ConstBytes pseudo, const uint8_t (&tag)[GCM_TAG]) const {
+        return ch_quic_retry_ok(&quic_, static_cast<uint32_t>(version), pseudo.data, pseudo.size,
+                                tag) != 0;
     }
 
     // Advances the 1-RTT keys one phase and toggles the Key Phase bit.

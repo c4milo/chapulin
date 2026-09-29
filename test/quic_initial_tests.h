@@ -30,9 +30,9 @@ static void a2_seal(uint8_t out[A2_PACKET], size_t *out_len) {
     CHECK(unhex("c300000001088394c8f03e5157080000449e00000002", hdr) == sizeof hdr);
     static uint8_t pt[A2_PAYLOAD];
     a2_payload(pt);
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, APPENDIX_DCID, sizeof APPENDIX_DCID, A2_PN,
-                            A2_PN_LEN, hdr, sizeof hdr, pt, A2_PAYLOAD, out, A2_PACKET,
-                            out_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, A2_PN, A2_PN_LEN, hdr, sizeof hdr, pt, A2_PAYLOAD,
+                            out, A2_PACKET, out_len) == CH_OK);
 }
 
 static void test_appendix_a2_seal(void) {
@@ -79,47 +79,50 @@ static void test_initial_seal_refusals(void) {
 
     // A Destination Connection ID one byte over RFC 9000 §17.2's cap.
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, sizeof dcid, 1, A2_PN_LEN, hdr,
-                            sizeof hdr, pt, sizeof pt, initial_out, whole,
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, sizeof dcid, 1,
+                            A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
                             &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
 
     // A packet number length outside 1 to QUIC_PN_MAX_LEN, both sides.
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, 0, hdr, sizeof hdr, pt, sizeof pt,
-                            initial_out, whole, &initial_out_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, 0, hdr,
+                            sizeof hdr, pt, sizeof pt, initial_out, whole,
+                            &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, QUIC_PN_MAX_LEN + 1, hdr,
-                            sizeof hdr, pt, sizeof pt, initial_out, whole,
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1,
+                            QUIC_PN_MAX_LEN + 1, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
                             &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
 
     // A header shorter than the packet number field it is said to end
     // with.
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, 3, hdr, 2, pt, sizeof pt,
-                            initial_out, whole, &initial_out_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, 3, hdr, 2, pt,
+                            sizeof pt, initial_out, whole, &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
 
     // One byte short of the packet, and the packet exactly.
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, A2_PN_LEN, hdr, sizeof hdr, pt,
-                            sizeof pt, initial_out, whole - 1, &initial_out_len) == CH_ECAP);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, A2_PN_LEN, hdr,
+                            sizeof hdr, pt, sizeof pt, initial_out, whole - 1,
+                            &initial_out_len) == CH_ECAP);
     CHECK(initial_out_untouched());
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, A2_PN_LEN, hdr, sizeof hdr, pt,
-                            sizeof pt, initial_out, whole, &initial_out_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, A2_PN_LEN, hdr,
+                            sizeof hdr, pt, sizeof pt, initial_out, whole,
+                            &initial_out_len) == CH_OK);
     CHECK(initial_out_len == whole);
 
     // RFC 9001 §5.4.2's own boundary: the packet number and the payload
     // together must reach QUIC_PN_MAX_LEN bytes, or the sample falls
     // outside the packet (rfc9001.txt:1283-1286). 4 seals, 3 refuses.
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, 1, hdr, 1, pt, 3, initial_out,
-                            1 + 3 + GCM_TAG, &initial_out_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, 1, hdr, 1, pt,
+                            3, initial_out, 1 + 3 + GCM_TAG, &initial_out_len) == CH_OK);
     CHECK(initial_out_len == 1 + 3 + GCM_TAG);
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, 1, 1, hdr, 1, pt, 2, initial_out,
-                            1 + 2 + GCM_TAG, &initial_out_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, 1, 1, hdr, 1, pt,
+                            2, initial_out, 1 + 2 + GCM_TAG, &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
 }
 
@@ -140,13 +143,13 @@ static void test_initial_open_refusals(void) {
     uint64_t pn = 0;
     size_t pt_len = 0;
 
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, dcid, sizeof dcid, pkt, sampled, pn_off, 0,
-                            &pn, &pt_len) == CH_EINVAL);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, sizeof dcid, pkt,
+                            sampled, pn_off, 0, &pn, &pt_len) == CH_EINVAL);
     CHECK(memcmp(pkt, before, sizeof before) == 0);
     CHECK(pn == 0 && pt_len == 0);
 
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, dcid, 8, pkt, sampled - 1, pn_off, 0, &pn,
-                            &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, 8, pkt, sampled - 1,
+                            pn_off, 0, &pn, &pt_len) == CH_QUIC_DISCARD);
     CHECK(memcmp(pkt, before, sizeof before) == 0);
     CHECK(pn == 0 && pt_len == 0);
 }
@@ -194,9 +197,9 @@ static void test_appendix_a3_seal(void) {
 
     static uint8_t out[A3_PACKET];
     size_t out_len = 0;
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, APPENDIX_DCID, sizeof APPENDIX_DCID, A3_PN,
-                            A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, out, sizeof out,
-                            &out_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
+                            out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof out);
     // Every byte, header protection included, because quic_packet.c
     // applies the mask and Appendix A.3 prints the result.
@@ -220,20 +223,21 @@ static void test_initial_endpoint_reads(void) {
     static uint8_t a3[A3_PACKET];
     static uint8_t a3_again[A3_PACKET];
     size_t a3_len = 0;
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, APPENDIX_DCID, sizeof APPENDIX_DCID, A3_PN,
-                            A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, a3, sizeof a3,
-                            &a3_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
+                            a3, sizeof a3, &a3_len) == CH_OK);
     memcpy(a3_again, a3, sizeof a3);
 
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, APPENDIX_DCID, sizeof APPENDIX_DCID, a3,
-                            a3_len, A3_PN_OFF, 0, &pn, &pt_len) == CH_OK);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, a3, a3_len, A3_PN_OFF, 0, &pn, &pt_len) == CH_OK);
     CHECK(pn == A3_PN);
     CHECK(pt_len == A3_PAYLOAD);
     CHECK(memcmp(&a3[A3_HDR_LEN], pt, A3_PAYLOAD) == 0);
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, APPENDIX_DCID, sizeof APPENDIX_DCID, a3_again,
-                            a3_len, A3_PN_OFF, 0, &pn, &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, a3_again, a3_len, A3_PN_OFF, 0, &pn,
+                            &pt_len) == CH_QUIC_DISCARD);
 
     static uint8_t a2[A2_PACKET];
     static uint8_t a2_again[A2_PACKET];
@@ -243,13 +247,15 @@ static void test_initial_endpoint_reads(void) {
     memcpy(a2_again, a2, sizeof a2);
     a2_payload(a2_pt);
 
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, APPENDIX_DCID, sizeof APPENDIX_DCID, a2,
-                            a2_len, A2_HDR_LEN - A2_PN_LEN, 0, &pn, &pt_len) == CH_OK);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, a2, a2_len, A2_HDR_LEN - A2_PN_LEN, 0, &pn,
+                            &pt_len) == CH_OK);
     CHECK(pn == A2_PN);
     CHECK(pt_len == A2_PAYLOAD);
     CHECK(memcmp(&a2[A2_HDR_LEN], a2_pt, A2_PAYLOAD) == 0);
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, APPENDIX_DCID, sizeof APPENDIX_DCID, a2_again,
-                            a2_len, A2_HDR_LEN - A2_PN_LEN, 0, &pn, &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, APPENDIX_DCID,
+                            sizeof APPENDIX_DCID, a2_again, a2_len, A2_HDR_LEN - A2_PN_LEN, 0, &pn,
+                            &pt_len) == CH_QUIC_DISCARD);
 }
 
 // The endpoint refusal both entries state: a value that is neither cfg.h
@@ -265,8 +271,8 @@ static void test_initial_endpoint_refusals(void) {
     const size_t whole = sizeof hdr + sizeof pt + GCM_TAG;
 
     poison_initial_out();
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER + 1, dcid, sizeof dcid, 1, A2_PN_LEN, hdr,
-                            sizeof hdr, pt, sizeof pt, initial_out, whole,
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER + 1, CH_QUIC_VERSION_1, dcid, sizeof dcid, 1,
+                            A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
                             &initial_out_len) == CH_EINVAL);
     CHECK(initial_out_untouched());
 
@@ -276,10 +282,46 @@ static void test_initial_endpoint_refusals(void) {
     memcpy(before, pkt, sizeof before);
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER + 1, dcid, sizeof dcid, pkt, sizeof pkt, 5, 0,
-                            &pn, &pt_len) == CH_EINVAL);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER + 1, CH_QUIC_VERSION_1, dcid, sizeof dcid, pkt,
+                            sizeof pkt, 5, 0, &pn, &pt_len) == CH_EINVAL);
     CHECK(memcmp(pkt, before, sizeof before) == 0);
     CHECK(pn == 0 && pt_len == 0);
+}
+
+// The version refusal both entries state: a version this build derives no
+// keys for derives no key and writes nothing. Version 1 is the one this
+// build derives, so the values on either side of it, version 2 and a
+// version no RFC defines are each refused, and version 1 itself seals.
+static void test_initial_version_refusals(void) {
+    uint8_t dcid[8];
+    uint8_t hdr[8];
+    uint8_t pt[8];
+    memset(dcid, 0x5a, sizeof dcid);
+    memset(hdr, 0x11, sizeof hdr);
+    memset(pt, 0x22, sizeof pt);
+    const size_t whole = sizeof hdr + sizeof pt + GCM_TAG;
+    static const uint32_t refused[] = {0, CH_QUIC_VERSION_1 + 1, CH_QUIC_VERSION_2, 0x0a0a0a0aU};
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        poison_initial_out();
+        CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, refused[i], dcid, sizeof dcid, 1,
+                                A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
+                                &initial_out_len) == CH_EINVAL);
+        CHECK(initial_out_untouched());
+
+        uint8_t pkt[64];
+        uint8_t before[sizeof pkt];
+        memset(pkt, 0x33, sizeof pkt);
+        memcpy(before, pkt, sizeof before);
+        uint64_t pn = 0;
+        size_t pt_len = 0;
+        CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, refused[i], dcid, sizeof dcid, pkt,
+                                sizeof pkt, 5, 0, &pn, &pt_len) == CH_EINVAL);
+        CHECK(memcmp(pkt, before, sizeof before) == 0);
+        CHECK(pn == 0 && pt_len == 0);
+    }
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, sizeof dcid, 1,
+                            A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
+                            &initial_out_len) == CH_OK);
 }
 
 #endif

@@ -7,8 +7,8 @@
 // three primitives. It has no record layer (RFC 9001 §4.1.3,
 // rfc9001.txt:462-464) and compiles no session.c, so every field and
 // call the record layer owns sits under #ifndef CH_TRANSPORT_QUIC_NONBLOCKING with
-// the reason beside it. The QUIC block at the end of this file lists
-// what a QUIC build keeps and what quic.c wipes.
+// the reason beside it. quic_session.h lists what a QUIC build keeps
+// between calls and what quic_fail wipes.
 #ifndef CH_SESSION_H
 #define CH_SESSION_H
 
@@ -368,6 +368,15 @@ typedef struct {
     size_t post_fill;
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The negotiated version: RFC 9368's QUIC version in use once version
+    // negotiation completes (rfc9368.txt:136-137), a CH_QUIC_VERSION_ value
+    // (quic_cfg.h). Each init call writes cfg.quic_original_version here,
+    // and ch_quic_switch_version, a client's one switch, is the only call
+    // that writes it again. The Handshake and 1-RTT keys are derived under
+    // it, a packet at those levels must carry it, and
+    // ch_quic_negotiated_version reports it. Public, like group: the caller
+    // read it off the wire.
+    uint32_t quic_negotiated_version;
     // The one handshake message the client owes, staged whole until
     // ch_quic_crypto_out hands it out. It carries no REC_HDR prefix:
     // RFC 9001 §4.1.3 takes the unprotected content of a handshake
@@ -429,72 +438,6 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
 
 // Wipe all key material and buffered plaintext; keys go dead.
 void tlsi_wipe(ch_tls *t);
-#endif
-
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-// What survives a return under TRANSPORT=quic-nonblocking.
-//
-// The tcp-blocking driver runs one handshake to completion inside ch_connect and
-// keeps its working state on ch_handshake's own stack frame. The QUIC
-// driver returns to the caller between handshake messages, so every
-// value a later call reads lives in the session struct instead. That
-// struct is ch_quic, which quic.h declares: it holds one ch_tls, the
-// handshake_state handshake_record.h declares, the step number, the
-// levels, the staged length, the alert, the Key Phase bit, the packet
-// protection key sets and the RFC 9001 §6.6 counters. No driver field
-// is added to ch_tls; ch_quic embeds it.
-//
-// Five ch_tls fields carry the driver's state between calls, and each
-// keeps the name it has above:
-//
-//   pt_off, pt_len   the unread CRYPTO bytes of one encryption level
-//                    inside cfg.buf, the meaning the TLS record reader
-//                    gives them. QUIC sends no record_size_limit, so
-//                    cfg.buf_len is the only bound a peer meets, and
-//                    the reader refuses, at the message header, a
-//                    message that could never fit.
-//   rd_secret        the two 1-RTT traffic secrets the "quic ku" step
-//   wr_secret        reads and rewrites (RFC 9001 §6.1,
-//                    rfc9001.txt:1605-1607). ks_master writes both, as
-//                    it does over TCP, and the invariant below says
-//                    which key set each one names afterwards.
-//   tx               the one staged handshake message, above.
-//
-// Which key set each secret belongs to, stated once because the two
-// sides differ and the difference is one update wide:
-//
-//   wr_secret is the traffic secret of ch_quic's app_tx.
-//   rd_secret is the traffic secret of ch_quic's app_rx[CH_QUIC_KEY_NEXT].
-//
-// The asymmetry comes from quic_keys_update, which writes the advanced
-// secret back over its argument and re-derives that set's packet
-// protection key and IV in the same call (quic_keys.h). So one call
-// with rd_secret always writes app_rx[CH_QUIC_KEY_NEXT] and leaves
-// rd_secret naming it. The Finished step runs that call once, which is
-// what makes the invariant true from the first 1-RTT packet on, and
-// ch_quic_key_update runs it again after it moves current to previous
-// and next to current. A build that kept the current phase's secret
-// here would derive a next set one update behind, and every 1-RTT
-// packet after the first peer-initiated key update would fail to open.
-//
-// What quic_fail wipes, in the names the code uses, so INV-17's claim
-// that every failure path wipes can be checked against a list: hs,
-// every read key (handshake_rx, handshake_hp_rx, all CH_QUIC_KEY_SETS
-// slots of app_rx, and app_hp_rx), t.rd_secret, t.wr_secret,
-// t.res_master, tx_len, t.pt_off and t.pt_len, and every read bit of
-// levels_ready, so no later call opens a packet. It keeps the write keys
-// of each level whose write bit is set, for the one CONNECTION_CLOSE
-// ch_quic_seal_close seals there: initial_dcid and initial_dcid_len,
-// which hold no key but derive the Initial one, handshake_tx and
-// handshake_hp_tx, and app_tx and app_hp_tx. It wipes those of a level
-// whose bit is clear, and ch_quic_seal_close wipes a level's right after
-// its seal (docs/decisions.md 57). It wipes no rec_dir, because a
-// TRANSPORT=quic-nonblocking build declares none. ch_quic_close wipes every field
-// above, the write keys included, clears levels_ready and sets
-// CH_ST_CLOSED.
-//
-// docs/quic.md, "The state that survives a return", states the whole
-// table and the bound each field's proof harness assumes.
 #endif
 
 #endif

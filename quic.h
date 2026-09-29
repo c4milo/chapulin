@@ -8,21 +8,27 @@
 // streams. docs/quic.md, "What the mode does not do", lists the split in full. The object
 // opens no socket and calls no I/O callback. Zero heap holds as it does over TCP: one
 // ch_quic, one caller-supplied buffer, no allocation. Configuration and result codes live
-// in cfg.h, the session struct under it in session.h, and the random source in rand.h. No call
-// here polls for keys: RFC 9001 §4.1.4 says the availability of new keys is always a result
-// of providing inputs to TLS (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside
-// ch_quic_crypto_in and the caller collects what a delivery produced.
+// in cfg.h and quic_cfg.h, ch_quic in quic_session.h, the ch_tls under it in session.h, and
+// the random source in rand.h. No call here polls for keys: RFC 9001 §4.1.4 says the
+// availability of new keys is always a result of providing inputs to TLS
+// (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside ch_quic_crypto_in and the
+// caller collects what a delivery produced.
+//
+// The QUIC version is the caller's value, like the level: every packet call takes the version
+// of the packet beside its level, and chapulin reads no header byte to learn either. It
+// derives each version's keys and refuses a packet in a version its level does not admit
+// (docs/decisions.md 79).
 //
 // Result codes, in one sentence each. CH_OK means the call did what it says. CH_EINVAL means the
 // call was refused on entry and sent nothing: ch_quic_init leaves the session failed until the next
 // init, and every other call changes nothing and may run again later. CH_ECAP from
 // ch_quic_crypto_out and the two seal calls means the caller's own buffer was short, nothing was
 // consumed, and the same call may run again with a larger one; from ch_quic_crypto_in it is a peer
-// message that could never fit cfg.buf_len, and the session is dead. cfg.h states CH_QUIC_DISCARD
-// and CH_QUIC_AEAD_LIMIT, which ch_quic_open alone returns. Every other error means the session is
-// dead: ch_quic_alert names the TLS alert, ch_quic_error_code the transport error code the caller
-// puts in CONNECTION_CLOSE, and ch_quic_seal_close seals that frame once at each level whose write
-// keys the session had. A server's two calls keep these meanings (srv_quic.h).
+// message that could never fit cfg.buf_len, and the session is dead. quic_cfg.h states
+// CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT, which ch_quic_open alone returns. Every other error means
+// the session is dead: ch_quic_alert names the TLS alert, ch_quic_error_code the transport error
+// code the caller puts in CONNECTION_CLOSE, and ch_quic_seal_close seals that frame once at each
+// level whose write keys the session had. A server's two calls keep these meanings (srv_quic.h).
 #ifndef CH_QUIC_H
 #define CH_QUIC_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -35,97 +41,26 @@
 #include "gcm.h"
 #include "handshake_record.h"
 #include "quic_keys.h"
+#include "quic_session.h"
 #include "quic_step.h"
 #include "session.h"
-
-// The bit ch_quic.levels_ready holds for one direction at one encryption level. level is
-// a CH_LEVEL_ value and direction is CH_KEY_READ or CH_KEY_WRITE (cfg.h), so the six bits
-// of the three levels sit in the low six bits of one byte. Both arguments are the
-// caller's own public values, never a secret, so the shift is an ordinary index.
-#define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1U << ((level) * 2 + (direction))))
-
-// One QUIC session. It holds everything that survives a return, because the driver returns to its
-// caller between handshake messages: the ch_tls a TCP build holds alone, the handshake_state a
-// tcp-blocking build keeps on ch_handshake's stack frame, the driver's own fields, and the packet
-// protection keys of every encryption level. docs/quic.md, "The state that survives a return",
-// states the bound each field's proof harness assumes. The caller declares one and passes its
-// address to every call. It is not copyable: hs.t points at t, and every public entry rewrites that
-// pointer to its own &q->t, so a copy cannot leave a dangling pointer inside a step.
-//
-// Two traffic secrets sit in t rather than here, and every 1-RTT derivation rests on which
-// key set each names: t.wr_secret is the traffic secret of app_tx, and t.rd_secret that of
-// app_rx[CH_QUIC_KEY_NEXT], not of app_rx[CH_QUIC_KEY_CURRENT]. session.h states why beside
-// the two fields, with what a build that kept the current phase's secret would get wrong.
-typedef struct ch_quic {
-    ch_tls t;
-    // The flight handlers' working state, wiped at HSQ_STEP_COMPLETE, one round trip
-    // earlier than the tcp-blocking driver wipes its frame, which is INV-17's rule that handshake
-    // secrets die at CONNECTED.
-    handshake_state hs;
-    uint8_t step;     // HSQ_STEP_*, quic_step.h
-    uint8_t rx_level; // the one level whose CRYPTO bytes cfg.buf holds
-    uint8_t tx_level; // the level the staged message goes out at
-    uint8_t alert;    // what ch_quic_alert reports after a failure
-    uint8_t endpoint; // CH_QUIC_ENDPOINT_*, the side its init call gave it (quic.c's CH_QUIC_SELF)
-    size_t tx_len;    // bytes staged in t.tx; 0 when nothing is owed
-    // The Key Phase bit the current 1-RTT send set carries, 0 or 1 (RFC 9001 §6.1,
-    // rfc9001.txt:1615-1616). ch_quic_key_phase reports it and ch_quic_key_update toggles it.
-    uint8_t key_phase;
-    // The QUIC transport error code a step or an entry wrote, and 0 when none did. Only quic_fail
-    // and the steps that owe 0x0a write it, and ch_quic_error_code states the one rule that turns
-    // this field, q->alert and q->t.state into the answer a caller puts in CONNECTION_CLOSE.
-    uint64_t error_code;
-    // Which encryption levels can protect or unprotect packets right now, one bit per level per
-    // direction at CH_QUIC_LEVEL_BIT above. The packet calls and ch_quic_discard read it, and it is
-    // the only answer to "installed and not discarded": a key set of all-zero bytes is a legitimate
-    // derivation, so no call decides that question by comparing key bytes. ch_quic_initial_keys
-    // sets both CH_LEVEL_INITIAL bits, and the step that fires cfg.on_level_ready for a later level
-    // sets that level's bits in the same call, so the caller's view and this field agree.
-    // ch_quic_discard clears both bits of one level and ch_quic_close clears every bit. A failure
-    // clears every read bit and keeps the write bits, each of which then admits one
-    // ch_quic_seal_close, which clears it. docs/quic.md's state table has its row.
-    uint8_t levels_ready;
-    // The Initial level: the Destination Connection ID RFC 9001 §5.2 derives every Initial
-    // key from, and no key. quic_initial.c builds the key each packet needs on its own
-    // stack, so none outlives a call, which is INV-26. Every long header carries these
-    // bytes in the clear. ch_quic_initial_keys writes both, again after a Retry.
-    uint8_t initial_dcid[CH_QUIC_DCID_MAX];
-    uint8_t initial_dcid_len;
-    // The Handshake level. The packet protection key and IV are one value per direction;
-    // the header protection key is its own, because §5.4 keeps it for the whole
-    // connection (rfc9001.txt:1172-1174).
-    quic_keys handshake_rx, handshake_tx;
-    quic_hp_key handshake_hp_rx, handshake_hp_tx;
-    // The 1-RTT level: one send set, and three receive sets indexed by CH_QUIC_KEY_PREVIOUS,
-    // CH_QUIC_KEY_CURRENT and CH_QUIC_KEY_NEXT (cfg.h) and by no computed index. §6.3 makes the
-    // current and the next set a floor (rfc9001.txt:1711-1712); the previous set is this design's
-    // choice, so a packet delayed across a key update still opens (§6.5). The header protection
-    // keys are written once and never updated (§6.1, rfc9001.txt:1607).
-    quic_keys app_tx;
-    quic_keys app_rx[CH_QUIC_KEY_SETS];
-    quic_hp_key app_hp_rx, app_hp_tx;
-    // RFC 9001 §6.6's counts. open_failures counts received packets that failed authentication in
-    // this connection, across every level and every key, because the limit is stated that way
-    // (rfc9001.txt:1823-1827). initial_sealed counts packets sealed under the Initial keys, whose
-    // AES-128-GCM pays a confidentiality limit (rfc9001.txt:1812-1813); a Retry does not reset it.
-    // An AES-GCM suite's key sets count their own packets, in quic_keys.sealed.
-    uint64_t open_failures;
-    uint64_t initial_sealed;
-} ch_quic;
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Validates the configuration, prepares the state machine and builds the ClientHello into
 // the session's staging area. It sends nothing: the caller takes those bytes with
-// ch_quic_crypto_out at CH_LEVEL_INITIAL. It and the two CRYPTO calls below, the client's
-// driver, are declared only in an object with a client, which alone defines them (quic.c).
+// ch_quic_crypto_out at CH_LEVEL_INITIAL. It, the two CRYPTO calls and ch_quic_switch_version
+// below, the client's driver, are declared only in an object with a client, which alone
+// defines them (quic.c).
 //
 // It zeroes q, copies cfg into q->t.cfg, and applies the checks ch_connect applies over TCP, minus
 // cfg.send and cfg.recv, which have no meaning here. Under TRUST=webpki those are webpki_cfg_ok's,
 // so SPKI pins mean what they mean over TCP (docs/decisions.md 64). It keeps the ALPN configuration
-// checks, and adds three rules of its own: cfg.transport_params is not NULL and its length is 1 to
-// CH_TRANSPORT_PARAMS_MAX (§8.2, rfc9001.txt:1929-1936), cfg.on_level_ready is not NULL, and the
+// checks, and adds four rules of its own: cfg.transport_params is not NULL and its length is 1 to
+// CH_TRANSPORT_PARAMS_MAX (§8.2, rfc9001.txt:1929-1936), cfg.on_level_ready is not NULL, the
 // ALPN offer names at least one protocol, because §8.1 makes ALPN mandatory for QUIC
-// (rfc9001.txt:1891-1895).
+// (rfc9001.txt:1891-1895), and cfg.quic_original_version is a version this build derives keys
+// for (quic_version.h), which 0 never is. It writes that version to
+// q->t.quic_negotiated_version, the value every packet call holds a later version to.
 //
 // It keeps the buffer floor too, cfg.buf_len >= CH_MIN_RXBUF, which under this build is
 // CH_QUIC_MIN_RXBUF and nothing else (cfg.h): a QUIC client sends no record_size_limit
@@ -142,8 +77,10 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 #endif
 
 // Stores the Destination Connection ID that RFC 9001 §5.2 derives the Initial secrets
-// from, beside its printed salt (rfc9001.txt:1051-1066), and marks both directions of the
-// Initial level ready. Appendix A.1 is the vector for what the packet calls then derive.
+// from, beside the salt its version prints (rfc9001.txt:1051-1066), and marks both directions
+// of the Initial level ready. Appendix A.1 is the vector for what the packet calls then derive
+// in version 1. The connection ID serves every version: each packet call derives the Initial
+// key of the version it is given from these bytes.
 //
 // The caller calls it once before it sends its first Initial packet, and again after a
 // Retry, because §5.2 changes the secrets then (rfc9001.txt:1092-1094): dcid is then the
@@ -173,7 +110,7 @@ int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
 // message, and returns when the bytes run out.
 //
 // Requires: q is initialized; level is a CH_LEVEL_ value; p points at n readable bytes
-// outside cfg.buf. Requires the caller contract cfg.h states: each level's bytes arrive
+// outside cfg.buf. Requires the caller contract quic_cfg.h states: each level's bytes arrive
 // once and in order, and bytes chapulin has consumed are never delivered again, because
 // chapulin stores no CRYPTO stream offset and cannot tell a retransmission from new data.
 // The callbacks this call fires must not call back into q.
@@ -219,7 +156,31 @@ int ch_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 // live and the caller calls again with a larger one. Returns CH_EINVAL and changes nothing
 // when level is above CH_LEVEL_APPLICATION or the session is dead.
 int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size_t *out_len);
+
+// Makes version the session's negotiated version, the one switch RFC 9369 §4.1 gives a client:
+// it learns the negotiated version from the first long header whose Version field differs from
+// the original version (rfc9369.txt:240-242). The caller switches before it opens that packet
+// and passes version to every packet call after it. No key moves: the packet calls derive each
+// Initial key from q->initial_dcid under the version they are given, and no Handshake key
+// exists yet. The switch must come first because the server sends every CRYPTO frame in the
+// negotiated version, and a CRYPTO frame in the original version makes the original version
+// the negotiated one (rfc9369.txt:236-244), so the first CRYPTO byte fixes the answer.
+//
+// Requires: q is initialized. Returns CH_OK and writes version to q->t.quic_negotiated_version
+// when all of these hold: q is a client session and live; it waits for the ServerHello and no
+// CRYPTO byte from the server has been delivered at any level; no switch has happened, so the
+// negotiated version is still cfg.quic_original_version; this build derives version's keys
+// (quic_version.h); and version is not the negotiated version. Returns CH_EINVAL and changes
+// nothing otherwise. This build derives version 1 alone, which is every session's original
+// version, so it refuses every switch.
+int ch_quic_switch_version(ch_quic *q, uint32_t version);
 #endif
+
+// Reports q->t.quic_negotiated_version: the version every Handshake and 1-RTT packet carries
+// and their keys are derived under. It is cfg.quic_original_version from init on, until a
+// client's ch_quic_switch_version, and 0 after a refused init. Requires: q is initialized. It
+// cannot fail and changes nothing.
+uint32_t ch_quic_negotiated_version(const ch_quic *q);
 
 // Protects one packet and writes it whole into out: the nonce from the packet protection
 // IV and the packet number, the unprotected header as the associated data (RFC 9001 §5.3,
@@ -232,6 +193,14 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // that same number. At CH_LEVEL_APPLICATION the caller has already written byte 0's Key
 // Phase bit from ch_quic_key_phase, and this call only masks that byte.
 //
+// version is the QUIC version the packet goes out in: the Version field the caller wrote into
+// a long header, and the negotiated version at CH_LEVEL_APPLICATION, whose short header names
+// none. CH_LEVEL_INITIAL admits the original version and the negotiated one: a server answers
+// Initial packets in the original version before it has chosen (rfc9369.txt:246-248), and a
+// client sends later ones in the negotiated version (rfc9369.txt:250-251). The Initial key is
+// derived under the version given. The other two levels admit the negotiated version alone,
+// because both endpoints send Handshake and 1-RTT packets in it (rfc9369.txt:256-257).
+//
 // Requires: q is initialized and live; CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE) is set in
 // q->levels_ready; hdr points at hdr_len readable bytes, pt at pt_len readable bytes, out
 // at cap writable bytes overlapping neither; pn is below 2^62, the range RFC 9000 §17.1
@@ -241,10 +210,11 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // *out_len. Returns CH_ECAP and writes nothing, leaving *out_len alone, when cap is below
 // that sum.
 //
-// Returns CH_EINVAL and writes nothing when the session is dead, when level is above
-// CH_LEVEL_APPLICATION, when that send bit is clear in q->levels_ready because the level's
-// keys were never installed or were discarded, when pn_len is 0 or above 4, when hdr_len
-// is below pn_len, or when pn_len + pt_len is below 4. That last refusal is §5.4.2's rule
+// Returns CH_EINVAL, writes nothing and counts nothing when the session is dead, when level is
+// above CH_LEVEL_APPLICATION, when level does not admit version, when that send bit is clear
+// in q->levels_ready because the level's keys were never installed or were discarded, when
+// pn_len is 0 or above 4, when hdr_len is below pn_len, or when pn_len + pt_len is below 4.
+// That last refusal is §5.4.2's rule
 // that the encoded packet number and the protected payload run at least 4 bytes past the
 // sample (rfc9001.txt:1283-1286), which keeps the 16-byte sample inside out; writing the
 // padding is the caller's, because the caller frames the packet. The boundary test is that
@@ -264,9 +234,9 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // returns CH_EINVAL and no packet goes out under them. A 1-RTT key update writes a new
 // set whose count starts at zero, and §6.6 makes the caller initiate one before the
 // limit (rfc9001.txt:1803-1805).
-int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                 size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                 size_t *out_len);
+int ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                 const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out,
+                 size_t cap, size_t *out_len);
 
 // The largest packet ch_quic_seal_close seals, header and tag included: RFC 9000 §14's
 // smallest maximum datagram size, which every QUIC path carries (rfc9000.txt:4598-4599).
@@ -286,9 +256,9 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const ui
 // Returns CH_ECAP when cap is short, and CH_EINVAL when the session has not failed, when
 // that bit is clear, when hdr_len + pt_len + 16 is above CH_QUIC_CLOSE_MAX, or for a
 // refusal ch_quic_seal lists; both change nothing, so the keys stay for a later call.
-int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                       size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                       size_t *out_len);
+int ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_t pn_len,
+                       const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                       uint8_t *out, size_t cap, size_t *out_len);
 
 // Removes header protection, recovers the packet number and removes packet protection from
 // one packet, in place in pkt. The three run in one call because RFC 9001 §9.5 requires
@@ -304,6 +274,13 @@ int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, co
 // current_phase_lowest_pn the previous keys open the packet, at or above it the next keys
 // do. That keeps §5.5's MUST against opening a higher-numbered packet under the previous
 // keys (rfc9001.txt:1365-1369).
+//
+// version is the Version field of the packet's long header, which the caller read, and the
+// negotiated version at CH_LEVEL_APPLICATION. Each level admits the versions ch_quic_seal's
+// does. At CH_LEVEL_INITIAL that is the original version beside the negotiated one, because a
+// server keeps its original version's Initial receive keys until a Handshake packet in the
+// negotiated version opens (rfc9369.txt:252-254). At the other two levels a packet in any
+// version but the negotiated one is one §4.1 makes an endpoint drop (rfc9369.txt:256-259).
 //
 // Requires: q is initialized and live; CH_QUIC_LEVEL_BIT(level, CH_KEY_READ) is set in
 // q->levels_ready; pkt points at pkt_len readable and writable bytes holding one whole
@@ -344,50 +321,56 @@ int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, co
 // dead and no later call processes a packet; the caller sends CONNECTION_CLOSE with
 // AEAD_LIMIT_REACHED.
 //
-// Returns CH_EINVAL and changes nothing when the session is dead, when level is above
-// CH_LEVEL_APPLICATION, when that receive bit is clear in q->levels_ready because the
-// level's keys were never installed or were discarded, or when level is
-// CH_LEVEL_APPLICATION while q->t.state is below CH_ST_CONNECTED. That last refusal is
+// Returns CH_EINVAL and changes nothing, q->open_failures included, when the session is dead,
+// when level is above CH_LEVEL_APPLICATION, when level does not admit version, when that
+// receive bit is clear in q->levels_ready because the level's keys were never installed or
+// were discarded, or when level is CH_LEVEL_APPLICATION while q->t.state is below
+// CH_ST_CONNECTED. A packet in a version its level does not admit is one the caller drops,
+// and it never reaches the AEAD, so §6.6 counts it nowhere. The last refusal is
 // §5.7, which forbids a client from processing a 1-RTT packet before the TLS handshake is
 // complete even when it already holds the keys (rfc9001.txt:1484-1486): the caller buffers
 // the packet and delivers it again once ch_quic_state reports CH_ST_CONNECTED.
-int ch_quic_open(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                 uint64_t largest_pn, uint64_t current_phase_lowest_pn, uint8_t *key_set,
-                 uint64_t *pn, size_t *pt_len);
+int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,
+                 size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
+                 uint8_t *key_set, uint64_t *pn, size_t *pt_len);
 
 // Recomputes RFC 9001 §5.8's Retry Integrity Tag over the Retry pseudo-packet the caller
 // built and compares it with ct_memeq against the tag the packet carried, under the key
-// and the nonce §5.8 prints (rfc9001.txt:1499-1502). Appendix A.4 is the vector.
+// and the nonce §5.8 prints (rfc9001.txt:1499-1502). Appendix A.4 is the vector. version is
+// the Retry packet's Version field. A server sends a Retry in the original version and a
+// client ignores a Retry in any other (rfc9369.txt:221-222), so a version other than
+// cfg.quic_original_version answers 0 before any tag is computed.
 //
-// It is a predicate: it reads no session field and writes none, so it answers a verdict
-// and not a ch_err code. Its return type is uint8_t for that reason, and not the int every
-// other entry here returns: a caller cannot compare a uint8_t against a ch_err without the
-// compiler saying so, and a caller that tested it against CH_OK would otherwise accept
-// exactly the forged Retry packets RFC 9000 §17.2.5.2 makes it discard. A 0 fails nothing
-// by itself. §17.2.5.2 makes discarding the Retry the caller's step
+// It is a predicate: it reads one session field, cfg.quic_original_version, and writes none,
+// so it answers a verdict and not a ch_err code. Its return type is uint8_t for that reason,
+// and not the int every other entry here returns: a caller cannot compare a uint8_t against
+// a ch_err without the compiler saying so, and a caller that tested it against CH_OK would
+// otherwise accept exactly the forged Retry packets RFC 9000 §17.2.5.2 makes it discard. A 0
+// fails nothing by itself. §17.2.5.2 makes discarding the Retry the caller's step
 // (rfc9000.txt:5407-5411), as are that section's other three rules, which read fields
 // chapulin does not parse.
 //
 // Requires: q is initialized; pseudo points at n readable bytes and is the pseudo-packet
 // §5.8 defines, which the caller builds; tag points at GCM_TAG readable bytes. The caller
-// checks the pseudo-packet's shape, because a wrong one produces a 0 and no diagnosis. q
-// is unread, because §5.8 prints the key and the nonce; docs/quic.md gives the call q.
+// checks the pseudo-packet's shape, because a wrong one produces a 0 and no diagnosis.
 //
-// Returns 1 for a matching tag and 0 otherwise, in a time that depends on n alone.
-uint8_t ch_quic_retry_ok(const ch_quic *q, const uint8_t *pseudo, size_t n,
+// Returns 1 for a matching tag in the original version and 0 otherwise, in a time that
+// depends on n and version alone.
+uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo, size_t n,
                          const uint8_t tag[GCM_TAG]);
 
 // Runs RFC 9001 §6's packet-level key update on the 1-RTT keys. It advances the send
-// secret with the "quic ku" label (§6.1, rfc9001.txt:1605-1613), rewrites the send packet
-// protection key and IV from it, and toggles q->key_phase, the bit the caller must set in
+// secret with the negotiated version's "quic ku" label (§6.1, rfc9001.txt:1605-1613;
+// quic_version.h), rewrites the send packet protection key and IV from it under that
+// version's labels, and toggles q->key_phase, the bit the caller must set in
 // byte 0 of every 1-RTT header it seals from then on (rfc9001.txt:1615-1616). On the
 // receive side it moves the current set to CH_QUIC_KEY_PREVIOUS and holds it, promotes
 // CH_QUIC_KEY_NEXT to CH_QUIC_KEY_CURRENT, and derives a new next set.
 //
-// That is two quic_keys_update calls and no other derivation, under the invariant the
-// ch_quic comment above states: quic_keys_update(q->t.wr_secret, &q->app_tx) for the send
-// side, and, after the two moves, quic_keys_update(q->t.rd_secret,
-// &q->app_rx[CH_QUIC_KEY_NEXT]), which leaves t.rd_secret naming the new next set again.
+// That is two quic_keys_update calls and no other derivation, under the invariant
+// quic_session.h states: one over q->t.wr_secret and q->app_tx for the send side, and,
+// after the two moves, one over q->t.rd_secret and q->app_rx[CH_QUIC_KEY_NEXT], which leaves
+// t.rd_secret naming the new next set again.
 // The HSQ_STEP_AWAIT_FINISHED step runs that same receive call once (quic_step.h),
 // which makes the invariant true from the first 1-RTT packet on. The moves copy key sets
 // and derive nothing.

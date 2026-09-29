@@ -1,0 +1,16 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: the two seal calls take a packet in any version, so a Handshake
+  packet goes out in a version the connection did not negotiate, which
+  RFC 9369 section 4.1 forbids (rfc9369.txt:256-257).
+  test/quic_version_tests.h seals at the Handshake level in four
+  versions other than the negotiated one and requires CH_EINVAL with
+  nothing written.
+
+--- old
+    if (level > CH_LEVEL_APPLICATION || !version_ok(q, level, version) ||
+        (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) == 0) {
+--- new
+    if (level > CH_LEVEL_APPLICATION ||
+        (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) == 0) {

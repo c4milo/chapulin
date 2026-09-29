@@ -35,9 +35,10 @@ import subprocess
 import sys
 import tempfile
 
-# The headers that declare ch_cfg and its members. Every object's module
-# includes them through the headers of its calls.
-CONFIG_HEADERS = {"cfg.h", "srv_cfg.h", "ticket.h", "webpki_cfg.h"}
+# The headers that declare ch_cfg and its members, and the ones cfg.h
+# includes under a mode's define. Every object's module includes them
+# through the headers of its calls.
+CONFIG_HEADERS = {"cfg.h", "quic_cfg.h", "srv_cfg.h", "ticket.h", "webpki_cfg.h"}
 
 # The suffixes of a name that sizes something a caller allocates or
 # fills in.

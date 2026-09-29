@@ -52,6 +52,14 @@ passes the comparison, because the declarations it pulls in belong to
 the file included, and it still puts those declarations in a TCP build
 that reads the header.
 
+A `quic*` file must also contribute something under the define, and a
+header whose body is macros alone, such as `quic_cfg.h`, preprocesses to
+no line in either run, because `-E` consumes every `#define`. For such a
+file the lint runs the preprocessor again with `-dD`, which keeps each
+`#define` in the output under the line marker of the file that wrote it,
+and counts the file's own definitions that appear with the define and
+not without it.
+
 What this cannot see. It reads whole files, so a QUIC-only function
 inside a file both transports compile is invisible: a QUIC arm added to
 `session.c` passes, and review catches that. It also cannot judge a file
@@ -229,8 +237,9 @@ def judge(path, quic, shared, conditional, extra=()):
     quic_only = not code(own_off) and (gained or lost)
 
     if path in quic:
+        gains = gained or lost or definitions_gained(path, extra)
         return "quic", quic_problems(path, code(own_off), code(whole_off),
-                                     gained or lost)
+                                     gains)
     if path in shared:
         if quic_only:
             return "quic", [f"{path} is QUIC-only, and both transports must "
@@ -252,6 +261,19 @@ def judge(path, quic, shared, conditional, extra=()):
             f"QUIC_CONDITIONAL in the Makefile if the mode really owns an "
             f"arm there"]
     return "silent", []
+
+
+def definitions_gained(path, extra=()):
+    """The `#define` lines one file writes with the define and not without
+    it, read from `-dD` runs, which keep every definition under the line
+    marker of the file that wrote it. A run that fails answers nothing,
+    and the caller then reports the file as contributing nothing."""
+    off = preprocess(path, False, list(extra) + ["-dD"])
+    on = preprocess(path, True, list(extra) + ["-dD"])
+    if off is None or on is None:
+        return []
+    return [line for line in on[1]
+            if line.startswith("#define") and line not in off[1]]
 
 
 def quic_problems(path, own_code, whole_code, gains):

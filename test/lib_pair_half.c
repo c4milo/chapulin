@@ -117,6 +117,7 @@ static void base_config(ch_cfg *cfg) {
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
+    cfg->quic_original_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
     cfg->alpn_protocols = alpn;
     cfg->alpn_count = 1;

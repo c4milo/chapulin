@@ -194,6 +194,7 @@ static void retry_session(ch_quic *q) {
     cfg.on_level_ready = retry_level_ready;
     cfg.transport_params = server_params;
     cfg.transport_params_len = sizeof server_params;
+    cfg.quic_original_version = CH_QUIC_VERSION_1;
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.on_crypto_out = retry_sink;
     provision(&cfg);

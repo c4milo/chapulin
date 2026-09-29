@@ -89,6 +89,10 @@ static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x5
 #include "quic_initial_tests.h"
 #include "quic_packet_tests.h"
 
+// The Retry key and the two Retry calls, which read gcm_tests.h's
+// Appendix A.4 packet.
+#include "quic_retry_tests.h"
+
 // FIPS 197's own example values for AES-128. Appendix B works one
 // encryption through every round; Appendix C.1 is the full block vector
 // for Nk = 4. The key expansion is checked by both, because a wrong
@@ -240,13 +244,13 @@ static void test_appendix_a1_keys(void) {
                                                    0x44, 0x43, 0x0b, 0x49, 0x0e, 0xea, 0xa3, 0x14};
     aes_public_key k;
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(memcmp(k.key.round_keys, client_key, sizeof client_key) == 0);
     CHECK(memcmp(k.iv, client_iv, sizeof client_iv) == 0);
     CHECK(memcmp(k.hp.round_keys, client_hp, sizeof client_hp) == 0);
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     CHECK(memcmp(k.key.round_keys, server_key, sizeof server_key) == 0);
     CHECK(memcmp(k.iv, server_iv, sizeof server_iv) == 0);
@@ -269,12 +273,12 @@ static void test_appendix_header_masks(void) {
     aes_public_key k;
     uint8_t mask[AES_BLOCK];
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     aes_encrypt_block_hp(&k, client_sample, mask);
     CHECK(memcmp(mask, client_mask, sizeof client_mask) == 0);
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     aes_encrypt_block_hp(&k, server_sample, mask);
     CHECK(memcmp(mask, server_mask, sizeof server_mask) == 0);
@@ -284,71 +288,6 @@ static void test_appendix_header_masks(void) {
     memcpy(both, server_sample, sizeof both);
     aes_encrypt_block_hp(&k, both, both);
     CHECK(memcmp(both, server_mask, sizeof server_mask) == 0);
-}
-
-// RFC 9001 §5.8's printed key (rfc9001.txt:1499-1500), and the two
-// fields aes_public_key_retry leaves zero because §5.8 prints the nonce
-// and a Retry packet carries no header protection.
-static void test_retry_key(void) {
-    static const uint8_t retry_key[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
-                                                   0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
-    static const aes_key_schedule zero_schedule;
-    static const uint8_t zero_iv[AES_IV] = {0};
-    aes_public_key k;
-    memset(&k, 0xa5, sizeof k);
-
-    aes_public_key_retry(&k);
-    CHECK(memcmp(k.key.round_keys, retry_key, sizeof retry_key) == 0);
-    CHECK(memcmp(k.iv, zero_iv, sizeof zero_iv) == 0);
-    CHECK(memcmp(&k.hp, &zero_schedule, sizeof zero_schedule) == 0);
-}
-
-// RFC 9001 Appendix A.4 (rfc9001.txt:2490-2498) through the two calls
-// quic_retry.h declares. test_appendix_a4_retry above builds the key,
-// the nonce and the empty plaintext itself and drives gcm_seal and
-// gcm_open; quic_retry_tag and quic_retry_ok hold all three, so this
-// checks what a server sends and what a client gets rather than what a
-// caller could assemble.
-static void test_retry_call(void) {
-    uint8_t pseudo[1 + sizeof APPENDIX_DCID + sizeof A4_RETRY_PACKET];
-    size_t pseudo_len = 0;
-    pseudo[pseudo_len++] = (uint8_t)sizeof APPENDIX_DCID;
-    memcpy(&pseudo[pseudo_len], APPENDIX_DCID, sizeof APPENDIX_DCID);
-    pseudo_len += sizeof APPENDIX_DCID;
-    size_t retry_body = sizeof A4_RETRY_PACKET - GCM_TAG;
-    memcpy(&pseudo[pseudo_len], A4_RETRY_PACKET, retry_body);
-    pseudo_len += retry_body;
-    const uint8_t *want_tag = &A4_RETRY_PACKET[retry_body];
-
-    // The server's half of §5.8: the tag minted over that pseudo-packet,
-    // against the bytes Appendix A.4 prints (rfc9001.txt:2497-2498), and
-    // then through the check a client runs on it. Minting and checking
-    // are one gcm_seal in quic_retry.c, and this is what holds them to
-    // the RFC's answer rather than to each other.
-    uint8_t minted[GCM_TAG];
-    quic_retry_tag(pseudo, pseudo_len, minted);
-    CHECK(memcmp(minted, want_tag, sizeof minted) == 0);
-    CHECK(quic_retry_ok(pseudo, pseudo_len, minted) == 1);
-
-    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 1);
-
-    // The two ways a forged Retry packet differs from this one, and RFC
-    // 9000 §17.2.5.2 makes the client discard both: a changed
-    // pseudo-packet byte and a changed tag byte.
-    pseudo[0] = (uint8_t)(pseudo[0] ^ 1);
-    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 0);
-    pseudo[0] = (uint8_t)(pseudo[0] ^ 1);
-
-    uint8_t wrong_tag[GCM_TAG];
-    memcpy(wrong_tag, want_tag, sizeof wrong_tag);
-    wrong_tag[GCM_TAG - 1] = (uint8_t)(wrong_tag[GCM_TAG - 1] ^ 1);
-    CHECK(quic_retry_ok(pseudo, pseudo_len, wrong_tag) == 0);
-
-    // The Original Destination Connection ID is what ties the tag to the
-    // Initial packet this Retry answers, so a client that kept the wrong
-    // one gets a 0 (rfc9001.txt:1531-1544).
-    pseudo[1] = (uint8_t)(pseudo[1] ^ 1);
-    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 0);
 }
 
 // The bound aes_public_key_initial states, both sides of it, and the
@@ -361,29 +300,33 @@ static void test_dcid_bounds(void) {
     aes_public_key k;
     aes_public_key before;
 
-    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, dcid, CH_QUIC_DCID_MAX,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     memcpy(&before, &k, sizeof before);
-    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX + 1, CH_QUIC_ENDPOINT_CLIENT) ==
-          CH_EINVAL);
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, dcid, CH_QUIC_DCID_MAX + 1,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_EINVAL);
     CHECK(memcmp(&k, &before, sizeof before) == 0);
 
     // A zero-length Destination Connection ID is the other end of the
     // range, and the salt alone keys the extract there.
-    CHECK(aes_public_key_initial(&k, NULL, 0, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, NULL, 0, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(memcmp(&k, &before, sizeof before) != 0);
 
     // CH_QUIC_ENDPOINT_CLIENT and CH_QUIC_ENDPOINT_SERVER are the only endpoints;
     // the first value past them refuses and writes nothing.
     memcpy(&before, &k, sizeof before);
-    CHECK(aes_public_key_initial(&k, dcid, 8, CH_QUIC_ENDPOINT_SERVER + 1) == CH_EINVAL);
+    CHECK(aes_public_key_initial(&k, CH_QUIC_VERSION_1, dcid, 8, CH_QUIC_ENDPOINT_SERVER + 1) ==
+          CH_EINVAL);
     CHECK(memcmp(&k, &before, sizeof before) == 0);
 
     // The two endpoints derive different keys from one connection ID,
     // which is what the two labels of §5.2 are for.
     aes_public_key client_side;
     aes_public_key server_side;
-    CHECK(aes_public_key_initial(&client_side, dcid, 8, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
-    CHECK(aes_public_key_initial(&server_side, dcid, 8, CH_QUIC_ENDPOINT_SERVER) == CH_OK);
+    CHECK(aes_public_key_initial(&client_side, CH_QUIC_VERSION_1, dcid, 8,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
+    CHECK(aes_public_key_initial(&server_side, CH_QUIC_VERSION_1, dcid, 8,
+                                 CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     CHECK(memcmp(&client_side, &server_side, sizeof client_side) != 0);
 }
 
@@ -417,11 +360,11 @@ static void test_appendix_a5_keys(void) {
     quic_hp_key h;
 
     memcpy(secret, secret_in, sizeof secret);
-    quic_keys_init(&k, secret);
+    quic_keys_init(&k, CH_QUIC_VERSION_1, secret);
     CHECK(memcmp(k.key, want_key, sizeof want_key) == 0);
     CHECK(memcmp(k.iv, want_iv, sizeof want_iv) == 0);
 
-    quic_hp_key_init(&h, secret);
+    quic_hp_key_init(&h, CH_QUIC_VERSION_1, secret);
     CHECK(memcmp(h.key, want_hp, sizeof want_hp) == 0);
 
     // The update writes the new secret back over its argument and
@@ -429,10 +372,10 @@ static void test_appendix_a5_keys(void) {
     // against the RFC's ku, and the key set against a fresh derivation
     // from that ku. A build that re-derived from the old secret would
     // pass the first check and fail the second.
-    quic_keys_update(secret, &k);
+    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
     CHECK(memcmp(secret, want_ku, sizeof want_ku) == 0);
     quic_keys expect;
-    quic_keys_init(&expect, want_ku);
+    quic_keys_init(&expect, CH_QUIC_VERSION_1, want_ku);
     CHECK(memcmp(k.key, expect.key, sizeof expect.key) == 0);
     CHECK(memcmp(k.iv, expect.iv, sizeof expect.iv) == 0);
 
@@ -475,6 +418,7 @@ int main(void) {
     test_appendix_a2_initial();
     test_appendix_a4_retry();
     test_retry_call();
+    test_retry_versions();
     test_block_boundaries();
     test_in_place();
     test_appendix_a2_seal();
@@ -483,6 +427,7 @@ int main(void) {
     test_appendix_a3_seal();
     test_initial_endpoint_reads();
     test_initial_endpoint_refusals();
+    test_initial_version_refusals();
     test_appendix_a5_packet();
     test_appendix_header_protection();
     test_header_protection_edges();

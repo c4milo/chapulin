@@ -24,6 +24,7 @@
 #include "quic_fail.h"
 #include "quic_keys.h"
 #include "quic_retry.h"
+#include "quic_version.h"
 #include "srv_flight.h"
 #include "srv_resume.h"
 
@@ -36,14 +37,16 @@ static void announce(ch_quic *q, uint8_t level, uint8_t direction) {
 }
 
 // The Handshake level's four keys, from the two handshake traffic secrets
-// srv_derive_handshake_secrets wrote. A server reads under the client's
-// secret and writes under its own, the mirror of quic_step.c:33-36, and
-// both directions exist at once because one derivation wrote both.
+// srv_derive_handshake_secrets wrote, under the negotiated version's
+// labels. A server reads under the client's secret and writes under its
+// own, the mirror of quic_step.c's install_handshake_keys, and both
+// directions exist at once because one derivation wrote both.
 static void install_handshake_keys(ch_quic *q) {
-    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, q->hs.c_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_rx, q->hs.c_hs, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->handshake_tx, q->hs.s_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_tx, q->hs.s_hs, q->t.suite);
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.c_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_rx, version, q->hs.c_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(&q->handshake_tx, version, q->hs.s_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_tx, version, q->hs.s_hs, q->t.suite);
     announce(q, CH_LEVEL_HANDSHAKE, CH_KEY_READ);
     announce(q, CH_LEVEL_HANDSHAKE, CH_KEY_WRITE);
 }
@@ -56,17 +59,18 @@ static void install_handshake_keys(ch_quic *q) {
 // when that Finished verifies.
 //
 // t.rd_secret afterwards names app_rx[CH_QUIC_KEY_NEXT], not the current
-// set, which is the invariant session.h states and ch_quic_key_update
+// set, which is the invariant quic_session.h states and ch_quic_key_update
 // depends on.
 static void install_application_keys(ch_quic *q) {
-    QUIC_KEYS_INIT_SUITE(&q->app_tx, q->t.wr_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_tx, q->t.wr_secret, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->app_rx[CH_QUIC_KEY_CURRENT], q->t.rd_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_rx, q->t.rd_secret, q->t.suite);
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(&q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_rx, version, q->t.rd_secret, q->t.suite);
     // The next set starts as the current one, so the update derives it
     // under the suite that set records.
     q->app_rx[CH_QUIC_KEY_NEXT] = q->app_rx[CH_QUIC_KEY_CURRENT];
-    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT]);
+    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
     announce(q, CH_LEVEL_APPLICATION, CH_KEY_WRITE);
 }
 
@@ -285,7 +289,10 @@ static int drive(ch_quic *q, const uint8_t *p, size_t n) {
 int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     memset(q, 0, sizeof *q);
     q->t.cfg = *cfg;
-    if (!srv_config_ok(cfg)) {
+    // The version rule is quic_version.h's, which ch_quic_init applies
+    // too: a session keyed under a version this build does not derive
+    // could open no Initial packet the client sends.
+    if (!srv_config_ok(cfg) || !quic_version_derived(cfg->quic_original_version)) {
         // Nothing went out and no secret was drawn, so a zeroed q with a
         // dead state is the whole answer.
         memset(q, 0, sizeof *q);
@@ -297,6 +304,9 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // specific one, seeded the way srv_handshake.c seeds it.
     q->hs.alert = ALERT_DECODE_ERROR;
     q->endpoint = CH_QUIC_ENDPOINT_SERVER;
+    // No call chooses another version yet, so the server negotiates the
+    // version the client's first Initial packet carried.
+    q->t.quic_negotiated_version = cfg->quic_original_version;
     // 0 is the first protocol in ch_cfg.alpn_protocols, so the
     // no-selection value has to be written before the parser can report
     // one.
@@ -332,8 +342,8 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
     return drive(q, p, n);
 }
 
-void ch_srv_quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t *tag) {
-    quic_retry_tag(pseudo, n, tag);
+int ch_srv_quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t *tag) {
+    return quic_retry_tag(version, pseudo, n, tag);
 }
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING

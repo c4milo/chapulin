@@ -1320,7 +1320,9 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 # Re-measured on the commit that moved this file under the codegen gates
 # (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l): 434
 # properties, 26 s, 0.67 GB peak. The 377 recorded before predates the
-# split of the cipher into quic_aes_soft.c.
+# split of the cipher into quic_aes_soft.c. With the QUIC version the two
+# constructors take (docs/decisions.md 79), unconstrained, and measured
+# the same way at PROVE_ONLY=aes: 436 properties, 55 s, 0.67 GB peak.
 launch fast full aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The software AES-256 reference and the round-count dispatch in
 # aes_encrypt_schedule, under -DCH_AES_256_TEST, which only tests and
@@ -1347,7 +1349,9 @@ launch fast full aes_extern 2 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_AES_EX
 # the same contract stub the aes harness uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is
 # compiled in because quic_keys_update wipes its own copy of the new
-# secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
+# secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak; 106
+# properties, under 1 s, 0.02 GB with the QUIC version each call takes
+# (docs/decisions.md 79).
 launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_keys_suite: the three derivations and the update in the
 # -DCH_SUITE_AES_GCM QUIC build, over each of the three suites, with HKDF
@@ -1355,7 +1359,9 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBL
 # Measured the same way: 141 properties, 1 s, 0.04 GB peak. An update
 # that derives at SHA256_LEN under every suite fails two of the hash
 # assertions. The one-suite line above measured 106 properties, under
-# 1 s, 0.02 GB.
+# 1 s, 0.02 GB. With the QUIC version, and the stub holding every label to
+# the four that version names (docs/decisions.md 79): 142 properties, 2 s,
+# 0.04 GB.
 launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
@@ -1363,7 +1369,9 @@ launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH
 # what those stubs assert. ct.c is compiled in because the verdict is
 # ct_memeq's. Measured on an idle development machine (arm64 macOS, the
 # pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
-# script): 160 properties, 3.5 s, 0.10 GB peak.
+# script): 160 properties, 3.5 s, 0.10 GB peak. With the QUIC version,
+# any value, and the refusal that writes no tag byte (docs/decisions.md
+# 79): 172 properties, 20 s, 0.23 GB peak.
 launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The Initial packet path: both entries over unconstrained lengths, with
 # the eight calls they make stubbed to their contracts
@@ -1373,7 +1381,9 @@ launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONB
 # one the other quic lines carry, because the key schedule an
 # aes_public_key holds is what fill_nondet writes most of. Measured on a
 # development machine (arm64 macOS, the pinned cbmc, kissat,
-# /usr/bin/time -l): 285 properties, 10 s, 0.23 GB peak.
+# /usr/bin/time -l): 285 properties, 10 s, 0.23 GB peak; 289 properties,
+# 11 s, 0.25 GB with the QUIC version each entry refuses or admits
+# (docs/decisions.md 79).
 launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # RFC 9001 §5.3 packet protection, §5.4 header protection, the §6.5 key
 # set selection and the §6.6 limits, over a 40-byte packet with a
@@ -1689,7 +1699,13 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # quic_step_ca 566 properties, 4.6 s, 45 MB. With the fork read from
 # cfg.psk instead, quic_step fails that assertion. With quic_fail writing
 # ch_tls.alert_sent beside q->alert (docs/decisions.md 75): quic_driver
-# 1663 properties, 86 s, 0.98 GB.
+# 1663 properties, 86 s, 0.98 GB. With the QUIC version rules and the
+# switch (docs/decisions.md 79), the packet calls' leg in
+# proof/quic_driver_packets.h: quic_driver 1772 properties, 109 s wall,
+# 1.43 GB peak; quic_step 583 properties, 6.3 s, 43 MB; quic_step_ca 590
+# properties, 8.2 s, 46 MB. An assert of 0 after the switch's
+# success assertions fails that one assert (1 of 1773), so the formula
+# reaches a switch that succeeds.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
@@ -1711,7 +1727,8 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # cbmc 6.11.0, kissat, PROVE_ONLY=quic_config_webpki PROVE_NO_CACHE=1
 # /usr/bin/time -l): 557 properties, 1.8 s, 68 MB peak, and 588
 # properties, 3.9 s, 123 MB once the ticket age and lifetime joined the
-# configuration and the verdict. With the real
+# configuration and the verdict, and 594 properties, 6 s, 0.16 GB once
+# the original QUIC version joined it (docs/decisions.md 79). With the real
 # ct_memeq the same formula took 141 s and 2.67 GB. Narrowing the verdict
 # assertion to exclude pins alone with no hostname, pins beside anchors
 # at both caps, or a presented ticket fails each, so the formula reaches

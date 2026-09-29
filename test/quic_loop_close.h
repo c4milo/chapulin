@@ -75,10 +75,10 @@ static void check_open_refused(ch_quic *failed, ch_quic *peer, uint8_t level) {
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(ch_quic_seal(peer, level, 7, 1, hdr, hdr_len, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) ==
-          CH_OK);
-    CHECK(ch_quic_open(failed, level, pkt, pkt_len, hdr_len - 1, 0, 0, &key_set, &pn, &pt_len) ==
-          CH_EINVAL);
+    CHECK(ch_quic_seal(peer, level, CH_QUIC_VERSION_1, 7, 1, hdr, hdr_len, pt, sizeof pt, pkt,
+                       sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_open(failed, level, CH_QUIC_VERSION_1, pkt, pkt_len, hdr_len - 1, 0, 0, &key_set,
+                       &pn, &pt_len) == CH_EINVAL);
 }
 
 // One close from the failed session at level, opened by the peer. The
@@ -97,14 +97,14 @@ static void close_and_open(ch_quic *failed, ch_quic *peer, uint8_t level) {
     uint64_t pn = 0;
     size_t pt_len = 0;
     CHECK(!write_keys_zero(failed, level));
-    CHECK(ch_quic_seal_close(failed, level, 7, 1, hdr, hdr_len, frame, sizeof frame, pkt,
-                             sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal_close(failed, level, CH_QUIC_VERSION_1, 7, 1, hdr, hdr_len, frame,
+                             sizeof frame, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(write_keys_zero(failed, level));
     CHECK((failed->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) == 0);
-    CHECK(ch_quic_seal_close(failed, level, 7, 1, hdr, hdr_len, frame, sizeof frame, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
-    CHECK(ch_quic_open(peer, level, pkt, pkt_len, hdr_len - 1, 0, 0, &key_set, &pn, &pt_len) ==
-          CH_OK);
+    CHECK(ch_quic_seal_close(failed, level, CH_QUIC_VERSION_1, 7, 1, hdr, hdr_len, frame,
+                             sizeof frame, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_open(peer, level, CH_QUIC_VERSION_1, pkt, pkt_len, hdr_len - 1, 0, 0, &key_set,
+                       &pn, &pt_len) == CH_OK);
     CHECK(pn == 7 && pt_len == sizeof frame && memcmp(pkt + hdr_len, frame, sizeof frame) == 0);
 }
 
@@ -115,8 +115,8 @@ static void check_no_close(ch_quic *failed, uint8_t level) {
     size_t hdr_len = close_hdr(level, &hdr);
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_seal_close(failed, level, 7, 1, hdr, hdr_len, frame, sizeof frame, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(failed, level, CH_QUIC_VERSION_1, 7, 1, hdr, hdr_len, frame,
+                             sizeof frame, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
 }
 
 // Both ends initialized, and both holding the Initial keys of close_dcid.

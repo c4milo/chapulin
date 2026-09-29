@@ -191,6 +191,26 @@ test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and
     try expectError(error.Invalid, values.check());
 }
 
+test "Client.toCfg and Server.toCfg under TRANSPORT=quic-nonblocking: the original version, and 0 for none" {
+    if (!has_quic) return error.SkipZigTest;
+    const key = [_]u8{0x11} ** 64;
+    if (has_client) {
+        var values: chapulin.Client = .{ .trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } } };
+        try expectEqual(@as(u32, 0), values.toCfg().quic_original_version);
+        values.quic_version = .v1;
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), values.toCfg().quic_original_version);
+        values.quic_version = .v2;
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_2), values.toCfg().quic_original_version);
+    }
+    if (has_server) {
+        const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
+        var values: chapulin.Server = .{ .cookie_key = &cookie_key, .now_seconds = 0 };
+        try expectEqual(@as(u32, 0), (try values.toCfg()).quic_original_version);
+        values.quic_version = .v1;
+        try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try values.toCfg()).quic_original_version);
+    }
+}
+
 test "Ticket.fromFields: the identity cap and the hash lengths" {
     const id_max = [_]u8{0x41} ** (c.CH_TICKET_ID_MAX + 1);
     const psk = [_]u8{0x42} ** 48;
@@ -292,10 +312,11 @@ test "every declaration this object has compiles" {
     if (has_alpn) compile(chapulin, &.{"alpnProtocol"});
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
     const record = [_][]const u8{ "init", "recordIn", "recordState", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
-    const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
+    const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "negotiatedVersion", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
     if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF), &(record ++ .{ "recordOut", "takeTicket" }));
     if (@hasDecl(c, "ch_srv_record_init")) compileSession(chapulin.record.Server(c.CH_MIN_RXBUF), &(record ++ .{ "sni", "outputLen" }));
-    if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket" }));
+    if (has_quic) compile(chapulin.quic, &.{"Version"});
+    if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket", "switchVersion" }));
     if (@hasDecl(c, "ch_srv_quic_init")) {
         compileSession(chapulin.quic.Server(c.CH_MIN_RXBUF), &(quic ++ .{"sni"}));
         compile(chapulin.quic, &.{ "retryTag", "tokenMint", "tokenCheck" });

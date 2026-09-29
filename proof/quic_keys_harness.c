@@ -4,9 +4,10 @@
 //
 // There is no length to vary here. Every buffer in quic_keys.h is a
 // fixed-size array and every derivation asks HKDF for a constant number
-// of bytes, so the whole input domain is the 32 secret bytes, and this
-// harness havocs them. What is left to prove is the framing: that each
-// call writes its own object whole and reads nothing past the secret.
+// of bytes, so the whole input domain is the 32 secret bytes and the
+// QUIC version, and this harness havocs both. What is left to prove is
+// the framing: that each call writes its own object whole and reads
+// nothing past the secret, whatever version chooses its labels.
 //
 // quic_keys_update is the one that can get this wrong. It derives the
 // next secret, writes it back over the caller's buffer, and re-derives
@@ -31,16 +32,16 @@ int main(void) {
     quic_hp_key h;
 
     fill_nondet(secret, sizeof secret);
-    quic_keys_init(&k, secret);
+    quic_keys_init(&k, nondet_u32(), secret);
 
     fill_nondet(secret, sizeof secret);
-    quic_hp_key_init(&h, secret);
+    quic_hp_key_init(&h, nondet_u32(), secret);
 
     // The update reads and rewrites the same secret, then rewrites the
     // key set from it. Both operands are havocked again first, so this
     // call reads no value an earlier call left.
     fill_nondet(secret, sizeof secret);
     fill_nondet((uint8_t *)&k, sizeof k);
-    quic_keys_update(secret, &k);
+    quic_keys_update(secret, &k, nondet_u32());
     return 0;
 }

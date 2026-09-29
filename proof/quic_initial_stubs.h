@@ -16,9 +16,13 @@
 //                            reading the connection ID, CH_EINVAL for an
 //                            endpoint that is neither name aes.h
 //                            gives, and otherwise a whole key of
-//                            unconstrained bytes. It records the endpoint
-//                            it was handed, refusal included, so main()
-//                            can compare the seal's against the open's.
+//                            unconstrained bytes. It asserts the version
+//                            is one quic_version_derived admits, which
+//                            aes.h asks of its caller, and it records the
+//                            endpoint it was handed, refusal included,
+//                            and counts its calls, so main() can compare
+//                            the seal's endpoint against the open's and
+//                            see that a refused version built no key.
 //   aes_encrypt_block_hp     AES_BLOCK unconstrained bytes.
 //   gcm_seal                 n ciphertext bytes and GCM_TAG tag bytes.
 //   gcm_open                 1 or 0, with the n plaintext bytes written
@@ -48,6 +52,7 @@
 #include "aes_public_key.h"
 #include "gcm.h"
 #include "quic_packet.h"
+#include "quic_version.h"
 
 uint64_t nondet_u64(void);
 
@@ -57,10 +62,14 @@ uint64_t nondet_u64(void);
 // only the vector test. The stub writes it before it checks any length,
 // so a refusing call records it too.
 uint8_t stub_last_endpoint;
+size_t stub_initial_calls;
 
-int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
-                           uint8_t endpoint) {
+int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *dcid,
+                           size_t dcid_len, uint8_t endpoint) {
     stub_last_endpoint = endpoint;
+    stub_initial_calls++;
+    __CPROVER_assert(quic_version_derived(version),
+                     "aes_public_key_initial: a version quic_initial.c admitted");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes_public_key_initial: key writable");
     if (dcid_len > CH_QUIC_DCID_MAX) {
         // The header promises this refusal reads no connection ID byte,

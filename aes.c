@@ -28,18 +28,40 @@
 #include "aes_traffic_key.h"
 #include "ch_assert.h"
 #endif
-
-// RFC 9001 §5.2's printed salt, the input every Initial secret starts
-// from (rfc9001.txt:1051-1055, rfc9001.txt:1066).
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-static const uint8_t INITIAL_SALT[20] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
-                                         0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
-                                         0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
+#include "quic_version.h"
+#endif
 
-// RFC 9001 §5.8's printed Retry integrity tag key, 0xbe0c690b9f66575a1d766b54e368c84e
-// (rfc9001.txt:1499-1500).
-static const uint8_t RETRY_KEY[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
-                                               0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// The length of an Initial salt, 20 bytes in both QUIC versions RFC 9001 and
+// RFC 9369 define (rfc9001.txt:1066, rfc9369.txt:163-165).
+#define INITIAL_SALT_LEN 20
+
+// RFC 9001 §5.2's printed salt for QUIC version 1, the input every version 1
+// Initial secret starts from (rfc9001.txt:1051-1055, rfc9001.txt:1066).
+static const uint8_t INITIAL_SALT_V1[INITIAL_SALT_LEN] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
+                                                          0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
+                                                          0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
+
+// RFC 9001 §5.8's printed Retry integrity tag key for QUIC version 1,
+// 0xbe0c690b9f66575a1d766b54e368c84e (rfc9001.txt:1499-1500).
+static const uint8_t RETRY_KEY_V1[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
+                                                  0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
+
+// The salt version's Initial secrets start from, and the key its Retry
+// integrity tag is sealed under. version is one quic_version_derived admits,
+// because quic_initial.c and quic_retry.c refuse every other version before
+// they call here, and version 1 is the one version this build admits, so each
+// answers version 1's bytes.
+static const uint8_t *initial_salt(uint32_t version) {
+    (void)version;
+    return INITIAL_SALT_V1;
+}
+
+static const uint8_t *retry_key(uint32_t version) {
+    (void)version;
+    return RETRY_KEY_V1;
+}
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -47,33 +69,35 @@ static const uint8_t RETRY_KEY[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x6
 // 9001 fixes for Initial and Retry packets, and the third is header
 // protection, which a TLS record does not have. A suite build compiles
 // the cipher above and none of this.
-int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
-                           uint8_t endpoint) {
+int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *dcid,
+                           size_t dcid_len, uint8_t endpoint) {
     if (dcid_len > CH_QUIC_DCID_MAX) {
         return CH_EINVAL;
     }
     if (endpoint != CH_QUIC_ENDPOINT_CLIENT && endpoint != CH_QUIC_ENDPOINT_SERVER) {
         return CH_EINVAL;
     }
-    // RFC 9001 §5.2: the salt and the Destination Connection ID extract
-    // one secret, and one label per endpoint expands it
+    // RFC 9001 §5.2: the version's salt and the Destination Connection ID
+    // extract one secret, and one label per endpoint expands it
     // (rfc9001.txt:1057-1061). Which endpoint a caller asks for is the
     // caller's; this file reads no role and derives what it is given.
     uint8_t initial_secret[SHA256_LEN];
-    hkdf_extract(SHA256_LEN, INITIAL_SALT, sizeof INITIAL_SALT, dcid, dcid_len, initial_secret);
+    hkdf_extract(SHA256_LEN, initial_salt(version), INITIAL_SALT_LEN, dcid, dcid_len,
+                 initial_secret);
     const char *label = endpoint == CH_QUIC_ENDPOINT_CLIENT ? "client in" : "server in";
     // RFC 9001 §5.2 names this one client_initial_secret or
     // server_initial_secret, one per endpoint.
     uint8_t direction_secret[SHA256_LEN];
     hkdf_expand_label(SHA256_LEN, initial_secret, label, NULL, 0, direction_secret,
                       sizeof direction_secret);
-    // RFC 9001 §5.1: three labels over that secret, each with a
-    // zero-length context (rfc9001.txt:1029-1032).
+    // RFC 9001 §5.1: the version's three labels over that secret, each
+    // with a zero-length context (rfc9001.txt:1029-1032).
+    quic_labels labels = quic_version_labels(version);
     uint8_t key[AES_128_KEY];
-    hkdf_expand_label(SHA256_LEN, direction_secret, "quic key", NULL, 0, key, sizeof key);
+    hkdf_expand_label(SHA256_LEN, direction_secret, labels.key, NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->key.round_keys);
-    hkdf_expand_label(SHA256_LEN, direction_secret, "quic iv", NULL, 0, k->iv, sizeof k->iv);
-    hkdf_expand_label(SHA256_LEN, direction_secret, "quic hp", NULL, 0, key, sizeof key);
+    hkdf_expand_label(SHA256_LEN, direction_secret, labels.iv, NULL, 0, k->iv, sizeof k->iv);
+    hkdf_expand_label(SHA256_LEN, direction_secret, labels.hp, NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->hp.round_keys);
 #ifdef CH_AES_256
     // RFC 9001 §5.2 fixes AES-128 for the Initial level whatever suite
@@ -92,8 +116,8 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
     return CH_OK;
 }
 
-void aes_public_key_retry(aes_public_key *k) {
-    aes_expand_round_keys(RETRY_KEY, k->key.round_keys);
+void aes_public_key_retry(aes_public_key *k, uint32_t version) {
+    aes_expand_round_keys(retry_key(version), k->key.round_keys);
 #ifdef CH_AES_256
     k->key.rounds = AES_128_ROUNDS;
 #endif

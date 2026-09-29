@@ -90,32 +90,36 @@ typedef struct {
 } quic_hp_key;
 
 // Derives one direction's packet protection key and IV from that
-// direction's traffic secret: HKDF-Expand-Label(secret, "quic key", "",
-// AEAD_KEY) and HKDF-Expand-Label(secret, "quic iv", "", AEAD_NONCE).
-// QUIC passes a zero-length context to every one of these labels
-// (RFC 9001 §5.1, rfc9001.txt:1017-1021, rfc9001.txt:1029-1032). RFC
-// 9001 Appendix A.5 is the vector for the 1-RTT level.
+// direction's traffic secret under one QUIC version's labels, which
+// quic_version.h holds: HKDF-Expand-Label(secret, "quic key", "",
+// AEAD_KEY) and HKDF-Expand-Label(secret, "quic iv", "", AEAD_NONCE) in
+// version 1. QUIC passes a zero-length context to every one of these
+// labels (RFC 9001 §5.1, rfc9001.txt:1017-1021, rfc9001.txt:1029-1032).
+// RFC 9001 Appendix A.5 is the version 1 vector for the 1-RTT level.
 //
-// Requires: k is not NULL; secret holds SHA256_LEN bytes, one of the
-// traffic secrets keysched.c derives for this level and direction. The
-// caller owns the secret and this call does not wipe it, because the
-// §6.1 update step reads it again.
+// Requires: k is not NULL; version is the session's negotiated version,
+// ch_tls.quic_negotiated_version, which is one quic_version_derived
+// admits; secret holds SHA256_LEN bytes, one of the traffic secrets
+// keysched.c derives for this level and direction. The caller owns the
+// secret and this call does not wipe it, because the §6.1 update step
+// reads it again.
 //
 // Writes k whole and cannot fail, so it returns nothing. It is the
 // rec_dir_init of this transport.
-void quic_keys_init(quic_keys *k, const uint8_t secret[SHA256_LEN]);
+void quic_keys_init(quic_keys *k, uint32_t version, const uint8_t secret[SHA256_LEN]);
 
 // Derives one direction's header protection key from the same traffic
-// secret: HKDF-Expand-Label(secret, "quic hp", "", CHACHA20_KEY).
+// secret under the same version's label: HKDF-Expand-Label(secret,
+// "quic hp", "", CHACHA20_KEY) in version 1.
 //
-// Requires: h is not NULL; secret holds SHA256_LEN bytes, the same
-// secret quic_keys_init took for this level and direction. The caller
-// calls it once per direction per level, when that level's traffic
-// secret arrives, and never again for that level: the value does not
-// change for the life of the connection (rfc9001.txt:1172-1174).
+// Requires: h is not NULL; version and secret are the ones quic_keys_init
+// took for this level and direction. The caller calls it once per
+// direction per level, when that level's traffic secret arrives, and
+// never again for that level: the value does not change for the life of
+// the connection (rfc9001.txt:1172-1174).
 //
 // Writes h whole and cannot fail, so it returns nothing.
-void quic_hp_key_init(quic_hp_key *h, const uint8_t secret[SHA256_LEN]);
+void quic_hp_key_init(quic_hp_key *h, uint32_t version, const uint8_t secret[SHA256_LEN]);
 
 #ifdef CH_SUITE_AES_GCM
 // quic_keys_init and quic_hp_key_init for a build that holds several
@@ -125,23 +129,27 @@ void quic_hp_key_init(quic_hp_key *h, const uint8_t secret[SHA256_LEN]);
 // these with the suite's HKDF (rfc9001.txt:1017-1021) and §5.4.3 keys
 // AES header protection with the AEAD's key size. quic_keys_init and
 // quic_hp_key_init are these calls with TLS_CHACHA20_POLY1305_SHA256.
-void quic_keys_init_suite(quic_keys *k, const uint8_t *secret, uint16_t suite);
-void quic_hp_key_init_suite(quic_hp_key *h, const uint8_t *secret, uint16_t suite);
-#define QUIC_KEYS_INIT_SUITE(k, secret, suite) quic_keys_init_suite((k), (secret), (suite))
-#define QUIC_HP_KEY_INIT_SUITE(h, secret, suite) quic_hp_key_init_suite((h), (secret), (suite))
+void quic_keys_init_suite(quic_keys *k, uint32_t version, const uint8_t *secret, uint16_t suite);
+void quic_hp_key_init_suite(quic_hp_key *h, uint32_t version, const uint8_t *secret,
+                            uint16_t suite);
+#define QUIC_KEYS_INIT_SUITE(k, version, secret, suite)                                            \
+    quic_keys_init_suite((k), (version), (secret), (suite))
+#define QUIC_HP_KEY_INIT_SUITE(h, version, secret, suite)                                          \
+    quic_hp_key_init_suite((h), (version), (secret), (suite))
 #else
 // A build with one suite keys every level with ChaCha20 and never
 // evaluates suite, as REC_DIR_INIT_SUITE does (record.h).
-#define QUIC_KEYS_INIT_SUITE(k, secret, suite) quic_keys_init((k), (secret))
-#define QUIC_HP_KEY_INIT_SUITE(h, secret, suite) quic_hp_key_init((h), (secret))
+#define QUIC_KEYS_INIT_SUITE(k, version, secret, suite) quic_keys_init((k), (version), (secret))
+#define QUIC_HP_KEY_INIT_SUITE(h, version, secret, suite) quic_hp_key_init((h), (version), (secret))
 #endif
 
 // The key update of RFC 9001 §6.1: secret' =
 // HKDF-Expand-Label(secret, "quic ku", "", Hash.length) at the hash of
 // k's suite (rfc9001.txt:1605-1607, rfc9001.txt:1612-1613), written back over
 // secret, then the packet protection key and IV re-derived from it into
-// k. The caller owns the traffic secret and passes it here, the way
-// rec_dir_update takes the TLS one.
+// k, each under version's label (quic_version.h). The caller owns the
+// traffic secret and passes it here, the way rec_dir_update takes the TLS
+// one.
 //
 // It rewrites the packet protection key and the IV and nothing else. No
 // quic_hp_key is passed to it, because §6.1 does not update the header
@@ -149,8 +157,9 @@ void quic_hp_key_init_suite(quic_hp_key *h, const uint8_t *secret, uint16_t suit
 // call cannot reach one.
 //
 // Requires: k is not NULL; secret holds the current 1-RTT traffic
-// secret for that direction, as many bytes as the hash of k's suite.
-// Only the 1-RTT level takes this call: keys at other levels are never
+// secret for that direction, as many bytes as the hash of k's suite;
+// version is the one k was derived under, the session's negotiated
+// version. Only the 1-RTT level takes this call: keys at other levels are never
 // updated, because they come from the handshake alone
 // (rfc9001.txt:1629-1631).
 //
@@ -159,7 +168,7 @@ void quic_hp_key_init_suite(quic_hp_key *h, const uint8_t *secret, uint16_t suit
 // wipes the old key set it no longer needs; this call never drops one,
 // because RFC 9001 §6.1 makes an endpoint retain its old keys until a
 // packet under the new keys opens (rfc9001.txt:1637-1638).
-void quic_keys_update(uint8_t *secret, quic_keys *k);
+void quic_keys_update(uint8_t *secret, quic_keys *k, uint32_t version);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

@@ -15,6 +15,7 @@
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "aes_public_key.h"
+#include "quic_version.h"
 
 // The endpoint that wrote what this caller opens: the one the caller is
 // not. RFC 9001 §5.2 derives one Initial secret per endpoint and each
@@ -68,16 +69,21 @@ static void sample_mask(const aes_public_key *k, const uint8_t *pkt, size_t pn_o
     aes_encrypt_block_hp(k, &pkt[pn_off + QUIC_PN_MAX_LEN], mask);
 }
 
-int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint64_t pn,
-                      size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                      size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    // A version this build derives no keys for has no salt and no labels
+    // here, so it is refused before anything is derived.
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
     // The send key of RFC 9001 §5.2, under the caller's own endpoint.
     // aes_public_key_initial returns CH_EINVAL for a dcid_len above
     // CH_QUIC_DCID_MAX and for an endpoint that is neither of the two,
     // which are the refusals this entry documents, so both bounds are
     // checked in one place. It writes nothing outside k.
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, endpoint);
+    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }
@@ -127,15 +133,18 @@ int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
     return CH_OK;
 }
 
-int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint8_t *pkt,
-                      size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                      size_t *pt_len) {
+int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                      uint64_t *pn, size_t *pt_len) {
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
     // The receive key of RFC 9001 §5.2, under the endpoint the caller is
     // not, built on this frame the way the send key is. It runs before
     // this call reads a byte of pkt, so both refusals below touch no
     // packet byte.
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, peer_endpoint(endpoint));
+    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, peer_endpoint(endpoint));
     if (rc != CH_OK) {
         return rc;
     }

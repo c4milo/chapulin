@@ -285,7 +285,7 @@ void quic_nonce(const uint8_t iv[AEAD_NONCE], uint64_t pn, uint8_t nonce[AEAD_NO
 // caller has processed under the current key phase.
 //
 // Returns CH_QUIC_KEY_PREVIOUS, CH_QUIC_KEY_CURRENT or
-// CH_QUIC_KEY_NEXT (cfg.h) and cannot fail. It is pure: it installs
+// CH_QUIC_KEY_NEXT (quic_keys.h) and cannot fail. It is pure: it installs
 // nothing, and a CH_QUIC_KEY_NEXT result only names the set that opens
 // this packet. ch_quic_key_update installs the update, which the caller
 // runs after a successful open reports it (§6.2,

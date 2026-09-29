@@ -96,7 +96,7 @@ typedef struct ch_quic ch_quic;
 // advances that secret once with the "quic ku" label and writes the
 // next set from it. So the next set exists before any packet arrives
 // under it, and q->t.rd_secret afterwards names the next set rather
-// than the current one, which is the invariant session.h states and
+// than the current one, which is the invariant quic_session.h states and
 // ch_quic_key_update depends on. app_rx[CH_QUIC_KEY_PREVIOUS] stays
 // zero until the first ch_quic_key_update.
 //

@@ -1,11 +1,12 @@
 //! A QUIC client and server of one QUIC ROLE=both object against each
 //! other, through the API alone: the handshake over cryptoIn and
 //! cryptoOut at each level with keysReady checked at each step, the
-//! transport parameters each side received, one 1-RTT packet sealed and
-//! opened each way and a tampered one discarded, a key update, the Retry
-//! integrity tag and a Retry token, the ticket taken at the 1-RTT level
-//! and resumed through Ticket.fromFields, a stale ticket refused, and
-//! close. Under KEYLOG=on, ch_keylog finds the client's context through
+//! version each side negotiated and the switches C refuses, the transport
+//! parameters each side received, one 1-RTT packet sealed and opened each
+//! way and a tampered one discarded, a key update, the Retry integrity tag
+//! and a Retry token, the ticket taken at the 1-RTT level and resumed
+//! through Ticket.fromFields, a stale ticket refused, and close. Under
+//! KEYLOG=on, ch_keylog finds the client's context through
 //! chapulin.hookContext.
 const std = @import("std");
 const chapulin = @import("chapulin");
@@ -43,17 +44,23 @@ fn sent(level: quic.Level) []const u8 {
 }
 
 fn clientValues() chapulin.Client {
-    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom() };
+    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .quic_version = .v1, .random = fixture.clientRandom() };
 }
 
 fn handshake(values: chapulin.Client) !void {
     outgoing = .{ .buffers = .{ &buffers[0], &buffers[1], &buffers[2] } };
-    try server.init(fixture.server(&server_alpn, server_now), &server_params, &server_peer, &sni_buf);
+    var server_values = fixture.server(&server_alpn, server_now);
+    server_values.quic_version = .v1;
+    try server.init(server_values, &server_params, &server_peer, &sni_buf);
     try client.init(values, &client_params, &client_peer);
     client.hook.context = &client_context;
     try client.initialKeys(&dcid);
     try server.initialKeys(&dcid);
     try check(client.keysReady(.initial, .write) and !client.keysReady(.handshake, .read), "the client's Initial keys are not the only ones ready");
+    // Both sides negotiate the original version, and C refuses a switch to
+    // it and to version 2, whose keys this object does not derive.
+    try check(client.negotiatedVersion() == .v1 and server.negotiatedVersion() == .v1, "a session did not negotiate its original version");
+    try check(client.switchVersion(.v1) == error.Invalid and client.switchVersion(.v2) == error.Invalid, "a switch C refuses was taken");
 
     var n = try client.cryptoOut(.initial, &message);
     try server.cryptoIn(.initial, message[0..n], &outgoing);
@@ -75,16 +82,19 @@ fn handshake(values: chapulin.Client) !void {
 fn packets() !void {
     const pt = "one packet each way";
     var pkt: [64]u8 = undefined;
-    var n = try server.seal(.application, 5, 2, &.{ 0x41, 0x00, 0x05 }, pt, &pkt);
-    var opened = try client.open(.application, pkt[0..n], 1, 0, 0);
+    var n = try server.seal(.application, .v1, 5, 2, &.{ 0x41, 0x00, 0x05 }, pt, &pkt);
+    var opened = try client.open(.application, .v1, pkt[0..n], 1, 0, 0);
     try check(opened.pn == 5 and opened.key_set == .current and std.mem.eql(u8, pkt[3..][0..opened.pt_len], pt), "the client did not open the server's packet");
-    n = try client.seal(.application, 6, 2, &.{ 0x41, 0x00, 0x06 }, pt, &pkt);
-    opened = try server.open(.application, pkt[0..n], 1, 0, 0);
+    n = try client.seal(.application, .v1, 6, 2, &.{ 0x41, 0x00, 0x06 }, pt, &pkt);
+    opened = try server.open(.application, .v1, pkt[0..n], 1, 0, 0);
     try check(opened.pn == 6 and std.mem.eql(u8, pkt[3..][0..opened.pt_len], pt), "the server did not open the client's packet");
 
-    n = try server.seal(.application, 7, 2, &.{ 0x41, 0x00, 0x07 }, pt, &pkt);
+    n = try server.seal(.application, .v1, 7, 2, &.{ 0x41, 0x00, 0x07 }, pt, &pkt);
+    // A 1-RTT packet in a version the session did not negotiate is refused
+    // before it is read, and the session stays live.
+    try check(client.open(.application, .v2, pkt[0..n], 1, 6, 0) == error.Invalid and client.state() == .connected, "a packet in another version was opened");
     pkt[n - 1] ^= 1;
-    try check(client.open(.application, pkt[0..n], 1, 6, 0) == error.Discard and client.state() == .connected, "a tampered packet was not discarded");
+    try check(client.open(.application, .v1, pkt[0..n], 1, 6, 0) == error.Discard and client.state() == .connected, "a tampered packet was not discarded");
 }
 
 /// The server updates its 1-RTT keys, and the client opens the next
@@ -95,8 +105,8 @@ fn keyUpdate() !void {
     var pkt: [64]u8 = undefined;
     try server.keyUpdate();
     try check(server.keyPhase() == 1, "keyUpdate did not flip the server's key phase");
-    const n = try server.seal(.application, 8, 2, &.{ 0x45, 0x00, 0x08 }, pt, &pkt);
-    const opened = try client.open(.application, pkt[0..n], 1, 6, 0);
+    const n = try server.seal(.application, .v1, 8, 2, &.{ 0x45, 0x00, 0x08 }, pt, &pkt);
+    const opened = try client.open(.application, .v1, pkt[0..n], 1, 6, 0);
     try check(opened.key_set == .next and opened.pn == 8, "the client did not open the updated packet under its next keys");
     try client.keyUpdate();
     try check(client.keyPhase() == 1, "keyUpdate did not flip the client's key phase");
@@ -107,10 +117,12 @@ fn keyUpdate() !void {
 fn retryAndTokens() !void {
     const pseudo = "a Retry pseudo-packet";
     var tag: [c.GCM_TAG]u8 = undefined;
-    quic.retryTag(pseudo, &tag);
-    try check(client.retryOk(pseudo, &tag), "retryOk refused retryTag's tag");
+    try check(quic.retryTag(.v2, pseudo, &tag) == error.Invalid, "retryTag took a version this object does not derive");
+    try quic.retryTag(.v1, pseudo, &tag);
+    try check(client.retryOk(.v1, pseudo, &tag), "retryOk refused retryTag's tag");
+    try check(!client.retryOk(.v2, pseudo, &tag), "retryOk took a Retry in a version other than the original");
     tag[0] ^= 1;
-    try check(!client.retryOk(pseudo, &tag), "retryOk took a changed tag");
+    try check(!client.retryOk(.v1, pseudo, &tag), "retryOk took a changed tag");
 
     const key = [_]u8{0x71} ** c.CH_QUIC_TOKEN_KEY_LEN;
     const address = [_]u8{ 192, 0, 2, 1, 0x11, 0x51 };

@@ -1,8 +1,8 @@
 // The TRANSPORT=quic-nonblocking driver through its public entries: the rules
 // ch_quic_init adds to the trust mode's, the staged ClientHello, a
-// ServerHello delivered as CRYPTO bytes, and the level rules RFC 9001
-// §4.1.3 states. No QUIC server speaks here. The ServerHello is one this
-// file builds, with a key share it draws itself, so the driver installs
+// ServerHello delivered as CRYPTO bytes, the level rules RFC 9001
+// §4.1.3 states, and the version rules test/quic_version_tests.h holds. No QUIC server speaks here.
+// The ServerHello is one this file builds, with a key share it draws itself, so the driver installs
 // the Handshake level and stops: every later message is encrypted under
 // keys only a server holds. docs/quic.md, "What is still open", carries
 // the interop debt that leaves. The last case fails that session and
@@ -58,6 +58,7 @@ static void configure(ch_cfg *cfg) {
     cfg->alpn_count = 1;
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
+    cfg->quic_original_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
 }
 
@@ -138,20 +139,20 @@ static void test_driver(void) {
     CHECK(n > 4 && out[0] == HS_CLIENT_HELLO && (((size_t)out[2] << 8) | out[3]) == n - 4);
     CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK && n == 0);
     // No packet is protected before its level's keys are installed.
-    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, 1, 1, hdr, sizeof hdr, pt, sizeof pt, pkt, sizeof pkt,
-                       &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(ch_quic_initial_keys(&q, dcid, sizeof dcid) == CH_EINVAL); // one past RFC 9000 §17.2
     CHECK(ch_quic_initial_keys(&q, dcid, 8) == CH_OK);
-    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, 1, 1, hdr, sizeof hdr, pt, sizeof pt, pkt, sizeof pkt,
-                       &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(pkt_len == sizeof hdr + sizeof pt + GCM_TAG);
     // A packet sealed under the client's Initial key does not open under
     // the server's: the tag fails, and §5.5 leaves the session live.
     uint64_t pn = 0;
     size_t pt_len = 0;
     uint8_t key_set = 0;
-    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, pkt, pkt_len, 4, 0, 0, &key_set, &pn, &pt_len) ==
-          CH_QUIC_DISCARD);
+    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len, 4, 0, 0, &key_set,
+                       &pn, &pt_len) == CH_QUIC_DISCARD);
     CHECK(ch_quic_state(&q) == CH_ST_START);
     // The ServerHello in two pieces: the driver waits for a whole message.
     size_t sh_len = build_server_hello(sh, sizeof sh, SUITE_CHACHA20_POLY1305_SHA256);
@@ -160,10 +161,10 @@ static void test_driver(void) {
     CHECK(ready == (CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_READ) |
                     CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE)));
     CHECK(ch_quic_state(&q) == CH_ST_START);
-    CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, 1, 1, hdr, sizeof hdr, pt, sizeof pt, pkt,
-                       sizeof pkt, &pkt_len) == CH_OK);
-    CHECK(ch_quic_seal(&q, CH_LEVEL_APPLICATION, 1, 1, hdr, sizeof hdr, pt, sizeof pt, pkt,
-                       sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     // Bytes at a level this client has left: §4.1.3's PROTOCOL_VIOLATION.
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
     CHECK(ch_quic_state(&q) == CH_ST_FAILED && ch_quic_error_code(&q) == 0x0a);
@@ -244,8 +245,8 @@ static void test_close_after_failure(void) {
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
     size_t frame_len = close_frame(frame, 0x0a, 0);
     // A live session owes no close.
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr, frame,
+                             frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     quic_keys handshake_tx = q.handshake_tx;
     quic_hp_key handshake_hp_tx = q.handshake_hp_tx;
 
@@ -269,12 +270,12 @@ static void test_close_after_failure(void) {
     // No packet opens and no ordinary seal runs on the failed session. The
     // Initial open is the one that matters: the connection ID it derives
     // from is still stored, for the close below.
-    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                       sizeof pkt, &pkt_len) == CH_EINVAL);
-    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, dcid, sizeof dcid, 7, 1, hdr, sizeof hdr,
-                            frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_OK);
-    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, pkt, pkt_len, sizeof hdr - 1, 0, 0, &key_set, &pn,
-                       &pt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr, frame,
+                       frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, dcid, sizeof dcid, 7, 1,
+                            hdr, sizeof hdr, frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, pkt, pkt_len, sizeof hdr - 1, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_EINVAL);
 
     // The Initial close, at CH_QUIC_CLOSE_MAX exactly: one byte more is
     // refused and keeps the keys. The packet is filled the way a client
@@ -284,43 +285,44 @@ static void test_close_after_failure(void) {
     size_t padded_len = CH_QUIC_CLOSE_MAX - sizeof hdr - GCM_TAG;
     memset(frame + close_len, 0x00, padded_len + 1 - close_len);
     frame_len = padded_len + 1;
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr, frame,
+                             frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(q.initial_dcid_len == sizeof dcid);
     frame_len = padded_len;
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr, frame,
+                             frame_len, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(pkt_len == CH_QUIC_CLOSE_MAX);
     CHECK(q.initial_dcid_len == 0 && all_zero(q.initial_dcid, sizeof q.initial_dcid));
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 8, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
-    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, dcid, sizeof dcid, pkt, pkt_len,
-                            sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, CH_QUIC_VERSION_1, 8, 1, hdr, sizeof hdr, frame,
+                             frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, dcid, sizeof dcid, pkt,
+                            pkt_len, sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
     CHECK(pn == 7 && pt_len == frame_len && memcmp(pkt + sizeof hdr, frame, frame_len) == 0);
 
     // The Handshake close. A short buffer seals nothing and keeps the keys.
     frame_len = close_frame(frame, ch_quic_error_code(&q), 0);
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof hdr + frame_len + GCM_TAG - 1, &pkt_len) == CH_ECAP);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr,
+                             frame, frame_len, pkt, sizeof hdr + frame_len + GCM_TAG - 1,
+                             &pkt_len) == CH_ECAP);
     CHECK(memcmp(&q.handshake_tx, &handshake_tx, sizeof handshake_tx) == 0);
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr,
+                             frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(all_zero(&q.handshake_tx, sizeof q.handshake_tx));
     CHECK(all_zero(&q.handshake_hp_tx, sizeof q.handshake_hp_tx));
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 8, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 8, 1, hdr, sizeof hdr,
+                             frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(quic_packet_open_handshake(&handshake_tx, &handshake_hp_tx, pkt, pkt_len, sizeof hdr - 1,
                                      0, &pn, &pt_len) == CH_OK);
     CHECK(pn == 7 && pt_len == frame_len && memcmp(pkt + sizeof hdr, frame, frame_len) == 0);
 
     // No 1-RTT keys existed, so no 1-RTT close is owed, and none is left.
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_APPLICATION, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr,
+                             frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(q.levels_ready == 0 && ch_quic_state(&q) == CH_ST_FAILED);
     CHECK(ch_quic_error_code(&q) == 0x0a);
     ch_quic_close(&q);
-    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
-                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 7, 1, hdr, sizeof hdr,
+                             frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
 }
 
 // RFC 9001 §4.1.3 (INV-39): the ServerHello's Initial delivery with one
@@ -349,12 +351,20 @@ static void test_server_hello_ends_level(void) {
     }
 }
 
+// The version rules, which read configure, build_server_hello and CHECK
+// above.
+#include "quic_version_tests.h"
+
 int main(void) {
     test_config_refusals();
     test_driver();
     test_server_hello_refused();
     test_close_after_failure();
     test_server_hello_ends_level();
+    test_init_versions();
+    test_switch_versions();
+    test_packet_versions();
+    test_retry_versions();
     if (failures == 0) {
         (void)printf("quic_driver: the driver stages, installs and refuses as quic.h states\n");
     }

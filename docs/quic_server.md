@@ -84,11 +84,12 @@ over ngtcp2's recorded hellos and a HelloRetryRequest ("The key exchange"
 below), and colibri's interop run below drives it against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
-`TRANSPORT=quic-nonblocking` builds, links and exports twenty-one calls. Two of them are
+`TRANSPORT=quic-nonblocking` builds, links and exports twenty-two calls. Two of them are
 the Retry token's, which landed after the rest and have a section of their
 own below, one is `ch_quic_seal_close`, which "When the handshake fails"
-below covers, and two are `alert.h`'s, which every object exports
-(`docs/decisions.md` 75).
+below covers, two are `alert.h`'s, which every object exports
+(`docs/decisions.md` 75), and one is `ch_quic_negotiated_version`
+(`docs/decisions.md` 79).
 
 `CH_QUIC_PARAMS_MIN_RXBUF` is still 0, and a chapulin server cannot close
 it: it would measure the bodies clients send, which is the other direction.
@@ -185,7 +186,8 @@ an IPv6 address and a port. No refusal writes to `*cids`.
   no token.
 - The Retry packet around the token: a Source Connection ID that differs
   from the client's Destination Connection ID (`rfc9000.txt:5385-5387`),
-  the pseudo-packet, and the tag `ch_srv_quic_retry_tag` writes.
+  the pseudo-packet, and the tag `ch_srv_quic_retry_tag` writes under the
+  original version, which the caller passes it (RFC 9369 §4.1).
 - The address bytes and their encoding, which must be the same for the
   mint and the check.
 - The lifetime. §8.1.4 asks a server to accept a Retry token only for a
