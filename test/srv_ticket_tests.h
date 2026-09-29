@@ -25,11 +25,13 @@ static const uint8_t ticket_nonce_a[AEAD_NONCE] = {0xa0, 0xa1, 0xa2, 0xa3, 0xa4,
                                                    0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab};
 
 // What one ticket carries: a counting PSK, so a field read from the wrong
-// offset shows as the wrong byte, and the protocol "h3".
+// offset shows as the wrong byte, QUIC version 2's Version field value
+// (rfc9369.txt:137-141), and the protocol "h3".
 static void ticket_contents(srv_ticket_contents *c) {
     memset(c, 0, sizeof *c);
     c->auth_seconds = 0x0102030405060708ULL;
     c->suite = SUITE_CHACHA20_POLY1305_SHA256;
+    c->quic_version = 0x6b3343cfU;
     c->alpn_len = 2;
     c->alpn[0] = 'h';
     c->alpn[1] = '3';
@@ -46,7 +48,7 @@ static int ticket_opens(const uint8_t *key, const uint8_t *t, size_t n) {
 static void test_ticket_round_trip(void) {
     srv_ticket_contents in;
     ticket_contents(&in);
-    CHECK(SRV_TICKET_LEN == 104 && SRV_TICKET_BODY_LEN == 75);
+    CHECK(SRV_TICKET_LEN == 108 && SRV_TICKET_BODY_LEN == 79 && SRV_TICKET_VERSION == 2);
     size_t n = srv_ticket_seal(seal_key, ticket_nonce_a, &in, out, sizeof out);
     CHECK(n == SRV_TICKET_LEN);
     // The clear head: the format's own version byte, then the nonce.
@@ -63,6 +65,7 @@ static void test_ticket_round_trip(void) {
     srv_ticket_contents got;
     CHECK(srv_ticket_open(seal_key, out, n, &got) == CH_OK);
     CHECK(got.auth_seconds == in.auth_seconds && got.suite == in.suite);
+    CHECK(got.quic_version == in.quic_version);
     CHECK(got.alpn_len == 2 && memcmp(got.alpn, "h3", 2) == 0);
     CHECK(memcmp(got.psk, in.psk, SHA256_LEN) == 0);
 
@@ -72,15 +75,15 @@ static void test_ticket_round_trip(void) {
     uint8_t body[SRV_TICKET_BODY_LEN];
     CHECK(aead_open(seal_key, ticket_nonce_a, out, 1, out + 1 + AEAD_NONCE, sizeof body,
                     out + 1 + AEAD_NONCE + SRV_TICKET_BODY_LEN, body) == 1);
-    static const uint8_t want_head[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                                        0x08, 0x13, 0x03, 0x02, 'h',  '3'};
+    static const uint8_t want_head[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x13,
+                                        0x03, 0x6b, 0x33, 0x43, 0xcf, 0x02, 'h',  '3'};
     CHECK(memcmp(body, want_head, sizeof want_head) == 0);
     int pad_zero = 1;
-    for (size_t i = sizeof want_head; i < 11 + CH_ALPN_NAME_MAX; i++) {
+    for (size_t i = sizeof want_head; i < 15 + CH_ALPN_NAME_MAX; i++) {
         pad_zero &= body[i] == 0;
     }
     CHECK(pad_zero);
-    CHECK(memcmp(body + 11 + CH_ALPN_NAME_MAX, in.psk, SHA256_LEN) == 0);
+    CHECK(memcmp(body + 15 + CH_ALPN_NAME_MAX, in.psk, SHA256_LEN) == 0);
 
     // No protocol at all: alpn_len 0 and a zero name field.
     in.alpn_len = 0;

@@ -13,6 +13,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "hkdf.h"
+#include "quic_version.h"
 
 // The ASCII bytes "chapulin quic token", which the tag covers ahead of
 // everything else. quic_token.h states why the tag input starts with them.
@@ -26,16 +27,24 @@ static const uint8_t token_label[] = {'c', 'h', 'a', 'p', 'u', 'l', 'i', 'n', ' 
 // instant, the two length bytes and the tag. It is 43, the shortest token.
 #define QUIC_TOKEN_FIXED (1 + QUIC_TOKEN_INSTANT_LEN + 1 + 1 + SHA256_LEN)
 
-// The longest tag input: the label, the byte holding address_len, the
-// address, and the longest body, which is every token byte before the tag.
-#define QUIC_TOKEN_TAG_INPUT_MAX                                                                   \
-    (sizeof token_label + 1 + CH_QUIC_TOKEN_ADDRESS_MAX + CH_QUIC_TOKEN_MAX - SHA256_LEN)
+// The bytes of the version in the tag input.
+#define QUIC_TOKEN_VERSION_LEN 4
 
-// Whether address_len is a length both calls accept: at least one byte,
-// because a token bound to no address validates every address, and at most
-// CH_QUIC_TOKEN_ADDRESS_MAX.
-static int address_len_ok(size_t address_len) {
-    return address_len > 0 && address_len <= CH_QUIC_TOKEN_ADDRESS_MAX;
+// The longest tag input: the label, the version, the byte holding
+// address_len, the address, and the longest body, which is every token byte
+// before the tag.
+#define QUIC_TOKEN_TAG_INPUT_MAX                                                                   \
+    (sizeof token_label + QUIC_TOKEN_VERSION_LEN + 1 + CH_QUIC_TOKEN_ADDRESS_MAX +                 \
+     CH_QUIC_TOKEN_MAX - SHA256_LEN)
+
+// Whether the address and the version are ones both calls accept: an
+// address of at least one byte, because a token bound to no address
+// validates every address, and at most CH_QUIC_TOKEN_ADDRESS_MAX, and a
+// version quic_version_derived admits, the rule every call that takes a
+// version from the caller applies.
+static int arguments_ok(uint32_t version, size_t address_len) {
+    return address_len > 0 && address_len <= CH_QUIC_TOKEN_ADDRESS_MAX &&
+           quic_version_derived(version);
 }
 
 // Writes issued_seconds as QUIC_TOKEN_INSTANT_LEN bytes, the most
@@ -57,18 +66,22 @@ static uint64_t read_instant(rbuf *r) {
 }
 
 // Writes the tag quic_token.h describes: HMAC-SHA-256 under key over the
-// label, one byte holding address_len, the address and the body_len body
-// bytes. Both callers check address_len and bound body_len before they call,
-// so the input always fits its buffer, and the assert holds them to that.
-// The input holds no secret: the label is printed above, and the address and
-// the body are bytes the client sent or will be sent.
-static void token_tag(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *address,
-                      size_t address_len, const uint8_t *body, size_t body_len,
-                      uint8_t tag[SHA256_LEN]) {
+// label, the version as two uint16 halves, the high half first, one byte
+// holding address_len, the address and the body_len body bytes. Both
+// callers check address_len and bound body_len before they call, so the
+// input always fits its buffer, and the assert holds them to that. The
+// input holds no secret: the label is printed above, the version is the
+// Retry's Version field, and the address and the body are bytes the client
+// sent or will be sent.
+static void token_tag(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                      const uint8_t *address, size_t address_len, const uint8_t *body,
+                      size_t body_len, uint8_t tag[SHA256_LEN]) {
     uint8_t input[QUIC_TOKEN_TAG_INPUT_MAX];
     wbuf w;
     wb_init(&w, input, sizeof input);
     wb_bytes(&w, token_label, sizeof token_label);
+    wb_u16(&w, (uint16_t)(version >> 16));
+    wb_u16(&w, (uint16_t)version);
     wb_u8(&w, (uint8_t)address_len);
     wb_bytes(&w, address, address_len);
     wb_bytes(&w, body, body_len);
@@ -76,10 +89,11 @@ static void token_tag(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *a
     hmac_sha256(key, CH_QUIC_TOKEN_KEY_LEN, input, w.len, tag);
 }
 
-int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *address,
-                           size_t address_len, const ch_quic_retry_cids *cids,
-                           uint64_t issued_seconds, uint8_t *out, size_t cap, size_t *out_len) {
-    if (!address_len_ok(address_len) || cids->original_dcid_len > CH_QUIC_DCID_MAX ||
+int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                           const uint8_t *address, size_t address_len,
+                           const ch_quic_retry_cids *cids, uint64_t issued_seconds, uint8_t *out,
+                           size_t cap, size_t *out_len) {
+    if (!arguments_ok(version, address_len) || cids->original_dcid_len > CH_QUIC_DCID_MAX ||
         cids->retry_scid_len > CH_QUIC_DCID_MAX) {
         return CH_EINVAL;
     }
@@ -104,7 +118,7 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8
     // w.len bytes of out. The tag goes out in the clear as the token's last
     // field, so nothing wipes it.
     uint8_t tag[SHA256_LEN];
-    token_tag(key, address, address_len, out, w.len, tag);
+    token_tag(key, version, address, address_len, out, w.len, tag);
     wb_bytes(&w, tag, sizeof tag);
 
     // The cap check above is what keeps the writer inside out, so the writer
@@ -114,11 +128,11 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8
     return CH_OK;
 }
 
-int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *token,
-                            size_t n, const uint8_t *address, size_t address_len,
-                            uint64_t now_seconds, uint64_t lifetime_seconds,
+int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                            const uint8_t *token, size_t n, const uint8_t *address,
+                            size_t address_len, uint64_t now_seconds, uint64_t lifetime_seconds,
                             ch_quic_retry_cids *cids) {
-    if (!address_len_ok(address_len)) {
+    if (!arguments_ok(version, address_len)) {
         return CH_EINVAL;
     }
 
@@ -146,12 +160,13 @@ int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint
         return CH_EAUTH;
     }
 
-    // The tag covers the body, which is every byte before the tag itself.
+    // The tag covers the version and the body, which is every byte before
+    // the tag itself, so a token minted under another version fails here.
     // ct_memeq compares all SHA256_LEN bytes, so a client cannot search for a
     // valid tag one byte per attempt. want is the correct tag over a body the
     // client chose, so it is wiped rather than left on the stack.
     uint8_t want[SHA256_LEN];
-    token_tag(key, address, address_len, token, n - SHA256_LEN, want);
+    token_tag(key, version, address, address_len, token, n - SHA256_LEN, want);
     uint32_t equal = ct_memeq(tag, want, SHA256_LEN);
     ct_wipe(want, sizeof want);
     if (equal == 0) {

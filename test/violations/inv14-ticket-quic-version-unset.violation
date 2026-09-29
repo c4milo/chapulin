@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_post.c
+catches: quic_loop_test
+reason: handle_ticket hands on_ticket a ticket with no QUIC version, so
+  the caller cannot tell which version the ticket belongs to, and a
+  resuming configuration that presents it is refused.
+  test/quic_loop_ticket_versions.h requires the version 2 of the
+  connection that received the ticket, and the version 1 of another.
+
+--- old
+    ticket.quic_version = t->quic_negotiated_version;
+--- new
+    (void)t->quic_negotiated_version;

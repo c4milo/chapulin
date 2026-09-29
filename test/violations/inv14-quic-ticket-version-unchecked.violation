@@ -1,0 +1,15 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_loop_test
+reason: ticket_version_ok admits every configuration, so a client starts
+  a connection in one QUIC version with a ticket from a connection in
+  the other, which RFC 9369 section 5 forbids (rfc9369.txt:268-271), and
+  a ticket presented without its version goes out too.
+  test/quic_loop_ticket_versions.h requires CH_EINVAL for a version 2
+  ticket in a version 1 connection, the reverse, and a ticket version of
+  0.
+
+--- old
+    return !cfg->resumption || cfg->ticket_quic_version == cfg->quic_original_version;
+--- new
+    return cfg != NULL;

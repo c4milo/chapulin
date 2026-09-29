@@ -18,10 +18,12 @@
 // Whether this build derives the keys of version, a QUIC Version field value (quic_cfg.h).
 // It is the one place that answers the question, and every call that takes a version from
 // the caller asks it: ch_quic_init and ch_srv_quic_init refuse an original version it answers
-// 0 for, ch_quic_switch_version refuses a switch to one, ch_srv_quic_retry_tag refuses a tag
-// under one, and quic_initial.c and quic_retry.c refuse one before they choose a salt, a label
-// or a key. This build derives version 1 and version 2, so it answers 1 for CH_QUIC_VERSION_1
-// and CH_QUIC_VERSION_2 and 0 for every other value, 0 among them.
+// 0 for, ch_quic_switch_version refuses a switch to one, a server fails a session whose
+// cfg.srv.choose_version answers one, ch_srv_quic_retry_tag refuses a tag under one, the two
+// Retry token calls refuse a token under one, and quic_initial.c and quic_retry.c refuse one
+// before they choose a salt, a label or a key. This build derives version 1 and version 2, so
+// it answers 1 for CH_QUIC_VERSION_1 and CH_QUIC_VERSION_2 and 0 for every other value, 0
+// among them.
 static inline int quic_version_derived(uint32_t version) {
     return version == CH_QUIC_VERSION_1 || version == CH_QUIC_VERSION_2;
 }

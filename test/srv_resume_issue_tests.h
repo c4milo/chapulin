@@ -154,6 +154,8 @@ static void test_resume_issue(void) {
     CHECK(read_issued_ticket(&client_rd, &lifetime, nonce, &c) > 0);
     CHECK(lifetime == SRV_TICKET_LIFETIME && c.auth_seconds == RESUME_AUTH);
     CHECK(c.suite == SUITE_CHACHA20_POLY1305_SHA256 && c.alpn_len == 0);
+    // A TCP session negotiates no QUIC version, so its ticket records 0.
+    CHECK(c.quic_version == 0);
     uint8_t psk[SHA256_LEN];
     ks_res_psk(SHA256_LEN, res_master, nonce, sizeof nonce, psk);
     CHECK(memcmp(c.psk, psk, sizeof psk) == 0);

@@ -424,6 +424,13 @@ typedef struct {
     // a Retry is checked against this one alone.
     uint32_t quic_original_version;
 
+    // The ticket's QUIC version, ch_ticket.quic_version, which a resuming client sets beside the
+    // other ticket fields. RFC 9369 section 5 forbids a client to start a connection in one QUIC
+    // version with a ticket from a connection in another (rfc9369.txt:268-271), so with
+    // resumption set ch_quic_init returns CH_EINVAL, and sends nothing, when this is not
+    // quic_original_version. 0 names no version, so a ticket presented without it is refused.
+    uint32_t ticket_quic_version;
+
     // The caller's own encoded QUIC transport parameters, the body of the
     // quic_transport_parameters extension. The ClientHello copies these bytes unread into
     // extension 0x39 (RFC 9001 §8.2, rfc9001.txt:1922-1924); chapulin reads none of them,

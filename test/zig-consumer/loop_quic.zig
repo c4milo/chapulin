@@ -4,11 +4,12 @@
 //! version each side negotiated and the switches C refuses, the transport
 //! parameters each side received, one 1-RTT packet sealed and opened each
 //! way and a tampered one discarded, a key update, the Retry integrity tag
-//! and a Retry token, the ticket taken at the 1-RTT level and resumed
-//! through Ticket.fromFields, a stale ticket refused, a server whose
-//! choose_version answers version 2 and a client that switches to it, and
-//! close. Under KEYLOG=on, ch_keylog finds the client's context through
-//! chapulin.hookContext.
+//! and a Retry token bound to its version, the ticket taken at the 1-RTT
+//! level and resumed through Ticket.fromFields, a stale ticket refused, a
+//! server whose choose_version answers version 2 and a client that
+//! switches to it, that connection's ticket refused in version 1 and
+//! resumed in version 2, and close. Under KEYLOG=on, ch_keylog finds the
+//! client's context through chapulin.hookContext.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
@@ -64,9 +65,19 @@ fn clientValues() chapulin.Client {
 /// does when the Version field of the server's first Initial packet
 /// differs from the client's.
 fn handshake(values: chapulin.Client, choose: ?quic.ChooseVersion) !void {
+    return handshakeWith(values, .v1, choose);
+}
+
+/// A handshake whose server's original version is version and which
+/// chooses nothing, the client's original version being the same.
+fn handshakeIn(values: chapulin.Client, version: quic.Version) !void {
+    return handshakeWith(values, version, null);
+}
+
+fn handshakeWith(values: chapulin.Client, original: quic.Version, choose: ?quic.ChooseVersion) !void {
     outgoing = .{ .buffers = .{ &buffers[0], &buffers[1], &buffers[2] } };
     var server_values = fixture.server(&server_alpn, server_now);
-    server_values.quic_version = .v1;
+    server_values.quic_version = original;
     server_values.choose_version = choose;
     try server.init(server_values, &server_params, &server_peer, &sni_buf);
     server.hook.context = &server_context;
@@ -77,8 +88,8 @@ fn handshake(values: chapulin.Client, choose: ?quic.ChooseVersion) !void {
     try check(client.keysReady(.initial, .write) and !client.keysReady(.handshake, .read), "the client's Initial keys are not the only ones ready");
     // Both sides negotiate the original version, and C refuses a switch to
     // it, the version the session already negotiated.
-    try check(client.negotiatedVersion() == .v1 and server.negotiatedVersion() == .v1, "a session did not negotiate its original version");
-    try check(client.switchVersion(.v1) == error.Invalid, "a switch to the negotiated version was taken");
+    try check(client.negotiatedVersion() == original and server.negotiatedVersion() == original, "a session did not negotiate its original version");
+    try check(client.switchVersion(original) == error.Invalid, "a switch to the negotiated version was taken");
 
     var n = try client.cryptoOut(.initial, &message);
     try server.cryptoIn(.initial, message[0..n], &outgoing);
@@ -162,13 +173,16 @@ fn retryAndTokens() !void {
     cids.original_dcid_len = dcid.len;
     @memcpy(cids.original_dcid[0..dcid.len], &dcid);
     var token: [c.CH_QUIC_TOKEN_MAX]u8 = undefined;
-    const n = try quic.tokenMint(&key, &address, &cids, 100, &token);
-    const found = try quic.tokenCheck(&key, token[0..n], &address, 110, 60);
+    const n = try quic.tokenMint(&key, .v1, &address, &cids, 100, &token);
+    const found = try quic.tokenCheck(&key, .v1, token[0..n], &address, 110, 60);
     try check(found == .retry and std.meta.eql(found.retry, cids), "tokenCheck did not return the minted connection IDs");
-    try check(try quic.tokenCheck(&key, "", &address, 110, 60) == .not_retry, "an empty token was not not_retry");
+    // The token is bound to the version it was minted under.
+    try check(try quic.tokenCheck(&key, .v2, token[0..n], &address, 110, 60) == .invalid, "a version 1 token checked under version 2");
+    try check(try quic.tokenCheck(&key, .v1, "", &address, 110, 60) == .not_retry, "an empty token was not not_retry");
     token[n - 1] ^= 1;
-    try check(try quic.tokenCheck(&key, token[0..n], &address, 110, 60) == .invalid, "a changed token was not invalid");
-    try check(quic.tokenCheck(&key, token[0..n], "", 110, 60) == error.Invalid, "an empty address was taken");
+    try check(try quic.tokenCheck(&key, .v1, token[0..n], &address, 110, 60) == .invalid, "a changed token was not invalid");
+    try check(quic.tokenCheck(&key, .v1, token[0..n], "", 110, 60) == error.Invalid, "an empty address was taken");
+    try check(quic.tokenMint(&key, @enumFromInt(0), &address, &cids, 100, &token) == error.Invalid, "a token minted under no version");
 }
 
 fn takeTicket() !chapulin.Ticket {
@@ -221,7 +235,21 @@ pub fn run() !void {
     try check(choose_calls == 1 and client.negotiatedVersion() == .v2 and server.negotiatedVersion() == .v2, "the server's choice of version 2 was not negotiated");
     try packets();
     try keyUpdate();
+    // Its ticket belongs to version 2: C refuses it in a connection that
+    // starts in version 1, and it resumes one that starts in version 2.
+    const taken_v2 = try takeTicket();
     client.close();
     server.close();
-    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, version 2 chosen by the server, and close\n", .{});
+    try check(taken_v2.ticket.quic_version == c.CH_QUIC_VERSION_2, "the ticket did not record version 2");
+    const ticket_v2 = try fixture.stored(&taken_v2);
+    var values_v2 = clientValues();
+    values_v2.ticket = &ticket_v2;
+    values_v2.ticket_age_ms = 1000;
+    try check(client.init(values_v2, &client_params, &client_peer) == error.Invalid, "a version 2 ticket started a version 1 connection");
+    values_v2.quic_version = .v2;
+    try handshakeIn(values_v2, .v2);
+    try check(client.pskSelected() and server.pskSelected() and client.negotiatedVersion() == .v2, "the version 2 ticket did not resume in version 2");
+    client.close();
+    server.close();
+    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, version 2 chosen by the server and its ticket resumed in version 2, and close\n", .{});
 }

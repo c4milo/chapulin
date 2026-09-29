@@ -99,7 +99,8 @@ static int take_transport_params(ch_quic *q, const client_hello *ch) {
 // client's transport parameters reached the caller and before srv_select,
 // because the server sends every CRYPTO frame in the negotiated version
 // (rfc9369.txt:236-238), the HelloRetryRequest and the ServerHello
-// included. step_client_hello is the one call site, so a second
+// included, and selects a ticket of that version alone (srv_resume.h).
+// step_client_hello is the one call site, so a second
 // ClientHello never asks again. A NULL callback keeps the original version.
 // An answer quic_version_derived refuses is the caller's failure, not the
 // peer's: CH_EIO, the code a refused on_crypto_out returns (srv_out.c),

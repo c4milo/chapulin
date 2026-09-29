@@ -285,7 +285,13 @@ the packet beside its level. A build derives the keys of QUIC version 1 and
 version 2. A client switches from its original version to the other once,
 before the server's first CRYPTO byte, and a server's caller chooses the
 negotiated version once, through `ch_srv_cfg.choose_version`, when the
-first ClientHello arrives ([`docs/decisions.md`](decisions.md) 79).
+first ClientHello arrives ([`docs/decisions.md`](decisions.md) 79). A
+ticket belongs to the negotiated version of the connection that issued
+it: a server passes over a ticket of another version, and a client
+presents one only in a connection that starts in its version
+(`ch_ticket.quic_version`, `ch_cfg.ticket_quic_version`). The Retry token
+binds the original version through its tag. QUIC version 2 is complete in
+both roles.
 [`docs/quic_server.md`](quic_server.md) states what chapulin owes one,
 which is the keys, the packet protection and that token, and nothing above
 them. Both

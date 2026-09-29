@@ -11,6 +11,7 @@ const c = chapulin.c;
 
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
+const has_quic = @hasField(c.ch_ticket, "quic_version");
 
 /// Under RAND=session, the streams each side's sessions draw from: one
 /// seeded stream per side, so a failure replays exactly. A test fixture
@@ -124,13 +125,18 @@ pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Serve
 }
 
 /// A Ticket rebuilt from its fields, as a program that stored them after
-/// the handshake rebuilds it for the next connection.
+/// the handshake rebuilds it for the next connection, the QUIC version it
+/// arrived in included.
 pub fn stored(taken: *const chapulin.Ticket) !chapulin.Ticket {
     const t = &taken.ticket;
     const identity = taken.identity[0..t.identity_len];
     const psk = t.psk[0..t.psk_len];
-    if (has_webpki) return chapulin.Ticket.fromFields(.{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .binding = &t.binding });
-    return chapulin.Ticket.fromFields(.{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch });
+    var fields: chapulin.Ticket.Fields = if (has_webpki)
+        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch, .binding = &t.binding }
+    else
+        .{ .identity = identity, .psk = psk, .age_add = t.age_add, .lifetime_s = t.lifetime_s, .epoch = t.epoch };
+    if (has_quic) fields.quic_version = @as(chapulin.quic.Version, @enumFromInt(t.quic_version));
+    return chapulin.Ticket.fromFields(fields);
 }
 
 /// Whether every byte of value is zero.

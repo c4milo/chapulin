@@ -14,13 +14,20 @@
 // srv_select_auth answers CH_OK, CH_EAUTH with decrypt_error, or CH_EPROTO
 // with missing_extension or handshake_failure; a CH_OK names an
 // authentication path, a ticket or a scheme; a selected ticket's index
-// names an entry inside the list. srv_send_new_session_ticket answers CH_OK, CH_EIO
-// or CH_ECAP, sends at most once, and sends only with a key and a clock.
+// names an entry inside the list; and a selected ticket records the
+// session's QUIC version. srv_send_new_session_ticket answers CH_OK, CH_EIO
+// or CH_ECAP, sends at most once, sends only with a key and a clock, and
+// seals the session's QUIC version into the ticket. This harness builds a
+// TCP server, whose sessions negotiate no QUIC version, so that version is
+// 0 and the opened tickets' versions take any value: the formula shows
+// that a ticket from a QUIC server is never selected here. The QUIC arm,
+// which reads ch_tls.quic_negotiated_version, is tested
+// (test/quic_loop_ticket_versions.h).
 //
 // The bounds. IDS_MAX holds one whole ticket identity, SRV_TICKET_LEN bytes
-// behind its two length bytes and before its four age bytes, plus a
-// second short entry, so the walk can both open a ticket and pass an
-// identity over. BINDERS_MAX holds one 32-byte binder and the start of a
+// behind its two length bytes and before its four age bytes, plus a second
+// short entry, 121 bytes in all, so the walk can both open a ticket and
+// pass an identity over. BINDERS_MAX holds one 32-byte binder and the start of a
 // second, so the binder walk can find an entry of the right length, one of
 // the wrong length and an index the list does not hold. Both
 // are the harness's, not the build's: a real list runs to the ClientHello's
@@ -52,9 +59,16 @@ uint64_t nondet_u64(void);
 #define IDS_MAX (2 + SRV_TICKET_LEN + 4 + 7)
 #define BINDERS_MAX (1 + SHA256_LEN + 2)
 
+// The QUIC version this harness's sessions negotiate: none, because it
+// builds a TCP server, and srv_resume.c records 0 for none.
+#define SESSION_QUIC_VERSION 0u
+
 // How many identities the stubbed open was asked about, so the harness can
-// say that a selected ticket is one the walk opened.
+// say that a selected ticket is one the walk opened, and the QUIC version
+// the last one it opened carried, which is the selected one's: the walk
+// stops at the first ticket that holds.
 static uint16_t opened;
+static uint32_t opened_version;
 
 int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
                     srv_ticket_contents *c) {
@@ -69,6 +83,8 @@ int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *tic
     }
     c->auth_seconds = nondet_u64();
     c->suite = nondet_u16();
+    c->quic_version = nondet_u32();
+    opened_version = c->quic_version;
     c->alpn_len = nondet_u8();
     __CPROVER_assume(c->alpn_len <= CH_ALPN_NAME_MAX);
     fill_nondet(c->alpn, sizeof c->alpn);
@@ -82,6 +98,8 @@ size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t n
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(c, sizeof *c), "seal: contents readable");
     __CPROVER_assert(c->alpn_len <= CH_ALPN_NAME_MAX, "seal: the name fits its field");
+    __CPROVER_assert(c->quic_version == SESSION_QUIC_VERSION,
+                     "seal: the ticket records the session's QUIC version");
     if (cap < SRV_TICKET_LEN || nondet_int()) {
         return 0;
     }
@@ -248,6 +266,8 @@ static void prove_select(void) {
         __CPROVER_assert(!sel.psk_selected || opened > 0, "a selected ticket was opened");
         __CPROVER_assert(!sel.psk_selected || sel.sigalg == 0,
                          "a selected ticket leaves no scheme for a CertificateVerify");
+        __CPROVER_assert(!sel.psk_selected || opened_version == SESSION_QUIC_VERSION,
+                         "a selected ticket records the session's QUIC version");
     }
     if (rc == CH_EAUTH) {
         __CPROVER_assert(h.alert == ALERT_DECRYPT_ERROR && sel.psk_selected == 0,

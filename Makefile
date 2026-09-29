@@ -455,6 +455,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
          test/quic_token_tests.h test/quic_retry_tests.h test/quic_version_tests.h test/srv_quic_version_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/quic_v2_vectors.h test/quic_version2_tests.h test/quic_loop_version.h test/diff_quic.h \
+         test/quic_loop_ticket_versions.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
          test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h \

@@ -148,6 +148,9 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
     cfg->quic_original_version = CH_QUIC_VERSION_1;
+    // A ticket belongs to the version of the connection that received it,
+    // and this one resumes a version 1 connection.
+    cfg->ticket_quic_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
 #else
     cfg->send = fail_send;

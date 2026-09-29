@@ -889,7 +889,9 @@ launch fast full epoch 40 "" ct.c
 # whose fields do not fill it (INV-14): 758 properties, 107 s, 5.32 GB
 # peak at a load average near 6, under the weight of 6. With the KeyUpdate
 # answer sent through hspost_send_key_update, which ch_write shares: 758
-# properties, 130 s, 2.43 GB peak at a load average near 15.
+# properties, 130 s, 2.43 GB peak at a load average near 15. With the
+# ticket zeroed before handle_ticket fills it (docs/decisions.md 79): 759
+# properties, 115 s, 3.42 GB peak on 2026-09-29.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
@@ -1506,8 +1508,18 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # day. The peak is the solver's; the nightly runs this proof in a job of
 # its own. With the ticket's draw through rand_draw (docs/decisions.md
 # 77): 1046 properties, 149 s, 4.92 GB, measured the same way on
-# 2026-09-27.
-launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
+# 2026-09-27. With the ticket's QUIC version (docs/decisions.md 79), four
+# bytes more of ticket in the identities and an 88-byte srv_ticket_contents
+# for the wipes: 1072 properties, 155 s and 154 s, and 9.97 GB and 5.51 GB
+# peak on two runs on 2026-09-29, where the unchanged formula measured
+# 132 s and 5.65 GB the same day, all under a watchdog that kills the run
+# past 12 GB resident. On x86-64 Linux, in an ubuntu:24.04 container with
+# CI's pinned cbmc 6.11.0 and kissat rel-4.0.4, the same formula took
+# 124 s, 2.71 GB of address space and 1.68 GB resident, sampled from
+# /proc, well under the nightly's cap of about 13 GB. Dropping the
+# version test from ticket_holds fails the assertion that a selected
+# ticket records the session's version.
+launch slow full srv_resume 120 "fill_nondet.0:122,find_ticket.0:24,binder_at.0:36,ct_wipe.0:92,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
 # unconverged launch line proves nothing (docs/proofs.md). Measured with
@@ -1556,13 +1568,15 @@ launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
 # aead_seal and aead_open are contract stubs the harness defines, which the
-# harness comment prices. fill_nondet's longest call is the 105-byte ticket.
+# harness comment prices. fill_nondet's longest call is the 109-byte ticket.
 # Measured (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=srv_ticket
 # PROVE_NO_CACHE=1 /usr/bin/time -l over this script): 693 properties, 1 s,
 # 0.03 GB peak. The same formula with an assert of 0 at the seal's success
 # arm and at the open's CH_OK and refusal arms fails all three, so every arm
-# is reached.
-launch fast full srv_ticket 110 "fill_nondet.0:106" buf.c ct.c -DCH_ROLE_SERVER
+# is reached. With the ticket's QUIC version, a 108-byte ticket and version
+# 2 of the format (docs/decisions.md 79): 711 properties, 1 s, 0.03 GB,
+# measured the same way on 2026-09-29.
+launch fast full srv_ticket 110 "fill_nondet.0:110" buf.c ct.c -DCH_ROLE_SERVER
 # The QUIC server's Retry token, the same shape as the cookie above: buf.c,
 # ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
 # calls over unconstrained inputs, the address length and the two connection
@@ -1574,7 +1588,10 @@ launch fast full srv_ticket 110 "fill_nondet.0:106" buf.c ct.c -DCH_ROLE_SERVER
 # PROVE_ONLY=quic_token PROVE_NO_CACHE=1 /usr/bin/time -l over this script):
 # 916 properties, 36 s and 52 s in two runs, 1.02 GB peak. The same formula
 # with an assert of 0 at each call's CH_OK tail and refusal tail fails all
-# four, so every tail is reached.
+# four, so every tail is reached. With the QUIC version under the tag and
+# refused unless quic_version_derived admits it (docs/decisions.md 79): 916
+# properties, 30 s, 1.04 GB, measured the same way on 2026-09-29; a check
+# that drops the version from the refusal fails both CH_EINVAL assertions.
 launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" buf.c ct.c hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The ROLE=server ClientHello parser, split in two at srv_read_extension,
 # the one entry between its files. This line is the readers half: every
@@ -1731,7 +1748,9 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # 1.43 GB peak; quic_step 583 properties, 6.3 s, 43 MB; quic_step_ca 590
 # properties, 8.2 s, 46 MB. An assert of 0 after the switch's
 # success assertions fails that one assert (1 of 1773), so the formula
-# reaches a switch that succeeds.
+# reaches a switch that succeeds. With quic_config.c's ticket version rule
+# (docs/decisions.md 79): quic_driver 1790 properties, 93 s, 0.99 GB, on
+# 2026-09-29.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
@@ -1754,7 +1773,10 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # /usr/bin/time -l): 557 properties, 1.8 s, 68 MB peak, and 588
 # properties, 3.9 s, 123 MB once the ticket age and lifetime joined the
 # configuration and the verdict, and 594 properties, 6 s, 0.16 GB once
-# the original QUIC version joined it (docs/decisions.md 79). With the real
+# the original QUIC version joined it (docs/decisions.md 79), and 613
+# properties, 5 s, 0.14 GB once the ticket's version joined it, measured
+# on 2026-09-29; a quic_config_ok that skips ticket_version_ok fails the
+# ticket version assertion. With the real
 # ct_memeq the same formula took 141 s and 2.67 GB. Narrowing the verdict
 # assertion to exclude pins alone with no hostname, pins beside anchors
 # at both caps, or a presented ticket fails each, so the formula reaches
@@ -1769,7 +1791,8 @@ launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:
 # 6 s, 0.14 GB, and quic_config_webpki's own line, re-run beside it, 594
 # properties, 5 s, 0.13 GB. A probe asserting that no three-suite list is
 # taken fails, and the harness's rule narrowed to two suites fails the
-# suite assertion, so the cap the code admits is exact.
+# suite assertion, so the cap the code admits is exact. With the ticket's
+# QUIC version: 724 properties, 6 s, 0.17 GB, measured on 2026-09-29.
 launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The

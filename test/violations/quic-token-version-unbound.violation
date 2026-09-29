@@ -1,0 +1,16 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the token check computes the tag under version 1 whatever version
+  the caller names, so a token minted in a version 1 Retry checks in a
+  version 2 Initial, and a version 2 token never checks. RFC 9369
+  section 4.1 has a client keep the Retry's version in the Initial that
+  carries the token and lets a server that bound the version drop the
+  packet of a client that switched (rfc9369.txt:221-227).
+  test/quic_token_tests.h requires each version's token to check under
+  its own version alone.
+
+--- old
+    token_tag(key, version, address, address_len, token, n - SHA256_LEN, want);
+--- new
+    token_tag(key, CH_QUIC_VERSION_1, address, address_len, token, n - SHA256_LEN, want);

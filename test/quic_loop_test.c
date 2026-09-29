@@ -19,10 +19,13 @@
 // the other, which is what the two cases below check after each
 // handshake. The raw build also fails each end on purpose and has it seal
 // the one CONNECTION_CLOSE each level owes, which the other end opens
-// (test/quic_loop_close.h), and runs whole handshakes in QUIC version 2
-// (test/quic_loop_version.h). bin/quic_loop_session is the raw build under
-// -DCH_RAND_SESSION: every session draws from the source its ch_cfg names,
-// and test/quic_loop_session.h checks what each source handed out.
+// (test/quic_loop_close.h), and runs whole handshakes in QUIC version 2,
+// one of them after a Retry (test/quic_loop_version.h). Both builds hold a
+// ticket to the QUIC version of the connection that issued it
+// (test/quic_loop_ticket_versions.h). bin/quic_loop_session is the raw
+// build under -DCH_RAND_SESSION: every session draws from the source its
+// ch_cfg names, and test/quic_loop_session.h checks what each source
+// handed out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,6 +100,7 @@ static struct {
     size_t psk_len;
     uint32_t lifetime_s;
     uint32_t age_add;
+    uint32_t quic_version;
 #ifdef CH_TRUST_WEBPKI
     uint8_t binding[SHA256_LEN];
 #endif
@@ -113,6 +117,7 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     kept.psk_len = ticket->psk_len;
     kept.lifetime_s = ticket->lifetime_s;
     kept.age_add = ticket->age_add;
+    kept.quic_version = ticket->quic_version;
 #ifdef CH_TRUST_WEBPKI
     memcpy(kept.binding, ticket->binding, SHA256_LEN);
 #endif
@@ -184,14 +189,16 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 }
 
 // The kept ticket as a resuming client presents it, one second after it
-// arrived. The obfuscated age comes from a ch_ticket holding the kept
-// age_add and nothing else, as a caller's copy does.
+// arrived, with the QUIC version it arrived in. The obfuscated age comes
+// from a ch_ticket holding the kept age_add and nothing else, as a
+// caller's copy does.
 static void present_ticket(ch_cfg *cfg) {
     cfg->psk = kept.psk;
     cfg->psk_len = kept.psk_len;
     cfg->psk_id = kept.identity;
     cfg->psk_id_len = kept.identity_len;
     cfg->resumption = 1;
+    cfg->ticket_quic_version = kept.quic_version;
     ch_ticket ticket;
     memset(&ticket, 0, sizeof ticket);
     ticket.age_add = kept.age_add;
@@ -222,9 +229,23 @@ static void check_ticket_age(ch_cfg *cfg) {
 static ch_quic client;
 static ch_quic server;
 
+// How many times choose_version_2, the server's choice in the version
+// cases, fired.
+static unsigned choose_calls;
+
+static uint32_t choose_version_2(void *io) {
+    (void)io;
+    choose_calls++;
+    return CH_QUIC_VERSION_2;
+}
+
 // One handshake over CRYPTO bytes, the ticket after it, and nothing else.
+// A client that follows takes the server's negotiated version before it
+// reads the server's first byte, as colibri does when the Version field of
+// the server's first Initial packet differs from the client's
+// (rfc9369.txt:240-244); test/quic_loop_version.h runs one that does not.
 // Returns 1 when both ends are connected, and 0 at the first refusal.
-static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
+static int run_quic_following(const ch_cfg *ccfg, const ch_cfg *scfg, int follow) {
     static uint8_t buf[4096];
     size_t n = 0;
     memset(&from_server, 0, sizeof from_server);
@@ -233,6 +254,11 @@ static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
     }
     if (ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) != CH_OK ||
         ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) != CH_OK) {
+        return 0;
+    }
+    uint32_t chosen = ch_quic_negotiated_version(&server);
+    if (follow && chosen != ch_quic_negotiated_version(&client) &&
+        ch_quic_switch_version(&client, chosen) != CH_OK) {
         return 0;
     }
     if (ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
@@ -246,6 +272,10 @@ static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
         return 0;
     }
     return ch_quic_state(&client) == CH_ST_CONNECTED && ch_quic_state(&server) == CH_ST_CONNECTED;
+}
+
+static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
+    return run_quic_following(ccfg, scfg, 1);
 }
 
 // Hands the server's 1-RTT CRYPTO bytes, the NewSessionTicket, to the
@@ -319,6 +349,10 @@ static size_t handshake_messages(void) {
 #ifdef CH_SUITE_AES_GCM
 #include "quic_loop_suites.h"
 #endif
+// The ticket version rows run each build's client and server.
+#if defined(CH_PIN_ECDSA) || defined(CH_TRUST_WEBPKI)
+#include "quic_loop_ticket_versions.h"
+#endif
 #ifdef CH_RAND_SESSION
 #include "quic_loop_session.h"
 #endif
@@ -336,6 +370,9 @@ int main(void) {
 #endif
 #ifdef CH_SUITE_AES_GCM
     test_quic_suites();
+#endif
+#if defined(CH_PIN_ECDSA) || defined(CH_TRUST_WEBPKI)
+    test_ticket_versions();
 #endif
 #ifdef CH_RAND_SESSION
     test_session();

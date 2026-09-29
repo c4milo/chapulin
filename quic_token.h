@@ -39,12 +39,23 @@
 //   11 + o + r  32     the tag
 //
 // The body is every byte before the tag. The tag is HMAC-SHA-256 under the
-// key over, in order: the 19 ASCII bytes "chapulin quic token", one byte
-// holding address_len, the address_len bytes of the address, and the body.
-// The label keeps a token's tag from ever being computed over the same bytes
-// as another MAC this tree writes, the HelloRetryRequest cookie of
-// srv_cookie.h among them, so a deployment that gave both one key still
+// key over, in order: the 19 ASCII bytes "chapulin quic token", the four
+// bytes of the QUIC version the Retry went out in, most significant first,
+// one byte holding address_len, the address_len bytes of the address, and
+// the body. The label keeps a token's tag from ever being computed over the
+// same bytes as another MAC this tree writes, the HelloRetryRequest cookie
+// of srv_cookie.h among them, so a deployment that gave both one key still
 // could not present one as the other.
+//
+// The version is bound the way the address is: the tag covers it and the
+// token does not carry it, so the check recomputes the tag over the
+// version the caller names. RFC 9369 section 4.1 has a server send a Retry
+// in the original version and a client send the Initial that carries the
+// token in that same version, and permits the server to encode the version
+// in the token and drop the packet of a client that switched
+// (rfc9369.txt:221-227). A token checked under any version but the one it
+// was minted under fails its tag. Binding it through the tag alone keeps
+// the layout below, CH_QUIC_TOKEN_MAX and every token length as they were.
 #ifndef CH_QUIC_TOKEN_H
 #define CH_QUIC_TOKEN_H
 #if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
@@ -98,7 +109,10 @@ typedef struct {
 } ch_quic_retry_cids;
 
 // Mints one Retry token for the client at address, carrying the two
-// connection IDs in cids and the instant issued_seconds.
+// connection IDs in cids and the instant issued_seconds, and bound to
+// version, the Version field of the Retry, which RFC 9369 section 4.1 makes
+// the original version (rfc9369.txt:221-222): the caller passes
+// cfg.quic_original_version, as it does to ch_srv_quic_retry_tag.
 //
 // issued_seconds is a count of seconds the caller reads from its own clock.
 // chapulin reads no clock and compares only the difference between two
@@ -114,9 +128,10 @@ typedef struct {
 // most CH_QUIC_TOKEN_MAX.
 //
 // Returns CH_EINVAL and writes nothing when address_len is 0 or above
-// CH_QUIC_TOKEN_ADDRESS_MAX, or when either length in cids is above
-// CH_QUIC_DCID_MAX. A token bound to no address would validate every
-// address, so the empty one is refused rather than minted.
+// CH_QUIC_TOKEN_ADDRESS_MAX, when either length in cids is above
+// CH_QUIC_DCID_MAX, or when this build derives no keys for version
+// (quic_version.h), 0 among them. A token bound to no address would
+// validate every address, so the empty one is refused rather than minted.
 //
 // Returns CH_ECAP and writes nothing when cap is below the token's length.
 // A cap of CH_QUIC_TOKEN_MAX never returns it.
@@ -125,9 +140,10 @@ typedef struct {
 // simulation replays a token exactly. RFC 9000 §8.1.4 requires a token to be
 // difficult to guess (rfc9000.txt:2429), and the tag is what makes it so: a
 // client without the key cannot compute the 32 bytes that end the token.
-int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *address,
-                           size_t address_len, const ch_quic_retry_cids *cids,
-                           uint64_t issued_seconds, uint8_t *out, size_t cap, size_t *out_len);
+int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                           const uint8_t *address, size_t address_len,
+                           const ch_quic_retry_cids *cids, uint64_t issued_seconds, uint8_t *out,
+                           size_t cap, size_t *out_len);
 
 // Checks the n token bytes a client's Initial carried and, when they verify,
 // writes the two connection IDs they hold to *cids.
@@ -135,9 +151,12 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8
 // A token verifies when all four of these hold: its first byte is
 // QUIC_TOKEN_TYPE_RETRY; its length is the one its two length bytes fix, and
 // each of those is at most CH_QUIC_DCID_MAX; its tag equals the tag this key
-// computes over this address and its body; and its issue instant is at most
-// lifetime_seconds before now_seconds and not after it. now_seconds comes
-// from the same clock as issued_seconds.
+// computes over version, this address and its body; and its issue instant
+// is at most lifetime_seconds before now_seconds and not after it.
+// now_seconds comes from the same clock as issued_seconds, and version is the
+// Version field of the Initial that carried the token, which RFC 9369
+// section 4.1 requires to be the original version the Retry went out in
+// (rfc9369.txt:222-224).
 //
 // The length fields are read before the tag is computed. They travel in the
 // clear, so reading them first tells a client nothing it did not send, and
@@ -155,8 +174,9 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8
 //
 // Every other return writes nothing to *cids.
 //
-// Returns CH_EINVAL when address_len is 0 or above CH_QUIC_TOKEN_ADDRESS_MAX.
-// That is the caller's error, and the token is not read.
+// Returns CH_EINVAL when address_len is 0 or above CH_QUIC_TOKEN_ADDRESS_MAX,
+// or when this build derives no keys for version (quic_version.h), 0 among
+// them. That is the caller's error, and the token is not read.
 //
 // Returns CH_EPROTO when n is 0 or the first byte is not
 // QUIC_TOKEN_TYPE_RETRY, QUIC_TOKEN_TYPE_NEW_TOKEN included: the token is not
@@ -168,13 +188,16 @@ int ch_srv_quic_token_mint(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8
 // Returns CH_EAUTH for a token whose first byte is QUIC_TOKEN_TYPE_RETRY and
 // that fails any other rule above: a length that does not match its length
 // bytes, a length byte above CH_QUIC_DCID_MAX, a tag that does not equal the
-// one this key computes for this address, or an issue instant after
+// one this key computes for this version and this address, which is what a
+// token minted under the other version gives, or an issue instant after
 // now_seconds or more than lifetime_seconds before it. RFC 9000 §8.1.2 has a
 // server close the connection with INVALID_TOKEN then, because a client that
-// received a Retry accepts no second one (rfc9000.txt:2295-2301).
-int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint8_t *token,
-                            size_t n, const uint8_t *address, size_t address_len,
-                            uint64_t now_seconds, uint64_t lifetime_seconds,
+// received a Retry accepts no second one (rfc9000.txt:2295-2301), and RFC
+// 9369 section 4.1 lets it drop the packet of a client that switched
+// versions (rfc9369.txt:224-227).
+int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], uint32_t version,
+                            const uint8_t *token, size_t n, const uint8_t *address,
+                            size_t address_len, uint64_t now_seconds, uint64_t lifetime_seconds,
                             ch_quic_retry_cids *cids);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING

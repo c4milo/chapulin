@@ -157,9 +157,10 @@ const ClientValues = struct {
     /// Protocols to offer, most preferred first: alpn_protocols, alpn_count.
     alpn: if (has_alpn) []const c.ch_alpn_protocol else void = if (has_alpn) &.{} else {},
     /// A ticket to resume with: psk, psk_len, psk_id, psk_id_len,
-    /// resumption, ticket_epoch, ticket_lifetime_s and, under TRUST=webpki,
-    /// ticket_binding. Under a raw or ca mode it leaves the server_pubkey
-    /// slots unset, because ch_cfg takes one auth mode.
+    /// resumption, ticket_epoch, ticket_lifetime_s, under TRUST=webpki
+    /// ticket_binding, and under TRANSPORT=quic-nonblocking
+    /// ticket_quic_version. Under a raw or ca mode it leaves the
+    /// server_pubkey slots unset, because ch_cfg takes one auth mode.
     ticket: ?*const Ticket = null,
     /// The ticket's age in milliseconds: ticket_age_ms, and obfuscated_age
     /// through ch_ticket_obfuscated_age. init answers error.Invalid for an
@@ -225,6 +226,7 @@ const ClientValues = struct {
             cfg.ticket_lifetime_s = ticket.ticket.lifetime_s;
             cfg.ticket_epoch = ticket.ticket.epoch;
             if (has_webpki) cfg.ticket_binding = &ticket.ticket.binding;
+            if (has_quic) cfg.ticket_quic_version = ticket.ticket.quic_version;
         }
         cfg.require_pq = @intFromBool(values.require_pq);
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
@@ -247,14 +249,17 @@ fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
 pub const Ticket = struct {
     /// The ch_ticket on_ticket received. Its identity pointer is null here,
     /// because the bytes it named are valid during on_ticket alone. psk,
-    /// psk_len, age_add, lifetime_s, epoch and, under TRUST=webpki,
-    /// binding are read from it under their C names.
+    /// psk_len, age_add, lifetime_s, epoch, under TRUST=webpki binding and
+    /// under TRANSPORT=quic-nonblocking quic_version are read from it under
+    /// their C names.
     ticket: c.ch_ticket,
     /// The identity bytes, ticket.identity_len of them, presented as psk_id.
     identity: [c.CH_TICKET_ID_MAX]u8,
 
     /// The fields fromFields takes. binding is the ticket's
-    /// ch_ticket.binding, which a TRUST=webpki object alone has.
+    /// ch_ticket.binding, which a TRUST=webpki object alone has, and
+    /// quic_version its ch_ticket.quic_version, a QUIC object's alone,
+    /// whose null init refuses as a resuming ticket's version.
     pub const Fields = if (has_webpki) struct {
         identity: []const u8,
         psk: []const u8,
@@ -262,12 +267,14 @@ pub const Ticket = struct {
         lifetime_s: u32,
         epoch: u32 = 0,
         binding: *const [c.SHA256_LEN]u8,
+        quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     } else struct {
         identity: []const u8,
         psk: []const u8,
         age_add: u32,
         lifetime_s: u32,
         epoch: u32 = 0,
+        quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     };
 
     /// A Ticket rebuilt from fields a program stored after an earlier
@@ -288,6 +295,7 @@ pub const Ticket = struct {
         out.ticket.lifetime_s = fields.lifetime_s;
         out.ticket.epoch = fields.epoch;
         if (has_webpki) out.ticket.binding = fields.binding.*;
+        if (has_quic) out.ticket.quic_version = quic.versionCode(fields.quic_version);
         return out;
     }
 

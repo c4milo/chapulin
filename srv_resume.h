@@ -31,6 +31,14 @@
 //     connections (rfc9001.txt:752-754), and a ticket that crossed
 //     protocols would carry one protocol's session into another. A
 //     mismatch costs one full handshake.
+//   - The QUIC version, because RFC 9369 §5 makes a ticket specific to
+//     the QUIC version of the connection that issued it, the negotiated
+//     one after compatible negotiation, and has a server accept none from
+//     another version and fall back to a full handshake
+//     (rfc9369.txt:268-284). A ticket records the session's negotiated
+//     version over QUIC and 0 over TCP, so no ticket crosses transports
+//     either. A QUIC server chooses the negotiated version before it
+//     selects a ticket (srv_quic.c), so the test reads the final version.
 //
 // What it does not bind, and why. Not the server_name: RFC 9846 §4.3.11
 // says a TLS 1.3 server need not associate one with a ticket
@@ -75,10 +83,11 @@
 // the ticket key, now_seconds is at least its auth_seconds and at most
 // SRV_TICKET_LIFETIME seconds past it, its suite is one this build holds
 // and hashes with the selected suite's hash, sel->hash_len
-// (rfc9846.txt:3219-3220), and its ALPN protocol is the one the parser
-// selected for this hello, or both are none. An identity that fails any test is passed over, which
-// RFC 9846 §4.3.11 asks of an unknown PSK (rfc9846.txt:2533-2537), and no
-// failure here ends the handshake.
+// (rfc9846.txt:3219-3220), its ALPN protocol is the one the parser
+// selected for this hello, or both are none, and its QUIC version is the
+// session's negotiated version, or 0 over TCP. An identity that fails any
+// test is passed over, which RFC 9846 §4.3.11 asks of an unknown PSK
+// (rfc9846.txt:2533-2537), and no failure here ends the handshake.
 //
 // The binder. For the selected identity it derives the binder key from
 // the ticket's PSK with ks_early's "res binder" label at sel->hash_len,
@@ -121,7 +130,8 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel);
 //
 // It takes the transcript hash through the client Finished, runs
 // ks_res_master over h->master and ks_res_psk over a fresh ticket_nonce,
-// seals the PSK into a ticket with srv_ticket_seal, and sends the message
+// seals the PSK into a ticket with srv_ticket_seal beside the session's
+// negotiated QUIC version, or 0 over TCP, and sends the message
 // srv_build_new_session_ticket writes. One rand_draw call draws the
 // three random values: the ticket's AEAD nonce, ticket_age_add, which RFC
 // 9846 §4.7.1 requires fresh per ticket (rfc9846.txt:3265-3270), and the

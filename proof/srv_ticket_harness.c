@@ -9,7 +9,7 @@
 // SRV_TICKET_LEN, and SRV_TICKET_LEN whenever cap and alpn_len allow it.
 // The open's: CH_OK only for exactly SRV_TICKET_LEN bytes whose first is
 // SRV_TICKET_VERSION, with alpn_len at most CH_ALPN_NAME_MAX, and a refusal
-// that leaves the contents zeroed.
+// that leaves the contents zeroed, the QUIC version among them.
 //
 // The ticket is at most SRV_TICKET_LEN bytes, which is the real bound: a
 // ticket of any other length is refused before the AEAD runs. The open
@@ -21,9 +21,10 @@
 // unconstrained ciphertext, tag or body. So the formula holds srv_ticket.c
 // to the AEAD's contract and reads every body the AEAD could release,
 // alpn_len above CH_ALPN_NAME_MAX included, but the round trip -- a sealed
-// ticket opens back to what it carried under its own key and no other --
-// is not proved here. test/srv_ticket_tests.h tests that and the tamper
-// sweep, and aead_harness.c proves the AEAD's framing.
+// ticket opens back to what it carried under its own key and no other,
+// its QUIC version included -- is not proved here. test/srv_ticket_tests.h
+// tests that, the body byte by byte and the tamper sweep, and
+// aead_harness.c proves the AEAD's framing.
 #include "harness.h"
 
 #include <string.h>
@@ -80,6 +81,7 @@ static void prove_seal(void) {
     srv_ticket_contents c;
     c.auth_seconds = nondet_u64();
     c.suite = nondet_u16();
+    c.quic_version = nondet_u32();
     c.alpn_len = nondet_u8();
     fill_nondet(c.alpn, sizeof c.alpn);
     fill_nondet(c.psk, sizeof c.psk);
@@ -114,7 +116,8 @@ static void prove_open(void) {
         __CPROVER_assert(c.alpn_len <= CH_ALPN_NAME_MAX,
                          "the ALPN length fits the name field the caller reads");
     } else {
-        __CPROVER_assert(c.auth_seconds == 0 && c.suite == 0 && c.alpn_len == 0,
+        __CPROVER_assert(c.auth_seconds == 0 && c.suite == 0 && c.quic_version == 0 &&
+                             c.alpn_len == 0,
                          "a refusal leaves the contents zeroed");
         __CPROVER_assert(c.psk[0] == 0 && c.psk[SHA256_LEN - 1] == 0,
                          "a refusal leaves no PSK behind");

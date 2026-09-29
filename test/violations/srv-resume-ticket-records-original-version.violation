@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_resume.c
+catches: quic_loop_test
+reason: the server seals the connection's original QUIC version into its
+  ticket instead of the negotiated one, so a ticket from a connection the
+  server moved to version 2 names version 1. RFC 9369 section 5 makes a
+  ticket from compatible negotiation belong to the negotiated version
+  (rfc9369.txt:268-284). test/quic_loop_ticket_versions.h opens the
+  ticket under the server's key and requires version 2, and requires it
+  to resume a connection that starts in version 2.
+
+--- old
+    c.quic_version = session_quic_version(t);
+--- new
+    c.quic_version = t->cfg.quic_original_version;

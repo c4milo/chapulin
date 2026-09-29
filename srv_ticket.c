@@ -1,8 +1,8 @@
 // The resumption ticket: seal and open. srv_ticket.h states the layout and
 // each rule. Reading goes through the rbuf reader and writing through the
 // wbuf writer (buf.h), so no step here does raw buffer arithmetic, and
-// auth_seconds moves one byte at a time, so no multi-byte value assumes
-// host endianness.
+// auth_seconds and quic_version move a byte or a half at a time, so no
+// multi-byte value assumes host endianness.
 #include "srv_ticket.h"
 
 #ifdef CH_ROLE_SERVER
@@ -57,6 +57,9 @@ static void write_body(const srv_ticket_contents *c, uint8_t body[SRV_TICKET_BOD
     wb_init(&b, body, SRV_TICKET_BODY_LEN);
     write_instant(&b, c->auth_seconds);
     wb_u16(&b, c->suite);
+    // A uint32 written as two uint16 halves, the high half first.
+    wb_u16(&b, (uint16_t)(c->quic_version >> 16));
+    wb_u16(&b, (uint16_t)c->quic_version);
     wb_u8(&b, c->alpn_len);
     wb_bytes(&b, name, sizeof name);
     wb_bytes(&b, c->psk, HKDF_HASH_MAX);
@@ -97,6 +100,8 @@ static int read_body(const uint8_t body[SRV_TICKET_BODY_LEN], srv_ticket_content
     rb_init(&r, body, SRV_TICKET_BODY_LEN);
     c->auth_seconds = read_instant(&r);
     c->suite = rb_u16(&r);
+    uint32_t high = rb_u16(&r); // two reads, so they stay sequenced
+    c->quic_version = (high << 16) | rb_u16(&r);
     c->alpn_len = rb_u8(&r);
     const uint8_t *name = rb_bytes(&r, CH_ALPN_NAME_MAX);
     const uint8_t *psk = rb_bytes(&r, HKDF_HASH_MAX);

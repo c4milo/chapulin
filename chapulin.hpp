@@ -13,8 +13,8 @@
 // ch_close, and Session forwards them. A TRANSPORT=quic-nonblocking object
 // exports none of the five and
 // eighteen ch_quic_ entries instead, so Quic forwards those, and Config
-// takes no Io and gains the original version, the transport parameters and
-// the two QUIC callbacks. One transport compiles per build, so one of the
+// takes no Io and gains the original version, a ticket's version, the
+// transport parameters and the two QUIC callbacks. One transport compiles per build, so one of the
 // two classes exists at a time. Both forward alert.h's two calls, which
 // every object exports.
 #ifndef CHAPULIN_HPP
@@ -234,6 +234,16 @@ class Config {
     // without one, and one whose keys the object does not derive.
     Config &original_version(QuicVersion version) {
         cfg_.quic_original_version = static_cast<uint32_t>(version);
+        return *this;
+    }
+
+    // The QUIC version of the ticket resume() presents: the value
+    // ch_ticket::quic_version held (ch_cfg.ticket_quic_version). A ticket
+    // belongs to the version of the connection it arrived on, so init()
+    // refuses a resuming Config whose ticket version is not its
+    // original_version() (RFC 9369 section 5).
+    Config &ticket_quic_version(QuicVersion version) {
+        cfg_.ticket_quic_version = static_cast<uint32_t>(version);
         return *this;
     }
 #else

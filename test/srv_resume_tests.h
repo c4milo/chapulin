@@ -231,6 +231,20 @@ static void test_resume_select(void) {
     static const uint8_t nonce[AEAD_NONCE] = {1};
     CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
     CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
+
+    // A QUIC server under the same key seals the version its connection
+    // negotiated into a ticket, and this TCP server, whose sessions
+    // negotiate none, passes such a ticket over, so no ticket crosses
+    // transports (rfc9369.txt:268-284). The same ticket at 0 resumes.
+    resume_reset(&sel, RESUME_AUTH);
+    resume_ticket(ticket, resume_key, RESUME_AUTH, CH_ALPN_NONE);
+    CHECK(srv_ticket_open(resume_key, ticket, sizeof ticket, &c) == CH_OK && c.quic_version == 0);
+    c.quic_version = 1; // QUIC version 1's Version field value
+    CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
+    c.quic_version = 0;
+    CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
 }
 
 // The binder: one that does not match the selected ticket ends the

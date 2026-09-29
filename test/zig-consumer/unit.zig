@@ -62,14 +62,16 @@ const anchor_spki = [_]u8{ 0x30, 0x01, 0x01 };
 const pins = [_]chapulin.SpkiPin{ @splat(0xa1), @splat(0xa2) };
 const alpn_names = [_][]const u8{ "h2", "http/1.1" };
 
-/// A ticket whose every field holds a value no default gives it.
+/// A ticket whose every field holds a value no default gives it, version 2
+/// among them in a QUIC object.
 fn sampleTicket() !chapulin.Ticket {
     const psk = [_]u8{0x5a} ** c.SHA256_LEN;
     const binding = [_]u8{0x6b} ** c.SHA256_LEN;
-    const fields: chapulin.Ticket.Fields = if (has_webpki)
+    var fields: chapulin.Ticket.Fields = if (has_webpki)
         .{ .identity = "identity", .psk = &psk, .age_add = 0xfedc_ba98, .lifetime_s = 7200, .epoch = 9, .binding = &binding }
     else
         .{ .identity = "identity", .psk = &psk, .age_add = 0xfedc_ba98, .lifetime_s = 7200, .epoch = 9 };
+    if (has_quic) fields.quic_version = .v2;
     return chapulin.Ticket.fromFields(fields);
 }
 
@@ -85,6 +87,7 @@ fn wantTicket(want: *c.ch_cfg, ticket: *const chapulin.Ticket, age_ms: u64) void
     want.ticket_lifetime_s = 7200;
     want.ticket_epoch = 9;
     if (has_webpki) want.ticket_binding = &ticket.ticket.binding;
+    if (has_quic) want.ticket_quic_version = c.CH_QUIC_VERSION_2;
 }
 
 test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a ticket and require_pq" {
@@ -250,6 +253,24 @@ test "Ticket.fromFields: the identity cap and the hash lengths" {
     } else {
         try expectError(error.Invalid, chapulin.Ticket.fromFields(fields));
     }
+}
+
+test "Ticket.fromFields and fromOnTicket under TRANSPORT=quic-nonblocking: the ticket's version, and 0 for none" {
+    if (!has_quic) return error.SkipZigTest;
+    const psk = [_]u8{0x42} ** c.SHA256_LEN;
+    const binding = [_]u8{0} ** c.SHA256_LEN;
+    var fields: chapulin.Ticket.Fields = if (has_webpki)
+        .{ .identity = "id", .psk = &psk, .age_add = 1, .lifetime_s = 2, .binding = &binding }
+    else
+        .{ .identity = "id", .psk = &psk, .age_add = 1, .lifetime_s = 2 };
+    try expectEqual(@as(u32, 0), (try chapulin.Ticket.fromFields(fields)).ticket.quic_version);
+    fields.quic_version = .v1;
+    try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try chapulin.Ticket.fromFields(fields)).ticket.quic_version);
+    var handed = std.mem.zeroes(c.ch_ticket);
+    handed.identity = "id";
+    handed.identity_len = 2;
+    handed.quic_version = c.CH_QUIC_VERSION_2;
+    try expectEqual(@as(u32, c.CH_QUIC_VERSION_2), chapulin.Ticket.fromOnTicket(&handed).?.ticket.quic_version);
 }
 
 test "Ticket.fromOnTicket copies the identity and drops the pointer to it" {

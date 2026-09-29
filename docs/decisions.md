@@ -3513,10 +3513,14 @@ does nothing more.
       the server passes over a ticket of another version for a full
       handshake. A TCP server's tickets record no version, so no ticket
       crosses transports. A client offers no ticket issued under a version
-      other than its original one. A raw or ca client refuses a declined
-      ticket, so its resumption fails closed when the server switches. The
-      Retry token binds the version, which §4.1 permits
-      (`rfc9369.txt:224-227`).
+      other than its original one: `ch_ticket.quic_version` carries the
+      version and `ch_cfg.ticket_quic_version` presents it, and
+      `ch_quic_init` refuses a mismatch. A raw or ca client refuses a
+      declined ticket, so its resumption fails closed when the server
+      switches. The Retry token binds the version, which §4.1 permits
+      (`rfc9369.txt:224-227`): its tag covers the version the way it covers
+      the client's address, so the layout and `CH_QUIC_TOKEN_MAX` stay as
+      they were, and a token checked under the other version fails its tag.
     - **INV-7 and INV-26.** INV-7's one version per build is the TLS
       version, 1.3, and it stays one; its claim will say that the QUIC
       version is the caller's value, like the level, and that chapulin
@@ -3547,7 +3551,12 @@ does nothing more.
     arm64, and from 5,544 to 5,560 under `SUITE=aesgcm`, measured by
     bench/sram.sh; the TCP sessions docs/performance.md measures do not
     change. The server's `choose_version` pointer grows it to 5,088
-    bytes, and to 5,584 under `SUITE=aesgcm`, measured the same way.
+    bytes, and to 5,584 under `SUITE=aesgcm`, measured the same way. The
+    two ticket version fields sit in padding, so neither `ch_ticket` nor
+    `ch_cfg` grows. A server ticket grows by four bytes, to 108, and to
+    124 under `SUITE=aesgcm`, and its format version moves to 2, so a
+    ticket sealed before the change fails to open and costs its client one
+    full handshake.
 
     Gain: colibri can negotiate version 2 in both roles, as the interop
     runner's v2 case asks, and chapulin enforces every rule that §4.1 and
@@ -3568,8 +3577,11 @@ does nothing more.
     server's caller chooses the negotiated version through
     `ch_srv_cfg.choose_version` at the first ClientHello, after the
     client's transport parameters and before the ticket selection, a
-    HelloRetryRequest and the ServerHello. The version in tickets and
-    tokens comes next.
+    HelloRetryRequest and the ServerHello. A ticket records the negotiated
+    version of the connection that issued it in both roles, the server
+    passes over a ticket of another version, the client offers none in
+    another, and the Retry token binds the original version through its
+    tag. QUIC version 2 is complete in both roles.
 
 80. **A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
     AES-256-GCM, then AES-128-GCM, then ChaCha20, and a caller may set a

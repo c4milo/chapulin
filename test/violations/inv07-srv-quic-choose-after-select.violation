@@ -7,7 +7,9 @@ reason: choose_version fires after srv_select, so the server selects a
   has the server process the client's transport parameters before it
   sends anything and send every CRYPTO frame in the negotiated version
   (rfc9369.txt:236-238). test/srv_quic_version_tests.h requires the
-  choice for a hello that then fails with no_application_protocol.
+  choice for a hello that then fails with no_application_protocol, and
+  test/quic_loop_ticket_versions.h requires a version 1 ticket passed
+  over by a server that chose version 2.
 
 --- old
     rc = choose_version(q);

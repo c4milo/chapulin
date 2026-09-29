@@ -67,20 +67,38 @@ static int ticket_alpn_matches(const srv_ticket_contents *c, const ch_cfg *cfg,
     return c->alpn_len == p->name_len && ct_memeq(c->alpn, p->name, p->name_len);
 }
 
+// The QUIC version a ticket this session issues records, and the one a
+// ticket it resumes must record: the negotiated version over QUIC, and 0
+// over TCP, where no session negotiates one. RFC 9369 section 5 makes a
+// ticket specific to the QUIC version of the connection that issued it,
+// the negotiated one after compatible negotiation (rfc9369.txt:268-284),
+// and 0 keeps a TCP server's tickets and a QUIC server's apart.
+static uint32_t session_quic_version(const ch_tls *t) {
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    return t->quic_negotiated_version;
+#else
+    (void)t;
+    return 0;
+#endif
+}
+
 // Whether an opened ticket may resume this handshake: every test
-// srv_resume.h lists after the open.
+// srv_resume.h lists after the open. quic_version is the session's,
+// session_quic_version's answer.
 static int ticket_holds(const srv_ticket_contents *c, const ch_cfg *cfg, const client_hello *ch,
-                        const selection *sel) {
+                        const selection *sel, uint32_t quic_version) {
     return ticket_fresh(c->auth_seconds, cfg->srv.now_seconds) &&
-           ticket_suite_matches(c->suite, sel) && ticket_alpn_matches(c, cfg, ch->alpn_selected);
+           ticket_suite_matches(c->suite, sel) && ticket_alpn_matches(c, cfg, ch->alpn_selected) &&
+           c->quic_version == quic_version;
 }
 
 // Walks the client's identities in its order and stops at the first
 // ticket that opens and holds, writing its index and what it carried.
 // The parser held the list to its syntax, so the walk only reads it.
 // Returns 1 when one was found, and 0 with *c wiped when none was.
-static int find_ticket(const ch_cfg *cfg, const client_hello *ch, const selection *sel,
+static int find_ticket(const ch_tls *t, const client_hello *ch, const selection *sel,
                        uint16_t *index, srv_ticket_contents *c) {
+    const ch_cfg *cfg = &t->cfg;
     rbuf r;
     rb_init(&r, ch->psk_identities, ch->psk_identities_len);
     for (uint16_t i = 0; rb_left(&r) > 0; i++) {
@@ -94,7 +112,7 @@ static int find_ticket(const ch_cfg *cfg, const client_hello *ch, const selectio
         // length is passed over without running the AEAD.
         if (identity_len == SRV_TICKET_LEN &&
             srv_ticket_open(cfg->srv.ticket_key, identity, identity_len, c) == CH_OK &&
-            ticket_holds(c, cfg, ch, sel)) {
+            ticket_holds(c, cfg, ch, sel, session_quic_version(t))) {
             *index = i;
             return 1;
         }
@@ -161,7 +179,7 @@ static int binder_matches(handshake_state *h, const client_hello *ch, const uint
 static int select_ticket(handshake_state *h, const client_hello *ch, selection *sel) {
     srv_ticket_contents c;
     uint16_t index = 0;
-    if (!find_ticket(&h->t->cfg, ch, sel, &index, &c)) {
+    if (!find_ticket(h->t, ch, sel, &index, &c)) {
         return CH_OK;
     }
     int matched = binder_matches(h, ch, c.psk, sel->hash_len, index);
@@ -245,6 +263,7 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
     memset(&c, 0, sizeof c);
     c.auth_seconds = auth_seconds;
     c.suite = t->suite;
+    c.quic_version = session_quic_version(t);
     ticket_alpn(t, &c);
     ks_res_psk(hash_len, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
     ct_wipe(res_master, sizeof res_master);

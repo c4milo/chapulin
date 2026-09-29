@@ -103,10 +103,10 @@ and colibri holds no key. `quic_token.[ch]` mints and checks one, and
 buffers. They take the key and no session, because a Retry precedes every
 piece of connection state.
 
-- `ch_srv_quic_token_mint(key, address, address_len, cids, issued_seconds,
-  out, cap, out_len)` writes a token of 43 to `CH_QUIC_TOKEN_MAX` (83)
-  bytes.
-- `ch_srv_quic_token_check(key, token, n, address, address_len,
+- `ch_srv_quic_token_mint(key, version, address, address_len, cids,
+  issued_seconds, out, cap, out_len)` writes a token of 43 to
+  `CH_QUIC_TOKEN_MAX` (83) bytes.
+- `ch_srv_quic_token_check(key, version, token, n, address, address_len,
   now_seconds, lifetime_seconds, cids)` checks one and writes the two
   connection IDs it carries to `*cids`.
 
@@ -115,7 +115,7 @@ piece of connection state.
 ```
 body  = 0x01 || issued_seconds (8, most significant first)
         || len(ODCID) (1) || ODCID || len(Retry SCID) (1) || Retry SCID
-token = body || HMAC-SHA-256(key, "chapulin quic token"
+token = body || HMAC-SHA-256(key, "chapulin quic token" || version (4)
                                   || len(address) (1) || address || body)
 ```
 
@@ -130,6 +130,19 @@ client's address does not travel: the tag covers it, and the check
 recomputes the tag over the address the Initial came from. That is how the
 token lets a server check that the source address and port stayed the
 same, which §8.1.4 asks of a Retry token (`rfc9000.txt:2444-2446`).
+
+**The QUIC version, bound the way the address is.** A server sends a
+Retry in the original version, and the client sends the Initial that
+carries the token in that same version; RFC 9369 §4.1 lets a server encode
+the version in its token and drop the packet of a client that switched
+(`rfc9369.txt:221-227`). The tag covers the version and the token does not
+carry it: the mint takes the Retry's version, the check takes the Version
+field of the Initial that carried the token, and a token checked under the
+other version fails its tag with `CH_EAUTH`. Binding it through the tag
+alone keeps the layout above, `CH_QUIC_TOKEN_MAX` and every token length
+as they were. Both calls refuse a version the build derives no keys for
+with `CH_EINVAL`, as every call that takes a version does
+(`quic_version.h`).
 
 **Integrity, not encryption.** §8.1.4 requires integrity protection against
 modification or falsification by clients (`rfc9000.txt:2435-2437`), and it
@@ -178,7 +191,8 @@ address, or an instant outside the window. §8.1.2 has a server close the
 connection with INVALID_TOKEN then, because the client accepts no second
 Retry (`rfc9000.txt:2295-2301`). `CH_EINVAL` is the caller's own error: an
 address length of 0, or one above `CH_QUIC_TOKEN_ADDRESS_MAX`, which is 18,
-an IPv6 address and a port. No refusal writes to `*cids`.
+an IPv6 address and a port, or a version the build derives no keys for. No
+refusal writes to `*cids`.
 
 **What the caller still owns.**
 
@@ -208,16 +222,20 @@ an IPv6 address and a port. No refusal writes to `*cids`.
 **What checks it.** `test/quic_token_tests.h`, which `bin/srv_quic_test`
 and `bin/srv_quic_both_test` run: the round trip at the shortest and longest
 connection IDs and addresses; the layout built by hand and compared byte
-for byte; another address and another key; a one-bit flip at every byte; every
-truncation and one byte too many; a NEW_TOKEN token with a valid tag and
+for byte; another address, another key and the other QUIC version, in both
+directions, and the underived versions refused at both calls; a one-bit
+flip at every byte; every truncation and one byte too many; a NEW_TOKEN
+token with a valid tag and
 three other type bytes; a connection ID one byte past its cap under a valid
 tag; the window at both edges and at the ends of `uint64_t`; and each
 length and capacity pair of the mint. `proof/quic_token_harness.c` proves
 both calls memory-safe and free of UB over unconstrained inputs, with
 SHA-256 as the contract stub. It proves the layout the mint writes, the
-reason for each of the check's codes, and the window. It does not prove the
-round trip or the address binding, because the stub makes every tag
-unconstrained; the tests hold those. Eight `quic-token-` violations in
+reason for each of the check's codes, the version refusal, and the window.
+It does not prove the round trip or the address and version binding,
+because the stub makes every tag unconstrained; the tests hold those.
+`bin/quic_loop_test` puts a version 1 Retry and its token before a
+negotiation that ends in version 2. Nine `quic-token-` violations in
 `test/violations/` each break one rule, and each is caught.
 
 ## The negotiated version
@@ -250,7 +268,11 @@ and that is colibri's.
   first hello's (`docs/decisions.md` 59), and the caller has them already.
 - A Retry comes before any session and keeps the original version
   (`rfc9369.txt:221-222`): the caller passes `cfg.quic_original_version`
-  to `ch_srv_quic_retry_tag`.
+  to `ch_srv_quic_retry_tag` and `ch_srv_quic_token_mint`, and the
+  Version field of the Initial that carries the token to
+  `ch_srv_quic_token_check` ("The Retry token" above).
+- A ticket belongs to the negotiated version, and the server selects a
+  ticket only after the choice ("Resumption" below).
 - `ch_quic_open` admits the original and the negotiated version at the
   Initial level, because a server keeps its original version's Initial
   receive keys until a Handshake packet in the negotiated version opens
@@ -268,8 +290,9 @@ opens, and a Handshake level that admits version 2 alone.
 `test/quic_loop_version.h`, which `bin/quic_loop_test` runs, completes a
 handshake packet by packet between a version 1 client and a server that
 chooses version 2, switching the client on the Version field of the
-server's first Initial packet, and a client that does not switch opens
-none of that server's packets. Three `inv07-srv-quic-choose-` violations
+server's first Initial packet, the same after a version 1 Retry and its
+token, and a client that does not switch opens none of that server's
+packets. Three `inv07-srv-quic-choose-` violations
 move the call after `srv_select`, call it again for the second hello, and
 drop the check of its answer, and `bin/srv_quic_test` fails on each.
 
@@ -339,24 +362,38 @@ the handshake is done.
 **colibri's client.** Set `cfg.on_ticket`. Once `ch_quic_state` reports
 `CH_ST_CONNECTED`, hand every 1-RTT CRYPTO byte to
 `ch_quic_crypto_in(q, CH_LEVEL_APPLICATION, ...)`, and `on_ticket` fires
-once per ticket with its `identity`, `psk` and `age_add`, and under
-`TRUST=webpki` its `binding`; copy them during the callback. To resume,
-configure the next `ch_quic_init` with `psk` set to the 32-byte PSK,
+once per ticket with its `identity`, `psk`, `age_add` and `quic_version`,
+and under `TRUST=webpki` its `binding`; copy them during the callback. To
+resume, configure the next `ch_quic_init` with `psk` set to the 32-byte PSK,
 `psk_id` to the identity, `resumption` to 1, `ticket_age_ms` to the
-ticket's age in milliseconds, `ticket_lifetime_s` to its `lifetime_s` and
+ticket's age in milliseconds, `ticket_lifetime_s` to its `lifetime_s`,
 `obfuscated_age` to `ch_ticket_obfuscated_age` of the ticket and that
-age, and offer the same ALPN
-protocol, because the server resumes a ticket only under the protocol it
-was issued under. Under `TRUST=raw-ecdsa` leave both `server_pubkey` slots
+age, and both `ticket_quic_version` and `quic_original_version` to its
+`quic_version`, and offer the same ALPN protocol, because the server
+resumes a ticket only under the protocol it was issued under. A ticket
+belongs to the negotiated version of the connection that received it, so
+RFC 9369 §5 forbids starting a connection in the other version with it
+(`rfc9369.txt:268-271`), and `ch_quic_init` refuses a
+`ticket_quic_version` that is not `quic_original_version`, 0 included. Under `TRUST=raw-ecdsa` leave both `server_pubkey` slots
 unset: a raw-mode configuration authenticates one way, and here that way is
 the PSK. Under `TRUST=webpki` keep the anchors, the hostname and the clock
 as for a full handshake and set `ticket_binding` to the stored binding;
 `ch_quic_init` refuses a ticket whose binding does not match them, which is
 what `docs/webpki.md`, "Resumption", describes for TCP.
 
+**The ticket's QUIC version.** The server seals into each ticket the
+version the connection negotiated, and a ticket it opens holds only when
+that version is the one the new connection negotiated. `choose_version`
+fires before the ticket selection ("The negotiated version" above), so a
+server that moves a version 1 connection to version 2 passes a version 1
+ticket over, which RFC 9369 §5 requires (`rfc9369.txt:276-281`). A TCP
+server's tickets record version 0, so under one ticket key no ticket
+crosses transports either.
+
 **A declined ticket.** A server passes a ticket over when it cannot open
-it, when it has expired on the server's clock, or when the connection
-negotiates another ALPN protocol. What happens next depends on the
+it, when it has expired on the server's clock, when the connection
+negotiates another ALPN protocol, or when it negotiates another QUIC
+version. What happens next depends on the
 client's trust mode. A `TRUST=raw-ecdsa` resuming ClientHello offers the
 ticket and no signature scheme, so this server has no certificate to send
 and answers `missing_extension`; the client closes, and the caller
@@ -379,8 +416,18 @@ full handshake whose ticket is bound to the client's configuration, which
 is only true if `ch_quic_init` took its hash, the resumed handshake, and a
 server with another ticket key that declines the ticket and completes a
 full handshake in the same connection, refused when the chain fails the
-client's hostname or anchor. Neither test sends a packet; colibri's
-runner does.
+client's hostname or anchor. Both builds run
+`test/quic_loop_ticket_versions.h`: a ticket from a connection the server
+moved to version 2 records version 2 at both ends, resumes a connection
+that starts in version 2, and is refused at `ch_quic_init` in one that
+starts in version 1; and a version 1 ticket offered to a server that
+chooses version 2 is passed over, which the raw client answers by failing
+closed and the webpki client by completing over its chain.
+`srv-resume-quic-version-unbound`,
+`srv-resume-ticket-records-original-version`,
+`inv14-quic-ticket-version-unchecked` and `inv14-ticket-quic-version-unset`
+each break one half, and `bin/quic_loop_test` fails on each. Neither test
+sends a packet for these rows; colibri's runner does.
 
 ## The key exchange
 

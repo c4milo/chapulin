@@ -1225,12 +1225,13 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - `srv_ticket_open` reads only inside the bytes it is given, answers
     `CH_OK` only for a ticket of exactly `SRV_TICKET_LEN` bytes whose
     first is `SRV_TICKET_VERSION` and whose ALPN length fits its field,
-    and leaves the contents zeroed on a refusal.
-- **Bound:** tickets ≤ 105 B, one past `SRV_TICKET_LEN`, and any
-  contents.
+    and leaves the contents zeroed on a refusal, the QUIC version
+    included.
+- **Bound:** tickets ≤ 109 B, one past `SRV_TICKET_LEN`, and any
+  contents, the QUIC version any `uint32_t`.
 - **Not proved:** that a sealed ticket opens under its own key and under
-  no other. The AEAD is a contract stub; `test/srv_ticket_tests.h` tests
-  it.
+  no other, and to the QUIC version it carried. The AEAD is a contract
+  stub; `test/srv_ticket_tests.h` tests both and the body byte by byte.
 
 #### srv_resume
 
@@ -1241,13 +1242,19 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
     ticket key and a clock, names an index inside the list, and answers
     `CH_OK` with a way to authenticate, `CH_EAUTH` with decrypt_error, or
     `CH_EPROTO` with missing_extension or handshake_failure;
+  - a selected ticket records the session's QUIC version, which over the
+    TCP build the harness compiles is 0, whatever version each opened
+    ticket carries;
   - `srv_send_new_session_ticket` sends at most one ticket, none without
-    a key and a clock, with a lifetime of 1 to `SRV_TICKET_LIFETIME`.
-- **Bound:** identities ≤ 117 B, one whole ticket and a short entry;
+    a key and a clock, with a lifetime of 1 to `SRV_TICKET_LIFETIME`, and
+    seals the session's QUIC version into it.
+- **Bound:** identities ≤ 121 B, one whole ticket and a short entry;
   binders ≤ 35 B.
-- **Not proved:** which binder matches. `srv_ticket.c`, the key schedule
-  and the builders are contract stubs; `test/srv_resume_tests.h` tests
-  it.
+- **Not proved:** which binder matches, and the QUIC arm, where the
+  session's version is `ch_tls.quic_negotiated_version`. `srv_ticket.c`,
+  the key schedule and the builders are contract stubs;
+  `test/srv_resume_tests.h` tests the binder, and
+  `test/quic_loop_ticket_versions.h` the QUIC arm.
 
 #### srv_flight
 
@@ -1381,18 +1388,19 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     `CH_QUIC_TOKEN_MAX`.
   - `ch_srv_quic_token_check` reads only inside the token and the
     address. It answers `CH_EINVAL` for exactly the address lengths
-    outside 1 to `CH_QUIC_TOKEN_ADDRESS_MAX`, `CH_EPROTO` only for a
+    outside 1 to `CH_QUIC_TOKEN_ADDRESS_MAX` and the QUIC versions
+    `quic_version_derived` refuses, as the mint does, `CH_EPROTO` only for a
     token that is not a Retry token, and `CH_EAUTH` only for one that
     is. It writes nothing on any refusal. It answers `CH_OK` only for a
     token whose length its two length bytes fix, whose connection IDs
     fit their arrays, and whose issue instant is at most the lifetime
     before now and not after it.
-- **Bound:** any address length, any connection ID length a byte holds,
-  any instant and lifetime; tokens ≤ 84 B, one past
+- **Bound:** any address length, any QUIC version, any connection ID
+  length a byte holds, any instant and lifetime; tokens ≤ 84 B, one past
   `CH_QUIC_TOKEN_MAX`.
-- **Not proved:** that a minted token checks, and that another address
-  or key does not. SHA-256 is the contract stub, so the tag is
-  unconstrained; `test/quic_token_tests.h` tests both.
+- **Not proved:** that a minted token checks, and that another address,
+  key or QUIC version does not. SHA-256 is the contract stub, so the tag
+  is unconstrained; `test/quic_token_tests.h` tests them.
 
 #### quic_driver
 
@@ -1474,7 +1482,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     either pins alone or 1 to `CH_WEBPKI_ANCHOR_MAX` anchors with a
     hostname and a clock; no pin slot; a ticket `webpki_resumption_ok`
     took or no PSK; with `resumption` set, a ticket age no older than
-    the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds; 1 to
+    the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds, and a
+    ticket QUIC version equal to the original version; 1 to
     `CH_ALPN_MAX` protocols; the transport parameters; `on_level_ready`;
     the buffer floor; an original version `quic_version_derived` admits;
     and no epoch callback;
@@ -1488,8 +1497,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
 - **Bound:** every pointer NULL or set, every count and length any
-  `size_t`, the ticket age any `uint64_t` and the lifetime any
-  `uint32_t`, anchor names and keys ≤ 4 B.
+  `size_t`, the ticket age any `uint64_t`, the lifetime and both versions
+  any `uint32_t`, anchor names and keys ≤ 4 B.
 - **Not proved:** which hostnames pass, which bindings match and which
   names repeat. Those are tested.
 
@@ -2075,6 +2084,23 @@ version 1 client and a server that chooses version 2
 (`test/quic_loop_version.h`). `inv07-srv-quic-choose-after-select`,
 `inv07-srv-quic-choose-after-retry` and `inv07-srv-quic-choose-unchecked`
 require `bin/srv_quic_test` to fail.
+
+### The QUIC version of tickets and Retry tokens
+
+The srv_resume harness proves the server's ticket version rule in the TCP
+build, where a session's version is 0. The arm that reads
+`ch_tls.quic_negotiated_version` rests on
+`test/quic_loop_ticket_versions.h`, which `bin/quic_loop_test` and
+`bin/quic_loop_webpki` run: a ticket records the version its connection
+negotiated at both ends, the client refuses it in a connection that starts
+in the other version, and a server that chose the other version passes it
+over. `srv-resume-quic-version-unbound`,
+`srv-resume-ticket-records-original-version`,
+`inv14-quic-ticket-version-unchecked` and `inv14-ticket-quic-version-unset`
+require `bin/quic_loop_test` to fail. The Retry token's version binding sits
+under the tag the quic_token harness leaves unconstrained, so it rests on
+`test/quic_token_tests.h`, and `quic-token-version-unbound` requires
+`bin/srv_quic_test` to fail.
 
 ### Constant-time behavior
 

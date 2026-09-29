@@ -168,7 +168,7 @@ The client's trust, whose variants are the object's trust mode's:
 |---|---|
 | `trust` | the fields `Trust` names |
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
-| `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, and `ticket_binding` under TRUST=webpki |
+| `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, `ticket_binding` under TRUST=webpki, and `ticket_quic_version` under `TRANSPORT=quic-nonblocking` |
 | `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
 | `require_pq`, false by default | `require_pq` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
@@ -194,10 +194,13 @@ because the bytes it named are valid during `on_ticket` alone.
 
 - `takeTicket()` on a client session moves the latest ticket out.
 - `Ticket.fromFields(.{ .identity, .psk, .age_add, .lifetime_s, .epoch,
-  .binding })` rebuilds one from fields a program stored. It refuses an
-  identity longer than `CH_TICKET_ID_MAX` and a psk that is not
-  `SHA256_LEN` or, in an object whose `HKDF_HASH_MAX` is `SHA384_LEN`,
-  that length. `binding` is a field under TRUST=webpki alone.
+  .binding, .quic_version })` rebuilds one from fields a program stored.
+  It refuses an identity longer than `CH_TICKET_ID_MAX` and a psk that is
+  not `SHA256_LEN` or, in an object whose `HKDF_HASH_MAX` is
+  `SHA384_LEN`, that length. `binding` is a field under TRUST=webpki
+  alone, and `quic_version`, a `?quic.Version`, under
+  `TRANSPORT=quic-nonblocking` alone: null writes 0, which `init` refuses
+  as a resuming ticket's version.
 - `Ticket.fromOnTicket(ticket)` copies what `on_ticket` hands over, for a
   program that writes its own `on_ticket`. It answers null for an
   identity longer than `CH_TICKET_ID_MAX`, which C drops before
@@ -212,7 +215,11 @@ the anchors and the SPKI pins (`webpki_ticket.h`), not to the transport
 or the ALPN protocol. A chapulin server passes over a ticket whose ALPN
 protocol is not the connection's (`srv_resume.c`), and the resuming
 hello still offers the certificate path, so that costs a full handshake
-(docs/decisions.md 55).
+(docs/decisions.md 55). A QUIC ticket belongs to the QUIC version of the
+connection that received it, `ticket.quic_version` (RFC 9369 §5): a
+client's `init` refuses it in a connection whose `quic_version` is the
+other one, and a chapulin server that chose the other version passes it
+over.
 
 ### Server
 
@@ -531,8 +538,8 @@ arrived there, the client's ticket slot and the server's current
 | `close()` | `ch_quic_close`, then the ticket slot zeroed | none |
 | `alpnSelected()`, `group()`, `suite()`, `pskSelected()`, `serverCertType()` | as in record mode | none |
 | `quic.retryTag(version, pseudo, tag)` | `ch_srv_quic_retry_tag` | Invalid |
-| `quic.tokenMint(key, address, cids, issued_seconds, out)` | `ch_srv_quic_token_mint`; returns the token's length | Invalid, Cap |
-| `quic.tokenCheck(key, token, address, now_seconds, lifetime_seconds)` | `ch_srv_quic_token_check` | Invalid |
+| `quic.tokenMint(key, version, address, cids, issued_seconds, out)` | `ch_srv_quic_token_mint`, the token bound to `version`, the original version; returns the token's length | Invalid, Cap |
+| `quic.tokenCheck(key, version, token, address, now_seconds, lifetime_seconds)` | `ch_srv_quic_token_check` under `version`; a token minted under another version is `.invalid` | Invalid |
 
 `seal`'s `error.Invalid` includes RFC 9001 §6.6's confidentiality limit:
 once a key set has sealed its limit, `ch_quic_seal` refuses every later
@@ -674,12 +681,15 @@ stompy's (`TX_RECORD=16384`) and a record-mode `ROLE=both` object under
   - a handshake at each level, with `keysReady` checked at each step;
   - the transport parameters each side received;
   - one packet each way, and a tampered one discarded;
-  - a key update, the Retry tag and a Retry token;
+  - a key update, the Retry tag and a Retry token, which is `.invalid`
+    under the other version;
   - the ticket resumed, and the stale ticket refused with no alert
     chosen;
   - a server whose `choose_version` answers version 2 from its hook's
     context, once, a client that switches to it, and the packets and the
     key update in version 2;
+  - that connection's ticket, which records version 2, refused in a
+    version 1 connection and resumed in a version 2 one;
   - under `KEYLOG=on`, `hookContext` finding the client's context.
 - `pair.zig` starts a client on each of colibri's two objects in one
   image, and computes a ticket's age through each object's call, directly
@@ -691,7 +701,7 @@ ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
 seeded `std.Random` per side, and whose program defines no
 `ch_rand_bytes`, so its link shows the object imports none.
 
-Twelve mutants in `test/violations/` break the API, the module, the
+Thirteen mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script
 catches each. INV-36 names them. The script also catches
 `inv38-zig-writable-len-skips-key-update`, which stops `ch_writable_len`

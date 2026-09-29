@@ -1,0 +1,14 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: Ticket.fromOnTicket zeroes the ticket's QUIC version when it
+  copies what on_ticket handed over, so toCfg presents a
+  ticket_quic_version of 0 and init refuses to resume with it. The full
+  handshake still completes, so only a resumption notices. loop_quic.zig
+  resumes the ticket it took, in version 1 and in version 2, and objects.
+
+--- old
+        out.ticket.identity = null;
+--- new
+        out.ticket.identity = null;
+        if (@hasField(c.ch_ticket, "quic_version")) out.ticket.quic_version = 0;

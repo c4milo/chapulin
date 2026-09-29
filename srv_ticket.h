@@ -17,17 +17,18 @@
 //   offset  bytes  field
 //   0       1      SRV_TICKET_VERSION
 //   1       12     the AEAD nonce, drawn fresh for this ticket
-//   13      75     the sealed body, laid out below
-//   88      16     the Poly1305 tag
+//   13      79     the sealed body, laid out below
+//   92      16     the Poly1305 tag
 //
 // The body, before it is sealed:
 //
 //   offset  bytes  field
 //   0       8      auth_seconds, most significant byte first
 //   8       2      suite, the cipher suite code point
-//   10      1      alpn_len, 0 to CH_ALPN_NAME_MAX
-//   11      32     the ALPN protocol name, zero past alpn_len
-//   43      32     psk, the resumption PSK
+//   10      4      quic_version, most significant byte first
+//   14      1      alpn_len, 0 to CH_ALPN_NAME_MAX
+//   15      32     the ALPN protocol name, zero past alpn_len
+//   47      32     psk, the resumption PSK
 //
 // The body is sealed with aead_seal, ChaCha20-Poly1305 (RFC 8439 §2.8),
 // under the caller's ticket key and the nonce at offset 1. The associated
@@ -71,10 +72,10 @@
 _Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD key long");
 
 // The first byte of every ticket: this format's own version number, not a
-// TLS version. A deployment that changes the layout moves it, and every
-// ticket under the old layout then fails to open and costs its client
-// one full handshake.
-#define SRV_TICKET_VERSION 1
+// TLS version and not a QUIC version. A deployment that changes the layout
+// moves it, and every ticket under the old layout then fails to open and
+// costs its client one full handshake. Version 2 added quic_version.
+#define SRV_TICKET_VERSION 2
 
 // The longest time a ticket stays usable, in seconds, counted from
 // auth_seconds. RFC 9846 §4.7.1 caps ticket_lifetime at 604800
@@ -86,15 +87,15 @@ _Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD ke
 #endif
 
 // The sealed body's length, in bytes: auth_seconds (8), suite (2),
-// alpn_len (1), the name at its longest (CH_ALPN_NAME_MAX) and the PSK at
-// the longest hash the build holds (HKDF_HASH_MAX). It is 75, and 91 in a
-// -DCH_SUITE_AES_GCM build, where a SHA-256 PSK leaves its last 16 bytes
-// zero.
-#define SRV_TICKET_BODY_LEN (8 + 2 + 1 + CH_ALPN_NAME_MAX + HKDF_HASH_MAX)
+// quic_version (4), alpn_len (1), the name at its longest
+// (CH_ALPN_NAME_MAX) and the PSK at the longest hash the build holds
+// (HKDF_HASH_MAX). It is 79, and 95 in a -DCH_SUITE_AES_GCM build, where
+// a SHA-256 PSK leaves its last 16 bytes zero.
+#define SRV_TICKET_BODY_LEN (8 + 2 + 4 + 1 + CH_ALPN_NAME_MAX + HKDF_HASH_MAX)
 
 // The whole ticket's length, in bytes, and the only length a ticket has
 // in one build: the version byte, the AEAD nonce, the body and the tag.
-// It is 104, and 120 in a -DCH_SUITE_AES_GCM build. The fixed length is
+// It is 108, and 124 in a -DCH_SUITE_AES_GCM build. The fixed length is
 // what lets srv_resume.c pass over an identity of any other length
 // without running the AEAD.
 #define SRV_TICKET_LEN (1 + AEAD_NONCE + SRV_TICKET_BODY_LEN + AEAD_TAG)
@@ -115,6 +116,13 @@ _Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD ke
 // hash (rfc9846.txt:3219-3220), and suite_hash_len (suite.h) of it names
 // that hash, so the hash is not stored separately.
 //
+// quic_version is the negotiated QUIC version of the connection that
+// issued the ticket, a CH_QUIC_VERSION_ value (quic_cfg.h), and 0 when a
+// TCP server issued it. RFC 9369 section 5 makes a ticket specific to the
+// QUIC version of the connection that provided it, the negotiated one
+// after compatible negotiation (rfc9369.txt:268-284), and srv_resume.h
+// states how the server holds a ticket to it.
+//
 // alpn and alpn_len are the application protocol that connection
 // negotiated, and alpn_len is 0 when it negotiated none. srv_resume.h
 // states why a ticket resumes only a connection that negotiates the same
@@ -127,6 +135,7 @@ _Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD ke
 typedef struct {
     uint64_t auth_seconds;
     uint16_t suite;
+    uint32_t quic_version;
     uint8_t alpn_len;
     uint8_t alpn[CH_ALPN_NAME_MAX];
     uint8_t psk[HKDF_HASH_MAX];

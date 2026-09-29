@@ -37,8 +37,9 @@ pub const Version = if (has_quic) enum(u32) {
     _,
 } else @compileError("quic.Version needs TRANSPORT=quic-nonblocking");
 
-/// The code a value's optional version sets in ch_cfg: the version's, or 0
-/// for null, which both QUIC init calls refuse as an original version.
+/// The code a value's optional version sets in ch_cfg, quic_original_version
+/// or ticket_quic_version: the version's, or 0 for null, which C refuses as
+/// an original version and as a resuming ticket's version.
 pub fn versionCode(version: ?Version) u32 {
     return if (version) |v| @intFromEnum(v) else 0;
 }
@@ -98,19 +99,22 @@ fn retryTagOf(version: Version, pseudo: []const u8, tag: *[c.GCM_TAG]u8) error{I
     return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_retry_tag(@intFromEnum(version), pseudo.ptr, pseudo.len, tag));
 }
 
-/// ch_srv_quic_token_mint: a Retry token for the client at address.
+/// ch_srv_quic_token_mint: a Retry token for the client at address, bound
+/// to version, the original version the Retry goes out in.
 pub const tokenMint = if (has_server) tokenMintOf else @compileError("quic.tokenMint needs a QUIC server role");
-fn tokenMintOf(key: *const [c.CH_QUIC_TOKEN_KEY_LEN]u8, address: []const u8, cids: *const c.ch_quic_retry_cids, issued_seconds: u64, out: []u8) error{ Invalid, Cap }!usize {
+fn tokenMintOf(key: *const [c.CH_QUIC_TOKEN_KEY_LEN]u8, version: Version, address: []const u8, cids: *const c.ch_quic_retry_cids, issued_seconds: u64, out: []u8) error{ Invalid, Cap }!usize {
     var n: usize = 0;
-    try chapulin.fromCode(error{ Invalid, Cap }, c.ch_srv_quic_token_mint(key, address.ptr, address.len, cids, issued_seconds, out.ptr, out.len, &n));
+    try chapulin.fromCode(error{ Invalid, Cap }, c.ch_srv_quic_token_mint(key, @intFromEnum(version), address.ptr, address.len, cids, issued_seconds, out.ptr, out.len, &n));
     return n;
 }
 
-/// ch_srv_quic_token_check. error.Invalid for an address the call refuses.
+/// ch_srv_quic_token_check under version, the Version field of the Initial
+/// that carried the token. error.Invalid for an address or a version the
+/// call refuses; a token minted under another version is .invalid.
 pub const tokenCheck = if (has_server) tokenCheckOf else @compileError("quic.tokenCheck needs a QUIC server role");
-fn tokenCheckOf(key: *const [c.CH_QUIC_TOKEN_KEY_LEN]u8, token: []const u8, address: []const u8, now_seconds: u64, lifetime_seconds: u64) error{Invalid}!TokenCheck {
+fn tokenCheckOf(key: *const [c.CH_QUIC_TOKEN_KEY_LEN]u8, version: Version, token: []const u8, address: []const u8, now_seconds: u64, lifetime_seconds: u64) error{Invalid}!TokenCheck {
     var cids = std.mem.zeroes(c.ch_quic_retry_cids);
-    const rc = c.ch_srv_quic_token_check(key, token.ptr, token.len, address.ptr, address.len, now_seconds, lifetime_seconds, &cids);
+    const rc = c.ch_srv_quic_token_check(key, @intFromEnum(version), token.ptr, token.len, address.ptr, address.len, now_seconds, lifetime_seconds, &cids);
     if (rc == c.CH_EPROTO) return .not_retry;
     if (rc == c.CH_EAUTH) return .invalid;
     try chapulin.fromCode(error{Invalid}, rc);

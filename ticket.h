@@ -4,7 +4,7 @@
 // one. cfg.h includes this header, because ch_cfg.on_ticket takes a
 // ch_ticket, and it states the ch_cfg fields a resuming client sets:
 // psk, psk_id, resumption, obfuscated_age, ticket_age_ms,
-// ticket_lifetime_s and ticket_epoch.
+// ticket_lifetime_s, ticket_epoch and, over QUIC, ticket_quic_version.
 #ifndef CH_TICKET_H
 #define CH_TICKET_H
 
@@ -50,6 +50,13 @@ typedef struct {
     uint32_t epoch;
 #ifdef CH_TRUST_WEBPKI
     uint8_t binding[SHA256_LEN]; // present it in ch_cfg.ticket_binding (webpki_ticket.h)
+#endif
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The negotiated QUIC version of the connection the ticket arrived on, which RFC 9369
+    // section 5 makes the ticket's (rfc9369.txt:268-284). Present it in
+    // ch_cfg.ticket_quic_version, and start the resuming connection in it: ch_quic_init refuses
+    // a ticket whose version is not ch_cfg.quic_original_version.
+    uint32_t quic_version;
 #endif
 } ch_ticket;
 

@@ -428,9 +428,11 @@ static void test_quic() {
     with_source(cfg);
     cfg.transport_params(chapulin::ConstBytes{kParams});
     cfg.original_version(chapulin::QuicVersion::v1);
+    cfg.ticket_quic_version(chapulin::QuicVersion::v2);
     cfg.on_level_ready(level_ready);
     cfg.context(nullptr);
     CHECK(cfg.raw().quic_original_version == CH_QUIC_VERSION_1);
+    CHECK(cfg.raw().ticket_quic_version == CH_QUIC_VERSION_2);
 
     chapulin::Quic q;
     CHECK(q.init(cfg) == chapulin::Status::invalid);

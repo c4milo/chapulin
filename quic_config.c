@@ -134,6 +134,17 @@ static int trust_config_ok(const ch_cfg *cfg) {
 }
 #endif
 
+// Whether cfg may offer its ticket in its original version. Without
+// resumption no ticket goes out. With it, RFC 9369 section 5 forbids a
+// client to start a connection in one QUIC version with a ticket from a
+// connection in another (rfc9369.txt:268-271), so the ticket's version,
+// ch_ticket.quic_version, must be the original version. quic_version_derived
+// admits no original version of 0, so a ticket presented without its
+// version is refused rather than read as version 1 (docs/decisions.md 79).
+static int ticket_version_ok(const ch_cfg *cfg) {
+    return !cfg->resumption || cfg->ticket_quic_version == cfg->quic_original_version;
+}
+
 // Loads the stored revocation epoch and checks a resuming ticket
 // against it, the rule tls.c's tlsi_epoch_init states (docs/ca.md,
 // INV-21). Every refusal is CH_EINVAL, as it is there, a ticket below
@@ -187,6 +198,10 @@ int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
     // ticket: tls.c's rule, from the one predicate both transports call
     // (handshake_post.h).
     if (!hspost_ticket_age_ok(cfg)) {
+        return CH_EINVAL;
+    }
+    // A ticket from a connection in another QUIC version.
+    if (!ticket_version_ok(cfg)) {
         return CH_EINVAL;
     }
 #ifndef CH_KEX_HYBRID

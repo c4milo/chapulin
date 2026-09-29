@@ -1,10 +1,11 @@
 // QUIC version 2 end to end, in the TRUST=raw-ecdsa build of
-// test/quic_loop_test.c, over CRYPTO bytes and packets at every level. Two
-// runs negotiate version 2: a client and a server that both start in it,
-// and a version 1 client against a server whose choose_version answers
+// test/quic_loop_test.c, over CRYPTO bytes and packets at every level.
+// Three runs negotiate version 2: a client and a server that both start in
+// it; a version 1 client against a server whose choose_version answers
 // version 2, where the test acts as colibri at both ends, packet by packet,
 // and switches the client when the server's first Initial packet carries
-// version 2 (rfc9369.txt:240-244). In each run the Initial, the Handshake
+// version 2 (rfc9369.txt:240-244); and the same after a version 1 Retry
+// with its token (rfc9369.txt:221-227). In each run the Initial, the Handshake
 // and the 1-RTT keys agree in version 2, a Handshake or 1-RTT packet in
 // version 1 is refused at both ends, and a 1-RTT key update at each end
 // keeps the keys agreeing, so both ends run version 2's "quicv2 ku" label.
@@ -146,22 +147,22 @@ static int open_crypto(ch_quic *to, uint8_t level, uint32_t version, const uint8
 }
 
 // A version 1 client against a server whose choose_version answers
-// version 2, packet by packet, with the test acting as colibri at both
-// ends. The server opens the client's first Initial packet in version 1,
-// its original version, and seals every packet after the choice in
-// version 2. The test reads the Version field of the server's first
-// Initial packet, and because it differs from the client's original
+// version 2, packet by packet from the client's Initial packet that
+// carries hello, with the test acting as colibri at both ends. Both
+// sessions hold their Initial keys already. The server opens that packet
+// in version 1, its original version, and seals every packet after the
+// choice in version 2. The test reads the Version field of the server's
+// first Initial packet, and because it differs from the client's original
 // version it switches the client before it opens that packet. Returns 1
 // when both ends are connected, and 0 at the first refusal.
-static int run_negotiated(const ch_cfg *ccfg, const ch_cfg *scfg) {
+static int negotiate(const uint8_t *hello, size_t hello_len) {
     static uint8_t buf[4096];
     const uint8_t *pt = NULL;
     size_t pt_len = 0;
     size_t n = 0;
     memset(&from_server, 0, sizeof from_server);
-    if (!start_close_case(ccfg, scfg) ||
-        ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) != CH_OK ||
-        !send_crypto(&client, CH_LEVEL_INITIAL, 0, buf, n) || wire_version() != CH_QUIC_VERSION_1 ||
+    if (!send_crypto(&client, CH_LEVEL_INITIAL, 0, hello, hello_len) ||
+        wire_version() != CH_QUIC_VERSION_1 ||
         open_crypto(&server, CH_LEVEL_INITIAL, wire_version(), &pt, &pt_len) != CH_OK ||
         ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, pt, pt_len) != CH_OK) {
         return 0;
@@ -187,13 +188,14 @@ static int run_negotiated(const ch_cfg *ccfg, const ch_cfg *scfg) {
     return ch_quic_state(&client) == CH_ST_CONNECTED && ch_quic_state(&server) == CH_ST_CONNECTED;
 }
 
-// How many times choose_version_2 fired.
-static unsigned choose_calls;
-
-static uint32_t choose_version_2(void *io) {
-    (void)io;
-    choose_calls++;
-    return CH_QUIC_VERSION_2;
+// The negotiation from init on, both ends holding the Initial keys of
+// version_dcid.
+static int run_negotiated(const ch_cfg *ccfg, const ch_cfg *scfg) {
+    static uint8_t hello[4096];
+    size_t n = 0;
+    return start_close_case(ccfg, scfg) &&
+           ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, hello, sizeof hello, &n) == CH_OK &&
+           negotiate(hello, n);
 }
 
 // A client that never switches, against the same server, with the CRYPTO
@@ -205,7 +207,7 @@ static uint32_t choose_version_2(void *io) {
 static void check_unswitched_client(const ch_cfg *ccfg, const ch_cfg *scfg) {
     const uint8_t *pt = NULL;
     size_t pt_len = 0;
-    CHECK(run_quic(ccfg, scfg));
+    CHECK(run_quic_following(ccfg, scfg, 0));
     CHECK(ch_quic_negotiated_version(&client) == CH_QUIC_VERSION_1);
     CHECK(ch_quic_negotiated_version(&server) == CH_QUIC_VERSION_2);
     CHECK(ch_quic_initial_keys(&client, version_dcid, sizeof version_dcid) == CH_OK);
@@ -216,6 +218,85 @@ static void check_unswitched_client(const ch_cfg *ccfg, const ch_cfg *scfg) {
         CHECK(open_crypto(&client, level, CH_QUIC_VERSION_2, &pt, &pt_len) == CH_EINVAL);
         CHECK(open_crypto(&client, level, CH_QUIC_VERSION_1, &pt, &pt_len) == CH_QUIC_DISCARD);
     }
+}
+
+// The Retry pseudo-packet of RFC 9001 section 5.8 for a version 1 Retry
+// that carries token and names retry_scid, after the Original Destination
+// Connection ID version_dcid (rfc9001.txt:1514-1529): the ID's length and
+// bytes, the first byte with the version 1 Retry type, the Version field,
+// an empty Destination Connection ID, the Source Connection ID and the
+// token. chapulin reads none of it; the integrity tag covers all of it.
+static size_t retry_pseudo(uint8_t *out, const uint8_t *retry_scid, size_t scid_len,
+                           const uint8_t *token, size_t token_len) {
+    size_t n = 0;
+    out[n++] = sizeof version_dcid;
+    memcpy(out + n, version_dcid, sizeof version_dcid);
+    n += sizeof version_dcid;
+    static const uint8_t head[6] = {0xf0, 0x00, 0x00, 0x00, 0x01, 0x00};
+    memcpy(out + n, head, sizeof head);
+    n += sizeof head;
+    out[n++] = (uint8_t)scid_len;
+    memcpy(out + n, retry_scid, scid_len);
+    n += scid_len;
+    memcpy(out + n, token, token_len);
+    return n + token_len;
+}
+
+// A Retry in version 1, then the switch to version 2 (rfc9369.txt:221-227).
+// The server sends the Retry before it has a session: a token bound to
+// version 1 and to the client's address, and the integrity tag under
+// version 1's key, which the client takes and a version 2 check refuses.
+// Both ends derive their Initial keys from the Retry's Source Connection
+// ID, and the client sends its hello again in version 1 with the token.
+// The server checks the token under version 1, the Version field of that
+// packet, where version 2 would refuse it, starts its session in version
+// 1, and the negotiation then runs as above and ends in version 2.
+static void test_retry_then_switch(void) {
+    static const uint8_t token_key[CH_QUIC_TOKEN_KEY_LEN] = {0x42, 0x24};
+    static const uint8_t address[6] = {192, 0, 2, 1, 0x11, 0x51};
+    static const uint8_t retry_scid[8] = {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5};
+    static uint8_t hello[4096];
+    uint8_t token[CH_QUIC_TOKEN_MAX];
+    uint8_t pseudo[1 + CH_QUIC_DCID_MAX + 6 + 1 + CH_QUIC_DCID_MAX + CH_QUIC_TOKEN_MAX];
+    uint8_t tag[GCM_TAG];
+    size_t hello_len = 0;
+    size_t token_len = 0;
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg);
+    scfg.srv.choose_version = choose_version_2;
+    pinned_client_config(&ccfg, &server_alpn[0]);
+    CHECK(ch_quic_init(&client, &ccfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, hello, sizeof hello, &hello_len) == CH_OK);
+
+    ch_quic_retry_cids cids;
+    memset(&cids, 0, sizeof cids);
+    memcpy(cids.original_dcid, version_dcid, sizeof version_dcid);
+    cids.original_dcid_len = sizeof version_dcid;
+    memcpy(cids.retry_scid, retry_scid, sizeof retry_scid);
+    cids.retry_scid_len = sizeof retry_scid;
+    CHECK(ch_srv_quic_token_mint(token_key, CH_QUIC_VERSION_1, address, sizeof address, &cids,
+                                 LOOP_NOW, token, sizeof token, &token_len) == CH_OK);
+    size_t pseudo_len = retry_pseudo(pseudo, retry_scid, sizeof retry_scid, token, token_len);
+    CHECK(ch_srv_quic_retry_tag(CH_QUIC_VERSION_1, pseudo, pseudo_len, tag) == CH_OK);
+    CHECK(ch_quic_retry_ok(&client, CH_QUIC_VERSION_1, pseudo, pseudo_len, tag) == 1);
+    CHECK(ch_quic_retry_ok(&client, CH_QUIC_VERSION_2, pseudo, pseudo_len, tag) == 0);
+
+    ch_quic_retry_cids got;
+    CHECK(ch_srv_quic_token_check(token_key, CH_QUIC_VERSION_2, token, token_len, address,
+                                  sizeof address, LOOP_NOW + 1, 10, &got) == CH_EAUTH);
+    CHECK(ch_srv_quic_token_check(token_key, CH_QUIC_VERSION_1, token, token_len, address,
+                                  sizeof address, LOOP_NOW + 1, 10, &got) == CH_OK);
+    CHECK(got.original_dcid_len == sizeof version_dcid &&
+          memcmp(got.original_dcid, version_dcid, sizeof version_dcid) == 0);
+    choose_calls = 0;
+    CHECK(ch_srv_quic_init(&server, &scfg) == CH_OK);
+    CHECK(ch_quic_initial_keys(&client, retry_scid, sizeof retry_scid) == CH_OK);
+    CHECK(ch_quic_initial_keys(&server, retry_scid, sizeof retry_scid) == CH_OK);
+    CHECK(negotiate(hello, hello_len));
+    CHECK(choose_calls == 1);
+    CHECK(ch_quic_negotiated_version(&client) == CH_QUIC_VERSION_2);
+    check_version_2_pair();
 }
 
 static void test_quic_version_2(void) {
@@ -246,6 +327,7 @@ static void test_quic_version_2(void) {
     CHECK(ch_quic_switch_version(&client, CH_QUIC_VERSION_1) == CH_EINVAL);
 
     check_unswitched_client(&ccfg, &scfg);
+    test_retry_then_switch();
 }
 
 #endif

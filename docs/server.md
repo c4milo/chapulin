@@ -2847,19 +2847,21 @@ the application write key: a record over TCP, CRYPTO bytes at
 serially gets a fresh ticket on every resumed connection; a client racing
 parallel connections would want more, and none asks.
 
-**What a ticket carries.** 104 bytes: a version byte, a 12-byte random
-nonce, and a 75-byte body sealed with ChaCha20-Poly1305 with the version
+**What a ticket carries.** 108 bytes: a version byte, a 12-byte random
+nonce, and a 79-byte body sealed with ChaCha20-Poly1305 with the version
 byte as associated data. The body holds the instant of the last full
-handshake behind the ticket, the cipher suite, the ALPN protocol and the
-32-byte PSK. The instant is carried forward through every resumed
+handshake behind the ticket, the cipher suite, the QUIC version the
+connection negotiated, 0 over TCP, the ALPN protocol and the 32-byte PSK. The instant is carried forward through every resumed
 handshake, so a chain of resumptions ends one lifetime after the
 certificate last signed. `srv_ticket.h` lays the bytes out and states when
 the key must rotate.
 
 **What a ticket binds, and what it does not.** It binds the suite's KDF hash
-(`rfc9846.txt:3219-3220`), the lifetime on the server's own clock, and the
+(`rfc9846.txt:3219-3220`), the lifetime on the server's own clock, the
 ALPN protocol, so a ticket resumes only a connection that negotiates the
-protocol it was issued under. It binds neither the server name, which
+protocol it was issued under, and the QUIC version, which RFC 9369 §5
+makes a ticket's (`rfc9369.txt:268-284`), so no ticket crosses QUIC
+versions or transports. It binds neither the server name, which
 `rfc9846.txt:2525-2527` says a server need not associate with a ticket, nor
 the signing identity, which the ticket key stands in for. `srv_resume.h`
 gives the reason for each.
@@ -2873,7 +2875,8 @@ and checks that identity's binder alone (`rfc9846.txt:2544-2546`) with
 that is absent or wrong ends the handshake with `decrypt_error`
 (`rfc9846.txt:2541-2544`, `:3968-3970`). An identity that does not open, has
 expired, was issued in the future, names another hash or another protocol
-is passed over (`rfc9846.txt:2533-2537`), and a hello that had no other
+is passed over (`rfc9846.txt:2533-2537`), and so is one from another QUIC
+version or transport; a hello that had no other
 identity gets a full handshake, or `missing_extension` when it offered no
 signature scheme to authenticate one with. A resumed ServerHello carries
 `pre_shared_key` and a key share, and the flight after it is

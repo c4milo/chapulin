@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv_resume.c
+catches: quic_loop_test
+reason: the ticket walk holds each ticket to its own QUIC version rather
+  than the session's, so a server that chose version 2 resumes a ticket
+  issued in a version 1 connection, and a TCP server resumes a QUIC
+  server's ticket. RFC 9369 section 5 has a server accept no ticket from
+  another version and fall back to a full handshake
+  (rfc9369.txt:276-281). test/quic_loop_ticket_versions.h requires a raw
+  client's version 1 ticket to fail closed against a server that chose
+  version 2, and test/srv_resume_tests.h, in bin/srv_flight_test,
+  requires a TCP server to pass over a ticket that records version 1.
+
+--- old
+            ticket_holds(c, cfg, ch, sel, session_quic_version(t))) {
+--- new
+            ticket_holds(c, cfg, ch, sel, c->quic_version)) {

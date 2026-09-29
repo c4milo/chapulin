@@ -107,7 +107,11 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
 ) {
     rbuf r;
     rb_init(&r, body, n);
+    // Every byte starts at zero, so none of the caller's copy holds stack
+    // bytes: the PSK array past psk_len included, which a SHA-256 session
+    // leaves 16 bytes of in a SUITE=aesgcm build.
     ch_ticket ticket;
+    memset(&ticket, 0, sizeof ticket);
     uint32_t hi = rb_u24(&r);                  // u32 fields read as u24+u8 to keep the
     ticket.lifetime_s = (hi << 8) | rb_u8(&r); // reads sequenced
     hi = rb_u24(&r);
@@ -137,6 +141,11 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
         return CH_OK;
     }
     ticket.epoch = t->epoch;
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The version this connection negotiated, which RFC 9369 section 5
+    // makes the ticket's (rfc9369.txt:268-284).
+    ticket.quic_version = t->quic_negotiated_version;
+#endif
     // The PSK takes the hash of the suite this session ran
     // (rfc9846.txt:3298-3301), and its length says which one.
     ticket.psk_len = tls_hash_len(t);

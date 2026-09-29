@@ -4,16 +4,18 @@
 // four codes for the reason quic_token.h gives.
 //
 // The properties, over unconstrained inputs at the module's real bound: any
-// key, any address length at all, any connection ID length a uint8_t holds,
-// any instant, any lifetime, any capacity up to CH_QUIC_TOKEN_MAX, and any
-// token of up to one byte past CH_QUIC_TOKEN_MAX. Memory safety and absence
+// key, any QUIC version, any address length at all, any connection ID
+// length a uint8_t holds, any instant, any lifetime, any capacity up to
+// CH_QUIC_TOKEN_MAX, and any token of up to one byte past
+// CH_QUIC_TOKEN_MAX. Memory safety and absence
 // of UB on both calls, which is what the automatic checks discharge; the
 // CH_ASSERTs in quic_token.c never fire. For the mint: a CH_OK answer writes
 // the type byte, the instant, both lengths and both connection IDs where the
 // layout puts them, at the length the connection IDs fix; a refusal writes
 // neither the buffer nor *out_len; and CH_QUIC_TOKEN_MAX always suffices. For
 // the check: every answer but CH_OK leaves *cids as it was; CH_EINVAL answers
-// exactly the address lengths outside 1 to CH_QUIC_TOKEN_ADDRESS_MAX;
+// exactly the address lengths outside 1 to CH_QUIC_TOKEN_ADDRESS_MAX and the
+// versions quic_version_derived refuses, as it does at the mint;
 // CH_EPROTO answers only a token that is empty or whose first byte is not
 // QUIC_TOKEN_TYPE_RETRY, and CH_EAUTH only one whose first byte is; and a
 // CH_OK answer means a Retry token whose length its two length bytes fix,
@@ -25,10 +27,11 @@
 // so hmac_sha256 runs over a digest CBMC picks freshly each call. That makes
 // the tag comparison unconstrained, which is what lets this formula reach
 // CH_OK over every token at all, and it puts the round trip and the address
-// binding out of its reach: that a minted token checks, and that the same
-// token at another address or under another key does not. The round trip,
-// the address and key cases and the tamper sweep are tested instead, in
-// test/quic_token_tests.h, and sha256_harness.c proves the hash itself.
+// and version binding out of its reach: that a minted token checks, and that
+// the same token at another address, under another key or under the other
+// QUIC version does not. The round trip, the address, key and version cases
+// and the tamper sweep are tested instead, in test/quic_token_tests.h, and
+// sha256_harness.c proves the hash itself.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
@@ -78,6 +81,7 @@ static void prove_mint(void) {
     ch_quic_retry_cids cids;
     havoc_cids(&cids);
 
+    uint32_t version = nondet_u32();
     size_t address_len = nondet_size_t();
     size_t cap = nondet_size_t();
     __CPROVER_assume(cap <= sizeof minted);
@@ -85,13 +89,13 @@ static void prove_mint(void) {
     size_t out_len = nondet_size_t();
     size_t out_len_before = out_len;
 
-    int rc =
-        ch_srv_quic_token_mint(key, address, address_len, &cids, issued, minted, cap, &out_len);
+    int rc = ch_srv_quic_token_mint(key, version, address, address_len, &cids, issued, minted, cap,
+                                    &out_len);
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL || rc == CH_ECAP,
                      "mint answers one of its three codes");
     int args_ok = address_len >= 1 && address_len <= CH_QUIC_TOKEN_ADDRESS_MAX &&
-                  cids.original_dcid_len <= CH_QUIC_DCID_MAX &&
+                  quic_version_derived(version) && cids.original_dcid_len <= CH_QUIC_DCID_MAX &&
                   cids.retry_scid_len <= CH_QUIC_DCID_MAX;
     size_t total = (size_t)43 + cids.original_dcid_len + cids.retry_scid_len;
     __CPROVER_assert((rc == CH_EINVAL) == !args_ok, "CH_EINVAL answers exactly the bad arguments");
@@ -136,17 +140,20 @@ static void prove_check(void) {
 
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof token);
+    uint32_t version = nondet_u32();
     size_t address_len = nondet_size_t();
     uint64_t now = nondet_u64();
     uint64_t lifetime = nondet_u64();
 
-    int rc = ch_srv_quic_token_check(key, token, n, address, address_len, now, lifetime, &got);
+    int rc =
+        ch_srv_quic_token_check(key, version, token, n, address, address_len, now, lifetime, &got);
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL || rc == CH_EPROTO || rc == CH_EAUTH,
                      "check answers one of its four codes");
-    int address_ok = address_len >= 1 && address_len <= CH_QUIC_TOKEN_ADDRESS_MAX;
-    __CPROVER_assert((rc == CH_EINVAL) == !address_ok,
-                     "CH_EINVAL answers exactly the bad address lengths");
+    int args_ok = address_len >= 1 && address_len <= CH_QUIC_TOKEN_ADDRESS_MAX &&
+                  quic_version_derived(version);
+    __CPROVER_assert((rc == CH_EINVAL) == !args_ok,
+                     "CH_EINVAL answers exactly the bad address lengths and versions");
     int retry = n > 0 && token[0] == QUIC_TOKEN_TYPE_RETRY;
     if (rc == CH_EPROTO) {
         __CPROVER_assert(!retry, "CH_EPROTO answers only a token that is not a Retry token");

@@ -22,11 +22,12 @@
 // hostname and a clock; no pin slot; PSK fields webpki_resumption_ok
 // took; with resumption set, a ticket age no older than the ticket's
 // lifetime, and no older than CH_TICKET_LIFETIME_MAX seconds whatever the
-// lifetime, where a lifetime of 0 is none given (handshake_post.h); 1 to
+// lifetime, where a lifetime of 0 is none given (handshake_post.h), and a
+// ticket version that is the original version (RFC 9369 section 5); 1 to
 // CH_ALPN_MAX protocols; transport parameters of 1 to
 // CH_TRANSPORT_PARAMS_MAX bytes; on_level_ready; the buffer floor; and
-// no epoch callback. The age and the lifetime take any value their types
-// hold. Under SUITE=aesgcm, quic_config_webpki_suite adds the client's
+// no epoch callback. The age, the lifetime and the ticket's version take
+// any value their types hold. Under SUITE=aesgcm, quic_config_webpki_suite adds the client's
 // suite list: no list and no count, or 1 to SUITE_HELD_COUNT suites the
 // build holds, none repeated, with no entry read past that cap.
 //
@@ -189,6 +190,7 @@ static void havoc_trust(void) {
     cfg.resumption = (int)nondet_u32();
     cfg.ticket_age_ms = nondet_u64();
     cfg.ticket_lifetime_s = nondet_u32();
+    cfg.ticket_quic_version = nondet_u32();
     cfg.ticket_binding = maybe(binding);
     cfg.epoch_load = (nondet_u8() & 1) ? epoch_load : NULL;
     cfg.epoch_store = (nondet_u8() & 1) ? epoch_store : NULL;
@@ -231,6 +233,12 @@ static int ticket_age_holds(void) {
     uint64_t lifetime_ms = (uint64_t)cfg.ticket_lifetime_s * 1000U;
     return cfg.ticket_age_ms <= cap_ms &&
            (cfg.ticket_lifetime_s == 0 || cfg.ticket_age_ms <= lifetime_ms);
+}
+
+// The ticket version half, as cfg.h states it: with resumption set, the
+// ticket's QUIC version is the original version.
+static int ticket_version_holds(void) {
+    return cfg.resumption == 0 || cfg.ticket_quic_version == cfg.quic_original_version;
 }
 
 // The transport half, as quic.h states it. The original version is held
@@ -301,6 +309,7 @@ int main(void) {
         __CPROVER_assert(trust_holds(), "CH_OK keeps the webpki trust rules");
         __CPROVER_assert(transport_holds(), "CH_OK keeps the QUIC transport rules");
         __CPROVER_assert(ticket_age_holds(), "CH_OK keeps the ticket age rule");
+        __CPROVER_assert(ticket_version_holds(), "CH_OK keeps the ticket version rule");
 #ifdef CH_CLIENT_AES_SUITES
         __CPROVER_assert(suites_hold(), "CH_OK keeps the client suite rule");
 #endif

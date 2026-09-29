@@ -1329,7 +1329,7 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Twelve more break the API, the module, the public headers or
+  to fail. Thirteen more break the API, the module, the public headers or
   the reverse check in `matches.zig`, and `test/zig-build-check.sh`
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
@@ -1344,7 +1344,9 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
   `inv36-zig-api-close-without-notify` closes without a close_notify;
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
-  so it no longer resumes; `inv36-zig-api-ticket-slot-kept` leaves
+  so it no longer resumes; `inv36-zig-api-ticket-drops-quic-version`
+  zeroes a copied ticket's QUIC version, so `ch_quic_init` refuses it;
+  `inv36-zig-api-ticket-slot-kept` leaves
   the resumption PSK in the slot after `takeTicket` and `recordClose`;
   `inv36-header-client-driver-in-server` declares the client's driver in
   `tcp_nonblocking.h` for a `ROLE=server` object, and
@@ -1594,16 +1596,21 @@ last `ROLE=server` stub, as the entry said it would.
   empty or whose first byte is not the Retry type with `CH_EPROTO`, and
   a Retry token whose length does not match its length bytes, whose
   connection ID is longer than `CH_QUIC_DCID_MAX`, whose tag does not
-  verify for the key and the client's address, or whose issue instant is
-  after now or more than the lifetime before it with `CH_EAUTH`. Neither
-  refusal writes the connection IDs the caller would read. A server
+  verify for the key, the QUIC version and the client's address, which
+  is what a token minted under the other version gives, or whose issue
+  instant is after now or more than the lifetime before it with
+  `CH_EAUTH`. Neither refusal writes the connection IDs the caller would
+  read, and both token calls refuse a version the build derives no keys
+  for with `CH_EINVAL`. A server
   (`srv_select_auth`, `srv_resume.c`) considers a PSK only under
   `psk_dhe_ke`, and only with a ticket key and a clock; it passes over,
   without failing the handshake, a ticket of any length but
   `SRV_TICKET_LEN`, one that does not open under the ticket key, one
   issued after its clock or more than `SRV_TICKET_LIFETIME` seconds
-  before it, one whose suite it does not hold, and one whose ALPN
-  protocol is not the one this connection selected; and it refuses the
+  before it, one whose suite it does not hold, one whose ALPN
+  protocol is not the one this connection selected, and one whose QUIC
+  version is not the one this connection negotiated, 0 over TCP, which
+  RFC 9369 §5 asks of a server (`rfc9369.txt:276-281`); and it refuses the
   binder of the ticket it selected with decrypt_error when that binder
   is absent, is not 32 bytes, or does not compare equal under
   `ct_memeq`. A hello left with no ticket and no scheme a provisioned
@@ -1625,7 +1632,13 @@ last `ROLE=server` stub, as the entry said it would.
   sends nothing a configuration with `resumption` set whose
   `ticket_age_ms` is above `ticket_lifetime_s` seconds or above
   `CH_TICKET_LIFETIME_MAX` seconds, seven days, where a lifetime of 0 is
-  none given (`hspost_ticket_age_ok`, handshake_post.h). The
+  none given (`hspost_ticket_age_ok`, handshake_post.h). `ch_quic_init`
+  also refuses, with `CH_EINVAL` and nothing sent, a configuration with
+  `resumption` set whose `ticket_quic_version` is not its
+  `quic_original_version`, 0 included, because RFC 9369 §5 forbids a
+  client to start a connection in one QUIC version with a ticket from
+  another (`rfc9369.txt:268-271`); `handle_ticket` writes the connection's
+  negotiated version into each `ch_ticket` it hands over. The
   post-handshake parser hands `on_ticket` no NewSessionTicket whose
   `ticket_lifetime` is 0, which RFC 9846 §4.6.1 says to discard at once,
   and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
@@ -1843,7 +1856,18 @@ last `ROLE=server` stub, as the entry said it would.
   quic-token-type-unchecked and quic-token-cids-written-on-failure fail
   bin/srv_quic_test, and quic-token-cid-length-unbounded fails the
   harness. An eighth, quic-token-memcmp, carries INV-16, because it
-  keeps every answer and changes only the compare's timing.
+  keeps every answer and changes only the compare's timing. The version
+  binding is test/quic_token_tests.h's version case: the same inputs
+  under version 1 and version 2 mint the same bytes up to the tag, each
+  token checks under its own version and is CH_EAUTH under the other,
+  and 0, the values beside version 1 and version 2 and a reserved
+  version are CH_EINVAL at both calls with nothing written.
+  quic-token-version-unbound, a check that computes the tag under
+  version 1 whatever it is given, fails bin/srv_quic_test, and the
+  quic_token harness proves CH_EINVAL exact over every version.
+  bin/quic_loop_test sends a version 1 Retry with its token, checks the
+  token under version 1 and refuses it under version 2, and then
+  negotiates version 2.
   The server's ticket rules are test/srv_resume_tests.h, which
   bin/srv_flight_test runs over real tickets: each passed-over shape,
   the lifetime at its last valid second and its first invalid one, a
@@ -1853,14 +1877,31 @@ last `ROLE=server` stub, as the entry said it would.
   absent. bin/tcp_nonblocking_loop_test, bin/quic_loop_test and
   bin/quic_loop_webpki run the same rules between this tree's client
   and server, and test/e2e.sh has OpenSSL's s_client resume against
-  bin/tlsserver. The srv_ticket and srv_resume CBMC harnesses prove
+  bin/tlsserver. The QUIC version a ticket binds has rows on both
+  transports: bin/srv_flight_test passes over a ticket that records
+  version 1 at a TCP server and resumes the same ticket at 0, and
+  bin/srv_test and bin/srv_flight_test hold the body's version field and
+  a TCP ticket's 0. test/quic_loop_ticket_versions.h, which
+  bin/quic_loop_test and bin/quic_loop_webpki run, takes a ticket from a
+  connection the server moved to version 2, requires version 2 in the
+  client's copy and in the server's sealed body, refuses it at
+  `ch_quic_init` in a version 1 connection and with a version of 0, and
+  resumes it in a version 2 connection; and a version 1 ticket offered to
+  a server that chooses version 2 is passed over, which a raw client
+  answers by failing closed and a webpki client by completing over its
+  chain in version 2. The srv_ticket and srv_resume CBMC harnesses prove
   both files memory-safe over any ticket bytes and any offer, and prove
   that a ticket is selected only under psk_dhe_ke with a key and a
   clock, that a selected ticket leaves no signature scheme selected,
-  and that a binder refusal is decrypt_error. The `srv-resume-` and
-  `srv-ticket-` violations guard the rules, and
-  srv-resume-binder-memcmp carries INV-16 for the reason
-  quic-token-memcmp does.
+  that a binder refusal is decrypt_error, and, in the TCP build the
+  harness compiles, that a selected ticket and an issued one record
+  version 0. The quic_config_webpki harness proves `ch_quic_init`'s
+  ticket version rule over every version. The `srv-resume-` and
+  `srv-ticket-` violations guard the rules, srv-resume-quic-version-unbound
+  and srv-resume-ticket-records-original-version among them, and
+  inv14-quic-ticket-version-unchecked and inv14-ticket-quic-version-unset
+  guard the client's half; srv-resume-binder-memcmp carries INV-16 for
+  the reason quic-token-memcmp does.
   The server's identity rules are test/srv_identity_tests.h, which
   bin/srv_auth_test runs: each rule's last admitted configuration and
   its first refused one, the ECDSA scalar at 1 and n - 1 admitted and at

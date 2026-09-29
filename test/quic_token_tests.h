@@ -6,9 +6,10 @@
 // that mints and checks it (rfc9000.txt:2442-2443). So the cases here check the
 // claims quic_token.h makes instead. A minted token checks back to what it
 // carried. Its bytes are the ones the header's layout names, built here by
-// hand. A token whose bytes, key or address changed does not check, and every
-// length and instant rule holds at its exact boundary. HMAC-SHA-256 itself is
-// checked against RFC 4231 in test/unit_test.c, so nothing here re-checks it.
+// hand. A token whose bytes, key, address or QUIC version changed does not
+// check, and every length and instant rule holds at its exact boundary.
+// HMAC-SHA-256 itself is checked against RFC 4231 in test/unit_test.c, so
+// nothing here re-checks it.
 #ifndef CH_QUIC_TOKEN_TESTS_H
 #define CH_QUIC_TOKEN_TESTS_H
 
@@ -38,9 +39,11 @@ static const uint8_t address_v4[6] = {192, 0, 2, 1, 0x11, 0x51};
 // case.
 static const char token_label_text[] = "chapulin quic token";
 
-// The instant and the lifetime most cases use, in seconds.
+// The instant and the lifetime most cases use, in seconds, and the QUIC
+// version every case but test_token_versions mints and checks under.
 #define TOKEN_ISSUED 1790000000u
 #define TOKEN_LIFETIME 10u
+#define TOKEN_VERSION CH_QUIC_VERSION_1
 
 // A token one byte longer than any the mint writes, for the cases that build
 // one that is too long.
@@ -86,7 +89,8 @@ static int cids_equal(const ch_quic_retry_cids *a, const ch_quic_retry_cids *b) 
 static size_t token_mint(uint8_t *dst, size_t cap, const uint8_t *address, size_t address_len,
                          const ch_quic_retry_cids *cids, uint64_t issued) {
     size_t n = 0;
-    int rc = ch_srv_quic_token_mint(token_key, address, address_len, cids, issued, dst, cap, &n);
+    int rc = ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, address_len, cids, issued,
+                                    dst, cap, &n);
     return rc == CH_OK ? n : 0;
 }
 
@@ -96,7 +100,8 @@ static size_t token_mint(uint8_t *dst, size_t cap, const uint8_t *address, size_
 static int token_check(const uint8_t *token, size_t n, const uint8_t *address, size_t address_len,
                        uint64_t now, uint64_t lifetime, ch_quic_retry_cids *got) {
     memset(got, 0xa5, sizeof *got);
-    int rc = ch_srv_quic_token_check(token_key, token, n, address, address_len, now, lifetime, got);
+    int rc = ch_srv_quic_token_check(token_key, TOKEN_VERSION, token, n, address, address_len, now,
+                                     lifetime, got);
     if (rc != CH_OK) {
         CHECK(cids_untouched(got));
     }
@@ -111,7 +116,8 @@ static int token_check_v6(const uint8_t *token, size_t n, uint64_t now) {
 }
 
 // Builds a token by hand from the layout quic_token.h prints, with a valid
-// tag under token_key over address_v6, and returns its length. The type and
+// tag under token_key over TOKEN_VERSION and address_v6, and returns its
+// length. The type and
 // the two lengths are the caller's, so a case can build a token the mint
 // never writes: one of another type, or one whose connection ID is longer
 // than CH_QUIC_DCID_MAX. dst takes TOKEN_BUF bytes.
@@ -131,11 +137,15 @@ static size_t hand_token(uint8_t type, uint64_t issued, size_t original_dcid_len
         dst[off++] = (uint8_t)(0x80 + i);
     }
 
-    // The tag input: the label, the address length byte, the address and the
-    // body, which is everything written above.
-    uint8_t input[sizeof token_label_text + 1 + CH_QUIC_TOKEN_ADDRESS_MAX + TOKEN_BUF];
+    // The tag input: the label, the version, the most significant byte
+    // first, the address length byte, the address and the body, which is
+    // everything written above.
+    uint8_t input[sizeof token_label_text + 4 + 1 + CH_QUIC_TOKEN_ADDRESS_MAX + TOKEN_BUF];
     size_t in = sizeof token_label_text - 1;
     memcpy(input, token_label_text, in);
+    for (int shift = 24; shift >= 0; shift -= 8) {
+        input[in++] = (uint8_t)(TOKEN_VERSION >> shift);
+    }
     input[in++] = (uint8_t)sizeof address_v6;
     memcpy(input + in, address_v6, sizeof address_v6);
     in += sizeof address_v6;
@@ -189,8 +199,8 @@ static void test_token_round_trip(void) {
     // A different key mints different bytes, and neither key checks the
     // other's token.
     size_t other = 0;
-    CHECK(ch_srv_quic_token_mint(token_other_key, address_v6, sizeof address_v6, &longest,
-                                 TOKEN_ISSUED, again, sizeof again, &other) == CH_OK);
+    CHECK(ch_srv_quic_token_mint(token_other_key, TOKEN_VERSION, address_v6, sizeof address_v6,
+                                 &longest, TOKEN_ISSUED, again, sizeof again, &other) == CH_OK);
     CHECK(other == n);
     CHECK(memcmp(again, token, n) != 0);
     CHECK(token_check_v6(again, other, TOKEN_ISSUED) == CH_EAUTH);
@@ -237,8 +247,9 @@ static void test_token_address_and_key(void) {
 
     // Another key does not check it.
     memset(&got, 0xa5, sizeof got);
-    CHECK(ch_srv_quic_token_check(token_other_key, token, n, address_v6, sizeof address_v6,
-                                  TOKEN_ISSUED, TOKEN_LIFETIME, &got) == CH_EAUTH);
+    CHECK(ch_srv_quic_token_check(token_other_key, TOKEN_VERSION, token, n, address_v6,
+                                  sizeof address_v6, TOKEN_ISSUED, TOKEN_LIFETIME,
+                                  &got) == CH_EAUTH);
     CHECK(cids_untouched(&got));
 }
 
@@ -358,10 +369,10 @@ static void test_token_mint_refusals(void) {
 
     // The address length pair at both ends: 0 and one past the cap are
     // refused, 1 and the cap are minted.
-    CHECK(ch_srv_quic_token_mint(token_key, address, 0, &cids, TOKEN_ISSUED, token, sizeof token,
-                                 &n) == CH_EINVAL);
-    CHECK(ch_srv_quic_token_mint(token_key, address, CH_QUIC_TOKEN_ADDRESS_MAX + 1, &cids,
-                                 TOKEN_ISSUED, token, sizeof token, &n) == CH_EINVAL);
+    CHECK(ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, 0, &cids, TOKEN_ISSUED, token,
+                                 sizeof token, &n) == CH_EINVAL);
+    CHECK(ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, CH_QUIC_TOKEN_ADDRESS_MAX + 1,
+                                 &cids, TOKEN_ISSUED, token, sizeof token, &n) == CH_EINVAL);
     CHECK(n == 0x5a5a);
     CHECK(token_mint(token, sizeof token, address, 1, &cids, TOKEN_ISSUED) == 59);
     CHECK(token_mint(token, sizeof token, address, CH_QUIC_TOKEN_ADDRESS_MAX, &cids,
@@ -369,11 +380,11 @@ static void test_token_mint_refusals(void) {
 
     // Each connection ID length at the cap and one past it.
     ch_quic_retry_cids wide = token_cids(CH_QUIC_DCID_MAX + 1, 0);
-    CHECK(ch_srv_quic_token_mint(token_key, address, 6, &wide, TOKEN_ISSUED, token, sizeof token,
-                                 &n) == CH_EINVAL);
+    CHECK(ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, 6, &wide, TOKEN_ISSUED, token,
+                                 sizeof token, &n) == CH_EINVAL);
     wide = token_cids(0, CH_QUIC_DCID_MAX + 1);
-    CHECK(ch_srv_quic_token_mint(token_key, address, 6, &wide, TOKEN_ISSUED, token, sizeof token,
-                                 &n) == CH_EINVAL);
+    CHECK(ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, 6, &wide, TOKEN_ISSUED, token,
+                                 sizeof token, &n) == CH_EINVAL);
     CHECK(n == 0x5a5a);
     wide = token_cids(CH_QUIC_DCID_MAX, 0);
     CHECK(token_mint(token, sizeof token, address, 6, &wide, TOKEN_ISSUED) == 63);
@@ -382,8 +393,8 @@ static void test_token_mint_refusals(void) {
     // it writes nothing, not even *out_len.
     uint8_t probe[TOKEN_BUF];
     memset(probe, 0xa5, sizeof probe);
-    CHECK(ch_srv_quic_token_mint(token_key, address, 6, &cids, TOKEN_ISSUED, probe, 58, &n) ==
-          CH_ECAP);
+    CHECK(ch_srv_quic_token_mint(token_key, TOKEN_VERSION, address, 6, &cids, TOKEN_ISSUED, probe,
+                                 58, &n) == CH_ECAP);
     CHECK(n == 0x5a5a);
     for (size_t i = 0; i < sizeof probe; i++) {
         CHECK(probe[i] == 0xa5);
@@ -409,7 +420,56 @@ static void test_token_check_refusals(void) {
                       &got) == CH_OK);
 }
 
+// The versions the token calls refuse: 0, the values beside version 1 and
+// version 2, and a version RFC 9000 section 15 reserves.
+static const uint32_t token_underived[] = {0, CH_QUIC_VERSION_1 + 1, CH_QUIC_VERSION_2 - 1,
+                                           CH_QUIC_VERSION_2 + 1, 0x0a0a0a0aU};
+
+// The version is under the tag and not in the token (rfc9369.txt:221-227):
+// the same inputs under version 1 and version 2 mint the same bytes up to
+// the tag and different tags, and each token checks under its own version
+// and is CH_EAUTH under the other, writing nothing. A version this build
+// derives no keys for is the caller's error at both calls, and neither call
+// writes anything for it.
+static void test_token_versions(void) {
+    static const uint32_t versions[2] = {CH_QUIC_VERSION_1, CH_QUIC_VERSION_2};
+    ch_quic_retry_cids cids = token_cids(8, 8);
+    uint8_t token[2][CH_QUIC_TOKEN_MAX];
+    size_t n[2] = {0, 0};
+    for (size_t i = 0; i < 2; i++) {
+        CHECK(ch_srv_quic_token_mint(token_key, versions[i], address_v6, sizeof address_v6, &cids,
+                                     TOKEN_ISSUED, token[i], sizeof token[i], &n[i]) == CH_OK);
+    }
+    CHECK(n[0] == 59 && n[1] == 59 && memcmp(token[0], token[1], 59 - SHA256_LEN) == 0);
+    CHECK(memcmp(token[0] + 59 - SHA256_LEN, token[1] + 59 - SHA256_LEN, SHA256_LEN) != 0);
+    for (size_t i = 0; i < 2; i++) {
+        for (size_t j = 0; j < 2; j++) {
+            ch_quic_retry_cids got;
+            memset(&got, 0xa5, sizeof got);
+            int rc = ch_srv_quic_token_check(token_key, versions[j], token[i], n[i], address_v6,
+                                             sizeof address_v6, TOKEN_ISSUED, TOKEN_LIFETIME, &got);
+            CHECK(i == j ? rc == CH_OK && cids_equal(&got, &cids)
+                         : rc == CH_EAUTH && cids_untouched(&got));
+        }
+    }
+    for (size_t i = 0; i < sizeof token_underived / sizeof token_underived[0]; i++) {
+        uint8_t probe[CH_QUIC_TOKEN_MAX];
+        size_t m = 0x5a5a;
+        memset(probe, 0xa5, sizeof probe);
+        CHECK(ch_srv_quic_token_mint(token_key, token_underived[i], address_v6, sizeof address_v6,
+                                     &cids, TOKEN_ISSUED, probe, sizeof probe, &m) == CH_EINVAL);
+        CHECK(m == 0x5a5a && probe[0] == 0xa5);
+        ch_quic_retry_cids got;
+        memset(&got, 0xa5, sizeof got);
+        CHECK(ch_srv_quic_token_check(token_key, token_underived[i], token[0], n[0], address_v6,
+                                      sizeof address_v6, TOKEN_ISSUED, TOKEN_LIFETIME,
+                                      &got) == CH_EINVAL);
+        CHECK(cids_untouched(&got));
+    }
+}
+
 static void test_quic_token(void) {
+    test_token_versions();
     test_token_round_trip();
     test_token_layout();
     test_token_address_and_key();
