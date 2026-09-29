@@ -112,8 +112,8 @@ static void check_version_2_pair(void) {
 // bytes at the Initial or the Handshake level behind a long header whose
 // Version field is the sender's negotiated version, and the packet number
 // pn in its one-byte packet number field.
-static uint8_t wire[sizeof from_server.bytes[0] + 64];
-static size_t wire_len;
+static uint8_t negotiation_packet[sizeof from_server.bytes[0] + 64];
+static size_t negotiation_packet_len;
 
 static int send_crypto(ch_quic *from, uint8_t level, uint8_t pn, const uint8_t *bytes, size_t n) {
     uint32_t version = ch_quic_negotiated_version(from);
@@ -123,26 +123,28 @@ static int send_crypto(ch_quic *from, uint8_t level, uint8_t pn, const uint8_t *
                       (uint8_t)(version >> 8),
                       (uint8_t)version,
                       pn};
-    return ch_quic_seal(from, level, version, pn, 1, hdr, sizeof hdr, bytes, n, wire, sizeof wire,
-                        &wire_len) == CH_OK;
+    return ch_quic_seal(from, level, version, pn, 1, hdr, sizeof hdr, bytes, n, negotiation_packet,
+                        sizeof negotiation_packet, &negotiation_packet_len) == CH_OK;
 }
 
-// The Version field of the packet in wire, which header protection leaves
-// in the clear (RFC 9001 section 5.4.1), so colibri reads it before it
-// opens the packet.
+// The Version field of the packet in negotiation_packet, which header
+// protection leaves in the clear (RFC 9001 section 5.4.1), so colibri
+// reads it before it opens the packet.
 static uint32_t wire_version(void) {
-    return (uint32_t)wire[1] << 24 | (uint32_t)wire[2] << 16 | (uint32_t)wire[3] << 8 | wire[4];
+    return (uint32_t)negotiation_packet[1] << 24 | (uint32_t)negotiation_packet[2] << 16 |
+           (uint32_t)negotiation_packet[3] << 8 | negotiation_packet[4];
 }
 
-// Opens the packet in wire at level as a packet of version, which colibri
-// reads off the header, and writes where the CRYPTO bytes sit. Returns
-// what ch_quic_open returned.
+// Opens the packet in negotiation_packet at level as a packet of version,
+// which colibri reads off the header, and writes where the CRYPTO bytes
+// sit. Returns what ch_quic_open returned.
 static int open_crypto(ch_quic *to, uint8_t level, uint32_t version, const uint8_t **bytes,
                        size_t *n) {
     uint8_t key_set = 0;
     uint64_t pn = 0;
-    int rc = ch_quic_open(to, level, version, wire, wire_len, 5, 0, 0, &key_set, &pn, n);
-    *bytes = wire + 6;
+    int rc = ch_quic_open(to, level, version, negotiation_packet, negotiation_packet_len, 5, 0, 0,
+                          &key_set, &pn, n);
+    *bytes = negotiation_packet + 6;
     return rc;
 }
 
