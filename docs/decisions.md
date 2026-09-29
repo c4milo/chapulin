@@ -3543,6 +3543,14 @@ does nothing more.
     - **An unset original version meaning version 1.** Every caller names
       the version on every packet call anyway, and a default would hide a
       configuration that forgot it.
+    - **Dropping a mismatched ticket at init.** colibri asked on
+      2026-09-29 whether `ch_quic_init` should drop a ticket issued under
+      another version and run a full handshake instead of refusing the
+      configuration. RFC 9369 §5 forbids offering the ticket
+      (`rfc9369.txt:268-271`) but does not say which to do. Camilo kept
+      the refusal the same day: a silent drop would change what the caller
+      asked for without telling it, and hide the mistake that passed the
+      ticket.
 
     Cost: a version argument on each packet call, fields for the original
     and the negotiated version, and a version in each ticket. The two
