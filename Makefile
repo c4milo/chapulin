@@ -160,8 +160,10 @@ REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
 # one lint alone. So a lint that runs a pinned checker checks the version
 # itself, first, before it reads a stamp or runs the checker. Another
 # version's verdict does not count: clang-tidy 18, for one, rejects
-# .clang-tidy, runs none of its checks and exits 0. test/pinned-checkers.sh
-# checks that both lints fail on another version.
+# .clang-tidy, runs none of its checks and exits 0, and another clang's
+# code generation moves lint-wide-multiply's recorded counts.
+# test/pinned-checkers.sh checks that each such lint fails on another
+# version.
 # Usage: $(call REQUIRE_PINNED,lint,checker,ERE its --version matches,the pin)
 REQUIRE_PINNED = @"$(2)" --version 2>/dev/null | grep -qE '$(3)' || { echo "$(1): $(2) is $$("$(2)" --version 2>/dev/null | head -1), and the pin is $(4) (tools/toolchain.env)"; exit 1; }
 
@@ -3759,8 +3761,9 @@ lint-invariants-run:
 # moved. A version this does
 # not recognise is a stop, not a warning: CLAUDE.md forbids adapting code or
 # suppressions to an older checker, and the same rule makes a silent newer
-# one just as wrong. lint-tidy and lint-cppcheck also check their own
-# checker (REQUIRE_PINNED), because a catch script runs them without this.
+# one just as wrong. lint-tidy, lint-cppcheck, lint-wide-multiply and
+# lint-runtime-symbols also check their own checkers (REQUIRE_PINNED),
+# because a catch script runs them without this.
 .PHONY: lint-toolchain
 lint-toolchain:
 	@rc=0; \
@@ -3791,11 +3794,12 @@ lint-toolchain:
 lint-pins:
 	@python3 tools/toolchain-pins.py
 
-# lint-tidy and lint-cppcheck fail on a checker at another version
-# (REQUIRE_PINNED): each gets a stand-in that reports an older one and a
-# newer one, and must fail and name the pin (test/pinned-checkers.sh). The
-# stand-ins need no LLVM and no cppcheck, and the recipe starts with + so
-# the lints the script runs share this make's job slots.
+# lint-tidy, lint-cppcheck, lint-wide-multiply and lint-runtime-symbols
+# fail on a checker at another version (REQUIRE_PINNED): each gets a
+# stand-in that reports an older one and a newer one, and must fail and name
+# the pin (test/pinned-checkers.sh). The stand-ins need no LLVM and no
+# cppcheck, and the recipe starts with + so the lints the script runs share
+# this make's job slots.
 .PHONY: lint-pinned-checkers
 lint-pinned-checkers:
 	+@./test/pinned-checkers.sh
@@ -5030,8 +5034,13 @@ WIDEMUL_GCC ?= $(M3_CC)
 # when it last passed (tools/stamp.py).
 WIDEMUL_CLANG = $(foreach s,$(WIDEMUL_SPECS) $(WIDE64_SPECS),$(if $(filter clang,$(word 2,$(subst :, ,$(s)))),$(firstword $(subst :, ,$(s)))))
 lint-wide-multiply:
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
+else
+	$(call REQUIRE_PINNED,lint-wide-multiply,$(CLANG_RV),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
 	@$(MAKE) --no-print-directory -j$(words $(WIDEMUL_CLANG)) \
 	  $(addprefix lint-wide-multiply-spec-,$(WIDEMUL_CLANG))
+endif
 lint-wide-multiply-spec-%:
 	@python3 tools/stamp.py lint-wide-multiply-$* --content '*.[ch]' --content tools/freestanding \
 	  $(STAMP_MAKEFILES) --output '$(CLANG_RV) --version' \
@@ -5187,6 +5196,8 @@ ifeq ($(CLANG_RV),)
 else ifeq ($(LLVM_NM),)
 	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
+	$(call REQUIRE_PINNED,lint-runtime-symbols,$(CLANG_RV),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
+	$(call REQUIRE_PINNED,lint-runtime-symbols,$(LLVM_NM),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
 	@python3 tools/stamp.py lint-runtime-symbols --content '*.[ch]' --content tools/freestanding \
 	  $(STAMP_MAKEFILES) --output '$(CLANG_RV) --version' --output '$(LLVM_NM) --version' \
 	  -- $(MAKE) --no-print-directory lint-runtime-symbols-run

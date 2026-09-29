@@ -1,0 +1,12 @@
+invariant: INV-16
+file: Makefile
+catches: test/pinned-checkers.sh
+reason: lint-runtime-symbols stops checking that its llvm-nm is the
+  pinned version. Its catch script runs it alone, without lint-toolchain,
+  so another llvm-nm would list the runtime calls it checks.
+  test/pinned-checkers.sh hands it a newer stand-in llvm-nm and requires
+  it to stop on the pin.
+
+--- old
+	$(call REQUIRE_PINNED,lint-runtime-symbols,$(LLVM_NM),version $(LLVM_MAJOR)\.,LLVM $(LLVM_MAJOR))
+--- new

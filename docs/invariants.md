@@ -2365,11 +2365,19 @@ last `ROLE=server` stub, as the entry said it would.
   `__muldi3` so the library's branching ones are never linked, and the
   gate asserts it still defines them; the rv32ic gcc spec holds
   `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
-  emitted one from inside `__muldi3` itself. Twenty `inv16-*` violations
+  emitted one from inside `__muldi3` itself. Both clang lints stop on a
+  clang or llvm-nm at another version than the pin before they count
+  anything (`REQUIRE_PINNED`), because a catch script runs each one alone,
+  without `lint-toolchain`; `test/pinned-checkers.sh` hands them older and
+  newer stand-ins. Twenty-three `inv16-*` violations
   in `test/violations/` prove each detection catches its mutant, among
   them `inv16-x25519-wide-without-timing-assertion`, which drops `ct.h`'s
   refusal of an `X25519=wide` build without `CH_NATIVE_MUL128` and which
-  `test/x25519-builds.sh` catches. Four
+  `test/x25519-builds.sh` catches, and
+  `inv16-wide-multiply-takes-unpinned-clang`,
+  `inv16-runtime-symbols-takes-unpinned-clang` and
+  `inv16-runtime-symbols-takes-unpinned-llvm-nm`, which drop those version
+  checks. Four
   of them catch only under a gcc gate: `inv16-widemul-mid-widened` and
   `inv16-widemul-s-sign-branch` under `lint-wide-multiply-gcc`'s Arm
   gcc, `inv16-widemul-compare-carries` in the mips lane, and

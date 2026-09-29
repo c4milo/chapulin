@@ -1,7 +1,7 @@
 #!/bin/bash
-# lint-tidy and lint-cppcheck each refuse a checker whose version is not
-# the pin, before they read a stamp or run the checker (REQUIRE_PINNED in
-# the Makefile). This hands each lint a stand-in one version older than
+# lint-tidy, lint-cppcheck, lint-wide-multiply and lint-runtime-symbols
+# each refuse a checker whose version is not the pin, before they read a
+# stamp or run the checker (REQUIRE_PINNED in the Makefile). This hands each lint a stand-in one version older than
 # the pin and one newer, and requires the lint to stop and name the pin.
 # `make lint-pinned-checkers` runs it, and test/violations.py runs it with
 # no argument.
@@ -55,5 +55,13 @@ refused lint-tidy CLANG_TIDY clang-tidy-older "LLVM $llvm"
 refused lint-tidy CLANG_TIDY clang-tidy-newer "LLVM $llvm"
 refused lint-cppcheck CPPCHECK cppcheck-older "Cppcheck $cppcheck"
 refused lint-cppcheck CPPCHECK cppcheck-newer "Cppcheck $cppcheck"
+stand_in clang-older "Ubuntu clang version $((llvm - 1)).1.3"
+stand_in clang-newer "Homebrew clang version $((llvm + 1)).1.0"
+stand_in llvm-nm-newer "Homebrew LLVM version $((llvm + 1)).1.0"
+refused lint-wide-multiply CLANG_RV clang-older "LLVM $llvm"
+refused lint-wide-multiply CLANG_RV clang-newer "LLVM $llvm"
+refused lint-runtime-symbols CLANG_RV clang-older "LLVM $llvm"
+refused lint-runtime-symbols LLVM_NM llvm-nm-newer "LLVM $llvm"
 echo "lint-pinned-checkers: lint-tidy refuses clang-tidy $((llvm - 1)) and $((llvm + 1)) for the pin, LLVM $llvm," \
-    "and lint-cppcheck refuses cppcheck $older and $newer for the pin, $cppcheck"
+    "lint-cppcheck refuses cppcheck $older and $newer for the pin, $cppcheck," \
+    "and lint-wide-multiply and lint-runtime-symbols refuse clang or llvm-nm at another LLVM"
