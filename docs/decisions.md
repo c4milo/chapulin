@@ -3460,3 +3460,86 @@ does nothing more.
     Gain: a `SUITE=aesgcm` session keeps RFC 9846 §5.5's AES-GCM limit for
     as long as it runs, with nothing for the caller to call, and every
     write sized with `ch_writable_len` still fits.
+
+79. **A QUIC object derives packet keys for QUIC version 1 and version 2,
+    and the caller names the version of each packet.** RFC 9369's QUIC
+    version 2 is version 1 with a new Version field, new long header type
+    codes, a new Initial salt, new HKDF labels and a new Retry integrity
+    key and nonce (`rfc9369.txt:130-188`). colibri reads and writes the
+    wire, so the header codes, Version Negotiation and RFC 9368's
+    version_information transport parameter are its half, tracked in
+    https://github.com/c4milo/colibri/issues/54. The keys are chapulin's,
+    and a QUIC object derived version 1's alone. Camilo decided on
+    2026-09-29 how the version enters the calls.
+
+    - **The caller names the version.** Each packet call takes the version
+      beside the encryption level, and chapulin reads no header byte to
+      learn either. An Initial packet may carry either version, because a
+      server keeps its original version's Initial receive keys until it
+      processes a Handshake packet in the negotiated version
+      (`rfc9369.txt:250-254`). A Handshake or 1-RTT packet in any version
+      but the negotiated one is refused, the drop §4.1 requires
+      (`rfc9369.txt:256-259`). A Retry uses the original version
+      (`rfc9369.txt:221-227`).
+    - **The client.** Its configuration names its original version, and a
+      configuration that names none is refused. It learns the negotiated
+      version from the first long header whose Version field differs from
+      the original (`rfc9369.txt:240-244`), and switches once, deriving the
+      new version's Initial keys from the same Destination Connection ID.
+      The switch is refused once the first CRYPTO byte from the server has
+      been delivered, because the server sends every CRYPTO frame in the
+      negotiated version, and a CRYPTO frame in the original version makes
+      the original the negotiated one (`rfc9369.txt:236-244`).
+    - **The server.** A callback from the server's caller chooses the
+      negotiated version once, after the client's transport parameters
+      and before ticket selection, the HelloRetryRequest and the
+      ServerHello, because a server sends no CRYPTO frame before it has
+      processed those parameters (`rfc9369.txt:236-237`). `srv_select`
+      runs before the parameters are handed to the caller today, so the
+      parameters move ahead of it. The caller answers from RFC 9368's
+      version_information, which chapulin does not parse.
+    - **Tickets and tokens.** A ticket belongs to the version of the
+      connection that issued it, the negotiated one after a switch
+      (`rfc9369.txt:268-284`). A server ticket records that version, and
+      the server passes over a ticket of another version for a full
+      handshake. A TCP server's tickets record no version, so no ticket
+      crosses transports. A client offers no ticket issued under a version
+      other than its original one. A raw or ca client refuses a declined
+      ticket, so its resumption fails closed when the server switches. The
+      Retry token binds the version, which §4.1 permits
+      (`rfc9369.txt:224-227`).
+    - **INV-7 and INV-26.** INV-7's one version per build is the TLS
+      version, 1.3, and it stays one; its claim will say that the QUIC
+      version is the caller's value, like the level, and that chapulin
+      chooses neither. Version 2's Initial keys come from a salt the RFC
+      prints and a connection ID sent in the clear, and its Retry key and
+      nonce are printed (`rfc9369.txt:158-188`), so INV-26's public-key
+      argument covers them as it covers version 1's.
+
+    Rejected:
+
+    - **A `QUIC_VERSION` build axis.** No field would grow and no signature
+      would change, but a build could not negotiate: the interop runner's
+      v2 case starts in version 1 and has the server answer in version 2.
+    - **The version as a pseudo-level.** The packet calls would keep their
+      signatures, but a level would then name a version, and chapulin
+      could not drop a Handshake packet in the wrong version.
+    - **A switch allowed until the Handshake keys.** It would admit a
+      switch after server CRYPTO bytes arrived in the original version,
+      which §4.1 makes the negotiated version.
+    - **An unset original version meaning version 1.** Every caller names
+      the version on every packet call anyway, and a default would hide a
+      configuration that forgot it.
+
+    Cost: a version argument on each packet call, fields for the original
+    and the negotiated version, and a version in each ticket.
+    bench/sram.sh measures the growth when the interface lands.
+
+    Gain: colibri can negotiate version 2 in both roles, as the interop
+    runner's v2 case asks, and chapulin enforces every rule that §4.1 and
+    §5 state for the keys, tickets and tokens it holds.
+
+    Status: this entry and the two RFCs land first. The interface, version
+    2's keys, the client's switch, the server's choice and the version in
+    tickets and tokens land in the commits that follow. Until the
+    interface lands, a QUIC object derives version 1's keys only.
