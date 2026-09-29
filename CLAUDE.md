@@ -490,3 +490,8 @@ Home: github.com/c4milo.
   call changes its Zig call in the same commit, and `make
   lint-zig-build` builds and runs the API against every configuration it
   checks (docs/zig.md, INV-36).
+- Performance work follows pepegrillo's `docs/performance.md`, the method
+  every project that adopts it shares; `docs/performance.md` is
+  chapulin's appendix to it: its instruments, its admission rule and the
+  pitfalls it has paid for. Read both before a change that moves SRAM,
+  code size or instructions.
