@@ -261,6 +261,156 @@ multiplication takes 34 µs there against 953 µs in the default build,
 and the client side of a pinned RSA-3072 handshake falls from 2.57 ms
 to 0.77 ms ([`bench/notes-primitives.md`](../bench/notes-primitives.md)).
 
+### Where a record's time goes
+
+[`bench/record.sh`](../bench/record.sh) (`make bench-record`) times the protection of one TLS
+record and splits it into its stages, for [#184](https://github.com/c4milo/chapulin/issues/184)
+(AES-GCM) and [#181](https://github.com/c4milo/chapulin/issues/181) (ChaCha20-Poly1305). It
+compiles the library sources with the flags `make lib` uses and the defines of a
+`SUITE=aesgcm AES=hw` object with `CH_NATIVE_AES`, and it times these on the same buffers:
+
+- `rec_seal`, which copies the caller's plaintext into the record and seals it in place, as
+  `ch_write` calls it, and `rec_open`, which opens a record in place, as `ch_read` calls it;
+- the AEAD calls `record.c` makes, with the same buffers;
+- each stage of the AEAD: a library function where the stage has one, and an entry
+  [`bench/record_stages.h`](../bench/record_stages.h) adds where the stage is static;
+- `rec_seal` and `rec_open` compiled with stubs in place of the AEAD, which is the record
+  layer's own work.
+
+Two stages have no function of their own, so their rows are differences of two timed rows:
+`counter_mode` compiled with a stub in place of its cipher, less the stub's calls, gives the
+AES-GCM exclusive-or rows, and `chacha20_xor` less the block function gives the ChaCha20 one.
+
+Each figure is the median of five runs, and each run's figure is the median of 15 batches of at
+least 1 ms, with every row's batches interleaved. The CSVs hold every row at 1 KiB, 16 KiB and
+64 KiB, each with its spread and its batches at the 10th and 90th percentile, and a check line
+that compares each whole with the sum of its parts.
+
+The machine is an Apple M1 Pro that ran other work: its one-minute load average was 4.7 to 9.3
+where the CSV headers record it. A Linux CSV's own load average line is the VM's, and its first
+line holds the host's. So these figures are the filter's, in the terms of the method below. The
+three columns are three CSVs:
+
+- macOS 26 with Apple clang 21:
+  [`bench/results-record-darwin-arm64-clang.csv`](../bench/results-record-darwin-arm64-clang.csv);
+- Linux 7.0 in an OrbStack VM on the same machine, which is where stompy runs, with clang 18:
+  [`bench/results-record-linux-arm64-clang.csv`](../bench/results-record-linux-arm64-clang.csv);
+- the same VM with gcc 13, the compiler CI runs:
+  [`bench/results-record-linux-arm64-gcc.csv`](../bench/results-record-linux-arm64-gcc.csv).
+
+stompy's chapulin compiles with Zig's clang, so the clang columns are the nearest to it. A share
+in parentheses is the stage's part of `rec_seal`. The last two rows of each table are ceilings on
+the same machine: `openssl speed -aead`, the median of five one-second runs, and Zig 0.16.0's
+`std.crypto`, timed as the other rows are, which the VM does not have.
+
+| AES-128-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
+| --- | --- | --- | --- |
+| `rec_seal` | 25.3 | 27.4 | 36.3 |
+| `rec_seal` without its AEAD | 0.6 (2%) | 0.7 (3%) | 5.8 (16%) |
+| AES, one call per 16-byte block | 9.3 (37%) | 9.6 (35%) | 12.1 (33%) |
+| the 16-byte wipe after each block, timed alone | 7.3 (29%) | 7.6 (28%) | 7.5 (21%) |
+| exclusive-or and counter increments, in place | 6.9 (27%) | 7.7 (28%) | 7.9 (22%) |
+| GHASH over the ciphertext | 9.0 (36%) | 10.3 (38%) | 9.6 (26%) |
+| `rec_open` | 19.9 | 21.0 | 30.6 |
+| exclusive-or and counter increments, as the open runs them | 1.8 | 1.9 | 7.8 |
+| OpenSSL, one record sealed | 2.1 | 2.7 | 2.7 |
+| Zig `std.crypto`, one record sealed | 4.4 | — | — |
+
+| AES-256-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
+| --- | --- | --- | --- |
+| `rec_seal` | 25.3 | 26.6 | 38.2 |
+| AES, one call per 16-byte block | 9.2 (36%) | 9.3 (35%) | 14.2 (37%) |
+| GHASH over the ciphertext | 9.0 (36%) | 10.3 (39%) | 9.6 (25%) |
+| counter mode as the open runs it, batch at the 10th percentile | 9.5 | 9.6 | 20.9 |
+| counter mode as the open runs it, batch at the 90th percentile | 17.7 | 19.2 | 23.2 |
+| OpenSSL, one record sealed | 2.5 | 3.1 | 3.1 |
+| Zig `std.crypto`, one record sealed | 5.3 | — | — |
+
+| ChaCha20-Poly1305, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
+| --- | --- | --- | --- |
+| `rec_seal`, the packaged multiply | 65.8 | 61.6 | 85.5 |
+| `rec_seal` without its AEAD | 0.3 (1%) | 0.4 (1%) | 5.5 (6%) |
+| the ChaCha20 block function | 25.1 (38%) | 24.4 (40%) | 27.7 (32%) |
+| exclusive-or, loads and stores, in place | 8.2 (12%) | 8.4 (14%) | 5.8 (7%) |
+| Poly1305 over the ciphertext | 33.0 (50%) | 28.3 (46%) | 45.4 (53%) |
+| `rec_seal`, `WIDEMUL=native` | 45.9 | 44.9 | 52.4 |
+| Poly1305 over the ciphertext, `WIDEMUL=native` | 11.6 (25%) | 11.4 (25%) | 12.8 (24%) |
+| `rec_open`, the packaged multiply | 58.1 | 52.7 | 80.3 |
+| OpenSSL, one record sealed | 9.3 | 10.0 | 9.9 |
+| Zig `std.crypto`, one record sealed | 37.0 | — | — |
+
+| Work a record pays whatever its size, and a 1 KiB record, ns | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
+| --- | --- | --- | --- |
+| AES-128 key expansion, `aes_traffic_key_init` | 194 | 200 | 276 |
+| AES-256 key expansion | 255 | 263 | 318 |
+| the wipe of the expanded key | 86 | 91 | 90 |
+| the GCM tag's fixed work | 129 | 138 | 196 |
+| the Poly1305 tag's fixed work, the packaged multiply | 239 | 217 | 302 |
+| AES-128-GCM `rec_seal`, 1 KiB | 2007 | 2114 | 2884 |
+| `rec_seal` without its AEAD, 1 KiB | 296 (15%) | 290 (14%) | 721 (25%) |
+
+The stages add up: every whole is within 10% of the sum of its parts, except counter mode as the
+open runs it on clang, whose speed changes between batches (below). What the numbers show for
+AES-GCM:
+
+- On clang the seal spends its time in three stages of similar size: the AES calls, the in-place
+  exclusive-or and GHASH. The AES rounds do not set the AES stage's time: on clang, AES-256's 14
+  rounds cost no more per block than AES-128's 10. The other work done for each block does. `aes_hw.c`'s
+  cipher wipes its 16-byte state after every block with `ct_wipe`, one byte at a time, and that
+  wipe, timed alone, takes most of the AES stage's time. Each block also calls into `aes.c`, which
+  passes it on to `aes_hw.c`, and loads every round key from memory again.
+- clang runs `counter_mode`'s exclusive-or with vector instructions only when the output does not
+  begin within the 16 bytes after the input begins. `rec_seal` seals in place, so the seal runs
+  the byte loop; the open writes its output 5 bytes before its input, so it runs the vector loop.
+  gcc 13 at `-O2` runs the byte loop in both.
+- GHASH takes one block at a time. Each block calls the C library's `memcpy` to copy the block,
+  and then waits on the previous block's multiply and reduction.
+- On clang the record layer's own work is 1% to 3% of a 16 KiB record. gcc 13 does not vectorize
+  `rec_seal`'s copy of the caller's plaintext, which it copies one byte at a time. At 1 KiB the
+  key expansion and the wipe that `record.c` runs for every record make most of the record
+  layer's share on clang and half of it on gcc.
+- On clang, counter mode runs at one of two speeds, and a batch shows which: as the open runs it,
+  AES-256's batches fall near the 10th-percentile row or near the 90th, which is about twice as
+  slow. A run's median can come from either group, which gives that row the widest spreads in the
+  macOS CSV. gcc's counter mode runs at one speed. What selects the speed was not measured.
+
+For ChaCha20-Poly1305:
+
+- In the packaged build, which multiplies through the 16x16 decomposition `ct.h` builds, Poly1305
+  is the largest stage, about half of the record. colibri's object is such a build. With
+  `WIDEMUL=native`, the builder's statement that the multiply runs in constant time, Poly1305 is a
+  quarter of a shorter record.
+- The ChaCha20 block function is the next stage. Its share is a third to two fifths of the
+  packaged record and more than half of the native one.
+- The exclusive-or in `chacha20_xor`'s loop runs one byte at a time in place on both compilers.
+  As the open runs it, clang vectorizes it and it adds almost nothing to the block function's
+  time; gcc runs the byte loop there too.
+
+The numbers support the candidates of [#184](https://github.com/c4milo/chapulin/issues/184) in
+this order, by the share of the record each one addresses:
+
+1. Several counter blocks per iteration. The AES stage is a third or more of the seal, and its
+   time goes to the other work done for each block: the per-block wipe, the calls and the
+   round-key loads.
+   A loop over several blocks runs that work once per call rather than once per block.
+2. GHASH over several blocks against precomputed powers of H. GHASH is a quarter to two fifths of
+   the seal, one dependent multiply per block.
+3. A word-wide exclusive-or. It is about a quarter of the seal, and on gcc of the open too, and
+   it is the smallest of the four to write.
+4. One pass for the keystream and the hash. This split cannot price it: the seal's two passes
+   run one after the other and add up to the whole, so one pass could overlap them, but how much
+   depends on what 1 and 2 leave. It comes last and needs its own measurement.
+
+Besides those four, `rec_seal`'s copy of the caller's plaintext, one byte at a time under gcc, is
+nearly all of the record layer's share there.
+
+For [#181](https://github.com/c4milo/chapulin/issues/181), the numbers support the vector path for
+ChaCha20 first: the block function and the in-place exclusive-or are half of the packaged record
+on clang and more than two thirds of the native one. Most of Poly1305's time in the packaged build
+is the multiply decomposition: `WIDEMUL=native` runs the same Poly1305 in about a third of the
+time. A vector Poly1305 needs a widening multiply too, so it needs the same statement about that
+multiply's timing.
+
 ## The method behind these numbers
 
 Every performance change follows pepegrillo's
@@ -274,6 +424,12 @@ property, never a cost to trade (`ct.[ch]`).
   figures above; a laptop's speed is a filter that orders candidates and lands in no document. A
   figure here is measured, never estimated, and a change to the code re-measures it in the same
   commit (`make lint-bench-numbers`).
+- The record split above prints a filter's figures, as an exception to the rule above: a
+  `SUITE=aesgcm AES=hw` build runs on hosts alone, so no device build can judge it, and
+  [#184](https://github.com/c4milo/chapulin/issues/184) and
+  [#181](https://github.com/c4milo/chapulin/issues/181) asked for the order the split gives. It
+  orders candidates. A change it points to still needs a judge's runs on a host that runs nothing
+  else, and this document names no such host yet.
 - The units of work are a handshake, a record, a byte of SRAM and a byte of flash.
 - A change stays when it lowers SRAM, flash or instructions past the noise on the device builds and
   raises none of them past it; a change that trades constant time for any of the three is refused,

@@ -16,10 +16,13 @@
 # along with the two sentences that restate its mips32r2 figures.
 #
 # It compares rendered strings rather than parsing prose, so the rounding
-# rule lives here and the documents follow it.
+# rule lives here and the documents follow it. tools/bench_record.py does
+# the same for the record tables bench/record.sh's CSVs fill.
 import csv
 import re
 import sys
+
+from bench_record import check_record
 
 MHZ_HZ = 500_000  # 500 MHz at one instruction per cycle, in kilo-instructions
 
@@ -452,9 +455,10 @@ def main():
     rc |= check_floor(readme)
     rc |= check_speed_ecdsa(readme)
     rc |= check_decision_x25519()
+    rc |= check_record(readme)
     if rc == 0:
-        print("lint-bench-numbers: docs/performance.md's figures, the README's At a "
-              "glance row and docs/decisions.md's x25519 cost match bench/")
+        print("lint-bench-numbers: docs/performance.md's figures and record tables, the README's "
+              "At a glance row and docs/decisions.md's x25519 cost match bench/")
     return rc
 
 

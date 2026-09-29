@@ -5507,6 +5507,20 @@ quic-footprint:
 bench-aead:
 	CC='$(CC)' bench/aead.sh
 
+# One TLS record's protection, split into its stages and timed on this
+# machine: rec_seal and rec_open, the AEAD entries record.c calls, and each
+# AEAD's stages, for AES-128-GCM and AES-256-GCM on AES=hw and for
+# ChaCha20-Poly1305, with OpenSSL and Zig's std.crypto as ceilings when
+# they are on PATH. bench/record.sh builds with the flags make lib uses and
+# the ones AES_HW_PROBE finds, states what it builds, and writes
+# bench/results-record-<os>-<arch>-<compiler>.csv, which docs/performance.md
+# reads. Not in `check` for the reason bench-aead is not, and a run takes
+# about a minute. `bench/record.sh --quick` runs every row once and writes
+# nothing.
+.PHONY: bench-record
+bench-record:
+	CC='$(CC)' bench/record.sh
+
 # Every primitive the tree ships, per byte or per operation, and whole
 # handshakes between this tree's client and server, on this machine.
 # bench/primitives.sh states what it builds and writes
