@@ -1872,7 +1872,11 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_SPKI_PIN_MAX` pins. Its seeds are every corpus and captured list,
   that large leaf's included, and the r2 leaf rebuilt at
   `CH_WEBPKI_LEAF_PIN_CERT_MAX`, each after the pin of its leaf's key
-  where the key reader reads the leaf. The webpki_leaf_pin
+  where the key reader reads the leaf. fuzz/fuzz_webpki_raw_key.c, which
+  the nightly also runs, drives `webpki_verify_raw_key` the same way. Its
+  seeds are the 27 distinct keys of the raw rows and the corpus, each the
+  one entry of a list after its own pin, and one entry a byte past
+  `CH_WEBPKI_SPKI_MAX` after `CH_SPKI_PIN_MAX` pins. The webpki_leaf_pin
   harness proves the call memory-safe and its verdict and alert pairs,
   that the key reader runs once and on entry 0, and that an accepted list
   hashed the leaf's SubjectPublicKeyInfo and returns its key; the

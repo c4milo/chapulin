@@ -1781,6 +1781,15 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   SHA-256 stub answers any digest; `spec/lean/Spec/WebpkiPin.lean`
   states the rule over the real SHA-256, and the differential compares
   the two.
+- **Tested instead:** `webpki_verify_raw_key` with the real key reader
+  and SHA-256 the harness stubs, over lists longer than the bound.
+  `fuzz/fuzz_webpki_raw_key.c`, which the nightly runs, drives the call
+  over the lists and pins libFuzzer generates: up to `CH_SPKI_PIN_MAX`
+  pins, in inputs of up to 4,096 bytes. Its seeds are the 27 distinct
+  keys of `test/webpki_auth_vectors.h`'s raw rows and
+  `test/webpki_corpus.h`, each the one entry of a list after its own
+  pin, two RSA-4096 anchors at `CH_WEBPKI_SPKI_MAX` among them, and one
+  entry a byte past that cap after `CH_SPKI_PIN_MAX` pins.
 
 #### webpki_leaf_pin
 
@@ -1886,7 +1895,7 @@ against the Lean oracle instead.
 
 No fuzz target covers this parser, on purpose. The differential drives
 the same domain against an oracle that checks the verdict and the bytes,
-where a fuzzer checks only for a crash, and an eighth target would push
+where a fuzzer checks only for a crash, and a ninth target would push
 the nightly fuzz job past the budget `lint-fuzz-budget` holds.
 
 ### x25519, P-256 and RSA functional correctness

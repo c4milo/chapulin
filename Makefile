@@ -5396,10 +5396,11 @@ FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 FUZZ_WEBPKI_LINK := -DCH_TRUST_WEBPKI webpki.c webpki_cert.c webpki_ext.c webpki_name.c webpki_sigalg.c \
                     webpki_spki.c webpki_time.c x509_der.c buf.c ct.c sha256.c sha512.c \
                     sha512_compress.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
-# The rule SPKI pins alone run on a chain (webpki_pin.c), over the walk's
-# files, which hold its entry framing (webpki.c) and its key reader
-# (webpki_cert.c).
-FUZZ_WEBPKI_LEAF_PIN_LINK := $(FUZZ_WEBPKI_LINK) webpki_pin.c
+# The two rules SPKI pins run (webpki_pin.c), on a raw public key and on a
+# chain under pins alone, over the walk's files, which hold their entry
+# framing (webpki.c), the raw key's reader (webpki_spki.c) and the leaf's
+# key reader (webpki_cert.c).
+FUZZ_WEBPKI_PIN_LINK := $(FUZZ_WEBPKI_LINK) webpki_pin.c
 FUZZ_HANDSHAKE_RECORD_LINK := handshake_record.c io.c record.c buf.c ct.c sha256.c hkdf.c \
                     chacha20.c poly1305.c aead.c
 
@@ -5415,7 +5416,8 @@ fuzz:
 	  exit 0; \
 	fi; \
 	rm -f "$$tmp"; \
-	for t in record handshake_parser handshake_record handshake_post x509 webpki webpki_leaf_pin; do \
+	for t in record handshake_parser handshake_record handshake_post x509 webpki webpki_leaf_pin \
+	    webpki_raw_key; do \
 	  mkdir -p bin/fuzz/work_$$t; \
 	done; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_record.c  $(FUZZ_RECORD_LINK)  -o bin/fuzz/fuzz_record; \
@@ -5424,9 +5426,12 @@ fuzz:
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_post.c  $(FUZZ_HANDSHAKE_POST_LINK)  -o bin/fuzz/fuzz_handshake_post; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_x509.c    $(FUZZ_X509_LINK)    -o bin/fuzz/fuzz_x509; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_webpki.c $(FUZZ_WEBPKI_LINK) -o bin/fuzz/fuzz_webpki; \
-	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_webpki_leaf_pin.c $(FUZZ_WEBPKI_LEAF_PIN_LINK) \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_webpki_leaf_pin.c $(FUZZ_WEBPKI_PIN_LINK) \
 	  -o bin/fuzz/fuzz_webpki_leaf_pin; \
-	for t in record handshake_parser handshake_record handshake_post x509 webpki webpki_leaf_pin; do \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_webpki_raw_key.c $(FUZZ_WEBPKI_PIN_LINK) \
+	  -o bin/fuzz/fuzz_webpki_raw_key; \
+	for t in record handshake_parser handshake_record handshake_post x509 webpki webpki_leaf_pin \
+	    webpki_raw_key; do \
 	  ./bin/fuzz/fuzz_$$t bin/fuzz/work_$$t fuzz/corpus/fuzz_$$t \
 	    -artifact_prefix=bin/fuzz/ -max_total_time=$(FUZZ_TIME); \
 	done
