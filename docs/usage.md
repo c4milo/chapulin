@@ -282,10 +282,10 @@ a Retry, and two of which are `alert.h`'s. Every QUIC configuration, in
 either role, names the version of the client's first Initial packet in
 `ch_cfg.quic_original_version`, and every packet call takes the version of
 the packet beside its level. A build derives the keys of QUIC version 1 and
-version 2, and a client switches from its original version to the other
-once, before the server's first CRYPTO byte; a server negotiates its
-original version until a later commit adds the server's choice
-([`docs/decisions.md`](decisions.md) 79).
+version 2. A client switches from its original version to the other once,
+before the server's first CRYPTO byte, and a server's caller chooses the
+negotiated version once, through `ch_srv_cfg.choose_version`, when the
+first ClientHello arrives ([`docs/decisions.md`](decisions.md) 79).
 [`docs/quic_server.md`](quic_server.md) states what chapulin owes one,
 which is the keys, the packet protection and that token, and nothing above
 them. Both

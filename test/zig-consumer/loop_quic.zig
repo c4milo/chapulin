@@ -5,8 +5,9 @@
 //! parameters each side received, one 1-RTT packet sealed and opened each
 //! way and a tampered one discarded, a key update, the Retry integrity tag
 //! and a Retry token, the ticket taken at the 1-RTT level and resumed
-//! through Ticket.fromFields, a stale ticket refused, and close. Under
-//! KEYLOG=on, ch_keylog finds the client's context through
+//! through Ticket.fromFields, a stale ticket refused, a server whose
+//! choose_version answers version 2 and a client that switches to it, and
+//! close. Under KEYLOG=on, ch_keylog finds the client's context through
 //! chapulin.hookContext.
 const std = @import("std");
 const chapulin = @import("chapulin");
@@ -37,6 +38,16 @@ var outgoing: quic.Outgoing = undefined;
 var message: [4096]u8 = undefined;
 /// What ch_keylog should find through chapulin.hookContext.
 var client_context: u8 = 0;
+/// What chooseV2 should be handed, and how many times it ran.
+var server_context: u8 = 0;
+var choose_calls: usize = 0;
+
+/// The server's choose_version in the last run: version 2, from the
+/// context the server's hook carries.
+fn chooseV2(context: ?*anyopaque) quic.Version {
+    if (context == @as(?*anyopaque, &server_context)) choose_calls += 1;
+    return .v2;
+}
 
 fn sent(level: quic.Level) []const u8 {
     const i = @intFromEnum(level);
@@ -47,11 +58,18 @@ fn clientValues() chapulin.Client {
     return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .quic_version = .v1, .random = fixture.clientRandom() };
 }
 
-fn handshake(values: chapulin.Client) !void {
+/// A handshake of a version 1 client and server, whose server chooses the
+/// negotiated version when choose is set. The client switches to the
+/// server's version before it reads the server's first byte, as colibri
+/// does when the Version field of the server's first Initial packet
+/// differs from the client's.
+fn handshake(values: chapulin.Client, choose: ?quic.ChooseVersion) !void {
     outgoing = .{ .buffers = .{ &buffers[0], &buffers[1], &buffers[2] } };
     var server_values = fixture.server(&server_alpn, server_now);
     server_values.quic_version = .v1;
+    server_values.choose_version = choose;
     try server.init(server_values, &server_params, &server_peer, &sni_buf);
+    server.hook.context = &server_context;
     try client.init(values, &client_params, &client_peer);
     client.hook.context = &client_context;
     try client.initialKeys(&dcid);
@@ -65,10 +83,13 @@ fn handshake(values: chapulin.Client) !void {
     var n = try client.cryptoOut(.initial, &message);
     try server.cryptoIn(.initial, message[0..n], &outgoing);
     try check(server.keysReady(.handshake, .write) and server.keysReady(.application, .write), "the server's flight left its write keys unready");
+    const version = server.negotiatedVersion();
+    if (version != client.negotiatedVersion()) try client.switchVersion(version);
     try client.cryptoIn(.initial, sent(.initial));
-    // The server's first CRYPTO bytes arrived in version 1, which makes
-    // version 1 the negotiated one, so C refuses a switch to version 2 now.
-    try check(client.switchVersion(.v2) == error.Invalid and client.negotiatedVersion() == .v1, "a switch after the server's first byte was taken");
+    // The server's first CRYPTO bytes fixed the negotiated version, so C
+    // refuses a switch to the other one now.
+    const other: quic.Version = if (version == .v1) .v2 else .v1;
+    try check(client.switchVersion(other) == error.Invalid and client.negotiatedVersion() == version, "a switch after the server's first byte was taken");
     try check(client.keysReady(.handshake, .read) and !client.keysReady(.application, .read), "the ServerHello did not ready the client's Handshake keys alone");
     if (@hasDecl(c, "ch_keylog")) {
         try check(chapulin.hookContext(hooks.keylog_io) == @as(*anyopaque, &client_context), "ch_keylog did not find the client's context");
@@ -80,24 +101,27 @@ fn handshake(values: chapulin.Client) !void {
     try check(server.state() == .connected, "the server did not connect");
 }
 
-/// One 1-RTT packet each way, with an empty connection ID and a two-byte
-/// packet number, and a tampered one the client drops.
+/// One 1-RTT packet each way in the negotiated version, with an empty
+/// connection ID and a two-byte packet number, and a tampered one the
+/// client drops.
 fn packets() !void {
     const pt = "one packet each way";
+    const v = client.negotiatedVersion();
     var pkt: [64]u8 = undefined;
-    var n = try server.seal(.application, .v1, 5, 2, &.{ 0x41, 0x00, 0x05 }, pt, &pkt);
-    var opened = try client.open(.application, .v1, pkt[0..n], 1, 0, 0);
+    var n = try server.seal(.application, v, 5, 2, &.{ 0x41, 0x00, 0x05 }, pt, &pkt);
+    var opened = try client.open(.application, v, pkt[0..n], 1, 0, 0);
     try check(opened.pn == 5 and opened.key_set == .current and std.mem.eql(u8, pkt[3..][0..opened.pt_len], pt), "the client did not open the server's packet");
-    n = try client.seal(.application, .v1, 6, 2, &.{ 0x41, 0x00, 0x06 }, pt, &pkt);
-    opened = try server.open(.application, .v1, pkt[0..n], 1, 0, 0);
+    n = try client.seal(.application, v, 6, 2, &.{ 0x41, 0x00, 0x06 }, pt, &pkt);
+    opened = try server.open(.application, v, pkt[0..n], 1, 0, 0);
     try check(opened.pn == 6 and std.mem.eql(u8, pkt[3..][0..opened.pt_len], pt), "the server did not open the client's packet");
 
-    n = try server.seal(.application, .v1, 7, 2, &.{ 0x41, 0x00, 0x07 }, pt, &pkt);
+    n = try server.seal(.application, v, 7, 2, &.{ 0x41, 0x00, 0x07 }, pt, &pkt);
     // A 1-RTT packet in a version the session did not negotiate is refused
     // before it is read, and the session stays live.
-    try check(client.open(.application, .v2, pkt[0..n], 1, 6, 0) == error.Invalid and client.state() == .connected, "a packet in another version was opened");
+    const other: quic.Version = if (v == .v1) .v2 else .v1;
+    try check(client.open(.application, other, pkt[0..n], 1, 6, 0) == error.Invalid and client.state() == .connected, "a packet in another version was opened");
     pkt[n - 1] ^= 1;
-    try check(client.open(.application, .v1, pkt[0..n], 1, 6, 0) == error.Discard and client.state() == .connected, "a tampered packet was not discarded");
+    try check(client.open(.application, v, pkt[0..n], 1, 6, 0) == error.Discard and client.state() == .connected, "a tampered packet was not discarded");
 }
 
 /// The server updates its 1-RTT keys, and the client opens the next
@@ -108,8 +132,9 @@ fn keyUpdate() !void {
     var pkt: [64]u8 = undefined;
     try server.keyUpdate();
     try check(server.keyPhase() == 1, "keyUpdate did not flip the server's key phase");
-    const n = try server.seal(.application, .v1, 8, 2, &.{ 0x45, 0x00, 0x08 }, pt, &pkt);
-    const opened = try client.open(.application, .v1, pkt[0..n], 1, 6, 0);
+    const v = client.negotiatedVersion();
+    const n = try server.seal(.application, v, 8, 2, &.{ 0x45, 0x00, 0x08 }, pt, &pkt);
+    const opened = try client.open(.application, v, pkt[0..n], 1, 6, 0);
     try check(opened.key_set == .next and opened.pn == 8, "the client did not open the updated packet under its next keys");
     try client.keyUpdate();
     try check(client.keyPhase() == 1, "keyUpdate did not flip the client's key phase");
@@ -154,7 +179,7 @@ fn takeTicket() !chapulin.Ticket {
 }
 
 pub fn run() !void {
-    try handshake(clientValues());
+    try handshake(clientValues(), null);
     try check(std.mem.eql(u8, client.alpnSelected() orelse "", "h3") and std.mem.eql(u8, server.alpnSelected() orelse "", "h3"), "ALPN did not select h3 on both ends");
     const client_saw = (try client.peerTransportParams()) orelse "";
     const server_saw = (try server.peerTransportParams()) orelse "";
@@ -172,7 +197,7 @@ pub fn run() !void {
     var values = clientValues();
     values.ticket = &ticket;
     values.ticket_age_ms = 1000;
-    try handshake(values);
+    try handshake(values, null);
     try check(client.pskSelected() and server.pskSelected(), "the ticket did not resume");
     try packets();
     try client.cryptoIn(.application, sent(.application));
@@ -189,5 +214,14 @@ pub fn run() !void {
     try check(client.init(values, &client_params, &client_peer) == error.Invalid and client.state() == .failed, "a stale ticket was not refused");
     // An init refusal sends nothing, so it chose no alert (alert.h).
     try check(client.alertSent() == null and client.alertReceived() == null, "an init refusal reported an alert");
-    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, and close\n", .{});
+
+    // The server chooses version 2 once, from its hook's context, and the
+    // packets and the key update run in version 2 at both ends.
+    try handshake(clientValues(), chooseV2);
+    try check(choose_calls == 1 and client.negotiatedVersion() == .v2 and server.negotiatedVersion() == .v2, "the server's choice of version 2 was not negotiated");
+    try packets();
+    try keyUpdate();
+    client.close();
+    server.close();
+    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, version 2 chosen by the server, and close\n", .{});
 }

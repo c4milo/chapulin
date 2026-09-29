@@ -179,8 +179,8 @@ int ch_quic_switch_version(ch_quic *q, uint32_t version);
 
 // Reports q->t.quic_negotiated_version: the version every Handshake and 1-RTT packet carries
 // and their keys are derived under. It is cfg.quic_original_version from init on, until a
-// client's ch_quic_switch_version, and 0 after a refused init. Requires: q is initialized. It
-// cannot fail and changes nothing.
+// client's ch_quic_switch_version or a server's cfg.srv.choose_version answer (srv_cfg.h), and
+// 0 after a refused init. Requires: q is initialized. It cannot fail and changes nothing.
 uint32_t ch_quic_negotiated_version(const ch_quic *q);
 
 // Protects one packet and writes it whole into out: the nonce from the packet protection

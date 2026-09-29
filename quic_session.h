@@ -46,8 +46,9 @@
 //                    the QUIC version every Handshake and 1-RTT key is
 //                    derived under and every packet at those levels
 //                    carries. Each init call writes the original
-//                    version, cfg.quic_original_version, and
-//                    ch_quic_switch_version alone writes it again.
+//                    version, cfg.quic_original_version, and one more
+//                    write may follow: a client's ch_quic_switch_version
+//                    or a server's cfg.srv.choose_version answer.
 //
 // Which key set each secret belongs to, stated once because the two
 // sides differ and the difference is one update wide:

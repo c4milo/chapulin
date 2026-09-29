@@ -32,6 +32,7 @@ const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
 // TRANSPORT=quic-nonblocking: every session names its original version in
 // ch_cfg (cfg.h), and quic.Version is the type that names one.
 const has_quic = @hasField(c.ch_cfg, "quic_original_version");
+const has_choose_version = has_server and @hasField(c.ch_srv_cfg, "choose_version");
 // A client that offers more than one suite (SUITE=aesgcm TRUST=webpki)
 // takes an order of its own in ch_cfg.cipher_suites (webpki_cfg.h).
 const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
@@ -226,7 +227,7 @@ const ClientValues = struct {
             if (has_webpki) cfg.ticket_binding = &ticket.ticket.binding;
         }
         cfg.require_pq = @intFromBool(values.require_pq);
-        if (has_quic) cfg.quic_original_version = quicVersionCode(values.quic_version);
+        if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
         if (has_client_suite_order) {
             cfg.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
             cfg.cipher_suite_count = values.cipher_suites.len;
@@ -234,12 +235,6 @@ const ClientValues = struct {
         return cfg;
     }
 };
-
-/// ch_cfg.quic_original_version for a value's quic_version: the version's
-/// code, or 0 for null, which both QUIC init calls refuse.
-fn quicVersionCode(version: ?quic.Version) u32 {
-    return if (version) |v| @intFromEnum(v) else 0;
-}
 
 fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
     cfg.spki_pins = if (pins.len == 0) null else @ptrCast(pins.ptr);
@@ -352,6 +347,10 @@ const ServerValues = struct {
     /// TRANSPORT=quic-nonblocking alone, as Client.quic_version is:
     /// quic_original_version. void in every other build.
     quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
+    /// The negotiated version's chooser, under TRANSPORT=quic-nonblocking
+    /// alone: srv.choose_version, through the session's own adapter
+    /// (quic.ChooseVersion). null keeps the original version.
+    choose_version: if (has_choose_version) ?quic.ChooseVersion else void = if (has_choose_version) null else {},
     /// The session's source of random bytes, under RAND=session alone, as
     /// Client.random is. check draws from it too, for the RSA-PSS salt.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
@@ -387,7 +386,7 @@ const ServerValues = struct {
             cfg.srv.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
             cfg.srv.cipher_suite_count = values.cipher_suites.len;
         }
-        if (has_quic) cfg.quic_original_version = quicVersionCode(values.quic_version);
+        if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
         return cfg;
     }
 

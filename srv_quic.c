@@ -79,6 +79,11 @@ static void install_application_keys(ch_quic *q) {
 // is a fatal missing_extension alert (rfc9001.txt:1929-1936). The body is
 // handed to the caller unread; it points into cfg.buf, so the callback
 // sees it before the next message overwrites that buffer.
+//
+// It runs for the first ClientHello alone. The frozen digest covers this
+// extension, so srv_check_retry_hello refuses a second hello whose body
+// differs from the first's (docs/decisions.md 59), and the caller has
+// those bytes already.
 static int take_transport_params(ch_quic *q, const client_hello *ch) {
     if (ch->transport_params == NULL) {
         q->hs.alert = ALERT_MISSING_EXTENSION;
@@ -90,18 +95,36 @@ static int take_transport_params(ch_quic *q, const client_hello *ch) {
     return CH_OK;
 }
 
+// Asks cfg.srv.choose_version for the negotiated version, right after the
+// client's transport parameters reached the caller and before srv_select,
+// because the server sends every CRYPTO frame in the negotiated version
+// (rfc9369.txt:236-238), the HelloRetryRequest and the ServerHello
+// included. step_client_hello is the one call site, so a second
+// ClientHello never asks again. A NULL callback keeps the original version.
+// An answer quic_version_derived refuses is the caller's failure, not the
+// peer's: CH_EIO, the code a refused on_crypto_out returns (srv_out.c),
+// with internal_error, before any byte goes out.
+static int choose_version(ch_quic *q) {
+    if (q->t.cfg.srv.choose_version == NULL) {
+        return CH_OK;
+    }
+    uint32_t version = q->t.cfg.srv.choose_version(q->t.cfg.io);
+    if (!quic_version_derived(version)) {
+        q->hs.alert = ALERT_INTERNAL_ERROR;
+        return CH_EIO;
+    }
+    q->t.quic_negotiated_version = version;
+    return CH_OK;
+}
+
 // Everything the server owes once a hello is accepted, whether it was the
 // first or the one that answered a HelloRetryRequest. The ServerHello
 // goes out at the Initial level and the rest at the Handshake level,
 // which is why h->level is written twice.
 static int server_flight(ch_quic *q, const client_hello *ch, const selection *sel) {
     handshake_state *h = &q->hs;
-    int rc = take_transport_params(q, ch);
-    if (rc != CH_OK) {
-        return rc;
-    }
     h->level = CH_LEVEL_INITIAL;
-    rc = srv_send_server_hello(h, ch, sel);
+    int rc = srv_send_server_hello(h, ch, sel);
     if (rc != CH_OK) {
         return rc;
     }
@@ -138,8 +161,10 @@ static int server_flight(ch_quic *q, const client_hello *ch, const selection *se
     return CH_OK;
 }
 
-// The first ClientHello. A selection that asks for a retry sends one and
-// waits; anything else answers with the flight.
+// The first ClientHello. Its transport parameters go to the caller and the
+// caller chooses the negotiated version before anything is selected or
+// sent. A selection that asks for a retry then sends one and waits;
+// anything else answers with the flight.
 //
 // This is srv_send_hello_retry_request's one call site, so a second
 // HelloRetryRequest is unreachable by call position rather than by a
@@ -152,6 +177,14 @@ static int step_client_hello(ch_quic *q) {
     memset(&sel, 0, sizeof sel);
 
     int rc = srv_read_client_hello(h, &ch);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = take_transport_params(q, &ch);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = choose_version(q);
     if (rc != CH_OK) {
         return rc;
     }
@@ -173,7 +206,8 @@ static int step_client_hello(ch_quic *q) {
 
 // The second ClientHello. srv_check_retry_hello writes sel from the
 // cookie and never sets need_retry, which is what keeps a second retry
-// unreachable.
+// unreachable. The first hello handed over the transport parameters and
+// fixed the negotiated version, so this step does neither.
 static int step_retry_hello(ch_quic *q) {
     handshake_state *h = &q->hs;
     client_hello ch;
@@ -304,8 +338,8 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // specific one, seeded the way srv_handshake.c seeds it.
     q->hs.alert = ALERT_DECODE_ERROR;
     q->endpoint = CH_QUIC_ENDPOINT_SERVER;
-    // No call chooses another version yet, so the server negotiates the
-    // version the client's first Initial packet carried.
+    // The version the client's first Initial packet carried, until
+    // cfg.srv.choose_version answers at the first ClientHello.
     q->t.quic_negotiated_version = cfg->quic_original_version;
     // 0 is the first protocol in ch_cfg.alpn_protocols, so the
     // no-selection value has to be written before the parser can report

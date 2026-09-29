@@ -182,6 +182,10 @@ static size_t message_len(const uint8_t *p, size_t n) {
     return len <= n ? len : 0;
 }
 
+// The choose_version a retry session takes, NULL but in the version case
+// of test/srv_quic_version_tests.h, which sets and clears it.
+static uint32_t (*retry_choose)(void *io);
+
 // A server as colibri's interop image configures one, with this binary's
 // identities and cookie key, and nothing written yet.
 static void retry_session(ch_quic *q) {
@@ -197,6 +201,7 @@ static void retry_session(ch_quic *q) {
     cfg.quic_original_version = CH_QUIC_VERSION_1;
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.on_crypto_out = retry_sink;
+    cfg.srv.choose_version = retry_choose;
     provision(&cfg);
     memset(&retry_out, 0, sizeof retry_out);
     CHECK(ch_srv_quic_init(q, &cfg) == CH_OK);

@@ -70,6 +70,16 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 // ServerHello at CH_LEVEL_INITIAL and by the rest of the flight at
 // CH_LEVEL_HANDSHAKE.
 //
+// The first ClientHello's delivery hands the client's transport
+// parameters to cfg.on_transport_params and then asks
+// cfg.srv.choose_version for the negotiated version, once per connection
+// and before any byte goes out (srv_cfg.h, RFC 9369 section 4.1). The
+// caller seals every later CRYPTO frame in that version, the
+// HelloRetryRequest and the ServerHello included, and reads it with
+// ch_quic_negotiated_version. A second ClientHello after a
+// HelloRetryRequest repeats the first's parameters, which the frozen
+// digest holds it to, and neither callback fires for it.
+//
 // Returns CH_OK when the bytes were taken, whether or not they completed
 // a message. Returns CH_EINVAL, and consumes and changes nothing, when
 // level is above CH_LEVEL_APPLICATION, or when it is above the level the
@@ -82,7 +92,10 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 //
 // Every other code leaves the session dead, and ch_quic_error_code names
 // the code the caller puts in CONNECTION_CLOSE: 0x0100 plus ch_quic_alert
-// for a TLS alert (RFC 9001 section 4.8). The server fails through
+// for a TLS alert (RFC 9001 section 4.8). CH_EIO is the caller's own
+// failure: an on_crypto_out that refused bytes, or a choose_version
+// answer this build derives no keys for, which fails with internal_error
+// before any byte goes out. The server fails through
 // quic_fail as a client does, so it keeps the write keys of each level it
 // had installed, and ch_quic_seal_close seals that close once at each
 // (docs/quic_server.md, "When the handshake fails").

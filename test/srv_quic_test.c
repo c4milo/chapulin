@@ -441,6 +441,8 @@ int main(void) {
     test_retry_extension_count();
     test_server_init_versions(&cfg);
     test_retry_tag_versions(&cfg);
+    test_server_choose_version(&cfg, hello, hello_len);
+    test_retry_in_version_2();
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

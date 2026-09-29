@@ -217,6 +217,30 @@ typedef struct {
     // completes no handshake. Re-entrancy: cfg.h's rule for
     // on_level_ready, for the same reason.
     int (*on_crypto_out)(void *io, uint8_t level, const uint8_t *p, size_t n);
+
+    // Chooses the negotiated version, a CH_QUIC_VERSION_ value
+    // (quic_cfg.h), which the server writes to
+    // ch_tls.quic_negotiated_version and derives every Handshake and 1-RTT
+    // key under. It fires once per connection, inside the
+    // ch_srv_quic_crypto_in that delivers the first ClientHello, right
+    // after on_transport_params has handed over the client's transport
+    // parameters. RFC 9369 section 4.1 lets a server send no CRYPTO frame
+    // before it has processed those parameters and has it send every
+    // CRYPTO frame in the negotiated version (rfc9369.txt:236-238), so the
+    // ticket selection, a HelloRetryRequest and the ServerHello all come
+    // after the choice. The caller answers from RFC 9368's
+    // version_information parameter, which chapulin does not parse. The
+    // second ClientHello after a HelloRetryRequest does not ask again, and
+    // a Retry precedes every session and keeps the original version
+    // (srv_quic.h).
+    //
+    // Optional: NULL keeps the original version, cfg.quic_original_version.
+    // An answer this build derives no keys for (quic_version.h) fails the
+    // handshake with CH_EIO, the code a refused on_crypto_out returns, and
+    // internal_error, because the failure is this caller's and not the
+    // peer's; nothing has gone out. Re-entrancy: cfg.h's rule for
+    // on_level_ready, for the same reason.
+    uint32_t (*choose_version)(void *io);
 #endif
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING

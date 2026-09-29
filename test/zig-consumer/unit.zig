@@ -333,7 +333,7 @@ test "every declaration this object has compiles" {
     if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket", "switchVersion" }));
     if (@hasDecl(c, "ch_srv_quic_init")) {
         compileSession(chapulin.quic.Server(c.CH_MIN_RXBUF), &(quic ++ .{"sni"}));
-        compile(chapulin.quic, &.{ "retryTag", "tokenMint", "tokenCheck" });
+        compile(chapulin.quic, &.{ "retryTag", "tokenMint", "tokenCheck", "ChooseVersion" });
     }
 }
 

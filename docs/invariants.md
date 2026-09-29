@@ -650,7 +650,11 @@ last `ROLE=server` stub, as the entry said it would.
   version 1 and version 2; it refuses an original version it does not
   derive, a packet in a version its level does not admit, and a Retry in
   any version but the original, and a client switches to the other version
-  once, before the server's first CRYPTO byte. The client offers
+  once, before the server's first CRYPTO byte. A server's caller chooses
+  the negotiated version once, through `ch_srv_cfg.choose_version`, after
+  the first ClientHello's transport parameters and before anything is
+  selected or sent, and an answer the build does not derive fails the
+  session. The client offers
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
@@ -688,7 +692,10 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_quic_switch_version`, `ch_srv_quic_retry_tag` and the Initial and
   Retry derivations ask, and `quic.c`'s `version_ok`, which the three
   packet calls ask before they read a byte: the negotiated version at every
-  level, and the original one at the Initial level too.
+  level, and the original one at the Initial level too. The server's
+  choice is `srv_quic.c`'s `choose_version`, which asks
+  `quic_version_derived` of the caller's answer, and `step_client_hello`
+  is its one call site, between `take_transport_params` and `srv_select`.
   The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
   `handshake_message.c`, `handshake_parser.c` and `handshake_flight.c`,
   with `handshake_groups.c`. A raw or ca parser refuses a
@@ -727,23 +734,36 @@ last `ROLE=server` stub, as the entry said it would.
   time; `bin/srv_quic_test` and `bin/srv_quic_both_test`
   (`test/srv_quic_version_tests.h`) refuse the underived versions at
   `ch_srv_quic_init` and `ch_srv_quic_retry_tag`, start a session in
-  either derived version, and refuse a server session's switch;
+  either derived version, and refuse a server session's switch. They hold
+  `choose_version` to one call after the transport parameters and before
+  any byte goes out, in each direction and for the original version; a
+  NULL callback to the original version; each underived answer to
+  `CH_EIO` with internal_error and nothing sent; a hello the selection
+  then refuses to a choice all the same; and ngtcp2's recorded retry
+  round to one call, a retry only a client switched to version 2 opens,
+  and a Handshake level that admits version 2 alone.
   `bin/quic_loop_test` refuses a 1-RTT packet in the other version at both
-  ends, and runs whole handshakes in version 2, one of them after a
-  client's switch, with a key update at each end (`test/quic_loop_version.h`);
+  ends, and runs whole handshakes in version 2 with a key update at each
+  end: one that starts there, and one packet by packet between a version 1
+  client and a server that chooses version 2, which switches the client on
+  the Version field of the server's first Initial packet; a client that
+  does not switch opens none of that server's packets
+  (`test/quic_loop_version.h`);
   and `bin/quic_test` refuses the underived versions at the two Initial
   derivations and the Retry tag, and holds version 2's salt, labels,
   Retry key and nonce to RFC 9369 Appendix A. The `quic_driver` harness
   proves the refusals over any saved version and any version a caller
   passes, the switch's six conditions and its one success included, and
   the `quic_initial`, `quic_retry`, `quic_step` and `quic_config_webpki`
-  harnesses prove their files' share. Twenty-five `inv07-quic-` and
+  harnesses prove their files' share. Twenty-eight `inv07-quic-` and
   `inv07-srv-quic-` violations each drop one rule or swap one version 2
   value for version 1's, and a test fails on each: the switch's server,
   failed-session, second-switch, server-byte and ServerHello conditions,
   the Initial level's original version, the Handshake keys, the 1-RTT
-  keys and the key update under the negotiated version, and version 2's
-  salt, labels, key update label, Retry key and Retry nonce among them.
+  keys and the key update under the negotiated version, version 2's
+  salt, labels, key update label, Retry key and Retry nonce, and the
+  server's choice made after `srv_select`, made again for the retried
+  hello and taken unchecked among them.
   `bin/webpki_session_test` drives the
   two-group offer against a mock server, and four mutants require it to
   fail: a hello that lists x25519 without its share, a parser that takes
@@ -815,8 +835,10 @@ last `ROLE=server` stub, as the entry said it would.
   P-256 alone.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again, takes back a suite
-  the caller's `ch_cfg.cipher_suites` left out of the hello, or lets a
-  QUIC packet call admit a packet in a version its level does not admit.
+  the caller's `ch_cfg.cipher_suites` left out of the hello, lets a
+  QUIC packet call admit a packet in a version its level does not admit,
+  or lets a server's version choice come after the selection or go
+  unchecked.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ### INV-8 — no legacy protocol

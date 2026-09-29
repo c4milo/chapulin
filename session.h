@@ -371,9 +371,10 @@ typedef struct {
     // The negotiated version: RFC 9368's QUIC version in use once version
     // negotiation completes (rfc9368.txt:136-137), a CH_QUIC_VERSION_ value
     // (quic_cfg.h). Each init call writes cfg.quic_original_version here,
-    // and ch_quic_switch_version, a client's one switch, is the only call
-    // that writes it again. The Handshake and 1-RTT keys are derived under
-    // it, a packet at those levels must carry it, and
+    // and one more write may follow, by role: ch_quic_switch_version, a
+    // client's one switch, or a server's cfg.srv.choose_version answer at
+    // its first ClientHello (srv_cfg.h). The Handshake and 1-RTT keys are
+    // derived under it, a packet at those levels must carry it, and
     // ch_quic_negotiated_version reports it. Public, like group: the caller
     // read it off the wire.
     uint32_t quic_negotiated_version;

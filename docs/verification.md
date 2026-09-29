@@ -2059,6 +2059,23 @@ each check at a record that ends with the message and at one byte more,
 level checks the same way, and twelve `.violation` mutants, one per
 check, require them to fail.
 
+### The server's choice of the negotiated version
+
+`srv_quic.c` has no harness (the table above), so the rules of
+`ch_srv_cfg.choose_version` rest on tests: one call per connection,
+after the client's transport parameters and before `srv_select`, none for
+the second ClientHello, and a session failed with `CH_EIO` and
+internal_error for an answer `quic_version_derived` refuses.
+`bin/srv_quic_test` and `bin/srv_quic_both_test`
+(`test/srv_quic_version_tests.h`) hold each rule, the underived answers
+at 0, the values beside version 1 and version 2 and a reserved version,
+over this tree's hello and ngtcp2's recorded retry round.
+`bin/quic_loop_test` completes a handshake packet by packet between a
+version 1 client and a server that chooses version 2
+(`test/quic_loop_version.h`). `inv07-srv-quic-choose-after-select`,
+`inv07-srv-quic-choose-after-retry` and `inv07-srv-quic-choose-unchecked`
+require `bin/srv_quic_test` to fail.
+
 ### Constant-time behavior
 
 Constant time comes from construction: no branch and no memory index

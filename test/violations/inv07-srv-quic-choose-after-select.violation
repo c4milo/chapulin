@@ -1,0 +1,29 @@
+invariant: INV-7
+file: srv_quic.c
+catches: srv_quic_test
+reason: choose_version fires after srv_select, so the server selects a
+  ticket before it knows the version the connection negotiates, and a
+  hello the selection refuses is never asked about. RFC 9369 section 4.1
+  has the server process the client's transport parameters before it
+  sends anything and send every CRYPTO frame in the negotiated version
+  (rfc9369.txt:236-238). test/srv_quic_version_tests.h requires the
+  choice for a hello that then fails with no_application_protocol.
+
+--- old
+    rc = choose_version(q);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = srv_select(h, &ch, &sel);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
+    rc = srv_select(h, &ch, &sel);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = choose_version(q);
+    if (rc != CH_OK) {
+        return rc;
+    }

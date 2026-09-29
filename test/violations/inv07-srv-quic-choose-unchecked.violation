@@ -1,0 +1,19 @@
+invariant: INV-7
+file: srv_quic.c
+catches: srv_quic_test
+reason: the server takes any answer choose_version gives, so a session
+  negotiates a version this build derives no keys for and derives its
+  Handshake keys under the labels of another. quic_version.h holds every
+  version a caller names to quic_version_derived.
+  test/srv_quic_version_tests.h requires CH_EIO, internal_error and
+  nothing sent for 0, the values beside version 1 and version 2, and a
+  reserved version.
+
+--- old
+    if (!quic_version_derived(version)) {
+        q->hs.alert = ALERT_INTERNAL_ERROR;
+        return CH_EIO;
+    }
+    q->t.quic_negotiated_version = version;
+--- new
+    q->t.quic_negotiated_version = version;

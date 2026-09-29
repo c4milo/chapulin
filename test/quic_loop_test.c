@@ -223,11 +223,8 @@ static ch_quic client;
 static ch_quic server;
 
 // One handshake over CRYPTO bytes, the ticket after it, and nothing else.
-// A switch_to other than 0 is the version the client switches to after
-// the server read its hello and before it reads a server byte, the moment
-// RFC 9369 section 4.1 gives it (rfc9369.txt:240-244). Returns 1 when both
-// ends are connected, and 0 at the first refusal.
-static int run_quic_switching(const ch_cfg *ccfg, const ch_cfg *scfg, uint32_t switch_to) {
+// Returns 1 when both ends are connected, and 0 at the first refusal.
+static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
     static uint8_t buf[4096];
     size_t n = 0;
     memset(&from_server, 0, sizeof from_server);
@@ -236,9 +233,6 @@ static int run_quic_switching(const ch_cfg *ccfg, const ch_cfg *scfg, uint32_t s
     }
     if (ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) != CH_OK ||
         ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) != CH_OK) {
-        return 0;
-    }
-    if (switch_to != 0 && ch_quic_switch_version(&client, switch_to) != CH_OK) {
         return 0;
     }
     if (ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
@@ -252,10 +246,6 @@ static int run_quic_switching(const ch_cfg *ccfg, const ch_cfg *scfg, uint32_t s
         return 0;
     }
     return ch_quic_state(&client) == CH_ST_CONNECTED && ch_quic_state(&server) == CH_ST_CONNECTED;
-}
-
-static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
-    return run_quic_switching(ccfg, scfg, 0);
 }
 
 // Hands the server's 1-RTT CRYPTO bytes, the NewSessionTicket, to the

@@ -3499,9 +3499,14 @@ does nothing more.
       and before ticket selection, the HelloRetryRequest and the
       ServerHello, because a server sends no CRYPTO frame before it has
       processed those parameters (`rfc9369.txt:236-237`). `srv_select`
-      runs before the parameters are handed to the caller today, so the
-      parameters move ahead of it. The caller answers from RFC 9368's
-      version_information, which chapulin does not parse.
+      ran before the parameters were handed to the caller, and the
+      HelloRetryRequest path never handed them out, so the parameters
+      moved ahead of it. The caller answers from RFC 9368's
+      version_information, which chapulin does not parse. The callback is
+      `ch_srv_cfg.choose_version`: NULL keeps the original version, and an
+      answer the build does not derive fails the session with `CH_EIO`
+      and internal_error, the code a refused `on_crypto_out` returns,
+      because the failure is the caller's and not the peer's.
     - **Tickets and tokens.** A ticket belongs to the version of the
       connection that issued it, the negotiated one after a switch
       (`rfc9369.txt:268-284`). A server ticket records that version, and
@@ -3541,7 +3546,8 @@ does nothing more.
     TRUST=webpki TRANSPORT=quic-nonblocking`, from 5,072 to 5,080 bytes on
     arm64, and from 5,544 to 5,560 under `SUITE=aesgcm`, measured by
     bench/sram.sh; the TCP sessions docs/performance.md measures do not
-    change.
+    change. The server's `choose_version` pointer grows it to 5,088
+    bytes, and to 5,584 under `SUITE=aesgcm`, measured the same way.
 
     Gain: colibri can negotiate version 2 in both roles, as the interop
     runner's v2 case asks, and chapulin enforces every rule that §4.1 and
@@ -3558,9 +3564,12 @@ does nothing more.
     four labels, each copied from `rfc9369.txt:158-188`, and RFC 9369
     Appendix A checks every one of them against the vendored text. A client
     that starts in either version may switch to the other once, before the
-    server's first CRYPTO byte, and a whole handshake runs in version 2. The
-    server's choice of a version and the version in tickets and tokens come
-    next; until then a server negotiates its original version.
+    server's first CRYPTO byte, and a whole handshake runs in version 2. A
+    server's caller chooses the negotiated version through
+    `ch_srv_cfg.choose_version` at the first ClientHello, after the
+    client's transport parameters and before the ticket selection, a
+    HelloRetryRequest and the ServerHello. The version in tickets and
+    tokens comes next.
 
 80. **A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
     AES-256-GCM, then AES-128-GCM, then ChaCha20, and a caller may set a

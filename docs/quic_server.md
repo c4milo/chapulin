@@ -220,6 +220,59 @@ round trip or the address binding, because the stub makes every tag
 unconstrained; the tests hold those. Eight `quic-token-` violations in
 `test/violations/` each break one rule, and each is caught.
 
+## The negotiated version
+
+RFC 9369 §4.1 lets a server switch a connection from its original version
+to a compatible one, and QUIC version 1 and version 2 are compatible in
+both directions (`rfc9369.txt:208-211`). `ch_srv_cfg.choose_version` makes
+that choice (`docs/decisions.md` 79). It fires once per connection, inside
+the `ch_srv_quic_crypto_in` that delivers the first ClientHello, right after
+`cfg.on_transport_params` has handed over the client's transport
+parameters, and before the ticket selection, a HelloRetryRequest and the
+ServerHello. A server sends no CRYPTO frame before it has processed those
+parameters, and it sends every CRYPTO frame in the negotiated version
+(`rfc9369.txt:236-238`), so the answer is fixed before the first byte goes
+out. The caller answers from RFC 9368's version_information parameter,
+which chapulin does not parse; RFC 9369 §4 requires an endpoint that
+supports version 2 to send, process and validate it (`rfc9369.txt:204-206`),
+and that is colibri's.
+
+- The answer becomes `ch_quic_negotiated_version`. The Handshake and 1-RTT
+  keys are derived under it, and the caller seals the HelloRetryRequest,
+  the ServerHello and every later packet in it.
+- NULL keeps the original version.
+- An answer `quic_version_derived` refuses fails the session with `CH_EIO`
+  and internal_error, before any byte goes out. `CH_EIO` is the code a
+  refused `on_crypto_out` returns, and internal_error names a failure that
+  is the caller's and not the peer's.
+- The second ClientHello after a HelloRetryRequest asks nothing and hands
+  over nothing. The frozen digest holds its transport parameters to the
+  first hello's (`docs/decisions.md` 59), and the caller has them already.
+- A Retry comes before any session and keeps the original version
+  (`rfc9369.txt:221-222`): the caller passes `cfg.quic_original_version`
+  to `ch_srv_quic_retry_tag`.
+- `ch_quic_open` admits the original and the negotiated version at the
+  Initial level, because a server keeps its original version's Initial
+  receive keys until a Handshake packet in the negotiated version opens
+  (`rfc9369.txt:252-254`).
+
+**What checks it.** `test/srv_quic_version_tests.h`, which
+`bin/srv_quic_test` and `bin/srv_quic_both_test` run: one call per
+connection, after the transport parameters and before any byte goes out,
+in each direction and for the original version; the original version kept
+under a NULL callback; each underived answer refused with `CH_EIO`,
+internal_error and nothing sent; a hello that then fails with
+no_application_protocol asked all the same; and ngtcp2's recorded retry
+round with one call, a retry that only a client switched to version 2
+opens, and a Handshake level that admits version 2 alone.
+`test/quic_loop_version.h`, which `bin/quic_loop_test` runs, completes a
+handshake packet by packet between a version 1 client and a server that
+chooses version 2, switching the client on the Version field of the
+server's first Initial packet, and a client that does not switch opens
+none of that server's packets. Three `inv07-srv-quic-choose-` violations
+move the call after `srv_select`, call it again for the second hello, and
+drop the check of its answer, and `bin/srv_quic_test` fails on each.
+
 ## When the handshake fails
 
 A server that fails reports the alert the way a client does, and seals the
@@ -232,9 +285,10 @@ check, and `docs/decisions.md` entry 57 states why.
 Which levels a server can close at depends on where it failed:
 
 - **At a ClientHello.** no_application_protocol (RFC 9001 section 8.1),
-  missing_extension for absent transport parameters (section 8.2), and every
-  other refusal of the first or the retry hello come before any Handshake
-  key exists. The server has Initial keys alone and sends one close, in an
+  missing_extension for absent transport parameters (section 8.2),
+  internal_error for a `choose_version` answer the build does not derive,
+  and every other refusal of the first or the retry hello come before any
+  Handshake key exists. The server has Initial keys alone and sends one close, in an
   Initial packet.
 - **Inside its own flight.** A failure after the ServerHello goes out, such as
   an `on_crypto_out` that refuses bytes, leaves Initial and Handshake keys.

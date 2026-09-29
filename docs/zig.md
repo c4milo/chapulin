@@ -104,13 +104,14 @@ for a `@compileError` declaration too.
 | `record.Server` | `ch_srv_record_init` |
 | `record.alert_record_len`, `record.key_update_record_len` | `ch_record_whole_len` |
 | `quic.Client` | `ch_quic_init` |
-| `quic.Server`, `quic.retryTag`, `quic.tokenMint`, `quic.tokenCheck`, `quic.TokenCheck` | `ch_srv_quic_init` |
+| `quic.Server`, `quic.retryTag`, `quic.tokenMint`, `quic.tokenCheck`, `quic.TokenCheck`, `quic.ChooseVersion` | `ch_srv_quic_init` |
 | `quic.Level`, `quic.Direction`, `quic.KeySet`, `quic.level_count` | `ch_quic_initial_keys` |
 | `Trust.web_pki`, `Trust.pins`, `trustAnchor`, `CertType`, `serverCertType` | `ch_cfg.anchors` (TRUST=webpki) |
 | `Trust.pinned` | no `ch_cfg.anchors` |
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
+| `Server.choose_version` other than `void` | `ch_srv_cfg.choose_version` (a QUIC server role) |
 | `Client.cipher_suites` | `ch_cfg.cipher_suites` (SUITE=aesgcm TRUST=webpki) |
 | `suite` | `ch_tls.suite` |
 | `exportKeyingMaterial` | `ch_export` (EXPORTER=on) |
@@ -226,6 +227,7 @@ hello still offers the certificate path, so that costs a full handshake
 | `require_server_name` | `srv.require_server_name` |
 | `cipher_suites`, empty for the default order | `srv.cipher_suites`, `srv.cipher_suite_count` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, as for a client: the Version field of the client's first Initial packet |
+| `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in `toCfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
@@ -491,6 +493,12 @@ each init zeroes it before the C init call.
 - `Opened`: `pn`, `pt_len` and `key_set`.
 - `Version`: `v1` and `v2`, the Version field values `quic_cfg.h` names,
   and any other `u32`, which C refuses where it derives no keys.
+- `ChooseVersion`: `*const fn (context: ?*anyopaque) Version`, a server's
+  choice of the negotiated version (`srv_cfg.h`). The session's adapter
+  calls it once per connection with its `hook.context`, after
+  `peerTransportParams` holds the client's transport parameters and
+  before anything is selected or sent, and C fails the session with
+  `error.Io` for a version it does not derive.
 - `TokenCheck`: `.retry` with the connection IDs the token carried,
   `.not_retry` or `.invalid`.
 
@@ -504,7 +512,7 @@ arrived there, the client's ticket slot and the server's current
 | Zig call | C call | Errors |
 |---|---|---|
 | `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready`, `on_transport_params` and `on_ticket`, and under `RAND=session` the values' `random` | Invalid |
-| `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params` and `srv.on_crypto_out`, and under `RAND=session` the values' `random` | Invalid |
+| `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params`, `srv.on_crypto_out` and, when the values carry a `choose_version`, `srv.choose_version`, and under `RAND=session` the values' `random` | Invalid |
 | `initialKeys(dcid)` | `ch_quic_initial_keys` | Invalid |
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
@@ -669,6 +677,9 @@ stompy's (`TX_RECORD=16384`) and a record-mode `ROLE=both` object under
   - a key update, the Retry tag and a Retry token;
   - the ticket resumed, and the stale ticket refused with no alert
     chosen;
+  - a server whose `choose_version` answers version 2 from its hook's
+    context, once, a client that switches to it, and the packets and the
+    key update in version 2;
   - under `KEYLOG=on`, `hookContext` finding the client's context.
 - `pair.zig` starts a client on each of colibri's two objects in one
   image, and computes a ticket's age through each object's call, directly

@@ -37,6 +37,12 @@ pub const Version = if (has_quic) enum(u32) {
     _,
 } else @compileError("quic.Version needs TRANSPORT=quic-nonblocking");
 
+/// The code a value's optional version sets in ch_cfg: the version's, or 0
+/// for null, which both QUIC init calls refuse as an original version.
+pub fn versionCode(version: ?Version) u32 {
+    return if (version) |v| @intFromEnum(v) else 0;
+}
+
 /// The 1-RTT receive key set ch_quic_open reports (quic_keys.h).
 pub const KeySet = if (has_quic) enum(u8) {
     previous = c.CH_QUIC_KEY_PREVIOUS,
@@ -54,6 +60,13 @@ pub const Outgoing = struct {
 /// What open recovered: the packet number, the plaintext length after the
 /// packet number field, and the receive key set that opened it.
 pub const Opened = struct { pn: u64, pt_len: usize, key_set: KeySet };
+
+/// A server's choice of the negotiated version, srv.choose_version
+/// (srv_cfg.h), called with the session's hook.context once per connection,
+/// after peerTransportParams holds the client's transport parameters and
+/// before anything is selected or sent. C fails the session for a version
+/// it does not derive.
+pub const ChooseVersion = if (has_server) *const fn (context: ?*anyopaque) Version else @compileError("quic.ChooseVersion needs a QUIC server role");
 
 /// What tokenCheck found. retry: the token verified, and these are the
 /// connection IDs it carried. not_retry: CH_EPROTO, the token is empty or
@@ -128,12 +141,15 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         ticket: if (side == .client) ?chapulin.Ticket else void,
         /// The Outgoing the running cryptoIn writes into. A client has none.
         outgoing: if (side == .server) ?*Outgoing else void,
+        /// The values' choose_version, which onChooseVersion calls. A client has none.
+        choose: if (side == .server) ?ChooseVersion else void,
 
         /// Client: Client.toCfg, then ch_quic_init with the API's
         /// on_level_ready, on_transport_params and on_ticket. Server:
         /// Server.toCfg, then ch_srv_quic_init with the API's
-        /// on_level_ready, on_transport_params and srv.on_crypto_out;
-        /// sni_buf is srv.sni_buf and srv.sni_cap. transport_params is
+        /// on_level_ready, on_transport_params, srv.on_crypto_out and,
+        /// when the values carry one, srv.choose_version; sni_buf is
+        /// srv.sni_buf and srv.sni_cap. transport_params is
         /// borrowed for the session, because a server writes it when its
         /// flight goes out. Under RAND=session each also stores the
         /// values' random and points rand_bytes at it. On error.Invalid
@@ -176,6 +192,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             };
             self.setCallbacks(&cfg, transport_params);
             cfg.srv.on_crypto_out = onCryptoOut;
+            self.choose = values.choose_version;
+            if (self.choose != null) cfg.srv.choose_version = onChooseVersion;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
             chapulin.attachRandom(&cfg, &self.random, values.random);
@@ -187,7 +205,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             self.peer_params = peer_params;
             self.peer_params_len = null;
             self.zeroTicketSlot();
-            if (side == .server) self.outgoing = null;
+            if (side == .server) {
+                self.outgoing = null;
+                self.choose = null;
+            }
         }
 
         fn setCallbacks(self: *Self, cfg: *c.ch_cfg, transport_params: []const u8) void {
@@ -423,6 +444,14 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             @memcpy(buffer[out.written[level]..][0..n], p[0..n]);
             out.written[level] += n;
             return 0;
+        }
+
+        /// Installed only when choose is set, so it answers what that
+        /// function answers and checks nothing: C refuses a version it does
+        /// not derive.
+        fn onChooseVersion(io: ?*anyopaque) callconv(.c) u32 {
+            const self = fromHook(io);
+            return @intFromEnum(self.choose.?(self.hook.context));
         }
 
         fn onTicket(io: ?*anyopaque, ticket: [*c]const c.ch_ticket) callconv(.c) void {
