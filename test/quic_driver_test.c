@@ -361,10 +361,7 @@ int main(void) {
     test_server_hello_refused();
     test_close_after_failure();
     test_server_hello_ends_level();
-    test_init_versions();
-    test_switch_versions();
-    test_packet_versions();
-    test_retry_versions();
+    test_versions();
     if (failures == 0) {
         (void)printf("quic_driver: the driver stages, installs and refuses as quic.h states\n");
     }

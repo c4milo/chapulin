@@ -78,9 +78,10 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 
 // Stores the Destination Connection ID that RFC 9001 §5.2 derives the Initial secrets
 // from, beside the salt its version prints (rfc9001.txt:1051-1066), and marks both directions
-// of the Initial level ready. Appendix A.1 is the vector for what the packet calls then derive
-// in version 1. The connection ID serves every version: each packet call derives the Initial
-// key of the version it is given from these bytes.
+// of the Initial level ready. RFC 9001 Appendix A.1 is the vector for what the packet calls
+// then derive in version 1, and RFC 9369 Appendix A.1 in version 2 (rfc9369.txt:412-464). The
+// connection ID serves every version: each packet call derives the Initial key of the version
+// it is given from these bytes.
 //
 // The caller calls it once before it sends its first Initial packet, and again after a
 // Retry, because §5.2 changes the secrets then (rfc9001.txt:1092-1094): dcid is then the
@@ -171,8 +172,8 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // CRYPTO byte from the server has been delivered at any level; no switch has happened, so the
 // negotiated version is still cfg.quic_original_version; this build derives version's keys
 // (quic_version.h); and version is not the negotiated version. Returns CH_EINVAL and changes
-// nothing otherwise. This build derives version 1 alone, which is every session's original
-// version, so it refuses every switch.
+// nothing otherwise. This build derives version 1 and version 2, so a session started in
+// either may switch to the other once.
 int ch_quic_switch_version(ch_quic *q, uint32_t version);
 #endif
 

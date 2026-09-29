@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic_version.h
+catches: quic_test
+reason: version 2 derives its packet protection key, IV and header
+  protection key under version 1's labels, where RFC 9369 section 3.3.2
+  names "quicv2 key", "quicv2 iv" and "quicv2 hp" (rfc9369.txt:167-174),
+  so every version 2 packet at every level is protected under keys no
+  version 2 peer holds. test/quic_version2_tests.h requires RFC 9369
+  Appendix A.1's keys and the HkdfLabel bytes it prints, and A.5's key,
+  IV and header protection key.
+
+--- old
+        {"quicv2 key", "quicv2 iv", "quicv2 hp", "quicv2 ku"},
+--- new
+        {"quic key", "quic iv", "quic hp", "quicv2 ku"},

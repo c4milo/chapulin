@@ -1,0 +1,14 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: after a switch the Initial level admits the negotiated version
+  alone, so a client drops the server's Initial packets in the original
+  version, which a server sends until it has processed the client's
+  transport parameters (rfc9369.txt:246-248). test/quic_version_tests.h
+  switches a version 1 client to version 2 and requires a server Initial
+  packet in version 1 to open.
+
+--- old
+    return level == CH_LEVEL_INITIAL && version == q->t.cfg.quic_original_version;
+--- new
+    return level == CH_LEVEL_INITIAL && version == q->t.quic_negotiated_version;

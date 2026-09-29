@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version takes a switch after a CRYPTO byte from the
+  server arrived. The server sends every CRYPTO frame in the negotiated
+  version, and one in the original version makes the original the
+  negotiated one (rfc9369.txt:236-244), so the switch derives keys under
+  a version the server did not use. test/quic_version_tests.h delivers
+  one byte of the ServerHello and requires CH_EINVAL, with the session
+  still waiting for the ServerHello.
+
+--- old
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0 &&
+--- new
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO &&

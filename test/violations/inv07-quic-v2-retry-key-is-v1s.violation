@@ -1,0 +1,17 @@
+invariant: INV-7
+file: aes.c
+catches: quic_test
+reason: version 2's Retry integrity key holds version 1's bytes, so a
+  version 2 Retry is sealed and checked under the key RFC 9001 prints for
+  version 1, where RFC 9369 section 3.3.3 prints
+  0x8fb4b01b56ac48e260fbcbcead7ccc92 (rfc9369.txt:176-188).
+  test/quic_version2_tests.h requires that key from aes_public_key_retry
+  and RFC 9369 Appendix A.4's tag, and test_retry_constants_from_secrets
+  requires the key the version 2 Retry secret derives.
+
+--- old
+static const uint8_t RETRY_KEY_V2[AES_128_KEY] = {0x8f, 0xb4, 0xb0, 0x1b, 0x56, 0xac, 0x48, 0xe2,
+                                                  0x60, 0xfb, 0xcb, 0xce, 0xad, 0x7c, 0xcc, 0x92};
+--- new
+static const uint8_t RETRY_KEY_V2[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
+                                                  0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};

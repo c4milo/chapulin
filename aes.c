@@ -11,10 +11,12 @@
 // Which keys may arrive here is INV-26 in docs/invariants.md: the
 // Initial keys, which anyone who sees a Destination Connection ID can
 // derive (RFC 9001 §5.2), the header protection key derived from the
-// same secret (§5.1), and the Retry key the RFC prints (§5.8). No key
-// from the TLS key schedule reaches this file. That bound holds under
-// every AES choice, and it is what an AES=soft build needs, because that
-// implementation's S-box is a table indexed with cipher state.
+// same secret (§5.1), and the Retry key the RFC prints (§5.8), each in
+// QUIC version 1 and in version 2, whose salt and Retry key RFC 9369
+// prints too (§3.3.1, §3.3.3). No key from the TLS key schedule is passed
+// to this file. That bound holds under every AES choice, and it is what an
+// AES=soft build needs, because that implementation's S-box is a table
+// indexed with cipher state.
 #include "aes.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
@@ -43,24 +45,40 @@ static const uint8_t INITIAL_SALT_V1[INITIAL_SALT_LEN] = {0x38, 0x76, 0x2c, 0xf7
                                                           0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
                                                           0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
 
+// RFC 9369 §3.3.1's printed salt for QUIC version 2,
+// 0x0dede3def700a6db819381be6e269dcbf9bd2ed9, the input every version 2
+// Initial secret starts from (rfc9369.txt:158-165).
+static const uint8_t INITIAL_SALT_V2[INITIAL_SALT_LEN] = {0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6,
+                                                          0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26,
+                                                          0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9};
+
 // RFC 9001 §5.8's printed Retry integrity tag key for QUIC version 1,
 // 0xbe0c690b9f66575a1d766b54e368c84e (rfc9001.txt:1499-1500).
 static const uint8_t RETRY_KEY_V1[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
                                                   0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
 
+// RFC 9369 §3.3.3's printed Retry integrity tag key for QUIC version 2,
+// 0x8fb4b01b56ac48e260fbcbcead7ccc92 (rfc9369.txt:176-188).
+static const uint8_t RETRY_KEY_V2[AES_128_KEY] = {0x8f, 0xb4, 0xb0, 0x1b, 0x56, 0xac, 0x48, 0xe2,
+                                                  0x60, 0xfb, 0xcb, 0xce, 0xad, 0x7c, 0xcc, 0x92};
+
+// Each version's salt and Retry key, at the index quic_version_index gives
+// it: version 1's first, version 2's second.
+static const uint8_t *const INITIAL_SALTS[QUIC_VERSION_COUNT] = {INITIAL_SALT_V1, INITIAL_SALT_V2};
+static const uint8_t *const RETRY_KEYS[QUIC_VERSION_COUNT] = {RETRY_KEY_V1, RETRY_KEY_V2};
+
 // The salt version's Initial secrets start from, and the key its Retry
 // integrity tag is sealed under. version is one quic_version_derived admits,
 // because quic_initial.c and quic_retry.c refuse every other version before
-// they call here, and version 1 is the one version this build admits, so each
-// answers version 1's bytes.
+// they call here. Each is a table read rather than a comparison, for the
+// reason quic_version_index states: this file's conditional branches are a
+// count the Makefile's BRANCH_CEILING records.
 static const uint8_t *initial_salt(uint32_t version) {
-    (void)version;
-    return INITIAL_SALT_V1;
+    return INITIAL_SALTS[quic_version_index(version)];
 }
 
 static const uint8_t *retry_key(uint32_t version) {
-    (void)version;
-    return RETRY_KEY_V1;
+    return RETRY_KEYS[quic_version_index(version)];
 }
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 

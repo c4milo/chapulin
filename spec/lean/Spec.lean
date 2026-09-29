@@ -5,6 +5,7 @@ import Spec.ChaCha
 import Spec.Poly
 import Spec.Aes
 import Spec.Gcm
+import Spec.Quic
 import Spec.Aead
 import Spec.Record
 import Spec.TlsWrite

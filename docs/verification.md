@@ -296,9 +296,13 @@ The entries are grouped by area:
   Destination Connection ID length RFC 9000 §17.2 admits. It also covers
   the first length past the cap, where the call refuses without reading
   the pointer. The QUIC version the constructors choose a salt, labels
-  and a Retry key by is any value, not only one the callers admit. HKDF
-  is stubbed to its contract (`proof/aes_stubs.h`), which the three
-  `hkdf` harnesses prove.
+  and a Retry key by is any value, not only one the callers admit, so
+  both entries of each per-version table, version 1's and version 2's,
+  are read inside the formula. HKDF is stubbed to its contract
+  (`proof/aes_stubs.h`), which the three `hkdf` harnesses prove. Which
+  salt, labels and key a version gets is not proved: RFC 9001's and RFC
+  9369's Appendix A vectors in `bin/quic_test` and the Lean differential
+  test that.
 - **Bound:** connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B); the rest of the
   domain is fixed-size.
 
@@ -362,9 +366,10 @@ The entries are grouped by area:
   neither formula returns a verdict, so neither carries a launch line,
   and `proof/run.sh` records both measurements. Those two rest on tests
   instead: SP 800-38D's four AES-128 cases, RFC 9001 Appendix A.2's
-  client Initial packet and A.4's Retry tag, 67 AES-128-GCM and 66
-  AES-256-GCM Wycheproof cases on all four build legs, and the Lean
-  differential.
+  client Initial packet and A.4's Retry tag, RFC 9369 Appendix A.2's
+  and A.3's Initial packets and A.4's Retry tag in QUIC version 2, 67
+  AES-128-GCM and 66 AES-256-GCM Wycheproof cases on all four build
+  legs, and the Lean differential.
 - **The `AES=hw` GHASH:** every harness compiles the portable GHASH. An
   `AES=hw` build runs `ghash_hw.c`'s GHASH on the carry-less multiply
   instead, which no harness reads. `bin/ghash_equiv_test` holds it to
@@ -1288,7 +1293,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   derivation asks HKDF for a constant number of bytes, and the harness
   varies all 32 secret bytes.
 - **Not proved:** what the derivations compute. `test/quic_vectors.c`
-  checks them against RFC 9001 Appendix A.5's four printed values.
+  checks them against RFC 9001 Appendix A.5's four printed values and
+  RFC 9369 Appendix A.5's four in version 2, and the Lean differential
+  compares them with `spec/lean/Spec/Quic.lean` over random secrets in
+  both versions.
 
 #### quic_packet
 
@@ -1334,7 +1342,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   `CH_QUIC_DCID_MAX` (20 B).
 - **Not proved:** what the derivation, the seal and the mask compute.
   `test/quic_vectors.c` checks them against RFC 9001 Appendix A.2's
-  client Initial packet.
+  client Initial packet, and against RFC 9369 Appendix A.2's and A.3's
+  packets byte for byte in version 2.
 
 #### quic_retry
 
@@ -1347,13 +1356,18 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   other version `quic_retry_tag` returns `CH_EINVAL` and writes no tag
   byte, and `quic_retry_ok` answers 0 to the genuine tag.
   `gcm_seal` and `aes_public_key_retry` are contract stubs the harness
-  defines. The `gcm_seal` stub asserts what RFC 9001 §5.8 fixes at this
-  one call site: the key `aes_public_key_retry` wrote, the nonce §5.8
-  prints, the caller's whole pseudo-packet as associated data, and an
+  defines. The `aes_public_key_retry` stub asserts it is asked for the
+  version the caller named, and the `gcm_seal` stub asserts what RFC
+  9001 §5.8 fixes at this one call site: the key `aes_public_key_retry`
+  wrote, the nonce that version's RFC prints (RFC 9001 §5.8's for
+  version 1, RFC 9369 §3.3.3's for version 2, both written in the
+  harness), the caller's whole pseudo-packet as associated data, and an
   empty plaintext.
 - **Bound:** pseudo-packets ≤ 64 B.
-- **Not proved:** that the AEAD meets that contract. The [gcm](#gcm)
-  harnesses and RFC 9001 Appendix A.4 cover that, not this harness.
+- **Not proved:** that the AEAD meets that contract, or that the key
+  `aes_public_key_retry` writes is the one the version's RFC prints. The
+  [gcm](#gcm) harnesses, RFC 9001 Appendix A.4, RFC 9369 Appendix A.4
+  and the Lean differential's Retry rows cover that, not this harness.
 
 #### quic_token
 
@@ -2391,9 +2405,11 @@ computes:
 - record framing;
 - x25519;
 - the AES-128 and AES-256 forward cipher of FIPS 197, AEAD_AES_128_GCM,
-  AEAD_AES_256_GCM and the GHASH under them (NIST SP 800-38D), and the
-  RFC 9001 Initial keys a `TRANSPORT=quic-nonblocking` build derives
-  from AES-128;
+  AEAD_AES_256_GCM and the GHASH under them (NIST SP 800-38D);
+- the QUIC packet protection keys of a `TRANSPORT=quic-nonblocking`
+  build in QUIC version 1 and version 2 (RFC 9001, RFC 9369): the
+  Initial keys, the keys a traffic secret derives, the key update, and
+  the Retry integrity tag;
 - P-256 and RSA-PSS;
 - the grammar of the four handshake messages a server sends;
 - the provisioning path: RFC 7468 armour with RFC 4648 base64, and the
@@ -2424,9 +2440,11 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 1. 21,636 random-input comparisons, the SHA-384 rows of HMAC, HKDF,
    `expand_label` and the key schedule included, and 799 rows of
    `ch_writable_len`'s arithmetic.
-2. The `TRANSPORT=quic-nonblocking` rows, 731 over the AES-128 and
-   AES-256 blocks, the Initial keys, AES-128-GCM, AES-256-GCM and GHASH,
-   three times:
+2. The `TRANSPORT=quic-nonblocking` rows, 1,095 over the AES-128 and
+   AES-256 blocks, AES-128-GCM, AES-256-GCM and GHASH, and in both QUIC
+   versions the Initial keys at every connection ID length for both
+   endpoints, 40 traffic secrets' packet keys, 40 key updates and the
+   Retry tag at every pseudo-packet length up to 80 bytes, three times:
    - under the build's `AES` value;
    - under `AES=hw`, the instructions and the carry-less multiply, where
      the compiler has them;

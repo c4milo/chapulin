@@ -1,0 +1,13 @@
+invariant: INV-7
+file: quic_version.h
+catches: quic_test
+reason: version 2 advances its 1-RTT secrets under version 1's key update
+  label "quic ku", where RFC 9369 section 3.3.2 names "quicv2 ku"
+  (rfc9369.txt:167-174), so after the first key update a version 2
+  session holds keys its peer does not. test/quic_version2_tests.h
+  requires RFC 9369 Appendix A.5's key update secret.
+
+--- old
+        {"quicv2 key", "quicv2 iv", "quicv2 hp", "quicv2 ku"},
+--- new
+        {"quicv2 key", "quicv2 iv", "quicv2 hp", "quic ku"},

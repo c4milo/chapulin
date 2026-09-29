@@ -1,9 +1,14 @@
 // quic_retry.c against RFC 9001 §5.8 and Appendix A.4, in its own header
 // for the reason test/gcm_tests.h is: test/quic_vectors.c holds the
 // helpers these read, and it includes this header after gcm_tests.h,
-// whose A4_RETRY_PACKET they read too.
+// whose A4_RETRY_PACKET they read too. The last row derives each
+// version's Retry key and nonce from the secret its RFC names, RFC 9369
+// §3.3.3's for version 2, whose values test/quic_v2_vectors.h holds.
 #ifndef CH_QUIC_RETRY_TESTS_H
 #define CH_QUIC_RETRY_TESTS_H
+
+#include "hkdf.h"
+#include "quic_v2_vectors.h"
 
 // RFC 9001 §5.8's printed key (rfc9001.txt:1499-1500), and the two
 // fields aes_public_key_retry leaves zero because §5.8 prints the nonce
@@ -73,8 +78,8 @@ static void test_retry_call(void) {
 // The version the Retry calls take first, and the rule quic_retry.h
 // states for it: a version this build derives no keys for mints no tag,
 // writes no tag byte, and validates no tag, not even Appendix A.4's
-// genuine one. Version 1 is the one version this build derives, so 0,
-// version 2 and a version no RFC defines are each refused.
+// genuine one. This build derives version 1 and version 2, so 0, the
+// values beside each and a version no RFC defines are each refused.
 static void test_retry_versions(void) {
     uint8_t pseudo[1 + sizeof APPENDIX_DCID + sizeof A4_RETRY_PACKET];
     size_t pseudo_len = 0;
@@ -86,7 +91,8 @@ static void test_retry_versions(void) {
     pseudo_len += retry_body;
     const uint8_t *want_tag = &A4_RETRY_PACKET[retry_body];
 
-    static const uint32_t refused[] = {0, CH_QUIC_VERSION_2, CH_QUIC_VERSION_1 + 1, 0x0a0a0a0aU};
+    static const uint32_t refused[] = {0, CH_QUIC_VERSION_1 + 1, CH_QUIC_VERSION_2 - 1,
+                                       CH_QUIC_VERSION_2 + 1, 0x0a0a0a0aU};
     for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
         uint8_t minted[GCM_TAG];
         memset(minted, 0xa5, sizeof minted);
@@ -97,6 +103,64 @@ static void test_retry_versions(void) {
         CHECK(quic_retry_ok(refused[i], pseudo, pseudo_len, want_tag) == 0);
     }
     CHECK(quic_retry_ok(CH_QUIC_VERSION_1, pseudo, pseudo_len, want_tag) == 1);
+}
+
+// One version's Retry secret, the two labels its RFC derives the key and
+// the nonce under, and the key and the nonce the RFC prints.
+typedef struct {
+    uint32_t version;
+    const char *secret;
+    const char *key_label;
+    const char *iv_label;
+    const char *key;
+    const char *nonce;
+} retry_secret_row;
+
+// Each version's printed Retry key and nonce, derived again from the
+// secret its RFC names: HKDF-Expand-Label over it with the version's key
+// and iv labels. The derived key must be the one aes_public_key_retry
+// writes, which is aes.c's constant, and the derived nonce must give the
+// tag quic_retry_tag mints under quic_retry.c's constant, so both
+// constants are held to the secret as well as to the printed bytes.
+static void test_retry_constants_from_secrets(void) {
+    static const retry_secret_row rows[] = {
+        // RFC 9001 §5.8 (rfc9001.txt:1499-1502, rfc9001.txt:1509-1512).
+        {CH_QUIC_VERSION_1, "d9c9943e6101fd200021506bcc02814c73030f25c79d71ce876eca876e6fca8e",
+         "quic key",                                                                                          "quic iv",   "be0c690b9f66575a1d766b54e368c84e", "461599d35d632bf2239825bb"},
+        // RFC 9369 §3.3.3 (rfc9369.txt:181-188).
+        {CH_QUIC_VERSION_2, V2_RETRY_SECRET,                                                    "quicv2 key", "quicv2 iv", V2_RETRY_KEY,
+         V2_RETRY_NONCE                                                                                                                                                                  },
+    };
+    uint8_t pseudo[29];
+    memset(pseudo, 0x3c, sizeof pseudo);
+    for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        uint8_t secret[SHA256_LEN];
+        uint8_t key[AES_128_KEY];
+        uint8_t nonce[AES_IV];
+        CHECK(unhex(rows[i].secret, secret) == sizeof secret);
+        hkdf_expand_label(SHA256_LEN, secret, rows[i].key_label, NULL, 0, key, sizeof key);
+        hkdf_expand_label(SHA256_LEN, secret, rows[i].iv_label, NULL, 0, nonce, sizeof nonce);
+        CHECK(eq_hex(key, rows[i].key) && eq_hex(nonce, rows[i].nonce));
+
+        aes_public_key k;
+        aes_public_key_retry(&k, rows[i].version);
+        CHECK(memcmp(k.key.round_keys, key, sizeof key) == 0);
+
+        // The derived key and nonce, sealed here the way quic_retry.c
+        // seals, against the tag quic_retry_tag mints.
+        aes_public_key derived;
+        memset(&derived, 0, sizeof derived);
+        aes_expand_round_keys(key, derived.key.round_keys);
+#ifdef CH_AES_256
+        derived.key.rounds = AES_128_ROUNDS;
+#endif
+        uint8_t empty[1] = {0};
+        uint8_t want[GCM_TAG];
+        uint8_t minted[GCM_TAG];
+        gcm_seal(&derived, nonce, pseudo, sizeof pseudo, empty, 0, empty, want);
+        CHECK(quic_retry_tag(rows[i].version, pseudo, sizeof pseudo, minted) == CH_OK);
+        CHECK(memcmp(minted, want, sizeof want) == 0);
+    }
 }
 
 #endif

@@ -3547,14 +3547,20 @@ does nothing more.
     runner's v2 case asks, and chapulin enforces every rule that §4.1 and
     §5 state for the keys, tickets and tokens it holds.
 
-    Status: this entry and the two RFCs landed first, and the interface
-    has landed: `ch_cfg.quic_original_version`, the version argument on the
-    packet calls and on the two Retry calls, `ch_quic_switch_version` and
-    `ch_quic_negotiated_version`, with every rule above that version 1
-    alone can reach. `quic_version.h`'s `quic_version_derived` is the one
-    rule that says which versions a build derives, and it admits version 1
-    alone, so every switch is refused. Version 2's keys come next, and then
-    the server's choice and the version in tickets and tokens.
+    Status: this entry and the two RFCs landed first, then the interface:
+    `ch_cfg.quic_original_version`, the version argument on the packet
+    calls and on the two Retry calls, `ch_quic_switch_version` and
+    `ch_quic_negotiated_version`. Version 2's keys and the client's switch
+    have landed since. `quic_version.h`'s `quic_version_derived`, the one
+    rule that says which versions a build derives, admits version 1 and
+    version 2. `aes.c` holds version 2's Initial salt and Retry key beside
+    version 1's, `quic_retry.c` its Retry nonce, and `quic_version.h` its
+    four labels, each copied from `rfc9369.txt:158-188`, and RFC 9369
+    Appendix A checks every one of them against the vendored text. A client
+    that starts in either version may switch to the other once, before the
+    server's first CRYPTO byte, and a whole handshake runs in version 2. The
+    server's choice of a version and the version in tickets and tokens come
+    next; until then a server negotiates its original version.
 
 80. **A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
     AES-256-GCM, then AES-128-GCM, then ChaCha20, and a caller may set a

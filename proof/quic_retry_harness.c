@@ -9,9 +9,10 @@
 //
 // The QUIC version is any value. For one quic_version_derived refuses,
 // quic_retry_tag returns CH_EINVAL and writes no tag byte, and
-// quic_retry_ok answers 0 to the genuine tag; for one it admits, both
-// behave as above, and the aes_public_key_retry stub asserts the version
-// it is handed is one quic_retry.c admitted.
+// quic_retry_ok answers 0 to the genuine tag; for one it admits, version
+// 1 or version 2, both behave as above, the aes_public_key_retry stub
+// asserts the version it is handed is the one quic_retry.c admitted, and
+// the gcm_seal stub asserts the nonce that version's RFC prints.
 //
 // The two entries are the server's and the client's halves of RFC 9001
 // §5.8, so the harness drives both: main() mints a tag and hands it
@@ -27,11 +28,12 @@
 //
 // The gcm_seal stub asserts more than pointer validity, because RFC
 // 9001 §5.8 fixes every input this one caller passes: the key
-// aes_public_key_retry wrote, the nonce §5.8 prints, the caller's
-// pseudo-packet as associated data, and an empty plaintext. Each is an
-// assertion below, so a quic_retry.c that built its own nonce, or that
-// sealed the pseudo-packet as plaintext instead of as associated data,
-// fails here and not only in the vector test.
+// aes_public_key_retry wrote, the nonce §5.8 prints for version 1 or RFC
+// 9369 §3.3.3 prints for version 2, the caller's pseudo-packet as
+// associated data, and an empty plaintext. Each is an assertion below,
+// so a quic_retry.c that built its own nonce, took one version's nonce
+// for the other's, or sealed the pseudo-packet as plaintext instead of
+// as associated data, fails here and not only in the vector test.
 //
 // The length bound is this harness's, not the module's. quic_retry.h
 // states no bound on n, and every byte of the pseudo-packet is read
@@ -46,16 +48,24 @@
 // The pseudo-packet bound this formula runs to.
 #define RETRY_PSEUDO_MAX 64
 
-// RFC 9001 §5.8's printed nonce, 0x461599d35d632bf2239825bb
-// (rfc9001.txt:1501-1502). It is the only nonce gcm_seal may be handed
-// here, and the stub below asserts that.
-static const uint8_t EXPECTED_NONCE[AES_IV] = {0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63,
-                                               0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb};
+// RFC 9001 §5.8's printed nonce for version 1, 0x461599d35d632bf2239825bb
+// (rfc9001.txt:1501-1502), and RFC 9369 §3.3.3's for version 2,
+// 0xd86969bc2d7c6d9990efb04a (rfc9369.txt:184), written here from the
+// RFCs and not read from quic_retry.c. The nonce of the version
+// aes_public_key_retry was last handed is the only one gcm_seal may be
+// handed here, and the stub below asserts that.
+static const uint8_t EXPECTED_NONCE_V1[AES_IV] = {0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63,
+                                                  0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb};
+static const uint8_t EXPECTED_NONCE_V2[AES_IV] = {0xd8, 0x69, 0x69, 0xbc, 0x2d, 0x7c,
+                                                  0x6d, 0x99, 0x90, 0xef, 0xb0, 0x4a};
+static uint32_t stub_retry_version;
 
-// The pseudo-packet main() passes, so the gcm_seal stub can check that
-// the bytes it is handed as associated data are the caller's own.
+// The pseudo-packet and the version main() passes, so the stubs can check
+// that the bytes gcm_seal is handed as associated data are the caller's
+// own, and that aes_public_key_retry is asked for the caller's version.
 static const uint8_t *harness_pseudo;
 static size_t harness_n;
+static uint32_t harness_version;
 
 // The key image aes_public_key_retry writes. Havoc'd once, so every call
 // sees the same key and no output byte is a value this harness chose.
@@ -75,6 +85,9 @@ void aes_public_key_retry(aes_public_key *k, uint32_t version) {
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes_public_key_retry: key writable");
     __CPROVER_assert(quic_version_derived(version),
                      "aes_public_key_retry: a version quic_retry.c admitted");
+    __CPROVER_assert(version == harness_version,
+                     "aes_public_key_retry: the version the caller named");
+    stub_retry_version = version;
     stub_key_init();
     *k = stub_key;
 }
@@ -116,9 +129,10 @@ void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_
         __CPROVER_assert(k->key.round_keys[i] == stub_key.key.round_keys[i],
                          "gcm_seal: sealing under the key aes_public_key_retry wrote");
     }
+    const uint8_t *expected =
+        stub_retry_version == CH_QUIC_VERSION_2 ? EXPECTED_NONCE_V2 : EXPECTED_NONCE_V1;
     for (size_t i = 0; i < AES_IV; i++) {
-        __CPROVER_assert(nonce[i] == EXPECTED_NONCE[i], "gcm_seal: the nonce RFC 9001 §5.8 "
-                                                        "prints");
+        __CPROVER_assert(nonce[i] == expected[i], "gcm_seal: the nonce the version's RFC prints");
     }
     __CPROVER_assert(n == 0, "gcm_seal: the empty plaintext of RFC 9001 §5.8");
     __CPROVER_assert(aad == harness_pseudo && aad_len == harness_n,
@@ -142,6 +156,7 @@ int main(void) {
     uint8_t want[GCM_TAG];
     stub_tag_of(pseudo, n, want);
     uint32_t version = nondet_u32();
+    harness_version = version;
     int derived = quic_version_derived(version);
     __CPROVER_assert(quic_retry_ok(version, pseudo, n, want) == derived,
                      "a genuine Retry tag validates in a derived version and in no other");

@@ -1,0 +1,16 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version takes a second switch, so a client that
+  switched to version 2 switches back to version 1 and derives its
+  Initial keys under a version the server did not choose. RFC 9369
+  section 4.1 fixes the negotiated version at the first long header whose
+  Version field differs from the original (rfc9369.txt:240-242).
+  test/quic_version_tests.h requires CH_EINVAL for a switch to either
+  version after a switch to version 2.
+
+--- old
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0 &&
+           q->t.quic_negotiated_version == q->t.cfg.quic_original_version;
+--- new
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0;

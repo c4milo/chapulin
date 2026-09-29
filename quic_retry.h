@@ -8,7 +8,8 @@
 // symbol aes.h or gcm.h declares. That rule is INV-26 in
 // docs/invariants.md, the AES exception: a lookup-table cipher is
 // allowed in this tree only where every key it sees is public, and this
-// key is printed in the RFC itself (rfc9001.txt:1499-1500). RFC 9001 §5
+// key is printed in the RFC itself (rfc9001.txt:1499-1500, and
+// rfc9369.txt:176-188 for version 2). RFC 9001 §5
 // draws the conclusion: Retry packets use a fixed key and so lack
 // confidentiality and integrity protection (rfc9001.txt:1002-1003). The
 // Semgrep rule inv-26-aes-public-keys-only fails a call to any aes_ or
@@ -46,9 +47,11 @@
 // aes_public_key_retry writes; the nonce N is the 96-bit constant
 // 0x461599d35d632bf2239825bb, which quic_retry.c holds, because aes.h
 // leaves the iv field of a Retry key zero; the plaintext is empty; and
-// the associated data is the whole pseudo-packet. So the computation is
-// one gcm_seal over an empty plaintext, then one ct_memeq over GCM_TAG
-// bytes.
+// the associated data is the whole pseudo-packet. RFC 9369 §3.3.3 changes
+// the key to 0x8fb4b01b56ac48e260fbcbcead7ccc92 and the nonce to
+// 0xd86969bc2d7c6d9990efb04a for version 2 and nothing else
+// (rfc9369.txt:176-188). So the computation is one gcm_seal over an
+// empty plaintext, then one ct_memeq over GCM_TAG bytes.
 //
 // Requires: version is the Retry packet's Version field; pseudo points
 // at n readable bytes and tag at GCM_TAG readable bytes.
@@ -65,8 +68,9 @@
 // the GCM_TAG bytes the Retry packet carried at its end. chapulin reads
 // no field of either: it computes the tag over the bytes it is given,
 // so a caller that builds the pseudo-packet wrongly gets a 0 and no
-// diagnosis. RFC 9001
-// Appendix A.4 is the vector (rfc9001.txt:2490-2498).
+// diagnosis. RFC 9001 Appendix A.4 is the version 1 vector
+// (rfc9001.txt:2490-2498) and RFC 9369 Appendix A.4 the version 2 one
+// (rfc9369.txt:574-582).
 //
 // Returns 1 for a matching tag and 0 otherwise, through ct_memeq, and 0
 // without computing a tag for a version this build derives no keys for.
@@ -123,8 +127,9 @@ uint8_t quic_retry_ok(uint32_t version, const uint8_t *pseudo, size_t n,
 // Destination Connection ID is the one the client put in the Initial
 // packet this Retry answers. chapulin reads no field of it and checks
 // none, so a caller that builds the pseudo-packet wrongly gets a tag no
-// client accepts and no diagnosis. RFC 9001 Appendix A.4 is the vector
-// (rfc9001.txt:2490-2498).
+// client accepts and no diagnosis. RFC 9001 Appendix A.4 is the version 1
+// vector (rfc9001.txt:2490-2498) and RFC 9369 Appendix A.4 the version 2
+// one (rfc9369.txt:574-582).
 //
 // Returns CH_OK and writes GCM_TAG bytes. Returns CH_EINVAL and writes
 // nothing when this build derives no keys for version, which is the

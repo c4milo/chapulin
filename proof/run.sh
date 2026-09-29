@@ -1337,19 +1337,26 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 # split of the cipher into quic_aes_soft.c. With the QUIC version the two
 # constructors take (docs/decisions.md 79), unconstrained, and measured
 # the same way at PROVE_ONLY=aes: 436 properties, 55 s, 0.67 GB peak.
-launch fast full aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
+# Version 2's salt, Retry key and labels sit beside version 1's in
+# per-version tables, and the formula then addresses more objects than
+# cbmc's default eight object bits number: it stops with "too many
+# addressed objects" before the solver runs. --object-bits 9 numbers 512.
+# Measured the same way: 439 properties, 26 s, 0.67 GB peak.
+launch fast full aes 45 "fill_nondet.0:177" --object-bits 9 -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The software AES-256 reference and the round-count dispatch in
 # aes_encrypt_schedule, under -DCH_AES_256_TEST, which only tests and
 # proofs define: the key schedule's 52 words, the fourteen rounds and both
 # arms of the dispatch over a havocked round count. HKDF is the stub
 # the aes harness uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
-# PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak.
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak;
+# 619 properties, 25 s, 0.92 GB with version 2's keys (docs/decisions.md 79).
 launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
 # The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
 # contract stubs of the four AES=hw block entries the harness defines,
 # because CBMC cannot read the instructions: both key lengths, the round
 # count each writes, and the dispatch that count drives. Measured the
-# same way: 140 properties, under 1 s, 0.02 GB peak.
+# same way: 140 properties, under 1 s, 0.02 GB peak; 145 properties, under
+# 1 s, 0.02 GB with version 2's keys compiled beside it.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
@@ -1365,7 +1372,8 @@ launch fast full aes_extern 2 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_AES_EX
 # compiled in because quic_keys_update wipes its own copy of the new
 # secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak; 106
 # properties, under 1 s, 0.02 GB with the QUIC version each call takes
-# (docs/decisions.md 79).
+# (docs/decisions.md 79); 107 properties, under 1 s, 0.02 GB once the
+# version chooses between version 1's labels and version 2's.
 launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_keys_suite: the three derivations and the update in the
 # -DCH_SUITE_AES_GCM QUIC build, over each of the three suites, with HKDF
@@ -1375,7 +1383,8 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBL
 # assertions. The one-suite line above measured 106 properties, under
 # 1 s, 0.02 GB. With the QUIC version, and the stub holding every label to
 # the four that version names (docs/decisions.md 79): 142 properties, 2 s,
-# 0.04 GB.
+# 0.04 GB; 144 properties, 13 s, 0.57 GB once those four are version 1's
+# or version 2's by the version's index.
 launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
@@ -1385,7 +1394,10 @@ launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH
 # pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
 # script): 160 properties, 3.5 s, 0.10 GB peak. With the QUIC version,
 # any value, and the refusal that writes no tag byte (docs/decisions.md
-# 79): 172 properties, 20 s, 0.23 GB peak.
+# 79): 172 properties, 20 s, 0.23 GB peak. With version 2 derived and the
+# gcm_seal stub holding each version to the nonce its RFC prints: 185
+# properties, 11 s, 0.21 GB. A quic_retry.c whose version 2 entry names
+# version 1's nonce fails that assertion (1 of 185).
 launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The Initial packet path: both entries over unconstrained lengths, with
 # the eight calls they make stubbed to their contracts

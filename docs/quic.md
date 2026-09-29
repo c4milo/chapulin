@@ -168,9 +168,11 @@ and collects what that delivery produced.
 RFC 9001 §5.1 derives packet keys with TLS 1.3's HKDF-Expand-Label
 (`rfc9001.txt:1017-1021`), so every QUIC label goes through the `tls13 ` prefix
 `hkdf.c` writes. Six labels are involved: `client in` and `server in` (§5.2),
-`quic key`, `quic iv` and `quic hp` (§5.1), and `quic ku` (§6.1). The longest
-is 9 bytes and `HKDF_LABEL_MAX` is 12 (`hkdf.h:26`), so no constant moves. QUIC
-always passes a zero-length context (`rfc9001.txt:1021`).
+`quic key`, `quic iv` and `quic hp` (§5.1), and `quic ku` (§6.1). QUIC version
+2 replaces the last four with `quicv2 key`, `quicv2 iv`, `quicv2 hp` and
+`quicv2 ku` (RFC 9369 §3.3.2, `rfc9369.txt:167-174`). The longest is 10 bytes
+and `HKDF_LABEL_MAX` is 12 (`hkdf.h:26`), so no constant moves. QUIC always
+passes a zero-length context (`rfc9001.txt:1021`).
 
 *Measured*, 2026-09-16. A program linking the tree's unmodified `hkdf.c`,
 `chacha20.c`, `poly1305.c`, `aead.c`, `ct.c` and `sha256.c`, and nothing else,
@@ -260,23 +262,29 @@ in the RFC (`rfc9001.txt:1066`). The Destination Connection ID travels in the
 clear in every long header (RFC 8999 §5.1, `rfc8999.txt:181-182`). RFC 9001
 draws the conclusion itself (`rfc9001.txt:999-1001`): because anyone can
 compute the Initial keys, Initial packets are not considered to have
-confidentiality or integrity protection.
+confidentiality or integrity protection. QUIC version 2 changes the salt to
+`0x0dede3def700a6db819381be6e269dcbf9bd2ed9`, which RFC 9369 §3.3.1 prints
+(`rfc9369.txt:158-165`), and the labels, which §3.3.2 prints, and nothing
+else about the derivation, so the same conclusion holds for its Initial keys.
 
 **Retry.** RFC 9001 §5.8 prints the key and the nonce
 (`rfc9001.txt:1499-1502`): K is 128 bits equal to
 `0xbe0c690b9f66575a1d766b54e368c84e` and N is 96 bits equal to
 `0x461599d35d632bf2239825bb`. RFC 9001 §5 says the same of these packets
 (`rfc9001.txt:1002-1003`): Retry packets use a fixed key and so lack
-confidentiality and integrity protection.
+confidentiality and integrity protection. RFC 9369 §3.3.3 prints version 2's
+pair, `0x8fb4b01b56ac48e260fbcbcead7ccc92` and `0xd86969bc2d7c6d9990efb04a`
+(`rfc9369.txt:176-188`).
 
 **Header protection at those levels.** The mask key is `quic hp` derived from
 the same Initial secret (RFC 9001 §5.1, `rfc9001.txt:1029-1032`), so it is
 public for the same reason the packet key is.
 
 So the complete list of key bytes an AES implementation in this tree ever sees
-is three items: a 16-byte packet key and a 16-byte header protection key, both
-expanded from `HKDF-Extract(initial_salt, dcid)`, and one 16-byte constant the
-RFC prints. No traffic secret `keysched.c` derives is among them.
+is three items in each QUIC version: a 16-byte packet key and a 16-byte header
+protection key, both expanded from `HKDF-Extract(initial_salt, dcid)` under
+the version's salt and labels, and one 16-byte constant the version's RFC
+prints. No traffic secret `keysched.c` derives is among them.
 
 ### The AES exception, stated as an invariant
 
@@ -288,10 +296,11 @@ the two Semgrep grades for the reason below.
 
 **What it forbids, exactly.** No source in this tree may pass a key to `aes.c`
 or `gcm.c` other than these three: the `hkdf_expand_label` output over
-`initial_secret`, where `initial_secret` is `hkdf_extract` over RFC 9001 §5.2's
-printed salt and the Destination Connection ID the caller supplied; the header
-protection key expanded from that same secret; and the 16-byte constant of RFC
-9001 §5.8. Equivalently and more bluntly: exactly two library sources may call
+`initial_secret`, where `initial_secret` is `hkdf_extract` over the printed
+salt of the packet's QUIC version, RFC 9001 §5.2's or RFC 9369 §3.3.1's, and
+the Destination Connection ID the caller supplied; the header protection key
+expanded from that same secret; and the 16-byte constant RFC 9001 §5.8 or RFC
+9369 §3.3.3 prints. Equivalently and more bluntly: exactly two library sources may call
 a symbol `aes.h` or `gcm.h` declares, `quic_initial.c` (the Initial packet
 path) and `quic_retry.c` (the Retry tag, minted and checked), and no other file may call one
 or construct the key type below. Every symbol those two headers declare begins
@@ -525,7 +534,7 @@ what each one rests on, and nothing more:
 
 | path | proved | tested |
 | --- | --- | --- |
-| `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
+| `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, RFC 9369 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
 | `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 267 runs of the data loop over every length from 0 to 65 bytes and 200 random lengths up to 16,384, and 2,109 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, and the in-place seal). `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
 | `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server legs against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
 
@@ -1115,7 +1124,7 @@ These are the names the header will use.
 | `ch_quic_seal_close(q, level, version, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | seals the one CONNECTION_CLOSE packet a failed session sends at one level, with `ch_quic_seal`'s arguments and argument refusals, then wipes that level's write keys and clears its write bit, so a second call there returns `CH_EINVAL`. It runs only when `t.state` is `CH_ST_FAILED` and the level's write bit is set, which a failure leaves at each level whose write keys were installed. `pt` is one CONNECTION_CLOSE frame of type 0x1c, followed by nothing or by PADDING frames alone; chapulin builds no frame and checks none. A packet above `CH_QUIC_CLOSE_MAX`, 1200 bytes with header and tag, returns `CH_EINVAL`. "When a session fails" below states what the caller does, and `docs/decisions.md` entry 57 why |
 | `ch_quic_open(q, level, version, pkt, pkt_len, pn_off, largest_pn, current_phase_lowest_pn, key_set, pn, pt_len)` | refuses, with `CH_EINVAL` and before it reads a byte or counts a failure, a packet whose `version` its level does not admit: the levels admit what `ch_quic_seal`'s do, because a server keeps its original version's Initial receive keys until a Handshake packet in the negotiated version opens (`rfc9369.txt:252-254`) and an endpoint drops a Handshake or 1-RTT packet in any other version (`rfc9369.txt:256-259`). Otherwise it removes header protection, recovers the packet number and removes packet protection in one call, because RFC 9001 §9.5 requires the three applied together without timing side channels (`rfc9001.txt:2110-2112`). `largest_pn` is the largest packet number the caller has successfully processed in that packet number space, the value RFC 9000 §17.1 and Appendix A.3 recover from (`rfc9000.txt:8350-8351`). `current_phase_lowest_pn` is the lowest packet number the caller has processed in the current key phase, which §6.5's selection rule reads. Discards a packet shorter than `pn_off + 4 + 16` bytes before it samples (§5.4.2). A call at `CH_LEVEL_APPLICATION` while `t.state` is below `CH_ST_CONNECTED` returns `CH_EINVAL` and changes nothing, because RFC 9001 §5.7 forbids a client from processing a 1-RTT packet before the TLS handshake is complete even when it already holds the 1-RTT keys (`rfc9001.txt:1484-1486`). At the 1-RTT level it selects the receive key set by §6.5's rule rather than by the Key Phase bit alone: the previous phase and the next phase carry the same Key Phase value (`rfc9001.txt:1735-1737`), so the bit picks the phase and, when the bit differs from the current phase's bit, the recovered packet number decides (`rfc9001.txt:1739-1743`) — below `current_phase_lowest_pn` the previous keys open the packet, at or above it the next keys do. That keeps the §5.5 MUST at `rfc9001.txt:1365-1369`, which forbids opening a higher-numbered packet under the previous keys. The phase compare and the packet number compare both run branchless under §9.5, in the mask arithmetic `ct.h` supplies, never an `if` and never an index a secret chooses. It writes the set that opened the packet to `key_set`: `CH_QUIC_KEY_PREVIOUS`, `CH_QUIC_KEY_CURRENT` or `CH_QUIC_KEY_NEXT`. It works in place in `pkt`, which the caller owns and which holds one whole packet. The two new parameters are `uint64_t *pn` and `size_t *pt_len`. On `CH_OK` the unprotected header sits at the front of `pkt`, the plaintext follows it at `pn_off + pn_len`, `*pt_len` is the plaintext length in bytes and `*pn` is the recovered packet number; a call that does not return `CH_OK` leaves both outputs alone. `*pn` is the value RFC 9000 Appendix A.3 decodes (`rfc9000.txt:8350-8351`), and the caller has no other source for it: it feeds the next call's `largest_pn` and `current_phase_lowest_pn`, and §6.4's KEY_UPDATE_ERROR compares it against the packet numbers of newer key phases, which §6.4 leaves colibri to judge. Recovering it a second time in the caller would put packet number recovery outside the function §9.5 requires it to share with the two unprotect steps (`rfc9001.txt:2110-2112`). A `CH_QUIC_KEY_NEXT` result is a peer-initiated key update, and the caller must call `ch_quic_key_update` before it seals the ACK (§6.2, `rfc9001.txt:1654-1656`). A successful open leaves the unprotected header in `pkt`, so the caller reads byte 0 there for the reserved bits, the Key Phase bit and the packet number length. A packet whose Key Phase bit differs from the current phase and that then fails to authenticate under the selected key set is a discard, and it changes no key set: `ch_quic_open` never installs an update, and `key_set` is written only on a successful open. That is the second §5.5 MUST, which discards a packet that appears to trigger a key update and cannot be unprotected (`rfc9001.txt:1369-1371`), and §6.3 gives the reason, that packets carrying an apparent key update are easy to forge (`rfc9001.txt:1706-1707`). A packet that fails to authenticate is a discard rather than a session failure (§5.5), and it raises the connection-wide §6.6 count of failed opens; the call that carries `open_failures` past 2^36 returns `CH_QUIC_AEAD_LIMIT` and makes the session dead, so no later call processes a packet |
 | `ch_quic_retry_ok(q, version, pseudo, n, tag)` | recomputes the §5.8 tag under the key and nonce `version` prints and compares it with `ct_memeq`. A server sends a Retry in the original version and a client ignores a Retry in any other (`rfc9369.txt:221-222`), so it answers 0 for a `version` other than `cfg.quic_original_version` |
-| `ch_quic_switch_version(q, version)` | makes `version` the negotiated version, the one switch RFC 9369 §4.1 gives a client, which learns that version from the first long header whose Version field differs from the original (`rfc9369.txt:240-242`). It succeeds once: on a live client session that waits for the ServerHello, before any CRYPTO byte from the server was delivered, to a version this build derives that is not the negotiated one; anything else returns `CH_EINVAL` and changes nothing. The first CRYPTO byte fixes the negotiated version, because the server sends every CRYPTO frame in it (`rfc9369.txt:236-244`). No key moves: every Initial key is derived per packet from `initial_dcid`, and no Handshake key exists yet. A client object declares it and a server object does not. This build derives version 1 alone, so every switch is refused |
+| `ch_quic_switch_version(q, version)` | makes `version` the negotiated version, the one switch RFC 9369 §4.1 gives a client, which learns that version from the first long header whose Version field differs from the original (`rfc9369.txt:240-242`). It succeeds once: on a live client session that waits for the ServerHello, before any CRYPTO byte from the server was delivered, to a version this build derives that is not the negotiated one; anything else returns `CH_EINVAL` and changes nothing. The first CRYPTO byte fixes the negotiated version, because the server sends every CRYPTO frame in it (`rfc9369.txt:236-244`). No key moves: every Initial key is derived per packet from `initial_dcid`, and no Handshake key exists yet. A client object declares it and a server object does not. This build derives version 1 and version 2, so a session started in either switches to the other once; the ServerHello step then derives the Handshake keys and the Finished step the 1-RTT keys under the negotiated version's labels |
 | `ch_quic_negotiated_version(q)` | reports `t.quic_negotiated_version`, the version every Handshake and 1-RTT packet carries and their keys are derived under: `cfg.quic_original_version` from init on, until a client's switch, and 0 after a refused init |
 | `ch_quic_key_update(q)` | advances the 1-RTT send secret with `quic ku` (§6.1), toggles `key_phase`, which is the bit the caller must set in byte 0 of every 1-RTT header it seals from then on (RFC 9001 §6.1, `rfc9001.txt:1615-1616`), moves the current receive key set to previous and holds it, promotes the next receive keys to current and generates the next ones (§6.3). No call derives a receive key set while it opens a packet: RFC 9001 §6.3 makes that a timing signal an attacker reads (`rfc9001.txt:1692-1696`), and §9.5 says an endpoint generates and saves the next set after receiving a key update (`rfc9001.txt:2122-2123`). It rewrites the packet protection key and the packet protection IV of every set it touches from the new `quic ku` secret, and it leaves both `quic_hp_key` values alone: RFC 9001 §5.4 keeps one header protection key for the whole connection (`rfc9001.txt:1172-1174`) and §6.1 says the header protection key is not updated (`rfc9001.txt:1607`). A build that derived a new one would compute a mask the peer cannot reproduce, and every 1-RTT packet after the first update would fail header protection removal at both ends. It never drops a set: RFC 9001 §6.1 makes an endpoint retain its old keys until a packet sent under the new keys opens (`rfc9001.txt:1637-1638`), and `ch_quic_drop_previous_keys` is the only call that wipes the previous set. The caller initiates under §6.1's two MUST NOTs, not before the handshake is confirmed and not before a packet under the current keys was acknowledged (`rfc9001.txt:1618-1621`), and responds under §6.2 when `ch_quic_open` reports `CH_QUIC_KEY_NEXT`: then this call is mandatory before the ACK is sealed |
 | `ch_quic_key_phase(q)` | reports `key_phase`, the Key Phase bit the current 1-RTT send key carries. The caller writes it into byte 0 before it calls `ch_quic_seal` at `CH_LEVEL_APPLICATION`. chapulin holds the send key and the bit that names it, so the two cannot disagree |
@@ -2491,7 +2500,9 @@ the ALPN reply already), against 30 modules in `spec/lean/Spec/` today. Each new
 module owes rows in `test/diff_test.c`, whose input domain stays inside what
 the C and the spec agree on.
 
-**Tests.** RFC 9001 Appendix A.1 through A.5 are exact vectors, and they live
+**Tests.** RFC 9001 Appendix A.1 through A.5 are exact vectors, and so are RFC
+9369's for QUIC version 2 (`test/quic_version2_tests.h`, over the values
+`test/quic_v2_vectors.h` copies from `docs/rfcs/rfc9369.txt`). They live
 in `test/quic_vectors.c`, which builds `bin/quic_test` under
 `-DCH_TRANSPORT_QUIC_NONBLOCKING` over the mode's sources and the primitives they call.
 That line grows with the sections: it carries `hkdf.c sha256.c ct.c` for the

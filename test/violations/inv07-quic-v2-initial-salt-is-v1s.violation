@@ -1,0 +1,18 @@
+invariant: INV-7
+file: aes.c
+catches: quic_test
+reason: version 2's Initial salt holds version 1's bytes, so a version 2
+  Initial packet goes out under the keys version 1 derives from the same
+  connection ID, which RFC 9369 section 3.3.1 changes
+  (rfc9369.txt:158-165), and no version 2 peer opens it.
+  test/quic_version2_tests.h requires RFC 9369 Appendix A.1's keys and
+  the A.2 and A.3 packets byte for byte.
+
+--- old
+static const uint8_t INITIAL_SALT_V2[INITIAL_SALT_LEN] = {0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6,
+                                                          0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26,
+                                                          0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9};
+--- new
+static const uint8_t INITIAL_SALT_V2[INITIAL_SALT_LEN] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
+                                                          0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
+                                                          0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};

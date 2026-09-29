@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic.c
+catches: srv_quic_both_test
+reason: ch_quic_switch_version takes a switch on a server session, which
+  RFC 9369 section 4.1 never gives a server: the client learns the
+  negotiated version from the server's packets (rfc9369.txt:240-244). A
+  fresh server session meets every other condition of the switch, so
+  test/srv_quic_version_tests.h, in the ROLE=both build, requires
+  CH_EINVAL for a switch to the other derived version in a version 1 and
+  a version 2 server session, with the negotiated version unchanged.
+
+--- old
+    return q->endpoint == CH_QUIC_ENDPOINT_CLIENT && q->t.state == CH_ST_START &&
+--- new
+    return q->t.state == CH_ST_START &&

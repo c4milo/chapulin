@@ -454,6 +454,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_webpki_chain.h test/diff_webpki_pin.h test/diff_webpki_leaf_pin.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
          test/quic_token_tests.h test/quic_retry_tests.h test/quic_version_tests.h test/srv_quic_version_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
+         test/quic_v2_vectors.h test/quic_version2_tests.h test/quic_loop_version.h test/diff_quic.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
          test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h \
@@ -2986,10 +2987,14 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
 # a -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles neither; test/diff_driver.h holds
 # the plumbing both mains share. aes.c and the AES implementation are
-# on the line for the reason bin/quic_test states.
-bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+# on the line for the reason bin/quic_test states. DIFF_QUIC_SRCS is what
+# each of the three binaries links beside them: quic_keys.c and
+# quic_retry.c, whose version 1 and version 2 rows test/diff_quic.h
+# holds, and the HKDF and constant-time sources they call.
+DIFF_QUIC_SRCS := quic_keys.c quic_retry.c hkdf.c sha256.c ct.c
+bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS)
 # The same main over the AES=hw sources, whatever this build's AES value is,
 # so the rows in test/diff_aes.h and test/diff_gcm.h run the AES instructions
 # and the carry-less multiply GHASH against spec/lean/Spec/Aes.lean and
@@ -2997,19 +3002,19 @@ bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c hkdf.c sha256.c ct.
 # value, which is AES=soft unless the caller says otherwise, and no other
 # differential binary compiles GCM. `diff` builds this one only where
 # AES_HW_PROBE found the instructions.
-bin/diff_quic_hw: test/diff_quic_test.c aes.c $(AES_HW_SRCS) gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+bin/diff_quic_hw: test/diff_quic_test.c aes.c $(AES_HW_SRCS) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c aes.c \
-	  $(AES_HW_SRCS) gcm.c hkdf.c sha256.c ct.c
+	  $(AES_HW_SRCS) gcm.c $(DIFF_QUIC_SRCS)
 # The same main on AES=extern, with test/aes_extern_hook.c as the hook,
 # so the AES and GCM rows, AES-256 among them, run aes_extern.c's
 # forwarding against the spec. It needs no instruction, so `diff` builds
 # it on every host.
-bin/diff_quic_extern: test/diff_quic_test.c aes.c $(AES_EXTERN_DEPS) gcm.c hkdf.c sha256.c ct.c $(HDRS) \
+bin/diff_quic_extern: test/diff_quic_test.c aes.c $(AES_EXTERN_DEPS) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) \
                       $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -I. -o $@ \
-	  test/diff_quic_test.c aes.c $(AES_EXTERN_SRCS) gcm.c hkdf.c sha256.c ct.c
+	  test/diff_quic_test.c aes.c $(AES_EXTERN_SRCS) gcm.c $(DIFF_QUIC_SRCS)
 
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
@@ -4903,6 +4908,14 @@ WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sh
 # because no spec's target has the AES instructions.
 # test/aes_equiv_test.c and the Wycheproof AES-GCM suite on that leg
 # check it instead (docs/quic.md, "What the AES axis proves").
+#
+# aes.c's counts did not move when QUIC version 2's salt, Retry key and
+# labels joined version 1's (docs/decisions.md 79). Each is read from a
+# two-entry table at quic_version_index, the 0 or 1 a comparison of the
+# version yields, and every compiler in the table writes that comparison
+# without a branch. A comparison per constant cost m3 five more and
+# rv32imac three more under the pinned clang. All eight specs were read
+# after the change.
 #
 # sha512.c and sha512_compress.c joined when TLS_AES_256_GCM_SHA384 put
 # SHA-384 under the key schedule: hmac_sha384 hashes HMAC keys and the

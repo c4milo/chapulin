@@ -58,14 +58,17 @@ fn handshake(values: chapulin.Client) !void {
     try server.initialKeys(&dcid);
     try check(client.keysReady(.initial, .write) and !client.keysReady(.handshake, .read), "the client's Initial keys are not the only ones ready");
     // Both sides negotiate the original version, and C refuses a switch to
-    // it and to version 2, whose keys this object does not derive.
+    // it, the version the session already negotiated.
     try check(client.negotiatedVersion() == .v1 and server.negotiatedVersion() == .v1, "a session did not negotiate its original version");
-    try check(client.switchVersion(.v1) == error.Invalid and client.switchVersion(.v2) == error.Invalid, "a switch C refuses was taken");
+    try check(client.switchVersion(.v1) == error.Invalid, "a switch to the negotiated version was taken");
 
     var n = try client.cryptoOut(.initial, &message);
     try server.cryptoIn(.initial, message[0..n], &outgoing);
     try check(server.keysReady(.handshake, .write) and server.keysReady(.application, .write), "the server's flight left its write keys unready");
     try client.cryptoIn(.initial, sent(.initial));
+    // The server's first CRYPTO bytes arrived in version 1, which makes
+    // version 1 the negotiated one, so C refuses a switch to version 2 now.
+    try check(client.switchVersion(.v2) == error.Invalid and client.negotiatedVersion() == .v1, "a switch after the server's first byte was taken");
     try check(client.keysReady(.handshake, .read) and !client.keysReady(.application, .read), "the ServerHello did not ready the client's Handshake keys alone");
     if (@hasDecl(c, "ch_keylog")) {
         try check(chapulin.hookContext(hooks.keylog_io) == @as(*anyopaque, &client_context), "ch_keylog did not find the client's context");
@@ -117,7 +120,11 @@ fn keyUpdate() !void {
 fn retryAndTokens() !void {
     const pseudo = "a Retry pseudo-packet";
     var tag: [c.GCM_TAG]u8 = undefined;
-    try check(quic.retryTag(.v2, pseudo, &tag) == error.Invalid, "retryTag took a version this object does not derive");
+    // 0x0a0a0a0a is a version RFC 9000 section 15 reserves, whose keys no
+    // object derives.
+    try check(quic.retryTag(@enumFromInt(0x0a0a0a0a), pseudo, &tag) == error.Invalid, "retryTag took a version this object does not derive");
+    try quic.retryTag(.v2, pseudo, &tag);
+    try check(!client.retryOk(.v2, pseudo, &tag), "retryOk took a Retry in a version other than the original");
     try quic.retryTag(.v1, pseudo, &tag);
     try check(client.retryOk(.v1, pseudo, &tag), "retryOk refused retryTag's tag");
     try check(!client.retryOk(.v2, pseudo, &tag), "retryOk took a Retry in a version other than the original");

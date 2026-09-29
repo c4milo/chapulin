@@ -1,0 +1,17 @@
+invariant: INV-7
+file: quic_step.c
+catches: quic_driver_test
+reason: the ServerHello step derives the Handshake keys under the
+  original version's labels, so a client that switched to version 2
+  seals and opens its Handshake packets under version 1's keys while it
+  names version 2, and no packet of the server's opens. RFC 9369 section
+  4.1 sends every Handshake packet in the negotiated version
+  (rfc9369.txt:256-257). test/quic_version_tests.h requires each
+  Handshake key after a switch to be the one version 2's labels derive.
+
+--- old
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.s_hs, q->t.suite);
+--- new
+    uint32_t version = q->t.cfg.quic_original_version;
+    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.s_hs, q->t.suite);

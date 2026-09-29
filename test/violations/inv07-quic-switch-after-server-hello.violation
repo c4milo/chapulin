@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version takes a switch after the ServerHello step,
+  once a delivery of no bytes at the Handshake level has emptied cfg.buf,
+  so the Handshake keys installed under version 1 stay while the packet
+  calls hold every Handshake packet to version 2. The server's CRYPTO
+  bytes fixed the negotiated version when they arrived
+  (rfc9369.txt:236-244). test/quic_version_tests.h requires CH_EINVAL
+  there, with t.pt_len at 0 so the step is the only condition left.
+
+--- old
+           q->step == HSQ_STEP_AWAIT_SERVER_HELLO && q->t.pt_len == 0 &&
+--- new
+           q->t.pt_len == 0 &&

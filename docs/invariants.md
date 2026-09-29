@@ -647,10 +647,10 @@ last `ROLE=server` stub, as the entry said it would.
   like the encryption level: every packet call takes the version of the
   packet beside its level, and chapulin chooses neither (decisions.md 79).
   It derives the keys of the versions `quic_version_derived` admits,
-  version 1 alone today; it refuses an original version it does not derive,
-  a packet in a version its level does not admit, and a Retry in any
-  version but the original, and a client switches to another version once,
-  before the server's first CRYPTO byte. The client offers
+  version 1 and version 2; it refuses an original version it does not
+  derive, a packet in a version its level does not admit, and a Retry in
+  any version but the original, and a client switches to the other version
+  once, before the server's first CRYPTO byte. The client offers
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
@@ -716,23 +716,35 @@ last `ROLE=server` stub, as the entry said it would.
   and handshake_sequence assert the reject on any ServerHello that picks
   another suite or group. The QUIC version rules are tested through the
   public calls: `bin/quic_driver_test` (`test/quic_version_tests.h`)
-  refuses 0, version 2 and two versions no RFC this build carries defines
-  at init, at the switch, at each packet call at the Initial and the
-  Handshake level and at `ch_quic_retry_ok`, and opens an Initial packet in
-  the original version; `bin/srv_quic_test` and `bin/srv_quic_both_test`
-  (`test/srv_quic_version_tests.h`) refuse them at `ch_srv_quic_init` and
-  `ch_srv_quic_retry_tag` and refuse a server session's switch;
-  `bin/quic_loop_test` refuses a 1-RTT packet in version 2 at both ends;
-  and `bin/quic_test` refuses them at the two Initial derivations and the
-  Retry tag. The `quic_driver` harness proves the refusals over any saved
-  version and any version a caller passes, the switch's six conditions
-  and its one success included, and the `quic_initial`, `quic_retry`,
-  `quic_step` and `quic_config_webpki` harnesses prove their files' share.
-  Eleven `inv07-quic-` and `inv07-srv-quic-` violations each drop one rule,
-  and a test fails on each. The switch's other conditions, a server
-  session, a failed session, a second switch and one after a server byte,
-  refuse every switch in a build that derives one version, so their
-  mutants wait for version 2's keys. `bin/webpki_session_test` drives the
+  refuses 0, the values beside version 1 and version 2 and a version RFC
+  9000 reserves at init, at the switch, at each packet call at the Initial
+  and the Handshake level and at `ch_quic_retry_ok`, and opens an Initial
+  packet in the original version. It switches a version 1 client to
+  version 2 and opens the server Initial packet RFC 9369 Appendix A.3
+  prints, holds each Handshake key to the one version 2's labels derive,
+  and refuses the switch after one server byte, after the ServerHello
+  step with the receive buffer empty, on a failed session and a second
+  time; `bin/srv_quic_test` and `bin/srv_quic_both_test`
+  (`test/srv_quic_version_tests.h`) refuse the underived versions at
+  `ch_srv_quic_init` and `ch_srv_quic_retry_tag`, start a session in
+  either derived version, and refuse a server session's switch;
+  `bin/quic_loop_test` refuses a 1-RTT packet in the other version at both
+  ends, and runs whole handshakes in version 2, one of them after a
+  client's switch, with a key update at each end (`test/quic_loop_version.h`);
+  and `bin/quic_test` refuses the underived versions at the two Initial
+  derivations and the Retry tag, and holds version 2's salt, labels,
+  Retry key and nonce to RFC 9369 Appendix A. The `quic_driver` harness
+  proves the refusals over any saved version and any version a caller
+  passes, the switch's six conditions and its one success included, and
+  the `quic_initial`, `quic_retry`, `quic_step` and `quic_config_webpki`
+  harnesses prove their files' share. Twenty-five `inv07-quic-` and
+  `inv07-srv-quic-` violations each drop one rule or swap one version 2
+  value for version 1's, and a test fails on each: the switch's server,
+  failed-session, second-switch, server-byte and ServerHello conditions,
+  the Initial level's original version, the Handshake keys, the 1-RTT
+  keys and the key update under the negotiated version, and version 2's
+  salt, labels, key update label, Retry key and Retry nonce among them.
+  `bin/webpki_session_test` drives the
   two-group offer against a mock server, and four mutants require it to
   fail: a hello that lists x25519 without its share, a parser that takes
   a retry naming a shared group, and `require_pq` keeping x25519 in the
@@ -2323,13 +2335,22 @@ last `ROLE=server` stub, as the entry said it would.
   public exactly when that key is. Only `AES=soft` is table-driven,
   and the claim below is what lets that one exist; outside a suite build
   it binds all three the same way, because `AES=extern` cannot state its
-  timing either. There are three: the packet protection key and the header
-  protection key, both expanded from `HKDF-Extract` over RFC 9001
-  §5.2's printed salt and the Destination Connection ID the caller
-  supplied, and the 16-byte constant RFC 9001 §5.8 prints for the Retry
-  integrity tag. RFC 9001 §5 draws the conclusion for the first two
-  itself: anyone can compute them, so Initial packets have no
-  confidentiality or integrity protection. Outside a
+  timing either. There are three, and each has a QUIC version 1 form and a
+  version 2 form: the packet protection key and the header protection
+  key, both expanded from `HKDF-Extract` over the version's printed salt,
+  RFC 9001 §5.2's or RFC 9369 §3.3.1's, and the Destination Connection ID
+  the caller supplied, under the version's printed labels, and the
+  16-byte constant the version prints for the Retry integrity tag, RFC
+  9001 §5.8's or RFC 9369 §3.3.3's (`rfc9369.txt:158-188`). RFC 9001 §5
+  draws the conclusion for the first two itself: anyone can compute them,
+  so Initial packets have no confidentiality or integrity protection.
+  RFC 9369 changes only printed inputs, the salt, the labels and the
+  Retry key and nonce, and the connection ID still travels in the clear,
+  so the conclusion holds for version 2's as it does for version 1's; its
+  §8 says version 2 changes no security property of version 1
+  (`rfc9369.txt:320-321`). A version picks its constants by a table read
+  in `aes.c` and `quic_retry.c`, and the version is itself a value the
+  caller read off the wire. Outside a
   `-DCH_SUITE_AES_GCM` build no traffic secret `keysched.c` derives is
   passed to AES, and AES is never a cipher suite. No field of `ch_quic`
   holds an AES key, and no AES key outlives the call that built it.

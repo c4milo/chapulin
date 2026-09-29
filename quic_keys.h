@@ -49,7 +49,8 @@ _Static_assert(CH_QUIC_KEY_SETS == CH_QUIC_KEY_NEXT + 1,
 
 // One direction of one encryption level: the packet protection key and
 // the packet protection IV of RFC 9001 §5.1, derived under the labels
-// "quic key" and "quic iv" (rfc9001.txt:1029-1032). It carries no
+// "quic key" and "quic iv" (rfc9001.txt:1029-1032), or "quicv2 key" and
+// "quicv2 iv" in QUIC version 2 (rfc9369.txt:167-174). It carries no
 // sequence number, where rec_dir carries one: QUIC's packet number
 // comes from the caller on every call, so nothing here counts packets.
 typedef struct {
@@ -68,7 +69,8 @@ typedef struct {
 } quic_keys;
 
 // The header protection key of RFC 9001 §5.1, derived under the label
-// "quic hp", one per direction per encryption level. It is a type of
+// "quic hp", or "quicv2 hp" in QUIC version 2, one per direction per
+// encryption level. It is a type of
 // its own rather than a third field of quic_keys because its lifetime
 // differs: §5.4 uses the same header protection key for the whole
 // connection, with the value not changing after a key update
@@ -93,9 +95,12 @@ typedef struct {
 // direction's traffic secret under one QUIC version's labels, which
 // quic_version.h holds: HKDF-Expand-Label(secret, "quic key", "",
 // AEAD_KEY) and HKDF-Expand-Label(secret, "quic iv", "", AEAD_NONCE) in
-// version 1. QUIC passes a zero-length context to every one of these
-// labels (RFC 9001 §5.1, rfc9001.txt:1017-1021, rfc9001.txt:1029-1032).
-// RFC 9001 Appendix A.5 is the version 1 vector for the 1-RTT level.
+// version 1, and "quicv2 key" and "quicv2 iv" in version 2
+// (rfc9369.txt:167-174). QUIC passes a zero-length context to every one
+// of these labels (RFC 9001 §5.1, rfc9001.txt:1017-1021,
+// rfc9001.txt:1029-1032). RFC 9001 Appendix A.5 is the version 1 vector
+// for the 1-RTT level and RFC 9369 Appendix A.5 the version 2 one
+// (rfc9369.txt:584-638).
 //
 // Requires: k is not NULL; version is the session's negotiated version,
 // ch_tls.quic_negotiated_version, which is one quic_version_derived
@@ -110,7 +115,8 @@ void quic_keys_init(quic_keys *k, uint32_t version, const uint8_t secret[SHA256_
 
 // Derives one direction's header protection key from the same traffic
 // secret under the same version's label: HKDF-Expand-Label(secret,
-// "quic hp", "", CHACHA20_KEY) in version 1.
+// "quic hp", "", CHACHA20_KEY) in version 1, and "quicv2 hp" in
+// version 2.
 //
 // Requires: h is not NULL; version and secret are the ones quic_keys_init
 // took for this level and direction. The caller calls it once per
@@ -145,11 +151,11 @@ void quic_hp_key_init_suite(quic_hp_key *h, uint32_t version, const uint8_t *sec
 
 // The key update of RFC 9001 §6.1: secret' =
 // HKDF-Expand-Label(secret, "quic ku", "", Hash.length) at the hash of
-// k's suite (rfc9001.txt:1605-1607, rfc9001.txt:1612-1613), written back over
-// secret, then the packet protection key and IV re-derived from it into
-// k, each under version's label (quic_version.h). The caller owns the
-// traffic secret and passes it here, the way rec_dir_update takes the TLS
-// one.
+// k's suite (rfc9001.txt:1605-1607, rfc9001.txt:1612-1613), under "quicv2
+// ku" in version 2 (rfc9369.txt:167-174), written back over secret, then
+// the packet protection key and IV re-derived from it into k, each under
+// version's label (quic_version.h). The caller owns the traffic secret
+// and passes it here, the way rec_dir_update takes the TLS one.
 //
 // It rewrites the packet protection key and the IV and nothing else. No
 // quic_hp_key is passed to it, because §6.1 does not update the header

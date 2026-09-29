@@ -274,15 +274,18 @@ how to cut and size its bytes:
 ## The server role and QUIC
 
 The `TRANSPORT=quic-nonblocking` client is implemented and checked against RFC 9001's
-Appendix A vectors; [`docs/quic.md`](quic.md) records its design. A
+and RFC 9369's Appendix A vectors; [`docs/quic.md`](quic.md) records its design. A
 QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic-nonblocking` runs the
 TLS 1.3 server handshake over CRYPTO frames and exports twenty-two calls,
 two of which mint and check the address validation token a server puts in
 a Retry, and two of which are `alert.h`'s. Every QUIC configuration, in
 either role, names the version of the client's first Initial packet in
 `ch_cfg.quic_original_version`, and every packet call takes the version of
-the packet beside its level; a build derives QUIC version 1's keys alone
-for now ([`docs/decisions.md`](decisions.md) 79).
+the packet beside its level. A build derives the keys of QUIC version 1 and
+version 2, and a client switches from its original version to the other
+once, before the server's first CRYPTO byte; a server negotiates its
+original version until a later commit adds the server's choice
+([`docs/decisions.md`](decisions.md) 79).
 [`docs/quic_server.md`](quic_server.md) states what chapulin owes one,
 which is the keys, the packet protection and that token, and nothing above
 them. Both

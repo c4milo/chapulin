@@ -25,6 +25,8 @@
 
 #include "diff_gcm.h"
 
+#include "diff_quic.h"
+
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
@@ -37,6 +39,9 @@ int main(int argc, char **argv) {
     expect("selftest", "ok");
     diff_aes128();
     diff_quic_initial_keys();
+    diff_quic_packet_keys();
+    diff_quic_key_update();
+    diff_quic_retry_tag();
     diff_gcm_seal(AES_128_KEY);
     diff_gcm_open(AES_128_KEY);
     diff_ghash(AES_128_KEY);

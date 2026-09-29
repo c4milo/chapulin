@@ -21,6 +21,11 @@ def hexArg? (s : String) : Option ByteArray :=
 def emit (b : ByteArray) : String :=
   if b.size == 0 then "-" else bytesToHex b
 
+/-- The QUIC version a `quic_` row names by its Version field in decimal,
+and nothing for a field `Spec.Quic.Version.ofField?` does not read. -/
+def quicVersion? (field : String) : Option Spec.Quic.Version := do
+  Spec.Quic.Version.ofField? (← field.toNat?)
+
 def emitNat? (n : Option Nat) : String :=
   match n with
   | some v => toString v
@@ -66,6 +71,7 @@ def selftestAll (_ : Unit) : String :=
     ("poly", Spec.Poly.selftest),
     ("aes", Spec.Aes.selftest),
     ("gcm", Spec.Gcm.selftest),
+    ("quic", Spec.Quic.selftest),
     ("aead", Spec.Aead.selftest),
     ("record", Spec.Record.selftest),
     ("tls_write", Spec.TlsWrite.selftest),
@@ -241,17 +247,43 @@ def dispatch : List String → Option String
     -- key size (SP 800-38D §7.1 step 1).
     guard (k.size == 16 || k.size == 32)
     return emit (Spec.Gcm.ghash k (← hexArg? aad) (← hexArg? ct))
-  | ["quic_initial_keys", dcid, direction] => do
+  -- The QUIC rows name the version by its Version field in decimal, and a
+  -- field neither RFC 9001 nor RFC 9369 defines is outside the protocol:
+  -- the C refuses one with CH_EINVAL before it derives a key.
+  | ["quic_initial_keys", field, dcid, direction] => do
+    let version ← quicVersion? field
     let d ← hexArg? dcid
-    -- RFC 9000 §17.2 caps a version 1 connection ID at 20 bytes, and
-    -- aes_public_key_initial refuses a longer one rather than truncating.
+    -- RFC 9000 §17.2 caps a version 1 connection ID at 20 bytes, RFC 9369
+    -- keeps the cap, and aes_public_key_initial refuses a longer one
+    -- rather than truncating.
     if d.size > 20 then return "ERR quic_initial_keys dcid over 20 bytes"
     let client ← match direction with
       | "client" => some true
       | "server" => some false
       | _ => none
-    let (key, iv, hp) := Spec.Aes.initialKeys d client
+    let (key, iv, hp) := Spec.Quic.initialKeys version d client
     return s!"{emit key} {emit iv} {emit hp}"
+  | ["quic_packet_keys", field, secret, keyLen] => do
+    let version ← quicVersion? field
+    let s ← hexArg? secret
+    let l ← keyLen.toNat?
+    -- A SHA-256 traffic secret, and the key length of an AEAD QUIC uses:
+    -- AES-128-GCM's 16 bytes or ChaCha20-Poly1305's and AES-256-GCM's 32.
+    guard (s.size == 32 && (l == 16 || l == 32))
+    let (key, iv, hp) := Spec.Quic.packetKeys version s l
+    return s!"{emit key} {emit iv} {emit hp}"
+  | ["quic_key_update", field, secret] => do
+    let version ← quicVersion? field
+    let s ← hexArg? secret
+    guard (s.size == 32)
+    -- RFC 9001 §6.1: the next secret, and the ChaCha20-Poly1305 key and
+    -- IV the next phase derives from it.
+    let next := Spec.Quic.nextSecret version s
+    let (key, iv, _) := Spec.Quic.packetKeys version next 32
+    return s!"{emit next} {emit key} {emit iv}"
+  | ["quic_retry_tag", field, pseudo] => do
+    let version ← quicVersion? field
+    return emit (Spec.Quic.retryTag version (← hexArg? pseudo))
   | ["poly1305", key, msg] => do
     let k ← hexArg? key
     guard (k.size == 32)

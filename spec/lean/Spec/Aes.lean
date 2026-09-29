@@ -1,10 +1,10 @@
 import Spec.Bytes
-import Spec.Hkdf
 
 /-!
-AES-128 and AES-256, the forward cipher of FIPS 197, and the Initial keys
-RFC 9001 §5.2 derives for AES-128, written from the standards as an
-executable oracle. AES-256 is TLS_AES_256_GCM_SHA384's cipher.
+AES-128 and AES-256, the forward cipher of FIPS 197, written from the
+standard as an executable oracle. AES-128 is the cipher of QUIC's Initial
+packets and Retry tag, whose keys `Spec.Quic` derives, and AES-256 is
+TLS_AES_256_GCM_SHA384's.
 
 The S-box is computed, not tabulated: FIPS 197 §5.1.1 defines it as the
 affine transform of the multiplicative inverse in GF(2^8), and this
@@ -153,34 +153,6 @@ whichever CIPH_K its key names, so `Spec.Gcm` calls this. -/
 def cipher (key block : ByteArray) : ByteArray :=
   if key.size == 32 then encryptBlock256 key block else encryptBlock key block
 
-/-- RFC 9001 §5.2's printed salt, 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a. -/
-def initialSalt : ByteArray :=
-  ByteArray.mk #[0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17,
-                 0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a]
-
-/-- RFC 9001 §5.8's printed Retry integrity tag key,
-0xbe0c690b9f66575a1d766b54e368c84e. -/
-def retryKey : ByteArray :=
-  ByteArray.mk #[0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a, 0x1d, 0x76,
-                 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e]
-
-/-- RFC 9001 §5.2: the secret one direction protects Initial packets
-with. `client` picks the label "client in", which the client uses for
-what it sends; "server in" is what it reads. -/
-def initialSecret (dcid : ByteArray) (client : Bool) : ByteArray :=
-  Spec.Hkdf.expandLabel (Spec.Hkdf.extract initialSalt dcid)
-    (if client then "client in" else "server in") ByteArray.empty 32
-
-/-- RFC 9001 §5.1: the packet protection key, the packet protection IV
-and the header protection key of one direction of the Initial level,
-each an HKDF-Expand-Label over that direction's secret with an empty
-context. -/
-def initialKeys (dcid : ByteArray) (client : Bool) : ByteArray × ByteArray × ByteArray :=
-  let secret := initialSecret dcid client
-  (Spec.Hkdf.expandLabel secret "quic key" ByteArray.empty 16,
-   Spec.Hkdf.expandLabel secret "quic iv" ByteArray.empty 12,
-   Spec.Hkdf.expandLabel secret "quic hp" ByteArray.empty 16)
-
 /-- A word read byte by byte is four bytes, whatever the array holds. -/
 theorem wordAt_size (w : ByteArray) (j : Nat) : (wordAt w j).size = 4 := rfl
 
@@ -295,16 +267,15 @@ theorem cipher_size (key block : ByteArray) (h_block : block.size = 16) :
 
 set_option compiler.extract_closed false in
 /-- Test vectors: FIPS 197 Appendix C.1 for the block cipher, the §5.1.1
-worked S-box entry, RFC 9001 Appendix A.1 for the client's Initial keys,
-and for AES-256 Appendix A.3's first computed word and last round key and
-Appendix C.3's block, both through `cipher`'s dispatch. -/
+worked S-box entry, and for AES-256 Appendix A.3's first computed word and
+last round key and Appendix C.3's block, both through `cipher`'s
+dispatch. -/
 def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])
   let block := encryptBlock (hx "000102030405060708090a0b0c0d0e0f")
     (hx "00112233445566778899aabbccddeeff")
-  let (key, iv, hp) := initialKeys (hx "8394c8f03e515708") true
   let schedule256 :=
     keySchedule256 (hx "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4")
   let block256 := cipher (hx "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
@@ -314,8 +285,5 @@ def selftest (_ : Unit) : Bool :=
     && bytesToHex (roundKeyAt schedule256 14) == "fe4890d1e6188d0b046df344706c631e"
     && bytesToHex block256 == "8ea2b7ca516745bfeafc49904b496089"
     && bytesToHex (ByteArray.mk #[sbox 0x53]) == "ed"
-    && bytesToHex key == "1f369613dd76d5467730efcbe3b1a22d"
-    && bytesToHex iv == "fa044b2f42a3fd3b46fb255c"
-    && bytesToHex hp == "9f50449e04a0e810283a1e9933adedd2"
 
 end Spec.Aes

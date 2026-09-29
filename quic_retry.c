@@ -7,13 +7,13 @@
 // data is the pseudo-packet the caller built. One gcm_seal is the whole
 // of minting, and one ct_memeq after it is the whole of checking.
 //
-// Nothing here is secret. The key is printed in the RFC
-// (rfc9001.txt:1499-1500), the nonce is printed beside it, and the
-// pseudo-packet holds bytes that travelled in the clear: the Retry
-// packet the server sent, and the connection ID the client's own
-// Initial packet carried. That is why INV-26 in docs/invariants.md
-// admits the table-driven AES under this call, and why no line below
-// wipes anything.
+// Nothing here is secret. Each version's key is printed in its RFC
+// (rfc9001.txt:1499-1500, rfc9369.txt:176-188), the nonce is printed
+// beside it, and the pseudo-packet holds bytes that travelled in the
+// clear: the Retry packet the server sent, and the connection ID the
+// client's own Initial packet carried. That is why INV-26 in
+// docs/invariants.md admits the table-driven AES under this call, and why
+// no line below wipes anything.
 #include "quic_retry.h"
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -29,12 +29,20 @@
 static const uint8_t RETRY_NONCE_V1[AES_IV] = {0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63,
                                                0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb};
 
+// RFC 9369 §3.3.3's printed nonce for QUIC version 2, 0xd86969bc2d7c6d9990efb04a
+// (rfc9369.txt:176-188).
+static const uint8_t RETRY_NONCE_V2[AES_IV] = {0xd8, 0x69, 0x69, 0xbc, 0x2d, 0x7c,
+                                               0x6d, 0x99, 0x90, 0xef, 0xb0, 0x4a};
+
+// Each version's nonce, at the index quic_version_index gives it: version 1's
+// first, version 2's second.
+static const uint8_t *const RETRY_NONCES[QUIC_VERSION_COUNT] = {RETRY_NONCE_V1, RETRY_NONCE_V2};
+
 // The nonce version's Retry integrity tag is sealed under. quic_retry_tag
-// refuses a version this build does not derive before it asks, and version
-// 1 is the one version it derives, so every call answers version 1's nonce.
+// refuses a version this build does not derive before it asks, so version is
+// version 1 or version 2 here.
 static const uint8_t *retry_nonce(uint32_t version) {
-    (void)version;
-    return RETRY_NONCE_V1;
+    return RETRY_NONCES[quic_version_index(version)];
 }
 
 int quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]) {

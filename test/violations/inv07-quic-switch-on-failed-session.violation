@@ -1,0 +1,15 @@
+invariant: INV-7
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_switch_version takes a switch on a failed session, which
+  then derives the keys of its one close under a version no packet of the
+  connection carried. A session that fails at its ServerHello still waits
+  for the ServerHello, holds no server byte after the wipe and has not
+  switched, so its state is the one condition left to refuse it.
+  test/quic_version_tests.h requires CH_EINVAL for a switch to version 2
+  there.
+
+--- old
+    return q->endpoint == CH_QUIC_ENDPOINT_CLIENT && q->t.state == CH_ST_START &&
+--- new
+    return q->endpoint == CH_QUIC_ENDPOINT_CLIENT &&

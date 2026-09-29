@@ -1,0 +1,17 @@
+invariant: INV-7
+file: quic_retry.c
+catches: quic_test
+reason: version 2's Retry nonce holds version 1's bytes, so a server's
+  version 2 Retry carries a tag no version 2 client validates, and a
+  client drops a genuine one, where RFC 9369 section 3.3.3 prints
+  0xd86969bc2d7c6d9990efb04a (rfc9369.txt:176-188).
+  test/quic_version2_tests.h requires RFC 9369 Appendix A.4's tag, and
+  test_retry_constants_from_secrets requires the nonce the version 2
+  Retry secret derives.
+
+--- old
+static const uint8_t RETRY_NONCE_V2[AES_IV] = {0xd8, 0x69, 0x69, 0xbc, 0x2d, 0x7c,
+                                               0x6d, 0x99, 0x90, 0xef, 0xb0, 0x4a};
+--- new
+static const uint8_t RETRY_NONCE_V2[AES_IV] = {0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63,
+                                               0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb};

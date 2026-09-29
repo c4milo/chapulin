@@ -72,11 +72,13 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // key, and each derives the one direction's key it needs on its own
 // stack. aes_public_key_initial does that derivation: the shared secret
 // is HKDF-Extract over the printed salt of the QUIC version the call is
-// given, 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a in version 1, and
-// dcid (rfc9001.txt:1051-1055, rfc9001.txt:1066), then one label per
-// endpoint, "client in" and "server in" (rfc9001.txt:1057-1061). RFC
-// 9001 Appendix A.1 is the version 1 vector for both endpoints
-// (rfc9001.txt:2352-2377).
+// given, 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a in version 1
+// (rfc9001.txt:1051-1055, rfc9001.txt:1066) and
+// 0x0dede3def700a6db819381be6e269dcbf9bd2ed9 in version 2
+// (rfc9369.txt:158-165), and dcid, then one label per endpoint, "client
+// in" and "server in" (rfc9001.txt:1057-1061). RFC 9001 Appendix A.1 is
+// the version 1 vector for both endpoints (rfc9001.txt:2352-2377), and
+// RFC 9369 Appendix A.1 the version 2 one (rfc9369.txt:412-464).
 //
 // version, the second argument of both, is the Version field of the
 // packet's long header, and it chooses the salt and the three §5.1

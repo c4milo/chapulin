@@ -120,11 +120,6 @@ def decrypt? (key iv aad ct tag : ByteArray) : Option ByteArray :=
   else
     none
 
-/-- RFC 9001 §5.8's printed Retry key and nonce (`rfc9001.txt:1499-1502`),
-the one AES key in QUIC that no derivation produces. -/
-def retryNonce : ByteArray :=
-  ByteArray.mk #[0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63, 0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb]
-
 /-- GHASH answers one block (SP 800-38D §6.4: GHASH maps to a 128-bit
 block). -/
 theorem ghash_size (key aad ct : ByteArray) : (ghash key aad ct).size = 16 :=
@@ -168,10 +163,9 @@ theorem decrypt?_isSome (key iv aad ct tag : ByteArray) :
   split <;> simp_all
 
 set_option compiler.extract_closed false in
-/-- Test vectors: NIST SP 800-38D's AES-128 cases 1 to 4, its AES-256
-cases 13 to 16, and the RFC 9001 Appendix A.4 Retry integrity tag, which
-is this AEAD over an empty plaintext with the Retry Pseudo-Packet as
-associated data (§5.8). -/
+/-- Test vectors: NIST SP 800-38D's AES-128 cases 1 to 4 and its AES-256
+cases 13 to 16. `Spec.Quic` checks the RFC 9001 and RFC 9369 Retry
+integrity tags, which are this AEAD over an empty plaintext. -/
 def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
@@ -185,15 +179,10 @@ def selftest (_ : Unit) : Bool :=
   let aad4 := hx "feedfacedeadbeeffeedfacedeadbeefabaddad2"
   let pt4 := hx ("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72" ++
                  "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-  -- RFC 9001 Appendix A.4's Retry Pseudo-Packet: the original
-  -- Destination Connection ID's length, that connection ID, and the
-  -- Retry packet up to its tag.
-  let pseudo := hx "088394c8f03e515708ff000000010008f067a5502a4262b5746f6b656e"
   let (ct1, tag1) := encrypt zeroKey zeroIv ByteArray.empty ByteArray.empty
   let (ct2, tag2) := encrypt zeroKey zeroIv ByteArray.empty (hx "00000000000000000000000000000000")
   let (ct3, tag3) := encrypt key3 iv3 ByteArray.empty pt3
   let (ct4, tag4) := encrypt key3 iv3 aad4 pt4
-  let (_, retryTag) := encrypt Spec.Aes.retryKey retryNonce pseudo ByteArray.empty
   let zeroKey256 := hx "0000000000000000000000000000000000000000000000000000000000000000"
   let key15 := hx "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"
   let (ct13, tag13) := encrypt zeroKey256 zeroIv ByteArray.empty ByteArray.empty
@@ -210,7 +199,6 @@ def selftest (_ : Unit) : Bool :=
     && bytesToHex ct4 == ("42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e" ++
                           "21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091")
     && bytesToHex tag4 == "5bc94fbc3221a5db94fae95ae7121a47"
-    && bytesToHex retryTag == "04a265ba2eff4d829058fb3f0f2496ba"
     && decrypt? key3 iv3 aad4 ct4 tag4 == some pt4
     && decrypt? key3 iv3 aad4 ct4 tag3 == none
     && bytesToHex (ghash zeroKey ByteArray.empty ByteArray.empty)

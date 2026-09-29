@@ -19,7 +19,8 @@
 // the other, which is what the two cases below check after each
 // handshake. The raw build also fails each end on purpose and has it seal
 // the one CONNECTION_CLOSE each level owes, which the other end opens
-// (test/quic_loop_close.h). bin/quic_loop_session is the raw build under
+// (test/quic_loop_close.h), and runs whole handshakes in QUIC version 2
+// (test/quic_loop_version.h). bin/quic_loop_session is the raw build under
 // -DCH_RAND_SESSION: every session draws from the source its ch_cfg names,
 // and test/quic_loop_session.h checks what each source handed out.
 #include <stdio.h>
@@ -222,8 +223,11 @@ static ch_quic client;
 static ch_quic server;
 
 // One handshake over CRYPTO bytes, the ticket after it, and nothing else.
-// Returns 1 when both ends are connected, and 0 at the first refusal.
-static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
+// A switch_to other than 0 is the version the client switches to after
+// the server read its hello and before it reads a server byte, the moment
+// RFC 9369 section 4.1 gives it (rfc9369.txt:240-244). Returns 1 when both
+// ends are connected, and 0 at the first refusal.
+static int run_quic_switching(const ch_cfg *ccfg, const ch_cfg *scfg, uint32_t switch_to) {
     static uint8_t buf[4096];
     size_t n = 0;
     memset(&from_server, 0, sizeof from_server);
@@ -232,6 +236,9 @@ static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
     }
     if (ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) != CH_OK ||
         ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) != CH_OK) {
+        return 0;
+    }
+    if (switch_to != 0 && ch_quic_switch_version(&client, switch_to) != CH_OK) {
         return 0;
     }
     if (ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
@@ -247,6 +254,10 @@ static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
     return ch_quic_state(&client) == CH_ST_CONNECTED && ch_quic_state(&server) == CH_ST_CONNECTED;
 }
 
+static int run_quic(const ch_cfg *ccfg, const ch_cfg *scfg) {
+    return run_quic_switching(ccfg, scfg, 0);
+}
+
 // Hands the server's 1-RTT CRYPTO bytes, the NewSessionTicket, to the
 // client.
 static void take_ticket(void) {
@@ -257,30 +268,36 @@ static void take_ticket(void) {
 
 // The 1-RTT keys agree: a short-header packet the server seals, with an
 // empty connection ID and a two-byte packet number, opens at the client.
-// Both ends negotiated version 1, and a 1-RTT packet in version 2 is one
-// RFC 9369 section 4.1 makes each end drop: the seal is refused, and the
-// open is refused before the packet is read or a failure counted.
-static void check_keys_agree(void) {
+// Both ends negotiated the version given, and a 1-RTT packet in the other
+// version is one RFC 9369 section 4.1 makes each end drop: the seal is
+// refused, and the open is refused before the packet is read or a failure
+// counted.
+static void check_keys_agree_in(uint32_t version) {
     static const uint8_t hdr[3] = {0x41, 0x00, 0x05};
     static const uint8_t pt[24] = {'r', 'e', 's', 'u', 'm', 'e', 'd'};
+    uint32_t other = version == CH_QUIC_VERSION_1 ? CH_QUIC_VERSION_2 : CH_QUIC_VERSION_1;
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(ch_quic_negotiated_version(&client) == CH_QUIC_VERSION_1 &&
-          ch_quic_negotiated_version(&server) == CH_QUIC_VERSION_1);
-    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, 5, 2, hdr, sizeof hdr, pt,
-                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
-    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, 5, 2, hdr, sizeof hdr, pt,
-                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_negotiated_version(&client) == version &&
+          ch_quic_negotiated_version(&server) == version);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, other, 5, 2, hdr, sizeof hdr, pt, sizeof pt,
+                       pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, version, 5, 2, hdr, sizeof hdr, pt, sizeof pt,
+                       pkt, sizeof pkt, &pkt_len) == CH_OK);
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
     uint64_t failures_before = client.open_failures;
-    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, pkt, pkt_len, 1, 0, 0,
-                       &key_set, &pn, &pt_len) == CH_EINVAL);
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, other, pkt, pkt_len, 1, 0, 0, &key_set, &pn,
+                       &pt_len) == CH_EINVAL);
     CHECK(client.open_failures == failures_before && pn == 0);
-    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_1, pkt, pkt_len, 1, 0, 0,
-                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, version, pkt, pkt_len, 1, 0, 0, &key_set, &pn,
+                       &pt_len) == CH_OK);
     CHECK(pn == 5 && pt_len == sizeof pt && memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
+}
+
+static void check_keys_agree(void) {
+    check_keys_agree_in(CH_QUIC_VERSION_1);
 }
 
 // How many Handshake-level messages the server sent, counted by walking
@@ -299,6 +316,7 @@ static size_t handshake_messages(void) {
 #ifdef CH_PIN_ECDSA
 #include "quic_loop_close.h"
 #include "quic_loop_raw.h"
+#include "quic_loop_version.h"
 #endif
 #ifdef CH_TRUST_WEBPKI
 #include "quic_loop_webpki.h"
@@ -319,6 +337,7 @@ int main(void) {
 #ifdef CH_PIN_ECDSA
     test_raw_resumption();
     test_close_after_failure();
+    test_quic_version_2();
 #endif
 #ifdef CH_TRUST_WEBPKI
     test_quic_hello_boundary();

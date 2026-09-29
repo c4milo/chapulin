@@ -289,9 +289,9 @@ static void test_initial_endpoint_refusals(void) {
 }
 
 // The version refusal both entries state: a version this build derives no
-// keys for derives no key and writes nothing. Version 1 is the one this
-// build derives, so the values on either side of it, version 2 and a
-// version no RFC defines are each refused, and version 1 itself seals.
+// keys for derives no key and writes nothing. This build derives version
+// 1 and version 2, so the values on either side of each and a version no
+// RFC defines are each refused, and each of the two seals.
 static void test_initial_version_refusals(void) {
     uint8_t dcid[8];
     uint8_t hdr[8];
@@ -300,7 +300,8 @@ static void test_initial_version_refusals(void) {
     memset(hdr, 0x11, sizeof hdr);
     memset(pt, 0x22, sizeof pt);
     const size_t whole = sizeof hdr + sizeof pt + GCM_TAG;
-    static const uint32_t refused[] = {0, CH_QUIC_VERSION_1 + 1, CH_QUIC_VERSION_2, 0x0a0a0a0aU};
+    static const uint32_t refused[] = {0, CH_QUIC_VERSION_1 + 1, CH_QUIC_VERSION_2 - 1,
+                                       CH_QUIC_VERSION_2 + 1, 0x0a0a0a0aU};
     for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
         poison_initial_out();
         CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, refused[i], dcid, sizeof dcid, 1,
@@ -320,6 +321,9 @@ static void test_initial_version_refusals(void) {
         CHECK(pn == 0 && pt_len == 0);
     }
     CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, sizeof dcid, 1,
+                            A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
+                            &initial_out_len) == CH_OK);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_2, dcid, sizeof dcid, 1,
                             A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, initial_out, whole,
                             &initial_out_len) == CH_OK);
 }

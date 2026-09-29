@@ -2,7 +2,8 @@
 // AES-128 and AES-256 forward ciphers, NIST SP 800-38D for
 // AEAD_AES_128_GCM, AEAD_AES_256_GCM and GHASH, and RFC 9001 Appendix A
 // for the Initial keys, the header protection masks, the client and
-// server Initial packets and the Retry integrity tag. The Makefile builds
+// server Initial packets and the Retry integrity tag, and RFC 9369
+// Appendix A for the same five in QUIC version 2. The Makefile builds
 // it with -DCH_AES_256_TEST, so the AES-256 rows run on both AES values
 // below. Its own
 // binary because bin/unit includes tls.h and calls rec_seal, which a
@@ -92,6 +93,9 @@ static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x5
 // The Retry key and the two Retry calls, which read gcm_tests.h's
 // Appendix A.4 packet.
 #include "quic_retry_tests.h"
+
+// RFC 9369 Appendix A, which reads the lengths the headers above define.
+#include "quic_version2_tests.h"
 
 // FIPS 197's own example values for AES-128. Appendix B works one
 // encryption through every round; Appendix C.1 is the full block vector
@@ -419,6 +423,7 @@ int main(void) {
     test_appendix_a4_retry();
     test_retry_call();
     test_retry_versions();
+    test_retry_constants_from_secrets();
     test_block_boundaries();
     test_in_place();
     test_appendix_a2_seal();
@@ -438,8 +443,10 @@ int main(void) {
     test_open_discards();
     test_handshake_open();
     test_aead_limits();
+    test_rfc9369_appendix_a();
     if (failures == 0) {
-        (void)printf("quic vectors: FIPS 197, SP 800-38D and RFC 9001 Appendix A agree\n");
+        (void)printf("quic vectors: FIPS 197, SP 800-38D, RFC 9001 Appendix A and RFC 9369"
+                     " Appendix A agree\n");
     }
     return failures != 0;
 }

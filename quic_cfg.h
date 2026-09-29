@@ -59,7 +59,7 @@
 // the long header, and chapulin reads no header byte to learn it (docs/decisions.md 79).
 // Whether this build derives a version's keys is one rule in one place, quic_version.h's
 // quic_version_derived, and every call that takes a version refuses one it does not derive.
-// This build derives version 1's keys alone.
+// This build derives the keys of both versions below and of no other.
 #define CH_QUIC_VERSION_1 0x00000001U
 #define CH_QUIC_VERSION_2 0x6B3343CFU
 

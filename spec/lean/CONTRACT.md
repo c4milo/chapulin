@@ -72,6 +72,31 @@ Spec.ChaCha.xor       : (key nonce : ByteArray) → (counter : UInt32) →
 Spec.Poly.mac         : (key msg : ByteArray) → ByteArray              -- RFC 8439 §2.5, Nat mod 2^130-5
 Spec.Aead.seal        : (key nonce aad pt : ByteArray) → ByteArray     -- RFC 8439 §2.8, ct ++ tag
 Spec.Aead.open?       : (key nonce aad ct tag : ByteArray) → Option ByteArray
+Spec.Quic.initialKeys : (version : Version) → (dcid : ByteArray) → (client : Bool) →
+                        (ByteArray × ByteArray × ByteArray)
+                        -- RFC 9001 §5.2 under the version's salt and labels
+                        -- (RFC 9369 §3.3.1-3.3.2): (key 16, iv 12, hp 16).
+                        -- Version is v1 or v2. Every quic_ line op names it
+                        -- by its Version field in decimal, 1 or 1798521807
+                        -- (0x6b3343cf), and a field neither RFC defines is
+                        -- ERR. Line op: `quic_initial_keys <field> <dcid>
+                        -- <client|server>` → `<key> <iv> <hp>`, dcid at most
+                        -- 20 bytes.
+Spec.Quic.packetKeys  : (version : Version) → (secret : ByteArray) → (keyLen : Nat) →
+                        (ByteArray × ByteArray × ByteArray)
+                        -- RFC 9001 §5.1: (key keyLen, iv 12, hp keyLen) under
+                        -- the version's labels. Line op: `quic_packet_keys
+                        -- <field> <secret> <16|32>` → `<key> <iv> <hp>`, a
+                        -- 32-byte secret.
+Spec.Quic.nextSecret  : (version : Version) → (secret : ByteArray) → ByteArray
+                        -- RFC 9001 §6.1 under the version's key update label,
+                        -- 32 bytes. Line op: `quic_key_update <field> <secret>`
+                        -- → `<next> <key> <iv>`, the key and IV packetKeys
+                        -- derives from next at 32 bytes.
+Spec.Quic.retryTag    : (version : Version) → (pseudo : ByteArray) → ByteArray
+                        -- RFC 9001 §5.8 under the version's printed key and
+                        -- nonce (RFC 9369 §3.3.3): the 16-byte tag. Line op:
+                        -- `quic_retry_tag <field> <pseudo>` → `<tag>`.
 Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
                         (ctype : UInt8) → (pt : ByteArray) → ByteArray
                         -- RFC 9846 §7.3: key/iv = expandLabel secret "key"/"iv",
@@ -990,6 +1015,7 @@ means the module's selftest plus the differential oracle carry it;
 | TlsWrite | 6 | `ch_writable_len`'s arithmetic, modeled from the C: every sum and product `records_fill` and `fill_across_key_update` compute fits a `size_t` of every width of 15 bits or more, at every `cap`, every limit from 1 to 16384 and every room; the answer is at most `cap`; a room of `cap` or more, `SIZE_MAX` among them, counts no KeyUpdate. That the answer is the most `ch_write` sends in `cap` bytes stays with CBMC's `writable_len` and `writable_len_suite`, at their bounds, and the tests |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
 | Hkdf | 5 | output lengths, schedule wiring and secret sizes; derivations vector-checked |
+| Quic | 4 | the packet protection key, IV and header protection key lengths, the next secret's 32 bytes, the two versions' labels pairwise distinct, and reading a version's own Version field back; the salts, labels, Retry keys and nonces and every derivation vector-checked against RFC 9001 and RFC 9369 Appendix A, and the Retry keys and nonces against the secrets each RFC derives them from |
 | Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |
 | Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |

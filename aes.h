@@ -62,7 +62,9 @@
 // AEAD_AES_128_GCM: the packet protection key expanded into its round
 // keys, the packet protection IV, and the header protection key
 // expanded into its own round keys. Those are RFC 9001 §5.1's "quic
-// key", "quic iv" and "quic hp" (rfc9001.txt:1029-1032). Every aes_ and
+// key", "quic iv" and "quic hp" (rfc9001.txt:1029-1032), which RFC 9369
+// names "quicv2 key", "quicv2 iv" and "quicv2 hp" in QUIC version 2
+// (rfc9369.txt:167-174). Every aes_ and
 // gcm_ entry outside the aes_traffic_ and gcm_traffic_ families takes
 // this type and nothing else, so a call that hands one of them a rec_dir
 // key, a quic_keys key, an aes_traffic_key or a bare byte array does not
@@ -194,20 +196,25 @@ void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BL
 // expanding both keys into their round keys. The derivation is RFC 9001
 // §5.2: initial_secret = HKDF-Extract(the version's salt, dcid), which is
 // 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a in version 1
-// (rfc9001.txt:1051-1055, rfc9001.txt:1066), then the label "client in"
-// for CH_QUIC_ENDPOINT_CLIENT and "server in" for CH_QUIC_ENDPOINT_SERVER
-// (rfc9001.txt:1057-1061), then the version's three §5.1 labels over that
-// secret with a zero-length context, "quic key", "quic iv" and "quic hp"
-// in version 1 (rfc9001.txt:1017-1021, rfc9001.txt:1029-1032;
+// (rfc9001.txt:1051-1055, rfc9001.txt:1066) and
+// 0x0dede3def700a6db819381be6e269dcbf9bd2ed9 in version 2
+// (rfc9369.txt:158-165), then the label "client in" for
+// CH_QUIC_ENDPOINT_CLIENT and "server in" for CH_QUIC_ENDPOINT_SERVER
+// (rfc9001.txt:1057-1061), which RFC 9369 leaves unchanged, then the
+// version's three §5.1 labels over that secret with a zero-length
+// context: "quic key", "quic iv" and "quic hp" in version 1
+// (rfc9001.txt:1017-1021, rfc9001.txt:1029-1032) and "quicv2 key",
+// "quicv2 iv" and "quicv2 hp" in version 2 (rfc9369.txt:167-174;
 // quic_version.h). RFC 9001 Appendix A.1 is the version 1 vector for both
-// endpoints (rfc9001.txt:2352-2377).
+// endpoints (rfc9001.txt:2352-2377) and RFC 9369 Appendix A.1 the
+// version 2 one (rfc9369.txt:412-464).
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
 // the caller includes aes_public_key.h; version is one
 // quic_version_derived admits, which quic_initial.c checks before it
-// calls, and this file holds version 1's salt alone, the one version this
-// build admits; dcid points at dcid_len readable
-// bytes, and dcid is read only when dcid_len is above 0; endpoint is
+// calls, and this file holds a salt for each such version; dcid points
+// at dcid_len readable bytes, and dcid is read only when dcid_len is
+// above 0; endpoint is
 // CH_QUIC_ENDPOINT_CLIENT or CH_QUIC_ENDPOINT_SERVER. This file derives
 // whichever one it is handed and reads no role: which endpoint each of
 // a caller's two directions needs is quic_initial.c's. Every caller
@@ -227,16 +234,18 @@ int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *d
 // Writes the Retry integrity tag key of one QUIC version into k, expanded
 // into its round keys: in version 1 the 128-bit constant
 // 0xbe0c690b9f66575a1d766b54e368c84e that RFC 9001 §5.8 prints
-// (rfc9001.txt:1499-1500). It leaves k->iv and k->hp zero, because the
-// RFC prints the nonce the caller passes to gcm_seal (rfc9001.txt:1502)
-// and a Retry packet carries no header protection. quic_retry.c is the
-// only caller, and it builds k on its own stack.
+// (rfc9001.txt:1499-1500), and in version 2 the constant
+// 0x8fb4b01b56ac48e260fbcbcead7ccc92 that RFC 9369 §3.3.3 prints
+// (rfc9369.txt:176-188). It leaves k->iv and k->hp zero, because each RFC
+// prints the nonce the caller passes to gcm_seal (rfc9001.txt:1502,
+// rfc9369.txt:184) and a Retry packet carries no header protection.
+// quic_retry.c is the only caller, and it builds k on its own stack.
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
 // the caller includes aes_public_key.h; version is one
 // quic_version_derived admits, which quic_retry.c checks before it calls,
-// and this file holds version 1's key alone. Writes k whole and cannot
-// fail, so it returns nothing.
+// and this file holds a key for each such version. Writes k whole and
+// cannot fail, so it returns nothing.
 void aes_public_key_retry(aes_public_key *k, uint32_t version);
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 

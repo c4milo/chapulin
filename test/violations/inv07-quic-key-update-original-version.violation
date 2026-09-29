@@ -1,0 +1,14 @@
+invariant: INV-7
+file: quic.c
+catches: quic_loop_test
+reason: ch_quic_key_update advances the 1-RTT secrets under the original
+  version's key update label, "quic ku" where a switched session owes
+  "quicv2 ku" (rfc9369.txt:167-174), so its next keys are not the
+  server's and the first packet after the update opens at neither end.
+  test/quic_loop_version.h updates the keys of a client that switched to
+  version 2 and requires its next packet to open at the server.
+
+--- old
+    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.quic_negotiated_version);
+--- new
+    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.cfg.quic_original_version);

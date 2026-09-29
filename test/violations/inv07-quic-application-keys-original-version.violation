@@ -1,0 +1,16 @@
+invariant: INV-7
+file: quic_step.c
+catches: quic_loop_test
+reason: the Finished step derives the 1-RTT keys under the original
+  version's labels, so a client that switched to version 2 protects its
+  1-RTT packets under version 1's keys and the server, which derived
+  version 2's, opens none. test/quic_loop_version.h switches a version 1
+  client to version 2 against a server started in version 2 and requires
+  a 1-RTT packet each way to open.
+
+--- old
+    uint32_t version = q->t.quic_negotiated_version;
+    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
+--- new
+    uint32_t version = q->t.cfg.quic_original_version;
+    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);

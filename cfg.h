@@ -417,8 +417,9 @@ typedef struct {
     // (rfc9368.txt:130-131), CH_QUIC_VERSION_1 or CH_QUIC_VERSION_2 (quic_cfg.h). Both roles
     // set it: a client to the version it sends first, and a server to the Version field of the
     // client's first Initial packet, which the caller reads before ch_srv_quic_init. Required:
-    // both init calls return CH_EINVAL, and send nothing, for 0 and for a version this build
-    // derives no keys for, which is every version but CH_QUIC_VERSION_1 (docs/decisions.md 79).
+    // both init calls return CH_EINVAL, and send nothing, for 0 and for any version but the two
+    // this build derives keys for, CH_QUIC_VERSION_1 and CH_QUIC_VERSION_2 (quic_version.h,
+    // docs/decisions.md 79).
     // The session's negotiated version starts at this value (ch_quic_negotiated_version), and
     // a Retry is checked against this one alone.
     uint32_t quic_original_version;
