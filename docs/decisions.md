@@ -3570,12 +3570,16 @@ does nothing more.
     `TLS_AES_256_GCM_SHA384`, and a server with no
     `ch_srv_cfg.cipher_suites` preferred the same order. A server that
     follows the client's order then selects ChaCha20 when both ends have
-    the AES instructions. stompy measured the cost through colibri's h11
+    the AES instructions, and so does Go's, which reads the client's order
+    only to choose between AES-GCM and ChaCha20 and then takes its own
+    list, AES-128-GCM first (`crypto/tls`,
+    `handshake_server_tls13.go`). stompy measured the cost through colibri's h11
     client, over the TCP object built `SUITE=aesgcm AES=hw` at 0adcf33, on
     one Apple M1 core in OrbStack with 5 MiB PUTs to MinIO: 1 ms of CPU
     per MB and 935 MB/s over 8 connections in cleartext, and 5 ms of CPU
     per MB and 150 MB/s, the same from 1 to 8 connections, over TLS.
-    MinIO's Go server follows the client's order, so it selected 0x1303.
+    MinIO's Go server selected ChaCha20, 0x1303, because the client listed
+    it before AES-GCM.
     The server role showed the same effect: against Go's client, on an AMD
     EPYC 7763 runner with the AES instructions, colibri's server over the
     object at 0adcf33 selected 0x1303. Camilo decided on 2026-09-29
@@ -3607,7 +3611,10 @@ does nothing more.
       `test/e2e.sh` run it through whole handshakes. On `AES=hw`, a
       default handshake with this tree's server, or with any server that
       follows the client's order and holds AES-256-GCM, now runs the
-      SHA-384 schedule, and its tickets carry 48-byte PSKs.
+      SHA-384 schedule, and its tickets carry 48-byte PSKs. Go's server
+      still selects AES-128-GCM, from its own list; a caller who wants
+      AES-256-GCM from it leaves AES-128-GCM out of
+      `ch_cfg.cipher_suites`.
     - **The caller's order.** A client that offers more than one suite
       (`CH_CLIENT_AES_SUITES`) takes `ch_cfg.cipher_suites` and
       `ch_cfg.cipher_suite_count`, with the element type and the count
@@ -3625,9 +3632,12 @@ does nothing more.
       and is gated with `@hasField`, as the server's is. `chapulin.hpp`
       exposes no suite order for either role and gains none.
     - **No CPU probe.** Nothing in this tree asks a CPU what it has
-      (CLAUDE.md). colibri probes the CPU in Zig and passes an order
-      through `values.Client.cipher_suites` and
-      `values.Server.cipher_suites`.
+      (CLAUDE.md). A caller that wants another order passes it through
+      `values.Client.cipher_suites` and `values.Server.cipher_suites`.
+      colibri takes the build-time default: its decision 97 picks the
+      chapulin object from the build target's features, so an `AES=hw`
+      object exists only for a target with the AES instructions, and it
+      probes nothing.
     - **The check.** `bin/webpki_session_test`, `bin/webpki_session_aes`
       and `bin/webpki_session_aes_extern` hold the ClientHello's
       cipher_suites bytes to each build's default, and the last two hold
@@ -3674,7 +3684,8 @@ does nothing more.
     `bin/webpki_session_aes_extern`.
 
     Gain: on a host whose build asserts the AES instructions, a chapulin
-    client gets AES-GCM from a server that follows the client's order,
-    and a chapulin server gives it to a client that offers it, with no
-    call to make. A caller that learns at run time what its CPU has sets
+    client gets AES-GCM from a server that follows the client's order or,
+    as Go's does, reads it to choose between AES-GCM and ChaCha20, and a
+    chapulin server gives it to a client that offers it, with no call to
+    make. A caller that learns at run time what its CPU has sets
     either order through the Zig API.
