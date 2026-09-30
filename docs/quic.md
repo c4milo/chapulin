@@ -2595,10 +2595,11 @@ stated there. That leg is the one check here that still waits: the mode is
 implemented and `bin/quic_driver_test` runs in `check`, so "What is still
 open" carries it and the comment above `COVERAGE_FLOOR` names what the
 commit that adds it does. `test/spec_coverage.py`'s `SRCS` list holds the
-quic sources, which read as rows saying "not built" while the differential
-has no QUIC leg; `bin/quic_driver_test` is a unit test and not a
-differential driver, so its `DRIVERS` list waits for the leg that compares
-the mode against `spec/lean/`. Every
+quic sources, which read as rows saying "not built" because its C coverage
+build runs `test/diff_test.c` alone, and "What is still open" carries the
+leg that builds `test/diff_quic_test.c` there. Its op count needs no edit:
+it reads every test main that includes `test/diff_driver.h`, and each header
+that main includes, so `test/diff_quic.h`'s ops count as driven. Every
 one of those needs a row or a leg for the new axis, which is work that is done
 with the first line of code and not after it, and a gate that waits says so in
 "What is still open" rather than staying silent. `test/e2e.sh` is the exception:
@@ -2670,6 +2671,12 @@ The mode, its owner split and the AES exception are decided. These are not:
   `bin/quic_driver_test` in its run list, and that commit moves the floor to
   CI's re-measured reading. The comment above `COVERAGE_FLOOR` carries the
   same debt;
+- the `spec-coverage` leg. `test/spec_coverage.py` measures C coverage over
+  a build of `test/diff_test.c` alone, so the quic sources, `aes.c` and
+  `gcm.c` read "not built" although `bin/diff_quic` compares four of them
+  against the spec. The leg builds and runs `test/diff_quic_test.c` there
+  too, and the comment above the script's `SRCS` list carries the same
+  debt;
 - the end-to-end leg. `test/e2e.sh` runs against `openssl s_server`, which
   speaks no QUIC, so this suite has no QUIC leg. The mode's first interop
   evidence came from outside the tree: on 2026-09-23 colibri's

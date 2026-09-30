@@ -6,9 +6,9 @@ Run from the repository root: python3 test/spec_coverage.py
 Lean 4 ships no line-coverage tool, so this measures the two things
 that can be measured and that matter:
 
-1. Op coverage. Every operation the spec exposes, and whether the
-   differential driver sends it. An op nothing drives is spec code no
-   test exercises: it can drift from the C without anything noticing.
+1. Op coverage. Every operation the spec exposes, and whether a
+   driver sends it. An op nothing drives is spec code no test
+   exercises: it can drift from the C without anything noticing.
 
 2. C coverage from the differential alone. The share of each shipping
    source file that the differential reaches, measured with gcov over
@@ -38,10 +38,11 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 # no -DCH_TRANSPORT_QUIC_NONBLOCKING, because the TLS sources beside them
 # do not compile under that define, and no -DCH_SUITE_AES_GCM, so each of
 # those files compiles to an empty translation unit and its row reads
-# "not built". That is the honest reading of a differential with no QUIC
-# leg, and it is a row a reader sees rather than a name that is absent.
-# The rows move to a percentage in the commit that adds a QUIC driver to
-# test/diff_test.c.
+# "not built". bin/diff_quic compares aes.c, gcm.c, quic_keys.c and
+# quic_retry.c against the spec from a main of its own,
+# test/diff_quic_test.c, which this run does not build. The rows move to
+# a percentage in the commit that builds that main here, and until then
+# each is a row a reader sees rather than a name that is absent.
 SRCS = """ct.c sha256.c sha512.c sha512_compress.c sha3.c mlkem.c mlkem_poly.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
 p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c webpki_cert.c webpki.c buf.c record.c keysched.c io.c handshake_message.c
 handshake_parser.c handshake_parser_ee.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c
@@ -63,35 +64,60 @@ def spec_ops():
     return sorted(set(re.findall(r'^\s*\|\s*\["([a-z0-9_]+)"', body, re.M)))
 
 
-# Every driver that talks to the spec, not only test/diff_test.c: drbg_test
-# and handshake_sequence_test each own an op and speak the same protocol.
-DRIVERS = ["diff_test.c", "diff_driver.h", "diff_hash.h", "diff_hash384.h", "diff_handshake_parser.h", "diff_handshake_certificate.h",
-           "diff_mlkem.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
-           "diff_sha512.h", "diff_p384.h", "diff_rsa_pkcs1.h", "diff_webpki.h", "diff_webpki_sigalg.h", "diff_webpki_cert.h", "diff_webpki_chain.h",
-           "diff_webpki_pin.h", "diff_webpki_leaf_pin.h", "diff_x509.h",
-           "diff_x509_bounds.h", "diff_writable_len.h",
-           "diff_x509_chain.h", "drbg_test.c",
-           "handshake_sequence_test.c", "handshake_sequence_server.h"]
+# A quoted include, the form every test file uses for a file beside it.
+INCLUDE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+
+
+def add_with_includes(path, found):
+    """Adds path to found, then every file beside it that it includes."""
+    if path in found or not path.exists():
+        return
+    found.add(path)
+    for name in INCLUDE.findall(path.read_text()):
+        add_with_includes(path.parent / name, found)
+
+
+def drivers():
+    """Every file that can send ops to the spec, read from the includes.
+
+    test/diff_driver.h holds the pipe to the spec process, so a test main
+    that includes it is a driver, and so is every test header such a
+    main includes, directly or through another header. Reading the
+    includes counts a new driver from the commit that adds it, where a
+    hand-kept list fell behind."""
+    found = set()
+    for main in (ROOT / "test").glob("*.c"):
+        if "diff_driver.h" in INCLUDE.findall(main.read_text()):
+            add_with_includes(main, found)
+    return sorted(found)
 
 
 def driven_ops():
     """Op names any driver sends to the spec."""
     found = set()
-    for name in DRIVERS:
-        path = ROOT / "test" / name
-        if not path.exists():
-            continue
+    for path in drivers():
         text = path.read_text()
-        # A command is always the format string of an snprintf into
-        # cmd, a literal handed to expect, or the op literal handed to
-        # hspd_request, which the handshake message drivers build every
-        # command through, or to diff_pin_command, which the two SPKI pin
-        # drivers do. Matching those four shapes keeps ordinary strings
-        # that happen to start with an op name out of the count.
+        # A driver writes a command in one of five shapes, and matching
+        # only these keeps an ordinary string that starts with an op
+        # name out of the count:
+        #   - the format string of an snprintf into cmd;
+        #   - a literal handed to expect;
+        #   - the op literal handed to hspd_request, which the handshake
+        #     message drivers build every command through;
+        #   - the op literal handed to diff_pin_command, which the two
+        #     SPKI pin drivers build every command through;
+        #   - a literal that a return statement hands back from a
+        #     function whose result is the first argument of an snprintf
+        #     into cmd whose format string opens with %s. test/diff_gcm.h
+        #     names its four ops through diff_gcm_op this way.
         found |= set(re.findall(r'snprintf\(\s*cmd[^"]*"([a-z0-9_]+)', text))
         found |= set(re.findall(r'expect\(\s*"([a-z0-9_]+)"', text))
         found |= set(re.findall(r'hspd_request\(\s*cmd[^"]*"([a-z0-9_]+)"', text))
         found |= set(re.findall(r'diff_pin_command\(\s*cmd,\s*"([a-z0-9_]+)"', text))
+        for helper in set(re.findall(r'snprintf\(\s*cmd[^"]*"%s[^"]*",\s*([a-z0-9_]+)\(', text)):
+            body = re.search(r'\b%s\([^)]*\)\s*\{(.*?)^\}' % helper, text, re.S | re.M)
+            for statement in re.findall(r'\breturn\b[^;]*;', body.group(1) if body else ""):
+                found |= set(re.findall(r'"([a-z0-9_]+)"', statement))
     return found
 
 
