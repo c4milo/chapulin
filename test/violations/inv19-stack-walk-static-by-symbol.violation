@@ -1,0 +1,15 @@
+invariant: INV-19
+file: bench/stack.py
+catches: test/lint-stack-walk.sh
+reason: the walk keys a static function by its symbol alone, as it did
+  before, so the static functions of one name in several objects become
+  one function with the callees of all of them. The TRUST=webpki object
+  holds a static point_add() in p256.c and in p384.c, and a static
+  mont_mul() in p256.c, p256_field.c, p256_scalar.c and rsa_mont.c, and
+  the walk under p256_ecdsa_verify() then reads 2,912 bytes where its own
+  frames add up to 2,064.
+
+--- old
+    return [(int(addr, 16), symbol, f"{obj.name}:{symbol}" if kind == "t" else symbol)
+--- new
+    return [(int(addr, 16), symbol, symbol)

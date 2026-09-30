@@ -1,0 +1,13 @@
+invariant: INV-19
+file: bench/stack.py
+catches: test/lint-stack-walk.sh
+reason: the walk looks up the callee a relocation names under its
+  symbol, which is a global function's key. A static callee's frame sits
+  under its object's key, so the walk finds no frame and drops the call.
+  The default build's ch_connect peak then reads 4,496 bytes where it is
+  4,992, and the TRUST=raw-ecdsa one 1,936 where it is 3,104.
+
+--- old
+            callee = keys.get(callee, callee)
+--- new
+            callee = callee

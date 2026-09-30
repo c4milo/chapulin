@@ -14,10 +14,10 @@ receive_buffer_webpki,12338
 static_working_set_webpki_arm64,15402
 static_working_set_webpki_rv32,15290
 stack_connect_rsa,4992
-stack_connect_ecdsa,3824
+stack_connect_ecdsa,3104
 stack_connect_psk,2768
 stack_connect_ca_rsa,5472
-stack_connect_ca_ecdsa,3984
+stack_connect_ca_ecdsa,3264
 stack_connect_webpki,16528
 stack_read,1712
 stack_connect_pq,15872

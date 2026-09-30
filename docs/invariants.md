@@ -3343,7 +3343,9 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** Type-system grade (the compiler refuses); bench/sram.sh
   measures the whole-call-chain peaks docs/performance.md reports, and
   `make lint-stack-walk` checks that bench/stack.py, which walks each
-  chain, follows a call and a tail call on a fixture. `make check`
+  chain, follows a call and a tail call on a fixture, keeps two static
+  functions of one name in two objects apart, and compiles the sources
+  and the defines make packages for the build it walks. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the
@@ -3364,6 +3366,13 @@ last `ROLE=server` stub, as the entry said it would.
   file and objects. A published peak can also read low when the walk
   misses an edge. `inv19-stack-walk-first-instruction-jump` makes
   bench/stack.py read the placeholder target objdump prints on a branch
-  at a function's first instruction, as it once did, and `make
-  lint-stack-walk` fails.
+  at a function's first instruction, as it once did,
+  `inv19-stack-walk-static-callee-global` drops every call to a static
+  function, and `inv19-stack-walk-no-build-defines` compiles a
+  `TRUST=raw-ecdsa` walk without `-DCH_PIN_ECDSA`. A peak can read high
+  as well. `inv19-stack-walk-static-by-symbol` merges the static
+  functions of one name in several objects, and
+  `inv19-stack-walk-extra-source` compiles a source the build does not
+  package; the walk once did both, and put the `TRUST=raw-ecdsa` peak at
+  3,824 bytes where it is 3,104. `make lint-stack-walk` fails on each.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Worst-case stack per entry point, computed from the code, not by hand.
 
-Builds every library object with -fstack-usage, extracts the real call
-graph from the object code (the branch relocations `objdump -d -r` prints
-under every call and tail call in an arm64 or x86-64 Mach-O object), and
-walks the max-weight path under each public entry point. Indirect calls
-(the caller's send/recv/on_ticket hooks and ch_rand_bytes) execute on the
-caller's budget and are reported as such, not silently omitted.
+Builds the sources the Makefile packages for one build with
+-fstack-usage, extracts the real call graph from the object code (the
+branch relocations `objdump -d -r` prints under every call and tail call
+in an arm64 or x86-64 Mach-O object), and walks the max-weight path under
+each public entry point. Indirect calls (the caller's send/recv/on_ticket
+hooks and ch_rand_bytes) execute on the caller's budget and are reported
+as such, not silently omitted.
 """
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -26,33 +28,27 @@ ROOT = Path(__file__).resolve().parent.parent
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 CA_ENTRIES = ["_ch_pubkey_from_pem_tcp_blocking"]
 # A ROLE=server build exports ch_srv_accept where a client exports
-# ch_connect, and shares the other three. STACK_CFLAGS names the role the
-# way it names a trust mode.
+# ch_connect, and shares the other three.
 SERVER_ENTRIES = ["_ch_srv_accept", "_ch_read", "_ch_write", "_ch_close"]
-# Every root source, minus the ones a build's defines exclude. webpki.c,
-# webpki_ticket.c, webpki_pin.c and webpki_cfg.c read the ch_cfg fields that exist
-# only under CH_TRUST_WEBPKI, so they compile in that build alone; the
-# other webpki_*.c files read none of them and compile everywhere.
-SRCS = sorted(ROOT.glob("*.c"))
 
-# STACK_CFLAGS: extra compile flags (e.g. -DCH_PIN_ECDSA to walk that
-# build). STACK_PRUNE: comma-separated functions removed from the graph,
-# for paths a mode provably never enters — PSK mode never reaches
-# server_auth (the cfg.psk check in run()), so pruning it measures the
-# PSK-mode peak from the same objects.
-# cfg.h refuses a build that declares no entropy pattern. This walks the
-# call graph, never links a generator, so it measures the extern shape.
-EXTRA_CFLAGS = ["-DCH_RAND_EXTERN"] + os.environ.get("STACK_CFLAGS", "").split()
-if "-DCH_TRUST_WEBPKI" not in EXTRA_CFLAGS:
-    SRCS = [s for s in SRCS if s.name not in ("webpki.c", "webpki_ticket.c", "webpki_pin.c", "webpki_cfg.c")]
-if "-DCH_ROLE_SERVER" in EXTRA_CFLAGS and "-DCH_ROLE_BOTH" not in EXTRA_CFLAGS:
-    ENTRIES = SERVER_ENTRIES
-# A SUITE=aesgcm build takes AES=hw or AES=extern, and quic_aes_soft.c
-# refuses the suite, so the software AES is not one of that build's
-# sources.
-if "-DCH_SUITE_AES_GCM" in EXTRA_CFLAGS:
-    SRCS = [s for s in SRCS if s.name != "quic_aes_soft.c"]
-PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
+# STACK_MAKE: the make variables that name the build to walk, as a make
+# command line takes them (e.g. TRUST=raw-ecdsa); empty walks the default
+# build. The script compiles the sources make packages for that build,
+# with the defines make packages them with (print-lib-lists), and no
+# other root source, so the walk reads the functions that build's object
+# holds. When it compiled every root source, the report listed
+# ch_pubkey_from_pem for every build, where only a ca build exports it.
+# RAND=extern comes first, so STACK_MAKE can replace it: cfg.h refuses a
+# build that declares no entropy pattern, and the walk links no
+# generator, so it measures the extern shape.
+# STACK_CFLAGS: compile flags beyond the build's defines, such as
+# -DCH_NATIVE_AES, the statement about the hardware that a SUITE=aesgcm
+# build needs and the Makefile never writes.
+# STACK_PRUNE: comma-separated functions removed from the graph, for
+# paths a mode provably never enters, named as the report prints them.
+# PSK mode never calls hsa_server_auth (the psk_selected check in
+# handshake.c's run()), so pruning it measures the PSK-mode peak from the
+# same objects.
 # -fstack-usage reports how much each prologue subtracts from the stack
 # pointer. An x86-64 function that calls nothing may also use up to 128
 # bytes below the stack pointer without subtracting them (the red zone),
@@ -100,20 +96,51 @@ ARCHES = {
 INSTRUCTION = re.compile(r"^\s*([0-9a-f]+):\s[0-9a-f ]+\t(\S+)\s*(.*)$")
 
 
-def build(tmp: Path) -> None:
-    for src in SRCS:
-        subprocess.run(["cc", *CFLAGS, "-I", str(ROOT), "-c", str(src)] + EXTRA_CFLAGS,
+def library() -> tuple[list[str], list[str]]:
+    """The sources and the defines of the build STACK_MAKE names, as make
+    prints them for the object it packages."""
+    command = ["make", "-s", "--no-print-directory", "-C", str(ROOT), "print-lib-lists",
+               "RAND=extern", *shlex.split(os.environ.get("STACK_MAKE", ""))]
+    # The child make gets no MAKEFLAGS, MFLAGS or MAKELEVEL, so it runs as
+    # a make started from a shell. A make that runs this script, as make
+    # lint-stack-walk does, names its jobserver in MAKEFLAGS, and GNU make
+    # warns when it cannot use it. make's own error, such as a TRUST value
+    # it refuses, goes to stderr.
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
+    made = subprocess.run(command, stdout=subprocess.PIPE, text=True, env=env)
+    lines = made.stdout.splitlines()
+    if made.returncode != 0 or len(lines) != 2 or not lines[0].split():
+        sys.exit(f"stack.py: {shlex.join(command)} printed no source list")
+    return lines[0].split(), lines[1].split()
+
+
+def build(tmp: Path, srcs: list[str], flags: list[str]) -> None:
+    for src in srcs:
+        subprocess.run(["cc", *CFLAGS, "-I", str(ROOT), "-c", str(ROOT / src), *flags],
                        cwd=tmp, check=True, capture_output=True)
 
 
+def functions(obj: Path) -> list[tuple[int, str, str]]:
+    """Each function obj defines, in address order, as its start, its
+    symbol and its key in the walk. A global function's key is its symbol.
+    A static function's key is obj.o:symbol, because two objects can each
+    define a static function under one symbol, and a call names the one in
+    its own object."""
+    return [(int(addr, 16), symbol, f"{obj.name}:{symbol}" if kind == "t" else symbol)
+            for addr, kind, symbol in re.findall(r"^([0-9a-f]+) ([tT]) (_[A-Za-z0-9_]+)$",
+                                                 run(NM, "-n", str(obj)), re.M)]
+
+
 def frames(tmp: Path) -> dict[str, int]:
+    """Each function's frame by its key, from the .su file -fstack-usage
+    writes beside each object."""
     out = {}
     for su in tmp.glob("*.su"):
+        keys = {symbol: key for _, symbol, key in functions(su.with_suffix(".o"))}
         for line in su.read_text().splitlines():
             parts = line.split("\t")
             if len(parts) >= 2 and parts[1].isdigit():
-                name = parts[0].split(":")[-1]
-                out["_" + name] = max(out.get("_" + name, 0), int(parts[1]))
+                out[keys["_" + parts[0].split(":")[-1]]] = int(parts[1])
     return out
 
 
@@ -156,15 +183,17 @@ def owner(starts: list[tuple[int, str]], addr: int) -> str | None:
 
 
 def object_edges(obj: Path, edges: dict[str, dict[str, int]]) -> Arch:
-    """Adds each call and tail call in obj to edges, as the callee and the
-    bytes the call pushes, and returns obj's architecture."""
+    """Adds each call and tail call in obj to edges, as the callee's key
+    and the bytes the call pushes, and returns obj's architecture."""
     listing = run(OBJDUMP, "-d", "-r", str(obj))
     arch = architecture(obj, listing)
     # objdump labels the start of a section ltmp0 rather than the function
     # there, so each function's start comes from nm.
-    starts = [(int(addr, 16), name) for addr, name in
-              re.findall(r"^([0-9a-f]+) [tT] (_[A-Za-z0-9_]+)$",
-                         run(NM, "-n", str(obj)), re.M)]
+    defined = functions(obj)
+    starts = [(addr, key) for addr, _, key in defined]
+    # A relocation names a symbol: a static function when obj defines one
+    # under it, and otherwise a global function.
+    keys = {symbol: key for _, symbol, key in defined}
     for addr, mnemonic, operands, callee in instructions(listing, arch):
         fn = owner(starts, addr)
         callees = edges.setdefault(fn, {})
@@ -173,6 +202,8 @@ def object_edges(obj: Path, edges: dict[str, dict[str, int]]) -> Arch:
         if callee is None and mnemonic in arch.calls | arch.jumps:
             target = re.match(r"0x([0-9a-f]+)", operands)
             callee = owner(starts, int(target.group(1), 16)) if target else None
+        elif callee is not None:
+            callee = keys.get(callee, callee)
         if callee is not None and callee != fn:
             pushed = arch.return_address if mnemonic in arch.calls else 0
             callees[callee] = max(callees.get(callee, 0), pushed)
@@ -201,22 +232,41 @@ def deepest(fn: str, frames: dict, edges: dict, seen: tuple) -> tuple[int, list[
     return frames.get(fn, 0) + best, [fn] + path
 
 
+def shown(key: str) -> str:
+    """A function as the report prints it: a global one by its C name, and
+    a static one as obj.o:name."""
+    obj, _, symbol = key.rpartition(":")
+    return f"{obj}:{symbol[1:]}" if obj else symbol[1:]
+
+
+def prune(frames: dict, edges: dict, names: list[str]) -> None:
+    """Removes each function names lists, as the report prints it, from
+    frames and edges. A name that matches no function stops the script:
+    the graph would stay whole, and the report would give the unpruned
+    peak as the pruned one."""
+    keys = {shown(key): key for key in frames}
+    unmatched = [name for name in names if name not in keys]
+    if unmatched:
+        sys.exit(f"stack.py: STACK_PRUNE names no function called {', '.join(unmatched)}")
+    for name in names:
+        edges.pop(keys[name], None)
+        del frames[keys[name]]
+        for callees in edges.values():
+            callees.pop(keys[name], None)
+
+
 def main() -> int:
+    srcs, defines = library()
+    entries = ENTRIES
+    if "-DCH_ROLE_SERVER" in defines and "-DCH_ROLE_BOTH" not in defines:
+        entries = SERVER_ENTRIES
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        build(tmp)
+        build(tmp, srcs, defines + os.environ.get("STACK_CFLAGS", "").split())
         fr = frames(tmp)
         cg, pushed = callgraph(tmp)
-        for fn in PRUNE:
-            cg.pop(fn, None)
-            fr.pop(fn, None)
-            for callees in cg.values():
-                callees.pop(fn, None)
-        entries = list(ENTRIES)
-        for entry in CA_ENTRIES:
-            if entry in fr:
-                entries.append(entry)
-        missing = [e for e in ENTRIES if e not in fr]
+        prune(fr, cg, [f for f in os.environ.get("STACK_PRUNE", "").split(",") if f])
+        missing = [e for e in entries if e not in fr]
         if missing:
             # A frame of 0 for a real entry point means the symbol was
             # not measured, and deepest() would report it as free.
@@ -224,10 +274,10 @@ def main() -> int:
             return 1
         # The call into an entry point pushes a return address too, so an
         # entry's figure is what a call to it takes from its caller's stack.
-        for entry in entries:
+        for entry in entries + [e for e in CA_ENTRIES if e in fr]:
             depth, path = deepest(entry, fr, cg, ())
-            chain = " > ".join(p.lstrip("_") for p in path)
-            print(f"{entry.lstrip('_'):12} {pushed + depth:5} B  via {chain}")
+            chain = " > ".join(shown(p) for p in path)
+            print(f"{shown(entry):12} {pushed + depth:5} B  via {chain}")
         print("(caller hooks — send/recv/on_ticket/ch_rand_bytes — run on the "
               "caller's own stack budget)")
     return 0

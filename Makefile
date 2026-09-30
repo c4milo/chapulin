@@ -5686,8 +5686,11 @@ lint-bench-numbers:
 # and jump. test/stack_walk.py compiles a fixture for arm64 and x86-64
 # Mach-O with the pinned clang and reads it with the pinned llvm-nm and
 # llvm-objdump, which read Mach-O on any host. The walk must follow a jump
-# at a function's first instruction, which it once dropped, and count the
-# return address an x86-64 call pushes.
+# at a function's first instruction, which it once dropped, count the
+# return address an x86-64 call pushes, and keep apart two static
+# functions of one name in two objects, which it once merged. The check
+# also requires the script to compile the sources and the defines
+# print-lib-lists prints for the build it walks, and no other root source.
 .PHONY: lint-stack-walk
 lint-stack-walk:
 	@CLANG=$(CLANG_RV) STACK_NM=$(LLVM_NM) STACK_OBJDUMP=$(subst llvm-nm,llvm-objdump,$(LLVM_NM)) \

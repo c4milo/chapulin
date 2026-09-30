@@ -1,0 +1,14 @@
+invariant: INV-19
+file: bench/stack.py
+catches: test/lint-stack-walk.sh
+reason: the walk compiles the build's sources with -DCH_RAND_EXTERN and
+  STACK_CFLAGS alone, the flags it used before it asked make for the
+  defines, and not with the defines make packages them with. A
+  TRUST=raw-ecdsa walk then compiles handshake_auth.c without
+  -DCH_PIN_ECDSA, so it calls rsa_pss_verify(), which that build does not
+  compile, and the ch_connect peak reads 2,768 bytes where it is 3,104.
+
+--- old
+        build(tmp, srcs, defines + os.environ.get("STACK_CFLAGS", "").split())
+--- new
+        build(tmp, srcs, ["-DCH_RAND_EXTERN"] + os.environ.get("STACK_CFLAGS", "").split())

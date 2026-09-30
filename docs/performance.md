@@ -45,21 +45,26 @@ from the relocations in an arm64 or x86-64 Mach-O object, and
 `bench/sram.sh` runs it on an arm64 Mac, so an rv32 peak needs tooling
 that does not exist yet.
 
-The script computes each entry point's worst case from the object
-code's call graph. It does not rely on a hand-picked call chain. It
-counts a tail call like a call, adding the callee's depth to the
-caller's whole frame, which can only overstate a peak, and `make
-lint-stack-walk` checks that it follows a tail call at a function's
-first instruction. The RSA verify holds the deepest frames, so it sets
-the `ch_connect` peak in the default build; it runs once per ticket
-lifetime, and every byte unwinds before `ch_connect` returns.
+The script computes each entry point's worst case from the object code's
+call graph. It does not rely on a hand-picked call chain. It compiles
+the sources the Makefile packages for the build it measures, with that
+build's defines, and no other source. It treats static functions of one
+name in two objects as two functions: `p256.c` and `p384.c` each define
+a static `point_add`, with different frames. It counts a tail call like
+a call, adding the callee's depth to the caller's whole frame, which can
+only overstate a peak. `make lint-stack-walk` checks that it follows a
+tail call at a function's first instruction, keeps two static functions
+of one name apart, and compiles what make packages. The RSA verify holds
+the deepest frames, so it sets the `ch_connect` peak in the default
+build; it runs once per ticket lifetime, and every byte unwinds before
+`ch_connect` returns.
 
 | call | arm64 |
 |---|---|
 | peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
-| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3824 |
+| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3104 |
 | peak stack, `ch_connect` (PSK) | 2768 |
-| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3984 |
+| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
 | peak stack, `ch_connect` (`TRUST=webpki`) | 16528 |
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16656 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15872 |
@@ -162,8 +167,9 @@ is live between calls:
 
 The scratch must not be `cfg.buf` while a session is live: `ch_read`
 serves unread plaintext out of that buffer across calls. The call
-itself measures 576 bytes of stack, reported by `bench/stack.py` beside
-the other public calls.
+itself measures 576 bytes of stack under `TRUST=ca-rsa` and 496 under
+`TRUST=ca-ecdsa`, reported by `bench/stack.py` beside the other public
+calls.
 
 ### Compared with other libraries
 

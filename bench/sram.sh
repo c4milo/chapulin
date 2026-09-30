@@ -159,7 +159,10 @@ echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
 echo "ch_quic (the same, SUITE=aesgcm AES=runtime): ${QUIC_SESSION_RUNTIME} B"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
-# same run the report prints.
+# same run the report prints. STACK_MAKE names each build by its make
+# variables, and stack.py compiles the sources make packages for it. The
+# suite builds pass CH_NATIVE_AES on its own, in STACK_CFLAGS, because the
+# Makefile writes no statement about the hardware.
 stack_report() { # $1 = report name, $2.. = VAR=value settings for stack.py
     local name=$1
     shift
@@ -173,31 +176,33 @@ echo "-- default build (TRUST=raw-rsa); ch_connect peak = pinned RSA verify --"
 stack_report default
 cat "$TMP/default.stack"
 echo "-- TRUST=raw-ecdsa build; ch_connect peak = pinned P-256 verify --"
-stack_report ecdsa STACK_CFLAGS=-DCH_PIN_ECDSA
+stack_report ecdsa STACK_MAKE=TRUST=raw-ecdsa
 head -1 "$TMP/ecdsa.stack"
 echo "-- PSK-mode ch_connect (server_auth pruned: PSK never enters it) --"
 stack_report psk STACK_PRUNE=hsa_server_auth
 head -1 "$TMP/psk.stack"
+# The two ca reports print whole, for ch_pubkey_from_pem, which only a ca
+# build exports.
 echo "-- TRUST=ca-rsa; ch_connect peak = chain verify + leaf frame --"
-stack_report ca_rsa STACK_CFLAGS=-DCH_TRUST_CA
-head -1 "$TMP/ca_rsa.stack"
+stack_report ca_rsa STACK_MAKE=TRUST=ca-rsa
+cat "$TMP/ca_rsa.stack"
 echo "-- TRUST=ca-ecdsa --"
-stack_report ca_ecdsa "STACK_CFLAGS=-DCH_TRUST_CA -DCH_PIN_ECDSA"
-head -1 "$TMP/ca_ecdsa.stack"
+stack_report ca_ecdsa STACK_MAKE=TRUST=ca-ecdsa
+cat "$TMP/ca_ecdsa.stack"
 echo "-- TRUST=webpki; ch_connect peak includes ML-KEM's K-PKE frames, above the chain walk --"
-stack_report webpki STACK_CFLAGS=-DCH_TRUST_WEBPKI
+stack_report webpki STACK_MAKE=TRUST=webpki
 head -1 "$TMP/webpki.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
-stack_report pq STACK_CFLAGS=-DCH_KEX_PQ
+stack_report pq STACK_MAKE=KEX=pq
 head -1 "$TMP/pq.stack"
 echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulation and the RSA-PSS signer --"
-stack_report server STACK_CFLAGS=-DCH_ROLE_SERVER
+stack_report server "STACK_MAKE=ROLE=server TRUST=none"
 head -1 "$TMP/server.stack"
 echo "-- ROLE=server SUITE=aesgcm; the same walk with SHA-384's schedule and the AES-GCM record path --"
-stack_report server_aes "STACK_CFLAGS=-DCH_ROLE_SERVER $SUITE_DEFS"
+stack_report server_aes "STACK_MAKE=ROLE=server TRUST=none SUITE=aesgcm AES=hw" STACK_CFLAGS=-DCH_NATIVE_AES
 head -1 "$TMP/server_aes.stack"
 echo "-- TRUST=webpki SUITE=aesgcm --"
-stack_report webpki_aes "STACK_CFLAGS=-DCH_TRUST_WEBPKI $SUITE_DEFS"
+stack_report webpki_aes "STACK_MAKE=TRUST=webpki SUITE=aesgcm AES=hw" STACK_CFLAGS=-DCH_NATIVE_AES
 head -1 "$TMP/webpki_aes.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the

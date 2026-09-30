@@ -1,0 +1,14 @@
+invariant: INV-19
+file: bench/stack.py
+catches: test/lint-stack-walk.sh
+reason: the walk compiles x509_ca.c, which the default build does not
+  package, beside the sources make lists. When the walk compiled every
+  root source, its report for the default build listed
+  ch_pubkey_from_pem_tcp_blocking at 576 bytes, a call that object does
+  not export, and its TRUST=raw-ecdsa walk read p384.c's point_add() and
+  rsa_mont.c's mont_mul() under p256_ecdsa_verify().
+
+--- old
+    return lines[0].split(), lines[1].split()
+--- new
+    return lines[0].split() + ["x509_ca.c"], lines[1].split()
