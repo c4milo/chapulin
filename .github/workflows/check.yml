@@ -171,6 +171,50 @@ jobs:
       # (test/platforms.mk, aes-runtime-disasm).
       - run: make -j"$(nproc)" aes-runtime-disasm
 
+  macos:
+    # macOS on Apple silicon as a supported platform: the arm64 job's
+    # roster, built with Apple clang and run natively. No other job
+    # builds with Apple clang; before this one, only a development Mac's
+    # make check did. tools/toolchain.env pins the Xcode whose clang the
+    # development Macs run (XCODE_VERSION), and xcode-27 is the one hosted
+    # image that carries it. That leaves two gaps: the image is a preview,
+    # which GitHub says may queue, and it runs macOS 27 where the
+    # development Macs run macOS 26. Lints stay with the amd64 check job,
+    # as they do for arm64: they need the pinned checkers that job
+    # installs, and a second copy of that toolchain buys no platform
+    # coverage.
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+      - name: Select the pinned Xcode
+        # Fail unless xcodebuild reports the pinned version: the image can
+        # change its default Xcode, and GitHub replaces a patch release
+        # with the next one under the same path. The step reads
+        # xcodebuild's output whole before grep does, because xcodebuild
+        # aborts on a broken pipe when grep -q stops reading at the match.
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app"
+          version=$(xcodebuild -version)
+          grep -qx "Xcode $XCODE_VERSION" <<< "$version" \
+            || { echo "Xcode is not the pinned $XCODE_VERSION: $version"; exit 1; }
+          cc --version
+      # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
+      # so this job runs the vector paths' NEON arms under Apple clang, as
+      # the arm64 job runs them under gcc.
+      - run: make suite-check
+      # The CHACHA=vector WIDEMUL=native object, which packages the NEON
+      # Poly1305 (docs/decisions.md 83).
+      - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
+      # The AES=hw binaries on the Arm instructions. Apple clang predefines
+      # __ARM_FEATURE_AES, so AES_HW_PROBE finds them with no flag.
+      - run: make aes-hw-check
+      # The three AES=runtime objects under Apple clang, disassembled: the
+      # AES and PMULL instructions must sit in aes_hw.c's and ghash_hw.c's
+      # functions alone. macOS ships no nproc, so sysctl counts the cores.
+      - run: make -j"$(sysctl -n hw.ncpu)" aes-runtime-disasm
+
   m3:
     # Cortex-M3 as a supported platform: the cross-check roster on
     # QEMU's MPS2-AN385 through newlib semihosting (make m3-check).

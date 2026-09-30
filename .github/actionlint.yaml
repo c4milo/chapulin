@@ -1,0 +1,11 @@
+# actionlint's configuration, which it reads from this path on its own.
+# actionlint knows the labels of GitHub's generally available runner
+# images, and xcode-27 is the label of a preview image, so actionlint
+# reports it as unknown. The macos job in check.yml runs there because it
+# is the one hosted image that carries the Xcode tools/toolchain.env pins
+# (XCODE_VERSION). self-hosted-runner is the one key actionlint offers for
+# a label it does not know, although GitHub hosts this runner. Drop the
+# entry once actionlint's own list carries the label.
+self-hosted-runner:
+  labels:
+    - xcode-27
