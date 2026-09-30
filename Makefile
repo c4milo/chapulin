@@ -3822,7 +3822,7 @@ san-check:
 	# them, and the Wycheproof suites over both paths.
 	@set -e; if [ -n "$(CHACHA_VECTOR_PROBE)" ]; then \
 	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
-	    test/chacha20_equiv_vector.c chacha20.c; \
+	    test/chacha20_equiv_vector.c chacha20.c ct.c; \
 	  echo "== chacha20_equiv_test (SAN -O$(O))"; ./bin/san/chacha20_equiv_test; \
 	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
 	    test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c; \
