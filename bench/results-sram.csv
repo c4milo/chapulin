@@ -21,8 +21,8 @@ stack_connect_ca_ecdsa,3264
 stack_connect_webpki,16528
 stack_read,1712
 stack_connect_pq,15872
-stack_write,912
-stack_close,864
+stack_write,944
+stack_close,896
 session_struct_server_arm64,1984
 session_struct_server_rv32,1824
 static_working_set_server_arm64,4032

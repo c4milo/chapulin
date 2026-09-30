@@ -69,7 +69,7 @@ build; it runs once per ticket lifetime, and every byte unwinds before
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16656 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15872 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
-| peak stack, `ch_write` / `ch_close` | 912 / 864 |
+| peak stack, `ch_write` / `ch_close` | 944 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 10304 |
 | peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10448 |
 
