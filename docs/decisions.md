@@ -4096,7 +4096,7 @@ does nothing more.
     record takes 26% to 28% of the packaged portable one's time
     (docs/performance.md, "Where a record's time goes"). These runs came
     before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
-    call. The runs that performance.md now holds, taken with the AES-GCM
+    call. The runs that performance.md held at d10b6e2, taken with the AES-GCM
     changes of [#184](https://github.com/c4milo/chapulin/issues/184),
     measure the code with the wipe: that build's Poly1305 takes 2.8 µs on
     macOS clang and gcc 13, and its 16 KiB `rec_seal` 17.2 and 18.4 µs.
