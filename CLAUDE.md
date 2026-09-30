@@ -106,7 +106,8 @@ Home: github.com/c4milo.
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
-  SHA-384) ← `chacha20.[ch]` + `poly1305.[ch]` +
+  SHA-384) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (four blocks at
+  a time on NEON or SSE2, CHACHA=vector) + `poly1305.[ch]` +
   `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
   write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
@@ -220,7 +221,15 @@ Home: github.com/c4milo.
   multiply, for 64-bit hosts. `ct.h` refuses `wide` unless the compiler
   has `unsigned __int128` and the build defines `CH_NATIVE_MUL128`, the
   same kind of claim `CH_NATIVE_WIDEMUL` makes (docs/decisions.md 52,
-  INV-34). AES is admitted for two purposes. The first is the keys RFC
+  INV-34). The Makefile CHACHA variable picks the ChaCha20 keystream the
+  same way: `portable`, the default and the reference, or `vector`,
+  `chacha20_vector.c`'s four blocks at a time in NEON or SSE2 vectors.
+  Every arm64 and x86-64 CPU has those, so the compiler's own
+  `__ARM_NEON` and `__SSE2__` select the path and nothing probes a CPU,
+  and a build whose compiler defines neither stops at an `#error`
+  (docs/decisions.md 82). CBMC cannot read an intrinsic, so the vector
+  path is held to the portable one by `bin/chacha20_equiv_test`, the RFC
+  8439 vectors and the Wycheproof suite. AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
