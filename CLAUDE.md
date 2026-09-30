@@ -116,8 +116,9 @@ Home: github.com/c4milo.
   `aes_extern.c` (the AES-128 key expansion and forward cipher of
   FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` and
   `aes_extern.c`; the Makefile AES variable picks one, and
-  `quic_aes_soft.c` compiles only in a QUIC build, because a
-  SUITE=aesgcm build refuses it)
+  `quic_aes_soft.c` compiles only in a QUIC build, and a SUITE=aesgcm
+  build refuses it except under AES=runtime, which runs QUIC's public
+  keys alone on it)
   ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
@@ -256,17 +257,28 @@ Home: github.com/c4milo.
   every spec targets a core with no AES or carry-less multiply
   instructions.
   The Makefile AES variable chooses the implementation the way TRUST
-  chooses the pinned algorithm, and never two in one object: `soft` is
-  this S-box, `hw` uses the compiler's own intrinsics under
-  `__ARM_FEATURE_AES` or `__AES__`, and `extern` takes a caller-supplied
-  `ch_aes_block`, the way `ch_rand_bytes` takes entropy, so a vendor AES
-  peripheral needs no code here. `hw` also moves GHASH off `gcm.c`'s
+  chooses the pinned algorithm: `soft` is this S-box, `hw` uses the
+  compiler's own intrinsics under `__ARM_FEATURE_AES` or `__AES__`,
+  `extern` takes a caller-supplied `ch_aes_block`, the way
+  `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
+  here, and each of the three puts one implementation in an object.
+  `runtime` is the one value that puts two there, and
+  `lint-trust-separation` admits no other pair: `hw`'s two files and, in a
+  QUIC object, `soft`'s S-box, which runs QUIC's public keys alone. The
+  caller's answer in `ch_cfg.aes_instructions` picks between them for
+  each session, and a traffic key runs on the instructions alone
+  (docs/decisions.md 81). `hw` also moves GHASH off `gcm.c`'s
   portable multiply onto the carry-less multiply, in `ghash_hw.c`:
   PMULL under `__ARM_FEATURE_AES`, which the Arm C Language Extensions
   put in the AES extension, and PCLMULQDQ under `__PCLMUL__`, which
-  x86-64 turns on with `-mpclmul` beside `-maes`. Those macros are the
-  whole detection, and the choice is the compiler's at build time:
-  nothing here probes a CPU and nothing asks an operating system. An
+  x86-64 turns on with `-mpclmul` beside `-maes`. Under `hw` those macros
+  are the whole detection, and the choice is the compiler's at build
+  time. Under `runtime` the choice is the caller's at run time: the caller
+  probes the CPU and states what it found in `ch_cfg.aes_instructions`,
+  every init refuses an unset answer, and `aes_hw.c` and `ghash_hw.c` turn
+  the instructions on for their own functions alone, so the rest of the
+  object runs on any CPU of its architecture. Under every value nothing
+  here probes a CPU and nothing asks an operating system. An
   arm64 core cannot answer the question itself — reading
   ID_AA64ISAR0_EL1 from EL0 takes SIGILL — so runtime detection means
   per-OS code this tree cannot carry and which the bare-metal m3 and
@@ -292,8 +304,8 @@ Home: github.com/c4milo.
   there, AES-128 and AES-256, beside the three public keys. `ct.h` is where the
   terms are written, beside the same rule for the widening multiply.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
-  that build is a compile error unless it also takes AES=hw and defines
-  `CH_NATIVE_AES`, or takes AES=extern and defines
+  that build is a compile error unless it also takes AES=hw or
+  AES=runtime and defines `CH_NATIVE_AES`, or takes AES=extern and defines
   `CH_AES_EXTERN_CONSTANT_TIME`. `CH_NATIVE_AES` is the build's assertion that this part's
   AES instructions and its carry-less multiply run in constant time, the
   way `CH_NATIVE_WIDEMUL` asserts the widening multiply:
