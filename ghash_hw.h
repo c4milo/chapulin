@@ -13,8 +13,8 @@
 // needs for the block of lengths that ends GHASH, and what
 // test/ghash_equiv_test.c compares at the operands most likely to go
 // wrong. The loop over data is where GHASH spends its time, and running
-// it here keeps the accumulator and the subkey in 64-bit words from one
-// block to the next rather than reading and writing 32 bytes per block.
+// it here lets it multiply up to eight blocks by powers of the subkey it
+// computes first, with one reduction for all of them (ghash_hw.c).
 //
 // A pair of its own rather than more entries in aes_block.h. That
 // header is the AES block cipher's contract, and aes.c is the one

@@ -1,10 +1,10 @@
 // Copies n bytes from below to copy and writes zero over each after the
 // copy, one byte at a time through a volatile pointer.
-// test/ghash_equiv_residue.h hands it a local array that its caller never
-// wrote, so the bytes are whatever an earlier call left on the stack
-// there. It is a source of its own so that the compiler that builds the
-// caller cannot see the read, and does not refuse the unwritten array as
-// a value used before it is set.
+// test/ghash_equiv_residue.h and test/poly1305_equiv_residue.h hand it a
+// local array that their caller never wrote, so the bytes are whatever an
+// earlier call left on the stack there. It is a source of its own so that
+// the compiler that builds the caller cannot see the read, and does not
+// refuse the unwritten array as a value used before it is set.
 #include <stddef.h>
 #include <stdint.h>
 

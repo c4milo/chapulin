@@ -1,0 +1,14 @@
+invariant: INV-17
+file: ghash_hw.c
+catches: ghash_equiv_test
+reason: the AES=hw GHASH data loop wipes its state only up to the powers
+  of the hash subkey, so H^1 to H^8 stay in the dead frame after every
+  call, and a later caller's uninitialized stack reads them. Each is a
+  function of the key, and H^1 is the subkey itself. No output changes,
+  so no vector notices. bin/ghash_equiv_test copies the stack below one
+  call over three passes and requires no power of H in the copy.
+
+--- old
+    ct_wipe(&s, offsetof(ghash_state, powers) + powers * sizeof s.powers[0]);
+--- new
+    ct_wipe(&s, offsetof(ghash_state, powers));

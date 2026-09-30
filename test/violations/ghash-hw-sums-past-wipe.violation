@@ -1,0 +1,18 @@
+invariant: INV-17
+file: ghash_hw.c
+catches: ghash_equiv_test
+reason: the AES=hw GHASH state holds the pass's sums after the powers of
+  H, past the end of the wipe, which covers the state up to the last
+  power the call computed. So the carry-less products of the last pass's
+  blocks and powers of H stay in the dead frame after every call, and a
+  later caller's uninitialized stack reads them. No output changes, so no
+  vector notices. bin/ghash_equiv_test copies the stack below one call over
+  three passes and requires none of the last pass's three sums in the
+  copy.
+
+--- old
+    ghash_sums sums;      // the products a multiply or a pass adds up, before product_of
+    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] = H^(i + 1)
+--- new
+    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] = H^(i + 1)
+    ghash_sums sums;      // the products a multiply or a pass adds up, before product_of

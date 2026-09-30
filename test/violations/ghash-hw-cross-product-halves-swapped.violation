@@ -1,19 +1,20 @@
 invariant: INV-26
 file: ghash_hw.c
 catches: ghash_equiv_test
-reason: one cross product of the AES=hw multiply puts its high half where
-  its low half belongs and the reverse, so the unreduced product is wrong
-  in its middle two words whenever the accumulator's low half and the
-  subkey's high half are both nonzero. It is the mistake a four-product
-  schoolbook multiply invites, and it leaves every product with a zero
-  operand half right, which is why bin/ghash_equiv_test runs every pair
-  of single-bit operands and random pairs beside the fixed ones. The edit
-  is shared C after either instruction, so it lands on an ARMv8 runner
-  and an x86-64 one alike.
+reason: the AES=hw multiply puts the high half of the cross products' sum
+  where its low half belongs and the reverse, so the unreduced product is
+  wrong in its middle two words whenever the cross products are nonzero.
+  It is the mistake a four-product schoolbook multiply invites, and it
+  leaves right every product whose cross products are zero, such as two
+  operands whose low halves are both zero, which is why
+  bin/ghash_equiv_test runs every pair of single-bit operands and random
+  pairs beside the fixed ones. The edit is shared C
+  after either instruction, so it lands on an ARMv8 runner and an x86-64
+  one alike.
 
 --- old
-    uint64_t word1 = low_high ^ cross1_low ^ cross2_low;
-    uint64_t word2 = high_low ^ cross1_high ^ cross2_high;
+    uint64_t word1 = product_high(s->sums.low) ^ product_low(s->sums.cross);
+    uint64_t word2 = product_low(s->sums.high) ^ product_high(s->sums.cross);
 --- new
-    uint64_t word1 = low_high ^ cross1_high ^ cross2_low;
-    uint64_t word2 = high_low ^ cross1_low ^ cross2_high;
+    uint64_t word1 = product_high(s->sums.low) ^ product_high(s->sums.cross);
+    uint64_t word2 = product_low(s->sums.high) ^ product_low(s->sums.cross);

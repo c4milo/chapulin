@@ -495,8 +495,9 @@ as plain bytes.
 `AES=hw` is the one value that changes GHASH and counter mode as well as the
 cipher. Under `CH_AES_HW`, `gcm.c`'s `multiply_by_subkey` and `hash_data` call
 `gcm_multiply_by_subkey_hw` and `gcm_hash_data_hw` in `ghash_hw.c`, which
-compute the same GF(2^128) products with four carry-less 64-bit products and a
-reduction per block. `AES=soft` and `AES=extern` run `gcm.c`'s portable
+compute the same GF(2^128) products with four carry-less 64-bit products per
+block. The data loop multiplies up to eight blocks by powers of H, which each call
+computes first, and reduces once per pass. `AES=soft` and `AES=extern` run `gcm.c`'s portable
 multiply, 128 masked steps per block, and compile no `ghash_hw.c`. Counter
 mode's whole blocks go through `aes_encrypt_counter_blocks` to `aes_hw.c`'s
 `aes_counter_blocks`, which runs eight counter blocks through the rounds
@@ -575,7 +576,7 @@ what each one rests on, and nothing more:
 | path | proved | tested |
 | --- | --- | --- |
 | `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, RFC 9369 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
-| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs, and 2,258 cases of the multi-block counter mode against `soft` one block at a time: every block count through three passes and a block, counters that wrap past 2^32 at every place in a pass, and the three layouts `gcm.c` passes. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 267 runs of the data loop over every length from 0 to 65 bytes and 200 random lengths up to 16,384, and 3,213 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, and the in-place seal), every payload length through three passes of the counter mode among them. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
+| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs, and 2,258 cases of the multi-block counter mode against `soft` one block at a time: every block count through three passes and a block, counters that wrap past 2^32 at every place in a pass, and the three layouts `gcm.c` passes. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 617 runs of the data loop over every length from 0 to 415 bytes, which is three passes of eight blocks and more, and 200 random lengths up to 16,384, a check that no power of H and none of the last pass's sums stays on the stack below a call, and 3,213 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, and the in-place seal), every payload length through three passes of the counter mode among them. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
 | `runtime` | `proof/aes_runtime_harness.c`: `aes.c` in the QUIC suite object, over contract stubs of both ciphers' eight entries, is memory-safe and UB-free, puts an Initial key on the instructions only under the answer present out of every byte an answer can be, the Retry key on the table, a traffic key of either length never on the table, and counter mode's whole blocks on the instructions alone. `proof/srv_select_runtime_harness.c` and `proof/quic_config_webpki_runtime_harness.c`: the default order and the answer rule. The ciphers themselves are `soft`'s and `hw`'s rows | `bin/aes_runtime_test`: RFC 9001 and RFC 9369 Appendix A under both answers, the SP 800-38D and FIPS 197 vectors under traffic keys, and a count of every call into the table, the instructions and the carry-less multiply. `test/aes-runtime-qemu.sh`, in CI's mips job: that binary and both loop binaries built for x86-64 under `qemu-x86_64 -cpu max,-aes,-pclmulqdq`, where the absent answer passes and the present one dies of SIGILL. `test/aes-runtime-disasm.sh`, in CI's arm64 job: the three `AES=runtime` objects `make check` links, disassembled, hold the AES and carry-less multiply instructions in `aes_hw.c`'s and `ghash_hw.c`'s functions alone. `bin/aes_suite_test_runtime`, `bin/quic_suite_test_runtime`, the QUIC, record-mode and blocking loop tests, `bin/webpki_session_aes_runtime` and `bin/srv_flight_test_aes_runtime` |
 | `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server legs against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
 
@@ -583,14 +584,20 @@ what each one rests on, and nothing more:
 `AES=hw` build and once, through `test/ghash_equiv_soft.c`, with `CH_AES_HW`
 undefined and the entries renamed, which is the portable GHASH and the one-block
 counter loop the proofs cover. Both copies run `aes_hw.c`'s cipher, so GHASH and
-the multi-block counter mode are the differences between them. Every pair of single-bit operands puts each product degree from 0
-to 254 through the reduction on its own.
-`test/violations/ghash-hw-reduction-constant.violation` shifts the upper half
-of the product by 8 where the field polynomial's x^7 term needs 7, and
-`ghash-hw-cross-product-halves-swapped.violation` swaps the two halves of one
-cross product; each requires that binary to fail. Both edit the shared C after
-the instruction, not either architecture's arm, so they land on an ARMv8 runner
-and an x86-64 one alike.
+the multi-block counter mode are the differences between them. Every pair of
+single-bit operands puts each product degree from 0 to 254 through the reduction
+on its own. `test/violations/ghash-hw-reduction-constant.violation` shifts the
+upper half of the product by 8 where the field polynomial's x^7 term needs 7,
+`ghash-hw-cross-product-halves-swapped.violation` swaps the two halves of the
+cross products' sum, `ghash-hw-powers-reversed.violation` runs a pass's blocks
+against the powers of H in the wrong order, and
+`ghash-hw-partial-block-dropped.violation` drops a last partial block; each
+requires that binary to fail. `ghash-hw-powers-wipe-skipped.violation` stops the
+data loop's wipe before the powers of H, and `ghash-hw-sums-past-wipe.violation`
+moves the pass's sums past the end of that wipe; the binary's copy of the stack
+below one call finds each. All six edit the shared C after the instruction, not
+either architecture's arm, so they land on an ARMv8 runner and an x86-64 one
+alike.
 
 Two more mutants hold the build rather than the arithmetic, because the
 equivalence test cannot see an `AES=hw` object that runs the portable GHASH: the

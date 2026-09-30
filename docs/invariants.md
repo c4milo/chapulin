@@ -2681,7 +2681,11 @@ last `ROLE=server` stub, as the entry said it would.
   holds the path no proof reaches (docs/quic.md, "What the AES axis
   proves"). `ghash-hw-reduction-constant.violation` and
   `ghash-hw-cross-product-halves-swapped.violation` break the `AES=hw`
-  GHASH multiply and require `bin/ghash_equiv_test` to fail.
+  GHASH multiply, and `ghash-hw-powers-reversed.violation` and
+  `ghash-hw-partial-block-dropped.violation` break its loop over data, the
+  first by running a pass's blocks against the powers of H in the wrong
+  order and the second by dropping a last partial block; all four require
+  `bin/ghash_equiv_test` to fail.
   `ghash-hw-falls-back-to-portable.violation` lets an `AES=hw` build of
   `gcm.c` run the portable multiply and requires
   `test/quic-builds.sh` to fail, and
@@ -3251,11 +3255,18 @@ last `ROLE=server` stub, as the entry said it would.
   `wr_secret` byte for byte what they were. Two violations each break
   one half: `inv17-close-notify-keeps-read-key` and
   `inv17-close-notify-wipes-write-key`, which `bin/unit` catches.
-  One wipe inside a call has a test too: the `CHACHA=vector` Poly1305
+  Wipes inside a call have tests too. The `CHACHA=vector` Poly1305
   wipes the powers of the one-time key's r that it computes, r^2, r^3
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
+  Inside the `AES=hw` GHASH, `ghash_hw.c`'s data loop computes the powers
+  of H it needs, adds up each pass's products in the same state, and wipes
+  both with H when each call ends; `bin/ghash_equiv_test` copies the stack
+  below one call and requires no power of H and none of the last pass's
+  sums in it. `ghash-hw-powers-wipe-skipped` stops that wipe before the
+  powers, and `ghash-hw-sums-past-wipe` moves the sums past its end; each
+  requires the binary to fail.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

@@ -254,13 +254,15 @@ static void compare_hash_data(const char *case_name, const uint8_t *bytes, size_
     loops++;
 }
 
-// Every length from zero to four blocks and a byte, which puts each
-// length of a last partial block through the pad, then random lengths up
-// to MAX_DATA. NULL with a length of zero is the shape gcm.h admits
-// for empty associated data.
+// Every length from zero to three of ghash_hw.c's passes, eight blocks
+// each, a block and fifteen bytes more, which puts each count of blocks
+// in a last short pass and each length of a last partial block through
+// the loop and the pad, then random lengths up to MAX_DATA. NULL with a
+// length of zero is the shape gcm.h admits for empty associated data.
+#define DATA_PASS_BYTES (8 * AES_BLOCK)
 static void run_hash_data(void) {
     compare_hash_data("data loop over NULL", NULL, 0);
-    for (size_t n = 0; n <= 4 * AES_BLOCK + 1; n++) {
+    for (size_t n = 0; n <= 3 * DATA_PASS_BYTES + 2 * AES_BLOCK - 1; n++) {
         rng_fill(data, n);
         char case_name[64];
         (void)snprintf(case_name, sizeof case_name, "data loop over %zu bytes", n);
@@ -419,8 +421,11 @@ static void run_aead(void) {
     }
 }
 
+#include "ghash_equiv_residue.h"
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
+    run_residue();
     run_multiply_fixed();
     run_multiply_single_bits();
     run_multiply_squares();

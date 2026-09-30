@@ -466,7 +466,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/aes_equiv_counter.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
+TESTH := test/test_random.h test/aes_equiv_counter.h test/ghash_equiv_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
@@ -1885,9 +1885,12 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # whole AEAD, each built twice in one binary. The line defines CH_AES_HW, so
 # gcm.c compiles as the AES=hw build; test/ghash_equiv_soft.c undefines it
 # and compiles gcm.c a second time under renamed entries, with the
-# portable GHASH the proofs cover. Both copies run aes_hw.c's cipher, so
-# GHASH is the only difference. aes.c calls hkdf.c for the Initial key
-# constructor, which is why hkdf.c and sha256.c link.
+# portable GHASH and the one-block counter loop the proofs cover. Both
+# copies run aes_hw.c's cipher, so GHASH and the multi-block counter mode
+# are the differences. aes.c calls hkdf.c for the Initial key
+# constructor, which is why hkdf.c and sha256.c link. test/stack_residue.c
+# copies the stack a call left, for the check that the powers of H and a
+# pass's sums are gone (test/ghash_equiv_residue.h).
 # X25519=wide against X25519=portable, both fields in one binary under two
 # names, the way bin/aes_equiv_test holds both AES implementations:
 # test/x25519_equiv_portable.c and test/x25519_equiv_wide.c compile x25519.c
@@ -1933,11 +1936,12 @@ bin/poly1305_equiv_test: test/poly1305_equiv_test.c test/poly1305_equiv_vector.c
 bin/unit_chacha_vector: test/unit_test.c $(SRCS) chacha20_vector.c poly1305_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_CHACHA_VECTOR -I. -o $@ test/unit_test.c $(SRCS) chacha20_vector.c poly1305_vector.c
-bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c gcm.c aes.c $(AES_HW_SRCS) \
+bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c \
+                      $(AES_HW_SRCS) \
                       hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -I. -o $@ test/ghash_equiv_test.c \
-	  test/ghash_equiv_soft.c gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c
+	  test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
 # ones call, which is SRV_BELOW: srv_message.c and srv_cookie.c read and write
