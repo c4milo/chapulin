@@ -14,9 +14,10 @@
 #                               GHASH
 #   AES=soft CH_NATIVE_WIDEMUL  ChaCha20-Poly1305 and Poly1305 again, over
 #                               the native multiply the host tests assert
-#   AES=hw                      AES-128-GCM over the AES instructions and
-#                               ghash_hw.c's GHASH on PMULL or
-#                               PCLMULQDQ
+#   AES=hw                      AES-128-GCM over the AES instructions,
+#                               gcm_hw.c's counter mode and one-pass
+#                               loops, and ghash_hw.c's GHASH on PMULL
+#                               or PCLMULQDQ
 #
 # Every build is -O2, the level the packaged object uses. CC picks the
 # compiler (default cc); CI and the x86-64 row use CC=gcc.
@@ -77,7 +78,7 @@ COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c chacha20.c poly
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" \
-    aes_hw.c ghash_hw.c
+    aes_hw.c ghash_hw.c gcm_hw.c
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'
