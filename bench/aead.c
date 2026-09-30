@@ -39,6 +39,7 @@
 #include "aead_gcm.h"
 #include "aes_public_key.h"
 #include "ch_assert.h"
+#include "widemul.h"
 
 #define SAMPLE_NS 2000000.0 // 2 ms per sample
 #define SAMPLES 101         // odd, so the median is one sample
@@ -147,16 +148,17 @@ static void run_poly1305(size_t n) {
 }
 
 static void run_chachapoly_seal(size_t n) {
-    aead_seal(chacha_key, nonce, aad, AAD_LEN, input, n, output, tag);
+    aead_seal(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, input, n, output, tag);
     consume(tag, sizeof tag);
 }
 
 static void prepare_chachapoly_open(size_t n) {
-    aead_seal(chacha_key, nonce, aad, AAD_LEN, input, n, sealed, sealed_tag);
+    aead_seal(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, input, n, sealed, sealed_tag);
 }
 
 static void run_chachapoly_open(size_t n) {
-    if (!aead_open(chacha_key, nonce, aad, AAD_LEN, sealed, n, sealed_tag, output)) {
+    if (!aead_open(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, sealed, n, sealed_tag,
+                   output)) {
         fail("aead_open rejected its own seal");
     }
     consume(&output[n - 1], 1);

@@ -29,6 +29,7 @@
 #include "p256_sign.h"
 #include "rand_draw.h"
 #include "rsa_sign.h"
+#include "widemul.h"
 
 // The 64 bytes of 0x20 that RFC 9846 section 4.5.2 puts in front of the
 // signed content.
@@ -194,7 +195,8 @@ static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t 
                         uint8_t *sig, size_t cap, size_t *sig_len) {
     uint8_t salt[RSA_PSS_SALT_LEN];
     rand_draw(cfg, salt, sizeof salt);
-    int signed_ok = rsa_pss_sign(id->priv, digest, salt, sig, cap, sig_len);
+    int signed_ok =
+        widemul_rsa_pss_sign(widemul_answer(cfg), id->priv, digest, salt, sig, cap, sig_len);
     ct_wipe(salt, sizeof salt);
     return signed_ok;
 }
@@ -207,7 +209,7 @@ static int sign_digest(const ch_cfg *cfg, const ch_identity *id, uint16_t sigalg
                        const uint8_t digest[SHA256_LEN], uint8_t *sig, size_t cap,
                        size_t *sig_len) {
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
-        return p256_sign(id->priv, digest, sig, cap, sig_len);
+        return p256_sign(widemul_answer(cfg), id->priv, digest, sig, cap, sig_len);
     }
     return sign_rsa_pss(cfg, id, digest, sig, cap, sig_len);
 }

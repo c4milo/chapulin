@@ -106,7 +106,10 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]);
 // stay constant time. Rejection of an out-of-range candidate, the retry
 // that a caller can actually reach at about 2^-32, is implemented in
 // full.
-int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uint8_t *sig,
-              size_t cap, size_t *sig_len);
+//
+// widemul is the answer the scalar and point multiplies run under, a
+// CH_WIDEMUL_ value, which this call hands to widemul.h's dispatchers.
+int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+              uint8_t *sig, size_t cap, size_t *sig_len);
 
 #endif

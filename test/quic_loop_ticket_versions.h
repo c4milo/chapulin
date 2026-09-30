@@ -11,6 +11,8 @@
 #ifndef CH_TEST_QUIC_LOOP_TICKET_VERSIONS_H
 #define CH_TEST_QUIC_LOOP_TICKET_VERSIONS_H
 
+#include "test_widemul.h"
+
 #ifdef CH_TRUST_WEBPKI
 // This build's server, which signs with the r2 identity, and its client,
 // which verifies the r2 chain. A resuming client presents the kept ticket
@@ -49,7 +51,7 @@ static void version_resuming_client(ch_cfg *cfg) {
 // it under the server's ticket key, or 0xffffffff when it does not open.
 static uint32_t kept_ticket_server_version(void) {
     srv_ticket_contents c;
-    if (srv_ticket_open(ticket_key, kept.identity, kept.identity_len, &c) != CH_OK) {
+    if (srv_ticket_open(TEST_WIDEMUL, ticket_key, kept.identity, kept.identity_len, &c) != CH_OK) {
         return 0xffffffffU;
     }
     return c.quic_version;

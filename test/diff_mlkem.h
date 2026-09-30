@@ -8,6 +8,7 @@
 #define CH_DIFFMLKEM_H
 
 #include "mlkem.h"
+#include "test_widemul.h"
 
 static void diff_mlkem_keygen(void) {
     for (int i = 0; i < 12; i++) {
@@ -45,7 +46,7 @@ static void diff_mlkem_encaps(void) {
         mlkem_keygen_derand(ek, dk, d, z);
         uint8_t ct[MLKEM_CT_LEN];
         uint8_t ss[MLKEM_SS_LEN];
-        if (mlkem_encaps_derand(ct, ss, ek, m) != 0) {
+        if (mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, m) != 0) {
             die("mlkem_encaps refused a key its own keygen produced");
         }
         static char ek_hex[2 * MLKEM_EK_LEN + 1];
@@ -73,7 +74,7 @@ static void diff_mlkem_encaps(void) {
         ek[1] = 0xff;
         uint8_t ct[MLKEM_CT_LEN];
         uint8_t ss[MLKEM_SS_LEN];
-        if (mlkem_encaps_derand(ct, ss, ek, m) == 0) {
+        if (mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, m) == 0) {
             die("mlkem_encaps accepted an off-modulus key");
         }
         static char ek_hex[2 * MLKEM_EK_LEN + 1];
@@ -99,7 +100,7 @@ static void diff_mlkem_decaps(void) {
         mlkem_keygen_derand(ek, dk, d, z);
         uint8_t ct[MLKEM_CT_LEN];
         uint8_t ss[MLKEM_SS_LEN];
-        if (mlkem_encaps_derand(ct, ss, ek, m) != 0) {
+        if (mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, m) != 0) {
             die("mlkem_encaps refused a key its own keygen produced");
         }
         // Odd rows tamper the ciphertext, so the row compares the
@@ -108,7 +109,7 @@ static void diff_mlkem_decaps(void) {
             ct[i] ^= 1;
         }
         uint8_t out[MLKEM_SS_LEN];
-        mlkem_decaps(out, ct, dk);
+        mlkem_decaps(TEST_WIDEMUL, out, ct, dk);
         static char dk_hex[2 * MLKEM_DK_LEN + 1];
         (void)hex_encode(dk_hex, dk, sizeof dk);
         static char ct_hex[2 * MLKEM_CT_LEN + 1];

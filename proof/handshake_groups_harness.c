@@ -52,8 +52,9 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
 }
 
-int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCALAR_LEN],
-                     uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(draw, P256_SCALAR_LEN), "keygen: draw readable");
     __CPROVER_assert(__CPROVER_w_ok(priv, P256_SCALAR_LEN), "keygen: priv writable");
     __CPROVER_assert(__CPROVER_w_ok(pub, P256_POINT_LEN), "keygen: pub writable");
@@ -69,8 +70,9 @@ int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCAL
     return 1;
 }
 
-int p256_ecdh(const uint8_t priv[P256_SCALAR_LEN], const uint8_t point[P256_POINT_LEN],
-              uint8_t out[P256_SECRET_LEN]) {
+int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(priv, P256_SCALAR_LEN), "p256_ecdh: priv readable");
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "p256_ecdh: point readable");
     __CPROVER_assert(__CPROVER_w_ok(out, P256_SECRET_LEN), "p256_ecdh: out writable");

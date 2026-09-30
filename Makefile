@@ -190,7 +190,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h poly1305.h poly1305_ve
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
-        alert.h
+        alert.h widemul.h cpu_cfg.h
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -469,7 +469,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/aes_equiv_counter.h test/ghash_equiv_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
+TESTH := test/test_random.h test/test_widemul.h test/aes_equiv_counter.h test/ghash_equiv_residue.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
@@ -4542,7 +4542,7 @@ else
 	# headers, so freertos-check lints them (test/platforms.mk).
 	@$(call TIDY_EACH,--tidy-arg --checks=$(QEMU_TIDY_CHECKS) \
 	  test/qemu/m3_runtime.c test/qemu/m3_start.c test/qemu/m3_kat.c, \
-	  -std=c11 --target=armv7m-none-eabi -ffreestanding -I. -Itest/qemu)
+	  -std=c11 --target=armv7m-none-eabi -ffreestanding -DCH_RAND_EXTERN -I. -Itest/qemu)
 	# The host half of the KAT diff is ordinary hosted C; no checks off.
 	@$(call TIDY_EACH,test/qemu/host_runtime.c,-std=c11 -D_DEFAULT_SOURCE -I. -Itest/qemu)
 	# Every pass above wrote one line; this checks them all from one pool.

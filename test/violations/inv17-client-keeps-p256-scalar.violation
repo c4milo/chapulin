@@ -9,7 +9,7 @@ reason: the client keeps its P-256 scalar after the secp256r1 exchange, so
   run, after a point it accepts and after one it refuses.
 
 --- old
-    int shared_ok = p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
     ct_wipe(h->p256_priv, sizeof h->p256_priv);
 --- new
-    int shared_ok = p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);

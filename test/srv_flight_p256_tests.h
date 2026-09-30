@@ -15,6 +15,7 @@
 
 #include "p256_ecdh.h"
 #include "srv_flight_kex_tests.h"
+#include "test_widemul.h"
 
 // The client half of a secp256r1 exchange.
 static uint8_t p256_client_priv[P256_SCALAR_LEN];
@@ -22,7 +23,7 @@ static uint8_t p256_client_point[P256_POINT_LEN];
 
 static void make_p256_client(void) {
     static const uint8_t draw[P256_SCALAR_LEN] = {0x51, 0x62, 0x73};
-    CHECK(p256_ecdh_keygen(draw, p256_client_priv, p256_client_point) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, draw, p256_client_priv, p256_client_point) == 1);
 }
 
 // A client_hello that lists groups and shares secp256r1 alone when
@@ -78,11 +79,11 @@ static void test_flight_p256_secret(void) {
     CHECK(sel.group == CH_GROUP_SECP256R1);
     CHECK(wire[KEX_SH_GROUP_AT] == 0x00 && wire[KEX_SH_GROUP_AT + 1] == 0x17);
     CHECK(((size_t)wire[KEX_SH_GROUP_AT + 2] << 8 | wire[KEX_SH_GROUP_AT + 3]) == P256_POINT_LEN);
-    CHECK(p256_ecdh_point_valid(wire + KEX_SH_SHARE_AT));
+    CHECK(p256_ecdh_point_valid(TEST_WIDEMUL, wire + KEX_SH_SHARE_AT));
     CHECK(!all_zero(hs.p256_priv, sizeof hs.p256_priv));
 
     uint8_t ikm[P256_SECRET_LEN];
-    CHECK(p256_ecdh(p256_client_priv, wire + KEX_SH_SHARE_AT, ikm) == 1);
+    CHECK(p256_ecdh(TEST_WIDEMUL, p256_client_priv, wire + KEX_SH_SHARE_AT, ikm) == 1);
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_OK);
     CHECK(all_zero(hs.p256_priv, sizeof hs.p256_priv));
     CHECK(all_zero(hs.priv, sizeof hs.priv) && all_zero(hs.pub, sizeof hs.pub));

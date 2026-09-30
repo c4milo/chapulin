@@ -23,6 +23,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "rand_draw.h"
+#include "widemul.h"
 
 // FIPS 203's encapsulation takes 32 bytes of randomness, m (mlkem.h).
 #define SRV_KEX_ENCAPS_RANDOM 32
@@ -61,7 +62,8 @@ static int encapsulate(handshake_state *h, const client_hello *ch,
     // encapsulation key before it writes anything, and answers nonzero
     // when a coefficient is at or above the modulus. The key is public,
     // so the branch on that verdict leaks nothing.
-    int refused = mlkem_encaps_derand(share, h->mlkem_ss, ch->hybrid_share, m);
+    int refused =
+        mlkem_encaps_derand(widemul_answer(&h->t->cfg), share, h->mlkem_ss, ch->hybrid_share, m);
     ct_wipe(m, sizeof m);
     if (refused != 0) {
         ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
@@ -82,7 +84,7 @@ static int encapsulate(handshake_state *h, const client_hello *ch,
 static int p256_share(handshake_state *h, const client_hello *ch,
                       uint8_t share[SRV_KEX_SHARE_MAX]) {
     CH_ASSERT(ch->p256_share != NULL);
-    if (!p256_ecdh_point_valid(ch->p256_share)) {
+    if (!p256_ecdh_point_valid(widemul_answer(&h->t->cfg), ch->p256_share)) {
         return CH_EPROTO;
     }
     uint8_t draw[P256_SCALAR_LEN];
@@ -90,7 +92,7 @@ static int p256_share(handshake_state *h, const client_hello *ch,
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
         rand_draw(&h->t->cfg, draw, sizeof draw);
-        drawn = p256_ecdh_keygen(draw, h->p256_priv, share);
+        drawn = p256_ecdh_keygen(widemul_answer(&h->t->cfg), draw, h->p256_priv, share);
     }
     ct_wipe(draw, sizeof draw);
     // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
@@ -146,7 +148,7 @@ static int x25519_secret(handshake_state *h, const client_hello *ch, uint16_t gr
     }
     CH_ASSERT(peer != NULL);
     ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
-    return x25519(ecdhe, h->priv, peer) != 0;
+    return widemul_x25519(widemul_answer(&h->t->cfg), ecdhe, h->priv, peer) != 0;
 }
 
 int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
@@ -157,7 +159,7 @@ int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
         // did, and zeroes its 32 bytes of ikm when it refuses.
         CH_ASSERT(ch->p256_share != NULL);
         *ikm_len = P256_SECRET_LEN;
-        shared_ok = p256_ecdh(h->p256_priv, ch->p256_share, ikm);
+        shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, ch->p256_share, ikm);
     } else {
         shared_ok = x25519_secret(h, ch, group, ikm, ikm_len);
     }

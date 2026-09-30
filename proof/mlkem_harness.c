@@ -172,10 +172,10 @@ int main(void) {
 
     fill_nondet(ek, sizeof ek);
     fill_nondet(m, sizeof m);
-    (void)mlkem_encaps_derand(ct, ss, ek, m);
+    (void)mlkem_encaps_derand(nondet_u8(), ct, ss, ek, m);
 
     fill_nondet(dk, sizeof dk);
     fill_nondet(ct, sizeof ct);
-    mlkem_decaps(ss, ct, dk);
+    mlkem_decaps(nondet_u8(), ss, ct, dk);
     return 0;
 }

@@ -10,6 +10,6 @@ reason: a webpki client whose server selected x25519 keeps the ML-KEM seed
 
 --- old
     ct_wipe(h->dz, sizeof h->dz);
-    if (!x25519(ikm, h->priv, info->server_pub)) {
+    if (!widemul_x25519(widemul_answer(&h->t->cfg), ikm, h->priv, info->server_pub)) {
 --- new
-    if (!x25519(ikm, h->priv, info->server_pub)) {
+    if (!widemul_x25519(widemul_answer(&h->t->cfg), ikm, h->priv, info->server_pub)) {

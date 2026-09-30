@@ -215,9 +215,8 @@ size_t quic_header_unprotect(uint8_t *pkt, size_t pn_off, uint8_t level,
 uint64_t quic_pn_read(const uint8_t *pkt, size_t pn_off, size_t pn_len);
 
 // Recovers the full packet number from the encoded one, which is the
-// DecodePacketNumber of RFC 9000 Appendix A.3
-// (rfc9000.txt:8358-8381). pn_len counts bytes, so the algorithm's
-// pn_nbits is 8 * pn_len.
+// DecodePacketNumber of RFC 9000 Appendix A.3 (rfc9000.txt:8358-8381).
+// pn_len counts bytes, so the algorithm's pn_nbits is 8 * pn_len.
 //
 // largest_pn is the largest packet number the caller has successfully
 // processed in that packet number space (rfc9000.txt:8350-8351), which
@@ -261,15 +260,14 @@ void quic_nonce(const uint8_t iv[AEAD_NONCE], uint64_t pn, uint8_t nonce[AEAD_NO
 // Picks the 1-RTT receive key set for one packet, which is the rule of
 // RFC 9001 §6.5 (rfc9001.txt:1735-1743). The Key Phase bit alone does
 // not answer, because packets from the previous phase and packets from
-// the next phase carry the same Key Phase value
-// (rfc9001.txt:1735-1737). So the bit picks the phase and
-// the recovered packet number tells the two apart: when the packet's
-// bit equals the stored key_phase the current set opens the packet;
-// when it differs, a packet number below current_phase_lowest_pn takes
-// the previous set and one at or above it takes the next set
-// (rfc9001.txt:1739-1743). Selecting the next set that way keeps the
-// §5.5 MUST that forbids opening a higher-numbered packet under the
-// previous keys (rfc9001.txt:1365-1369).
+// the next phase carry the same Key Phase value (rfc9001.txt:1735-1737).
+// So the bit picks the phase and the recovered packet number tells the
+// two apart: when the packet's bit equals the stored key_phase the
+// current set opens the packet; when it differs, a packet number below
+// current_phase_lowest_pn takes the previous set and one at or above it
+// takes the next set (rfc9001.txt:1739-1743). Selecting the next set
+// that way keeps the §5.5 MUST that forbids opening a higher-numbered
+// packet under the previous keys (rfc9001.txt:1365-1369).
 //
 // Both compares are branchless mask arithmetic and never an if. §6.5
 // asks for that in its own words: the selection must not expose a
@@ -335,7 +333,8 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 // frames the packet; this call refuses one it cannot sample. The
 // boundary test is that pn_len + pt_len == 4 seals and 3 refuses.
 //
-// Requires: k and h hold that level's send keys; level is
+// Requires: widemul is the session's answer, which aead_seal takes
+// (widemul.h); k and h hold that level's send keys; level is
 // CH_LEVEL_HANDSHAKE or CH_LEVEL_APPLICATION, because quic_initial.c
 // runs the Initial level; hdr points at hdr_len readable bytes; pt
 // points at pt_len readable bytes; out points at cap writable bytes
@@ -361,9 +360,9 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 // bring k->sealed to QUIC_CONFIDENTIALITY_LIMIT (rfc9001.txt:1812-1813),
 // and raises k->sealed for each packet it seals, the one field of k it
 // writes. A key update writes a new set and starts the count again.
-int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
-                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                     uint8_t *out, size_t cap, size_t *out_len);
+int quic_packet_seal(uint8_t widemul, quic_keys *k, const quic_hp_key *h, uint8_t level,
+                     uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                     const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
 
 // Opens one Handshake-level packet in place: it removes header
 // protection, recovers the packet number and removes packet protection,
@@ -382,11 +381,12 @@ int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t
 // test is that the last valid length opens and the first invalid one
 // discards.
 //
-// Requires: k and h hold the Handshake receive keys; pkt points at
-// pkt_len readable and writable bytes and holds one whole packet,
-// which the caller owns; pn_off is the offset of the packet number
-// field and is at most pkt_len; largest_pn is the largest packet
-// number the caller processed in that space, or 0 before the first.
+// Requires: widemul as quic_packet_seal takes it, for aead_open; k and
+// h hold the Handshake receive keys; pkt points at pkt_len readable and
+// writable bytes and holds one whole packet, which the caller owns;
+// pn_off is the offset of the packet number field and is at most
+// pkt_len; largest_pn is the largest packet number the caller processed
+// in that space, or 0 before the first.
 //
 // Returns CH_OK, leaves the unprotected header at the front of pkt,
 // puts the plaintext at pn_off + pn_len, writes the plaintext length
@@ -412,9 +412,9 @@ int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t
 // No other code is returned. ch_quic_open refuses a call at a level
 // whose keys are not installed, and an out-of-order call, before it
 // reaches here.
-int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
-                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                               size_t *pt_len);
+int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
+                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                               uint64_t *pn, size_t *pt_len);
 
 // Opens one 1-RTT packet in place. It runs quic_packet_open_handshake's
 // three steps in one call and adds the §6.5 receive key set selection
@@ -426,7 +426,7 @@ int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t
 // session's previous, current and next 1-RTT receive sets; h holds the
 // 1-RTT receive header protection key, which §5.4 keeps for the whole
 // connection (rfc9001.txt:1172-1174); key_phase is the bit the current
-// set carries, 0 or 1; pkt, pkt_len, pn_off and largest_pn are
+// set carries, 0 or 1; widemul, pkt, pkt_len, pn_off and largest_pn are
 // quic_packet_open_handshake's, over the application packet number
 // space; current_phase_lowest_pn is the lowest packet number the
 // caller has processed under the current key phase.
@@ -455,10 +455,11 @@ int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t
 // No other code is returned. ch_quic_open refuses a 1-RTT packet that
 // arrives before the handshake completes (RFC 9001 §5.7,
 // rfc9001.txt:1484-1486), so that check does not run here.
-int quic_packet_open_application(const quic_keys sets[CH_QUIC_KEY_SETS], const quic_hp_key *h,
-                                 uint8_t key_phase, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                                 uint64_t largest_pn, uint64_t current_phase_lowest_pn,
-                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len);
+int quic_packet_open_application(uint8_t widemul, const quic_keys sets[CH_QUIC_KEY_SETS],
+                                 const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
+                                 size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                                 uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
+                                 size_t *pt_len);
 
 // Whether the connection has passed RFC 9001 §6.6's integrity limit
 // and must process no more packets (rfc9001.txt:1823-1827).

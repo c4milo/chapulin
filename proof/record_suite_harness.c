@@ -98,8 +98,10 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
     return 0;
 }
 
-void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+               const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+               uint8_t tag[AEAD_TAG]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(aad, aad_len), "seal: aad readable");
@@ -111,9 +113,10 @@ void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], con
     fill_nondet(tag, AEAD_TAG);
 }
 
-int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
-              uint8_t *pt) {
+int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "open: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "open: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(aad, aad_len), "open: aad readable");

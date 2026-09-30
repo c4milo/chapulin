@@ -22,6 +22,7 @@
 #include "srv_message.h"
 #include "srv_out.h"
 #include "srv_resume.h"
+#include "widemul.h"
 #include "x25519.h"
 
 // Holds the session's source to rand.h's contract: the caller zeroed what
@@ -34,7 +35,7 @@ static void assert_drawn(const uint8_t *p, size_t n) {
 void srv_begin(handshake_state *h) {
     rand_draw(&h->t->cfg, h->priv, sizeof h->priv);
     assert_drawn(h->priv, sizeof h->priv);
-    x25519_base(h->pub, h->priv);
+    widemul_x25519_base(widemul_answer(&h->t->cfg), h->pub, h->priv);
     transcript_init(&h->t->transcript);
 }
 

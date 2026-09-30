@@ -12,6 +12,8 @@
 #ifndef CH_QUIC_PACKET_TESTS_H
 #define CH_QUIC_PACKET_TESTS_H
 
+#include "test_widemul.h"
+
 // RFC 9001 Appendix A.5's application write secret (rfc9001.txt:2509-2511).
 // The three derivations it feeds are checked in test_appendix_a5_keys;
 // here they key a whole packet.
@@ -45,8 +47,8 @@ static void test_appendix_a5_packet(void) {
     (void)unhex("4200bff4", hdr);
     (void)unhex("01", pt);
 
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, sizeof hdr, pt,
-                           sizeof pt, out, sizeof out, &out_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == 21);
     CHECK(eq_hex(out, "4cfe4189655e5cd55c41f69080575d7999c25a5bfb"));
 
@@ -64,8 +66,8 @@ static void test_appendix_a5_packet(void) {
     uint8_t key_set = 0xff;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_packet_open_application(sets, &h, 0, out, out_len, 1, A5_PN - 1, 0, &key_set, &pn,
-                                       &pt_len) == CH_OK);
+    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, out, out_len, 1, A5_PN - 1, 0,
+                                       &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_CURRENT);
     CHECK(pn == A5_PN);
     CHECK(pt_len == 1);
@@ -235,37 +237,37 @@ static void test_seal_refusals(void) {
     (void)unhex("01", pt);
 
     // pn_len + pt_len == QUIC_PN_MAX_LEN seals and one less refuses.
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, QUIC_PN_MAX_LEN, hdr, sizeof hdr,
-                           pt, 0, out, sizeof out, &out_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, QUIC_PN_MAX_LEN, hdr,
+                           sizeof hdr, pt, 0, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof hdr + AEAD_TAG);
     memset(out, 0xa5, sizeof out);
     out_len = 0;
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, sizeof hdr, pt, 0,
-                           out, sizeof out, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, 0, out, sizeof out, &out_len) == CH_EINVAL);
     CHECK(out[0] == 0xa5 && out_len == 0);
 
     // The lengths the header calls invalid.
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr, sizeof hdr, pt, sizeof pt,
-                           out, sizeof out, &out_len) == CH_EINVAL);
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, QUIC_PN_MAX_LEN + 1, hdr,
-                           sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, 2, pt, sizeof pt,
-                           out, sizeof out, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr, sizeof hdr,
+                           pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, QUIC_PN_MAX_LEN + 1,
+                           hdr, sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, 2, pt,
+                           sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
 
     // The capacity boundary: the exact size seals and one byte less
     // refuses with nothing written.
     size_t whole = sizeof hdr + sizeof pt + AEAD_TAG;
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, sizeof hdr, pt,
-                           sizeof pt, out, whole, &out_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, sizeof pt, out, whole, &out_len) == CH_OK);
     memset(out, 0xa5, sizeof out);
     out_len = 0;
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, sizeof hdr, pt,
-                           sizeof pt, out, whole - 1, &out_len) == CH_ECAP);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, sizeof pt, out, whole - 1, &out_len) == CH_ECAP);
     CHECK(out[0] == 0xa5 && out_len == 0);
 
     // A call wrong in both ways answers the argument check.
-    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr, sizeof hdr, pt, sizeof pt,
-                           out, 0, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr, sizeof hdr,
+                           pt, sizeof pt, out, 0, &out_len) == CH_EINVAL);
 }
 
 // The two grounds the open calls discard on, over Appendix A.5's packet.
@@ -290,8 +292,8 @@ static void test_open_discards(void) {
     // whole packet is the last length that opens and one byte less is
     // the first that discards, untouched.
     memcpy(pkt, packet, sizeof pkt);
-    CHECK(quic_packet_open_application(sets, &h, 0, pkt, sizeof pkt - 1, 1, A5_PN - 1, 0, &key_set,
-                                       &pn, &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, pkt, sizeof pkt - 1, 1, A5_PN - 1,
+                                       0, &key_set, &pn, &pt_len) == CH_QUIC_DISCARD);
     CHECK(memcmp(pkt, packet, sizeof pkt) == 0);
     CHECK(pn == 0xdead && pt_len == 0xbeef && key_set == 0xff);
 
@@ -299,15 +301,15 @@ static void test_open_discards(void) {
     // the header and the sample alone, so the discard is the AEAD's.
     memcpy(pkt, packet, sizeof pkt);
     pkt[sizeof pkt - 1] ^= 1;
-    CHECK(quic_packet_open_application(sets, &h, 0, pkt, sizeof pkt, 1, A5_PN - 1, 0, &key_set, &pn,
-                                       &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, pkt, sizeof pkt, 1, A5_PN - 1, 0,
+                                       &key_set, &pn, &pt_len) == CH_QUIC_DISCARD);
     CHECK(pn == 0xdead && pt_len == 0xbeef && key_set == 0xff);
 
     // The same §5.4.2 discard on the Handshake path, which has one key
     // set and no Key Phase bit.
     memcpy(pkt, packet, sizeof pkt);
-    CHECK(quic_packet_open_handshake(&k, &h, pkt, sizeof pkt - 1, 1, A5_PN - 1, &pn, &pt_len) ==
-          CH_QUIC_DISCARD);
+    CHECK(quic_packet_open_handshake(TEST_WIDEMUL, &k, &h, pkt, sizeof pkt - 1, 1, A5_PN - 1, &pn,
+                                     &pt_len) == CH_QUIC_DISCARD);
     CHECK(memcmp(pkt, packet, sizeof pkt) == 0);
     CHECK(pn == 0xdead && pt_len == 0xbeef);
 }
@@ -327,7 +329,8 @@ static void test_handshake_open(void) {
     a5_keys(&k, &h);
     (void)unhex("4cfe4189655e5cd55c41f69080575d7999c25a5bfb", pkt);
 
-    CHECK(quic_packet_open_handshake(&k, &h, pkt, sizeof pkt, 1, A5_PN - 1, &pn, &pt_len) == CH_OK);
+    CHECK(quic_packet_open_handshake(TEST_WIDEMUL, &k, &h, pkt, sizeof pkt, 1, A5_PN - 1, &pn,
+                                     &pt_len) == CH_OK);
     CHECK(pn == A5_PN);
     CHECK(pt_len == 1);
     CHECK(eq_hex(pkt, "4200bff4"));

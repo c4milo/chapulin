@@ -22,6 +22,7 @@
 #include "keysched.h"
 #include "mlkem.h"
 #include "srv_quic_retry_vectors.h"
+#include "test_widemul.h"
 #include "x25519.h"
 
 // Room for the recorded second hello, 1,566 bytes, and the largest variant:
@@ -419,7 +420,7 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     }
     // RFC 10024: the ML-KEM secret, then the x25519 one.
     uint8_t ikm[MLKEM_SS_LEN + X25519_LEN];
-    mlkem_decaps(ikm, server_share + 4, dk);
+    mlkem_decaps(TEST_WIDEMUL, ikm, server_share + 4, dk);
     CHECK(x25519(ikm + MLKEM_SS_LEN, x25519_priv, server_share + 4 + MLKEM_CT_LEN) == 1);
 
     // The transcript through the ServerHello, then through each Handshake

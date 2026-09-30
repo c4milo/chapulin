@@ -15,6 +15,7 @@
 #include "keysched.h"
 #include "rand_draw.h"
 #include "srv_out.h"
+#include "widemul.h"
 
 // The four-byte obfuscated_ticket_age each PskIdentity ends with (RFC
 // 9846 §4.3.11). This server reads none of it: srv_resume.h says why.
@@ -111,7 +112,8 @@ static int find_ticket(const ch_tls *t, const client_hello *ch, const selection 
         // The length travels in the clear, so an identity of any other
         // length is passed over without running the AEAD.
         if (identity_len == SRV_TICKET_LEN &&
-            srv_ticket_open(cfg->srv.ticket_key, identity, identity_len, c) == CH_OK &&
+            srv_ticket_open(widemul_answer(cfg), cfg->srv.ticket_key, identity, identity_len, c) ==
+                CH_OK &&
             ticket_holds(c, cfg, ch, sel, session_quic_version(t))) {
             *index = i;
             return 1;
@@ -269,7 +271,8 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
     ct_wipe(res_master, sizeof res_master);
 
     uint8_t ticket[SRV_TICKET_LEN];
-    size_t ticket_len = srv_ticket_seal(t->cfg.srv.ticket_key, nonce, &c, ticket, sizeof ticket);
+    size_t ticket_len = srv_ticket_seal(widemul_answer(&t->cfg), t->cfg.srv.ticket_key, nonce, &c,
+                                        ticket, sizeof ticket);
     ct_wipe(&c, sizeof c);
     if (ticket_len == 0) {
         return 0;

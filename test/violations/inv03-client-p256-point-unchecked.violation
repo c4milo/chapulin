@@ -10,7 +10,7 @@ reason: the client drops p256_ecdh's verdict on the server's secp256r1
   refuses.
 
 --- old
-    int shared_ok = p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
 --- new
-    (void)p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    (void)p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
     int shared_ok = 1;

@@ -36,15 +36,17 @@ void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], con
 // Encapsulates against a peer ek using a 32-byte message m (FIPS 203
 // Algorithm 17, ML-KEM.Encaps_internal). Writes ct[1088] and ss[32].
 // Returns 0 on success, nonzero if ek fails the FIPS 203 section 7.2
-// modulus check (a coefficient at or above q).
-int mlkem_encaps_derand(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
+// modulus check (a coefficient at or above q). This call and
+// mlkem_decaps take first the answer their compression runs under, a
+// CH_WIDEMUL_ value (widemul.h); key generation compresses nothing.
+int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
                         const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]);
 
 // Decapsulates ct with dk (FIPS 203 Algorithm 18,
 // ML-KEM.Decaps_internal). Always writes a 32-byte ss; on an invalid ct
 // it writes the implicit-reject secret, selected in constant time. dk is
 // trusted (locally generated), so it carries no modulus check.
-void mlkem_decaps(uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
+void mlkem_decaps(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
                   const uint8_t dk[MLKEM_DK_LEN]);
 
 #endif

@@ -15,6 +15,7 @@
 
 #include "quic_retry.h"
 #include "quic_v2_vectors.h"
+#include "test_widemul.h"
 
 // Versions this build derives no keys for: 0, the values beside version 1
 // and version 2, and a version RFC 9000 §15 reserves for exercising
@@ -215,8 +216,8 @@ static void test_handshake_level_after_switch(void) {
 
     // The server's Handshake packet, sealed under this client's receive
     // keys, which are the server's send keys.
-    CHECK(quic_packet_seal(&v2_rx, &v2_hp_rx, CH_LEVEL_HANDSHAKE, 1, 1, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &v2_rx, &v2_hp_rx, CH_LEVEL_HANDSHAKE, 1, 1, hdr,
+                           sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     memcpy(copy, pkt, pkt_len);
     CHECK(ch_quic_open(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, pkt, pkt_len, sizeof hdr - 1, 0,
                        0, &key_set, &pn, &pt_len) == CH_EINVAL);
@@ -327,8 +328,8 @@ static void test_packet_versions(void) {
     CHECK(ch_quic_seal(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 1, 1, hdr, sizeof hdr, pt,
                        sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
 
-    CHECK(quic_packet_seal(&server_tx, &server_hp, CH_LEVEL_HANDSHAKE, 1, 1, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_WIDEMUL, &server_tx, &server_hp, CH_LEVEL_HANDSHAKE, 1, 1, hdr,
+                           sizeof hdr, pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     memcpy(copy, pkt, pkt_len);
     pn = 0;
     for (size_t i = 0; i < refused_count; i++) {

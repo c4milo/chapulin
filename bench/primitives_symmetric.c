@@ -16,6 +16,7 @@
 #include "sha256.h"
 #include "sha3.h"
 #include "sha512.h"
+#include "widemul.h"
 
 #define MAX_PAYLOAD 16384 // one full TLS record, RFC 9846 §5.1
 #define RECORD_AAD_LEN 5  // the record header TLS 1.3 authenticates, RFC 9846 §5.2
@@ -133,17 +134,18 @@ static void run_poly1305(size_t n) {
 
 static void run_seal(size_t n) {
     uint8_t tag[AEAD_TAG];
-    aead_seal(key, nonce, aad, sizeof aad, input, n, output, tag);
+    aead_seal(WIDEMUL_BUILD_ANSWER, key, nonce, aad, sizeof aad, input, n, output, tag);
     bench_consume(tag, sizeof tag);
 }
 
 static void prepare_open(size_t n) {
     prepare_inputs(n);
-    aead_seal(key, nonce, aad, sizeof aad, input, n, sealed, sealed_tag);
+    aead_seal(WIDEMUL_BUILD_ANSWER, key, nonce, aad, sizeof aad, input, n, sealed, sealed_tag);
 }
 
 static void run_open(size_t n) {
-    if (!aead_open(key, nonce, aad, sizeof aad, sealed, n, sealed_tag, output)) {
+    if (!aead_open(WIDEMUL_BUILD_ANSWER, key, nonce, aad, sizeof aad, sealed, n, sealed_tag,
+                   output)) {
         bench_fail("aead_open rejected its own seal");
     }
     bench_consume(&output[n - 1], 1);

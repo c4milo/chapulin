@@ -47,6 +47,10 @@ extern const p256_point p256_point_infinity;
 // secp256r1's generator G, in the Montgomery domain.
 extern const p256_point p256_point_generator;
 
+// Every call below that multiplies takes first the answer its field
+// multiplies run under, a CH_WIDEMUL_ value, and hands it to widemul.h's
+// dispatchers with each one. p256_point_cswap multiplies nothing.
+
 // o = a + b, by the complete addition formula for curves with a = -3
 // (Renes, Costello and Batina, EUROCRYPT 2016, Algorithm 4). Complete
 // means correct for every pair of inputs, including a = b, a = -b and
@@ -56,7 +60,7 @@ extern const p256_point p256_point_generator;
 //
 // test/gen_p256_sign_vectors.py runs the same 43 steps in Python against
 // an affine reference, over those cases, before it prints a vector.
-void p256_point_add(p256_point *o, const p256_point *a, const p256_point *b);
+void p256_point_add(uint8_t widemul, p256_point *o, const p256_point *a, const p256_point *b);
 
 // Exchanges a and b when mask is all ones, leaves both when it is zero.
 // The mask follows p256_field.h's convention.
@@ -79,12 +83,12 @@ void p256_point_cswap(p256_point *a, p256_point *b, uint32_t mask);
 // The three running points hold intermediate multiples of p, which are
 // as secret as k. This routine wipes them before it returns, so a caller
 // wiping its own frame does not have to know they existed.
-void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
+void p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k, const p256_point *p);
 
 // o = k*G. This is p256_point_mul against p256_point_generator and
 // nothing else: secp256r1's generator gets no precomputed multiples
 // here, so a public key costs exactly what a shared secret costs.
-void p256_point_base_mul(p256_point *o, const p256_scalar *k);
+void p256_point_base_mul(uint8_t widemul, p256_point *o, const p256_scalar *k);
 
 // Reads an uncompressed point and returns all ones when it is a point
 // these routines compute with, zero otherwise: the leading byte is 0x04,
@@ -102,7 +106,7 @@ void p256_point_base_mul(p256_point *o, const p256_scalar *k);
 // above. Subgroup membership is not checked and does not need to be:
 // secp256r1 has prime order and cofactor 1, so every point that
 // satisfies the curve equation generates the whole group.
-uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]);
+uint32_t p256_point_from_bytes(uint8_t widemul, p256_point *o, const uint8_t in[P256_POINT_LEN]);
 
 // Writes a's affine coordinates as 32 big-endian bytes each, and returns
 // all ones when a is a finite point and zero when a is the point at
@@ -111,10 +115,11 @@ uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]);
 // Both outputs are written either way: the infinity case writes the
 // bytes the arithmetic produced from a zero inverse, which are not a
 // coordinate, and the mask is how the caller learns to discard them.
-uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const p256_point *a);
+uint32_t p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                           const p256_point *a);
 
 // p256_point_affine with no Y, for the two callers that read only X: the
 // signature's r and the ECDH shared secret.
-uint32_t p256_point_affine_x(uint8_t out[P256_FE_LEN], const p256_point *a);
+uint32_t p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN], const p256_point *a);
 
 #endif

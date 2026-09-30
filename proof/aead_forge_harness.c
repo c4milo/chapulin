@@ -26,7 +26,7 @@ int main(void) {
     __CPROVER_assume(n >= 1 && n <= sizeof pt);
     __CPROVER_assume(aad_len <= sizeof aad);
 
-    aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
+    aead_seal(nondet_u8(), key, nonce, aad, aad_len, pt, n, ct, tag);
 
     uint8_t forged[AEAD_TAG];
     fill_nondet(forged, sizeof forged);
@@ -43,7 +43,7 @@ int main(void) {
     for (size_t i = 0; i < sizeof out; i++) {
         out[i] = sentinel[i];
     }
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, forged, out) == 0,
+    __CPROVER_assert(aead_open(nondet_u8(), key, nonce, aad, aad_len, ct, n, forged, out) == 0,
                      "forged tag rejected");
     for (size_t i = 0; i < sizeof out; i++) {
         __CPROVER_assert(out[i] == sentinel[i], "failed open writes nothing");

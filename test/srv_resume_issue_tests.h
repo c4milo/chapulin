@@ -8,6 +8,7 @@
 #define CH_SRV_RESUME_ISSUE_TESTS_H
 
 #include "srv_resume_tests.h"
+#include "test_widemul.h"
 
 // A driver that zeroes its selection before the second hello, as
 // srv_tcp_nonblocking.c and srv_quic.c do, gets the first hello's scheme
@@ -130,7 +131,7 @@ static size_t read_issued_ticket(rec_dir *client_rd, uint32_t *lifetime, uint8_t
     const uint8_t *ticket = rb_bytes(&r, SRV_TICKET_LEN);
     CHECK(rb_u16(&r) == 0); // no extension, so no early_data
     CHECK(!r.err && rb_left(&r) == 0);
-    CHECK(srv_ticket_open(resume_key, ticket, SRV_TICKET_LEN, c) == CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, resume_key, ticket, SRV_TICKET_LEN, c) == CH_OK);
     return n;
 }
 

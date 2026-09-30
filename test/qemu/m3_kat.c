@@ -16,6 +16,7 @@
 #include "x25519.h"
 
 #include "plat.h"
+#include "widemul.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
@@ -72,13 +73,14 @@ int main(void) {
     for (size_t i = 0; i < sizeof pt; i++) {
         pt[i] = (uint8_t)i;
     }
-    aead_seal(key, nonce, (const uint8_t *)"aad", 3, pt, sizeof pt, ct, tag);
+    aead_seal(WIDEMUL_BUILD_ANSWER, key, nonce, (const uint8_t *)"aad", 3, pt, sizeof pt, ct, tag);
     put_hex("aead-ct ", ct, sizeof ct);
     put_hex("aead-tag ", tag, sizeof tag);
 
     // And the tag must open again on the target itself.
     uint8_t back[32];
-    if (aead_open(key, nonce, (const uint8_t *)"aad", 3, ct, sizeof ct, tag, back) != 1) {
+    if (aead_open(WIDEMUL_BUILD_ANSWER, key, nonce, (const uint8_t *)"aad", 3, ct, sizeof ct, tag,
+                  back) != 1) {
         plat_write("FAIL aead reopen\n");
         plat_exit(1);
     }

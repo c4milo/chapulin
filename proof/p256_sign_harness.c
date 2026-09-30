@@ -139,7 +139,7 @@ static void prove_sign(void) {
     fill_nondet(sig, sizeof sig);
     uint8_t guard = sig[P256_SIG_MAX];
 
-    int rc = p256_sign(priv, msg_hash, sig, cap, &sig_len);
+    int rc = p256_sign(nondet_u8(), priv, msg_hash, sig, cap, &sig_len);
     __CPROVER_assert(rc == 0 || rc == 1, "p256_sign: the return is the 1-or-0 convention");
     __CPROVER_assert(rc == 0 || sig_len <= cap, "p256_sign: the length fits the capacity");
     __CPROVER_assert(sig[P256_SIG_MAX] == guard, "p256_sign: nothing is written past the capacity");

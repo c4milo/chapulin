@@ -7,6 +7,8 @@
 #ifndef CH_HANDSHAKE_SEQUENCE_SERVER_H
 #define CH_HANDSHAKE_SEQUENCE_SERVER_H
 
+#include "test_widemul.h"
+
 // What the server has sent so far, deciding how the next record is
 // protected: nothing yet, the handshake flight, or post-Finished.
 #define PHASE_CLEAR 0
@@ -249,7 +251,7 @@ static void render_server_hello(mock_server *s) {
     uint8_t msg[HANDSHAKE_SEQUENCE_SH_MAX];
 #ifdef CH_KEX_PQ
     // Encapsulate before the build: build_server_hello sends server_ct.
-    if (mlkem_encaps_derand(server_ct, server_ss, client_share(s), server_m) != 0) {
+    if (mlkem_encaps_derand(TEST_WIDEMUL, server_ct, server_ss, client_share(s), server_m) != 0) {
         die("captured encapsulation key fails the modulus check");
     }
 #endif

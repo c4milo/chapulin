@@ -29,6 +29,7 @@
 #include "p256_sign.h"
 #include "record.h"
 #include "test_random.h"
+#include "test_widemul.h"
 #include "tls.h"
 #include "webpki_ticket.h"
 #include "x25519.h"
@@ -213,7 +214,8 @@ static void push_certificate_flight(mock_server *s, rec_dir *d) {
     sha256_final(&content, digest);
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
-    CHECK(p256_sign(webpki_corpus_server_priv, digest, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, webpki_corpus_server_priv, digest, sig, sizeof sig, &sig_len) ==
+          1);
     uint8_t msg[8 + P256_SIG_MAX];
     wbuf w;
     wb_init(&w, msg, sizeof msg);

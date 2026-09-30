@@ -6,6 +6,8 @@
 #ifndef CH_SESSION_POST_TESTS_H
 #define CH_SESSION_POST_TESTS_H
 
+#include "test_widemul.h"
+
 // Post-handshake behavior the e2e cannot reach: a NewSessionTicket
 // fragmented across records (RFC 9846 §5.1), a KeyUpdate that rekeys both
 // directions, then application data under the updated key.
@@ -386,7 +388,7 @@ static void test_record_padding(void) {
     for (size_t i = 0; i < AEAD_NONCE; i++) {
         nonce[i] = server.iv[i]; // seq 0: nonce is the static IV
     }
-    aead_seal(server.key, nonce, rec, REC_HDR, inner, sizeof inner, rec + REC_HDR,
+    aead_seal(TEST_WIDEMUL, server.key, nonce, rec, REC_HDR, inner, sizeof inner, rec + REC_HDR,
               rec + REC_HDR + sizeof inner);
     server.seq++;
 
@@ -402,7 +404,7 @@ static void test_record_padding(void) {
     for (size_t i = 0; i < AEAD_NONCE; i++) {
         nonce[i] = server.iv[i] ^ (i == AEAD_NONCE - 1 ? 1 : 0); // seq 1
     }
-    aead_seal(server.key, nonce, rec, REC_HDR, empty, sizeof empty, rec + REC_HDR,
+    aead_seal(TEST_WIDEMUL, server.key, nonce, rec, REC_HDR, empty, sizeof empty, rec + REC_HDR,
               rec + REC_HDR + sizeof empty);
     client.seq = 1;
     CHECK(rec_open(&client, rec, REC_HDR + sizeof empty + AEAD_TAG, pt, sizeof pt, &pt_len,

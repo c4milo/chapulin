@@ -152,8 +152,12 @@ typedef struct {
 // nothing when cap is below SRV_TICKET_LEN or c->alpn_len is above
 // CH_ALPN_NAME_MAX. It stages the body on its own frame and wipes that
 // staging before it returns, because the body holds the PSK.
-size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
-                       const srv_ticket_contents *c, uint8_t *out, size_t cap);
+//
+// This call and srv_ticket_open take first the answer the AEAD's Poly1305
+// runs under, a CH_WIDEMUL_ value (widemul.h): the session's own.
+size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                       const uint8_t nonce[AEAD_NONCE], const srv_ticket_contents *c, uint8_t *out,
+                       size_t cap);
 
 // Opens the n bytes of one ticket under key and writes what it carried to
 // *c.
@@ -178,8 +182,8 @@ size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t n
 // length past the name. Every refusal means only "not a ticket this key
 // sealed", and srv_resume.c answers each one by passing over the identity,
 // which RFC 9846 §4.3.11 asks of an unknown PSK (rfc9846.txt:2533-2537).
-int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
-                    srv_ticket_contents *c);
+int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                    const uint8_t *ticket, size_t n, srv_ticket_contents *c);
 
 #endif // CH_ROLE_SERVER
 #endif

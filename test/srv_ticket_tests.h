@@ -13,6 +13,8 @@
 #ifndef CH_SRV_TICKET_TESTS_H
 #define CH_SRV_TICKET_TESTS_H
 
+#include "test_widemul.h"
+
 // The key the cases seal under, and a second key that differs in its last
 // byte.
 static const uint8_t seal_key[CH_SRV_TICKET_KEY_LEN] = {
@@ -42,14 +44,14 @@ static void ticket_contents(srv_ticket_contents *c) {
 
 static int ticket_opens(const uint8_t *key, const uint8_t *t, size_t n) {
     srv_ticket_contents c;
-    return srv_ticket_open(key, t, n, &c) == CH_OK;
+    return srv_ticket_open(TEST_WIDEMUL, key, t, n, &c) == CH_OK;
 }
 
 static void test_ticket_round_trip(void) {
     srv_ticket_contents in;
     ticket_contents(&in);
     CHECK(SRV_TICKET_LEN == 108 && SRV_TICKET_BODY_LEN == 79 && SRV_TICKET_VERSION == 2);
-    size_t n = srv_ticket_seal(seal_key, ticket_nonce_a, &in, out, sizeof out);
+    size_t n = srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, out, sizeof out);
     CHECK(n == SRV_TICKET_LEN);
     // The clear head: the format's own version byte, then the nonce.
     CHECK(out[0] == SRV_TICKET_VERSION);
@@ -63,7 +65,7 @@ static void test_ticket_round_trip(void) {
     CHECK(!psk_seen);
 
     srv_ticket_contents got;
-    CHECK(srv_ticket_open(seal_key, out, n, &got) == CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, seal_key, out, n, &got) == CH_OK);
     CHECK(got.auth_seconds == in.auth_seconds && got.suite == in.suite);
     CHECK(got.quic_version == in.quic_version);
     CHECK(got.alpn_len == 2 && memcmp(got.alpn, "h3", 2) == 0);
@@ -73,8 +75,8 @@ static void test_ticket_round_trip(void) {
     // recovered by opening the ciphertext with the AEAD directly under the
     // version byte as associated data.
     uint8_t body[SRV_TICKET_BODY_LEN];
-    CHECK(aead_open(seal_key, ticket_nonce_a, out, 1, out + 1 + AEAD_NONCE, sizeof body,
-                    out + 1 + AEAD_NONCE + SRV_TICKET_BODY_LEN, body) == 1);
+    CHECK(aead_open(TEST_WIDEMUL, seal_key, ticket_nonce_a, out, 1, out + 1 + AEAD_NONCE,
+                    sizeof body, out + 1 + AEAD_NONCE + SRV_TICKET_BODY_LEN, body) == 1);
     static const uint8_t want_head[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x13,
                                         0x03, 0x6b, 0x33, 0x43, 0xcf, 0x02, 'h',  '3'};
     CHECK(memcmp(body, want_head, sizeof want_head) == 0);
@@ -87,18 +89,18 @@ static void test_ticket_round_trip(void) {
 
     // No protocol at all: alpn_len 0 and a zero name field.
     in.alpn_len = 0;
-    n = srv_ticket_seal(seal_key, ticket_nonce_a, &in, out, sizeof out);
-    CHECK(srv_ticket_open(seal_key, out, n, &got) == CH_OK && got.alpn_len == 0);
+    n = srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, out, sizeof out);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, seal_key, out, n, &got) == CH_OK && got.alpn_len == 0);
     // The longest name the API admits, CH_ALPN_NAME_MAX bytes, seals and
     // opens; one byte more is refused before anything is written.
     in.alpn_len = CH_ALPN_NAME_MAX;
     memset(in.alpn, 'n', sizeof in.alpn);
-    n = srv_ticket_seal(seal_key, ticket_nonce_a, &in, out, sizeof out);
+    n = srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, out, sizeof out);
     CHECK(n == SRV_TICKET_LEN);
-    CHECK(srv_ticket_open(seal_key, out, n, &got) == CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, seal_key, out, n, &got) == CH_OK);
     CHECK(got.alpn_len == CH_ALPN_NAME_MAX && memcmp(got.alpn, in.alpn, sizeof in.alpn) == 0);
     in.alpn_len = CH_ALPN_NAME_MAX + 1;
-    CHECK(srv_ticket_seal(seal_key, ticket_nonce_a, &in, out, sizeof out) == 0);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, out, sizeof out) == 0);
 }
 
 // A ticket that moved by one bit anywhere, header included, does not open,
@@ -107,7 +109,8 @@ static void test_ticket_tamper(void) {
     srv_ticket_contents in;
     ticket_contents(&in);
     uint8_t ticket[SRV_TICKET_LEN];
-    CHECK(srv_ticket_seal(seal_key, ticket_nonce_a, &in, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, ticket, sizeof ticket) ==
+          SRV_TICKET_LEN);
     CHECK(ticket_opens(seal_key, ticket, sizeof ticket));
     CHECK(!ticket_opens(other_seal_key, ticket, sizeof ticket));
     int all_refused = 1;
@@ -121,7 +124,7 @@ static void test_ticket_tamper(void) {
     srv_ticket_contents got;
     memset(&got, 0x5a, sizeof got);
     ticket[SRV_TICKET_LEN - 1] ^= 0x80;
-    CHECK(srv_ticket_open(seal_key, ticket, sizeof ticket, &got) == CH_EAUTH);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, seal_key, ticket, sizeof ticket, &got) == CH_EAUTH);
     static const uint8_t zero[SHA256_LEN] = {0};
     CHECK(got.auth_seconds == 0 && got.suite == 0 && got.alpn_len == 0);
     CHECK(memcmp(got.alpn, zero, sizeof got.alpn) == 0);
@@ -136,8 +139,10 @@ static void test_ticket_bounds(void) {
     ticket_contents(&in);
     uint8_t ticket[SRV_TICKET_LEN + 1];
     memset(ticket, 0, sizeof ticket);
-    CHECK(srv_ticket_seal(seal_key, ticket_nonce_a, &in, ticket, SRV_TICKET_LEN - 1) == 0);
-    CHECK(srv_ticket_seal(seal_key, ticket_nonce_a, &in, ticket, SRV_TICKET_LEN) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, ticket,
+                          SRV_TICKET_LEN - 1) == 0);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, seal_key, ticket_nonce_a, &in, ticket, SRV_TICKET_LEN) ==
+          SRV_TICKET_LEN);
     CHECK(ticket_opens(seal_key, ticket, SRV_TICKET_LEN));
     CHECK(!ticket_opens(seal_key, ticket, SRV_TICKET_LEN - 1));
     CHECK(!ticket_opens(seal_key, ticket, SRV_TICKET_LEN + 1));

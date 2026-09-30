@@ -11,6 +11,7 @@
 #include "poly1305.h"
 #include "record.h"
 #include "sha256.h"
+#include "test_widemul.h"
 
 static void diff_chacha20(void) {
     for (int i = 0; i < 200; i++) {
@@ -104,7 +105,7 @@ static void diff_aead_seal(void) {
         size_t n = rng_below(201);
         rng_fill(pt, n);
         uint8_t sealed[200 + AEAD_TAG];
-        aead_seal(key, nonce, aad, aad_len, pt, n, sealed, sealed + n);
+        aead_seal(TEST_WIDEMUL, key, nonce, aad, aad_len, pt, n, sealed, sealed + n);
         char key_hex[65];
         (void)hex_encode(key_hex, key, sizeof key);
         char nonce_hex[25];
@@ -136,13 +137,13 @@ static void diff_aead_open(void) {
         rng_fill(pt, n);
         uint8_t ct[200];
         uint8_t tag[AEAD_TAG];
-        aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
+        aead_seal(TEST_WIDEMUL, key, nonce, aad, aad_len, pt, n, ct, tag);
         if (i % 2 == 1) { // corrupted-tag reject: flip one random tag byte
             tag[rng_below(AEAD_TAG)] ^= (uint8_t)(1 + rng_below(255));
         }
         uint8_t dec[200];
         char want[401];
-        if (aead_open(key, nonce, aad, aad_len, ct, n, tag, dec)) {
+        if (aead_open(TEST_WIDEMUL, key, nonce, aad, aad_len, ct, n, tag, dec)) {
             (void)hex_encode(want, dec, n);
         } else {
             (void)snprintf(want, sizeof want, "FAIL");

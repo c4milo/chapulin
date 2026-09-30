@@ -11,6 +11,7 @@
 #include "ct.h"
 #include "mlkem_poly.h"
 #include "sha3.h"
+#include "widemul.h"
 
 #define MLK_DKPKE_BYTES 1152 // K-PKE secret key: ByteEncode12 of s-hat
 #define MLK_U_BYTES 960      // compressed u vector inside a ciphertext
@@ -90,9 +91,11 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
 }
 
 // K-PKE.Encrypt (Algorithm 14). coins seeds the noise; m is the 32-byte
-// message. Writes the 1088-byte ciphertext.
-static void mlk_pke_encrypt(uint8_t ct[MLKEM_CT_LEN], const uint8_t ek[MLKEM_EK_LEN],
-                            const uint8_t m[32], const uint8_t coins[32]) {
+// message. Writes the 1088-byte ciphertext. widemul is the answer the
+// compression runs under (widemul.h).
+static void mlk_pke_encrypt(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN],
+                            const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32],
+                            const uint8_t coins[32]) {
     const uint8_t *rho = ek + 1152;
     mlk_polyvec t;
     mlk_polyvec r;
@@ -118,8 +121,8 @@ static void mlk_pke_encrypt(uint8_t ct[MLKEM_CT_LEN], const uint8_t ek[MLKEM_EK_
     mlk_poly_frommsg(&noise, m); // Decompress1(m)
     mlk_poly_add(&v, &v, &noise);
     mlk_poly_reduce(&v);
-    mlk_polyvec_compress(ct, &u);
-    mlk_poly_compress(ct + MLK_U_BYTES, &v);
+    widemul_mlk_polyvec_compress(widemul, ct, &u);
+    widemul_mlk_poly_compress(widemul, ct + MLK_U_BYTES, &v);
     // u and v are published only compressed; the low bits the
     // compression drops depend on the secret noise, so both are wiped.
     ct_wipe(&r, sizeof r);
@@ -129,8 +132,9 @@ static void mlk_pke_encrypt(uint8_t ct[MLKEM_CT_LEN], const uint8_t ek[MLKEM_EK_
 }
 
 // K-PKE.Decrypt (Algorithm 15). Recovers the 32-byte message from a
-// ciphertext and the K-PKE secret key.
-static void mlk_pke_decrypt(uint8_t m[32], const uint8_t dkpke[MLK_DKPKE_BYTES],
+// ciphertext and the K-PKE secret key, and compresses the message under the
+// answer widemul.
+static void mlk_pke_decrypt(uint8_t widemul, uint8_t m[32], const uint8_t dkpke[MLK_DKPKE_BYTES],
                             const uint8_t ct[MLKEM_CT_LEN]) {
     mlk_polyvec u;
     mlk_polyvec s;
@@ -146,7 +150,7 @@ static void mlk_pke_decrypt(uint8_t m[32], const uint8_t dkpke[MLK_DKPKE_BYTES],
     mlk_poly_invntt(&w);         // inverse NTT absorbs R^-1
     mlk_poly_sub(&w, &v, &w);    // v - s o u
     mlk_poly_reduce(&w);
-    mlk_poly_tomsg(m, &w);
+    widemul_mlk_poly_tomsg(widemul, m, &w);
     ct_wipe(&s, sizeof s);
     ct_wipe(&w, sizeof w);
 }
@@ -192,7 +196,7 @@ void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], con
     memcpy(ek, dk + 1152, MLKEM_EK_LEN);
 }
 
-int mlkem_encaps_derand(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
+int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
                         const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
     if (mlk_modulus_check(ek) != 0) {
         return 1;
@@ -202,14 +206,14 @@ int mlkem_encaps_derand(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
     memcpy(gin, m, 32);
     sha3_256(ek, MLKEM_EK_LEN, gin + 32);
     sha3_512(gin, 64, g);
-    mlk_pke_encrypt(ct, ek, m, g + 32); // coins = r
-    memcpy(ss, g, 32);                  // shared secret = K
+    mlk_pke_encrypt(widemul, ct, ek, m, g + 32); // coins = r
+    memcpy(ss, g, 32);                           // shared secret = K
     ct_wipe(gin, sizeof gin);
     ct_wipe(g, sizeof g);
     return 0;
 }
 
-void mlkem_decaps(uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
+void mlkem_decaps(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
                   const uint8_t dk[MLKEM_DK_LEN]) {
     const uint8_t *dkpke = dk;
     const uint8_t *ek = dk + 1152;
@@ -220,12 +224,12 @@ void mlkem_decaps(uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
     uint8_t g[64];   // (K', r')
     uint8_t kbar[32];
     uint8_t ct2[MLKEM_CT_LEN];
-    mlk_pke_decrypt(mp, dkpke, ct);
+    mlk_pke_decrypt(widemul, mp, dkpke, ct);
     memcpy(gin, mp, 32);
     memcpy(gin + 32, h, 32);
     sha3_512(gin, 64, g);
     mlk_reject_secret(kbar, z, ct);
-    mlk_pke_encrypt(ct2, ek, mp, g + 32); // re-encrypt with r'
+    mlk_pke_encrypt(widemul, ct2, ek, mp, g + 32); // re-encrypt with r'
     // ss = (ct == ct2) ? K' : K_bar, selected in constant time.
     uint32_t eq = ct_memeq(ct, ct2, MLKEM_CT_LEN);
     uint8_t keep = (uint8_t)(-(uint8_t)eq); // 0xff on match, 0x00 otherwise

@@ -40,8 +40,9 @@ void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_
     fill_nondet(dk, MLKEM_DK_LEN);
 }
 
-void mlkem_decaps(uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
+void mlkem_decaps(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
                   const uint8_t dk[MLKEM_DK_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_w_ok(ss, MLKEM_SS_LEN), "decaps: ss writable");
     __CPROVER_assert(__CPROVER_r_ok(ct, MLKEM_CT_LEN), "decaps: ct readable");
     __CPROVER_assert(__CPROVER_r_ok(dk, MLKEM_DK_LEN), "decaps: dk readable");

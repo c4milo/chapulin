@@ -50,6 +50,10 @@
 // treats an all-zero draw.
 #define P256_ECDH_DRAWS 4
 
+// Each call below takes first the answer its field and scalar multiplies
+// run under, a CH_WIDEMUL_ value, which it hands to widemul.h's dispatchers.
+// A session passes its own (widemul_answer).
+
 // Turns 32 drawn bytes into a key pair: priv = draw, pub = draw * G.
 // Returns 1, or 0 when the draw is not in [1, n-1] and the caller must
 // draw again, at most P256_ECDH_DRAWS times in all. A draw is out of
@@ -57,8 +61,8 @@
 // draw lands in this file, which INV-4 requires. On 0 both
 // outputs are zeroed, so a caller that ignores the return code publishes
 // no key rather than a wrong one.
-int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCALAR_LEN],
-                     uint8_t pub[P256_POINT_LEN]);
+int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]);
 
 // Returns 1 when point is a point this file will compute with: the
 // leading byte is 0x04, X and Y are both below the field prime p, and
@@ -70,14 +74,14 @@ int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCAL
 // above. Subgroup membership is not checked and does not need to be:
 // secp256r1 has prime order and cofactor 1, so every point that
 // satisfies the curve equation generates the whole group.
-int p256_ecdh_point_valid(const uint8_t point[P256_POINT_LEN]);
+int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]);
 
 // out = the X coordinate of priv * point, the ECDH shared secret of SEC
 // 1 section 3.3.1. Returns 1, or 0 when point fails
 // p256_ecdh_point_valid, when priv is not in [1, n-1], or when the
 // product is the point at infinity, which the two range checks already
 // rule out. On 0 out is zeroed.
-int p256_ecdh(const uint8_t priv[P256_SCALAR_LEN], const uint8_t point[P256_POINT_LEN],
-              uint8_t out[P256_SECRET_LEN]);
+int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]);
 
 #endif

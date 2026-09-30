@@ -9,6 +9,7 @@
 
 #include "mlkem.h"
 #include "p256_ecdh.h"
+#include "test_widemul.h"
 
 // How the mock writes a secp256r1 share (RFC 9846 §4.3.8.2,
 // rfc9846.txt:2261-2286). MOCK_P256_VALID is the server's point, and each
@@ -46,11 +47,11 @@ typedef struct {
 // client's point when the hello carried one.
 static void mock_p256(mock_kex *k, int mode, const uint8_t *client_point) {
     uint8_t priv[P256_SCALAR_LEN];
-    CHECK(p256_ecdh_keygen(server_p256_draw, priv, k->share) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, server_p256_draw, priv, k->share) == 1);
     k->share_len = P256_POINT_LEN;
     k->ecdhe_len = P256_SECRET_LEN;
     if (client_point != NULL) {
-        CHECK(p256_ecdh(priv, client_point, k->ecdhe) == 1);
+        CHECK(p256_ecdh(TEST_WIDEMUL, priv, client_point, k->ecdhe) == 1);
     }
     if (mode == MOCK_P256_OFF_CURVE) {
         k->share[P256_POINT_LEN - 1] ^= 1;
@@ -99,7 +100,7 @@ static void mock_key_exchange(mock_kex *k, uint16_t group, int p256_mode, const 
     if (group == CH_GROUP_X25519MLKEM768) {
         static const uint8_t m[32] = {0x4b};
         if (hybrid != NULL) {
-            CHECK(mlkem_encaps_derand(k->share, k->ecdhe, hybrid, m) == 0);
+            CHECK(mlkem_encaps_derand(TEST_WIDEMUL, k->share, k->ecdhe, hybrid, m) == 0);
         }
         ecdhe += MLKEM_SS_LEN;
         pub_at += MLKEM_CT_LEN;

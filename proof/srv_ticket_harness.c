@@ -35,8 +35,10 @@ int nondet_int(void);
 
 #include "aead.h"
 
-void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+               const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+               uint8_t tag[AEAD_TAG]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "aead_seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "aead_seal: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "aead_seal: aad readable");
@@ -47,9 +49,10 @@ void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], con
     fill_nondet(tag, AEAD_TAG);
 }
 
-int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
-              uint8_t *pt) {
+int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "aead_open: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "aead_open: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "aead_open: aad readable");
@@ -89,7 +92,7 @@ static void prove_seal(void) {
     size_t cap = nondet_size_t();
     __CPROVER_assume(cap <= sizeof sealed);
 
-    size_t n = srv_ticket_seal(key, nonce, &c, sealed, cap);
+    size_t n = srv_ticket_seal(nondet_u8(), key, nonce, &c, sealed, cap);
 
     __CPROVER_assert(n <= cap, "a sealed ticket fits the buffer it was given");
     __CPROVER_assert(n == 0 || n == SRV_TICKET_LEN, "a ticket is SRV_TICKET_LEN bytes or none");
@@ -107,7 +110,7 @@ static void prove_open(void) {
     __CPROVER_assume(n <= sizeof ticket);
 
     srv_ticket_contents c;
-    int rc = srv_ticket_open(key, ticket, n, &c);
+    int rc = srv_ticket_open(nondet_u8(), key, ticket, n, &c);
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EAUTH, "open answers one of its two verdicts");
     if (rc == CH_OK) {

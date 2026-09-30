@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "test_widemul.h"
 
 // The AES-GCM arm only. A published suite fixes its own key, and INV-26
 // keeps the two constructors in aes.h the only public way to write
@@ -141,16 +142,16 @@ static void run_aead(void) {
         uint8_t got_tag[16];
         uint8_t got_pt[1024];
         if (wp_aead[i].valid) {
-            aead_seal(key, iv, aad, wp_aead[i].aad_len, msg, n, got_ct, got_tag);
+            aead_seal(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, msg, n, got_ct, got_tag);
             if (memcmp(got_ct, ct, n) != 0 || memcmp(got_tag, tag, 16) != 0) {
                 fail("aead", wp_aead[i].tc, "seal output differs from vector");
             }
-            if (!aead_open(key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt) ||
+            if (!aead_open(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt) ||
                 memcmp(got_pt, msg, n) != 0) {
                 fail("aead", wp_aead[i].tc, "valid case failed to open");
             }
         } else {
-            if (aead_open(key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt)) {
+            if (aead_open(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt)) {
                 fail("aead", wp_aead[i].tc, "invalid case accepted");
             }
         }
@@ -404,7 +405,7 @@ static void run_mlkem_encaps(void) {
         const uint8_t *want_ct = p + 32 + MLKEM_EK_LEN;
         const uint8_t *want_k = p + 32 + MLKEM_EK_LEN + MLKEM_CT_LEN;
         static uint8_t ct[MLKEM_CT_LEN], ss[MLKEM_SS_LEN];
-        int rc = mlkem_encaps_derand(ct, ss, ek, m);
+        int rc = mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, m);
         if (wp_mlkem_encaps[i].valid) {
             if (rc != 0) {
                 fail("mlkem-encaps", wp_mlkem_encaps[i].tc, "valid ek rejected");
@@ -443,7 +444,7 @@ static void run_mlkem_full(void) {
         // K is the expected output either way: the real secret for an
         // honest ciphertext, the implicit-rejection secret for a
         // tampered one — decapsulation must not reveal which.
-        mlkem_decaps(ss, c, dk);
+        mlkem_decaps(TEST_WIDEMUL, ss, c, dk);
         if (memcmp(ss, want_k, MLKEM_SS_LEN) != 0) {
             fail("mlkem", wp_mlkem[i].tc, "K mismatch");
         }

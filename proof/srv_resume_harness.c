@@ -70,8 +70,9 @@ uint64_t nondet_u64(void);
 static uint16_t opened;
 static uint32_t opened_version;
 
-int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
-                    srv_ticket_contents *c) {
+int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                    const uint8_t *ticket, size_t n, srv_ticket_contents *c) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_TICKET_KEY_LEN), "open: key readable");
     __CPROVER_assert(n == SRV_TICKET_LEN, "open: only a ticket-length identity is opened");
     __CPROVER_assert(__CPROVER_r_ok(ticket, n), "open: identity readable");
@@ -92,8 +93,10 @@ int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *tic
     return CH_OK;
 }
 
-size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
-                       const srv_ticket_contents *c, uint8_t *out, size_t cap) {
+size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                       const uint8_t nonce[AEAD_NONCE], const srv_ticket_contents *c, uint8_t *out,
+                       size_t cap) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_TICKET_KEY_LEN), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(c, sizeof *c), "seal: contents readable");

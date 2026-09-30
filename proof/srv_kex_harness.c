@@ -83,8 +83,9 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // nonzero and nothing written for a refused key, otherwise a ciphertext and
 // a shared secret. The ciphertext is not filled, for the reason the shares
 // are not.
-int mlkem_encaps_derand(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
+int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
                         const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_w_ok(ct, MLKEM_CT_LEN), "encaps: ciphertext writable");
     __CPROVER_assert(__CPROVER_w_ok(ss, MLKEM_SS_LEN), "encaps: secret writable");
     __CPROVER_assert(__CPROVER_r_ok(ek, MLKEM_EK_LEN), "encaps: key readable");
@@ -113,14 +114,16 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint
 // refuses a candidate at any draw and accepts one within P256_ECDH_DRAWS,
 // the bound rand.h's contract gives a working generator, and a refusal
 // zeroes both outputs. The exchange's refusal zeroes its 32 bytes.
-int p256_ecdh_point_valid(const uint8_t point[P256_POINT_LEN]) {
+int p256_ecdh_point_valid(uint8_t widemul, const uint8_t point[P256_POINT_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "point check: point readable");
     point_checked = point;
     return nondet_u8() & 1;
 }
 
-int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCALAR_LEN],
-                     uint8_t pub[P256_POINT_LEN]) {
+int p256_ecdh_keygen(uint8_t widemul, const uint8_t draw[P256_SCALAR_LEN],
+                     uint8_t priv[P256_SCALAR_LEN], uint8_t pub[P256_POINT_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(draw, P256_SCALAR_LEN), "keygen: draw readable");
     __CPROVER_assert(__CPROVER_w_ok(priv, P256_SCALAR_LEN), "keygen: priv writable");
     __CPROVER_assert(__CPROVER_w_ok(pub, P256_POINT_LEN), "keygen: pub writable");
@@ -138,8 +141,9 @@ int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCAL
     return 1;
 }
 
-int p256_ecdh(const uint8_t priv[P256_SCALAR_LEN], const uint8_t point[P256_POINT_LEN],
-              uint8_t out[P256_SECRET_LEN]) {
+int p256_ecdh(uint8_t widemul, const uint8_t priv[P256_SCALAR_LEN],
+              const uint8_t point[P256_POINT_LEN], uint8_t out[P256_SECRET_LEN]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(priv, P256_SCALAR_LEN), "p256_ecdh: priv readable");
     __CPROVER_assert(__CPROVER_r_ok(point, P256_POINT_LEN), "p256_ecdh: point readable");
     __CPROVER_assert(__CPROVER_w_ok(out, P256_SECRET_LEN), "p256_ecdh: out writable");

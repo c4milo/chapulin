@@ -47,8 +47,10 @@ void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 // WHAT THIS MODELS: n unconstrained ciphertext bytes and an
 // unconstrained tag. WHAT IT NO LONGER PROVES: RFC 8439's seal, which
 // aead_harness holds.
-void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+               const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+               uint8_t tag[AEAD_TAG]) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "aead_seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "aead_seal: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "aead_seal: aad readable");
@@ -64,9 +66,10 @@ void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], con
 // therefore proven on the discard arm and on the success arm. WHAT IT
 // NO LONGER PROVES: that aead.c verifies before it decrypts, which
 // aead_harness holds.
-int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
-              uint8_t *pt) {
+int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "aead_open: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "aead_open: nonce readable");
     __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "aead_open: aad readable");
@@ -176,8 +179,8 @@ static void prove_seal(void) {
     fill_nondet(pt, sizeof pt);
     fill_nondet(out, sizeof out);
 
-    int rc = quic_packet_seal(&k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len, pt, pt_len,
-                              out, cap, &out_len);
+    int rc = quic_packet_seal(nondet_u8(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
+                              pt, pt_len, out, cap, &out_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL || rc == CH_ECAP,
                      "quic_packet_seal: it returns one of the three codes its header names");
     if (rc == CH_OK) {
@@ -207,7 +210,8 @@ static void prove_open(void) {
     fill_nondet((uint8_t *)&h, sizeof h);
     fill_nondet(pkt, sizeof pkt);
 
-    int rc = quic_packet_open_handshake(&k, &h, pkt, pkt_len, pn_off, nondet_u64(), &pn, &pt_len);
+    int rc = quic_packet_open_handshake(nondet_u8(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(),
+                                        &pn, &pt_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD,
                      "quic_packet_open_handshake: it returns one of the two codes its header "
                      "names");
@@ -224,8 +228,8 @@ static void prove_open(void) {
     fill_nondet((uint8_t *)&h, sizeof h);
     fill_nondet(pkt, sizeof pkt);
 
-    rc = quic_packet_open_application(sets, &h, nondet_u8(), pkt, pkt_len, pn_off, nondet_u64(),
-                                      nondet_u64(), &key_set, &pn, &pt_len);
+    rc = quic_packet_open_application(nondet_u8(), sets, &h, nondet_u8(), pkt, pkt_len, pn_off,
+                                      nondet_u64(), nondet_u64(), &key_set, &pn, &pt_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD,
                      "quic_packet_open_application: it returns one of the two codes its header "
                      "names");

@@ -5,6 +5,7 @@
 #include "ct.h"
 #include "hkdf.h"
 #include "suite.h"
+#include "widemul.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
 #include "gcm.h"
@@ -36,6 +37,13 @@ static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const
 }
 #endif
 
+// The answer d's ChaCha20-Poly1305 runs its Poly1305 under (widemul.h):
+// the one this object's build states.
+static uint8_t direction_widemul(const rec_dir *d) {
+    (void)d;
+    return WIDEMUL_BUILD_ANSWER;
+}
+
 // The AEAD of one record: len bytes of TLSInnerPlaintext at body sealed
 // in place with the tag after them, under whichever AEAD d runs, with
 // the record header as the associated data (RFC 9846 §5.2).
@@ -47,7 +55,7 @@ static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const u
         return;
     }
 #endif
-    aead_seal(d->key, nonce, hdr, REC_HDR, body, len, body, body + len);
+    aead_seal(direction_widemul(d), d->key, nonce, hdr, REC_HDR, body, len, body, body + len);
 }
 
 // The other direction: the record at rec holds a header, len bytes of
@@ -62,7 +70,8 @@ static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const ui
         return open_aes_gcm(d, nonce, rec, len, pt);
     }
 #endif
-    return aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
+    return aead_open(direction_widemul(d), d->key, nonce, rec, REC_HDR, rec + REC_HDR, len,
+                     rec + REC_HDR + len, pt);
 }
 
 #ifdef CH_SUITE_AES_GCM

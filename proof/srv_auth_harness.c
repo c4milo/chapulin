@@ -57,8 +57,9 @@
 // buffers the real function reads and writes at the lengths it uses,
 // and then havocs its outputs, so the proof considers every answer the
 // real function could give.
-int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uint8_t *sig,
-              size_t cap, size_t *sig_len) {
+int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+              uint8_t *sig, size_t cap, size_t *sig_len) {
+    (void)widemul;
     __CPROVER_assert(__CPROVER_r_ok(priv, P256_PRIV_LEN), "p256_sign: key readable");
     __CPROVER_assert(__CPROVER_r_ok(msg_hash, SHA256_LEN), "p256_sign: digest readable");
     __CPROVER_assert(__CPROVER_w_ok(sig, cap), "p256_sign: output writable");

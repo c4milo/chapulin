@@ -39,6 +39,7 @@
 #include "rsa_pkcs1_wide_vectors.h"
 #include "rsa_sign_vectors.h"
 #include "rsa_wide_vectors.h"
+#include "widemul.h"
 
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -130,8 +131,9 @@ static void prepare_mlkem(size_t n) {
     uint8_t ss[MLKEM_SS_LEN];
     uint8_t decapsulated[MLKEM_SS_LEN];
     mlkem_keygen_derand(mlkem_ek, mlkem_dk, MLKEM_D, MLKEM_Z);
-    expect(mlkem_encaps_derand(mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0, "encaps refused its ek");
-    mlkem_decaps(decapsulated, mlkem_ct, mlkem_dk);
+    expect(mlkem_encaps_derand(WIDEMUL_BUILD_ANSWER, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+           "encaps refused its ek");
+    mlkem_decaps(WIDEMUL_BUILD_ANSWER, decapsulated, mlkem_ct, mlkem_dk);
     expect(memcmp(ss, decapsulated, sizeof ss) == 0, "decaps disagrees with encaps");
     expect(memcmp(ss, MLKEM_K_WANT, sizeof ss) == 0, "ML-KEM missed its FIPS 203 answer");
 }
@@ -139,14 +141,15 @@ static void prepare_mlkem(size_t n) {
 static void run_mlkem_encaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    expect(mlkem_encaps_derand(mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0, "encaps refused its ek");
+    expect(mlkem_encaps_derand(WIDEMUL_BUILD_ANSWER, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+           "encaps refused its ek");
     bench_consume(ss, 1);
 }
 
 static void run_mlkem_decaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(ss, mlkem_ct, mlkem_dk);
+    mlkem_decaps(WIDEMUL_BUILD_ANSWER, ss, mlkem_ct, mlkem_dk);
     bench_consume(ss, 1);
 }
 
@@ -161,7 +164,8 @@ static void run_p256_sign(size_t n) {
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
     const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign(v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1, "p256_sign failed");
+    expect(p256_sign(WIDEMUL_BUILD_ANSWER, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
+           "p256_sign failed");
     bench_consume(sig, 1);
 }
 
@@ -170,7 +174,8 @@ static void prepare_p256_sign(size_t n) {
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
     const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign(v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1, "p256_sign failed");
+    expect(p256_sign(WIDEMUL_BUILD_ANSWER, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
+           "p256_sign failed");
     expect(sig_len == v->sig_len && memcmp(sig, v->sig, sig_len) == 0,
            "p256_sign missed RFC 6979 A.2.5");
 }
@@ -183,7 +188,8 @@ static void run_p256_ecdh_keygen(size_t n) {
     (void)n;
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
-    expect(p256_ecdh_keygen(P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar, priv, pub) == 1,
+    expect(p256_ecdh_keygen(WIDEMUL_BUILD_ANSWER, P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar, priv,
+                            pub) == 1,
            "p256_ecdh_keygen refused its draw");
     bench_consume(pub, 1);
 }
@@ -193,7 +199,8 @@ static void prepare_p256_ecdh_keygen(size_t n) {
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
     const p256_ecdh_keygen_case *c = &P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE];
-    expect(p256_ecdh_keygen(c->scalar, priv, pub) == 1, "p256_ecdh_keygen refused its draw");
+    expect(p256_ecdh_keygen(WIDEMUL_BUILD_ANSWER, c->scalar, priv, pub) == 1,
+           "p256_ecdh_keygen refused its draw");
     expect(memcmp(pub, c->pub, sizeof pub) == 0, "p256_ecdh_keygen missed its vector");
 }
 
@@ -201,7 +208,8 @@ static void run_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
+    expect(p256_ecdh(WIDEMUL_BUILD_ANSWER, c->priv, c->peer, shared) == 1,
+           "p256_ecdh refused its vector");
     bench_consume(shared, 1);
 }
 
@@ -209,7 +217,8 @@ static void prepare_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
+    expect(p256_ecdh(WIDEMUL_BUILD_ANSWER, c->priv, c->peer, shared) == 1,
+           "p256_ecdh refused its vector");
     expect(memcmp(shared, c->shared, sizeof shared) == 0, "p256_ecdh missed its vector");
 }
 

@@ -16,16 +16,19 @@
 
 // ct gets n bytes of ciphertext; tag is written separately so record-layer
 // callers can place it after the ciphertext. pt == ct allowed (in-place).
-void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]);
+// Both calls take first the answer Poly1305's block loop runs under, a
+// CH_WIDEMUL_ value, and hand it to widemul.h's dispatchers.
+void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+               const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+               uint8_t tag[AEAD_TAG]);
 
 // Returns 1 and writes n plaintext bytes on tag match; returns 0 and
 // writes nothing on mismatch. pt == ct is allowed, and so is pt below ct
 // (pt <= ct): decryption copies forward, so writing each byte before or
 // at the address it was read from is safe. The record layer depends on
 // this to decrypt in place over its own 5-byte header.
-int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
-              uint8_t *pt);
+int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[AEAD_TAG], uint8_t *pt);
 
 #endif

@@ -21,6 +21,7 @@
 #include "chacha20.h"
 #include "poly1305.h"
 #include "sha256.h"
+#include "test_widemul.h"
 
 // The largest ciphertext below, A.2's second vector.
 #define RFC8439_MAX 375
@@ -146,10 +147,10 @@ static void test_rfc8439_appendix(void) {
     unhex(rfc8439_aead_aad, aad);
     unhex(rfc8439_aead_tag, tag);
     size_t n = unhex(rfc8439_aead_ciphertext, ct);
-    CHECK(aead_open(key, nonce, aad, sizeof aad, ct, n, tag, pt) == 1);
+    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, ct, n, tag, pt) == 1);
     sha256_of(pt, n, digest);
     CHECK(eq_hex(digest, rfc8439_aead_plaintext_sha256));
-    aead_seal(key, nonce, aad, sizeof aad, pt, n, pt, tag);
+    aead_seal(TEST_WIDEMUL, key, nonce, aad, sizeof aad, pt, n, pt, tag);
     CHECK(eq_hex(pt, rfc8439_aead_ciphertext));
     CHECK(eq_hex(tag, rfc8439_aead_tag));
 }

@@ -19,6 +19,7 @@
 #include "ghash_hw.h"
 #include "record_stages.h"
 #include "suite.h"
+#include "widemul.h"
 
 #if !defined(CH_SUITE_AES_GCM) || !defined(CH_AES_HW)
 #error                                                                                             \
@@ -77,7 +78,8 @@ static void seal_record(bench_state *b) {
     memcpy(body, b->app, b->plaintext_len);
     body[b->plaintext_len] = REC_APPDATA;
     if (b->aead == BENCH_CHACHA20_POLY1305) {
-        aead_seal(b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body, body + b->len);
+        aead_seal(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body,
+                  body + b->len);
     } else {
         gcm_traffic_seal(&b->key, b->nonce, b->sealed, REC_HDR, body, b->len, body, body + b->len);
     }
@@ -258,14 +260,16 @@ static void run_compute_tag_fixed(bench_state *b) {
 
 static void run_chacha_seal(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    aead_seal(b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body, body + b->len);
+    aead_seal(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body,
+              body + b->len);
     consume(body[b->len]);
 }
 
 static void run_chacha_open(bench_state *b) {
     refill(b);
     uint8_t *body = b->rec + REC_HDR;
-    if (!aead_open(b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body + b->len, b->rec)) {
+    if (!aead_open(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len,
+                   body + b->len, b->rec)) {
         fail("aead_open rejected its own record");
     }
     consume(b->rec[0]);

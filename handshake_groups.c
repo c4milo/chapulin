@@ -8,6 +8,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "rand_draw.h"
+#include "widemul.h"
 
 // Draws the P-256 key pair into h->p256_priv and h->p256_pub. Each draw
 // is a candidate scalar, and p256_ecdh_keygen refuses one outside
@@ -23,7 +24,7 @@ static void draw_p256_key(handshake_state *h) {
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
         rand_draw(&h->t->cfg, draw, sizeof draw);
-        drawn = p256_ecdh_keygen(draw, h->p256_priv, h->p256_pub);
+        drawn = p256_ecdh_keygen(widemul_answer(&h->t->cfg), draw, h->p256_priv, h->p256_pub);
     }
     ct_wipe(draw, sizeof draw);
     // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
@@ -63,7 +64,7 @@ int hsg_selected_group_ok(const handshake_state *h, uint16_t group) {
 static int x25519_secret(handshake_state *h, const server_hello_info *info,
                          uint8_t ikm[X25519_LEN]) {
     ct_wipe(h->dz, sizeof h->dz);
-    if (!x25519(ikm, h->priv, info->server_pub)) {
+    if (!widemul_x25519(widemul_answer(&h->t->cfg), ikm, h->priv, info->server_pub)) {
         ct_wipe(ikm, X25519_LEN);
         return CH_EPROTO;
     }
@@ -76,7 +77,7 @@ static int x25519_secret(handshake_state *h, const server_hello_info *info,
 static int p256_secret(handshake_state *h, const server_hello_info *info,
                        uint8_t ikm[P256_SECRET_LEN]) {
     CH_ASSERT(h->retry_group == CH_GROUP_SECP256R1 && info->server_p256 != NULL);
-    int shared_ok = p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    int shared_ok = p256_ecdh(widemul_answer(&h->t->cfg), h->p256_priv, info->server_p256, ikm);
     ct_wipe(h->p256_priv, sizeof h->p256_priv);
     return shared_ok ? CH_OK : CH_EPROTO;
 }

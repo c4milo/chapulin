@@ -20,6 +20,7 @@
 #include "p256_scalar.h"
 #include "p256_sign.h"
 #include "p256_sign_vectors.h"
+#include "test_widemul.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -137,14 +138,14 @@ static void test_signatures(void) {
         size_t sig_len = 0;
         size_t again_len = 0;
 
-        CHECK(p256_sign(v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1);
+        CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1);
         CHECK(sig_len == v->sig_len);
         CHECK(same_bytes(sig, v->sig, sig_len));
         CHECK(p256_ecdsa_verify(v->pub, v->msg_hash, sig, sig_len) == 1);
 
         // A deterministic nonce means the same message signs the same
         // way every time. A signer that drew entropy would fail here.
-        CHECK(p256_sign(v->priv, v->msg_hash, again, sizeof again, &again_len) == 1);
+        CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, again, sizeof again, &again_len) == 1);
         CHECK(again_len == sig_len);
         CHECK(same_bytes(again, sig, sig_len));
     }
@@ -161,9 +162,9 @@ static void test_message_binding(void) {
     size_t other_len = 0;
 
     memcpy(hash, v->msg_hash, sizeof hash);
-    CHECK(p256_sign(v->priv, hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, v->priv, hash, sig, sizeof sig, &sig_len) == 1);
     hash[31] ^= 0x01;
-    CHECK(p256_sign(v->priv, hash, other, sizeof other, &other_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, v->priv, hash, other, sizeof other, &other_len) == 1);
     CHECK(!(other_len == sig_len && same_bytes(other, sig, sig_len)));
     CHECK(p256_ecdsa_verify(v->pub, hash, sig, sig_len) == 0);
     CHECK(p256_ecdsa_verify(v->pub, hash, other, other_len) == 1);
@@ -183,24 +184,24 @@ static void test_key_boundary(void) {
     size_t sig_len = 0;
 
     memset(priv, 0, sizeof priv);
-    CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign(TEST_WIDEMUL, priv, hash, sig, sizeof sig, &sig_len) == 0);
     CHECK(p256_sign_key_ok(priv) == 0);
 
     priv[31] = 1;
-    CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, priv, hash, sig, sizeof sig, &sig_len) == 1);
     CHECK(p256_sign_key_ok(priv) == 1);
 
     memcpy(priv, ORDER, sizeof priv);
     priv[31] = 0x50; // n - 1
-    CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, priv, hash, sig, sizeof sig, &sig_len) == 1);
     CHECK(p256_sign_key_ok(priv) == 1);
 
     memcpy(priv, ORDER, sizeof priv); // n
-    CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign(TEST_WIDEMUL, priv, hash, sig, sizeof sig, &sig_len) == 0);
     CHECK(p256_sign_key_ok(priv) == 0);
 
     memset(priv, 0xff, sizeof priv); // above n
-    CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign(TEST_WIDEMUL, priv, hash, sig, sizeof sig, &sig_len) == 0);
     CHECK(p256_sign_key_ok(priv) == 0);
 }
 
@@ -212,15 +213,16 @@ static void test_buffer_boundary(void) {
     size_t sig_len = 0;
 
     memset(sig, 0xaa, sizeof sig);
-    CHECK(p256_sign(v->priv, v->msg_hash, sig, v->sig_len, &sig_len) == 1);
+    CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, sig, v->sig_len, &sig_len) == 1);
     CHECK(sig_len == v->sig_len);
     CHECK(sig[v->sig_len] == 0xaa);
 
     memset(sig, 0xaa, sizeof sig);
     sig_len = 0;
-    CHECK(p256_sign(v->priv, v->msg_hash, sig, (size_t)v->sig_len - 1, &sig_len) == 0);
+    CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, sig, (size_t)v->sig_len - 1, &sig_len) ==
+          0);
     CHECK(sig[v->sig_len - 1] == 0xaa);
-    CHECK(p256_sign(v->priv, v->msg_hash, sig, 0, &sig_len) == 0);
+    CHECK(p256_sign(TEST_WIDEMUL, v->priv, v->msg_hash, sig, 0, &sig_len) == 0);
 }
 
 // Every vector's DER is minimal: no INTEGER carries a leading zero it

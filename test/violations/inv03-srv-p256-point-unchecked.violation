@@ -8,8 +8,8 @@ reason: the server skips the check on the client's secp256r1 point before it
   ServerHello and before any draw.
 
 --- old
-    if (!p256_ecdh_point_valid(ch->p256_share)) {
+    if (!p256_ecdh_point_valid(widemul_answer(&h->t->cfg), ch->p256_share)) {
         return CH_EPROTO;
     }
 --- new
-    (void)p256_ecdh_point_valid(ch->p256_share);
+    (void)p256_ecdh_point_valid(widemul_answer(&h->t->cfg), ch->p256_share);

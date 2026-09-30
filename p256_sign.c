@@ -14,6 +14,7 @@
 #include "p256_point.h"
 #include "p256_scalar.h"
 #include "sha256.h"
+#include "widemul.h"
 
 // How many RFC 6979 candidates the generator produces before the signer
 // gives up. A candidate fails only when it lands at or above the group
@@ -167,16 +168,17 @@ static int write_signature(uint8_t *sig, size_t cap, size_t *sig_len,
     return 1;
 }
 
-// s = k^-1 * (z + r*d) mod n, every step through p256_scalar.c.
-static void signature_scalar(p256_scalar *s, const p256_scalar *k, const p256_scalar *d,
-                             const p256_scalar *z, const p256_scalar *r) {
+// s = k^-1 * (z + r*d) mod n, every step through p256_scalar.c, each
+// multiply under the answer widemul (widemul.h).
+static void signature_scalar(uint8_t widemul, p256_scalar *s, const p256_scalar *k,
+                             const p256_scalar *d, const p256_scalar *z, const p256_scalar *r) {
     p256_scalar k_inverse;
     p256_scalar product;
 
-    p256_scalar_mul(&product, r, d);
+    widemul_p256_scalar_mul(widemul, &product, r, d);
     p256_scalar_add(&product, z, &product);
-    p256_scalar_inverse(&k_inverse, k);
-    p256_scalar_mul(s, &k_inverse, &product);
+    widemul_p256_scalar_inverse(widemul, &k_inverse, k);
+    widemul_p256_scalar_mul(widemul, s, &k_inverse, &product);
 
     ct_wipe(&k_inverse, sizeof k_inverse);
     ct_wipe(&product, sizeof product);
@@ -185,23 +187,24 @@ static void signature_scalar(p256_scalar *s, const p256_scalar *k, const p256_sc
 // r and s for one nonce, as the 32 big-endian bytes the DER writer
 // takes. Returns 1 when both are usable and 0 when either came out zero,
 // which p256_sign.h states is the one place this file narrows RFC 6979.
-static int compute_signature(const p256_scalar *k, const p256_scalar *d, const p256_scalar *z,
-                             uint8_t r_bytes[P256_SCALAR_LEN], uint8_t s_bytes[P256_SCALAR_LEN]) {
+static int compute_signature(uint8_t widemul, const p256_scalar *k, const p256_scalar *d,
+                             const p256_scalar *z, uint8_t r_bytes[P256_SCALAR_LEN],
+                             uint8_t s_bytes[P256_SCALAR_LEN]) {
     p256_point point;
     p256_scalar r = p256_scalar_zero;
     p256_scalar s = p256_scalar_zero;
     uint8_t x_bytes[P256_FE_LEN];
     int rc = 0;
 
-    p256_point_base_mul(&point, k);
+    p256_point_base_mul(widemul, &point, k);
     // The point is k*G for a k in [1, n-1], so it is never the point at
     // infinity and the mask is always all ones. Reading it anyway keeps a
     // faulted multiplication from producing a signature over bytes that
     // are not a coordinate.
-    if (p256_point_affine_x(x_bytes, &point)) {
+    if (p256_point_affine_x(widemul, x_bytes, &point)) {
         p256_scalar_from_bytes(&r, x_bytes);
         p256_scalar_reduce(&r, &r);
-        signature_scalar(&s, k, d, z, &r);
+        signature_scalar(widemul, &s, k, d, z, &r);
         p256_scalar_to_bytes(r_bytes, &r);
         p256_scalar_to_bytes(s_bytes, &s);
         // r and s are public: they go on the wire. A zero in either is
@@ -222,8 +225,8 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
     return usable != 0;
 }
 
-int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uint8_t *sig,
-              size_t cap, size_t *sig_len) {
+int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+              uint8_t *sig, size_t cap, size_t *sig_len) {
     p256_scalar d;
     p256_scalar z;
     p256_scalar k;
@@ -247,7 +250,8 @@ int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uin
     p256_scalar_reduce(&z, &z);
     p256_scalar_to_bytes(z_octets, &z);
 
-    if (derive_nonce(&k, priv, z_octets) && compute_signature(&k, &d, &z, r_bytes, s_bytes)) {
+    if (derive_nonce(&k, priv, z_octets) &&
+        compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes)) {
         rc = write_signature(sig, cap, sig_len, r_bytes, s_bytes);
     }
 

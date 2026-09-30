@@ -46,6 +46,6 @@ int main(void) {
     point_nondet(&sum);
     int i = (int)nondet_i64();
     __CPROVER_assume(i >= 0 && i < P256_SCALAR_LIMBS * 32);
-    ladder_round(&r0, &r1, &sum, &k, i);
+    ladder_round(nondet_u8(), &r0, &r1, &sum, &k, i);
     return 0;
 }

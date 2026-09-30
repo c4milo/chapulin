@@ -12,6 +12,7 @@
 
 #include "p256_ecdh.h"
 #include "p256_ecdh_vectors.h"
+#include "test_widemul.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -47,11 +48,11 @@ static void run_keygen_cases(void) {
         uint8_t pub[P256_POINT_LEN];
         fill(priv, sizeof priv);
         fill(pub, sizeof pub);
-        CHECK(p256_ecdh_keygen(c->scalar, priv, pub) == 1);
+        CHECK(p256_ecdh_keygen(TEST_WIDEMUL, c->scalar, priv, pub) == 1);
         CHECK(memcmp(priv, c->scalar, sizeof priv) == 0);
         CHECK(memcmp(pub, c->pub, sizeof pub) == 0);
         // A key this file just produced is a key it must accept.
-        CHECK(p256_ecdh_point_valid(pub) == 1);
+        CHECK(p256_ecdh_point_valid(TEST_WIDEMUL, pub) == 1);
     }
 }
 
@@ -60,8 +61,8 @@ static void run_shared_cases(void) {
         const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[i];
         uint8_t out[P256_SECRET_LEN];
         fill(out, sizeof out);
-        CHECK(p256_ecdh_point_valid(c->peer) == 1);
-        CHECK(p256_ecdh(c->priv, c->peer, out) == 1);
+        CHECK(p256_ecdh_point_valid(TEST_WIDEMUL, c->peer) == 1);
+        CHECK(p256_ecdh(TEST_WIDEMUL, c->priv, c->peer, out) == 1);
         CHECK(memcmp(out, c->shared, sizeof out) == 0);
     }
 }
@@ -72,8 +73,8 @@ static void run_bad_points(void) {
         const uint8_t *point = P256_ECDH_BAD_POINT[i].point;
         uint8_t out[P256_SECRET_LEN];
         fill(out, sizeof out);
-        CHECK(p256_ecdh_point_valid(point) == 0);
-        CHECK(p256_ecdh(P256_ECDH_SCALAR_ONE, point, out) == 0);
+        CHECK(p256_ecdh_point_valid(TEST_WIDEMUL, point) == 0);
+        CHECK(p256_ecdh(TEST_WIDEMUL, P256_ECDH_SCALAR_ONE, point, out) == 0);
         CHECK(all_zero(out, sizeof out));
     }
 }
@@ -85,18 +86,18 @@ static void run_scalar_boundary(void) {
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t out[P256_SECRET_LEN];
 
-    CHECK(p256_ecdh_keygen(P256_ECDH_SCALAR_ONE, priv, pub) == 1);
-    CHECK(p256_ecdh_keygen(P256_ECDH_SCALAR_LAST, priv, pub) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, P256_ECDH_SCALAR_ONE, priv, pub) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, P256_ECDH_SCALAR_LAST, priv, pub) == 1);
 
     fill(priv, sizeof priv);
     fill(pub, sizeof pub);
-    CHECK(p256_ecdh_keygen(P256_ECDH_SCALAR_FIRST_BAD, priv, pub) == 0);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, P256_ECDH_SCALAR_FIRST_BAD, priv, pub) == 0);
     CHECK(all_zero(priv, sizeof priv));
     CHECK(all_zero(pub, sizeof pub));
 
     fill(priv, sizeof priv);
     fill(pub, sizeof pub);
-    CHECK(p256_ecdh_keygen(P256_ECDH_SCALAR_ZERO, priv, pub) == 0);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, P256_ECDH_SCALAR_ZERO, priv, pub) == 0);
     CHECK(all_zero(priv, sizeof priv));
     CHECK(all_zero(pub, sizeof pub));
 
@@ -109,22 +110,22 @@ static void run_scalar_boundary(void) {
     // mutant this case exists for.
     fill(priv, sizeof priv);
     fill(pub, sizeof pub);
-    CHECK(p256_ecdh_keygen(P256_ECDH_SCALAR_ABOVE_ORDER, priv, pub) == 0);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, P256_ECDH_SCALAR_ABOVE_ORDER, priv, pub) == 0);
     CHECK(all_zero(priv, sizeof priv));
     CHECK(all_zero(pub, sizeof pub));
 
     // The same two ends through the key exchange itself.
     const uint8_t *generator = P256_ECDH_KEYGEN[0].pub; // 1 * G
     fill(out, sizeof out);
-    CHECK(p256_ecdh(P256_ECDH_SCALAR_LAST, generator, out) == 1);
+    CHECK(p256_ecdh(TEST_WIDEMUL, P256_ECDH_SCALAR_LAST, generator, out) == 1);
     fill(out, sizeof out);
-    CHECK(p256_ecdh(P256_ECDH_SCALAR_FIRST_BAD, generator, out) == 0);
+    CHECK(p256_ecdh(TEST_WIDEMUL, P256_ECDH_SCALAR_FIRST_BAD, generator, out) == 0);
     CHECK(all_zero(out, sizeof out));
     fill(out, sizeof out);
-    CHECK(p256_ecdh(P256_ECDH_SCALAR_ZERO, generator, out) == 0);
+    CHECK(p256_ecdh(TEST_WIDEMUL, P256_ECDH_SCALAR_ZERO, generator, out) == 0);
     CHECK(all_zero(out, sizeof out));
     fill(out, sizeof out);
-    CHECK(p256_ecdh(P256_ECDH_SCALAR_ABOVE_ORDER, generator, out) == 0);
+    CHECK(p256_ecdh(TEST_WIDEMUL, P256_ECDH_SCALAR_ABOVE_ORDER, generator, out) == 0);
     CHECK(all_zero(out, sizeof out));
 }
 
@@ -140,10 +141,10 @@ static void run_agreement(void) {
     uint8_t secret_a[P256_SECRET_LEN];
     uint8_t secret_b[P256_SECRET_LEN];
 
-    CHECK(p256_ecdh_keygen(a, priv_a, pub_a) == 1);
-    CHECK(p256_ecdh_keygen(b, priv_b, pub_b) == 1);
-    CHECK(p256_ecdh(priv_a, pub_b, secret_a) == 1);
-    CHECK(p256_ecdh(priv_b, pub_a, secret_b) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, a, priv_a, pub_a) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, b, priv_b, pub_b) == 1);
+    CHECK(p256_ecdh(TEST_WIDEMUL, priv_a, pub_b, secret_a) == 1);
+    CHECK(p256_ecdh(TEST_WIDEMUL, priv_b, pub_a, secret_b) == 1);
     CHECK(memcmp(secret_a, secret_b, sizeof secret_a) == 0);
     // Different pairs, different secret: a routine that returned a
     // constant would pass every check above and fail this one.

@@ -8,6 +8,6 @@ reason: on a core with no multiplier a new `*` in aead.c becomes a call
   that file now, and aead.c is allowed none
 
 --- old
-    poly1305_update(&p, len, 16);
+    widemul_poly1305_update(widemul, &p, len, 16);
 --- new
-    poly1305_update(&p, len, (size_t)((unsigned)aad_len * (unsigned)n) & 16U);
+    widemul_poly1305_update(widemul, &p, len, (size_t)((unsigned)aad_len * (unsigned)n) & 16U);

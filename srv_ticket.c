@@ -66,8 +66,9 @@ static void write_body(const srv_ticket_contents *c, uint8_t body[SRV_TICKET_BOD
     CH_ASSERT(b.err == 0 && b.len == SRV_TICKET_BODY_LEN);
 }
 
-size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
-                       const srv_ticket_contents *c, uint8_t *out, size_t cap) {
+size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                       const uint8_t nonce[AEAD_NONCE], const srv_ticket_contents *c, uint8_t *out,
+                       size_t cap) {
     if (cap < SRV_TICKET_LEN || c->alpn_len > CH_ALPN_NAME_MAX) {
         return 0;
     }
@@ -77,7 +78,8 @@ size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t n
     write_body(c, body);
     uint8_t ct[SRV_TICKET_BODY_LEN];
     uint8_t tag[AEAD_TAG];
-    aead_seal(key, nonce, ticket_version, sizeof ticket_version, body, sizeof body, ct, tag);
+    aead_seal(widemul, key, nonce, ticket_version, sizeof ticket_version, body, sizeof body, ct,
+              tag);
     ct_wipe(body, sizeof body);
 
     wbuf w;
@@ -114,8 +116,8 @@ static int read_body(const uint8_t body[SRV_TICKET_BODY_LEN], srv_ticket_content
     return CH_OK;
 }
 
-int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
-                    srv_ticket_contents *c) {
+int srv_ticket_open(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
+                    const uint8_t *ticket, size_t n, srv_ticket_contents *c) {
     memset(c, 0, sizeof *c);
     // INV-25's exact-fill check, and the two clear-text checks srv_ticket.h
     // promises before the AEAD runs: r.err refuses a ticket shorter than
@@ -134,8 +136,8 @@ int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *tic
     // aead_open compares the tag in constant time and releases no byte of
     // body on a mismatch (aead.h).
     uint8_t body[SRV_TICKET_BODY_LEN];
-    if (aead_open(key, nonce, ticket_version, sizeof ticket_version, ct, sizeof body, tag, body) ==
-        0) {
+    if (aead_open(widemul, key, nonce, ticket_version, sizeof ticket_version, ct, sizeof body, tag,
+                  body) == 0) {
         return CH_EAUTH;
     }
     int rc = read_body(body, c);

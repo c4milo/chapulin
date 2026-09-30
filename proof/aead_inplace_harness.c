@@ -33,8 +33,8 @@ int main(void) {
     }
 
     uint8_t tag[AEAD_TAG];
-    aead_seal(key, nonce, aad, aad_len, buf, n, buf, tag);
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, buf, n, tag, buf) == 1,
+    aead_seal(nondet_u8(), key, nonce, aad, aad_len, buf, n, buf, tag);
+    __CPROVER_assert(aead_open(nondet_u8(), key, nonce, aad, aad_len, buf, n, tag, buf) == 1,
                      "in-place open succeeds");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(buf[i] == copy[i], "in-place seal then open round-trips");

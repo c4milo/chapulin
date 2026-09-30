@@ -13,7 +13,7 @@
 #include "keylog.h"
 #include "keysched.h"
 #include "rand_draw.h"
-#include "x25519.h"
+#include "widemul.h" // and x25519.h, whose calls go through its dispatchers
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_pin.h"
 #endif
@@ -51,7 +51,7 @@ void hsf_begin(handshake_state *h) {
         CH_ASSERT(!ct_memeq(h->dz + 32, unwritten, 32));
 #endif
     }
-    x25519_base(h->pub, h->priv);
+    widemul_x25519_base(widemul_answer(&t->cfg), h->pub, h->priv);
     if (t->cfg.psk != NULL) {
         ks_early(hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early,
                  h->binder_key);
@@ -127,22 +127,22 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
     return n;
 }
 
-// Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] —
-// ML-KEM first, RFC 10024's order despite the group's name. The ct
-// pointer reads out of the live ServerHello bytes; no read of a further
-// message sits between the parse and this. The seed h->dz is wiped as
-// soon as the dk is expanded from it, its last use. Decapsulation cannot
-// fail (a tampered ciphertext yields the implicit-reject secret); the
-// x25519 all-zero refusal stays, and on it the half-built secret is
-// wiped.
+// Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] — ML-KEM
+// first, RFC 10024's order despite the group's name. The ct pointer reads
+// out of the live ServerHello bytes; no read of a further message sits
+// between the parse and this. The seed h->dz is wiped as soon as the dk is
+// expanded from it, its last use. Decapsulation cannot fail (a tampered
+// ciphertext yields the implicit-reject secret); the x25519 all-zero
+// refusal stays, and on it the half-built secret is wiped.
 static int hybrid_secret(handshake_state *h, const server_hello_info *info,
                          uint8_t ikm[MLKEM_SS_LEN + X25519_LEN]) {
+    uint8_t widemul = widemul_answer(&h->t->cfg);
     uint8_t dk[MLKEM_DK_LEN];
     mlkem_keygen_dk(dk, h->dz, h->dz + 32);
     ct_wipe(h->dz, sizeof h->dz);
-    mlkem_decaps(ikm, info->server_ct, dk);
+    mlkem_decaps(widemul, ikm, info->server_ct, dk);
     ct_wipe(dk, sizeof dk);
-    if (!x25519(ikm + MLKEM_SS_LEN, h->priv, info->server_pub)) {
+    if (!widemul_x25519(widemul, ikm + MLKEM_SS_LEN, h->priv, info->server_pub)) {
         ct_wipe(ikm, MLKEM_SS_LEN + X25519_LEN);
         return CH_EPROTO;
     }
@@ -321,7 +321,8 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 #else
     uint8_t ecdhe[X25519_LEN];
     size_t ecdhe_len = sizeof ecdhe;
-    int shared_ok = x25519(ecdhe, h->priv, info->server_pub) != 0;
+    int shared_ok =
+        widemul_x25519(widemul_answer(&h->t->cfg), ecdhe, h->priv, info->server_pub) != 0;
 #endif
     // The six values the exchange consumed. The tcp-blocking driver would
     // wipe them with its frame; the tcp-nonblocking and QUIC drivers
@@ -422,9 +423,8 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
         return CH_EPROTO;
     }
     // The body belongs to the QUIC version in use and is opaque to TLS
-    // (RFC 9001 §8.2, rfc9001.txt:1926-1928), so it goes out unread. The
-    // pointer is into cfg.buf and the call happens before anything
-    // overwrites it.
+    // (RFC 9001 §8.2, rfc9001.txt:1926-1928), so it goes out unread. The pointer
+    // is into cfg.buf and the call happens before anything overwrites it.
     if (t->cfg.on_transport_params != NULL) {
         t->cfg.on_transport_params(t->cfg.io, transport_params, transport_params_len);
     }

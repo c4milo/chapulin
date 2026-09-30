@@ -20,6 +20,7 @@
 #include "record.h"
 #include "sha256.h"
 #include "test_random.h"
+#include "test_widemul.h"
 #include "tls.h"
 #include "x25519.h"
 
@@ -175,25 +176,27 @@ static void test_aead(void) {
     unhex("50515253c0c1c2c3c4c5c6c7", aad);
     const char *pt = "Ladies and Gentlemen of the class of '99: If I could offer you "
                      "only one tip for the future, sunscreen would be it.";
-    aead_seal(key, nonce, aad, sizeof aad, (const uint8_t *)pt, strlen(pt), ct, tag);
+    aead_seal(TEST_WIDEMUL, key, nonce, aad, sizeof aad, (const uint8_t *)pt, strlen(pt), ct, tag);
     CHECK(eq_hex(ct, "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d6"
                      "3dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b36"
                      "92ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc"
                      "3ff4def08e4b7a9de576d26586cec64b6116"));
     CHECK(eq_hex(tag, "1ae10b594f09e26a7e902ecbd0600691"));
-    CHECK(aead_open(key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 1);
+    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 1);
     CHECK(memcmp(back, pt, strlen(pt)) == 0);
     // Backward-overlap decrypt (pt 5 bytes below ct), as rec_open does it.
     uint8_t framed[5 + 128];
-    aead_seal(key, nonce, aad, sizeof aad, (const uint8_t *)pt, strlen(pt), framed + 5, tag);
-    CHECK(aead_open(key, nonce, aad, sizeof aad, framed + 5, strlen(pt), tag, framed) == 1);
+    aead_seal(TEST_WIDEMUL, key, nonce, aad, sizeof aad, (const uint8_t *)pt, strlen(pt),
+              framed + 5, tag);
+    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, framed + 5, strlen(pt), tag,
+                    framed) == 1);
     CHECK(memcmp(framed, pt, strlen(pt)) == 0);
     // Any flipped bit anywhere must fail closed.
     tag[3] ^= 1;
-    CHECK(aead_open(key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 0);
+    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 0);
     tag[3] ^= 1;
     ct[17] ^= 0x80;
-    CHECK(aead_open(key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 0);
+    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 0);
 }
 
 static void test_x25519(void) {

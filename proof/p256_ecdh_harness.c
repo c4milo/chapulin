@@ -52,7 +52,7 @@ int main(void) {
     // Any 65 bytes a peer can send, including the encodings this file
     // refuses.
     fill_nondet(peer, sizeof peer);
-    int valid = p256_ecdh_point_valid(peer);
+    int valid = p256_ecdh_point_valid(nondet_u8(), peer);
     __CPROVER_assert(valid == 0 || valid == 1, "p256_ecdh_point_valid returns 0 or 1");
 
     // Any draw, in range or not. Both outputs are freshly havocked, the
@@ -60,7 +60,7 @@ int main(void) {
     fill_nondet(draw, sizeof draw);
     fill_nondet(priv, sizeof priv);
     fill_nondet(pub, sizeof pub);
-    int rc = p256_ecdh_keygen(draw, priv, pub);
+    int rc = p256_ecdh_keygen(nondet_u8(), draw, priv, pub);
     __CPROVER_assert(rc == 0 || rc == 1, "p256_ecdh_keygen returns 0 or 1");
     __CPROVER_assert(rc == 1 || all_zero(priv, sizeof priv),
                      "p256_ecdh_keygen: a refusal leaves no private key");
@@ -73,7 +73,7 @@ int main(void) {
     fill_nondet(priv, sizeof priv);
     fill_nondet(peer, sizeof peer);
     fill_nondet(out, sizeof out);
-    rc = p256_ecdh(priv, peer, out);
+    rc = p256_ecdh(nondet_u8(), priv, peer, out);
     __CPROVER_assert(rc == 0 || rc == 1, "p256_ecdh returns 0 or 1");
     __CPROVER_assert(rc == 1 || all_zero(out, sizeof out),
                      "p256_ecdh: a refusal leaves no shared secret");

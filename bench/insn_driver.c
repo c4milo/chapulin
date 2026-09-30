@@ -18,6 +18,7 @@
 #include "x25519.h"
 
 #include "insn_vectors.h"
+#include "widemul.h"
 
 // Fixed message bytes; only lengths shape the work below. The hybrid
 // ClientHello is the longest flight, so its length sizes the buffer and
@@ -150,7 +151,7 @@ static uint32_t hs_once_pq(void) {
     {
         uint8_t dk[MLKEM_DK_LEN];
         mlkem_keygen_dk(dk, MLKEM_D, MLKEM_Z);
-        mlkem_decaps(ikm, server_ct, dk);
+        mlkem_decaps(WIDEMUL_BUILD_ANSWER, ikm, server_ct, dk);
     }
     if (!x25519(ikm + MLKEM_SS_LEN, X25519_SCALAR, X25519_POINT)) {
         return 0xffffffffu;
@@ -218,7 +219,7 @@ int app_main(void) {
     static uint8_t ct_out[1024];
     uint8_t tag[AEAD_TAG];
     for (int k = 0; k < ITERS; k++) {
-        aead_seal(msg, msg + 32, msg + 44, 5, msg, 1024, ct_out, tag);
+        aead_seal(WIDEMUL_BUILD_ANSWER, msg, msg + 32, msg + 44, 5, msg, 1024, ct_out, tag);
         acc += tag[0];
     }
 #elif defined(OP_X25519)
@@ -261,11 +262,11 @@ int app_main(void) {
     static uint8_t ek[MLKEM_EK_LEN], dk[MLKEM_DK_LEN];
     static uint8_t kem_ct[MLKEM_CT_LEN], ss[MLKEM_SS_LEN];
     mlkem_keygen_derand(ek, dk, MLKEM_D, MLKEM_Z);
-    if (mlkem_encaps_derand(kem_ct, ss, ek, MLKEM_M) != 0) {
+    if (mlkem_encaps_derand(WIDEMUL_BUILD_ANSWER, kem_ct, ss, ek, MLKEM_M) != 0) {
         return 3;
     }
     for (int k = 0; k < ITERS; k++) {
-        mlkem_decaps(ss, kem_ct, dk);
+        mlkem_decaps(WIDEMUL_BUILD_ANSWER, ss, kem_ct, dk);
         acc += ss[0];
     }
     if (ITERS > 0) {

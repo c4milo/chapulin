@@ -13,6 +13,7 @@
 #define CH_TEST_TCP_NONBLOCKING_GROUP_TESTS_H
 
 #include "p256_ecdh.h"
+#include "test_widemul.h"
 #include "x25519.h"
 
 // The client half: a P-256 point and an x25519 value, from fixed secrets.
@@ -136,7 +137,7 @@ static void test_server_group_order(void) {
     static const uint8_t p256_draw[P256_SCALAR_LEN] = {0x3d, 0x4e};
     static const uint8_t x25519_priv[X25519_LEN] = {0x5f};
     uint8_t p256_priv[P256_SCALAR_LEN];
-    CHECK(p256_ecdh_keygen(p256_draw, p256_priv, group_p256_point) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, p256_draw, p256_priv, group_p256_point) == 1);
     x25519_base(group_x25519_pub, x25519_priv);
     int hrr = 0;
     const uint8_t *share = NULL;
@@ -146,7 +147,8 @@ static void test_server_group_order(void) {
     // share is a point on the curve.
     static const uint16_t p256_only[] = {CH_GROUP_SECP256R1};
     CHECK(server_answers(p256_only, 1, 1U, &hrr, &share, &share_len) == CH_GROUP_SECP256R1);
-    CHECK(!hrr && share != NULL && share_len == P256_POINT_LEN && p256_ecdh_point_valid(share));
+    CHECK(!hrr && share != NULL && share_len == P256_POINT_LEN &&
+          p256_ecdh_point_valid(TEST_WIDEMUL, share));
     // secp256r1 alone, with no share: a HelloRetryRequest naming it.
     CHECK(server_answers(p256_only, 1, 0U, &hrr, &share, &share_len) == CH_GROUP_SECP256R1);
     CHECK(hrr);

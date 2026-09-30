@@ -30,8 +30,9 @@ int main(void) {
 
     uint8_t frame[5 + 16];
     uint8_t tag[AEAD_TAG];
-    aead_seal(key, nonce, aad, aad_len, pt, n, frame + 5, tag);
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, frame + 5, n, tag, frame) == 1,
+    aead_seal(nondet_u8(), key, nonce, aad, aad_len, pt, n, frame + 5, tag);
+    __CPROVER_assert(aead_open(nondet_u8(), key, nonce, aad, aad_len, frame + 5, n, tag, frame) ==
+                         1,
                      "backward-overlap open succeeds");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(frame[i] == pt[i], "backward-overlap open round-trips");

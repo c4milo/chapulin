@@ -16,6 +16,7 @@
 
 #include "srv_flight_keys_tests.h"
 #include "srv_resume.h"
+#include "test_widemul.h"
 
 static const uint8_t resume_key[CH_SRV_TICKET_KEY_LEN] = {
     0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
@@ -53,7 +54,7 @@ static void resume_ticket(uint8_t ticket[SRV_TICKET_LEN], const uint8_t *key, ui
     memset(c.psk, 0, sizeof c.psk);
     memcpy(c.psk, resume_psk, sizeof resume_psk);
     static const uint8_t nonce[AEAD_NONCE] = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
-    CHECK(srv_ticket_seal(key, nonce, &c, ticket, SRV_TICKET_LEN) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, key, nonce, &c, ticket, SRV_TICKET_LEN) == SRV_TICKET_LEN);
 }
 
 // The binder a client computes for resume_psk over resume_hash: HMAC under
@@ -226,10 +227,11 @@ static void test_resume_select(void) {
     // may not share, so the ticket is passed over.
     resume_reset(&sel, RESUME_AUTH);
     srv_ticket_contents c;
-    CHECK(srv_ticket_open(resume_key, ticket, sizeof ticket, &c) == CH_OK);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, resume_key, ticket, sizeof ticket, &c) == CH_OK);
     c.suite = 0x1302; // TLS_AES_256_GCM_SHA384, a SHA-384 suite
     static const uint8_t nonce[AEAD_NONCE] = {1};
-    CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, resume_key, nonce, &c, ticket, sizeof ticket) ==
+          SRV_TICKET_LEN);
     CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
 
     // A QUIC server under the same key seals the version its connection
@@ -238,12 +240,15 @@ static void test_resume_select(void) {
     // transports (rfc9369.txt:268-284). The same ticket at 0 resumes.
     resume_reset(&sel, RESUME_AUTH);
     resume_ticket(ticket, resume_key, RESUME_AUTH, CH_ALPN_NONE);
-    CHECK(srv_ticket_open(resume_key, ticket, sizeof ticket, &c) == CH_OK && c.quic_version == 0);
+    CHECK(srv_ticket_open(TEST_WIDEMUL, resume_key, ticket, sizeof ticket, &c) == CH_OK &&
+          c.quic_version == 0);
     c.quic_version = 1; // QUIC version 1's Version field value
-    CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, resume_key, nonce, &c, ticket, sizeof ticket) ==
+          SRV_TICKET_LEN);
     CHECK(resume_one(&sel, ticket) == CH_OK && sel.psk_selected == 0);
     c.quic_version = 0;
-    CHECK(srv_ticket_seal(resume_key, nonce, &c, ticket, sizeof ticket) == SRV_TICKET_LEN);
+    CHECK(srv_ticket_seal(TEST_WIDEMUL, resume_key, nonce, &c, ticket, sizeof ticket) ==
+          SRV_TICKET_LEN);
     CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
 }
 

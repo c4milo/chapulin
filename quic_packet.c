@@ -36,8 +36,9 @@
 // The AEAD k's suite names, over n bytes of pt sealed into ct with the
 // tag after them. AES round keys die with this frame, and an AES-GCM set
 // counts the packet for §6.6.
-static void seal_body(quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-                      size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct) {
+static void seal_body(uint8_t widemul, quic_keys *k, const uint8_t nonce[AEAD_NONCE],
+                      const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
+                      uint8_t *ct) {
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
@@ -48,7 +49,7 @@ static void seal_body(quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8
         return;
     }
 #endif
-    aead_seal(k->key, nonce, aad, aad_len, pt, n, ct, ct + n);
+    aead_seal(widemul, k->key, nonce, aad, aad_len, pt, n, ct, ct + n);
 }
 
 // The other direction, ct and its tag opened into pt: 1 when the tag
@@ -56,8 +57,8 @@ static void seal_body(quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8
 // the n bytes it wrote while it hashed (gcm.h), and ChaCha20-Poly1305
 // writes none (aead.h). Neither writes past pt's n bytes, so the tag
 // after them stays as it arrived.
-static int open_body(const quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-                     size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt) {
+static int open_body(uint8_t widemul, const quic_keys *k, const uint8_t nonce[AEAD_NONCE],
+                     const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt) {
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
@@ -67,7 +68,7 @@ static int open_body(const quic_keys *k, const uint8_t nonce[AEAD_NONCE], const 
         return ok;
     }
 #endif
-    return aead_open(k->key, nonce, aad, aad_len, ct, n, ct + n, pt);
+    return aead_open(widemul, k->key, nonce, aad, aad_len, ct, n, ct + n, pt);
 }
 
 // The packet number space of RFC 9000 §17.1: every packet number is
@@ -164,9 +165,8 @@ void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN]
     }
 #endif
     // §5.4.4: the counter is sample[0..3] read little-endian and the
-    // nonce is sample[4..15] taken as bytes (rfc9001.txt:1344-1347).
-    // Both are assembled byte by byte, so no step assumes host
-    // endianness.
+    // nonce is sample[4..15] taken as bytes (rfc9001.txt:1344-1347). Both
+    // are assembled byte by byte, so no step assumes host endianness.
     uint32_t counter = 0;
     for (size_t i = 0; i < 4; i++) {
         counter |= (uint32_t)sample[i] << (8 * i);
@@ -220,9 +220,8 @@ uint64_t quic_pn_read(const uint8_t *pkt, size_t pn_off, size_t pn_len) {
 
 uint64_t quic_pn_decode(uint64_t largest_pn, uint64_t truncated_pn, size_t pn_len) {
     // RFC 9000 Appendix A.3's DecodePacketNumber, with pn_nbits as
-    // 8 * pn_len (rfc9000.txt:8358-8381). The mask holds the shift
-    // distance below 64 for every pn_len, so no caller can make it
-    // undefined.
+    // 8 * pn_len (rfc9000.txt:8358-8381). The mask holds the shift distance
+    // below 64 for every pn_len, so no caller can make it undefined.
     unsigned pn_nbits = (unsigned)(pn_len & 7U) << 3;
     uint64_t expected_pn = largest_pn + 1;
     uint64_t pn_win = UINT64_C(1) << pn_nbits;
@@ -303,9 +302,9 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 #endif
 }
 
-int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
-                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                     uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(uint8_t widemul, quic_keys *k, const quic_hp_key *h, uint8_t level,
+                     uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                     const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(hdr != NULL);
@@ -351,7 +350,7 @@ int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t
     quic_nonce(k->iv, pn, nonce);
     // §5.3 makes the unprotected header the associated data
     // (rfc9001.txt:1141-1143), and out holds it now.
-    seal_body(k, nonce, out, hdr_len, pt, pt_len, out + hdr_len);
+    seal_body(widemul, k, nonce, out, hdr_len, pt, pt_len, out + hdr_len);
     ct_wipe(nonce, sizeof nonce);
 
     // §5.4.1 applies header protection after packet protection
@@ -404,12 +403,13 @@ static int unprotect_header(const quic_hp_key *h, uint8_t *pkt, size_t pkt_len, 
 // QUIC_PN_MAX_LEN. Those two make pkt_len - body_off at least
 // QUIC_HP_SAMPLE_LEN, which is AEAD_TAG, so the ciphertext length below
 // does not wrap and is zero at the shortest packet the check admits.
-static int open_payload(const quic_keys *k, uint8_t *pkt, size_t pkt_len, size_t body_off,
-                        uint64_t pn, size_t *pt_len) {
+static int open_payload(uint8_t widemul, const quic_keys *k, uint8_t *pkt, size_t pkt_len,
+                        size_t body_off, uint64_t pn, size_t *pt_len) {
     size_t ct_len = pkt_len - body_off - AEAD_TAG;
     uint8_t nonce[AEAD_NONCE];
     quic_nonce(k->iv, pn, nonce);
-    int opened = open_body(k, nonce, pkt, body_off, pkt + body_off, ct_len, pkt + body_off);
+    int opened =
+        open_body(widemul, k, nonce, pkt, body_off, pkt + body_off, ct_len, pkt + body_off);
     ct_wipe(nonce, sizeof nonce);
     if (opened == 0) {
         // RFC 9001 §5.5 calls a tag that does not match a discard
@@ -421,9 +421,9 @@ static int open_payload(const quic_keys *k, uint8_t *pkt, size_t pkt_len, size_t
     return CH_OK;
 }
 
-int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
-                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                               size_t *pt_len) {
+int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
+                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                               uint64_t *pn, size_t *pt_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(pkt != NULL);
@@ -436,7 +436,7 @@ int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t
         return CH_QUIC_DISCARD;
     }
     size_t opened_len = 0;
-    if (open_payload(k, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len) != CH_OK) {
+    if (open_payload(widemul, k, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len) != CH_OK) {
         return CH_QUIC_DISCARD;
     }
     *pn = recovered;
@@ -444,10 +444,11 @@ int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t
     return CH_OK;
 }
 
-int quic_packet_open_application(const quic_keys sets[CH_QUIC_KEY_SETS], const quic_hp_key *h,
-                                 uint8_t key_phase, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                                 uint64_t largest_pn, uint64_t current_phase_lowest_pn,
-                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
+int quic_packet_open_application(uint8_t widemul, const quic_keys sets[CH_QUIC_KEY_SETS],
+                                 const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
+                                 size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                                 uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
+                                 size_t *pt_len) {
     CH_ASSERT(sets != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(pkt != NULL);
@@ -470,7 +471,7 @@ int quic_packet_open_application(const quic_keys sets[CH_QUIC_KEY_SETS], const q
     quic_keys chosen;
     quic_keys_select(sets, selected, &chosen);
     size_t opened_len = 0;
-    int rc = open_payload(&chosen, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len);
+    int rc = open_payload(widemul, &chosen, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len);
     ct_wipe(&chosen, sizeof chosen);
     if (rc != CH_OK) {
         // §5.5's second MUST: a packet that appears to carry a key

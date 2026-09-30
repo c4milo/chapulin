@@ -12,11 +12,11 @@ reason: the 1-RTT open path calls gcm_open on a key set the TLS key
   by name either way.
 
 --- old
-int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
-                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                               size_t *pt_len) {
+int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
+                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                               uint64_t *pn, size_t *pt_len) {
 --- new
-int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
-                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
-                               size_t *pt_len) {
+int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
+                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                               uint64_t *pn, size_t *pt_len) {
     gcm_open(k, pkt, pkt, pn_off, pkt, pkt_len, pkt, pkt);

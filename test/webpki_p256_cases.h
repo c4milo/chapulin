@@ -15,6 +15,7 @@
 
 #include "handshake_groups.h"
 #include "p256_ecdh.h"
+#include "test_widemul.h"
 
 // The retry hello a HelloRetryRequest naming secp256r1 asks for: its
 // key_share holds one 69-byte entry, the group, the length and the 65-byte
@@ -75,7 +76,7 @@ static void test_webpki_p256_retry(void) {
         hello_share_entry shares[2] = {{0}};
         CHECK(hello_key_shares(s.retry_hello, s.retry_hello_len, shares, 2) == 1);
         CHECK(shares[0].group == CH_GROUP_SECP256R1 && shares[0].key_len == P256_POINT_LEN &&
-              shares[0].key[0] == 0x04 && p256_ecdh_point_valid(shares[0].key));
+              shares[0].key[0] == 0x04 && p256_ecdh_point_valid(TEST_WIDEMUL, shares[0].key));
         size_t echo_len = 0;
         const uint8_t *echo = hello_ext(s.retry_hello, s.retry_hello_len, EXT_COOKIE, &echo_len);
         CHECK(cookie ? echo != NULL && echo_len == 2 + 4 : echo == NULL);
@@ -156,7 +157,7 @@ static int p256_zero(const uint8_t *p, size_t n) {
 static void test_webpki_p256_wipes(void) {
     uint8_t server_priv[P256_SCALAR_LEN];
     uint8_t server_point[P256_POINT_LEN];
-    CHECK(p256_ecdh_keygen(server_p256_draw, server_priv, server_point) == 1);
+    CHECK(p256_ecdh_keygen(TEST_WIDEMUL, server_p256_draw, server_priv, server_point) == 1);
     for (int refuse = 0; refuse <= 1; refuse++) {
         mock_server s;
         ch_tls t;
@@ -172,7 +173,8 @@ static void test_webpki_p256_wipes(void) {
         retry.retry_group = CH_GROUP_SECP256R1;
         CHECK(hsg_take_retry(&h, &retry) == CH_OK);
         CHECK(h.retry_group == CH_GROUP_SECP256R1);
-        CHECK(!p256_zero(h.p256_priv, sizeof h.p256_priv) && p256_ecdh_point_valid(h.p256_pub));
+        CHECK(!p256_zero(h.p256_priv, sizeof h.p256_priv) &&
+              p256_ecdh_point_valid(TEST_WIDEMUL, h.p256_pub));
         CHECK(p256_zero(h.priv, sizeof h.priv) && p256_zero(h.pub, sizeof h.pub) &&
               p256_zero(h.dz, sizeof h.dz));
 

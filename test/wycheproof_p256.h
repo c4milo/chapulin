@@ -6,6 +6,8 @@
 #ifndef CH_WYCHEPROOF_P256_H
 #define CH_WYCHEPROOF_P256_H
 
+#include "test_widemul.h"
+
 // P-256 ECDH over the "ecpoint" suite: the peer's key is the SEC 1 point
 // a key share carries. The invalid cases are the ones that matter here —
 // sixteen points off the curve, the invalid-curve attack this file's
@@ -33,11 +35,11 @@ static void run_ecdh_p256(void) {
             }
             continue;
         }
-        int ok = p256_ecdh(priv, pub, out);
+        int ok = p256_ecdh(TEST_WIDEMUL, priv, pub, out);
         // The two entries agree by construction: p256_ecdh refuses
         // exactly the points p256_ecdh_point_valid refuses, because it
         // calls the same check, and every private key here is in range.
-        if (ok != p256_ecdh_point_valid(pub)) {
+        if (ok != p256_ecdh_point_valid(TEST_WIDEMUL, pub)) {
             fail("ecdh-p256", wp_ecdh_p256[i].tc, "p256_ecdh and point_valid disagree");
         }
         switch (wp_ecdh_p256[i].kind) {
@@ -118,7 +120,7 @@ static void run_ecdsa_p256_sign(void) {
         size_t again_len = 0;
 
         sha256_of(msg, wp_ecdsa_p256_sha256[i].msg_len, hash);
-        if (!p256_sign(SIGN_PRIV, hash, sig, sizeof sig, &sig_len)) {
+        if (!p256_sign(TEST_WIDEMUL, SIGN_PRIV, hash, sig, sizeof sig, &sig_len)) {
             fail("ecdsa-p256-sign", tc, "signing refused a message");
             continue;
         }
@@ -127,8 +129,8 @@ static void run_ecdsa_p256_sign(void) {
         }
         // The nonce is deterministic, so one hash signs the same way
         // every time.
-        if (!p256_sign(SIGN_PRIV, hash, again, sizeof again, &again_len) || again_len != sig_len ||
-            memcmp(again, sig, sig_len) != 0) {
+        if (!p256_sign(TEST_WIDEMUL, SIGN_PRIV, hash, again, sizeof again, &again_len) ||
+            again_len != sig_len || memcmp(again, sig, sig_len) != 0) {
             fail("ecdsa-p256-sign", tc, "two signatures over one message differ");
         }
     }

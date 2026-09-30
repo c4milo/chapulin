@@ -24,6 +24,7 @@
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
 #endif
+#include "widemul.h"
 
 // Which endpoint session q is. quic.c holds no other role: every other
 // call in it takes key sets and bytes and reads no side, which is why a
@@ -272,12 +273,12 @@ static int seal_at_level(ch_quic *q, uint8_t level, uint32_t version, uint64_t p
         return CH_EINVAL;
     }
     if (level == CH_LEVEL_HANDSHAKE) {
-        return quic_packet_seal(&q->handshake_tx, &q->handshake_hp_tx, level, pn, pn_len, hdr,
-                                hdr_len, pt, pt_len, out, cap, out_len);
+        return quic_packet_seal(widemul_answer(&q->t.cfg), &q->handshake_tx, &q->handshake_hp_tx,
+                                level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
     }
     if (level == CH_LEVEL_APPLICATION) {
-        return quic_packet_seal(&q->app_tx, &q->app_hp_tx, level, pn, pn_len, hdr, hdr_len, pt,
-                                pt_len, out, cap, out_len);
+        return quic_packet_seal(widemul_answer(&q->t.cfg), &q->app_tx, &q->app_hp_tx, level, pn,
+                                pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
     }
     // The Initial keys pay RFC 9001 §6.6's confidentiality limit here,
     // and an AES-GCM suite's keys pay it in quic_packet_seal
@@ -347,14 +348,15 @@ static int open_at_level(ch_quic *q, uint8_t level, uint32_t version, uint8_t *p
                          size_t pn_off, uint64_t largest_pn, uint64_t current_phase_lowest_pn,
                          uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
     if (level == CH_LEVEL_APPLICATION) {
-        return quic_packet_open_application(q->app_rx, &q->app_hp_rx, q->key_phase, pkt, pkt_len,
-                                            pn_off, largest_pn, current_phase_lowest_pn, key_set,
-                                            pn, pt_len);
+        return quic_packet_open_application(widemul_answer(&q->t.cfg), q->app_rx, &q->app_hp_rx,
+                                            q->key_phase, pkt, pkt_len, pn_off, largest_pn,
+                                            current_phase_lowest_pn, key_set, pn, pt_len);
     }
     *key_set = CH_QUIC_KEY_CURRENT;
     if (level == CH_LEVEL_HANDSHAKE) {
-        return quic_packet_open_handshake(&q->handshake_rx, &q->handshake_hp_rx, pkt, pkt_len,
-                                          pn_off, largest_pn, pn, pt_len);
+        return quic_packet_open_handshake(widemul_answer(&q->t.cfg), &q->handshake_rx,
+                                          &q->handshake_hp_rx, pkt, pkt_len, pn_off, largest_pn, pn,
+                                          pt_len);
     }
     return QUIC_INITIAL_OPEN(q->t.cfg.aes_instructions, CH_QUIC_SELF(q), version, q->initial_dcid,
                              q->initial_dcid_len, pkt, pkt_len, pn_off, largest_pn, pn, pt_len);

@@ -9,10 +9,10 @@ reason: a ticket whose tag does not verify is decrypted under this server's key
   under a second key, and requires every one to be refused.
 
 --- old
-        0) {
+                  body) == 0) {
         return CH_EAUTH;
     }
 --- new
-        0) {
+                  body) == 0) {
         chacha20_xor(key, nonce, 1, ct, body, sizeof body);
     }

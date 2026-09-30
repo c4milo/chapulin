@@ -17,6 +17,7 @@
 #include "mlkem.h"
 #include "srv_flight_tests.h"
 #include "srv_kex.h"
+#include "test_widemul.h"
 
 // Where the key_share extension's group sits in the record the server
 // wrote, for a hello whose legacy_session_id was empty: the record header,
@@ -134,7 +135,7 @@ static void test_flight_hybrid_secret(void) {
     CHECK(!all_zero(hs.mlkem_ss, sizeof hs.mlkem_ss));
 
     uint8_t ikm[MLKEM_SS_LEN + X25519_LEN];
-    mlkem_decaps(ikm, wire + KEX_SH_SHARE_AT, kex_client_dk);
+    mlkem_decaps(TEST_WIDEMUL, ikm, wire + KEX_SH_SHARE_AT, kex_client_dk);
     CHECK(x25519(ikm + MLKEM_SS_LEN, kex_client_priv, wire + KEX_SH_SHARE_AT + MLKEM_CT_LEN) == 1);
 
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_OK);

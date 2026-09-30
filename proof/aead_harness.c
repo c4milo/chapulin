@@ -30,10 +30,10 @@ int main(void) {
     __CPROVER_assume(n >= 1 && n <= sizeof pt);
     __CPROVER_assume(aad_len <= sizeof aad);
 
-    aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
+    aead_seal(nondet_u8(), key, nonce, aad, aad_len, pt, n, ct, tag);
 
     uint8_t back[16];
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, tag, back) == 1,
+    __CPROVER_assert(aead_open(nondet_u8(), key, nonce, aad, aad_len, ct, n, tag, back) == 1,
                      "genuine seal opens");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(back[i] == pt[i], "open round-trips");

@@ -39,17 +39,9 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
-// The two answers ch_cfg.aes_instructions takes in an AES=runtime object (-DCH_AES_RUNTIME,
-// docs/decisions.md 81). 0 is neither, so a configuration that never set the field is
-// refused. The object chooses which AES runs, so it needs one it carries: QUIC's public-key
-// packets or the AES-GCM suites, and a TCP object without SUITE=aesgcm carries neither.
-#ifdef CH_AES_RUNTIME
-#define CH_AES_INSTRUCTIONS_PRESENT 1
-#define CH_AES_INSTRUCTIONS_ABSENT 2
-#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_SUITE_AES_GCM)
-#error "AES=runtime chooses an AES this object does not carry: build it for QUIC or SUITE=aesgcm"
-#endif
-#endif
+// The answers the fields about the CPU take: ch_cfg.aes_instructions's, and the two every
+// operation built on the widening multiply runs under.
+#include "cpu_cfg.h"
 
 // The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
 // X25519MLKEM768 hybrid (RFC 10024). ch_tls.group reports the one the ServerHello

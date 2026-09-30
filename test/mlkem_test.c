@@ -10,6 +10,7 @@
 
 #include "mlkem.h"
 #include "mlkem_vectors.h"
+#include "test_widemul.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -32,12 +33,12 @@ static void test_kats(void) {
 
         uint8_t ct[MLKEM_CT_LEN];
         uint8_t ss[MLKEM_SS_LEN];
-        CHECK(mlkem_encaps_derand(ct, ss, ek, mlk_kat_m[i]) == 0);
+        CHECK(mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, mlk_kat_m[i]) == 0);
         CHECK(memcmp(ct, mlk_kat_ct[i], MLKEM_CT_LEN) == 0);
         CHECK(memcmp(ss, mlk_kat_K[i], MLKEM_SS_LEN) == 0);
 
         uint8_t ss2[MLKEM_SS_LEN];
-        mlkem_decaps(ss2, ct, dk);
+        mlkem_decaps(TEST_WIDEMUL, ss2, ct, dk);
         CHECK(memcmp(ss2, mlk_kat_K[i], MLKEM_SS_LEN) == 0);
     }
 }
@@ -58,7 +59,7 @@ static void test_keygen_dk_matches(void) {
 // against the pq-crystals reference, not only kyber-py.
 static void test_cctv_decaps(void) {
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(ss, mlk_decaps_ct, mlk_decaps_dk);
+    mlkem_decaps(TEST_WIDEMUL, ss, mlk_decaps_ct, mlk_decaps_dk);
     CHECK(memcmp(ss, mlk_decaps_ss, MLKEM_SS_LEN) == 0);
 }
 
@@ -67,7 +68,7 @@ static void test_cctv_decaps(void) {
 // reads the whole ciphertext and returns the derived reject secret.
 static void test_cctv_strcmp(void) {
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(ss, mlk_strcmp_ct, mlk_strcmp_dk);
+    mlkem_decaps(TEST_WIDEMUL, ss, mlk_strcmp_ct, mlk_strcmp_dk);
     CHECK(memcmp(ss, mlk_strcmp_ss, MLKEM_SS_LEN) == 0);
 }
 
@@ -79,11 +80,11 @@ static void test_implicit_reject(void) {
     memcpy(ct, mlk_kat_ct[0], MLKEM_CT_LEN);
     ct[5] ^= 1;
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(ss, ct, mlk_kat_dk[0]);
+    mlkem_decaps(TEST_WIDEMUL, ss, ct, mlk_kat_dk[0]);
     CHECK(memcmp(ss, mlk_kat_K[0], MLKEM_SS_LEN) != 0);
     // The same tampered input is deterministic: two decaps agree.
     uint8_t ss2[MLKEM_SS_LEN];
-    mlkem_decaps(ss2, ct, mlk_kat_dk[0]);
+    mlkem_decaps(TEST_WIDEMUL, ss2, ct, mlk_kat_dk[0]);
     CHECK(memcmp(ss, ss2, MLKEM_SS_LEN) == 0);
 }
 
@@ -95,11 +96,11 @@ static void test_implicit_reject(void) {
 static void test_cctv_unlucky(void) {
     uint8_t ct[MLKEM_CT_LEN];
     uint8_t ss[MLKEM_SS_LEN];
-    CHECK(mlkem_encaps_derand(ct, ss, mlk_unlucky_ek, mlk_unlucky_m) == 0);
+    CHECK(mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, mlk_unlucky_ek, mlk_unlucky_m) == 0);
     CHECK(memcmp(ct, mlk_unlucky_c, MLKEM_CT_LEN) == 0);
     CHECK(memcmp(ss, mlk_unlucky_K, MLKEM_SS_LEN) == 0);
     uint8_t ss2[MLKEM_SS_LEN];
-    mlkem_decaps(ss2, mlk_unlucky_c, mlk_unlucky_dk);
+    mlkem_decaps(TEST_WIDEMUL, ss2, mlk_unlucky_c, mlk_unlucky_dk);
     CHECK(memcmp(ss2, mlk_unlucky_K, MLKEM_SS_LEN) == 0);
 }
 
@@ -113,7 +114,7 @@ static void test_encaps_rejects_bad_key(void) {
     ek[1] = 0xff;
     uint8_t ct[MLKEM_CT_LEN];
     uint8_t ss[MLKEM_SS_LEN];
-    CHECK(mlkem_encaps_derand(ct, ss, ek, mlk_kat_m[0]) != 0);
+    CHECK(mlkem_encaps_derand(TEST_WIDEMUL, ct, ss, ek, mlk_kat_m[0]) != 0);
 }
 
 int main(void) {
