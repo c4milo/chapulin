@@ -43,16 +43,28 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # ghash_hw.c) are built and run, under the flags AES_HW_PROBE found:
 # -march=armv8-a+crypto on a gcc whose default target has neither. On CI
 # the probe must find them, or a runner without the instructions would
-# skip in silence.
+# skip in silence. The AES=runtime binaries run here too: that gcc turns
+# the instructions on per function, with no flag at all
+# (docs/decisions.md 81).
 .PHONY: aes-hw-check
-aes-hw-check: $(AES_HW_BINS)
+aes-hw-check: $(AES_HW_BINS) $(AES_RUNTIME_BINS)
 ifeq ($(AES_HW_BINS),)
 	$(call REQUIRE_ON_CI,AES=hw instructions)
 	@echo "SKIP aes-hw-check: $(CC) has no AES instructions and no flag turns them on"
 else
 	@set -e; for b in $(AES_HW_BINS); do echo "== $$b ($(or $(AES_HW_CFLAGS),no flag))"; ./$$b; done
+	@set -e; for b in $(AES_RUNTIME_BINS); do echo "== $$b (AES=runtime, no flag)"; ./$$b; done
 endif
 
+# test/aes-runtime-qemu.sh: bin/aes_runtime_test and the two AES=runtime
+# loop binaries built for x86-64 and run under qemu-x86_64 on a CPU model
+# with AES-NI and PCLMULQDQ turned off. The answer that the instructions
+# are absent must pass there, and the present answer and an AES=hw build
+# must die of SIGILL. Linux only, with qemu-user; X86_CC names a cross
+# compiler on a host of another architecture (docs/decisions.md 81).
+.PHONY: aes-runtime-qemu
+aes-runtime-qemu:
+	./test/aes-runtime-qemu.sh
 
 # The Cortex-M3 lane: the cross-check suite roster, built with the Arm
 # GNU toolchain (newlib + rdimon semihosting) and run one binary at a

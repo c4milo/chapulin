@@ -1,0 +1,18 @@
+invariant: INV-14
+file: tls.c
+catches: tcp_blocking_loop_aes_runtime
+reason: the raw and ca client of an AES=runtime ROLE=both object stops
+  asking for the caller's answer about the AES instructions, so ch_connect
+  sends a ClientHello for a configuration that never stated what its
+  probe found. The webpki client's rule in the other tlsi_config_ok is
+  untouched, so only the raw client's own row notices:
+  test/tcp_blocking_loop_runtime.h requires CH_EINVAL and nothing sent at
+  0 and at 3.
+
+--- old
+    // one still asks every session for the answer.
+    if (!suite_aes_instructions_ok(cfg)) {
+        return 0;
+    }
+--- new
+    // one still asks every session for the answer.

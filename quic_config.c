@@ -184,6 +184,14 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 }
 
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
+#ifdef CH_AES_RUNTIME
+    // The caller's answer about the AES instructions, which picks the AES
+    // the Initial packets run on and the suites the hello offers (cfg.h),
+    // before the web PKI suite rule reads it.
+    if (!suite_aes_instructions_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
     if (!trust_config_ok(cfg) || !transport_config_ok(cfg) || !alpn_ok(cfg) || cfg->buf == NULL ||
         cfg->buf_len < CH_MIN_RXBUF) {
         return CH_EINVAL;

@@ -149,7 +149,7 @@ static void check_h3spec_offer(void) {
     selection sel;
     uint8_t select_alert = 0;
     CHECK(select_under(&ch, NULL, 0, &sel, &select_alert) == CH_OK);
-#if defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+#if (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) && defined(CH_NATIVE_AES)
     CHECK(sel.suite == SUITE_AES_256_GCM_SHA384 && sel.hash_len == SHA384_LEN);
 #else
     CHECK(sel.suite == SUITE_AES_128_GCM_SHA256 && sel.hash_len == SHA256_LEN);

@@ -1360,6 +1360,17 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # same way: 140 properties, under 1 s, 0.02 GB peak; 145 properties, under
 # 1 s, 0.02 GB with version 2's keys compiled beside it.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# aes.c in the AES=runtime QUIC suite object, which holds the AES
+# instructions and the table, over contract stubs of both ciphers' six
+# entries: an Initial key takes the instructions only under the answer
+# CH_AES_INSTRUCTIONS_PRESENT, out of every byte an answer can be, the
+# Retry key takes the table under any, and a traffic key of either length
+# never takes the table (docs/decisions.md 81). HKDF is the stub the aes
+# harness uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 196 properties, 1 s, 0.03 GB peak.
+# An Initial key expanded on the instructions under the absent answer
+# fails it (inv26-runtime-absent-expands-on-instructions).
+launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
 # one. ch_aes_block is a contract stub the harness defines, because the
@@ -1565,6 +1576,13 @@ launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_
 # walk that takes the first suite in the order whether or not the client
 # offered it fails three of the assertions.
 launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# srv_select_runtime: the default order an AES=runtime session takes from
+# its caller's answer, any byte, which is ChaCha20 alone unless the answer
+# is CH_AES_INSTRUCTIONS_PRESENT, and the same walk over it, which then
+# selects no suite suite_runs_here refuses (docs/decisions.md 81).
+# Measured the same way: 67 properties, under 1 s, 0.02 GB peak. The
+# absent answer given the default order fails it.
+launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
 # aead_seal and aead_open are contract stubs the harness defines, which the
@@ -1794,6 +1812,14 @@ launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:
 # suite assertion, so the cap the code admits is exact. With the ticket's
 # QUIC version: 724 properties, 6 s, 0.17 GB, measured on 2026-09-29.
 launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_config.c webpki_cfg.c
+# quic_config_webpki_runtime: the same rules in the AES=runtime suite
+# build, which add the caller's answer about the AES instructions, any
+# byte: CH_OK only for one of the two answers, and under the absent one
+# only for a list that names no AES-GCM suite (docs/decisions.md 81).
+# Measured the same way: 782 properties, 4 s, 0.14 GB peak. An
+# answer of 0 admitted, or an AES-GCM suite admitted under the absent
+# answer, fails it.
+launch fast full quic_config_webpki_runtime 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,

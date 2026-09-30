@@ -36,10 +36,11 @@ const has_choose_version = has_server and @hasField(c.ch_srv_cfg, "choose_versio
 // A client that offers more than one suite (SUITE=aesgcm TRUST=webpki)
 // takes an order of its own in ch_cfg.cipher_suites (webpki_cfg.h).
 const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
-// RAND=session: each session names its own source of random bytes in
-// ch_cfg (cfg.h), where every other build draws from the image's
-// ch_rand_bytes.
+// RAND=session: each session names its own source of random bytes in ch_cfg (cfg.h), where every
+// other build draws from the image's ch_rand_bytes.
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
+// AES=runtime: each session states the caller's CPU probe in ch_cfg (cfg.h).
+const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's
 /// Status names it. Each call's error set is the part of this one its C
@@ -156,11 +157,10 @@ const ClientValues = struct {
     trust: Trust,
     /// Protocols to offer, most preferred first: alpn_protocols, alpn_count.
     alpn: if (has_alpn) []const c.ch_alpn_protocol else void = if (has_alpn) &.{} else {},
-    /// A ticket to resume with: psk, psk_len, psk_id, psk_id_len,
-    /// resumption, ticket_epoch, ticket_lifetime_s, under TRUST=webpki
-    /// ticket_binding, and under TRANSPORT=quic-nonblocking
-    /// ticket_quic_version. Under a raw or ca mode it leaves the
-    /// server_pubkey slots unset, because ch_cfg takes one auth mode.
+    /// A ticket to resume with: psk, psk_len, psk_id, psk_id_len, resumption, ticket_epoch,
+    /// ticket_lifetime_s, under TRUST=webpki ticket_binding, and under TRANSPORT=quic-nonblocking
+    /// ticket_quic_version. Under a raw or ca mode it leaves the server_pubkey slots unset, because
+    /// ch_cfg takes one auth mode.
     ticket: ?*const Ticket = null,
     /// The ticket's age in milliseconds: ticket_age_ms, and obfuscated_age
     /// through ch_ticket_obfuscated_age. init answers error.Invalid for an
@@ -168,19 +168,20 @@ const ClientValues = struct {
     ticket_age_ms: u64 = 0,
     /// Refuse a key exchange other than X25519MLKEM768: require_pq.
     require_pq: bool = false,
-    /// The QUIC version of the first Initial packet, under
-    /// TRANSPORT=quic-nonblocking alone: quic_original_version. null leaves
-    /// it 0, which init refuses with error.Invalid, so a configuration that
-    /// names no version fails where C refuses it. void in every other build.
+    /// The QUIC version of the first Initial packet, under TRANSPORT=quic-nonblocking alone:
+    /// quic_original_version. null leaves it 0, which init refuses with error.Invalid, so a
+    /// configuration that names no version fails where C refuses it. void in every other build.
     quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     /// Suites to offer, most preferred first, empty for the build's order:
     /// cipher_suites, cipher_suite_count.
     cipher_suites: if (has_client_suite_order) []const Suite else void = if (has_client_suite_order) &.{} else {},
-    /// The session's source of random bytes, under RAND=session alone:
-    /// rand_bytes and rand_io, through the copy the session's init stores
-    /// (attachRandom). null leaves rand_bytes NULL, which init refuses with
-    /// error.Invalid. void in every other build.
+    /// The session's source of random bytes, under RAND=session alone: rand_bytes and rand_io,
+    /// through the copy the session's init stores (attachRandom). null leaves rand_bytes NULL,
+    /// which init refuses with error.Invalid. void in every other build.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
+    /// What the caller's CPU probe found, under AES=runtime alone: aes_instructions. null leaves
+    /// it 0, which init refuses with error.Invalid. void in every other build.
+    aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
 
     /// The ch_cfg these values set. A session's init adds its own buffer,
     /// callbacks and io to it, and under RAND=session its source.
@@ -234,6 +235,7 @@ const ClientValues = struct {
             cfg.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
             cfg.cipher_suite_count = values.cipher_suites.len;
         }
+        if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
         return cfg;
     }
 };
@@ -331,8 +333,7 @@ pub const RsaPssIdentity = if (has_server) struct {
     private_key: *const c.ch_rsa_priv,
 } else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both");
 
-/// What a server sets. Every slice and pointer is borrowed and must outlive
-/// the session.
+/// What a server sets. Every slice and pointer is borrowed and must outlive the session.
 pub const Server = if (has_server) ServerValues else @compileError("Server needs ROLE=server or ROLE=both");
 const ServerValues = struct {
     /// srv.ecdsa_p256; null leaves the slot unprovisioned.
@@ -351,9 +352,8 @@ const ServerValues = struct {
     require_server_name: bool = false,
     /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
     cipher_suites: if (has_suite_order) []const Suite else void = if (has_suite_order) &.{} else {},
-    /// The Version field of the client's first Initial packet, under
-    /// TRANSPORT=quic-nonblocking alone, as Client.quic_version is:
-    /// quic_original_version. void in every other build.
+    /// The Version field of the client's first Initial packet, under TRANSPORT=quic-nonblocking
+    /// alone, as Client.quic_version is: quic_original_version. void in every other build.
     quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     /// The negotiated version's chooser, under TRANSPORT=quic-nonblocking
     /// alone: srv.choose_version, through the session's own adapter
@@ -362,6 +362,8 @@ const ServerValues = struct {
     /// The session's source of random bytes, under RAND=session alone, as
     /// Client.random is. check draws from it too, for the RSA-PSS salt.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
+    /// What the caller's CPU probe found, under AES=runtime alone, as Client.aes_instructions is.
+    aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
 
     /// The ch_cfg these values set, which a session's init completes as it
     /// completes Client.toCfg's. error.Invalid for a chain longer than
@@ -395,13 +397,13 @@ const ServerValues = struct {
             cfg.srv.cipher_suite_count = values.cipher_suites.len;
         }
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
+        if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
         return cfg;
     }
 
-    /// ch_srv_check: each provisioned key signs, and the signature
-    /// verifies. It takes no session and runs no I/O. Under RAND=session
-    /// the RSA-PSS signature draws its salt from random, which C holds
-    /// for the call alone.
+    /// ch_srv_check: each provisioned key signs, and the signature verifies. It takes no session
+    /// and runs no I/O. Under RAND=session the RSA-PSS signature draws its salt from random, which
+    /// C holds for the call alone.
     pub fn check(values: ServerValues) error{Invalid}!void {
         var cfg = try values.toCfg();
         var source: RandomSource = undefined;
@@ -409,6 +411,10 @@ const ServerValues = struct {
         return fromCode(error{Invalid}, c.ch_srv_check(&cfg));
     }
 };
+
+/// ch_cfg.aes_instructions under AES=runtime (cfg.h): what the caller's own CPU probe found.
+pub const AesInstructions = if (has_aes_runtime) AesAnswer else @compileError("AesInstructions needs AES=runtime");
+const AesAnswer = enum(u8) { present = c.CH_AES_INSTRUCTIONS_PRESENT, absent = c.CH_AES_INSTRUCTIONS_ABSENT };
 
 /// ch_tls.group's code points (cfg.h).
 pub const Group = enum(u16) {
@@ -464,12 +470,10 @@ pub const Hook = extern struct { context: ?*anyopaque = null };
 /// the session must not move after init. void in every other build.
 pub const RandomSource = if (has_rand_session) std.Random else void;
 
-/// Under RAND=session, stores random in source and points cfg at it:
-/// rand_io is source, and rand_bytes the adapter that fills each draw from
-/// it. A null random leaves rand_bytes NULL, which every init call and
-/// ch_srv_check refuse with CH_EINVAL, so the refusal stays C's. It does
-/// nothing in any other build. The sessions' init calls and Server.check
-/// call it.
+/// Under RAND=session, stores random in source and points cfg at it: rand_io is source, and
+/// rand_bytes the adapter that fills each draw from it. A null random leaves rand_bytes NULL, which
+/// every init call and ch_srv_check refuse with CH_EINVAL, so the refusal stays C's. It does
+/// nothing in any other build. The sessions' init calls and Server.check call it.
 pub fn attachRandom(cfg: *c.ch_cfg, source: *RandomSource, random: if (has_rand_session) ?std.Random else void) void {
     if (has_rand_session) {
         if (random) |r| {

@@ -38,6 +38,15 @@ The scope has landed, and the work went past it:
   `CH_AES_HW`. What that statement rests on is the vendor's word and
   nothing this tree can observe. "Where the suite cannot go" below
   predates it.
+- Both suites run on `AES=runtime`, whose one object holds the AES
+  instructions and runs them when the caller's CPU probe found them
+  (`docs/decisions.md` entry 81,
+  [#183](https://github.com/c4milo/chapulin/issues/183)). A session whose
+  caller answers `CH_AES_INSTRUCTIONS_ABSENT` holds ChaCha20 alone, and
+  its init refuses a suite list that names an AES-GCM suite. Every traffic
+  key runs on the instructions under `CH_NATIVE_AES`, the statement
+  `AES=hw` makes; the table a QUIC object holds beside them runs QUIC's
+  public keys alone.
 
 The rename landed last: `quic_aes.[ch]` and `quic_gcm.[ch]` are now
 `aes.[ch]` and `gcm.[ch]`, and the `AES=hw` and GHASH sources lost the
@@ -150,6 +159,8 @@ asks for it.
 without them, where `aes_hw.c` and `ghash_hw.c` are each an
 `#error`, so no device build
 carries this suite and `ct.h:95-100` is what stops one from trying.
+`AES=runtime` needs an arm64 or x86-64 target for the same two files, and
+stops at the same `#error` on those lanes.
 
 ## Verification owed
 

@@ -12,6 +12,7 @@ const c = chapulin.c;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 const has_quic = @hasField(c.ch_ticket, "quic_version");
+const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 
 /// Under RAND=session, the streams each side's sessions draw from: one
 /// seeded stream per side, so a failure replays exactly. A test fixture
@@ -29,6 +30,14 @@ pub fn clientRandom() if (has_rand_session) ?std.Random else void {
 
 fn serverRandom() if (has_rand_session) ?std.Random else void {
     return if (has_rand_session) server_stream.random() else {};
+}
+
+/// The value of Client.aes_instructions and Server.aes_instructions: the
+/// instructions present under AES=runtime, which the machines that run
+/// these loops have, as an AES=hw object needs them, and void in every
+/// other build.
+pub fn aesAnswer() if (has_aes_runtime) ?chapulin.AesInstructions else void {
+    return if (has_aes_runtime) .present else {};
 }
 
 /// Where every source of random bytes here stands: the image's byte
@@ -121,6 +130,7 @@ pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Serve
         .now_seconds = now_seconds,
         .alpn = alpn,
         .random = serverRandom(),
+        .aes_instructions = aesAnswer(),
     };
 }
 

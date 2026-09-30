@@ -292,10 +292,12 @@ rules:
       protects TLS records, and quic_packet.c, which protects QUIC
       Handshake and 1-RTT packets and their headers, are the two library
       sources that may name them; aes.c and gcm.c are excluded
-      as the definition sites. ct.h refuses that build unless it takes AES=hw and asserts
-      the instructions' timing (CH_NATIVE_AES), or takes AES=extern and
-      asserts the peripheral's (CH_AES_EXTERN_CONSTANT_TIME), so a traffic
-      key never meets the AES=soft S-box, and aes_traffic_key.h, the type's body,
+      as the definition sites. ct.h refuses that build unless it takes AES=hw or
+      AES=runtime and asserts the instructions' timing (CH_NATIVE_AES), or
+      takes AES=extern and asserts the peripheral's
+      (CH_AES_EXTERN_CONSTANT_TIME), and an AES=runtime object records the
+      instructions in every traffic key's schedule, so a traffic key never
+      meets the S-box, and aes_traffic_key.h, the type's body,
       is included by the same files and no other, which
       `make lint-quic-surface` checks. A use anywhere else is a traffic
       key on a path nobody reviewed for it. Tripwire grade, as above.

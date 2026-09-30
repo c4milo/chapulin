@@ -24,7 +24,7 @@ const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking
 const Role = enum { client, server, both };
 const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", webpki, none };
 const Suite = enum { chacha, aesgcm };
-const Aes = enum { soft, hw, @"extern" };
+const Aes = enum { soft, hw, @"extern", runtime };
 const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
@@ -354,6 +354,9 @@ fn refuseUnbuildable(config: Config) void {
     if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
         fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
     }
+    if (config.aes == .runtime and config.transport != .@"quic-nonblocking" and config.suite != .aesgcm) {
+        fatal("AES=runtime chooses an AES this object does not carry: use TRANSPORT=quic-nonblocking or SUITE=aesgcm", .{});
+    }
     if (config.tx_record) |text| {
         if (config.transport == .@"quic-nonblocking") {
             fatal("TX_RECORD={s} sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{text});
@@ -396,15 +399,19 @@ fn deviceClient(config: Config) bool {
 fn computePlan(b: *std.Build, config: Config) Plan {
     const aes_impl: Names = switch (config.aes) {
         .soft => &.{"quic_aes_soft.c"},
-        .hw => &aes_hw_srcs,
+        .hw, .runtime => &aes_hw_srcs,
         .@"extern" => &.{"aes_extern.c"},
     };
+    // AES_QUIC_IMPL: under AES=runtime a QUIC object also holds the table
+    // cipher, for the public keys of a session whose caller found no AES
+    // instructions (aes.h).
+    const aes_quic_impl: Names = if (config.aes == .runtime) concat(b, &.{ aes_impl, &.{"quic_aes_soft.c"} }) else aes_impl;
     const suite_add: Names = if (config.suite == .aesgcm)
         concat(b, &.{ &.{"aes.c"}, aes_impl, &.{ "gcm.c", "sha512.c", "sha512_compress.c" } })
     else
         &.{};
     const trust = trustAxis(b, config.trust);
-    var transport = transportAxis(b, config.transport, aes_impl);
+    var transport = transportAxis(b, config.transport, aes_quic_impl);
     const role = roleAxis(b, config, &transport);
     // ROLE=both keeps both verifiers, whatever the client half pins.
     const pin_filter: Names = if (config.role == .both) &.{} else pinFilter(config.trust);
@@ -510,6 +517,7 @@ fn aesDefs(aes: Aes) Names {
         .soft => &.{},
         .hw => &.{"-DCH_AES_HW"},
         .@"extern" => &.{"-DCH_AES_EXTERN"},
+        .runtime => &.{"-DCH_AES_RUNTIME"},
     };
 }
 
@@ -612,7 +620,8 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
 /// pclmul on x86, and aes on Arm, where the Arm C Language Extensions put
 /// the 64-bit PMULL in the AES extension. Another architecture gets
 /// nothing, and aes_hw.c's #error stops the build, as it does for a cc the
-/// Makefile's probe finds no flag for.
+/// Makefile's probe finds no flag for. AES=runtime adds nothing: aes_hw.c
+/// and ghash_hw.c turn the instructions on for their own functions alone.
 fn aesTarget(b: *std.Build, target: std.Build.ResolvedTarget, aes: Aes) std.Build.ResolvedTarget {
     if (aes != .hw) return target;
     var query = target.query;

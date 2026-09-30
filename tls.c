@@ -116,6 +116,14 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
+#ifdef CH_AES_RUNTIME
+    // The caller's answer about the AES instructions (cfg.h). A raw or ca
+    // client offers ChaCha20 alone, and the ROLE=both object that holds
+    // one still asks every session for the answer.
+    if (!suite_aes_instructions_ok(cfg)) {
+        return 0;
+    }
+#endif
 #ifndef CH_KEX_PQ
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy the
@@ -337,6 +345,13 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
 int tlsi_config_ok(const ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
+#ifdef CH_AES_RUNTIME
+    // The caller's answer about the AES instructions (cfg.h), before
+    // webpki_cfg_ok's suite rule reads it.
+    if (!suite_aes_instructions_ok(cfg)) {
         return 0;
     }
 #endif

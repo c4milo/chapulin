@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: an AES=runtime QUIC object runs every block of a schedule the table
+  expanded on the AES instructions, so a session whose caller's probe found
+  none executes AES instructions on its Initial packets and dies of SIGILL
+  on a CPU without them. The bytes do not change, because both ciphers
+  keep one round-key layout, so no vector notices. bin/aes_runtime_test
+  counts the calls into aes_hw.c under the absent answer and requires
+  none.
+
+--- old
+    return s->instructions == CH_AES_INSTRUCTIONS_PRESENT;
+--- new
+    return s->instructions != 0;

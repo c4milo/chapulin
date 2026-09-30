@@ -2,7 +2,8 @@
 # Builds the packaged object both ways, with make and with build.zig, and
 # requires the two to agree (docs/decisions.md 69). make lint-zig-build
 # runs it in check with no argument, over the default object, the four
-# colibri links, stompy's and a SUITE=aesgcm record-mode object. check-slow
+# colibri links, stompy's, a SUITE=aesgcm record-mode object and colibri's
+# QUIC object on AES=runtime. check-slow
 # runs it with --roster, which adds the configuration of every lib-check
 # leg in check.
 #
@@ -71,7 +72,8 @@
 #
 # Each configuration builds both objects and compares them in a process
 # of its own, as many at once as the machine has cores. With every object
-# and program built, the seven take 5.1 to 5.3 s on an M-series Mac.
+# and program built, the seven took 5.1 to 5.3 s on an M-series Mac, and
+# the eight take 4.5 to 5.4 s at a load average of 11 to 13.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -103,7 +105,10 @@ link_flags=()
 # (docs/decisions.md 78). It takes AES=hw, as the QUIC rows do: build.zig
 # adds the AES and carry-less multiply features to the target, and the
 # M-series Macs and CI's x86_64 runner have both. AES=extern would need a
-# ch_aes_block that encrypts, and hooks.zig's stops the program.
+# ch_aes_block that encrypts, and hooks.zig's stops the program. The QUIC
+# object colibri links comes once more on AES=runtime (docs/decisions.md
+# 81), with build.zig adding no instruction feature, and its loop answers
+# that the instructions are present (fixture.zig's aesAnswer).
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -112,6 +117,7 @@ configs=(
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes-hw|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw|CH_NATIVE_AES"
+    "quic-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime KEYLOG=on|CH_NATIVE_AES"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once.
@@ -132,6 +138,8 @@ roster=(
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes-hw|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw|CH_NATIVE_AES"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern|CH_AES_EXTERN_CONSTANT_TIME"
+    "server-aes-runtime|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=runtime|CH_NATIVE_AES"
+    "quic-raw-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off AES=runtime|"
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
 )
 case ${1:-} in
@@ -218,11 +226,13 @@ statement_defs() {
 }
 
 # Whether this compiler can build a configuration: AES=hw needs the AES
-# instructions and X25519=wide needs unsigned __int128, which the Makefile
-# probes for and check's legs skip without.
+# instructions, AES=runtime an arm64 or x86-64 target, and X25519=wide
+# unsigned __int128, which the Makefile probes for and check's legs skip
+# without.
 buildable() {
     case " $1 " in
     *" AES=hw "*) [ -n "$probe" ] ;;
+    *" AES=runtime "*) "$cc" -dM -E -x c /dev/null | grep -qwE '__aarch64__|__x86_64__' ;;
     *" X25519=wide "*) printf 'unsigned __int128 x;\n' | "$cc" -x c -fsyntax-only - 2> /dev/null ;;
     *) true ;;
     esac

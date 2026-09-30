@@ -936,8 +936,9 @@ does nothing more.
 
     A second macro, `CH_NATIVE_CLMUL`, was considered and rejected. No
     build here runs one instruction without the other: `AES=hw` compiles
-    `aes_hw.c` and `ghash_hw.c` together and every other `AES`
-    value compiles neither. The second define would be required exactly
+    `aes_hw.c` and `ghash_hw.c` together, `AES=runtime` compiles both and
+    runs both on one answer about the part (entry 81), and every other
+    `AES` value compiles neither. The second define would be required exactly
     when the first is, so it would add a line to every suite build and a
     refusal to `ct.h` without separating any build that exists.
     `CH_NATIVE_WIDEMUL` stays apart because it covers a different
@@ -2348,7 +2349,8 @@ does nothing more.
       `SUITE=aesgcm` holds `TLS_AES_128_GCM_SHA256` and
       `TLS_AES_256_GCM_SHA384` under every `AES` value it takes.
     - **A separate timing flag.** `ct.h` admits `-DCH_SUITE_AES_GCM` on
-      `AES=hw` with `CH_NATIVE_AES`, or on `AES=extern` with
+      `AES=hw` with `CH_NATIVE_AES`, on `AES=runtime` with the same
+      statement since entry 81, or on `AES=extern` with
       `CH_AES_EXTERN_CONSTANT_TIME`, and refuses every other pairing,
       `AES=soft` included. `CH_AES_EXTERN_CONSTANT_TIME` is the firmware
       author's statement, from the vendor, that the peripheral behind
@@ -2373,7 +2375,9 @@ does nothing more.
     - **The rename.** `quic_aes_extern.c` is now `aes_extern.c`, because a
       suite build compiles it over TCP, so it is no longer QUIC-only
       (INV-27). `quic_aes_soft.c` keeps its prefix: its S-box is indexed
-      with the key, so a suite build refuses it for good.
+      with the key, so a suite build refuses it, and the one suite build
+      that holds it, an `AES=runtime` QUIC object, runs QUIC's public keys
+      alone on it (entry 81).
     - **The tests.** Every `AES=extern` test binary links
       `test/aes_extern_hook.c` as the hook: `quic_aes_soft.c`'s cipher
       under other names, for both key lengths, which aborts on any other
@@ -3693,7 +3697,8 @@ does nothing more.
       registers from EL0 without the operating system's help, so a probe
       needs per-OS code, and the bare-metal lanes have no OS to ask.
       Whether a build has the AES instructions stays the compiler's
-      answer at build time.
+      answer at build time, or under `AES=runtime` the caller's
+      (entry 81).
     - **A probe function the caller supplies.** It would move no rule into
       chapulin that a caller's order does not already carry, and it would
       add a callback to every configuration. A caller runs its own probe
@@ -3719,3 +3724,136 @@ does nothing more.
     chapulin server gives it to a client that offers it, with no call to
     make. A caller that learns at run time what its CPU has sets
     either order through the Zig API.
+
+81. **An `AES=runtime` object holds the AES instructions and a fallback,
+    and the caller's CPU probe picks between them for each session**
+    ([#183](https://github.com/c4milo/chapulin/issues/183)). Every other
+    `AES` value fixes the choice when the object is built. An `AES=hw`
+    object runs the AES instructions for every QUIC Initial packet and for
+    AES-GCM traffic, so it stops with SIGILL on a CPU without them, and
+    every other object holds ChaCha20 alone for traffic, so a caller whose
+    probe finds the instructions cannot use them. colibri picks its
+    chapulin object from the build target's features (its decision 97),
+    and its callers probe the CPU when they want the choice at run time
+    (entry 80). Camilo decided on 2026-09-29. This entry amends entries 50
+    and 68 where they state the `AES` axis.
+
+    - **The build value.** `AES=runtime` compiles `aes_hw.c` and
+      `ghash_hw.c` with no instruction flag. A target pragma at the top of
+      each file puts the target attribute on each function in it, `+aes`
+      on arm64, whose AES extension holds the 64-bit PMULL, and `aes` and
+      `pclmul` on x86-64, so the instructions appear in those two files
+      alone and the rest of the object runs on any CPU of its
+      architecture. A QUIC object also holds `quic_aes_soft.c`, whose two
+      entries take the names `aes_soft_expand_round_keys` and
+      `aes_soft_cipher_block` there, for QUIC's public keys. A TCP object
+      has no public key and holds no table. Both files refuse a target
+      other than arm64 or x86-64 with an `#error`.
+    - **The answer.** `ch_cfg.aes_instructions`, declared only in an
+      `AES=runtime` object, takes `CH_AES_INSTRUCTIONS_PRESENT` or
+      `CH_AES_INSTRUCTIONS_ABSENT`: whether the CPU has the AES and
+      carry-less multiply instructions, as the caller's probe found.
+      `ch_connect`, `ch_record_init`, `ch_quic_init`, `ch_srv_accept`,
+      `ch_srv_record_init` and `ch_srv_quic_init` return `CH_EINVAL` for
+      any other value, 0 included, before anything is sent, as they do
+      for an unset QUIC version, so every caller states what its probe
+      found. chapulin probes nothing.
+    - **Present** behaves as `AES=hw`. QUIC Initial packets and their
+      header protection run on the instructions, and a `SUITE=aesgcm`
+      build offers and prefers entry 80's order.
+    - **Absent** runs neither instruction. QUIC Initial packets and their
+      header protection run on the table, and their GHASH on `gcm.c`'s
+      portable multiply; both keys are public (INV-26). The session holds
+      ChaCha20 alone: a client offers it alone and a server's default
+      order is it alone. Init refuses a `ch_cfg.cipher_suites` or a
+      `ch_srv_cfg.cipher_suites` that names an AES-GCM suite rather than
+      dropping the suite, and a server refuses a retry cookie that names
+      one with illegal_parameter, because a server with the instructions
+      may have minted it under the same cookie key.
+    - **Each schedule records its cipher.** `aes_key_schedule` gains
+      `instructions` in a QUIC object, and `aes_encrypt_schedule`,
+      `aes_encrypt_block_hp` and `gcm.c` run a schedule on the cipher it
+      records. The Initial constructor records the caller's answer, the
+      Retry constructor the table, and `aes_traffic_key_init` the
+      instructions under either answer, so the table runs no traffic
+      key. Each branch reads the caller's answer or a constant, not a
+      key.
+    - **The Retry key runs on the table under either answer.**
+      `ch_srv_quic_retry_tag` takes no configuration to read an answer
+      from, and RFC 9001 and RFC 9369 print the key, so the table leaks
+      nothing. Under the present answer this departs from `AES=hw` in
+      which cipher computes the tag, and not in the tag.
+    - **`CH_NATIVE_AES` keeps its meaning.** It is the builder's statement
+      that the part's AES instructions and carry-less multiply run in
+      constant time where the part has them, and `ct.h` refuses
+      `SUITE=aesgcm` on `AES=runtime` without it. The caller's answer says
+      whether the instructions exist; the build states their timing.
+    - **What the build refuses.** The Makefile and `build.zig` refuse
+      `AES=runtime` in a TCP object without `SUITE=aesgcm`, which carries
+      no AES to choose, and `cfg.h` refuses the same build for a tree with
+      its own build system. `aes_block.h` refuses `CH_AES_RUNTIME` beside
+      `CH_AES_HW` or `CH_AES_EXTERN`.
+    - **The build record** carries `CH_BUILD_AES_RUNTIME`, because the
+      field changes `ch_cfg`'s layout, which is entry 77's reason for
+      `RAND=session`.
+    - **The wrappers.** `chapulin.hpp` gains `AesInstructions` and
+      `Config::aes_instructions()`. The Zig API gains `AesInstructions`
+      and `aes_instructions` in `Client` and `Server` values, declared
+      where `@hasField` finds the field; null leaves 0, which init
+      refuses.
+    - **The checks.** `bin/aes_runtime_test` runs RFC 9001 and RFC 9369
+      Appendix A under both answers and the SP 800-38D and FIPS 197
+      vectors under traffic keys, and counts every call into the table,
+      the instructions and the carry-less multiply: under the absent
+      answer no call goes to the instructions, under the present one the
+      table runs no Initial key, and the table runs no traffic key.
+      `test/aes-runtime-qemu.sh` builds that binary and both loop
+      binaries for x86-64 and runs them under `qemu-x86_64 -cpu
+      max,-aes,-pclmulqdq`: the absent answer passes the vectors and whole
+      QUIC and TCP handshakes, and the present answer and an `AES=hw`
+      build die of SIGILL. QEMU's arm64 models all implement the AES
+      extension, so on arm64 the claim rests on the counts.
+      `bin/webpki_session_aes_runtime`, `bin/webpki_loop_aes_runtime`,
+      `bin/quic_loop_aes_runtime`, `bin/tcp_blocking_loop_aes_runtime`
+      and `bin/srv_flight_test_aes_runtime` hold the field to 0, 1, 2 and
+      3 at every init call, each pair of
+      answers to the suite both ends run, and each refused list and
+      cookie. The `aes_runtime`, `srv_select_runtime` and
+      `quic_config_webpki_runtime` proofs hold the cipher each key takes,
+      the default order and the answer rule over every byte an answer can
+      be. `lint-trust-separation` admits `aes_hw.c`, `ghash_hw.c` and
+      `quic_aes_soft.c` together in `AES=runtime`'s QUIC rows alone, and
+      `aes-two-implementations-in-one-object.violation` stays caught.
+      Eleven mutants in `test/violations/` break the new rules, and each
+      is caught.
+
+    Cost:
+
+    - One object holds two AES implementations, which CLAUDE.md forbade.
+      `lint-trust-separation` holds the exception to one value and one
+      pair.
+    - Every block in a QUIC object reads which cipher its schedule
+      records, and every schedule carries one more byte.
+    - `ch_cfg` grows 8 bytes on arm64 in an `AES=runtime` build: one byte,
+      and the alignment of the pointer after it (docs/performance.md).
+    - A present answer on a CPU without the instructions dies of SIGILL,
+      and an absent one on a CPU with them runs ChaCha20. The answer is
+      the caller's, and chapulin cannot check it.
+    - `make check` builds and runs eight more binaries and three more
+      `lib-check` objects, and `lint-zig-build` one more configuration.
+
+    Gain: one object per architecture serves CPUs with and without the
+    AES instructions, and colibri's callers pass the answer their probe
+    found instead of choosing an object at build time.
+
+    Rejected:
+
+    - **An attribute macro on each function.** The first draft put
+      `AES_HW_TARGET` before every function in the two files. Semgrep
+      could not parse a function whose definition starts with an unknown
+      macro, so `lint-invariants` read those files only in part. The
+      pragma gives each function the same target attribute and leaves
+      each definition as `AES=hw` writes it.
+    - **Cutting a caller's list down to ChaCha20 under the absent
+      answer.** A caller who named AES-GCM asked for an offer the session
+      cannot make, and a silent drop would hide that.

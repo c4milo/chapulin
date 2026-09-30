@@ -4,7 +4,8 @@
 // ch_srv_cfg.cipher_suites. The server reads the offer as a set and
 // selects by its own order (docs/decisions.md 80), so every order selects
 // one suite: TLS_AES_256_GCM_SHA384 in a SUITE=aesgcm build on AES=hw
-// that defines CH_NATIVE_AES, and TLS_CHACHA20_POLY1305_SHA256 in the
+// that defines CH_NATIVE_AES, or on AES=runtime with the instructions
+// present, and TLS_CHACHA20_POLY1305_SHA256 in the
 // AES=extern suite build and in a build without the suite, whose parser
 // reads the two AES-GCM code points and passes over them
 // (rfc9846.txt:1275-1278). test/webpki_loop_test.c includes this file in
@@ -20,7 +21,8 @@
 // The suite the server's default order selects from an offer of all
 // three, read from the build's defines rather than from suite.h's
 // SUITE_AES_FIRST, so a change to suite.h's rule shows here as a failure.
-#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+#if defined(CH_SUITE_AES_GCM) && (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) &&                \
+    defined(CH_NATIVE_AES)
 #define ORDER_DEFAULT_PICK SUITE_AES_256_GCM_SHA384
 #else
 #define ORDER_DEFAULT_PICK SUITE_CHACHA20_POLY1305_SHA256

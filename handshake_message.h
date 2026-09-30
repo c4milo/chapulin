@@ -274,9 +274,11 @@ static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
 #ifdef CH_CLIENT_AES_SUITES
 // The cipher suites cfg's ClientHello offers, in its order, with their
 // number in *count: cfg->cipher_suites when the caller named a list, and
-// suite_default_order (suite.h) when it named none. ch_connect,
-// ch_record_init and ch_quic_init hold a list to 1 to SUITE_HELD_COUNT
-// suites this build holds, none repeated (webpki_cfg.h). The hello writes
+// suite_session_default (suite.h) when it named none, which is
+// suite_default_order unless an AES=runtime caller found no AES
+// instructions. ch_connect, ch_record_init and ch_quic_init hold a list
+// to 1 to SUITE_HELD_COUNT suites this build holds, none repeated and, in
+// that AES=runtime session, none AES-GCM (webpki_cfg.h). The hello writes
 // these and the handshake takes no other suite back (RFC 9846 §4.2.3,
 // rfc9846.txt:1373-1376). Public: the hello lists them in the clear.
 static inline const uint16_t *hs_offered_suites(const ch_cfg *cfg, size_t *count) {
@@ -284,8 +286,7 @@ static inline const uint16_t *hs_offered_suites(const ch_cfg *cfg, size_t *count
         *count = cfg->cipher_suite_count;
         return cfg->cipher_suites;
     }
-    *count = SUITE_HELD_COUNT;
-    return suite_default_order;
+    return suite_session_default(cfg, count);
 }
 #endif
 

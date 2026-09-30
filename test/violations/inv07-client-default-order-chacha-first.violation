@@ -9,8 +9,7 @@ reason: a client on AES=hw with CH_NATIVE_AES offers ChaCha20 first when
   bytes must list AES-256-GCM, AES-128-GCM and ChaCha20 in that order.
 
 --- old
-    *count = SUITE_HELD_COUNT;
-    return suite_default_order;
+    return suite_session_default(cfg, count);
 --- new
     static const uint16_t chacha_first[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
                                             SUITE_AES_256_GCM_SHA384};

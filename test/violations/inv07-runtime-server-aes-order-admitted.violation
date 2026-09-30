@@ -1,0 +1,21 @@
+invariant: INV-7
+file: srv.c
+catches: webpki_loop_aes_runtime
+reason: an AES=runtime server whose caller's probe found no AES instructions
+  admits a caller's srv.cipher_suites list that names an AES-GCM suite,
+  so it selects that suite for a client that offers it and keys AES-GCM
+  traffic on a CPU its caller said lacks the instructions. The ruling
+  refuses such a list at init (docs/decisions.md 81).
+  test/webpki_loop_runtime.h's check_runtime_lists requires
+  ch_srv_record_init to refuse each list the client refuses.
+
+--- old
+static int suites_run_here(const ch_cfg *cfg) {
+    for (size_t i = 0; i < cfg->srv.cipher_suite_count; i++) {
+        if (!suite_runs_here(cfg, cfg->srv.cipher_suites[i])) {
+            return 0;
+--- new
+static int suites_run_here(const ch_cfg *cfg) {
+    for (size_t i = 0; i < cfg->srv.cipher_suite_count; i++) {
+        if (!suite_runs_here(cfg, cfg->srv.cipher_suites[i])) {
+            break;

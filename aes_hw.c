@@ -22,7 +22,17 @@
 // which the bare-metal m3 and freertos lanes have nobody to ask. A
 // consumer compiles chapulin into its own build, so it already chooses
 // -march=armv8-a+crypto or -maes; a build without the flag takes
-// AES=soft and stays correct.
+// AES=soft and stays correct, and a consumer that probes the CPU itself
+// takes AES=runtime and passes the answer.
+//
+// AES=runtime compiles this file with no instruction flag, so the rest of
+// the object runs on any CPU of its architecture. The architecture picks
+// the instruction set, and the pragma below puts the target attribute
+// that turns the AES instructions on onto each function in this file and
+// on no function outside it. aes.c calls this file for a traffic key, and
+// for a public key only when the caller's probe found the instructions
+// (ch_cfg.aes_instructions), so a session whose CPU lacks them never
+// runs a line of it (docs/decisions.md 81).
 //
 // The intrinsic headers are the compiler's own, so they are not third-
 // party code. A third-party AES library would be.
@@ -62,22 +72,59 @@
 #include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#ifdef CH_AES_HW
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
 
 #include <stddef.h>
 #include <string.h>
 
 #include "ct.h"
 
-#ifdef __ARM_FEATURE_AES
-#include <arm_neon.h>
-typedef uint8x16_t aes_state;
-#elif defined(__AES__)
-#include <wmmintrin.h>
-typedef __m128i aes_state;
-#else
+// Which instruction set the arms below take: the Arm AES instructions
+// where AES_HW_ARM is defined, and x86-64 AES-NI where it is not. Under
+// AES=hw the build's flags say which, and under AES=runtime the
+// architecture does, because no flag turns the instructions on.
+#ifdef CH_AES_RUNTIME
+#ifdef __aarch64__
+#define AES_HW_ARM
+#elif !defined(__x86_64__)
+#error "AES=runtime needs an arm64 or x86-64 target, whose AES instructions it can run"
+#endif
+#elif defined(__ARM_FEATURE_AES)
+#define AES_HW_ARM
+#elif !defined(__AES__)
 #error                                                                                             \
     "AES=hw needs the AES instructions: compile with -march=armv8-a+crypto or -maes, or build AES=soft"
+#endif
+
+#ifdef AES_HW_ARM
+#include <arm_neon.h>
+typedef uint8x16_t aes_state;
+#else
+#include <wmmintrin.h>
+typedef __m128i aes_state;
+#endif
+
+// Under AES=runtime, every function from here to the pop at the end of
+// this file carries the target attribute that turns the AES instructions
+// on: "+aes" is the Arm AES extension, and "aes" is x86-64 AES-NI. GCC's
+// target pragma applies the attribute to each function defined after it,
+// and clang's attribute pragma to each function it covers, so the
+// includes above and every other file of the object stay without it.
+#ifdef CH_AES_RUNTIME
+#ifdef __clang__
+#ifdef AES_HW_ARM
+#pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
+#else
+#pragma clang attribute push(__attribute__((target("aes"))), apply_to = function)
+#endif
+#else
+#pragma GCC push_options
+#ifdef AES_HW_ARM
+#pragma GCC target("+aes")
+#else
+#pragma GCC target("aes")
+#endif
+#endif
 #endif
 
 // A block moves between memory and a vector register through memcpy
@@ -102,7 +149,7 @@ static void store_block(uint8_t p[AES_BLOCK], aes_state v) {
 // not assume host endianness: the same representation is packed and
 // unpacked, and SubWord treats each byte on its own, so no step depends
 // on which end a word starts at.
-#ifdef __ARM_FEATURE_AES
+#ifdef AES_HW_ARM
 static void sub_word(const uint8_t in[4], uint8_t out[4]) {
     // vaeseq_u8(v, zero) is ShiftRows(SubBytes(v)). Replicating the word
     // into all four columns makes ShiftRows move equal bytes between
@@ -173,9 +220,9 @@ static void expand(const uint8_t *key, size_t key_len, uint8_t *round_keys, size
     }
     // Both temporaries hold bytes of the last round key. Under
     // -DCH_SUITE_AES_GCM that is a traffic key, and this is the one
-    // implementation that build may take, so the wipe runs here and not in
-    // quic_aes_soft.c. Two calls and two fixed sizes, so the wipe itself
-    // reads nothing it was given.
+    // implementation that build runs a traffic key on, so the wipe runs
+    // here and not in quic_aes_soft.c. Two calls and two fixed sizes, so
+    // the wipe itself reads nothing it was given.
     ct_wipe(word, sizeof word);
     ct_wipe(substituted, sizeof substituted);
 }
@@ -185,7 +232,7 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
     expand(key, AES_128_KEY, round_keys, (size_t)AES_ROUND_KEYS * AES_BLOCK);
 }
 
-#ifdef __ARM_FEATURE_AES
+#ifdef AES_HW_ARM
 // FIPS 197 §5.1 over rounds rounds, AES_128_ROUNDS or AES_256_ROUNDS, a
 // constant each entry below passes. vaeseq_u8(s, k) is
 // ShiftRows(SubBytes(s XOR k)) and vaesmcq_u8 is MixColumns, so each pair
@@ -247,5 +294,13 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
 }
 #endif
 
-#endif // CH_AES_HW
+#ifdef CH_AES_RUNTIME
+#ifdef __clang__
+#pragma clang attribute pop
+#else
+#pragma GCC pop_options
+#endif
+#endif
+
+#endif // CH_AES_HW || CH_AES_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

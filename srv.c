@@ -106,6 +106,21 @@ static int suites_ok(const ch_srv_cfg *srv) {
 }
 #endif
 
+#if defined(CH_AES_RUNTIME) && defined(CH_SUITE_AES_GCM)
+// Whether every suite the server's list names can run on this CPU: none
+// is AES-GCM when an AES=runtime caller's probe found no AES instructions.
+// Such a list is refused rather than cut down to the suites that run
+// (docs/decisions.md 81). suites_ok has already bounded the count.
+static int suites_run_here(const ch_cfg *cfg) {
+    for (size_t i = 0; i < cfg->srv.cipher_suite_count; i++) {
+        if (!suite_runs_here(cfg, cfg->srv.cipher_suites[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+#endif
+
 // The server's own fields: at least one provisioned identity to prove
 // this endpoint with, every provisioned identity one the flight can
 // sign with and send, and the key the HelloRetryRequest cookie is minted
@@ -117,6 +132,11 @@ static int suites_ok(const ch_srv_cfg *srv) {
 static int srv_fields_ok(const ch_cfg *cfg) {
 #ifdef CH_SUITE_AES_GCM
     if (!suites_ok(&cfg->srv)) {
+        return 0;
+    }
+#endif
+#if defined(CH_AES_RUNTIME) && defined(CH_SUITE_AES_GCM)
+    if (!suites_run_here(cfg)) {
         return 0;
     }
 #endif
@@ -161,6 +181,13 @@ static int transport_ok(const ch_cfg *cfg) {
 int srv_config_ok(const ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
+#ifdef CH_AES_RUNTIME
+    // The caller's answer about the AES instructions, which picks what
+    // this session runs (cfg.h), before any rule that reads it.
+    if (!suite_aes_instructions_ok(cfg)) {
         return 0;
     }
 #endif

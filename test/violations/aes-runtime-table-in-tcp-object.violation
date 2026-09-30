@@ -1,0 +1,16 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: AES=runtime puts the S-box table in every object it builds, the TCP
+  suite object included, where no public key exists for it to run and
+  the only AES keys are traffic keys. AES=runtime is the one value that
+  holds two implementations, and only its QUIC objects hold the table
+  (docs/decisions.md 81). The lint's AES=runtime TCP suite row bans
+  quic_aes_soft.c.
+
+--- old
+AES_DEF := -DCH_AES_RUNTIME
+AES_IMPL := $(AES_HW_SRCS)
+--- new
+AES_DEF := -DCH_AES_RUNTIME
+AES_IMPL := $(AES_HW_SRCS) quic_aes_soft.c

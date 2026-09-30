@@ -13,7 +13,8 @@ reason: a build declares a TLS cipher suite whose AEAD is AES-GCM and
 
 --- old
 #else
-#error "CH_SUITE_AES_GCM needs AES=hw or AES=extern: the AES=soft S-box is indexed with the key"
+#error                                                                                             \
+    "CH_SUITE_AES_GCM needs AES=hw, AES=runtime or AES=extern: the AES=soft S-box is indexed with the key"
 #endif
 --- new
 #endif

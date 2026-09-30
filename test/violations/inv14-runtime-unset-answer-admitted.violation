@@ -1,0 +1,16 @@
+invariant: INV-14
+file: suite.h
+catches: webpki_session_aes_runtime
+reason: an AES=runtime init admits ch_cfg.aes_instructions at 0, the value a
+  caller that never set the field leaves, and the session runs as though
+  the caller had answered that the instructions are absent. The ruling is
+  that every caller states what its probe found (docs/decisions.md 81).
+  The edit keeps 3 refused, so it moves the lower edge alone;
+  test_webpki_runtime_answers requires ch_connect to refuse 0 before a
+  byte leaves.
+
+--- old
+    return cfg->aes_instructions == CH_AES_INSTRUCTIONS_PRESENT ||
+           cfg->aes_instructions == CH_AES_INSTRUCTIONS_ABSENT;
+--- new
+    return cfg->aes_instructions <= CH_AES_INSTRUCTIONS_ABSENT;

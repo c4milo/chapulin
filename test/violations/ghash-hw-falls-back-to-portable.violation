@@ -13,8 +13,8 @@ reason: gcm.c guards its AES=hw arm on a macro no build defines, so
   both entries ghash_hw.c defines.
 
 --- old
-#ifdef CH_AES_HW
-// AES=hw: ghash_hw.c computes both GHASH steps on the carry-less
+#ifdef GCM_GHASH_CARRYLESS_ALONE
+// ghash_hw.c computes both GHASH steps on the carry-less multiply
 --- new
 #ifdef CH_GHASH_HW
-// AES=hw: ghash_hw.c computes both GHASH steps on the carry-less
+// ghash_hw.c computes both GHASH steps on the carry-less multiply

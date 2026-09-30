@@ -340,6 +340,27 @@ The entries are grouped by area:
   cannot read an intrinsic, so `bin/aes_equiv_test` holds it to the
   software one over 200,400 pairs.
 
+#### aes_runtime
+
+- **Harness:** `aes_runtime` (fast)
+- **Build:** `TRANSPORT=quic-nonblocking SUITE=aesgcm AES=runtime`, the
+  object that holds the AES instructions and the table.
+- **Proves:** `aes.c` is safe over unconstrained inputs and puts each key
+  on the cipher `docs/decisions.md` entry 81 names, over contract stubs of
+  both ciphers' six entries, each of which asserts the buffers
+  `aes_block.h` states and whether the key in hand may run on it:
+  - an Initial key expands and runs on the instructions only when the
+    caller's answer is `CH_AES_INSTRUCTIONS_PRESENT`, and on the table for
+    every other byte, and both of its schedules record which;
+  - the Retry key expands and runs on the table under any answer;
+  - the table runs no traffic key of either length.
+- **Bound:** the full domain: every byte of the answer, every admitted
+  connection ID length and every endpoint byte.
+- **Not proved:** either cipher's arithmetic, which `aes` proves for the
+  table and `bin/aes_equiv_test` tests for the instructions; and `gcm.c`'s
+  choice between the two GHASH bodies, which `bin/aes_runtime_test`
+  counts.
+
 #### gcm
 
 - **Harnesses:** `gcm_safety` (slow), `gcm_refusal` (slow), `ghash` (slow), `gcm` (no launch line), `gcm_forge` (no launch line)
@@ -1075,6 +1096,18 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   when no suite in the order is offered.
 - **Bound:** the full domain.
 
+#### srv_select_runtime
+
+- **Harness:** `srv_select_runtime` (fast)
+- **Build:** `ROLE=server SUITE=aesgcm AES=runtime`.
+- **Proves:** `suite_session_default`, the order a session offers or
+  prefers when its caller names none, is ChaCha20 alone for every byte of
+  the caller's answer but `CH_AES_INSTRUCTIONS_PRESENT`, and the build's
+  default order for that one; and `srv_first_offered_suite` over it, from
+  any offer of the three suites, names no suite `suite_runs_here` refuses
+  for the session (`docs/decisions.md` entry 81).
+- **Bound:** the full domain.
+
 #### srv_parser_walk
 
 - **Harness:** `srv_parser_walk` (slow)
@@ -1466,9 +1499,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 #### quic_config_webpki
 
-- **Harnesses:** `quic_config_webpki` (fast), `quic_config_webpki_suite` (fast)
-- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only, and
-  `quic_config_webpki_suite` under `SUITE=aesgcm` too.
+- **Harnesses:** `quic_config_webpki` (fast), `quic_config_webpki_suite` (fast), `quic_config_webpki_runtime` (fast)
+- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only,
+  `quic_config_webpki_suite` under `SUITE=aesgcm` too, and
+  `quic_config_webpki_runtime` under `SUITE=aesgcm AES=runtime`.
 - **Proves:** `ch_quic_init`'s configuration rules under `TRUST=webpki`,
   which are `webpki_cfg_ok`'s, SPKI pins included, plus RFC 9001's
   (`docs/decisions.md` entry 64). `quic_config_ok`:
@@ -1492,7 +1526,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     `SUITE_HELD_COUNT` suites the build holds with none repeated, and
     reads no suite past that cap whatever the count says
     (`docs/decisions.md` entry 80). Narrowing the harness's rule to two
-    suites fails the formula, so the cap it admits is exact.
+    suites fails the formula, so the cap it admits is exact;
+  - in `quic_config_webpki_runtime`, answers `CH_OK` only when the
+    caller's `aes_instructions`, any byte, is one of the two answers
+    `cfg.h` names, and under `CH_AES_INSTRUCTIONS_ABSENT` only for a
+    `cipher_suites` that names no AES-GCM suite (`docs/decisions.md`
+    entry 81).
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.

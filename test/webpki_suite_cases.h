@@ -27,7 +27,8 @@ static int hello_suites_are(const uint8_t *hello, size_t n, const uint8_t *want,
 // and ChaCha20 on AES=hw with CH_NATIVE_AES, ChaCha20, AES-128-GCM and
 // AES-256-GCM on AES=extern, and ChaCha20 alone without the suite.
 static void test_webpki_suites_hello(void) {
-#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+#if defined(CH_SUITE_AES_GCM) && (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) &&                \
+    defined(CH_NATIVE_AES)
     static const uint8_t want[] = {0x00, 0x06, 0x13, 0x02, 0x13, 0x01, 0x13, 0x03};
 #elif defined(CH_SUITE_AES_GCM)
     static const uint8_t want[] = {0x00, 0x06, 0x13, 0x03, 0x13, 0x01, 0x13, 0x02};
@@ -283,6 +284,9 @@ static int accept_selected_psk(size_t psk_len, uint16_t suite, uint8_t *alert) {
     memset(&info, 0, sizeof info);
     h.t = &session;
     h.suite = suite;
+#ifdef CH_AES_RUNTIME
+    session.cfg.aes_instructions = CH_AES_INSTRUCTIONS_PRESENT;
+#endif
     session.cfg.psk = psk;
     session.cfg.psk_len = psk_len;
     session.cfg.resumption = 1;
@@ -307,6 +311,77 @@ static void test_webpki_suite_psk_hash(void) {
     CHECK(accept_selected_psk(SHA384_LEN, SUITE_AES_256_GCM_SHA384, &alert) == CH_OK);
     CHECK(accept_selected_psk(SHA256_LEN, SUITE_AES_128_GCM_SHA256, &alert) == CH_OK);
 }
+
+#ifdef CH_AES_RUNTIME
+// ch_connect at each edge of ch_cfg.aes_instructions, in the AES=runtime
+// build bin/webpki_session_aes_runtime (docs/decisions.md 81): 0, the value
+// a caller that never set it leaves, and 3, the first value past the two
+// answers, are refused before a byte leaves. The present answer offers
+// AES-256-GCM, AES-128-GCM and ChaCha20, and the absent answer ChaCha20
+// alone.
+static void test_webpki_runtime_answers(void) {
+    static const uint8_t aes_first[] = {0x00, 0x06, 0x13, 0x02, 0x13, 0x01, 0x13, 0x03};
+    static const uint8_t chacha_alone[] = {0x00, 0x02, 0x13, 0x03};
+    mock_server s;
+    ch_cfg cfg = valid_cfg(&s);
+    cfg.aes_instructions = 0;
+    CHECK(refused(&cfg));
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = 3;
+    CHECK(refused(&cfg));
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_PRESENT;
+    CHECK(sends_client_hello(&cfg));
+    CHECK(hello_suites_are(s.hello, s.hello_len, aes_first, sizeof aes_first));
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    CHECK(sends_client_hello(&cfg));
+    CHECK(hello_suites_are(s.hello, s.hello_len, chacha_alone, sizeof chacha_alone));
+}
+
+// A client whose caller found no AES instructions: a list that names an
+// AES-GCM suite is refused before a byte leaves, ChaCha20 alone is
+// offered, and a ServerHello or a HelloRetryRequest that selects
+// AES-128-GCM, which the hello did not list, is an illegal_parameter
+// abort (rfc9846.txt:1373-1376, 1484-1485), the retry before any second
+// hello.
+static void test_webpki_runtime_without_aes(void) {
+    static const uint16_t aes128[] = {SUITE_AES_128_GCM_SHA256};
+    static const uint16_t chacha_then_aes[] = {SUITE_CHACHA20_POLY1305_SHA256,
+                                               SUITE_AES_256_GCM_SHA384};
+    static const uint16_t chacha[] = {SUITE_CHACHA20_POLY1305_SHA256};
+    static const uint8_t chacha_alone[] = {0x00, 0x02, 0x13, 0x03};
+    mock_server s;
+    ch_tls t;
+    ch_cfg cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    cfg.cipher_suites = aes128;
+    cfg.cipher_suite_count = 1;
+    CHECK(refused(&cfg));
+    cfg.cipher_suites = chacha_then_aes;
+    cfg.cipher_suite_count = 2;
+    CHECK(refused(&cfg));
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    CHECK(offers(&cfg, chacha, 1, chacha_alone, sizeof chacha_alone));
+
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    s.answer = 1;
+    s.suite = SUITE_AES_128_GCM_SHA256;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_ILLEGAL_PARAMETER);
+
+    cfg = valid_cfg(&s);
+    cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    s.answer = 1;
+    s.retry = 1;
+    s.retry_cookie = 1;
+    s.retry_suite = SUITE_AES_128_GCM_SHA256;
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_ILLEGAL_PARAMETER && s.retry_hello_len == 0);
+}
+#endif
 
 #endif // CH_CLIENT_AES_SUITES
 #endif

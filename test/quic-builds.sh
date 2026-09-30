@@ -203,3 +203,99 @@ if [ -n "$soft_calls" ]; then
         "only an AES=hw object carries ghash_hw.c" >&2
     exit 1
 fi
+
+# AES=runtime (docs/decisions.md 81). Its suite build hands the
+# instructions traffic keys on a CPU that has them, so ct.h asks it for
+# CH_NATIVE_AES as it asks AES=hw, and the peripheral's statement does not
+# stand in for it. Each refusal is checked alone, as above.
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES "$tu"; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM with AES=runtime and CH_NATIVE_AES must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=runtime without CH_NATIVE_AES compiled; ct.h must refuse it" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME \
+    -DCH_AES_EXTERN_CONSTANT_TIME "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=runtime compiled with CH_AES_EXTERN_CONSTANT_TIME in place" \
+        "of CH_NATIVE_AES; ct.h must refuse it" >&2
+    exit 1
+fi
+# The same pair over QUIC, where quic_packet.c hands AES the Handshake and
+# 1-RTT keys.
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES quic_packet.c; then
+    echo "quic-builds: quic_packet.c under the suite with AES=runtime and CH_NATIVE_AES must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME quic_packet.c 2>/dev/null; then
+    echo "quic-builds: a QUIC suite build on AES=runtime without CH_NATIVE_AES compiled; ct.h must refuse it" >&2
+    exit 1
+fi
+
+# The build AES=runtime has nothing to choose in, a TCP object without the
+# suite, is refused by cfg.h, and so is AES=runtime beside either other
+# AES define, by aes_block.h. A QUIC object and a suite object compile.
+runtime_tu() { # $@ = defines: compiles one file that reads cfg.h and aes_block.h
+    printf '#include "cfg.h"\n#include "aes_block.h"\n' > "$tu"
+    "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_NATIVE_AES "$@" "$tu"
+}
+if runtime_tu -DCH_AES_RUNTIME 2>/dev/null; then
+    echo "quic-builds: AES=runtime in a TCP object without the suite compiled; cfg.h must refuse it" >&2
+    exit 1
+fi
+for other in -DCH_AES_HW -DCH_AES_EXTERN; do
+    if runtime_tu -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME "$other" 2>/dev/null; then
+        echo "quic-builds: AES=runtime beside $other compiled; aes_block.h must refuse it" >&2
+        exit 1
+    fi
+done
+if ! runtime_tu -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME ||
+    ! runtime_tu -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME; then
+    echo "quic-builds: AES=runtime over QUIC and under the suite must compile" >&2
+    exit 1
+fi
+
+# The table beside the instructions. quic_aes_soft.c compiles in an
+# AES=runtime QUIC suite object, where it defines the two aes_soft_ entries
+# and neither of aes_block.h's own, which aes_hw.c holds there, and no
+# AES-256. A TCP suite object on AES=runtime holds no table, and the file
+# refuses the suite there as it does on AES=soft.
+if ! "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES quic_aes_soft.c; then
+    echo "quic-builds: quic_aes_soft.c in an AES=runtime QUIC suite object must compile" >&2
+    exit 1
+fi
+soft_defs=$(nm -g "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | sort | tr '\n' ' ')
+if [ "$soft_defs" != "aes_soft_cipher_block aes_soft_expand_round_keys " ]; then
+    echo "quic-builds: quic_aes_soft.c on AES=runtime defines [$soft_defs];" \
+        "it must define aes_soft_cipher_block and aes_soft_expand_round_keys alone" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME \
+    -DCH_NATIVE_AES quic_aes_soft.c 2>/dev/null; then
+    echo "quic-builds: quic_aes_soft.c in an AES=runtime TCP suite object compiled; it must refuse the suite" >&2
+    exit 1
+fi
+
+# AES=runtime's GHASH: gcm.c calls both ghash_hw.c entries in each QUIC
+# object, which holds the table too and runs a schedule on the cipher it
+# records, with and without the suite, and in the TCP suite object, which
+# holds no table and runs every schedule on the instructions.
+for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME" \
+    "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME -DCH_SUITE_AES_GCM -DCH_NATIVE_AES" \
+    "-DCH_AES_RUNTIME -DCH_SUITE_AES_GCM -DCH_NATIVE_AES"; do
+    # shellcheck disable=SC2086 # one define per word
+    if ! "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs gcm.c; then
+        echo "quic-builds: gcm.c under $defs must compile" >&2
+        exit 1
+    fi
+    runtime_calls=$(nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' ')
+    if [ "$runtime_calls" != "gcm_hash_data_hw gcm_multiply_by_subkey_hw " ]; then
+        echo "quic-builds: gcm.c under $defs calls [$runtime_calls] of ghash_hw.c;" \
+            "it must call gcm_multiply_by_subkey_hw and gcm_hash_data_hw" >&2
+        exit 1
+    fi
+done

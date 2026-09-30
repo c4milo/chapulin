@@ -120,6 +120,18 @@ struct Io {
 };
 #endif
 
+#ifdef CH_AES_RUNTIME
+// Whether this CPU has the AES and carry-less multiply instructions, as
+// your own probe found (cfg.h), in an AES=runtime build: the value
+// Config::aes_instructions() writes into ch_cfg.aes_instructions. chapulin
+// probes nothing, and every init refuses a Config that states neither
+// (docs/decisions.md 81).
+enum class AesInstructions : uint8_t {
+    present = CH_AES_INSTRUCTIONS_PRESENT,
+    absent = CH_AES_INSTRUCTIONS_ABSENT,
+};
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A QUIC Version field value (quic_cfg.h): the original version
 // Config::original_version() names and the version each packet call and
@@ -323,6 +335,15 @@ class Config {
         cfg_.epoch_io = ctx;
         return *this;
     }
+
+#ifdef CH_AES_RUNTIME
+    // Your CPU probe's answer, AES=runtime builds only
+    // (ch_cfg.aes_instructions). Every init refuses a Config without one.
+    Config &aes_instructions(AesInstructions answer) {
+        cfg_.aes_instructions = static_cast<uint8_t>(answer);
+        return *this;
+    }
+#endif
 
 #ifdef CH_RAND_SESSION
     // The session's own randomness source, RAND=session builds only

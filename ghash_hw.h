@@ -2,9 +2,12 @@
 // AEAD_AES_128_GCM that an AES=hw build moves out of gcm.c. Under
 // CH_AES_HW, gcm.c's multiply_by_subkey and hash_data call the two
 // entries below; under AES=soft and AES=extern they run their own
-// portable bodies. The Makefile AES variable picks which, and never both
-// in one object: AES=hw compiles ghash_hw.c beside aes_hw.c,
-// and the other two values compile neither.
+// portable bodies. The Makefile AES variable picks which: AES=hw compiles
+// ghash_hw.c beside aes_hw.c, and AES=soft and AES=extern compile
+// neither. AES=runtime compiles both files, and gcm.c calls these two for
+// a schedule the AES instructions run and its portable bodies for one the
+// table runs (aes_schedule.h), so a session whose caller found no
+// instructions runs no carry-less multiply.
 //
 // Two entries rather than one. The multiply alone is what gcm.c
 // needs for the block of lengths that ends GHASH, and what
@@ -27,7 +30,7 @@
 #ifndef CH_GHASH_HW_H
 #define CH_GHASH_HW_H
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#ifdef CH_AES_HW
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -55,6 +58,6 @@ void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_
 void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
                       size_t n);
 
-#endif // CH_AES_HW
+#endif // CH_AES_HW || CH_AES_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

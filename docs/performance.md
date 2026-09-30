@@ -33,6 +33,10 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4320** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3368 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15706** | — |
+| `ch_tls` under `ROLE=server SUITE=aesgcm AES=runtime` | 2280 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm AES=runtime`** (2048 buffer) | **4328** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm AES=runtime` | 3376 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its floor) | **15714** | — |
 
 ### Peak stack
 
@@ -109,6 +113,15 @@ larger for `TRUST=webpki`:
   ([`docs/decisions.md`](decisions.md) 58);
 - a webpki client's configuration holds the caller's suite order, a
   pointer and a count ([`docs/decisions.md`](decisions.md) 80).
+
+**`AES=runtime`.** The same two suite builds on `AES=runtime` hold one more
+byte in `ch_cfg`, `aes_instructions`, the caller's answer about the AES
+instructions ([`docs/decisions.md`](decisions.md) 81). The pointer that
+follows it aligns to 8 bytes, so each session struct is 8 bytes larger than
+the `AES=hw` build's, and `ch_quic` in the QUIC object colibri links, which
+the script prints, is 8 bytes larger too. The value runs on arm64 and
+x86-64 alone, so these rows are host figures as well. `bench/sram.sh` does
+not measure the stack of an `AES=runtime` build.
 
 ### The receive buffer
 

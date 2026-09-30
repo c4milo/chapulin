@@ -30,19 +30,34 @@
 
 // AES-256, which TLS_AES_256_GCM_SHA384 takes (RFC 9846 §9.1,
 // rfc9846.txt:4540-4543). A library object compiles it only under
-// -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw or AES=extern, so
-// it runs on the AES instructions in aes_hw.c or on the image's
-// ch_aes_block through aes_extern.c. A test binary or a proof harness
-// defines CH_AES_256_TEST to compile it without the suite: on AES=soft
-// that is the software reference in quic_aes_soft.c, which holds the
-// hardware path to FIPS 197 where CBMC cannot read an intrinsic, on
+// -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw, AES=runtime or
+// AES=extern, so it runs on the AES instructions in aes_hw.c or on the
+// image's ch_aes_block through aes_extern.c. A test binary or a proof
+// harness defines CH_AES_256_TEST to compile it without the suite: on
+// AES=soft that is the software reference in quic_aes_soft.c, which holds
+// the hardware path to FIPS 197 where CBMC cannot read an intrinsic, on
 // AES=hw it is the instructions a suite build runs, and on AES=extern it
 // is the hook with a 32-byte key. The Makefile's
 // LIB_DEF never carries CH_AES_256_TEST, and quic_aes_soft.c refuses the
-// suite define outright. CH_AES_256 is the one name the sources below
-// test, so neither condition is spelled twice.
+// suite define outside AES=runtime and holds no AES-256 under it.
+// CH_AES_256 is the one name the sources below test, so neither condition
+// is spelled twice.
 #if defined(CH_SUITE_AES_GCM) || defined(CH_AES_256_TEST)
 #define CH_AES_256
+#endif
+
+// An AES=runtime QUIC object holds two ciphers, and each key runs on one:
+// aes_hw.c's on the AES instructions, under aes_block.h's own entry
+// names, and quic_aes_soft.c's on the S-box table, under the aes_soft_
+// names. The table runs QUIC's public keys alone, the Initial keys when
+// the caller's probe found no AES instructions (cfg.h) and the Retry key
+// always, and every schedule records which cipher expanded it
+// (aes_schedule.h). A traffic key runs on the instructions alone. An
+// AES=runtime TCP object has no public key to run, so it holds the
+// instructions alone, as AES=hw does. CH_AES_TWO_CIPHERS is the one name
+// the sources test for the QUIC object (docs/decisions.md 81).
+#if defined(CH_AES_RUNTIME) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+#define CH_AES_TWO_CIPHERS
 #endif
 #define AES_256_KEY 32        // FIPS 197 Table 3, Nk = 8 words
 #define AES_256_ROUNDS 14     // FIPS 197 Table 3, Nr for Nk = 8
@@ -139,7 +154,10 @@ typedef struct aes_traffic_key aes_traffic_key;
 // TLS_AES_128_GCM_SHA256 and AES_256_KEY for TLS_AES_256_GCM_SHA384, the
 // "key" length the suite fixes (RFC 9846 §7.3). The key is secret, and
 // this build runs AES on the instructions or on the image's peripheral
-// alone (ct.h), so no table in this tree is indexed with it.
+// alone (ct.h), so no table in this tree is indexed with it. An
+// AES=runtime QUIC object holds the table beside the instructions for
+// public keys, and this call records the instructions in k whatever the
+// caller's probe found, so the table never runs a traffic key.
 //
 // Requires: k is not NULL and points at one whole aes_traffic_key, so the
 // caller includes aes_traffic_key.h; key points at key_len readable bytes;
@@ -223,13 +241,25 @@ void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BL
 // Connection ID changes and so do the keys (rfc9001.txt:1092-1094); the
 // caller passes the new one and this call reads nothing it kept.
 //
+// An AES=runtime object's declaration takes one more argument,
+// aes_instructions, the session's ch_cfg.aes_instructions.
+// CH_AES_INSTRUCTIONS_PRESENT expands both keys on the AES instructions
+// and every other value on the table, and k records which
+// (aes_schedule.h), so each block run under k takes the cipher that
+// expanded it. Both keys are public, so the table leaks nothing (INV-26).
+//
 // Returns CH_OK and writes k whole. Returns CH_EINVAL and writes
 // nothing when dcid_len is above CH_QUIC_DCID_MAX, or when endpoint is
 // neither of the two names above; k keeps whatever it held. No other
 // code can be returned: the derivation itself cannot fail.
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#ifdef CH_AES_RUNTIME
+int aes_public_key_initial(aes_public_key *k, uint8_t aes_instructions, uint32_t version,
+                           const uint8_t *dcid, size_t dcid_len, uint8_t endpoint);
+#else
 int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *dcid,
                            size_t dcid_len, uint8_t endpoint);
+#endif
 
 // Writes the Retry integrity tag key of one QUIC version into k, expanded
 // into its round keys: in version 1 the 128-bit constant
@@ -239,7 +269,10 @@ int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *d
 // (rfc9369.txt:176-188). It leaves k->iv and k->hp zero, because each RFC
 // prints the nonce the caller passes to gcm_seal (rfc9001.txt:1502,
 // rfc9369.txt:184) and a Retry packet carries no header protection.
-// quic_retry.c is the only caller, and it builds k on its own stack.
+// quic_retry.c is the only caller, and it builds k on its own stack. An
+// AES=runtime object expands it on the table whatever the caller's probe
+// found, because ch_srv_quic_retry_tag takes no configuration to read the
+// probe from; the key is printed, so the table leaks nothing (INV-26).
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
 // the caller includes aes_public_key.h; version is one

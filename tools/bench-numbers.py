@@ -100,6 +100,14 @@ MEMORY = [
     ("**total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor)",
      [["static_working_set_webpki_aes_arm64"]]),
     ("peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`)", [["stack_connect_webpki_aes"]]),
+    ("`ch_tls` under `ROLE=server SUITE=aesgcm AES=runtime`",
+     [["session_struct_server_aes_runtime_arm64"]]),
+    ("**total static working set, `ROLE=server SUITE=aesgcm AES=runtime`** (2048 buffer)",
+     [["static_working_set_server_aes_runtime_arm64"]]),
+    ("`ch_tls` under `TRUST=webpki SUITE=aesgcm AES=runtime`",
+     [["session_struct_webpki_aes_runtime_arm64"]]),
+    ("**total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its "
+     "floor)", [["static_working_set_webpki_aes_runtime_arm64"]]),
 ]
 
 

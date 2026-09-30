@@ -37,6 +37,13 @@
 // statement about what the object contains. aes_hw.c states why
 // nothing here probes a CPU at run time.
 //
+// AES=runtime compiles this file with no instruction flag, as it compiles
+// aes_hw.c: the architecture picks the instruction, and the pragma below
+// puts the target attribute that turns it on onto each function in this
+// file and on no function outside it. gcm.c calls this file only for a
+// schedule the AES instructions run (aes_schedule.h), so a session whose
+// caller's probe found no instructions runs no carry-less multiply.
+//
 // Bit order. SP 800-38D writes a block as a polynomial whose x^0
 // coefficient is the most significant bit of byte 0. Reading the 16
 // bytes big-endian into a 128-bit integer therefore puts x^0 at integer
@@ -66,25 +73,66 @@
 #include "ghash_hw.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#ifdef CH_AES_HW
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
 
 #include <stddef.h>
 #include <string.h>
 
 #include "ct.h"
 
-#ifdef __ARM_FEATURE_AES
-#include <arm_neon.h>
+// Which instruction the multiply below takes: PMULL where GHASH_HW_ARM is
+// defined, and PCLMULQDQ where it is not. Under AES=hw the build's flags
+// say which, and under AES=runtime the architecture does, because no flag
+// turns the instruction on.
+#ifdef CH_AES_RUNTIME
+#ifdef __aarch64__
+#define GHASH_HW_ARM
+#elif !defined(__x86_64__)
+#error "AES=runtime needs an arm64 or x86-64 target, whose carry-less multiply it can run"
+#endif
+#elif defined(__ARM_FEATURE_AES)
+#define GHASH_HW_ARM
+#elif !defined(__PCLMUL__)
+#error                                                                                             \
+    "AES=hw needs the carry-less multiply: compile with -march=armv8-a+crypto or -maes -mpclmul, or build AES=soft"
+#endif
 
+#ifdef GHASH_HW_ARM
+#include <arm_neon.h>
+#else
+#include <wmmintrin.h>
+#endif
+
+// Under AES=runtime, every function from here to the pop at the end of
+// this file carries the target attribute that turns the instruction on:
+// "+aes", the Arm AES extension, which the Arm C Language Extensions give
+// the 64-bit PMULL, or "pclmul", x86-64's PCLMULQDQ. aes_hw.c states how
+// each compiler's pragma applies it.
+#ifdef CH_AES_RUNTIME
+#ifdef __clang__
+#ifdef GHASH_HW_ARM
+#pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
+#else
+#pragma clang attribute push(__attribute__((target("pclmul"))), apply_to = function)
+#endif
+#else
+#pragma GCC push_options
+#ifdef GHASH_HW_ARM
+#pragma GCC target("+aes")
+#else
+#pragma GCC target("pclmul")
+#endif
+#endif
+#endif
+
+#ifdef GHASH_HW_ARM
 // high:low = the 128-bit carry-less product of a and b, on PMULL.
 static void carryless_multiply(uint64_t a, uint64_t b, uint64_t *high, uint64_t *low) {
     uint64x2_t product = vreinterpretq_u64_p128(vmull_p64((poly64_t)a, (poly64_t)b));
     *low = vgetq_lane_u64(product, 0);
     *high = vgetq_lane_u64(product, 1);
 }
-#elif defined(__PCLMUL__)
-#include <wmmintrin.h>
-
+#else
 // high:low = the 128-bit carry-less product of a and b, on PCLMULQDQ.
 // The immediate 0x00 multiplies the low 64-bit lane of one operand by the
 // low lane of the other.
@@ -94,9 +142,6 @@ static void carryless_multiply(uint64_t a, uint64_t b, uint64_t *high, uint64_t 
     *low = (uint64_t)_mm_cvtsi128_si64(product);
     *high = (uint64_t)_mm_cvtsi128_si64(_mm_unpackhi_epi64(product, product));
 }
-#else
-#error                                                                                             \
-    "AES=hw needs the carry-less multiply: compile with -march=armv8-a+crypto or -maes -mpclmul, or build AES=soft"
 #endif
 
 // One GF(2^128) element as a 128-bit integer in two words: high holds
@@ -232,5 +277,13 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
     ct_wipe(&s, sizeof s);
 }
 
-#endif // CH_AES_HW
+#ifdef CH_AES_RUNTIME
+#ifdef __clang__
+#pragma clang attribute pop
+#else
+#pragma GCC pop_options
+#endif
+#endif
+
+#endif // CH_AES_HW || CH_AES_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

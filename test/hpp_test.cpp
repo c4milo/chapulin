@@ -433,6 +433,15 @@ static void test_quic() {
     cfg.context(nullptr);
     CHECK(cfg.raw().quic_original_version == CH_QUIC_VERSION_1);
     CHECK(cfg.raw().ticket_quic_version == CH_QUIC_VERSION_2);
+#ifdef CH_AES_RUNTIME
+    // The probe's answer is written to ch_cfg.aes_instructions as given, and an
+    // unset one stays 0, which every init refuses (docs/decisions.md 81).
+    CHECK(cfg.raw().aes_instructions == 0);
+    cfg.aes_instructions(chapulin::AesInstructions::absent);
+    CHECK(cfg.raw().aes_instructions == CH_AES_INSTRUCTIONS_ABSENT);
+    cfg.aes_instructions(chapulin::AesInstructions::present);
+    CHECK(cfg.raw().aes_instructions == CH_AES_INSTRUCTIONS_PRESENT);
+#endif
 
     chapulin::Quic q;
     CHECK(q.init(cfg) == chapulin::Status::invalid);

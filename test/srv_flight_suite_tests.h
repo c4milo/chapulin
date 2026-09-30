@@ -23,7 +23,7 @@
 // there at all.
 static void test_flight_select_suite(void) {
     selection sel;
-#if defined(CH_AES_HW) && defined(CH_NATIVE_AES)
+#if (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) && defined(CH_NATIVE_AES)
     const uint16_t first_of_three = SUITE_AES_256_GCM_SHA384;
     const uint16_t first_of_two = SUITE_AES_128_GCM_SHA256;
 #else
@@ -162,6 +162,53 @@ static void test_flight_key_suite(void) {
     rec_dir_init_suite(&peer, sess.rd_secret, SUITE_AES_128_GCM_SHA256);
     CHECK(seals_and_opens(&peer, &sess.rd));
 }
+
+#ifdef CH_AES_RUNTIME
+// An AES=runtime server whose caller found no AES instructions holds
+// ChaCha20 alone (docs/decisions.md 81). From an offer of all three it
+// selects ChaCha20, and from an offer of AES-GCM alone nothing, with
+// handshake_failure. A retry cookie that names AES-128-GCM, which a
+// server with the instructions minted under the same cookie key, is
+// refused with illegal_parameter, because this session cannot run the
+// suite the cookie holds it to; the same cookie opens under the present
+// answer.
+static void test_flight_without_aes(void) {
+    selection sel;
+    flight_aes_answer = CH_AES_INSTRUCTIONS_ABSENT;
+    flight_reset();
+    offer_x25519();
+    flight_hello.suites =
+        SRV_SUITE_CHACHA20_POLY1305 | SRV_SUITE_AES_128_GCM | SRV_SUITE_AES_256_GCM;
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
+    CHECK(sel.suite == SUITE_CHACHA20_POLY1305_SHA256);
+    offer_x25519();
+    flight_hello.suites = SRV_SUITE_AES_128_GCM | SRV_SUITE_AES_256_GCM;
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
+
+    flight_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
+    flight_reset();
+    srv_begin(&hs);
+    offer_x25519();
+    parse_result.suites = SRV_SUITE_AES_128_GCM;
+    parse_result.shares = 0;
+    feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
+    CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK && sel.need_retry == 1);
+    CHECK(srv_send_hello_retry_request(&hs, &flight_hello, &sel) == CH_OK);
+    memcpy(cookie_echo, hs.cookie, hs.cookie_len);
+    flight_hello.cookie = cookie_echo;
+    flight_hello.cookie_len = hs.cookie_len;
+    flight_hello.shares = flight_hello.groups;
+    selection second;
+    memset(&second, 0, sizeof second);
+    sess.cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_EPROTO);
+    CHECK(hs.alert == ALERT_ILLEGAL_PARAMETER && second.suite == 0);
+    sess.cfg.aes_instructions = CH_AES_INSTRUCTIONS_PRESENT;
+    CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_OK);
+    CHECK(second.suite == SUITE_AES_128_GCM_SHA256);
+}
+#endif
 
 #endif // CH_SUITE_AES_GCM
 #endif

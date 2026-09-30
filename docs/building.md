@@ -72,7 +72,7 @@ Other targets:
   holds all three groups in every build (decisions 54 and 63).
   `SUITE=aesgcm` adds `TLS_AES_128_GCM_SHA256` and
   `TLS_AES_256_GCM_SHA384` to a `TRUST=webpki` client or a server role,
-  and it takes one of two `AES` values. `AES=hw` runs AES on the
+  and it takes one of three `AES` values. `AES=hw` runs AES on the
   compiler's intrinsics and needs `-DCH_NATIVE_AES` in `CFLAGS`, the
   statement that the part's AES instructions and carry-less multiply run
   in constant time (decision 50). `AES=extern` runs every AES block in a
@@ -84,6 +84,19 @@ Other targets:
   tree can check either. The `AES=hw` build offers and prefers
   `TLS_AES_256_GCM_SHA384`, then `TLS_AES_128_GCM_SHA256`, then ChaCha20,
   and the `AES=extern` build keeps ChaCha20 first (decision 80).
+  `AES=runtime` builds one object for CPUs with and without the AES
+  instructions, on arm64 or x86-64 (decision 81). It needs no instruction
+  flag, because the two files that run the instructions turn them on for
+  their own functions, and under `SUITE=aesgcm` it needs
+  `-DCH_NATIVE_AES` as `AES=hw` does. Your program probes the CPU and
+  sets `ch_cfg.aes_instructions` in every session's configuration to
+  `CH_AES_INSTRUCTIONS_PRESENT` or `CH_AES_INSTRUCTIONS_ABSENT`; every
+  init call refuses any other value, 0 included. Present behaves as
+  `AES=hw`. Absent runs no AES instruction: the session holds ChaCha20
+  alone, a QUIC object runs its Initial packets on the software AES, and
+  init refuses a suite list that names an AES-GCM suite. The value needs
+  an object that carries AES, so a TCP object takes it only with
+  `SUITE=aesgcm`, and the Makefile refuses it otherwise.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

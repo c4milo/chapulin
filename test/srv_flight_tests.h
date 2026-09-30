@@ -134,6 +134,7 @@ static void flight_reset(void) {
     sess.cfg.srv.ecdsa_p256.priv = der;
     sess.cfg.srv.ecdsa_p256.pub = der;
     sess.cfg.srv.rsa_pss = sess.cfg.srv.ecdsa_p256;
+    FLIGHT_AES_ANSWER(sess.cfg);
     sess.peer_limit = CH_TX_PT;
     sess.alpn_selected = CH_ALPN_NONE;
     sess.hash_len = SHA256_LEN;

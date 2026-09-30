@@ -145,6 +145,14 @@ static const ch_alpn_protocol server_alpn[2] = {
 static uint8_t server_buf[CH_MIN_RXBUF];
 static uint8_t client_buf[CH_MIN_RXBUF];
 
+#ifdef CH_AES_RUNTIME
+// The answers an AES=runtime row gives each end's ch_cfg.aes_instructions:
+// the instructions present unless the row says otherwise
+// (test/quic_loop_runtime.h).
+static uint8_t server_aes = CH_AES_INSTRUCTIONS_PRESENT;
+static uint8_t client_aes = CH_AES_INSTRUCTIONS_PRESENT;
+#endif
+
 static void server_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = server_buf;
@@ -168,6 +176,9 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
+#ifdef CH_AES_RUNTIME
+    cfg->aes_instructions = server_aes;
+#endif
 }
 
 // The client half both builds share: one offered protocol, the transport
@@ -185,6 +196,9 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
     cfg->on_ticket = keep_ticket;
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
+#endif
+#ifdef CH_AES_RUNTIME
+    cfg->aes_instructions = client_aes;
 #endif
 }
 
@@ -356,8 +370,18 @@ static size_t handshake_messages(void) {
 #ifdef CH_RAND_SESSION
 #include "quic_loop_session.h"
 #endif
+#ifdef CH_AES_RUNTIME
+#include "quic_loop_runtime.h"
+#endif
 
-int main(void) {
+int main(int argc, char **argv) {
+#ifdef CH_AES_RUNTIME
+    if (argc > 1 && strcmp(argv[1], "absent") == 0) {
+        return test_quic_runtime_absent();
+    }
+#endif
+    (void)argc;
+    (void)argv;
 #ifdef CH_PIN_ECDSA
     test_raw_resumption();
     test_close_after_failure();
@@ -376,6 +400,9 @@ int main(void) {
 #endif
 #ifdef CH_RAND_SESSION
     test_session();
+#endif
+#ifdef CH_AES_RUNTIME
+    test_quic_runtime();
 #endif
     if (failures == 0) {
         (void)printf("quic_loop: a QUIC client resumed a ticket from this tree's server with no"

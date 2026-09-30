@@ -1,0 +1,14 @@
+invariant: INV-26
+file: aes.c
+catches: proof/prove-one.sh aes_runtime
+reason: an AES=runtime QUIC object expands an Initial key on the AES
+  instructions for every answer but 0, the absent one included, so a
+  session whose caller's probe found none executes AES instructions
+  before its first packet. The aes_runtime proof's stubs assert that only
+  the answer present runs the instructions, over every byte an answer
+  can be.
+
+--- old
+    if (aes_instructions == CH_AES_INSTRUCTIONS_PRESENT) {
+--- new
+    if (aes_instructions != 0) {

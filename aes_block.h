@@ -5,7 +5,10 @@
 // default), aes_hw.c (AES=hw, the compiler's AES intrinsics) or
 // aes_extern.c (AES=extern, a block function the caller supplies).
 // One source per object, the way PIN puts one pinned algorithm in one
-// object.
+// object. AES=runtime is the one value with two: aes_hw.c defines these
+// entries, and a QUIC object holds quic_aes_soft.c beside it under the
+// aes_soft_ names below, which the caller's probe result chooses between
+// for each public key (docs/decisions.md 81).
 //
 // aes.c is the only library source that calls these. It owns both
 // key types, derives the RFC 9001 §5.2 keys into an aes_public_key,
@@ -20,7 +23,8 @@
 // none of the three implementations can build a key object at all,
 // whatever it does with the bytes it is handed.
 //
-// Detection is the compiler's, at build time, and nothing here probes a
+// Detection is the compiler's, at build time, or under AES=runtime the
+// caller's, at run time (ch_cfg.aes_instructions). Nothing here probes a
 // CPU or asks an operating system. aes_hw.c states why.
 #ifndef CH_AES_BLOCK_H
 #define CH_AES_BLOCK_H
@@ -28,11 +32,14 @@
 // All three sources define the same two entries, so two of them in one
 // object would not link. This says so at the preprocessor instead, and
 // it sits outside the transport guard below so it answers whatever build
-// reads this header. The Makefile AES variable cannot produce both
+// reads this header. The Makefile AES variable cannot produce two of the
 // defines; a firmware tree compiling these sources with its own build
-// system can, which is who this line is for.
-#if defined(CH_AES_HW) && defined(CH_AES_EXTERN)
-#error "CH_AES_HW and CH_AES_EXTERN are exclusive: declare at most one (docs/quic.md)"
+// system can, which is who this line is for. AES=runtime is the one value
+// that puts two implementations in one object, and it names its own
+// define, CH_AES_RUNTIME, rather than pairing the other two.
+#if defined(CH_AES_HW) + defined(CH_AES_EXTERN) + defined(CH_AES_RUNTIME) > 1
+#error                                                                                             \
+    "CH_AES_HW, CH_AES_EXTERN and CH_AES_RUNTIME are exclusive: declare at most one (docs/quic.md)"
 #endif
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
@@ -96,6 +103,22 @@ void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
 // allowed. Writes AES_BLOCK bytes and cannot fail.
 void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
                           const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
+#endif
+
+#ifdef CH_AES_TWO_CIPHERS
+// The second cipher of an AES=runtime QUIC object (aes.h). aes_hw.c
+// defines the four entries above on the AES instructions, and
+// quic_aes_soft.c defines these two on the S-box table, with the contracts
+// of aes_expand_round_keys and aes_cipher_block and the same round-key
+// layout, so a schedule either one expands reads the same to the other.
+// aes.c is their one caller, for a public key alone: the Initial keys of a
+// session whose caller found no AES instructions, and the Retry key. A
+// traffic key never runs on them, because aes_traffic_key_init records the
+// instructions in its schedule (aes_schedule.h).
+void aes_soft_expand_round_keys(const uint8_t key[AES_128_KEY],
+                                uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]);
+void aes_soft_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
+                           const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
 #endif
 
 #ifdef CH_AES_EXTERN

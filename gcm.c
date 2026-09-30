@@ -14,13 +14,21 @@
 // running multiple in the GF(2^128) multiply, the keystream, the tag mask
 // and the tag this call expected. A public key does not need it; the
 // suite build runs these same bodies under a traffic key, and one body
-// serves both. ct.h refuses that build unless it also takes AES=hw or
-// AES=extern, so no table in this tree sits underneath it.
+// serves both. ct.h refuses that build unless it also takes AES=hw,
+// AES=runtime or AES=extern, and an AES=runtime object runs every traffic
+// key on the instructions (aes.h), so no table in this tree sits
+// underneath it.
 //
 // GHASH has two bodies, and the Makefile AES variable picks one.
 // AES=soft and AES=extern run the portable multiply below, 128 masked
 // steps per block. AES=hw runs ghash_hw.c's, four carry-less
 // products and a reduction per block, and compiles no portable body.
+// An AES=runtime QUIC object (CH_AES_TWO_CIPHERS, aes.h) compiles both
+// and runs ghash_hw.c's for a schedule the AES instructions run and the
+// portable one for a schedule the table runs (aes_schedule.h), so a
+// session whose caller found no AES instructions runs no carry-less
+// multiply either. An AES=runtime TCP object holds no table and runs
+// ghash_hw.c's alone, as AES=hw does.
 // Under an AES=extern suite build the portable multiply runs under a
 // secret hash subkey. Its masks keep every subkey bit off a branch and
 // off a memory index, and it multiplies no integers, so it needs no
@@ -43,7 +51,7 @@
 #include <string.h>
 
 #include "ct.h"
-#ifdef CH_AES_HW
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
 #include "ghash_hw.h"
 #endif
 
@@ -51,12 +59,19 @@
 // subkey H.
 static const uint8_t ZERO_BLOCK[AES_BLOCK] = {0};
 
-#ifdef CH_AES_HW
-// AES=hw: ghash_hw.c computes both GHASH steps on the carry-less
-// multiply instruction, and the portable bodies under #else are not
-// compiled. CBMC cannot read an intrinsic, so the proofs cover the
-// portable bodies alone, and test/ghash_equiv_test.c holds each entry
-// below to its portable twin byte for byte.
+// The objects that run every schedule on the AES instructions, and so
+// hold ghash_hw.c's GHASH alone: AES=hw, and an AES=runtime object with
+// no table beside the instructions.
+#if defined(CH_AES_HW) || (defined(CH_AES_RUNTIME) && !defined(CH_AES_TWO_CIPHERS))
+#define GCM_GHASH_CARRYLESS_ALONE
+#endif
+
+#ifdef GCM_GHASH_CARRYLESS_ALONE
+// ghash_hw.c computes both GHASH steps on the carry-less multiply
+// instruction, and the portable bodies under #else are not compiled.
+// CBMC cannot read an intrinsic, so the proofs cover the portable bodies
+// alone, and test/ghash_equiv_test.c holds each entry below to its
+// portable twin byte for byte.
 static void multiply_by_subkey(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
     gcm_multiply_by_subkey_hw(acc, subkey);
 }
@@ -126,7 +141,50 @@ static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
         off += take;
     }
 }
-#endif // CH_AES_HW
+#endif // GCM_GHASH_CARRYLESS_ALONE
+
+// The GHASH body that runs under k. An AES=runtime QUIC object holds two
+// (the paragraph at the top of this file): the carry-less multiply for a
+// schedule on the instructions, and the portable one for a schedule on
+// the table, which only QUIC's public keys use. Every other object holds
+// one body, and k chooses nothing. k->instructions is the caller's probe
+// result or a constant (aes_schedule.h), so the branch reads a public
+// value.
+#ifdef CH_AES_TWO_CIPHERS
+static int ghash_on_instructions(const aes_key_schedule *k) {
+    return k->instructions == CH_AES_INSTRUCTIONS_PRESENT;
+}
+
+static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
+                           const uint8_t subkey[AES_BLOCK]) {
+    if (ghash_on_instructions(k)) {
+        gcm_multiply_by_subkey_hw(acc, subkey);
+        return;
+    }
+    multiply_by_subkey(acc, subkey);
+}
+
+static void ghash_data(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
+                       const uint8_t subkey[AES_BLOCK], const uint8_t *data, size_t n) {
+    if (ghash_on_instructions(k)) {
+        gcm_hash_data_hw(acc, subkey, data, n);
+        return;
+    }
+    hash_data(acc, subkey, data, n);
+}
+#else
+static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
+                           const uint8_t subkey[AES_BLOCK]) {
+    (void)k;
+    multiply_by_subkey(acc, subkey);
+}
+
+static void ghash_data(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
+                       const uint8_t subkey[AES_BLOCK], const uint8_t *data, size_t n) {
+    (void)k;
+    hash_data(acc, subkey, data, n);
+}
+#endif
 
 // SP 800-38D §6.4's last block holds the two lengths in bits, each as a
 // 64-bit big-endian value. The bytes are written one at a time, so this
@@ -148,8 +206,8 @@ static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t
     aes_encrypt_schedule(k, ZERO_BLOCK, subkey);
 
     memset(out, 0, AES_BLOCK);
-    hash_data(out, subkey, aad, aad_len);
-    hash_data(out, subkey, ct, n);
+    ghash_data(k, out, subkey, aad, aad_len);
+    ghash_data(k, out, subkey, ct, n);
 
     uint8_t lengths[AES_BLOCK];
     write_length_bits(lengths, aad_len);
@@ -157,7 +215,7 @@ static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t
     for (size_t i = 0; i < AES_BLOCK; i++) {
         out[i] = (uint8_t)(out[i] ^ lengths[i]);
     }
-    multiply_by_subkey(out, subkey);
+    ghash_multiply(k, out, subkey);
     ct_wipe(subkey, sizeof subkey);
 }
 

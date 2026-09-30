@@ -79,15 +79,18 @@ void ct_wipe(void *p, size_t n);
 // CH_NATIVE_WIDEMUL rather than beside the trust modes, because each is one
 // claim about what a part does with secret operands.
 //
-// A suite build takes one of two AES values, and each needs its own claim:
+// A suite build takes one of three AES values, and each needs its own claim:
 //
-//   CH_AES_HW or CH_AES_EXTERN
+//   CH_AES_HW, CH_AES_RUNTIME or CH_AES_EXTERN
 //                  AES=soft is the default and reads a 256-byte S-box at an
 //                  index computed from the key, so a secret key needs an
-//                  implementation with no table: AES=hw or AES=extern.
-//   CH_NATIVE_AES  under AES=hw, the build asserts that this part's AES
-//                  instructions and its carry-less multiply run in constant
-//                  time. AES-GCM needs both under one key: the AES rounds
+//                  implementation with no table: AES=hw, AES=runtime, whose
+//                  traffic keys run on the instructions alone, or
+//                  AES=extern.
+//   CH_NATIVE_AES  under AES=hw or AES=runtime, the build asserts that this
+//                  part's AES instructions and its carry-less multiply run
+//                  in constant time, where the part has them. AES-GCM needs
+//                  both under one key: the AES rounds
 //                  produce the keystream and the hash subkey, and under
 //                  AES=hw GHASH multiplies by that subkey on PMULL or
 //                  PCLMULQDQ (ghash_hw.c). __ARM_FEATURE_AES, __AES__ and
@@ -98,7 +101,11 @@ void ct_wipe(void *p, size_t n);
 //                  implementation. Firmware defines it with a vendor
 //                  statement that covers both instructions, and
 //                  aes_hw.c states what it covers. docs/decisions.md
-//                  entry 50 says why one define carries both.
+//                  entry 50 says why one define carries both. Under
+//                  AES=runtime whether the part has them is the caller's
+//                  answer at run time (cfg.h), and CH_NATIVE_AES keeps
+//                  this meaning: it is the build's statement about the
+//                  instructions where they exist (docs/decisions.md 81).
 //   CH_AES_EXTERN_CONSTANT_TIME
 //                  under AES=extern, the build asserts that the peripheral
 //                  behind the image's ch_aes_block runs in constant time,
@@ -119,12 +126,18 @@ void ct_wipe(void *p, size_t n);
 #ifndef CH_NATIVE_AES
 #error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif
+#elif defined(CH_AES_RUNTIME)
+#ifndef CH_NATIVE_AES
+#error                                                                                             \
+    "CH_SUITE_AES_GCM on AES=runtime needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
+#endif
 #elif defined(CH_AES_EXTERN)
 #ifndef CH_AES_EXTERN_CONSTANT_TIME
 #error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
 #endif
 #else
-#error "CH_SUITE_AES_GCM needs AES=hw or AES=extern: the AES=soft S-box is indexed with the key"
+#error                                                                                             \
+    "CH_SUITE_AES_GCM needs AES=hw, AES=runtime or AES=extern: the AES=soft S-box is indexed with the key"
 #endif
 #endif
 

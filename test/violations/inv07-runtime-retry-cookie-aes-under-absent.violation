@@ -1,0 +1,15 @@
+invariant: INV-7
+file: srv_flight.c
+catches: srv_flight_test_aes_runtime
+reason: an AES=runtime server whose caller's probe found no AES instructions
+  takes a second ClientHello whose cookie holds it to AES-128-GCM, which
+  a server with the instructions minted under the same cookie key. The
+  session then keys AES-GCM traffic on a CPU its caller said lacks the
+  instructions. test_flight_without_aes requires that retry to fail with
+  illegal_parameter under the absent answer and to open under the present
+  one.
+
+--- old
+    if (!suite_runs_here(&h->t->cfg, suite)) {
+--- new
+    if (!suite_runs_here(&h->t->cfg, SUITE_CHACHA20_POLY1305_SHA256)) {

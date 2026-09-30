@@ -69,24 +69,12 @@ static void sample_mask(const aes_public_key *k, const uint8_t *pkt, size_t pn_o
     aes_encrypt_block_hp(k, &pkt[pn_off + QUIC_PN_MAX_LEN], mask);
 }
 
-int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
-                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
-                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
-    // A version this build derives no keys for has no salt and no labels
-    // here, so it is refused before anything is derived.
-    if (!quic_version_derived(version)) {
-        return CH_EINVAL;
-    }
-    // The send key of RFC 9001 §5.2, under the caller's own endpoint.
-    // aes_public_key_initial returns CH_EINVAL for a dcid_len above
-    // CH_QUIC_DCID_MAX and for an endpoint that is neither of the two,
-    // which are the refusals this entry documents, so both bounds are
-    // checked in one place. It writes nothing outside k.
-    aes_public_key k;
-    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, endpoint);
-    if (rc != CH_OK) {
-        return rc;
-    }
+// quic_initial_seal after its key: every step but the version refusal
+// and the derivation, which each build's entry below makes first. k is
+// the send key of RFC 9001 §5.2, under the caller's own endpoint.
+static int seal_under(const aes_public_key *k, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                      size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                      size_t *out_len) {
     if (pn_len == 0 || pn_len > QUIC_PN_MAX_LEN || hdr_len < pn_len) {
         return CH_EINVAL;
     }
@@ -108,7 +96,7 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     // Packet protection first, header protection second, the order RFC
     // 9001 §5.3 states (rfc9001.txt:1129-1132).
     uint8_t nonce[AES_IV];
-    initial_nonce(&k, pn, nonce);
+    initial_nonce(k, pn, nonce);
     for (size_t i = 0; i < hdr_len; i++) {
         out[i] = hdr[i];
     }
@@ -116,11 +104,11 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     // including the packet number (rfc9001.txt:1141-1143). hdr holds
     // those bytes and out now holds a copy of them; the AEAD reads the
     // caller's, which no step here writes.
-    gcm_seal(&k, nonce, hdr, hdr_len, pt, pt_len, &out[hdr_len], &out[hdr_len + pt_len]);
+    gcm_seal(k, nonce, hdr, hdr_len, pt, pt_len, &out[hdr_len], &out[hdr_len + pt_len]);
 
     size_t pn_off = hdr_len - pn_len;
     uint8_t mask[AES_BLOCK];
-    sample_mask(&k, out, pn_off, mask);
+    sample_mask(k, out, pn_off, mask);
     // An Initial packet carries a long header, so the first mask byte
     // covers the low four bits of byte 0 and the next pn_len bytes
     // cover the packet number (rfc9001.txt:1164-1166,
@@ -133,21 +121,12 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     return CH_OK;
 }
 
-int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
-                      uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
-                      uint64_t *pn, size_t *pt_len) {
-    if (!quic_version_derived(version)) {
-        return CH_EINVAL;
-    }
-    // The receive key of RFC 9001 §5.2, under the endpoint the caller is
-    // not, built on this frame the way the send key is. It runs before
-    // this call reads a byte of pkt, so both refusals below touch no
-    // packet byte.
-    aes_public_key k;
-    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, peer_endpoint(endpoint));
-    if (rc != CH_OK) {
-        return rc;
-    }
+// quic_initial_open after its key, which each build's entry below derives
+// first: the receive key of RFC 9001 §5.2, under the endpoint the caller
+// is not. The derivation reads no byte of pkt, so both refusals before
+// this call touch no packet byte.
+static int open_under(const aes_public_key *k, uint8_t *pkt, size_t pkt_len, size_t pn_off,
+                      uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
     // RFC 9001 §5.4.2: an endpoint discards a packet that is not long
     // enough to hold a complete sample (rfc9001.txt:1280-1281). The
     // compares subtract rather than add, so neither side can wrap, and
@@ -157,7 +136,7 @@ int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     }
 
     uint8_t mask[AES_BLOCK];
-    sample_mask(&k, pkt, pn_off, mask);
+    sample_mask(k, pkt, pn_off, mask);
     // quic_header_unprotect uncovers byte 0 first, because its low two
     // bits carry the packet number length the rest of this call needs
     // (rfc9001.txt:1195-1198). It answers 1 to QUIC_PN_MAX_LEN and
@@ -174,10 +153,10 @@ int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     size_t hdr_len = pn_off + pn_len;
     size_t ct_len = pkt_len - hdr_len - GCM_TAG;
     uint8_t nonce[AES_IV];
-    initial_nonce(&k, recovered_pn, nonce);
+    initial_nonce(k, recovered_pn, nonce);
     // In place, which gcm.h admits as pt == ct: the plaintext
     // replaces the ciphertext where it sat, right after the header.
-    if (!gcm_open(&k, nonce, pkt, hdr_len, &pkt[hdr_len], ct_len, &pkt[hdr_len + ct_len],
+    if (!gcm_open(k, nonce, pkt, hdr_len, &pkt[hdr_len], ct_len, &pkt[hdr_len + ct_len],
                   &pkt[hdr_len])) {
         return CH_QUIC_DISCARD;
     }
@@ -185,5 +164,73 @@ int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     *pt_len = ct_len;
     return CH_OK;
 }
+
+// The two entries, once per build: an AES=runtime object's take the
+// caller's answer about the AES instructions first (quic_initial.h). Each
+// refuses a version this build derives no keys for before anything is
+// derived, because that version has no salt and no labels here. Then
+// aes_public_key_initial returns CH_EINVAL for a dcid_len above
+// CH_QUIC_DCID_MAX and for an endpoint that is neither of the two, which
+// are the other refusals these entries document, so both bounds are
+// checked in one place; it writes nothing outside k.
+#ifdef CH_AES_RUNTIME
+int quic_initial_seal(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
+                      const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
+                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                      uint8_t *out, size_t cap, size_t *out_len) {
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    aes_public_key k;
+    int rc = aes_public_key_initial(&k, aes_instructions, version, dcid, dcid_len, endpoint);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    return seal_under(&k, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+}
+
+int quic_initial_open(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
+                      const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
+                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    aes_public_key k;
+    int rc = aes_public_key_initial(&k, aes_instructions, version, dcid, dcid_len,
+                                    peer_endpoint(endpoint));
+    if (rc != CH_OK) {
+        return rc;
+    }
+    return open_under(&k, pkt, pkt_len, pn_off, largest_pn, pn, pt_len);
+}
+#else
+int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
+                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    aes_public_key k;
+    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, endpoint);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    return seal_under(&k, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+}
+
+int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
+                      uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
+                      uint64_t *pn, size_t *pt_len) {
+    if (!quic_version_derived(version)) {
+        return CH_EINVAL;
+    }
+    aes_public_key k;
+    int rc = aes_public_key_initial(&k, version, dcid, dcid_len, peer_endpoint(endpoint));
+    if (rc != CH_OK) {
+        return rc;
+    }
+    return open_under(&k, pkt, pkt_len, pn_off, largest_pn, pn, pt_len);
+}
+#endif
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

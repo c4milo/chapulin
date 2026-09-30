@@ -64,12 +64,23 @@ SESSION_WEBPKI_AES=$("$TMP/sz_webpki_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
 RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
+# The same two suite builds on AES=runtime, whose ch_cfg holds the caller's
+# answer about the AES instructions (docs/decisions.md 81). The value runs
+# on arm64 and x86-64 alone, so these rows are host figures too.
+RUNTIME_DEFS="-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES"
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER $RUNTIME_DEFS -I. -o "$TMP/sz_server_runtime" "$TMP/sz.c"
+SESSION_SERVER_RUNTIME=$("$TMP/sz_server_runtime" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $RUNTIME_DEFS -I. -o "$TMP/sz_webpki_runtime" "$TMP/sz.c"
+SESSION_WEBPKI_RUNTIME=$("$TMP/sz_webpki_runtime" | awk '{print $2}')
 # stack.py reads arm64 objects, and the arm64 cc this runs on defines
 # __ARM_FEATURE_AES by default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
-# QUIC key set records its suite and its section 6.6 count. The report
-# prints both; docs/performance.md's table does not carry them.
+# QUIC key set records its suite and its section 6.6 count. The same object
+# on AES=runtime comes third. The report prints all three;
+# docs/performance.md's table does not carry them.
 cat > "$TMP/szq.c" <<'EOF'
 #include <stdio.h>
 #include "quic.h"
@@ -85,6 +96,9 @@ QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -I. -o "$TMP/szq_aes" "$TMP/szq.c"
 QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $RUNTIME_DEFS -I. -o "$TMP/szq_runtime" "$TMP/szq.c"
+QUIC_SESSION_RUNTIME=$("$TMP/szq_runtime" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
@@ -136,8 +150,13 @@ echo "session struct (ROLE=server SUITE=aesgcm): ${SESSION_SERVER_AES} B"
 echo "static working set:      $((SESSION_SERVER_AES + RXBUF)) B (ROLE=server SUITE=aesgcm, ${RXBUF} B receive buffer)"
 echo "session struct (TRUST=webpki SUITE=aesgcm): ${SESSION_WEBPKI_AES} B"
 echo "static working set:      $((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm, its ${RXBUF_WEBPKI_AES} B floor)"
+echo "session struct (ROLE=server SUITE=aesgcm AES=runtime): ${SESSION_SERVER_RUNTIME} B"
+echo "static working set:      $((SESSION_SERVER_RUNTIME + RXBUF)) B (ROLE=server SUITE=aesgcm AES=runtime, ${RXBUF} B receive buffer)"
+echo "session struct (TRUST=webpki SUITE=aesgcm AES=runtime): ${SESSION_WEBPKI_RUNTIME} B"
+echo "static working set:      $((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm AES=runtime, its ${RXBUF_WEBPKI_AES} B floor)"
 echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking): ${QUIC_SESSION} B"
 echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
+echo "ch_quic (the same, SUITE=aesgcm AES=runtime): ${QUIC_SESSION_RUNTIME} B"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints.
@@ -237,6 +256,10 @@ TMPOUT="$TMP/results-sram.csv"
     row receive_buffer_webpki_aes "$RXBUF_WEBPKI_AES"
     row static_working_set_webpki_aes_arm64 "$((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES))"
     row stack_connect_webpki_aes "$(peak webpki_aes ch_connect)"
+    row session_struct_server_aes_runtime_arm64 "$SESSION_SERVER_RUNTIME"
+    row static_working_set_server_aes_runtime_arm64 "$((SESSION_SERVER_RUNTIME + RXBUF))"
+    row session_struct_webpki_aes_runtime_arm64 "$SESSION_WEBPKI_RUNTIME"
+    row static_working_set_webpki_aes_runtime_arm64 "$((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES))"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

@@ -105,19 +105,20 @@ static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
 }
 
 // The first suite in cfg.srv.cipher_suites that the client offered, or,
-// when that is unset, the first in suite_default_order, the order suite.h
-// states for this build and its client offers in (docs/decisions.md 80);
-// 0 when there is none.
+// when that is unset, the first in suite_session_default, the order suite.h
+// states for this build and its client offers in (docs/decisions.md 80),
+// ChaCha20 alone where an AES=runtime caller found no AES instructions
+// (docs/decisions.md 81); 0 when there is none.
 static uint16_t select_suite(const ch_cfg *cfg, uint8_t offered) {
 #ifdef CH_SUITE_AES_GCM
     if (cfg->srv.cipher_suites != NULL) {
         return srv_first_offered_suite(cfg->srv.cipher_suites, cfg->srv.cipher_suite_count,
                                        offered);
     }
-#else
-    (void)cfg;
 #endif
-    return srv_first_offered_suite(suite_default_order, SUITE_HELD_COUNT, offered);
+    size_t count = 0;
+    const uint16_t *order = suite_session_default(cfg, &count);
+    return srv_first_offered_suite(order, count, offered);
 }
 
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
@@ -221,7 +222,14 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
     }
     // srv_cookie_open refused a suite this build does not hold, so the
     // suite needs no second check here: it is whichever one srv_select
-    // chose for the first hello, AES-GCM included.
+    // chose for the first hello, AES-GCM included. In an AES=runtime
+    // object it may be a server's that shares the cookie key on a CPU with
+    // the AES instructions, and this session may lack them.
+#if defined(CH_AES_RUNTIME) && defined(CH_SUITE_AES_GCM)
+    if (!suite_runs_here(&h->t->cfg, suite)) {
+        return CH_EPROTO;
+    }
+#endif
     if (srv_group_bit(group) == 0) {
         return CH_EPROTO;
     }

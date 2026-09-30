@@ -11,7 +11,7 @@ reason: quic_aes_soft.c stops refusing -DCH_SUITE_AES_GCM, so a tree that
   compiler to refuse it.
 
 --- old
-#ifdef CH_SUITE_AES_GCM
+#if defined(CH_SUITE_AES_GCM) && !defined(CH_AES_TWO_CIPHERS)
 #error "CH_SUITE_AES_GCM never compiles AES=soft: its S-box is indexed with the key (INV-26)"
 #endif
 --- new

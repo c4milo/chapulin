@@ -29,7 +29,11 @@
 // no epoch callback. The age, the lifetime and the ticket's version take
 // any value their types hold. Under SUITE=aesgcm, quic_config_webpki_suite adds the client's
 // suite list: no list and no count, or 1 to SUITE_HELD_COUNT suites the
-// build holds, none repeated, with no entry read past that cap.
+// build holds, none repeated, with no entry read past that cap. Under
+// AES=runtime, quic_config_webpki_runtime adds the caller's answer about
+// the AES instructions, any byte: CH_OK only for one of the two answers
+// cfg.h names, and under the absent one only for a list that names no
+// AES-GCM suite (docs/decisions.md 81).
 //
 // Three callees are contract stubs, each proven by its own harness.
 // webpki_hostname_ok asserts it may read the name and answers 1 only for
@@ -293,6 +297,27 @@ static int suites_hold(void) {
 }
 #endif
 
+#ifdef CH_AES_RUNTIME
+// The runtime half, as cfg.h states it: one of the two answers, and under
+// the absent one no AES-GCM suite in the caller's list. The loop stops at
+// the list's own size whatever the count says.
+static int answer_holds(void) {
+    if (cfg.aes_instructions == CH_AES_INSTRUCTIONS_PRESENT) {
+        return 1;
+    }
+    if (cfg.aes_instructions != CH_AES_INSTRUCTIONS_ABSENT) {
+        return 0;
+    }
+    for (size_t i = 0;
+         cfg.cipher_suites != NULL && i < cfg.cipher_suite_count && i < SUITE_HELD_COUNT; i++) {
+        if (cfg.cipher_suites[i] != SUITE_CHACHA20_POLY1305_SHA256) {
+            return 0;
+        }
+    }
+    return 1;
+}
+#endif
+
 int main(void) {
     memset(&t, 0, sizeof t);
     memset(&cfg, 0, sizeof cfg);
@@ -301,6 +326,9 @@ int main(void) {
     havoc_transport();
 #ifdef CH_CLIENT_AES_SUITES
     havoc_suites();
+#endif
+#ifdef CH_AES_RUNTIME
+    cfg.aes_instructions = nondet_u8();
 #endif
     t.cfg = cfg;
     int rc = quic_config_ok(&t, &cfg);
@@ -312,6 +340,9 @@ int main(void) {
         __CPROVER_assert(ticket_version_holds(), "CH_OK keeps the ticket version rule");
 #ifdef CH_CLIENT_AES_SUITES
         __CPROVER_assert(suites_hold(), "CH_OK keeps the client suite rule");
+#endif
+#ifdef CH_AES_RUNTIME
+        __CPROVER_assert(answer_holds(), "CH_OK keeps the AES instructions answer rule");
 #endif
     }
     return 0;

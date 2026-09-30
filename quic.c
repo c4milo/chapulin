@@ -293,8 +293,9 @@ static int seal_at_level(ch_quic *q, uint8_t level, uint32_t version, uint64_t p
     // other one's for the open (quic_initial.h, rfc9001.txt:1057-1061).
     // CH_QUIC_SELF is this session's role, because these two calls are
     // the one place in this file that does read a side.
-    int rc = quic_initial_seal(CH_QUIC_SELF(q), version, q->initial_dcid, q->initial_dcid_len, pn,
-                               pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+    int rc = QUIC_INITIAL_SEAL(q->t.cfg.aes_instructions, CH_QUIC_SELF(q), version, q->initial_dcid,
+                               q->initial_dcid_len, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap,
+                               out_len);
     if (rc == CH_OK) {
         q->initial_sealed++;
     }
@@ -311,9 +312,8 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn, size_
                          out_len);
 }
 
-// The Initial packet carries a GCM tag and the other two levels a
-// ChaCha20-Poly1305 one, and the close bound below counts one length for
-// both.
+// The Initial level's GCM tag and the other two levels' ChaCha20-Poly1305
+// tag are one length, so the close bound below counts one for all three.
 #ifndef __cplusplus
 _Static_assert(GCM_TAG == AEAD_TAG, "every level's packet carries a 16-byte tag");
 #endif
@@ -357,8 +357,8 @@ static int open_at_level(ch_quic *q, uint8_t level, uint32_t version, uint8_t *p
         return quic_packet_open_handshake(&q->handshake_rx, &q->handshake_hp_rx, pkt, pkt_len,
                                           pn_off, largest_pn, pn, pt_len);
     }
-    return quic_initial_open(CH_QUIC_SELF(q), version, q->initial_dcid, q->initial_dcid_len, pkt,
-                             pkt_len, pn_off, largest_pn, pn, pt_len);
+    return QUIC_INITIAL_OPEN(q->t.cfg.aes_instructions, CH_QUIC_SELF(q), version, q->initial_dcid,
+                             q->initial_dcid_len, pkt, pkt_len, pn_off, largest_pn, pn, pt_len);
 }
 
 int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size_t pkt_len,

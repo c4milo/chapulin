@@ -139,6 +139,12 @@ static uint8_t cli_buf[CH_MIN_RXBUF];
 
 typedef int (*recv_fn)(void *io, uint8_t *p, size_t n);
 
+#ifdef CH_AES_RUNTIME
+// Both ends' ch_cfg.aes_instructions: present unless a row of
+// test/tcp_blocking_loop_runtime.h says otherwise.
+static uint8_t blocking_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
+#endif
+
 // The rsa_pss identity alone, because the client pins its modulus.
 static void server_config(ch_cfg *cfg, recv_fn recv) {
     memset(cfg, 0, sizeof *cfg);
@@ -160,6 +166,9 @@ static void server_config(ch_cfg *cfg, recv_fn recv) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
+#ifdef CH_AES_RUNTIME
+    cfg->aes_instructions = blocking_aes_answer;
+#endif
 }
 
 static void client_config(ch_cfg *cfg, recv_fn recv) {
@@ -172,6 +181,9 @@ static void client_config(ch_cfg *cfg, recv_fn recv) {
     cfg->server_pubkey_len = sizeof rsa_sign_2048_n;
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
+#endif
+#ifdef CH_AES_RUNTIME
+    cfg->aes_instructions = blocking_aes_answer;
 #endif
 }
 
@@ -429,6 +441,9 @@ static void server_reads_client(int after_finished, size_t bytes) {
 #ifdef CH_RAND_SESSION
 #include "tcp_blocking_session_tests.h"
 #endif
+#ifdef CH_AES_RUNTIME
+#include "tcp_blocking_loop_runtime.h"
+#endif
 
 int main(void) {
     static const uint8_t retry_scalar[X25519_LEN] = {0x2a};
@@ -443,6 +458,9 @@ int main(void) {
     test_handshake_alerts();
 #ifdef CH_RAND_SESSION
     test_session();
+#endif
+#ifdef CH_AES_RUNTIME
+    test_runtime_answers();
 #endif
     if (failures == 0) {
         (void)printf("tcp_blocking_loop: ch_connect and ch_srv_accept each go on when the"

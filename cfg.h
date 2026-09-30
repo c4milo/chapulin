@@ -39,6 +39,18 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
+// The two answers ch_cfg.aes_instructions takes in an AES=runtime object (-DCH_AES_RUNTIME,
+// docs/decisions.md 81). 0 is neither, so a configuration that never set the field is
+// refused. The object chooses which AES runs, so it needs one it carries: QUIC's public-key
+// packets or the AES-GCM suites, and a TCP object without SUITE=aesgcm carries neither.
+#ifdef CH_AES_RUNTIME
+#define CH_AES_INSTRUCTIONS_PRESENT 1
+#define CH_AES_INSTRUCTIONS_ABSENT 2
+#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_SUITE_AES_GCM)
+#error "AES=runtime chooses an AES this object does not carry: build it for QUIC or SUITE=aesgcm"
+#endif
+#endif
+
 // The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
 // X25519MLKEM768 hybrid (RFC 10024). ch_tls.group reports the one the ServerHello
 // selected, on both sides.
@@ -380,6 +392,16 @@ typedef struct {
     // ch_tls.group is CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
     // (docs/decisions.md 39). A classic raw or ca build offers x25519 alone and refuses the flag.
     int require_pq;
+#ifdef CH_AES_RUNTIME
+    // Whether this CPU has the AES and carry-less multiply instructions, as the caller's probe
+    // found: CH_AES_INSTRUCTIONS_PRESENT or CH_AES_INSTRUCTIONS_ABSENT. chapulin probes nothing.
+    // Every init call returns CH_EINVAL, and sends nothing, for any other value. Present runs
+    // QUIC's Initial packets and AES-GCM on the instructions, in docs/decisions.md 80's order.
+    // Absent runs neither instruction: Initial packets take the software AES, whose keys are
+    // public (INV-26), the session holds ChaCha20 alone, and init refuses a cipher_suites list
+    // that names an AES-GCM suite. A Retry tag takes the software AES under either answer.
+    uint8_t aes_instructions;
+#endif
 
 #ifdef CH_TRUST_WEBPKI
     // Web PKI trust, and a SUITE=aesgcm client's suite order: webpki_cfg.h states the rules.

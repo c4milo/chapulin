@@ -360,6 +360,7 @@ static void test_webpki_hello_boundary(void) {
     long_hostname(name, sizeof name);
     widest_alpn(widest, widest_names);
     ch_cfg cfg = {0};
+    SESSION_AES_ANSWER(cfg);
     cfg.psk = identity;
     // The longest PSK the build takes, which in a CH_CLIENT_AES_SUITES
     // build is a SHA-384 one with a 48-byte binder.
@@ -371,8 +372,7 @@ static void test_webpki_hello_boundary(void) {
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;
     cfg.alpn_count = CH_ALPN_MAX;
-    // webpki_cert_types_offered reads the two counts: a pin and an anchor
-    // offer the raw key and X.509 both.
+    // webpki_cert_types_offered reads both counts: a pin and an anchor offer both types.
     cfg.spki_pin_count = 1;
     cfg.anchor_count = 1;
 #define BUILD_HELLO(cap)                                                                           \

@@ -51,6 +51,17 @@ static int failures = 0;
 // test/srv_flight_kex_tests.h drives X25519MLKEM768. Every server build
 // holds both, so no build define changes which bytes these compare.
 
+// The answer an AES=runtime build's flight_reset writes into every case's
+// ch_cfg.aes_instructions: the instructions present, unless a case of
+// test/srv_flight_suite_tests.h says otherwise (docs/decisions.md 81).
+// Every other build has no such field, and flight_reset writes nothing.
+#ifdef CH_AES_RUNTIME
+static uint8_t flight_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
+#define FLIGHT_AES_ANSWER(cfg) ((cfg).aes_instructions = flight_aes_answer)
+#else
+#define FLIGHT_AES_ANSWER(cfg) ((void)0)
+#endif
+
 #include "srv_flight_kex_tests.h"
 #include "srv_flight_keys_tests.h"
 #include "srv_flight_p256_tests.h"
@@ -67,6 +78,9 @@ int main(void) {
     test_flight_key_suite();
     test_flight_retry_suite();
     test_flight_cookie_suite_length();
+#endif
+#ifdef CH_AES_RUNTIME
+    test_flight_without_aes();
 #endif
     test_flight_alpn();
     test_flight_read_hello();
