@@ -3,7 +3,9 @@
 # repository token, and the commitlint packages under tools/, which run on
 # a developer machine and on the runner. Neither ships in bin/chapulin.o.
 # An update to either is a routine update, so a green patch or minor
-# version may merge on its own.
+# version may merge on its own. A third entry, for the semgrep install in
+# .semgrep, holds only an ignore rule for security updates; its versions
+# move with tools/toolchain.env.
 #
 # The checker, proof and test versions are not here. They live in
 # tools/toolchain.env, and .github/workflows/toolchain-pins.yml opens a
@@ -63,3 +65,19 @@ updates:
       # later lands as a runtime dependency.
       prefix: build
       prefix-development: build
+
+  - package-ecosystem: pip
+    # .semgrep/requirements.txt pins semgrep and everything it installs, by
+    # hash, for CI's lint-invariants. Its versions move with
+    # tools/toolchain.env, so version updates stay off. The entry exists for
+    # its ignore rule, which Dependabot applies to security updates too.
+    directory: "/.semgrep"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      # semgrep pins pyjwt~=2.13.0, in 1.173.0 and in 1.178.0, the newest on
+      # 2026-09-30, so a pyjwt 2.14 bump cannot install and fails CI before
+      # any check runs (156d8e5). Remove this once semgrep allows 2.14.
+      - dependency-name: "pyjwt"
+        versions: [">=2.14.0"]
