@@ -16,6 +16,8 @@ RECORD_CSVS = [
 
 PACKAGED = "WIDEMUL=decomposed"
 NATIVE = "WIDEMUL=native"
+VECTOR = "CHACHA=vector WIDEMUL=decomposed"
+VECTOR_NATIVE = "CHACHA=vector WIDEMUL=native"
 RECORD = 16384
 
 
@@ -75,6 +77,16 @@ TABLES = [
          cell("chacha20poly1305", "poly1305_data", NATIVE),
          cell("chacha20poly1305", "rec_seal", NATIVE)),
         ("`rec_open`, the packaged multiply", cell("chacha20poly1305", "rec_open"), None),
+        ("`rec_seal`, `CHACHA=vector`", cell("chacha20poly1305", "rec_seal", VECTOR), None),
+        ("ChaCha20 in place, `CHACHA=vector`",
+         cell("chacha20poly1305", "chacha20_xor_in_place", VECTOR),
+         cell("chacha20poly1305", "rec_seal", VECTOR)),
+        ("`rec_seal`, `CHACHA=vector WIDEMUL=native`",
+         cell("chacha20poly1305", "rec_seal", VECTOR_NATIVE), None),
+        ("ChaCha20 in place, `CHACHA=vector WIDEMUL=native`",
+         cell("chacha20poly1305", "chacha20_xor_in_place", VECTOR_NATIVE),
+         cell("chacha20poly1305", "rec_seal", VECTOR_NATIVE)),
+        ("`rec_open`, `CHACHA=vector`", cell("chacha20poly1305", "rec_open", VECTOR), None),
         ("OpenSSL, one record sealed", cell("chacha20poly1305", "openssl_seal", "OpenSSL"), None),
         ("Zig `std.crypto`, one record sealed", cell("chacha20poly1305", "zig_seal", "zig"),
          None),

@@ -1,0 +1,13 @@
+invariant: INV-16
+file: chacha20_vector.h
+catches: test/chacha-builds.sh
+reason: chacha20_vector.h no longer stops a build whose compiler targets
+  neither NEON nor SSE2. chacha20_vector.c would then fail later on a
+  missing intrinsic header, or on a toolchain that ships one, compile a
+  path nothing here has tested. The script compiles the header for the
+  Cortex-M3 with the pinned clang and requires the refusal.
+
+--- old
+#if !defined(__ARM_NEON) && !defined(__SSE2__)
+--- new
+#if 0

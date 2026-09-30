@@ -1,5 +1,9 @@
 #include "chacha20.h"
 
+#ifdef CH_CHACHA_VECTOR
+#include "chacha20_vector.h"
+#endif
+
 static uint32_t rotate_left(uint32_t x, unsigned r) {
     return (x << r) | (x >> (32 - r));
 }
@@ -68,6 +72,12 @@ void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 
 void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                   uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
+#ifdef CH_CHACHA_VECTOR
+    // CHACHA=vector: the same keystream, four blocks at a time
+    // (chacha20_vector.h). The loop below is the reference that
+    // bin/chacha20_equiv_test compares it with.
+    chacha20_vector_xor(key, nonce, counter, in, out, n);
+#else
     uint32_t state[16];
     uint8_t keystream[CHACHA20_BLOCK];
     setup(state, key, nonce, counter);
@@ -82,4 +92,5 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
         out += take;
         n -= take;
     }
+#endif
 }

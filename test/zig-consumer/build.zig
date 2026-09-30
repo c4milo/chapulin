@@ -37,6 +37,7 @@ const Options = struct {
     RAND: ?[]const u8 = null,
     KEX: ?[]const u8 = null,
     X25519: ?[]const u8 = null,
+    CHACHA: ?[]const u8 = null,
     WIDEMUL: ?[]const u8 = null,
     EXPORTER: ?[]const u8 = null,
     KEYLOG: ?[]const u8 = null,

@@ -3857,3 +3857,83 @@ does nothing more.
     - **Cutting a caller's list down to ChaCha20 under the absent
       answer.** A caller who named AES-GCM asked for an offer the session
       cannot make, and a silent drop would hide that.
+
+82. **`CHACHA=vector` computes ChaCha20 four blocks at a time in 128-bit
+    vectors, NEON on arm64 and SSE2 on x86-64, and `CHACHA=portable`
+    stays the default and the reference.** At fc02391, `chacha20.c`
+    computed one 64-byte block at a time and XORed one byte at a time.
+    On an Apple M1 Pro under clang those two stages took 33 of the 66 µs
+    that `rec_seal` spent on a 16 KiB record, and every build carries
+    ChaCha20-Poly1305 (docs/performance.md, "Where a record's time
+    goes"). Camilo decided on 2026-09-29
+    ([#181](https://github.com/c4milo/chapulin/issues/181)) to make the
+    AEAD cheaper with a vector path. The path keeps entry 45's reason for
+    ChaCha20, constant time by construction, gives the portable C's
+    output, and leaves the portable C as the reference.
+
+    - **Four blocks per call, one per lane.** `chacha20_vector.c` holds
+      each of the 16 state words of four consecutive blocks in one vector
+      of four 32-bit lanes. It runs `chacha20.c`'s rounds on the 16
+      vectors with adds, exclusive-ors and fixed rotations, transposes
+      the result into block order, and XORs it into the output 16 bytes
+      at a time. `chacha20_xor` calls it under `-DCH_CHACHA_VECTOR`.
+      `chacha20_block`, which derives the Poly1305 key, stays the
+      portable function in both builds.
+    - **`chacha20.h`'s contract, unchanged.** The lanes hold the
+      counters counter to counter + 3, and the adds wrap modulo 2^32, as
+      `state[12]++` does. A last group of 1 to 255 bytes computes four
+      blocks into a buffer and XORs its bytes one at a time, as
+      `chacha20.c` XORs its last block. Each 16 bytes are read before the
+      16 at the same offset are written, in ascending order, so the
+      output may sit on the input or below it, where `rec_open` puts it.
+    - **NEON and SSE2, from the compiler's macros.** Every AArch64 core
+      has NEON and every x86-64 core has SSE2, so a compiler for either
+      target defines `__ARM_NEON` or `__SSE2__`. Nothing probes a CPU,
+      and no caller passes a probe's answer: unlike the AES instructions,
+      these come with the architecture. `chacha20_vector.h` stops a build
+      for any other target, and for a big-endian one, whose lanes would
+      store their bytes in the wrong order. So `CHACHA=vector` never falls
+      back to the portable loop. `test/chacha-builds.sh` checks both
+      refusals, and that a vector object calls the path.
+    - **An axis, as `X25519` is (entry 52).** A device core has neither
+      instruction set, so the portable loop stays the default and the
+      device path, with its proof. The values name what each path needs
+      from the target. The vector path asks for no timing statement of
+      its own, where `X25519=wide` asks for `CH_NATIVE_MUL128`: it
+      multiplies nothing, reads no table, and runs the operations the
+      portable loop runs. The build record leaves the axis out, as entry
+      56 leaves `X25519=wide` out, because no public layout or bound
+      reads it.
+    - **128-bit vectors only.** They are the widest that every core of
+      both architectures has. No machine here runs x86-64, so nothing
+      could show that AVX2 pays, and the ruling admits AVX2 only on a
+      measurement. An eight-block NEON variant, two groups of four in one
+      round loop, ran faster in a scratch timing loop under clang, which
+      is no measurement this tree records. It is a second tradeoff, with
+      more register pressure on SSE2's 16 registers, so it waits for a
+      change of its own, measured alone.
+    - **Poly1305 stays as it is.** Its cost in the packaged object is the
+      widening multiply: `ct.h` builds each 32x32->64 product from 16x16
+      pieces. `WIDEMUL=native`, the builder's statement that the multiply
+      runs in constant time, already runs the same Poly1305 in about a
+      third of the time. A vector Poly1305 needs a widening multiply too,
+      so it would need the same statement.
+
+    Cost: a second ChaCha20 to keep equal to the first. The pair is 313
+    lines. On arm64 under clang at `-O2` it adds 1,192 bytes of text to a
+    host object, and takes the stack below `chacha20_xor` from 320 to 768
+    bytes, which `lint-stack` holds to the device budget in the
+    `CHACHA=vector` leg. Nothing proves the path, because CBMC cannot
+    read an intrinsic. `make check` holds it with
+    `bin/chacha20_equiv_test`, 30,771 cases against the portable loop;
+    `bin/unit_chacha_vector`, which runs RFC 8439's vectors and every
+    record the unit suite seals; a Wycheproof leg; a packaged-object leg;
+    and the codegen gate's two 64-bit specs, which hold its branches at
+    12. Seven violations break the path, and each is caught
+    (docs/verification.md, "The CHACHA=vector path").
+
+    Gain: the record bench's second run, a filter's figures, took a 16
+    KiB `rec_seal` from 67.3 to 47.6 µs on macOS clang, from 61.6 to 41.6
+    µs on the Linux VM's clang and from 83.7 to 65.6 µs on gcc 13. With
+    `WIDEMUL=native` as well, it takes 26.1 to 34.2 µs, 39% to 42% of the
+    packaged portable record (docs/performance.md).

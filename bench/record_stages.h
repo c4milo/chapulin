@@ -38,6 +38,14 @@ void bench_gcm_counter_mode_without_aes(const aes_traffic_key *k, const uint8_t 
 void bench_chacha20_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                            uint32_t counter, size_t n, uint8_t out[CHACHA20_BLOCK]);
 
+// bench/record_chacha_vector.c, in the CHACHA=vector builds alone.
+// chacha20_vector.c's four_blocks, called as often and with the same
+// counter as chacha20_vector_xor calls it over n bytes, with each group of
+// four blocks written to out and no exclusive-or.
+void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
+                                  const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, size_t n,
+                                  uint8_t out[4 * CHACHA20_BLOCK]);
+
 // bench/record_aead.c. aead.c's mac: the one-time key block, Poly1305 over
 // the associated data and the ciphertext, and the tag.
 void bench_aead_mac(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],

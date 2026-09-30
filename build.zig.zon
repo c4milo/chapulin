@@ -31,6 +31,8 @@
         "ch_assert.h",
         "chacha20.c",
         "chacha20.h",
+        "chacha20_vector.c",
+        "chacha20_vector.h",
         "chapulin.hpp",
         "chapulin.zig",
         "chapulin_quic.zig",

@@ -8,8 +8,8 @@
 # It asks make for the flags the library's objects compile with, LIB_CFLAGS,
 # and for the flags AES_HW_PROBE found for the AES instructions, so the
 # bench compiles the library sources as make lib does. CC picks the
-# compiler (default cc). It builds bench/record.c twice, each time with the
-# library sources it times:
+# compiler (default cc). It builds bench/record.c four times, each time
+# with the library sources it times:
 #
 #   the SUITE=aesgcm AES=hw object's defines, -DCH_SUITE_AES_GCM -DCH_AES_HW,
 #   with CH_NATIVE_AES, the builder's statement ct.h requires of that
@@ -19,6 +19,11 @@
 #   the same with -DCH_NATIVE_WIDEMUL, which WIDEMUL=native puts in an
 #   object: the ChaCha20-Poly1305 rows again, because Poly1305 is the one
 #   stage the multiply changes
+#
+#   each of those two with -DCH_CHACHA_VECTOR and chacha20_vector.c, which
+#   CHACHA=vector puts in an object: the ChaCha20-Poly1305 rows on the
+#   vector path (https://github.com/c4milo/chapulin/issues/181), where the
+#   compiler targets NEON or SSE2
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
@@ -95,6 +100,18 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_gcm_stu
     sha512.c sha512_compress.c)
 "${CC_WORDS[@]}" "${FLAGS[@]}" -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/record_native" "${SRCS[@]}"
+# The CHACHA=vector builds, on either multiply, where the compiler targets
+# NEON or SSE2 on a little-endian core, as chacha20_vector.h requires.
+VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c bench/record_chacha_vector.c)
+VECTOR=""
+VECTOR_NOTE="no CHACHA=vector rows: $CC targets neither NEON nor SSE2 on a little-endian core"
+if printf '#include "chacha20_vector.h"\n' | "${CC_WORDS[@]}" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2>/dev/null; then
+    VECTOR=yes
+    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c and bench/record_chacha_vector.c"
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -o "$W/record_vector" "${VECTOR_SRCS[@]}"
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -o "$W/record_vector_native" \
+        "${VECTOR_SRCS[@]}"
+fi
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'
@@ -152,6 +169,10 @@ LOAD_BEFORE=$(load)
 {
     "$W/record" ${QUICK:+"$QUICK"} aes128gcm aes256gcm chacha20poly1305
     "$W/record_native" ${QUICK:+"$QUICK"} chacha20poly1305
+    if [ -n "$VECTOR" ]; then
+        "$W/record_vector" ${QUICK:+"$QUICK"} chacha20poly1305
+        "$W/record_vector_native" ${QUICK:+"$QUICK"} chacha20poly1305
+    fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"
     fi
@@ -179,7 +200,8 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
 {
     echo "# bench/record.sh on $(cpu) ($ARCH)${BENCH_HOST:+, $BENCH_HOST}, $(uname -s)" \
         "$(uname -r), $(date -u +%Y-%m-%d), tree $TREE"
-    echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; WIDEMUL=native adds -DCH_NATIVE_WIDEMUL"
+    echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; WIDEMUL=native adds -DCH_NATIVE_WIDEMUL;" \
+        "$VECTOR_NOTE"
     echo "# $ZIG_NOTE; ${OPENSSL:-no openssl on PATH}"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns: per record, the median of 5 runs, each the median of 15 batches of at least" \

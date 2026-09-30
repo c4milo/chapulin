@@ -1,0 +1,14 @@
+invariant: INV-16
+file: chacha20_vector.h
+catches: test/chacha-builds.sh
+reason: chacha20_vector.h no longer stops a big-endian build. There a
+  keystream word leaves its lane in big-endian byte order, which is not
+  the order RFC 8439 serializes in, so every block would be wrong. No
+  runner here is big-endian, so no vector could catch it; the script
+  compiles the header for big-endian AArch64 with the pinned clang and
+  requires the refusal.
+
+--- old
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+--- new
+#if 0

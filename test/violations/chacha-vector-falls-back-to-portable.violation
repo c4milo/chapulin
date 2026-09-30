@@ -1,0 +1,18 @@
+invariant: INV-16
+file: chacha20.c
+catches: test/chacha-builds.sh
+reason: chacha20.c guards its call to the vector path on a macro no build
+  defines, so a CHACHA=vector object runs the portable loop under the
+  vector name. Nothing else objects: chacha20_vector.c still compiles and
+  links, bin/chacha20_equiv_test calls it directly, and every vector and
+  Wycheproof case passes, because the portable loop computes the same
+  bytes; only the time is wrong. CHACHA=vector is a statement about what
+  the object runs, so the script compiles chacha20.c with
+  -DCH_CHACHA_VECTOR and requires its object to call chacha20_vector_xor.
+
+--- old
+#ifdef CH_CHACHA_VECTOR
+    // CHACHA=vector: the same keystream, four blocks at a time
+--- new
+#ifdef CH_CHACHA_VECTOR_PATH
+    // CHACHA=vector: the same keystream, four blocks at a time

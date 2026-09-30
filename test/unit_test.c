@@ -319,6 +319,7 @@ static void test_record(void) {
 }
 
 #include "p256_tests.h"
+#include "rfc8439_tests.h"
 #include "rfc8448_tests.h"
 #include "session_tests.h"
 
@@ -355,6 +356,7 @@ int main(void) {
     test_chacha20();
     test_poly1305();
     test_aead();
+    test_rfc8439_appendix();
     test_x25519();
     test_p256();
     test_buf();

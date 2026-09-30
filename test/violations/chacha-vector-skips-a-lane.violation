@@ -1,0 +1,16 @@
+invariant: INV-16
+file: chacha20_vector.c
+catches: chacha20_equiv_test
+reason: the group loop XORs three of its four lanes, so the fourth block
+  of every group keeps the input's bytes: in place, 64 bytes of each 256
+  go out as plaintext. bin/chacha20_equiv_test compares every byte of the
+  output with chacha20.c's, at every length that holds a whole group.
+
+--- old
+    for (size_t b = 0; b < 4; b++) {
+        for (size_t g = 0; g < 4; g++) {
+            size_t offset = CHACHA20_BLOCK * b + 16 * g;
+--- new
+    for (size_t b = 0; b < 3; b++) {
+        for (size_t g = 0; g < 4; g++) {
+            size_t offset = CHACHA20_BLOCK * b + 16 * g;

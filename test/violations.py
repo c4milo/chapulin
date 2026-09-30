@@ -338,10 +338,11 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-stack-quic.sh",
                 "test/lib-check-webpki-tcp-nonblocking.sh",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
-                "test/quic-builds.sh", "test/x25519-builds.sh",
+                "test/quic-builds.sh", "test/x25519-builds.sh", "test/chacha-builds.sh",
                 "test/zig-build-check.sh", "test/localize-check.sh",
                 "test/tx-record-builds.sh", "webpki_loop_tx_record",
-                "quic_driver_test", "srv_stub_test", "x25519_equiv_test", "quic_test_extern"}
+                "quic_driver_test", "srv_stub_test", "x25519_equiv_test", "chacha20_equiv_test",
+                "quic_test_extern"}
 
 
 def catches_of(name):

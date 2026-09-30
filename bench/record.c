@@ -68,10 +68,17 @@
 #define QUICK_BATCH_NS 1000.0 // one operation or a few, for --quick
 #define MAX_ROWS 32
 
-#ifdef CH_NATIVE_WIDEMUL
-#define BUILD_LABEL "WIDEMUL=native"
+// The build column: the widening multiply, and under CHACHA=vector the
+// ChaCha20 path before it.
+#ifdef CH_CHACHA_VECTOR
+#define CHACHA_LABEL "CHACHA=vector "
 #else
-#define BUILD_LABEL "WIDEMUL=decomposed"
+#define CHACHA_LABEL ""
+#endif
+#ifdef CH_NATIVE_WIDEMUL
+#define BUILD_LABEL CHACHA_LABEL "WIDEMUL=native"
+#else
+#define BUILD_LABEL CHACHA_LABEL "WIDEMUL=decomposed"
 #endif
 
 // The library's one platform hook this link can call. Nothing here trips

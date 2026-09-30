@@ -1,0 +1,18 @@
+invariant: INV-16
+file: chacha20_vector.c
+catches: chacha20_equiv_test
+reason: a group whose counters wrap past 2^32 carries one into the first
+  nonce word, as the original ChaCha's 64-bit counter does, where RFC
+  8439's counter is 32 bits and chacha20.c's state[12]++ wraps to 0 with
+  the nonce unchanged. Only a counter within three of 2^32 reaches the
+  edit, so a random counter almost never does, and neither does a record,
+  whose counter starts at 1. bin/chacha20_equiv_test's counter-wrap pass
+  runs the counter's last values at every length to twelve blocks.
+
+--- old
+    input[12] = lanes_counters(counter);
+--- new
+    input[12] = lanes_counters(counter);
+    if (counter > UINT32_MAX - 3) {
+        input[13] = lanes_add(input[13], lanes_broadcast(1));
+    }

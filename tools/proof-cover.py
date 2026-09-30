@@ -52,6 +52,20 @@ AUDITED = {
         "test every call left here. Delete this entry when tls.c gets a "
         "harness of its own."
     ),
+    "chacha20_vector.c": (
+        "the CHACHA=vector path, written in NEON or SSE2 intrinsics, which "
+        "CBMC cannot read, so no harness compiles the file. Every bitwise "
+        "operator takes unsigned operands: the lane operations run on "
+        "uint32x4_t or __m128i values through the intrinsics, load32 shifts "
+        "uint32_t values, and the last group's XOR takes two uint8_t bytes, "
+        "which widen to int and hold 0 to 255. The SSE2 arm's two (int) "
+        "casts hand a uint32_t word to _mm_set1_epi32, a conversion gcc and "
+        "clang define as keeping its 32 bits, and no arithmetic runs on the "
+        "int. bin/chacha20_equiv_test holds the file to chacha20.c's proven "
+        "loop, and bin/unit_chacha_vector and the CHACHA=vector Wycheproof "
+        "leg run the published vectors on it. Delete this entry if a harness "
+        "can ever compile the file."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` at :70, which "
@@ -99,10 +113,11 @@ def shipped_sources():
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
-    # pin and X25519=wide field sources join through build variables.
+    # pin, X25519=wide field and CHACHA=vector sources join through build
+    # variables.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
-            "mlkem.c", "mlkem_poly.c", "x25519_wide.c"}
+            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

@@ -46,7 +46,7 @@ typedef struct {
     uint8_t subkey[AES_BLOCK]; // GHASH's hash subkey under key
     uint8_t acc[AES_BLOCK];
     uint8_t counter[AES_BLOCK];
-    uint8_t keystream[CHACHA20_BLOCK];
+    uint8_t keystream[4 * CHACHA20_BLOCK]; // one block, or one group of four under CHACHA=vector
     uint8_t tag[AEAD_TAG];
     uint8_t poly_key[POLY1305_KEY];
     poly1305 poly;

@@ -28,6 +28,7 @@ const Aes = enum { soft, hw, @"extern", runtime };
 const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
+const Chacha = enum { portable, vector };
 const Widemul = enum { decomposed, native };
 const Setting = enum { on, off };
 
@@ -43,6 +44,7 @@ const Config = struct {
     rand: ?Rand,
     kex: ?Kex,
     x25519: X25519,
+    chacha: Chacha,
     widemul: Widemul,
     exporter: Setting,
     keylog: Setting,
@@ -221,6 +223,7 @@ pub fn build(b: *std.Build) void {
         .rand = b.option(Rand, "RAND", "The entropy pattern, which has no default (cfg.h)"),
         .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
         .x25519 = b.option(X25519, "X25519", "The X25519 field") orelse .portable,
+        .chacha = b.option(Chacha, "CHACHA", "The ChaCha20 keystream: portable C or 128-bit vectors") orelse .portable,
         .widemul = b.option(Widemul, "WIDEMUL", "The widening multiply (ct.h)") orelse .decomposed,
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
@@ -430,6 +433,10 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     if (config.x25519 == .wide) {
         defs = concat(b, &.{ defs, &.{"-DCH_X25519_WIDE"} });
         lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
+    }
+    if (config.chacha == .vector) {
+        defs = concat(b, &.{ defs, &.{"-DCH_CHACHA_VECTOR"} });
+        lib_srcs = concat(b, &.{ lib_srcs, &.{"chacha20_vector.c"} });
     }
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });

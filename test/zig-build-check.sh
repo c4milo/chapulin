@@ -141,6 +141,7 @@ roster=(
     "server-aes-runtime|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=runtime|CH_NATIVE_AES"
     "quic-raw-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off AES=runtime|"
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
+    "chacha-vector|RAND=extern CHACHA=vector|"
 )
 case ${1:-} in
 "") ;;
@@ -226,14 +227,15 @@ statement_defs() {
 }
 
 # Whether this compiler can build a configuration: AES=hw needs the AES
-# instructions, AES=runtime an arm64 or x86-64 target, and X25519=wide
-# unsigned __int128, which the Makefile probes for and check's legs skip
-# without.
+# instructions, AES=runtime an arm64 or x86-64 target, X25519=wide
+# unsigned __int128 and CHACHA=vector NEON or SSE2, which the Makefile
+# probes for and check's legs skip without.
 buildable() {
     case " $1 " in
     *" AES=hw "*) [ -n "$probe" ] ;;
     *" AES=runtime "*) "$cc" -dM -E -x c /dev/null | grep -qwE '__aarch64__|__x86_64__' ;;
     *" X25519=wide "*) printf 'unsigned __int128 x;\n' | "$cc" -x c -fsyntax-only - 2> /dev/null ;;
+    *" CHACHA=vector "*) printf '#include "chacha20_vector.h"\n' | "$cc" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2> /dev/null ;;
     *) true ;;
     esac
 }

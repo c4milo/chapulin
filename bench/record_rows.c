@@ -281,8 +281,14 @@ static void run_chacha20_xor_shifted(bench_state *b) {
     consume(b->rec[b->len - 1]);
 }
 
+// The keystream alone: chacha20.c's block function, or under CHACHA=vector
+// chacha20_vector.c's four blocks at a time, as chacha20_xor calls it.
 static void run_chacha20_blocks(bench_state *b) {
+#ifdef CH_CHACHA_VECTOR
+    bench_chacha20_vector_blocks(b->wr.key, b->nonce, 1, b->len, b->keystream);
+#else
     bench_chacha20_blocks(b->wr.key, b->nonce, 1, b->len, b->keystream);
+#endif
     consume(b->keystream[0]);
 }
 

@@ -53,7 +53,7 @@ GATE_COMMAND = {
     "lint-zig-build-run": "make lint-zig-build",
     **{f"wycheproof-{kind}-{leg}": "make wycheproof"
        for kind in ("leg", "run")
-       for leg in ("default", "aes-hw", "aes-extern", "x25519-wide")},
+       for leg in ("default", "aes-hw", "aes-extern", "x25519-wide", "chacha-vector")},
 }
 
 # The catches lines a test/violations entry can name for a gate that a
@@ -542,6 +542,14 @@ def select_lints(out, changed, csources, lib):
                 "handshake_message.c refuses the AES suite in a raw or ca "
                 "client, and this script compiles it either side of that",
                 ["test/quic-builds.sh"])
+    # chacha20.c calls the CHACHA=vector path only under CH_CHACHA_VECTOR,
+    # and test/chacha-builds.sh compiles it either side of that define,
+    # beside chacha20_vector.h's two refusals.
+    if "chacha20.c" in csources:
+        out.add("tests", "test/chacha-builds.sh",
+                "chacha20.c calls the vector path under CH_CHACHA_VECTOR, and "
+                "this script compiles it either side of that define",
+                ["test/chacha-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.

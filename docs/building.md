@@ -62,7 +62,11 @@ Other targets:
   `unsigned __int128` and the build adds `-DCH_NATIVE_MUL128` to
   `CFLAGS`, its statement that the part's 64x64->128 multiply runs in
   constant time in the mode the part runs in (decision 52, INV-34). The
-  Makefile never writes that define itself. It also carries every key
+  Makefile never writes that define itself. `CHACHA=vector` replaces
+  `chacha20.c`'s one-block loop with `chacha20_vector.c`'s four blocks at
+  a time on NEON or SSE2, for an arm64 or x86-64 host:
+  `chacha20_vector.h` stops the build for any other target, and the
+  build states nothing about timing (decision 82). It also carries every key
   exchange group it offers, X25519MLKEM768 and x25519 with a share each
   and secp256r1 listed after them for a HelloRetryRequest to ask for, so
   `make TRUST=webpki` refuses a `KEX` value, which would select nothing

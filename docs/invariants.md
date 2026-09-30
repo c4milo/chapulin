@@ -2309,6 +2309,13 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_NATIVE_MUL128`, the same claim about that instruction, and unless
   the compiler has `unsigned __int128`. `test/x25519-builds.sh` checks
   both refusals in `make check` (decision 52).
+  The `CHACHA=vector` path computes ChaCha20 on NEON or SSE2 with the
+  operations the portable loop uses, adds, exclusive-ors and fixed
+  rotations on every lane, so it asks for no statement of its own.
+  `chacha20_vector.h` refuses a build for a target with neither
+  instruction set or a big-endian one, and `test/chacha-builds.sh`
+  checks both refusals and that a vector object calls the path
+  (decision 82).
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -2366,7 +2373,13 @@ last `ROLE=server` stub, as the entry said it would.
   `inv16-x25519-wide-cswap-branch` writes that field's `cswap` as an
   `if` on the scalar bit and both counts rise by two. No gcc spec
   measures the file: no CI lane runs a 64-bit gcc through
-  `lint-wide-multiply-gcc`.
+  `lint-wide-multiply-gcc`. The same two specs compile
+  `chacha20_vector.c`, whose intrinsics no 32-bit spec targets, and hold
+  its conditional branches at 12 on each, all loop control over public
+  counts. CBMC cannot read an intrinsic, so `bin/chacha20_equiv_test`
+  holds that path's output to `chacha20.c`'s; four `chacha-vector-*`
+  violations break its last partial group, its counter, one lane's XOR
+  and its order of writes, and the test catches each.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and

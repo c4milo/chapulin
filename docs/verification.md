@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 90 C sources in the tree root are compiled into a
+80 of the 91 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 10 sources are in no such harness:
+The other 11 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -47,6 +47,7 @@ The other 10 sources are in no such harness:
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
+| `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
@@ -254,6 +255,10 @@ The entries are grouped by area:
 - **Harness:** `chacha20` (fast)
 - **Proves:** safe at any counter, in place and into a distinct buffer.
 - **Bound:** ≤ 160 B: three blocks, full, full and partial.
+- **Not proved:** the `CHACHA=vector` path, whose intrinsics CBMC cannot
+  unwind. The harness compiles `chacha20.c` without `-DCH_CHACHA_VECTOR`,
+  and [The CHACHA=vector path](#the-chachavector-path) states what holds
+  the vector path to this loop.
 
 #### poly1305
 
@@ -2318,8 +2323,9 @@ equality proof stays at 8-bit operands.
 
 #### The X25519=wide field
 
-The `X25519=wide` field is the one secret-bearing source none of those
-specs can build, since it needs `unsigned __int128`. It multiplies on
+The `X25519=wide` field is one of two secret-bearing sources none of
+those specs can build, since it needs `unsigned __int128`; the other is
+the `CHACHA=vector` path (below). It multiplies on
 the 64x64->128 instruction, and `ct.h` refuses the build unless it
 defines `CH_NATIVE_MUL128`, its own statement that this instruction runs
 in constant time:
@@ -2333,6 +2339,53 @@ the pinned clang. It holds the file's divisions and 128-bit runtime
 calls at zero and its branch count at the loop control it has, and
 `inv16-x25519-wide-cswap-branch` shows the count sees a `cswap` written
 as an `if`. No gcc measures it.
+
+### The CHACHA=vector path
+
+`chacha20_vector.c` computes ChaCha20 four blocks at a time on NEON or
+SSE2 intrinsics (decision 82). CBMC cannot unwind an intrinsic, so no
+harness compiles the file, and the [chacha20](#chacha20) proof covers
+`chacha20.c`'s loop alone. As `AES=hw` rests on `bin/aes_equiv_test`
+and the published vectors, the vector path rests on these, each in
+`make check`:
+
+- `bin/chacha20_equiv_test` compares it with `chacha20.c`'s loop over
+  30,771 cases:
+  - every length from 0 to 1,024 bytes, in each aliasing shape
+    `chacha20.h` allows: a separate output, the output on the input, and
+    the output 5 bytes below the input, as `rec_open` writes it;
+  - the counter at 0 and at its last nine values, at every length to 768
+    bytes, so the 32-bit counter wraps inside a group of four blocks, at
+    its edge and in the last partial group;
+  - 20,000 random cases to 2,048 bytes, at random alignments and shifts;
+  - a 16,385-byte and a 65,536-byte input.
+
+  Each case checks every output byte and every byte around the output,
+  then runs again on heap buffers of exactly the case's size, which
+  `make san-check` runs under AddressSanitizer.
+- `bin/unit_chacha_vector` runs the unit suite on the path: RFC 8439's
+  §2.3.2, §2.4.2, A.2 and A.5 vectors, of which A.2's 375-byte vector
+  and A.5's 265 bytes reach the four-block loop, and every record the
+  suite seals and opens.
+- The Wycheproof ChaCha20-Poly1305 suite runs on it in a leg of its own,
+  with messages up to 513 bytes.
+- `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
+  the pinned clang and holds its conditional branches at 12 on each,
+  every one loop control over a public count. It multiplies nothing.
+
+Seven violations break the path, and each is caught. The equivalence
+test catches `chacha-vector-tail-whole-rows-only`,
+`chacha-vector-counter-carries-into-nonce`,
+`chacha-vector-skips-a-lane` and
+`chacha-vector-blocks-in-descending-order`; `test/chacha-builds.sh`
+catches `chacha-vector-header-admits-any-target`,
+`chacha-vector-header-admits-big-endian` and
+`chacha-vector-falls-back-to-portable`.
+
+None of this proves the two paths agree on an input no case reaches.
+The path's timing rests on construction, as the portable loop's does:
+it runs adds, exclusive-ors, shifts and lane moves, with no table and no
+multiply. No gcc measures its branches.
 
 ### The subjectAltName walk against a full-length hostname
 
@@ -2445,7 +2498,8 @@ Three more suites run on every push and add evidence rather than proof.
 `make wycheproof` generates (`tools/wycheproof-total.py`).
 
 The x25519 suite's 518 cases run a second time over the `X25519=wide`
-field, in its own binary.
+field, in its own binary, and the ChaCha20-Poly1305 suite's 316 cases
+over the `CHACHA=vector` path, in another.
 
 The HMAC-SHA256 suite calls `hmac_sha256` directly. So the MAC that
 Finished, the binders, the QUIC Retry token, the HelloRetryRequest

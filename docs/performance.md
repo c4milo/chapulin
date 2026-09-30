@@ -280,7 +280,8 @@ to 0.77 ms ([`bench/notes-primitives.md`](../bench/notes-primitives.md)).
 record and splits it into its stages, for [#184](https://github.com/c4milo/chapulin/issues/184)
 (AES-GCM) and [#181](https://github.com/c4milo/chapulin/issues/181) (ChaCha20-Poly1305). It
 compiles the library sources with the flags `make lib` uses and the defines of a
-`SUITE=aesgcm AES=hw` object with `CH_NATIVE_AES`, and it times these on the same buffers:
+`SUITE=aesgcm AES=hw` object with `CH_NATIVE_AES`, and builds the ChaCha20-Poly1305 rows a
+second time with `CHACHA=vector` (decision 82). It times these on the same buffers:
 
 - `rec_seal`, which copies the caller's plaintext into the record and seals it in place, as
   `ch_write` calls it, and `rec_open`, which opens a record in place, as `ch_read` calls it;
@@ -293,13 +294,15 @@ compiles the library sources with the flags `make lib` uses and the defines of a
 Two stages have no function of their own, so their rows are differences of two timed rows:
 `counter_mode` compiled with a stub in place of its cipher, less the stub's calls, gives the
 AES-GCM exclusive-or rows, and `chacha20_xor` less the block function gives the ChaCha20 one.
+Under `CHACHA=vector` the block function's row is `chacha20_vector.c`'s four blocks at a time,
+with each group's keystream stored to a buffer.
 
 Each figure is the median of five runs, and each run's figure is the median of 15 batches of at
 least 1 ms, with every row's batches interleaved. The CSVs hold every row at 1 KiB, 16 KiB and
 64 KiB, each with its spread and its batches at the 10th and 90th percentile, and a check line
 that compares each whole with the sum of its parts.
 
-The machine is an Apple M1 Pro that ran other work: its one-minute load average was 4.7 to 9.3
+The machine is an Apple M1 Pro that ran other work: its one-minute load average was 12.8 to 17.9
 where the CSV headers record it. A Linux CSV's own load average line is the VM's, and its first
 line holds the host's. So these figures are the filter's, in the terms of the method below. The
 three columns are three CSVs:
@@ -318,51 +321,56 @@ the same machine: `openssl speed -aead`, the median of five one-second runs, and
 
 | AES-128-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal` | 25.3 | 27.4 | 36.3 |
+| `rec_seal` | 26.8 | 27.6 | 36.3 |
 | `rec_seal` without its AEAD | 0.6 (2%) | 0.7 (3%) | 5.8 (16%) |
-| AES, one call per 16-byte block | 9.3 (37%) | 9.6 (35%) | 12.1 (33%) |
-| the 16-byte wipe after each block, timed alone | 7.3 (29%) | 7.6 (28%) | 7.5 (21%) |
-| exclusive-or and counter increments, in place | 6.9 (27%) | 7.7 (28%) | 7.9 (22%) |
-| GHASH over the ciphertext | 9.0 (36%) | 10.3 (38%) | 9.6 (26%) |
-| `rec_open` | 19.9 | 21.0 | 30.6 |
-| exclusive-or and counter increments, as the open runs them | 1.8 | 1.9 | 7.8 |
-| OpenSSL, one record sealed | 2.1 | 2.7 | 2.7 |
+| AES, one call per 16-byte block | 9.5 (35%) | 9.7 (35%) | 12.3 (34%) |
+| the 16-byte wipe after each block, timed alone | 7.5 (28%) | 7.6 (28%) | 7.5 (21%) |
+| exclusive-or and counter increments, in place | 7.1 (27%) | 7.6 (28%) | 7.8 (21%) |
+| GHASH over the ciphertext | 9.2 (34%) | 10.4 (38%) | 9.6 (26%) |
+| `rec_open` | 19.8 | 21.3 | 30.8 |
+| exclusive-or and counter increments, as the open runs them | 1.8 | 1.8 | 7.9 |
+| OpenSSL, one record sealed | 2.1 | 2.8 | 2.7 |
 | Zig `std.crypto`, one record sealed | 4.4 | — | — |
 
 | AES-256-GCM, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal` | 25.3 | 26.6 | 38.2 |
-| AES, one call per 16-byte block | 9.2 (36%) | 9.3 (35%) | 14.2 (37%) |
-| GHASH over the ciphertext | 9.0 (36%) | 10.3 (39%) | 9.6 (25%) |
-| counter mode as the open runs it, batch at the 10th percentile | 9.5 | 9.6 | 20.9 |
-| counter mode as the open runs it, batch at the 90th percentile | 17.7 | 19.2 | 23.2 |
-| OpenSSL, one record sealed | 2.5 | 3.1 | 3.1 |
-| Zig `std.crypto`, one record sealed | 5.3 | — | — |
+| `rec_seal` | 25.9 | 27.5 | 37.3 |
+| AES, one call per 16-byte block | 9.1 (35%) | 9.3 (34%) | 13.9 (37%) |
+| GHASH over the ciphertext | 9.2 (36%) | 10.4 (38%) | 9.5 (26%) |
+| counter mode as the open runs it, batch at the 10th percentile | 9.8 | 9.6 | 20.9 |
+| counter mode as the open runs it, batch at the 90th percentile | 18.8 | 19.4 | 23.0 |
+| OpenSSL, one record sealed | 2.5 | 3.1 | 3.3 |
+| Zig `std.crypto`, one record sealed | 5.4 | — | — |
 
 | ChaCha20-Poly1305, one 16 KiB record, µs | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| `rec_seal`, the packaged multiply | 65.8 | 61.6 | 85.5 |
-| `rec_seal` without its AEAD | 0.3 (1%) | 0.4 (1%) | 5.5 (6%) |
-| the ChaCha20 block function | 25.1 (38%) | 24.4 (40%) | 27.7 (32%) |
-| exclusive-or, loads and stores, in place | 8.2 (12%) | 8.4 (14%) | 5.8 (7%) |
-| Poly1305 over the ciphertext | 33.0 (50%) | 28.3 (46%) | 45.4 (53%) |
-| `rec_seal`, `WIDEMUL=native` | 45.9 | 44.9 | 52.4 |
-| Poly1305 over the ciphertext, `WIDEMUL=native` | 11.6 (25%) | 11.4 (25%) | 12.8 (24%) |
-| `rec_open`, the packaged multiply | 58.1 | 52.7 | 80.3 |
-| OpenSSL, one record sealed | 9.3 | 10.0 | 9.9 |
-| Zig `std.crypto`, one record sealed | 37.0 | — | — |
+| `rec_seal`, the packaged multiply | 67.3 | 61.6 | 83.7 |
+| `rec_seal` without its AEAD | 0.3 (1%) | 0.4 (1%) | 5.5 (7%) |
+| the ChaCha20 block function | 25.4 (38%) | 24.4 (40%) | 27.5 (33%) |
+| exclusive-or, loads and stores, in place | 8.2 (12%) | 7.6 (12%) | 5.7 (7%) |
+| Poly1305 over the ciphertext | 33.0 (49%) | 28.2 (46%) | 44.7 (53%) |
+| `rec_seal`, `WIDEMUL=native` | 45.8 | 44.4 | 51.3 |
+| Poly1305 over the ciphertext, `WIDEMUL=native` | 11.6 (25%) | 11.2 (25%) | 12.8 (25%) |
+| `rec_open`, the packaged multiply | 59.1 | 52.4 | 78.9 |
+| `rec_seal`, `CHACHA=vector` | 47.6 | 41.6 | 65.6 |
+| ChaCha20 in place, `CHACHA=vector` | 13.9 (29%) | 13.5 (32%) | 14.9 (23%) |
+| `rec_seal`, `CHACHA=vector WIDEMUL=native` | 26.6 | 26.1 | 34.2 |
+| ChaCha20 in place, `CHACHA=vector WIDEMUL=native` | 14.0 (53%) | 13.7 (52%) | 14.6 (43%) |
+| `rec_open`, `CHACHA=vector` | 47.3 | 42.5 | 60.6 |
+| OpenSSL, one record sealed | 9.3 | 10.8 | 12.1 |
+| Zig `std.crypto`, one record sealed | 38.0 | — | — |
 
 | Work a record pays whatever its size, and a 1 KiB record, ns | macOS, Apple clang 21 | Linux VM, clang 18 | Linux VM, gcc 13 |
 | --- | --- | --- | --- |
-| AES-128 key expansion, `aes_traffic_key_init` | 194 | 200 | 276 |
-| AES-256 key expansion | 255 | 263 | 318 |
-| the wipe of the expanded key | 86 | 91 | 90 |
-| the GCM tag's fixed work | 129 | 138 | 196 |
-| the Poly1305 tag's fixed work, the packaged multiply | 239 | 217 | 302 |
-| AES-128-GCM `rec_seal`, 1 KiB | 2007 | 2114 | 2884 |
-| `rec_seal` without its AEAD, 1 KiB | 296 (15%) | 290 (14%) | 721 (25%) |
+| AES-128 key expansion, `aes_traffic_key_init` | 207 | 198 | 273 |
+| AES-256 key expansion | 256 | 268 | 322 |
+| the wipe of the expanded key | 89 | 92 | 91 |
+| the GCM tag's fixed work | 130 | 138 | 198 |
+| the Poly1305 tag's fixed work, the packaged multiply | 238 | 220 | 296 |
+| AES-128-GCM `rec_seal`, 1 KiB | 2031 | 2127 | 2863 |
+| `rec_seal` without its AEAD, 1 KiB | 310 (15%) | 308 (14%) | 721 (25%) |
 
-The stages add up: every whole is within 10% of the sum of its parts, except counter mode as the
+The stages add up: every whole is within 9% of the sum of its parts, except counter mode as the
 open runs it on clang, whose speed changes between batches (below). What the numbers show for
 AES-GCM:
 
@@ -398,6 +406,14 @@ For ChaCha20-Poly1305:
 - The exclusive-or in `chacha20_xor`'s loop runs one byte at a time in place on both compilers.
   As the open runs it, clang vectorizes it and it adds almost nothing to the block function's
   time; gcc runs the byte loop there too.
+- `CHACHA=vector` runs the keystream and the exclusive-or in 13.5 to 14.9 µs, where the portable
+  loop takes 32 to 34, on both compilers. The exclusive-or adds nothing measurable there: the path
+  loads, XORs and stores 16 bytes where the keystream alone stores them, and `chacha20_xor` takes
+  the time of the keystream alone, in place and as the open runs it. A 16 KiB `rec_seal` falls
+  by 29% on macOS clang, 32% on the VM's clang and 22% on gcc 13, and a 1 KiB one by 16% to 25%.
+- With `WIDEMUL=native` as well, `rec_seal` takes 26.1 to 34.2 µs, 39% to 42% of the packaged
+  portable record. ChaCha20 is then 43% to 53% of the record, and Poly1305, at 11 to 13 µs, most
+  of the rest.
 
 The numbers support the candidates of [#184](https://github.com/c4milo/chapulin/issues/184) in
 this order, by the share of the record each one addresses:
@@ -417,12 +433,21 @@ this order, by the share of the record each one addresses:
 Besides those four, `rec_seal`'s copy of the caller's plaintext, one byte at a time under gcc, is
 nearly all of the record layer's share there.
 
-For [#181](https://github.com/c4milo/chapulin/issues/181), the numbers support the vector path for
-ChaCha20 first: the block function and the in-place exclusive-or are half of the packaged record
-on clang and more than two thirds of the native one. Most of Poly1305's time in the packaged build
-is the multiply decomposition: `WIDEMUL=native` runs the same Poly1305 in about a third of the
-time. A vector Poly1305 needs a widening multiply too, so it needs the same statement about that
-multiply's timing.
+For [#181](https://github.com/c4milo/chapulin/issues/181), the numbers supported the vector path
+for ChaCha20 first, because the block function and the in-place exclusive-or were half of the
+packaged record on clang and more than two thirds of the native one, and decision 82 added it.
+Two paired runs on each platform agree. The tables hold the second, where the vector `rec_seal`
+took 0.71, 0.68 and 0.78 of the portable one's time in the three columns; the first gave 0.78,
+0.70 and 0.78. Most of what remains of the packaged record is Poly1305's multiply decomposition:
+`WIDEMUL=native` runs the same Poly1305 in about a third of the time. A vector Poly1305 needs a
+widening multiply too, so it needs the same statement about that multiply's timing.
+
+No x86-64 machine has timed the vector path's SSE2 arm; CI's x86-64 runners test it. A column
+for it needs `make bench-record` on an x86-64 host that runs nothing else, once with gcc and once
+with clang: the script finds the AES instructions there with `-maes -mpclmul`, writes
+`bench/results-record-linux-x86_64-gcc.csv` and its clang twin, and `tools/bench_record.py` then
+takes the two files as columns. An emulated x86-64, such as an OrbStack amd64 container, runs
+translated code, so its times say nothing about the SSE2 arm.
 
 ## The method behind these numbers
 

@@ -140,6 +140,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
+      # so this job runs the vector path's NEON arm under gcc; the check
+      # and san jobs run its SSE2 arm (test/platforms.mk, suite-check).
       - run: make suite-check
       # The AES=hw binaries on the Arm instructions under gcc, which no
       # other CI job builds (test/platforms.mk, aes-hw-check).

@@ -1,0 +1,16 @@
+invariant: INV-16
+file: chacha20_vector.c
+catches: chacha20_equiv_test
+reason: the last partial group XORs only whole 16-byte rows, the way a
+  vector loop that forgets its remainder does, so the last 1 to 15 bytes
+  of any length that is not a multiple of 16 pass through unencrypted.
+  CBMC cannot read an intrinsic, so no proof covers this file, and
+  bin/chacha20_equiv_test is what holds it to chacha20.c: its every-length
+  pass runs each length from 0 to 1,024 bytes.
+
+--- old
+        for (size_t i = 0; i < n; i++) {
+            out[i] = in[i] ^ keystream[i];
+--- new
+        for (size_t i = 0; i < (n & ~(size_t)15); i++) {
+            out[i] = in[i] ^ keystream[i];
