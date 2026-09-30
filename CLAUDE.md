@@ -123,16 +123,17 @@ Home: github.com/c4milo.
   `aes_block.h` with one of `quic_aes_soft.c`, `aes_hw.c` or
   `aes_extern.c` (the AES-128 key expansion and forward cipher of
   FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` and
-  `aes_extern.c`, and on `aes_hw.c` counter mode over whole blocks,
-  eight a pass; the Makefile AES variable picks one, and
+  `aes_extern.c`; the Makefile AES variable picks one, and
   `quic_aes_soft.c` compiles only in a QUIC build, and a SUITE=aesgcm
   build refuses it except under AES=runtime, which runs QUIC's public
   keys alone on it)
   ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
-  (GHASH's multiply and data loop on the carry-less multiply, AES=hw
-  and AES=runtime) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
+  (GHASH's multiply and data loop on the carry-less multiply) and
+  `gcm_hw.[ch]` (counter mode over whole blocks, and the seal's and the
+  open's counter mode and GHASH in one loop), both over `ghash_vector.h`
+  (the GHASH steps they share), AES=hw and AES=runtime ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
   X25519=wide) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) +
@@ -278,7 +279,7 @@ Home: github.com/c4milo.
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `aes_hw.c` and `ghash_hw.c` cannot join, because
+  that grows; `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` cannot join, because
   every spec targets a core with no AES or carry-less multiply
   instructions.
   The Makefile AES variable chooses the implementation the way TRUST
@@ -288,19 +289,21 @@ Home: github.com/c4milo.
   `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
   here, and each of the three puts one implementation in an object.
   `runtime` is the one value that puts two there, and
-  `lint-trust-separation` admits no other pair: `hw`'s two files and, in a
+  `lint-trust-separation` admits no other pair: `hw`'s three files and, in a
   QUIC object, `soft`'s S-box, which runs QUIC's public keys alone. The
   caller's answer in `ch_cfg.aes_instructions` picks between them for
   each session, and a traffic key runs on the instructions alone
   (docs/decisions.md 81). `hw` also moves GHASH off `gcm.c`'s
-  portable multiply onto the carry-less multiply, in `ghash_hw.c`:
+  portable multiply onto the carry-less multiply, in `ghash_hw.c` and
+  `gcm_hw.c`:
   PMULL under `__ARM_FEATURE_AES`, which the Arm C Language Extensions
   put in the AES extension, and PCLMULQDQ under `__PCLMUL__`, which
   x86-64 turns on with `-mpclmul` beside `-maes`. Under `hw` those macros
   are the whole detection, and the choice is the compiler's at build
   time. Under `runtime` the choice is the caller's at run time: the caller
   probes the CPU and states what it found in `ch_cfg.aes_instructions`,
-  every init refuses an unset answer, and `aes_hw.c` and `ghash_hw.c` turn
+  every init refuses an unset answer, and `aes_hw.c`, `ghash_hw.c` and
+  `gcm_hw.c` turn
   the instructions on for their own functions alone, so the rest of the
   object runs on any CPU of its architecture. Under every value nothing
   here probes a CPU and nothing asks an operating system. An
