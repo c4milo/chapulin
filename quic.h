@@ -317,8 +317,14 @@ int ch_quic_seal_close(ch_quic *q, uint8_t level, uint32_t version, uint64_t pn,
 // Neither case installs a key set or derives one, so a packet that appears to trigger a
 // key update and then fails to authenticate changes nothing at all, which is §5.5's second
 // MUST (rfc9001.txt:1369-1371); §6.3 gives the reason, that such packets are easy to forge
-// (rfc9001.txt:1706-1707). The bytes of a packet that reached the AEAD are unspecified
-// after a discard, because the call works in place.
+// (rfc9001.txt:1706-1707). A packet that reached the AEAD and is discarded holds no
+// plaintext byte afterwards. The call works in place, so pkt holds the header with its
+// protection removed, and where the payload was, zeros under AES-GCM, which every Initial
+// packet and the AES-GCM suites use and whose open decrypts while it hashes and wipes what
+// it wrote (docs/decisions.md 85), or the ciphertext under ChaCha20-Poly1305, whose open
+// writes nothing on a mismatch. The tag and
+// every byte past pkt_len stay as they arrived, so the caller can still compare a
+// datagram's last 16 bytes with its Stateless Reset tokens (rfc9000.txt:3486-3497).
 //
 // Returns CH_QUIC_AEAD_LIMIT from the call that carries q->open_failures past §6.6's
 // integrity limit of 2^36 invalid packets (rfc9001.txt:1823-1831). The session is then

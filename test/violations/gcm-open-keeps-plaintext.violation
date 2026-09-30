@@ -1,0 +1,22 @@
+invariant: INV-17
+file: gcm.c
+catches: quic_test
+builds: bin/quic_test
+reason: gcm_open decrypts while it hashes, so a tag that does not match
+  finds the plaintext already written. Without the wipe a failed open
+  returns 0 and leaves that plaintext in the caller's buffer, and with it
+  the keystream of the nonce, which is the plaintext exclusive-ored with
+  ciphertext the sender chose. gcm.h promises zeros there
+  (docs/decisions.md 85). The SP 800-38D vectors in test/gcm_tests.h
+  forge one tag bit and require zeros after the call, so bin/quic_test
+  is what objects.
+
+--- old
+    if (!ok) {
+        ct_wipe(pt, n);
+        return 0;
+    }
+--- new
+    if (!ok) {
+        return 0;
+    }

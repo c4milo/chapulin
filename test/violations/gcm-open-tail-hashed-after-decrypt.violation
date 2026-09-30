@@ -1,0 +1,18 @@
+invariant: INV-26
+file: gcm.c
+catches: quic_test
+builds: bin/quic_test
+reason: gcm_open runs counter mode over the bytes the whole passes left
+  before GHASH hashes them. An open into a second buffer cannot show the
+  difference; an open in place, which quic_packet.c's is, hashes the
+  plaintext it just wrote over the ciphertext and refuses every genuine
+  packet. Under AES=soft no whole pass exists, so the whole payload is
+  that rest. bin/quic_test opens RFC 9001's Initial packets in place and
+  requires them to open.
+
+--- old
+    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    counter_mode(k, counter, &ct[done], n - done, &pt[done]);
+--- new
+    counter_mode(k, counter, &ct[done], n - done, &pt[done]);
+    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);

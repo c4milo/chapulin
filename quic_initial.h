@@ -289,10 +289,14 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
 // (rfc9001.txt:1373-1376). That one is an authentication failure, and
 // ch_quic_open raises ch_quic's open_failures for it and asks
 // quic_integrity_limit_exceeded what the new count means. A discard
-// writes no plaintext byte anywhere. The rest of pkt is unspecified
-// after this second case, because the call works in place and has
-// already removed the header protection; the caller drops the packet,
-// so it reads none of it.
+// leaves no plaintext byte anywhere: the open decrypts while it hashes,
+// and wipes the payload it wrote when the tag does not match (gcm.h,
+// docs/decisions.md 85). pkt then holds the header with its protection
+// removed, because the call works in place and removes it before the
+// AEAD runs, and zeros where the payload was. The tag and every byte past
+// pkt_len stay as they arrived, so a caller can still compare a
+// datagram's last 16 bytes with its Stateless Reset tokens
+// (rfc9000.txt:3486-3497).
 //
 // No other return code exists for this call. It raises no counter
 // itself: the §6.6 counts are per connection and live in ch_quic

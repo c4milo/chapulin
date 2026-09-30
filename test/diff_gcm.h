@@ -134,19 +134,19 @@ static void diff_gcm_open(size_t key_len) {
         expect(cmd, pt_hex);
 
         // The same ciphertext under one wrong tag bit. Both sides refuse,
-        // and the C writes no plaintext byte.
+        // and the C leaves no plaintext byte: it wipes what it wrote.
         uint8_t wrong_tag[GCM_TAG];
         memcpy(wrong_tag, tag, sizeof wrong_tag);
         wrong_tag[sizeof wrong_tag - 1] = (uint8_t)(wrong_tag[sizeof wrong_tag - 1] ^ 0x80);
-        uint8_t untouched[DIFF_GCM_MAX];
-        memset(untouched, 0x5a, sizeof untouched);
-        if (gcm_open(&k, nonce, aad, aad_len, ct, n, wrong_tag, untouched) != 0) {
+        uint8_t wiped[DIFF_GCM_MAX];
+        memset(wiped, 0x5a, sizeof wiped);
+        if (gcm_open(&k, nonce, aad, aad_len, ct, n, wrong_tag, wiped) != 0) {
             (void)fprintf(stderr, "diff: gcm_open accepted a wrong tag at %zu bytes\n", n);
             exit(1);
         }
         for (size_t i = 0; i < n; i++) {
-            if (untouched[i] != 0x5a) {
-                (void)fprintf(stderr, "diff: gcm_open wrote plaintext on a wrong tag\n");
+            if (wiped[i] != 0) {
+                (void)fprintf(stderr, "diff: gcm_open left a nonzero byte on a wrong tag\n");
                 exit(1);
             }
         }

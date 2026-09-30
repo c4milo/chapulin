@@ -25,8 +25,8 @@
 //                            see that a refused version built no key.
 //   aes_encrypt_block_hp     AES_BLOCK unconstrained bytes.
 //   gcm_seal                 n ciphertext bytes and GCM_TAG tag bytes.
-//   gcm_open                 1 or 0, with the n plaintext bytes written
-//                            only on 1. That is the all-or-nothing rule
+//   gcm_open                 1 or 0, with n plaintext bytes written on 1
+//                            and n zero bytes on 0. That is the rule
 //                            gcm_refusal proves of the real call.
 //   quic_header_protect      byte 0 and QUIC_PN_MAX_LEN bytes at pn_off.
 //   quic_header_unprotect    the same writes, and a length of 1 to
@@ -122,7 +122,9 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
     __CPROVER_assert(__CPROVER_r_ok(tag, GCM_TAG), "gcm_open: tag readable");
     __CPROVER_assert(n == 0 || __CPROVER_w_ok(pt, n), "gcm_open: plaintext writable");
     if (nondet_u8() == 0) {
-        return 0; // the tag did not match, and no plaintext byte is written
+        // The tag did not match, and the bytes the open wrote are wiped.
+        memset(pt, 0, n);
+        return 0;
     }
     fill_nondet(pt, n);
     return 1;

@@ -1,8 +1,9 @@
-// Proves: gcm_open is all-or-nothing. For any tag at all, an open that
-// returns 0 leaves every byte of the output buffer as the caller left
-// it, checked against a sentinel the harness writes first. gcm.h
-// states that promise, and it is why the tag is computed over the
-// ciphertext and compared before any plaintext byte is written.
+// Proves: gcm_open releases no plaintext. For any tag at all, an open
+// that returns 0 leaves zeros in the n bytes of the output it may write
+// and every byte after them as the caller left it, checked against a
+// sentinel the harness writes first. gcm.h states that promise: the open
+// decrypts while it hashes, and wipes what it wrote when the tag does not
+// match.
 //
 // Nothing constrains the tag and nothing constrains the return value, so
 // one formula carries the accepting arm and the refusing arm together.
@@ -12,8 +13,9 @@
 // proof/run.sh records. Leaving the tag free gets the promise with one
 // pipeline in the formula instead of two.
 //
-// The property is `rc != 0 || pt[i] == sentinel[i]`, which is vacuous if
-// the refusing arm is unreachable. CH_GCM_REACH=1 replaces it with
+// The property is `rc != 0 || pt[i] == 0` below n and `pt[i] ==
+// sentinel[i]` from n up, the first vacuous if the refusing arm is
+// unreachable. CH_GCM_REACH=1 replaces it with
 // __CPROVER_assert(0) under __CPROVER_assume(rc == 0); that run must
 // report VERIFICATION FAILED on that one property, and proof/run.sh
 // records the measurement. CH_GCM_REACH=2 does the same for the
@@ -75,7 +77,11 @@ int main(void) {
     __CPROVER_assert(0, "accepting arm unreachable");
 #else
     for (size_t i = 0; i < sizeof pt; i++) {
-        __CPROVER_assert(rc != 0 || pt[i] == sentinel[i], "failed open writes nothing");
+        if (i < n) {
+            __CPROVER_assert(rc != 0 || pt[i] == 0, "failed open leaves zeros");
+        } else {
+            __CPROVER_assert(pt[i] == sentinel[i], "open writes nothing past n");
+        }
     }
 #endif
     return 0;

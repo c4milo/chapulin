@@ -2507,7 +2507,7 @@ last `ROLE=server` stub, as the entry said it would.
   contract `aes_block.h` states. Under `AES=hw`, GHASH's multiply by
   the hash subkey also moves out of `gcm.c`, into `ghash_hw.c`
   on the carry-less multiply, behind `ghash_hw.h`, and counter mode's
-  whole blocks and the seal's whole passes into `gcm_hw.c`, behind
+  whole blocks and the seal's and the open's whole passes into `gcm_hw.c`, behind
   `gcm_hw.h`, which take the round keys `gcm.c` passes; the hash subkey
   is the forward cipher of a zero block under the same key, so it is
   public exactly when that key is. Only `AES=soft` is table-driven,
@@ -3281,15 +3281,26 @@ last `ROLE=server` stub, as the entry said it would.
   `ghash-hw-sums-past-wipe` moves the sums past its end, and
   `ghash-hw-powers-held-in-registers` reads the powers through an ordinary
   pointer; each requires the binary to fail. `gcm_hw.c`'s one-pass seal
-  keeps its powers, sums and each pass's keystream in one state it wipes
-  when the call ends, and writes each pass's output over its keystream, so
-  no keystream stays live to that wipe; the same binary copies the stack
-  below one seal and requires none of them there, the last pass's
-  keystream included.
+  and open keep their powers, sums and each pass's keystream in one state
+  they wipe when the call ends, and write each pass's output over its
+  keystream, so no keystream stays live to that wipe; the same binary
+  copies the stack below one seal and one open and requires none of them
+  there, the last pass's keystream included.
+  An AES-GCM open decrypts while it hashes, so a tag that does not match
+  finds the plaintext written, and that plaintext exclusive-ored with the
+  ciphertext is the keystream of the nonce. `gcm.c` wipes those n bytes
+  before it returns 0 (gcm.h, docs/decisions.md 85). `bin/quic_test`'s
+  SP 800-38D vectors forge one tag bit and require zeros after the call,
+  and `gcm-open-keeps-plaintext` drops the wipe and requires that binary
+  to fail. `bin/quic_suite_test` forges the tag of a packet with a second
+  packet after it in one datagram, and requires the failed open to leave
+  the header unprotected, as it does before the AEAD runs, zeros in the
+  payload, and the tag and the packet after it as they arrived.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has
-  arrived, or wipes the write key there.
+  arrived, or wipes the write key there, or returns from a failed AES-GCM
+  open without wiping the plaintext it wrote.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
 ### INV-18 — no library-global mutable state

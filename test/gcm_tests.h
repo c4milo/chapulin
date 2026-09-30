@@ -127,9 +127,11 @@ static void gcm_test_key(aes_public_key *k, const char *key_hex) {
 
 // Every SP 800-38D case, four questions each: the ciphertext and the tag
 // gcm_seal writes, the plaintext gcm_open releases, and the refusal
-// gcm_open answers with when one tag bit is wrong. The refusal arm also
-// checks that no plaintext byte was written, which is the promise
-// gcm.h makes and the reason the tag is computed first.
+// gcm_open answers with when one tag bit is wrong. The refusal arm is a
+// forged tag, and it also checks what gcm.h promises of it: the open
+// decrypts while it hashes, so it wipes the n bytes it wrote, and the
+// output holds zeros after the call and the byte after them is
+// untouched.
 static void seal_and_open_case(const sp800_38d_case *c) {
     uint8_t iv[AES_IV];
     uint8_t aad[GCM_TEST_MAX];
@@ -154,16 +156,17 @@ static void seal_and_open_case(const sp800_38d_case *c) {
     CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, tag, got_pt) == 1);
     CHECK(memcmp(got_pt, pt, n) == 0);
 
-    // One wrong tag bit, and the plaintext buffer stays as it was.
+    // One wrong tag bit, and the plaintext buffer holds zeros.
     uint8_t wrong_tag[GCM_TAG];
     memcpy(wrong_tag, tag, sizeof wrong_tag);
     wrong_tag[0] = (uint8_t)(wrong_tag[0] ^ 1);
-    uint8_t untouched[GCM_TEST_MAX];
-    memset(untouched, 0xa5, sizeof untouched);
-    CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, wrong_tag, untouched) == 0);
+    uint8_t wiped[GCM_TEST_MAX + 1];
+    memset(wiped, 0xa5, sizeof wiped);
+    CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, wrong_tag, wiped) == 0);
     for (size_t j = 0; j < n; j++) {
-        CHECK(untouched[j] == 0xa5);
+        CHECK(wiped[j] == 0);
     }
+    CHECK(wiped[n] == 0xa5);
 }
 
 static void test_sp800_38d_cases(void) {

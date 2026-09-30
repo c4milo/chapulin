@@ -1,9 +1,9 @@
 // AES-GCM's work over whole blocks on the AES instructions and the
 // carry-less multiply: SP 800-38D §6.5's counter mode, several blocks at a
-// time, and the seal's counter mode and GHASH in one loop. gcm.c's
-// counter_mode and seal call these entries for a schedule the AES
-// instructions run, and run a schedule the table or a peripheral runs one
-// block at a time. The Makefile AES variable compiles gcm_hw.c where it
+// time, and the seal's and the open's counter mode and GHASH in one loop.
+// gcm.c's counter_mode, seal and open call these entries for a schedule
+// the AES instructions run, and run a schedule the table or a peripheral
+// runs one block at a time. The Makefile AES variable compiles gcm_hw.c where it
 // compiles aes_hw.c and ghash_hw.c: AES=hw, and AES=runtime, where gcm.c
 // calls it for a schedule on the instructions alone (aes_schedule.h).
 //
@@ -33,9 +33,9 @@
 
 #include "aes.h"
 
-// How many blocks a pass of gcm_seal_passes_hw covers: the eight counter
-// blocks the AES rounds run together, and the eight ciphertext blocks one
-// GHASH reduction covers.
+// How many blocks a pass of gcm_seal_passes_hw and gcm_open_passes_hw
+// covers: the eight counter blocks the AES rounds run together, and the
+// eight ciphertext blocks one GHASH reduction covers.
 #define GCM_HW_PASS_BLOCKS 8
 
 // SP 800-38D §6.5's GCTR over whole blocks, under round keys expanded for
@@ -73,6 +73,21 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
 // may be NULL when passes is 0, with in == out allowed and no other
 // overlap. Writes out, counter and acc, and cannot fail.
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out);
+
+// The open's GHASH and counter mode over passes * GCM_HW_PASS_BLOCKS whole
+// blocks of ciphertext in one loop: acc goes on through GHASH over every
+// block of in, as gcm_seal_passes_hw's does over its out, and out gets
+// gcm_counter_blocks_hw's output over in, which is the plaintext. It
+// checks no tag: the caller compares the tag once GHASH is done and wipes
+// out when it does not match (gcm.h).
+//
+// Requires: what gcm_seal_passes_hw requires, with in == out allowed and
+// so is out below in (out <= in), as gcm_counter_blocks_hw admits: each
+// pass's ciphertext is hashed before any of its plaintext is written.
+// Writes out, counter and acc, and cannot fail.
+void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out);
 

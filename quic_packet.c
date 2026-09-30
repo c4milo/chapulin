@@ -52,7 +52,10 @@ static void seal_body(quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8
 }
 
 // The other direction, ct and its tag opened into pt: 1 when the tag
-// matched, and 0, with nothing written, when it did not.
+// matched, and 0 when it did not, with no plaintext at pt: AES-GCM wipes
+// the n bytes it wrote while it hashed (gcm.h), and ChaCha20-Poly1305
+// writes none (aead.h). Neither writes past pt's n bytes, so the tag
+// after them stays as it arrived.
 static int open_body(const quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
                      size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt) {
 #ifdef CH_SUITE_AES_GCM

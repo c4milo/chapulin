@@ -1,8 +1,8 @@
-// Proves: gcm_open is all-or-nothing. On any tag that differs from the
-// genuine one it returns 0 and writes no plaintext, checked by asserting
-// that the output buffer's sentinel survives the failed open. gcm.h
-// states that promise, and it is why the tag is computed over the
-// ciphertext before any plaintext byte is written.
+// Proves: gcm_open releases no plaintext. On any tag that differs from
+// the genuine one it returns 0 and leaves zeros in the n bytes it may
+// write, and the output buffer's sentinel past them survives the failed
+// open. gcm.h states that promise: the open decrypts while it hashes, and
+// wipes what it wrote when the tag does not match.
 //
 // Split out of gcm_harness.c, for the reason aead_forge is split
 // out of aead_harness.c: one formula carrying the round trip and the
@@ -65,7 +65,8 @@ int main(void) {
     __CPROVER_assert(gcm_open(&k, nonce, aad, aad_len, ct, n, forged, out) == 0,
                      "forged tag rejected");
     for (size_t i = 0; i < sizeof out; i++) {
-        __CPROVER_assert(out[i] == sentinel[i], "failed open writes nothing");
+        __CPROVER_assert(i < n ? out[i] == 0 : out[i] == sentinel[i],
+                         "failed open leaves zeros and nothing past n");
     }
     return 0;
 }

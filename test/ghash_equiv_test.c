@@ -287,29 +287,37 @@ static uint8_t soft_ct[MAX_DATA];
 static uint8_t hw_ct[MAX_DATA];
 static uint8_t soft_pt[MAX_DATA];
 static uint8_t hw_pt[MAX_DATA];
+// How far below its ciphertext compare_aead's shifted open writes the
+// plaintext, and the buffer that holds both.
+#define OPEN_SHIFT 5
+static uint8_t shifted[MAX_DATA + OPEN_SHIFT];
 
-// The byte an open's output buffer holds before the call, so a refused
-// open can be seen to have written nothing.
+// The byte an open's output buffer holds before the call, so the byte
+// after the n an open may write can be seen to stay as it was.
 #define UNWRITTEN 0xa5
 
-static int all_unwritten(const uint8_t *p, size_t n) {
+// Whether a refused open left p as gcm.h promises: n zero bytes, and after
+// them, where the buffer goes on, the byte the call found there.
+static int wiped_to(const uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
-        if (p[i] != UNWRITTEN) {
+        if (p[i] != 0) {
             return 0;
         }
     }
-    return 1;
+    return n == MAX_DATA || p[n] == UNWRITTEN;
 }
 
 // Opens the sealed bytes under both paths with the given tag and
 // requires both to give the expected verdict. A genuine tag must open to
 // the plaintext on both, and a wrong one must leave both output buffers
-// unwritten.
+// wiped: both paths decrypt while they hash, and wipe what they wrote
+// when the tag does not match.
 static void compare_open(const char *case_name, const aes_public_key *k,
                          const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len, size_t n,
                          const uint8_t tag[GCM_TAG], int genuine) {
-    memset(soft_pt, UNWRITTEN, n);
-    memset(hw_pt, UNWRITTEN, n);
+    size_t filled = n < MAX_DATA ? n + 1 : n;
+    memset(soft_pt, UNWRITTEN, filled);
+    memset(hw_pt, UNWRITTEN, filled);
     int soft_ok = gcm_open_soft(k, nonce, aad, aad_len, hw_ct, n, tag, soft_pt);
     int hw_ok = gcm_open(k, nonce, aad, aad_len, hw_ct, n, tag, hw_pt);
     if (soft_ok != genuine || hw_ok != genuine) {
@@ -319,13 +327,17 @@ static void compare_open(const char *case_name, const aes_public_key *k,
     if (genuine && (memcmp(soft_pt, plaintext, n) != 0 || memcmp(hw_pt, plaintext, n) != 0)) {
         fail(case_name, "an open wrote bytes other than the plaintext");
     }
-    if (!genuine && (!all_unwritten(soft_pt, n) || !all_unwritten(hw_pt, n))) {
-        fail(case_name, "a refused open wrote to its output");
+    if (!genuine && (!wiped_to(soft_pt, n) || !wiped_to(hw_pt, n))) {
+        fail(case_name, "a refused open left bytes other than zeros in its output");
     }
 }
 
 // One AEAD case on both paths: seal, GHASH, open with the genuine tag and
 // with one bit of it flipped, and the in-place seal quic_initial.c uses.
+// Then the two other shapes gcm.h admits for an open: in place, which
+// quic_packet.c uses, and OPEN_SHIFT bytes below the ciphertext. Each
+// writes plaintext over ciphertext it has not yet read, so each fails if
+// the open hashes a byte after it wrote that byte's address.
 static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
     uint8_t key[AES_128_KEY];
     uint8_t nonce[AES_IV];
@@ -374,6 +386,17 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
     gcm_seal(&k, nonce, aad, aad_len, hw_pt, n, hw_pt, in_place_tag);
     if (memcmp(hw_pt, hw_ct, n) != 0 || memcmp(in_place_tag, hw_tag, GCM_TAG) != 0) {
         fail(case_name, "the in-place seal differs from the seal into a second buffer");
+        return;
+    }
+    if (gcm_open(&k, nonce, aad, aad_len, hw_pt, n, hw_tag, hw_pt) != 1 ||
+        memcmp(hw_pt, plaintext, n) != 0) {
+        fail(case_name, "the in-place open did not return the plaintext");
+        return;
+    }
+    memcpy(&shifted[OPEN_SHIFT], hw_ct, n);
+    if (gcm_open(&k, nonce, aad, aad_len, &shifted[OPEN_SHIFT], n, hw_tag, shifted) != 1 ||
+        memcmp(shifted, plaintext, n) != 0) {
+        fail(case_name, "the open below its ciphertext did not return the plaintext");
         return;
     }
     aeads++;

@@ -53,20 +53,26 @@ void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_
               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[GCM_TAG]);
 
 // Opens n ciphertext bytes under k's packet protection key, the GCM-AD
-// of SP 800-38D. It computes the tag over the ciphertext first and
-// releases no plaintext byte on a mismatch, as aead_open does.
+// of SP 800-38D. It decrypts as it hashes, in one pass over the
+// ciphertext, and compares the tag after both are done. On a mismatch it
+// has already written the plaintext, so it wipes those n bytes before it
+// returns, and a failed open returns no plaintext byte (docs/decisions.md
+// 85). aead_open still compares first and writes nothing on a mismatch.
 //
 // Requires: the same shapes gcm_seal requires, with ct readable and pt
 // writable for n bytes. pt == ct is allowed, and so is pt below ct
-// (pt <= ct), because decryption copies forward: each byte is written
-// at or after the address it was read from.
+// (pt <= ct), because decryption copies forward: each byte is hashed and
+// then written at or before the address it was read from.
 //
-// Returns 1 and writes n plaintext bytes when the tag matches. Returns
-// 0 and writes nothing when it does not. The caller decides what a 0
-// means: for a QUIC packet it is a discard that leaves the session live
-// and raises the RFC 9001 §6.6 count of failed opens
-// (rfc9001.txt:1829-1831), and for a Retry packet it is a packet the
-// caller drops.
+// Returns 1 and writes n plaintext bytes when the tag matches. Returns 0
+// and leaves n zero bytes at pt when it does not. Either way it writes no
+// byte outside those n, so the tag and anything after pt's n bytes stay
+// as they were: a QUIC caller that opens in place still finds the tag
+// bytes, which RFC 9000 §10.3.1 compares with its Stateless Reset tokens
+// (rfc9000.txt:3486-3497). The caller decides what a 0 means: for a QUIC
+// packet it is a discard that leaves the session live and raises the RFC
+// 9001 §6.6 count of failed opens (rfc9001.txt:1829-1831), and for a Retry
+// packet it is a packet the caller drops.
 int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG], uint8_t *pt);
 

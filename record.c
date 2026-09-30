@@ -52,7 +52,9 @@ static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const u
 
 // The other direction: the record at rec holds a header, len bytes of
 // ciphertext and the tag, and pt gets the plaintext. Returns 1 when the
-// tag matched and 0, having written nothing, when it did not.
+// tag matched and 0 when it did not, with no plaintext at pt: AES-GCM
+// wipes the len bytes it wrote while it hashed (gcm.h), and
+// ChaCha20-Poly1305 writes none (aead.h).
 static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
                      size_t len, uint8_t *pt) {
 #ifdef CH_SUITE_AES_GCM

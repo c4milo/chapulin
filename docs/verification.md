@@ -47,7 +47,7 @@ The other 13 sources are in no such harness:
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
-| `gcm_hw.c` | It runs counter mode and the one-pass seal on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal to `gcm.c`'s proven one-block loop and portable GHASH. |
+| `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
@@ -382,10 +382,13 @@ The entries are grouped by area:
     key schedule, any nonce, and both aliasing shapes the header admits:
     separate buffers, and `pt == ct`, which is how `quic_initial.c`
     decrypts a payload in place.
-  - `gcm_refusal`: `gcm_open` is all-or-nothing. For any tag at all, a
-    call that returns 0 writes no plaintext byte. The same harness runs
-    twice more, once per arm, with a define that asserts that arm is
-    unreachable, and both runs must fail.
+  - `gcm_refusal`: `gcm_open` releases no plaintext. For any tag at
+    all, a call that returns 0 leaves zeros in the n bytes of its output,
+    and no call writes a byte past them. The open decrypts while it
+    hashes and wipes what it wrote on a mismatch (`docs/decisions.md`
+    entry 85). The same harness runs twice more, once per arm, with a
+    define that asserts that arm is unreachable, and both runs must
+    fail.
   - `ghash`: the same safety for GHASH alone, at sixteen blocks per
     argument, where the whole-module formula gets two.
 - **Bound:** plaintext and associated data ≤ 32 B each for safety and
@@ -409,10 +412,13 @@ The entries are grouped by area:
   a block and eight blocks a pass against the powers of H each call
   computes, with the reduction on the same instruction, and runs
   counter mode's whole blocks through `gcm_hw.c`'s `gcm_counter_blocks_hw`,
-  several at a time, and a seal's whole passes of eight blocks through
-  `gcm_seal_passes_hw`, which runs counter mode and GHASH over the
-  ciphertext in one loop. No harness reads any of the three.
-  `bin/ghash_equiv_test` holds both to the portable paths byte for byte,
+  several at a time, and a seal's and an open's whole passes of eight
+  blocks through `gcm_seal_passes_hw` and `gcm_open_passes_hw`, which run
+  counter mode and GHASH over the ciphertext in one loop. No harness reads
+  any of them. `gcm_refusal`'s wipe on a mismatch sits in `gcm.c` after
+  both paths, so it holds for both. `bin/ghash_equiv_test` holds both to
+  the portable paths byte for byte, the opens in place and below the
+  ciphertext included,
   `bin/aes_equiv_test` holds the multi-block counter mode to the soft
   cipher at every block count through three passes and across the 2^32
   counter wrap, and the vectors, the Wycheproof `AES=hw` leg and

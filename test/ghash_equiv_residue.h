@@ -1,8 +1,9 @@
-// What gcm_hash_data_hw and gcm_seal_passes_hw leave on the stack. Each
-// computes the powers of the hash subkey it needs, keeps them in its
-// ghash_state on its frame beside the subkey and the sums each pass adds
-// up, and wipes that state once when the call ends; the seal keeps the
-// pass's keystream in the same object and wipes it with them. The frame is
+// What gcm_hash_data_hw, gcm_seal_passes_hw and gcm_open_passes_hw leave
+// on the stack. Each computes the powers of the hash subkey it needs,
+// keeps them in its ghash_state on its frame beside the subkey and the
+// sums each pass adds up, and wipes that state once when the call ends;
+// the seal and the open keep the pass's keystream in the same object and
+// wipe it with them. The frame is
 // dead after the return, but its bytes stay in memory below this binary's
 // own frames until another call writes over them.
 //
@@ -22,8 +23,8 @@
 //   the three sums the last pass leaves in ghash_state, the carry-less
 //   products of its blocks and the powers before the reduction.
 //
-// The seal's run also looks for each block of the last pass's keystream,
-// its ciphertext exclusive-ored with its plaintext.
+// The seal's and the open's runs also look for each block of the last
+// pass's keystream, its ciphertext exclusive-ored with its plaintext.
 //
 // The portable multiply and residue_carryless_multiply compute them only
 // after the copy, so their own frames cannot hold them first.
@@ -45,6 +46,7 @@
 static uint8_t residue_copy[RESIDUE_BYTES];
 static uint8_t residue_data[RESIDUE_DATA];
 static uint8_t residue_sealed[RESIDUE_DATA];
+static uint8_t residue_opened[RESIDUE_DATA];
 static uint8_t residue_acc[AES_BLOCK]; // the accumulator a call starts from
 static uint8_t residue_result[AES_BLOCK];
 static uint8_t residue_subkey[AES_BLOCK];
@@ -62,6 +64,15 @@ static __attribute__((noinline)) void residue_seal_call(void) {
     memcpy(counter, residue_counter, AES_BLOCK);
     gcm_seal_passes_hw(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
                        residue_data, RESIDUE_PASSES, residue_sealed);
+}
+
+// residue_data read as ciphertext, opened into a second buffer.
+static __attribute__((noinline)) void residue_open_call(void) {
+    memcpy(residue_result, residue_acc, AES_BLOCK);
+    uint8_t counter[AES_BLOCK];
+    memcpy(counter, residue_counter, AES_BLOCK);
+    gcm_open_passes_hw(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
+                       residue_data, RESIDUE_PASSES, residue_opened);
 }
 
 // test/stack_residue.c, compiled as a source of its own.
@@ -187,6 +198,36 @@ static int residue_look(const char *run, const uint8_t *hashed) {
     return 0;
 }
 
+// Each block of the last pass's keystream, in exclusive-ored with out,
+// looked for in the copy the last snapshot took.
+static int residue_keystream(const char *run, const uint8_t *in, const uint8_t *out) {
+    size_t last = (size_t)(RESIDUE_PASSES - 1) * RESIDUE_POWERS * AES_BLOCK;
+    for (size_t b = 0; b < RESIDUE_POWERS; b++) {
+        uint8_t keystream[AES_BLOCK] = {0};
+        for (size_t i = 0; i < AES_BLOCK; i++) {
+            size_t at = last + b * AES_BLOCK + i;
+            keystream[i] = (uint8_t)(out[at] ^ in[at]);
+        }
+        if (residue_found(run, "keystream block", b, keystream, AES_BLOCK)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// A new subkey, accumulator, key and counter block for the next run: the
+// values residue_look computed for the run before can sit in a
+// callee-saved register that the next call then saves on its own frame,
+// and the copy would find them there.
+static void residue_fresh_inputs(void) {
+    rng_fill(residue_subkey, sizeof residue_subkey);
+    rng_fill(residue_acc, sizeof residue_acc);
+    uint8_t key[AES_128_KEY];
+    rng_fill(key, sizeof key);
+    aes_expand_round_keys(key, residue_round_keys);
+    rng_fill(residue_counter, sizeof residue_counter);
+}
+
 static void run_residue(void) {
     rng_fill(residue_subkey, sizeof residue_subkey);
     rng_fill(residue_acc, sizeof residue_acc);
@@ -197,31 +238,23 @@ static void run_residue(void) {
         return;
     }
 
-    // A second subkey and accumulator: the values residue_look computed
-    // for the first run can sit in a callee-saved register that the seal
-    // then saves on its own frame, and the copy would find them there.
-    rng_fill(residue_subkey, sizeof residue_subkey);
-    rng_fill(residue_acc, sizeof residue_acc);
-    uint8_t key[AES_128_KEY];
-    rng_fill(key, sizeof key);
-    aes_expand_round_keys(key, residue_round_keys);
-    rng_fill(residue_counter, sizeof residue_counter);
+    residue_fresh_inputs();
     residue_seal_call();
     residue_snapshot();
-    if (residue_look("one-pass seal", residue_sealed)) {
+    if (residue_look("one-pass seal", residue_sealed) ||
+        residue_keystream("one-pass seal", residue_data, residue_sealed)) {
         return;
     }
-    size_t last = (size_t)(RESIDUE_PASSES - 1) * RESIDUE_POWERS * AES_BLOCK;
-    for (size_t b = 0; b < RESIDUE_POWERS; b++) {
-        uint8_t keystream[AES_BLOCK] = {0};
-        for (size_t i = 0; i < AES_BLOCK; i++) {
-            size_t at = last + b * AES_BLOCK + i;
-            keystream[i] = (uint8_t)(residue_sealed[at] ^ residue_data[at]);
-        }
-        if (residue_found("one-pass seal", "keystream block", b, keystream, AES_BLOCK)) {
-            return;
-        }
+
+    // The open hashes what it reads, so residue_data is what its sums
+    // cover.
+    residue_fresh_inputs();
+    residue_open_call();
+    residue_snapshot();
+    if (residue_look("one-pass open", residue_data)) {
+        return;
     }
+    (void)residue_keystream("one-pass open", residue_data, residue_opened);
 }
 
 #endif

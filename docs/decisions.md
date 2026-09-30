@@ -4171,3 +4171,92 @@ does nothing more.
     Gain: whichever client entry a caller uses, a refusal returns one
     code and leaves one epoch report, and no configuration a client entry
     accepts makes a ClientHello its staging array cannot hold.
+
+85. **An AES-GCM open decrypts while it hashes, and wipes the plaintext it
+    wrote when the tag does not match.** `gcm_open` computed the tag over
+    the ciphertext, compared it and only then decrypted, so it read the
+    ciphertext twice. On the AES instructions the seal runs counter mode
+    and GHASH in one loop (`gcm_hw.c`), and the open could not, because it
+    wrote no plaintext before the comparison. OpenSSL's open runs both in
+    one loop and wipes its output on a mismatch. Camilo ruled on
+    2026-09-30 ([#184](https://github.com/c4milo/chapulin/issues/184))
+    that chapulin's open does the same, and that `gcm.h` promises this
+    instead: no plaintext is returned on a bad tag, and the open wipes its
+    output before it returns.
+
+    - **The order.** `open_schedule` in `gcm.c` starts GHASH over the
+      associated data, hands the whole passes of eight blocks under a
+      schedule the AES instructions run to `gcm_open_passes_hw`, runs
+      GHASH and then counter mode over the rest, and compares the tag
+      through `ct_memeq`. `gcm_open_passes_hw` runs one pass ahead:
+      iteration p hashes pass p and decrypts pass p - 1, so the GHASH of
+      one pass runs beside the AES rounds of the one before. Every AES
+      value takes this order, the table's included, because one body
+      serves them all.
+    - **Aliasing.** `gcm.h` still admits `pt == ct` and `pt` below `ct`,
+      and `quic_packet.c`, `quic_initial.c` and `record.c` open in place.
+      A plaintext write can then overwrite ciphertext, so both loops hash
+      each ciphertext byte before they write to its address.
+    - **The wipe.** On a mismatch the open wipes the n bytes it wrote
+      through `ct_wipe` and returns 0, and it writes no byte outside
+      them. The branch on the comparison's verdict tells an observer
+      nothing the return value does not tell the caller. The plaintext of
+      a forged ciphertext is that ciphertext exclusive-ored with the
+      keystream of the nonce, so leaving it would hand the sender that
+      keystream.
+    - **What a caller finds after a discard.** `ch_quic_open` works in
+      place. A packet whose tag does not match leaves its header with the
+      protection removed, which the call does before the AEAD runs, as it
+      did before, zeros where the payload was, and the tag and every byte
+      past `pkt_len` as they arrived. colibri compares a datagram's last
+      16 bytes with its Stateless Reset tokens (RFC 9000 §10.3.1,
+      `rfc9000.txt:3486-3497`), and those bytes are the last packet's
+      tag, which no open writes. `quic.h` and `quic_initial.h` now state
+      this where they called those bytes unspecified. A failed `rec_open`
+      ends its session (INV-13), and its record holds zeros where the
+      payload was.
+    - **ChaCha20-Poly1305 keeps its order.** `aead_open` still verifies
+      first and writes nothing on a mismatch. The promise above admits
+      both orders, so moving it later changes no caller.
+
+    Rejected:
+
+    - **Comparing first on the instructions.** It reads the ciphertext
+      twice, which is the time the gain below measures.
+    - **Decrypting into a scratch buffer and copying on a match.** That
+      takes a second buffer as large as a record, 16 KiB of SRAM, and a
+      second pass over the data.
+    - **Leaving the plaintext for the caller to drop.** The caller would
+      hold unauthenticated plaintext and the keystream it gives away.
+
+    Cost: a forged record now costs counter mode and a wipe on top of
+    GHASH. `ct_wipe` writes one byte at a time. In a scratch timing loop
+    on the M1 Pro under Apple clang, a failed open of 1 KiB took 845 ns
+    where the comparison first took 375 ns, and of 16 KiB 8.0 µs where
+    it took 1.3 µs; a genuine open of 16 KiB went from 3.0 to 2.5 µs in
+    the same loop. A failed TLS record ends its session, so it happens
+    once per connection. A QUIC endpoint discards a forged packet and
+    goes on, and a packet that fits a 1,500-byte path costs about the
+    1 KiB figure.
+
+    Gain: in paired runs of the record bench, a 16 KiB `aead_open` went
+    from 2.99 to 2.57 µs under AES-128-GCM and from 3.39 to 2.99 µs under
+    AES-256-GCM on macOS clang, from 3.00 to 2.86 and 3.44 to 3.27 µs on
+    the Linux VM's clang 18, and from 3.23 to 2.84 and 3.65 to 3.28 µs on
+    gcc 13. The seal did not move.
+
+    Guards. `test/gcm_tests.h` forges one tag bit in every SP 800-38D
+    case and requires zeros after the call and the byte after them
+    untouched, in `bin/quic_test` and the legs that run those vectors.
+    `bin/ghash_equiv_test`, the Wycheproof AES-GCM suite and
+    `bin/diff_quic_test` require zeros from every refused open, and
+    `bin/ghash_equiv_test` opens in place and five bytes below the
+    ciphertext on both paths. `bin/quic_suite_test` forges the tag of the
+    first of two packets in one datagram and checks every byte of the
+    datagram after the failed open. `gcm-open-keeps-plaintext` drops the
+    wipe, and `bin/quic_test` fails; `gcm-hw-open-hashes-after-decrypt`
+    hashes each pass after decrypting it, and `bin/ghash_equiv_test`
+    fails; `gcm-open-tail-hashed-after-decrypt` runs counter mode over the
+    rest before GHASH, and `bin/quic_test` fails. `gcm_refusal` proves the
+    zeros below n and nothing written past n for any tag, on the portable
+    path; no harness reads `gcm_hw.c`.

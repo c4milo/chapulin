@@ -279,9 +279,12 @@ static void xor_pass(const aes_state keystream[GCM_HW_PASS_BLOCKS], const uint8_
 // written, and states holds the output from then on. Left in states until
 // the wipe at the end of the call, the last pass's keystream stayed live
 // across the hash that follows it, and clang 18 copied a block of it to a
-// stack slot of its own, which the wipe does not clear.
-static void xor_pass_in_place(aes_state states[GCM_HW_PASS_BLOCKS], const uint8_t *in,
-                              uint8_t *out) {
+// stack slot of its own, which the wipe does not clear. Marked inline for
+// the reason cipher_pass is: with the seal and the open both calling it,
+// gcc 13 at -O2 kept one out-of-line copy, and the call added about a
+// third to each loop's time.
+static inline void xor_pass_in_place(aes_state states[GCM_HW_PASS_BLOCKS], const uint8_t *in,
+                                     uint8_t *out) {
 #pragma GCC unroll 8
     for (size_t b = 0; b < GCM_HW_PASS_BLOCKS; b++) {
         states[b] = xor_state(load_state(&in[b * AES_BLOCK]), states[b]);
@@ -339,6 +342,49 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
         }
     }
     ghash_hash_pass(&s.ghash, &out[(passes - 1) * GCM_HW_PASS_BYTES]);
+    ghash_store_block(acc, s.ghash.acc);
+    set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
+    ct_wipe(&s, sizeof s);
+}
+
+// The seal's loop the other way round. The ciphertext is the input, so a
+// pass's GHASH waits on no AES round, and the loop runs one pass ahead:
+// iteration p hashes pass p and decrypts pass p - 1. A pass's plaintext is
+// written at or below its ciphertext and ends before the next pass's
+// ciphertext begins, so the loop hashes every block before it writes a
+// plaintext byte to that block's address.
+//
+// Each step sits in an if of its own, which keeps the compilers from
+// mixing the two. With the hash and the rounds in one block, clang 18
+// moved the powers' volatile reads up among the AES rounds and copied
+// some powers to stack slots of its own, which bin/ghash_equiv_test found.
+// With the first pass's hash before the loop, gcc 13 at -O2 built each
+// counter from bytes it counted one at a time, and the loop ran about a
+// third slower.
+void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out) {
+    if (passes == 0) {
+        return;
+    }
+    gcm_hw_state s;
+    s.ghash.subkey = ghash_load_block(subkey);
+    s.ghash.acc = ghash_load_block(acc);
+    ghash_compute_powers(&s.ghash, GHASH_PASS_BLOCKS);
+    aes_state prefix = counter_prefix(counter);
+    uint32_t count = counter_count(counter);
+    for (size_t p = 0; p <= passes; p++) {
+        if (p > 0) {
+            size_t at = (p - 1) * GCM_HW_PASS_BYTES;
+            fill_counters(s.keystream, prefix,
+                          count + (uint32_t)((p - 1) * GCM_HW_PASS_BLOCKS) + 1U);
+            cipher_pass(s.keystream, round_keys, rounds);
+            xor_pass_in_place(s.keystream, &in[at], &out[at]);
+        }
+        if (p < passes) {
+            ghash_hash_pass(&s.ghash, &in[p * GCM_HW_PASS_BYTES]);
+        }
+    }
     ghash_store_block(acc, s.ghash.acc);
     set_counter_count(counter, count + (uint32_t)(passes * GCM_HW_PASS_BLOCKS));
     ct_wipe(&s, sizeof s);

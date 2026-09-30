@@ -1,5 +1,5 @@
 // gcm.c compiled with two more entries, for bench/record.c only.
-// counter_mode, compute_tag and first_counter_block are static in gcm.c, so
+// counter_mode, ghash_schedule, mask_tag and first_counter_block are static in gcm.c, so
 // this file includes the source, the way bench/aead_gcm.c does. The bench
 // also links the library's own gcm.o, so this file first renames the
 // external names gcm.c defines: the copy compiled here serves the two
@@ -26,5 +26,7 @@ void bench_gcm_compute_tag(const aes_traffic_key *k, const uint8_t nonce[AES_IV]
                            uint8_t tag[GCM_TAG]) {
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
-    compute_tag(&k->key, first_counter, aad, aad_len, ct, n, tag);
+    uint8_t hashed[AES_BLOCK];
+    ghash_schedule(&k->key, aad, aad_len, ct, n, hashed);
+    mask_tag(&k->key, first_counter, hashed, tag);
 }

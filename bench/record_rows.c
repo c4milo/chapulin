@@ -230,6 +230,17 @@ static void run_seal_passes(bench_state *b) {
     consume(body[0]);
 }
 
+// The open's whole passes, as open_schedule hands them to gcm_hw.c: GHASH
+// over the ciphertext and counter mode in one loop, over every whole pass
+// of the record, from the record's body to the buffer's start, as the open
+// runs it. The loop checks no tag, so the bytes it reads need not be a
+// record, and it needs no refill.
+static void run_open_passes(bench_state *b) {
+    gcm_open_passes_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
+                       b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), b->rec);
+    consume(b->rec[0]);
+}
+
 static void run_compute_tag(bench_state *b) {
     bench_gcm_compute_tag(&b->key, b->nonce, b->rec, REC_HDR, b->rec + REC_HDR, b->len, b->tag);
     consume(b->tag[0]);
@@ -322,6 +333,7 @@ static const bench_row AES_ROWS[] = {
     {"counter_blocks_in_place", ALL,    run_counter_blocks_in_place, 0},
     {"counter_blocks_shifted",  ALL,    run_counter_blocks_shifted,  0},
     {"seal_passes",             ALL,    run_seal_passes,             0},
+    {"open_passes",             ALL,    run_open_passes,             0},
     {"compute_tag",             ALL,    run_compute_tag,             0},
     {"ghash_data",              ALL,    run_ghash_data,              0},
     {"compute_tag_fixed",       FIXED,  run_compute_tag_fixed,       0},
@@ -334,16 +346,15 @@ static const bench_difference AES_DIFFERENCES[] = {
     {"counter_mode_tail_shifted",  "counter_mode_shifted",  "counter_blocks_shifted" },
 };
 
-// Each whole against its parts. The seal's two stages are counter mode
-// and GHASH over the ciphertext in one loop, and the tag's fixed work; the
-// open runs counter mode, GHASH over the ciphertext and the tag's fixed
-// work.
+// Each whole against its parts. The seal's and the open's two stages are
+// counter mode and GHASH over the ciphertext in one loop, and the tag's
+// fixed work.
 static const bench_check AES_CHECKS[] = {
-    {"aead_seal",   {"seal_passes", "compute_tag_fixed", NULL}                       },
-    {"aead_open",   {"counter_mode_shifted", "ghash_data", "compute_tag_fixed", NULL}},
-    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}                        },
-    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}                     },
-    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}                     },
+    {"aead_seal",   {"seal_passes", "compute_tag_fixed", NULL}  },
+    {"aead_open",   {"open_passes", "compute_tag_fixed", NULL}  },
+    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}   },
+    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}},
+    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}},
 };
 
 // The ChaCha20-Poly1305 rows.

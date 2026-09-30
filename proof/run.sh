@@ -636,7 +636,10 @@ launch slow:4 full record 165 "" ct.c
 # at any sequence number, refusing the wrap and an AES-GCM record at or
 # past REC_AES_GCM_RECORDS_MAX and nothing else: 592 properties, 18 s,
 # 0.64 GB peak at a load average near 25. With rec_seal's plaintext copy
-# one memmove: 569 properties, 31 s, 0.58 GB maximum resident set.
+# one memmove: 569 properties, 31 s, 0.58 GB maximum resident set. With
+# the AES-GCM open stub writing its output either way, zeros on a
+# mismatch (docs/decisions.md 85): 570 properties, 17 s, 0.59 GB at a
+# load average near 40.
 launch fast full record_suite 250 "" ct.c -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -1438,7 +1441,8 @@ launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONB
 # development machine (arm64 macOS, the pinned cbmc, kissat,
 # /usr/bin/time -l): 285 properties, 10 s, 0.23 GB peak; 289 properties,
 # 11 s, 0.25 GB with the QUIC version each entry refuses or admits
-# (docs/decisions.md 79).
+# (docs/decisions.md 79); 290 properties, 6 s, 0.25 GB with the open stub
+# writing zeros on a mismatch (docs/decisions.md 85).
 launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # RFC 9001 §5.3 packet protection, §5.4 header protection, the §6.5 key
 # set selection and the §6.6 limits, over a 40-byte packet with a
@@ -1463,9 +1467,12 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # key length assertion, and a seal that skips the §6.6 check fails the
 # limit assertion, so both are reached. The one-suite line above
 # measured 923 properties, 8 s, 0.23 GB after quic_packet_seal lost its
-# const.
+# const. With the AES-GCM open stub writing its output either way, zeros
+# on a mismatch (docs/decisions.md 85): 1143 properties, 15 s, 0.47 GB at
+# a load average near 40.
 launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
-# AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
+# AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
+# the plaintext went, and
 # GHASH on its own. The forward cipher is a contract stub
 # (proof/gcm_stubs.h); the unwindset names hash_data and
 # counter_mode because both loop on a symbolic count, and without them
@@ -1489,7 +1496,12 @@ launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOC
 # passes and hash_finish, whose portable arm these lines compile, at load
 # averages of 6 to 8: gcm_safety 438 properties, 376 s, 2.8 GB;
 # gcm_refusal 443 properties, 50 s, 1.3 GB; ghash 436 properties, 232 s,
-# 1.8 GB.
+# 1.8 GB. Measured again after the open took the seal's order, decrypting
+# while it hashes and wiping its output on a mismatch (docs/decisions.md
+# 85), at load averages of 15 to 40: gcm_safety 457 properties, 279 s,
+# 2.7 GB; gcm_refusal 464 properties, 50 s, 1.5 GB. gcm_refusal with
+# -DCH_GCM_REACH=1 and with -DCH_GCM_REACH=2 each fails its one assertion,
+# 1 of 460, in 57 s and 66 s at 0.57 GB, so both arms are reached.
 # Neither proves a functional or authenticity property; the two harnesses
 # that state those carry no launch line, below.
 launch slow:3 full gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32

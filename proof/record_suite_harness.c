@@ -87,11 +87,14 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(ct, n), "gcm open: ct readable");
     __CPROVER_assert(__CPROVER_r_ok(tag, GCM_TAG), "gcm open: tag readable");
     aes_ran = 1;
+    // The open decrypts while it hashes, so it writes pt either way: the
+    // plaintext on a match, and zeros over it on a mismatch (gcm.h).
+    __CPROVER_assert(n == 0 || __CPROVER_w_ok(pt, n), "gcm open: pt writable");
     if (nondet_u8() & 1) {
-        __CPROVER_assert(n == 0 || __CPROVER_w_ok(pt, n), "gcm open: pt writable");
         fill_nondet(pt, n);
         return 1;
     }
+    memset(pt, 0, n);
     return 0;
 }
 

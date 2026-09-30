@@ -35,13 +35,19 @@
 // off a memory index, and it multiplies no integers, so it needs no
 // statement about the part.
 //
-// Counter mode and the seal have one body with one more step under AES=hw
-// and AES=runtime. A schedule the AES instructions run takes counter
-// mode's whole blocks through gcm_hw.c, which runs several blocks at once,
-// and the seal's whole passes of eight blocks through gcm_hw.c's loop that
-// runs counter mode and GHASH over the ciphertext together; the loop that
-// every other schedule runs block by block takes what is left. Everything
-// else here is one body under every AES value.
+// Counter mode, the seal and the open have one body with one more step
+// under AES=hw and AES=runtime. A schedule the AES instructions run takes
+// counter mode's whole blocks through gcm_hw.c, which runs several blocks
+// at once, and the seal's and the open's whole passes of eight blocks
+// through gcm_hw.c's loops that run counter mode and GHASH over the
+// ciphertext together; the loop that every other schedule runs block by
+// block takes what is left. Everything else here is one body under every
+// AES value.
+//
+// The open decrypts while it hashes, under every AES value, and compares
+// the tag once it has written the plaintext. On a mismatch it wipes the
+// n bytes it wrote before it returns, so a failed call returns no
+// plaintext byte (gcm.h, docs/decisions.md entry 85).
 //
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first
 // counter block straight from a 96-bit IV, and hashes any other IV
@@ -304,12 +310,14 @@ static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t count
     return blocks * AES_BLOCK;
 }
 
-// The seal's whole passes of GCM_HW_PASS_BLOCKS blocks on the AES
-// instructions: counter mode and GHASH over the ciphertext in one loop
-// (gcm_seal_passes_hw), from h's accumulator, and the bytes they covered.
-// A schedule the table runs covers none.
-static size_t seal_whole_passes(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], gcm_hash *h,
-                                const uint8_t *pt, size_t n, uint8_t *ct) {
+// The whole passes of GCM_HW_PASS_BLOCKS blocks on the AES instructions:
+// counter mode and GHASH over the ciphertext in one loop, from h's
+// accumulator, gcm_seal_passes_hw when seal is set and gcm_open_passes_hw
+// when it is not, and the bytes they covered. A schedule the table runs
+// covers none. seal is the caller's own constant, so its branch reads no
+// data.
+static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[AES_BLOCK],
+                           gcm_hash *h, const uint8_t *in, size_t n, uint8_t *out) {
 #ifdef CH_AES_TWO_CIPHERS
     if (!on_instructions(k)) {
         return 0;
@@ -317,8 +325,12 @@ static size_t seal_whole_passes(const aes_key_schedule *k, uint8_t counter[AES_B
 #endif
     size_t pass_bytes = (size_t)GCM_HW_PASS_BLOCKS * AES_BLOCK;
     size_t passes = n / pass_bytes;
-    gcm_seal_passes_hw(k->round_keys, instruction_rounds(k), counter, h->acc, h->subkey, pt, passes,
-                       ct);
+    size_t rounds = instruction_rounds(k);
+    if (seal) {
+        gcm_seal_passes_hw(k->round_keys, rounds, counter, h->acc, h->subkey, in, passes, out);
+    } else {
+        gcm_open_passes_hw(k->round_keys, rounds, counter, h->acc, h->subkey, in, passes, out);
+    }
     return passes * pass_bytes;
 }
 #endif
@@ -371,14 +383,6 @@ static void mask_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_
     ct_wipe(mask, sizeof mask);
 }
 
-static void compute_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_BLOCK],
-                        const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                        uint8_t tag[GCM_TAG]) {
-    uint8_t hashed[AES_BLOCK];
-    ghash_schedule(k, aad, aad_len, ct, n, hashed);
-    mask_tag(k, first_counter, hashed, tag);
-}
-
 void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, const uint8_t *ct,
                size_t n, uint8_t out[GCM_TAG]) {
     ghash_schedule(&k->key, aad, aad_len, ct, n, out);
@@ -404,7 +408,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
     // two pointers stay inside the buffers or one past their end.
     size_t done = 0;
 #if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
-    done = seal_whole_passes(k, counter, &h, pt, n, ct);
+    done = whole_passes(k, 1, counter, &h, pt, n, ct);
 #endif
     counter_mode(k, counter, &pt[done], n - done, &ct[done]);
     ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
@@ -418,19 +422,35 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
                          uint8_t *pt) {
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
-    // The tag is computed over the ciphertext and compared before any
-    // plaintext byte is written, which is the order aead_open uses and
-    // the order the header promises.
-    uint8_t want[GCM_TAG];
-    compute_tag(k, first_counter, aad, aad_len, ct, n, want);
-    uint32_t ok = ct_memeq(want, tag, GCM_TAG);
-    ct_wipe(want, sizeof want);
-    if (!ok) {
-        return 0;
-    }
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
-    counter_mode(k, counter, ct, n, pt);
+    gcm_hash h;
+    hash_start(k, &h, aad, aad_len);
+    // The open decrypts while it hashes, as the seal encrypts while it
+    // hashes, and compares the tag after both are done. pt may be ct or sit
+    // below it (gcm.h), so a plaintext write can overwrite ciphertext.
+    // Each ciphertext byte is therefore hashed before any write to its
+    // address: gcm_hw.c's loop hashes each pass before it decrypts it, and
+    // here GHASH runs over the rest before counter mode writes it.
+    size_t done = 0;
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+    done = whole_passes(k, 0, counter, &h, ct, n, pt);
+#endif
+    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    counter_mode(k, counter, &ct[done], n - done, &pt[done]);
+    uint8_t hashed[AES_BLOCK];
+    hash_finish(k, &h, aad_len, n, hashed);
+    uint8_t want[GCM_TAG];
+    mask_tag(k, first_counter, hashed, want);
+    uint32_t ok = ct_memeq(want, tag, GCM_TAG);
+    ct_wipe(want, sizeof want);
+    // ok is the tag comparison's verdict, which the caller learns anyway,
+    // so the branch on it is public. On a mismatch the call wipes the n
+    // bytes counter mode wrote, and it wrote nothing else at pt.
+    if (!ok) {
+        ct_wipe(pt, n);
+        return 0;
+    }
     return 1;
 }
 

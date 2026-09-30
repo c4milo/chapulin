@@ -1,4 +1,4 @@
-// aes_hw.c's four entries, ghash_hw.c's two and gcm_hw.c's two under
+// aes_hw.c's four entries, ghash_hw.c's two and gcm_hw.c's three under
 // second names, and the entries aes.c and gcm.c call in their place, each
 // a count and a call (test/aes_runtime_count.h). test/aes_runtime_soft.c
 // states why the #defines come before the includes.
@@ -7,15 +7,16 @@
 // instruction flag, each function turning the instructions on through its
 // own target attribute. The entries below carry none, and call the
 // renamed ones, so a count runs on any CPU, and an instruction runs only
-// only inside a call into the file that holds it. gcm_hw.c's one-pass
-// seal runs the AES instructions and the carry-less multiply both, so a
-// call to it counts once for each.
+// inside a call into the file that holds it. gcm_hw.c's one-pass seal and
+// open run the AES instructions and the carry-less multiply both, so a
+// call to either counts once for each.
 #define aes_expand_round_keys instruction_expand_round_keys
 #define aes_cipher_block instruction_cipher_block
 #define aes_expand_round_keys_256 instruction_expand_round_keys_256
 #define aes_cipher_block_256 instruction_cipher_block_256
 #define gcm_counter_blocks_hw instruction_counter_blocks
 #define gcm_seal_passes_hw instruction_seal_passes
+#define gcm_open_passes_hw instruction_open_passes
 #define gcm_multiply_by_subkey_hw clmul_multiply_by_subkey
 #define gcm_hash_data_hw clmul_hash_data
 
@@ -29,6 +30,7 @@
 #undef aes_cipher_block_256
 #undef gcm_counter_blocks_hw
 #undef gcm_seal_passes_hw
+#undef gcm_open_passes_hw
 #undef gcm_multiply_by_subkey_hw
 #undef gcm_hash_data_hw
 
@@ -50,6 +52,9 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out);
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out);
+void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out);
 void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]);
@@ -92,6 +97,14 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
     aes_runtime_instruction_calls++;
     aes_runtime_clmul_calls++;
     instruction_seal_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
+}
+
+void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                        uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
+                        size_t passes, uint8_t *out) {
+    aes_runtime_instruction_calls++;
+    aes_runtime_clmul_calls++;
+    instruction_open_passes(round_keys, rounds, counter, acc, subkey, in, passes, out);
 }
 
 void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {

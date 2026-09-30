@@ -44,6 +44,14 @@ static void check_aes_gcm(const char *suite, uint32_t tc, const aes_public_key *
         }
     } else if (gcm_open(k, iv, aad, aad_len, ct, n, tag, got_pt)) {
         fail(suite, tc, "invalid case accepted");
+    } else {
+        // gcm.h: a refused open wipes the n bytes it wrote.
+        for (size_t i = 0; i < n; i++) {
+            if (got_pt[i] != 0) {
+                fail(suite, tc, "invalid case left a nonzero byte in its output");
+                break;
+            }
+        }
     }
 }
 

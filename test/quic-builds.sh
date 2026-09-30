@@ -186,8 +186,8 @@ done
 # symbols, and the match is anchored at the end of the line because a
 # Mach-O object prefixes each name with an underscore.
 # The instruction entries gcm.c can call.
-hw_entries='gcm_(multiply_by_subkey|hash_data|counter_blocks|seal_passes)_hw$'
-hw_want="gcm_counter_blocks_hw gcm_hash_data_hw gcm_multiply_by_subkey_hw gcm_seal_passes_hw "
+hw_entries='gcm_(multiply_by_subkey|hash_data|counter_blocks|seal_passes|open_passes)_hw$'
+hw_want="gcm_counter_blocks_hw gcm_hash_data_hw gcm_multiply_by_subkey_hw gcm_open_passes_hw gcm_seal_passes_hw "
 ghash_calls() { # $@ = extra flags: the instruction entries gcm.c calls, on one line
     "$cc" -std=c11 -O2 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" gcm.c ||
         return 1

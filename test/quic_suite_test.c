@@ -185,13 +185,81 @@ static void test_confidentiality_limit(void) {
     CHECK(c.sealed == QUIC_CONFIDENTIALITY_LIMIT);
 }
 
+// The longest payload the failed-open test seals: two whole passes of
+// gcm_hw.c's loop and a partial third, so the loop and the tail after it
+// both run on the instructions.
+#define FAILED_OPEN_MAX 300
+
+// A failed open under an AES-GCM suite changes the bytes it decrypted into
+// and nothing else. RFC 9001 §5.5 discards a packet whose tag does not
+// match and keeps the connection (rfc9001.txt:1373-1376), and colibri then
+// compares the datagram's last 16 bytes with its Stateless Reset tokens
+// (rfc9000.txt:3486-3497), so the tag bytes and any packet coalesced after
+// this one must come back as they were. gcm.h has the open decrypt while
+// it hashes and wipe what it wrote when the tag fails.
+//
+// Two packets, sealed one after the other into one datagram, the first
+// with one bit of its tag flipped. The open of the first discards it and
+// leaves: its header unprotected, which quic_packet.c does before the AEAD
+// runs; its payload zero; its tag as it arrived; and every byte of the
+// second packet as it was.
+static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
+    uint8_t secret[64];
+    secret_of(v->hash_len, secret);
+    quic_keys k;
+    quic_hp_key h;
+    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, v->suite);
+    uint8_t body[FAILED_OPEN_MAX];
+    for (size_t i = 0; i < payload; i++) {
+        body[i] = (uint8_t)(0x30 + i);
+    }
+    static const uint8_t second_hdr[3] = {0x41, 0x00, 0x06};
+    uint8_t datagram[2 * (sizeof hdr + FAILED_OPEN_MAX + AEAD_TAG)];
+    size_t first_len = 0;
+    size_t second_len = 0;
+    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, body, payload,
+                           datagram, sizeof datagram, &first_len) == CH_OK);
+    CHECK(quic_packet_seal(&k, &h, CH_LEVEL_APPLICATION, 6, 2, second_hdr, sizeof second_hdr, body,
+                           payload, &datagram[first_len], sizeof datagram - first_len,
+                           &second_len) == CH_OK);
+    datagram[first_len - 1] ^= 1;
+    uint8_t before[sizeof datagram];
+    memcpy(before, datagram, sizeof datagram);
+
+    quic_keys sets[CH_QUIC_KEY_SETS];
+    memset(sets, 0, sizeof sets);
+    sets[CH_QUIC_KEY_CURRENT] = k;
+    uint8_t key_set = 0xff;
+    uint64_t pn = 0xdead;
+    size_t pt_len = 0xbeef;
+    CHECK(quic_packet_open_application(sets, &h, 0, datagram, first_len, 1, 0, 0, &key_set, &pn,
+                                       &pt_len) == CH_QUIC_DISCARD);
+    CHECK(key_set == 0xff && pn == 0xdead && pt_len == 0xbeef);
+    CHECK(memcmp(datagram, hdr, sizeof hdr) == 0);
+    size_t zeros = 0;
+    for (size_t i = sizeof hdr; i < sizeof hdr + payload; i++) {
+        zeros += datagram[i] == 0;
+    }
+    CHECK(zeros == payload);
+    size_t tag_at = sizeof hdr + payload;
+    CHECK(memcmp(&datagram[tag_at], &before[tag_at], AEAD_TAG) == 0);
+    CHECK(memcmp(&datagram[first_len], &before[first_len], second_len) == 0);
+}
+
 int main(void) {
     test_suite_vector(&aes128);
     test_suite_vector(&aes256);
     test_confidentiality_limit();
+    static const size_t payloads[] = {sizeof pt, FAILED_OPEN_MAX};
+    for (size_t i = 0; i < sizeof payloads / sizeof payloads[0]; i++) {
+        test_failed_open_bytes(&aes128, payloads[i]);
+        test_failed_open_bytes(&aes256, payloads[i]);
+    }
     if (failures == 0) {
         (void)printf("quic_suite: AES-128-GCM and AES-256-GCM packet and header protection match "
-                     "an independent computation, update and count as RFC 9001 says\n");
+                     "an independent computation, update and count as RFC 9001 says, and a "
+                     "failed open zeroes its payload and leaves its tag and the next packet\n");
     }
     return failures != 0;
 }
