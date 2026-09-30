@@ -882,11 +882,15 @@ The entries are grouped by area:
 - **Harnesses:** `hello_build` (fast), `hello_build_webpki` (fast), `hello_build_suite` (fast)
 - **Proves:**
   - the ClientHello builder writes nothing outside the caller's buffer
-    at any capacity, for every cookie and PSK identity a caller may
-    pass, and returns either zero or a length that fits;
-  - at `CH_HELLO_MAX` the build always succeeds, so the constant
-    `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely
-    plausible;
+    at any capacity, for every cookie and every PSK identity of at most
+    `CH_TICKET_ID_MAX` bytes, and returns either zero or a length that
+    fits;
+  - at `CH_HELLO_MAX` the build always succeeds for those inputs, so the
+    constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient,
+    not merely plausible. The raw and ca configuration checks admit a
+    longer external identity, which can make a hello no staging array
+    holds: every client entry refuses such a first hello with
+    `CH_EINVAL` before it sends a byte (INV-13);
   - `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`,
     with the server_name extension over any hostname, the ALPN extension
     over any offer, and the five signature schemes, which a resuming
@@ -908,7 +912,11 @@ The entries are grouped by area:
 - **Not proved:** that `pre_shared_key` is the last extension.
   `test/session_cfg_tests.h` and `test/webpki_session_cases.h` test it.
   The assertion over the hello's last bytes gave kissat a formula that
-  returned no verdict in nine minutes at 5.7 GB.
+  returned no verdict in nine minutes at 5.7 GB. Nor the build over an
+  identity longer than 320 bytes: its writes go through `wbuf`, whose
+  bounds check the `buf` harness proves over buffers of up to 64 bytes,
+  and `test/session_hello_tests.h` runs `ch_connect` over an identity as
+  long as `ch_tls.tx`.
 
 #### key_share
 
@@ -1319,7 +1327,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   8-byte buffers. `proof/run.sh` records what was tried and the layered
   split it needs.
 - **Tested instead:** `bin/srv_tcp_nonblocking_test`,
-  `bin/tcp_nonblocking_loop_test` and thirteen `.violation` mutants cover
+  `bin/tcp_nonblocking_loop_test` and fourteen `.violation` mutants cover
   `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, among them the
   alert record a failure seals before its wipe and pushes (INV-13).
 

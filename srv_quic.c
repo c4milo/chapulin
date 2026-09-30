@@ -330,9 +330,7 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     if (!srv_config_ok(cfg) || !quic_version_derived(cfg->quic_original_version)) {
         // Nothing went out and no secret was drawn, so a zeroed q with a
         // dead state is the whole answer.
-        memset(q, 0, sizeof *q);
-        q->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return quic_refuse_init(q);
     }
     q->hs.t = &q->t;
     // The description a failure carries when no handler chose a more

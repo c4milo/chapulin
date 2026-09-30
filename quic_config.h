@@ -29,7 +29,8 @@
 // too, with the code ch_connect and ch_record_init return for it.
 //
 // It writes t->epoch, t->epoch_seen and t->epoch_status under a CA mode
-// and nothing outside t in any build.
+// and nothing outside t in any build. ch_quic_init keeps those three
+// when it refuses, so they say why (quic_fail.h, quic_refuse_init).
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

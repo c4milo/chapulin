@@ -1981,7 +1981,7 @@ ServerHello, and writes it in the clear before that (`docs/decisions.md` 76).
 | file | what it holds |
 | --- | --- |
 | `srv_tcp_nonblocking.[ch]` | the driver: the three steps and the two entry points. `srv_quic.[ch]`'s mirror on the transport that keeps its records. |
-| `tcp_nonblocking_frame.[ch]` | taking one inbound record, and dying: the alert record a failure sends, sealed before the wipe. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
+| `tcp_nonblocking_frame.[ch]` | refusing a configuration, taking one inbound record, and dying: the alert record a failure sends, sealed before the wipe. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
 
 `srv_tcp_nonblocking.c` installs no keys. Every `rec_dir_init` a server makes
 already sits inside the handler that derived the secret it takes — the

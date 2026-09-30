@@ -4057,3 +4057,58 @@ does nothing more.
     (docs/performance.md, "Where a record's time goes"). These runs came
     before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
     call, and the next record runs measure it.
+
+84. **Every client entry refuses a ClientHello it cannot stage before a
+    byte goes out, and a refusal keeps the session's epoch report.** Two
+    answers differed between `ch_connect` and the two non-blocking client
+    entries, `ch_record_init` and `ch_quic_init`.
+
+    - **The hello.** `ch_connect` built its first ClientHello inside the
+      handshake, so a hello too long for `ch_tls.tx` failed there: an
+      internal_error alert went out in the clear, and `ch_connect`
+      returned `CH_ECAP`. The two non-blocking entries build that hello
+      before they return, and they refused it with `CH_EINVAL` and
+      nothing staged. `ch_handshake` now builds the first hello before
+      its first send and refuses it the same way, so all three return
+      `CH_EINVAL`, send nothing and record no alert (INV-13). The retry
+      hello a HelloRetryRequest asks for still fails the handshake with
+      `CH_ECAP` and internal_error in every driver, because the first
+      hello has gone out by then.
+    - **What reaches it.** `hello_build` proves that `CH_HELLO_MAX` holds
+      every hello whose PSK identity is at most `CH_TICKET_ID_MAX` bytes.
+      `webpki_cfg_ok` refuses a longer identity, and the raw and ca
+      configuration checks do not. So a longer external identity reaches
+      the refusal, and one that the first hello still holds can make the
+      retry hello, which echoes a cookie, too long. Refusing a longer
+      identity when the configuration is checked would make both
+      failures unreachable, as they are under `TRUST=webpki`. It changes
+      which configurations the raw and ca modes take, so it is left for
+      a decision of its own.
+    - **The epoch report.** `ch_record_init` and `ch_quic_init` zeroed
+      the session on every refusal. After refusing a ticket that the
+      stored epoch retired, they left `CH_EPOCH_NONE` in
+      `ch_tls.epoch_status`, where `ch_connect` leaves
+      `CH_EPOCH_REVOKED` (docs/ca.md). Each now zeroes the session but
+      for `ch_tls.epoch`, `epoch_seen` and `epoch_status`, through
+      `tcp_nonblocking_refuse_init` and `quic_refuse_init`. The two
+      server entries call the same functions, and a server's three
+      fields are zero.
+
+    Rejected:
+
+    - **Zeroing `ch_connect`'s epoch report instead.** No rule asks for
+      a zeroed session. The non-blocking entries zero theirs so that
+      nothing stays staged and no key share outlives the call, and three
+      fields that hold no secret change neither. Zeroing them would
+      remove the one field that tells a retired ticket from every other
+      refusal.
+    - **`CH_ECAP` from the two non-blocking entries.** A non-blocking
+      call that returns `CH_ECAP` leaves its session live (INV-13), and
+      a peer that has read no byte is owed no alert.
+
+    Cost: two functions of ten lines, one per non-blocking transport,
+    and `ch_handshake` carries the first hello's length into the
+    handshake.
+
+    Gain: whichever client entry a caller uses, a refusal returns one
+    code and leaves one epoch report.

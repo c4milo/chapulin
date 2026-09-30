@@ -23,18 +23,20 @@
 _Static_assert(CH_HELLO_MAX <= CH_TX_HELLO, "the largest ClientHello must fit TX staging");
 #endif
 
-// Builds the ClientHello into the TX staging array past the record
-// header, then sends it as a plaintext handshake record. The message
-// itself, the binder and the transcript update are
-// hsf_build_client_hello's. retry is 1 for the hello a HelloRetryRequest
-// asked for, which the caller knows by position.
-static int send_client_hello(handshake_state *h, int retry) {
+// Builds a ClientHello into the TX staging array past the record header
+// and returns its length, or 0 when the array cannot hold it. The
+// message itself, the binder and the transcript update are
+// hsf_build_client_hello's.
+static size_t build_client_hello(handshake_state *h) {
     ch_tls *t = h->t;
-    uint8_t *msg = t->tx + REC_HDR;
-    size_t n = hsf_build_client_hello(h, msg, sizeof t->tx - REC_HDR);
-    if (n == 0) {
-        return CH_ECAP;
-    }
+    return hsf_build_client_hello(h, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
+}
+
+// Sends the n-byte ClientHello staged past the record header as one
+// plaintext handshake record. retry is 1 for the hello a
+// HelloRetryRequest asked for, which the caller knows by position.
+static int send_client_hello(handshake_state *h, size_t n, int retry) {
+    ch_tls *t = h->t;
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
     // The very first record may carry 0x0301 for old middleboxes; every
@@ -56,10 +58,24 @@ static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n
     return io_send_all(&t->cfg, t->tx, out_len);
 }
 
+// Builds the hello a HelloRetryRequest asked for and sends it. The first
+// hello went out before it, so a retry hello the staging array cannot
+// hold fails the handshake with the internal_error the builder wrote,
+// where the first one is a refusal on entry (ch_handshake). The cookie
+// the retry echoes is what makes it longer than the first.
+static int send_retry_hello(handshake_state *h) {
+    size_t n = build_client_hello(h);
+    if (n == 0) {
+        return CH_ECAP;
+    }
+    return send_client_hello(h, n, 1);
+}
+
 // ClientHello out, ServerHello in, with at most one HelloRetryRequest
-// round; on CH_OK info holds an acceptable non-HRR ServerHello.
-static int hello_exchange(handshake_state *h, server_hello_info *info) {
-    int rc = send_client_hello(h, 0);
+// round; on CH_OK info holds an acceptable non-HRR ServerHello. The first
+// hello is already staged, hello_len bytes of it (ch_handshake).
+static int hello_exchange(handshake_state *h, size_t hello_len, server_hello_info *info) {
+    int rc = send_client_hello(h, hello_len, 0);
     if (rc != CH_OK) {
         return rc;
     }
@@ -68,7 +84,7 @@ static int hello_exchange(handshake_state *h, server_hello_info *info) {
         return rc;
     }
     if (info->hrr) {
-        rc = send_client_hello(h, 1);
+        rc = send_retry_hello(h);
         if (rc != CH_OK) {
             return rc;
         }
@@ -84,12 +100,10 @@ static int hello_exchange(handshake_state *h, server_hello_info *info) {
     return hsf_accept_server_hello(h, info);
 }
 
-static int run(handshake_state *h) {
+static int run(handshake_state *h, size_t hello_len) {
     ch_tls *t = h->t;
-    hsf_begin(h);
-
     server_hello_info info;
-    int rc = hello_exchange(h, &info);
+    int rc = hello_exchange(h, hello_len, &info);
     if (rc != CH_OK) {
         return rc;
     }
@@ -169,7 +183,22 @@ int ch_handshake(ch_tls *t) {
     t->alpn_selected = CH_ALPN_NONE;
 #endif
 
-    int rc = run(&h);
+    // The first hello is built before this driver sends a byte, so a
+    // hello the staging array cannot hold is a refusal on entry, the one
+    // ch_record_init and ch_quic_init make: CH_EINVAL, nothing sent and
+    // no alert recorded (INV-13). hello_build proves the array holds every
+    // hello whose PSK identity is at most CH_TICKET_ID_MAX bytes.
+    // webpki_cfg_ok refuses a longer identity, and the raw and ca
+    // configuration checks admit one, so a longer external PSK identity
+    // is the one configuration that reaches this.
+    hsf_begin(&h);
+    size_t hello_len = build_client_hello(&h);
+    if (hello_len == 0) {
+        ct_wipe(&h, sizeof h);
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+    int rc = run(&h, hello_len);
     uint8_t alert = h.alert;
     ct_wipe(&h, sizeof h);
     if (rc != CH_OK) {

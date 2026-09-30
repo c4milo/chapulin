@@ -1,5 +1,5 @@
-// What both tcp-nonblocking drivers do identically: take one inbound record,
-// and die with the alert record the death owes.
+// What both tcp-nonblocking drivers do identically: refuse a configuration,
+// take one inbound record, and die with the alert record the death owes.
 //
 // tcp_nonblocking.c drives the client and srv_tcp_nonblocking.c the
 // server, and neither owns these. The framing is the same because a
@@ -18,6 +18,15 @@
 
 #include "tcp_nonblocking.h"
 #include "tls.h"
+
+// An init call's refusal on entry. It zeroes r, so nothing is staged and
+// no secret is left, and sets r->t.state to CH_ST_FAILED. It keeps the
+// three epoch fields, ch_tls.epoch, epoch_seen and epoch_status, as a CA
+// client's epoch check wrote them, because they say why a ticket was
+// refused, and ch_connect leaves them the same way (docs/ca.md). They
+// hold no secret, and they are zero in every other build and in a
+// server. Returns CH_EINVAL, the code of every refusal on entry (INV-13).
+int tcp_nonblocking_refuse_init(ch_record *r);
 
 // Wipes every secret and clears the fields that say how much is staged
 // or unread. session.h lists the same names beside the invariant they

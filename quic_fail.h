@@ -1,4 +1,5 @@
-// The one way a QUIC session dies, shared by both drivers.
+// The one way a QUIC session dies, and the one way an init call refuses
+// one, shared by both drivers.
 //
 // INV-17 says every failure path wipes every secret the session holds,
 // with one exception: each level's write keys, kept for the one
@@ -13,6 +14,15 @@
 #include <stdint.h>
 
 #include "quic.h"
+
+// An init call's refusal on entry: tcp_nonblocking_refuse_init's rule on
+// this transport. It zeroes q, so nothing is staged and no secret or key
+// is left, and sets q->t.state to CH_ST_FAILED. It keeps ch_tls.epoch,
+// epoch_seen and epoch_status as a CA client's epoch check wrote them,
+// because they say why a ticket was refused, and ch_connect leaves them
+// the same way (docs/ca.md). They hold no secret, and they are zero in
+// every other build and in a server. Returns CH_EINVAL (INV-13).
+int quic_refuse_init(ch_quic *q);
 
 // Wipes every secret, the write keys of every level included, and clears
 // every bit of q->levels_ready and the two fields that say how many bytes

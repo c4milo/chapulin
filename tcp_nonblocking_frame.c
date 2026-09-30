@@ -1,6 +1,7 @@
-// The inbound record framing and the session-death path both tcp-nonblocking
-// drivers share. tcp_nonblocking_frame.h states the contract; this file is
-// quic_fail.c's counterpart on the transport that keeps its records, and
+// The refusal on entry, the inbound record framing and the session-death
+// path both tcp-nonblocking drivers share. tcp_nonblocking_frame.h states
+// the contract; this file is quic_fail.c's counterpart on the transport
+// that keeps its records, and
 // it holds no protocol rule beyond what one record is allowed to be and
 // which key protects the alert a failure owes. It also holds
 // ch_record_whole_len, the public call that tells a caller of either role
@@ -36,6 +37,18 @@ size_t ch_record_whole_len(const uint8_t *p, size_t n) {
         return REC_HDR;
     }
     return rb_left(&r) < body_len ? 0 : REC_HDR + body_len;
+}
+
+int tcp_nonblocking_refuse_init(ch_record *r) {
+    uint32_t epoch = r->t.epoch;
+    uint32_t epoch_seen = r->t.epoch_seen;
+    uint8_t epoch_status = r->t.epoch_status;
+    memset(r, 0, sizeof *r);
+    r->t.epoch = epoch;
+    r->t.epoch_seen = epoch_seen;
+    r->t.epoch_status = epoch_status;
+    r->t.state = CH_ST_FAILED;
+    return CH_EINVAL;
 }
 
 void tcp_nonblocking_wipe(ch_record *r) {

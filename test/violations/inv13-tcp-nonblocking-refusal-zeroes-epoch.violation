@@ -1,0 +1,19 @@
+invariant: INV-13
+file: tcp_nonblocking_frame.c
+catches: ticket_epoch_tcp_nonblocking
+reason: ch_record_init zeroes the epoch fields when it refuses a CA build's
+  ticket that the stored epoch retired, so its caller reads CH_EPOCH_NONE
+  where ch_connect's reads CH_EPOCH_REVOKED, and cannot tell that refusal
+  from any other. bin/ticket_epoch_tcp_nonblocking requires the stored
+  epoch, the ticket's epoch and CH_EPOCH_REVOKED after the refusal.
+
+--- old
+    memset(r, 0, sizeof *r);
+    r->t.epoch = epoch;
+    r->t.epoch_seen = epoch_seen;
+    r->t.epoch_status = epoch_status;
+--- new
+    memset(r, 0, sizeof *r);
+    (void)epoch;
+    (void)epoch_seen;
+    (void)epoch_status;

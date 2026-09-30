@@ -472,7 +472,10 @@ cannot, treat the rollout as an outage window.
 The library does not watch your fleet. It reports each session, and
 your application collects the results.
 
-Read these after `ch_connect`, whether it succeeded or failed:
+Read these after `ch_connect`, whether it succeeded or failed. A
+non-blocking client keeps them in its session's `ch_tls` the same way:
+after `ch_record_init` or `ch_quic_init` refuses a configuration, and
+after the handshake it starts has ended.
 
 - `ch_tls.epoch` — this device's stored epoch. Send it with your
   telemetry. The spread across a fleet is its drift; keep it under
@@ -485,9 +488,9 @@ Read these after `ch_connect`, whether it succeeded or failed:
     epoch than storage, so a write was lost.
   - `CH_EPOCH_REVOKED` — the peer is older. The handshake failed.
     Usually a server you have not reissued yet. On a resumed session it
-    is the ticket that is older: `ch_connect` refused it with
-    `CH_EINVAL` before it sent a byte, so drop the ticket and connect in
-    full.
+    is the ticket that is older: `ch_connect`, `ch_record_init` or
+    `ch_quic_init` refused it with `CH_EINVAL` before it sent a byte, so
+    drop the ticket and connect in full.
   - `CH_EPOCH_UNTRUSTED` — the date is not an allowed one, or too far
     ahead. The handshake failed. Never routine: a mis-issued
     certificate, or

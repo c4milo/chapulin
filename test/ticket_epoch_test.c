@@ -179,6 +179,10 @@ static void test_ticket_epoch_boundary(void) {
     configure(&cfg, 9);
     CHECK(client_init(&cfg) == CH_EINVAL);
     CHECK(client_state() == CH_ST_FAILED);
+    // The refused session still says why, as ch_connect's does: the
+    // stored epoch, the ticket's, and the verdict that retired it.
+    CHECK(session.t.epoch == 10 && session.t.epoch_seen == 9);
+    CHECK(session.t.epoch_status == CH_EPOCH_REVOKED);
     out_len = 0;
     CHECK(client_out(out, sizeof out, &out_len) == CH_EINVAL && out_len == 0);
     CHECK(ch_alert_sent(&session.t) == 0);

@@ -1457,8 +1457,14 @@ last `ROLE=server` stub, as the entry said it would.
     (docs/decisions.md 74). A CA build's resuming ticket whose
     `ticket_epoch` is below the stored epoch is a refusal on entry too
     (docs/ca.md): `ch_connect`, `ch_record_init` and `ch_quic_init` each
-    return `CH_EINVAL` for it, and `ch_connect` leaves
-    `CH_EPOCH_REVOKED` in `ch_tls.epoch_status`.
+    return `CH_EINVAL` for it and leave `CH_EPOCH_REVOKED` in
+    `ch_tls.epoch_status`. So is a first ClientHello too long for
+    `ch_tls.tx`, which only an external PSK identity past
+    `CH_TICKET_ID_MAX` can produce: each client entry builds that hello
+    before it sends or stages a byte (docs/decisions.md 84). The two
+    non-blocking entries zero their session on a refusal but for
+    `ch_tls.epoch`, `epoch_seen` and `epoch_status`
+    (`tcp_nonblocking_refuse_init`, `quic_refuse_init`).
   - A call on a session that cannot take it, which changes nothing:
     `CH_EPROTO` for bytes delivered to a session that failed or closed,
     and from `ch_read` and `ch_write` before the handshake completes,
@@ -1514,12 +1520,21 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/srv_auth_test` to fail. The entry refusals are INV-14's, each
   with its tests. The retired ticket has a boundary pair at each client
   entry: a ticket at the stored epoch is taken, and one a step below it
-  gets `CH_EINVAL` with no byte sent or staged and no alert recorded.
+  gets `CH_EINVAL` with no byte sent or staged, no alert recorded and
+  `CH_EPOCH_REVOKED` in `epoch_status`.
   `bin/unit_ca` (`test/session_cfg_tests.h`) holds `ch_connect` to it,
   and `bin/ticket_epoch_tcp_nonblocking` and `bin/ticket_epoch_quic`
   (`test/ticket_epoch_test.c`) hold `ch_record_init` and `ch_quic_init`.
   `inv13-ticket-epoch-refusal-eauth` returns `CH_EAUTH` from
-  `ch_connect` for that ticket again, and `bin/unit_ca` fails. Each
+  `ch_connect` for that ticket again, and `bin/unit_ca` fails.
+  `inv13-tcp-nonblocking-refusal-zeroes-epoch` and
+  `inv13-quic-refusal-zeroes-epoch` zero the epoch fields in a refusal
+  again, and the two ticket epoch binaries fail. `bin/unit`
+  (`test/session_hello_tests.h`) gives `ch_connect` an identity as long as
+  `ch_tls.tx` and requires `CH_EINVAL` with no send and no alert, and a
+  `CH_TICKET_ID_MAX` identity to reach I/O;
+  `inv13-connect-unstageable-hello-ecap` fails that hello with an alert
+  and `CH_ECAP` again, and `bin/unit` fails. Each
   funnel's recorded alert is tested:
   `bin/unit` (`test/session_alert_tests.h`) reads `ch_alert_sent` after
   `tlsi_fail` sent decode_error, unexpected_message and internal_error,
@@ -1552,8 +1567,9 @@ last `ROLE=server` stub, as the entry said it would.
   the caller can retry a read, or adds a failure path that records no
   alert, or one that sends an alert after the peer's fatal alert, or
   leaves a tcp-nonblocking alert for the caller to send, who holds no
-  key to protect it with, or answers a retired ticket on one client
-  entry with a code the other two do not return.
+  key to protect it with, or answers a retired ticket or a hello it
+  cannot stage on one client entry with a code or an epoch report the
+  other two do not leave.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set

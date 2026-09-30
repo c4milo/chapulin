@@ -251,9 +251,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     // emit calls it without a NULL test on the strength of that: a server
     // whose flight reaches nobody completes no handshake.
     if (!srv_config_ok(cfg)) {
-        memset(r, 0, sizeof *r);
-        r->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return tcp_nonblocking_refuse_init(r);
     }
     r->hs.t = &r->t;
     r->t.server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)

@@ -36,16 +36,13 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     // The callbacks go unused until the handshake is done; ch_read and
     // ch_write need them after it (tcp_nonblocking.h).
     if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
-        memset(r, 0, sizeof *r);
-        r->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return tcp_nonblocking_refuse_init(r);
     }
     // A CA build loads its revocation epoch before the first message,
-    // exactly as ch_connect does; every other build answers CH_OK.
+    // exactly as ch_connect does; every other build answers CH_OK. The
+    // refusal keeps the epoch fields the check wrote, which say why.
     if (tlsi_epoch_init(&r->t, cfg, cfg->psk != NULL) != CH_OK) {
-        memset(r, 0, sizeof *r);
-        r->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_TRUST_WEBPKI
     webpki_ticket_config_hash(cfg, r->t.ticket_config_hash);
@@ -63,11 +60,12 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     r->t.alpn_selected = CH_ALPN_NONE;
 #endif
     hsf_begin(&r->hs);
+    // A hello the staging array cannot hold is refused before a byte is
+    // staged, and the zeroed session holds no key share (ch_handshake
+    // states which configuration reaches it).
     size_t n = hsf_build_client_hello(&r->hs, r->t.tx + REC_HDR, sizeof r->t.tx - REC_HDR);
     if (n == 0) {
-        memset(r, 0, sizeof *r);
-        r->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return tcp_nonblocking_refuse_init(r);
     }
     tcp_nonblocking_stage_plain(r, n);
     r->step = TCP_NONBLOCKING_STEP_AWAIT_SERVER_HELLO;

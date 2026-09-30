@@ -228,7 +228,9 @@ seven days alone apply. No ticket with a lifetime of 0 is handed to
 A CA build also takes `ticket_epoch`, the ticket's `epoch`: the stored
 epoch when the ticket arrived. The same three calls return `CH_EINVAL`,
 before a byte is sent, when it is below the stored epoch, because an
-epoch bump since then retired the ticket ([`docs/ca.md`](ca.md)). Either
+epoch bump since then retired the ticket ([`docs/ca.md`](ca.md)). Each
+leaves `CH_EPOCH_REVOKED` in the session's `ch_tls.epoch_status`, which
+tells this refusal from the others. Either
 refusal, of the age or of the epoch, means the ticket cannot be used
 again: drop it and connect in full. A `TRUST=webpki` build also takes
 `ticket_binding`.

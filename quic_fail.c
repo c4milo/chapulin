@@ -9,6 +9,8 @@
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
+#include <string.h>
+
 #include "ct.h"
 #include "handshake_message.h"
 #include "handshake_record.h"
@@ -59,6 +61,18 @@ void quic_wipe_write_keys(ch_quic *q, uint8_t level) {
         ct_wipe(&q->app_hp_tx, sizeof q->app_hp_tx);
     }
     q->levels_ready &= (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
+}
+
+int quic_refuse_init(ch_quic *q) {
+    uint32_t epoch = q->t.epoch;
+    uint32_t epoch_seen = q->t.epoch_seen;
+    uint8_t epoch_status = q->t.epoch_status;
+    memset(q, 0, sizeof *q);
+    q->t.epoch = epoch;
+    q->t.epoch_seen = epoch_seen;
+    q->t.epoch_status = epoch_status;
+    q->t.state = CH_ST_FAILED;
+    return CH_EINVAL;
 }
 
 void quic_wipe(ch_quic *q) {

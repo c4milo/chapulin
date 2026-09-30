@@ -74,11 +74,9 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     memset(q, 0, sizeof *q);
     q->t.cfg = *cfg;
     if (quic_config_ok(&q->t, cfg) != CH_OK) {
-        // Nothing went out and no secret was drawn, so a zeroed q with
-        // a dead state is the whole answer.
-        memset(q, 0, sizeof *q);
-        q->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        // Nothing went out and no secret was drawn. The refused session
+        // keeps the epoch fields the check wrote, which say why.
+        return quic_refuse_init(q);
     }
     q->hs.t = &q->t;
     q->hs.alert = ALERT_DECODE_ERROR;
@@ -98,11 +96,12 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // one.
     q->t.alpn_selected = CH_ALPN_NONE;
     hsf_begin(&q->hs);
+    // A hello the staging array cannot hold is refused before a byte is
+    // staged, and the zeroed session holds no key share (handshake.c's
+    // ch_handshake states which configuration reaches it).
     size_t n = hsf_build_client_hello(&q->hs, q->t.tx, sizeof q->t.tx);
     if (n == 0) {
-        memset(q, 0, sizeof *q);
-        q->t.state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return quic_refuse_init(q);
     }
     q->tx_len = n;
     q->tx_level = CH_LEVEL_INITIAL;
