@@ -156,10 +156,10 @@ asks for it.
 ### Where the suite cannot go
 
 `AES=hw` needs the instructions. The `m3` and `freertos` lanes target cores
-without them, where `aes_hw.c` and `ghash_hw.c` are each an
+without them, where `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` are each an
 `#error`, so no device build
 carries this suite and `ct.h:95-100` is what stops one from trying.
-`AES=runtime` needs an arm64 or x86-64 target for the same two files, and
+`AES=runtime` needs an arm64 or x86-64 target for the same three files, and
 stops at the same `#error` on those lanes.
 
 ## Verification owed

@@ -1,5 +1,5 @@
 invariant: INV-26
-file: ghash_hw.c
+file: ghash_vector.h
 catches: ghash_equiv_test
 reason: the AES=hw reduction puts the high half of the middle term, the
   cross products' sum Karatsuba's form recovers, where its low half belongs
@@ -13,10 +13,10 @@ reason: the AES=hw reduction puts the high half of the middle term, the
   runner and an x86-64 one alike.
 
 --- old
-    ghash_vector first = xor_vector(xor_vector(swap_halves(sums->low), low_half_only(middle)),
-                                    multiply_low_halves(sums->low, constant));
-    ghash_vector upper = xor_vector(sums->high, high_half_down(middle));
+        ghash_xor(ghash_xor(ghash_swap_halves(sums->low), ghash_low_half_only(middle)),
+                  ghash_multiply_lane0(sums->low, constant));
+    ghash_vector upper = ghash_xor(sums->high, ghash_high_half_down(middle));
 --- new
-    ghash_vector first = xor_vector(xor_vector(swap_halves(sums->low), high_half_down(middle)),
-                                    multiply_low_halves(sums->low, constant));
-    ghash_vector upper = xor_vector(sums->high, low_half_only(middle));
+        ghash_xor(ghash_xor(ghash_swap_halves(sums->low), ghash_high_half_down(middle)),
+                  ghash_multiply_lane0(sums->low, constant));
+    ghash_vector upper = ghash_xor(sums->high, ghash_low_half_only(middle));

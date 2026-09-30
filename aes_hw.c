@@ -1,12 +1,10 @@
 // AES=hw: the AES-128 key expansion and forward cipher of FIPS 197 on
-// the AES instructions, through the compiler's own intrinsic headers,
-// counter mode over whole blocks, BLOCKS_PER_PASS blocks at a time, and
-// the three AES-256 entries in a build that has AES-256 (CH_AES_256,
-// aes.h).
-// aes_block.h states the contracts; this file implements them and
-// nothing else. Both key sizes share one expansion loop, one round loop
-// and one counter loop, so AES-256 adds three entries and no second
-// cipher.
+// the AES instructions, through the compiler's own intrinsic headers, and
+// the two AES-256 entries in a build that has AES-256 (CH_AES_256,
+// aes.h). aes_block.h states the contracts; this file implements them and
+// nothing else. Both key sizes share one expansion loop and one round
+// loop, so AES-256 adds two entries and no second cipher. Counter mode over
+// whole blocks, several at a time, is gcm_hw.c's.
 //
 // Two instruction sets, and the compiler picks between them at build
 // time. __ARM_FEATURE_AES says the ARMv8 crypto extensions are available
@@ -106,22 +104,6 @@ typedef uint8x16_t aes_state;
 #include <wmmintrin.h>
 typedef __m128i aes_state;
 #endif
-
-// How many counter blocks aes_counter_blocks runs through the rounds
-// together. The rounds of one block do not depend on another block's, so
-// the core can run the eight at once. Eight states and one round key take
-// nine vector registers, which x86-64's sixteen and arm64's thirty-two
-// both hold.
-//
-// Each loop over the states of a pass carries #pragma GCC unroll 8, which
-// gcc and clang both read. gcc 13 at -O2 leaves such a loop rolled and
-// keeps the eight states in memory, so every round loads and stores each
-// of them: counter mode then took 16.5 µs of a 16 KiB record, against 1.8
-// µs from clang on the same core (docs/performance.md). Unrolled, the
-// states stay in registers. gcc does not expand a macro in the pragma, so
-// the count is written out and the assertion below holds it to this one.
-#define BLOCKS_PER_PASS 8
-_Static_assert(BLOCKS_PER_PASS == 8, "each #pragma GCC unroll below writes BLOCKS_PER_PASS out");
 
 // Under AES=runtime, every function from here to the pop at the end of
 // this file carries the target attribute that turns the AES instructions
@@ -274,35 +256,6 @@ static void cipher(const uint8_t *round_keys, size_t rounds, const uint8_t in[AE
     ct_wipe(&state, sizeof state);
 }
 
-// cipher over BLOCKS_PER_PASS states at once, round by round: each round
-// key is loaded once and runs on every state of the pass before the next
-// one is loaded.
-static void cipher_pass(const uint8_t *round_keys, size_t rounds,
-                        aes_state states[BLOCKS_PER_PASS]) {
-    for (size_t round = 0; round < rounds - 1; round++) {
-        aes_state key = load_block(&round_keys[round * AES_BLOCK]);
-#pragma GCC unroll 8
-        for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-            states[b] = vaesmcq_u8(vaeseq_u8(states[b], key));
-        }
-    }
-    aes_state key = load_block(&round_keys[(rounds - 1) * AES_BLOCK]);
-    aes_state last = load_block(&round_keys[rounds * AES_BLOCK]);
-#pragma GCC unroll 8
-    for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-        states[b] = veorq_u8(vaeseq_u8(states[b], key), last);
-    }
-}
-
-// prefix with its bytes 12 to 15 replaced by word: lane 3 of the four
-// 32-bit lanes holds those four bytes.
-static aes_state counter_state(aes_state prefix, uint32_t word) {
-    return vreinterpretq_u8_u32(vsetq_lane_u32(word, vreinterpretq_u32_u8(prefix), 3));
-}
-
-static aes_state xor_state(aes_state a, aes_state b) {
-    return veorq_u8(a, b);
-}
 #else
 // The same over the x86-64 instructions. _mm_aesenc_si128(s, k) is
 // MixColumns(SubBytes(ShiftRows(s))) XOR k, one whole FIPS 197 §5.1 round
@@ -322,105 +275,11 @@ static void cipher(const uint8_t *round_keys, size_t rounds, const uint8_t in[AE
     ct_wipe(&state, sizeof state);
 }
 
-// The same three over the x86-64 instructions.
-static void cipher_pass(const uint8_t *round_keys, size_t rounds,
-                        aes_state states[BLOCKS_PER_PASS]) {
-    aes_state first = load_block(round_keys);
-#pragma GCC unroll 8
-    for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-        states[b] = _mm_xor_si128(states[b], first);
-    }
-    for (size_t round = 1; round < rounds; round++) {
-        aes_state key = load_block(&round_keys[round * AES_BLOCK]);
-#pragma GCC unroll 8
-        for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-            states[b] = _mm_aesenc_si128(states[b], key);
-        }
-    }
-    aes_state last = load_block(&round_keys[rounds * AES_BLOCK]);
-#pragma GCC unroll 8
-    for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-        states[b] = _mm_aesenclast_si128(states[b], last);
-    }
-}
-
-// _mm_cvtsi32_si128 puts word in bytes 0 to 3 of a zero vector, and
-// _mm_slli_si128 moves it to bytes 12 to 15, where prefix holds zeros.
-static aes_state counter_state(aes_state prefix, uint32_t word) {
-    return _mm_or_si128(prefix, _mm_slli_si128(_mm_cvtsi32_si128((int)word), 12));
-}
-
-static aes_state xor_state(aes_state a, aes_state b) {
-    return _mm_xor_si128(a, b);
-}
 #endif
 
 void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
                       const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
     cipher(round_keys, AES_128_ROUNDS, in, out);
-}
-
-// The four bytes of value, most significant first, as the uint32_t whose
-// memory holds them in that order, which is the word counter_state puts
-// in bytes 12 to 15. memcpy moves the bytes, so the bytes do not depend
-// on the host's byte order.
-static uint32_t big_endian_word(uint32_t value) {
-    uint8_t bytes[4] = {(uint8_t)(value >> 24), (uint8_t)(value >> 16), (uint8_t)(value >> 8),
-                        (uint8_t)value};
-    uint32_t word;
-    memcpy(&word, bytes, sizeof word);
-    return word;
-}
-
-// SP 800-38D §6.5's GCTR over whole blocks, aes_block.h's contract for
-// aes_counter_blocks, BLOCKS_PER_PASS counter blocks per pass. count is
-// the counter's last four bytes read big-endian, and adding to a uint32_t
-// is inc32: the sum wraps modulo 2^32 and never reaches the first twelve
-// bytes. A last pass shorter than BLOCKS_PER_PASS still runs the rounds
-// on BLOCKS_PER_PASS counter blocks and uses the ones it needs.
-//
-// Each block's input is read before its output is written, and an output
-// block ends before the next input block begins when out is at or below
-// in, so both overlaps the contract admits read every input byte first.
-static void counter_blocks(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
-                           const uint8_t *in, size_t blocks, uint8_t *out) {
-    uint8_t prefix_bytes[AES_BLOCK] = {0};
-    memcpy(prefix_bytes, counter, AES_BLOCK - 4);
-    aes_state prefix = load_block(prefix_bytes);
-    uint32_t count = ((uint32_t)counter[12] << 24) | ((uint32_t)counter[13] << 16) |
-                     ((uint32_t)counter[14] << 8) | counter[15];
-    // keystream holds a pass's counter blocks and then their keystream,
-    // which the exclusive-or reads. Every loop over it that runs the rounds
-    // is unrolled, so the compiler can keep it in registers through them.
-    // One wipe after the loop clears it, however many passes ran, for the
-    // case of a copy left on this frame, as cipher wipes its state.
-    aes_state keystream[BLOCKS_PER_PASS];
-    size_t done = 0;
-    while (done < blocks) {
-#pragma GCC unroll 8
-        for (size_t b = 0; b < BLOCKS_PER_PASS; b++) {
-            keystream[b] = counter_state(prefix, big_endian_word(count + (uint32_t)(done + b + 1)));
-        }
-        cipher_pass(round_keys, rounds, keystream);
-        size_t take = blocks - done < BLOCKS_PER_PASS ? blocks - done : BLOCKS_PER_PASS;
-        for (size_t b = 0; b < take; b++) {
-            size_t at = (done + b) * AES_BLOCK;
-            store_block(&out[at], xor_state(load_block(&in[at]), keystream[b]));
-        }
-        done += take;
-    }
-    uint32_t last = count + (uint32_t)blocks;
-    counter[12] = (uint8_t)(last >> 24);
-    counter[13] = (uint8_t)(last >> 16);
-    counter[14] = (uint8_t)(last >> 8);
-    counter[15] = (uint8_t)last;
-    ct_wipe(keystream, sizeof keystream);
-}
-
-void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
-                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                        uint8_t *out) {
-    counter_blocks(round_keys, AES_128_ROUNDS, counter, in, blocks, out);
 }
 
 #ifdef CH_AES_256
@@ -437,11 +296,6 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
     cipher(round_keys, AES_256_ROUNDS, in, out);
 }
 
-void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
-                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                            uint8_t *out) {
-    counter_blocks(round_keys, AES_256_ROUNDS, counter, in, blocks, out);
-}
 #endif
 
 #ifdef CH_AES_RUNTIME

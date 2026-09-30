@@ -187,7 +187,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
+        handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
         alert.h
@@ -258,14 +258,16 @@ else
 $(error SUITE=$(SUITE) is not a cipher suite; use SUITE=chacha or SUITE=aesgcm)
 endif
 
-# AES=hw is two sources rather than one: aes_hw.c runs the block
-# cipher on the AES instructions and ghash_hw.c runs GHASH's multiply
-# on the carry-less multiply instruction. gcm.c calls the second in
-# place of its own portable multiply under -DCH_AES_HW, so an AES=hw object
-# carries both and the other two values carry neither. AES_HW_SRCS names
-# the pair once, for AES_IMPL below and for every test binary that builds
-# the AES=hw leg whatever this build's AES value is.
-AES_HW_SRCS := aes_hw.c ghash_hw.c
+# AES=hw is three sources rather than one: aes_hw.c runs the block
+# cipher on the AES instructions, ghash_hw.c runs GHASH's multiply on the
+# carry-less multiply instruction, and gcm_hw.c runs counter mode over
+# whole blocks and the seal's counter mode and GHASH in one loop on both.
+# gcm.c calls the last two in place of its own portable multiply and
+# one-block counter loop under -DCH_AES_HW, so an AES=hw object carries all
+# three and the other two values carry none. AES_HW_SRCS names them once,
+# for AES_IMPL below and for every test binary that builds the AES=hw leg
+# whatever this build's AES value is.
+AES_HW_SRCS := aes_hw.c ghash_hw.c gcm_hw.c
 # AES-256 outside a suite build, for the test binaries and proof harnesses
 # that hold it to FIPS 197 and SP 800-38D on every AES value: on AES=soft
 # it compiles the software reference quic_aes_soft.c keeps for that, and
@@ -332,8 +334,8 @@ AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghas
                                      bin/srv_flight_test_aes bin/webpki_session_aes bin/webpki_loop_aes \
                                      bin/quic_loop_aes bin/quic_suite_test)
 # Whether this compiler can build AES=runtime: it targets arm64 or x86-64,
-# the two architectures aes_hw.c and ghash_hw.c turn the instructions on
-# for per function, whatever flags it runs with. The binaries run both
+# the two architectures aes_hw.c, ghash_hw.c and gcm_hw.c turn the
+# instructions on for per function, whatever flags it runs with. The binaries run both
 # answers, so they need a CPU with the instructions too, as the AES=hw
 # binaries do. Each suite binary states CH_NATIVE_AES on its own line, the
 # way the AES=hw ones do (ct.h).
@@ -383,15 +385,16 @@ QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
                       aes_traffic_key.h:$(AES_SUITE_ENTRY) aes_schedule.h:$(AES_SUITE_ENTRY) \
                       aes_hw.c:$(AES_SUITE_ENTRY) gcm.c:$(AES_SUITE_ENTRY) gcm.h:$(AES_SUITE_ENTRY) \
                       ghash_hw.c:$(AES_SUITE_ENTRY) ghash_hw.h:$(AES_SUITE_ENTRY) \
-                      aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
+                      ghash_vector.h:$(AES_SUITE_ENTRY) gcm_hw.c:$(AES_SUITE_ENTRY) \
+                      gcm_hw.h:$(AES_SUITE_ENTRY) aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
                       quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
                       x509_ca.h:-DCH_TRUST_CA
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. aes_hw.c without the
-# AES instructions and ghash_hw.c without the carry-less multiply
-# are each their own #error, by design, so lint-quic-partition skips them
-# there and judges them everywhere else.
-QUIC_UNPROBED := $(if $(AES_HW_PROBE),,aes_hw.c ghash_hw.c)
+# AES instructions, and ghash_hw.c, ghash_vector.h and gcm_hw.c without
+# the carry-less multiply, are each their own #error, by design, so
+# lint-quic-partition skips them there and judges them everywhere else.
+QUIC_UNPROBED := $(if $(AES_HW_PROBE),,aes_hw.c ghash_hw.c ghash_vector.h gcm_hw.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -1246,12 +1249,13 @@ print-aes-runtime-loop-srcs:
 # because exactly one of them belongs in an object: they define the
 # same two entries, so a second one would not link. Those rows hold
 # the AES axis to one implementation, the way the PIN rows hold the
-# pinned algorithm to one. ghash_hw.c comes out with them: the
-# AES=hw row requires it beside aes_hw.c and every other row bans
-# it, because an AES=soft or AES=extern object runs gcm.c's
-# portable GHASH and no second one. AES=runtime is the one value
-# that holds two, and only in the pair docs/decisions.md 81 admits: its
-# QUIC rows require aes_hw.c, ghash_hw.c and quic_aes_soft.c together
+# pinned algorithm to one. ghash_hw.c and gcm_hw.c come out with them:
+# the AES=hw row requires both beside aes_hw.c and every other row bans
+# them, because an AES=soft or AES=extern object runs gcm.c's
+# portable GHASH and one-block counter loop and no second one. AES=runtime
+# is the one value that holds two ciphers, and only in the pair
+# docs/decisions.md 81 admits: its QUIC rows require aes_hw.c, ghash_hw.c,
+# gcm_hw.c and quic_aes_soft.c together
 # and ban aes_extern.c, its TCP suite row bans the table, every other row
 # bans -DCH_AES_RUNTIME, and a TCP AES=runtime build without the suite
 # must be refused, because it carries no AES to choose. They name TRANSPORT
@@ -1306,10 +1310,10 @@ print-aes-runtime-loop-srcs:
 # names no webpki file at all.
 # The SUITE=aesgcm rows hold a suite object to a cipher with no table in
 # this tree and to SHA-384, once per AES value a suite build takes, over
-# TCP and over QUIC. The AES=hw rows require aes_hw.c and ghash_hw.c and
-# ban the other two ciphers; the AES=extern rows require aes_extern.c and
-# ban the other two, ghash_hw.c with them, because that object runs
-# gcm.c's portable GHASH. Every suite row requires the two SHA-512 files
+# TCP and over QUIC. The AES=hw rows require aes_hw.c, ghash_hw.c and
+# gcm_hw.c and ban the other two ciphers; the AES=extern rows require
+# aes_extern.c and ban the other two, ghash_hw.c and gcm_hw.c with them,
+# because that object runs gcm.c's portable GHASH and counter loop. Every suite row requires the two SHA-512 files
 # and bans -DCH_AES_256_TEST, the define that compiles the software
 # AES-256 for the tests and proofs; the QUIC rows ban that define too. A
 # packaged object that carried it would hold a software AES-256 no secret
@@ -1407,13 +1411,13 @@ lint-trust-separation-run:
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_token.c | tr '\n' ' '); \
 	aes_files=$$(git ls-files 'aes*.c' 'gcm*.c' 'ghash*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$aes_files" ] || { echo "lint-trust-separation: git tracks no aes*.c, gcm*.c or ghash*.c file at the root, so the AES rows would check nothing"; rc=1; }; \
-	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e aes_hw.c -e ghash_hw.c -e aes_extern.c | tr '\n' ' '); \
+	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e aes_hw.c -e ghash_hw.c -e gcm_hw.c -e aes_extern.c | tr '\n' ' '); \
 	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c tls_write.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
-	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c tls_write.c aes_hw.c ghash_hw.c aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST"; \
-	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "aes_hw.c ghash_hw.c aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_RUNTIME"; \
-	check "TRANSPORT=quic-nonblocking AES=hw EXPORTER=off" "aes_hw.c ghash_hw.c" "quic_aes_soft.c aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST"; \
-	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "aes_extern.c" "quic_aes_soft.c aes_hw.c ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW -DCH_AES_RUNTIME"; \
-	check "TRANSPORT=quic-nonblocking AES=runtime EXPORTER=off" "aes_hw.c ghash_hw.c quic_aes_soft.c" "aes_extern.c" "-DCH_AES_RUNTIME" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c tls_write.c aes_hw.c ghash_hw.c gcm_hw.c aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "aes_hw.c ghash_hw.c gcm_hw.c aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_RUNTIME"; \
+	check "TRANSPORT=quic-nonblocking AES=hw EXPORTER=off" "aes_hw.c ghash_hw.c gcm_hw.c" "quic_aes_soft.c aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "aes_extern.c" "quic_aes_soft.c aes_hw.c ghash_hw.c gcm_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW -DCH_AES_RUNTIME"; \
+	check "TRANSPORT=quic-nonblocking AES=runtime EXPORTER=off" "aes_hw.c ghash_hw.c gcm_hw.c quic_aes_soft.c" "aes_extern.c" "-DCH_AES_RUNTIME" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	for axis in "TRANSPORT=tcp-blocking" "TRANSPORT=tcp-nonblocking"; do \
 	  n=$$((n + 1)); refused_build "$$axis AES=runtime SUITE=chacha" "an AES=runtime TCP object without SUITE=aesgcm carries no AES to choose" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	done; \
@@ -1428,12 +1432,12 @@ lint-trust-separation-run:
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv $$aes_always sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_tcp_nonblocking.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_tcp_nonblocking.c $$role_crypto tcp_nonblocking.c tcp_nonblocking_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=hw" "aes.c aes_hw.c ghash_hw.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw EXPORTER=off" "aes.c aes_hw.c ghash_hw.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern" "aes.c aes_extern.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_hw.c ghash_hw.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN" "-DCH_AES_HW -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=extern EXPORTER=off" "aes.c aes_extern.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_hw.c ghash_hw.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=runtime" "aes.c aes_hw.c ghash_hw.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=runtime EXPORTER=off" "aes.c aes_hw.c ghash_hw.c quic_aes_soft.c gcm.c quic_packet.c sha512.c sha512_compress.c" "aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=hw" "aes.c aes_hw.c ghash_hw.c gcm_hw.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw EXPORTER=off" "aes.c aes_hw.c ghash_hw.c gcm_hw.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=extern" "aes.c aes_extern.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_hw.c ghash_hw.c gcm_hw.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN" "-DCH_AES_HW -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=extern EXPORTER=off" "aes.c aes_extern.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_hw.c ghash_hw.c gcm_hw.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_RUNTIME -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=runtime" "aes.c aes_hw.c ghash_hw.c gcm_hw.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=runtime EXPORTER=off" "aes.c aes_hw.c ghash_hw.c gcm_hw.c quic_aes_soft.c gcm.c quic_packet.c sha512.c sha512_compress.c" "aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST -DCH_NATIVE_AES -DCH_AES_EXTERN_CONSTANT_TIME"; \
 	wait; \
 	for f in "$$rows"/*; do [ -s "$$f" ] && { cat "$$f"; rc=1; }; done; \
 	rm -rf "$$rows"; \
@@ -1877,7 +1881,7 @@ bin/quic_test_hw: test/quic_vectors.c aes.c $(AES_HW_SRCS) gcm.c quic_keys.c qui
 # ct.c is on the line because aes_hw.c wipes its key-schedule word
 # and its cipher state through ct_wipe; quic_aes_soft.c wipes nothing and
 # links nothing, for the reason its file comment gives.
-bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c aes_hw.c ct.c $(HDRS) $(TESTH)
+bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c aes_hw.c gcm_hw.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c ct.c
 # GHASH on the carry-less multiply against gcm.c's portable GHASH, the
@@ -4938,6 +4942,13 @@ lint-impact:
 #     three public keys INV-26 admits. test/ghash_equiv_test.c and the
 #     Wycheproof AES-GCM suite on the AES=hw leg check it instead, and
 #     neither measures timing.
+#   gcm_hw.c: counter mode over whole blocks and the seal's counter mode
+#     and GHASH in one loop, on the AES instructions and the carry-less
+#     multiply, under AES=hw. It sits here for aes_hw.c's reason, and
+#     takes the keys aes_hw.c and ghash_hw.c take. Its branches read the
+#     round count and the block count alone. test/aes_equiv_test.c,
+#     test/ghash_equiv_test.c and the Wycheproof AES-GCM suite on the
+#     AES=hw leg check it instead, and none of them measures timing.
 #   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
 #     srv_ticket.c, srv_auth.c, srv_resume.c, srv_kex.c, srv_flight.c,
 #     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
@@ -5061,7 +5072,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
-                  aes_hw.c ghash_hw.c quic_initial.c quic_retry.c build.c
+                  aes_hw.c ghash_hw.c gcm_hw.c quic_initial.c quic_retry.c build.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather

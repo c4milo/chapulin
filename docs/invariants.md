@@ -2506,7 +2506,9 @@ last `ROLE=server` stub, as the entry said it would.
   `aes_extern.c` the Makefile `AES` variable picked, behind the
   contract `aes_block.h` states. Under `AES=hw`, GHASH's multiply by
   the hash subkey also moves out of `gcm.c`, into `ghash_hw.c`
-  on the carry-less multiply, behind `ghash_hw.h`; the hash subkey
+  on the carry-less multiply, behind `ghash_hw.h`, and counter mode's
+  whole blocks and the seal's whole passes into `gcm_hw.c`, behind
+  `gcm_hw.h`, which take the round keys `gcm.c` passes; the hash subkey
   is the forward cipher of a zero block under the same key, so it is
   public exactly when that key is. Only `AES=soft` is table-driven,
   and the claim below is what lets that one exist; outside a suite build
@@ -2532,8 +2534,9 @@ last `ROLE=server` stub, as the entry said it would.
   holds an AES key, and no AES key outlives the call that built it.
 
   `AES=runtime` is the one value whose object holds two of the
-  implementations: `aes_hw.c` with `ghash_hw.c`, compiled so that only
-  their own functions carry the AES instructions, and in a QUIC object
+  implementations: `aes_hw.c` with `ghash_hw.c` and `gcm_hw.c`, compiled
+  so that only their own functions carry the AES instructions, and in a
+  QUIC object
   `quic_aes_soft.c` beside them (docs/decisions.md 81). The caller's
   answer, `ch_cfg.aes_instructions`, puts each Initial key on one of them:
   the instructions when the caller's probe found them, and the table
@@ -2669,11 +2672,12 @@ last `ROLE=server` stub, as the entry said it would.
   object. All three define the same two entries, so a second one would
   not link, but a linker says nothing about which implementation an
   object ended up with; the lint reads the packaged source list per axis
-  value instead. Its `AES=hw` row requires `ghash_hw.c` beside
-  `aes_hw.c`, and every other row bans it but `AES=runtime`'s. Those rows
-  admit the one pair of implementations an object may hold: the QUIC rows
-  require `aes_hw.c`, `ghash_hw.c` and `quic_aes_soft.c` together, the TCP
-  suite row requires the first two and bans the table, and a TCP
+  value instead. Its `AES=hw` row requires `ghash_hw.c` and `gcm_hw.c`
+  beside `aes_hw.c`, and every other row bans them but `AES=runtime`'s.
+  Those rows admit the one pair of implementations an object may hold: the
+  QUIC rows require `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and
+  `quic_aes_soft.c` together, the TCP suite row requires the first three and
+  bans the table, and a TCP
   `AES=runtime` build without the suite must be refused.
   `aes-runtime-table-in-tcp-object.violation` puts the table in that TCP
   suite object, and `test/lint-trust-separation.sh` fails it.
@@ -2770,8 +2774,9 @@ last `ROLE=server` stub, as the entry said it would.
   with a measured branch count per spec in `BRANCH_CEILING`. Before that
   no gate compiled them, so nothing held `multiply_by_subkey`'s two masks
   to a branchless lowering -- the same select `lint-wide-multiply` holds
-  for `poly1305_final` and `cswap`. `aes_hw.c` and `ghash_hw.c`
-  stay in `WIDEMUL_PUBLIC` because they cannot join: every spec targets a
+  for `poly1305_final` and `cswap`. `aes_hw.c`, `ghash_hw.c` and
+  `gcm_hw.c` stay in `WIDEMUL_PUBLIC` because they cannot join: every spec
+  targets a
   core without the AES or carry-less multiply instructions, where each
   file is its own `#error`. `test/aes_equiv_test.c`,
   `test/ghash_equiv_test.c`, the published vectors in `bin/quic_test_hw`,
@@ -2808,8 +2813,8 @@ last `ROLE=server` stub, as the entry said it would.
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
   callers, with `aes.c`, `gcm.c`, the three AES
-  implementations and `ghash_hw.c` excluded as the definition
-  sites.
+  implementations, `ghash_hw.c` and `gcm_hw.c` excluded as the
+  definition sites.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
   every line: `-DCH_SUITE_AES_GCM` with neither `CH_AES_HW` nor
@@ -2868,7 +2873,8 @@ last `ROLE=server` stub, as the entry said it would.
   `quic_packet_suite` proof asserts the key length too.
 
   What holds `AES=runtime`. `bin/aes_runtime_test` compiles
-  `quic_aes_soft.c`, `aes_hw.c` and `ghash_hw.c` under counting entries
+  `quic_aes_soft.c`, `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` under counting
+  entries
   and runs RFC 9001 and RFC 9369 Appendix A under both answers and the SP
   800-38D and FIPS 197 vectors under traffic keys: under the absent answer
   no call goes to the instructions or the carry-less multiply, under the
@@ -2879,7 +2885,8 @@ last `ROLE=server` stub, as the entry said it would.
   and the present one dies of SIGILL; CI's mips job runs it on every
   push. On arm64, where no QEMU model drops the AES extension,
   `test/aes-runtime-disasm.sh` in CI's arm64 job finds the AES and PMULL
-  instructions in `aes_hw.c`'s and `ghash_hw.c`'s functions alone. The
+  instructions in `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions
+  alone. The
   `aes_runtime` proof holds the same three rules over every byte an
   answer can be, and
   `srv_select_runtime` and `quic_config_webpki_runtime` hold the default
@@ -2952,7 +2959,7 @@ last `ROLE=server` stub, as the entry said it would.
 
   What `make lint-quic-surface` reads, so the rule's own premise is
   checked rather than assumed. It fails when `aes.h`,
-  `aes_block.h`, `gcm.h` or `ghash_hw.h` declares a
+  `aes_block.h`, `gcm.h`, `ghash_hw.h` or `gcm_hw.h` declares a
   function or a function-like macro outside the `aes_`, `gcm_` and
   `ch_aes_` family, because the rule matches names;
   `inv26-cipher-entry-off-prefix.violation` adds a `quic_encrypt_block`
@@ -3273,7 +3280,12 @@ last `ROLE=server` stub, as the entry said it would.
   in it. `ghash-hw-powers-wipe-skipped` stops that wipe before the powers,
   `ghash-hw-sums-past-wipe` moves the sums past its end, and
   `ghash-hw-powers-held-in-registers` reads the powers through an ordinary
-  pointer; each requires the binary to fail.
+  pointer; each requires the binary to fail. `gcm_hw.c`'s one-pass seal
+  keeps its powers, sums and each pass's keystream in one state it wipes
+  when the call ends, and writes each pass's output over its keystream, so
+  no keystream stays live to that wipe; the same binary copies the stack
+  below one seal and requires none of them there, the last pass's
+  keystream included.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

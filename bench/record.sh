@@ -99,7 +99,7 @@ FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_A
     $AES_HW_CFLAGS -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha.c bench/record_aead.c bench/record_stub.c
-    record.c gcm.c aes.c aes_hw.c ghash_hw.c aead.c chacha20.c poly1305.c ct.c hkdf.c sha256.c
+    record.c gcm.c aes.c aes_hw.c ghash_hw.c gcm_hw.c aead.c chacha20.c poly1305.c ct.c hkdf.c sha256.c
     sha512.c sha512_compress.c)
 "${CC_WORDS[@]}" "${FLAGS[@]}" -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/record_native" "${SRCS[@]}"

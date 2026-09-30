@@ -1,5 +1,5 @@
 invariant: INV-26
-file: ghash_hw.c
+file: ghash_vector.h
 catches: ghash_equiv_test
 reason: the AES=hw GHASH pass multiplies its later blocks by the powers of
   H in the wrong order, the third block by H^3 where a pass of eight blocks
@@ -11,6 +11,7 @@ reason: the AES=hw GHASH pass multiplies its later blocks by the powers of
   instruction, so it lands on an ARMv8 runner and an x86-64 one alike.
 
 --- old
-                     power_at(s, GHASH_PASS_BLOCKS - 1 - j));
+        ghash_add_products(s, &s->sums, ghash_load_block(&data[j * AES_BLOCK]),
+                           GHASH_PASS_BLOCKS - 1 - j);
 --- new
-                     power_at(s, j));
+        ghash_add_products(s, &s->sums, ghash_load_block(&data[j * AES_BLOCK]), j);

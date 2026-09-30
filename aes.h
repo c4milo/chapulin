@@ -299,20 +299,6 @@ void aes_public_key_retry(aes_public_key *k, uint32_t version);
 void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
                           uint8_t out[AES_BLOCK]);
 
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
-// SP 800-38D §6.5's GCTR over whole blocks under an expanded key, on the
-// AES instructions: aes_counter_blocks, or aes_counter_blocks_256 when
-// the schedule records fourteen rounds, with aes_block.h's contract.
-// gcm.c calls it for a schedule the instructions run, and runs a schedule
-// the table runs one block at a time through aes_encrypt_schedule.
-//
-// Requires: s runs on the AES instructions, which an object that holds
-// the table as well checks with CH_ASSERT (aes_schedule.h); counter, in,
-// out and blocks as aes_counter_blocks requires them. Cannot fail.
-void aes_encrypt_counter_blocks(const aes_key_schedule *s, uint8_t counter[AES_BLOCK],
-                                const uint8_t *in, size_t blocks, uint8_t *out);
-#endif
-
 void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
                        uint8_t out[AES_BLOCK]);
 

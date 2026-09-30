@@ -17,11 +17,13 @@
 //                  GHASH against the same three over the portable one
 //
 // Both AEADs run aes_hw.c's cipher. They differ in GHASH and in counter
-// mode: the AES=hw copy runs whole blocks through aes_counter_blocks,
-// several at a time, and the portable copy runs every block through the
-// one-block cipher, so the AEAD cases hold the multi-block counter mode
-// to the one-block loop as well. test/aes_equiv_test.c holds the cipher
-// and the multi-block counter mode to AES=soft.
+// mode: the AES=hw copy runs whole blocks through gcm_hw.c, several at a
+// time, and seals whole passes of eight blocks in its loop that runs
+// counter mode and GHASH together, and the portable copy runs every block
+// through the one-block cipher and GHASH after it, so the AEAD cases hold
+// the multi-block counter mode and the one-pass seal to the one-block
+// loop as well. test/aes_equiv_test.c holds the cipher and the multi-block
+// counter mode to AES=soft.
 //
 // The multiply's operands are the edge cases first and then random
 // pairs. The edge cases: zero; the field's one, which is x^0, the most
@@ -379,8 +381,8 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
 
 // Every associated-data length from 0 to 40 against every payload length
 // from 0 to 48, which covers each partial block on both arguments. Then
-// every payload length up to three passes of aes_hw.c's counter mode and
-// a block, BLOCKS_PER_PASS blocks a pass, under three associated-data
+// every payload length up to three passes of gcm_hw.c's counter mode and
+// a block, GCM_HW_PASS_BLOCKS blocks a pass, under three associated-data
 // lengths, so each count of whole blocks in a last short pass meets each
 // length of a last partial block. Then random lengths up to MAX_AAD and
 // MAX_DATA.

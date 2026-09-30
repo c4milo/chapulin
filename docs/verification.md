@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 92 C sources in the tree root are compiled into a
+80 of the 93 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 12 sources are in no such harness:
+The other 13 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -46,7 +46,8 @@ The other 12 sources are in no such harness:
 | `srv_tcp_nonblocking.c` | Its harness's formula returns no verdict ([srv_tcp_nonblocking](#srv_tcp_nonblocking)). | `bin/srv_tcp_nonblocking_test` |
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
-| `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
+| `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
+| `gcm_hw.c` | It runs counter mode and the one-pass seal on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal to `gcm.c`'s proven one-block loop and portable GHASH. |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
@@ -363,16 +364,14 @@ The entries are grouped by area:
     caller's answer is `CH_AES_INSTRUCTIONS_PRESENT`, and on the table for
     every other byte, and both of its schedules record which;
   - the Retry key expands and runs on the table under any answer;
-  - the table runs no traffic key of either length;
-  - counter mode's whole blocks run on the instructions for an Initial
-    key under the answer present and for a traffic key, and
-    `aes_encrypt_counter_blocks`'s `CH_ASSERT` holds for both.
+  - the table runs no traffic key of either length.
 - **Bound:** the full domain: every byte of the answer, every admitted
   connection ID length and every endpoint byte.
 - **Not proved:** either cipher's arithmetic, which `aes` proves for the
   table and `bin/aes_equiv_test` tests for the instructions; and `gcm.c`'s
-  choice between the two GHASH bodies and the two counter-mode paths,
-  which `bin/aes_runtime_test` counts.
+  choice between the two GHASH bodies and between the one-block counter
+  loop and `gcm_hw.c`, which `bin/aes_runtime_test` counts and
+  `gcm.c`'s `instruction_rounds` asserts.
 
 #### gcm
 
@@ -409,8 +408,10 @@ The entries are grouped by area:
   `ghash_hw.c`'s GHASH on the carry-less multiply instead, three products
   a block and eight blocks a pass against the powers of H each call
   computes, with the reduction on the same instruction, and runs
-  counter mode's whole blocks through `aes_hw.c`'s `aes_counter_blocks`,
-  several at a time, neither of which a harness reads.
+  counter mode's whole blocks through `gcm_hw.c`'s `gcm_counter_blocks_hw`,
+  several at a time, and a seal's whole passes of eight blocks through
+  `gcm_seal_passes_hw`, which runs counter mode and GHASH over the
+  ciphertext in one loop. No harness reads any of the three.
   `bin/ghash_equiv_test` holds both to the portable paths byte for byte,
   `bin/aes_equiv_test` holds the multi-block counter mode to the soft
   cipher at every block count through three passes and across the 2^32
@@ -2506,8 +2507,9 @@ makes. Three checks stand in:
 - `test/aes-runtime-disasm.sh`, in CI's arm64 job, builds the three
   `AES=runtime` objects `make check` links, disassembles every source's
   object, and requires the AES and carry-less multiply instructions in
-  `aes_hw.c`'s and `ghash_hw.c`'s functions alone. It requires at least
-  one of each in those two files, so a disassembler that spelled them
+  `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions alone. It
+  requires an AES instruction in the first, a carry-less multiply in the
+  second and both in the third, so a disassembler that spelled them
   another way would fail it rather than pass it.
 
 `inv26-runtime-initial-seal-ignores-answer` makes `quic.c` seal every

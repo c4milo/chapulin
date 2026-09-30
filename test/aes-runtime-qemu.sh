@@ -19,8 +19,8 @@
 # QEMU's arm64 models all implement the AES extension, and none of their
 # properties turns it off (QEMU 8.2 and 10.2), so the arm64 half of the
 # claim rests on the call counts bin/aes_runtime_test reads and on
-# test/aes-runtime-disasm.sh, which finds the instructions in aes_hw.c's
-# and ghash_hw.c's functions alone.
+# test/aes-runtime-disasm.sh, which finds the instructions in aes_hw.c's,
+# ghash_hw.c's and gcm_hw.c's functions alone.
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC names an x86-64
 # compiler, cc by default, which must be one on an x86-64 host;
@@ -58,7 +58,7 @@ read -r -a tcp_srcs <<< "$(sed -n 2p <<< "$lists")"
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
     -o "$out/webpki_loop_aes_runtime" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -maes -mpclmul -DCH_AES_HW -DCH_AES_256_TEST \
-    -o "$out/quic_test_hw" test/quic_vectors.c aes.c aes_hw.c ghash_hw.c "${common[@]}" || exit 1
+    -o "$out/quic_test_hw" test/quic_vectors.c aes.c aes_hw.c ghash_hw.c gcm_hw.c "${common[@]}" || exit 1
 
 for b in aes_runtime_test quic_loop_aes_runtime webpki_loop_aes_runtime; do
     "$qemu" -cpu "$cpu" "$out/$b" absent ||

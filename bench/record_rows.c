@@ -15,6 +15,7 @@
 
 #include "ct.h"
 #include "gcm.h"
+#include "gcm_hw.h"
 #include "ghash_hw.h"
 #include "record_stages.h"
 #include "suite.h"
@@ -202,18 +203,31 @@ static void run_counter_mode_shifted(bench_state *b) {
 }
 
 // Counter mode's whole blocks alone, as counter_mode hands them to the AES
-// instructions: aes_encrypt_counter_blocks over every whole block of the
+// instructions: gcm_counter_blocks_hw over every whole block of the
 // record, in place and as the open runs it. counter advances with each call,
 // and the timing reads no value of it.
 static void run_counter_blocks_in_place(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    aes_encrypt_counter_blocks(&b->key.key, b->counter, body, b->whole_blocks, body);
+    gcm_counter_blocks_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, body,
+                          b->whole_blocks, body);
     consume(body[0]);
 }
 
 static void run_counter_blocks_shifted(bench_state *b) {
-    aes_encrypt_counter_blocks(&b->key.key, b->counter, b->rec + REC_HDR, b->whole_blocks, b->rec);
+    gcm_counter_blocks_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->rec + REC_HDR,
+                          b->whole_blocks, b->rec);
     consume(b->rec[0]);
+}
+
+// The seal's whole passes, as seal_schedule hands them to gcm_hw.c:
+// counter mode and GHASH over the ciphertext in one loop, over every whole
+// pass of the record, in place, from the accumulator ghash_data's row
+// uses. Every record size the bench times is whole passes.
+static void run_seal_passes(bench_state *b) {
+    uint8_t *body = b->rec + REC_HDR;
+    gcm_seal_passes_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
+                       body, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), body);
+    consume(body[0]);
 }
 
 static void run_compute_tag(bench_state *b) {
@@ -307,6 +321,7 @@ static const bench_row AES_ROWS[] = {
     {"counter_mode_shifted",    ALL,    run_counter_mode_shifted,    0},
     {"counter_blocks_in_place", ALL,    run_counter_blocks_in_place, 0},
     {"counter_blocks_shifted",  ALL,    run_counter_blocks_shifted,  0},
+    {"seal_passes",             ALL,    run_seal_passes,             0},
     {"compute_tag",             ALL,    run_compute_tag,             0},
     {"ghash_data",              ALL,    run_ghash_data,              0},
     {"compute_tag_fixed",       FIXED,  run_compute_tag_fixed,       0},
@@ -319,15 +334,16 @@ static const bench_difference AES_DIFFERENCES[] = {
     {"counter_mode_tail_shifted",  "counter_mode_shifted",  "counter_blocks_shifted" },
 };
 
-// Each whole against its parts. The seal's three stages are counter mode,
-// GHASH over the ciphertext and the tag's fixed work; the open runs the
-// same three with counter mode in its own shape.
+// Each whole against its parts. The seal's two stages are counter mode
+// and GHASH over the ciphertext in one loop, and the tag's fixed work; the
+// open runs counter mode, GHASH over the ciphertext and the tag's fixed
+// work.
 static const bench_check AES_CHECKS[] = {
-    {"aead_seal",   {"counter_mode_in_place", "ghash_data", "compute_tag_fixed", NULL}},
-    {"aead_open",   {"counter_mode_shifted", "ghash_data", "compute_tag_fixed", NULL} },
-    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}                         },
-    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}                      },
-    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}                      },
+    {"aead_seal",   {"seal_passes", "compute_tag_fixed", NULL}                       },
+    {"aead_open",   {"counter_mode_shifted", "ghash_data", "compute_tag_fixed", NULL}},
+    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}                        },
+    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}                     },
+    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}                     },
 };
 
 // The ChaCha20-Poly1305 rows.

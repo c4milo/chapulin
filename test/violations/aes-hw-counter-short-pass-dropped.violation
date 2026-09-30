@@ -1,5 +1,5 @@
 invariant: INV-26
-file: aes_hw.c
+file: gcm_hw.c
 catches: aes_equiv_test
 reason: the AES=hw counter mode runs only whole passes of eight blocks, so
   the blocks of a last short pass keep their input bytes and a record
@@ -14,4 +14,4 @@ reason: the AES=hw counter mode runs only whole passes of eight blocks, so
 --- old
     while (done < blocks) {
 --- new
-    while (blocks - done >= BLOCKS_PER_PASS) {
+    while (blocks - done >= GCM_HW_PASS_BLOCKS) {

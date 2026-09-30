@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Shows that an AES=runtime object carries the AES and carry-less multiply
-# instructions in aes_hw.c's and ghash_hw.c's functions and nowhere else
-# (docs/decisions.md 81). bin/aes_runtime_test counts the calls into those
-# two files and finds none under the answer that the instructions are
-# absent; this shows that no other file of the object runs them.
+# instructions in aes_hw.c's, ghash_hw.c's and gcm_hw.c's functions and
+# nowhere else (docs/decisions.md 81). bin/aes_runtime_test counts the
+# calls into those three files and finds none under the answer that the
+# instructions are absent; this shows that no other file of the object
+# runs them.
 #
 # QEMU's arm64 models all implement the AES extension, so
 # test/aes-runtime-qemu.sh runs the absent answer on an x86-64 CPU model
@@ -18,12 +19,12 @@
 # source's object and requires:
 #
 #   - no AES or carry-less multiply instruction in any object but
-#     aes_hw.o and ghash_hw.o;
-#   - an AES instruction in aes_hw.o and a carry-less multiply in
-#     ghash_hw.o, so a disassembler that spells either another way fails
-#     the check rather than passes it;
+#     aes_hw.o, ghash_hw.o and gcm_hw.o;
+#   - an AES instruction in aes_hw.o, a carry-less multiply in ghash_hw.o
+#     and both in gcm_hw.o, so a disassembler that spells either another
+#     way fails the check rather than passes it;
 #   - as many of those instructions in the linked chapulin.o as in the
-#     two files, so an object this script could not read fails too.
+#     three files, so an object this script could not read fails too.
 #
 # The instructions: on arm64 aese, aesd, aesmc, aesimc, pmull and pmull2;
 # on x86-64 the AES-NI instructions and pclmulqdq, with or without the
@@ -89,7 +90,7 @@ for object in "${objects[@]}"; do
         [ -f "$o" ] || { echo "aes-runtime-disasm: [$object]: $o is missing" >&2; exit 1; }
         found=$(instructions "$o")
         case "$src" in
-        aes_hw.c | ghash_hw.c)
+        aes_hw.c | ghash_hw.c | gcm_hw.c)
             in_files=$((in_files + $(count "$found" "$aes|$clmul")))
             ;;
         *)
@@ -109,15 +110,20 @@ for object in "${objects[@]}"; do
             echo "aes-runtime-disasm: [$object]: read no carry-less multiply in ghash_hw.o" >&2
             rc=1
         fi
+        if [ "$src" = gcm_hw.c ] &&
+            { [ "$(count "$found" "$aes")" -eq 0 ] || [ "$(count "$found" "$clmul")" -eq 0 ]; }; then
+            echo "aes-runtime-disasm: [$object]: read no AES instruction or no carry-less multiply in gcm_hw.o" >&2
+            rc=1
+        fi
     done
     linked=$(count "$(instructions "$obj")" "$aes|$clmul")
     if [ "$linked" -ne "$in_files" ]; then
         echo "aes-runtime-disasm: [$object]: chapulin.o holds $linked of the instructions," \
-            "and aes_hw.o and ghash_hw.o hold $in_files" >&2
+            "and aes_hw.o, ghash_hw.o and gcm_hw.o hold $in_files" >&2
         rc=1
     fi
-    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c and ghash_hw.c"
+    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c and gcm_hw.c"
 done
 [ "$rc" -ne 0 ] ||
-    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c and ghash_hw.c"
+    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c and gcm_hw.c"
 exit "$rc"

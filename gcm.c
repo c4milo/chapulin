@@ -35,12 +35,13 @@
 // off a memory index, and it multiplies no integers, so it needs no
 // statement about the part.
 //
-// Counter mode has one body with one more step under AES=hw and
-// AES=runtime: a schedule the AES instructions run takes its whole blocks
-// through aes_encrypt_counter_blocks, which runs several blocks at once,
-// and the loop that every other schedule runs block by block takes the
-// last partial block. Everything else here is one body under every AES
-// value.
+// Counter mode and the seal have one body with one more step under AES=hw
+// and AES=runtime. A schedule the AES instructions run takes counter
+// mode's whole blocks through gcm_hw.c, which runs several blocks at once,
+// and the seal's whole passes of eight blocks through gcm_hw.c's loop that
+// runs counter mode and GHASH over the ciphertext together; the loop that
+// every other schedule runs block by block takes what is left. Everything
+// else here is one body under every AES value.
 //
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first
 // counter block straight from a 96-bit IV, and hashes any other IV
@@ -59,6 +60,8 @@
 
 #include "ct.h"
 #if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#include "ch_assert.h"
+#include "gcm_hw.h"
 #include "ghash_hw.h"
 #endif
 
@@ -205,25 +208,42 @@ static void write_length_bits(uint8_t out[8], size_t len) {
     }
 }
 
-static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t aad_len,
-                           const uint8_t *ct, size_t n, uint8_t out[AES_BLOCK]) {
-    // SP 800-38D §7.1 step 1: the hash subkey H is the forward cipher of
-    // a block of zeros.
+// GHASH's state through one AEAD call: the hash subkey H and the
+// accumulator, both functions of the key, so hash_finish wipes them.
+typedef struct {
     uint8_t subkey[AES_BLOCK];
-    aes_encrypt_schedule(k, ZERO_BLOCK, subkey);
+    uint8_t acc[AES_BLOCK];
+} gcm_hash;
 
-    memset(out, 0, AES_BLOCK);
-    ghash_data(k, out, subkey, aad, aad_len);
-    ghash_data(k, out, subkey, ct, n);
+// SP 800-38D §7.1 step 1: the hash subkey H is the forward cipher of a
+// block of zeros. Then GHASH over the associated data, from zero.
+static void hash_start(const aes_key_schedule *k, gcm_hash *h, const uint8_t *aad, size_t aad_len) {
+    aes_encrypt_schedule(k, ZERO_BLOCK, h->subkey);
+    memset(h->acc, 0, AES_BLOCK);
+    ghash_data(k, h->acc, h->subkey, aad, aad_len);
+}
 
+// GHASH's last block, the two lengths, and out = the GHASH value. h is
+// wiped.
+static void hash_finish(const aes_key_schedule *k, gcm_hash *h, size_t aad_len, size_t n,
+                        uint8_t out[AES_BLOCK]) {
     uint8_t lengths[AES_BLOCK];
     write_length_bits(lengths, aad_len);
     write_length_bits(&lengths[8], n);
     for (size_t i = 0; i < AES_BLOCK; i++) {
-        out[i] = (uint8_t)(out[i] ^ lengths[i]);
+        h->acc[i] = (uint8_t)(h->acc[i] ^ lengths[i]);
     }
-    ghash_multiply(k, out, subkey);
-    ct_wipe(subkey, sizeof subkey);
+    ghash_multiply(k, h->acc, h->subkey);
+    memcpy(out, h->acc, AES_BLOCK);
+    ct_wipe(h, sizeof *h);
+}
+
+static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t aad_len,
+                           const uint8_t *ct, size_t n, uint8_t out[AES_BLOCK]) {
+    gcm_hash h;
+    hash_start(k, &h, aad, aad_len);
+    ghash_data(k, h.acc, h.subkey, ct, n);
+    hash_finish(k, &h, aad_len, n, out);
 }
 
 // SP 800-38D §7.1 step 2: for a 96-bit IV the first counter block is the
@@ -250,9 +270,26 @@ static void increment_counter(uint8_t counter[AES_BLOCK]) {
 }
 
 #if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+// The round count gcm_hw.c's entries take beside k's round keys. A
+// schedule the table expanded never reaches them: every caller below
+// checks on_instructions first, and the assertion holds that, because the
+// table has no entry that runs several blocks. The round count is the
+// suite's, as in aes_encrypt_schedule.
+static size_t instruction_rounds(const aes_key_schedule *k) {
+#ifdef CH_AES_TWO_CIPHERS
+    CH_ASSERT(on_instructions(k));
+#endif
+#ifdef CH_AES_256
+    return k->rounds;
+#else
+    (void)k;
+    return AES_128_ROUNDS;
+#endif
+}
+
 // The whole blocks of counter_mode's input on the AES instructions, which
-// run several blocks at once (aes_encrypt_counter_blocks), and the bytes
-// they covered. A schedule the table runs, which only an AES=runtime QUIC
+// run several blocks at once (gcm_counter_blocks_hw), and the bytes they
+// covered. A schedule the table runs, which only an AES=runtime QUIC
 // object holds, covers none, and counter_mode runs all its blocks one at a
 // time.
 static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t counter[AES_BLOCK],
@@ -263,8 +300,26 @@ static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t count
     }
 #endif
     size_t blocks = n / AES_BLOCK;
-    aes_encrypt_counter_blocks(k, counter, in, blocks, out);
+    gcm_counter_blocks_hw(k->round_keys, instruction_rounds(k), counter, in, blocks, out);
     return blocks * AES_BLOCK;
+}
+
+// The seal's whole passes of GCM_HW_PASS_BLOCKS blocks on the AES
+// instructions: counter mode and GHASH over the ciphertext in one loop
+// (gcm_seal_passes_hw), from h's accumulator, and the bytes they covered.
+// A schedule the table runs covers none.
+static size_t seal_whole_passes(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], gcm_hash *h,
+                                const uint8_t *pt, size_t n, uint8_t *ct) {
+#ifdef CH_AES_TWO_CIPHERS
+    if (!on_instructions(k)) {
+        return 0;
+    }
+#endif
+    size_t pass_bytes = (size_t)GCM_HW_PASS_BLOCKS * AES_BLOCK;
+    size_t passes = n / pass_bytes;
+    gcm_seal_passes_hw(k->round_keys, instruction_rounds(k), counter, h->acc, h->subkey, pt, passes,
+                       ct);
+    return passes * pass_bytes;
 }
 #endif
 
@@ -303,19 +358,25 @@ static void counter_mode(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], 
 
 // SP 800-38D §7.1 step 6: the tag is GHASH over the associated data and
 // the ciphertext, exclusive-ored with the forward cipher of the first
-// counter block.
-static void compute_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_BLOCK],
-                        const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-                        uint8_t tag[GCM_TAG]) {
-    uint8_t hashed[AES_BLOCK];
-    ghash_schedule(k, aad, aad_len, ct, n, hashed);
+// counter block. hashed is that GHASH value, and both it and the mask are
+// wiped.
+static void mask_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_BLOCK],
+                     uint8_t hashed[AES_BLOCK], uint8_t tag[GCM_TAG]) {
     uint8_t mask[AES_BLOCK];
     aes_encrypt_schedule(k, first_counter, mask);
     for (size_t i = 0; i < GCM_TAG; i++) {
         tag[i] = (uint8_t)(hashed[i] ^ mask[i]);
     }
-    ct_wipe(hashed, sizeof hashed);
+    ct_wipe(hashed, AES_BLOCK);
     ct_wipe(mask, sizeof mask);
+}
+
+static void compute_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_BLOCK],
+                        const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+                        uint8_t tag[GCM_TAG]) {
+    uint8_t hashed[AES_BLOCK];
+    ghash_schedule(k, aad, aad_len, ct, n, hashed);
+    mask_tag(k, first_counter, hashed, tag);
 }
 
 void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, const uint8_t *ct,
@@ -331,12 +392,25 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
                           uint8_t *ct, uint8_t tag[GCM_TAG]) {
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
-    // counter_mode advances the block it is given, so it gets a copy and
-    // compute_tag still reads the first counter block.
+    // Counter mode advances the block it is given, so it gets a copy and
+    // mask_tag still reads the first counter block.
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
-    counter_mode(k, counter, pt, n, ct);
-    compute_tag(k, first_counter, aad, aad_len, ct, n, tag);
+    gcm_hash h;
+    hash_start(k, &h, aad, aad_len);
+    // GHASH runs over the ciphertext in order, so the whole passes, which
+    // gcm_hw.c hashes as it writes them, come first, and the rest is
+    // hashed once counter mode has written it. done is at most n, so the
+    // two pointers stay inside the buffers or one past their end.
+    size_t done = 0;
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+    done = seal_whole_passes(k, counter, &h, pt, n, ct);
+#endif
+    counter_mode(k, counter, &pt[done], n - done, &ct[done]);
+    ghash_data(k, h.acc, h.subkey, &ct[done], n - done);
+    uint8_t hashed[AES_BLOCK];
+    hash_finish(k, &h, aad_len, n, hashed);
+    mask_tag(k, first_counter, hashed, tag);
 }
 
 static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV], const uint8_t *aad,

@@ -1,5 +1,7 @@
-// The AES=hw implementation under a second name. test/aes_equiv_soft.c
-// states why the renames are here and what they rewrite.
+// The AES=hw implementation under a second name, and gcm_hw.c's counter
+// mode over whole blocks, which runs on it. test/aes_equiv_soft.c states
+// why the renames are here and what they rewrite; gcm_hw.c's entries have
+// no soft twin to collide with, so they keep their names.
 //
 // CH_AES_HW is defined here rather than on the compile line because the
 // same line compiles test/aes_equiv_soft.c, whose body is guarded off by
@@ -11,7 +13,6 @@
 #define aes_cipher_block aes_cipher_block_hw
 #define aes_expand_round_keys_256 aes_expand_round_keys_256_hw
 #define aes_cipher_block_256 aes_cipher_block_256_hw
-#define aes_counter_blocks aes_counter_blocks_hw
-#define aes_counter_blocks_256 aes_counter_blocks_256_hw
 
 #include "aes_hw.c"
+#include "gcm_hw.c"

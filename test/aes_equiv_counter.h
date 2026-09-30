@@ -1,8 +1,8 @@
-// aes_counter_blocks and aes_counter_blocks_256 on the AES instructions
-// against SP 800-38D §6.5 computed one block at a time on AES=soft: the
-// same output bytes and the same counter afterwards.
+// gcm_hw.c's gcm_counter_blocks_hw on the AES instructions, under AES-128
+// and AES-256 round keys, against SP 800-38D §6.5 computed one block at a
+// time on AES=soft: the same output bytes and the same counter afterwards.
 //
-// aes_hw.c runs BLOCKS_PER_PASS counter blocks through the rounds
+// gcm_hw.c runs GCM_HW_PASS_BLOCKS counter blocks through the rounds
 // together, so the cases are chosen around that pass:
 //
 //   every block count from 0 to three passes and a block, which puts
@@ -19,12 +19,12 @@
 #ifndef CH_AES_EQUIV_COUNTER_H
 #define CH_AES_EQUIV_COUNTER_H
 
-void aes_counter_blocks_hw(const uint8_t round_keys[], uint8_t counter[AES_BLOCK],
+// gcm_hw.c's entry, compiled by test/aes_equiv_hw.c under CH_AES_HW, which
+// this binary's main does not define, so gcm_hw.h declares nothing here.
+void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out);
-void aes_counter_blocks_256_hw(const uint8_t round_keys[], uint8_t counter[AES_BLOCK],
-                               const uint8_t *in, size_t blocks, uint8_t *out);
 
-// aes_hw.c's BLOCKS_PER_PASS, which this binary does not include.
+// gcm_hw.h's GCM_HW_PASS_BLOCKS, for the same reason.
 #define COUNTER_PASS 8
 #define COUNTER_MAX_BLOCKS (3 * COUNTER_PASS + 1)
 // How far below its input record.c's open writes its output: the
@@ -102,11 +102,8 @@ static void compare_counter(const char *case_name, int aes256, const uint8_t sta
     }
     uint8_t counter[AES_BLOCK];
     memcpy(counter, start, AES_BLOCK);
-    if (aes256) {
-        aes_counter_blocks_256_hw(hw_keys, counter, in, blocks, out);
-    } else {
-        aes_counter_blocks_hw(hw_keys, counter, in, blocks, out);
-    }
+    gcm_counter_blocks_hw(hw_keys, aes256 ? AES_256_ROUNDS : AES_128_ROUNDS, counter, in, blocks,
+                          out);
     if (memcmp(out, counter_want, blocks * AES_BLOCK) != 0 ||
         memcmp(counter, want_counter, AES_BLOCK) != 0) {
         (void)fprintf(stderr, "FAIL %s: %zu blocks, layout %d, AES-%d\n", case_name, blocks,

@@ -85,7 +85,7 @@ const srcs = [_][]const u8{
 };
 
 // The Makefile's named lists, each under its Makefile name.
-const aes_hw_srcs = [_][]const u8{ "aes_hw.c", "ghash_hw.c" };
+const aes_hw_srcs = [_][]const u8{ "aes_hw.c", "ghash_hw.c", "gcm_hw.c" };
 const quic_srcs_after_aes = [_][]const u8{
     "gcm.c",         "quic_keys.c", "quic_packet.c", "quic_initial.c", "quic_retry.c",
     "quic_config.c", "quic_fail.c", "quic_step.c",   "quic.c",
@@ -630,8 +630,9 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
 /// pclmul on x86, and aes on Arm, where the Arm C Language Extensions put
 /// the 64-bit PMULL in the AES extension. Another architecture gets
 /// nothing, and aes_hw.c's #error stops the build, as it does for a cc the
-/// Makefile's probe finds no flag for. AES=runtime adds nothing: aes_hw.c
-/// and ghash_hw.c turn the instructions on for their own functions alone.
+/// Makefile's probe finds no flag for. AES=runtime adds nothing: aes_hw.c,
+/// ghash_hw.c and gcm_hw.c turn the instructions on for their own
+/// functions alone.
 fn aesTarget(b: *std.Build, target: std.Build.ResolvedTarget, aes: Aes) std.Build.ResolvedTarget {
     if (aes != .hw) return target;
     var query = target.query;

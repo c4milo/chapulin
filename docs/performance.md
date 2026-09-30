@@ -389,7 +389,7 @@ The stages add up: every whole is within 17% of the sum of its parts. The larger
 into the GHASH data loop, its setup and its wipe, which the whole pays once. What the numbers show
 for AES-GCM:
 
-- Counter mode runs a record's whole blocks through `aes_hw.c`'s `aes_counter_blocks`, eight blocks
+- Counter mode runs a record's whole blocks through `gcm_hw.c`'s `gcm_counter_blocks_hw`, eight blocks
   a pass. Each round key is loaded once and runs on the eight counter blocks of the pass, the eight
   keystream blocks are exclusive-ored into the data in vector registers, and the one array that
   holds a pass's keystream is wiped once per call. The last partial block takes the one-block
@@ -449,11 +449,11 @@ the order of the share of the record each one addressed:
 
 1. Several counter blocks per iteration. The AES stage was a third or more of the seal, and its
    time went to the work done for each block: the per-block wipe, the calls and the round-key
-   loads. `aes_counter_blocks` does that work once per pass or once per call (above).
+   loads. `gcm_counter_blocks_hw` does that work once per pass or once per call (above).
 2. GHASH over several blocks against precomputed powers of H. It was four fifths of the seal on
    clang after 1, one dependent multiply per block; `ghash_hw.c` now runs eight blocks per
    reduction (above).
-3. A word-wide exclusive-or. `aes_counter_blocks` runs the exclusive-or of whole blocks in vector
+3. A word-wide exclusive-or. `gcm_counter_blocks_hw` runs the exclusive-or of whole blocks in vector
    registers, so the byte loop runs only on a record's last partial block and in the builds that
    run AES on the table or a peripheral, none of which this split times; no word-wide loop was
    written. Beside it, `rec_seal`'s plaintext copy, which gcc ran one byte at a time, is one
@@ -487,7 +487,7 @@ still rests on decision 83's scratch timing. That build's Poly1305 takes 2.8 µs
 µs in one whose `aes_hw.c` differed in one function; this build with `-falign-functions=64` takes
 2.8 µs, so where the linker places the function causes the difference (the pitfalls below).
 
-No x86-64 machine has timed the vector paths' SSE2 arms or the AES-NI arm of `aes_counter_blocks`;
+No x86-64 machine has timed the vector paths' SSE2 arms or the AES-NI arm of `gcm_hw.c`;
 CI's x86-64 runners test them. A column
 for it needs `make bench-record` on an x86-64 host that runs nothing else, once with gcc and once
 with clang: the script finds the AES instructions there with `-maes -mpclmul`, writes

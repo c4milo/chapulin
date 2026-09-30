@@ -1,8 +1,6 @@
 // The AES-128 key expansion and forward cipher, as two entries over
 // plain byte arrays, and the AES-256 pair beside them in a build that
-// has AES-256 (CH_AES_256, aes.h). aes_hw.c adds counter mode over
-// whole blocks for each key size, which runs several blocks at once on
-// the AES instructions. The Makefile AES variable picks
+// has AES-256 (CH_AES_256, aes.h). The Makefile AES variable picks
 // the one source that defines them: quic_aes_soft.c (AES=soft, the
 // default), aes_hw.c (AES=hw, the compiler's AES intrinsics) or
 // aes_extern.c (AES=extern, a block function the caller supplies).
@@ -105,38 +103,6 @@ void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
 // allowed. Writes AES_BLOCK bytes and cannot fail.
 void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
                           const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
-#endif
-
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
-// SP 800-38D §6.5's GCTR over whole blocks, under the round keys
-// aes_expand_round_keys wrote: for i from 1 to blocks, block i of out is
-// block i of in exclusive-ored with CIPH(inc32^i(counter)). inc32 adds one
-// to the counter's last four bytes, read big-endian, modulo 2^32 and
-// leaves the first twelve alone (SP 800-38D §6.2), so a counter near 2^32
-// wraps to zero without a carry into the IV bytes. counter then holds
-// inc32^blocks of what it held, the counter of the last block, so the
-// caller can go on with the block after it.
-//
-// aes_hw.c alone defines it, because the AES instructions are what run
-// several blocks at once; the table and a peripheral run one block per
-// call. aes.c is its one caller, for a schedule the instructions run.
-//
-// Requires: round_keys was written by aes_expand_round_keys; counter
-// points at AES_BLOCK readable and writable bytes; in and out point at
-// blocks * AES_BLOCK readable and writable bytes, and may be NULL when
-// blocks is 0. in == out is allowed, and so is out below in (out <= in):
-// every input byte is read before an output byte is written over it.
-// Writes blocks * AES_BLOCK bytes and cannot fail.
-void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
-                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks, uint8_t *out);
-
-#ifdef CH_AES_256
-// The same under the round keys aes_expand_round_keys_256 wrote, for
-// Nr = 14.
-void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
-                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                            uint8_t *out);
-#endif
 #endif
 
 #ifdef CH_AES_TWO_CIPHERS

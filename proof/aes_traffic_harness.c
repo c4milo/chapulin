@@ -2,12 +2,12 @@
 // -DCH_SUITE_AES_GCM build hands AES, is memory-safe and UB-free for both
 // key lengths its contract admits, never reaches its CH_ASSERT on either,
 // and writes the round count that names the cipher the key needs; and
-// aes_encrypt_schedule and aes_encrypt_counter_blocks run that key through
-// the cipher the round count names.
+// aes_encrypt_schedule runs that key through the cipher the round count
+// names.
 //
 // A suite build takes AES=hw, whose key expansion and cipher are the AES
 // instructions, or AES=extern, whose cipher is the image's hook, and
-// CBMC can read neither. So the six AES=hw entries are contract stubs
+// CBMC can read neither. So the four block entries are contract stubs
 // below: each asserts the buffers aes_block.h says it reads and writes,
 // and havocs what it writes. What this proves is aes.c's own framing
 // over them. The instructions are held to FIPS 197 by
@@ -32,23 +32,6 @@ static int ran_expand_128;
 static int ran_expand_256;
 static int ran_cipher_128;
 static int ran_cipher_256;
-static int ran_counter_128;
-static int ran_counter_256;
-
-// The whole-block counter mode the harness hands at most two blocks.
-#define COUNTER_BLOCKS_MAX 2
-
-// What both counter-mode stubs assert and havoc: aes_block.h's buffers for
-// blocks whole blocks.
-static void counter_blocks_contract(uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                                    uint8_t *out) {
-    __CPROVER_assert(blocks <= COUNTER_BLOCKS_MAX, "counter: the harness's bound");
-    __CPROVER_assert(__CPROVER_rw_ok(counter, AES_BLOCK), "counter: counter readable and writable");
-    __CPROVER_assert(__CPROVER_r_ok(in, blocks * AES_BLOCK), "counter: input readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, blocks * AES_BLOCK), "counter: output writable");
-    fill_nondet(counter, AES_BLOCK);
-    fill_nondet(out, blocks * AES_BLOCK);
-}
 
 void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
                            uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
@@ -88,24 +71,6 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
     ran_cipher_256 = 1;
 }
 
-void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
-                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                        uint8_t *out) {
-    __CPROVER_assert(__CPROVER_r_ok(round_keys, AES_ROUND_KEYS * AES_BLOCK),
-                     "counter: round keys readable");
-    counter_blocks_contract(counter, in, blocks, out);
-    ran_counter_128 = 1;
-}
-
-void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
-                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
-                            uint8_t *out) {
-    __CPROVER_assert(__CPROVER_r_ok(round_keys, AES_256_ROUND_KEYS * AES_BLOCK),
-                     "counter 256: round keys readable");
-    counter_blocks_contract(counter, in, blocks, out);
-    ran_counter_256 = 1;
-}
-
 int main(void) {
     uint8_t key[AES_256_KEY];
     uint8_t in[AES_BLOCK];
@@ -130,20 +95,6 @@ int main(void) {
         __CPROVER_assert(ran_cipher_256 && !ran_cipher_128, "the dispatch runs AES-256");
     } else {
         __CPROVER_assert(ran_cipher_128 && !ran_cipher_256, "the dispatch runs AES-128");
-    }
-
-    // Counter mode's whole blocks, in place, as gcm.c's seal runs them.
-    uint8_t counter[AES_BLOCK];
-    uint8_t data[COUNTER_BLOCKS_MAX * AES_BLOCK];
-    fill_nondet(counter, sizeof counter);
-    fill_nondet(data, sizeof data);
-    size_t blocks = nondet_size_t();
-    __CPROVER_assume(blocks <= COUNTER_BLOCKS_MAX);
-    aes_encrypt_counter_blocks(&k.key, counter, data, blocks, data);
-    if (key_len == AES_256_KEY) {
-        __CPROVER_assert(ran_counter_256 && !ran_counter_128, "counter mode runs AES-256");
-    } else {
-        __CPROVER_assert(ran_counter_128 && !ran_counter_256, "counter mode runs AES-128");
     }
     return 0;
 }

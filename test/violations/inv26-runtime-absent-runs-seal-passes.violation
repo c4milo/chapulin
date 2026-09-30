@@ -1,0 +1,25 @@
+invariant: INV-26
+file: gcm.c
+catches: aes_runtime_test
+reason: an AES=runtime QUIC object hands the whole passes of a seal under
+  a schedule the table runs to gcm_hw.c's one-pass loop, so a session
+  whose caller's probe found no AES instructions executes them and the
+  carry-less multiply on every Initial packet it seals past 128 bytes,
+  and dies of SIGILL on the CPU that probe described. Both paths compute
+  the same bytes, so no vector notices. gcm.c's instruction_rounds asserts
+  that its schedule runs on the instructions, and bin/aes_runtime_test
+  seals RFC 9001's Initial packets under the absent answer, so the
+  assertion stops that binary.
+
+--- old
+    if (!on_instructions(k)) {
+        return 0;
+    }
+#endif
+    size_t pass_bytes = (size_t)GCM_HW_PASS_BLOCKS * AES_BLOCK;
+--- new
+    if (k == NULL) {
+        return 0;
+    }
+#endif
+    size_t pass_bytes = (size_t)GCM_HW_PASS_BLOCKS * AES_BLOCK;

@@ -237,8 +237,9 @@ rules:
       and quic_retry.c are the only library sources that may name an
       aes_ or gcm_ entry outside the aes_traffic_ and gcm_traffic_
       families; aes.c, gcm.c, the three AES implementations the
-      Makefile AES variable chooses among and ghash_hw.c, the GHASH
-      AES=hw adds, are excluded as the definition sites. ch_aes_block
+      Makefile AES variable chooses among, and ghash_hw.c and gcm_hw.c,
+      the GHASH and the whole-block counter mode AES=hw adds, are
+      excluded as the definition sites. ch_aes_block
       joins the family because an AES=extern build leaves that hook to
       the image, and a library source calling it would run AES on a key
       of its choosing exactly as a call to aes_ would. A use anywhere
@@ -256,11 +257,11 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
                 quic_retry.c, aes.c, gcm.c, quic_aes_soft.c,
-                aes_hw.c, aes_extern.c, ghash_hw.c]
+                aes_hw.c, aes_extern.c, ghash_hw.c, gcm_hw.c]
     pattern-either:
       # A call. `make lint-quic-surface` fails when a function, a
       # function-like macro or a typedef in aes.h, aes_block.h,
-      # gcm.h or ghash_hw.h is named anything but aes_ or
+      # gcm.h, ghash_hw.h or gcm_hw.h is named anything but aes_ or
       # gcm_, so this prefix family matches a symbol any of them gains
       # tomorrow rather than assuming it. The lookahead leaves the two
       # traffic families to the rule below, and nothing else.
