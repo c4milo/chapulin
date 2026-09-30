@@ -61,10 +61,23 @@ endif
 # with AES-NI and PCLMULQDQ turned off. The answer that the instructions
 # are absent must pass there, and the present answer and an AES=hw build
 # must die of SIGILL. Linux only, with qemu-user; X86_CC names a cross
-# compiler on a host of another architecture (docs/decisions.md 81).
+# compiler on a host of another architecture (docs/decisions.md 81). CI's
+# mips job runs it, and test/docker-aes-runtime-qemu.sh runs it in a
+# container on any host with docker.
 .PHONY: aes-runtime-qemu
 aes-runtime-qemu:
 	./test/aes-runtime-qemu.sh
+
+# test/aes-runtime-disasm.sh: the three AES=runtime objects check links,
+# built with this host's compiler and disassembled, hold the AES and
+# carry-less multiply instructions in aes_hw.c's and ghash_hw.c's
+# functions and nowhere else. CI's arm64 job runs it, because no QEMU
+# arm64 model can turn the AES extension off (docs/decisions.md 81). The
+# recipe starts with + so the builds the script runs take this make's job
+# slots.
+.PHONY: aes-runtime-disasm
+aes-runtime-disasm:
+	+./test/aes-runtime-disasm.sh
 
 # The Cortex-M3 lane: the cross-check suite roster, built with the Arm
 # GNU toolchain (newlib + rdimon semihosting) and run one binary at a

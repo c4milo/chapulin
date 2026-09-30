@@ -176,6 +176,9 @@ FULL_COMMANDS = [
                                        "cross-check under qemu-mips"),
     ("nightly", "test/docker-riscv32.sh", "the riscv32 cross lane, which runs "
                                           "cross-check under qemu-riscv32"),
+    ("nightly", "test/docker-aes-runtime-qemu.sh",
+     "the AES=runtime lane, which runs the absent answer under qemu-x86_64 "
+     "on a CPU model without AES-NI or PCLMULQDQ"),
 ]
 
 
@@ -358,6 +361,30 @@ def select_pairs(out, changed, legs):
                     f"script, and the script links objects of two "
                     f"transports into one image",
                     ["test/lib-pair-check.sh"])
+
+
+# test/docker-aes-runtime-qemu.sh runs test/aes-runtime-qemu.sh, which
+# compiles x86-64 copies of these binaries into bin/qemu/ and runs them
+# under qemu-x86_64 (docs/decisions.md 81). No make rule builds the
+# copies. The script asks make for the two loop binaries' source lists
+# and names the other two binaries' sources itself, and the sources of
+# these four rules hold every file it compiles.
+AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes_runtime",
+                             "bin/webpki_loop_aes_runtime", "bin/quic_test_hw")
+AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
+
+
+def select_aes_runtime_qemu(out, changed):
+    """test/docker-aes-runtime-qemu.sh: a source the lane compiles can
+    break it, and so can the two scripts."""
+    compiled = set().union(*(out.mapping.sources.get(b, set())
+                             for b in AES_RUNTIME_QEMU_BINARIES))
+    for path in changed:
+        if path in compiled or path in AES_RUNTIME_QEMU_FILES:
+            out.add("tests", "test/docker-aes-runtime-qemu.sh",
+                    f"{path} is compiled or run by the AES=runtime lane, which "
+                    f"runs the absent answer on a CPU model without AES-NI",
+                    ["test/docker-aes-runtime-qemu.sh"])
 
 
 # The files make lint-zig-build reads beside the packaged sources: the Zig
@@ -618,6 +645,7 @@ def plan(changed, mapping):
     select_spec(out, changed)
     select_modes(out, sources, mapping.lib_legs())
     select_pairs(out, changed, mapping.lib_legs())
+    select_aes_runtime_qemu(out, changed)
     select_zig(out, changed, mapping.lib_legs())
     select_codegen(out, csources, lib)
     select_runners(out, changed)

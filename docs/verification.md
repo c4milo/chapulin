@@ -2387,6 +2387,47 @@ The path's timing rests on construction, as the portable loop's does:
 it runs adds, exclusive-ors, shifts and lane moves, with no table and no
 multiply. No gcc measures its branches.
 
+### The AES=runtime answer that the instructions are absent
+
+An `AES=runtime` session whose caller answers that the CPU lacks the AES
+instructions must run neither AES nor the carry-less multiply (decision
+81). The [aes_runtime](#aes_runtime) proof holds the cipher `aes.c` puts
+each key on, over contract stubs of both ciphers. No proof reads the
+instructions the compiler emits, or the calls the rest of a session
+makes. Three checks stand in:
+
+- `bin/aes_runtime_test`, in `make check`, counts every call into the
+  table, the instructions and the carry-less multiply over RFC 9001 and
+  RFC 9369 Appendix A under both answers. Under the absent answer no call
+  goes to the instructions.
+- `test/aes-runtime-qemu.sh`, in CI's mips job on every push, builds that
+  binary and the two `AES=runtime` loop binaries for x86-64 with the
+  runner's gcc. It runs them under `qemu-x86_64 -cpu
+  max,-aes,-pclmulqdq`, where either instruction raises SIGILL. The
+  vectors must pass under the absent answer, and so must the whole QUIC
+  and TCP handshakes, resumptions and pin rows with both ends answering
+  absent. The present answer and an `AES=hw` build must die of SIGILL, so
+  a qemu whose CPU model kept the instructions fails the step rather than
+  passing it. `test/docker-aes-runtime-qemu.sh` runs the same script in a
+  container on a development machine.
+- `test/aes-runtime-disasm.sh`, in CI's arm64 job, builds the three
+  `AES=runtime` objects `make check` links, disassembles every source's
+  object, and requires the AES and carry-less multiply instructions in
+  `aes_hw.c`'s and `ghash_hw.c`'s functions alone. It requires at least
+  one of each in those two files, so a disassembler that spelled them
+  another way would fail it rather than pass it.
+
+`inv26-runtime-initial-seal-ignores-answer` makes `quic.c` seal every
+Initial packet under the present answer. Both ciphers compute the same
+packet, and `bin/aes_runtime_test` links no `quic.c`, so no test on a
+CPU with the instructions sees it; the qemu run catches it.
+
+None of this runs the absent answer on an arm64 CPU without the AES
+extension: QEMU's arm64 models all implement it, and none turns it off.
+On arm64 the claim rests on the counts and the disassembly. The qemu run
+executes the vectors and the rows the loop binaries hold, and no other
+path.
+
 ### The subjectAltName walk against a full-length hostname
 
 `webpki_name` proves the `TRUST=webpki` per-entry dNSName compare with

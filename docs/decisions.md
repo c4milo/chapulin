@@ -3811,8 +3811,14 @@ does nothing more.
       binaries for x86-64 and runs them under `qemu-x86_64 -cpu
       max,-aes,-pclmulqdq`: the absent answer passes the vectors and whole
       QUIC and TCP handshakes, and the present answer and an `AES=hw`
-      build die of SIGILL. QEMU's arm64 models all implement the AES
-      extension, so on arm64 the claim rests on the counts.
+      build die of SIGILL. CI's mips job runs it on every push, with the
+      qemu-user package that job installs, and
+      `test/docker-aes-runtime-qemu.sh` runs it in a container elsewhere.
+      QEMU's arm64 models all implement the AES extension, so on arm64
+      the claim rests on the counts and on `test/aes-runtime-disasm.sh`,
+      which CI's arm64 job runs: it disassembles the three `AES=runtime`
+      objects `make check` links and finds the AES and PMULL instructions
+      in `aes_hw.c`'s and `ghash_hw.c`'s functions alone.
       `bin/webpki_session_aes_runtime`, `bin/webpki_loop_aes_runtime`,
       `bin/quic_loop_aes_runtime`, `bin/tcp_blocking_loop_aes_runtime`
       and `bin/srv_flight_test_aes_runtime` hold the field to 0, 1, 2 and
@@ -3824,8 +3830,12 @@ does nothing more.
       be. `lint-trust-separation` admits `aes_hw.c`, `ghash_hw.c` and
       `quic_aes_soft.c` together in `AES=runtime`'s QUIC rows alone, and
       `aes-two-implementations-in-one-object.violation` stays caught.
-      Eleven mutants in `test/violations/` break the new rules, and each
-      is caught.
+      Twelve mutants in `test/violations/` break the new rules, and each
+      is caught. `inv26-runtime-initial-seal-ignores-answer` seals every
+      QUIC Initial packet under the present answer, which no test on a
+      CPU with the instructions can see: both ciphers compute the same
+      packet, and `bin/aes_runtime_test` links no `quic.c`. The qemu run
+      catches it.
 
     Cost:
 
@@ -3841,6 +3851,8 @@ does nothing more.
       the caller's, and chapulin cannot check it.
     - `make check` builds and runs eight more binaries and three more
       `lib-check` objects, and `lint-zig-build` one more configuration.
+      CI's mips job builds four x86-64 binaries and runs them under qemu,
+      and its arm64 job builds the three objects and disassembles them.
 
     Gain: one object per architecture serves CPUs with and without the
     AES instructions, and colibri's callers pass the answer their probe

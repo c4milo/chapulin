@@ -114,7 +114,8 @@ jobs:
   # The deployment ISA: big-endian mips32r2 under qemu-user. Every
   # byte-exact suite (RFC 8448 traces, Wycheproof, unit vectors) must
   # pass on the target's byte order and code generation, not only on
-  # the x86-64 the other jobs run.
+  # the x86-64 the other jobs run. The job also runs the AES=runtime
+  # check under qemu-x86_64, which the same qemu-user package carries.
   mips:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -130,6 +131,16 @@ jobs:
         # none matches, so this step cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
       - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
+      - name: Run the AES=runtime absent answer on an x86-64 CPU without AES-NI or PCLMULQDQ
+        # test/aes-runtime-qemu.sh builds the AES=runtime binaries with the
+        # runner's gcc and runs them under qemu-x86_64 on a CPU model with
+        # both instructions turned off. The answer that the instructions
+        # are absent must pass the vectors and whole QUIC and TCP
+        # handshakes. The present answer and an AES=hw build must die of
+        # SIGILL, which shows the model traps both instructions, so a qemu
+        # that kept them fails this step rather than passing it
+        # (docs/decisions.md 81).
+        run: make aes-runtime-qemu
 
   arm64:
     # linux arm64 as a supported platform: the whole deterministic
@@ -147,6 +158,13 @@ jobs:
       # The AES=hw binaries on the Arm instructions under gcc, which no
       # other CI job builds (test/platforms.mk, aes-hw-check).
       - run: make aes-hw-check
+      # The three AES=runtime objects under gcc, disassembled: the AES and
+      # PMULL instructions must sit in aes_hw.c's and ghash_hw.c's
+      # functions alone. No QEMU arm64 model turns the AES extension off,
+      # so this job cannot run the answer that the instructions are absent
+      # on a CPU without them, as the mips job does for x86-64
+      # (test/platforms.mk, aes-runtime-disasm).
+      - run: make -j"$(nproc)" aes-runtime-disasm
 
   m3:
     # Cortex-M3 as a supported platform: the cross-check roster on

@@ -2782,14 +2782,21 @@ last `ROLE=server` stub, as the entry said it would.
   key. `test/aes-runtime-qemu.sh` runs that binary and both
   `AES=runtime` loop binaries, built for x86-64, under `qemu-x86_64` on a
   CPU model without AES-NI and PCLMULQDQ, where the absent answer passes
-  and the present one dies of SIGILL. The `aes_runtime` proof holds the
-  same three rules over every byte an answer can be, and
+  and the present one dies of SIGILL; CI's mips job runs it on every
+  push. On arm64, where no QEMU model drops the AES extension,
+  `test/aes-runtime-disasm.sh` in CI's arm64 job finds the AES and PMULL
+  instructions in `aes_hw.c`'s and `ghash_hw.c`'s functions alone. The
+  `aes_runtime` proof holds the same three rules over every byte an
+  answer can be, and
   `srv_select_runtime` and `quic_config_webpki_runtime` hold the default
   order and the answer rule. `inv26-runtime-absent-runs-aes-instructions`,
   `inv26-runtime-absent-runs-carryless-multiply` and
   `inv26-runtime-traffic-key-on-table` require `bin/aes_runtime_test` to
-  fail, and `inv26-runtime-absent-expands-on-instructions` requires
-  `proof/prove-one.sh aes_runtime` to fail. `test/quic-builds.sh` compiles
+  fail, `inv26-runtime-absent-expands-on-instructions` requires
+  `proof/prove-one.sh aes_runtime` to fail, and
+  `inv26-runtime-initial-seal-ignores-answer`, which seals every QUIC
+  Initial packet under the present answer in `quic.c`, requires
+  `test/docker-aes-runtime-qemu.sh` to fail. `test/quic-builds.sh` compiles
   the refusals: the suite on `AES=runtime` without `CH_NATIVE_AES`,
   `AES=runtime` beside either other value, and `AES=runtime` in a TCP
   object without the suite.
