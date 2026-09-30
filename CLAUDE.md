@@ -123,7 +123,8 @@ Home: github.com/c4milo.
   `aes_block.h` with one of `quic_aes_soft.c`, `aes_hw.c` or
   `aes_extern.c` (the AES-128 key expansion and forward cipher of
   FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` and
-  `aes_extern.c`; the Makefile AES variable picks one, and
+  `aes_extern.c`, and on `aes_hw.c` counter mode over whole blocks,
+  eight a pass; the Makefile AES variable picks one, and
   `quic_aes_soft.c` compiles only in a QUIC build, and a SUITE=aesgcm
   build refuses it except under AES=runtime, which runs QUIC's public
   keys alone on it)
@@ -131,7 +132,7 @@ Home: github.com/c4milo.
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
-  alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
+  and AES=runtime) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
   X25519=wide) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) +
