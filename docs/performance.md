@@ -54,10 +54,24 @@ a static `point_add`, with different frames. It counts a tail call like
 a call, adding the callee's depth to the caller's whole frame, which can
 only overstate a peak. `make lint-stack-walk` checks that it follows a
 tail call at a function's first instruction, keeps two static functions
-of one name apart, and compiles what make packages. The RSA verify holds
-the deepest frames, so it sets the `ch_connect` peak in the default
-build; it runs once per ticket lifetime, and every byte unwinds before
-`ch_connect` returns.
+of one name apart, names the calls below that no object defines, and
+compiles what make packages. The RSA verify holds the deepest frames, so
+it sets the `ch_connect` peak in the default build; it runs once per
+ticket lifetime, and every byte unwinds before `ch_connect` returns.
+
+A peak leaves out the frames of the calls below, and the script's report
+names them for each build:
+
+- C library calls, such as `memcpy` and `strlen`;
+- `__stack_chk_fail`, `__memcpy_chk` and `__memset_chk`, the stack
+  protector and the checked `memcpy` and `memset` that the host compiler
+  adds by default;
+- the hooks the image defines, such as `ch_assert_fail` and
+  `ch_rand_bytes` ([`docs/porting.md`](porting.md));
+- the caller's `send`, `recv` and `on_ticket`, which the objects call
+  through pointers.
+
+The image's C library and the caller's own functions set those frames.
 
 | call | arm64 |
 |---|---|

@@ -5,9 +5,12 @@ Builds the sources the Makefile packages for one build with
 -fstack-usage, extracts the real call graph from the object code (the
 branch relocations `objdump -d -r` prints under every call and tail call
 in an arm64 or x86-64 Mach-O object), and walks the max-weight path under
-each public entry point. Indirect calls (the caller's send/recv/on_ticket
-hooks and ch_rand_bytes) execute on the caller's budget and are reported
-as such, not silently omitted.
+each public entry point. Two kinds of call add frames the walk cannot
+count, and the report names both rather than leave them out silently:
+calls through pointers, the caller's send/recv/on_ticket hooks, which the
+object code does not name; and calls to functions no object defines, in
+the C library or the image, such as memcpy and ch_rand_bytes, which have
+no .su line. Each peak leaves out their frames.
 """
 import os
 import re
@@ -232,6 +235,23 @@ def deepest(fn: str, frames: dict, edges: dict, seen: tuple) -> tuple[int, list[
     return frames.get(fn, 0) + best, [fn] + path
 
 
+def uncounted(frames: dict, edges: dict, entries: list[str]) -> list[str]:
+    """The functions a walk from entries calls and counts no frame for,
+    as the report prints them: the ones no object defines."""
+    seen, todo, out = set(), list(entries), set()
+    while todo:
+        fn = todo.pop()
+        if fn in seen:
+            continue
+        seen.add(fn)
+        for callee in edges.get(fn, {}):
+            if callee in frames:
+                todo.append(callee)
+            else:
+                out.add(shown(callee))
+    return sorted(out)
+
+
 def shown(key: str) -> str:
     """A function as the report prints it: a global one by its C name, and
     a static one as obj.o:name."""
@@ -255,6 +275,23 @@ def prune(frames: dict, edges: dict, names: list[str]) -> None:
             callees.pop(keys[name], None)
 
 
+def report(frames: dict, edges: dict, entries: list[str], pushed: int) -> list[str]:
+    """The report's lines: each entry's peak and the path that sets it,
+    then the calls whose frames each peak leaves out. The call into an
+    entry point pushes a return address too, so an entry's figure is what
+    a call to it takes from its caller's stack."""
+    lines = []
+    for entry in entries:
+        depth, path = deepest(entry, frames, edges, ())
+        chain = " > ".join(shown(p) for p in path)
+        lines.append(f"{shown(entry):12} {pushed + depth:5} B  via {chain}")
+    lines.append(f"(no frame counted for the calls no object defines: "
+                 f"{', '.join(uncounted(frames, edges, entries)) or 'none'})")
+    lines.append("(caller hooks — send/recv/on_ticket — are called through pointers and run on "
+                 "the caller's own stack budget)")
+    return lines
+
+
 def main() -> int:
     srcs, defines = library()
     entries = ENTRIES
@@ -272,14 +309,7 @@ def main() -> int:
             # not measured, and deepest() would report it as free.
             print(f"stack.py: no frame for {', '.join(missing)}", file=sys.stderr)
             return 1
-        # The call into an entry point pushes a return address too, so an
-        # entry's figure is what a call to it takes from its caller's stack.
-        for entry in entries + [e for e in CA_ENTRIES if e in fr]:
-            depth, path = deepest(entry, fr, cg, ())
-            chain = " > ".join(shown(p) for p in path)
-            print(f"{shown(entry):12} {pushed + depth:5} B  via {chain}")
-        print("(caller hooks — send/recv/on_ticket/ch_rand_bytes — run on the "
-              "caller's own stack budget)")
+        print("\n".join(report(fr, cg, entries + [e for e in CA_ENTRIES if e in fr], pushed)))
     return 0
 
 

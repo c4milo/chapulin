@@ -23,10 +23,11 @@ each with the frames the .su files give:
   mont_mul() under a TRUST=raw-ecdsa build's p256_ecdsa_verify(), so
   that build's ch_connect peak read 720 bytes high.
 
-It also requires STACK_PRUNE to take out one static helper() by the name
-the report prints, and stack.py's main() to compile the sources make
-packages for the build it walks, with the defines make packages them
-with.
+It also requires the walks to name sink(), which no object defines, as
+the one call they count no frame for, STACK_PRUNE to take out one static
+helper() by the name the report prints, and stack.py's main() to compile
+the sources make packages for the build it walks, with the defines make
+packages them with.
 
 CLANG names the compiler, and STACK_NM and STACK_OBJDUMP the tools the
 script reads with. make lint-stack-walk passes the pinned LLVM ones,
@@ -144,15 +145,21 @@ def stopped(call) -> str:
 def check(stack, clang: str, triple: str, flags: list[str], pushed: int) -> bool:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
+        # clang calls __stack_chk_fail by default for a Darwin target, and
+        # -fno-stack-protector leaves sink() the one function the fixture
+        # calls and does not define.
         for name, text in SOURCES.items():
             (tmp / name).write_text(text)
             subprocess.run([clang, f"--target={triple}", *stack.CFLAGS, *flags,
-                            "-c", name], cwd=tmp, check=True)
+                            "-fno-stack-protector", "-c", name], cwd=tmp, check=True)
         su = su_frames(tmp)
         frames = stack.frames(tmp)
         edges, entry_pushed = stack.callgraph(tmp)
         walks = [(entry, stack.deepest("_" + entry, frames, edges, ()), functions, calls, chain)
                  for entry, functions, calls, chain in WALKS]
+        # Every object calls sink() and none defines it, so the report
+        # names it as the one call the walks count no frame for.
+        lines = stack.report(frames, edges, ["_" + walk[0] for walk in WALKS], pushed)
         # STACK_PRUNE names a function as the report prints it, so
         # narrow.o:helper takes out narrow()'s helper() and leaves wide()'s,
         # and a bare helper names no function and stops the script.
@@ -172,6 +179,11 @@ def check(stack, clang: str, triple: str, flags: list[str], pushed: int) -> bool
             ok = False
         else:
             print(f"lint-stack-walk: {triple}: {got}")
+    frameless = "(no frame counted for the calls no object defines: sink)"
+    if frameless not in lines:
+        print(f"lint-stack-walk: {triple}: the report reads {lines[len(WALKS):]}; want the "
+              f"line {frameless}")
+        ok = False
     want_pruned = [wants["wide"], su[("narrow", "narrow")]]
     if accepted != "nothing" or pruned != want_pruned:
         print(f"lint-stack-walk: {triple}: pruning narrow.o:helper prints {accepted} and "

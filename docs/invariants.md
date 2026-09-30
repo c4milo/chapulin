@@ -3371,8 +3371,9 @@ last `ROLE=server` stub, as the entry said it would.
   measures the whole-call-chain peaks docs/performance.md reports, and
   `make lint-stack-walk` checks that bench/stack.py, which walks each
   chain, follows a call and a tail call on a fixture, keeps two static
-  functions of one name in two objects apart, and compiles the sources
-  and the defines make packages for the build it walks. `make check`
+  functions of one name in two objects apart, names the calls it counts
+  no frame for, and compiles the sources and the defines make packages
+  for the build it walks. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the
