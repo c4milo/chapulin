@@ -9,8 +9,10 @@ Home: github.com/c4milo.
 - C11, libc only. No third-party code, no OS assumptions beyond the
   caller-supplied I/O callbacks. The target is a bare-metal MCU or an
   lwIP-class socket stack.
-- Zero heap. No malloc anywhere, ever — one static `ch_tls` session
-  struct plus a caller-provided record buffer is the entire working set.
+- Zero heap. No malloc anywhere, ever — one static session struct,
+  `ch_tls`, `ch_record` or `ch_quic` by `TRANSPORT`, plus one
+  caller-provided buffer is the entire working set; `RAND=drbg` adds
+  `drbg.c`'s generator state.
   bench/sram.sh measures the memory numbers in docs/performance.md;
   never estimate them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
@@ -59,6 +61,9 @@ Home: github.com/c4milo.
   raw-public-key certificate types outside TRUST=webpki (below), no
   0-RTT, no compression, no renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
+  A QUIC client breaks that rule in every trust mode: RFC 9001 §8.1
+  requires ALPN, so it offers the caller's list and closes with
+  no_application_protocol when the server selects none.
   TRUST=webpki breaks that rule six times. It offers several signature
   schemes, because it cannot know
   which family signed the chain the server will send, and it offers the
@@ -162,7 +167,10 @@ Home: github.com/c4milo.
   the alert a failure chose and the peer's fatal alert; `tls.h` and
   `quic.h` include it, and `tls.c` and `quic.c` define its calls) ←
   demo/test mains. Firmware takes everything below
-  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A host
+  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A QUIC
+  object compiles `quic.[ch]` and the other `quic_*` sources in place of
+  `io`, `record`, `session`, `handshake`, `tls` and `tls_write`, and its
+  firmware supplies `ch_rand_bytes` and no I/O callbacks. A host
   may build `RAND=session` instead: each session then names its own
   source in `ch_cfg.rand_bytes` and `ch_cfg.rand_io`, the object neither
   defines nor imports `ch_rand_bytes`, and every draw goes through
@@ -382,9 +390,14 @@ Home: github.com/c4milo.
   `ch_err` codes and fail closed — alert, wipe keys, dead session. A
   session that reads the peer's fatal alert sends none (RFC 9846 §6.2).
   `CH_ASSERT` is for programmer-error invariants only, seeded at contract
-  points, never in per-byte paths.
-- Record size discipline: the client always sends `record_size_limit`
-  (RFC 8449) sized to the caller's buffer. A peer record over the limit is
+  points, never in per-byte paths. INV-13 lists the results that are not
+  errors in this sense: refusals on entry, calls the session cannot take,
+  and the non-blocking transports' `CH_ECAP`, `CH_QUIC_DISCARD` and
+  `CH_RECORD_AGAIN`.
+- Record size discipline: a TCP client always sends `record_size_limit`
+  (RFC 8449) sized to the caller's buffer. A QUIC build sends none (RFC
+  9001 §4.1.3): `cfg.buf_len` bounds one handshake message, and a longer
+  one fails the session. A peer record over the limit is
   a protocol error, not a resize. Each outgoing record carries at most
   `CH_TX_PT` bytes of plaintext, 512 by default; a TCP host build raises
   it with `TX_RECORD` up to 2^14 (docs/decisions.md 71), the peer's
@@ -399,7 +412,9 @@ Home: github.com/c4milo.
   in constant time over the truncated ClientHello before it accepts one
   of its own tickets (docs/server.md, "Resumption"). Both roles: the
   message before each key change ends its record, or the connection ends
-  with unexpected_message (RFC 9846 §5.1, INV-39).
+  with unexpected_message (RFC 9846 §5.1, INV-39). Over QUIC both roles
+  refuse a TLS KeyUpdate as a connection error and update packet keys
+  instead (RFC 9001 §6), and a server sends no change_cipher_spec (§8.4).
 - Write all prose — README, docs, comments, commit messages — in active
   voice with plain words, following Google's Technical Writing One and
   Two: short sentences with one idea each, terms defined before use,
