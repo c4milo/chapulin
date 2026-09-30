@@ -107,7 +107,9 @@ Home: github.com/c4milo.
   builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (four blocks at
-  a time on NEON or SSE2, CHACHA=vector) + `poly1305.[ch]` +
+  a time on NEON or SSE2, CHACHA=vector) + `poly1305.[ch]` with
+  `poly1305_vector.[ch]` (four blocks at a time in two NEON or SSE2
+  lanes, CHACHA=vector with WIDEMUL=native) +
   `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
   write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
@@ -213,7 +215,11 @@ Home: github.com/c4milo.
   `lint-wide-multiply` holds the count at its recorded ceiling per
   file and compiler, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
-  shows as a count that grows.
+  shows as a count that grows. The statement covers every widening
+  multiply the object runs, scalar or vector. Under CHACHA=vector it
+  also turns on `poly1305_vector.c`, whose lanes multiply with NEON's
+  UMULL and UMLAL or SSE2's PMULUDQ; without it, a CHACHA=vector object
+  runs `poly1305.c`'s loop and its decomposition (docs/decisions.md 83).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way. The Makefile X25519 variable picks the x25519 field:
   `portable`, the default, is the 16-limb field every core runs, and
@@ -229,7 +235,8 @@ Home: github.com/c4milo.
   and a build whose compiler defines neither stops at an `#error`
   (docs/decisions.md 82). CBMC cannot read an intrinsic, so the vector
   path is held to the portable one by `bin/chacha20_equiv_test`, the RFC
-  8439 vectors and the Wycheproof suite. AES is admitted for two purposes. The first is the keys RFC
+  8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
+  `poly1305_vector.c` to `poly1305.c`'s loop the same way. AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
