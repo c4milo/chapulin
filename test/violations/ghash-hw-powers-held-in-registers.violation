@@ -1,0 +1,18 @@
+invariant: INV-17
+file: ghash_hw.c
+catches: ghash_equiv_test
+reason: the AES=hw GHASH reads each power of H through an ordinary
+  pointer, so the compiler loads the eight powers once and holds them in
+  registers across every pass. They do not fit there beside a pass's
+  blocks, and gcc and clang, on ARMv8 and on x86-64, each copy a power, or
+  its two halves added, to a stack slot of the function's own, which the
+  wipe of ghash_state does not clear, so a later caller's uninitialized
+  stack reads a function of the key. No output changes, so no vector
+  notices. bin/ghash_equiv_test copies the stack below one call over three
+  passes and requires no power of H and no power's halves added in the
+  copy.
+
+--- old
+    const volatile ghash_vector *power = &s->powers[i];
+--- new
+    const ghash_vector *power = &s->powers[i];

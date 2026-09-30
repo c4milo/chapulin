@@ -2785,9 +2785,9 @@ last `ROLE=server` stub, as the entry said it would.
   hash subkey, the running multiple in the GF(2^128) multiply, the
   keystream block, the tag mask and the tag it computed for comparison;
   `aes_hw.c` wipes its key-schedule word and its cipher state;
-  `ghash_hw.c` wipes the object that holds the hash subkey, the
-  accumulator and the unreduced product once at the end of each entry,
-  not once per block. Under `AES=extern` a schedule holds the traffic key
+  `ghash_hw.c` wipes the object that holds the hash subkey, its powers,
+  the accumulator and the sums of products before each reduction once at
+  the end of each entry, not once per block. Under `AES=extern` a schedule holds the traffic key
   itself, not an expansion of it, and the same `ct_wipe` of the whole
   `aes_traffic_key` in `record.c` and `quic_packet.c` wipes it;
   `aes_extern.c` keeps no copy of its own. What the hook or the
@@ -3265,11 +3265,15 @@ last `ROLE=server` stub, as the entry said it would.
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
   Inside the `AES=hw` GHASH, `ghash_hw.c`'s data loop computes the powers
   of H it needs, adds up each pass's products in the same state, and wipes
-  both with H when each call ends; `bin/ghash_equiv_test` copies the stack
-  below one call and requires no power of H and none of the last pass's
-  sums in it. `ghash-hw-powers-wipe-skipped` stops that wipe before the
-  powers, and `ghash-hw-sums-past-wipe` moves the sums past its end; each
-  requires the binary to fail.
+  both with H when each call ends. It reads each power from that state
+  through a volatile lvalue, because both compilers, holding the eight in
+  registers across a pass, copied some to stack slots of their own.
+  `bin/ghash_equiv_test` copies the stack below one call and requires no
+  power of H, no power's two halves added and none of the last pass's sums
+  in it. `ghash-hw-powers-wipe-skipped` stops that wipe before the powers,
+  `ghash-hw-sums-past-wipe` moves the sums past its end, and
+  `ghash-hw-powers-held-in-registers` reads the powers through an ordinary
+  pointer; each requires the binary to fail.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

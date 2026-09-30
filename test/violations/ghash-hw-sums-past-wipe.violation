@@ -11,8 +11,8 @@ reason: the AES=hw GHASH state holds the pass's sums after the powers of
   copy.
 
 --- old
-    ghash_sums sums;      // the products a multiply or a pass adds up, before product_of
-    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] = H^(i + 1)
+    ghash_sums sums;     // the products a multiply or a pass adds up, before reduce
+    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] holds H^(i + 1) * x^-1
 --- new
-    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] = H^(i + 1)
-    ghash_sums sums;      // the products a multiply or a pass adds up, before product_of
+    ghash_vector powers[GHASH_PASS_BLOCKS]; // powers[i] holds H^(i + 1) * x^-1
+    ghash_sums sums;     // the products a multiply or a pass adds up, before reduce

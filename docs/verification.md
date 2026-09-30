@@ -406,8 +406,9 @@ The entries are grouped by area:
   legs, and the Lean differential.
 - **The `AES=hw` GHASH and counter mode:** every harness compiles the
   portable GHASH and the one-block counter loop. An `AES=hw` build runs
-  `ghash_hw.c`'s GHASH on the carry-less multiply instead, eight blocks a
-  pass against the powers of H each call computes, and runs
+  `ghash_hw.c`'s GHASH on the carry-less multiply instead, three products
+  a block and eight blocks a pass against the powers of H each call
+  computes, with the reduction on the same instruction, and runs
   counter mode's whole blocks through `aes_hw.c`'s `aes_counter_blocks`,
   several at a time, neither of which a harness reads.
   `bin/ghash_equiv_test` holds both to the portable paths byte for byte,

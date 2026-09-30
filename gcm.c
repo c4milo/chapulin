@@ -21,8 +21,9 @@
 //
 // GHASH has two bodies, and the Makefile AES variable picks one.
 // AES=soft and AES=extern run the portable multiply below, 128 masked
-// steps per block. AES=hw runs ghash_hw.c's, four carry-less
-// products and a reduction per block, and compiles no portable body.
+// steps per block. AES=hw runs ghash_hw.c's, three carry-less
+// products per block and, once per pass of up to eight blocks, a
+// reduction on the same instruction, and compiles no portable body.
 // An AES=runtime QUIC object (CH_AES_TWO_CIPHERS, aes.h) compiles both
 // and runs ghash_hw.c's for a schedule the AES instructions run and the
 // portable one for a schedule the table runs (aes_schedule.h), so a
