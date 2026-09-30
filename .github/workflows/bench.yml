@@ -1,15 +1,17 @@
 name: bench
 
-# Times ChaCha20-Poly1305 against AES-128-GCM per byte, and every
-# primitive and the in-process handshakes, on an x86-64 runner, which
-# writes the partners of bench/results-aead-arm64.csv and
-# bench/results-primitives-arm64.csv.
+# Times ChaCha20-Poly1305 against AES-128-GCM per byte, every primitive
+# and the in-process handshakes, and one TLS record's protection split
+# into its stages, on an x86-64 runner. It writes the partners of
+# bench/results-aead-arm64.csv and bench/results-primitives-arm64.csv, and
+# bench/results-record-linux-x86_64-gcc.csv and its clang twin, which
+# docs/performance.md names.
 # Someone starts it by hand and nothing else does: a timing belongs to
 # the machine that ran it, and a shared runner is a loaded machine, so a
-# run is a measurement to read, not a check that passes or fails. The job
-# commits nothing; it prints the CSV on the run page and keeps it as an
-# artifact, and whoever records it copies it into bench/ with the runner's
-# load average from its header.
+# run is a measurement to read, not a check that passes or fails. No job
+# commits anything; each prints its CSVs on the run page and keeps them as
+# an artifact, and whoever records one copies it into bench/ with the
+# runner's load average from its header.
 on:
   workflow_dispatch:
 
@@ -69,4 +71,51 @@ jobs:
           path: |
             bench/results-primitives-x86_64.csv
             bench/results-primitives-calls.csv
+          if-no-files-found: error
+  record-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - name: Install clang (apt.llvm.org, pinned major)
+        # The second run's compiler. The action exports its versioned name
+        # as CLANG_RV.
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+      - name: Build the pinned OpenSSL and put it on PATH
+        # The OpenSSL rows time `openssl speed -aead` on the same machine.
+        # The runner's own OpenSSL is 3.0, and the development machine's
+        # rows come from the pinned release.
+        uses: ./.github/actions/install-openssl
+        with:
+          version: ${{ env.OPENSSL_VERSION }}
+          sha256: ${{ env.OPENSSL_SHA256 }}
+      - name: Time one record under gcc
+        # The runner's own gcc, as in the aead job. bench/record.sh probes
+        # -maes -mpclmul for the AES-GCM rows, and it fails rather than
+        # writing a file without them when the probe finds nothing.
+        run: make bench-record CC=gcc
+      - name: Time one record under the pinned clang
+        run: make bench-record CC="$CLANG_RV"
+      - name: Print the CSVs on the run page
+        # Each CSV's header holds the runner's load average before and
+        # after its run.
+        run: |
+          for compiler in gcc clang; do
+            echo '```'
+            cat "bench/results-record-linux-x86_64-$compiler.csv"
+            echo '```'
+          done >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the CSVs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: results-record-linux-x86_64
+          path: |
+            bench/results-record-linux-x86_64-gcc.csv
+            bench/results-record-linux-x86_64-clang.csv
           if-no-files-found: error
