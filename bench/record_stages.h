@@ -1,6 +1,6 @@
 // The entries bench/record.c times that the library does not export: the
 // stages its sources keep static, and the library's own code with one
-// callee replaced by a stub. Five stage sources each compile one library
+// callee replaced by a stub. Four stage sources each compile one library
 // source under renamed external names and add the entries below, the way
 // bench/aead_gcm.c adds one to gcm.c, and bench/record_stub.c defines the
 // stubs. The bench also links the library's own objects, so the
@@ -25,12 +25,6 @@ void bench_gcm_counter_mode(const aes_traffic_key *k, const uint8_t nonce[AES_IV
 void bench_gcm_compute_tag(const aes_traffic_key *k, const uint8_t nonce[AES_IV],
                            const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                            uint8_t tag[GCM_TAG]);
-
-// bench/record_gcm_stub.c. The same counter_mode, compiled with its
-// forward cipher replaced by bench_stub_encrypt_schedule: the counter
-// increments, the calls and the keystream exclusive-or, and no AES round.
-void bench_gcm_counter_mode_without_aes(const aes_traffic_key *k, const uint8_t nonce[AES_IV],
-                                        const uint8_t *in, size_t n, uint8_t *out);
 
 // bench/record_chacha.c. chacha20.c's block function, called as often
 // and with the same counter as chacha20_xor calls it over n bytes, with
@@ -62,10 +56,8 @@ int bench_rec_open_without_aead(rec_dir *d, const uint8_t *rec, size_t n, uint8_
 
 // bench/record_stub.c. The stubs, in a source of their own so that every
 // call to one stays a call, as the call to the function it replaces is.
-// The cipher copies in to out and runs no round. The two seals write
-// nothing, and the two opens write nothing and report a match.
-void bench_stub_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
-                                 uint8_t out[AES_BLOCK]);
+// The two seals write nothing, and the two opens write nothing and report
+// a match.
 void bench_stub_gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV],
                                  const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
                                  uint8_t *ct, uint8_t tag[GCM_TAG]);

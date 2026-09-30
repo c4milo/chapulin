@@ -1362,20 +1362,25 @@ launch fast full aes 45 "fill_nondet.0:177" --object-bits 9 -DCH_TRANSPORT_QUIC_
 # 619 properties, 25 s, 0.92 GB with version 2's keys (docs/decisions.md 79).
 launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
 # The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
-# contract stubs of the four AES=hw block entries the harness defines,
-# because CBMC cannot read the instructions: both key lengths, the round
-# count each writes, and the dispatch that count drives. Measured the
-# same way: 140 properties, under 1 s, 0.02 GB peak; 145 properties, under
-# 1 s, 0.02 GB with version 2's keys compiled beside it.
+# contract stubs of the six AES=hw entries the harness defines, because
+# CBMC cannot read the instructions: both key lengths, the round count
+# each writes, and the dispatch that count drives for one block and for
+# counter mode's whole blocks. Measured the same way: 140 properties,
+# under 1 s, 0.02 GB peak; 145 properties, under 1 s, 0.02 GB with version
+# 2's keys compiled beside it; 180 properties, 2 s, 0.13 GB maximum
+# resident set with the counter-mode dispatch.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # aes.c in the AES=runtime QUIC suite object, which holds the AES
-# instructions and the table, over contract stubs of both ciphers' six
+# instructions and the table, over contract stubs of both ciphers' eight
 # entries: an Initial key takes the instructions only under the answer
 # CH_AES_INSTRUCTIONS_PRESENT, out of every byte an answer can be, the
-# Retry key takes the table under any, and a traffic key of either length
-# never takes the table (docs/decisions.md 81). HKDF is the stub the aes
-# harness uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
-# PROVE_NO_CACHE=1 /usr/bin/time -l): 196 properties, 1 s, 0.03 GB peak.
+# Retry key takes the table under any, a traffic key of either length
+# never takes the table (docs/decisions.md 81), and counter mode's whole
+# blocks run on the instructions for the schedules gcm.c hands them. HKDF
+# is the stub the aes harness uses. Measured (arm64 macOS, cbmc 6.11.0,
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l): 196 properties, 1 s, 0.03 GB
+# peak; 229 properties, 4 s, 0.26 GB maximum resident set with the
+# counter-mode entry.
 # An Initial key expanded on the instructions under the absent answer
 # fails it (inv26-runtime-absent-expands-on-instructions).
 launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES

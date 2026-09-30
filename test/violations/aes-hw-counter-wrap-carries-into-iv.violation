@@ -1,0 +1,18 @@
+invariant: INV-26
+file: aes_hw.c
+catches: aes_equiv_test
+reason: the AES=hw counter mode hands back a counter whose wrap past 2^32
+  carries into the last IV byte, as a 128-bit increment would. SP 800-38D
+  §6.2's inc32 never touches the first twelve bytes, and aes_block.h
+  promises the counter of the last block, which gcm.c's loop takes up for
+  the next block. Only a counter within a call's length of 2^32 shows it,
+  which is why bin/aes_equiv_test starts counters there, at every place
+  in a pass, and compares the counter each call hands back. The edit sits
+  outside the two architecture arms, so an ARMv8 runner and an x86-64 one
+  each compile and catch it.
+
+--- old
+    counter[15] = (uint8_t)last;
+--- new
+    counter[15] = (uint8_t)last;
+    counter[11] = (uint8_t)(counter[11] + (last < count));

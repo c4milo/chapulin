@@ -33,7 +33,13 @@
 // secret hash subkey. Its masks keep every subkey bit off a branch and
 // off a memory index, and it multiplies no integers, so it needs no
 // statement about the part.
-// Everything else here is one body under every AES value.
+//
+// Counter mode has one body with one more step under AES=hw and
+// AES=runtime: a schedule the AES instructions run takes its whole blocks
+// through aes_encrypt_counter_blocks, which runs several blocks at once,
+// and the loop that every other schedule runs block by block takes the
+// last partial block. Everything else here is one body under every AES
+// value.
 //
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first
 // counter block straight from a 96-bit IV, and hashes any other IV
@@ -149,15 +155,15 @@ static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
 // the table, which only QUIC's public keys use. Every other object holds
 // one body, and k chooses nothing. k->instructions is the caller's probe
 // result or a constant (aes_schedule.h), so the branch reads a public
-// value.
+// value. counter_mode reads the same predicate.
 #ifdef CH_AES_TWO_CIPHERS
-static int ghash_on_instructions(const aes_key_schedule *k) {
+static int on_instructions(const aes_key_schedule *k) {
     return k->instructions == CH_AES_INSTRUCTIONS_PRESENT;
 }
 
 static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
                            const uint8_t subkey[AES_BLOCK]) {
-    if (ghash_on_instructions(k)) {
+    if (on_instructions(k)) {
         gcm_multiply_by_subkey_hw(acc, subkey);
         return;
     }
@@ -166,7 +172,7 @@ static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
 
 static void ghash_data(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
                        const uint8_t subkey[AES_BLOCK], const uint8_t *data, size_t n) {
-    if (ghash_on_instructions(k)) {
+    if (on_instructions(k)) {
         gcm_hash_data_hw(acc, subkey, data, n);
         return;
     }
@@ -242,17 +248,41 @@ static void increment_counter(uint8_t counter[AES_BLOCK]) {
     }
 }
 
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+// The whole blocks of counter_mode's input on the AES instructions, which
+// run several blocks at once (aes_encrypt_counter_blocks), and the bytes
+// they covered. A schedule the table runs, which only an AES=runtime QUIC
+// object holds, covers none, and counter_mode runs all its blocks one at a
+// time.
+static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t counter[AES_BLOCK],
+                                        const uint8_t *in, size_t n, uint8_t *out) {
+#ifdef CH_AES_TWO_CIPHERS
+    if (!on_instructions(k)) {
+        return 0;
+    }
+#endif
+    size_t blocks = n / AES_BLOCK;
+    aes_encrypt_counter_blocks(k, counter, in, blocks, out);
+    return blocks * AES_BLOCK;
+}
+#endif
+
 // SP 800-38D §6.5, GCTR, over the blocks after the first counter block:
 // each input block is exclusive-ored with the forward cipher of the
 // counter, and the counter increases before every block. The caller
 // passes the first counter block, so the first cipher call here runs on
-// inc32 of it, which is what §7.1 step 3 asks for.
+// inc32 of it, which is what §7.1 step 3 asks for. On the AES
+// instructions the whole blocks run first, several at a time, and the loop
+// below runs the last partial block.
 //
 // One byte of out is written after the byte of in at the same index is
 // read, so in == out works and so does out below in.
 static void counter_mode(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], const uint8_t *in,
                          size_t n, uint8_t *out) {
     size_t off = 0;
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+    off = counter_mode_whole_blocks(k, counter, in, n, out);
+#endif
     // One buffer for every block, wiped once at the end rather than once
     // per block: the last block's keystream is the only one still in the
     // frame when this returns, and a wipe inside the loop would run per

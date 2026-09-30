@@ -7,14 +7,18 @@
 //     caller's answer is CH_AES_INSTRUCTIONS_PRESENT, and on the table for
 //     every other byte, and both of its schedules record which;
 //   - the Retry key expands and runs on the table whatever the answer;
-//   - the table runs no traffic key of either length.
+//   - the table runs no traffic key of either length;
+//   - counter mode over whole blocks, which gcm.c hands only a schedule
+//     the instructions run, runs on the instructions for an Initial key
+//     under the answer present and for a traffic key of either length,
+//     and its CH_ASSERT holds for both.
 //
 // The answer is any byte rather than one of the two cfg.h names. Every init
 // call refuses the others, and this proves the constructor would still keep
 // such a value off the instructions.
 //
 // CBMC can read neither cipher whole here: the instructions have no C
-// body, and proof/aes_harness.c proves the table itself. So all six entries
+// body, and proof/aes_harness.c proves the table itself. So all eight entries
 // are contract stubs below. Each asserts the buffers aes_block.h says it
 // reads and writes, havocs what it writes, and asserts that the key in hand
 // may run on it. HKDF is proof/aes_stubs.h's stub.
@@ -76,6 +80,47 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
     ran_on_instructions();
 }
 
+// The whole-block counter mode the harness hands at most two blocks.
+#define COUNTER_BLOCKS_MAX 2
+
+static void counter_blocks_contract(uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                                    uint8_t *out) {
+    __CPROVER_assert(blocks <= COUNTER_BLOCKS_MAX, "counter: the harness's bound");
+    __CPROVER_assert(__CPROVER_rw_ok(counter, AES_BLOCK), "counter: counter readable and writable");
+    __CPROVER_assert(__CPROVER_r_ok(in, blocks * AES_BLOCK), "counter: input readable");
+    __CPROVER_assert(__CPROVER_w_ok(out, blocks * AES_BLOCK), "counter: output writable");
+    fill_nondet(counter, AES_BLOCK);
+    fill_nondet(out, blocks * AES_BLOCK);
+    ran_on_instructions();
+}
+
+void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
+                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                        uint8_t *out) {
+    __CPROVER_assert(__CPROVER_r_ok(round_keys, AES_ROUND_KEYS * AES_BLOCK),
+                     "counter: round keys readable");
+    counter_blocks_contract(counter, in, blocks, out);
+}
+
+void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                            uint8_t *out) {
+    __CPROVER_assert(__CPROVER_r_ok(round_keys, AES_256_ROUND_KEYS * AES_BLOCK),
+                     "counter 256: round keys readable");
+    counter_blocks_contract(counter, in, blocks, out);
+}
+
+// Counter mode's whole blocks under s, in place, as gcm.c's seal runs them.
+static void run_counter_blocks(const aes_key_schedule *s) {
+    uint8_t counter[AES_BLOCK];
+    uint8_t data[COUNTER_BLOCKS_MAX * AES_BLOCK];
+    fill_nondet(counter, sizeof counter);
+    fill_nondet(data, sizeof data);
+    size_t blocks = nondet_size_t();
+    __CPROVER_assume(blocks <= COUNTER_BLOCKS_MAX);
+    aes_encrypt_counter_blocks(s, counter, data, blocks, data);
+}
+
 void aes_soft_expand_round_keys(const uint8_t key[AES_128_KEY],
                                 uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
     __CPROVER_assert(__CPROVER_r_ok(key, AES_128_KEY), "table expand: key readable");
@@ -121,6 +166,9 @@ int main(void) {
         // The header protection entry with one buffer, the shape
         // quic_initial.c's sample and mask allow.
         aes_encrypt_block_hp(&k, out, out);
+        if (answer == CH_AES_INSTRUCTIONS_PRESENT) {
+            run_counter_blocks(&k.key);
+        }
     }
 
     // The Retry key, on the table under every answer.
@@ -144,5 +192,6 @@ int main(void) {
     fill_nondet(in, sizeof in);
     aes_traffic_encrypt_block(&t, in, out);
     aes_encrypt_schedule(&t.key, out, out);
+    run_counter_blocks(&t.key);
     return 0;
 }

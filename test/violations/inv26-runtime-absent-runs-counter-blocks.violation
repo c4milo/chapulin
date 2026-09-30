@@ -1,0 +1,20 @@
+invariant: INV-26
+file: gcm.c
+catches: aes_runtime_test
+reason: an AES=runtime QUIC object hands the whole blocks of a schedule
+  the table runs to the AES instructions, so a session whose caller's
+  probe found no AES instructions executes them on every Initial packet
+  and dies of SIGILL on the CPU that probe described. Both ciphers compute
+  the same bytes, so no vector notices. aes_encrypt_counter_blocks
+  asserts that its schedule runs on the instructions, and
+  bin/aes_runtime_test seals and opens RFC 9001's Initial packets under
+  the absent answer, so the assertion stops that binary.
+
+--- old
+    if (!on_instructions(k)) {
+        return 0;
+    }
+--- new
+    if (k == NULL) {
+        return 0;
+    }

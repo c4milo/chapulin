@@ -8,11 +8,13 @@
 // instructions alone, and the software reference exists for this binary
 // and the proof.
 //
-// Two things are compared, not one. The round keys
-// aes_expand_round_keys writes are compared whole, so a key schedule that
-// diverges is named at the schedule rather than three rounds later inside
-// a block; and the block aes_cipher_block writes is compared, which is
-// the answer callers depend on.
+// Three things are compared. The round keys aes_expand_round_keys writes
+// are compared whole, so a key schedule that diverges is named at the
+// schedule rather than three rounds later inside a block; the block
+// aes_cipher_block writes is compared, which is the answer callers depend
+// on; and counter mode over whole blocks, which the instructions run
+// several blocks at a time, is compared with the soft cipher run one
+// block at a time (test/aes_equiv_counter.h).
 //
 // The inputs are the edge cases first and then random pairs. The edge
 // cases are the ones a table and an instruction are most likely to
@@ -301,15 +303,18 @@ static void run_aes256(void) {
     }
 }
 
+#include "aes_equiv_counter.h"
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_fixed();
     run_single_bits();
     run_random();
     run_aes256();
-    printf("aes equivalence: %lu AES-128 pairs and %lu AES-256 pairs agree between AES=soft "
-           "and AES=hw (seed 0x%llx)\n",
-           compared, compared_256, (unsigned long long)seed);
+    run_counter_blocks();
+    printf("aes equivalence: %lu AES-128 pairs, %lu AES-256 pairs and %lu counter-mode cases "
+           "agree between AES=soft and AES=hw (seed 0x%llx)\n",
+           compared, compared_256, counter_cases, (unsigned long long)seed);
     if (failures > 0) {
         printf("aes equivalence: %d mismatches\n", failures);
         return 1;

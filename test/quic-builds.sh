@@ -170,28 +170,35 @@ for role in -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER; do
     fi
 done
 
-# AES=hw's GHASH. gcm.c compiled with -DCH_AES_HW must call the two
-# entries ghash_hw.c defines, and compiled without it must call
-# neither. The first half is what refuses an AES=hw object that runs the
-# portable multiply under the AES=hw name: ghash_hw.c would still
-# link and define two functions nobody calls, and bin/ghash_equiv_test
-# would still pass, because the portable GHASH computes the same bytes.
+# AES=hw's GHASH and counter mode. gcm.c compiled with -DCH_AES_HW must
+# call the two entries ghash_hw.c defines and aes.c's
+# aes_encrypt_counter_blocks, which runs whole blocks several at a time on
+# the instructions, and compiled without it must call none of them. The
+# first half is what refuses an AES=hw object that runs the portable
+# multiply or the one-block counter loop under the AES=hw name: ghash_hw.c
+# and the multi-block entry would still link, and bin/ghash_equiv_test
+# would still pass, because the portable paths compute the same bytes.
 # gcm.c names no intrinsic, so it compiles here without the flags
-# that turn the instructions on. nm lists an object's undefined symbols,
-# and the match is anchored at the end of the line because a Mach-O
-# object prefixes each name with an underscore.
-ghash_calls() { # $@ = extra flags: the ghash_hw.c entries gcm.c calls, on one line
-    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" gcm.c ||
+# that turn the instructions on. It compiles at -O2, as make lib compiles
+# it, because gcc at -O0 still emits a static function that nothing
+# calls, and the calls inside it with it. nm lists an object's undefined
+# symbols, and the match is anchored at the end of the line because a
+# Mach-O object prefixes each name with an underscore.
+# The instruction entries gcm.c can call.
+hw_entries='gcm_(multiply_by_subkey|hash_data)_hw$|aes_encrypt_counter_blocks$'
+hw_want="aes_encrypt_counter_blocks gcm_hash_data_hw gcm_multiply_by_subkey_hw "
+ghash_calls() { # $@ = extra flags: the instruction entries gcm.c calls, on one line
+    "$cc" -std=c11 -O2 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" gcm.c ||
         return 1
-    nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' '
+    nm -u "$gcm_obj" | grep -oE "$hw_entries" | sort -u | tr '\n' ' '
 }
 if ! hw_calls=$(ghash_calls -DCH_AES_HW); then
     echo "quic-builds: gcm.c under -DCH_AES_HW must compile" >&2
     exit 1
 fi
-if [ "$hw_calls" != "gcm_hash_data_hw gcm_multiply_by_subkey_hw " ]; then
-    echo "quic-builds: gcm.c under -DCH_AES_HW calls [$hw_calls] of ghash_hw.c;" \
-        "it must call gcm_multiply_by_subkey_hw and gcm_hash_data_hw" >&2
+if [ "$hw_calls" != "$hw_want" ]; then
+    echo "quic-builds: gcm.c under -DCH_AES_HW calls [$hw_calls] of the instruction entries;" \
+        "it must call [$hw_want]" >&2
     exit 1
 fi
 if ! soft_calls=$(ghash_calls); then
@@ -200,7 +207,7 @@ if ! soft_calls=$(ghash_calls); then
 fi
 if [ -n "$soft_calls" ]; then
     echo "quic-builds: gcm.c without -DCH_AES_HW calls $soft_calls;" \
-        "only an AES=hw object carries ghash_hw.c" >&2
+        "only an AES=hw object carries ghash_hw.c and the multi-block counter mode" >&2
     exit 1
 fi
 
@@ -280,22 +287,23 @@ if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES
     exit 1
 fi
 
-# AES=runtime's GHASH: gcm.c calls both ghash_hw.c entries in each QUIC
-# object, which holds the table too and runs a schedule on the cipher it
-# records, with and without the suite, and in the TCP suite object, which
-# holds no table and runs every schedule on the instructions.
+# AES=runtime's GHASH and counter mode: gcm.c calls both ghash_hw.c
+# entries and the multi-block counter mode in each QUIC object, which
+# holds the table too and runs a schedule on the cipher it records, with
+# and without the suite, and in the TCP suite object, which holds no table
+# and runs every schedule on the instructions.
 for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME" \
     "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME -DCH_SUITE_AES_GCM -DCH_NATIVE_AES" \
     "-DCH_AES_RUNTIME -DCH_SUITE_AES_GCM -DCH_NATIVE_AES"; do
     # shellcheck disable=SC2086 # one define per word
-    if ! "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs gcm.c; then
+    if ! "$cc" -std=c11 -O2 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN $defs gcm.c; then
         echo "quic-builds: gcm.c under $defs must compile" >&2
         exit 1
     fi
-    runtime_calls=$(nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' ')
-    if [ "$runtime_calls" != "gcm_hash_data_hw gcm_multiply_by_subkey_hw " ]; then
-        echo "quic-builds: gcm.c under $defs calls [$runtime_calls] of ghash_hw.c;" \
-            "it must call gcm_multiply_by_subkey_hw and gcm_hash_data_hw" >&2
+    runtime_calls=$(nm -u "$gcm_obj" | grep -oE "$hw_entries" | sort -u | tr '\n' ' ')
+    if [ "$runtime_calls" != "$hw_want" ]; then
+        echo "quic-builds: gcm.c under $defs calls [$runtime_calls] of the instruction entries;" \
+            "it must call [$hw_want]" >&2
         exit 1
     fi
 done

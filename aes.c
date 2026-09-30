@@ -32,6 +32,8 @@
 #include "hkdf.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
+#endif
+#if defined(CH_SUITE_AES_GCM) || defined(CH_AES_TWO_CIPHERS)
 #include "ch_assert.h"
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -245,6 +247,25 @@ void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK]
 #endif
     aes_cipher_block(s->round_keys, in, out);
 }
+
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+void aes_encrypt_counter_blocks(const aes_key_schedule *s, uint8_t counter[AES_BLOCK],
+                                const uint8_t *in, size_t blocks, uint8_t *out) {
+#ifdef CH_AES_TWO_CIPHERS
+    // The table has no entry that runs several blocks, and a schedule it
+    // expanded never reaches the instructions (aes.h).
+    CH_ASSERT(on_instructions(s));
+#endif
+#ifdef CH_AES_256
+    // The round count is the suite's, as in aes_encrypt_schedule.
+    if (s->rounds == AES_256_ROUNDS) {
+        aes_counter_blocks_256(s->round_keys, counter, in, blocks, out);
+        return;
+    }
+#endif
+    aes_counter_blocks(s->round_keys, counter, in, blocks, out);
+}
+#endif
 
 void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
                        uint8_t out[AES_BLOCK]) {

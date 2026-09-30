@@ -3870,7 +3870,7 @@ does nothing more.
       be. `lint-trust-separation` admits `aes_hw.c`, `ghash_hw.c` and
       `quic_aes_soft.c` together in `AES=runtime`'s QUIC rows alone, and
       `aes-two-implementations-in-one-object.violation` stays caught.
-      Twelve mutants in `test/violations/` break the new rules, and each
+      Thirteen mutants in `test/violations/` break the new rules, and each
       is caught. `inv26-runtime-initial-seal-ignores-answer` seals every
       QUIC Initial packet under the present answer, which no test on a
       CPU with the instructions can see: both ciphers compute the same

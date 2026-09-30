@@ -90,7 +90,7 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len) {
     b->plaintext_len = plaintext_len;
     b->len = plaintext_len + 1;
     b->record_len = REC_HDR + b->len + AEAD_TAG;
-    b->aes_blocks = (b->len + AES_BLOCK - 1) / AES_BLOCK;
+    b->whole_blocks = b->len / AES_BLOCK;
     rec_dir_init_suite(&b->wr, secret, suite);
     b->rd = b->wr;
     memcpy(b->nonce, b->wr.iv, AEAD_NONCE); // the IV is the nonce at sequence number 0
@@ -201,41 +201,19 @@ static void run_counter_mode_shifted(bench_state *b) {
     consume(b->rec[b->len - 1]);
 }
 
-// The forward cipher alone, once per block counter_mode runs, on one
-// counter block: the timing reads no value of it.
-static void run_aes_blocks(bench_state *b) {
-    for (size_t i = 0; i < b->aes_blocks; i++) {
-        aes_encrypt_schedule(&b->key.key, b->counter, b->keystream);
-    }
-    consume(b->keystream[0]);
-}
-
-static void run_counter_mode_without_aes_in_place(bench_state *b) {
+// Counter mode's whole blocks alone, as counter_mode hands them to the AES
+// instructions: aes_encrypt_counter_blocks over every whole block of the
+// record, in place and as the open runs it. counter advances with each call,
+// and the timing reads no value of it.
+static void run_counter_blocks_in_place(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    bench_gcm_counter_mode_without_aes(&b->key, b->nonce, body, b->len, body);
-    consume(body[b->len - 1]);
+    aes_encrypt_counter_blocks(&b->key.key, b->counter, body, b->whole_blocks, body);
+    consume(body[0]);
 }
 
-static void run_counter_mode_without_aes_shifted(bench_state *b) {
-    bench_gcm_counter_mode_without_aes(&b->key, b->nonce, b->rec + REC_HDR, b->len, b->rec);
-    consume(b->rec[b->len - 1]);
-}
-
-// The 16-byte wipe aes_hw.c's cipher runs after each block, alone, as often
-// as counter_mode runs the cipher. aes_blocks includes it.
-static void run_block_wipes(bench_state *b) {
-    for (size_t i = 0; i < b->aes_blocks; i++) {
-        ct_wipe(b->keystream, AES_BLOCK);
-    }
-    consume(b->keystream[0]);
-}
-
-// The stub's own calls, which the two rows above make once per block.
-static void run_stub_cipher_calls(bench_state *b) {
-    for (size_t i = 0; i < b->aes_blocks; i++) {
-        bench_stub_encrypt_schedule(&b->key.key, b->counter, b->keystream);
-    }
-    consume(b->keystream[0]);
+static void run_counter_blocks_shifted(bench_state *b) {
+    aes_encrypt_counter_blocks(&b->key.key, b->counter, b->rec + REC_HDR, b->whole_blocks, b->rec);
+    consume(b->rec[0]);
 }
 
 static void run_compute_tag(bench_state *b) {
@@ -316,46 +294,40 @@ static void run_mac_fixed(bench_state *b) {
 
 // The AES-GCM rows, for both key sizes, in the order a run times them.
 static const bench_row AES_ROWS[] = {
-    {"rec_seal",                          RECORD, run_rec_seal,                          0},
-    {"refill",                            ALL,    run_refill,                            0},
-    {"rec_open",                          RECORD, run_rec_open,                          1},
-    {"rec_seal_without_aead",             RECORD, run_rec_seal_without_aead,             0},
-    {"rec_open_without_aead",             RECORD, run_rec_open_without_aead,             0},
-    {"key_expansion",                     FIXED,  run_key_expansion,                     0},
-    {"key_wipe",                          FIXED,  run_key_wipe,                          0},
-    {"aead_seal",                         ALL,    run_gcm_seal,                          0},
-    {"aead_open",                         ALL,    run_gcm_open,                          1},
-    {"counter_mode_in_place",             ALL,    run_counter_mode_in_place,             0},
-    {"counter_mode_shifted",              ALL,    run_counter_mode_shifted,              0},
-    {"aes_blocks",                        ALL,    run_aes_blocks,                        0},
-    {"block_wipes",                       ALL,    run_block_wipes,                       0},
-    {"counter_mode_without_aes_in_place", ALL,    run_counter_mode_without_aes_in_place, 0},
-    {"counter_mode_without_aes_shifted",  ALL,    run_counter_mode_without_aes_shifted,  0},
-    {"stub_cipher_calls",                 ALL,    run_stub_cipher_calls,                 0},
-    {"compute_tag",                       ALL,    run_compute_tag,                       0},
-    {"ghash_data",                        ALL,    run_ghash_data,                        0},
-    {"compute_tag_fixed",                 FIXED,  run_compute_tag_fixed,                 0},
+    {"rec_seal",                RECORD, run_rec_seal,                0},
+    {"refill",                  ALL,    run_refill,                  0},
+    {"rec_open",                RECORD, run_rec_open,                1},
+    {"rec_seal_without_aead",   RECORD, run_rec_seal_without_aead,   0},
+    {"rec_open_without_aead",   RECORD, run_rec_open_without_aead,   0},
+    {"key_expansion",           FIXED,  run_key_expansion,           0},
+    {"key_wipe",                FIXED,  run_key_wipe,                0},
+    {"aead_seal",               ALL,    run_gcm_seal,                0},
+    {"aead_open",               ALL,    run_gcm_open,                1},
+    {"counter_mode_in_place",   ALL,    run_counter_mode_in_place,   0},
+    {"counter_mode_shifted",    ALL,    run_counter_mode_shifted,    0},
+    {"counter_blocks_in_place", ALL,    run_counter_blocks_in_place, 0},
+    {"counter_blocks_shifted",  ALL,    run_counter_blocks_shifted,  0},
+    {"compute_tag",             ALL,    run_compute_tag,             0},
+    {"ghash_data",              ALL,    run_ghash_data,              0},
+    {"compute_tag_fixed",       FIXED,  run_compute_tag_fixed,       0},
 };
 
-// counter_mode less its cipher, less the stub's own calls: the counter
-// increments and the keystream exclusive-or, in each shape.
+// counter_mode less its whole blocks: the last partial block, which runs
+// on the one-block cipher, and the call that hands the whole blocks down.
 static const bench_difference AES_DIFFERENCES[] = {
-    {"xor_and_increments_in_place", "counter_mode_without_aes_in_place", "stub_cipher_calls"},
-    {"xor_and_increments_shifted",  "counter_mode_without_aes_shifted",  "stub_cipher_calls"},
+    {"counter_mode_tail_in_place", "counter_mode_in_place", "counter_blocks_in_place"},
+    {"counter_mode_tail_shifted",  "counter_mode_shifted",  "counter_blocks_shifted" },
 };
 
-// Each whole against its parts. The seal's four stages are the AES
-// rounds, the exclusive-or with the counter increments, GHASH over the
-// ciphertext and the tag's fixed work; the open runs the same four with
-// the exclusive-or in its own shape.
+// Each whole against its parts. The seal's three stages are counter mode,
+// GHASH over the ciphertext and the tag's fixed work; the open runs the
+// same three with counter mode in its own shape.
 static const bench_check AES_CHECKS[] = {
-    {"aead_seal",             {"aes_blocks", "xor_and_increments_in_place", "ghash_data", "compute_tag_fixed"}},
-    {"aead_open",             {"aes_blocks", "xor_and_increments_shifted", "ghash_data", "compute_tag_fixed"} },
-    {"counter_mode_in_place", {"aes_blocks", "xor_and_increments_in_place", NULL}                             },
-    {"counter_mode_shifted",  {"aes_blocks", "xor_and_increments_shifted", NULL}                              },
-    {"compute_tag",           {"ghash_data", "compute_tag_fixed", NULL}                                       },
-    {"rec_seal",              {"rec_seal_without_aead", "aead_seal", NULL}                                    },
-    {"rec_open",              {"rec_open_without_aead", "aead_open", NULL}                                    },
+    {"aead_seal",   {"counter_mode_in_place", "ghash_data", "compute_tag_fixed", NULL}},
+    {"aead_open",   {"counter_mode_shifted", "ghash_data", "compute_tag_fixed", NULL} },
+    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}                         },
+    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}                      },
+    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}                      },
 };
 
 // The ChaCha20-Poly1305 rows.

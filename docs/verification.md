@@ -343,8 +343,8 @@ The entries are grouped by area:
     `bin/aes_equiv_test` holds the instructions to.
   - `aes_traffic`: `aes_traffic_key_init` writes AES-128's round count
     for a 16-byte key and AES-256's for a 32-byte one, and the dispatch
-    runs the cipher that count names, over contract stubs of the
-    `AES=hw` block entries.
+    runs the cipher that count names, for one block and for counter
+    mode's whole blocks, over contract stubs of the `AES=hw` entries.
 - **Bound:** the full domain.
 - **Not proved:** the `AES=hw` AES-256 cipher a suite build runs. CBMC
   cannot read an intrinsic, so `bin/aes_equiv_test` holds it to the
@@ -357,19 +357,22 @@ The entries are grouped by area:
   object that holds the AES instructions and the table.
 - **Proves:** `aes.c` is safe over unconstrained inputs and puts each key
   on the cipher `docs/decisions.md` entry 81 names, over contract stubs of
-  both ciphers' six entries, each of which asserts the buffers
+  both ciphers' eight entries, each of which asserts the buffers
   `aes_block.h` states and whether the key in hand may run on it:
   - an Initial key expands and runs on the instructions only when the
     caller's answer is `CH_AES_INSTRUCTIONS_PRESENT`, and on the table for
     every other byte, and both of its schedules record which;
   - the Retry key expands and runs on the table under any answer;
-  - the table runs no traffic key of either length.
+  - the table runs no traffic key of either length;
+  - counter mode's whole blocks run on the instructions for an Initial
+    key under the answer present and for a traffic key, and
+    `aes_encrypt_counter_blocks`'s `CH_ASSERT` holds for both.
 - **Bound:** the full domain: every byte of the answer, every admitted
   connection ID length and every endpoint byte.
 - **Not proved:** either cipher's arithmetic, which `aes` proves for the
   table and `bin/aes_equiv_test` tests for the instructions; and `gcm.c`'s
-  choice between the two GHASH bodies, which `bin/aes_runtime_test`
-  counts.
+  choice between the two GHASH bodies and the two counter-mode paths,
+  which `bin/aes_runtime_test` counts.
 
 #### gcm
 
@@ -401,11 +404,16 @@ The entries are grouped by area:
   and A.3's Initial packets and A.4's Retry tag in QUIC version 2, 67
   AES-128-GCM and 66 AES-256-GCM Wycheproof cases on all four build
   legs, and the Lean differential.
-- **The `AES=hw` GHASH:** every harness compiles the portable GHASH. An
-  `AES=hw` build runs `ghash_hw.c`'s GHASH on the carry-less multiply
-  instead, which no harness reads. `bin/ghash_equiv_test` holds it to
-  the portable one byte for byte, and the vectors, the Wycheproof
-  `AES=hw` leg and `bin/diff_quic_hw` run over it.
+- **The `AES=hw` GHASH and counter mode:** every harness compiles the
+  portable GHASH and the one-block counter loop. An `AES=hw` build runs
+  `ghash_hw.c`'s GHASH on the carry-less multiply instead, and runs
+  counter mode's whole blocks through `aes_hw.c`'s `aes_counter_blocks`,
+  several at a time, neither of which a harness reads.
+  `bin/ghash_equiv_test` holds both to the portable paths byte for byte,
+  `bin/aes_equiv_test` holds the multi-block counter mode to the soft
+  cipher at every block count through three passes and across the 2^32
+  counter wrap, and the vectors, the Wycheproof `AES=hw` leg and
+  `bin/diff_quic_hw` run over both.
 
 ### Key exchange
 

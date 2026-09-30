@@ -1,0 +1,17 @@
+invariant: INV-26
+file: aes_hw.c
+catches: aes_equiv_test
+reason: the AES=hw counter mode runs only whole passes of eight blocks, so
+  the blocks of a last short pass keep their input bytes and a record
+  whose whole blocks are not a multiple of eight leaves up to seven of
+  them unencrypted. It is the mistake a loop over fixed-size passes
+  invites. CBMC cannot read the instructions, so bin/aes_equiv_test is
+  what holds it: it runs every block count from zero to three passes and
+  a block against the soft cipher one block at a time. The edit sits
+  outside the two architecture arms, so an ARMv8 runner and an x86-64 one
+  each compile and catch it.
+
+--- old
+    while (done < blocks) {
+--- new
+    while (blocks - done >= BLOCKS_PER_PASS) {

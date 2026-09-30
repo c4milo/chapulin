@@ -2,11 +2,14 @@ invariant: INV-26
 file: gcm.c
 catches: aes_runtime_test
 reason: an AES=runtime QUIC object runs GHASH on the carry-less multiply
-  for a schedule the table runs, so a session whose caller's probe found
-  no AES instructions executes PMULL or PCLMULQDQ on every Initial packet.
-  Both GHASH bodies compute the same bytes, so no vector notices.
-  bin/aes_runtime_test counts the calls into ghash_hw.c under the absent
-  answer and requires none.
+  and counter mode's whole blocks on the AES instructions for a schedule
+  the table runs, so a session whose caller's probe found no AES
+  instructions executes PMULL or PCLMULQDQ and the AES instructions on
+  every Initial packet. Both paths compute the same bytes, so no vector
+  notices. bin/aes_runtime_test seals and opens Initial packets under the
+  absent answer: aes_encrypt_counter_blocks's assertion that its schedule
+  runs on the instructions stops it at the first seal, and it also counts
+  the calls into ghash_hw.c and requires none.
 
 --- old
     return k->instructions == CH_AES_INSTRUCTIONS_PRESENT;

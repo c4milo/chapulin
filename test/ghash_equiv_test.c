@@ -16,9 +16,12 @@
 //   the AEAD       gcm_seal, gcm_open and gcm_ghash over the instruction
 //                  GHASH against the same three over the portable one
 //
-// Both AEADs run aes_hw.c's block cipher, so GHASH is the only
-// difference between them; test/aes_equiv_test.c holds that cipher to
-// AES=soft.
+// Both AEADs run aes_hw.c's cipher. They differ in GHASH and in counter
+// mode: the AES=hw copy runs whole blocks through aes_counter_blocks,
+// several at a time, and the portable copy runs every block through the
+// one-block cipher, so the AEAD cases hold the multi-block counter mode
+// to the one-block loop as well. test/aes_equiv_test.c holds the cipher
+// and the multi-block counter mode to AES=soft.
 //
 // The multiply's operands are the edge cases first and then random
 // pairs. The edge cases: zero; the field's one, which is x^0, the most
@@ -373,14 +376,31 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
 }
 
 // Every associated-data length from 0 to 40 against every payload length
-// from 0 to 48, which covers each partial block on both arguments, then
-// random lengths up to MAX_AAD and MAX_DATA.
+// from 0 to 48, which covers each partial block on both arguments. Then
+// every payload length up to three passes of aes_hw.c's counter mode and
+// a block, BLOCKS_PER_PASS blocks a pass, under three associated-data
+// lengths, so each count of whole blocks in a last short pass meets each
+// length of a last partial block. Then random lengths up to MAX_AAD and
+// MAX_DATA.
+#define AEAD_PASS_BYTES (8 * AES_BLOCK)
 static void run_aead(void) {
     for (size_t aad_len = 0; aad_len <= 40; aad_len++) {
         for (size_t n = 0; n <= 48; n++) {
             char case_name[64];
             (void)snprintf(case_name, sizeof case_name, "aead aad %zu, payload %zu", aad_len, n);
             compare_aead(case_name, aad_len, n);
+            if (failures > 0) {
+                return;
+            }
+        }
+    }
+    static const size_t pass_aad[] = {0, 5, 21};
+    for (size_t a = 0; a < sizeof pass_aad / sizeof pass_aad[0]; a++) {
+        for (size_t n = 49; n <= 3 * AEAD_PASS_BYTES + 2 * AES_BLOCK; n++) {
+            char case_name[64];
+            (void)snprintf(case_name, sizeof case_name, "aead aad %zu, payload %zu", pass_aad[a],
+                           n);
+            compare_aead(case_name, pass_aad[a], n);
             if (failures > 0) {
                 return;
             }

@@ -17,9 +17,9 @@
 // rec_seal and rec_open, and the AEAD entries record.c calls. The stage
 // rows call the library's functions where they are external, and entries
 // in the stage sources bench/record_stages.h lists where a stage is
-// static. Two stages have no function of their own: the exclusive-or in
-// gcm.c's counter_mode, which bench/record_gcm_stub.c times by giving
-// counter_mode a stub for its cipher, and the exclusive-or in
+// static. Two stages have no function of their own: the last partial
+// block of gcm.c's counter_mode, which is counter_mode less the whole
+// blocks it hands the AES instructions, and the exclusive-or in
 // chacha20_xor's loop. Each is a difference of two timed rows, which
 // record_rows.c lists. Each check line prints a whole and the sum of its
 // parts.

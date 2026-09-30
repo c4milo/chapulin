@@ -2687,7 +2687,13 @@ last `ROLE=server` stub, as the entry said it would.
   `test/quic-builds.sh` to fail, and
   `ghash-hw-source-unpackaged.violation` drops `ghash_hw.c` from
   the `AES=hw` sources and requires `test/lint-trust-separation.sh` to
-  fail.
+  fail. `aes-hw-counter-short-pass-dropped.violation` and
+  `aes-hw-counter-wrap-carries-into-iv.violation` break `aes_hw.c`'s
+  counter mode over whole blocks, which runs eight blocks a pass, and
+  require `bin/aes_equiv_test` to fail, and
+  `aes-hw-counter-falls-back-to-one-block.violation` lets an `AES=hw`
+  build of `gcm.c` run every block through the one-block cipher and
+  requires `test/quic-builds.sh` to fail.
 
   **What a secret AES key needs, and what holds it.** The entry above
   used to say only that moving these files out of `WIDEMUL_PUBLIC` was a
@@ -2871,7 +2877,8 @@ last `ROLE=server` stub, as the entry said it would.
   answer can be, and
   `srv_select_runtime` and `quic_config_webpki_runtime` hold the default
   order and the answer rule. `inv26-runtime-absent-runs-aes-instructions`,
-  `inv26-runtime-absent-runs-carryless-multiply` and
+  `inv26-runtime-absent-runs-carryless-multiply`,
+  `inv26-runtime-absent-runs-counter-blocks` and
   `inv26-runtime-traffic-key-on-table` require `bin/aes_runtime_test` to
   fail, `inv26-runtime-absent-expands-on-instructions` requires
   `proof/prove-one.sh aes_runtime` to fail, and

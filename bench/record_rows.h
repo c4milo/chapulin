@@ -37,7 +37,7 @@ typedef struct {
     size_t plaintext_len; // the record's plaintext bytes
     size_t len;           // plaintext_len + 1: the TLSInnerPlaintext the AEAD seals
     size_t record_len;    // REC_HDR + len + AEAD_TAG
-    size_t aes_blocks;    // the AES blocks counter_mode runs over len bytes
+    size_t whole_blocks;  // the whole blocks of len bytes, which counter_mode runs eight a pass
     rec_dir wr;           // the direction rec_seal seals under
     rec_dir rd;           // the direction rec_open opens under, keyed as wr
     aes_traffic_key key;  // wr's AES key, expanded once for the AEAD rows

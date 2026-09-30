@@ -1,4 +1,4 @@
-// aes_hw.c's four entries and ghash_hw.c's two under second names, and the
+// aes_hw.c's six entries and ghash_hw.c's two under second names, and the
 // entries aes.c and gcm.c call in their place, each a count and a call
 // (test/aes_runtime_count.h). test/aes_runtime_soft.c states why the
 // #defines come before the includes.
@@ -12,6 +12,8 @@
 #define aes_cipher_block instruction_cipher_block
 #define aes_expand_round_keys_256 instruction_expand_round_keys_256
 #define aes_cipher_block_256 instruction_cipher_block_256
+#define aes_counter_blocks instruction_counter_blocks
+#define aes_counter_blocks_256 instruction_counter_blocks_256
 #define gcm_multiply_by_subkey_hw clmul_multiply_by_subkey
 #define gcm_hash_data_hw clmul_hash_data
 
@@ -22,6 +24,8 @@
 #undef aes_cipher_block
 #undef aes_expand_round_keys_256
 #undef aes_cipher_block_256
+#undef aes_counter_blocks
+#undef aes_counter_blocks_256
 #undef gcm_multiply_by_subkey_hw
 #undef gcm_hash_data_hw
 
@@ -40,6 +44,11 @@ void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
                                uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK]);
 void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
                           const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
+void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
+                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks, uint8_t *out);
+void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                            uint8_t *out);
 void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]);
 void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
                       size_t n);
@@ -66,6 +75,20 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
                           const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
     aes_runtime_instruction_calls++;
     instruction_cipher_block_256(round_keys, in, out);
+}
+
+void aes_counter_blocks(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
+                        uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                        uint8_t *out) {
+    aes_runtime_instruction_calls++;
+    instruction_counter_blocks(round_keys, counter, in, blocks, out);
+}
+
+void aes_counter_blocks_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                            uint8_t counter[AES_BLOCK], const uint8_t *in, size_t blocks,
+                            uint8_t *out) {
+    aes_runtime_instruction_calls++;
+    instruction_counter_blocks_256(round_keys, counter, in, blocks, out);
 }
 
 void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
