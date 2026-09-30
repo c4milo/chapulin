@@ -28,8 +28,7 @@ _Static_assert(CH_HELLO_MAX <= CH_TX_HELLO, "the largest ClientHello must fit TX
 // message itself, the binder and the transcript update are
 // hsf_build_client_hello's.
 static size_t build_client_hello(handshake_state *h) {
-    ch_tls *t = h->t;
-    return hsf_build_client_hello(h, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
+    return hsf_build_client_hello(h, h->t->tx + REC_HDR, sizeof h->t->tx - REC_HDR);
 }
 
 // Sends the first n bytes of ch_tls.tx through cfg.send. A send that
