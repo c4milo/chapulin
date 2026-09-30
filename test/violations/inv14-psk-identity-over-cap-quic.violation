@@ -1,0 +1,13 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_driver_test
+reason: quic_config_ok takes a PSK identity one byte past CH_TICKET_ID_MAX,
+  the bound hello_build proves the ClientHello in q->t.tx holds, so a
+  configuration ch_quic_init accepts can make a hello that does not fit.
+  bin/quic_driver_test requires CH_EINVAL and nothing staged for an
+  identity of CH_TICKET_ID_MAX + 1 bytes.
+
+--- old
+    return len >= 1 && len <= CH_TICKET_ID_MAX;
+--- new
+    return len >= 1 && len <= CH_TICKET_ID_MAX + 1;

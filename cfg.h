@@ -304,7 +304,9 @@ typedef struct {
 typedef struct {
     // Authentication is one of two modes:
     //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
-    //    (resumption = 1 and the ticket fields below, ticket.h).
+    //    (resumption = 1 and the ticket fields below, ticket.h). Either
+    //    way every client entry refuses with CH_EINVAL a psk_id_len that
+    //    is not 1 to CH_TICKET_ID_MAX bytes, the most a ClientHello holds.
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap

@@ -16,11 +16,10 @@
 // configuration it refuses returns CH_EINVAL before a byte is sent. A CA
 // build's ticket that the stored epoch retired is one of those
 // refusals, and ch_tls.epoch_status reads CH_EPOCH_REVOKED after it
-// (docs/ca.md). So is a ClientHello too long for ch_tls.tx, which only a
-// PSK identity longer than CH_TICKET_ID_MAX can produce: ch_connect
-// builds the hello before it sends a byte. Every other error comes from
-// the handshake, which first tries to send the alert its failure chose,
-// and ch_alert_sent names it.
+// (docs/ca.md). So is a PSK whose identity is not 1 to CH_TICKET_ID_MAX
+// bytes (cfg.h), and that bound keeps every ClientHello inside ch_tls.tx.
+// Every other error comes from the handshake, which first tries to send
+// the alert its failure chose, and ch_alert_sent names it.
 // The peer's fatal alert is the exception: the handshake returns
 // CH_EPROTO, sends nothing and ch_alert_received names the alert
 // (alert.h, RFC 9846 §6.2).

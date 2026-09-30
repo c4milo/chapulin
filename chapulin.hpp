@@ -270,7 +270,8 @@ class Config {
 
     // External pre-shared key with its identity. Setting both a PSK and a
     // pin leaves both fields set, which ch_connect rejects — the mistake
-    // surfaces rather than resolving to one mode silently.
+    // surfaces rather than resolving to one mode silently. So is an
+    // identity that is not 1 to CH_TICKET_ID_MAX bytes (cfg.h).
     Config &psk(ConstBytes key, ConstBytes identity) {
         cfg_.psk = key.data;
         cfg_.psk_len = key.size;

@@ -72,6 +72,8 @@ static int step_server_hello(ch_record *r) {
         // staged record is uncollected.
         size_t n = hsf_build_client_hello(&r->hs, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
         if (n == 0) {
+            // Unreachable, for the reason handshake.c's send_retry_hello
+            // gives, and failed the same way. No test reaches it.
             return CH_ECAP;
         }
         tcp_nonblocking_stage_plain(r, n);

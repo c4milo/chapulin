@@ -199,7 +199,9 @@ because the bytes it named are valid during `on_ticket` alone.
   .binding, .quic_version })` rebuilds one from fields a program stored.
   It refuses an identity longer than `CH_TICKET_ID_MAX` and a psk that is
   not `SHA256_LEN` or, in an object whose `HKDF_HASH_MAX` is
-  `SHA384_LEN`, that length. `binding` is a field under TRUST=webpki
+  `SHA384_LEN`, that length. It keeps an empty identity, and `init`
+  refuses it, as every C client entry refuses an identity that is not 1
+  to `CH_TICKET_ID_MAX` bytes. `binding` is a field under TRUST=webpki
   alone, and `quic_version`, a `?quic.Version`, under
   `TRANSPORT=quic-nonblocking` alone: null writes 0, which `init` refuses
   as a resuming ticket's version.

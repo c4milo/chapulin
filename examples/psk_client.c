@@ -153,7 +153,9 @@ static const uint8_t g_psk[32] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
                                   0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20};
 
 // The identity travels in the clear in the ClientHello. It names a
-// device to the server; it must not carry a secret.
+// device to the server; it must not carry a secret. It is 1 to
+// CH_TICKET_ID_MAX (320) bytes, and ch_connect refuses any other length
+// with CH_EINVAL before it sends a byte.
 static const char g_psk_id[] = "device-42";
 
 // The request this device sends. Yours is a CoAP datagram, an MQTT

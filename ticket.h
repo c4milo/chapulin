@@ -14,7 +14,8 @@
 #include "hkdf.h"
 #include "sha256.h"
 
-// Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped.
+// Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped,
+// and every client entry refuses a psk_id_len above it (cfg.h).
 #define CH_TICKET_ID_MAX 320
 
 // The longest a ticket is kept, in seconds. RFC 9846 §4.6.1 forbids a

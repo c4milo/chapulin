@@ -887,10 +887,13 @@ The entries are grouped by area:
     fits;
   - at `CH_HELLO_MAX` the build always succeeds for those inputs, so the
     constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient,
-    not merely plausible. The raw and ca configuration checks admit a
-    longer external identity, which can make a hello no staging array
-    holds: every client entry refuses such a first hello with
-    `CH_EINVAL` before it sends a byte (INV-13);
+    not merely plausible. The proof assumes an identity of at most
+    `CH_TICKET_ID_MAX` bytes, and every client entry's configuration
+    check is what makes that true: `psk_id_len_ok` in `tls.c` and
+    `quic_config.c`, and `ticket_shape_ok` under `TRUST=webpki`, refuse
+    any other length (INV-14). So the drivers' branches for a first or
+    retry hello that does not fit are unreachable for every accepted
+    configuration (`docs/decisions.md` entry 84);
   - `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`,
     with the server_name extension over any hostname, the ALPN extension
     over any offer, and the five signature schemes, which a resuming
@@ -912,11 +915,7 @@ The entries are grouped by area:
 - **Not proved:** that `pre_shared_key` is the last extension.
   `test/session_cfg_tests.h` and `test/webpki_session_cases.h` test it.
   The assertion over the hello's last bytes gave kissat a formula that
-  returned no verdict in nine minutes at 5.7 GB. Nor the build over an
-  identity longer than 320 bytes: its writes go through `wbuf`, whose
-  bounds check the `buf` harness proves over buffers of up to 64 bytes,
-  and `test/session_hello_tests.h` runs `ch_connect` over an identity as
-  long as `ch_tls.tx`.
+  returned no verdict in nine minutes at 5.7 GB.
 
 #### key_share
 

@@ -379,7 +379,7 @@ int main(void) {
     test_pinned_hello_extensions();
     test_psk_hello_bytes();
     test_hello_staging_boundary();
-    test_connect_refuses_unbuildable_hello();
+    test_connect_psk_identity_bounds();
     test_connect_hello_send_fails();
     test_epoch_cfg();
     test_ticket_age_cfg();

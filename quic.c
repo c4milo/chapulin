@@ -96,9 +96,9 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // one.
     q->t.alpn_selected = CH_ALPN_NONE;
     hsf_begin(&q->hs);
-    // A hello the staging array cannot hold is refused before a byte is
-    // staged, and the zeroed session holds no key share (handshake.c's
-    // ch_handshake states which configuration reaches it).
+    // Unreachable, for the reason handshake.c's ch_handshake gives: no
+    // configuration quic_config_ok accepts makes a hello that q->t.tx
+    // cannot hold. It refuses anyway, and the zeroed session holds no key.
     size_t n = hsf_build_client_hello(&q->hs, q->t.tx, sizeof q->t.tx);
     if (n == 0) {
         return quic_refuse_init(q);

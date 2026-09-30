@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tls.c
+catches: unit
+reason: tlsi_config_ok takes a PSK identity one byte past CH_TICKET_ID_MAX,
+  the bound hello_build proves the ClientHello in ch_tls.tx holds, so a
+  configuration ch_connect and ch_record_init accept can make a hello
+  that does not fit. bin/unit requires CH_EINVAL and no send for an
+  identity of CH_TICKET_ID_MAX + 1 bytes.
+
+--- old
+    return len >= 1 && len <= CH_TICKET_ID_MAX;
+--- new
+    return len >= 1 && len <= CH_TICKET_ID_MAX + 1;

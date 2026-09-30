@@ -97,7 +97,8 @@ static size_t build_server_hello(uint8_t *out, size_t cap, uint16_t suite) {
 }
 
 // The rules quic.h adds to the trust mode's, refused one at a time, and
-// what a refused session answers afterwards.
+// what a refused session answers afterwards, then one rule of the trust
+// mode's own: the PSK identity bound.
 static void test_config_refusals(void) {
     ch_cfg cfg;
     configure(&cfg);
@@ -114,6 +115,24 @@ static void test_config_refusals(void) {
     CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL);
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, params, sizeof params) == CH_EPROTO);
     CHECK(ch_quic_error_code(&q) != 0);
+
+    // The trust mode's PSK identity bound, tls.c's as well: an identity of
+    // CH_TICKET_ID_MAX bytes stages its hello, and one byte more or none at
+    // all is refused with nothing staged.
+    static uint8_t identity[CH_TICKET_ID_MAX + 1];
+    static const uint8_t psk[32] = {1};
+    configure(&cfg);
+    cfg.server_pubkey = NULL;
+    cfg.server_pubkey_len = 0;
+    cfg.psk = psk;
+    cfg.psk_len = sizeof psk;
+    cfg.psk_id = identity;
+    cfg.psk_id_len = CH_TICKET_ID_MAX;
+    CHECK(ch_quic_init(&q, &cfg) == CH_OK && q.tx_len > 0);
+    cfg.psk_id_len = CH_TICKET_ID_MAX + 1;
+    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
+    cfg.psk_id_len = 0;
+    CHECK(ch_quic_init(&q, &cfg) == CH_EINVAL && q.tx_len == 0);
 }
 
 // The hello goes out whole at Initial, the connection ID installs the

@@ -84,11 +84,23 @@ static int pin_len_ok(size_t len) {
 #endif
 }
 
+// The length a PSK identity takes: at least the one byte RFC 9846
+// §4.3.11 gives an identity (rfc9846.txt:2468-2471), and at most
+// CH_TICKET_ID_MAX, the most a ticket's identity holds. hello_build
+// proves that CH_HELLO_MAX, which ch_tls.tx holds, fits every hello whose
+// identity is in this range, and nothing else bounds the identity, so this
+// check is what keeps the drivers' branches for a hello that does not fit
+// unreachable (docs/decisions.md 84). webpki_cfg_ok holds a ticket's
+// identity to the same range.
+static int psk_id_len_ok(size_t len) {
+    return len >= 1 && len <= CH_TICKET_ID_MAX;
+}
+
 // Whether a PSK is the configured auth mode. Both callers below ask, and
 // tlsi_epoch_init takes the answer.
 static int psk_configured(const ch_cfg *cfg) {
     return cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
-           cfg->server_pubkey == NULL;
+           psk_id_len_ok(cfg->psk_id_len) && cfg->server_pubkey == NULL;
 }
 
 // Every rule a client configuration must keep whatever drives it. The I/O

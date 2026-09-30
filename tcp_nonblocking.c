@@ -60,11 +60,12 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     r->t.alpn_selected = CH_ALPN_NONE;
 #endif
     hsf_begin(&r->hs);
-    // A hello the staging array cannot hold is refused before a byte is
-    // staged, and the zeroed session holds no key share (ch_handshake
-    // states which configuration reaches it).
     size_t n = hsf_build_client_hello(&r->hs, r->t.tx + REC_HDR, sizeof r->t.tx - REC_HDR);
     if (n == 0) {
+        // Unreachable, for the reason handshake.c's ch_handshake gives: no
+        // configuration tlsi_config_ok accepts makes a hello that r->t.tx
+        // cannot hold. It refuses anyway, before a byte is staged, and the
+        // zeroed session holds no key share. No test reaches this branch.
         return tcp_nonblocking_refuse_init(r);
     }
     tcp_nonblocking_stage_plain(r, n);

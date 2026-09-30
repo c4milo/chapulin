@@ -75,14 +75,16 @@ static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n
     return send_staged(h, out_len);
 }
 
-// Builds the hello a HelloRetryRequest asked for and sends it. The first
-// hello went out before it, so a retry hello the staging array cannot
-// hold fails the handshake with the internal_error the builder wrote,
-// where the first one is a refusal on entry (ch_handshake). The cookie
-// the retry echoes is what makes it longer than the first.
+// Builds the hello a HelloRetryRequest asked for and sends it.
 static int send_retry_hello(handshake_state *h) {
     size_t n = build_client_hello(h);
     if (n == 0) {
+        // Unreachable, for the reason ch_handshake gives for the first
+        // hello: CH_HELLO_MAX counts the longest cookie a retry echoes.
+        // The first hello went out before this one, so the branch fails
+        // the handshake with the internal_error the builder wrote rather
+        // than refusing on entry. No test reaches it, because no
+        // configuration ch_connect accepts does.
         return CH_ECAP;
     }
     return send_client_hello(h, n, 1);
@@ -200,17 +202,18 @@ int ch_handshake(ch_tls *t) {
     t->alpn_selected = CH_ALPN_NONE;
 #endif
 
-    // The first hello is built before this driver sends a byte, so a
-    // hello the staging array cannot hold is a refusal on entry, the one
-    // ch_record_init and ch_quic_init make: CH_EINVAL, nothing sent and
-    // no alert recorded (INV-13). hello_build proves the array holds every
-    // hello whose PSK identity is at most CH_TICKET_ID_MAX bytes.
-    // webpki_cfg_ok refuses a longer identity, and the raw and ca
-    // configuration checks admit one, so a longer external PSK identity
-    // is the one configuration that reaches this.
+    // The first hello is built before this driver sends a byte.
     hsf_begin(&h);
     size_t hello_len = build_client_hello(&h);
     if (hello_len == 0) {
+        // Unreachable: hello_build proves that CH_HELLO_MAX, which
+        // ch_tls.tx holds, fits every hello whose PSK identity is at most
+        // CH_TICKET_ID_MAX bytes, and the configuration check refuses a
+        // longer one (psk_id_len_ok in tls.c, webpki_cfg_ok under
+        // TRUST=webpki). It refuses anyway, the way ch_record_init and
+        // ch_quic_init refuse the same hello: CH_EINVAL, nothing sent and
+        // no alert recorded (INV-13). No test reaches this branch, because
+        // no configuration ch_connect accepts does.
         ct_wipe(&h, sizeof h);
         t->state = CH_ST_FAILED;
         return CH_EINVAL;

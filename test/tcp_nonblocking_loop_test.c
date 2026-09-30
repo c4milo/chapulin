@@ -442,6 +442,7 @@ int main(void) {
     test_failure_alerts(&client, &server, &ccfg, &scfg);
 
     test_resumption();
+    test_psk_identity_bounds();
 
     // The client Finished and the first application record in one call.
     server_config(&scfg);

@@ -1,7 +1,8 @@
 // Resumption over the tcp-nonblocking transport, both halves in one
 // process: this tree's server issues a ticket after a full handshake, this
 // tree's client takes it through ch_read and on_ticket, and a second
-// connection resumes with it and no certificate. Included by
+// connection resumes with it and no certificate. It also holds the bound
+// ch_record_init puts on any PSK identity. Included by
 // test/tcp_nonblocking_loop_test.c after test/tcp_nonblocking_read_tests.h,
 // whose held records and held_recv it reads.
 //
@@ -210,6 +211,29 @@ static void test_resumption(void) {
     CHECK(records_pushed == 5 && to_client.len == 0);
     resume_config(&ccfg, &first);
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
+}
+
+// ch_record_init's PSK identity bound, tlsi_config_ok's as for ch_connect:
+// an identity of CH_TICKET_ID_MAX bytes stages its hello, and one byte
+// more or none at all is refused with nothing staged.
+static void test_psk_identity_bounds(void) {
+    static ch_record client;
+    static uint8_t identity[CH_TICKET_ID_MAX + 1];
+    static const uint8_t psk[SHA256_LEN] = {1};
+    ch_cfg ccfg;
+    client_config(&ccfg);
+    ccfg.server_pubkey = NULL;
+    ccfg.server_pubkey_len = 0;
+    ccfg.psk = psk;
+    ccfg.psk_len = sizeof psk;
+    ccfg.psk_id = identity;
+    ccfg.psk_id_len = CH_TICKET_ID_MAX;
+    CHECK(ch_record_init(&client, &ccfg) == CH_OK && client.tx_len > 0);
+    ccfg.psk_id_len = CH_TICKET_ID_MAX + 1;
+    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
+    ccfg.psk_id_len = 0;
+    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL && client.tx_len == 0);
+    CHECK(ch_record_state(&client) == CH_ST_FAILED);
 }
 
 #endif

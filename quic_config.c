@@ -108,12 +108,19 @@ static int pin_len_ok(size_t len) {
 #endif
 }
 
+// The length a PSK identity takes, tls.c's rule (psk_id_len_ok there):
+// 1 to CH_TICKET_ID_MAX bytes, which is what keeps every hello this
+// configuration makes inside q->t.tx.
+static int psk_id_len_ok(size_t len) {
+    return len >= 1 && len <= CH_TICKET_ID_MAX;
+}
+
 // Exactly one auth mode, tls.c's rule: a config carrying both a PSK and
 // a pin is a provisioning mistake and gets refused, not resolved. The
 // optional second pin obeys every slot-A rule and never stands alone.
 static int trust_config_ok(const ch_cfg *cfg) {
-    int psk_ok =
-        cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL && cfg->server_pubkey == NULL;
+    int psk_ok = cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
+                 psk_id_len_ok(cfg->psk_id_len) && cfg->server_pubkey == NULL;
     int pin_ok =
         cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);
     if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin_len_ok(cfg->server_pubkey2_len))) {

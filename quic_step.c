@@ -84,6 +84,8 @@ static int step_server_hello(ch_quic *q) {
         // while tx_len is not 0.
         size_t n = hsf_build_client_hello(&q->hs, q->t.tx, sizeof q->t.tx);
         if (n == 0) {
+            // Unreachable, for the reason handshake.c's send_retry_hello
+            // gives, and failed the same way. No test reaches it.
             return CH_ECAP;
         }
         q->tx_len = n;

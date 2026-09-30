@@ -4098,10 +4098,12 @@ does nothing more.
     before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
     call, and the next record runs measure it.
 
-84. **Every client entry refuses a ClientHello it cannot stage before a
-    byte goes out, and a refusal keeps the session's epoch report.** Two
-    answers differed between `ch_connect` and the two non-blocking client
-    entries, `ch_record_init` and `ch_quic_init`.
+84. **Every client entry takes a PSK identity of 1 to `CH_TICKET_ID_MAX`
+    bytes, refuses a ClientHello it cannot stage before a byte goes out,
+    and keeps the session's epoch report when it refuses.** Two answers
+    differed between `ch_connect` and the two non-blocking client entries,
+    `ch_record_init` and `ch_quic_init`, and one of them was reachable
+    because the raw and ca modes put no bound on a PSK identity.
 
     - **The hello.** `ch_connect` built its first ClientHello inside the
       handshake, so a hello too long for `ch_tls.tx` failed there: an
@@ -4114,16 +4116,22 @@ does nothing more.
       hello a HelloRetryRequest asks for still fails the handshake with
       `CH_ECAP` and internal_error in every driver, because the first
       hello has gone out by then.
-    - **What reaches it.** `hello_build` proves that `CH_HELLO_MAX` holds
-      every hello whose PSK identity is at most `CH_TICKET_ID_MAX` bytes.
-      `webpki_cfg_ok` refuses a longer identity, and the raw and ca
-      configuration checks do not. So a longer external identity reaches
-      the refusal, and one that the first hello still holds can make the
-      retry hello, which echoes a cookie, too long. Refusing a longer
-      identity when the configuration is checked would make both
-      failures unreachable, as they are under `TRUST=webpki`. It changes
-      which configurations the raw and ca modes take, so it is left for
-      a decision of its own.
+    - **The identity bound.** `hello_build` proves that `CH_HELLO_MAX`
+      holds every hello whose PSK identity is at most `CH_TICKET_ID_MAX`
+      bytes. `webpki_cfg_ok` held a ticket's identity to 1 to
+      `CH_TICKET_ID_MAX` bytes, and the raw and ca configuration checks
+      held an external identity to no length at all. A longer identity
+      reached the first hello's refusal, and one the first hello still
+      held could make the retry hello, which echoes a cookie, too long
+      in the middle of the handshake. Camilo ruled on 2026-09-30 that
+      every raw and ca client entry refuses an identity that is not 1 to
+      `CH_TICKET_ID_MAX` bytes with `CH_EINVAL`, through `psk_id_len_ok`
+      in `tls.c` and `quic_config.c`. That check is what makes both
+      branches unreachable for every configuration a client entry
+      accepts, and each branch still fails closed as it did, with no
+      test that reaches it. The empty identity those checks took goes
+      too: RFC 9846 §4.3.11 gives an identity at least one byte
+      (rfc9846.txt:2468-2471).
     - **The epoch report.** `ch_record_init` and `ch_quic_init` zeroed
       the session on every refusal. After refusing a ticket that the
       stored epoch retired, they left `CH_EPOCH_NONE` in
@@ -4145,10 +4153,15 @@ does nothing more.
     - **`CH_ECAP` from the two non-blocking entries.** A non-blocking
       call that returns `CH_ECAP` leaves its session live (INV-13), and
       a peer that has read no byte is owed no alert.
+    - **Holding a longer identity.** A larger `ch_tls.tx` would carry
+      more than `CH_TICKET_ID_MAX` bytes of identity, at an SRAM cost in
+      every build, for an identity no ticket this tree takes can have.
 
     Cost: two functions of ten lines, one per non-blocking transport,
     and `ch_handshake` carries the first hello's length into the
-    handshake.
+    handshake. An external PSK identity longer than 320 bytes, which RFC
+    9846 allows, no longer connects in the raw and ca modes.
 
     Gain: whichever client entry a caller uses, a refusal returns one
-    code and leaves one epoch report.
+    code and leaves one epoch report, and no configuration a client entry
+    accepts makes a ClientHello its staging array cannot hold.

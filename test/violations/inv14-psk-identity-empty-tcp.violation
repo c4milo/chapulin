@@ -1,0 +1,12 @@
+invariant: INV-14
+file: tls.c
+catches: unit
+reason: tlsi_config_ok takes an empty PSK identity, which RFC 9846 section
+  4.3.11 does not allow, so ch_connect sends a ClientHello every server
+  must refuse. bin/unit requires CH_EINVAL and no send for an identity of
+  0 bytes.
+
+--- old
+    return len >= 1 && len <= CH_TICKET_ID_MAX;
+--- new
+    return len <= CH_TICKET_ID_MAX;

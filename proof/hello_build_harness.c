@@ -61,6 +61,12 @@ int main(void) {
         cfg.psk = psk_id; // any non-NULL: the builder only tests the pointer
         cfg.psk_id = psk_id;
         cfg.psk_id_len = nondet_size_t();
+        // The lengths callers may pass. Every client entry's configuration
+        // check refuses a longer identity: psk_id_len_ok in tls.c and
+        // quic_config.c, and ticket_shape_ok under TRUST=webpki. That check
+        // is what carries this proof to every accepted configuration, and
+        // with it the drivers' branches for a hello that does not fit are
+        // unreachable (docs/decisions.md 84).
         __CPROVER_assume(cfg.psk_id_len <= CH_TICKET_ID_MAX);
         cfg.resumption = nondet_u8() & 1;
         cfg.obfuscated_age = nondet_u32();

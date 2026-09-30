@@ -1461,10 +1461,11 @@ last `ROLE=server` stub, as the entry said it would.
     `ticket_epoch` is below the stored epoch is a refusal on entry too
     (docs/ca.md): `ch_connect`, `ch_record_init` and `ch_quic_init` each
     return `CH_EINVAL` for it and leave `CH_EPOCH_REVOKED` in
-    `ch_tls.epoch_status`. So is a first ClientHello too long for
-    `ch_tls.tx`, which only an external PSK identity past
-    `CH_TICKET_ID_MAX` can produce: each client entry builds that hello
-    before it sends or stages a byte (docs/decisions.md 84). The two
+    `ch_tls.epoch_status`. A first ClientHello too long for `ch_tls.tx`
+    would be one too, because each client entry builds that hello before
+    it sends or stages a byte, but no accepted configuration makes one:
+    the configuration check holds a PSK identity to `CH_TICKET_ID_MAX`
+    bytes (INV-14, docs/decisions.md 84). The two
     non-blocking entries zero their session on a refusal but for
     `ch_tls.epoch`, `epoch_seen` and `epoch_status`
     (`tcp_nonblocking_refuse_init`, `quic_refuse_init`).
@@ -1538,12 +1539,11 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_connect` for that ticket again, and `bin/unit_ca` fails.
   `inv13-tcp-nonblocking-refusal-zeroes-epoch` and
   `inv13-quic-refusal-zeroes-epoch` zero the epoch fields in a refusal
-  again, and the two ticket epoch binaries fail. `bin/unit`
-  (`test/session_hello_tests.h`) gives `ch_connect` an identity as long as
-  `ch_tls.tx` and requires `CH_EINVAL` with no send and no alert, and a
-  `CH_TICKET_ID_MAX` identity to reach I/O;
-  `inv13-connect-unstageable-hello-ecap` fails that hello with an alert
-  and `CH_ECAP` again, and `bin/unit` fails. Each
+  again, and the two ticket epoch binaries fail. No test reaches the
+  drivers' branches for a hello too long for `ch_tls.tx`, first or
+  retried, because no accepted configuration does; INV-14's identity
+  bound, with its own boundary rows and violations, is what keeps them
+  unreachable. Each
   funnel's recorded alert is tested:
   `bin/unit` (`test/session_alert_tests.h`) reads `ch_alert_sent` after
   `tlsi_fail` sent decode_error, unexpected_message and internal_error,
@@ -1597,10 +1597,9 @@ last `ROLE=server` stub, as the entry said it would.
   the caller can retry a read, or adds a failure path that records no
   alert, or one that sends an alert after the peer's fatal alert, or
   leaves a tcp-nonblocking alert for the caller to send, who holds no
-  key to protect it with, or answers a retired ticket or a hello it
-  cannot stage on one client entry with a code or an epoch report the
-  other two do not leave, or records a peer's fault for a send its own
-  transport refused.
+  key to protect it with, or answers a retired ticket on one client
+  entry with a code or an epoch report the other two do not leave, or
+  records a peer's fault for a send its own transport refused.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set
@@ -1682,7 +1681,15 @@ last `ROLE=server` stub, as the entry said it would.
   sends nothing a configuration with `resumption` set whose
   `ticket_age_ms` is above `ticket_lifetime_s` seconds or above
   `CH_TICKET_LIFETIME_MAX` seconds, seven days, where a lifetime of 0 is
-  none given (`hspost_ticket_age_ok`, handshake_post.h). `ch_quic_init`
+  none given (`hspost_ticket_age_ok`, handshake_post.h). Each also
+  refuses, the same way, a PSK whose identity is not 1 to
+  `CH_TICKET_ID_MAX` bytes: `psk_id_len_ok` in `tls.c` and
+  `quic_config.c` in the raw and ca modes, and `ticket_shape_ok` under
+  `TRUST=webpki`. RFC 9846 §4.3.11 gives an identity at least one byte
+  (rfc9846.txt:2468-2471), and `hello_build` proves that `CH_HELLO_MAX`
+  holds every hello whose identity is in that range, so the bound keeps
+  every ClientHello a client builds inside `ch_tls.tx` (docs/decisions.md
+  84). `ch_quic_init`
   also refuses, with `CH_EINVAL` and nothing sent, a configuration with
   `resumption` set whose `ticket_quic_version` is not its
   `quic_original_version`, 0 included, because RFC 9369 §5 forbids a
@@ -1757,7 +1764,16 @@ last `ROLE=server` stub, as the entry said it would.
   inv14-ticket-age-quic-unchecked, inv14-ticket-age-seven-days-dropped,
   inv14-ticket-age-lifetime-ignored, inv14-ticket-age-low-bits,
   inv14-ticket-lifetime-zero-handed-over and
-  inv14-ticket-obfuscated-age-drops-add. The TRUST=webpki config and server_name
+  inv14-ticket-obfuscated-age-drops-add. The PSK identity bound has
+  boundary rows at each client entry, where an identity of
+  `CH_TICKET_ID_MAX` bytes is taken and one of `CH_TICKET_ID_MAX + 1` or
+  0 bytes is refused: `bin/unit`, `bin/unit_ca` and `bin/unit_pq`
+  (`test/session_hello_tests.h`) for `ch_connect`,
+  `bin/tcp_nonblocking_loop_test` for `ch_record_init` and
+  `bin/quic_driver_test` for `ch_quic_init`. Four violations move one
+  bound each: inv14-psk-identity-over-cap-tcp,
+  inv14-psk-identity-empty-tcp, inv14-psk-identity-over-cap-quic and
+  inv14-psk-identity-empty-quic. The TRUST=webpki config and server_name
   refusals have boundary rows in test/webpki_session_cases.h and
   bin/handshake_strict_webpki, each guarded by an `inv14-` violation.
   The ticket rule is bin/webpki_resume_test and
@@ -1979,7 +1995,8 @@ last `ROLE=server` stub, as the entry said it would.
   inv13-srv-signer-refusal-einval carries the flight's code.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
-  something it does not know.
+  something it does not know, or lets a client entry take a PSK
+  identity the ClientHello it stages cannot hold.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ### INV-33 — an SPKI pin names the server key, on the path the walk read or on the leaf
