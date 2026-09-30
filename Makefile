@@ -5413,6 +5413,14 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # array, here the SHA-256 context. The 32-byte copy loop and its bne are
 # gone. Neither reads a seed byte.
 #
+# gcm.c's two riscv32 gcc entries rose from 22 to 23 when the one-pass
+# open split compute_tag and ghash_schedule into hash_start, hash_finish
+# and mask_tag (docs/decisions.md 85). Their branches moved into
+# hash_finish and mask_tag. The one new branch was read: a beq that
+# tests the stack-protector canary this toolchain adds to a function
+# holding an array, here gcm_ghash, which now keeps the gcm_hash state
+# on its own frame. It reads no key, subkey or data byte.
+#
 # chacha20_vector.c's two entries were read before they were recorded.
 # Every branch on both targets closes a loop over a public count or tests
 # the byte count n: n against the 256 bytes of a group, the four blocks
@@ -5459,12 +5467,12 @@ BRANCH_CEILING := \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
-  rv32imac-gcc/gcm.c:22 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
+  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
-  rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/aes_extern.c:0 rv32ic-gcc/gcm.c:22 \
+  rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/aes_extern.c:0 rv32ic-gcc/gcm.c:23 \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/aes_extern.c:0 mips32r2-gcc-O2/gcm.c:16 \
   mips32r2-gcc-O2/rsa_sign.c:26 \
