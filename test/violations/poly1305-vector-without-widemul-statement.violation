@@ -1,0 +1,15 @@
+invariant: INV-16
+file: poly1305_vector.h
+catches: test/chacha-builds.sh
+reason: poly1305_vector.h turns the vector Poly1305 on under
+  CH_CHACHA_VECTOR alone, so a CHACHA=vector object whose builder never
+  stated the widening multiply's timing runs UMULL, UMLAL or PMULUDQ on
+  the one-time key, where ct.h's 16x16 decomposition belongs. Every
+  vector still passes: the tags are the same, only the claim is gone. The
+  script compiles poly1305.c under -DCH_CHACHA_VECTOR alone and requires
+  that its object not call poly1305_vector_blocks.
+
+--- old
+#if defined(CH_CHACHA_VECTOR) && defined(CH_WIDEMUL_NATIVE)
+--- new
+#if defined(CH_CHACHA_VECTOR)

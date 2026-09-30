@@ -342,6 +342,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/zig-build-check.sh", "test/localize-check.sh",
                 "test/tx-record-builds.sh", "webpki_loop_tx_record",
                 "quic_driver_test", "srv_stub_test", "x25519_equiv_test", "chacha20_equiv_test",
+                "poly1305_equiv_test",
                 "quic_test_extern"}
 
 

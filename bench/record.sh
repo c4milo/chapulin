@@ -20,10 +20,13 @@
 #   object: the ChaCha20-Poly1305 rows again, because Poly1305 is the one
 #   stage the multiply changes
 #
-#   each of those two with -DCH_CHACHA_VECTOR and chacha20_vector.c, which
-#   CHACHA=vector puts in an object: the ChaCha20-Poly1305 rows on the
-#   vector path (https://github.com/c4milo/chapulin/issues/181), where the
-#   compiler targets NEON or SSE2
+#   each of those two with -DCH_CHACHA_VECTOR, chacha20_vector.c and
+#   poly1305_vector.c, which CHACHA=vector puts in an object: the
+#   ChaCha20-Poly1305 rows on the vector paths
+#   (https://github.com/c4milo/chapulin/issues/181), where the compiler
+#   targets NEON or SSE2. poly1305_vector.c compiles to nothing without
+#   -DCH_NATIVE_WIDEMUL, so only the second build runs the vector Poly1305,
+#   as only a CHACHA=vector WIDEMUL=native object carries it
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
@@ -102,12 +105,12 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_gcm_stu
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/record_native" "${SRCS[@]}"
 # The CHACHA=vector builds, on either multiply, where the compiler targets
 # NEON or SSE2 on a little-endian core, as chacha20_vector.h requires.
-VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c bench/record_chacha_vector.c)
+VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c poly1305_vector.c bench/record_chacha_vector.c)
 VECTOR=""
 VECTOR_NOTE="no CHACHA=vector rows: $CC targets neither NEON nor SSE2 on a little-endian core"
 if printf '#include "chacha20_vector.h"\n' | "${CC_WORDS[@]}" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2>/dev/null; then
     VECTOR=yes
-    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c and bench/record_chacha_vector.c"
+    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c, poly1305_vector.c and bench/record_chacha_vector.c"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -o "$W/record_vector" "${VECTOR_SRCS[@]}"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -o "$W/record_vector_native" \
         "${VECTOR_SRCS[@]}"

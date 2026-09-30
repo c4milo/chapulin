@@ -1,0 +1,14 @@
+invariant: INV-17
+file: poly1305_vector.c
+catches: poly1305_equiv_test
+reason: the vector Poly1305 returns without wiping r^2, r^3 and r^4, so
+  its dead frame keeps them. r and a tag seen on the wire give the pad,
+  and r and the pad forge any message under that key. Every tag is still
+  right, so no vector sees it. bin/poly1305_equiv_test copies the stack
+  below a call and looks for each power as the call lays it out.
+
+--- old
+    carry_scalar(p->h, total);
+    ct_wipe(&of_r, sizeof of_r);
+--- new
+    carry_scalar(p->h, total);

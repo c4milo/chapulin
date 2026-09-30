@@ -571,11 +571,19 @@ def select_lints(out, changed, csources, lib):
                 ["test/quic-builds.sh"])
     # chacha20.c calls the CHACHA=vector path only under CH_CHACHA_VECTOR,
     # and test/chacha-builds.sh compiles it either side of that define,
-    # beside chacha20_vector.h's two refusals.
+    # beside chacha20_vector.h's two refusals. poly1305.c calls its vector
+    # path only under that define and CH_NATIVE_WIDEMUL, and the script
+    # compiles it under each define alone and under both.
     if "chacha20.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20.c calls the vector path under CH_CHACHA_VECTOR, and "
                 "this script compiles it either side of that define",
+                ["test/chacha-builds.sh"])
+    if "poly1305.c" in csources:
+        out.add("tests", "test/chacha-builds.sh",
+                "poly1305.c calls the vector path under CH_CHACHA_VECTOR and "
+                "CH_NATIVE_WIDEMUL, and this script compiles it under each "
+                "define alone and under both",
                 ["test/chacha-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,

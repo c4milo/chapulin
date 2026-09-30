@@ -2,6 +2,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
+#include "poly1305_vector.h"
 
 static uint32_t load32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -87,6 +88,25 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
     p->h[4] = h4;
 }
 
+// Absorbs the n bytes at m, whole blocks. This is the one place that
+// chooses between the loop above and the CHACHA=vector path. Under
+// CH_POLY1305_VECTOR (poly1305_vector.h), n of POLY1305_VECTOR_MIN or
+// more hands its whole groups of four blocks to poly1305_vector_blocks,
+// and the loop above takes the zero to three blocks after the last group.
+// The loop is the reference that bin/poly1305_equiv_test holds the path
+// to.
+static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n) {
+#ifdef CH_POLY1305_VECTOR
+    if (n >= POLY1305_VECTOR_MIN) {
+        size_t grouped = n - n % POLY1305_VECTOR_GROUP;
+        poly1305_vector_blocks(p, m, grouped);
+        m += grouped;
+        n -= grouped;
+    }
+#endif
+    blocks(p, m, n, (uint32_t)1 << 24);
+}
+
 void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
     if (p->fill > 0) {
         while (n > 0 && p->fill < 16) {
@@ -100,7 +120,7 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
     }
     size_t whole = n & ~(size_t)15;
     if (whole > 0) {
-        blocks(p, in, whole, (uint32_t)1 << 24);
+        whole_blocks(p, in, whole);
         in += whole;
         n -= whole;
     }

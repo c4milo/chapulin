@@ -2316,6 +2316,15 @@ last `ROLE=server` stub, as the entry said it would.
   instruction set or a big-endian one, and `test/chacha-builds.sh`
   checks both refusals and that a vector object calls the path
   (decision 82).
+  The `CHACHA=vector` Poly1305 multiplies on NEON's UMULL and UMLAL or
+  SSE2's PMULUDQ, so it runs only where the build asserts
+  `CH_NATIVE_WIDEMUL`, which states that every widening multiply the
+  object runs, scalar or vector, takes a time that does not depend on its
+  operands. `poly1305_vector.h` turns the path on only when
+  `CH_CHACHA_VECTOR` and ct.h's `CH_WIDEMUL_NATIVE` meet, so
+  `CH_CT_WIDEMUL` turns it off with the scalar multiply, and
+  `test/chacha-builds.sh` checks that `poly1305.c` calls the path under
+  both defines and under neither alone (decision 83).
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -2379,7 +2388,14 @@ last `ROLE=server` stub, as the entry said it would.
   counts. CBMC cannot read an intrinsic, so `bin/chacha20_equiv_test`
   holds that path's output to `chacha20.c`'s; four `chacha-vector-*`
   violations break its last partial group, its counter, one lane's XOR
-  and its order of writes, and the test catches each.
+  and its order of writes, and the test catches each. They compile
+  `poly1305_vector.c` too, and hold its conditional branches at 4 on
+  each, the contract check at its entry and its group loop, all on the
+  byte count; its multiplies are the ones `CH_NATIVE_WIDEMUL` asserts, so
+  the count leaves them out. `bin/poly1305_equiv_test` holds its
+  accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
+  break its powers, its carries, its lanes, its contract and its limb
+  bounds, and the test catches each.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
@@ -3163,6 +3179,11 @@ last `ROLE=server` stub, as the entry said it would.
   `wr_secret` byte for byte what they were. Two violations each break
   one half: `inv17-close-notify-keeps-read-key` and
   `inv17-close-notify-wipes-write-key`, which `bin/unit` catches.
+  One wipe inside a call has a test too: the `CHACHA=vector` Poly1305
+  wipes the powers of the one-time key's r that it computes, r^2, r^3
+  and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
+  copies the stack below a call and requires none of them there, and
+  `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

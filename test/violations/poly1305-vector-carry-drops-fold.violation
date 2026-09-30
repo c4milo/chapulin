@@ -1,0 +1,14 @@
+invariant: INV-16
+file: poly1305_vector.c
+catches: poly1305_equiv_test
+reason: a carry round drops the carry out of limb 4, which 2^130 = 5
+  modulo 2^130 - 5 folds back into limb 0 times 5, so each group between
+  the first and the last loses the top of its accumulator. The tag is
+  wrong for every update of more than one group. bin/poly1305_equiv_test
+  compares the accumulator with poly1305.c's at every length that holds
+  two groups and more.
+
+--- old
+    out[0] = sums_add_carry_times_5(sums_low_limb(in[0]), in[4]);
+--- new
+    out[0] = sums_low_limb(in[0]);

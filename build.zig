@@ -441,6 +441,9 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
     if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    // The vector Poly1305 multiplies, so it joins the object only where the
+    // builder states the multiply's timing as well (docs/decisions.md 83).
+    if (config.chacha == .vector and config.widemul == .native) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector.c"} });
     if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });

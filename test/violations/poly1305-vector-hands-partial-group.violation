@@ -1,0 +1,14 @@
+invariant: INV-16
+file: poly1305.c
+catches: poly1305_equiv_test
+reason: poly1305_update hands the vector path every whole block of a
+  long update, not only its whole groups, so an update whose whole
+  blocks are not a multiple of four hands it one to three blocks it does
+  not take. poly1305_vector_blocks asserts its contract at the entry, and
+  bin/poly1305_equiv_test runs every length from 0 to 416 bytes, so the
+  first such length stops the binary.
+
+--- old
+        size_t grouped = n - n % POLY1305_VECTOR_GROUP;
+--- new
+        size_t grouped = n;

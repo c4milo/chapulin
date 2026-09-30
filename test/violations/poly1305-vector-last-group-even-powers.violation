@@ -1,0 +1,16 @@
+invariant: INV-16
+file: poly1305_vector.c
+catches: poly1305_equiv_test
+reason: the last group multiplies both lanes by r^4 and r^2, as every
+  group before it does, so the odd blocks of the last group, and every
+  odd block before them, are owed one power of r more than they get. The
+  tag is wrong for every update the path takes. CBMC cannot read an
+  intrinsic, so no proof covers this file, and bin/poly1305_equiv_test
+  holds its accumulator to poly1305.c's after every update.
+
+--- old
+    multiplier_set(&of_r.first, of_r.r4, of_r.r3);
+    multiplier_set(&of_r.second, of_r.r2, p->r);
+--- new
+    multiplier_set(&of_r.first, of_r.r4, of_r.r4);
+    multiplier_set(&of_r.second, of_r.r2, of_r.r2);

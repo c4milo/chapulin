@@ -93,6 +93,8 @@
         "pem.h",
         "poly1305.c",
         "poly1305.h",
+        "poly1305_vector.c",
+        "poly1305_vector.h",
         "quic.c",
         "quic.h",
         "quic_aes_soft.c",

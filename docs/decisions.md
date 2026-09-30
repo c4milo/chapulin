@@ -3929,7 +3929,8 @@ does nothing more.
       pieces. `WIDEMUL=native`, the builder's statement that the multiply
       runs in constant time, already runs the same Poly1305 in about a
       third of the time. A vector Poly1305 needs a widening multiply too,
-      so it would need the same statement.
+      so it would need the same statement. Entry 83 adds one under that
+      statement.
 
     Cost: a second ChaCha20 to keep equal to the first. The pair is 313
     lines. On arm64 under clang at `-O2` it adds 1,192 bytes of text to a
@@ -3949,3 +3950,110 @@ does nothing more.
     µs on the Linux VM's clang and from 83.7 to 65.6 µs on gcc 13. With
     `WIDEMUL=native` as well, it takes 26.1 to 34.2 µs, 39% to 42% of the
     packaged portable record (docs/performance.md).
+
+83. **`CHACHA=vector` with `WIDEMUL=native` runs Poly1305's block loop
+    four blocks at a time in two vector lanes, NEON on arm64 and SSE2 on
+    x86-64, and `CH_NATIVE_WIDEMUL` states the timing of every widening
+    multiply the object runs, scalar or vector.** Entry 82 left Poly1305
+    as it was. In that entry's record runs, with the vector ChaCha20 in
+    place and `WIDEMUL=native`, Poly1305 took 11.2 to 12.8 µs of the 26.1
+    to 34.2 µs a 16 KiB `rec_seal` took, most of what the vector ChaCha20
+    left. A vector Poly1305 multiplies, so it needs a statement about the
+    multiply's timing. Camilo ruled on 2026-09-30
+    ([#181](https://github.com/c4milo/chapulin/issues/181)) that
+    `CH_NATIVE_WIDEMUL` is that statement for every widening multiply the
+    object runs, scalar or vector, NEON's UMULL and UMLAL and SSE2's
+    PMULUDQ among them, with no new flag, and that the vector Poly1305
+    builds only under `CHACHA=vector` with `WIDEMUL=native`.
+
+    - **Two lanes, four blocks a group.** `poly1305_vector.c` holds two
+      accumulators of five 26-bit limbs, one per lane, as `poly1305.c`
+      holds one. Lane 0 takes the first and third block of each group of
+      four, and lane 1 the second and fourth. For each group both lanes
+      compute (h + the lane's first block) * r^4 + (the lane's second
+      block) * r^2, two steps of Horner's rule over every other block, as
+      five sums of 32x32->64 products, and carry the sums back into limbs.
+      The last group multiplies lane 1 by r^3 and r instead, the powers
+      its blocks are owed, and the two lanes' sums add up to the
+      accumulator. Each call computes r^2, r^3 and r^4 from `p->r` with
+      three scalar multiplies, so the `poly1305` context gains no field.
+    - **`poly1305.c` stays the reference and chooses in one place.**
+      `whole_blocks` in `poly1305.c` is the one call site that picks
+      between the loops, so a choice the caller makes at run time
+      ([#186](https://github.com/c4milo/chapulin/issues/186)) can go there
+      alone. It hands the path every whole group of an update that holds
+      at least 128 bytes of whole blocks, and its own loop takes the
+      blocks after the last group. The buffered partial block and the
+      final reduction stay in `poly1305.c` in every build. The path hands
+      back the accumulator's value modulo 2^130 - 5 with every limb at
+      most 2^26, inside the bounds `poly1305.c`'s loop keeps, so the loop
+      and `poly1305_final` read it as they read their own.
+    - **A threshold of two groups.** Below it, the powers of r cost more
+      than the lanes save. In a scratch timing loop on the M1 Pro the path
+      was slower than the portable loop over one group and faster over
+      two, under Apple clang 21, clang 18 and gcc 13. That is no
+      measurement this tree records, and no x86-64 machine has timed the
+      SSE2 arm, so `POLY1305_VECTOR_MIN` is 128 bytes until one does.
+    - **Two carry rounds where the portable loop has one chain.** In that
+      timing loop, clang moved each carry of a chain into the next sum's
+      chain of multiply-adds, which the adds allow, and so each sum waited
+      on the one below it. A round adds a shifted value to a masked one,
+      which leaves no chain to move a carry into, and two rounds leave
+      limbs below 2^26 + 2^10. gcc kept every array that a loop indexes in
+      memory, so the file indexes limbs by constants alone.
+    - **One statement for both multiplies.** A builder who defines
+      `CH_NATIVE_WIDEMUL` for an object that is also `CHACHA=vector`
+      states the timing of the part's vector widening multiplies, not only
+      its scalar one; `ct.h` says so. Without the define a `CHACHA=vector`
+      object runs `poly1305.c`'s loop and its 16x16 decomposition.
+      `poly1305_vector.h` turns the path on only where `CH_CHACHA_VECTOR`
+      and `ct.h`'s `CH_WIDEMUL_NATIVE` meet, so `CH_CT_WIDEMUL` turns it
+      off with the scalar multiply, and the Makefile and `build.zig`
+      package `poly1305_vector.c` only in an object that is both.
+    - **Each call wipes the powers of r.** r and a tag seen on the wire
+      give the pad s, and r and s forge any message under that one-time
+      key, such as a lost QUIC packet with its bits flipped. Each power
+      gives r back, by a root modulo 2^130 - 5. So the call keeps r^2,
+      r^3, r^4 and the two multipliers built from them in one struct, and
+      wipes it through `ct_wipe` once when it ends: 208 bytes on NEON and
+      352 on SSE2. Registers and the spill slots the compiler picks stay
+      out of reach, as they do for every wipe written in C.
+      `bin/poly1305_equiv_test` copies the stack below a call and requires
+      none of the three powers there, in any layout the call holds them
+      in. The wipe came after the scratch timing that set the threshold
+      and after the record runs below, so neither measures it.
+    - **Entry 82's limits hold.** 128-bit vectors only, no probe of the
+      CPU, and nothing new in the build record: no public layout or bound
+      reads the path.
+
+    Cost: a second Poly1305 block loop to keep equal to the first. The
+    pair is 443 lines. On arm64 under Apple clang 21 at `-O2` it adds
+    1,872 bytes of text to a host object, 1,824 in `poly1305_vector.c` and
+    48 in `poly1305.c`. It takes the stack below `poly1305_update` from 80
+    to 400 bytes in a `CHACHA=vector WIDEMUL=native` build, 336 of them
+    the path's frame with its struct of powers, and the deepest path from
+    `aead_seal` through `mac` from 400 to 720. The peak below `aead_seal`
+    stays where the vector ChaCha20 put it, 848 bytes: `aead_seal`'s 80
+    over `chacha20_vector_xor`'s 768, by `bench/stack.py`'s frames. The
+    script's own walk reports 720 there, because `chacha20_xor` reaches
+    `chacha20_vector_xor` by a branch at its first instruction, which the
+    walk does not follow. `lint-stack` holds the path's frames to the
+    device budget in the `check-lib-chacha-vector-widemul` leg. Nothing
+    proves the path, because CBMC cannot read an intrinsic. `make check`
+    holds it with `bin/poly1305_equiv_test`, 43,282 cases against the
+    portable loop and the check of the stack a call leaves;
+    `bin/unit_chacha_vector`, which runs RFC 8439's A.3 and A.5 vectors on
+    it; a Wycheproof leg; a packaged-object leg on each CI architecture;
+    and the codegen gate's two 64-bit specs, which hold its branches at 4.
+    Nine violations break the path, and each is caught
+    (docs/verification.md, "The CHACHA=vector Poly1305").
+
+    Gain: in paired runs of the record bench, a filter's figures, a
+    `CHACHA=vector WIDEMUL=native` build took a 16 KiB `rec_seal` from
+    26.2 to 17.4 µs on macOS clang, from 25.5 to 16.8 µs on the Linux VM's
+    clang and from 33.3 to 23.1 µs on gcc 13, and Poly1305 over its
+    ciphertext from 11.6, 11.2 and 12.8 µs to 2.7, 2.6 and 2.7 µs. That
+    record takes 26% to 28% of the packaged portable one's time
+    (docs/performance.md, "Where a record's time goes"). These runs came
+    before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
+    call, and the next record runs measure it.

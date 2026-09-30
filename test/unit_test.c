@@ -357,6 +357,7 @@ int main(void) {
     test_poly1305();
     test_aead();
     test_rfc8439_appendix();
+    test_rfc8439_poly1305();
     test_x25519();
     test_p256();
     test_buf();

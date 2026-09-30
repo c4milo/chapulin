@@ -184,7 +184,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
@@ -459,6 +459,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
+          poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c \
           $(wildcard examples/*.c)
@@ -470,6 +471,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
+         test/poly1305_equiv_residue.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_exact_fill.h \
@@ -948,7 +950,9 @@ X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25
 # saying so. It asks for no timing statement of its own, where X25519=wide
 # asks for CH_NATIVE_MUL128: it runs the operations chacha20.c runs, adds,
 # exclusive-ors, shifts and lane moves, with no multiply, no table and no
-# division, so it rests on what the portable loop rests on.
+# division, so it rests on what the portable loop rests on. The vector
+# Poly1305 does multiply, so it joins the object only beside WIDEMUL=native
+# (below the WIDEMUL axis).
 CHACHA ?= portable
 ifeq ($(CHACHA),vector)
 LIB_DEF += -DCH_CHACHA_VECTOR
@@ -962,7 +966,10 @@ endif
 # the targets that read this rather than stop at the header's #error.
 CHACHA_VECTOR_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qwE '__ARM_NEON|__SSE2__' && \
   $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qw '__BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__' && echo yes)
-CHACHA_VECTOR_BINS := $(if $(CHACHA_VECTOR_PROBE),bin/chacha20_equiv_test bin/unit_chacha_vector)
+# The host test flags assert CH_NATIVE_WIDEMUL, so bin/unit_chacha_vector
+# runs the vector Poly1305 as well, and bin/poly1305_equiv_test holds it
+# to poly1305.c's loop.
+CHACHA_VECTOR_BINS := $(if $(CHACHA_VECTOR_PROBE),bin/chacha20_equiv_test bin/poly1305_equiv_test bin/unit_chacha_vector)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
 # that exports nothing pays neither: docs/performance.md's SRAM numbers
@@ -1056,6 +1063,16 @@ ifeq ($(WIDEMUL),native)
 LIB_DEF += -DCH_NATIVE_WIDEMUL
 else ifneq ($(WIDEMUL),decomposed)
 $(error WIDEMUL=$(WIDEMUL) is not a multiply; use WIDEMUL=decomposed or WIDEMUL=native)
+endif
+# CHACHA=vector with WIDEMUL=native adds poly1305_vector.c, Poly1305's
+# block loop four blocks at a time on the vector widening multiply, which
+# CH_NATIVE_WIDEMUL covers along with the scalar one (ct.h). Under
+# CHACHA=vector alone the object carries poly1305.c's loop and its 16x16
+# decomposition, and no poly1305_vector.c: poly1305_vector.h turns the
+# path on only when both defines meet. docs/decisions.md entry 83 says
+# why.
+ifeq ($(CHACHA)-$(WIDEMUL),vector-native)
+LIB_SRCS += poly1305_vector.c
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -1312,7 +1329,8 @@ print-aes-runtime-loop-srcs:
 #
 # The CHACHA rows hold chacha20_vector.c and -DCH_CHACHA_VECTOR to the
 # CHACHA=vector object, so the default object carries the portable loop
-# alone.
+# alone, and poly1305_vector.c to the object that is CHACHA=vector and
+# WIDEMUL=native both, so neither axis alone packages the vector Poly1305.
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
@@ -1369,8 +1387,13 @@ lint-trust-separation-run:
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	check "TRUST=raw-rsa X25519=portable" "x25519.c" "x25519_wide.c" "" "-DCH_X25519_WIDE"; \
 	check "TRUST=raw-rsa X25519=wide" "x25519.c x25519_wide.c" "" "-DCH_X25519_WIDE" "-DCH_NATIVE_MUL128"; \
-	check "TRUST=raw-rsa CHACHA=portable" "chacha20.c" "chacha20_vector.c" "" "-DCH_CHACHA_VECTOR"; \
-	check "TRUST=raw-rsa CHACHA=vector" "chacha20.c chacha20_vector.c" "" "-DCH_CHACHA_VECTOR" ""; \
+	check "TRUST=raw-rsa CHACHA=portable" "chacha20.c" "chacha20_vector.c poly1305_vector.c" "" "-DCH_CHACHA_VECTOR"; \
+	check "TRUST=raw-rsa CHACHA=vector" "chacha20.c chacha20_vector.c poly1305.c" "poly1305_vector.c" "-DCH_CHACHA_VECTOR" \
+	  "-DCH_NATIVE_WIDEMUL"; \
+	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" "chacha20_vector.c poly1305_vector.c" "-DCH_NATIVE_WIDEMUL" \
+	  "-DCH_CHACHA_VECTOR"; \
+	check "TRUST=raw-rsa CHACHA=vector WIDEMUL=native" "chacha20.c chacha20_vector.c poly1305.c poly1305_vector.c" "" \
+	  "-DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL" ""; \
 	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
@@ -1890,12 +1913,26 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c test/chacha20_equiv_vector.c
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c
-# The unit suite over the vector path: RFC 8439's vectors in
-# test/unit_test.c and test/rfc8439_tests.h, and every record the suite
-# seals and opens, with chacha20_xor answering from chacha20_vector.c.
-bin/unit_chacha_vector: test/unit_test.c $(SRCS) chacha20_vector.c $(HDRS) $(TESTH)
+# The vector Poly1305 against poly1305.c's loop, both in one binary:
+# poly1305.c compiles here without -DCH_CHACHA_VECTOR, the portable loop
+# alone, and test/poly1305_equiv_vector.c compiles the vector build of
+# poly1305.c beside it under renamed calls, with poly1305_vector.c. The
+# host CFLAGS assert CH_NATIVE_WIDEMUL, which the path needs.
+# test/stack_residue.c copies the stack a call left, for the check that
+# the powers of r are gone (test/poly1305_equiv_residue.h).
+bin/poly1305_equiv_test: test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c \
+                         poly1305_vector.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_CHACHA_VECTOR -I. -o $@ test/unit_test.c $(SRCS) chacha20_vector.c
+	$(CC) $(CFLAGS) -I. -o $@ test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
+	  poly1305.c ct.c
+# The unit suite over the vector paths: RFC 8439's vectors in
+# test/unit_test.c and test/rfc8439_tests.h, and every record the suite
+# seals and opens, with chacha20_xor answering from chacha20_vector.c
+# and, under the host's CH_NATIVE_WIDEMUL, poly1305_update's whole groups
+# from poly1305_vector.c.
+bin/unit_chacha_vector: test/unit_test.c $(SRCS) chacha20_vector.c poly1305_vector.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_CHACHA_VECTOR -I. -o $@ test/unit_test.c $(SRCS) chacha20_vector.c poly1305_vector.c
 bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c gcm.c aes.c $(AES_HW_SRCS) \
                       hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2751,7 +2788,7 @@ CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-e
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
               check-lib-server-aes-hw check-lib-server-aes-extern check-lib-server-aes-runtime \
               check-lib-quic-aes-runtime check-lib-quic-raw-aes-runtime check-lib-x25519-wide \
-              check-lib-chacha-vector check-lib-pair \
+              check-lib-chacha-vector check-lib-chacha-vector-widemul check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
 .PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) check-x25519-builds check-chacha-builds \
         check-wycheproof check-skips
@@ -2813,8 +2850,9 @@ endif
 check-x25519-builds:
 	+@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
-# chacha20_vector.h's two refusals, and chacha20.c's call to the vector
-# path in a CHACHA=vector build.
+# chacha20_vector.h's two refusals, chacha20.c's call to the vector path
+# in a CHACHA=vector build, and poly1305.c's call to its vector path in a
+# build that adds CH_NATIVE_WIDEMUL.
 check-chacha-builds:
 	+@mkdir -p bin/check; ./test/chacha-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
@@ -3058,6 +3096,17 @@ ifeq ($(CHACHA_VECTOR_PROBE),)
 	@echo "SKIP lib-check CHACHA=vector: $(CC) targets neither NEON nor SSE2 on a little-endian core"
 else
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern CHACHA=vector \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+# The same object with the native multiply, which adds the vector Poly1305
+# (docs/decisions.md 83): the export list must not move, lint-stack holds
+# poly1305_vector.c's frames to the device budget, and CI's arm64 job
+# packages the NEON arm the same way (.github/workflows/check.yml).
+check-lib-chacha-vector-widemul:
+ifeq ($(CHACHA_VECTOR_PROBE),)
+	@echo "SKIP lib-check CHACHA=vector WIDEMUL=native: $(CC) targets neither NEON nor SSE2 on a little-endian core"
+else
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern CHACHA=vector WIDEMUL=native \
 	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
 # Two objects of different transports in one image (docs/decisions.md
@@ -3565,7 +3614,7 @@ WYCHEPROOF_X25519_WIDE = $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH
   aes.c $(AES_IMPL) gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
 WYCHEPROOF_CHACHA_VECTOR = $(CC) $(CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
   $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) chacha20_vector.c \
-  $(AES_IMPL)
+  poly1305_vector.c $(AES_IMPL)
 wycheproof-leg-default:
 	@python3 tools/stamp.py wycheproof-default $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-default
@@ -3621,8 +3670,9 @@ wycheproof-run-x25519-wide:
 	@$(WYCHEPROOF_X25519_WIDE) -o bin/wycheproof_test_x25519_wide && \
 	{ ./bin/wycheproof_test_x25519_wide > bin/wycheproof_test_x25519_wide.log 2>&1; rc=$$?; \
 	  echo "== bin/wycheproof_test_x25519_wide (X25519=wide):"; cat bin/wycheproof_test_x25519_wide.log; exit $$rc; }
-# The CHACHA=vector leg, for the same reason: the vector path is a second
-# ChaCha20 in this tree, so the ChaCha20-Poly1305 suite answers for it
+# The CHACHA=vector leg, for the same reason: the vector paths are a
+# second ChaCha20 and, under the host's CH_NATIVE_WIDEMUL, a second
+# Poly1305 in this tree, so the ChaCha20-Poly1305 suite answers for them
 # too. Only the ChaCha20-Poly1305 rows differ from the first binary. A
 # compiler that targets neither NEON nor SSE2 cannot build the path, and
 # skips; every CI host targets one of the two, so there the skip is a
@@ -3757,18 +3807,21 @@ san-check:
 	else \
 	  echo "SKIP san X25519=wide: $(CC) has no unsigned __int128"; \
 	fi
-	# The CHACHA=vector path, where the compiler targets NEON or SSE2: the
-	# equivalence binary, which runs every case again on heap buffers of
-	# exactly the case's size, so ASan sees a read or a write one byte past
-	# them, and the Wycheproof suites over the path.
+	# The CHACHA=vector paths, where the compiler targets NEON or SSE2: the
+	# two equivalence binaries, which run their cases on heap buffers that
+	# end where each case ends, so ASan sees a read or a write one byte past
+	# them, and the Wycheproof suites over both paths.
 	@set -e; if [ -n "$(CHACHA_VECTOR_PROBE)" ]; then \
 	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
 	    test/chacha20_equiv_vector.c chacha20.c; \
 	  echo "== chacha20_equiv_test (SAN -O$(O))"; ./bin/san/chacha20_equiv_test; \
+	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
+	    test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c; \
+	  echo "== poly1305_equiv_test (SAN -O$(O))"; ./bin/san/poly1305_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof CHACHA=vector: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) \
 	    $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test_chacha_vector test/wycheproof_test.c \
-	    $(WYCHEPROOF_SRCS) chacha20_vector.c $(AES_IMPL); \
+	    $(WYCHEPROOF_SRCS) chacha20_vector.c poly1305_vector.c $(AES_IMPL); \
 	  echo "== wycheproof_test_chacha_vector (SAN -O$(O))"; ./bin/san/wycheproof_test_chacha_vector; \
 	else \
 	  echo "SKIP san CHACHA=vector: $(CC) targets neither NEON nor SSE2 on a little-endian core"; \
@@ -4232,7 +4285,10 @@ else
 	# x509_ca.c, drbg.c and the two mains that call ch_drbg_seed get
 	# passes of their own too: x509_ca.h declares ch_pubkey_from_pem only
 	# under -DCH_TRUST_CA, and drbg.h declares ch_drbg_seed only under
-	# -DCH_RAND_DRBG.
+	# -DCH_RAND_DRBG. test/stack_residue.c stays out of every pass: it
+	# declares its one call beside the definition, where its callers
+	# declare it too, and misc-use-internal-linkage asks a file read alone
+	# to make that call static, which its callers' link would refuse.
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c \
@@ -4248,7 +4304,8 @@ else
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
 	  test/x25519_equiv_portable.c test/hkdf384_test.c \
-	  test/x25519_equiv_wide.c test/diff_x25519_test.c chacha20_vector.c test/chacha20_equiv_vector.c,$(LINT_C)), \
+	  test/x25519_equiv_wide.c test/diff_x25519_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
+	  poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c,$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The X25519=wide field. x25519_wide.c guards its body on
 	# -DCH_X25519_WIDE, and x25519.c compiles its dispatch to that field only
@@ -4258,14 +4315,16 @@ else
 	# reason test/aes_equiv_soft.c does below.
 	@$(call TIDY_EACH,x25519.c x25519_wide.c test/diff_x25519_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(X25519_WIDE_DEF) -I.)
-	# The CHACHA=vector path. chacha20_vector.c guards its body on
-	# -DCH_CHACHA_VECTOR, and chacha20.c calls it only under the define, so
-	# this pass reads both, in the instruction set of the host that runs the
-	# lint: NEON on an arm64 machine, SSE2 on CI's x86-64 runner.
-	# test/chacha20_equiv_vector.c stays out of both passes, for the reason
-	# test/aes_equiv_soft.c does below.
-	@$(call TIDY_EACH,chacha20.c chacha20_vector.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CHACHA_VECTOR -I.)
+	# The CHACHA=vector paths. chacha20_vector.c guards its body on
+	# -DCH_CHACHA_VECTOR, and poly1305_vector.c on that define beside
+	# -DCH_NATIVE_WIDEMUL; chacha20.c and poly1305.c call them only under
+	# the same defines, so this pass reads all four, and the equivalence
+	# test that needs both defines, in the instruction set of the host that
+	# runs the lint: NEON on an arm64 machine, SSE2 on CI's x86-64 runner.
+	# test/chacha20_equiv_vector.c and test/poly1305_equiv_vector.c stay out
+	# of both passes, for the reason test/aes_equiv_soft.c does below.
+	@$(call TIDY_EACH,chacha20.c chacha20_vector.c poly1305.c poly1305_vector.c test/poly1305_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -I.)
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
@@ -4925,17 +4984,21 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
                    sha512.c:0 sha512_compress.c:0 handshake_groups.c:0
-# The X25519=wide field, x25519_wide.c, is one of two secret-bearing sources
+# The X25519=wide field, x25519_wide.c, is one of three secret-bearing sources
 # no spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, so ct.h makes the field an #error on every one
 # of them. WIDE64_SPECS below measure it instead, on 64-bit targets, and this
 # list is what they compile, file:ceiling as above. Its multiply is the
 # 64x64->128 instruction CH_NATIVE_MUL128 asserts, so that spec's tokens are
 # the divisions and the 128-bit runtime calls, and the ceiling is zero.
-# The other is the CHACHA=vector path, chacha20_vector.c: it needs NEON or
-# SSE2, which no 32-bit spec targets, and the arm64 and x86-64 specs have.
-# It multiplies nothing, so its ceiling is zero too.
-WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0
+# The others are the CHACHA=vector paths, chacha20_vector.c and
+# poly1305_vector.c: they need NEON or SSE2, which no 32-bit spec targets,
+# and the arm64 and x86-64 specs have. chacha20_vector.c multiplies
+# nothing. poly1305_vector.c multiplies on the 32x32->64 widening
+# multiply, scalar and vector, that CH_NATIVE_WIDEMUL asserts, which these
+# specs count no more than x25519_wide.c's; it divides nothing and calls no
+# runtime routine. So both ceilings are zero too.
+WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 poly1305_vector.c:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -4959,7 +5022,8 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # hashes exist only under that define, and handshake_groups.c needs it
 # because its body sits behind CH_KEX_TWO_GROUPS, which that define sets.
 # chacha20_vector.c needs -DCH_CHACHA_VECTOR, because its whole body sits
-# behind that define.
+# behind that define, and poly1305_vector.c needs it with
+# -DCH_NATIVE_WIDEMUL, for the same reason.
 # Adding any of the three to the shared line would break record.c, io.c,
 # session.c, handshake.c and tls.c, which are on the same list and
 # compile only without the transport and role defines, and
@@ -4988,7 +5052,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384 \
                    handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
-                   chacha20_vector.c:-DCH_CHACHA_VECTOR
+                   chacha20_vector.c:-DCH_CHACHA_VECTOR \
+                   poly1305_vector.c:-DCH_CHACHA_VECTOR$(COMMA)-DCH_NATIVE_WIDEMUL
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
@@ -5294,7 +5359,8 @@ WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sh
 # clear, and none of them reads a key byte.
 BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c \
-               aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c sha512.c sha512_compress.c
+               aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c poly1305_vector.c sha512.c \
+               sha512_compress.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -5338,6 +5404,12 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # and four rows each group XORs or stores, the 16 input words, the 16
 # vectors of the feed-forward, the ten double rounds, n against zero, and
 # the last group's bytes. No lane value reaches one.
+#
+# poly1305_vector.c's two entries were read the same way. All four
+# branches on each target test the byte count n: the CH_ASSERT at the
+# entry, n against zero and n modulo 64, and the group loop's entry and
+# back edge, n against 64. The powers of r and both carries are straight
+# line.
 BRANCH_CEILING := \
   m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
@@ -5386,7 +5458,8 @@ BRANCH_CEILING := \
   m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
   mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
-  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:12 x86-64/chacha20_vector.c:12
+  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:12 x86-64/chacha20_vector.c:12 \
+  arm64/poly1305_vector.c:4 x86-64/poly1305_vector.c:4
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc lint-wide-multiply-run

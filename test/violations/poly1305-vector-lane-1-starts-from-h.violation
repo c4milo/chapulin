@@ -1,0 +1,15 @@
+invariant: INV-16
+file: poly1305_vector.c
+catches: poly1305_equiv_test
+reason: lane 1 starts from the accumulator as lane 0 does, so the value
+  of every block before the update counts twice, once times each lane's
+  powers. Its first update comes out right only when the accumulator is
+  0, which is exactly when a message's first update reaches the path, so
+  only an update after earlier blocks shows the fault.
+  bin/poly1305_equiv_test cuts every message into two or three updates
+  and calls poly1305_vector_blocks after one to four earlier blocks.
+
+--- old
+    h[0] = limbs_of(p->h[0], 0);
+--- new
+    h[0] = limbs_of(p->h[0], p->h[0]);

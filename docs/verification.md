@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 91 C sources in the tree root are compiled into a
+80 of the 92 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 11 sources are in no such harness:
+The other 12 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -48,6 +48,7 @@ The other 11 sources are in no such harness:
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
+| `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
@@ -269,7 +270,11 @@ The entries are grouped by area:
   path in every alignment.
 - **Not proved:** the five-call shape `aead.c` uses. The aead harnesses
   stub Poly1305, so that shape rests on the unit vectors, Wycheproof and
-  the differential.
+  the differential. Nor the `CHACHA=vector` Poly1305, whose intrinsics
+  CBMC cannot unwind. The harness compiles `poly1305.c` without
+  `-DCH_CHACHA_VECTOR`, so `whole_blocks` calls the loop it proves, and
+  [The CHACHA=vector Poly1305](#the-chachavector-poly1305) states what
+  holds the vector path to that loop.
 
 #### aead
 
@@ -2323,9 +2328,9 @@ equality proof stays at 8-bit operands.
 
 #### The X25519=wide field
 
-The `X25519=wide` field is one of two secret-bearing sources none of
-those specs can build, since it needs `unsigned __int128`; the other is
-the `CHACHA=vector` path (below). It multiplies on
+The `X25519=wide` field is one of three secret-bearing sources none of
+those specs can build, since it needs `unsigned __int128`; the others are
+the two `CHACHA=vector` paths (below). It multiplies on
 the 64x64->128 instruction, and `ct.h` refuses the build unless it
 defines `CH_NATIVE_MUL128`, its own statement that this instruction runs
 in constant time:
@@ -2386,6 +2391,76 @@ None of this proves the two paths agree on an input no case reaches.
 The path's timing rests on construction, as the portable loop's does:
 it runs adds, exclusive-ors, shifts and lane moves, with no table and no
 multiply. No gcc measures its branches.
+
+### The CHACHA=vector Poly1305
+
+`poly1305_vector.c` runs Poly1305's block loop four blocks at a time, in
+two lanes on NEON or SSE2 intrinsics, in a build that defines
+`CH_CHACHA_VECTOR` and asserts `CH_NATIVE_WIDEMUL` (decision 83). CBMC
+cannot unwind an intrinsic, so no harness compiles the file, and the
+[poly1305](#poly1305) proof covers `poly1305.c`'s loop alone. The vector
+path rests on these, each in `make check`:
+
+- `bin/poly1305_equiv_test` compares it with `poly1305.c`'s loop over
+  43,282 cases. Each case compares the accumulator modulo 2^130 - 5
+  after the updates, the buffered partial block and the tag:
+  - every length from 0 to 416 bytes, which crosses the path's 128-byte
+    threshold and four more groups, in one update and cut at every odd
+    offset below 128 bytes;
+  - keys and messages of all 0x00 and all 0xff bytes, the smallest and
+    the largest limbs;
+  - `poly1305_vector_blocks` called alone on one to twelve groups, after
+    zero to four blocks, with the limb bounds its header states checked
+    on return, and once on a group a search found, whose lane totals
+    carry h1 past 2^26 in the first pass;
+  - 20,000 random cases to 2,048 bytes, cut into three updates at random
+    offsets and alignments;
+  - a 16,385-byte and a 65,536-byte input.
+
+  The vector build reads each message from a heap buffer that ends where
+  the message ends, which `make san-check` runs under AddressSanitizer.
+- The same binary copies the stack below one call over four groups, where
+  the call's dead frame lay, and requires none of r^2, r^3 and r^4 there:
+  not as five limbs side by side, as the call's struct holds each power,
+  nor one limb every 8 or 16 bytes, as a NEON or SSE2 multiplier holds a
+  lane's (test/poly1305_equiv_residue.h). Five words match when they hold
+  the power's value modulo 2^130 - 5, whatever their carry form.
+- `bin/unit_chacha_vector` runs the unit suite on the path: RFC 8439's
+  A.3 vectors 2 and 3, 375 bytes each, and A.5's 265 bytes reach it, as
+  does every record the suite seals and opens with 128 bytes of whole
+  blocks or more.
+- The Wycheproof ChaCha20-Poly1305 suite runs on it in the
+  `CHACHA=vector` leg.
+- `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
+  the pinned clang and holds its conditional branches at 4 on each: the
+  contract check at the entry and the group loop, all on the byte count.
+  It divides nothing and calls no runtime routine. Its multiplies are the
+  ones `CH_NATIVE_WIDEMUL` asserts, so the count leaves them out, as it
+  leaves out `x25519_wide.c`'s.
+- `test/chacha-builds.sh` compiles `poly1305.c` under each of the two
+  defines alone, under both, and under both with `CH_CT_WIDEMUL`, and
+  requires the call to the path in the build with both defines and
+  nothing more, and in no other.
+
+Nine violations break the path, and each is caught. The equivalence
+test catches `poly1305-vector-last-group-even-powers`,
+`poly1305-vector-carry-drops-fold`, `poly1305-vector-one-carry-round`,
+`poly1305-vector-lane-1-starts-from-h`,
+`poly1305-vector-hands-partial-group`,
+`poly1305-vector-returns-wide-h1` and `poly1305-vector-keeps-powers`,
+which drops the wipe; `test/chacha-builds.sh` catches
+`poly1305-vector-falls-back-to-portable` and
+`poly1305-vector-without-widemul-statement`.
+
+None of this proves the two paths agree on an input no case reaches.
+The limb bounds that keep every sum below 2^64 are argued in the file's
+comments, not proved. The residue check reads the stack one compiler
+left on one call; it cannot see registers, or a spill slot that holds a
+power in a layout it does not search. The path's timing rests on the build's
+`CH_NATIVE_WIDEMUL` statement for its multiplies, as the portable
+loop's does under that define, and on construction for the rest: adds,
+masks, fixed shifts and lane moves, with no table. No gcc measures its
+branches.
 
 ### The AES=runtime answer that the instructions are absent
 
@@ -2540,7 +2615,7 @@ Three more suites run on every push and add evidence rather than proof.
 
 The x25519 suite's 518 cases run a second time over the `X25519=wide`
 field, in its own binary, and the ChaCha20-Poly1305 suite's 316 cases
-over the `CHACHA=vector` path, in another.
+over the `CHACHA=vector` paths, ChaCha20 and Poly1305, in another.
 
 The HMAC-SHA256 suite calls `hmac_sha256` directly. So the MAC that
 Finished, the binders, the QUIC Retry token, the HelloRetryRequest

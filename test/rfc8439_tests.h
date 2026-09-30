@@ -2,9 +2,11 @@
 // vectors, which run ChaCha20 over up to 375 bytes: long enough to reach
 // the CHACHA=vector path's four-block loop as well as its last partial
 // group, where test_chacha20's 114 bytes reach only the partial group.
-// bin/unit runs them on chacha20.c's portable loop and
-// bin/unit_chacha_vector on chacha20_vector.c. Included by
-// test/unit_test.c only, after its CHECK macro, unhex and eq_hex.
+// Appendix A.3's Poly1305 vectors follow, the longest of which reach the
+// CHACHA=vector Poly1305. bin/unit runs them on chacha20.c's and
+// poly1305.c's portable loops and bin/unit_chacha_vector on
+// chacha20_vector.c and poly1305_vector.c. Included by test/unit_test.c
+// only, after its CHECK macro, unhex and eq_hex.
 //
 // The RFC's plaintexts are prose, so the table holds each one's SHA-256,
 // computed from the RFC's hex dump, and not its 127 to 375 bytes. The
@@ -15,6 +17,7 @@
 
 #include "aead.h"
 #include "chacha20.h"
+#include "poly1305.h"
 #include "sha256.h"
 
 // The largest ciphertext below, A.2's second vector.
@@ -147,6 +150,152 @@ static void test_rfc8439_appendix(void) {
     aead_seal(key, nonce, aad, sizeof aad, pt, n, pt, tag);
     CHECK(eq_hex(pt, rfc8439_aead_ciphertext));
     CHECK(eq_hex(tag, rfc8439_aead_tag));
+}
+
+// Appendix A.3's eleven Poly1305 vectors. Vectors 2 and 3 authenticate
+// A.2 vector 2's 375-byte plaintext and vector 4 A.2 vector 3's 127
+// bytes, so each of those names the cipher vector whose ciphertext
+// decrypts to its message; the other eight hold their message in hex.
+// Vectors 2 and 3 hold 368 bytes of whole blocks, enough for the
+// CHACHA=vector Poly1305 in bin/unit_chacha_vector, and vectors 5 to 11
+// meet the final reduction's edge cases in both builds.
+typedef struct {
+    const char *name;
+    const char *key; // r, then s
+    const rfc8439_cipher_vector *plaintext_of;
+    const char *message;
+    const char *tag;
+} rfc8439_poly1305_vector;
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_1 = {
+    .name = "A.3 vector 1",
+    .key = "0000000000000000000000000000000000000000000000000000000000000000",
+    .message = "0000000000000000000000000000000000000000000000000000000000000000"
+               "0000000000000000000000000000000000000000000000000000000000000000",
+    .tag = "00000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_2 = {
+    .name = "A.3 vector 2",
+    .key = "0000000000000000000000000000000036e5f6b5c5e06070f0efca96227a863e",
+    .plaintext_of = &rfc8439_a2_vector_2,
+    .tag = "36e5f6b5c5e06070f0efca96227a863e",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_3 = {
+    .name = "A.3 vector 3",
+    .key = "36e5f6b5c5e06070f0efca96227a863e00000000000000000000000000000000",
+    .plaintext_of = &rfc8439_a2_vector_2,
+    .tag = "f3477e7cd95417af89a6b8794c310cf0",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_4 = {
+    .name = "A.3 vector 4",
+    .key = "1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0",
+    .plaintext_of = &rfc8439_a2_vector_3,
+    .tag = "4541669a7eaaee61e708dc7cbcc5eb62",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_5 = {
+    .name = "A.3 vector 5",
+    .key = "0200000000000000000000000000000000000000000000000000000000000000",
+    .message = "ffffffffffffffffffffffffffffffff",
+    .tag = "03000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_6 = {
+    .name = "A.3 vector 6",
+    .key = "02000000000000000000000000000000ffffffffffffffffffffffffffffffff",
+    .message = "02000000000000000000000000000000",
+    .tag = "03000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_7 = {
+    .name = "A.3 vector 7",
+    .key = "0100000000000000000000000000000000000000000000000000000000000000",
+    .message = "ffffffffffffffffffffffffffffffff"
+               "f0ffffffffffffffffffffffffffffff"
+               "11000000000000000000000000000000",
+    .tag = "05000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_8 = {
+    .name = "A.3 vector 8",
+    .key = "0100000000000000000000000000000000000000000000000000000000000000",
+    .message = "ffffffffffffffffffffffffffffffff"
+               "fbfefefefefefefefefefefefefefefe"
+               "01010101010101010101010101010101",
+    .tag = "00000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_9 = {
+    .name = "A.3 vector 9",
+    .key = "0200000000000000000000000000000000000000000000000000000000000000",
+    .message = "fdffffffffffffffffffffffffffffff",
+    .tag = "faffffffffffffffffffffffffffffff",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_10 = {
+    .name = "A.3 vector 10",
+    .key = "0100000000000000040000000000000000000000000000000000000000000000",
+    .message = "e33594d7505e43b90000000000000000"
+               "3394d7505e4379cd0100000000000000"
+               "00000000000000000000000000000000"
+               "01000000000000000000000000000000",
+    .tag = "14000000000000005500000000000000",
+};
+
+static const rfc8439_poly1305_vector rfc8439_a3_vector_11 = {
+    .name = "A.3 vector 11",
+    .key = "0100000000000000040000000000000000000000000000000000000000000000",
+    .message = "e33594d7505e43b90000000000000000"
+               "3394d7505e4379cd0100000000000000"
+               "00000000000000000000000000000000",
+    .tag = "13000000000000000000000000000000",
+};
+
+static const rfc8439_poly1305_vector *const rfc8439_a3_vectors[] = {
+    &rfc8439_a3_vector_1, &rfc8439_a3_vector_2,  &rfc8439_a3_vector_3,  &rfc8439_a3_vector_4,
+    &rfc8439_a3_vector_5, &rfc8439_a3_vector_6,  &rfc8439_a3_vector_7,  &rfc8439_a3_vector_8,
+    &rfc8439_a3_vector_9, &rfc8439_a3_vector_10, &rfc8439_a3_vector_11,
+};
+
+// Each A.3 vector in one update, and in two cut 7 bytes in, so a partial
+// block waits in the context when the rest of the message arrives.
+static void test_rfc8439_poly1305(void) {
+    uint8_t key[POLY1305_KEY];
+    uint8_t message[RFC8439_MAX];
+    uint8_t tag[POLY1305_TAG];
+    for (size_t i = 0; i < sizeof rfc8439_a3_vectors / sizeof rfc8439_a3_vectors[0]; i++) {
+        const rfc8439_poly1305_vector *v = rfc8439_a3_vectors[i];
+        int failures_before = failures;
+        unhex(v->key, key);
+        size_t n;
+        if (v->plaintext_of != NULL) {
+            uint8_t cipher_key[CHACHA20_KEY];
+            uint8_t nonce[CHACHA20_NONCE];
+            unhex(v->plaintext_of->key, cipher_key);
+            unhex(v->plaintext_of->nonce, nonce);
+            n = unhex(v->plaintext_of->ciphertext, message);
+            chacha20_xor(cipher_key, nonce, v->plaintext_of->counter, message, message, n);
+        } else {
+            n = unhex(v->message, message);
+        }
+        poly1305 p;
+        poly1305_init(&p, key);
+        poly1305_update(&p, message, n);
+        poly1305_final(&p, tag);
+        CHECK(eq_hex(tag, v->tag));
+        size_t cut = n < 7 ? n : 7;
+        poly1305_init(&p, key);
+        poly1305_update(&p, message, cut);
+        poly1305_update(&p, message + cut, n - cut);
+        poly1305_final(&p, tag);
+        CHECK(eq_hex(tag, v->tag));
+        if (failures != failures_before) {
+            (void)fprintf(stderr, "rfc8439: the checks above ran on %s\n", v->name);
+        }
+    }
 }
 
 #endif

@@ -142,6 +142,7 @@ roster=(
     "quic-raw-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off AES=runtime|"
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
     "chacha-vector|RAND=extern CHACHA=vector|"
+    "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
 )
 case ${1:-} in
 "") ;;

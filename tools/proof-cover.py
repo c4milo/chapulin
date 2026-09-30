@@ -66,6 +66,21 @@ AUDITED = {
         "leg run the published vectors on it. Delete this entry if a harness "
         "can ever compile the file."
     ),
+    "poly1305_vector.c": (
+        "the CHACHA=vector Poly1305, written in NEON or SSE2 intrinsics, "
+        "which CBMC cannot read, so no harness compiles the file. Every "
+        "bitwise operator takes unsigned operands: the lane operations run on "
+        "uint32x2_t, uint64x2_t or __m128i values through the intrinsics, "
+        "LIMB_MASK is 0x3ffffffU and HIGH_BIT a uint32_t, and carry_scalar, "
+        "multiply_scalar and multiplier_set shift, mask and multiply uint32_t "
+        "and uint64_t values, where the constant 5 converts to unsigned. The "
+        "SSE2 arm's (int) casts hand _mm_set_epi32 a limb, 5 times a limb, "
+        "LIMB_MASK or HIGH_BIT, each below 2^31, and no arithmetic runs on "
+        "the int. bin/poly1305_equiv_test holds the file to poly1305.c's "
+        "proven loop, and bin/unit_chacha_vector and the CHACHA=vector "
+        "Wycheproof leg run the published vectors on it. Delete this entry "
+        "if a harness can ever compile the file."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` at :70, which "
@@ -117,7 +132,7 @@ def shipped_sources():
     # variables.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
-            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c"}
+            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "poly1305_vector.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

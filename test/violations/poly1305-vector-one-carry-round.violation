@@ -1,0 +1,27 @@
+invariant: INV-16
+file: poly1305_vector.c
+catches: poly1305_equiv_test
+reason: the group loop carries its sums once, not twice, so a limb can
+  reach 2^33 where the next group's multiply reads 32 bits of it: NEON's
+  narrowing move and SSE2's PMULUDQ both drop the rest. The sums stay
+  below 2^64, so nothing overflows where a sanitizer would see it; only
+  the value is wrong. bin/poly1305_equiv_test compares the accumulator
+  with poly1305.c's at every length from 0 to 416 bytes and over 20,000
+  random cases.
+
+--- old
+    carry_round(once, d);
+    carry_round(twice, once);
+    h[0] = sums_narrow(twice[0]);
+    h[1] = sums_narrow(twice[1]);
+    h[2] = sums_narrow(twice[2]);
+    h[3] = sums_narrow(twice[3]);
+    h[4] = sums_narrow(twice[4]);
+--- new
+    carry_round(once, d);
+    (void)twice;
+    h[0] = sums_narrow(once[0]);
+    h[1] = sums_narrow(once[1]);
+    h[2] = sums_narrow(once[2]);
+    h[3] = sums_narrow(once[3]);
+    h[4] = sums_narrow(once[4]);

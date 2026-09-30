@@ -40,12 +40,20 @@ void ct_wipe(void *p, size_t n);
 //
 // Two macros steer it, and CH_CT_WIDEMUL wins when both are set:
 //
-//   CH_NATIVE_WIDEMUL  the build asserts this part multiplies in constant
-//                      time. The Makefile passes it for host test binaries,
-//                      where nothing secret is at risk and solver time is;
-//                      firmware passes it only with a vendor statement.
-//                      `make lib WIDEMUL=native` puts it in the packaged
-//                      object, and the object's cc-stamp records it.
+//   CH_NATIVE_WIDEMUL  the build asserts that every widening multiply the
+//                      object runs, scalar or vector, takes a time that
+//                      does not depend on its operands: the 32x32->64
+//                      multiply below, and under CHACHA=vector the lane
+//                      multiplies of poly1305_vector.c, NEON's UMULL and
+//                      UMLAL or SSE2's PMULUDQ, which this define turns on
+//                      (docs/decisions.md entry 83). A statement that
+//                      covers the scalar multiply alone does not cover a
+//                      CHACHA=vector build. The Makefile passes it for host
+//                      test binaries, where nothing secret is at risk and
+//                      solver time is; firmware passes it only with a
+//                      vendor statement. `make lib WIDEMUL=native` puts it
+//                      in the packaged object, and the object's cc-stamp
+//                      records it.
 //   CH_CT_WIDEMUL      force the decomposition, whatever else is set.
 //                      bin/timing and proof/ctwidemul_harness.c use it to
 //                      measure and prove the path that ships, and

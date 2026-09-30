@@ -74,6 +74,14 @@ architectures has. `chacha20_vector.h` stops the build on any other target and
 on a big-endian one, and the build needs no timing statement: the path runs
 adds, exclusive-ors and rotations, as the portable loop does (decision 82).
 
+With `WIDEMUL=native` as well, the build runs Poly1305 four blocks at a time on
+the vector unit's widening multiply, NEON's UMULL and UMLAL or SSE2's PMULUDQ.
+`CH_NATIVE_WIDEMUL` states that every widening multiply the object runs, scalar
+or vector, runs in constant time, so a vendor statement behind it must cover
+those instructions as well as the scalar multiply. Without the define, a
+`CHACHA=vector` build runs the portable Poly1305 and its 16x16 decomposition
+(decision 83).
+
 ### Check it on your target, because the compiler can undo it
 
 The decomposition is C, and an optimiser is free to prove one of the four
