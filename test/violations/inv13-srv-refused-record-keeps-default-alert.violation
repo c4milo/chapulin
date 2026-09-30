@@ -1,0 +1,17 @@
+invariant: INV-13
+file: srv_out.c
+catches: srv_tcp_nonblocking_test
+reason: a record the server's transport refused keeps the handler's
+  default alert, decode_error, which says the peer sent a malformed
+  message, where RFC 9846 section 6.2 names internal_error for this
+  side's own failure. bin/srv_tcp_nonblocking_test refuses the
+  ServerHello's record and requires internal_error from the failed
+  session.
+
+--- old
+    int rc = emit(h->t, p, n);
+    if (rc != CH_OK) {
+        h->alert = ALERT_INTERNAL_ERROR;
+    }
+--- new
+    int rc = emit(h->t, p, n);

@@ -198,10 +198,12 @@ static void test_resume_issue(void) {
     sess.cfg.srv.ticket_key = NULL;
     CHECK(srv_send_new_session_ticket(&hs) == CH_OK && wire_len == 0);
 
-    // A transport that refuses the write reports CH_EIO.
+    // A transport that refuses the write reports CH_EIO, with internal_error:
+    // the failure is this side's and not the peer's (RFC 9846 §6.2).
     resume_connected(RESUME_AUTH, &client_rd);
     send_rc = -1;
     CHECK(srv_send_new_session_ticket(&hs) == CH_EIO);
+    CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 }
 
 #endif

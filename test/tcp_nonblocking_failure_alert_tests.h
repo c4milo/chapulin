@@ -22,8 +22,9 @@
 //   ClientHello, and a ClientHello whose key share gives an all-zero
 //   x25519 secret, the last check before that key, after its ServerHello
 //   is out. It fails sealed when its sink fails the EncryptedExtensions,
-//   the first record that key seals, and when a client Finished's tag does
-//   not verify, under its application write key.
+//   the first record that key seals, and under its application write key
+//   when its sink fails the NewSessionTicket and when a client Finished's
+//   tag does not verify.
 //
 // Included by test/tcp_nonblocking_loop_test.c after the handshake helpers.
 #ifndef CH_TEST_TCP_NONBLOCKING_FAILURE_ALERT_TESTS_H
@@ -231,7 +232,9 @@ static int failing_sink(void *io, const uint8_t *p, size_t n) {
 }
 
 // The server's first failure after its write key: the sink fails the
-// EncryptedExtensions, the first record that key seals. The alert goes
+// EncryptedExtensions, the first record that key seals. A refused record
+// is this side's failure and not the peer's, so the server records
+// internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981). The alert goes
 // through the same sink right after it, sealed under that key, and the
 // client opens it with the read key the ServerHello gave it.
 static void server_sink_fails_first_protected_record(ch_record *client, ch_record *server,
@@ -242,7 +245,7 @@ static void server_sink_fails_first_protected_record(ch_record *client, ch_recor
     pushes_seen = 0;
     CHECK(!client_to_server(client, server));
     uint8_t sent = ch_alert_sent(&server->t);
-    CHECK(sent != 0 && pushes_seen == 3 && records_pushed == 3);
+    CHECK(sent == ALERT_INTERNAL_ERROR && pushes_seen == 3 && records_pushed == 3);
     size_t hello_len = record_at(to_client.bytes, 0);
     size_t flight_len = hello_len + record_at(to_client.bytes, hello_len);
     size_t consumed = 0;
@@ -250,6 +253,49 @@ static void server_sink_fails_first_protected_record(ch_record *client, ch_recor
     check_alert_record(to_client.bytes + flight_len, to_client.len - flight_len, &client->t.rd,
                        sent);
     client_reads_server_alert(client, flight_len, sent);
+}
+
+// A ticket key and a clock, so the server issues a NewSessionTicket once
+// the client Finished verifies (srv_resume.h).
+static const uint8_t failure_ticket_key[CH_SRV_TICKET_KEY_LEN] = {0x5a};
+
+// Hands what the server pushed to the connected client through ch_read,
+// which must read the server's fatal alert at the end and send nothing.
+static void connected_client_reads_alert(ch_record *client, uint8_t alert) {
+    memset(&held, 0, sizeof held);
+    memcpy(held.bytes, to_client.bytes, to_client.len);
+    held.len = to_client.len;
+    client_sends = 0;
+    client->t.cfg.send = client_send;
+    client->t.cfg.recv = held_recv;
+    uint8_t got[16];
+    CHECK(ch_read(&client->t, got, sizeof got) == CH_EPROTO);
+    CHECK(ch_alert_received(&client->t) == alert && ch_alert_sent(&client->t) == 0);
+    CHECK(client_sends == 0);
+}
+
+// The server's one failure after it is connected: the sink fails the
+// NewSessionTicket, the record the server pushes after the client
+// Finished verifies. The failure records internal_error as every refused
+// record does, and the alert goes through the same sink right after the
+// ticket, sealed under the application write key. The connected client
+// reads the ticket and then the alert.
+static void server_sink_fails_ticket(ch_record *client, ch_record *server, const ch_cfg *ccfg,
+                                     const ch_cfg *scfg) {
+    ch_cfg tickets = *scfg;
+    tickets.srv.ticket_key = failure_ticket_key;
+    tickets.srv.now_seconds = 1700000000U;
+    start_pair(client, server, ccfg, &tickets);
+    CHECK(client_to_server(client, server));
+    CHECK(server_to_client(client));
+    server->t.cfg.srv.on_record_out = failing_sink;
+    failed_push = 1;
+    pushes_seen = 0;
+    CHECK(!client_to_server(client, server));
+    CHECK(ch_record_state(client) == CH_ST_CONNECTED);
+    CHECK(ch_record_state(server) == CH_ST_FAILED && pushes_seen == 2);
+    CHECK(ch_alert_sent(&server->t) == ALERT_INTERNAL_ERROR);
+    connected_client_reads_alert(client, ALERT_INTERNAL_ERROR);
 }
 
 // A server refusal under its application write key: the client Finished
@@ -273,16 +319,7 @@ static void server_refuses_client_finished(ch_record *client, ch_record *server,
     CHECK(ch_srv_record_in(server, wire, total, &consumed) == CH_EPROTO);
     CHECK(ch_alert_sent(&server->t) == ALERT_BAD_RECORD_MAC && records_pushed == pushed + 1);
     check_alert_record(to_client.bytes, to_client.len, &client->t.rd, ALERT_BAD_RECORD_MAC);
-    memset(&held, 0, sizeof held);
-    memcpy(held.bytes, to_client.bytes, to_client.len);
-    held.len = to_client.len;
-    client_sends = 0;
-    client->t.cfg.send = client_send;
-    client->t.cfg.recv = held_recv;
-    uint8_t got[16];
-    CHECK(ch_read(&client->t, got, sizeof got) == CH_EPROTO);
-    CHECK(ch_alert_received(&client->t) == ALERT_BAD_RECORD_MAC && ch_alert_sent(&client->t) == 0);
-    CHECK(client_sends == 0);
+    connected_client_reads_alert(client, ALERT_BAD_RECORD_MAC);
 }
 
 static void test_failure_alerts(ch_record *client, ch_record *server, const ch_cfg *ccfg,
@@ -295,6 +332,7 @@ static void test_failure_alerts(ch_record *client, ch_record *server, const ch_c
     server_refuses_first_message(client, server, ccfg, scfg);
     server_refuses_client_share(client, server, ccfg, scfg);
     server_sink_fails_first_protected_record(client, server, ccfg, scfg);
+    server_sink_fails_ticket(client, server, ccfg, scfg);
     server_refuses_client_finished(client, server, ccfg, scfg);
     expect_refusal = 0;
     // INV-28: neither driver called a socket callback to emit its alert.

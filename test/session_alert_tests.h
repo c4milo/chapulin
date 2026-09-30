@@ -142,7 +142,9 @@ static void test_alert_inside_message(void) {
 // tlsi_fail writes ch_alert_sent on every failure a live session meets,
 // here a protected record whose inner type is change_cipher_spec, which
 // RFC 9846 §5 refuses with unexpected_message (rfc9846.txt:3433-3435),
-// and a send that fails, which ch_write answers with internal_error.
+// and a send that fails. A failed send is this side's failure and not the
+// peer's, so both ch_write and the reply ch_read owes a KeyUpdate answer
+// it with internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981).
 static void test_failure_alert_recorded(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -172,6 +174,17 @@ static void test_failure_alert_recorded(void) {
     m2.fail_after = 1;
     CHECK(ch_write(&t2, (const uint8_t *)"x", 1) == CH_EIO);
     CHECK(ch_alert_sent(&t2) == ALERT_INTERNAL_ERROR && ch_alert_received(&t2) == 0);
+
+    static const uint8_t update_requested[5] = {HS_KEY_UPDATE, 0, 0, 1, 1};
+    mock_io m3 = {0};
+    ch_tls t3;
+    rec_dir peer;
+    rec_dir_init(&peer, secret);
+    mock_session(&t3, &m3, rxbuf, sizeof rxbuf, secret, NULL);
+    mock_push(&m3, &peer, REC_HANDSHAKE, update_requested, sizeof update_requested);
+    m3.fail_after = 1;
+    CHECK(ch_read(&t3, out, sizeof out) == CH_EIO);
+    CHECK(ch_alert_sent(&t3) == ALERT_INTERNAL_ERROR && ch_alert_received(&t3) == 0);
 }
 
 #endif

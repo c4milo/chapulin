@@ -3242,12 +3242,52 @@ does nothing more.
     of `ch_record_alert` no longer links, and a server whose sink refused
     a record pushes the alert into the same sink. A record sealed after a
     refused one is one sequence number ahead of what the peer read, so the
-    peer cannot open it; the blocking server has the same limit.
+    peer cannot open it unless the refused bytes reached it; the blocking
+    drivers have the same limit, and the last item below says why it
+    stays.
 
     Gain: a caller sends the bytes the API hands it and nothing else, and
     a strict peer reads every handshake alert: in the clear before the
     failing side's write key, and protected after. No key survives a
     failure.
+
+    Three cases the change left open are closed the same way in every
+    driver:
+
+    - **A refused record names internal_error.** A record the caller's
+      transport refused, through `cfg.send`, `cfg.srv.on_record_out` or
+      `cfg.srv.on_crypto_out`, kept the handler's default alert,
+      decode_error, which says the peer sent a malformed message. RFC 9846
+      §6.2 names internal_error for an error unrelated to the peer
+      (rfc9846.txt:3979-3981), and `ch_write` already named it for a
+      failed send. Only the send call knows that the failure is this
+      side's, so each send names it there: `srv_out.c` for the server,
+      `send_staged` in `handshake.c` for the blocking client's ClientHello
+      and Finished, and `take_key_update` in `handshake_post.c` for the
+      KeyUpdate reply `ch_read` sends. A failed receive keeps its reader's
+      alert, because a peer that closes the connection fails a receive
+      the same way. A tcp-nonblocking or QUIC client sends nothing during
+      its handshake: its caller collects the bytes.
+    - **The ticket push.** A NewSessionTicket that the sink refused after
+      the client Finished failed the tcp-nonblocking and the QUIC server
+      with no alert recorded: each wiped its handshake state, `hs.alert`
+      among it, before `tcp_nonblocking_fail` or `quic_fail` read the
+      alert. Each now returns first. `tcp_nonblocking_fail` then records
+      internal_error and seals the alert that `fail` pushes, and
+      `quic_fail` records it and keeps the close keys, and each wipes the
+      state after. The QUIC server reported 0x0100, which names
+      close_notify. The blocking server's `srv_handshake` reads the alert
+      before its wipe, so it always recorded one.
+    - **The sequence number after a refused record.** The refused record
+      used its sequence number, and the driver does not take it back. The
+      sink may have written the record whole or in part before it
+      reported the failure, so the peer may hold those bytes. Sealing the
+      alert under the same number would put two plaintexts under one
+      nonce, which breaks ChaCha20-Poly1305 and AES-GCM alike. So the
+      alert goes out one number ahead, and it opens only for a peer that
+      took the refused bytes, as `test/tcp_nonblocking_failure_alert_tests.h`
+      shows. A QUIC server has no such limit: its caller seals the
+      CONNECTION_CLOSE under a packet number of its own.
 
 77. **A `RAND=session` object draws every random byte from a source each
     session's `ch_cfg` names, and packages no generator.** colibri's owner

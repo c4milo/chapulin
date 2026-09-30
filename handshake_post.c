@@ -225,6 +225,9 @@ static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len, uint8_t *
 // other with illegal_parameter (rfc9846.txt:3362-3365). Each writes its
 // alert to *alert. A KeyUpdate with bytes after it keeps the
 // unexpected_message the caller set. Each refusal comes before the rekey.
+// A reply that cannot be sealed or sent is this side's failure and not
+// the peer's, so it writes internal_error (rfc9846.txt:3979-3981), the
+// alert ch_write names when the same call fails there.
 static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int ends_input,
                            uint8_t *alert) {
     if (msg_len != 1) {
@@ -238,7 +241,11 @@ static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int e
     if (!ends_input) {
         return CH_EPROTO;
     }
-    return handle_key_update(t, body[0]);
+    int rc = handle_key_update(t, body[0]);
+    if (rc != CH_OK) {
+        *alert = ALERT_INTERNAL_ERROR;
+    }
+    return rc;
 }
 
 // Handles the complete post-handshake messages in pt[0..n) — only

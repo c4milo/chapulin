@@ -1,0 +1,22 @@
+invariant: INV-13
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking server wipes its handshake state before it
+  returns a failed NewSessionTicket push, so fail() reads an alert of 0,
+  records none and pushes none, where every other failure names its
+  alert. bin/tcp_nonblocking_loop_test fails the ticket's push and
+  requires internal_error from ch_alert_sent and the sealed alert record
+  after the ticket, which the connected client reads.
+
+--- old
+    rc = srv_send_new_session_ticket(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
+    rc = srv_send_new_session_ticket(&r->hs);
+    if (rc != CH_OK) {
+        ct_wipe(&r->hs, sizeof r->hs);
+        r->hs.t = &r->t;
+        return rc;
+    }

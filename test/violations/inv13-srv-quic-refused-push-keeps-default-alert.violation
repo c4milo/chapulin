@@ -1,0 +1,18 @@
+invariant: INV-13
+file: srv_out.c
+catches: quic_loop_test
+reason: CRYPTO bytes the QUIC server's on_crypto_out refused keep the
+  handler's last alert, which names a peer fault, where RFC 9846 section
+  6.2 names internal_error for this side's own failure. bin/quic_loop_test
+  refuses the NewSessionTicket's 1-RTT bytes and requires internal_error
+  and 0x0150.
+
+--- old
+    if (cfg->srv.on_crypto_out(cfg->io, h->level, p, n) != 0) {
+        h->alert = ALERT_INTERNAL_ERROR;
+        return CH_EIO;
+    }
+--- new
+    if (cfg->srv.on_crypto_out(cfg->io, h->level, p, n) != 0) {
+        return CH_EIO;
+    }

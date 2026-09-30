@@ -183,10 +183,12 @@ Each returns 0 when there is none. A session that reads the peer's
 fatal alert, in the handshake or after it, fails with `CH_EPROTO` and
 sends nothing in answer, because RFC 9846 §6.2 has both sides close the
 connection at once; `ch_alert_received` names that alert and
-`ch_alert_sent` reads 0. A tcp-nonblocking session passes `&r->t` and a
-QUIC session `&q->t`. Over QUIC `ch_alert_sent` answers what
-`ch_quic_alert` answers, and `ch_alert_received` reads 0, because QUIC
-carries no alert record.
+`ch_alert_sent` reads 0. A session whose send your transport refused,
+through `cfg.send` or a server's sink, names internal_error: the failure
+is on this side, not the peer's. A tcp-nonblocking session passes
+`&r->t` and a QUIC session `&q->t`. Over QUIC `ch_alert_sent` answers
+what `ch_quic_alert` answers, and `ch_alert_received` reads 0, because
+QUIC carries no alert record.
 
 A tcp-nonblocking session that fails in its handshake gives you its alert
 as one record to send before you close the connection. After a failed

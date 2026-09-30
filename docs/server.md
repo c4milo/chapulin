@@ -1975,6 +1975,9 @@ through `on_record_out` before `ch_srv_record_in` returns. The caller holds no
 key, so `tcp_nonblocking_fail` seals the alert under the server's write key
 once the server has one, which it installs right after it has sent its
 ServerHello, and writes it in the clear before that (`docs/decisions.md` 76).
+A record `on_record_out` refused, the NewSessionTicket after the client
+Finished among them, fails the session with internal_error, because the
+failure is the caller's and not the peer's.
 
 #### The file partition
 

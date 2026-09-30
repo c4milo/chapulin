@@ -1,7 +1,7 @@
 // Proves: the fifteen srv_flight.h handlers are memory safe and free of
 // UB over an unconstrained ClientHello, selection and session, and that
-// every refusal but a failed send leaves h->alert holding a description
-// somebody wrote.
+// every refusal but CH_EIO leaves h->alert holding a description somebody
+// wrote.
 //
 // The layering is proof/srv_accept_harness.c's, turned around. There the
 // driver was real and these fifteen were contract stubs; here they are
@@ -420,10 +420,10 @@ static void fresh(void) {
 }
 
 // srv_flight.h's failure rule, read off the byte nothing else writes.
-// CH_EIO is outside it: a send that did not happen has no peer to tell,
-// so no handler chooses a description for one and the driver's seed is
-// what tlsi_fail passes. The client's handlers propagate hsr_next_msg's
-// CH_EIO the same way.
+// CH_EIO stays outside the assertion. srv_out.c names internal_error for
+// a send the transport refused (srv_out.h), but this harness has no
+// launch line, so no run has checked that every CH_EIO path writes a
+// description.
 static void refusal_wrote_alert(int rc) {
     if (rc != CH_OK && rc != CH_EIO) {
         __CPROVER_assert(h.alert != ALERT_UNWRITTEN,

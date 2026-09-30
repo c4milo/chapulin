@@ -32,6 +32,19 @@ static size_t build_client_hello(handshake_state *h) {
     return hsf_build_client_hello(h, t->tx + REC_HDR, sizeof t->tx - REC_HDR);
 }
 
+// Sends the first n bytes of ch_tls.tx through cfg.send. A send that
+// fails is this side's transport and not the peer's, so the handshake
+// fails with internal_error (RFC 9846 §6.2, rfc9846.txt:3979-3981), the
+// alert ch_write names for a failed send.
+static int send_staged(handshake_state *h, size_t n) {
+    ch_tls *t = h->t;
+    int rc = io_send_all(&t->cfg, t->tx, n);
+    if (rc != CH_OK) {
+        h->alert = ALERT_INTERNAL_ERROR;
+    }
+    return rc;
+}
+
 // Sends the n-byte ClientHello staged past the record header as one
 // plaintext handshake record. retry is 1 for the hello a
 // HelloRetryRequest asked for, which the caller knows by position.
@@ -46,16 +59,20 @@ static int send_client_hello(handshake_state *h, size_t n, int retry) {
     t->tx[2] = retry ? 0x03 : 0x01;
     t->tx[3] = (uint8_t)(n >> 8);
     t->tx[4] = (uint8_t)n;
-    return io_send_all(&t->cfg, t->tx, REC_HDR + n);
+    return send_staged(h, REC_HDR + n);
 }
 
+// Seals the client Finished under the handshake write key and sends it.
+// A seal that refuses is this side's failure too, so it names
+// internal_error, as stage_sealed in tcp_nonblocking_step.c does.
 static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n) {
     ch_tls *t = h->t;
     size_t out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, n, t->tx, sizeof t->tx, &out_len) != 0) {
+        h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    return io_send_all(&t->cfg, t->tx, out_len);
+    return send_staged(h, out_len);
 }
 
 // Builds the hello a HelloRetryRequest asked for and sends it. The first

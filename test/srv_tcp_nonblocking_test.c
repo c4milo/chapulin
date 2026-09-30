@@ -259,7 +259,8 @@ static void test_a_partial_record_is_not_consumed(void) {
     ch_record_close(&r);
 }
 
-// A sink that refuses fails the handshake rather than losing the record.
+// A sink that refuses fails the handshake rather than losing the record,
+// with internal_error: the failure is this side's and not the peer's.
 static void test_a_refusing_sink_kills_the_session(void) {
     uint8_t hello[CH_HELLO_MAX];
     size_t hello_len = build_hello(hello, sizeof hello);
@@ -276,6 +277,7 @@ static void test_a_refusing_sink_kills_the_session(void) {
     size_t consumed = 0;
     CHECK(ch_srv_record_in(&r, rec, rec_len, &consumed) != CH_OK);
     CHECK(ch_record_state(&r) == CH_ST_FAILED);
+    CHECK(r.t.alert_sent == ALERT_INTERNAL_ERROR); // what ch_alert_sent reads
     CHECK(seen.io_calls == 0);
 }
 

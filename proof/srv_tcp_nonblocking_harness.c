@@ -20,7 +20,7 @@
 // says it writes, so nothing here rests on one handler's implementation.
 // rec_open, rec_seal and hsr_feed are stubs for the same reason
 // proof/handshake_post_harness.c stubs them: record protection belongs to
-// record.c's harness and reassembly to handshake_record.c's. srv_out_record
+// record.c's harness and reassembly to handshake_record.c's. srv_out_alert
 // states srv_out.h's contract and counts the records a failure pushes.
 //
 // The pairing with srv_flight. proof/srv_flight_harness.c turns this
@@ -336,7 +336,7 @@ static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
 static ch_record r;
 static ch_cfg cfg;
-static size_t records_pushed; // srv_out_record's calls, all a failure's
+static size_t records_pushed; // srv_out_alert's calls, all a failure's
 
 // tcp_nonblocking_fail's seal of one fatal alert, under a live write key:
 // the wipe after the seal clears ch_tls.keys, so a seal after it fails.
@@ -354,13 +354,13 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     return 0;
 }
 
-// srv_out.h's push to cfg.srv.on_record_out, which answers CH_OK or CH_EIO.
-int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n) {
+// srv_out.h's best-effort push of a failure's alert record to
+// cfg.srv.on_record_out, which reports nothing back.
+void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n) {
     __CPROVER_assert(t == &r.t && n >= REC_HDR && n <= CH_ALERT_RECORD_LEN &&
                          __CPROVER_r_ok(rec, n),
                      "push: one alert record of the session under proof");
     records_pushed++;
-    return (nondet_u8() & 1) ? CH_OK : CH_EIO;
 }
 
 // cfg.srv.on_record_out. srv_config_ok refuses a NULL, so srv_out.c's

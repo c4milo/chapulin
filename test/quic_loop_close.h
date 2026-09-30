@@ -306,11 +306,42 @@ static void test_refuse_after_finished(void) {
     test_client_key_update_after_finished();
 }
 
+// The server's sink, but refusing every 1-RTT CRYPTO byte, as a caller
+// whose 1-RTT stream has closed would.
+static int sink_refusing_application(void *io, uint8_t level, const uint8_t *p, size_t n) {
+    return level == CH_LEVEL_APPLICATION ? -1 : sink(io, level, p, n);
+}
+
+// A server whose sink refuses the NewSessionTicket, the one message it
+// sends after the client Finished verifies. A refused push is this side's
+// failure and not the peer's, so the server records internal_error (RFC
+// 9846 §6.2, rfc9846.txt:3979-3981) and reports 0x0150. It holds all
+// three write keys by then, and the close at 1-RTT reaches the connected
+// client.
+static void test_server_ticket_push_refused(void) {
+    static uint8_t buf[4096];
+    size_t n = 0;
+    take_client_finished(buf, sizeof buf, &n);
+    server.t.cfg.srv.on_crypto_out = sink_refusing_application;
+    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_HANDSHAKE, buf, n) == CH_EIO);
+    CHECK(ch_quic_alert(&server) == ALERT_INTERNAL_ERROR);
+    CHECK(ch_alert_sent(&server.t) == ALERT_INTERNAL_ERROR);
+    CHECK(ch_quic_error_code(&server) == 0x0100 + ALERT_INTERNAL_ERROR);
+    CHECK(from_server.len[CH_LEVEL_APPLICATION] == 0);
+    check_failed(&server, CH_QUIC_LEVEL_BIT(CH_LEVEL_INITIAL, CH_KEY_WRITE) |
+                              CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE) |
+                              CH_QUIC_LEVEL_BIT(CH_LEVEL_APPLICATION, CH_KEY_WRITE));
+    close_and_open(&server, &client, CH_LEVEL_APPLICATION);
+    ch_quic_close(&server);
+    ch_quic_close(&client);
+}
+
 static void test_close_after_failure(void) {
     test_server_close_at_initial();
     test_server_close_at_handshake();
     test_client_close_at_handshake();
     test_refuse_after_finished();
+    test_server_ticket_push_refused();
 }
 
 #endif

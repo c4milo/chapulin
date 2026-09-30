@@ -1,0 +1,16 @@
+invariant: INV-13
+file: handshake_post.c
+catches: unit
+reason: a KeyUpdate reply that ch_read could not send keeps
+  unexpected_message, which says the peer sent a message out of order,
+  where ch_write names internal_error when the same reply fails there.
+  bin/unit fails the reply's send and requires internal_error from
+  ch_alert_sent.
+
+--- old
+    int rc = handle_key_update(t, body[0]);
+    if (rc != CH_OK) {
+        *alert = ALERT_INTERNAL_ERROR;
+    }
+--- new
+    int rc = handle_key_update(t, body[0]);

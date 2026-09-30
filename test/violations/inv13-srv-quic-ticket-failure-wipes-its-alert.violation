@@ -1,0 +1,24 @@
+invariant: INV-13
+file: srv_quic.c
+catches: quic_loop_test
+reason: the QUIC server wipes its handshake state before it returns a
+  failed NewSessionTicket push, so quic_fail reads an alert of 0 and the
+  session reports 0x0100, a CRYPTO_ERROR that names close_notify, which
+  quic.h says no failure reports. bin/quic_loop_test refuses the ticket's
+  1-RTT bytes and requires internal_error from ch_quic_alert and
+  ch_alert_sent, and 0x0150 from ch_quic_error_code.
+
+--- old
+    rc = srv_send_new_session_ticket(&q->hs);
+    // A ticket that fails returns before the wipe, so quic_fail reads the
+    // alert it chose from hs.alert and then wipes hs with the rest.
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
+    rc = srv_send_new_session_ticket(&q->hs);
+    if (rc != CH_OK) {
+        ct_wipe(&q->hs, sizeof q->hs);
+        q->hs.t = &q->t;
+        return rc;
+    }

@@ -197,7 +197,7 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch) {
     CH_ASSERT(n == SRV_CCS_RECORD_LEN);
     h->t->compat_ccs = 1;
     // The driver's own output, never cfg.send: INV-28 holds this record too.
-    return srv_out_record(h->t, rec, n);
+    return srv_out_record(h, rec, n);
 #endif
 }
 

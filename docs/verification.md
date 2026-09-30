@@ -1047,10 +1047,11 @@ The entries are grouped by area:
   bytes and consumes no more than its input, hands `on_ticket` no
   ticket whose `ticket_lifetime` is 0, rekeys on a KeyUpdate only
   when it is the last message of its input, the one RFC 9846 §5.1 lets
-  precede a key change (INV-39), and writes no alert but two, each
-  only on a refusal: decode_error for a message that does not parse
-  (§6), and illegal_parameter for a request_update neither 0 nor 1
-  (§4.7.3, INV-14).
+  precede a key change (INV-39), and writes no alert but three, each
+  only on a failure: decode_error for a message that does not parse
+  (§6), illegal_parameter for a request_update neither 0 nor 1
+  (§4.7.3, INV-14), and internal_error for a KeyUpdate reply that could
+  not be sealed or sent (§6.2, INV-13).
 - **Bound:** messages ≤ 128 B.
 
 ### Server
@@ -1327,7 +1328,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   8-byte buffers. `proof/run.sh` records what was tried and the layered
   split it needs.
 - **Tested instead:** `bin/srv_tcp_nonblocking_test`,
-  `bin/tcp_nonblocking_loop_test` and fourteen `.violation` mutants cover
+  `bin/tcp_nonblocking_loop_test` and fifteen `.violation` mutants cover
   `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, among them the
   alert record a failure seals before its wipe and pushes (INV-13).
 

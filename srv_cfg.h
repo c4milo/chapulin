@@ -197,7 +197,8 @@ typedef struct {
     // Takes the server's handshake bytes as they are produced: level is a
     // CH_LEVEL_ value and the n bytes at p are CRYPTO frame content for it
     // (RFC 9001 section 4.1.3, rfc9001.txt:462-464). Returns 0 to accept
-    // them and any other value to fail the handshake.
+    // them and any other value to fail the handshake with CH_EIO and
+    // internal_error, this side's failure and not the peer's (srv_out.h).
     //
     // A push, where the client's ch_quic_crypto_out is a pull, and the
     // certificate chain is what forces the difference: one Certificate
@@ -247,7 +248,8 @@ typedef struct {
     // Takes the server's handshake records as they are produced: the n
     // bytes at p are one whole TLS record, header and all, ready for the
     // caller to write to its socket. Returns 0 to accept them and any
-    // other value to fail the handshake.
+    // other value to fail the handshake with CH_EIO and internal_error,
+    // this side's failure and not the peer's (srv_out.h).
     //
     // A push, where the client's ch_record_out is a pull, and the same
     // certificate chain forces the difference here that forces it over

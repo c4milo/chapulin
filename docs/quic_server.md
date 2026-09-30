@@ -315,6 +315,8 @@ Which levels a server can close at depends on where it failed:
   Initial packet.
 - **Inside its own flight.** A failure after the ServerHello goes out, such as
   an `on_crypto_out` that refuses bytes, leaves Initial and Handshake keys.
+  A refused push is the caller's failure and not the peer's, so its alert is
+  internal_error and `ch_quic_error_code` reports 0x0150 (`srv_out.h`).
 - **At the client Finished.** A Finished that does not verify, or a KeyUpdate
   or any other message in its place, which h3spec sends, leaves Handshake
   keys and the 1-RTT write keys the server installed with its own Finished,
@@ -326,6 +328,10 @@ Which levels a server can close at depends on where it failed:
   goes out: the bytes are data at a level the server is leaving (RFC 9001
   section 4.1.3), and `ch_quic_error_code` reports 0x0a, or 0x010a when
   they open a KeyUpdate (section 6, `rfc9001.txt:1565-1568`).
+- **After the client Finished.** An `on_crypto_out` that refuses the
+  NewSessionTicket's 1-RTT bytes fails a server that is already connected,
+  with internal_error and 0x0150. It keeps the write keys of the case
+  above, the 1-RTT ones among them, and owes a close at each.
 
 colibri reads `ch_quic_error_code`, calls `ch_quic_seal_close` once at each of
 those levels, sends the packets, and calls `ch_quic_close`. A server sends a

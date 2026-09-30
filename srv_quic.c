@@ -251,12 +251,17 @@ static int step_client_finished(ch_quic *q) {
     // needs hs.master and the transcript.
     q->hs.level = CH_LEVEL_APPLICATION;
     rc = srv_send_new_session_ticket(&q->hs);
+    // A ticket that fails returns before the wipe, so quic_fail reads the
+    // alert it chose from hs.alert and then wipes hs with the rest.
+    if (rc != CH_OK) {
+        return rc;
+    }
     // INV-17: the handshake secrets die at CONNECTED, one round trip
     // earlier than the tcp-blocking driver wipes its frame, because this one owns
     // the state the other keeps on a stack frame that is about to return.
     ct_wipe(&q->hs, sizeof q->hs);
     q->hs.t = &q->t;
-    return rc;
+    return CH_OK;
 }
 
 // Runs the one step q->step names, over the one whole handshake message

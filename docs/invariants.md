@@ -1442,7 +1442,10 @@ last `ROLE=server` stub, as the entry said it would.
   chose, which `ch_alert_sent` reports (alert.h), and the call that
   failed sends that alert as one record: sealed under this side's write
   key once there is one, in the clear before it, and with no key left
-  after the wipe (docs/decisions.md 76). The peer's fatal alert
+  after the wipe (docs/decisions.md 76). A send the caller's transport
+  refused is this side's failure, and every driver records
+  internal_error for it, the NewSessionTicket a server pushes after the
+  client Finished included. The peer's fatal alert
   kills the session with no alert of this side's, sent or recorded, and
   `ch_alert_received` reports the peer's (INV-22). Three kinds of result are not
   errors in that sense, and each public header says which of its codes
@@ -1497,7 +1500,13 @@ last `ROLE=server` stub, as the entry said it would.
   way it emits its others: the client stages it in `ch_tls.tx` for
   `ch_record_out`, and the server pushes it through
   `cfg.srv.on_record_out`. `tlsi_fail` and `tcp_nonblocking_fail` write
-  and send nothing once `ch_tls.alert_received` is set. Each entry
+  and send nothing once `ch_tls.alert_received` is set. Each send writes
+  internal_error where the transport refused it: `srv_out.c` for every
+  server record and CRYPTO push, `send_staged` in `handshake.c` for the
+  blocking client, `take_key_update` for `ch_read`'s KeyUpdate reply,
+  and `ch_write` itself. The two non-blocking servers return a failed
+  ticket before they wipe `hs`, so `tcp_nonblocking_fail` and
+  `quic_fail` read its alert. Each entry
   checks its configuration or its arguments before it sends a byte, and
   returns early, changing nothing, when the session cannot take the
   call. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
@@ -1546,14 +1555,35 @@ last `ROLE=server` stub, as the entry said it would.
   `inv13-tcp-nonblocking-fail-records-no-alert` and
   `inv13-quic-fail-records-no-alert` each drop one funnel's write, and
   `bin/unit`, `bin/tcp_nonblocking_loop_test` and `bin/quic_driver_test`
-  catch them. The tcp-nonblocking alert record is tested between the two
-  drivers: `bin/tcp_nonblocking_loop_test` and `bin/tcp_nonblocking_loop_pq`
+  catch them. A refused send is tested in each driver, and each test
+  requires internal_error:
+  - `bin/unit` (`test/session_hello_tests.h`,
+    `test/session_alert_tests.h`) fails `ch_connect`'s hello and
+    `ch_read`'s KeyUpdate reply;
+  - `bin/srv_flight_test` fails the blocking server's ServerHello and
+    ticket;
+  - `bin/srv_tcp_nonblocking_test` fails the tcp-nonblocking
+    ServerHello, and `bin/tcp_nonblocking_loop_test` its
+    EncryptedExtensions and ticket;
+  - `bin/quic_loop_test` (`test/quic_loop_close.h`) fails the QUIC
+    server's ticket, which must report 0x0150.
+
+  `inv13-client-refused-send-keeps-default-alert`,
+  `inv13-key-update-reply-refused-keeps-default-alert`,
+  `inv13-srv-refused-record-keeps-default-alert` and
+  `inv13-srv-quic-refused-push-keeps-default-alert` each drop one send's
+  internal_error, and `inv13-tcp-nonblocking-ticket-failure-wipes-its-alert`
+  and `inv13-srv-quic-ticket-failure-wipes-its-alert` wipe the ticket's
+  alert before `tcp_nonblocking_fail` or `quic_fail` reads it; each is
+  caught. The tcp-nonblocking
+  alert record is tested between the two drivers:
+  `bin/tcp_nonblocking_loop_test` and `bin/tcp_nonblocking_loop_pq`
   (`test/tcp_nonblocking_failure_alert_tests.h`) fail each side at the
   last check before its write key and the first after it, and at a
-  wrong pin and a client Finished after it. Each failure emits one
-  record: `REC_HDR + 2` bytes in the clear before the key, and
-  `CH_ALERT_RECORD_LEN` bytes after it that open to 2 bytes of plaintext
-  under a copy of the peer's read key. `ch_record_out` hands the client's
+  wrong pin, a client Finished and a refused ticket push after it. Each
+  failure emits one record: `REC_HDR + 2` bytes in the clear before the
+  key, and `CH_ALERT_RECORD_LEN` bytes after it that open to 2 bytes of
+  plaintext under a copy of the peer's read key. `ch_record_out` hands the client's
   record over once and then answers `CH_EINVAL`, and the other side reads
   each record through `ch_alert_received`. `test/zig-consumer/loop_record.zig`
   runs failures on both sides of each key through the Zig API and
@@ -1569,7 +1599,8 @@ last `ROLE=server` stub, as the entry said it would.
   leaves a tcp-nonblocking alert for the caller to send, who holds no
   key to protect it with, or answers a retired ticket or a hello it
   cannot stage on one client entry with a code or an epoch report the
-  other two do not leave.
+  other two do not leave, or records a peer's fault for a send its own
+  transport refused.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set

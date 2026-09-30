@@ -39,6 +39,15 @@ size_t srv_out_limit(const ch_tls *t);
 #define SRV_OUT_STAGE REC_HDR
 #endif
 
+// Each of the three calls below returns CH_OK, or CH_EIO when the
+// caller's transport refused the bytes: cfg.send, cfg.srv.on_record_out or
+// cfg.srv.on_crypto_out answered nonzero. A refusal is this side's
+// failure and not the peer's, so the call writes internal_error into
+// h->alert first (RFC 9846 §6.2, rfc9846.txt:3979-3981), the alert
+// ch_write names for a failed send. A TCP record the transport refused
+// may have left whole or in part, so nothing is sealed again under the
+// sequence number it used (docs/decisions.md 76).
+
 // Sends the n bytes staged at t->tx + REC_HDR in the clear. Over TLS that
 // is one plaintext handshake record; over QUIC it is n CRYPTO bytes and
 // the record header is never written.
@@ -48,12 +57,21 @@ int srv_out_plain(handshake_state *h, size_t n);
 // other record leaves this server: through cfg.srv.on_record_out in a
 // TRANSPORT=tcp-nonblocking build (INV-28) and through cfg.send otherwise. The one
 // caller is the compatibility change_cipher_spec (srv_send_compat_ccs).
-int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n);
+int srv_out_record(handshake_state *h, const uint8_t *rec, size_t n);
 
 // Sends n bytes of one handshake message under the current protection.
 // Over TLS that is one or more sealed records; over QUIC it is the bytes
-// themselves. pt lies outside t->tx, where rec_seal writes.
+// themselves. pt lies outside t->tx, where rec_seal writes. A record the
+// seal refuses is CH_ECAP with internal_error.
 int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n);
+
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+// Pushes the alert record tcp_nonblocking_fail wrote through
+// cfg.srv.on_record_out, the way every other record leaves this server.
+// The failure it reports has already been recorded, so the push is best
+// effort, as tlsi_fail's send is, and a refusal changes nothing.
+void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n);
+#endif
 
 // The most bytes one srv_frag holds, and so the most plaintext of one
 // Certificate record. It stays 512 whatever CH_TX_PT is. srv_frag lives

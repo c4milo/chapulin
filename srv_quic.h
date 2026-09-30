@@ -93,8 +93,9 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 // Every other code leaves the session dead, and ch_quic_error_code names
 // the code the caller puts in CONNECTION_CLOSE: 0x0100 plus ch_quic_alert
 // for a TLS alert (RFC 9001 section 4.8). CH_EIO is the caller's own
-// failure: an on_crypto_out that refused bytes, or a choose_version
-// answer this build derives no keys for, which fails with internal_error
+// failure, and its alert is internal_error: an on_crypto_out that refused
+// bytes, the NewSessionTicket's after the client Finished among them, or
+// a choose_version answer this build derives no keys for, which fails
 // before any byte goes out. The server fails through
 // quic_fail as a client does, so it keeps the write keys of each level it
 // had installed, and ch_quic_seal_close seals that close once at each

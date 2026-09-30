@@ -152,10 +152,10 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel);
 // have run, and h->master and the transcript still live. It adds nothing to
 // the transcript: a post-handshake message is not part of it.
 //
-// Returns CH_OK. Returns CH_EIO for a failed send, and CH_ECAP with
-// ALERT_INTERNAL_ERROR when a builder refused, which is a build mistake
-// rather than peer input. It wipes the resumption secret, the PSK and the
-// ticket body before it returns, on every path.
+// Returns CH_OK. Returns CH_EIO for a failed send and CH_ECAP when a
+// builder refused, which is a build mistake rather than peer input, each
+// with ALERT_INTERNAL_ERROR (srv_out.h). It wipes the resumption secret,
+// the PSK and the ticket body before it returns, on every path.
 int srv_send_new_session_ticket(handshake_state *h);
 
 #endif // CH_ROLE_SERVER

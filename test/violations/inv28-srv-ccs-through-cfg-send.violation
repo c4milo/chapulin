@@ -11,6 +11,6 @@ reason: the compatibility change_cipher_spec, the one record a server sends
   session id and requires the record from on_record_out.
 
 --- old
-    return srv_out_record(h->t, rec, n);
+    return srv_out_record(h, rec, n);
 --- new
     return h->t->cfg.send(h->t->cfg.io, rec, n) == 0 ? CH_OK : CH_EIO;

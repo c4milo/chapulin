@@ -91,8 +91,12 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // ch_alert_sent names (alert.h). That record is in the clear until the
 // server installs its handshake write key, which it does right after it
 // has sent its ServerHello, and sealed under its current write key after,
-// CH_ALERT_RECORD_LEN bytes (tls.h). The push is best effort: a sink that
-// refused a record of the flight may refuse this one too. The caller
+// CH_ALERT_RECORD_LEN bytes (tls.h). A record the sink refused, the
+// NewSessionTicket after the client Finished among them, is this side's
+// failure, CH_EIO with internal_error (srv_out.h). The push is best
+// effort: a sink that refused a record may refuse this one too, and the
+// alert sealed after a refused record opens for the peer only if the
+// refused bytes reached it (docs/decisions.md 76). The caller
 // sends what the sink took and then closes the connection. A client's
 // fatal alert, in the clear or protected, is the exception: the call
 // returns CH_EPROTO and pushes nothing, ch_alert_received names the

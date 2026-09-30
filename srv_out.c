@@ -27,10 +27,14 @@
 //
 // ch_srv_check refuses a configuration whose on_crypto_out is NULL, so
 // this call needs no NULL test: a server whose flight reaches nobody
-// completes no handshake.
+// completes no handshake. A refusal names internal_error (srv_out.h).
 static int push(handshake_state *h, const uint8_t *p, size_t n) {
     const ch_cfg *cfg = &h->t->cfg;
-    return cfg->srv.on_crypto_out(cfg->io, h->level, p, n) == 0 ? CH_OK : CH_EIO;
+    if (cfg->srv.on_crypto_out(cfg->io, h->level, p, n) != 0) {
+        h->alert = ALERT_INTERNAL_ERROR;
+        return CH_EIO;
+    }
+    return CH_OK;
 }
 
 // No record bounds a CRYPTO frame's content, so the staging cap is the
@@ -79,9 +83,25 @@ static int emit(ch_tls *t, const uint8_t *p, size_t n) {
 #endif
 }
 
-int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n) {
-    return emit(t, rec, n);
+// A handler's record through emit. A refusal names internal_error, and
+// the record's sequence number stays used (srv_out.h).
+static int emit_record(handshake_state *h, const uint8_t *p, size_t n) {
+    int rc = emit(h->t, p, n);
+    if (rc != CH_OK) {
+        h->alert = ALERT_INTERNAL_ERROR;
+    }
+    return rc;
 }
+
+int srv_out_record(handshake_state *h, const uint8_t *rec, size_t n) {
+    return emit_record(h, rec, n);
+}
+
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+void srv_out_alert(ch_tls *t, const uint8_t *rec, size_t n) {
+    (void)emit(t, rec, n);
+}
+#endif
 
 // Sends the n bytes staged at t->tx + REC_HDR as one plaintext handshake
 // record. RFC 9846 §5.1 fixes legacy_record_version at 0x0303 here.
@@ -92,7 +112,7 @@ int srv_out_plain(handshake_state *h, size_t n) {
     t->tx[2] = 0x03;
     t->tx[3] = (uint8_t)(n >> 8);
     t->tx[4] = (uint8_t)n;
-    return emit(t, t->tx, REC_HDR + n);
+    return emit_record(h, t->tx, REC_HDR + n);
 }
 
 // Seals pt as one or more handshake records, each carrying at most
@@ -110,7 +130,7 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
             h->alert = ALERT_INTERNAL_ERROR;
             return CH_ECAP;
         }
-        int rc = emit(t, t->tx, out_len);
+        int rc = emit_record(h, t->tx, out_len);
         if (rc != CH_OK) {
             return rc;
         }

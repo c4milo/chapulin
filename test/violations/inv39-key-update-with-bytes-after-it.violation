@@ -12,7 +12,7 @@ reason: ch_read rekeys on a KeyUpdate that has bytes after it in its
     if (!ends_input) {
         return CH_EPROTO;
     }
-    return handle_key_update(t, body[0]);
+    int rc = handle_key_update(t, body[0]);
 --- new
     (void)ends_input;
-    return handle_key_update(t, body[0]);
+    int rc = handle_key_update(t, body[0]);

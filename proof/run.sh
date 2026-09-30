@@ -451,6 +451,11 @@ launch slow:5 noovf x25519_sqr 65 ""
 # ch_rand_bytes under the proofs' RAND=extern (docs/decisions.md 77).
 # Measured the same way the same day: psk 1831 properties in 149 s at
 # 5.81 GB, pin 1833 in 54 s at 3.51 GB.
+# ch_handshake then built the first ClientHello before run, refusing one
+# the staging array cannot hold (docs/decisions.md 84), and a failed send
+# took internal_error (docs/decisions.md 76). Measured through
+# proof/prove-one.sh on 2026-09-30, at a load average between 30 and 45:
+# psk 1861 properties in 206 s at 6.09 GB, pin 1863 in 123 s at 3.04 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -891,7 +896,10 @@ launch fast full epoch 40 "" ct.c
 # answer sent through hspost_send_key_update, which ch_write shares: 758
 # properties, 130 s, 2.43 GB peak at a load average near 15. With the
 # ticket zeroed before handle_ticket fills it (docs/decisions.md 79): 759
-# properties, 115 s, 3.42 GB peak on 2026-09-29.
+# properties, 115 s, 3.42 GB peak on 2026-09-29. With internal_error for a
+# KeyUpdate reply that could not be sealed or sent (docs/decisions.md 76):
+# 765 properties, 139 s, 5.13 GB peak at a load average between 20 and 30
+# on 2026-09-29, under the weight of 6.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
@@ -1865,7 +1873,7 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
 # real, the fifteen handlers contract stubs. It would cover the step table, the
 # record loop and the wipe without resting on a handler, and the alert record a
-# failure pushes: rec_seal and srv_out_record are stubs that assert the seal
+# failure pushes: rec_seal and srv_out_alert are stubs that assert the seal
 # runs under a key the wipe has not cleared and that a failure pushes at most
 # one record. cbmc --show-properties over the harness, tcp_nonblocking_frame.c,
 # ct.c and buf.c lists 1,399 properties; no solve was run.

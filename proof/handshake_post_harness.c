@@ -5,9 +5,10 @@
 // with a ticket_lifetime of 0 is handed to on_ticket, that a KeyUpdate
 // rekeys only as the last message of the input, which RFC 9846 §5.1
 // requires of the message before a key change, and that the parser
-// writes two alerts, each only on a refusal: decode_error for a message
-// that does not parse (§6) and illegal_parameter for a
-// request_update neither 0 nor 1 (§4.7.3). This is the last
+// writes three alerts, each only on a failure: decode_error for a message
+// that does not parse (§6), illegal_parameter for a request_update
+// neither 0 nor 1 (§4.7.3), and internal_error for a KeyUpdate reply
+// that could not be sealed or sent (§6.2). This is the last
 // attacker-facing parser; a peer that reaches a connected session feeds
 // it arbitrary decrypted bytes.
 //
@@ -161,15 +162,19 @@ int main(void) {
     // What hspost_read sets before it calls the parser.
     uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
     int rc = handle_post_handshake(&t, pt, n, &used, &alert);
-    // The parser writes two alerts, each only on a refusal: decode_error
+    // The parser writes three alerts, each only on a failure: decode_error
     // for a KeyUpdate body that is not one byte or a NewSessionTicket whose
-    // fields do not fill it (RFC 9846 §6), and illegal_parameter for a
-    // KeyUpdate whose request_update is neither 0 nor 1 (§4.7.3). Every
+    // fields do not fill it (RFC 9846 §6), illegal_parameter for a
+    // KeyUpdate whose request_update is neither 0 nor 1 (§4.7.3), and
+    // internal_error for a KeyUpdate reply that could not be sealed or
+    // sent, which is this side's failure and not the peer's (§6.2). Every
     // other refusal keeps the caller's.
     __CPROVER_assert(
         alert == ALERT_UNEXPECTED_MESSAGE ||
-            ((alert == ALERT_DECODE_ERROR || alert == ALERT_ILLEGAL_PARAMETER) && rc == CH_EPROTO),
-        "only a refused length or request_update writes an alert");
+            ((alert == ALERT_DECODE_ERROR || alert == ALERT_ILLEGAL_PARAMETER) &&
+             rc == CH_EPROTO) ||
+            (alert == ALERT_INTERNAL_ERROR && rc == CH_EIO),
+        "only a refused length or request_update, or a reply that did not go out, writes an alert");
     if (rc == CH_OK) {
         __CPROVER_assert(used <= n, "consumed no more than the input");
         // pt[0..n) ends where the newest record ends, so a KeyUpdate that

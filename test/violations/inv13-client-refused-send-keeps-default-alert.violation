@@ -1,0 +1,16 @@
+invariant: INV-13
+file: handshake.c
+catches: unit
+reason: a ClientHello or client Finished whose send fails keeps the
+  handshake's default alert, decode_error, which says the peer sent a
+  malformed message, where ch_write names internal_error for the same
+  failure. bin/unit fails the first hello's send and requires
+  internal_error from ch_alert_sent.
+
+--- old
+    int rc = io_send_all(&t->cfg, t->tx, n);
+    if (rc != CH_OK) {
+        h->alert = ALERT_INTERNAL_ERROR;
+    }
+--- new
+    int rc = io_send_all(&t->cfg, t->tx, n);

@@ -9,7 +9,7 @@ reason: the tcp-nonblocking server pushes no alert record when its handshake
 
 --- old
     if (rec_len != 0) {
-        (void)srv_out_record(&r->t, rec, rec_len);
+        srv_out_alert(&r->t, rec, rec_len);
     }
 --- new
     (void)rec_len;

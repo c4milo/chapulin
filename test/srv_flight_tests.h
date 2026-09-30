@@ -492,9 +492,9 @@ static void test_flight_server_hello(void) {
     CHECK(srv_send_compat_ccs(&hs, &flight_hello) == CH_OK);
     CHECK(wire_len == 0 && sess.compat_ccs == 0);
 
-    // A transport that refuses the write reports CH_EIO.
-    send_rc = -1;
+    send_rc = -1; // a refused write: CH_EIO, and this side's internal_error
     CHECK(srv_send_server_hello(&hs, &flight_hello, &sel) == CH_EIO);
+    CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 }
 
 #endif

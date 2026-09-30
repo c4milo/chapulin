@@ -164,13 +164,18 @@ static int step_client_finished(ch_record *r) {
     r->step = SRV_TCP_NONBLOCKING_STEP_COMPLETE;
     // The ticket leaves through on_record_out after the client Finished
     // verified (RFC 9846 §4.7.1), and before the wipe, because it needs
-    // hs.master and the transcript.
+    // hs.master and the transcript. A ticket that fails returns before
+    // the wipe, so fail() reads the alert it chose from hs.alert and
+    // then wipes hs with every other secret, as for any other failure.
     rc = srv_send_new_session_ticket(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
     // INV-17: the handshake secrets die at CONNECTED. The wipe clears
     // hs.t with the rest, so this step writes the back pointer again.
     ct_wipe(&r->hs, sizeof r->hs);
     r->hs.t = &r->t;
-    return rc;
+    return CH_OK;
 }
 
 // Nothing is legal here. The caller moves to ch_read the moment
@@ -208,14 +213,14 @@ static int advance(ch_record *r) {
 
 // A failure, with the alert record tcp_nonblocking_fail wrote pushed
 // through cfg.srv.on_record_out, the way every record this driver writes
-// leaves (srv_out_record). The push is best effort, as tlsi_fail's send
+// leaves (srv_out_alert). The push is best effort, as tlsi_fail's send
 // is: a sink that refused a record of the flight may refuse this one
 // too, and the call returns rc either way.
 static int fail(ch_record *r, int rc) {
     uint8_t rec[CH_ALERT_RECORD_LEN] = {0};
     size_t rec_len = tcp_nonblocking_fail(r, rec);
     if (rec_len != 0) {
-        (void)srv_out_record(&r->t, rec, rec_len);
+        srv_out_alert(&r->t, rec, rec_len);
     }
     return rc;
 }
