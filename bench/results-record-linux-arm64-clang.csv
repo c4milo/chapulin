@@ -1,364 +1,334 @@
-# bench/record.sh on implementer 0x61 part 0x000 (arm64), OrbStack Linux VM on an Apple M1 Pro; the macOS host's load average was 40.54 47.66 40.86 before the run, Linux 7.0.14-orbstack-00380-ga7e0a2dc9535, 2026-09-30, tree 156d8e5-dirty
+# bench/record.sh on implementer 0x61 part 0x000 (arm64), OrbStack Linux VM on an Apple M1 Pro; the macOS host's load average was 4.58 9.39 18.42 before the run, Linux 7.0.14-orbstack-00380-ga7e0a2dc9535, 2026-09-30, tree f712560-dirty
 # Ubuntu clang version 18.1.3 (1ubuntu1); clang-18 -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -Wvla -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -march=armv8-a+crypto -I. -Ibench; WIDEMUL=native adds -DCH_NATIVE_WIDEMUL; CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c, poly1305_vector.c and bench/record_chacha_vector.c
 # no zig row: zig 0.16.0 is not on PATH; OpenSSL 3.0.13
-# load average (1, 5, 15 min) before: 2.08 1.45 1.41; after: 1.48 1.39 1.39
+# load average (1, 5, 15 min) before: 1.02 0.81 0.94; after: 1.12 0.88 0.95
 # ns: per record, the median of 5 runs, each the median of 15 batches of at least 1 ms; ns_per_byte and mb_per_s: per byte of the record's plaintext; spread_pct: the slowest run less the fastest, percent of ns; p10_ns and p90_ns: the batches at the 10th and 90th percentile over every run; # check lines: aead, build, record_bytes, a whole and its parts, the whole's ns, the parts' summed ns, and their difference
 aead,build,stage,record_bytes,ns,ns_per_byte,mb_per_s,spread_pct,p10_ns,p90_ns
-aes128gcm,WIDEMUL=decomposed,rec_seal,1024,2105.2,2.0559,486.4,2.4,2072.9,2297.4
-aes128gcm,WIDEMUL=decomposed,refill,1024,22.6,0.0221,45222.9,2.0,22.4,26.3
-aes128gcm,WIDEMUL=decomposed,rec_open,1024,1741.4,1.7005,588.0,5.6,1716.5,2294.2
-aes128gcm,WIDEMUL=decomposed,rec_seal_without_aead,1024,301.5,0.2944,3396.9,6.4,277.4,334.3
-aes128gcm,WIDEMUL=decomposed,rec_open_without_aead,1024,286.4,0.2797,3575.2,3.7,265.8,375.6
-aes128gcm,WIDEMUL=decomposed,key_expansion,0,206.5,,,7.1,185.1,285.4
-aes128gcm,WIDEMUL=decomposed,key_wipe,0,90.4,,,0.6,89.9,114.1
-aes128gcm,WIDEMUL=decomposed,aead_seal,1024,1806.8,1.7644,566.8,0.8,1795.4,2582.7
-aes128gcm,WIDEMUL=decomposed,aead_open,1024,1447.3,1.4134,707.5,0.6,1432.8,1985.4
-aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,1024,1033.1,1.0089,991.2,0.5,1027.2,1323.0
-aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,1024,666.7,0.6510,1536.0,1.4,661.7,919.5
-aes128gcm,WIDEMUL=decomposed,aes_blocks,1024,610.0,0.5957,1678.7,0.5,607.3,689.5
-aes128gcm,WIDEMUL=decomposed,block_wipes,1024,481.7,0.4704,2125.9,1.0,479.2,613.3
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,1024,556.5,0.5434,1840.2,1.4,551.1,795.6
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,1024,197.9,0.1933,5173.5,0.6,192.9,258.9
-aes128gcm,WIDEMUL=decomposed,stub_cipher_calls,1024,73.3,0.0716,13961.6,4.0,70.8,79.9
-aes128gcm,WIDEMUL=decomposed,compute_tag,1024,764.9,0.7469,1338.8,1.0,758.5,1019.0
-aes128gcm,WIDEMUL=decomposed,ghash_data,1024,662.7,0.6472,1545.2,1.8,658.2,800.8
-aes128gcm,WIDEMUL=decomposed,compute_tag_fixed,0,137.3,,,1.1,136.3,179.9
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_in_place,1024,483.3,0.4720,2118.9,1.1,,
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_shifted,1024,125.5,0.1225,8162.6,2.3,,
-# check,aes128gcm,WIDEMUL=decomposed,1024,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,1806.8,1893.3,+4.8%
-# check,aes128gcm,WIDEMUL=decomposed,1024,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,1447.3,1535.5,+6.1%
-# check,aes128gcm,WIDEMUL=decomposed,1024,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,1033.1,1093.3,+5.8%
-# check,aes128gcm,WIDEMUL=decomposed,1024,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,666.7,735.5,+10.3%
-# check,aes128gcm,WIDEMUL=decomposed,1024,compute_tag = ghash_data + compute_tag_fixed,764.9,800.0,+4.6%
-# check,aes128gcm,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,2105.2,2108.2,+0.1%
-# check,aes128gcm,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,1741.4,1733.7,-0.4%
-aes128gcm,WIDEMUL=decomposed,rec_seal,16384,27257.8,1.6637,601.1,0.8,27027.3,36803.4
-aes128gcm,WIDEMUL=decomposed,refill,16384,400.2,0.0244,40935.6,1.9,391.8,418.5
-aes128gcm,WIDEMUL=decomposed,rec_open,16384,21050.6,1.2848,778.3,1.2,20835.7,31499.8
-aes128gcm,WIDEMUL=decomposed,rec_seal_without_aead,16384,702.9,0.0429,23307.8,2.9,674.6,852.1
-aes128gcm,WIDEMUL=decomposed,rec_open_without_aead,16384,293.8,0.0179,55774.9,6.7,265.6,376.5
-aes128gcm,WIDEMUL=decomposed,aead_seal,16384,26526.7,1.6191,617.6,1.6,26367.8,31898.4
-aes128gcm,WIDEMUL=decomposed,aead_open,16384,20691.7,1.2629,791.8,1.8,20558.1,29345.5
-aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,16384,16073.6,0.9811,1019.3,1.4,15950.5,27040.4
-aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,16384,10298.2,0.6286,1591.0,1.0,10183.3,17610.4
-aes128gcm,WIDEMUL=decomposed,aes_blocks,16384,9567.4,0.5839,1712.5,1.3,9492.2,16193.0
-aes128gcm,WIDEMUL=decomposed,block_wipes,16384,7510.1,0.4584,2181.6,1.7,7465.8,8528.8
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,16384,8616.2,0.5259,1901.5,3.4,8510.4,11430.7
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,16384,2887.3,0.1762,5674.5,1.0,2822.3,3112.1
-aes128gcm,WIDEMUL=decomposed,stub_cipher_calls,16384,1032.8,0.0630,15863.7,0.8,1023.1,1095.1
-aes128gcm,WIDEMUL=decomposed,compute_tag,16384,10447.3,0.6377,1568.3,0.7,10378.3,11252.6
-aes128gcm,WIDEMUL=decomposed,ghash_data,16384,10333.0,0.6307,1585.6,0.6,10259.8,17864.3
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_in_place,16384,7581.6,0.4627,2161.0,4.0,,
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_shifted,16384,1856.2,0.1133,8826.6,1.9,,
-# check,aes128gcm,WIDEMUL=decomposed,16384,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,26526.7,27619.4,+4.1%
-# check,aes128gcm,WIDEMUL=decomposed,16384,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,20691.7,21893.9,+5.8%
-# check,aes128gcm,WIDEMUL=decomposed,16384,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,16073.6,17149.0,+6.7%
-# check,aes128gcm,WIDEMUL=decomposed,16384,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,10298.2,11423.6,+10.9%
-# check,aes128gcm,WIDEMUL=decomposed,16384,compute_tag = ghash_data + compute_tag_fixed,10447.3,10470.4,+0.2%
-# check,aes128gcm,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,27257.8,27229.6,-0.1%
-# check,aes128gcm,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,21050.6,20985.4,-0.3%
-aes128gcm,WIDEMUL=decomposed,refill,65536,1715.0,0.0262,38212.3,1.7,1526.2,2440.6
-aes128gcm,WIDEMUL=decomposed,aead_seal,65536,106122.4,1.6193,617.6,6.4,105020.9,183942.7
-aes128gcm,WIDEMUL=decomposed,aead_open,65536,82445.8,1.2580,794.9,1.2,81880.7,129310.4
-aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,65536,64252.6,0.9804,1020.0,6.4,63820.3,90049.5
-aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,65536,41091.2,0.6270,1594.9,3.5,40712.2,53979.2
-aes128gcm,WIDEMUL=decomposed,aes_blocks,65536,38286.4,0.5842,1711.7,3.1,37946.6,56904.9
-aes128gcm,WIDEMUL=decomposed,block_wipes,65536,30101.6,0.4593,2177.2,4.2,29828.8,38643.2
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,65536,34470.0,0.5260,1901.2,3.7,33953.1,52229.2
-aes128gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,65536,11439.1,0.1745,5729.1,2.5,11096.4,16808.9
-aes128gcm,WIDEMUL=decomposed,stub_cipher_calls,65536,4087.2,0.0624,16034.3,1.3,4072.6,5019.9
-aes128gcm,WIDEMUL=decomposed,compute_tag,65536,41412.8,0.6319,1582.5,2.5,41170.6,46959.7
-aes128gcm,WIDEMUL=decomposed,ghash_data,65536,41371.1,0.6313,1584.1,1.7,40993.5,56665.4
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_in_place,65536,30393.4,0.4638,2156.3,4.2,,
-aes128gcm,WIDEMUL=decomposed,xor_and_increments_shifted,65536,7362.5,0.1123,8901.4,4.0,,
-# check,aes128gcm,WIDEMUL=decomposed,65536,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,106122.4,110188.2,+3.8%
-# check,aes128gcm,WIDEMUL=decomposed,65536,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,82445.8,87157.3,+5.7%
-# check,aes128gcm,WIDEMUL=decomposed,65536,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,64252.6,68679.8,+6.9%
-# check,aes128gcm,WIDEMUL=decomposed,65536,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,41091.2,45648.9,+11.1%
-# check,aes128gcm,WIDEMUL=decomposed,65536,compute_tag = ghash_data + compute_tag_fixed,41412.8,41508.4,+0.2%
-aes256gcm,WIDEMUL=decomposed,rec_seal,1024,2146.1,2.0958,477.1,4.1,2110.8,2359.6
-aes256gcm,WIDEMUL=decomposed,refill,1024,22.6,0.0220,45397.5,0.9,22.4,35.5
-aes256gcm,WIDEMUL=decomposed,rec_open,1024,1778.0,1.7364,575.9,5.9,1750.7,2276.5
-aes256gcm,WIDEMUL=decomposed,rec_seal_without_aead,1024,362.1,0.3536,2828.2,3.8,344.4,506.4
-aes256gcm,WIDEMUL=decomposed,rec_open_without_aead,1024,357.5,0.3491,2864.6,7.5,321.5,493.3
-aes256gcm,WIDEMUL=decomposed,key_expansion,0,265.8,,,11.5,239.0,299.2
-aes256gcm,WIDEMUL=decomposed,key_wipe,0,90.4,,,3.1,89.9,119.3
-aes256gcm,WIDEMUL=decomposed,aead_seal,1024,1795.0,1.7529,570.5,2.6,1779.9,2681.6
-aes256gcm,WIDEMUL=decomposed,aead_open,1024,1430.7,1.3971,715.8,1.9,1409.7,2009.3
-aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,1024,1015.3,0.9915,1008.5,2.4,1010.3,1123.3
-aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,1024,646.8,0.6316,1583.3,73.0,642.6,1567.2
-aes256gcm,WIDEMUL=decomposed,aes_blocks,1024,589.5,0.5757,1737.1,2.7,587.1,1011.4
-aes256gcm,WIDEMUL=decomposed,block_wipes,1024,480.4,0.4691,2131.7,0.6,479.0,545.4
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,1024,556.8,0.5437,1839.2,1.2,550.9,972.4
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,1024,197.5,0.1928,5186.0,1.4,192.4,305.4
-aes256gcm,WIDEMUL=decomposed,stub_cipher_calls,1024,71.9,0.0702,14242.1,3.6,70.8,78.5
-aes256gcm,WIDEMUL=decomposed,compute_tag,1024,763.9,0.7460,1340.5,1.1,759.1,828.6
-aes256gcm,WIDEMUL=decomposed,ghash_data,1024,662.7,0.6472,1545.1,1.2,658.5,706.1
-aes256gcm,WIDEMUL=decomposed,compute_tag_fixed,0,137.2,,,1.1,136.1,191.0
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_in_place,1024,483.3,0.4720,2118.7,1.6,,
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_shifted,1024,125.6,0.1227,8149.9,3.5,,
-# check,aes256gcm,WIDEMUL=decomposed,1024,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,1795.0,1872.7,+4.3%
-# check,aes256gcm,WIDEMUL=decomposed,1024,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,1430.7,1515.0,+5.9%
-# check,aes256gcm,WIDEMUL=decomposed,1024,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,1015.3,1072.8,+5.7%
-# check,aes256gcm,WIDEMUL=decomposed,1024,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,646.8,715.1,+10.6%
-# check,aes256gcm,WIDEMUL=decomposed,1024,compute_tag = ghash_data + compute_tag_fixed,763.9,799.9,+4.7%
-# check,aes256gcm,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,2146.1,2157.1,+0.5%
-# check,aes256gcm,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,1778.0,1788.1,+0.6%
-aes256gcm,WIDEMUL=decomposed,rec_seal,16384,27161.5,1.6578,603.2,3.6,26867.8,36504.6
-aes256gcm,WIDEMUL=decomposed,refill,16384,401.8,0.0245,40780.2,1.7,391.7,432.2
-aes256gcm,WIDEMUL=decomposed,rec_open,16384,20676.1,1.2620,792.4,18.6,20592.9,30228.9
-aes256gcm,WIDEMUL=decomposed,rec_seal_without_aead,16384,770.1,0.0470,21275.7,1.3,742.9,1108.4
-aes256gcm,WIDEMUL=decomposed,rec_open_without_aead,16384,355.3,0.0217,46119.0,5.8,322.8,533.1
-aes256gcm,WIDEMUL=decomposed,aead_seal,16384,26699.9,1.6296,613.6,8.8,26143.2,34102.9
-aes256gcm,WIDEMUL=decomposed,aead_open,16384,20312.3,1.2398,806.6,0.7,20231.5,30070.2
-aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,16384,15924.5,0.9720,1028.9,1.3,15730.5,25443.4
-aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,16384,9927.7,0.6059,1650.3,4.2,9845.0,18869.1
-aes256gcm,WIDEMUL=decomposed,aes_blocks,16384,9227.2,0.5632,1775.6,0.8,9156.9,9827.5
-aes256gcm,WIDEMUL=decomposed,block_wipes,16384,7488.8,0.4571,2187.8,2.5,7463.1,9213.9
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,16384,8601.2,0.5250,1904.8,1.7,8495.8,11318.4
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,16384,2866.3,0.1749,5716.1,6.4,2809.9,3270.8
-aes256gcm,WIDEMUL=decomposed,stub_cipher_calls,16384,1029.5,0.0628,15915.2,1.1,1023.1,1079.8
-aes256gcm,WIDEMUL=decomposed,compute_tag,16384,10458.7,0.6383,1566.5,2.8,10377.0,11987.3
-aes256gcm,WIDEMUL=decomposed,ghash_data,16384,10323.9,0.6301,1587.0,5.5,10260.7,14641.3
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_in_place,16384,7570.2,0.4621,2164.3,1.9,,
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_shifted,16384,1836.8,0.1121,8919.7,9.5,,
-# check,aes256gcm,WIDEMUL=decomposed,16384,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,26699.9,27258.5,+2.1%
-# check,aes256gcm,WIDEMUL=decomposed,16384,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,20312.3,21525.1,+6.0%
-# check,aes256gcm,WIDEMUL=decomposed,16384,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,15924.5,16797.4,+5.5%
-# check,aes256gcm,WIDEMUL=decomposed,16384,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,9927.7,11064.0,+11.4%
-# check,aes256gcm,WIDEMUL=decomposed,16384,compute_tag = ghash_data + compute_tag_fixed,10458.7,10461.0,+0.0%
-# check,aes256gcm,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,27161.5,27470.0,+1.1%
-# check,aes256gcm,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,20676.1,20667.5,-0.0%
-aes256gcm,WIDEMUL=decomposed,refill,65536,1715.5,0.0262,38203.3,2.8,1611.0,2673.1
-aes256gcm,WIDEMUL=decomposed,aead_seal,65536,115507.8,1.7625,567.4,10.9,104153.6,205213.6
-aes256gcm,WIDEMUL=decomposed,aead_open,65536,81302.4,1.2406,806.1,2.1,80601.9,105159.7
-aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,65536,63359.4,0.9668,1034.4,2.0,62828.1,76664.1
-aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,65536,39996.1,0.6103,1638.6,6.2,39408.8,77891.9
-aes256gcm,WIDEMUL=decomposed,aes_blocks,65536,37108.1,0.5662,1766.1,3.8,36596.3,52238.3
-aes256gcm,WIDEMUL=decomposed,block_wipes,65536,30087.2,0.4591,2178.2,0.7,29812.5,43432.3
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_in_place,65536,34208.3,0.5220,1915.8,2.5,33856.8,77617.2
-aes256gcm,WIDEMUL=decomposed,counter_mode_without_aes_shifted,65536,11429.7,0.1744,5733.8,3.5,11130.5,17768.6
-aes256gcm,WIDEMUL=decomposed,stub_cipher_calls,65536,4106.1,0.0627,15960.6,2.6,4070.1,6027.3
-aes256gcm,WIDEMUL=decomposed,compute_tag,65536,41414.1,0.6319,1582.5,2.1,41152.3,45688.8
-aes256gcm,WIDEMUL=decomposed,ghash_data,65536,41342.4,0.6308,1585.2,1.2,41018.2,58834.6
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_in_place,65536,30126.9,0.4597,2175.3,2.5,,
-aes256gcm,WIDEMUL=decomposed,xor_and_increments_shifted,65536,7323.6,0.1117,8948.6,4.4,,
-# check,aes256gcm,WIDEMUL=decomposed,65536,aead_seal = aes_blocks + xor_and_increments_in_place + ghash_data + compute_tag_fixed,115507.8,108714.6,-5.9%
-# check,aes256gcm,WIDEMUL=decomposed,65536,aead_open = aes_blocks + xor_and_increments_shifted + ghash_data + compute_tag_fixed,81302.4,85911.2,+5.7%
-# check,aes256gcm,WIDEMUL=decomposed,65536,counter_mode_in_place = aes_blocks + xor_and_increments_in_place,63359.4,67235.0,+6.1%
-# check,aes256gcm,WIDEMUL=decomposed,65536,counter_mode_shifted = aes_blocks + xor_and_increments_shifted,39996.1,44431.7,+11.1%
-# check,aes256gcm,WIDEMUL=decomposed,65536,compute_tag = ghash_data + compute_tag_fixed,41414.1,41479.6,+0.2%
-chacha20poly1305,WIDEMUL=decomposed,rec_seal,1024,4160.3,4.0628,246.1,1.8,4102.5,8059.4
-chacha20poly1305,WIDEMUL=decomposed,refill,1024,22.6,0.0220,45377.1,2.3,22.4,35.8
-chacha20poly1305,WIDEMUL=decomposed,rec_open,1024,3662.7,3.5768,279.6,10.5,3592.8,5591.4
-chacha20poly1305,WIDEMUL=decomposed,rec_seal_without_aead,1024,24.2,0.0237,42240.0,7.4,23.9,44.8
-chacha20poly1305,WIDEMUL=decomposed,rec_open_without_aead,1024,5.9,0.0058,173552.8,3.9,5.8,7.8
-chacha20poly1305,WIDEMUL=decomposed,aead_seal,1024,4124.7,4.0280,248.3,1.5,4087.2,5459.6
-chacha20poly1305,WIDEMUL=decomposed,aead_open,1024,3610.7,3.5260,283.6,2.0,3577.8,6129.2
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,1024,2122.4,2.0727,482.5,4.5,2106.0,3369.1
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,1024,1618.7,1.5807,632.6,2.8,1603.1,3009.1
-chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,1024,1601.8,1.5643,639.3,7.0,1589.8,2324.4
-chacha20poly1305,WIDEMUL=decomposed,mac,1024,1995.6,1.9488,513.1,1.3,1981.0,2542.5
-chacha20poly1305,WIDEMUL=decomposed,poly1305_data,1024,1753.0,1.7119,584.2,2.3,1735.2,2874.8
-chacha20poly1305,WIDEMUL=decomposed,mac_fixed,0,218.2,,,2.2,216.3,456.9
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,1024,515.5,0.5034,1986.4,4.3,,
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,1024,12.2,0.0119,83886.1,572.3,,
-# check,chacha20poly1305,WIDEMUL=decomposed,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,4124.7,4093.5,-0.8%
-# check,chacha20poly1305,WIDEMUL=decomposed,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,3610.7,3589.8,-0.6%
-# check,chacha20poly1305,WIDEMUL=decomposed,1024,mac = poly1305_data + mac_fixed,1995.6,1971.1,-1.2%
-# check,chacha20poly1305,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,4160.3,4148.9,-0.3%
-# check,chacha20poly1305,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,3662.7,3616.6,-1.3%
-chacha20poly1305,WIDEMUL=decomposed,rec_seal,16384,60655.0,3.7021,270.1,0.3,60446.6,61837.2
-chacha20poly1305,WIDEMUL=decomposed,refill,16384,402.3,0.0246,40726.5,1.9,394.3,420.2
-chacha20poly1305,WIDEMUL=decomposed,rec_open,16384,52216.2,3.1870,313.8,0.9,52012.9,67171.1
-chacha20poly1305,WIDEMUL=decomposed,rec_seal_without_aead,16384,413.5,0.0252,39627.3,6.2,404.9,470.5
-chacha20poly1305,WIDEMUL=decomposed,rec_open_without_aead,16384,5.8,0.0004,2818142.3,0.2,5.8,6.1
-chacha20poly1305,WIDEMUL=decomposed,aead_seal,16384,60264.3,3.6782,271.9,0.3,60014.3,71705.7
-chacha20poly1305,WIDEMUL=decomposed,aead_open,16384,52219.6,3.1872,313.8,0.3,52019.5,53790.3
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,16384,32104.2,1.9595,510.3,0.3,32035.2,32537.8
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,16384,24089.2,1.4703,680.1,0.2,23994.1,27802.7
-chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,16384,24016.3,1.4658,682.2,0.4,23887.4,24722.7
-chacha20poly1305,WIDEMUL=decomposed,mac,16384,28059.9,1.7126,583.9,0.4,27987.6,29155.6
-chacha20poly1305,WIDEMUL=decomposed,poly1305_data,16384,27770.8,1.6950,590.0,0.5,27652.3,28381.5
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,16384,8110.0,0.4950,2020.2,0.9,,
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,16384,79.4,0.0048,206250.2,124.6,,
-# check,chacha20poly1305,WIDEMUL=decomposed,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,60264.3,60093.2,-0.3%
-# check,chacha20poly1305,WIDEMUL=decomposed,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,52219.6,52078.2,-0.3%
-# check,chacha20poly1305,WIDEMUL=decomposed,16384,mac = poly1305_data + mac_fixed,28059.9,27989.0,-0.3%
-# check,chacha20poly1305,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,60655.0,60677.8,+0.0%
-# check,chacha20poly1305,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,52216.2,52225.4,+0.0%
-chacha20poly1305,WIDEMUL=decomposed,refill,65536,1703.0,0.0260,38481.7,3.8,1623.1,1853.8
-chacha20poly1305,WIDEMUL=decomposed,aead_seal,65536,240302.1,3.6667,272.7,0.8,239088.6,296698.0
-chacha20poly1305,WIDEMUL=decomposed,aead_open,65536,208284.8,3.1782,314.6,0.5,206825.4,229731.6
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,65536,128349.0,1.9585,510.6,0.6,127875.0,132375.0
-chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,65536,96000.0,1.4648,682.7,0.2,95479.1,98416.8
-chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,65536,95510.5,1.4574,686.2,0.3,95000.0,97864.5
-chacha20poly1305,WIDEMUL=decomposed,mac,65536,111682.3,1.7041,586.8,0.3,111213.6,119700.6
-chacha20poly1305,WIDEMUL=decomposed,poly1305_data,65536,111260.4,1.6977,589.0,0.4,110966.1,118598.9
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,65536,32796.9,0.5004,1998.2,3.0,,
-chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,65536,416.6,0.0064,157302.1,46.3,,
-# check,chacha20poly1305,WIDEMUL=decomposed,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,240302.1,239827.6,-0.2%
-# check,chacha20poly1305,WIDEMUL=decomposed,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,208284.8,207478.6,-0.4%
-# check,chacha20poly1305,WIDEMUL=decomposed,65536,mac = poly1305_data + mac_fixed,111682.3,111478.6,-0.2%
-chacha20poly1305,WIDEMUL=native,rec_seal,1024,3032.0,2.9609,337.7,0.5,3019.5,3381.8
-chacha20poly1305,WIDEMUL=native,refill,1024,22.5,0.0220,45482.1,0.5,22.4,23.9
-chacha20poly1305,WIDEMUL=native,rec_open,1024,2528.7,2.4694,405.0,0.2,2514.3,3020.5
-chacha20poly1305,WIDEMUL=native,rec_seal_without_aead,1024,24.0,0.0234,42651.7,0.3,23.9,28.2
-chacha20poly1305,WIDEMUL=native,rec_open_without_aead,1024,5.9,0.0058,173562.2,0.3,5.8,6.0
-chacha20poly1305,WIDEMUL=native,aead_seal,1024,3019.3,2.9485,339.2,0.7,3006.7,4105.8
-chacha20poly1305,WIDEMUL=native,aead_open,1024,2509.9,2.4511,408.0,0.6,2498.8,2915.0
-chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,1024,2106.0,2.0566,486.2,0.2,2099.8,2274.6
-chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,1024,1602.7,1.5651,638.9,0.6,1598.3,2135.1
-chacha20poly1305,WIDEMUL=native,chacha20_blocks,1024,1596.4,1.5589,641.5,0.9,1589.4,1697.7
-chacha20poly1305,WIDEMUL=native,mac,1024,904.6,0.8834,1131.9,0.6,902.4,1015.9
-chacha20poly1305,WIDEMUL=native,poly1305_data,1024,696.2,0.6799,1470.8,0.6,692.4,794.5
-chacha20poly1305,WIDEMUL=native,mac_fixed,0,193.1,,,0.4,191.6,251.6
-chacha20poly1305,WIDEMUL=native,xor_rest_in_place,1024,509.8,0.4978,2008.8,2.6,,
-chacha20poly1305,WIDEMUL=native,xor_rest_shifted,1024,6.3,0.0062,162368.5,96.8,,
-# check,chacha20poly1305,WIDEMUL=native,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,3019.3,2995.3,-0.8%
-# check,chacha20poly1305,WIDEMUL=native,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,2509.9,2492.0,-0.7%
-# check,chacha20poly1305,WIDEMUL=native,1024,mac = poly1305_data + mac_fixed,904.6,889.4,-1.7%
-# check,chacha20poly1305,WIDEMUL=native,1024,rec_seal = rec_seal_without_aead + aead_seal,3032.0,3043.3,+0.4%
-# check,chacha20poly1305,WIDEMUL=native,1024,rec_open = rec_open_without_aead + aead_open,2528.7,2515.8,-0.5%
-chacha20poly1305,WIDEMUL=native,rec_seal,16384,44041.7,2.6881,372.0,0.9,43806.0,51825.5
-chacha20poly1305,WIDEMUL=native,refill,16384,397.7,0.0243,41193.2,3.0,391.4,433.7
-chacha20poly1305,WIDEMUL=native,rec_open,16384,35562.1,2.1705,460.7,0.8,35407.1,54722.2
-chacha20poly1305,WIDEMUL=native,rec_seal_without_aead,16384,426.8,0.0260,38389.1,3.0,413.1,492.9
-chacha20poly1305,WIDEMUL=native,rec_open_without_aead,16384,5.8,0.0004,2820533.4,1.3,5.8,7.7
-chacha20poly1305,WIDEMUL=native,aead_seal,16384,43582.0,2.6600,375.9,1.3,43397.2,51265.6
-chacha20poly1305,WIDEMUL=native,aead_open,16384,35464.4,2.1646,462.0,2.5,35396.5,38883.7
-chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,16384,32104.2,1.9595,510.3,1.2,32023.4,33992.2
-chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,16384,24102.2,1.4711,679.8,0.5,24010.4,29238.9
-chacha20poly1305,WIDEMUL=native,chacha20_blocks,16384,23955.1,1.4621,683.9,2.3,23880.9,27365.2
-chacha20poly1305,WIDEMUL=native,mac,16384,11406.9,0.6962,1436.3,9.3,11360.7,15265.3
-chacha20poly1305,WIDEMUL=native,poly1305_data,16384,11164.4,0.6814,1467.5,9.6,11122.4,13869.1
-chacha20poly1305,WIDEMUL=native,xor_rest_in_place,16384,8134.8,0.4965,2014.1,2.5,,
-chacha20poly1305,WIDEMUL=native,xor_rest_shifted,16384,82.0,0.0050,199728.8,563.5,,
-# check,chacha20poly1305,WIDEMUL=native,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,43582.0,43461.7,-0.3%
-# check,chacha20poly1305,WIDEMUL=native,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,35464.4,35459.7,-0.0%
-# check,chacha20poly1305,WIDEMUL=native,16384,mac = poly1305_data + mac_fixed,11406.9,11357.5,-0.4%
-# check,chacha20poly1305,WIDEMUL=native,16384,rec_seal = rec_seal_without_aead + aead_seal,44041.7,44008.8,-0.1%
-# check,chacha20poly1305,WIDEMUL=native,16384,rec_open = rec_open_without_aead + aead_open,35562.1,35470.2,-0.3%
-chacha20poly1305,WIDEMUL=native,refill,65536,1697.3,0.0259,38612.7,1.1,1605.6,1759.6
-chacha20poly1305,WIDEMUL=native,aead_seal,65536,172583.5,2.6334,379.7,1.2,172041.5,177604.0
-chacha20poly1305,WIDEMUL=native,aead_open,65536,141312.0,2.1563,463.8,0.3,140115.2,142854.7
-chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,65536,128323.0,1.9581,510.7,0.3,127859.4,130156.2
-chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,65536,96158.8,1.4673,681.5,0.2,95703.1,97302.1
-chacha20poly1305,WIDEMUL=native,chacha20_blocks,65536,95156.2,1.4520,688.7,0.4,94968.8,97416.5
-chacha20poly1305,WIDEMUL=native,mac,65536,44942.7,0.6858,1458.2,0.4,44737.0,45433.6
-chacha20poly1305,WIDEMUL=native,poly1305_data,65536,44690.1,0.6819,1466.5,0.3,44380.2,45216.1
-chacha20poly1305,WIDEMUL=native,xor_rest_in_place,65536,33062.6,0.5045,1982.2,1.4,,
-chacha20poly1305,WIDEMUL=native,xor_rest_shifted,65536,940.1,0.0143,69714.5,28.0,,
-# check,chacha20poly1305,WIDEMUL=native,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,172583.5,173206.2,+0.4%
-# check,chacha20poly1305,WIDEMUL=native,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,141312.0,141042.0,-0.2%
-# check,chacha20poly1305,WIDEMUL=native,65536,mac = poly1305_data + mac_fixed,44942.7,44883.2,-0.1%
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal,1024,3058.3,2.9867,334.8,1.7,3041.7,5654.1
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,1024,22.5,0.0219,45585.1,0.8,22.4,27.2
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open,1024,3050.1,2.9786,335.7,1.0,3030.1,4434.3
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal_without_aead,1024,24.0,0.0234,42665.3,0.9,23.9,38.1
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open_without_aead,1024,5.8,0.0057,176215.8,0.5,5.8,13.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,1024,3037.3,2.9661,337.1,2.7,3028.6,4479.9
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,1024,3028.9,2.9579,338.1,9.3,3015.8,4325.3
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,1024,1055.7,1.0310,969.9,0.7,1051.6,1153.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,1024,1053.4,1.0287,972.1,0.2,1050.6,1109.8
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,1024,1052.8,1.0281,972.7,1.1,1049.8,1077.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,1024,1981.9,1.9354,516.7,1.4,1971.9,2614.1
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,1024,1742.0,1.7012,587.8,0.8,1730.5,1798.8
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac_fixed,0,208.7,,,2.4,207.1,428.5
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,1024,2.9,0.0028,354488.2,190.2,,
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,1024,1.6,0.0015,645277.5,687.1,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,3037.3,3006.5,-1.0%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,3028.9,3004.1,-0.8%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,mac = poly1305_data + mac_fixed,1981.9,1950.7,-1.6%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,3058.3,3061.3,+0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,3050.1,3034.7,-0.5%
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal,16384,42207.0,2.5761,388.2,0.8,41964.8,84237.0
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,16384,400.5,0.0244,40913.8,2.7,393.9,513.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open,16384,41697.9,2.5450,392.9,0.4,41547.5,68546.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal_without_aead,16384,426.8,0.0261,38386.3,1.6,412.4,657.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open_without_aead,16384,5.8,0.0004,2811149.7,3.5,5.8,12.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,16384,41835.9,2.5535,391.6,1.7,41533.8,60890.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,16384,41733.7,2.5472,392.6,6.9,41508.4,80490.2
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,16384,13645.8,0.8329,1200.7,1.0,13600.3,23434.6
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,16384,13625.0,0.8316,1202.5,0.7,13593.4,20283.5
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,16384,13646.5,0.8329,1200.6,4.2,13580.7,19861.3
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,16384,28087.9,1.7143,583.3,0.6,27969.4,43030.0
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,16384,27886.7,1.7021,587.5,1.1,27726.6,54260.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,16384,12.4,0.0008,1324796.0,3519.2,,
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,16384,-10.7,-0.0007,-1525201.5,-4421.2,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,41835.9,41741.3,-0.2%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,41733.7,41720.4,-0.0%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,mac = poly1305_data + mac_fixed,28087.9,28095.4,+0.0%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,42207.0,42262.8,+0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,41697.9,41739.5,+0.1%
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,65536,1705.0,0.0260,38437.6,2.0,1632.6,2358.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,65536,165666.6,2.5279,395.6,0.5,164854.2,191760.4
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,65536,165725.3,2.5288,395.4,0.3,164841.9,236133.5
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,65536,53971.4,0.8235,1214.3,0.4,53747.4,79013.0
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,65536,53989.6,0.8238,1213.9,52.5,53725.2,89895.8
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,65536,53947.9,0.8232,1214.8,12.7,53720.1,67424.5
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,65536,111614.6,1.7031,587.2,0.3,111179.7,126757.8
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,65536,111385.4,1.6996,588.4,0.3,110903.6,168869.8
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,65536,-7.8,-0.0001,-8388608.0,-85733.6,,
-chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,65536,92.5,0.0014,708736.7,23304.6,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,165666.6,165565.5,-0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,165725.3,165583.6,-0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,mac = poly1305_data + mac_fixed,111614.6,111594.1,-0.0%
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal,1024,1469.9,1.4354,696.7,1.1,1460.3,1566.3
-chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,1024,22.5,0.0219,45579.9,0.8,22.3,22.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open,1024,1463.7,1.4294,699.6,3.8,1460.7,1600.5
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal_without_aead,1024,24.1,0.0235,42567.2,1.6,24.0,25.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open_without_aead,1024,5.8,0.0057,176428.2,1.9,5.8,6.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,1024,1451.4,1.4174,705.5,0.9,1447.9,1842.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,1024,1455.5,1.4214,703.5,1.9,1449.0,1870.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,1024,1051.6,1.0269,973.8,0.9,1049.2,1214.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,1024,1052.0,1.0273,973.4,1.1,1048.8,1104.5
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,1024,1051.2,1.0266,974.1,1.0,1049.1,1109.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,1024,407.2,0.3977,2514.4,1.2,406.0,454.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,1024,201.4,0.1967,5083.5,0.7,200.6,296.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,mac_fixed,0,180.3,,,0.7,179.6,224.0
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,1024,0.4,0.0004,2514570.7,609.6,,
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,1024,1.4,0.0014,719187.9,151.4,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1451.4,1433.3,-1.2%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1455.5,1433.7,-1.5%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,mac = poly1305_data + mac_fixed,407.2,381.7,-6.3%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,rec_seal = rec_seal_without_aead + aead_seal,1469.9,1475.4,+0.4%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,rec_open = rec_open_without_aead + aead_open,1463.7,1461.3,-0.2%
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal,16384,16795.6,1.0251,975.5,0.5,16757.8,16985.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,16384,401.8,0.0245,40777.1,0.9,393.0,419.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open,16384,16389.4,1.0003,999.7,0.6,16345.3,17164.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal_without_aead,16384,424.4,0.0259,38608.1,0.6,415.0,448.2
-chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open_without_aead,16384,5.8,0.0004,2822618.8,1.0,5.8,6.0
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,16384,16386.7,1.0002,999.8,0.3,16356.8,17107.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,16384,16374.6,0.9994,1000.6,0.3,16334.2,16615.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,16384,13621.7,0.8314,1202.8,0.3,13576.8,13776.7
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,16384,13616.2,0.8311,1203.3,0.3,13570.3,13764.6
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,16384,13615.6,0.8310,1203.3,0.2,13579.4,13736.0
-chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,16384,2777.0,0.1695,5899.9,0.6,2766.2,2814.6
-chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,16384,2565.8,0.1566,6385.4,0.5,2555.9,2643.8
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,16384,6.2,0.0004,2651266.8,300.3,,
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,16384,-8.8,-0.0005,-1864135.1,-674.1,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,16386.7,16367.8,-0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,16374.6,16362.3,-0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,mac = poly1305_data + mac_fixed,2777.0,2746.1,-1.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,rec_seal = rec_seal_without_aead + aead_seal,16795.6,16811.1,+0.1%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,rec_open = rec_open_without_aead + aead_open,16389.4,16380.4,-0.1%
-chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,65536,1693.2,0.0258,38705.5,2.5,1591.6,2666.6
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,65536,64492.2,0.9841,1016.2,1.3,64182.3,83898.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,65536,64544.7,0.9849,1015.4,0.5,64193.2,100148.0
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,65536,53951.8,0.8232,1214.7,0.4,53731.8,62071.6
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,65536,53907.5,0.8226,1215.7,1.1,53690.1,67091.2
-chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,65536,53847.7,0.8217,1217.1,0.5,53705.8,63253.9
-chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,65536,10397.5,0.1587,6303.1,0.6,10329.8,15497.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,65536,10160.8,0.1550,6449.9,0.6,10114.9,12359.4
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,65536,54.7,0.0008,1198372.6,473.8,,
-chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,65536,58.6,0.0009,1118481.1,571.1,,
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,64492.2,64292.9,-0.3%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,64544.7,64248.6,-0.5%
-# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,mac = poly1305_data + mac_fixed,10397.5,10341.1,-0.5%
-aes128gcm,OpenSSL 3.0.13,openssl_seal,16384,3054.9,0.1865,5363.2,7.6,,
-aes128gcm,OpenSSL 3.0.13,openssl_open,16384,3131.9,0.1912,5231.3,10.4,,
-aes256gcm,OpenSSL 3.0.13,openssl_seal,16384,3339.5,0.2038,4906.2,9.1,,
-aes256gcm,OpenSSL 3.0.13,openssl_open,16384,3369.3,0.2056,4862.7,6.8,,
-chacha20poly1305,OpenSSL 3.0.13,openssl_seal,16384,10951.6,0.6684,1496.0,19.2,,
-chacha20poly1305,OpenSSL 3.0.13,openssl_open,16384,11270.4,0.6879,1453.7,15.5,,
+aes128gcm,WIDEMUL=decomposed,rec_seal,1024,959.6,0.9371,1067.2,1.7,946.8,985.2
+aes128gcm,WIDEMUL=decomposed,refill,1024,22.5,0.0220,45555.4,0.3,22.4,22.6
+aes128gcm,WIDEMUL=decomposed,rec_open,1024,958.2,0.9357,1068.7,0.5,937.2,966.8
+aes128gcm,WIDEMUL=decomposed,rec_seal_without_aead,1024,306.1,0.2989,3345.1,3.8,279.4,317.6
+aes128gcm,WIDEMUL=decomposed,rec_open_without_aead,1024,285.1,0.2785,3591.3,7.1,264.7,304.9
+aes128gcm,WIDEMUL=decomposed,key_expansion,0,192.2,,,10.1,184.6,217.2
+aes128gcm,WIDEMUL=decomposed,key_wipe,0,90.1,,,0.2,89.8,90.7
+aes128gcm,WIDEMUL=decomposed,aead_seal,1024,653.8,0.6385,1566.2,0.7,650.9,659.0
+aes128gcm,WIDEMUL=decomposed,aead_open,1024,655.8,0.6404,1561.4,0.4,654.1,661.1
+aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,1024,170.3,0.1663,6011.9,0.4,169.7,171.6
+aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,1024,170.8,0.1668,5995.4,0.5,169.7,171.9
+aes128gcm,WIDEMUL=decomposed,counter_blocks_in_place,1024,148.5,0.1450,6894.7,0.5,148.0,150.9
+aes128gcm,WIDEMUL=decomposed,counter_blocks_shifted,1024,148.2,0.1448,6907.5,0.4,148.0,149.5
+aes128gcm,WIDEMUL=decomposed,compute_tag,1024,487.7,0.4762,2099.8,0.3,486.4,489.7
+aes128gcm,WIDEMUL=decomposed,ghash_data,1024,308.1,0.3008,3324.0,0.5,307.0,309.9
+aes128gcm,WIDEMUL=decomposed,compute_tag_fixed,0,247.6,,,0.5,247.0,249.6
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,1024,22.0,0.0215,46614.0,3.3,,
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,1024,22.3,0.0217,46017.4,4.5,,
+# check,aes128gcm,WIDEMUL=decomposed,1024,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,653.8,726.0,+11.0%
+# check,aes128gcm,WIDEMUL=decomposed,1024,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,655.8,726.5,+10.8%
+# check,aes128gcm,WIDEMUL=decomposed,1024,compute_tag = ghash_data + compute_tag_fixed,487.7,555.7,+13.9%
+# check,aes128gcm,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,959.6,959.9,+0.0%
+# check,aes128gcm,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,958.2,940.9,-1.8%
+aes128gcm,WIDEMUL=decomposed,rec_seal,16384,5237.1,0.3196,3128.4,0.7,5214.8,5335.4
+aes128gcm,WIDEMUL=decomposed,refill,16384,399.9,0.0244,40965.9,1.8,389.9,413.5
+aes128gcm,WIDEMUL=decomposed,rec_open,16384,4867.4,0.2971,3366.1,0.3,4841.9,4952.5
+aes128gcm,WIDEMUL=decomposed,rec_seal_without_aead,16384,648.7,0.0396,25255.8,3.5,621.8,663.8
+aes128gcm,WIDEMUL=decomposed,rec_open_without_aead,16384,288.3,0.0176,56831.8,10.0,265.5,306.5
+aes128gcm,WIDEMUL=decomposed,aead_seal,16384,4611.2,0.2814,3553.1,0.4,4602.5,4657.9
+aes128gcm,WIDEMUL=decomposed,aead_open,16384,4567.4,0.2788,3587.2,0.8,4551.6,4686.3
+aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,16384,1671.8,0.1020,9800.3,0.5,1668.9,1718.4
+aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,16384,1644.3,0.1004,9964.2,0.2,1640.6,1656.0
+aes128gcm,WIDEMUL=decomposed,counter_blocks_in_place,16384,1646.0,0.1005,9953.6,0.5,1642.2,1666.1
+aes128gcm,WIDEMUL=decomposed,counter_blocks_shifted,16384,1620.7,0.0989,10109.3,0.6,1614.1,1658.1
+aes128gcm,WIDEMUL=decomposed,compute_tag,16384,2946.9,0.1799,5559.8,0.4,2936.6,2986.7
+aes128gcm,WIDEMUL=decomposed,ghash_data,16384,2762.2,0.1686,5931.5,0.5,2754.2,2830.9
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,16384,26.1,0.0016,627162.2,48.3,,
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,16384,25.0,0.0015,655769.9,31.8,,
+# check,aes128gcm,WIDEMUL=decomposed,16384,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,4611.2,4681.6,+1.5%
+# check,aes128gcm,WIDEMUL=decomposed,16384,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,4567.4,4654.1,+1.9%
+# check,aes128gcm,WIDEMUL=decomposed,16384,compute_tag = ghash_data + compute_tag_fixed,2946.9,3009.8,+2.1%
+# check,aes128gcm,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,5237.1,5259.9,+0.4%
+# check,aes128gcm,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,4867.4,4855.7,-0.2%
+aes128gcm,WIDEMUL=decomposed,refill,65536,1671.6,0.0255,39205.8,1.6,1587.2,1713.3
+aes128gcm,WIDEMUL=decomposed,aead_seal,65536,17227.9,0.2629,3804.1,0.5,17183.6,17403.6
+aes128gcm,WIDEMUL=decomposed,aead_open,65536,17044.8,0.2601,3844.9,0.6,17004.5,17204.0
+aes128gcm,WIDEMUL=decomposed,counter_mode_in_place,65536,6452.8,0.0985,10156.2,0.6,6426.1,6495.4
+aes128gcm,WIDEMUL=decomposed,counter_mode_shifted,65536,6333.8,0.0966,10347.0,0.6,6313.2,6384.8
+aes128gcm,WIDEMUL=decomposed,counter_blocks_in_place,65536,6423.8,0.0980,10202.0,0.3,6401.5,6481.6
+aes128gcm,WIDEMUL=decomposed,counter_blocks_shifted,65536,6305.3,0.0962,10393.7,0.4,6290.7,6348.0
+aes128gcm,WIDEMUL=decomposed,compute_tag,65536,10798.8,0.1648,6068.8,0.2,10758.5,10877.9
+aes128gcm,WIDEMUL=decomposed,ghash_data,65536,10613.0,0.1619,6175.1,0.4,10574.5,10715.8
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,65536,27.5,0.0004,2382450.4,83.4,,
+aes128gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,65536,28.5,0.0004,2301085.7,46.9,,
+# check,aes128gcm,WIDEMUL=decomposed,65536,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,17227.9,17313.4,+0.5%
+# check,aes128gcm,WIDEMUL=decomposed,65536,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,17044.8,17194.4,+0.9%
+# check,aes128gcm,WIDEMUL=decomposed,65536,compute_tag = ghash_data + compute_tag_fixed,10798.8,10860.6,+0.6%
+aes256gcm,WIDEMUL=decomposed,rec_seal,1024,1056.8,1.0320,969.0,4.4,1023.6,1094.1
+aes256gcm,WIDEMUL=decomposed,refill,1024,22.5,0.0220,45547.7,0.7,22.4,23.0
+aes256gcm,WIDEMUL=decomposed,rec_open,1024,1040.4,1.0161,984.2,1.0,1024.4,1066.8
+aes256gcm,WIDEMUL=decomposed,rec_seal_without_aead,1024,373.3,0.3645,2743.3,3.5,348.4,395.6
+aes256gcm,WIDEMUL=decomposed,rec_open_without_aead,1024,357.7,0.3493,2863.0,4.2,322.7,381.9
+aes256gcm,WIDEMUL=decomposed,key_expansion,0,271.8,,,8.1,239.5,296.8
+aes256gcm,WIDEMUL=decomposed,key_wipe,0,90.1,,,0.7,89.8,92.4
+aes256gcm,WIDEMUL=decomposed,aead_seal,1024,684.2,0.6682,1496.6,0.7,681.1,698.4
+aes256gcm,WIDEMUL=decomposed,aead_open,1024,684.5,0.6684,1496.0,0.5,680.6,699.5
+aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,1024,195.3,0.1907,5243.7,0.7,194.6,198.0
+aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,1024,195.3,0.1907,5244.0,0.4,194.6,198.7
+aes256gcm,WIDEMUL=decomposed,counter_blocks_in_place,1024,174.3,0.1702,5875.9,0.4,173.5,176.2
+aes256gcm,WIDEMUL=decomposed,counter_blocks_shifted,1024,174.0,0.1699,5884.2,1.0,173.4,178.5
+aes256gcm,WIDEMUL=decomposed,compute_tag,1024,487.6,0.4761,2100.2,0.6,486.2,496.4
+aes256gcm,WIDEMUL=decomposed,ghash_data,1024,307.7,0.3005,3328.2,1.9,307.1,318.5
+aes256gcm,WIDEMUL=decomposed,compute_tag_fixed,0,249.0,,,1.4,246.6,256.3
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,1024,21.2,0.0207,48372.5,5.3,,
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,1024,21.1,0.0206,48571.3,6.5,,
+# check,aes256gcm,WIDEMUL=decomposed,1024,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,684.2,752.0,+9.9%
+# check,aes256gcm,WIDEMUL=decomposed,1024,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,684.5,751.9,+9.9%
+# check,aes256gcm,WIDEMUL=decomposed,1024,compute_tag = ghash_data + compute_tag_fixed,487.6,556.7,+14.2%
+# check,aes256gcm,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,1056.8,1057.5,+0.1%
+# check,aes256gcm,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,1040.4,1042.2,+0.2%
+aes256gcm,WIDEMUL=decomposed,rec_seal,16384,5735.7,0.3501,2856.5,0.6,5718.3,5828.1
+aes256gcm,WIDEMUL=decomposed,refill,16384,398.3,0.0243,41139.5,1.9,391.4,413.6
+aes256gcm,WIDEMUL=decomposed,rec_open,16384,5347.9,0.3264,3063.6,0.5,5323.4,5400.0
+aes256gcm,WIDEMUL=decomposed,rec_seal_without_aead,16384,702.4,0.0429,23326.7,1.6,687.4,728.5
+aes256gcm,WIDEMUL=decomposed,rec_open_without_aead,16384,348.9,0.0213,46953.9,2.4,323.1,358.7
+aes256gcm,WIDEMUL=decomposed,aead_seal,16384,5037.9,0.3075,3252.1,0.3,5023.8,5070.1
+aes256gcm,WIDEMUL=decomposed,aead_open,16384,5002.2,0.3053,3275.4,0.3,4977.9,5024.6
+aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,16384,2089.0,0.1275,7842.9,0.3,2083.7,2117.3
+aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,16384,2060.1,0.1257,7952.9,0.5,2056.4,2085.0
+aes256gcm,WIDEMUL=decomposed,counter_blocks_in_place,16384,2068.1,0.1262,7922.2,0.5,2061.8,2105.9
+aes256gcm,WIDEMUL=decomposed,counter_blocks_shifted,16384,2040.0,0.1245,8031.5,0.3,2034.5,2076.9
+aes256gcm,WIDEMUL=decomposed,compute_tag,16384,2945.6,0.1798,5562.1,1.0,2932.3,3024.7
+aes256gcm,WIDEMUL=decomposed,ghash_data,16384,2764.9,0.1688,5925.7,0.3,2754.6,2831.8
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,16384,21.2,0.0013,771366.3,32.6,,
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,16384,19.6,0.0012,835352.3,31.5,,
+# check,aes256gcm,WIDEMUL=decomposed,16384,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,5037.9,5102.9,+1.3%
+# check,aes256gcm,WIDEMUL=decomposed,16384,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,5002.2,5074.0,+1.4%
+# check,aes256gcm,WIDEMUL=decomposed,16384,compute_tag = ghash_data + compute_tag_fixed,2945.6,3013.9,+2.3%
+# check,aes256gcm,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,5735.7,5740.3,+0.1%
+# check,aes256gcm,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,5347.9,5351.1,+0.1%
+aes256gcm,WIDEMUL=decomposed,refill,65536,1669.6,0.0255,39253.6,5.4,1630.0,1741.5
+aes256gcm,WIDEMUL=decomposed,aead_seal,65536,18994.1,0.2898,3450.3,2.2,18915.4,19449.9
+aes256gcm,WIDEMUL=decomposed,aead_open,65536,18785.3,0.2866,3488.7,2.3,18672.5,19343.3
+aes256gcm,WIDEMUL=decomposed,counter_mode_in_place,65536,8126.6,0.1240,8064.4,3.0,8105.1,8362.6
+aes256gcm,WIDEMUL=decomposed,counter_mode_shifted,65536,8005.2,0.1221,8186.7,2.6,7987.6,8289.1
+aes256gcm,WIDEMUL=decomposed,counter_blocks_in_place,65536,8099.9,0.1236,8090.9,1.8,8076.2,8305.0
+aes256gcm,WIDEMUL=decomposed,counter_blocks_shifted,65536,7978.5,0.1217,8214.1,2.6,7965.8,8180.7
+aes256gcm,WIDEMUL=decomposed,compute_tag,65536,10826.2,0.1652,6053.5,2.7,10759.1,11227.5
+aes256gcm,WIDEMUL=decomposed,ghash_data,65536,10627.0,0.1622,6167.0,3.1,10573.6,11002.9
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_in_place,65536,34.8,0.0005,1881275.6,295.3,,
+aes256gcm,WIDEMUL=decomposed,counter_mode_tail_shifted,65536,20.2,0.0003,3246365.3,169.3,,
+# check,aes256gcm,WIDEMUL=decomposed,65536,aead_seal = counter_mode_in_place + ghash_data + compute_tag_fixed,18994.1,19002.6,+0.0%
+# check,aes256gcm,WIDEMUL=decomposed,65536,aead_open = counter_mode_shifted + ghash_data + compute_tag_fixed,18785.3,18881.2,+0.5%
+# check,aes256gcm,WIDEMUL=decomposed,65536,compute_tag = ghash_data + compute_tag_fixed,10826.2,10875.9,+0.5%
+chacha20poly1305,WIDEMUL=decomposed,rec_seal,1024,4124.7,4.0280,248.3,1.5,4100.4,4305.7
+chacha20poly1305,WIDEMUL=decomposed,refill,1024,22.6,0.0221,45338.7,0.6,22.4,23.3
+chacha20poly1305,WIDEMUL=decomposed,rec_open,1024,3609.0,3.5244,283.7,0.9,3589.8,3775.6
+chacha20poly1305,WIDEMUL=decomposed,rec_seal_without_aead,1024,24.1,0.0235,42479.6,0.6,24.0,25.4
+chacha20poly1305,WIDEMUL=decomposed,rec_open_without_aead,1024,5.8,0.0057,175980.0,0.8,5.8,5.9
+chacha20poly1305,WIDEMUL=decomposed,aead_seal,1024,4091.6,3.9957,250.3,0.8,4084.6,4235.2
+chacha20poly1305,WIDEMUL=decomposed,aead_open,1024,3598.4,3.5141,284.6,2.7,3576.6,3725.3
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,1024,2114.0,2.0645,484.4,1.8,2103.9,2190.9
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,1024,1610.7,1.5729,635.8,2.0,1601.9,1656.5
+chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,1024,1593.9,1.5565,642.5,0.8,1589.6,1655.6
+chacha20poly1305,WIDEMUL=decomposed,mac,1024,1987.1,1.9406,515.3,0.6,1979.7,2068.8
+chacha20poly1305,WIDEMUL=decomposed,poly1305_data,1024,1738.4,1.6977,589.0,0.5,1730.2,1798.5
+chacha20poly1305,WIDEMUL=decomposed,mac_fixed,0,216.6,,,0.9,216.0,223.3
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,1024,516.4,0.5043,1982.8,5.6,,
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,1024,15.2,0.0149,67294.1,166.9,,
+# check,chacha20poly1305,WIDEMUL=decomposed,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,4091.6,4069.0,-0.6%
+# check,chacha20poly1305,WIDEMUL=decomposed,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,3598.4,3565.7,-0.9%
+# check,chacha20poly1305,WIDEMUL=decomposed,1024,mac = poly1305_data + mac_fixed,1987.1,1955.0,-1.6%
+# check,chacha20poly1305,WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,4124.7,4115.7,-0.2%
+# check,chacha20poly1305,WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,3609.0,3604.2,-0.1%
+chacha20poly1305,WIDEMUL=decomposed,rec_seal,16384,60641.9,3.7013,270.2,0.1,60337.2,61539.1
+chacha20poly1305,WIDEMUL=decomposed,refill,16384,400.4,0.0244,40921.1,1.6,392.2,408.6
+chacha20poly1305,WIDEMUL=decomposed,rec_open,16384,52181.7,3.1849,314.0,0.7,51931.5,54199.7
+chacha20poly1305,WIDEMUL=decomposed,rec_seal_without_aead,16384,368.2,0.0225,44492.0,3.5,359.7,380.0
+chacha20poly1305,WIDEMUL=decomposed,rec_open_without_aead,16384,5.8,0.0004,2820996.6,0.8,5.8,6.0
+chacha20poly1305,WIDEMUL=decomposed,aead_seal,16384,60130.2,3.6701,272.5,0.7,59981.8,61596.4
+chacha20poly1305,WIDEMUL=decomposed,aead_open,16384,52167.3,3.1840,314.1,1.1,51954.9,53572.4
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,16384,32102.9,1.9594,510.4,0.8,32019.5,32972.7
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,16384,24080.1,1.4697,680.4,0.5,24002.0,24692.7
+chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,16384,24011.1,1.4655,682.4,0.6,23880.2,24498.0
+chacha20poly1305,WIDEMUL=decomposed,mac,16384,28074.2,1.7135,583.6,0.4,27949.2,28563.2
+chacha20poly1305,WIDEMUL=decomposed,poly1305_data,16384,27864.6,1.7007,588.0,0.8,27708.3,28175.8
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,16384,8173.8,0.4989,2004.4,2.9,,
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,16384,110.7,0.0068,148041.2,81.2,,
+# check,chacha20poly1305,WIDEMUL=decomposed,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,60130.2,60184.1,+0.1%
+# check,chacha20poly1305,WIDEMUL=decomposed,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,52167.3,52161.3,-0.0%
+# check,chacha20poly1305,WIDEMUL=decomposed,16384,mac = poly1305_data + mac_fixed,28074.2,28081.2,+0.0%
+# check,chacha20poly1305,WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,60641.9,60498.5,-0.2%
+# check,chacha20poly1305,WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,52181.7,52173.1,-0.0%
+chacha20poly1305,WIDEMUL=decomposed,refill,65536,1711.8,0.0261,38285.0,2.8,1620.1,1764.2
+chacha20poly1305,WIDEMUL=decomposed,aead_seal,65536,239703.1,3.6576,273.4,0.4,239151.1,245005.2
+chacha20poly1305,WIDEMUL=decomposed,aead_open,65536,208050.7,3.1746,315.0,0.7,207047.0,218883.1
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_in_place,65536,128224.0,1.9565,511.1,0.4,127895.8,130135.5
+chacha20poly1305,WIDEMUL=decomposed,chacha20_xor_shifted,65536,95958.3,1.4642,683.0,0.6,95635.4,98044.3
+chacha20poly1305,WIDEMUL=decomposed,chacha20_blocks,65536,95458.3,1.4566,686.5,0.7,95210.9,96388.0
+chacha20poly1305,WIDEMUL=decomposed,mac,65536,111549.5,1.7021,587.5,0.5,111187.5,112757.8
+chacha20poly1305,WIDEMUL=decomposed,poly1305_data,65536,111187.5,1.6966,589.4,0.5,110890.6,112940.1
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_in_place,65536,32591.1,0.4973,2010.9,1.0,,
+chacha20poly1305,WIDEMUL=decomposed,xor_rest_shifted,65536,476.5,0.0073,137536.2,214.2,,
+# check,chacha20poly1305,WIDEMUL=decomposed,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,239703.1,239628.1,-0.0%
+# check,chacha20poly1305,WIDEMUL=decomposed,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,208050.7,207362.4,-0.3%
+# check,chacha20poly1305,WIDEMUL=decomposed,65536,mac = poly1305_data + mac_fixed,111549.5,111404.1,-0.1%
+chacha20poly1305,WIDEMUL=native,rec_seal,1024,3030.0,2.9590,338.0,0.8,3018.1,3148.8
+chacha20poly1305,WIDEMUL=native,refill,1024,22.5,0.0219,45563.2,0.7,22.3,23.6
+chacha20poly1305,WIDEMUL=native,rec_open,1024,2520.7,2.4617,406.2,0.2,2511.1,2641.4
+chacha20poly1305,WIDEMUL=native,rec_seal_without_aead,1024,24.3,0.0237,42200.2,0.6,24.1,25.4
+chacha20poly1305,WIDEMUL=native,rec_open_without_aead,1024,5.8,0.0057,175883.8,1.1,5.8,6.1
+chacha20poly1305,WIDEMUL=native,aead_seal,1024,3018.2,2.9475,339.3,0.5,3001.4,3174.6
+chacha20poly1305,WIDEMUL=native,aead_open,1024,2509.8,2.4509,408.0,0.3,2497.8,2614.3
+chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,1024,2109.3,2.0599,485.5,0.5,2098.6,2212.8
+chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,1024,1605.2,1.5676,637.9,0.6,1597.3,1688.8
+chacha20poly1305,WIDEMUL=native,chacha20_blocks,1024,1594.9,1.5575,642.1,0.8,1589.6,1684.4
+chacha20poly1305,WIDEMUL=native,mac,1024,904.7,0.8835,1131.9,0.5,900.9,960.4
+chacha20poly1305,WIDEMUL=native,poly1305_data,1024,696.6,0.6803,1469.9,0.9,692.0,728.7
+chacha20poly1305,WIDEMUL=native,mac_fixed,0,191.6,,,1.0,190.7,202.5
+chacha20poly1305,WIDEMUL=native,xor_rest_in_place,1024,507.4,0.4955,2018.1,3.5,,
+chacha20poly1305,WIDEMUL=native,xor_rest_shifted,1024,6.1,0.0060,167745.3,289.3,,
+# check,chacha20poly1305,WIDEMUL=native,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,3018.2,2997.5,-0.7%
+# check,chacha20poly1305,WIDEMUL=native,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,2509.8,2493.5,-0.6%
+# check,chacha20poly1305,WIDEMUL=native,1024,mac = poly1305_data + mac_fixed,904.7,888.2,-1.8%
+# check,chacha20poly1305,WIDEMUL=native,1024,rec_seal = rec_seal_without_aead + aead_seal,3030.0,3042.5,+0.4%
+# check,chacha20poly1305,WIDEMUL=native,1024,rec_open = rec_open_without_aead + aead_open,2520.7,2515.6,-0.2%
+chacha20poly1305,WIDEMUL=native,rec_seal,16384,43988.3,2.6848,372.5,0.3,43733.1,46279.9
+chacha20poly1305,WIDEMUL=native,refill,16384,400.3,0.0244,40924.2,2.8,389.7,416.5
+chacha20poly1305,WIDEMUL=native,rec_open,16384,35528.8,2.1685,461.1,0.9,35388.4,37062.9
+chacha20poly1305,WIDEMUL=native,rec_seal_without_aead,16384,369.9,0.0226,44298.7,2.1,361.6,388.5
+chacha20poly1305,WIDEMUL=native,rec_open_without_aead,16384,5.8,0.0004,2820146.4,0.2,5.8,6.0
+chacha20poly1305,WIDEMUL=native,aead_seal,16384,43533.8,2.6571,376.4,0.6,43346.3,44483.1
+chacha20poly1305,WIDEMUL=native,aead_open,16384,35491.1,2.1662,461.6,0.5,35382.2,36789.4
+chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,16384,32123.7,1.9607,510.0,0.3,32015.6,33394.5
+chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,16384,24099.0,1.4709,679.9,0.4,23994.8,24694.0
+chacha20poly1305,WIDEMUL=native,chacha20_blocks,16384,24025.4,1.4664,681.9,0.5,23888.0,25080.1
+chacha20poly1305,WIDEMUL=native,mac,16384,11405.9,0.6962,1436.4,0.5,11356.8,11997.7
+chacha20poly1305,WIDEMUL=native,poly1305_data,16384,11172.9,0.6819,1466.4,0.5,11116.5,11726.6
+chacha20poly1305,WIDEMUL=native,xor_rest_in_place,16384,8118.5,0.4955,2018.1,2.1,,
+chacha20poly1305,WIDEMUL=native,xor_rest_shifted,16384,100.9,0.0062,162343.4,139.3,,
+# check,chacha20poly1305,WIDEMUL=native,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,43533.8,43488.1,-0.1%
+# check,chacha20poly1305,WIDEMUL=native,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,35491.1,35463.4,-0.1%
+# check,chacha20poly1305,WIDEMUL=native,16384,mac = poly1305_data + mac_fixed,11405.9,11364.5,-0.4%
+# check,chacha20poly1305,WIDEMUL=native,16384,rec_seal = rec_seal_without_aead + aead_seal,43988.3,43903.7,-0.2%
+# check,chacha20poly1305,WIDEMUL=native,16384,rec_open = rec_open_without_aead + aead_open,35528.8,35496.9,-0.1%
+chacha20poly1305,WIDEMUL=native,refill,65536,1684.4,0.0257,38907.5,1.6,1605.9,1732.7
+chacha20poly1305,WIDEMUL=native,aead_seal,65536,173088.6,2.6411,378.6,0.8,172541.6,182921.9
+chacha20poly1305,WIDEMUL=native,aead_open,65536,141151.8,2.1538,464.3,1.8,140650.2,149264.7
+chacha20poly1305,WIDEMUL=native,chacha20_xor_in_place,65536,128234.4,1.9567,511.1,1.8,127859.4,134385.5
+chacha20poly1305,WIDEMUL=native,chacha20_xor_shifted,65536,96151.1,1.4671,681.6,1.4,95677.1,100283.9
+chacha20poly1305,WIDEMUL=native,chacha20_blocks,65536,95677.1,1.4599,685.0,2.4,95200.6,100763.1
+chacha20poly1305,WIDEMUL=native,mac,65536,44904.9,0.6852,1459.4,3.6,44734.4,46619.8
+chacha20poly1305,WIDEMUL=native,poly1305_data,65536,44615.9,0.6808,1468.9,1.4,44501.3,46326.8
+chacha20poly1305,WIDEMUL=native,xor_rest_in_place,65536,32557.3,0.4968,2012.9,10.7,,
+chacha20poly1305,WIDEMUL=native,xor_rest_shifted,65536,463.5,0.0071,141393.7,675.9,,
+# check,chacha20poly1305,WIDEMUL=native,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,173088.6,173041.9,-0.0%
+# check,chacha20poly1305,WIDEMUL=native,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,141151.8,140958.6,-0.1%
+# check,chacha20poly1305,WIDEMUL=native,65536,mac = poly1305_data + mac_fixed,44904.9,44807.5,-0.2%
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal,1024,3058.2,2.9865,334.8,2.1,3043.4,3195.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,1024,22.6,0.0220,45395.0,2.6,22.4,23.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open,1024,3052.4,2.9809,335.5,2.9,3029.2,3167.5
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal_without_aead,1024,24.2,0.0236,42374.5,1.2,24.0,24.8
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open_without_aead,1024,5.8,0.0057,175912.6,2.1,5.8,6.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,1024,3057.6,2.9860,334.9,2.4,3028.2,3144.8
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,1024,3046.7,2.9753,336.1,2.1,3021.5,3189.7
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,1024,1060.4,1.0356,965.7,2.5,1051.6,1111.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,1024,1057.3,1.0325,968.5,2.1,1050.1,1097.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,1024,1052.6,1.0279,972.8,1.2,1049.0,1110.3
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,1024,1993.2,1.9465,513.7,2.3,1972.1,2081.7
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,1024,1742.4,1.7016,587.7,1.0,1731.4,1807.9
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac_fixed,0,208.5,,,2.7,207.1,218.8
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,1024,2.3,0.0022,449453.9,1396.6,,
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,1024,3.3,0.0032,314604.3,443.8,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,3057.6,3011.4,-1.5%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,3046.7,3008.3,-1.3%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,mac = poly1305_data + mac_fixed,1993.2,1951.0,-2.1%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,rec_seal = rec_seal_without_aead + aead_seal,3058.2,3081.8,+0.8%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,1024,rec_open = rec_open_without_aead + aead_open,3052.4,3052.5,+0.0%
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal,16384,42144.5,2.5723,388.8,0.7,41880.2,43803.4
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,16384,400.0,0.0244,40958.6,1.6,392.2,416.8
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open,16384,41813.4,2.5521,391.8,0.9,41519.1,43986.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_seal_without_aead,16384,366.6,0.0224,44694.5,2.7,356.5,383.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,rec_open_without_aead,16384,5.8,0.0004,2812836.1,1.9,5.8,6.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,16384,41776.1,2.5498,392.2,2.0,41510.4,43760.4
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,16384,41900.8,2.5574,391.0,1.5,41507.5,44253.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,16384,13640.6,0.8326,1201.1,0.5,13586.9,14237.3
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,16384,13645.5,0.8329,1200.7,2.0,13578.1,14269.5
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,16384,13676.8,0.8348,1197.9,0.4,13596.7,14312.8
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,16384,28108.1,1.7156,582.9,1.6,27947.3,29434.9
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,16384,27850.3,1.6998,588.3,0.6,27712.2,29123.0
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,16384,-37.4,-0.0023,-437636.1,-202.6,,
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,16384,-31.2,-0.0019,-524288.0,-960.4,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,41776.1,41699.4,-0.2%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,41900.8,41704.3,-0.5%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,mac = poly1305_data + mac_fixed,28108.1,28058.8,-0.2%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,rec_seal = rec_seal_without_aead + aead_seal,42144.5,42142.6,-0.0%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,16384,rec_open = rec_open_without_aead + aead_open,41813.4,41906.6,+0.2%
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,refill,65536,1712.7,0.0261,38264.1,2.7,1613.2,1793.6
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_seal,65536,165541.6,2.5260,395.9,1.9,164911.5,170963.5
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,aead_open,65536,165736.9,2.5289,395.4,1.4,164922.0,173221.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_in_place,65536,53998.7,0.8240,1213.7,1.6,53721.3,55405.0
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_xor_shifted,65536,54058.6,0.8249,1212.3,2.8,53725.3,55772.1
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,chacha20_blocks,65536,54109.4,0.8256,1211.2,2.3,53786.4,56057.3
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,mac,65536,112158.9,1.7114,584.3,3.7,111099.0,116604.2
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,poly1305_data,65536,111296.9,1.6983,588.8,2.8,110817.8,115216.2
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_in_place,65536,-273.5,-0.0042,-239647.1,-256.2,,
+chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,xor_rest_shifted,65536,-9.1,-0.0001,-7182027.4,-3225.0,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,165541.6,165504.1,-0.0%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,165736.9,165564.0,-0.1%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=decomposed,65536,mac = poly1305_data + mac_fixed,112158.9,111505.4,-0.6%
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal,1024,1665.3,1.6263,614.9,0.7,1648.8,1694.4
+chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,1024,22.6,0.0221,45245.8,1.0,22.5,23.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open,1024,1647.3,1.6087,621.6,0.3,1628.9,1702.4
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal_without_aead,1024,24.4,0.0238,42048.2,0.3,24.0,24.7
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open_without_aead,1024,5.9,0.0057,175028.5,0.5,5.8,6.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,1024,1630.9,1.5927,627.9,0.5,1611.7,1655.8
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,1024,1629.8,1.5916,628.3,0.5,1615.0,1674.5
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,1024,1061.9,1.0370,964.3,1.2,1055.0,1081.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,1024,1063.5,1.0386,962.9,0.2,1057.0,1079.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,1024,1061.7,1.0368,964.5,1.0,1053.6,1082.3
+chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,1024,586.1,0.5723,1747.3,0.7,581.5,609.2
+chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,1024,384.4,0.3754,2663.6,0.5,379.4,392.4
+chacha20poly1305,CHACHA=vector WIDEMUL=native,mac_fixed,0,182.6,,,0.7,180.1,185.9
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,1024,-0.8,-0.0008,-1257285.4,-2657.9,,
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,1024,0.0,0.0000,inf,inf,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1630.9,1628.9,-0.1%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1629.8,1630.5,+0.0%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,mac = poly1305_data + mac_fixed,586.1,567.0,-3.2%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,rec_seal = rec_seal_without_aead + aead_seal,1665.3,1655.3,-0.6%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,1024,rec_open = rec_open_without_aead + aead_open,1647.3,1635.7,-0.7%
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal,16384,18915.4,1.1545,866.2,0.5,18319.7,19253.9
+chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,16384,400.9,0.0245,40867.1,0.9,384.9,406.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open,16384,18589.5,1.1346,881.4,0.3,18281.4,18932.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_seal_without_aead,16384,369.6,0.0226,44331.7,1.5,359.2,381.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,rec_open_without_aead,16384,5.8,0.0004,2801143.0,0.4,5.8,5.9
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,16384,18497.4,1.1290,885.7,0.6,18339.8,18797.5
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,16384,18520.9,1.1304,884.6,0.4,18416.4,18779.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,16384,13724.0,0.8376,1193.8,0.3,13645.2,13952.5
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,16384,13747.1,0.8391,1191.8,0.3,13485.0,13947.6
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,16384,13727.2,0.8378,1193.5,0.3,13187.5,13928.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,16384,4857.6,0.2965,3372.9,0.9,4677.6,4943.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,16384,4665.2,0.2847,3512.0,0.4,4523.1,4736.8
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,16384,-7.2,-0.0004,-2286970.6,-781.6,,
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,16384,7.2,0.0004,2286970.6,658.9,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,18497.4,18571.8,+0.4%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,18520.9,18594.9,+0.4%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,mac = poly1305_data + mac_fixed,4857.6,4847.8,-0.2%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,rec_seal = rec_seal_without_aead + aead_seal,18915.4,18867.0,-0.3%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,16384,rec_open = rec_open_without_aead + aead_open,18589.5,18526.8,-0.3%
+chacha20poly1305,CHACHA=vector WIDEMUL=native,refill,65536,1687.3,0.0257,38840.8,1.9,1551.6,1728.9
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_seal,65536,72895.8,1.1123,899.0,0.5,72109.4,74039.1
+chacha20poly1305,CHACHA=vector WIDEMUL=native,aead_open,65536,72887.8,1.1122,899.1,0.4,72121.9,74220.3
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_in_place,65536,54343.8,0.8292,1206.0,0.8,54024.8,55220.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_xor_shifted,65536,54316.4,0.8288,1206.6,0.2,53234.4,55153.7
+chacha20poly1305,CHACHA=vector WIDEMUL=native,chacha20_blocks,65536,54291.7,0.8284,1207.1,0.2,52691.4,55218.8
+chacha20poly1305,CHACHA=vector WIDEMUL=native,mac,65536,18576.2,0.2834,3528.0,0.6,17899.7,18814.5
+chacha20poly1305,CHACHA=vector WIDEMUL=native,poly1305_data,65536,18356.8,0.2801,3570.1,0.6,18225.9,18640.0
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_in_place,65536,62.5,0.0010,1048576.0,502.1,,
+chacha20poly1305,CHACHA=vector WIDEMUL=native,xor_rest_shifted,65536,27.3,0.0004,2396745.1,847.7,,
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,72895.8,72883.1,-0.0%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,72887.8,72855.8,-0.0%
+# check,chacha20poly1305,CHACHA=vector WIDEMUL=native,65536,mac = poly1305_data + mac_fixed,18576.2,18539.4,-0.2%
+aes128gcm,OpenSSL 3.0.13,openssl_seal,16384,2761.2,0.1685,5933.7,1.3,,
+aes128gcm,OpenSSL 3.0.13,openssl_open,16384,2857.1,0.1744,5734.4,1.5,,
+aes256gcm,OpenSSL 3.0.13,openssl_seal,16384,3132.7,0.1912,5230.0,2.3,,
+aes256gcm,OpenSSL 3.0.13,openssl_open,16384,3501.5,0.2137,4679.2,15.0,,
+chacha20poly1305,OpenSSL 3.0.13,openssl_seal,16384,9825.7,0.5997,1667.5,2.4,,
+chacha20poly1305,OpenSSL 3.0.13,openssl_open,16384,9997.3,0.6102,1638.8,0.6,,

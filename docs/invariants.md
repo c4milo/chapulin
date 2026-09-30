@@ -862,7 +862,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Absence of a padding writer; `rec_seal` appends
   content type and tag only.
 - **Check.** Convention; the RFC 8448 byte-identical replays would
-  move on any added byte.
+  move on any added byte. `rec_seal` copies the plaintext with one
+  `memmove`, and `rec-seal-copy-short` copies a byte less and requires
+  `bin/aes_suite_test`, which seals the published records through it, to
+  fail.
 - **Violation.** A PR pads for traffic-analysis resistance and the
   SRAM and replay-vector numbers quietly change.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).

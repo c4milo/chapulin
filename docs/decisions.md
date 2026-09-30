@@ -4060,8 +4060,10 @@ does nothing more.
       out of reach, as they do for every wipe written in C.
       `bin/poly1305_equiv_test` copies the stack below a call and requires
       none of the three powers there, in any layout the call holds them
-      in. The wipe came after the scratch timing that set the threshold
-      and after the record runs below, so neither measures it.
+      in. The wipe came after the scratch timing that set the threshold,
+      which does not measure it, and after the paired record runs below.
+      The record runs docs/performance.md holds now measure the code with
+      it.
     - **Entry 82's limits hold.** 128-bit vectors only, no probe of the
       CPU, and nothing new in the build record: no public layout or bound
       reads the path.
@@ -4094,7 +4096,13 @@ does nothing more.
     record takes 26% to 28% of the packaged portable one's time
     (docs/performance.md, "Where a record's time goes"). These runs came
     before the wipe of the powers, one `ct_wipe` of 208 or 352 bytes per
-    call, and the next record runs measure it.
+    call. The runs that performance.md now holds, taken with the AES-GCM
+    changes of [#184](https://github.com/c4milo/chapulin/issues/184),
+    measure the code with the wipe: that build's Poly1305 takes 2.8 µs on
+    macOS clang and gcc 13, and its 16 KiB `rec_seal` 17.2 and 18.4 µs.
+    On the VM's clang the Poly1305 takes 4.7 µs in that bench build, where
+    the linker's placement of the function, not its code, causes the
+    difference (docs/performance.md, the pitfalls).
 
 84. **Every client entry takes a PSK identity of 1 to `CH_TICKET_ID_MAX`
     bytes, refuses a ClientHello it cannot stage before a byte goes out,

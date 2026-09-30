@@ -620,7 +620,9 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wi
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry
 # 58): 435 properties, 596 s, 3.88 GB peak (arm64 macOS, cbmc 6.11.0,
-# kissat, PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -l).
+# kissat, PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -l). With
+# rec_seal's plaintext copy one memmove: 412 properties, 620 s, 4.28 GB
+# maximum resident set, the same command at a load average near 15.
 launch slow:4 full record 165 "" ct.c
 # record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
 # open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
@@ -633,7 +635,8 @@ launch slow:4 full record 165 "" ct.c
 # seal and open assertions, so both properties are reached. With the seal
 # at any sequence number, refusing the wrap and an AES-GCM record at or
 # past REC_AES_GCM_RECORDS_MAX and nothing else: 592 properties, 18 s,
-# 0.64 GB peak at a load average near 25.
+# 0.64 GB peak at a load average near 25. With rec_seal's plaintext copy
+# one memmove: 569 properties, 31 s, 0.58 GB maximum resident set.
 launch fast full record_suite 250 "" ct.c -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step

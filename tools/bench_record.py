@@ -35,31 +35,25 @@ TABLES = [
         ("`rec_seal`", cell("aes128gcm", "rec_seal"), None),
         ("`rec_seal` without its AEAD", cell("aes128gcm", "rec_seal_without_aead"),
          cell("aes128gcm", "rec_seal")),
-        ("AES, one call per 16-byte block", cell("aes128gcm", "aes_blocks"),
+        ("counter mode, in place", cell("aes128gcm", "counter_mode_in_place"),
          cell("aes128gcm", "rec_seal")),
-        ("the 16-byte wipe after each block, timed alone", cell("aes128gcm", "block_wipes"),
-         cell("aes128gcm", "rec_seal")),
-        ("exclusive-or and counter increments, in place",
-         cell("aes128gcm", "xor_and_increments_in_place"), cell("aes128gcm", "rec_seal")),
         ("GHASH over the ciphertext", cell("aes128gcm", "ghash_data"),
          cell("aes128gcm", "rec_seal")),
         ("`rec_open`", cell("aes128gcm", "rec_open"), None),
-        ("exclusive-or and counter increments, as the open runs them",
-         cell("aes128gcm", "xor_and_increments_shifted"), None),
+        ("counter mode, as the open runs it", cell("aes128gcm", "counter_mode_shifted"), None),
         ("OpenSSL, one record sealed", cell("aes128gcm", "openssl_seal", "OpenSSL"), None),
+        ("OpenSSL, one record opened", cell("aes128gcm", "openssl_open", "OpenSSL"), None),
         ("Zig `std.crypto`, one record sealed", cell("aes128gcm", "zig_seal", "zig"), None),
     ]),
     ("AES-256-GCM, one 16 KiB record, µs", "us", [
         ("`rec_seal`", cell("aes256gcm", "rec_seal"), None),
-        ("AES, one call per 16-byte block", cell("aes256gcm", "aes_blocks"),
+        ("counter mode, in place", cell("aes256gcm", "counter_mode_in_place"),
          cell("aes256gcm", "rec_seal")),
         ("GHASH over the ciphertext", cell("aes256gcm", "ghash_data"),
          cell("aes256gcm", "rec_seal")),
-        ("counter mode as the open runs it, batch at the 10th percentile",
-         cell("aes256gcm", "counter_mode_shifted", column="p10_ns"), None),
-        ("counter mode as the open runs it, batch at the 90th percentile",
-         cell("aes256gcm", "counter_mode_shifted", column="p90_ns"), None),
+        ("`rec_open`", cell("aes256gcm", "rec_open"), None),
         ("OpenSSL, one record sealed", cell("aes256gcm", "openssl_seal", "OpenSSL"), None),
+        ("OpenSSL, one record opened", cell("aes256gcm", "openssl_open", "OpenSSL"), None),
         ("Zig `std.crypto`, one record sealed", cell("aes256gcm", "zig_seal", "zig"), None),
     ]),
     ("ChaCha20-Poly1305, one 16 KiB record, µs", "us", [
@@ -110,10 +104,8 @@ TABLES = [
 ]
 
 # The sentence that states how closely each whole matches the sum of its
-# parts, and the one check it excepts in the clang columns.
-TOLERANCE = re.compile(r"every whole is within (\d+)% of the sum of its parts, except counter "
-                       r"mode as the open runs it on clang")
-EXCEPTED = "counter_mode_shifted"
+# parts.
+TOLERANCE = re.compile(r"every whole is within (\d+)% of the sum of its parts")
 
 
 def read_record_csv(path):
@@ -194,15 +186,12 @@ def check_tables(text, data):
 
 
 def check_tolerance(text, data):
-    """The stated percent: the largest difference of any check, rounded up,
-    leaving out the excepted check in the clang columns."""
+    """The stated percent: the largest difference of any check, rounded up."""
     m = TOLERANCE.search(re.sub(r"\s+", " ", text))
     if m is None:
         print("lint-bench-numbers: docs/performance.md does not state how the record stages sum")
         return 1
-    within = max(abs(d) for (_, checks), path in zip(data, RECORD_CSVS)
-                 for (_, _, _, whole, d) in checks
-                 if not (whole == EXCEPTED and path.endswith("clang.csv")))
+    within = max(abs(d) for _, checks in data for (_, _, _, _, d) in checks)
     want = "%d" % math.ceil(within)
     if m.group(1) != want:
         print("lint-bench-numbers: the record sum sentence says %s%%; the checks render as %s%%"

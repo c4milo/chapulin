@@ -18,10 +18,9 @@ reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
     out[4] = (uint8_t)body;
 
     // Build TLSInnerPlaintext in place: content || type, no padding.
+    // memmove, because pt may be inner itself (record.h).
     uint8_t *inner = out + REC_HDR;
-    for (size_t i = 0; i < n; i++) {
-        inner[i] = pt[i];
-    }
+    memmove(inner, pt, n);
     inner[n] = type;
 
     uint8_t nonce[AEAD_NONCE];
@@ -42,9 +41,7 @@ reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
 
     // Build TLSInnerPlaintext in place: content || type || zero padding.
     uint8_t *inner = out + REC_HDR;
-    for (size_t i = 0; i < n; i++) {
-        inner[i] = pt[i];
-    }
+    memmove(inner, pt, n);
     inner[n] = type;
     for (size_t i = 0; i < pad; i++) {
         inner[n + 1 + i] = 0;

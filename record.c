@@ -1,5 +1,7 @@
 #include "record.h"
 
+#include <string.h>
+
 #include "ct.h"
 #include "hkdf.h"
 #include "suite.h"
@@ -136,10 +138,9 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     out[4] = (uint8_t)body;
 
     // Build TLSInnerPlaintext in place: content || type, no padding.
+    // memmove, because pt may be inner itself (record.h).
     uint8_t *inner = out + REC_HDR;
-    for (size_t i = 0; i < n; i++) {
-        inner[i] = pt[i];
-    }
+    memmove(inner, pt, n);
     inner[n] = type;
 
     uint8_t nonce[AEAD_NONCE];

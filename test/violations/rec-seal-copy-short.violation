@@ -1,0 +1,15 @@
+invariant: INV-9
+file: record.c
+catches: aes_suite_test
+reason: rec_seal copies one byte less than the caller's plaintext into the
+  record, so the last byte of every record is whatever the output buffer
+  held before, sealed and authenticated as if the caller had written it.
+  The copy is one memmove, which gcc runs as the C library's vector copy
+  where it ran the byte loop before it; bin/aes_suite_test seals RFC
+  8448's AES-128-GCM record and the Illustrated TLS 1.3 AES-256-GCM one
+  through rec_seal and compares the record with the published bytes.
+
+--- old
+    memmove(inner, pt, n);
+--- new
+    memmove(inner, pt, n - (n > 0));
