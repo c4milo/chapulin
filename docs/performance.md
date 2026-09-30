@@ -321,11 +321,11 @@ Poly1305 as well (decision 83). It times these on the same buffers:
 - `rec_seal` and `rec_open` compiled with stubs in place of the AEAD, which is the record
   layer's own work.
 
-One stage has no function of its own, so its row is a difference of two timed rows:
-`chacha20_xor` less the block function gives the ChaCha20 exclusive-or. Under `CHACHA=vector` the
-block function's row is `chacha20_vector.c`'s four blocks at a time, with each group's keystream
-stored to a buffer. AES-GCM's exclusive-or has no row: `gcm_hw.c` runs it in the same pass as the
-AES rounds (below), so its time is inside counter mode's and the loops'.
+One stage has no function of its own, so its row is a difference of two timed rows: `chacha20_xor`
+less the block function gives the ChaCha20 exclusive-or. Under `CHACHA=vector` the block function's
+row is `chacha20_vector.c`'s passes, eight blocks a pass on NEON and four on SSE2, with each pass's
+keystream stored to a buffer. AES-GCM's exclusive-or has no row: `gcm_hw.c` runs it in the same pass
+as the AES rounds (below), so its time is inside counter mode's and the loops'.
 
 Each figure is the median of five runs, and each run's figure is the median of 15 batches of at
 least 1 ms, with every row's batches interleaved. The CSVs hold every row at 1 KiB, 16 KiB and

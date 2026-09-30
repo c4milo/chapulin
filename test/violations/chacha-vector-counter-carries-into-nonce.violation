@@ -7,12 +7,12 @@ reason: a group whose counters wrap past 2^32 carries one into the first
   the nonce unchanged. Only a counter within three of 2^32 reaches the
   edit, so a random counter almost never does, and neither does a record,
   whose counter starts at 1. bin/chacha20_equiv_test's counter-wrap pass
-  runs the counter's last values at every length to twelve blocks.
+  runs the counter's last values at every length to twenty blocks.
 
 --- old
-    input[12] = lanes_counters(counter);
+    x[12] = lanes_counters(counter);
 --- new
-    input[12] = lanes_counters(counter);
+    x[12] = lanes_counters(counter);
     if (counter > UINT32_MAX - 3) {
-        input[13] = lanes_add(input[13], lanes_broadcast(1));
+        x[13] = lanes_add(x[13], lanes_broadcast(1));
     }

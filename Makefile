@@ -941,11 +941,11 @@ X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181): CHACHA=portable
 # (default) is chacha20.c's loop, one 64-byte block at a time in 32-bit
-# words, and CHACHA=vector adds chacha20_vector.c, four blocks at a time
-# in 128-bit vectors, NEON on arm64 and SSE2 on x86-64. One path per
-# object, the way X25519 names one field: chacha20.c runs its own loop
-# only without -DCH_CHACHA_VECTOR and calls chacha20_vector.c only with
-# it. docs/decisions.md entry 82 says why.
+# words, and CHACHA=vector adds chacha20_vector.c, eight blocks a pass
+# on NEON on arm64 and four on SSE2 on x86-64, in 128-bit vectors. One
+# path per object, the way X25519 names one field: chacha20.c runs its own
+# loop only without -DCH_CHACHA_VECTOR and calls chacha20_vector.c only
+# with it. docs/decisions.md entries 82 and 86 say why.
 #
 # The vector path is a host-side choice. chacha20_vector.h stops the build
 # when the compiler targets neither NEON nor SSE2, or targets a big-endian
@@ -1915,11 +1915,12 @@ bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
 # CHACHA=vector against CHACHA=portable, both paths in one binary under
 # their own names: chacha20.c compiles here without -DCH_CHACHA_VECTOR, so
 # chacha20_xor is the portable loop, and test/chacha20_equiv_vector.c
-# compiles chacha20_vector.c under the define beside it.
+# compiles chacha20_vector.c under the define beside it. ct.c is the wipe
+# of the buffer the vector path's last 1 to 15 bytes pass through.
 bin/chacha20_equiv_test: test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c chacha20_vector.c \
-                         $(HDRS) $(TESTH)
+                         ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c
+	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c ct.c
 # The vector Poly1305 against poly1305.c's loop, both in one binary:
 # poly1305.c compiles here without -DCH_CHACHA_VECTOR, the portable loop
 # alone, and test/poly1305_equiv_vector.c compiles the vector build of
@@ -5423,10 +5424,14 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 #
 # chacha20_vector.c's two entries were read before they were recorded.
 # Every branch on both targets closes a loop over a public count or tests
-# the byte count n: n against the 256 bytes of a group, the four blocks
-# and four rows each group XORs or stores, the 16 input words, the 16
-# vectors of the feed-forward, the ten double rounds, n against zero, and
-# the last group's bytes. No lane value reaches one.
+# the byte count n: n against the bytes of a pass, the ten double rounds,
+# n against zero, whether n ends inside a row, the loop over those last 1
+# to 15 bytes, and for each row of 16 bytes whether the limit of the pass
+# covers it. They rose from 12 to 40 on arm64 and to 23 on x86-64 when a
+# pass began to XOR its rows from registers and test each row against the
+# limit, and an arm64 pass to hold two groups (docs/decisions.md 86): 31
+# and 16 of them are those row tests, and one on arm64 tests whether the
+# limit covers the second group. No branch reads a lane value.
 #
 # poly1305_vector.c's two entries were read the same way. All four
 # branches on each target test the byte count n: the CH_ASSERT at the
@@ -5481,7 +5486,7 @@ BRANCH_CEILING := \
   m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
   mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
-  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:12 x86-64/chacha20_vector.c:12 \
+  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:23 \
   arm64/poly1305_vector.c:4 x86-64/poly1305_vector.c:4
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)

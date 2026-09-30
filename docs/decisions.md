@@ -4260,3 +4260,79 @@ does nothing more.
     rest before GHASH, and `bin/quic_test` fails. `gcm_refusal` proves the
     zeros below n and nothing written past n for any tag, on the portable
     path; no harness reads `gcm_hw.c`.
+
+86. **A `CHACHA=vector` pass computes eight blocks on NEON, two groups of
+    four side by side, and four on SSE2, and XORs its keystream into the
+    data from the registers that computed it.** Entry 82 computed one
+    group of four blocks a call, stored it to memory and XORed it into the
+    data in a second loop, and it left an eight-block NEON variant for a
+    change of its own, measured alone. In the record bench at 9b72b67,
+    ChaCha20 took 14.0 of the 17.3 µs a 16 KiB `rec_seal` took on macOS
+    in a `CHACHA=vector WIDEMUL=native` build, where OpenSSL sealed the
+    same record in 9.4 (docs/performance.md).
+
+    - **Where the time went.** In a scratch timing loop on the M1 Pro
+      under Apple clang 21, over 16 KiB in place, entry 82's path took
+      13.9 µs. The same group with its XOR from registers took 13.4; that
+      group without its four transposes, 13.0; with the rotation by 8 as
+      one table lookup (TBL) in place of a shift and an insert, 12.5. Two
+      groups a pass took 8.3. The rounds of one group kept every word in
+      a register, with no load or store, so they took most of the time,
+      and they waited on themselves: each quarter round is a chain of 15
+      operations on NEON, each waiting on the one before, and one group
+      runs four such chains at once.
+    - **Two groups on NEON.** A pass holds two groups' 32 words, which
+      fill arm64's 32 vector registers. The compilers keep a few of them
+      on the stack: per double round the loop loads or stores a vector 11
+      times under Apple clang 21, 23 times under clang 18 and 42 under
+      gcc 13, beside 240 vector operations. The pass's three loops over
+      its groups carry `#pragma GCC unroll 2`, for the reason `gcm_hw.c`'s
+      loops carry theirs (docs/performance.md, the pitfalls): gcc keeps
+      an array that a rolled loop indexes in memory.
+    - **One group on SSE2.** SSE2 has 16 vector registers, which one
+      group's 16 words fill. No x86-64 machine here can time a second
+      group, and an emulated one says nothing about time, so SSE2 keeps
+      one group a pass. It takes the XOR from registers and the last
+      bytes below as NEON does.
+    - **The XOR from registers.** A pass XORs each row of 16 bytes from
+      the vector that holds its keystream, in ascending order, reading
+      each row before it writes it, as entry 82 did from memory, so the
+      output may still sit on the input or below it. The last pass tests
+      each row against the bytes left, and the last 1 to 15 bytes pass
+      through a buffer of 16 bytes that `ct_wipe` clears. Entry 82 left
+      its last 256 bytes of keystream on the stack. No wipe written in C
+      clears a register or a spill slot the compiler picks, here as
+      elsewhere.
+    - **Rejected: the rotation by 8 as a table lookup.** It took 6% off
+      Apple clang's two-group pass. Under gcc 13 it took from 5% off to
+      27% more, depending on the order of the rounds in the source: the
+      lookup's index takes a register, and gcc then kept more of the
+      state on the stack. gcc is the compiler CI runs, so the rotation
+      stays a shift and an insert.
+    - **Unchanged.** Entry 82's constant-time argument and its limits:
+      128-bit vectors, no probe of the CPU, nothing in the build record.
+      `chacha20_block` stays the portable function.
+
+    Cost: on arm64 under Apple clang 21 at `-O2`, `chacha20_vector.c`'s
+    text grows from 1,744 to 3,108 bytes. Its conditional branches in
+    `make lint-wide-multiply` rise from 12 to 40 on arm64 and 23 on
+    x86-64: most test whether the last pass's limit covers a row, and
+    each tests the byte count. `bench/stack.py` puts the stack below `chacha20_xor` in a
+    `CHACHA=vector` build at 544 bytes, from 768, because no call stores
+    a group to memory; with `WIDEMUL=native`, the peak below `aead_seal`
+    falls from 848 to 720, and its deepest path now runs through `mac`
+    and the vector Poly1305. `bin/chacha20_equiv_test` runs every length
+    to 2,048 bytes, which crosses a NEON pass's edge four times, and the
+    counter's last 17 values at every length to 20 blocks: 49,211 cases.
+    The four violations that break the path's rows, counters and last
+    bytes moved to the new code, and the equivalence test catches each,
+    on NEON and, under emulation, on SSE2.
+
+    Gain: in paired runs of the record bench, a filter's figures, a
+    `CHACHA=vector WIDEMUL=native` build took a 16 KiB `rec_seal` from
+    17.8 to 12.1 µs on macOS clang, from 17.5 to 12.2 µs on the Linux
+    VM's clang and from 18.4 to 12.7 µs on gcc 13, and ChaCha20 in place
+    from 14.5, 14.0 and 15.0 µs to 8.8, 8.4 and 9.2 µs. The first pair
+    agreed: 0.67, 0.64 and 0.67 of the time before, where the second gave
+    0.68, 0.70 and 0.69. OpenSSL seals the same record in 9.4, 10.2 and
+    10.2 µs on the same machine.

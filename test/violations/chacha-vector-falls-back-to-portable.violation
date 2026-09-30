@@ -12,7 +12,7 @@ reason: chacha20.c guards its call to the vector path on a macro no build
 
 --- old
 #ifdef CH_CHACHA_VECTOR
-    // CHACHA=vector: the same keystream, four blocks at a time
+    // CHACHA=vector: the same keystream, several blocks at a time
 --- new
 #ifdef CH_CHACHA_VECTOR_PATH
-    // CHACHA=vector: the same keystream, four blocks at a time
+    // CHACHA=vector: the same keystream, several blocks at a time

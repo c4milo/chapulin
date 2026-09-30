@@ -33,12 +33,14 @@ void bench_chacha20_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[
                            uint32_t counter, size_t n, uint8_t out[CHACHA20_BLOCK]);
 
 // bench/record_chacha_vector.c, in the CHACHA=vector builds alone.
-// chacha20_vector.c's four_blocks, called as often and with the same
-// counter as chacha20_vector_xor calls it over n bytes, with each group of
-// four blocks written to out and no exclusive-or.
+// chacha20_vector.c's passes, run as often and with the same counters as
+// chacha20_vector_xor runs them over n bytes, with each pass's keystream
+// written to out and no exclusive-or. A pass is eight blocks on NEON and
+// four on SSE2, so out holds the larger.
+#define BENCH_CHACHA20_VECTOR_PASS_MAX (8 * CHACHA20_BLOCK)
 void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
                                   const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, size_t n,
-                                  uint8_t out[4 * CHACHA20_BLOCK]);
+                                  uint8_t out[BENCH_CHACHA20_VECTOR_PASS_MAX]);
 
 // bench/record_aead.c. aead.c's mac: the one-time key block, Poly1305 over
 // the associated data and the ciphertext, and the tag.

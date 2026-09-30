@@ -9,8 +9,31 @@
 #include <emmintrin.h>
 #endif
 
-// The bytes one call to four_blocks produces: four ChaCha20 blocks.
-#define GROUP_BYTES ((size_t)4 * CHACHA20_BLOCK)
+#include "ct.h"
+
+// One group is four blocks: word w of each of the four sits in one lane of
+// the vector that holds word w.
+#define GROUP_BLOCKS 4
+#define GROUP_BYTES ((size_t)GROUP_BLOCKS * CHACHA20_BLOCK)
+
+// The groups one pass computes side by side. Each quarter round is a chain
+// of operations that each wait on the one before, and one group runs four
+// such chains at a time. On the M1 Pro that left the vector units waiting:
+// two groups a pass, eight chains, took about 40% less time per block for
+// the same operations. arm64's 32 vector registers hold two groups' 32
+// words, with a few of them kept on the stack. SSE2's 16 registers hold
+// one group's 16 words, and no x86-64 machine here has timed a second
+// group (docs/decisions.md 86). Each loop over a pass's groups carries
+// #pragma GCC unroll 2, which gcc and clang both read: gcc keeps an array
+// that a rolled loop indexes in memory. gcc does not expand a macro in the
+// pragma, so the count is written out and the assertion holds it.
+#ifdef __ARM_NEON
+#define PASS_GROUPS 2
+#else
+#define PASS_GROUPS 1
+#endif
+_Static_assert(PASS_GROUPS <= 2, "each #pragma GCC unroll 2 below covers PASS_GROUPS");
+#define PASS_BYTES ((size_t)PASS_GROUPS * GROUP_BYTES)
 
 // The vector operations the rounds below are written in, one set per
 // instruction set. Each operates on all four lanes at once and has no
@@ -166,9 +189,22 @@ static inline void quarter_round(lanes *a, lanes *b, lanes *c, lanes *d) {
     *b = lanes_rotate_left_7(lanes_xor(*b, *c));
 }
 
+// One double round of RFC 8439 §2.3 on one group: the four column
+// rounds, then the four diagonal rounds, as chacha20.c's block runs them.
+static inline void double_round(lanes x[16]) {
+    quarter_round(&x[0], &x[4], &x[8], &x[12]);
+    quarter_round(&x[1], &x[5], &x[9], &x[13]);
+    quarter_round(&x[2], &x[6], &x[10], &x[14]);
+    quarter_round(&x[3], &x[7], &x[11], &x[15]);
+    quarter_round(&x[0], &x[5], &x[10], &x[15]);
+    quarter_round(&x[1], &x[6], &x[11], &x[12]);
+    quarter_round(&x[2], &x[7], &x[8], &x[13]);
+    quarter_round(&x[3], &x[4], &x[9], &x[14]);
+}
+
 // The input words of RFC 8439 §2.3 in chacha20.c's order: the constants,
 // the key and the nonce. Word 12, the block counter, differs by lane, so
-// four_blocks sets it and this leaves it 0.
+// group_input sets it and this leaves it 0.
 static void setup(uint32_t words[16], const uint8_t key[CHACHA20_KEY],
                   const uint8_t nonce[CHACHA20_NONCE]) {
     words[0] = 0x61707865;
@@ -184,30 +220,26 @@ static void setup(uint32_t words[16], const uint8_t key[CHACHA20_KEY],
     words[15] = load32(nonce + 8);
 }
 
-// The four keystream blocks for the counters counter to counter + 3, one
-// block per lane. On return x[4 * g + b] holds bytes 16 * g to 16 * g + 15
-// of block b: words 4 * g to 4 * g + 3 of that block.
-static inline void four_blocks(const uint32_t words[16], uint32_t counter, lanes x[16]) {
+// The input of the group whose blocks have the counters counter to
+// counter + 3: word w of every block in x[w], one block per lane.
+static inline void group_input(lanes x[16], const uint32_t words[16], uint32_t counter) {
+#pragma GCC unroll 16
+    for (size_t w = 0; w < 16; w++) {
+        x[w] = lanes_broadcast(words[w]);
+    }
+    x[12] = lanes_counters(counter);
+}
+
+// The end of each block of the group in x after its ten double rounds:
+// the input added back, as RFC 8439 §2.3 ends a block, and a transpose
+// into block order. On return x[4 * g + b] holds bytes 16 * g to
+// 16 * g + 15 of block b: words 4 * g to 4 * g + 3 of that block.
+static inline void group_keystream(lanes x[16], const uint32_t words[16], uint32_t counter) {
     lanes input[16];
-    for (size_t i = 0; i < 16; i++) {
-        input[i] = lanes_broadcast(words[i]);
-    }
-    input[12] = lanes_counters(counter);
-    for (size_t i = 0; i < 16; i++) {
-        x[i] = input[i];
-    }
-    for (int i = 0; i < 10; i++) {
-        quarter_round(&x[0], &x[4], &x[8], &x[12]);
-        quarter_round(&x[1], &x[5], &x[9], &x[13]);
-        quarter_round(&x[2], &x[6], &x[10], &x[14]);
-        quarter_round(&x[3], &x[7], &x[11], &x[15]);
-        quarter_round(&x[0], &x[5], &x[10], &x[15]);
-        quarter_round(&x[1], &x[6], &x[11], &x[12]);
-        quarter_round(&x[2], &x[7], &x[8], &x[13]);
-        quarter_round(&x[3], &x[4], &x[9], &x[14]);
-    }
-    for (size_t i = 0; i < 16; i++) {
-        x[i] = lanes_add(x[i], input[i]);
+    group_input(input, words, counter);
+#pragma GCC unroll 16
+    for (size_t w = 0; w < 16; w++) {
+        x[w] = lanes_add(x[w], input[w]);
     }
     // x[w] holds word w of the four blocks. Each transpose turns four
     // consecutive words of the four blocks into four words of each block.
@@ -217,43 +249,93 @@ static inline void four_blocks(const uint32_t words[16], uint32_t counter, lanes
     transpose(&x[12], &x[13], &x[14], &x[15]);
 }
 
-// out[0..255] = in[0..255] XOR the four blocks in x, 16 bytes at a time in
-// ascending order, so out <= in is safe as it is in chacha20.c.
-static inline void xor_group(const uint8_t *in, uint8_t *out, const lanes x[16]) {
-    for (size_t b = 0; b < 4; b++) {
-        for (size_t g = 0; g < 4; g++) {
-            size_t offset = CHACHA20_BLOCK * b + 16 * g;
-            xor_16(in + offset, out + offset, x[4 * g + b]);
+// out[0..count) = in[0..count) XOR the first count bytes of keystream,
+// for the last 1 to 15 bytes of a message. The keystream passes through
+// a buffer of 16 bytes, which the call wipes before it returns.
+static void xor_partial(const uint8_t *in, uint8_t *out, lanes keystream, size_t count) {
+    uint8_t bytes[16];
+    store_16(bytes, keystream);
+    for (size_t i = 0; i < count; i++) {
+        out[i] = in[i] ^ bytes[i];
+    }
+    ct_wipe(bytes, sizeof bytes);
+}
+
+// XORs the group's keystream in x, in block order as group_keystream
+// leaves it, into each row of 16 bytes that out[0..limit) and
+// in[0..limit) hold whole, 16 bytes at a time in ascending order. Each 16
+// bytes are read before the 16 at the same offset are written, so out <=
+// in is safe as it is in chacha20.c. Returns the keystream of the first
+// row it leaves, or next when it XORs all 16. Only the limit, which is
+// public, decides which rows run.
+static inline lanes xor_rows(const uint8_t *in, uint8_t *out, const lanes x[16], size_t limit,
+                             lanes next) {
+#pragma GCC unroll 16
+    for (size_t row = 0; row < 16; row++) {
+        // Row 4 * b + g of the group is bytes 16 * g to 16 * g + 15 of
+        // block b, which x[4 * g + b] holds.
+        size_t offset = 16 * row;
+        lanes keystream = x[4 * (row % 4) + row / 4];
+        if (offset + 16 > limit) {
+            return keystream;
+        }
+        xor_16(in + offset, out + offset, keystream);
+    }
+    return next;
+}
+
+// One pass: the PASS_GROUPS groups whose blocks start at the counter
+// counter, their ten double rounds run side by side, and their keystream
+// XORed into each whole row of 16 bytes that out[0..limit) and
+// in[0..limit) hold, for a limit of 1 to PASS_BYTES. Returns the
+// keystream of the row the limit ends inside, whose first limit % 16
+// bytes the caller XORs when limit % 16 is not 0. A pass with a limit
+// below PASS_BYTES is the message's last, and it computes every group of
+// the pass, since the groups run side by side.
+static lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in, uint8_t *out,
+                  size_t limit) {
+    lanes x[PASS_GROUPS][16];
+#pragma GCC unroll 2
+    for (size_t g = 0; g < PASS_GROUPS; g++) {
+        group_input(x[g], words, counter + (uint32_t)(GROUP_BLOCKS * g));
+    }
+    for (int i = 0; i < 10; i++) {
+#pragma GCC unroll 2
+        for (size_t g = 0; g < PASS_GROUPS; g++) {
+            double_round(x[g]);
         }
     }
+    lanes next = lanes_broadcast(0);
+#pragma GCC unroll 2
+    for (size_t g = 0; g < PASS_GROUPS; g++) {
+        size_t start = GROUP_BYTES * g;
+        if (start < limit) {
+            group_keystream(x[g], words, counter + (uint32_t)(GROUP_BLOCKS * g));
+            next = xor_rows(in + start, out + start, x[g], limit - start, next);
+        }
+    }
+    return next;
 }
 
 void chacha20_vector_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                          uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
     uint32_t words[16];
     setup(words, key, nonce);
-    lanes x[16];
-    while (n >= GROUP_BYTES) {
-        four_blocks(words, counter, x);
-        xor_group(in, out, x);
-        counter += 4;
-        in += GROUP_BYTES;
-        out += GROUP_BYTES;
-        n -= GROUP_BYTES;
+    while (n >= PASS_BYTES) {
+        (void)pass(words, counter, in, out, PASS_BYTES);
+        counter += PASS_GROUPS * GROUP_BLOCKS;
+        in += PASS_BYTES;
+        out += PASS_BYTES;
+        n -= PASS_BYTES;
     }
     if (n > 0) {
-        // The last 1 to 255 bytes: the next four blocks into a buffer in
-        // block order, as xor_group lays them out, and then one byte at a
-        // time, as chacha20.c XORs its last block.
-        uint8_t keystream[GROUP_BYTES];
-        four_blocks(words, counter, x);
-        for (size_t b = 0; b < 4; b++) {
-            for (size_t g = 0; g < 4; g++) {
-                store_16(keystream + CHACHA20_BLOCK * b + 16 * g, x[4 * g + b]);
-            }
-        }
-        for (size_t i = 0; i < n; i++) {
-            out[i] = in[i] ^ keystream[i];
+        // The last 1 to PASS_BYTES - 1 bytes: the whole rows in the pass,
+        // and the last 1 to 15 bytes, when there are any, one at a time,
+        // as chacha20.c XORs its last block.
+        lanes last = pass(words, counter, in, out, n);
+        size_t whole = n - n % 16;
+        if (whole < n) {
+            xor_partial(in + whole, out + whole, last, n - whole);
         }
     }
 }

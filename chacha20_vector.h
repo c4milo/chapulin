@@ -1,5 +1,6 @@
-// CHACHA=vector: the ChaCha20 stream cipher of RFC 8439 §2.4, four blocks
-// at a time in 128-bit vectors, NEON on arm64 and SSE2 on x86-64.
+// CHACHA=vector: the ChaCha20 stream cipher of RFC 8439 §2.4, several
+// blocks at a time in 128-bit vectors, NEON on arm64 and SSE2 on x86-64:
+// eight blocks a pass on NEON and four on SSE2.
 // chacha20.c's chacha20_xor calls it in place of its own loop when the
 // build defines CH_CHACHA_VECTOR, and chacha20.c stays the reference:
 // bin/chacha20_equiv_test compares the two over the same inputs.
@@ -37,7 +38,7 @@
 #error "CHACHA=vector needs a little-endian target; build CHACHA=portable"
 #endif
 
-// chacha20_xor's contract, computed four blocks at a time: out = in XOR
+// chacha20_xor's contract, computed a pass of blocks at a time: out = in XOR
 // keystream(key, nonce, counter...), with the 32-bit block counter
 // counter for the first block and one more, modulo 2^32, for each block
 // after it. out == in is allowed, as is out below in (out <= in): each 16

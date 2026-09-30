@@ -63,8 +63,8 @@ Other targets:
   `CFLAGS`, its statement that the part's 64x64->128 multiply runs in
   constant time in the mode the part runs in (decision 52, INV-34). The
   Makefile never writes that define itself. `CHACHA=vector` replaces
-  `chacha20.c`'s one-block loop with `chacha20_vector.c`'s four blocks at
-  a time on NEON or SSE2, for an arm64 or x86-64 host:
+  `chacha20.c`'s one-block loop with `chacha20_vector.c`'s eight blocks
+  at a time on NEON or four on SSE2, for an arm64 or x86-64 host:
   `chacha20_vector.h` stops the build for any other target, and the
   build states nothing about timing (decision 82). With `WIDEMUL=native`
   as well, `poly1305_vector.c` runs Poly1305 four blocks at a time on the

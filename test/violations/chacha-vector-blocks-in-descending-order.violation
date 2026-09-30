@@ -1,18 +1,15 @@
 invariant: INV-16
 file: chacha20_vector.c
 catches: chacha20_equiv_test
-reason: the group loop XORs its four blocks last to first. In place each
-  16 bytes are still read before they are written, so the output stays
-  right there; with the output 5 bytes below the input, as rec_open
-  decrypts over its header, the fourth block's first write lands on the
-  last 5 input bytes of the third before they are read. chacha20.h allows
-  that shape, and bin/chacha20_equiv_test runs it at every length.
+reason: each group XORs its sixteen rows of 16 bytes last to first. In
+  place each 16 bytes are still read before they are written, so the
+  output stays right there; with the output 5 bytes below the input, as
+  rec_open decrypts over its header, the last row's write lands on the
+  last 5 input bytes of the row before it before they are read.
+  chacha20.h allows that shape, and bin/chacha20_equiv_test runs it at
+  every length.
 
 --- old
-    for (size_t b = 0; b < 4; b++) {
-        for (size_t g = 0; g < 4; g++) {
-            size_t offset = CHACHA20_BLOCK * b + 16 * g;
+    for (size_t row = 0; row < 16; row++) {
 --- new
-    for (size_t b = 4; b-- > 0;) {
-        for (size_t g = 0; g < 4; g++) {
-            size_t offset = CHACHA20_BLOCK * b + 16 * g;
+    for (size_t row = 16; row-- > 0;) {

@@ -68,11 +68,12 @@ enabled on an Intel part that enumerates it. Nothing in this tree sets either
 mode. `CH_NATIVE_WIDEMUL` does not select the wide field and does not imply
 `CH_NATIVE_MUL128` (decision 52).
 
-On the same host, `CHACHA=vector` computes ChaCha20 four blocks at a time in
-128-bit vectors, NEON on arm64 and SSE2 on x86-64, which every core of those
-architectures has. `chacha20_vector.h` stops the build on any other target and
-on a big-endian one, and the build needs no timing statement: the path runs
-adds, exclusive-ors and rotations, as the portable loop does (decision 82).
+On the same host, `CHACHA=vector` computes ChaCha20 several blocks at a time in
+128-bit vectors, eight on NEON on arm64 and four on SSE2 on x86-64, which every
+core of those architectures has (decisions 82 and 86). `chacha20_vector.h` stops
+the build on any other target and on a big-endian one, and the build needs no
+timing statement: the path runs adds, exclusive-ors and rotations, as the
+portable loop does (decision 82).
 
 With `WIDEMUL=native` as well, the build runs Poly1305 four blocks at a time on
 the vector unit's widening multiply, NEON's UMULL and UMLAL or SSE2's PMULUDQ.

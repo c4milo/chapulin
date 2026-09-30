@@ -2372,21 +2372,24 @@ as an `if`. No gcc measures it.
 
 ### The CHACHA=vector path
 
-`chacha20_vector.c` computes ChaCha20 four blocks at a time on NEON or
-SSE2 intrinsics (decision 82). CBMC cannot unwind an intrinsic, so no
-harness compiles the file, and the [chacha20](#chacha20) proof covers
-`chacha20.c`'s loop alone. As `AES=hw` rests on `bin/aes_equiv_test`
-and the published vectors, the vector path rests on these, each in
-`make check`:
+`chacha20_vector.c` computes ChaCha20 on NEON or SSE2 intrinsics, in
+passes of eight blocks on NEON, two groups of four side by side, and of
+four blocks on SSE2 (decisions 82 and 86). CBMC cannot unwind an
+intrinsic, so no harness compiles the file, and the
+[chacha20](#chacha20) proof covers `chacha20.c`'s loop alone. As
+`AES=hw` rests on `bin/aes_equiv_test` and the published vectors, the
+vector path rests on these, each in `make check`:
 
 - `bin/chacha20_equiv_test` compares it with `chacha20.c`'s loop over
-  30,771 cases:
-  - every length from 0 to 1,024 bytes, in each aliasing shape
+  49,211 cases:
+  - every length from 0 to 2,048 bytes, which crosses a NEON pass's edge
+    four times and an SSE2 pass's eight, in each aliasing shape
     `chacha20.h` allows: a separate output, the output on the input, and
     the output 5 bytes below the input, as `rec_open` writes it;
-  - the counter at 0 and at its last nine values, at every length to 768
-    bytes, so the 32-bit counter wraps inside a group of four blocks, at
-    its edge and in the last partial group;
+  - the counter at 0 and at its last 17 values, at every length to 1,280
+    bytes, so the 32-bit counter wraps inside each group of a pass, at
+    the edge between a pass's two groups, at a pass's edge, inside the
+    pass after it and in the last partial pass;
   - 20,000 random cases to 2,048 bytes, at random alignments and shifts;
   - a 16,385-byte and a 65,536-byte input.
 
@@ -2395,13 +2398,15 @@ and the published vectors, the vector path rests on these, each in
   `make san-check` runs under AddressSanitizer.
 - `bin/unit_chacha_vector` runs the unit suite on the path: RFC 8439's
   §2.3.2, §2.4.2, A.2 and A.5 vectors, of which A.2's 375-byte vector
-  and A.5's 265 bytes reach the four-block loop, and every record the
-  suite seals and opens.
+  and A.5's 265 bytes run a whole group of four blocks and a partial
+  one, and every record the suite seals and opens.
 - The Wycheproof ChaCha20-Poly1305 suite runs on it in a leg of its own,
   with messages up to 513 bytes.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 12 on each,
-  every one loop control over a public count. It multiplies nothing.
+  the pinned clang and holds its conditional branches at 40 and 23,
+  every one loop control over a public count or a test of the byte
+  count: most of them test whether the last pass's limit covers a row of
+  16 bytes. It multiplies nothing.
 
 Seven violations break the path, and each is caught. The equivalence
 test catches `chacha-vector-tail-whole-rows-only`,

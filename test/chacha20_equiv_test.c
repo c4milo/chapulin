@@ -15,12 +15,15 @@
 //
 // The inputs, in order:
 //
-//   - every length from 0 to LENGTH_MAX, which crosses the four-block
-//     group four times, so the group loop, the last partial group and
-//     every length of that group all run;
-//   - the counter's last values, 2^32 - 9 to 2^32 - 1, and 0, at every
-//     length to 12 blocks, so the 32-bit counter wraps inside a group, at
-//     a group's edge and in the last partial group;
+//   - every length from 0 to LENGTH_MAX, which crosses the path's pass
+//     of eight blocks four times on NEON and its pass of four blocks
+//     eight times on SSE2, so the pass loop, the last partial pass, every
+//     length of that pass, and on NEON a last pass that ends in either
+//     of its two groups all run;
+//   - the counter's last values, 2^32 - 17 to 2^32 - 1, and 0, at every
+//     length to 20 blocks, so the 32-bit counter wraps inside a group, at
+//     the edge between a pass's two groups, at a pass's edge, inside the
+//     pass after it, and in the last partial pass;
 //   - RANDOM_CASES cases with a random key, nonce, counter, length up to
 //     RANDOM_LENGTH_MAX, alignment and aliasing shape;
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
@@ -75,12 +78,16 @@ static void rng_fill(uint8_t *p, size_t n) {
     }
 }
 
-// Four blocks make one group of the vector path.
-#define GROUP_BYTES ((size_t)4 * CHACHA20_BLOCK)
-#define LENGTH_MAX (4 * GROUP_BYTES)
-#define WRAP_LENGTH_MAX ((size_t)12 * CHACHA20_BLOCK)
+// The vector path computes one pass of eight blocks at a time on NEON,
+// two groups of four side by side, and of four blocks on SSE2. The
+// lengths below count in the larger pass, so each build crosses its own
+// pass's edge at least four times.
+#define PASS_BYTES_MAX ((size_t)8 * CHACHA20_BLOCK)
+#define LENGTH_MAX (4 * PASS_BYTES_MAX)
+#define WRAP_BACK_MAX 17
+#define WRAP_LENGTH_MAX ((size_t)20 * CHACHA20_BLOCK)
 #define RANDOM_CASES 20000
-#define RANDOM_LENGTH_MAX (8 * GROUP_BYTES)
+#define RANDOM_LENGTH_MAX (4 * PASS_BYTES_MAX)
 #define LARGE_LENGTH ((size_t)65536)
 // Bytes the vector path's buffer keeps on each side of what a case uses,
 // filled with GUARD_BYTE, to see a write outside the n output bytes.
@@ -241,15 +248,16 @@ static void run_every_length(void) {
     }
 }
 
-// The counter's last values and its wrap to 0, at every length to twelve
-// blocks, so a wrap falls inside the first group, at its edge, and in the
-// last partial group.
+// The counter's last values and its wrap to 0, at every length to twenty
+// blocks, so a wrap falls inside each group of the first pass, at the edge
+// between them, at the pass's edge, inside the next pass, and in the last
+// partial pass.
 static void run_counter_wrap(void) {
     equiv_case c;
-    for (uint32_t back = 0; back <= 9 && failures == 0; back++) {
+    for (uint32_t back = 0; back <= WRAP_BACK_MAX && failures == 0; back++) {
         for (size_t n = 0; n <= WRAP_LENGTH_MAX && failures == 0; n++) {
             random_case(&c, n);
-            c.counter = 0U - back; // 0, then 2^32 - 1 down to 2^32 - 9
+            c.counter = 0U - back; // 0, then 2^32 - 1 down to 2^32 - 17
             compare("counter wrap", &c);
         }
     }

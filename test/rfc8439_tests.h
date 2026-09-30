@@ -1,7 +1,9 @@
 // RFC 8439's block function vector (§2.3.2) and its Appendix A.2 and A.5
-// vectors, which run ChaCha20 over up to 375 bytes: long enough to reach
-// the CHACHA=vector path's four-block loop as well as its last partial
-// group, where test_chacha20's 114 bytes reach only the partial group.
+// vectors, which run ChaCha20 over up to 375 bytes: long enough to run
+// the CHACHA=vector path over a whole group of four blocks and a partial
+// one, a whole pass and a partial one on SSE2 and one pass with both its
+// groups on NEON, where test_chacha20's 114 bytes run a partial group
+// alone.
 // Appendix A.3's Poly1305 vectors follow, the longest of which reach the
 // CHACHA=vector Poly1305. bin/unit runs them on chacha20.c's and
 // poly1305.c's portable loops and bin/unit_chacha_vector on

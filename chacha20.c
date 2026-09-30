@@ -73,7 +73,7 @@ void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                   uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
 #ifdef CH_CHACHA_VECTOR
-    // CHACHA=vector: the same keystream, four blocks at a time
+    // CHACHA=vector: the same keystream, several blocks at a time
     // (chacha20_vector.h). The loop below is the reference that
     // bin/chacha20_equiv_test compares it with.
     chacha20_vector_xor(key, nonce, counter, in, out, n);

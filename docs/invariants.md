@@ -2452,11 +2452,12 @@ last `ROLE=server` stub, as the entry said it would.
   measures the file: no CI lane runs a 64-bit gcc through
   `lint-wide-multiply-gcc`. The same two specs compile
   `chacha20_vector.c`, whose intrinsics no 32-bit spec targets, and hold
-  its conditional branches at 12 on each, all loop control over public
-  counts. CBMC cannot read an intrinsic, so `bin/chacha20_equiv_test`
-  holds that path's output to `chacha20.c`'s; four `chacha-vector-*`
-  violations break its last partial group, its counter, one lane's XOR
-  and its order of writes, and the test catches each. They compile
+  its conditional branches at 40 on arm64 and 23 on x86-64, all loop
+  control over public counts or tests of the byte count. CBMC cannot
+  read an intrinsic, so `bin/chacha20_equiv_test` holds that path's
+  output to `chacha20.c`'s; four `chacha-vector-*` violations break its
+  last partial row, its counter, one lane's XOR and its order of writes,
+  and the test catches each. They compile
   `poly1305_vector.c` too, and hold its conditional branches at 4 on
   each, the contract check at its entry and its group loop, all on the
   byte count; its multiplies are the ones `CH_NATIVE_WIDEMUL` asserts, so
