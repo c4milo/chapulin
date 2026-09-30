@@ -2,9 +2,10 @@
 """Worst-case stack per entry point, computed from the code, not by hand.
 
 Builds every library object with -fstack-usage, extracts the real call
-graph from the object code (arm64 `bl`/`b` sites via otool), and walks the
-max-weight path under each public entry point. Indirect calls (the
-caller's send/recv/on_ticket hooks and ch_rand_bytes) execute on the
+graph from the object code (the branch relocations `objdump -d -r` prints
+under every call and tail call in an arm64 or x86-64 Mach-O object), and
+walks the max-weight path under each public entry point. Indirect calls
+(the caller's send/recv/on_ticket hooks and ch_rand_bytes) execute on the
 caller's budget and are reported as such, not silently omitted.
 """
 import os
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 # The public calls, per build. ch_pubkey_from_pem exists only under
@@ -51,14 +53,57 @@ if "-DCH_ROLE_SERVER" in EXTRA_CFLAGS and "-DCH_ROLE_BOTH" not in EXTRA_CFLAGS:
 if "-DCH_SUITE_AES_GCM" in EXTRA_CFLAGS:
     SRCS = [s for s in SRCS if s.name != "quic_aes_soft.c"]
 PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
+# -fstack-usage reports how much each prologue subtracts from the stack
+# pointer. An x86-64 function that calls nothing may also use up to 128
+# bytes below the stack pointer without subtracting them (the red zone),
+# and its figure then leaves those bytes out. -mno-red-zone makes the
+# prologue subtract them, so each figure counts every byte its function
+# uses. clang uses no red zone on arm64, and the flag leaves every arm64
+# object byte for byte the same.
+CFLAGS = ["-std=c11", "-O2", "-fstack-usage", "-mno-red-zone"]
+# The tools that read the objects. LLVM's llvm-nm and llvm-objdump read a
+# Mach-O object on any host, which is how test/stack_walk.py runs the walk
+# on Linux.
+NM = os.environ.get("STACK_NM") or "nm"
+OBJDUMP = os.environ.get("STACK_OBJDUMP") or "objdump"
+
+
+class Arch(NamedTuple):
+    relocation: str  # the type of the relocation that names a callee
+    calls: frozenset[str]
+    jumps: frozenset[str]
+    return_address: int  # bytes a call pushes that no frame's figure counts
+
+
+# The architectures this reads, by the file format objdump names. objdump
+# prints a call or jump to another function with a placeholder target and
+# puts the relocation that names the callee under it. The placeholder is
+# the branch's own address on arm64, so a branch at a function's first
+# instruction reads as a branch to that function itself. On x86-64 it is
+# the next instruction's address, so a branch that ends where the next
+# function starts reads as a branch to that function. So a relocation,
+# where there is one, names the callee. bl leaves the return address in
+# x30, and the callee saves x30 in its own frame; an x86-64 call pushes
+# the return address between the two frames, where neither figure counts
+# it. A jump is a tail call and pushes nothing. The caller holds no frame
+# by then, but the walk adds the caller's frame to the callee's depth
+# anyway, which can only overstate a peak.
+ARCHES = {
+    "mach-o arm64": Arch("ARM64_RELOC_BRANCH26", frozenset({"bl"}),
+                         frozenset({"b"}), 0),
+    "mach-o 64-bit x86-64": Arch("X86_64_RELOC_BRANCH", frozenset({"call", "callq"}),
+                                 frozenset({"jmp", "jmpq"}), 8),
+}
+# An instruction line of objdump -d -r: address, encoding, mnemonic and
+# operands. objdump prints each relocation on a line of its own under the
+# instruction it applies to, as an address, a type and a symbol.
+INSTRUCTION = re.compile(r"^\s*([0-9a-f]+):\s[0-9a-f ]+\t(\S+)\s*(.*)$")
 
 
 def build(tmp: Path) -> None:
     for src in SRCS:
-        subprocess.run(
-            ["cc", "-std=c11", "-O2", "-I", str(ROOT), "-fstack-usage", "-c", str(src)]
-            + EXTRA_CFLAGS,
-            cwd=tmp, check=True, capture_output=True)
+        subprocess.run(["cc", *CFLAGS, "-I", str(ROOT), "-c", str(src)] + EXTRA_CFLAGS,
+                       cwd=tmp, check=True, capture_output=True)
 
 
 def frames(tmp: Path) -> dict[str, int]:
@@ -72,65 +117,87 @@ def frames(tmp: Path) -> dict[str, int]:
     return out
 
 
-def callgraph(tmp: Path) -> dict[str, set[str]]:
-    # Function boundaries come from nm (objdump labels the section start
-    # ltmp0); call targets come from bl annotations when resolved locally
-    # and from the ARM64_RELOC_BRANCH26 relocation lines objdump -d -r
-    # interleaves for cross-object calls.
-    edges: dict[str, set[str]] = {}
-    for obj in tmp.glob("*.o"):
-        syms = []
-        nm = subprocess.run(["nm", "-n", str(obj)],
-                            check=True, capture_output=True, text=True).stdout
-        for line in nm.splitlines():
-            m = re.match(r"^([0-9a-f]+) [tT] (_[A-Za-z0-9_]+)$", line)
-            if m:
-                syms.append((int(m.group(1), 16), m.group(2)))
-        text = subprocess.run(["objdump", "-d", "-r", str(obj)],
-                              check=True, capture_output=True, text=True).stdout
-        fn = None
-        pending = False
-        for line in text.splitlines():
-            m = re.search(r"ARM64_RELOC_BRANCH26\s+(_[A-Za-z0-9_]+)$", line)
-            if m:
-                if pending and fn is not None and m.group(1) != fn:
-                    edges[fn].add(m.group(1))
-                pending = False
-                continue
-            # Instruction lines carry an 8-hex opcode; relocation lines do
-            # not, which is how the two are told apart.
-            m = re.match(r"^\s*([0-9a-f]+): [0-9a-f]{8}\s", line)
-            if m:
-                addr = int(m.group(1), 16)
-                for start, name in syms:
-                    if start <= addr:
-                        fn = name
-                edges.setdefault(fn, set())
-                pending = False
-                # bl is a call; a plain b to another function is a tail
-                # call, counted like a call (over-approximates by the
-                # caller's frame, which is the safe direction). A resolved
-                # target is an offset-free <_symbol> annotation; anything
-                # else (address-only, or <fn+0x..> pointing back into the
-                # caller) means the real target arrives as a relocation.
-                if "\tbl\t" in line or "\tb\t" in line:
-                    t = re.search(r"<(_[A-Za-z0-9_]+)>$", line)
-                    if t and t.group(1) != fn:
-                        edges[fn].add(t.group(1))
-                    elif not t:
-                        pending = True
-    return edges
+def run(*command: str) -> str:
+    return subprocess.run(command, check=True, capture_output=True, text=True).stdout
+
+
+def architecture(obj: Path, listing: str) -> Arch:
+    form = re.search(r"file format (.+)$", listing, re.M)
+    name = form.group(1).strip() if form else "no file format"
+    if name not in ARCHES:
+        sys.exit(f"stack.py: objdump reads {obj.name} as {name}; the walk reads "
+                 f"{' and '.join(ARCHES)} objects")
+    return ARCHES[name]
+
+
+def instructions(listing: str, arch: Arch) -> list[tuple[int, str, str, str | None]]:
+    """Each instruction's address, mnemonic and operands, and the symbol
+    the relocation under it names as a callee, or None."""
+    callee_line = re.compile(r"^\s+[0-9a-f]+:\s+" + re.escape(arch.relocation) + r"\s+(\S+)$")
+    out = []
+    for line in listing.splitlines():
+        m = callee_line.match(line)
+        if m and out:
+            out[-1] = (*out[-1][:3], m.group(1))
+            continue
+        m = INSTRUCTION.match(line)
+        if m:
+            out.append((int(m.group(1), 16), m.group(2), m.group(3), None))
+    return out
+
+
+def owner(starts: list[tuple[int, str]], addr: int) -> str | None:
+    """The function that holds addr: the last one to start at or before it."""
+    fn = None
+    for start, name in starts:
+        if start <= addr:
+            fn = name
+    return fn
+
+
+def object_edges(obj: Path, edges: dict[str, dict[str, int]]) -> Arch:
+    """Adds each call and tail call in obj to edges, as the callee and the
+    bytes the call pushes, and returns obj's architecture."""
+    listing = run(OBJDUMP, "-d", "-r", str(obj))
+    arch = architecture(obj, listing)
+    # objdump labels the start of a section ltmp0 rather than the function
+    # there, so each function's start comes from nm.
+    starts = [(int(addr, 16), name) for addr, name in
+              re.findall(r"^([0-9a-f]+) [tT] (_[A-Za-z0-9_]+)$",
+                         run(NM, "-n", str(obj)), re.M)]
+    for addr, mnemonic, operands, callee in instructions(listing, arch):
+        fn = owner(starts, addr)
+        callees = edges.setdefault(fn, {})
+        # A call or jump with no relocation names its own target: the
+        # function that holds the address objdump prints.
+        if callee is None and mnemonic in arch.calls | arch.jumps:
+            target = re.match(r"0x([0-9a-f]+)", operands)
+            callee = owner(starts, int(target.group(1), 16)) if target else None
+        if callee is not None and callee != fn:
+            pushed = arch.return_address if mnemonic in arch.calls else 0
+            callees[callee] = max(callees.get(callee, 0), pushed)
+    return arch
+
+
+def callgraph(tmp: Path) -> tuple[dict[str, dict[str, int]], int]:
+    """Each function's callees, each with the bytes its call pushes, and
+    the bytes a call into an entry point pushes."""
+    edges: dict[str, dict[str, int]] = {}
+    archs = {object_edges(obj, edges) for obj in sorted(tmp.glob("*.o"))}
+    if len(archs) != 1:
+        sys.exit(f"stack.py: the objects hold {len(archs)} architectures, not one")
+    return edges, archs.pop().return_address
 
 
 def deepest(fn: str, frames: dict, edges: dict, seen: tuple) -> tuple[int, list[str]]:
     if fn in seen:  # cycle guard; none expected
         return 0, []
     best, path = 0, []
-    for callee in sorted(edges.get(fn, ())):
+    for callee, pushed in sorted(edges.get(fn, {}).items()):
         if callee in frames:
             d, p = deepest(callee, frames, edges, seen + (fn,))
-            if d > best:
-                best, path = d, p
+            if pushed + d > best:
+                best, path = pushed + d, p
     return frames.get(fn, 0) + best, [fn] + path
 
 
@@ -139,12 +206,12 @@ def main() -> int:
         tmp = Path(td)
         build(tmp)
         fr = frames(tmp)
-        cg = callgraph(tmp)
+        cg, pushed = callgraph(tmp)
         for fn in PRUNE:
             cg.pop(fn, None)
             fr.pop(fn, None)
             for callees in cg.values():
-                callees.discard(fn)
+                callees.pop(fn, None)
         entries = list(ENTRIES)
         for entry in CA_ENTRIES:
             if entry in fr:
@@ -155,10 +222,12 @@ def main() -> int:
             # not measured, and deepest() would report it as free.
             print(f"stack.py: no frame for {', '.join(missing)}", file=sys.stderr)
             return 1
+        # The call into an entry point pushes a return address too, so an
+        # entry's figure is what a call to it takes from its caller's stack.
         for entry in entries:
             depth, path = deepest(entry, fr, cg, ())
             chain = " > ".join(p.lstrip("_") for p in path)
-            print(f"{entry.lstrip('_'):12} {depth:5} B  via {chain}")
+            print(f"{entry.lstrip('_'):12} {pushed + depth:5} B  via {chain}")
         print("(caller hooks — send/recv/on_ticket/ch_rand_bytes — run on the "
               "caller's own stack budget)")
     return 0

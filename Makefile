@@ -2740,7 +2740,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -3950,7 +3950,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -5676,6 +5676,18 @@ lint-runtime-symbols-run:
 .PHONY: lint-bench-numbers
 lint-bench-numbers:
 	@python3 tools/bench-numbers.py
+
+# bench/stack.py, which computes the peaks docs/performance.md states,
+# reads the call graph from the relocations objdump prints under each call
+# and jump. test/stack_walk.py compiles a fixture for arm64 and x86-64
+# Mach-O with the pinned clang and reads it with the pinned llvm-nm and
+# llvm-objdump, which read Mach-O on any host. The walk must follow a jump
+# at a function's first instruction, which it once dropped, and count the
+# return address an x86-64 call pushes.
+.PHONY: lint-stack-walk
+lint-stack-walk:
+	@CLANG=$(CLANG_RV) STACK_NM=$(LLVM_NM) STACK_OBJDUMP=$(subst llvm-nm,llvm-objdump,$(LLVM_NM)) \
+	  python3 test/stack_walk.py bench/stack.py
 
 # shellcheck -x follows each script's source lines, so the run is skipped
 # only when every file git does not ignore and shellcheck's version are

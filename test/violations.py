@@ -305,7 +305,8 @@ def run_steps(name, root, env, say):
 # with the pinned clang and with the Arm GNU gcc the m3 lane pins and
 # answer in seconds, the trust-separation lint script, which reads
 # the Makefile in three, the TRUST=webpki frame-budget script, which
-# compiles that object's sources in two, the QUIC partition lint
+# compiles that object's sources in two, the stack walk script, which
+# compiles a fixture twice in under one, the QUIC partition lint
 # script, which preprocesses the root sources in three, and the
 # tcp-nonblocking webpki link script, which links that object in two
 # and a half, the X25519=wide build script, which compiles ct.h five
@@ -335,7 +336,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
                 "test/lint-exact-fill.sh", "test/lint-invariants.sh",
                 "test/lint-stack-webpki.sh",
-                "test/lint-stack-quic.sh",
+                "test/lint-stack-quic.sh", "test/lint-stack-walk.sh",
                 "test/lib-check-webpki-tcp-nonblocking.sh",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
                 "test/quic-builds.sh", "test/x25519-builds.sh", "test/chacha-builds.sh",

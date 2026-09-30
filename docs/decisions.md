@@ -4074,11 +4074,9 @@ does nothing more.
     the path's frame with its struct of powers, and the deepest path from
     `aead_seal` through `mac` from 400 to 720. The peak below `aead_seal`
     stays where the vector ChaCha20 put it, 848 bytes: `aead_seal`'s 80
-    over `chacha20_vector_xor`'s 768, by `bench/stack.py`'s frames. The
-    script's own walk reports 720 there, because `chacha20_xor` reaches
-    `chacha20_vector_xor` by a branch at its first instruction, which the
-    walk does not follow. `lint-stack` holds the path's frames to the
-    device budget in the `check-lib-chacha-vector-widemul` leg. Nothing
+    over `chacha20_vector_xor`'s 768, as `bench/stack.py` reports.
+    `lint-stack` holds the path's frames to the device budget in the
+    `check-lib-chacha-vector-widemul` leg. Nothing
     proves the path, because CBMC cannot read an intrinsic. `make check`
     holds it with `bin/poly1305_equiv_test`, 43,282 cases against the
     portable loop and the check of the stack a call leaves;

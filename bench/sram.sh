@@ -2,12 +2,12 @@
 # Regenerates the memory numbers in docs/performance.md. Everything is
 # measured from the code being committed, never hand-computed: struct
 # sizes from sizeof, stack peaks from bench/stack.py, which walks the
-# real call graph (otool-extracted edges weighted by -fstack-usage
-# frames) instead of any hand-picked chain. Host-native today; the
-# cross-compiled ASIC model (pushkin's device-ram.sh) lands with the
-# bench. Prints the report and writes bench/results-sram.csv, the file
-# make lint-bench-numbers compares against docs/performance.md's Memory
-# table (https://github.com/c4milo/chapulin/issues/90).
+# real call graph (edges read from the objects' relocations, weighted by
+# -fstack-usage frames) instead of any hand-picked chain. Host-native
+# today; the cross-compiled ASIC model (pushkin's device-ram.sh) lands
+# with the bench. Prints the report and writes bench/results-sram.csv,
+# the file make lint-bench-numbers compares against docs/performance.md's
+# Memory table (https://github.com/c4milo/chapulin/issues/90).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -74,8 +74,8 @@ SESSION_SERVER_RUNTIME=$("$TMP/sz_server_runtime" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $RUNTIME_DEFS -I. -o "$TMP/sz_webpki_runtime" "$TMP/sz.c"
 SESSION_WEBPKI_RUNTIME=$("$TMP/sz_webpki_runtime" | awk '{print $2}')
-# stack.py reads arm64 objects, and the arm64 cc this runs on defines
-# __ARM_FEATURE_AES by default, so aes_hw.c needs no flag here.
+# This runs stack.py on arm64, where cc defines __ARM_FEATURE_AES by
+# default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
 # QUIC key set records its suite and its section 6.6 count. The same object

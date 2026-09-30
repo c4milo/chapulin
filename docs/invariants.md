@@ -3320,7 +3320,9 @@ last `ROLE=server` stub, as the entry said it would.
   exempt from the frame budget; they keep vector tables in their
   frames.
 - **Check.** Type-system grade (the compiler refuses); bench/sram.sh
-  measures the whole-call-chain peaks docs/performance.md reports. `make check`
+  measures the whole-call-chain peaks docs/performance.md reports, and
+  `make lint-stack-walk` checks that bench/stack.py, which walks each
+  chain, follows a call and a tail call on a fixture. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the
@@ -3338,5 +3340,9 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:
   a 5,000-byte buffer in `p256_ecdsa_verify`, which an rsa mode filters
   out of every other object, so only the `TRUST=webpki` leg compiles the
-  file and objects.
+  file and objects. A published peak can also read low when the walk
+  misses an edge. `inv19-stack-walk-first-instruction-jump` makes
+  bench/stack.py read the placeholder target objdump prints on a branch
+  at a function's first instruction, as it once did, and `make
+  lint-stack-walk` fails.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

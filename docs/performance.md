@@ -40,14 +40,19 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 
 ### Peak stack
 
-The stack peaks are arm64 only: `bench/stack.py` reads arm64
-relocations, so an rv32 peak needs tooling that does not exist yet.
+The stack peaks are arm64 only. `bench/stack.py` reads the call graph
+from the relocations in an arm64 or x86-64 Mach-O object, and
+`bench/sram.sh` runs it on an arm64 Mac, so an rv32 peak needs tooling
+that does not exist yet.
 
 The script computes each entry point's worst case from the object
-code's call graph. It does not rely on a hand-picked call chain. The
-RSA verify holds the deepest frames, so it sets the `ch_connect` peak in
-the default build; it runs once per ticket lifetime, and every byte
-unwinds before `ch_connect` returns.
+code's call graph. It does not rely on a hand-picked call chain. It
+counts a tail call like a call, adding the callee's depth to the
+caller's whole frame, which can only overstate a peak, and `make
+lint-stack-walk` checks that it follows a tail call at a function's
+first instruction. The RSA verify holds the deepest frames, so it sets
+the `ch_connect` peak in the default build; it runs once per ticket
+lifetime, and every byte unwinds before `ch_connect` returns.
 
 | call | arm64 |
 |---|---|
@@ -87,8 +92,10 @@ larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
 lists, secp256r1 (63). Its `ch_connect` peaks at 16,528 bytes, through
-ML-KEM's decapsulation, above the 7,152 its chain walk into an RSA-4096
-verify reaches, the widest modulus a public root carries.
+ML-KEM's decapsulation, above the 7,344 its chain walk into an RSA-4096
+verify reaches with ML-KEM pruned from the call graph
+(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`). RSA-4096 is the widest
+modulus a public root carries.
 
 **`ROLE=server`.** A server build pays them as well, because every
 server holds the hybrid ([`docs/decisions.md`](decisions.md) 54). Its
