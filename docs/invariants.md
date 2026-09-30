@@ -69,7 +69,8 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-2 — zero heap, caller-owned memory
 
 - **Claim.** The library never allocates. All state lives in the
-  caller's `ch_tls` and record buffer; no OS facilities are assumed.
+  caller's session struct, which INV-18 names per transport with its
+  one exception, and in `cfg.buf`; no OS facilities are assumed.
 - **Mechanism.** Absence of any allocator call; the freestanding
   include set (no stdio.h, stdlib.h, time.h in library sources).
 - **Check.** Semgrep-structural (`inv-2-no-allocator`, and
@@ -3256,14 +3257,23 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-18 — no library-global mutable state
 
-- **Claim.** All state lives in the caller's `ch_tls`. The library
-  object carries no top-level mutable variable, so sessions cannot
+- **Claim.** All state lives in the session struct the caller passes:
+  `ch_tls` under `TRANSPORT=tcp-blocking`, `ch_record` under
+  `TRANSPORT=tcp-nonblocking` and `ch_quic` under
+  `TRANSPORT=quic-nonblocking`, in either role. `ch_record` and
+  `ch_quic` each hold a `ch_tls` beside the driver state that survives
+  a return (`tcp_nonblocking.h`, `quic_session.h`), and a call that
+  takes no session, such as `ch_srv_check` or the Retry token calls,
+  keeps nothing between calls. The library object carries no
+  top-level mutable variable outside `drbg.c`, so sessions cannot
   interfere and the whole stack is reentrant per session.
 - **Mechanism.** Structural; the reference DRBG (`drbg.c`) is the
-  sole documented exception and ships outside the packaged library
-  object. A `RAND=session` object carries no generator at all: every
-  draw goes to the source the session's own `ch_cfg` names (INV-4), so
-  sessions on different threads share no entropy state.
+  sole documented exception: its key and its seeded flag are
+  file-scope variables that every session in the image shares, and
+  only a `RAND=drbg` object packages it. A `RAND=session` object
+  carries no generator at all: every draw goes to the source the
+  session's own `ch_cfg` names (INV-4), so sessions on different
+  threads share no entropy state.
 - **Check.** Semgrep (`inv-18-no-global-mutable-state`): top-level non-const `static` in
   library sources, drbg.c allowlisted. It is exactly the check that
   would have flagged the DRBG's globals automatically. Graded

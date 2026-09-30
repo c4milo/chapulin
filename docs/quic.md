@@ -126,10 +126,12 @@ that keep their TLS text and owe a QUIC arm — `handshake_parser.c`,
 `handshake_record.c`, `handshake_auth.c` and `handshake_post.c` — for as long
 as the object could not compile them. Every arm landed with the driver, so
 the list is empty and the object compiles all four beside
-`handshake_message.c`; the name stays because `TRANSPORT_FILTER` and
+`handshake_message.c`. The parser's arm now sits in `handshake_parser_ee.c`,
+which took `hsp_parse_encrypted_exts` out of `handshake_parser.c`, and the
+object compiles that file too. The name stays because `TRANSPORT_FILTER` and
 `tools/quic-partition.py` read it. And `LIB_VARIANT` gained `$(TRANSPORT)` as
-a term, so the two transports never write an object of the same name to the
-same path.
+a term, so no two transports write an object of the same name to the same
+path.
 
 ## What QUIC asks of a TLS stack
 
@@ -249,11 +251,13 @@ cipher is needed. It is still AES, plus GHASH.
 
 ### The rule it contradicts
 
-`CLAUDE.md`: "ChaCha20/Poly1305/x25519 are constant time by construction — keep
+`CLAUDE.md` at `3432a5d`: "ChaCha20/Poly1305/x25519 are constant time by construction — keep
 them that way; AES never enters this codebase precisely to avoid tables."
-`docs/decisions.md` entry 6 records the same trade: "Cost: the IoT profile's
+`docs/decisions.md` entry 6 recorded the same trade at `3432a5d`: "Cost: the IoT profile's
 mandatory AES-CCM suite and AES-only servers. Gain: constant time by
 construction on any core — no lookup tables, no timing story to defend."
+Both have since taken the exception this section argues for, and "What
+changes in `CLAUDE.md`" says where.
 
 The rule is categorical and the reason under it is not. The reason is about
 what a lookup table leaks, and a table leaks the key it is indexed with. Every
@@ -296,7 +300,7 @@ prints. No traffic secret `keysched.c` derives is among them.
 
 The argument above is only as good as the rule that keeps it true tomorrow, so
 the rule has to be checkable, not merely stated. It is INV-26 in
-`docs/invariants.md`, which stops at INV-27 (`docs/invariants.md:279` at `e7cc18a`), in the
+`docs/invariants.md`, which stopped at INV-27 when this was written (`docs/invariants.md:279` at `e7cc18a`), in the
 entry shape INV-20 already uses for the certificate parser, at the weaker of
 the two Semgrep grades for the reason below.
 
@@ -401,20 +405,22 @@ for something else.
    `quic_initial.c` and `quic_retry.c` names a symbol that begins `aes_`
    or `gcm_`. Check 4 fails the build when
    that naming rule stops holding. `.semgrep/invariants.yml`
-   holds 13 rules today (*measured*,
+   held 13 rules at `3432a5d` (*measured*,
    `grep -c 'id:' .semgrep/invariants.yml`), and
    `lint-invariants` runs them.
-2. `lint-codegen-partition` (`Makefile`) already forces every library
-   source into exactly one of two hand-kept lists: `WIDEMUL_CEILING`, the
-   secret-bearing sources held at a wide-multiply count, which holds 24 files
-   today, and `WIDEMUL_PUBLIC`, the sources whose every operand is public,
-   which holds 19. The two sum to the 43 `.c` files at the repository root.
-   `aes.c` and `gcm.c` belong in `WIDEMUL_PUBLIC`, beside the entry the list
-   already carries for each file saying what that file may see
+2. `lint-codegen-partition` (`Makefile`) already forced every library
+   source into exactly one of two hand-kept lists at `3432a5d`: `WIDEMUL_CEILING`, the
+   secret-bearing sources held at a wide-multiply count, which held 24 files
+   then, and `WIDEMUL_PUBLIC`, the sources whose every operand is public,
+   which held 19. The two summed to the 43 `.c` files at the repository root.
+   `aes.c` and `gcm.c` went into `WIDEMUL_PUBLIC`, beside the entry the list
+   carries for each file saying what that file may see
    (`Makefile`). The Makefile states the consequence in its own
    words: "A secret arriving in any of these is a design change, and this list
    is where it lands." Moving `aes.c` out of that list is the diff a reviewer
-   looks for.
+   looks for, and the `SUITE=aesgcm` build made it: that build passes `aes.c`
+   and `gcm.c` a traffic key, so both now sit in `WIDEMUL_CEILING`
+   (`CODEGEN_SRCS` in the `Makefile`).
 3. `lib-check` (`Makefile`) diffs the packaged object's exported symbols
    against `PUBLIC` (`Makefile`) and fails on any difference. No `aes_` or
    `gcm_` symbol is in `PUBLIC`, so the AES cannot leave the object and be
@@ -442,7 +448,7 @@ hand-kept list (`Makefile`), so `lint-shellcheck` picks it up with no
 further edit. A script target
 with no `builds:` line rebuilds nothing (`test/violations.py:189`,
 `test/violations.py:219-225`), so the edit is one Semgrep matches whether or
-not it compiles. `test/violations/` holds 89 files today (*measured*,
+not it compiles. `test/violations/` held 89 files at `3432a5d` (*measured*,
 `ls test/violations/*.violation | wc -l`), `test/violations.py` applies the
 edit and requires the named target to fail, and an edit whose old text no
 longer matches fails as stale rather than passing silently.
@@ -496,7 +502,7 @@ multiply, 128 masked steps per block, and compile no `ghash_hw.c`.
 more entries in `aes_block.h`, because `aes.c` alone calls that header
 and `gcm.c` alone calls this one.
 
-One implementation per object, the way `PIN` puts one pinned algorithm in one
+One implementation per object, the way a `TRUST` value puts one pinned algorithm in one
 object, with one exception. All three define the same two entries, so a second
 one would not link; `lint-trust-separation` checks the packaged source list per
 `AES` value, and
@@ -834,16 +840,16 @@ joins exactly one of the two `lint-codegen-partition` lists.
 
 | pair | concern | codegen list, and why | harness | place in `CLAUDE.md`'s chain |
 | --- | --- | --- | --- | --- |
-| `aes.[ch]` | the AES-128 forward cipher (FIPS 197), the `aes_public_key` type, declared incomplete here and given a body by `aes_public_key.h`, and its two constructors | `WIDEMUL_PUBLIC`: every key it sees is public by INV-26 | `aes_harness.c` | beside `chacha20.[ch]`, under `hkdf.[ch]`, which the constructors call |
+| `aes.[ch]` | the AES-128 forward cipher (FIPS 197), the `aes_public_key` type, declared incomplete here and given a body by `aes_public_key.h`, and its two constructors | `WIDEMUL_PUBLIC`: every key it sees is public by INV-26. It now sits in `WIDEMUL_CEILING`, because the `SUITE=aesgcm` build passes it a traffic key | `aes_harness.c` | beside `chacha20.[ch]`, under `hkdf.[ch]`, which the constructors call |
 | `aes_public_key.h` | the body of `aes_public_key`, and nothing else. `aes.c`, `quic_initial.c` and `quic_retry.c` include it; every other file sees the incomplete type `aes.h` declares | none: it holds no code | none of its own; `aes_harness.c` compiles it | beside `aes.[ch]` |
-| `gcm.[ch]` | AEAD_AES_128_GCM seal and open, and GHASH (SP 800-38D) | `WIDEMUL_PUBLIC`: the same three keys, and GHASH multiplies a public key by public ciphertext | `gcm_harness.c`, split the way `aead` split if a formula fails to converge | beside `aead.[ch]` |
+| `gcm.[ch]` | AEAD_AES_128_GCM seal and open, and GHASH (SP 800-38D) | `WIDEMUL_PUBLIC`: the same three keys, and GHASH multiplies a public key by public ciphertext. It now sits in `WIDEMUL_CEILING`, for `aes.[ch]`'s reason | `gcm_harness.c`, split the way `aead` split if a formula fails to converge | beside `aead.[ch]` |
 | `quic_keys.[ch]` | the §5.1 labels `quic key`, `quic iv` and `quic hp`, the §6.1 `quic ku` step, and the per-level, per-direction key set that replaces `rec_dir`. It writes one `quic_hp_key` per direction per level when that level's traffic secret arrives, and the `quic ku` step rewrites the packet key and IV alone (RFC 9001 §5.4 and §6.1, `rfc9001.txt:1172-1174`, `rfc9001.txt:1607`) | `WIDEMUL_CEILING`, held at 0: it derives from traffic secrets. It joins `BRANCH_SRCS` with `quic_packet.c`, which is where the 16 new `BRANCH_CEILING` entries land | `quic_keys_harness.c` | in place of `record.[ch]` |
 | `quic_packet.[ch]` | §5.3 packet protection and §5.4.4 header protection under ChaCha20-Poly1305, the §6.5 receive key-set selection — the Key Phase bit picks the phase and the recovered packet number tells the previous phase from the next — the §5.4.2 length check and the §6.6 counters | `WIDEMUL_CEILING`, held at 0: it holds 1-RTT keys. It joins `BRANCH_SRCS` too, with both halves counted: §9.5 puts a MUST on the open path and another on the seal path | `quic_packet_harness.c`, and one more for open if the seal-and-open formula does not converge | beside `quic_keys.[ch]` |
 | `quic_initial.[ch]` | the Initial packet path: AES-128-GCM seal and open and the §5.4.3 AES-ECB mask, each taking the Destination Connection ID and deriving its own key on its own stack (INV-26). Each also takes which endpoint the caller is, `CH_QUIC_ENDPOINT_CLIENT` or `CH_QUIC_ENDPOINT_SERVER`: §5.2 gives each endpoint its own Initial secret, the seal derives the caller's and the open derives the other's, and `quic.c` names the client at both calls | `WIDEMUL_PUBLIC`: the Initial keys are public (RFC 9001 §5) | `quic_initial_harness.c` | beside `quic_packet.[ch]`, over `aes.[ch]` and `gcm.[ch]` |
 | `quic_retry.[ch]` | the §5.8 Retry integrity tag under the printed key and nonce. `quic_retry_tag` writes one and `quic_retry_ok` checks one, and the check calls the mint, so the two cannot disagree. Neither decides whether to send a Retry or what its token holds: RFC 9000 §8.1.2 leaves address validation to the server, and colibri owns it | `WIDEMUL_PUBLIC`: the key is printed in the RFC | `quic_retry_harness.c` | beside `quic_initial.[ch]` |
 | `handshake_flight.[ch]` | the flight handlers both drivers call, moved out of `handshake.c` with their bodies unchanged but for the two edits "Entry points and their contracts" names: 233 of its 395 lines. Every build compiles it | `WIDEMUL_CEILING`, held at 0: it holds every handshake secret | none of its own; `handshake_psk`, `handshake_pin` and the step legs compile it, which is what `tools/proof-cover.py` requires | between `handshake_auth.[ch]` and `handshake.[ch]` |
 | `quic_step.[ch]` | `HSQ_STEP_*`, `hsq_advance` and the six step functions: one whole handshake message each | `WIDEMUL_CEILING`, held at 0: the steps derive and install traffic secrets | `quic_step_harness.c`, one launch line per step and mode | beside `handshake.[ch]`, over `handshake_flight.[ch]` |
-| `quic.[ch]` | `ch_quic`, the `ch_quic_` entries, the input loop, the staged output, and the wipe that replaces `tlsi_wipe` (`session.c:25-37`), because what it wipes is key sets rather than `rec_dir` | `WIDEMUL_CEILING`, held at 0, where `tls.c` sits today | `handshake_quic_harness.c` | in place of `tls.[ch]`, above every file in this table |
+| `quic.[ch]` | `ch_quic`, which `quic_session.h` declares, the `ch_quic_` entries, the input loop and the staged output. The wipe that replaces `tlsi_wipe` (`session.c:25-37`), because what it wipes is key sets rather than `rec_dir`, is `quic_wipe` in `quic_fail.c`, beside the failure path `quic_fail` | `WIDEMUL_CEILING`, held at 0, where `tls.c` sits today | `quic_driver_harness.c` | in place of `tls.[ch]`, above every file in this table |
 
 `aes.[ch]` and `gcm.[ch]` are the only pairs the AES exception adds; the other
 seven are the transport, and `aes_public_key.h` is a header of its own with no
@@ -855,8 +861,8 @@ other five are absent from it on purpose: a call from any of them to a symbol
 `aes.h` or `gcm.h` declares is exactly the error that rule reports. The
 `WIDEMUL_PUBLIC` reason column joins the list's existing comment block
 (`Makefile`) as its own entries, and every `WIDEMUL_CEILING` row is
-an entry of the form `<name>.c:0` beside the twenty-four the list carries
-today.
+an entry of the form `<name>.c:0` beside the twenty-four the list carried
+at `3432a5d`.
 
 The table adds five `WIDEMUL_CEILING` entries, and four of them need a gate
 change before they compile at all. Both gates that read the list build every
@@ -869,7 +875,7 @@ compile without `-DCH_TRANSPORT_QUIC_NONBLOCKING`, because `CH_LEVEL_*` and the 
 breaks `record.c`, `io.c`, `session.c`, `handshake.c` and `tls.c`, which stay
 on the same list. `handshake_flight.c` is the fifth entry and needs nothing,
 because both transports compile it. Every mode-specific source in the tree
-today sits in `WIDEMUL_PUBLIC` instead (`Makefile:1802-1804` at `3432a5d`), which these two
+at `3432a5d` sat in `WIDEMUL_PUBLIC` instead (`Makefile:1802-1804` at `3432a5d`), which these two
 gates never compile, and `sha3.c` and `mlkem*.c` are on the gated list only
 because the shared line hardcodes `-DCH_KEX_PQ`. `lint-wide-multiply` treats a
 failed compile as a failure rather than a zero, in its own words: "a count of
@@ -885,9 +891,10 @@ compiler-runtime symbol a file pulls on rv32ic.
 The work creates two files that are neither a pair nor a library source.
 `test/lint-invariants.sh` is the AES mutant's catch target, above.
 `test/quic_driver_test.c` builds `bin/quic_driver_test`, which is the catch
-target of all nine driver mutants and the home of the QUIC sequence
+target of the QUIC driver's mutants. It was also to hold the QUIC sequence
 differential against the Lean oracle, the work INV-22's amended mechanism
-names. Both join the Makefile edits table below.
+names, and that differential has not landed: the file runs no sequence
+against the oracle. Both join the Makefile edits table below.
 
 `quic_packet.c`, `quic_initial.c` and `quic_retry.c` read the packet through
 the `rbuf` reader and write sealed output through the `wbuf` writer, as
@@ -969,7 +976,7 @@ The key type makes that day an initializer or a constructor call a reviewer
 can see, the Semgrep rule makes it a failed build, and the other two gates
 make an edit around both visible rather than silent; the mutant proves the
 first gate works. None of them stops a maintainer who edits the key type's
-constructors, the Semgrep rule, the `WIDEMUL_PUBLIC` entry and the invariant
+constructors, the Semgrep rule, `aes.c`'s codegen list entry and the invariant
 in one commit.
 What stops that is a reviewer reading the diff, which is what
 `docs/decisions.md` entry 32 says this codebase optimizes for.
@@ -990,20 +997,26 @@ no crypto.
 Cost, and most of it is this tree's.
 
 - The AES exception above, with the verification debt the table counts.
-- The transport's own exported calls grow from four to the eighteen below,
-  against `docs/decisions.md` entry 28. `PUBLIC` is
-  `ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)` today
-  (`Makefile:363` at `3432a5d`), so the four TLS names are one term of three. The
-  `TRANSPORT` axis replaces that term and nothing else: `PUBLIC` becomes
-  `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, where `PUBLIC_TRANSPORT`
-  is the four TLS names under `TRANSPORT=tcp-blocking` and the eighteen `ch_quic_` names
-  under `TRANSPORT=quic-nonblocking`, selected the way `PUBLIC_CA` is selected on `TRUST`
-  (`Makefile`). The other two terms keep their meaning:
-  `ch_pubkey_from_pem` under a CA mode (`Makefile`), and `ch_drbg_seed`
-  and `ch_rand_bytes` under `RAND=drbg` (`Makefile`, docs/decisions.md
-  67). So a QUIC object exports eighteen calls under `TRUST=raw-rsa
-  RAND=extern`, nineteen under a CA mode, twenty under `RAND=drbg`, and
-  twenty-one under both. The sixteenth, `ch_quic_seal_close`, landed with
+- The transport's own exported calls grew from four to the eighteen
+  `ch_quic_` calls below, against `docs/decisions.md` entry 28. `PUBLIC` was
+  `ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)` at `3432a5d`
+  (`Makefile:363` at `3432a5d`), so the four TLS names were one term of three. The
+  `TRANSPORT` axis replaced that term with `PUBLIC_TRANSPORT`, selected the way
+  `PUBLIC_CA` is selected on `TRUST`: eight names under `TRANSPORT=tcp-blocking`,
+  and under `TRANSPORT=quic-nonblocking` the eighteen `ch_quic_` calls with
+  `ch_ticket_obfuscated_age`, `ch_alert_sent` and `ch_alert_received`, which
+  both transports export. `PUBLIC` now lists `PUBLIC_ROLE`, which a client
+  takes from `PUBLIC_TRANSPORT`, then `PUBLIC_RAND`, `PUBLIC_CA`,
+  `PUBLIC_EXPORT` and `PUBLIC_BUILD`, and gives six names a symbol that
+  carries the transport (`TRANSPORT_NAMED` in the `Makefile`, docs/decisions.md 61).
+  The other terms keep their meaning: `ch_pubkey_from_pem` under a CA mode,
+  `ch_drbg_seed` and `ch_rand_bytes` under `RAND=drbg` (docs/decisions.md
+  67), and the build record in every object (docs/decisions.md 56). So a QUIC
+  client object exports twenty-two symbols under `TRUST=raw-rsa RAND=extern`,
+  twenty-three under a CA mode, twenty-four under `RAND=drbg`, and
+  twenty-five under both (*measured* at `c754665`: `make lib-check
+  TRANSPORT=quic-nonblocking` with those variables prints the count). The
+  sixteenth `ch_quic_` call, `ch_quic_seal_close`, landed with
   `docs/decisions.md` entry 57, and the seventeenth and eighteenth,
   `ch_quic_switch_version` and `ch_quic_negotiated_version`, with entry 79.
   It cannot be a second term added to the first,
@@ -1026,7 +1039,7 @@ Cost, and most of it is this tree's.
   (`rfc9001.txt:1373-1376`). INV-13 is the invariant that exception amends, and
   "What changes in `docs/invariants.md`" holds the replacement text; without it
   entry 21 is weakened quietly.
-- A fifth build axis in the gates that read a build axis by name.
+- One more build axis in the gates that read a build axis by name.
 
 Gain.
 
@@ -1092,9 +1105,10 @@ exception removed and the AES duplicated.
 What this split would have kept: `CLAUDE.md`'s AES sentence and entry 6 as
 written, no AES object, no INV-26, no new Wycheproof suite, and fewer new
 symbols in `PUBLIC`. It would not have kept GHASH out of a codegen gate,
-because no gate measures it either way: `gcm.c` sits in `WIDEMUL_PUBLIC`, and
-neither `lint-wide-multiply` nor `lint-runtime-symbols` compiles a file on that
-list. The suspendable driver and
+because no gate measured it either way when this was decided: `gcm.c` sat in
+`WIDEMUL_PUBLIC`, and neither `lint-wide-multiply` nor `lint-runtime-symbols`
+compiles a file on that list. The `SUITE=aesgcm` build has since moved `gcm.c`
+into `WIDEMUL_CEILING`. The suspendable driver and
 the parser change are identical work either way.
 
 ### Considered and rejected: a second TLS stack for HTTP/3
@@ -1117,7 +1131,7 @@ largest part of QUIC, and the part chapulin never owns.
 
 ## What the mode is
 
-A build axis, not a run-time flag, for the same reason `TRUST`, `PIN` and `KEX`
+A build axis, not a run-time flag, for the same reason `TRUST` and `KEX`
 are builds: within a mode the client offers exactly one of everything
 (`CLAUDE.md`), and QUIC inverts rules the TCP builds must keep. RFC 9001 §6
 forbids the TLS KeyUpdate that entry 3 keeps and `handshake_post.c:181-203`
@@ -1129,9 +1143,12 @@ at `handshake_record.c:59-65` goes with the record layer (§4.1.3,
 (`rfc9001.txt:1977-1978`). RFC 9001 §4.1.3 removes the record layer that
 entry 19's `record_size_limit` sizes.
 
-`LIB_VARIANT` is `$(PIN)-$(TRUST)-$(KEX)-$(RAND)` today (`Makefile:287` at `3432a5d`), so
-the axis is a fifth value in it: `TRANSPORT=quic-nonblocking`, against `TRANSPORT=tcp-blocking` as
-the default. The other four axes keep their meaning in a QUIC build. One
+`LIB_VARIANT` was `$(PIN)-$(TRUST)-$(KEX)-$(RAND)` at `3432a5d` (`Makefile:287` at `3432a5d`), so
+the axis became a fifth term in it: `TRANSPORT=quic-nonblocking`, against `TRANSPORT=tcp-blocking` as
+the default. `LIB_VARIANT` now names eleven variables, and two more when they
+are set, `TX_RECORD` and `CHACHA=vector` (`LIB_VARIANT` in the `Makefile`); `PIN`
+is now half of a `TRUST` value (`docs/decisions.md` entry 40). `TRUST`, `KEX`
+and `RAND` keep their meaning in a QUIC build. One
 key-exchange group per build stays (entry 12), so a `KEX=pq` QUIC build offers
 X25519MLKEM768 alone and fails closed against a server without it, the same as
 over TCP.
@@ -1140,19 +1157,20 @@ over TCP.
 
 `ch_connect`, `ch_read`, `ch_write` and `ch_close` (`tls.h`) are a
 byte-stream API over a socket the library drives. None of them fits. A QUIC
-object exports a different set: `PUBLIC` becomes
-`$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)` (`Makefile`), and
-`PUBLIC_TRANSPORT` holds the four TLS names under `TRANSPORT=tcp-blocking` and these
-eighteen under `TRANSPORT=quic-nonblocking`, selected the way `PUBLIC_CA` is selected on
-`TRUST` (`Makefile`). `PUBLIC_RAND` and `PUBLIC_CA` are unchanged on
-both transports, so `lib-check`'s list is these eighteen plus
-`ch_pubkey_from_pem` under a CA mode, and `ch_drbg_seed` and `ch_rand_bytes`
-under `RAND=drbg`.
-These are the names the header will use.
+object exports a different set. `PUBLIC_TRANSPORT` holds eight names under
+`TRANSPORT=tcp-blocking`, those four with `ch_writable_len`,
+`ch_ticket_obfuscated_age`, `ch_alert_sent` and `ch_alert_received`, and under
+`TRANSPORT=quic-nonblocking` these eighteen with the last three of those,
+selected the way `PUBLIC_CA` is selected on `TRUST` (`Makefile`). `PUBLIC`
+adds the other axes' terms (`Makefile`), so `lib-check`'s list for a QUIC
+client is these eighteen, those three and the build record, twenty-two
+symbols, plus `ch_pubkey_from_pem` under a CA mode, and `ch_drbg_seed` and
+`ch_rand_bytes` under `RAND=drbg`.
+These are the names the header uses.
 
 | call | what it does |
 | --- | --- |
-| `ch_quic_init(q, cfg)` | validates the configuration, prepares the state machine and builds the ClientHello into `t.tx` and sets `tx_len`. It sends nothing, and the caller takes those bytes with `ch_quic_crypto_out`. Refuses with `CH_EINVAL` for the same errors `tls.c:108-113` refuses today, minus the `cfg.send` and `cfg.recv` checks, which have no meaning here; under `TRUST=webpki` those are `webpki_cfg_ok`'s, SPKI pins included (`docs/decisions.md` entry 64). Keeps the `cfg.buf_len >= CH_MIN_RXBUF` check, for the reason below, and keeps the `alpn_ok` check (`webpki_cfg.c:201`). Adds three rules of its own, which "Suspending the driver" states: the caller's transport parameters, `on_level_ready`, and an ALPN offer of at least one protocol |
+| `ch_quic_init(q, cfg)` | validates the configuration, prepares the state machine and builds the ClientHello into `t.tx` and sets `tx_len`. It sends nothing, and the caller takes those bytes with `ch_quic_crypto_out`. Refuses with `CH_EINVAL` for the same errors `tls.c:108-113` refuses today, minus the `cfg.send` and `cfg.recv` checks, which have no meaning here; under `TRUST=webpki` those are `webpki_cfg_ok`'s, SPKI pins included (`docs/decisions.md` entry 64). Keeps the `cfg.buf_len >= CH_MIN_RXBUF` check, for the reason below, and keeps the ALPN rules: `webpki_cfg_ok` applies them under `TRUST=webpki` (`webpki_cfg.c:201`), and `quic_config.c` carries its own `alpn_ok` for the raw and ca modes. Adds three rules of its own, which "Suspending the driver" states: the caller's transport parameters, `on_level_ready`, and an ALPN offer of at least one protocol |
 | `ch_quic_initial_keys(q, dcid, dcid_len)` | stores the caller's Destination Connection ID, which RFC 9001 §5.2 derives the Initial keys from, and marks both directions of the Initial level ready. It derives no key: the packet calls do that on their own stack (INV-26). The caller calls it again after a Retry, because the secrets change then (`rfc9001.txt:1092-1094`) |
 | `ch_quic_crypto_in(q, level, p, n)` | delivers the bytes CRYPTO frames carried at one level, in order. Runs the state machine until it needs more bytes, then returns |
 | `ch_quic_crypto_out(q, level, out, cap, out_len)` | hands out the one handshake message the client owes at that level, whole or not at all. Returns `CH_OK` and no bytes when nothing is owed there, and `CH_ECAP` with nothing consumed when `cap` is shorter than the message, so the caller can call again with a larger buffer |
@@ -1232,12 +1250,13 @@ transport parameters, `ch_cfg.transport_params` and
 already exists: `ch_cfg.alpn_protocols` and `ch_cfg.alpn_count`
 (`cfg.h:433-434`), the server's choice in `ch_tls.alpn_selected`
 (`session.h:310`) with `CH_ALPN_NONE` (`cfg.h:281`) for no selection, and the
-`alpn_ok` check in `ch_connect` (`webpki_cfg.c:201`). `docs/webpki.md` states what the
+`alpn_ok` check `webpki_cfg_ok` makes for `ch_connect` (`webpki_cfg.c:201`). `docs/webpki.md` states what the
 caller sets and what the client refuses, and `docs/decisions.md` entry 37
-states why. Today only a `TRUST=webpki` build declares them; RFC 9001 §8.1
+states why. At `3432a5d` only a `TRUST=webpki` build declared them; RFC 9001 §8.1
 makes them mandatory in every trust mode of a `TRANSPORT=quic-nonblocking` build
-(`rfc9001.txt:1891-1895`), so the `#ifdef CH_TRUST_WEBPKI` guards around them
-move, and `ch_quic_init` keeps the `alpn_ok` check. One rule differs from
+(`rfc9001.txt:1891-1895`), so their guards now name `CH_TRANSPORT_QUIC_NONBLOCKING`
+and `CH_ROLE_SERVER` beside `CH_TRUST_WEBPKI`, and `ch_quic_init` applies the
+ALPN rules through `quic_config_ok`. One rule differs from
 `docs/webpki.md`'s: there a server that sends no ALPN extension leaves
 `ch_tls.alpn_selected` at `CH_ALPN_NONE` and the handshake completes. Under
 `TRANSPORT=quic-nonblocking`, §8.1 makes a client close with `no_application_protocol` when
@@ -1475,8 +1494,9 @@ the fields of one named level.
 configuration, and applies the rules `ch_connect` applies today
 (`tls.c:100-150` for raw and ca, `tls.c:345-360` for webpki) minus the
 `cfg.send` and `cfg.recv` checks, which have no meaning here. It keeps
-`buf_len >= CH_MIN_RXBUF` and the `alpn_ok` check (`webpki_cfg.c:201`), and adds
-three rules of its own: the caller's encoded transport parameters are present
+`buf_len >= CH_MIN_RXBUF` and the ALPN rules, which `webpki_cfg_ok` applies
+under `TRUST=webpki` (`webpki_cfg.c:201`) and `quic_config.c`'s own `alpn_ok`
+applies in the raw and ca modes, and adds three rules of its own: the caller's encoded transport parameters are present
 and within `CH_TRANSPORT_PARAMS_MAX`, `on_level_ready` is not NULL, and the
 ALPN offer names at least one protocol, because RFC 9001 §8.1 makes ALPN
 mandatory. Any failure sets `CH_ST_FAILED` and returns `CH_EINVAL`. Then it
@@ -1745,10 +1765,11 @@ Finished goes out rather than after, where the tree ran `ks_master`,
 depends on it, because a failed send wipes the session either way.
 
 **`handshake_auth.[ch]`, prefix `hsa_`.** `hsa_server_auth` keeps its TLS
-contract (`handshake_auth.h:13-16`); under `CH_TRANSPORT_QUIC_NONBLOCKING` it returns
-`CH_OK` right after `sha256_update` at `handshake_auth.c:325`.
-`hsa_read_certificate_verify` is new and QUIC-only, declared under `#ifdef`,
-and requires a preceding `hsa_server_auth` that returned `CH_OK` in the same
+contract (`handshake_auth.h:13-16`); under `CH_TRANSPORT_QUIC_NONBLOCKING`, and
+under `CH_TRANSPORT_TCP_NONBLOCKING` too, it returns
+`CH_OK` right after `transcript_update` at `handshake_auth.c:325`.
+`hsa_read_certificate_verify` is new, declared under `#if` for those two
+transports alone, and requires a preceding `hsa_server_auth` that returned `CH_OK` in the same
 session. `hsa_epoch_commit` does not change.
 
 **`handshake_record.[ch]`, prefix `hsr_`.** The tcp-blocking arm
@@ -1775,20 +1796,25 @@ reaches them by `#include`, the way `proof/certverify_webpki_harness.c:106`
 already reaches a static function.
 
 **`quic.[ch]`, the public file beside `tls.[ch]`.** The entries in "The
-interface it exposes" and the two static functions the input loop and the
-failure path use; `ch_quic` itself sits in `quic_session.h`, which `quic.h`
+interface it exposes" and `drive`, the static function that holds the input
+loop. The failure path, `quic_fail` and `quic_wipe`, sits in `quic_fail.[ch]`,
+which the server driver calls too. `ch_quic` itself sits in `quic_session.h`, which `quic.h`
 includes, with the rules of what survives a return.
-`PUBLIC_TRANSPORT` takes these eighteen names in place of the four tcp-blocking ones
-under `TRANSPORT=quic-nonblocking`, and `lib-check` (`Makefile`) holds
-`$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)` (`PUBLIC` in the `Makefile`). It is a
+`PUBLIC_TRANSPORT` takes these eighteen names and the three calls both
+transports export in place of the eight tcp-blocking ones
+under `TRANSPORT=quic-nonblocking`, and `lib-check` (`Makefile`) holds the
+object to `PUBLIC`, which adds the other axes' terms. It is a
 selection on one term, not an addition: `lib-check` diffs the object's
 exported symbols against `PUBLIC` for exact equality (`Makefile`), so
 a `PUBLIC_TRANSPORT` carrying both sets fails a tcp-blocking build by the eighteen
-`ch_quic_` names and a QUIC build by the four tcp-blocking ones. `ch_pubkey_from_pem`,
+`ch_quic_` names and a QUIC build by the five TCP calls it does not define. `ch_pubkey_from_pem`,
 `ch_drbg_seed` and `ch_rand_bytes` are unchanged on both transports, so a CA-mode
-QUIC object exports nineteen calls and a `TRUST=ca-rsa RAND=drbg` one twenty-one. The
-ALPN configuration rules `webpki_cfg.c:91-133` holds today are needed here in every
-trust mode.
+QUIC client object exports twenty-three symbols and a `TRUST=ca-rsa RAND=drbg` one
+twenty-five (*measured* at `c754665` by `make lib-check`). The
+ALPN configuration rules `webpki_cfg.c:91-133` holds apply here in every
+trust mode: `webpki_cfg_ok` applies them under `TRUST=webpki`, `quic_config.c`
+carries its own copy for the raw and ca modes, and `quic_config.c`'s `alpn_ok`
+adds in every mode the rule that the offer names a protocol.
 
 **`handshake_post.[ch]`.** `handle_ticket` stays `static` at
 `handshake_post.c:102`. Under `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` the file gains
@@ -1871,9 +1897,9 @@ already records why this tree refuses that trade.
 | `handshake_post.c` | `#ifndef` around `:181-284` and `:286-367`; `hspost_take_ticket` after `:153` at `3432a5d`; and an `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arm at `handshake_post.c:123-134`, where the body reads the extension block's length and skips its bytes today (`handshake_post.c:98-99` states why), which instead reads the block, refuses any `early_data` whose `max_early_data_size` is not 0xffffffff, and records the refusal so `ch_quic_error_code` reports 0x0a rather than the bare `CH_EPROTO` of `handshake_post.c:137`. The arm is a fence, so the text a TCP build preprocesses does not move |
 | `session.h` | fences around `:177-178`, `:202`, `:213` and `:357`; a QUIC-shaped `tx` beside `:398`; `alpn_selected`'s guard at `:292` widens to webpki or quic |
 | `cfg.h` | the ALPN block (`:261-281`, `:425-434`) widens to webpki or quic; a new QUIC block carries `CH_LEVEL_*`, `CH_KEY_*`, `CH_TRANSPORT_PARAMS_MAX`, the two fields and the two callbacks |
-| `handshake_message.c`, `handshake_parser.c` | the QUIC arms "The parser change, in full" specifies, plus `ALERT_MISSING_EXTENSION` 109 and `ALERT_NO_APPLICATION_PROTOCOL` 120 in `handshake_message.h:210-249` |
-| `tls.c` | the ALPN rule functions `:329-371` at `3432a5d` move into a header of static functions included where `tls.c:323-326` sits, below every `CH_ASSERT`. Byte identity is measured, not claimed; if `tls.o` moves, `quic.c` carries its own copy and a unit row holds the two to the same verdicts |
-| `Makefile` | `SRCS` and `HDRS` gain `handshake_flight`; a `TRANSPORT` axis beside `TRUST`, defaulting to `tcp-blocking`, which under `quic-nonblocking` adds `-DCH_TRANSPORT_QUIC_NONBLOCKING`, drops `io.c record.c session.c handshake.c tls.c` and adds `quic.c quic_step.c` and the packet-protection sources; `LIB_VARIANT`; a `PUBLIC_TRANSPORT` variable and `PUBLIC` rewritten as `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, selected on the new axis the way `PUBLIC_CA` is selected on `TRUST`; `lint-trust-separation` rows; per-file defines on `WIDEMUL_CEILING`, read at `:5459-5460` and `:5577-5580`; an `RV_ALLOWED` decision for each of the five new `WIDEMUL_CEILING` entries, and a row only where the file pulls a runtime symbol, because a row for a file that pulls nothing prints a line on every run (`Makefile:5590-5593`); a `bin/quic_driver_test` target over `test/quic_driver_test.c`, which `check` runs beside the other test binaries and which `test-invariants-fast` gains as a prerequisite (`Makefile`); a `cxx-check TRANSPORT=quic-nonblocking` invocation beside the three at `:2880`, `:2901-2903` and `:2907`; a `bin/quic_test` target over `test/quic_vectors.c`, in the shape of `bin/sha3_test`; and the three lint passes that read a file name. `LINT_C` gains the nine new sources and `test/quic_driver_test.c`, and `HDRS` gains the nine new headers, so `lint-format` and `lint-cppcheck` read them. `lint-tidy` gains a third pass in the shape of the `-DCH_TRUST_WEBPKI` pass in its recipe, over `quic.c quic_step.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c aes.c gcm.c handshake_flight.c handshake_record.c handshake_post.c handshake_parser.c handshake_message.c handshake_auth.c test/quic_driver_test.c` with `-DCH_TRANSPORT_QUIC_NONBLOCKING`, and the four sources that need the define are filtered out of the first pass the way `webpki.c` is, because that pass declares no transport and reads none of the QUIC arms |
+| `handshake_message.c`, `handshake_parser_ee.c` | the QUIC arms "The parser change, in full" specifies, plus `ALERT_MISSING_EXTENSION` 109 and `ALERT_NO_APPLICATION_PROTOCOL` 120 in `handshake_message.h:210-249`. The parser's arm sits in `handshake_parser_ee.c` beside `hsp_parse_encrypted_exts`, which that file took out of `handshake_parser.c` |
+| `tls.c` | the ALPN rule functions `:329-371` at `3432a5d` left `tls.c`: `webpki_cfg.c` holds them, and `webpki_cfg_ok` applies them for `ch_connect` and `ch_quic_init` under `TRUST=webpki`. The raw and ca QUIC builds compile no `webpki_cfg.c`, so `quic_config.c` carries its own copy in `alpn_ok` |
+| `Makefile` | `SRCS` and `HDRS` gain `handshake_flight`; a `TRANSPORT` axis beside `TRUST`, defaulting to `tcp-blocking`, which under `quic-nonblocking` adds `-DCH_TRANSPORT_QUIC_NONBLOCKING`, drops `io.c record.c session.c handshake.c tls.c` and adds `quic.c quic_step.c` and the packet-protection sources; `LIB_VARIANT`; a `PUBLIC_TRANSPORT` variable and `PUBLIC` rewritten as `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, selected on the new axis the way `PUBLIC_CA` is selected on `TRUST`, which later axes widened ("The decision" above gives `PUBLIC` as it stands); `lint-trust-separation` rows; per-file defines on `WIDEMUL_CEILING`, read at `:5459-5460` and `:5577-5580`; an `RV_ALLOWED` decision for each of the five new `WIDEMUL_CEILING` entries, and a row only where the file pulls a runtime symbol, because a row for a file that pulls nothing prints a line on every run (`Makefile:5590-5593`); a `bin/quic_driver_test` target over `test/quic_driver_test.c`, which `check` runs beside the other test binaries and which `test-invariants-fast` gains as a prerequisite (`Makefile`); a `cxx-check TRANSPORT=quic-nonblocking` invocation beside the three at `:2880`, `:2901-2903` and `:2907`; a `bin/quic_test` target over `test/quic_vectors.c`, in the shape of `bin/sha3_test`; and the three lint passes that read a file name. `LINT_C` gains the nine new sources and `test/quic_driver_test.c`, and `HDRS` gains the nine new headers, so `lint-format` and `lint-cppcheck` read them. `lint-tidy` gains a third pass in the shape of the `-DCH_TRUST_WEBPKI` pass in its recipe, over `quic.c quic_step.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c aes.c gcm.c handshake_flight.c handshake_record.c handshake_post.c handshake_parser_ee.c handshake_message.c handshake_auth.c test/quic_driver_test.c` with `-DCH_TRANSPORT_QUIC_NONBLOCKING`, and the four sources that need the define are filtered out of the first pass the way `webpki.c` is, because that pass declares no transport and reads none of the QUIC arms |
 | `test/violations.py` | `FAST_TARGETS` (`test/violations.py:326-345`) gains `"quic_driver_test"` and `"test/lint-invariants.sh"`. Without both names the nine driver mutants and the AES one fall into the slow tier (`test/violations.py:468-471`), which `check-slow` does not run: its recipe in the `Makefile` runs `test-invariants-fast` alone, so they would run in the nightly and not in the run `CLAUDE.md` calls the definition of done |
 | `io.c`, `record.c`, `session.c`, `keysched.c` | nothing |
 
@@ -1991,7 +2017,7 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    | the CertificateRequest arm folded into the KeyUpdate arm, so `ch_quic_error_code` reports 0x010a for a post-handshake CertificateRequest | `quic_step.c` | INV-22 | `quic_driver_test` |
    | the §5.7 check removed from `ch_quic_open`, so a 1-RTT packet opens before `t.state` reaches `CH_ST_CONNECTED` | `quic.c` | INV-22 | `quic_driver_test` |
    | the next receive keys promoted inside `ch_quic_open` before the open succeeds, so a forged Key Phase bit installs a key update | `quic.c` | INV-13 | `quic_driver_test` |
-   | the `seen` check removed from `hsp_parse_encrypted_exts`, so an EncryptedExtensions with no `quic_transport_parameters` is accepted | `handshake_parser.c` | INV-14 | `quic_driver_test` |
+   | the `seen` check removed from `hsp_parse_encrypted_exts`, so an EncryptedExtensions with no `quic_transport_parameters` is accepted | `handshake_parser_ee.c` | INV-14 | `quic_driver_test` |
 
 The Lean oracle moves with the driver. `spec/lean/Spec/Handshake.lean`'s `State`
 (`:64-80`) names the same states the step numbers do, constructor for
@@ -2014,7 +2040,10 @@ against a hand-written case alone. The oracle command at
 `spec/lean/Main.lean:368-374` takes the transport as a fourth word, and the TLS test
 passes `tls`. The QUIC sequence differential never draws application data or
 close_notify, so its input domain stays inside what the C and the spec agree on
-(`CLAUDE.md`).
+(`CLAUDE.md`). None of this oracle work has landed: the `handshake_sequence`
+command in `spec/lean/Main.lean` takes no transport, `spec/lean/Spec/Handshake.lean`
+has no QUIC arm, and `bin/quic_driver_test` runs no sequence, so INV-22's check
+still names the TCP run alone.
 
 ### What a reader should be suspicious of here
 
@@ -2046,7 +2075,10 @@ close_notify, so its input domain stays inside what the C and the spec agree on
    stored step, the default arm, the Lean `State` the step numbers copy,
    and the QUIC sequence
    differential, and that differential is real work in
-   `test/handshake_sequence_server.h` that lands with the driver, not after.
+   `test/handshake_sequence_server.h` that was to land with the driver, not
+   after. The driver landed without it, and INV-22 still says "no state
+   variable to desynchronize"; "What changes in `docs/invariants.md`" carries
+   the amendment as proposed.
 
 ### The summary of this section
 
@@ -2096,13 +2128,15 @@ lines move into `handshake_flight.c` with their bodies unchanged but for the
 two edits named above, and every
 build compiles that file, so the protocol logic those lines hold is reused
 rather than replaced. "Suspending the driver" gives the ranges. The
-`tlsi_wipe` half of `session.c` (`session.c:25-37`) is rewritten in `quic.c`,
-because what it wipes is key sets rather than `rec_dir`.
+`tlsi_wipe` half of `session.c` (`session.c:25-37`) is rewritten as `quic_wipe`
+in `quic_fail.c`, because what it wipes is key sets rather than `rec_dir`.
 
 The changed five are `handshake_message.c` 147, `handshake_parser.c` 396,
 `handshake_record.c` 141, `handshake_auth.c` 298 and `handshake_post.c` 153,
 1,135 lines. Each keeps its TLS text and gains a QUIC arm under an `#ifdef`, so
-both transports compile all five. The two the driver adds arms to are
+both transports compile all five. `handshake_parser.c`'s arm now sits in
+`handshake_parser_ee.c`, which took `hsp_parse_encrypted_exts` out of it, and
+both transports compile that file too. The two the driver adds arms to are
 `handshake_record.c`, which gains the reader that takes bytes at `t.pt_off`
 beside the record reader, and `handshake_post.c`, whose `handle_ticket`
 (`handshake_post.c:102-161`) stays `static` and gains a QUIC-only wrapper. "The
@@ -2145,7 +2179,7 @@ The five changed files:
 | file | lines | change |
 | --- | --- | --- |
 | `handshake_message.c` | 147 | drop the `record_size_limit` extension (`handshake_message.c:264-266`), add `quic_transport_parameters` at code point 0x39 (RFC 9001 §8.2, `rfc9001.txt:1923`), and move `write_alpn` (`handshake_message.c:17-39`) out of `CH_TRUST_WEBPKI` so a device QUIC build sends ALPN too (RFC 9001 §8.1) |
-| `handshake_parser.c` | 396 | one new admitted extension with a body to read, `quic_transport_parameters`, and the ALPN arm (`handshake_parser_ee.c:60-87`, `:94-100`) lifted out of `CH_TRUST_WEBPKI`; see below |
+| `handshake_parser.c`, whose EncryptedExtensions parser is now `handshake_parser_ee.c` | 396 | one new admitted extension with a body to read, `quic_transport_parameters`, and the ALPN arm (`handshake_parser_ee.c:60-87`, `:94-100`) lifted out of `CH_TRUST_WEBPKI`; see below |
 | `handshake_record.c` | 141 | the record arm (`:19-150`) goes under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING`; `hsr_transcript_hash` (`:257-260`) stays in both; the QUIC arm adds `hsr_feed`, `hsr_peek_message` and a non-waiting `hsr_next_msg` |
 | `handshake_auth.c` | 298 | its verification logic is unchanged, but its two `hsr_next_msg` calls at `:280` and `:104` are suspension points, so `hsa_server_auth` splits into two entry points |
 | `handshake_post.c` | 153 | `handle_ticket` (`:102-161`) is reached through a QUIC-only wrapper, and gains an `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arm at `:123-134` that reads the extension block instead of skipping it, refuses any `early_data` whose `max_early_data_size` is not 0xffffffff, and records the refusal so `ch_quic_error_code` reports 0x0a rather than the bare `CH_EPROTO` of `:137`; the arm is a fence, so a TCP build compiles the text it compiles today. `handle_key_update` (`:197-203`), `handle_post_handshake` (`:258-284`) and `hspost_read` (`:360-367`) go under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING` |
@@ -2157,14 +2191,15 @@ differently from any other handshake message in Initial packets.
 
 ### The parser change, in full
 
-`hsp_parse_encrypted_exts` (`handshake_parser.c:336-396` at `3432a5d`) admits exactly four
-extension types — `record_size_limit`, `supported_groups`, and under
+`hsp_parse_encrypted_exts`, which now sits in `handshake_parser_ee.c`, admitted
+exactly four extension types at `3432a5d` (`handshake_parser.c:336-396` at `3432a5d`)
+— `record_size_limit`, `supported_groups`, and under
 `TRUST=webpki` one empty `server_name` acknowledgement and one ALPN selection
-the ClientHello offered (`handshake_parser.c:303-312` at `3432a5d`) — and refuses every
+the ClientHello offered (`handshake_parser.c:303-312` at `3432a5d`) — and refused every
 other one (`handshake_parser.c:382-388` at `3432a5d`): with `unsupported_extension` in a
 device build, and under `TRUST=webpki` with the alert
-`unadmitted_extension_alert` names (`handshake_parser.c:322-327` at `3432a5d`). Today's
-parser would fail every QUIC handshake closed at that line. Three things
+`unadmitted_extension_alert` named (`handshake_parser.c:322-327` at `3432a5d`). That
+parser would have failed every QUIC handshake closed at that line. Three things
 follow.
 
 1. **`quic_transport_parameters`, code point 0x39.** One more admitted type,
@@ -2175,7 +2210,7 @@ follow.
    Admitting the type is not the whole edit, because §8.2 puts a client MUST
    on its absence: a client that receives an EncryptedExtensions without
    `quic_transport_parameters` MUST close the connection with error 0x016d
-   (`rfc9001.txt:1932-1936`). Today's parser ends its loop and returns `CH_OK`
+   (`rfc9001.txt:1932-1936`). The parser at `3432a5d` ended its loop and returned `CH_OK`
    with `seen` unread (`handshake_parser.c:395` at `3432a5d`), so admitting one more type
    would accept an EncryptedExtensions that carries none. Under
    `CH_TRANSPORT_QUIC_NONBLOCKING` the function reads the mask before it returns: a
@@ -2205,11 +2240,12 @@ follow.
    exactly one name and requires a name the ClientHello offered. The second
    requirement is this client's own rule: RFC 7301 §3.2 expects a server to
    select only a protocol the client supports (`rfc7301.txt:256-258`) and
-   states no client-side check. The device builds still send none
-   (`examples/server/README.md:35`). The QUIC work is to move both out of
-   `CH_TRUST_WEBPKI` and to add the `no_application_protocol` alert, which no
-   build sends today. That alert replaces one that exists. `parse_alpn`'s
-   no-match arm writes `ALERT_ILLEGAL_PARAMETER` today
+   states no client-side check. The device TCP builds still send none
+   (`examples/server/README.md:35`). The QUIC work moved both out of
+   `CH_TRUST_WEBPKI`, under a guard that also names `CH_TRANSPORT_QUIC_NONBLOCKING`,
+   and added the `no_application_protocol` alert, which no
+   build sent at `3432a5d`. That alert replaced one that existed. `parse_alpn`'s
+   no-match arm wrote `ALERT_ILLEGAL_PARAMETER` at `3432a5d`
    (`handshake_parser.c:292` at `3432a5d`), which is 47 (`handshake_message.h:221`), so
    §4.8's 0x0100 conversion reaches the wire as 0x012f, where RFC 9001 §8.1
    requires 0x0178 from a client whenever ALPN negotiation fails
@@ -2235,7 +2271,7 @@ follow.
    the bound is a second thing to re-measure.
 
 A fourth item is smaller but real: the `seen` bitmask at
-`handshake_parser.c:355-357` at `3432a5d` uses four bits of a `uint8_t` today and would use
+`handshake_parser.c:355-357` at `3432a5d` used four bits of a `uint8_t` then and would use
 five. That fits. The cognitive-complexity ceiling of 15 is the constraint to
 watch, not the mask.
 
@@ -2462,12 +2498,13 @@ Read this as part of the profile, not as a list of future work.
   `retry_source_connection_id` against connection IDs on the wire. chapulin
   sees the Destination Connection ID colibri hands to `ch_quic_initial_keys`
   and nothing else.
-- **ALPN exists in one mode.** 545bf5d added ALPN under `TRUST=webpki`
+- **ALPN was in one mode.** 545bf5d added ALPN under `TRUST=webpki`
   (`handshake_message.c:5-27` at `3432a5d`, `handshake_parser.c:275-294` at `3432a5d`); the device
-  builds send none, which is what `examples/server/README.md:35` describes.
-  RFC 9001 §8.1 makes ALPN mandatory for QUIC, so a device QUIC build must
-  carry both halves outside `CH_TRUST_WEBPKI`, and no build sends
-  `no_application_protocol` today.
+  TCP builds still send none, which is what `examples/server/README.md:35` describes.
+  RFC 9001 §8.1 makes ALPN mandatory for QUIC, so a device QUIC build now
+  carries both halves outside `CH_TRUST_WEBPKI`, `write_alpn` in
+  `handshake_message.c` and `parse_alpn` in `handshake_parser_ee.c`, and
+  closes with `no_application_protocol` when the server selects none.
 - **No ticket reuse rule.** RFC 9001 §4.5 says clients SHOULD NOT reuse
   tickets, which is a SHOULD, and nothing in `handshake_post.c` holds it.
   Reuse is the caller's choice, as it is over TLS. §4.6.1's `early_data`
@@ -2502,7 +2539,7 @@ protocol change touches the code, its Lean spec and the tests in one commit
 
 **CBMC.** `tools/proof-cover.py` fails a shipped source that no `full` harness
 compiles and no `AUDITED` entry lists, so every new `.c` owes a harness.
-Against 83 launch lines and 86 harness files today:
+Against 83 launch lines and 86 harness files at `3432a5d`:
 
 - New: one per new source, by the names in "The new sources, by name":
   `quic_keys.c`, `quic_packet.c`, `quic_initial.c`, `quic_retry.c`,
@@ -2513,7 +2550,7 @@ Against 83 launch lines and 86 harness files today:
   `handshake_record.c` and `quic_config.c` in a raw build are compiled into
   `quic_driver` rather than a leg of their own; `quic_config_webpki` proves
   the `TRUST=webpki` arm, with `webpki_cfg.c` real. The transport parameters add
-  no source: `handshake_message.c` writes them and `handshake_parser.c` reads
+  no source: `handshake_message.c` writes them and `handshake_parser_ee.c` reads
   them. `gcm` split the way `aead` did — five harness files, three
   launch lines, because two formulas returned no verdict.
 - Moved: `aead`, `aead_overlap` and `aead_forge` (`proof/run.sh:375-377`) for
@@ -2542,7 +2579,7 @@ proves nothing.
 QUIC mode owes its own modules — the key labels of §5.1 and §6.1, the §5.3
 seal and open, the §5.4 mask, and AES and GHASH for INV-26 — and an
 amendment to `HandshakeParser.lean` for `quic_transport_parameters` (it models
-the ALPN reply already), against 30 modules in `spec/lean/Spec/` today. Each new
+the ALPN reply already), against the 30 modules the spec held at `3432a5d`. Each new
 module owes rows in `test/diff_test.c`, whose input domain stays inside what
 the C and the spec agree on.
 
@@ -2621,7 +2658,8 @@ check`, once per trust mode (`Makefile:753` at `3432a5d`, `:764`, `:767`), and l
 `test/hpp_test.cpp` against the packaged object (`Makefile`).
 `chapulin.hpp` calls `ch_close`, `ch_connect`, `ch_write` and `ch_read`
 (`chapulin.hpp:513`, `:520`, `:525`, `:535`), and a `TRANSPORT=quic-nonblocking` object
-exports none of the four, so `make check TRANSPORT=quic-nonblocking` fails at the link. The
+exports none of the four, so `make check TRANSPORT=quic-nonblocking` failed at the link
+until the wrapper had a QUIC arm. The
 decision is to give the wrapper a QUIC arm rather than to skip the gate:
 `chapulin.hpp` puts today's `Session` class under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING`
 and adds a `Quic` class under `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` that forwards the
@@ -2632,8 +2670,10 @@ eighteen entries and adds only the RAII cleanup, byte views and typed results
 carries the `Io` callbacks (`chapulin.hpp:116`) a QUIC build has no use for, and
 the two new callbacks and `ch_cfg.transport_params` surface there. Skipping the
 gate under one axis would leave the largest API surface in the tree with no C++
-leg, which is the one thing that sentence exists to prevent. The commit that
-lands `quic.[ch]` applies it.
+leg, which is the one thing that sentence exists to prevent. It has landed:
+`chapulin.hpp` holds `Quic` under the `#else` of that `#ifndef`, and `check`
+runs `cxx-check` against a QUIC object in two legs, `check-lib-quic` and
+`check-lib-quic-raw-aes-runtime`.
 
 ## What is still open
 
@@ -2702,65 +2742,76 @@ The mode, its owner split and the AES exception are decided. These are not:
 
 A `TRANSPORT=quic-nonblocking` build falsifies ten sentences in `CLAUDE.md` at `3432a5d`.
 The AES sentence and the file-pair chain are in the appendix. Each row names
-the sentence, its replacement and the commit that applies it; nothing changes
-before that commit.
+the sentence, its replacement, the commit that was to apply it, and where the
+row stands against `CLAUDE.md` at `c754665`. Every one of those commits has
+landed, and none changed `CLAUDE.md` as planned. One sentence changed in other
+words, two need no change, and seven are proposed and not landed. For those
+seven the replacement column holds the exact wording proposed to `CLAUDE.md`'s
+owner, who approves it before it lands.
 
-| sentence | replacement | commit |
-| --- | --- | --- |
-| `CLAUDE.md:103-104`, "AES never enters this codebase precisely to avoid tables" | the appendix text | the first AES source, `aes.[ch]` |
-| `CLAUDE.md:10-11`, "Zero heap. No malloc anywhere, ever — one static `ch_tls` session struct plus a caller-provided record buffer is the entire working set." | "Zero heap. No malloc anywhere, ever — one static session struct, `ch_tls` under `TRANSPORT=tcp-blocking` and `ch_quic` under `TRANSPORT=quic-nonblocking`, plus one caller-provided buffer is the entire working set. The buffer holds records in a TCP build and one encryption level's CRYPTO bytes in a QUIC build." | `quic.[ch]` |
-| `CLAUDE.md:140-141`, "All parsing goes through the bounds-checked `rbuf` reader and all output bytes through the `wbuf` writer; no raw buffer arithmetic outside them." | the same sentence, then: "Header protection is the one exception, and only in `quic_packet.c`, the one file that writes a masked byte: RFC 9001 §5.4.1 XORs the first mask byte into the low four bits of byte 0 for a long header and the low five bits for a short header, and the next `pn_len` mask bytes into the packet number field, in the caller's `pkt` on the open path and in `out` on the seal path, which `quic_header_protect` and `quic_header_unprotect` do, on five mask bytes their caller computed, and nothing else does. The `pn_off + 4 + 16` length check runs before either, so the bytes they touch are inside a range already checked." | `quic_packet.[ch]` |
-| `CLAUDE.md:249-254`, "`chapulin.hpp` is an optional, header-only C++ wrapper ... `make cxx-check` compiles it against the packaged library object as part of check." | the same sentence, then: "A `TRANSPORT=quic-nonblocking` object exports the `ch_quic_` entries and none of the four TLS calls, so the wrapper forks with the object: `Session` sits under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING` and `Quic` under `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING`, forwarding the QUIC entries and adding no logic either. `cxx-check` runs on both transports." | `quic.[ch]` |
-| `CLAUDE.md:144-145`, "Operational errors (bad peer input, short buffers, I/O failure) return `ch_err` codes and fail closed — alert, wipe keys, dead session." | the same sentence, then: "`TRANSPORT=quic-nonblocking` has two stated exceptions and no others. `ch_quic_open` reports a discard and keeps the session alive, because RFC 9001 §5.5 says a packet that fails to unprotect is not necessarily an attack; and `CH_EINVAL` from a `ch_quic_` entry means the caller called out of order, changed nothing, and may call again. INV-13 carries both." | `quic_packet.[ch]` for the first, `quic.[ch]` for the second |
-| `CLAUDE.md:148-150`, "Record size discipline: the client always sends `record_size_limit` (RFC 8449) sized to the caller's buffer. A peer record over the limit is a protocol error, not a resize." | "Record size discipline: a `TRANSPORT=tcp-blocking` client always sends `record_size_limit` (RFC 8449) sized to the caller's buffer, and a peer record over the limit is a protocol error, not a resize. A `TRANSPORT=quic-nonblocking` build has no record layer (RFC 9001 §4.1.3); there `cfg.buf_len` bounds one level's reassembled CRYPTO bytes, and a message that does not fit is a protocol error, not a resize." | the `handshake_record.[ch]` QUIC arm |
-| `CLAUDE.md:151-152`, "RFC MUSTs we keep even though this is minimal: HelloRetryRequest handling, KeyUpdate receipt, ..." | "... HelloRetryRequest handling in both transports, KeyUpdate receipt over TLS (under `TRANSPORT=quic-nonblocking` a KeyUpdate message is a connection error, RFC 9001 §6, and the key update is the packet-level one of §6), ..." | `quic.[ch]` |
-| `CLAUDE.md:53-86`, the file-pair chain, which names every library file and none of the nine new pairs, and ends "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`" (`CLAUDE.md:79-80`) | the appendix text | each pair's own commit adds its entry, and the last one lands the whole chain |
-| `CLAUDE.md:215-221`, "Every change passes `make check` ... and `make check-slow` (proofs, e2e against a real TLS 1.3 server, ...)" | the same sentence, then: "The `TRANSPORT` axis does not multiply those runs. `make check` and `make check-slow` build the `TRANSPORT=tcp-blocking` binaries and add one `cxx-check TRANSPORT=quic-nonblocking` leg, one `bin/quic_test` run and one `bin/quic_driver_test` run. The QUIC object has no e2e leg until a QUIC server joins the suite, because `test/e2e.sh` runs `openssl s_server`, which speaks no QUIC; \"What is still open\" names that choice." | `quic.[ch]` |
-| `CLAUDE.md:46-52`, "TRUST=webpki keeps that rule ... and breaks it twice ... offers the list of ALPN protocols the caller configured" | the same sentence with "and every `TRANSPORT=quic-nonblocking` build offers the ALPN list too, because RFC 9001 §8.1 requires it" | the commit that moves `write_alpn` and `parse_alpn` out of `CH_TRUST_WEBPKI` |
+| sentence | replacement | commit | status at `c754665` |
+| --- | --- | --- | --- |
+| `CLAUDE.md:103-104`, "AES never enters this codebase precisely to avoid tables" | the appendix text | the first AES source, `aes.[ch]` | landed in other words: `CLAUDE.md:232-334` at `c754665` admits AES for two purposes, QUIC's public keys and the traffic keys of a `SUITE=aesgcm` build |
+| `CLAUDE.md:10-11`, "Zero heap. No malloc anywhere, ever — one static `ch_tls` session struct plus a caller-provided record buffer is the entire working set." | "Zero heap. No malloc anywhere, ever — one static session struct, `ch_tls`, `ch_record` or `ch_quic` by `TRANSPORT`, plus one caller-provided buffer is the entire working set; `RAND=drbg` adds `drbg.c`'s generator state." | `quic.[ch]` | proposed, not landed: `CLAUDE.md:12-13` at `c754665` still names `ch_tls` and a record buffer alone |
+| `CLAUDE.md:140-141`, "All parsing goes through the bounds-checked `rbuf` reader and all output bytes through the `wbuf` writer; no raw buffer arithmetic outside them." | the same sentence, then: "QUIC header protection is an exception: `quic_packet.c` XORs the mask into the packet in place (RFC 9001 §5.4.1), after a length check covers every byte it touches." | `quic_packet.[ch]` | proposed, not landed: `CLAUDE.md:370-371` at `c754665` admits no exception. The planned text called header protection the one exception, which is false: `record.c` writes the record header by index and `io.c` reads it the same way |
+| `CLAUDE.md:249-254`, "`chapulin.hpp` is an optional, header-only C++ wrapper ... `make cxx-check` compiles it against the packaged library object as part of check." | the same sentence, then: "A `TRANSPORT=quic-nonblocking` object exports the `ch_quic_` entries and none of the four TLS calls, so the wrapper forks with the object: `Session` sits under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING` and `Quic` under `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING`, forwarding the QUIC entries and adding no logic either. `cxx-check` runs on both transports." | `quic.[ch]` | no longer needed: `CLAUDE.md:497-502` at `c754665` names no transport and holds for each. `chapulin.hpp` holds `Session` under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING` and `Quic` under its `#else`, and `check-lib-quic` runs `cxx-check` against a QUIC object |
+| `CLAUDE.md:144-145`, "Operational errors (bad peer input, short buffers, I/O failure) return `ch_err` codes and fail closed — alert, wipe keys, dead session." | the same sentence, then: "INV-13 lists the results that are not errors in this sense: refusals on entry, calls the session cannot take, and the non-blocking transports' `CH_ECAP`, `CH_QUIC_DISCARD` and `CH_RECORD_AGAIN`." | `quic_packet.[ch]` for the first, `quic.[ch]` for the second | proposed, not landed: `CLAUDE.md:374-376` at `c754665` names none. The planned "two stated exceptions and no others" is false: `ch_quic_crypto_out`'s `CH_ECAP` also leaves a QUIC session live |
+| `CLAUDE.md:148-150`, "Record size discipline: the client always sends `record_size_limit` (RFC 8449) sized to the caller's buffer. A peer record over the limit is a protocol error, not a resize." | "a TCP client always sends" in place of "the client always sends", then: "A QUIC build sends none (RFC 9001 §4.1.3): `cfg.buf_len` bounds one handshake message, and a longer one fails the session." | the `handshake_record.[ch]` QUIC arm | proposed, not landed: `CLAUDE.md:379-384` at `c754665` says a QUIC build refuses `TX_RECORD`, and still says the client always sends `record_size_limit` |
+| `CLAUDE.md:151-152`, "RFC MUSTs we keep even though this is minimal: HelloRetryRequest handling, KeyUpdate receipt, ..." | the same bullet, then: "Over QUIC both roles refuse a TLS KeyUpdate as a connection error and update packet keys instead (RFC 9001 §6), and a server sends no change_cipher_spec (§8.4)." | `quic.[ch]` | proposed, not landed: `CLAUDE.md:385-395` at `c754665` lists KeyUpdate receipt for both roles and the server's change_cipher_spec |
+| `CLAUDE.md:53-86`, the file-pair chain, which names every library file and none of the nine new pairs, and ends "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`" (`CLAUDE.md:79-80`) | one sentence after "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`": "A QUIC object compiles `quic.[ch]` and the other `quic_*` sources in place of `io`, `record`, `session`, `handshake`, `tls` and `tls_write`, and its firmware supplies `ch_rand_bytes` and no I/O callbacks." It takes the place of the appendix's chain, which no longer matches the tree | each pair's own commit adds its entry, and the last one lands the whole chain | proposed, not landed: the chain at `CLAUDE.md:100-163` at `c754665` carries `aes.[ch]` and `gcm.[ch]` but no QUIC transport pair, and ends at `tls.[ch]` |
+| `CLAUDE.md:215-221`, "Every change passes `make check` ... and `make check-slow` (proofs, e2e against a real TLS 1.3 server, ...)" | the same sentence, then: "The `TRANSPORT` axis does not multiply those runs. `make check` and `make check-slow` build the `TRANSPORT=tcp-blocking` binaries and add one `cxx-check TRANSPORT=quic-nonblocking` leg, one `bin/quic_test` run and one `bin/quic_driver_test` run. The QUIC object has no e2e leg until a QUIC server joins the suite, because `test/e2e.sh` runs `openssl s_server`, which speaks no QUIC; \"What is still open\" names that choice." | `quic.[ch]` | no longer needed: `CLAUDE.md:459-469` at `c754665` names no transport and stays true. `check` runs `bin/quic_test`, `bin/quic_driver_test` and the QUIC loop tests (`CHECK_RUN_BINS`), and "What is still open" names the QUIC e2e leg the suite lacks |
+| `CLAUDE.md:46-52`, "TRUST=webpki keeps that rule ... and breaks it twice ... offers the list of ALPN protocols the caller configured" | a sentence after "the server takes it or the handshake fails closed": "A QUIC client breaks that rule in every trust mode: RFC 9001 §8.1 requires ALPN, so it offers the caller's list and closes with no_application_protocol when the server selects none." | the commit that moves `write_alpn` and `parse_alpn` out of `CH_TRUST_WEBPKI` | proposed, not landed: `write_alpn` and `parse_alpn` sit under a guard that names `CH_TRUST_WEBPKI` or `CH_TRANSPORT_QUIC_NONBLOCKING`, but `CLAUDE.md:60-61` at `c754665` still says a client offers exactly one of everything within a mode |
 
 ## What changes in `docs/invariants.md`
 
 A `TRANSPORT=quic-nonblocking` build falsifies four numbered invariants and adds two. The
-file stops at INV-27 today (`docs/invariants.md:279` at `e7cc18a`). Each row names the
-entry, what replaces it and the commit that applies it; nothing changes before
-that commit. Two more entries take a sentence rather than a row: INV-14's claim
-lists the refusals (`docs/invariants.md:462-468` at `e7cc18a`) and INV-18's claim says all
-state lives in `ch_tls` (`docs/invariants.md`), and a QUIC build adds
-refusals to the first and holds its state in `ch_quic`, so the commit that lands
-`quic.[ch]` names the transport in both.
+file stopped at INV-27 when this was written (`docs/invariants.md:279` at `e7cc18a`) and
+now runs to INV-39. Each row names the entry, what replaces it, the commit that
+was to apply it, and where the row stands against `docs/invariants.md` at
+`c754665`. Every one of those commits has landed. Two more entries take a
+sentence rather than a row: INV-14's claim listed the refusals
+(`docs/invariants.md:462-468` at `e7cc18a`) and INV-18's claim said all state lives in
+`ch_tls`, and a QUIC build adds refusals to the first and holds its state in
+`ch_quic`. Both now name the transport: INV-14 lists `ch_quic_init`'s
+refusals, and INV-18 names `ch_record` and `ch_quic` beside `ch_tls`, as INV-2
+does through it.
 
-| entry | replacement | commit |
-| --- | --- | --- |
-| INV-1, "one sealing path" (`docs/invariants.md:36-46` at `e7cc18a`). Its claim is "Record protection is the only path that seals or opens bytes", its mechanism "only `record.c` calls them", and `inv-1-seal-only-in-record` implements it with `paths: exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]` (`.semgrep/invariants.yml:99-110` at `e7cc18a`). A QUIC build calls `aead_seal` and `aead_open` from `quic_packet.c`, so the claim is false and the rule fails on the first line of code | the claim becomes "Record protection is the only path that seals or opens bytes under `TRANSPORT=tcp-blocking`, and packet protection is the only one under `TRANSPORT=quic-nonblocking`"; the mechanism names `record.c` as the TLS caller and `quic_packet.c` as the QUIC one, and adds that `quic_initial.c` and `quic_retry.c` seal and open with `gcm_seal` and `gcm_open`, which INV-26 governs and this rule does not match; the check names the amended `inv-1-seal-only-in-record`, whose exclude list becomes `[test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c, quic_packet.c]` | `quic_packet.[ch]` |
-| INV-13, "no resumable errors" (`docs/invariants.md:448-458` at `e7cc18a`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic-nonblocking` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard |
-| INV-17, "secrets die at phase boundaries" (`docs/invariants.md:770-780` at `e7cc18a`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:772-773`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:777`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic-nonblocking` beside `tlsi_fail` under `TRANSPORT=tcp-blocking`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the tcp-blocking driver reaches the same wipe at `handshake.c:174` | `quic.[ch]` |
-| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:732-766` at `e7cc18a`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:746-747`), and its check is `handshake_sequence_test` (`:755`), which links a raw-mode client over the tcp-blocking driver (`:758`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic-nonblocking` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
-| INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `aes.[ch]` |
-| INV-27, new, and the one row here that has landed: the partition. Every root file only a `TRANSPORT=quic-nonblocking` build compiles is named `quic*`, and the Makefile's `QUIC_SHARED` and `QUIC_CONDITIONAL` name the mode's text that is not | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire grade (`make lint-quic-partition`, `tools/quic-partition.py`)" and three mutants in `test/violations/` measuring it | the interface headers, which landed it |
+| entry | replacement | commit | status at `c754665` |
+| --- | --- | --- | --- |
+| INV-1, "one sealing path" (`docs/invariants.md:36-46` at `e7cc18a`). Its claim is "Record protection is the only path that seals or opens bytes", its mechanism "only `record.c` calls them", and `inv-1-seal-only-in-record` implements it with `paths: exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]` (`.semgrep/invariants.yml:99-110` at `e7cc18a`). A QUIC build calls `aead_seal` and `aead_open` from `quic_packet.c`, so the claim is false and the rule fails on the first line of code | the claim becomes "Record protection is the only path that seals or opens bytes under `TRANSPORT=tcp-blocking`, and packet protection is the only one under `TRANSPORT=quic-nonblocking`"; the mechanism names `record.c` as the TLS caller and `quic_packet.c` as the QUIC one, and adds that `quic_initial.c` and `quic_retry.c` seal and open with `gcm_seal` and `gcm_open`, which INV-26 governs and this rule does not match; the check names the amended `inv-1-seal-only-in-record`, whose exclude list becomes `[test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c, quic_packet.c]` | `quic_packet.[ch]` | landed in other words: INV-1 names `quic_packet.c` and `srv_ticket.c` as callers beside `record.c`, and `inv-1-seal-only-in-record` excludes both |
+| INV-13, "no resumable errors" (`docs/invariants.md:448-458` at `e7cc18a`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic-nonblocking` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard | landed in other words: INV-13 counts `CH_QUIC_DISCARD` and `CH_EINVAL` among the results that are not errors, names `quic_fail` beside `tlsi_fail` and `tcp_nonblocking_fail`, and its check names `bin/quic_driver_test`, which runs no sequence differential |
+| INV-17, "secrets die at phase boundaries" (`docs/invariants.md:770-780` at `e7cc18a`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:772-773`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:777`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic-nonblocking` beside `tlsi_fail` under `TRANSPORT=tcp-blocking`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the tcp-blocking driver reaches the same wipe at `handshake.c:174` | `quic.[ch]` | landed in other words: INV-17 names `quic_fail` beside `tlsi_wipe` and the write keys a QUIC failure keeps |
+| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:732-766` at `e7cc18a`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:746-747`), and its check is `handshake_sequence_test` (`:755`), which links a raw-mode client over the tcp-blocking driver (`:758`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic-nonblocking` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor, and under `TRANSPORT=tcp-nonblocking` the stored `ch_record.step` and the same default arm in `tcp_nonblocking_step.c`; the check adds the `quic_step` harness, which proves `hsq_advance`'s default arm, and a QUIC sequence run against the same oracle stays owed | `quic_step.[ch]` | proposed, not landed: INV-22 still says "no state variable to desynchronize", which `ch_quic.step` and `ch_record.step` falsify, and the QUIC sequence differential the planned check named does not exist |
+| INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `aes.[ch]` | landed: INV-26 holds the entry, and its check names `inv-26-aes-public-keys-only` |
+| INV-27, new: the partition. Every root file only a `TRANSPORT=quic-nonblocking` build compiles is named `quic*`, and the Makefile's `QUIC_SHARED` and `QUIC_CONDITIONAL` name the mode's text that is not | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire grade (`make lint-quic-partition`, `tools/quic-partition.py`)" and three mutants in `test/violations/` measuring it | the interface headers, which landed it | landed |
 
 ## What changes in `docs/decisions.md`
 
 A `TRANSPORT=quic-nonblocking` build falsifies five more entries, beside entry 6, which the
-appendix replaces whole. Each row names the entry, what replaces it and the
-commit that applies it; nothing changes before that commit. Entry 38 records
+appendix replaces whole. Each row names the entry, what replaces it, the commit
+that was to apply it, and where the row stands against `docs/decisions.md` at
+`c754665`. Every one of those commits has landed. Entry 38 records
 the trade and names each conflict; these rows amend the entries it conflicts
 with, so a reader holding `docs/decisions.md` alone reads no absolute that a
-QUIC build breaks.
+QUIC build breaks. Entry 6 took the appendix text whole, with a sentence added
+for the `SUITE=aesgcm` build.
 
-| entry | replacement | commit |
-| --- | --- | --- |
-| entry 3, "The MUSTs stay despite minimalism" (`docs/decisions.md:17-21`), whose list reads "KeyUpdate both directions" (`:18`) | the entry gains: "KeyUpdate receipt is the TLS message over `TRANSPORT=tcp-blocking`; a `TRANSPORT=quic-nonblocking` build treats that message as a connection error and takes the packet-level key update of RFC 9001 §6 instead." | `quic.[ch]` |
-| entry 19, "`record_size_limit` is the receive buffer's size" (`docs/decisions.md`) | the entry gains: "A `TRANSPORT=quic-nonblocking` build sends no `record_size_limit`, because RFC 9001 §4.1.3 removes the record layer. There `cfg.buf_len` bounds one encryption level's reassembled CRYPTO bytes, and `CH_QUIC_MIN_RXBUF` is the floor it must meet." | the `handshake_record.[ch]` QUIC arm |
-| entry 21, "Every operational error fails closed" (`docs/decisions.md`) | the entry gains: "A `TRANSPORT=quic-nonblocking` build has two stated exceptions and no others: `ch_quic_open` reports a discard and keeps the session alive (RFC 9001 §5.5), and `CH_EINVAL` from a `ch_quic_` entry means the caller called out of order and changed nothing. INV-13 carries both." | `quic_packet.[ch]` for the first, `quic.[ch]` for the second |
-| entry 28, "Four exported symbols" (`docs/decisions.md`) | the heading and the first sentence become "**Four exported symbols under `TRANSPORT=tcp-blocking`, fifteen under `TRANSPORT=quic-nonblocking`.** The library packages as one relocatable object; partial linking plus symbol localization does the namespacing. `PUBLIC` is `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, and the transport axis selects the first term rather than adding to it." | `quic.[ch]` |
-| entry 37, "A `TRUST=webpki` caller offers a list of application protocols and the server picks one" (`docs/decisions.md`) | the entry gains: "A `TRANSPORT=quic-nonblocking` build offers the same ALPN list in every trust mode, because RFC 9001 §8.1 requires it, and closes with `no_application_protocol` when no protocol is negotiated." | the commit that moves `write_alpn` and `parse_alpn` out of `CH_TRUST_WEBPKI` |
+| entry | replacement | commit | status at `c754665` |
+| --- | --- | --- | --- |
+| entry 3, "The MUSTs stay despite minimalism" (`docs/decisions.md:17-21`), whose list reads "KeyUpdate both directions" (`:18`) | the entry gains: "KeyUpdate receipt is the TLS message over TCP; a `TRANSPORT=quic-nonblocking` build treats that message as a connection error and takes the packet-level key update of RFC 9001 §6 instead." | `quic.[ch]` | proposed, not landed: entry 3 still lists "KeyUpdate both directions" |
+| entry 19, "`record_size_limit` is the receive buffer's size" (`docs/decisions.md`) | the entry gains: "A `TRANSPORT=quic-nonblocking` build sends no `record_size_limit`, because RFC 9001 §4.1.3 removes the record layer. There `cfg.buf_len` bounds one encryption level's reassembled CRYPTO bytes, and `CH_QUIC_MIN_RXBUF` is the floor it must meet." | the `handshake_record.[ch]` QUIC arm | proposed, not landed: entry 19 names no transport |
+| entry 21, "Every operational error fails closed" (`docs/decisions.md`) | the entry gains: "INV-13 lists the results that are not errors in this sense: refusals on entry, calls the session cannot take, and the non-blocking transports' `CH_ECAP`, `CH_QUIC_DISCARD` (RFC 9001 §5.5) and `CH_RECORD_AGAIN`." | `quic_packet.[ch]` for the first, `quic.[ch]` for the second | proposed, not landed: entry 21 names no exception, and the planned "two stated exceptions and no others" is false, because `ch_quic_crypto_out`'s `CH_ECAP` also leaves a QUIC session live |
+| entry 28, "Four exported symbols" (`docs/decisions.md`) | the heading and the first sentence become "**Four exported symbols under `TRANSPORT=tcp-blocking`, fifteen under `TRANSPORT=quic-nonblocking`.** The library packages as one relocatable object; partial linking plus symbol localization does the namespacing. `PUBLIC` is `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, and the transport axis selects the first term rather than adding to it." | `quic.[ch]` | landed in other words: entry 28 now says each axis sets its own list of calls (entries 38, 41 and 43) and entry 56 adds `ch_build` to every object. The planned "fifteen" is stale: a QUIC client object exports twenty-two symbols (*measured* at `c754665`, `make lib-check TRANSPORT=quic-nonblocking TRUST=raw-rsa RAND=extern`) |
+| entry 37, "A `TRUST=webpki` caller offers a list of application protocols and the server picks one" (`docs/decisions.md`) | the entry gains: "A `TRANSPORT=quic-nonblocking` build offers the same ALPN list in every trust mode, because RFC 9001 §8.1 requires it, and closes with `no_application_protocol` when no protocol is negotiated." | the commit that moves `write_alpn` and `parse_alpn` out of `CH_TRUST_WEBPKI` | proposed, not landed: the code moved, but entry 37 still says failing the handshake when the server sends no ALPN extension was rejected, and a QUIC build fails it |
 
 ## Appendix: replacement text
 
-The first two replacements below are the AES ones, and the commit that lands
-the first AES source applies both. Neither changes before that commit. The
-third is the file-pair chain, and each pair's own commit adds that pair's
-entry to it.
+The first two replacements below are the AES ones, planned for the commit that
+landed the first AES source. Both landed: entry 6 reads the second
+text whole, with a sentence added for the `SUITE=aesgcm` build, and `CLAUDE.md`
+took the first in other words, which "What changes in `CLAUDE.md`" cites. The
+third is the file-pair chain, planned for each pair's own commit. It did not
+land, and the `CLAUDE.md` table's chain row proposes one sentence in its place.
 
 **`CLAUDE.md`**, replacing the sentence that `CLAUDE.md:103-104` held at `3432a5d` ("ChaCha20/
 Poly1305/x25519 are constant time by construction — keep them that way; AES
