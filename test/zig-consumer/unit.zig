@@ -372,6 +372,9 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     const placeholder = [_]u8{ 0x30, 0x00 };
     const anchors = [_]c.ch_trust_anchor{chapulin.trustAnchor(&placeholder, &placeholder)};
     var values: chapulin.Client = .{ .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "dns.example", .now_seconds = 1789000000 } } };
+    // A host object's init refuses a value without CH_CPU_PROBED, so the
+    // value states the probe's bit, and the first refusal is the random's.
+    if (comptime has_cpu) values.cpu = .{};
     var session: chapulin.record.Client(c.CH_MIN_RXBUF) = undefined;
     try expectError(error.Invalid, session.init(values));
     try expect(session.recordState() == .failed);
