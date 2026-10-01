@@ -80,6 +80,14 @@ SESSION_WEBPKI_RUNTIME=$("$TMP/sz_webpki_runtime" | awk '{print $2}')
 # these rows are host figures too.
 cc -std=c11 -DCH_RAND_EXTERN -DCH_WIDEMUL_RUNTIME -I. -o "$TMP/sz_widemul_runtime" "$TMP/sz.c"
 SESSION_WIDEMUL_RUNTIME=$("$TMP/sz_widemul_runtime" | awk '{print $2}')
+# The TRUST=webpki and ROLE=server builds as host objects, which the
+# Makefile builds for them on arm64 and x86-64 and whose ch_cfg holds the
+# caller's description of its CPU (docs/decisions.md 89). A host object
+# runs on those two architectures alone, so these rows are host figures.
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -I. -o "$TMP/sz_webpki_host" "$TMP/sz.c"
+SESSION_WEBPKI_HOST=$("$TMP/sz_webpki_host" | awk '{print $2}')
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
+SESSION_SERVER_HOST=$("$TMP/sz_server_host" | awk '{print $2}')
 # This runs stack.py on arm64, where cc defines __ARM_FEATURE_AES by
 # default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
@@ -170,6 +178,10 @@ echo "ch_quic (the same, SUITE=aesgcm AES=runtime): ${QUIC_SESSION_RUNTIME} B"
 echo "ch_quic (the same, SUITE=aesgcm AES=runtime WIDEMUL=runtime): ${QUIC_SESSION_WIDEMUL} B"
 echo "session struct (WIDEMUL=runtime): ${SESSION_WIDEMUL_RUNTIME} B"
 echo "static working set:      $((SESSION_WIDEMUL_RUNTIME + RXBUF)) B (WIDEMUL=runtime, ${RXBUF} B receive buffer)"
+echo "session struct (TRUST=webpki, host object): ${SESSION_WEBPKI_HOST} B"
+echo "static working set:      $((SESSION_WEBPKI_HOST + RXBUF_WEBPKI)) B (TRUST=webpki, host object, its ${RXBUF_WEBPKI} B floor)"
+echo "session struct (ROLE=server, host object): ${SESSION_SERVER_HOST} B"
+echo "static working set:      $((SESSION_SERVER_HOST + RXBUF)) B (ROLE=server, host object, ${RXBUF} B receive buffer)"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints. STACK_MAKE names each build by its make
@@ -280,6 +292,10 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_webpki_aes_runtime_arm64 "$((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES))"
     row session_struct_widemul_runtime_arm64 "$SESSION_WIDEMUL_RUNTIME"
     row static_working_set_widemul_runtime_arm64 "$((SESSION_WIDEMUL_RUNTIME + RXBUF))"
+    row session_struct_webpki_host_arm64 "$SESSION_WEBPKI_HOST"
+    row static_working_set_webpki_host_arm64 "$((SESSION_WEBPKI_HOST + RXBUF_WEBPKI))"
+    row session_struct_server_host_arm64 "$SESSION_SERVER_HOST"
+    row static_working_set_server_host_arm64 "$((SESSION_SERVER_HOST + RXBUF))"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

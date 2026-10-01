@@ -23,6 +23,7 @@ const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
+const has_cpu = @hasField(c.ch_cfg, "cpu");
 const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
@@ -146,6 +147,42 @@ test "Client.toCfg under SUITE=aesgcm TRUST=webpki: the suite order, empty for t
     want.cipher_suites = @ptrCast(&suites);
     want.cipher_suite_count = 2;
     try expectFields(c.ch_cfg, want, values.toCfg());
+}
+
+test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit the values state, and 0 for none" {
+    if (!has_cpu) return error.SkipZigTest;
+    const descriptions = [_]?chapulin.Cpu{
+        null,
+        .{},
+        .{ .constant_time_aes = true },
+        .{ .constant_time_multiply = true },
+        .{ .avx2 = true },
+        .{ .vaes = true },
+        .{ .constant_time_aes = true, .constant_time_multiply = true, .avx2 = true, .vaes = true },
+    };
+    const probed = c.CH_CPU_PROBED;
+    const codes = [_]u32{
+        0,
+        probed,
+        probed | c.CH_CPU_CONSTANT_TIME_AES,
+        probed | c.CH_CPU_CONSTANT_TIME_MULTIPLY,
+        probed | c.CH_CPU_AVX2,
+        probed | c.CH_CPU_VAES,
+        probed | c.CH_CPU_CONSTANT_TIME_AES | c.CH_CPU_CONSTANT_TIME_MULTIPLY | c.CH_CPU_AVX2 | c.CH_CPU_VAES,
+    };
+    for (descriptions, codes) |description, code| {
+        if (has_client) {
+            const key = [_]u8{0x11} ** 64;
+            const trust: chapulin.Trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } };
+            const values: chapulin.Client = .{ .trust = trust, .cpu = description };
+            try expectEqual(code, values.toCfg().cpu);
+        }
+        if (has_server) {
+            const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
+            const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .cpu = description };
+            try expectEqual(code, (try values.toCfg()).cpu);
+        }
+    }
 }
 
 test "Client.toCfg and Server.toCfg under AES=runtime: the probe's answer, and 0 for none" {

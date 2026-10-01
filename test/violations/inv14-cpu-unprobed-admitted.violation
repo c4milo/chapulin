@@ -1,0 +1,14 @@
+invariant: INV-14
+file: cpu.h
+catches: tcp_blocking_loop_host
+reason: cpu_bits_ok stops requiring CH_CPU_PROBED, so a configuration
+  that never set ch_cfg.cpu, 0, runs as though its caller had looked and
+  found nothing. The ruling is that every caller writes the field on
+  purpose (docs/decisions.md 89). The edit keeps the undefined bits
+  refused, so it moves the probe's rule alone; test/tcp_blocking_loop_cpu.h
+  requires ch_connect to refuse 0 before a byte leaves.
+
+--- old
+    return (cfg->cpu & CH_CPU_PROBED) != 0 && (cfg->cpu & ~(uint32_t)CH_CPU_DEFINED) == 0;
+--- new
+    return (cfg->cpu & ~(uint32_t)CH_CPU_DEFINED) == 0;

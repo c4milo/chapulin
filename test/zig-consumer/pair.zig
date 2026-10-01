@@ -41,11 +41,15 @@ fn clientValues(comptime api: type) api.Client {
     const anchors = struct {
         const list = [_]api.c.ch_trust_anchor{api.trustAnchor(&anchor_name, &anchor_spki)};
     };
-    return .{ .trust = .{ .web_pki = .{
+    var values: api.Client = .{ .trust = .{ .web_pki = .{
         .anchors = &anchors.list,
         .server_name = hostname,
         .now_seconds = 1789000000,
     } } };
+    // A host object takes a description of the CPU, and the probe's bit
+    // alone describes any CPU (cpu_cfg.h).
+    if (comptime @hasField(api.c.ch_cfg, "cpu")) values.cpu = .{};
+    return values;
 }
 
 /// Whether module api's ch_ticket_obfuscated_age adds a ticket's age_add

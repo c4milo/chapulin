@@ -112,6 +112,9 @@ static uint32_t axes_from_defines(void) {
 #ifdef CH_WIDEMUL_RUNTIME
     axes |= CH_BUILD_WIDEMUL_RUNTIME;
 #endif
+#ifdef CH_CPU_RUNTIME
+    axes |= CH_BUILD_CPU_RUNTIME;
+#endif
     return axes;
 }
 

@@ -12,6 +12,7 @@ const c = chapulin.c;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 const has_quic = @hasField(c.ch_ticket, "quic_version");
+const has_cpu = @hasField(c.ch_cfg, "cpu");
 const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
@@ -31,6 +32,13 @@ pub fn clientRandom() if (has_rand_session) ?std.Random else void {
 
 fn serverRandom() if (has_rand_session) ?std.Random else void {
     return if (has_rand_session) server_stream.random() else {};
+}
+
+/// The value of Client.cpu and Server.cpu: in a host object, the
+/// probe's bit alone, which describes any CPU, and void in every other
+/// build.
+pub fn cpuAnswer() if (has_cpu) ?chapulin.Cpu else void {
+    return if (has_cpu) .{} else {};
 }
 
 /// The value of Client.aes_instructions and Server.aes_instructions: the
@@ -139,6 +147,7 @@ pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Serve
         .now_seconds = now_seconds,
         .alpn = alpn,
         .random = serverRandom(),
+        .cpu = cpuAnswer(),
         .aes_instructions = aesAnswer(),
         .widemul = widemulAnswer(),
     };

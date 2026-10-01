@@ -41,6 +41,7 @@
 #include "rsa_sign_vectors.h"
 #include "srv.h"
 #include "srv_flight.h"
+#include "test_cpu.h"
 #include "test_widemul.h"
 #include "tls.h"
 
@@ -154,7 +155,7 @@ static uint8_t blocking_server_widemul = TEST_WIDEMUL;
 
 // The rsa_pss identity alone, because the client pins its modulus.
 static void server_config(ch_cfg *cfg, recv_fn recv) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
     cfg->send = send_to_client;
@@ -182,7 +183,7 @@ static void server_config(ch_cfg *cfg, recv_fn recv) {
 }
 
 static void client_config(ch_cfg *cfg, recv_fn recv) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
     cfg->send = send_to_server;
@@ -457,12 +458,9 @@ static void server_reads_client(int after_finished, size_t bytes) {
 #ifdef CH_RAND_SESSION
 #include "tcp_blocking_session_tests.h"
 #endif
-#ifdef CH_AES_RUNTIME
+#include "tcp_blocking_loop_cpu.h"
 #include "tcp_blocking_loop_runtime.h"
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
 #include "tcp_blocking_loop_widemul.h"
-#endif
 
 int main(void) {
     static const uint8_t retry_scalar[X25519_LEN] = {0x2a};
@@ -483,6 +481,9 @@ int main(void) {
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     test_widemul_answers();
+#endif
+#ifdef CH_CPU_RUNTIME
+    test_cpu_values_at_init();
 #endif
     if (failures == 0) {
         (void)printf("tcp_blocking_loop: ch_connect and ch_srv_accept each go on when the"

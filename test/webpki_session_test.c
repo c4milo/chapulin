@@ -21,6 +21,7 @@
 #include "handshake_parser.h"
 #include "keysched.h"
 #include "record.h"
+#include "test_cpu.h"
 #include "test_random.h"
 #include "tls.h"
 #include "webpki.h"
@@ -410,6 +411,7 @@ static ch_cfg valid_cfg(mock_server *s) {
     cfg.now_seconds = 1789000000U;
     SESSION_AES_ANSWER(cfg);
     TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     return cfg;
 }
 
@@ -437,6 +439,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 #include "webpki_p256_cases.h"
 #include "webpki_pins_cases.h"
 #include "webpki_session_cases.h"
+#include "webpki_session_cpu.h"
 #include "webpki_suite_cases.h"
 #ifdef CH_WIDEMUL_RUNTIME
 #include "webpki_session_widemul.h"
@@ -484,6 +487,7 @@ int main(void) {
 #ifdef CH_WIDEMUL_RUNTIME
     test_webpki_widemul_answers();
 #endif
+    test_webpki_cpu_values();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

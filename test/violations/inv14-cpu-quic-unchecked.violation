@@ -1,0 +1,18 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_loop_host
+reason: ch_quic_init of a host object stops asking for the caller's
+  description of its CPU, so a QUIC client stages a ClientHello for a
+  configuration that never set ch_cfg.cpu. The server's rule in srv.c is
+  untouched, so only the client's row notices: test/quic_loop_cpu.h
+  requires CH_EINVAL and a failed session for 0.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h), before any rule
+    // that reads it.
+    if (!cpu_bits_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+--- new

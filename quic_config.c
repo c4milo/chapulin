@@ -18,6 +18,9 @@
 #else
 #include "rsa.h"
 #endif
+#ifdef CH_CPU_RUNTIME
+#include "cpu.h"
+#endif
 #ifdef CH_WIDEMUL_RUNTIME
 #include "widemul.h"
 #endif
@@ -194,6 +197,13 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 }
 
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h), before any rule
+    // that reads it.
+    if (!cpu_bits_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
 #ifdef CH_AES_RUNTIME
     // The caller's answer about the AES instructions, which picks the AES
     // the Initial packets run on and the suites the hello offers (cfg.h),

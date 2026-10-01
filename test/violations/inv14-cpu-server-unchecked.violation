@@ -1,0 +1,18 @@
+invariant: INV-14
+file: srv.c
+catches: tcp_nonblocking_loop_host
+reason: the server init calls of a host object stop asking for the
+  caller's description of its CPU, so ch_srv_record_init takes a
+  configuration that never set ch_cfg.cpu. ch_srv_check keeps its own
+  rule, so only the init rows notice: test/tcp_nonblocking_loop_cpu.h
+  requires CH_EINVAL and a failed session for 0.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h), before any rule
+    // that reads it.
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
+--- new

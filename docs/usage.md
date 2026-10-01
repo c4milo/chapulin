@@ -42,6 +42,9 @@ ch_cfg cfg = {
     .now_seconds = (uint64_t)time(NULL), // your clock; compared exactly
     .buf = rxbuf, .buf_len = sizeof rxbuf,
     .send = my_send, .recv = my_recv, .io = &sock,
+#ifdef CH_CPU_RUNTIME
+    .cpu = CH_CPU_PROBED, // a host object: what you found about the CPU
+#endif
 };
 ```
 
@@ -62,7 +65,13 @@ the handshake was a full one.
 SubjectPublicKeyInfo. With pins set the client offers raw public keys,
 and pins with no anchors need no hostname and no clock.
 The anchor, hostname, clock and pin fields exist only in a `TRUST=webpki`
-build, so a raw or ca build that sets one fails to compile. The hostname
+build, so a raw or ca build that sets one fails to compile. On an arm64
+or x86-64 host, a `TRUST=webpki`, `ROLE=server` or `ROLE=both` object is a
+host object (`-DCH_CPU_RUNTIME`, [`docs/building.md`](building.md)), and
+`cpu` takes the bits your own probe of the CPU found (`cpu_cfg.h`).
+`CH_CPU_PROBED` says you wrote the field, and every init call refuses a
+value without it, or with a bit the object does not define for its
+architecture. chapulin probes nothing. The hostname
 goes out as the ClientHello's `server_name`, and the hello offers five
 signature schemes, because a public chain's links may be signed by any
 of them.

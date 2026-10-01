@@ -4827,8 +4827,9 @@ does nothing more.
     6. CLAUDE.md, with the text Camilo approves.
 
     Each code commit measures the objects it changes with `bench/sram.sh`
-    and `bench/device-ram.sh`. If the AVX2 or VAES predicates land before
-    commit 1, commit 1 makes them read their bits.
+    and `bench/device-ram.sh`. The AVX2 and VAES predicates landed before
+    commit 1 (entry 90), and commit 5 makes them read their bits, with the
+    rest of the x86-64 vector paths.
 
     - **colibri** links `TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki
       SUITE=aesgcm AES=runtime CHACHA=vector` with `CH_NATIVE_AES` through

@@ -1,0 +1,14 @@
+invariant: INV-36
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile stops telling a device client from a host product, so
+  a raw or ca client on an arm64 or x86-64 compiler builds the host
+  object, -DCH_CPU_RUNTIME and ch_cfg.cpu included, and the default make
+  lib grows a field every firmware caller would have to set
+  (docs/decisions.md 89). lint-trust-separation's host rows require the
+  four device clients to define no -DCH_CPU_RUNTIME under HOST_TARGET=yes.
+
+--- old
+DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
+--- new
+DEVICE_CLIENT :=

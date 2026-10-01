@@ -236,8 +236,9 @@ pub fn build(b: *std.Build) void {
         .native_mul128 = b.option(bool, "CH_NATIVE_MUL128", "State that the 64x64->128 multiply runs in constant time (ct.h)") orelse false,
     };
     refuseUnbuildable(config);
-    const plan = computePlan(b, config);
-    const target = aesTarget(b, b.standardTargetOptions(.{}), config.aes);
+    const standard_target = b.standardTargetOptions(.{});
+    const plan = computePlan(b, config, standard_target.result);
+    const target = aesTarget(b, standard_target, config.aes);
     // The flags the sources compile with. The module below is translated
     // under every -D among them, so the object and the module take their
     // defines from this one list.
@@ -312,6 +313,7 @@ pub fn build(b: *std.Build) void {
     const root = api_files.addCopyFile(b.path("chapulin.zig"), "chapulin.zig");
     _ = api_files.addCopyFile(b.path("chapulin_record.zig"), "chapulin_record.zig");
     _ = api_files.addCopyFile(b.path("chapulin_quic.zig"), "chapulin_quic.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
     _ = api_files.add("defines.txt", lines(b, plan.defs));
     const api = b.addModule("chapulin", .{
         .root_source_file = root,
@@ -395,7 +397,23 @@ fn recordSize(text: []const u8) bool {
     return n >= 512 and n <= 16384;
 }
 
-/// A raw or ca client, the one build whose key exchange KEX chooses.
+/// The host test, as the Makefile's HOST_TARGET runs it on cc
+/// (docs/decisions.md 89): the target is arm64 or x86-64, and it has NEON or
+/// SSE2 on a little-endian core. Zig names a big-endian arm64 target
+/// aarch64_be, which is neither architecture here. The Makefile's third
+/// probe, unsigned __int128, asks nothing more of either architecture:
+/// clang, which compiles every source here, defines __SIZEOF_INT128__ for
+/// both under every ABI, x32 and ILP32 included.
+fn hostTarget(target: std.Target) bool {
+    return switch (target.cpu.arch) {
+        .aarch64 => target.cpu.has(.aarch64, .neon),
+        .x86_64 => target.cpu.has(.x86, .sse2),
+        else => false,
+    };
+}
+
+/// A raw or ca client: the one build whose key exchange KEX chooses, and
+/// the one product that builds the portable object on a host target.
 fn deviceClient(config: Config) bool {
     return config.role == .client and switch (config.trust) {
         .@"raw-rsa", .@"raw-ecdsa", .@"ca-rsa", .@"ca-ecdsa" => true,
@@ -404,8 +422,8 @@ fn deviceClient(config: Config) bool {
 }
 
 /// LIB_DEF, LIB_SRCS and PUBLIC, assembled from the axis blocks as the
-/// Makefile assembles them.
-fn computePlan(b: *std.Build, config: Config) Plan {
+/// Makefile assembles them, for an object compiled for target.
+fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     const aes_impl: Names = switch (config.aes) {
         .soft => &.{"quic_aes_soft.c"},
         .hw, .runtime => &aes_hw_srcs,
@@ -436,6 +454,11 @@ fn computePlan(b: *std.Build, config: Config) Plan {
 
     if (config.kex == .pq) defs = concat(b, &.{ defs, &.{"-DCH_KEX_PQ"} });
     if (config.kex == .pq or config.trust == .webpki or config.role != .client) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
+    // CPU_RUNTIME_DEF: the host object, which each session's ch_cfg.cpu
+    // describes the CPU to (docs/decisions.md 89). TRUST=webpki, ROLE=server
+    // and ROLE=both build it on a target that passes the host test, and a
+    // raw or ca client builds the portable object on every target.
+    if (hostTarget(target) and !deviceClient(config)) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
     if (config.x25519 == .wide) {
         defs = concat(b, &.{ defs, &.{"-DCH_X25519_WIDE"} });
         lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });

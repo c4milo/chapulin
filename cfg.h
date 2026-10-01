@@ -39,8 +39,8 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
-// The answers the fields about the CPU take: ch_cfg.aes_instructions's, and the two every
-// operation built on the widening multiply runs under.
+// What the fields about the CPU take: ch_cfg.cpu's bits, ch_cfg.aes_instructions's answers, and
+// the two every operation built on the widening multiply runs under.
 #include "cpu_cfg.h"
 
 // The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
@@ -386,6 +386,9 @@ typedef struct {
     // ch_tls.group is CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
     // (docs/decisions.md 39). A classic raw or ca build offers x25519 alone and refuses the flag.
     int require_pq;
+#ifdef CH_CPU_RUNTIME
+    uint32_t cpu; // what the caller states about this CPU, a host object alone (cpu_cfg.h)
+#endif
 #ifdef CH_AES_RUNTIME
     // Whether this CPU has the AES and carry-less multiply instructions, as the caller's probe
     // found: CH_AES_INSTRUCTIONS_PRESENT or CH_AES_INSTRUCTIONS_ABSENT. chapulin probes nothing.

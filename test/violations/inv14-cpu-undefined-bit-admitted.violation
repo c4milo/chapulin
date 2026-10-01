@@ -1,0 +1,13 @@
+invariant: INV-14
+file: cpu.h
+catches: webpki_session_host
+reason: cpu_bits_ok stops refusing a bit the object does not define, so a
+  bit a later release adds runs as though this object knew what it says.
+  The ruling is that such a bit is refused, not ignored
+  (docs/decisions.md 89). test/webpki_session_cpu.h requires ch_connect
+  to refuse the first bit past CH_CPU_VAES and the top bit.
+
+--- old
+    return (cfg->cpu & CH_CPU_PROBED) != 0 && (cfg->cpu & ~(uint32_t)CH_CPU_DEFINED) == 0;
+--- new
+    return (cfg->cpu & CH_CPU_PROBED) != 0;

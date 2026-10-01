@@ -36,8 +36,9 @@ const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
 // RAND=session: each session names its own source of random bytes in ch_cfg (cfg.h), where every
 // other build draws from the image's ch_rand_bytes.
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
-// AES=runtime and WIDEMUL=runtime: each session states what the caller found about its CPU in
-// ch_cfg (cpu_cfg.h).
+// A host object, AES=runtime and WIDEMUL=runtime: each session states what the caller found
+// about its CPU in ch_cfg (cpu_cfg.h).
+const has_cpu = @hasField(c.ch_cfg, "cpu");
 const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
@@ -173,6 +174,9 @@ const ClientValues = struct {
     /// through the copy the session's init stores (attachRandom). null leaves rand_bytes NULL,
     /// which init refuses with error.Invalid. void in every other build.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
+    /// What the caller states about its CPU, in a host object alone: cpu. null leaves it 0, which
+    /// init refuses with error.Invalid. void in every other build.
+    cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
     /// What the caller's CPU probe found, under AES=runtime alone: aes_instructions. null leaves
     /// it 0, which init refuses with error.Invalid. void in every other build.
     aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
@@ -231,6 +235,7 @@ const ClientValues = struct {
             cfg.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
             cfg.cipher_suite_count = values.cipher_suites.len;
         }
+        if (has_cpu) cfg.cpu = cpuBits(values.cpu);
         if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
         if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
@@ -242,70 +247,8 @@ fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
     cfg.spki_pin_count = pins.len;
 }
 
-/// A NewSessionTicket (RFC 9846 §4.6.1) that outlives the session: the
-/// ch_ticket on_ticket received, by value, and the identity bytes it
-/// pointed at. A program that copies a Ticket owns zeroing that copy.
-pub const Ticket = struct {
-    /// The ch_ticket on_ticket received. Its identity pointer is null here, because the bytes it
-    /// named are valid during on_ticket alone. psk, psk_len, age_add, lifetime_s, epoch, under
-    /// TRUST=webpki binding and under TRANSPORT=quic-nonblocking quic_version are read from it
-    /// under their C names.
-    ticket: c.ch_ticket,
-    /// The identity bytes, ticket.identity_len of them, presented as psk_id.
-    identity: [c.CH_TICKET_ID_MAX]u8,
-
-    /// The fields fromFields takes. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
-    /// object alone has, and quic_version its ch_ticket.quic_version, a QUIC object's alone, whose
-    /// null init refuses as a resuming ticket's version.
-    pub const Fields = if (has_webpki) struct {
-        identity: []const u8,
-        psk: []const u8,
-        age_add: u32,
-        lifetime_s: u32,
-        epoch: u32 = 0,
-        binding: *const [c.SHA256_LEN]u8,
-        quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
-    } else struct {
-        identity: []const u8,
-        psk: []const u8,
-        age_add: u32,
-        lifetime_s: u32,
-        epoch: u32 = 0,
-        quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
-    };
-
-    /// A Ticket rebuilt from fields a program stored after an earlier handshake, for a program that
-    /// keeps its own ticket value across connections and objects. It refuses an identity longer
-    /// than CH_TICKET_ID_MAX or a psk that is not a hash length this object holds, SHA256_LEN or,
-    /// where HKDF_HASH_MAX is SHA384_LEN, that too. Setting ticket's fields by hand is not
-    /// supported.
-    pub fn fromFields(fields: Fields) error{Invalid}!Ticket {
-        const psk_ok = fields.psk.len == c.SHA256_LEN or fields.psk.len == c.HKDF_HASH_MAX;
-        if (fields.identity.len > c.CH_TICKET_ID_MAX or !psk_ok) return error.Invalid;
-        var out: Ticket = .{ .ticket = std.mem.zeroes(c.ch_ticket), .identity = @splat(0) };
-        @memcpy(out.identity[0..fields.identity.len], fields.identity);
-        @memcpy(out.ticket.psk[0..fields.psk.len], fields.psk);
-        out.ticket.identity_len = fields.identity.len;
-        out.ticket.psk_len = fields.psk.len;
-        out.ticket.age_add = fields.age_add;
-        out.ticket.lifetime_s = fields.lifetime_s;
-        out.ticket.epoch = fields.epoch;
-        if (has_webpki) out.ticket.binding = fields.binding.*;
-        if (has_quic) out.ticket.quic_version = quic.versionCode(fields.quic_version);
-        return out;
-    }
-
-    /// A copy of the ch_ticket on_ticket hands over, identity bytes and
-    /// all, or null for an identity longer than CH_TICKET_ID_MAX, which C
-    /// drops before on_ticket. The sessions' own on_ticket calls it.
-    pub fn fromOnTicket(ticket: *const c.ch_ticket) ?Ticket {
-        if (ticket.identity_len > c.CH_TICKET_ID_MAX or ticket.identity == null) return null;
-        var out: Ticket = .{ .ticket = ticket.*, .identity = @splat(0) };
-        @memcpy(out.identity[0..ticket.identity_len], ticket.identity[0..ticket.identity_len]);
-        out.ticket.identity = null;
-        return out;
-    }
-};
+/// A NewSessionTicket that outlives the session, by value (chapulin_ticket.zig).
+pub const Ticket = @import("chapulin_ticket.zig").Ticket;
 
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
 pub const EcdsaP256Identity = if (has_server) struct {
@@ -356,6 +299,8 @@ const ServerValues = struct {
     /// The session's source of random bytes, under RAND=session alone, as
     /// Client.random is. check draws from it too, for the RSA-PSS salt.
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
+    /// What the caller states about its CPU, in a host object alone, as Client.cpu is.
+    cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
     /// What the caller's CPU probe found, under AES=runtime alone, as Client.aes_instructions is.
     aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
     /// The answer about the widening multiply, under WIDEMUL=runtime alone, as Client.widemul is.
@@ -393,6 +338,7 @@ const ServerValues = struct {
             cfg.srv.cipher_suite_count = values.cipher_suites.len;
         }
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
+        if (has_cpu) cfg.cpu = cpuBits(values.cpu);
         if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
         if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
@@ -408,6 +354,28 @@ const ServerValues = struct {
         return fromCode(error{Invalid}, c.ch_srv_check(&cfg));
     }
 };
+
+/// ch_cfg.cpu in a host object (cpu_cfg.h): what the caller's own probe found, and what it states.
+/// A value sets CH_CPU_PROBED and the bit of each field that is true.
+pub const Cpu = if (has_cpu) CpuBits else @compileError("Cpu needs a host object: TRUST=webpki, ROLE=server or ROLE=both on arm64 or x86-64");
+const CpuBits = struct {
+    /// CH_CPU_CONSTANT_TIME_AES: the AES and carry-less multiply instructions, which the caller
+    /// states run in constant time in the mode the session's thread runs in.
+    constant_time_aes: bool = false,
+    /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time.
+    constant_time_multiply: bool = false,
+    /// CH_CPU_AVX2 and CH_CPU_VAES: x86-64 bits, which an arm64 object refuses.
+    avx2: bool = false,
+    vaes: bool = false,
+};
+
+/// ch_cfg.cpu for what found states, and 0 for null.
+fn cpuBits(found: ?CpuBits) u32 {
+    const cpu = found orelse return 0;
+    return c.CH_CPU_PROBED | (if (cpu.constant_time_aes) c.CH_CPU_CONSTANT_TIME_AES else 0) |
+        (if (cpu.constant_time_multiply) c.CH_CPU_CONSTANT_TIME_MULTIPLY else 0) |
+        (if (cpu.avx2) c.CH_CPU_AVX2 else 0) | (if (cpu.vaes) c.CH_CPU_VAES else 0);
+}
 
 /// ch_cfg.aes_instructions under AES=runtime (cfg.h): what the caller's own CPU probe found.
 pub const AesInstructions = if (has_aes_runtime) AesAnswer else @compileError("AesInstructions needs AES=runtime");

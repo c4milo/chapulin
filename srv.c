@@ -18,6 +18,9 @@
 #include "srv_auth.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
+#ifdef CH_CPU_RUNTIME
+#include "cpu.h"
+#endif
 #ifdef CH_WIDEMUL_RUNTIME
 #include "widemul.h"
 #endif
@@ -187,6 +190,13 @@ int srv_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h), before any rule
+    // that reads it.
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
 #ifdef CH_AES_RUNTIME
     // The caller's answer about the AES instructions, which picks what
     // this session runs (cfg.h), before any rule that reads it.
@@ -233,6 +243,13 @@ int ch_srv_check(const ch_cfg *cfg) {
     // either check, whichever identities it holds, as every server init
     // call refuses it.
     if (!rand_source_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+#ifdef CH_CPU_RUNTIME
+    // Every init call refuses this description of the CPU, so the check
+    // refuses it too, before either identity signs.
+    if (!cpu_bits_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif

@@ -1,0 +1,15 @@
+invariant: INV-36
+file: cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h stops refusing -DCH_CPU_RUNTIME for a target that is
+  neither arm64 nor x86-64, so a firmware tree's own build for a
+  Cortex-M3 can ask for a host object the Makefile and build.zig never
+  build for it (docs/decisions.md 89). test/host-builds.sh compiles the
+  header with the define for the Cortex-M3 and requires the compile to
+  fail.
+
+--- old
+#if !defined(__aarch64__) && !defined(__x86_64__)
+#error "CH_CPU_RUNTIME builds a host object, which targets arm64 or x86-64 (docs/decisions.md 89)"
+#endif
+--- new

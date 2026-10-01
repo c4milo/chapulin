@@ -11,6 +11,9 @@
 #include "handshake_record.h"
 #include "io.h"
 #include "rand_draw.h"
+#ifdef CH_CPU_RUNTIME
+#include "cpu.h"
+#endif
 #ifdef CH_WIDEMUL_RUNTIME
 #include "widemul.h"
 #endif
@@ -128,6 +131,14 @@ int tlsi_config_ok(const ch_cfg *cfg) {
     }
 #ifdef CH_RAND_SESSION
     if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h). A raw or ca client
+    // is a host object only in ROLE=both, and that object asks every
+    // session for it.
+    if (!cpu_bits_ok(cfg)) {
         return 0;
     }
 #endif
@@ -369,6 +380,12 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
 int tlsi_config_ok(const ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h).
+    if (!cpu_bits_ok(cfg)) {
         return 0;
     }
 #endif

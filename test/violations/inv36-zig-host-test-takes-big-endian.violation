@@ -1,0 +1,12 @@
+invariant: INV-36
+file: build.zig
+catches: test/host-builds.sh
+reason: build.zig's host test takes a big-endian arm64 target, which the
+  Makefile's refuses, so a Zig build for aarch64_be compiles the host
+  object and cpu_cfg.h stops it. test/host-builds.sh requires build.zig to
+  pass no -DCH_CPU_RUNTIME for aarch64_be-linux-gnu.
+
+--- old
+        .aarch64 => target.cpu.has(.aarch64, .neon),
+--- new
+        .aarch64, .aarch64_be => target.cpu.has(.aarch64, .neon),

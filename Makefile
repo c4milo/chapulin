@@ -190,7 +190,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
-        alert.h widemul.h widemul_native.h cpu_cfg.h
+        alert.h widemul.h widemul_native.h cpu_cfg.h cpu.h
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -517,7 +517,9 @@ TESTH := test/test_random.h test/test_widemul.h test/x86_kernels_cpu.h test/chac
          test/webpki_loop_order.h test/aes_runtime_count.h test/quic_v1_vectors.h test/quic_loop_runtime.h \
          test/webpki_loop_runtime.h test/tcp_blocking_loop_runtime.h test/widemul_runtime_count.h \
          test/widemul_count_names.h test/tcp_blocking_loop_widemul.h test/tcp_nonblocking_loop_widemul.h \
-         test/quic_loop_widemul.h test/webpki_session_widemul.h
+         test/quic_loop_widemul.h test/webpki_session_widemul.h test/test_cpu.h \
+         test/tcp_blocking_loop_cpu.h test/tcp_nonblocking_loop_cpu.h test/quic_loop_cpu.h \
+         test/webpki_session_cpu.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -924,6 +926,36 @@ endif
 ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST))$(filter server both,$(ROLE)),)
 LIB_SRCS += $(KEX_HYBRID_SRCS)
 endif
+# The host test (docs/decisions.md 89). A host object compiles each fast
+# path beside the portable code, and each session picks among them at
+# init from ch_cfg.cpu, the caller's description of its CPU (cpu_cfg.h). A
+# target is a host target when $(CC) passes three probes: it targets arm64
+# or x86-64, it targets NEON or SSE2 on a little-endian core, and it has
+# unsigned __int128. Every LP64 compiler for the two architectures passes
+# all three. A host build passes one define, -DCH_CPU_RUNTIME, and the
+# sources choose on it and never on the architecture macros, so every
+# proof harness, bench/sram.sh, the test binaries of the portable code and
+# a firmware tree's own build compile the code they compiled before.
+#
+# The product picks the object on a host target. A device client,
+# ROLE=client with a raw or ca TRUST, builds the portable object on every
+# target, so the default `make lib` and the examples stay the device
+# object. TRUST=webpki, ROLE=server and ROLE=both build the host object. A
+# check that packages a server's device object on a development machine
+# sets HOST_TARGET empty on its command line: that is the host test's
+# result for a device target, and the build then passes no define.
+#
+# No path reads the bits of ch_cfg.cpu yet. The AES, CHACHA, WIDEMUL and
+# X25519 variables still choose what each object runs, and the commits
+# entry 89 lists move each choice to its bit.
+HOST_TARGET := $(shell macros=$$($(CC) -dM -E -x c /dev/null 2>/dev/null); \
+  printf '%s\n' "$$macros" | grep -qwE '__aarch64__|__x86_64__' && \
+  printf '%s\n' "$$macros" | grep -qwE '__ARM_NEON|__SSE2__' && \
+  printf '%s\n' "$$macros" | grep -qw '__BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__' && \
+  printf '%s\n' "$$macros" | grep -qw '__SIZEOF_INT128__' && echo yes)
+DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
+CPU_RUNTIME_DEF := $(if $(HOST_TARGET),$(if $(DEVICE_CLIENT),,-DCH_CPU_RUNTIME))
+LIB_DEF += $(CPU_RUNTIME_DEF)
 # The X25519 field, which both KEX values run: X25519=portable (default) is
 # x25519.c's 16 limbs of 16 bits, whose products are 32x32 multiplies that
 # ct.h can build from 16x16 pieces on any core, and X25519=wide adds
@@ -1232,7 +1264,11 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # CHACHA belongs here for X25519's reason: -DCH_CHACHA_VECTOR changes
 # chacha20.o and adds chacha20_vector.o. It is added only for the vector
 # value, for TX_RECORD's reason.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(filter vector,$(CHACHA)),-chacha-vector)
+# The host test's result belongs here because -DCH_CPU_RUNTIME changes
+# ch_cfg and every object that reads it, and a check can build a server's
+# device object beside its host object. It is added only for a host
+# object, for TX_RECORD's reason.
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(filter vector,$(CHACHA)),-chacha-vector)$(if $(CPU_RUNTIME_DEF),-host)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1414,6 +1450,14 @@ print-aes-runtime-qemu-srcs:
 # object packages no generator, because each session names its own source
 # (docs/decisions.md 77).
 #
+# The host rows set the host test's result on their own command line,
+# HOST_TARGET=yes or empty, so they read the same on every compiler. On a
+# host target the four device clients define no -DCH_CPU_RUNTIME, and a
+# TRUST=webpki client, ROLE=server and ROLE=both, raw client half and all,
+# define it; on any other target none of the three does
+# (docs/decisions.md 89). Each row names ROLE and TRUST, because a
+# recursion inherits the outer make's values.
+#
 # Each row runs as its own background job and prints into a file of its
 # own, and the files print in row order once every row has ended, so the
 # rows run at once and their lines never interleave. A row prints only
@@ -1489,6 +1533,13 @@ lint-trust-separation-run:
 	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
+	for axis in "ROLE=client TRUST=raw-rsa" "ROLE=client TRUST=raw-ecdsa" "ROLE=client TRUST=ca-rsa" "ROLE=client TRUST=ca-ecdsa"; do \
+	  check "$$axis HOST_TARGET=yes" "" "" "" "-DCH_CPU_RUNTIME"; \
+	done; \
+	for axis in "ROLE=client TRUST=webpki" "ROLE=server TRUST=none" "ROLE=both TRUST=raw-rsa" "ROLE=both TRUST=webpki"; do \
+	  check "$$axis HOST_TARGET=yes" "" "" "-DCH_CPU_RUNTIME" ""; \
+	  check "$$axis HOST_TARGET=" "" "" "" "-DCH_CPU_RUNTIME"; \
+	done; \
 	for axis in "TRUST=webpki ROLE=client" "TRUST=webpki ROLE=both" "TRUST=none ROLE=server"; do \
 	  for k in x25519 pq; do \
 	    n=$$((n + 1)); refused "$$axis" $$k > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
@@ -2886,6 +2937,33 @@ WIDEMUL_RUNTIME_BINS := bin/widemul_runtime_test bin/tcp_blocking_loop_widemul b
                         bin/quic_loop_widemul bin/webpki_session_widemul \
                         $(foreach t,$(WIDEMUL_RUNTIME_TESTS),$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),bin/$(t)_widemul_$(a)))
 
+# The host object's binaries (docs/decisions.md 89): each loop and session
+# test that holds the widening multiply's answer at every init call, built
+# as a host object builds its sources, -DCH_CPU_RUNTIME. Every case of each
+# runs with both ends describing the CPU as TEST_CPU (test/test_cpu.h), and
+# its test/*_cpu.h rows hold ch_cfg.cpu's refusals at ch_connect,
+# ch_record_init, ch_quic_init, ch_srv_accept, ch_srv_record_init,
+# ch_srv_quic_init and ch_srv_check. cpu_cfg.h refuses the define on a
+# compiler that fails the host test, so the binaries are named only where
+# HOST_TARGET found one, and check-skips says when it did not.
+bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_CPU_RUNTIME -I. -o $@ test/tcp_blocking_loop_test.c \
+	  $(TCP_BLOCKING_LOOP_SRCS)
+bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
+	  -DCH_CPU_RUNTIME -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
+bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  -DCH_CPU_RUNTIME -I. -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS)
+bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
+                                 bin/webpki_session_host)
+
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
@@ -3017,7 +3095,8 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_HW_BINS) $(AES_EXTERN_BINS) $(AES_RUNTIME_BINS) \
                   $(X25519_WIDE_BINS)) \
-                  $(patsubst bin/%,%,$(CHACHA_VECTOR_BINS) $(WIDEMUL_RUNTIME_BINS) $(X86_KERNEL_BINS)) \
+                  $(patsubst bin/%,%,$(CHACHA_VECTOR_BINS) $(WIDEMUL_RUNTIME_BINS) $(X86_KERNEL_BINS) \
+                  $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
                   tcp_nonblocking_loop_test tcp_nonblocking_loop_pq tcp_blocking_loop_test \
                   quic_loop_test quic_loop_webpki tcp_blocking_loop_session tcp_nonblocking_loop_session \
@@ -3036,10 +3115,10 @@ CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-e
               check-lib-server-widemul-runtime check-lib-quic-widemul-runtime check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
 .PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) check-x25519-builds check-chacha-builds \
-        check-widemul-builds check-script-builds check-wycheproof check-skips
+        check-widemul-builds check-host-builds check-script-builds check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
-       check-x25519-builds check-chacha-builds check-widemul-builds check-script-builds check-wycheproof \
-       check-skips proof-coverage proof-reach-smoke
+       check-x25519-builds check-chacha-builds check-widemul-builds check-host-builds check-script-builds \
+       check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
 
 # A recipe line that runs a script which calls make itself starts with +,
@@ -3087,6 +3166,10 @@ check-skips:
 	@[ -n "$(AES_RUNTIME_BINS)" ] || echo "SKIP AES=runtime: $(CC) targets neither arm64 nor x86-64"
 	@[ -n "$(X25519_WIDE_BINS)" ] || echo "SKIP X25519=wide: $(CC) has no unsigned __int128"
 	@[ -n "$(X86_KERNEL_BINS)" ] || echo "SKIP the x86-64 kernels' routed binaries: $(CC) does not target x86-64"
+ifeq ($(HOST_BINS),)
+	$(call REQUIRE_ON_CI,the host test: arm64 or x86-64 with NEON or SSE2 and unsigned __int128)
+	@echo "SKIP the host object's binaries: $(CC) fails the host test (docs/decisions.md 89)"
+endif
 ifeq ($(CHACHA_VECTOR_BINS),)
 	$(call REQUIRE_ON_CI,CHACHA=vector: NEON or SSE2)
 	@echo "SKIP CHACHA=vector: $(CC) targets neither NEON nor SSE2 on a little-endian core"
@@ -3108,6 +3191,12 @@ check-chacha-builds:
 # beside it in make and in build.zig (docs/decisions.md 87).
 check-widemul-builds:
 	+@mkdir -p bin/check; ZIG='$(ZIG)' ./test/widemul-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+# The host test in cpu_cfg.h, the Makefile and build.zig, each against
+# this host's compiler and the pinned clang's cross targets that fail one
+# probe (docs/decisions.md 89).
+check-host-builds:
+	+@mkdir -p bin/check; ZIG='$(ZIG)' ./test/host-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The programs the bench and platform scripts compile from source lists of
 # their own, built and not run (test/script-builds.sh names them). No
@@ -4805,6 +4894,27 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest)
 	@$(call TIDY_EACH,quic_config.c test/quic_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
+	# A host object (docs/decisions.md 89): the rule every init call and
+	# ch_srv_check apply to ch_cfg.cpu, which compiles only under
+	# -DCH_CPU_RUNTIME, in each role, trust mode and transport that has it,
+	# and the host binaries' rows and the files that set the field, built
+	# under the same define. cpu_cfg.h refuses the define on a compiler
+	# that fails the host test, so the passes run only where HOST_TARGET
+	# found one.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,tls.c srv.c test/tcp_blocking_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,tls.c test/webpki_session_test.c examples/webpki_client.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI -I.)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/tcp_nonblocking_loop_test.c test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
+	  -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,quic_config.c test/quic_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
+	  -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
@@ -5084,10 +5194,13 @@ bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ examples/ca_client.c $(SRCS)
 
 # The web PKI example needs the TRUST=webpki library, so it links its own
-# copy of the sources that object packages, under that object's define.
+# copy of the sources that object packages, under that object's defines:
+# -DCH_TRUST_WEBPKI, and -DCH_CPU_RUNTIME where HOST_TARGET makes that
+# object a host object.
 bin/example_webpki: examples/webpki_client.c $(WEBPKI_TEST_SRCS) $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ examples/webpki_client.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(if $(HOST_TARGET),-DCH_CPU_RUNTIME) -I. -o $@ examples/webpki_client.c \
+	  $(WEBPKI_TEST_SRCS)
 
 .PHONY: examples-check
 examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki

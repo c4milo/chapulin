@@ -1,0 +1,13 @@
+invariant: INV-36
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile stops passing -DCH_CPU_RUNTIME, so a TRUST=webpki
+  client, ROLE=server and ROLE=both build the portable object on a host,
+  and their sessions never take the caller's description of the CPU.
+  lint-trust-separation's host rows require the define for the three
+  products under HOST_TARGET=yes.
+
+--- old
+CPU_RUNTIME_DEF := $(if $(HOST_TARGET),$(if $(DEVICE_CLIENT),,-DCH_CPU_RUNTIME))
+--- new
+CPU_RUNTIME_DEF :=

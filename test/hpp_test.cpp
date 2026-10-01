@@ -48,12 +48,16 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
 }
 #endif
 
-// Gives a test Config the session's source in a RAND=session build and
-// an answer about the widening multiply in a WIDEMUL=runtime build, and
-// does nothing in the others.
+// Gives a test Config the session's source in a RAND=session build, a
+// description of the CPU in a host object and an answer about the
+// widening multiply in a WIDEMUL=runtime build, and does nothing in the
+// others.
 static void with_source(chapulin::Config &cfg) {
 #ifdef CH_RAND_SESSION
     cfg.rand_bytes(session_fill, &session_ctx);
+#endif
+#ifdef CH_CPU_RUNTIME
+    cfg.cpu(chapulin::Cpu{});
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     cfg.widemul(chapulin::Widemul::not_stated);
@@ -245,6 +249,45 @@ static void test_webpki_config(chapulin::Io io) {
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
+#ifdef CH_CPU_RUNTIME
+    // The description of the CPU is written to ch_cfg.cpu: CH_CPU_PROBED
+    // and the bit of each member that is true. One that was never written
+    // stays 0, which connect refuses before any I/O, and so is AVX2 on
+    // arm64, whose object does not define that bit (docs/decisions.md 89).
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+#ifdef CH_RAND_SESSION
+        cfg.rand_bytes(session_fill, &session_ctx);
+#endif
+#ifdef CH_WIDEMUL_RUNTIME
+        cfg.widemul(chapulin::Widemul::not_stated);
+#endif
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        CHECK(cfg.raw().cpu == 0);
+        chapulin::Session unset;
+        CHECK(unset.connect(cfg) == chapulin::Status::invalid);
+        cfg.cpu(chapulin::Cpu{});
+        CHECK(cfg.raw().cpu == CH_CPU_PROBED);
+        chapulin::Session probed;
+        CHECK(probed.connect(cfg) == chapulin::Status::io);
+        chapulin::Cpu stated;
+        stated.constant_time_aes = true;
+        stated.constant_time_multiply = true;
+        cfg.cpu(stated);
+        CHECK(cfg.raw().cpu ==
+              (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY));
+        chapulin::Session both;
+        CHECK(both.connect(cfg) == chapulin::Status::io);
+        chapulin::Cpu x86;
+        x86.avx2 = true;
+        cfg.cpu(x86);
+        CHECK(cfg.raw().cpu == (CH_CPU_PROBED | CH_CPU_AVX2));
+        chapulin::Session avx2;
+        CHECK(avx2.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_AVX2) != 0
+                                        ? chapulin::Status::io
+                                        : chapulin::Status::invalid));
+    }
+#endif
     // ALPN: the setter writes both ch_cfg fields, a valid offer reaches
     // I/O, and a session that never read an EncryptedExtensions reports
     // no selection. A name over CH_ALPN_NAME_MAX is refused.

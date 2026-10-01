@@ -1,0 +1,20 @@
+invariant: INV-14
+file: tls.c
+catches: tcp_blocking_loop_host
+reason: the raw and ca client of a ROLE=both host object stops asking for
+  the caller's description of its CPU, so ch_connect sends a ClientHello
+  for a configuration that never set ch_cfg.cpu. The webpki client's rule
+  in the other tlsi_config_ok is untouched, so only the raw client's row
+  notices: test/tcp_blocking_loop_cpu.h requires CH_EINVAL and nothing
+  sent for 0.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h). A raw or ca client
+    // is a host object only in ROLE=both, and that object asks every
+    // session for it.
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
+--- new

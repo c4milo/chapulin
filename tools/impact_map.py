@@ -305,7 +305,7 @@ def known(path):
                 "fuzz/", "tools/", ".githooks/")) or path in (
         "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md",
         "build.zig", "build.zig.zon", "chapulin.zig", "chapulin_record.zig",
-        "chapulin_quic.zig")
+        "chapulin_quic.zig", "chapulin_ticket.zig")
 
 
 class Plan:

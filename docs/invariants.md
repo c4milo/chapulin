@@ -1272,7 +1272,12 @@ last `ROLE=server` stub, as the entry said it would.
   code the call returns to one error, builds `ch_cfg` only from the
   fields each value names, and keeps no TLS rule of its own: a record's
   length, a write's size and a ticket's age come from the C calls that
-  compute them.
+  compute them. Both builds give a `TRUST=webpki` client, `ROLE=server`
+  and `ROLE=both` the host object, `-DCH_CPU_RUNTIME`, on a target that
+  passes the host test, arm64 or x86-64 with NEON or SSE2 on a
+  little-endian core and `unsigned __int128`, and give every other product
+  and every other target the portable object; `cpu_cfg.h` stops the
+  define for a target that fails the test (decisions.md 89).
 - **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
   function per block, and writes the lists it compiles to `lib-srcs.txt`
   and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
@@ -1288,9 +1293,16 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_RAND_DRBG` and `rand.h` declares no `ch_rand_bytes` under
   `CH_RAND_SESSION`. A test binary that runs the provisioning walk outside a
   CA build defines `CH_X509_CA_TEST`, which no object's defines include.
-  `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
-  `chapulin_quic.zig` into a directory of the configuration's own, roots
-  the module there, and adds the object to it with `addObjectFile`.
+  `build.zig` copies `chapulin.zig`, `chapulin_record.zig`,
+  `chapulin_quic.zig` and `chapulin_ticket.zig` into a directory of the
+  configuration's own, roots
+  the module there, and adds the object to it with `addObjectFile`. The
+  Makefile runs the host test on `$(CC)`'s predefined macros
+  (`HOST_TARGET`) and `build.zig` on the resolved target's architecture
+  and features (`hostTarget`), and each tells a device client apart by
+  its role and trust mode (`DEVICE_CLIENT`, `deviceClient`). A command
+  line that sets `HOST_TARGET` empty gets the portable object of a host
+  product on a host.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
   builds the default object, the four colibri links, stompy's
   `TX_RECORD=16384` object and a `SUITE=aesgcm` record-mode object both
@@ -1366,6 +1378,25 @@ last `ROLE=server` stub, as the entry said it would.
   outside a CA build, which the script's translation of `x509_ca.h`
   refuses for the default object. The script also catches
   `inv38-zig-writable-len-skips-key-update` (INV-38).
+  The host test has rows of its own. `lint-trust-separation` sets
+  `HOST_TARGET` to `yes` and to empty on each row's command line, and
+  requires `-DCH_CPU_RUNTIME` of a `TRUST=webpki` client, `ROLE=server`,
+  `ROLE=both` with a raw client half and `ROLE=both` with a webpki one on
+  a host target alone, and of no device client on either.
+  `test/host-builds.sh` compiles `cpu_cfg.h` under the define on this
+  host's compiler and for six targets the pinned clang builds, each of
+  the first five failing one probe, and requires the header to refuse
+  each of the six, the Makefile to pass no define under a compiler for
+  any of them, and `build.zig` to pass it for this host and for arm64 and
+  x86-64 Linux and not for a Cortex-M3 or a big-endian arm64 core.
+  `lint-zig-build` compares the two builds' defines on this host, where
+  both run the test. Six mutants break the host test, and each is
+  caught: `inv36-host-define-on-device-client` and
+  `inv36-host-define-dropped` by `test/lint-trust-separation.sh`,
+  `inv36-cpu-cfg-admits-another-architecture`,
+  `inv36-host-test-skips-the-vector-probe` and
+  `inv36-zig-host-test-takes-big-endian` by `test/host-builds.sh`, and
+  `inv36-zig-host-define-on-device-client` by `test/zig-build-check.sh`.
   The slot's `std.crypto.secureZero` has no mutant of its own. Storing
   null leaves an optional's payload undefined, and what Zig 0.16.0
   writes there depends on the backend: LLVM wrote zeros in every mode
@@ -1796,7 +1827,12 @@ last `ROLE=server` stub, as the entry said it would.
   AES-GCM suite (decisions.md 81). In a `WIDEMUL=runtime` object every
   init call and `ch_srv_check` refuse with `CH_EINVAL`, and send nothing,
   a `ch_cfg.widemul` that is neither `CH_WIDEMUL_CONSTANT_TIME` nor
-  `CH_WIDEMUL_NOT_STATED`, 0 among them (decisions.md 87).
+  `CH_WIDEMUL_NOT_STATED`, 0 among them (decisions.md 87). In a host
+  object every init call and `ch_srv_check` refuse with `CH_EINVAL`, and
+  send nothing, a `ch_cfg.cpu` without `CH_CPU_PROBED`, 0 among them, and
+  one with a bit outside `CH_CPU_DEFINED`, the bits the object defines
+  for its architecture: `CH_CPU_AVX2` or `CH_CPU_VAES` on arm64, or a bit
+  a later release adds (decisions.md 89).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -2055,6 +2091,19 @@ last `ROLE=server` stub, as the entry said it would.
   test/webpki_session_widemul.h for the webpki `ch_connect`. Six
   `inv14-widemul-` violations drop the rule at each place it is written,
   or admit 0, and each row catches its own.
+  The host object's `ch_cfg.cpu` has rows at every init call and
+  `ch_srv_check` in the host binaries: test/tcp_blocking_loop_cpu.h for
+  `ch_connect`, `ch_srv_accept` and `ch_srv_check`,
+  test/tcp_nonblocking_loop_cpu.h for `ch_record_init` and
+  `ch_srv_record_init`, test/quic_loop_cpu.h for `ch_quic_init`,
+  `ch_srv_quic_init` and `ch_srv_check`, and test/webpki_session_cpu.h for
+  the webpki `ch_connect`. Each refuses 0, every defined bit but
+  `CH_CPU_PROBED`, the first bit past `CH_CPU_VAES`, the top bit and on
+  arm64 each x86-64 bit, and takes `CH_CPU_PROBED` alone and every bit
+  the architecture defines, which test/test_cpu.h writes out apart from
+  `cpu_cfg.h`. Eight `inv14-cpu-` violations drop the rule at each of the
+  five places it is written, admit 0, admit an undefined bit, or give each
+  architecture the other's bits, and a row catches each.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know, or lets a client entry take a PSK

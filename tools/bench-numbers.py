@@ -111,6 +111,12 @@ MEMORY = [
     ("`ch_tls` under `WIDEMUL=runtime`", [["session_struct_widemul_runtime_arm64"]]),
     ("**total static working set, `WIDEMUL=runtime`** (2048 buffer)",
      [["static_working_set_widemul_runtime_arm64"]]),
+    ("`ch_tls` under `TRUST=webpki`, host object", [["session_struct_webpki_host_arm64"]]),
+    ("**total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor)",
+     [["static_working_set_webpki_host_arm64"]]),
+    ("`ch_tls` under `ROLE=server`, host object", [["session_struct_server_host_arm64"]]),
+    ("**total static working set, `ROLE=server`, host object** (2048 buffer)",
+     [["static_working_set_server_host_arm64"]]),
 ]
 
 

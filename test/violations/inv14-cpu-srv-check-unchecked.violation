@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv.c
+catches: tcp_blocking_loop_host
+reason: ch_srv_check stops asking for the caller's description of its
+  CPU, so a boot check passes a configuration every server init call
+  refuses. test/tcp_blocking_loop_cpu.h requires ch_srv_check to refuse
+  the values the init calls refuse.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // Every init call refuses this description of the CPU, so the check
+    // refuses it too, before either identity signs.
+    if (!cpu_bits_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+--- new

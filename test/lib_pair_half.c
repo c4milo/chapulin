@@ -109,11 +109,16 @@ static int fail_recv(void *io, uint8_t *p, size_t n) {
 }
 #endif
 
-// The fields every session here sets, whatever its role.
+// The fields every session here sets, whatever its role. A host object
+// takes the caller's description of its CPU (cpu_cfg.h), and the probe's
+// bit alone describes any CPU.
 static void base_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = rxbuf;
     cfg->buf_len = sizeof rxbuf;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = CH_CPU_PROBED;
+#endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
@@ -148,7 +153,7 @@ static void provision(ch_cfg *cfg) {
 
 static int check_identity(void) {
     ch_cfg cfg;
-    memset(&cfg, 0, sizeof cfg);
+    base_config(&cfg);
     provision(&cfg);
     return ch_srv_check(&cfg) == CH_OK ? 0 : failed("ch_srv_check refused a P-256 identity");
 }

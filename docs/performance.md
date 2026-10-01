@@ -39,6 +39,10 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its floor) | **15714** | — |
 | `ch_tls` under `WIDEMUL=runtime` | 1168 | — |
 | **total static working set, `WIDEMUL=runtime`** (2048 buffer) | **3216** | — |
+| `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
+| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
+| `ch_tls` under `ROLE=server`, host object | 1992 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
 
 ### Peak stack
 
@@ -161,6 +165,19 @@ the directions do not grow. In the QUIC object colibri links on
 the script prints, does not grow either. The value is for hosts, so these
 rows are host figures too, and `bench/sram.sh` does not measure the stack
 of a `WIDEMUL=runtime` build.
+
+**A host object.** On arm64 and x86-64 the Makefile and `build.zig`
+build a `TRUST=webpki` client, `ROLE=server` and `ROLE=both` as a host
+object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
+([`docs/decisions.md`](decisions.md) 89). The field is 4 bytes, and with
+the alignment of the pointer after it each session struct is 8 bytes
+larger than the same build's portable object, which the rows without
+"host object" measure. Under `AES=runtime` the field sits in bytes the
+alignment of `aes_instructions` left unused, and the struct does not
+grow. A host object runs on those two architectures alone, so these rows
+are host figures. The stack peaks of `TRUST=webpki` and `ROLE=server` are
+a host object's too: `bench/stack.py` compiles what make packages for
+those builds on this host.
 
 ### The receive buffer
 

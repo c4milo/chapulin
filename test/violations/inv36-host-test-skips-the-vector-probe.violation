@@ -1,0 +1,12 @@
+invariant: INV-36
+file: Makefile
+catches: test/host-builds.sh
+reason: the Makefile's host test stops asking for NEON or SSE2, so a
+  compiler for an arm64 core without NEON or an x86-64 core without SSE2
+  gives a TRUST=webpki object -DCH_CPU_RUNTIME, which cpu_cfg.h then
+  refuses at compile time. test/host-builds.sh requires the Makefile to
+  pass no define under a compiler for either target.
+
+--- old
+  printf '%s\n' "$$macros" | grep -qwE '__ARM_NEON|__SSE2__' && \
+--- new

@@ -1,0 +1,16 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_host
+reason: the webpki client of a host object stops asking for the caller's
+  description of its CPU, so ch_connect sends a ClientHello for a
+  configuration that never set ch_cfg.cpu. test/webpki_session_cpu.h
+  requires CH_EINVAL before a byte leaves for 0.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h).
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
+--- new

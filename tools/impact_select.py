@@ -417,7 +417,8 @@ def select_script_builds(out, changed):
 # the public headers name, and the corpus the loops take the r2 chain
 # from. The Zig project under test/zig-consumer/ is selected by its
 # prefix below.
-ZIG_API_FILES = {"chapulin.zig", "chapulin_record.zig", "chapulin_quic.zig"}
+ZIG_API_FILES = {"chapulin.zig", "chapulin_record.zig", "chapulin_quic.zig",
+                 "chapulin_ticket.zig"}
 ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
                    "test/localize-check.sh", "test/build_test.c",
                    "tools/public-constants.py",
@@ -454,6 +455,14 @@ def select_zig(out, changed, legs):
                     f"{path} is read by the WIDEMUL=runtime script, which "
                     f"holds build.zig's lists and refusal to make's",
                     ["test/widemul-builds.sh"])
+        # test/host-builds.sh does the same for the host test: the define
+        # build.zig writes for each target, beside the Makefile's and
+        # cpu_cfg.h's (docs/decisions.md 89).
+        if path in ("build.zig", "build.zig.zon", "test/host-builds.sh"):
+            out.add("tests", "test/host-builds.sh",
+                    f"{path} is read by the host test's script, which holds "
+                    f"build.zig's host test to make's and cpu_cfg.h's",
+                    ["test/host-builds.sh"])
 
 
 def select_codegen(out, csources, lib):

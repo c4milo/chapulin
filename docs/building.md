@@ -115,6 +115,29 @@ Other targets:
   init refuses a suite list that names an AES-GCM suite. The value needs
   an object that carries AES, so a TCP object takes it only with
   `SUITE=aesgcm`, and the Makefile refuses it otherwise.
+- On an arm64 or x86-64 host, `TRUST=webpki`, `ROLE=server` and
+  `ROLE=both` build a host object (decision 89). The Makefile and
+  `build.zig` run the host test on the compiler: it targets arm64 or
+  x86-64, NEON or SSE2 on a little-endian core, and has
+  `unsigned __int128`. Where it passes, the object compiles with
+  `-DCH_CPU_RUNTIME`, which `make print-lib-def` prints with the rest of
+  its defines, and `ch_cfg` holds `cpu`, your description of the CPU
+  (`cpu_cfg.h`). Your program probes the CPU and sets the bits it found in
+  every session's configuration: `CH_CPU_PROBED` always, which says you
+  wrote the field, `CH_CPU_CONSTANT_TIME_AES` and
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` where you state those instructions run
+  in constant time on that CPU in the mode your thread runs in, and on
+  x86-64 `CH_CPU_AVX2` and `CH_CPU_VAES`. Every init call and
+  `ch_srv_check` refuse a value without `CH_CPU_PROBED`, and one with a
+  bit this object does not define for its architecture, such as
+  `CH_CPU_AVX2` on arm64. chapulin probes nothing and sets no CPU mode.
+  No path reads the bits after `CH_CPU_PROBED` yet: the `AES`, `CHACHA`,
+  `WIDEMUL` and `X25519` variables still choose what each object runs,
+  until decision 89's later commits move each choice to its bit. A raw or
+  ca client builds the portable object on every target, and so does every
+  product for any other target, so the default `make lib` has no `cpu`
+  field. To package a server's portable object on a host, set the host
+  test's result empty on the command line, `HOST_TARGET=`.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

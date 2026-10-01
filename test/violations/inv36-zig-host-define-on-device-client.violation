@@ -1,0 +1,13 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig stops telling a device client from a host product, so a
+  Zig build of the default raw client on an arm64 or x86-64 target
+  compiles the host object, which make lib does not. test/zig-build-check.sh
+  compares the two builds' defines for the default configuration and
+  fails on -DCH_CPU_RUNTIME.
+
+--- old
+    if (hostTarget(target) and !deviceClient(config)) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
+--- new
+    if (hostTarget(target)) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });

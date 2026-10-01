@@ -39,6 +39,8 @@
         "chapulin.zig",
         "chapulin_quic.zig",
         "chapulin_record.zig",
+        "chapulin_ticket.zig",
+        "cpu.h",
         "cpu_cfg.h",
         "ct.c",
         "ct.h",

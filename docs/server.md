@@ -2097,6 +2097,13 @@ A private key stays a pointer and is never copied into `ch_tls`. Copying it and
 wiping at close would put a second copy of a deployment-lifetime secret in SRAM
 and buy nothing, because the original outlives every wipe. This is INV-31.
 
+On an arm64 or x86-64 host a server object is a host object
+(`docs/decisions.md` 89), and its `ch_cfg` also holds `cpu`, the caller's
+description of its CPU (`cpu_cfg.h`). `ch_srv_accept`, `ch_srv_record_init`,
+`ch_srv_quic_init` and `ch_srv_check` return `CH_EINVAL` for a value without
+`CH_CPU_PROBED`, or with a bit the object does not define for its architecture.
+A server built for any other target has no such field.
+
 ### What `ch_tls` gains and drops
 
 The session keeps the name `ch_tls`. It is a TLS session, and one name per

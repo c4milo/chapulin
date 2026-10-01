@@ -350,7 +350,10 @@ The rest of the configuration is the hostname and the clock:
   hostname and these anchors (see "Resumption" below);
 - either `server_pubkey` slot, or its length, is set;
 - an epoch callback is set;
-- `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode.
+- `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode;
+- in a host object, the build on an arm64 or x86-64 host, `cpu` lacks
+  `CH_CPU_PROBED` or holds a bit the object does not define for its
+  architecture (`cpu_cfg.h`, docs/decisions.md 89).
 
 `ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX`, `CH_SPKI_PIN_MAX` and the ten
 `ch_cfg` fields exist only in a `TRUST=webpki` build, so the raw and ca

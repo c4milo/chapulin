@@ -120,6 +120,28 @@ struct Io {
 };
 #endif
 
+#ifdef CH_CPU_RUNTIME
+// What your own probe of the CPU found, and what you state about it, in a
+// host object (cpu_cfg.h): Config::cpu() writes CH_CPU_PROBED into
+// ch_cfg.cpu, and the bit of each member that is true. Every init refuses
+// a Config that never called it. chapulin probes nothing and writes no CPU
+// state (docs/decisions.md 89).
+struct Cpu {
+    // The CPU has the AES and carry-less multiply instructions, and you
+    // state that they run in constant time on it, in the mode the
+    // session's thread runs in: CH_CPU_CONSTANT_TIME_AES.
+    bool constant_time_aes = false;
+    // You state that the widening multiply runs in constant time on this
+    // CPU, in that mode: CH_CPU_CONSTANT_TIME_MULTIPLY.
+    bool constant_time_multiply = false;
+    // The CPU has AVX2 (CH_CPU_AVX2), and VAES and VPCLMULQDQ on 256-bit
+    // registers (CH_CPU_VAES). Both are x86-64 bits, and an arm64 object
+    // refuses either.
+    bool avx2 = false;
+    bool vaes = false;
+};
+#endif
+
 #ifdef CH_AES_RUNTIME
 // Whether this CPU has the AES and carry-less multiply instructions, as
 // your own probe found (cfg.h), in an AES=runtime build: the value
@@ -349,6 +371,17 @@ class Config {
         cfg_.epoch_io = ctx;
         return *this;
     }
+
+#ifdef CH_CPU_RUNTIME
+    // Your description of this CPU, host objects only (ch_cfg.cpu).
+    // Every init refuses a Config without one.
+    Config &cpu(Cpu found) {
+        cfg_.cpu = CH_CPU_PROBED | (found.constant_time_aes ? CH_CPU_CONSTANT_TIME_AES : 0U) |
+                   (found.constant_time_multiply ? CH_CPU_CONSTANT_TIME_MULTIPLY : 0U) |
+                   (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U);
+        return *this;
+    }
+#endif
 
 #ifdef CH_AES_RUNTIME
     // Your CPU probe's answer, AES=runtime builds only

@@ -8,7 +8,7 @@
  *
  * Everything except the trust decision matches the other examples in
  * this directory. You fill in a ch_cfg, call ch_connect, then ch_write,
- * ch_read, and ch_close. Three things change, and this file marks each
+ * ch_read, and ch_close. Four things change, and this file marks each
  * one:
  *
  *   1. The trust anchors. Instead of one pinned key, ch_cfg.anchors
@@ -23,6 +23,11 @@
  *   3. CH_MIN_RXBUF is 12,338 bytes. The build derives it from the
  *      largest chain it admits, and this file sizes its buffer from the
  *      constant.
+ *   4. The CPU. On an arm64 or x86-64 host the library is a host object
+ *      (docs/decisions.md 89), which takes your description of the CPU
+ *      in ch_cfg.cpu, and ch_connect refuses a ch_cfg that never set it.
+ *      This file states that it set the field and nothing more, so every
+ *      path the session takes runs on any CPU of the architecture.
  *
  * What the check covers: the chain verifies up to one of your anchors,
  * every certificate on the path is valid at now_seconds, and a dNSName
@@ -46,13 +51,15 @@
  *
  *   make TRUST=webpki RAND=extern lib
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -DCH_TRUST_WEBPKI -DCH_RAND_EXTERN -I. \
+ *      $(make -s print-lib-def TRUST=webpki RAND=extern) -I. \
  *      -o webpki_client examples/webpki_client.c bin/chapulin.o
  *
- * Pass -DCH_TRUST_WEBPKI and -DCH_RAND_EXTERN to your own translation
- * units too, not just to the library: the anchor, hostname and clock
- * fields of ch_cfg exist only under the first, CH_MIN_RXBUF depends on
- * it, and cfg.h refuses to compile without a declared entropy pattern.
+ * Pass the library's defines to your own translation units too:
+ * -DCH_TRUST_WEBPKI, -DCH_RAND_EXTERN and, on an arm64 or x86-64 host,
+ * -DCH_CPU_RUNTIME. The anchor, hostname and clock fields of ch_cfg
+ * exist only under the first, CH_MIN_RXBUF depends on it, cfg.h refuses
+ * to compile without a declared entropy pattern, and ch_cfg.cpu exists
+ * only under the third.
  *
  * Run:
  *
@@ -321,6 +328,12 @@ static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anch
     cfg->recv = io_recv;
     cfg->io = fd;
     cfg->on_ticket = on_ticket;
+#ifdef CH_CPU_RUNTIME
+    // The CPU, in a host object (cpu_cfg.h). CH_CPU_PROBED says this file
+    // wrote the field on purpose. It probes nothing, so it sets no other
+    // bit.
+    cfg->cpu = CH_CPU_PROBED;
+#endif
 }
 
 int main(int argc, char **argv) {

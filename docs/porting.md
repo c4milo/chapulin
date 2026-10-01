@@ -390,6 +390,18 @@ the defines `make print-lib-def` prints. `docs/decisions.md` 56 lists what the
 record holds, which defines it leaves out and why, and entry 61 says why its
 name carries the transport.
 
+A packaged object for a `TRUST=webpki` client, `ROLE=server` or
+`ROLE=both`, built on an arm64 or x86-64 host, is a host object: its
+defines include `-DCH_CPU_RUNTIME`, and its `ch_cfg` holds `cpu`, which
+every init call refuses until you set it (`cpu_cfg.h`,
+`docs/building.md`). Compile against it with that define, as with every
+other define `make print-lib-def` prints. A program that leaves it out
+computes a record without the `CH_BUILD_CPU_RUNTIME` bit, so
+`ch_build_matches` returns 0. A firmware tree that compiles the sources in its own build passes no such
+define and gets the portable object, whose `ch_cfg` has no `cpu` field,
+and `cpu_cfg.h` stops a build that passes it for a target outside the two
+architectures (`docs/decisions.md` 89).
+
 ## Linking two transports into one image
 
 One image can link one packaged object of each of two transports: a

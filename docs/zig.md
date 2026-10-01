@@ -2,9 +2,10 @@
 
 A Zig program runs chapulin's record-mode and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
-never builds a `ch_cfg` or writes a C callback. The API is three files at
-the repository root, `chapulin.zig`, `chapulin_record.zig` and
-`chapulin_quic.zig`, and it is chapulin.hpp's kind of wrapper: each call
+never builds a `ch_cfg` or writes a C callback. The API is four files at
+the repository root, `chapulin.zig`, `chapulin_record.zig`,
+`chapulin_quic.zig` and `chapulin_ticket.zig`, which holds `Ticket`, and
+it is chapulin.hpp's kind of wrapper: each call
 forwards to the C call of the same name. It adds four things and no
 more:
 
@@ -110,6 +111,7 @@ for a `@compileError` declaration too.
 | `Trust.pinned` | no `ch_cfg.anchors` |
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
+| `Cpu`, and `Client.cpu` and `Server.cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
 | `AesInstructions`, and `Client.aes_instructions` and `Server.aes_instructions` other than `void` | `ch_cfg.aes_instructions` (AES=runtime) |
 | `Widemul`, and `Client.widemul` and `Server.widemul` other than `void` | `ch_cfg.widemul` (WIDEMUL=runtime) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
@@ -176,6 +178,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
+| `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses |
 | `aes_instructions`, null by default, `AES=runtime` alone | `aes_instructions`: `.present` or `.absent`, what the caller's CPU probe found, or 0 for null, which `init` refuses |
 | `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`: `.constant_time` or `.not_stated`, the caller's answer about the widening multiply on its CPU and in its thread's mode, or 0 for null, which `init` refuses |
 
@@ -242,6 +245,7 @@ over.
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, as for a client: the Version field of the client's first Initial packet |
 | `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in `toCfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
+| `cpu`, null by default, a host object alone | `cpu`, as for a client |
 | `aes_instructions`, null by default, `AES=runtime` alone | `aes_instructions`, as for a client |
 | `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`, as for a client |
 
@@ -280,6 +284,29 @@ and the sessions draw from the image's `ch_rand_bytes`.
 - **Threads.** A session draws from its own source alone, so sessions on
   different threads share no entropy state in chapulin and need no lock
   around its draws.
+
+### The CPU
+
+A host object, which the package builds for a `TRUST=webpki` client,
+`ROLE=server` and `ROLE=both` on an arm64 or x86-64 target, takes the
+caller's description of its CPU in `ch_cfg.cpu` (`cpu_cfg.h`,
+docs/decisions.md 89). `Client.cpu` and `Server.cpu` are `?Cpu`, null by
+default; in any other object they are `void`, and `Cpu` is a
+`@compileError`.
+
+- **A value states what the caller found.** `Cpu` holds four bools,
+  false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`
+  and `vaes`. `toCfg` writes `CH_CPU_PROBED` and the bit of each one that
+  is true. `Cpu{}` says the caller looked and states nothing more.
+- **A value without one is refused at init.** A null `cpu` leaves the
+  field 0, C answers `CH_EINVAL`, and `init` and `Server.check` return
+  `error.Invalid` with nothing sent. So does `avx2` or `vaes` in an arm64
+  object, which defines neither bit. Both refusals are C's.
+- **The probe is the caller's.** chapulin and its API probe nothing and
+  set no CPU mode. A caller states the two constant-time bits only where
+  it can: on arm64 a core with FEAT_DIT and a thread that has set
+  PSTATE.DIT, and on x86-64 a part on Intel's DOIT list whose operating
+  system has set DOITM.
 
 ### Codes and reports
 

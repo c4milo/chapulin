@@ -37,6 +37,7 @@
 #include "rand.h"
 #include "srv_quic.h"
 #include "srv_ticket.h"
+#include "test_cpu.h"
 #include "test_widemul.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
@@ -161,7 +162,7 @@ static uint8_t quic_client_widemul = TEST_WIDEMUL;
 #endif
 
 static void server_config(ch_cfg *cfg) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = server_buf;
     cfg->buf_len = sizeof server_buf;
     cfg->alpn_protocols = server_alpn;
@@ -194,7 +195,7 @@ static void server_config(ch_cfg *cfg) {
 // The client half both builds share: one offered protocol, the transport
 // parameters RFC 9001 section 8.2 requires, and the ticket callback.
 static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = client_buf;
     cfg->buf_len = sizeof client_buf;
     cfg->alpn_protocols = alpn;
@@ -390,6 +391,10 @@ static size_t handshake_messages(void) {
 #if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
 #include "quic_loop_widemul.h"
 #endif
+// So do the host object's rows of ch_cfg.cpu.
+#if defined(CH_CPU_RUNTIME) && defined(CH_TRUST_WEBPKI)
+#include "quic_loop_cpu.h"
+#endif
 
 int main(int argc, char **argv) {
 #ifdef CH_AES_RUNTIME
@@ -423,6 +428,9 @@ int main(int argc, char **argv) {
 #endif
 #if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
     test_quic_widemul();
+#endif
+#if defined(CH_CPU_RUNTIME) && defined(CH_TRUST_WEBPKI)
+    test_quic_cpu_values();
 #endif
     if (failures == 0) {
         (void)printf("quic_loop: a QUIC client resumed a ticket from this tree's server with no"

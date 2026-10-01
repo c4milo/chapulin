@@ -1,5 +1,5 @@
 invariant: INV-36
-file: chapulin.zig
+file: chapulin_ticket.zig
 catches: test/zig-build-check.sh
 reason: Ticket.fromOnTicket zeroes the ticket's binding when it copies what
   on_ticket handed over, so a TRUST=webpki ticket no longer names the

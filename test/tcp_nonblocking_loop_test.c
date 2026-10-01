@@ -63,6 +63,7 @@
 #include "rsa_sign_vectors.h"
 #include "srv_tcp_nonblocking.h"
 #include "tcp_nonblocking.h"
+#include "test_cpu.h"
 #include "test_widemul.h"
 #include "tls.h"
 
@@ -250,7 +251,7 @@ static void check_logs_agree(void) {
 // slot, so the unprovisioned one would make the server decline the only
 // scheme the client offers.
 static void server_config(ch_cfg *cfg) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = srv_buf;
     cfg->buf_len = sizeof srv_buf;
     cfg->send = never_send;
@@ -276,7 +277,7 @@ static void server_config(ch_cfg *cfg) {
 }
 
 static void client_config(ch_cfg *cfg) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     cfg->buf = cli_buf;
     cfg->buf_len = sizeof cli_buf;
     cfg->send = never_send;
@@ -387,6 +388,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #include "tcp_nonblocking_failure_alert_tests.h"
 #include "tcp_nonblocking_frame_tests.h"
 #include "tcp_nonblocking_group_tests.h"
+#include "tcp_nonblocking_loop_cpu.h"
 #include "tcp_nonblocking_loop_widemul.h"
 #include "tcp_nonblocking_read_tests.h"
 #include "tcp_nonblocking_record_end_tests.h"
@@ -475,6 +477,7 @@ int main(void) {
     test_session();
 #endif
     test_widemul_answers();
+    test_cpu_values_at_init();
 
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"

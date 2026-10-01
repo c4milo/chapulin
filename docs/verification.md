@@ -2700,6 +2700,28 @@ it; the 47 `inv16-` violations of decision 87 are those mutants. The
 counts say which copy ran, not what the native multiply costs in time:
 that is the caller's answer, which nothing here can check.
 
+### The host object's description of the CPU
+
+On arm64 and x86-64 a `TRUST=webpki` client, `ROLE=server` and
+`ROLE=both` build a host object, `-DCH_CPU_RUNTIME`, whose sessions take
+the caller's description of its CPU in `ch_cfg.cpu` (decision 89). No
+harness compiles the define, and under it no path reads a bit yet: every
+harness preprocesses to the text it had before the change, so no verdict
+moved. What no proof covers is the rule every init call and
+`ch_srv_check` apply to the field, `cpu_bits_ok`. Tests hold it:
+
+- `bin/tcp_blocking_loop_host`, `bin/tcp_nonblocking_loop_host`,
+  `bin/quic_loop_host` and `bin/webpki_session_host`, in `make check`,
+  compile their loop or session as a host object and run every case with
+  both ends' fields set. Their rows refuse 0, every defined bit but
+  `CH_CPU_PROBED`, a bit no architecture defines and, on arm64, each
+  x86-64 bit, at every init call and `ch_srv_check`, and take the probe's
+  bit alone and every bit the architecture defines.
+- `test/host-builds.sh` holds the host test in `cpu_cfg.h`, the Makefile
+  and `build.zig` against this host's compiler and the pinned clang's
+  cross targets, and `lint-trust-separation` holds which products build
+  the host object.
+
 ### The subjectAltName walk against a full-length hostname
 
 `webpki_name` proves the `TRUST=webpki` per-entry dNSName compare with
