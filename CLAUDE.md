@@ -103,7 +103,8 @@ Home: github.com/c4milo.
   raw or ca resuming hello offers the ticket alone and fails a decline
   closed.
 - One concern per file pair, dependencies pointing down only:
-  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
+  `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
+  compiler cannot remove) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
   them test-only) ←
@@ -212,7 +213,10 @@ Home: github.com/c4milo.
   neither exports nor imports (INV-36).
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
-  through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
+  through `ct_memeq`, and wipes through `ct_wipe`, which calls `memset`
+  through a volatile function pointer so the compiler cannot remove it,
+  while the proofs read a byte-loop stub in `proof/` with the same
+  contract (docs/decisions.md 91); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
   poly1305's final reduction), never an `if`. A core with no hardware
   multiplier turns `*` into a runtime-library call that branches on its
