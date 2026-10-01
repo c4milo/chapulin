@@ -587,6 +587,118 @@ writes `bench/results-record-linux-x86_64-gcc.csv` and its clang twin, and
 `tools/bench_record.py` then takes the two files as columns. An emulated x86-64, such as an
 OrbStack amd64 container, runs translated code, so its times say nothing about those arms.
 
+### Where a server handshake's instructions go
+
+[#188](https://github.com/c4milo/chapulin/issues/188) measured colibri's server at 55.4 M user
+instructions per TLS connection on a Neoverse-N2, where h2o and nginx over OpenSSL 3.0.13 took 2.1
+and 2.4 M. This section counts the server's side of that connection inside chapulin and splits it
+into stages. The connection is the one h2load makes in colibri's bench: TLS 1.3 with
+TLS_AES_256_GCM_SHA384 over X25519, a P-256 ECDSA leaf and the P-256 root that signed it, as in
+colibri's test identity (here 444 and 387 bytes of DER), ALPN h2 and no ticket key. After the
+handshake the client sends one 100-byte request record, the server answers with one 256-byte
+record, and each side sends close_notify.
+
+The figures were taken this way:
+
+- The object is the issue's: c798fb8 with `RAND=session TRANSPORT=tcp-nonblocking ROLE=both
+  TRUST=webpki EXPORTER=on SUITE=aesgcm AES=runtime CHACHA=vector TX_RECORD=16384 KEYLOG=off`
+  and `CH_NATIVE_AES`, built by `build.zig` with Zig 0.16.0 for aarch64-linux-gnu. colibri builds
+  for the CPU it runs on, so the N2 columns pass `-Dcpu=neoverse_n2`, and one column builds for
+  the base armv8-a instead.
+- A test server calls the object as colibri's server does (`ch_srv_record_init`,
+  `ch_srv_record_in`, `ch_read`, `ch_write`, `ch_close`). An OpenSSL 3.0.13 client offers what
+  h2load 1.59.0 offers there: the one suite, h2load's default groups X25519, P-256, P-384 and
+  P-521 with an X25519 share, and ALPN h2. Both run in an arm64 Ubuntu 24.04 container in OrbStack
+  on an Apple M1 Pro.
+- QEMU 8.2.2 in user mode, with `-cpu neoverse-n2`, runs the server one instruction per
+  translation block, as `bench/insn-*.sh` count. A scratch tool rebuilds the call stack from that
+  trace and the binary's `bl` and `blr` addresses, and charges each instruction to the outermost
+  crypto function it runs under, and inside `p256_sign` to the part of the signature it runs in:
+  the nonce generator, `p256_point_base_mul`, `p256_point_affine_x` or the scalar arithmetic.
+  Valgrind 3.22's callgrind, which cannot run the N2 build's SVE instructions, counted the base
+  build's handshake at 42,370,882 instructions, and QEMU at 42,370,683.
+- Each figure counts the user-mode instructions of the server process in the second connection
+  of a run. The first takes about 3,000 more, and under callgrind a third matched the second to
+  within 100.
+- The OpenSSL column serves the same connection with OpenSSL 3.0.13, the same chain and key and
+  no session tickets, under callgrind. Its two key rows come from separate calls of OpenSSL's
+  public API, 20 of each: `EVP_PKEY_keygen` and `EVP_PKEY_derive` for X25519, and
+  `EVP_PKEY_sign` over a SHA-256 digest for P-256. Under valgrind, OpenSSL finds no SHA-512
+  instructions, so its SHA-384 runs the scalar code, 0.27 M of its handshake. A Neoverse-N2 has
+  those instructions, and OpenSSL uses them there.
+- No script in `bench/` writes these figures yet, so `make lint-bench-numbers` checks none of
+  them.
+
+| server side of one connection, M instructions | c798fb8 for Neoverse-N2 | for the base armv8-a | N2, `WIDEMUL=native` | N2, `WIDEMUL=native X25519=wide` | base, Zig's ReleaseSafe flags | OpenSSL 3.0.13 |
+| --- | --- | --- | --- | --- | --- | --- |
+| X25519 key share: key generation and shared secret | 33.83 | 25.48 | 4.32 | 0.79 | 67.42 | 0.89 |
+| CertificateVerify: P-256 ECDSA signature | 16.39 | 16.21 | 5.51 | 5.51 | 24.17 | 0.21 |
+| of which k·G, the 256-round ladder | 14.45 | 14.26 | 4.82 | 4.82 | 21.43 | — |
+| of which the two inversions, the scalar arithmetic and the DER | 1.75 | 1.74 | 0.50 | 0.50 | 2.43 | — |
+| of which the RFC 6979 nonce | 0.19 | 0.19 | 0.19 | 0.19 | 0.29 | — |
+| transcript hashes and key schedule | 0.59 | 0.62 | 0.59 | 0.59 | 0.88 | — |
+| certificate, other messages and their records | 0.06 | 0.07 | 0.06 | 0.06 | 0.18 | — |
+| the handshake | 50.87 | 42.37 | 10.48 | 6.95 | 92.65 | 2.10 |
+| one request's records and the two close_notify | 0.020 | 0.025 | 0.020 | 0.020 | 0.075 | 0.045 |
+
+What the numbers show:
+
+- Two public-key operations make up 98% to 99% of the handshake on the decomposed multiply and 91%
+  to 94% on the native one. In the issue's object X25519 takes 66.5% and the signature 32.2%.
+  Each X25519 scalar multiplication costs half of its row, because key generation runs the same
+  ladder as the shared secret.
+- The multiply decomposition is most of the gap. `WIDEMUL=native` alone takes the N2 handshake
+  from 50.87 M to 10.48 M, and `X25519=wide` then takes it to 6.95 M. X25519 then costs 0.79 M,
+  against OpenSSL's 0.89 M. In 0.2.0 a host session gets both from `CH_CPU_CONSTANT_TIME_MULTIPLY`
+  (decision 89). At a104a3e the default object takes 42.37 M on the base armv8-a, as at c798fb8,
+  and a `WIDEMUL=runtime` object answered `CH_WIDEMUL_CONSTANT_TIME` takes 12.08 M, 0.02 M above
+  `WIDEMUL=native`'s 12.07 M.
+- The CPU target costs instructions only on the decomposed multiply. Built for `neoverse_n2`,
+  `x25519.c`'s `mul` holds SVE instructions that clang 21 emits for that CPU, and it runs 5,452
+  instructions a call where the base build's runs 4,079: 8.39 M more over the 6,114 calls of a
+  handshake. On the native multiply the N2 build is the cheaper one: X25519 costs 4.32 M against
+  the base build's 5.86 M.
+- The signature remains. It costs 5.51 M on the native multiply, 26 times OpenSSL's 0.21 M.
+  `p256_point_base_mul` runs a 256-round Montgomery ladder with two complete additions a round
+  on 32-bit limbs, and keeps no table of multiples of G (`p256_point.h`). OpenSSL 3.0's arm64
+  build signs with the `ecp_nistz256` assembly, which reads a precomputed table of multiples of G
+  and computes on 64-bit limbs.
+- The rest is small. The transcript and key schedule take 0.59 M: HKDF and its HMAC-SHA384 take
+  0.44 M, the SHA-384 transcript 0.07 M, and the SHA-256 transcript, which `transcript.h` runs
+  beside SHA-384, 0.08 M. Messages and their records take 0.06 M.
+- colibri's ReleaseSafe does not change the object. `build.zig` compiles it at ReleaseFast with
+  sanitize_c, the stack protector and the stack check off, whatever mode the dependent builds in,
+  and `--verbose-cc` shows `-O2` with no `-fsanitize`. Zig 0.16 compiles C for ReleaseSafe with
+  `-O2 -fsanitize=undefined -fsanitize-trap=undefined -fstack-protector-strong
+  -D_FORTIFY_SOURCE=2`, and the same sources with those flags take 2.2 times the instructions.
+- This count accounts for 50.89 M of the 55.41 M user instructions per connection the issue
+  measured. The other 4.5 M are outside it: colibri's own code, which this harness does not run,
+  and any difference between the CPU features Zig detects on the runner and its `neoverse_n2`
+  model. colibri's cleartext connection costs 0.22 M.
+
+The order of the work, by the instructions each item removes from a handshake:
+
+1. A host session that states its multiply, in 0.2.0, removes 43.9 M of the N2 object's
+   50.87 M. That statement is the caller's (decision 89), so this item is colibri's.
+2. k·G from a precomputed table of multiples of G, read by a full scan with mask selection, in
+   place of the ladder. A comb over 64 four-bit windows runs about an eighth of the ladder's 512
+   additions, so it is expected to remove most of the ladder's 4.82 M on the native multiply and
+   of its 14.45 M on the decomposed one. Eight multiples for each of 64 four-bit windows take 32 KiB of affine
+   points, so the table belongs in the host object (decision 89). It reverses the "no
+   precomputed table" statement in `p256_point.h` and `p256_sign.h`, so it needs a ruling first.
+   It needs a CBMC harness for the lookup, and a test that recomputes every table entry from G.
+3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519,
+   where the wide field took 0.39 M a scalar multiplication against 2.16 M. On P-256 it is
+   expected to cut the signature's 0.50 M of inversions and scalar arithmetic and whatever the
+   table leaves of k·G by a similar factor. It needs a harness and a spec over 64-bit limbs.
+4. SHA-256 on the ARMv8 and x86-64 SHA instructions and SHA-512 on the ARMv8.2 ones, behind new
+   `ch_cfg.cpu` bits. Hashing takes 0.78 M of the 6.95 M: the transcript and key schedule's
+   0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the intrinsics,
+   so equivalence tests against the portable code hold them, as they hold `AES=hw`.
+5. X25519 key generation from a table of multiples of the base point, as BoringSSL computes it,
+   which bounds the gain at the key generation's 0.39 M. It needs the same ruling as item 2.
+6. A server whose suite hashes with SHA-384 stops the SHA-256 transcript, 0.08 M.
+
 ## The method behind these numbers
 
 Every performance change follows pepegrillo's
