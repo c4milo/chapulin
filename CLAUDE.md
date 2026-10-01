@@ -224,13 +224,24 @@ Home: github.com/c4milo.
   and firmware does only with a vendor statement (`make lib
   WIDEMUL=native` puts it in the packaged object), and
   `lint-wide-multiply` holds the count at its recorded ceiling per
-  file and compiler, and beside it the conditional-branch count of
+  file and compiler, and a native copy's count at that copy's own
+  ceiling, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
   shows as a count that grows. The statement covers every widening
   multiply the object runs, scalar or vector. Under CHACHA=vector it
   also turns on `poly1305_vector.c`, whose lanes multiply with NEON's
   UMULL and UMLAL or SSE2's PMULUDQ; without it, a CHACHA=vector object
   runs `poly1305.c`'s loop and its decomposition (docs/decisions.md 83).
+  `make lib WIDEMUL=runtime` holds both multiplies. Each of the seven
+  files built on it compiles once under its own names on the
+  decomposition and again as `<file>_native.c` under
+  `widemul_native.h`'s renames, and `widemul.h` runs the native copy for
+  a session whose `ch_cfg.widemul` is `CH_WIDEMUL_CONSTANT_TIME`: one
+  branch per operation and no function pointer. The caller owns
+  PSTATE.DIT and DOITM, and chapulin probes nothing. Every init and
+  `ch_srv_check` refuse an unset answer, and `ct.h` refuses
+  `CH_NATIVE_WIDEMUL` or `X25519=wide` beside the value, and a native
+  copy outside it (docs/decisions.md 87).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way. The Makefile X25519 variable picks the x25519 field:
   `portable`, the default, is the 16-limb field every core runs, and
