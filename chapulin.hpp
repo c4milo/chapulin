@@ -132,6 +132,19 @@ enum class AesInstructions : uint8_t {
 };
 #endif
 
+#ifdef CH_WIDEMUL_RUNTIME
+// Whether the widening multiply runs in constant time on this CPU, in the
+// mode your thread runs in, in a WIDEMUL=runtime build: the value
+// Config::widemul() writes into ch_cfg.widemul. The mode is yours to set,
+// DIT on arm64 and DOITM's policy on x86-64 (cpu_cfg.h). chapulin writes
+// no CPU state and probes nothing, and every init refuses a Config that
+// states neither (docs/decisions.md 87).
+enum class Widemul : uint8_t {
+    constant_time = CH_WIDEMUL_CONSTANT_TIME,
+    not_stated = CH_WIDEMUL_NOT_STATED,
+};
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A QUIC Version field value (quic_cfg.h): the original version
 // Config::original_version() names and the version each packet call and
@@ -342,6 +355,15 @@ class Config {
     // (ch_cfg.aes_instructions). Every init refuses a Config without one.
     Config &aes_instructions(AesInstructions answer) {
         cfg_.aes_instructions = static_cast<uint8_t>(answer);
+        return *this;
+    }
+#endif
+
+#ifdef CH_WIDEMUL_RUNTIME
+    // Your answer about the widening multiply, WIDEMUL=runtime builds only
+    // (ch_cfg.widemul). Every init refuses a Config without one.
+    Config &widemul(Widemul answer) {
+        cfg_.widemul = static_cast<uint8_t>(answer);
         return *this;
     }
 #endif

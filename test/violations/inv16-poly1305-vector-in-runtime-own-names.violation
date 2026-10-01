@@ -1,0 +1,13 @@
+invariant: INV-16
+file: poly1305_vector.h
+catches: test/widemul-builds.sh
+reason: poly1305_vector.h turns the vector Poly1305 on in every file of a
+  CHACHA=vector WIDEMUL=runtime object, so poly1305.c under its own
+  names, which the answer CH_WIDEMUL_NOT_STATED runs, multiplies on
+  UMULL, UMLAL or PMULUDQ. The tags are the same. test/widemul-builds.sh
+  requires poly1305.c in that object to call neither vector name.
+
+--- old
+#if defined(CH_CHACHA_VECTOR) && defined(CH_WIDEMUL_NATIVE)
+--- new
+#if defined(CH_CHACHA_VECTOR) && (defined(CH_WIDEMUL_NATIVE) || defined(CH_WIDEMUL_RUNTIME))

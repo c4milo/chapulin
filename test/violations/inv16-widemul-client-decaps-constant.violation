@@ -1,0 +1,13 @@
+invariant: INV-16
+file: handshake_flight.c
+catches: quic_loop_widemul
+reason: the client's hybrid secret, ML-KEM decapsulation and the x25519 half,
+  runs under CH_WIDEMUL_NOT_STATED whatever it answered. The secret is
+  the same. test/quic_loop_widemul.h runs the webpki client, which
+  selects the hybrid, and requires a client that answers
+  CH_WIDEMUL_CONSTANT_TIME to call no file under its own names.
+
+--- old
+    uint8_t widemul = widemul_answer(&h->t->cfg);
+--- new
+    uint8_t widemul = CH_WIDEMUL_NOT_STATED;

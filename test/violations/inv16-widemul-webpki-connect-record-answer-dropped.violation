@@ -1,0 +1,17 @@
+invariant: INV-16
+file: tls.c
+catches: webpki_session_widemul
+reason: the webpki ch_connect stops writing the session's answer into its record
+  directions, so each record it seals or opens runs Poly1305 under 0, the
+  decomposition, whatever the caller answered. The key exchange and the
+  signature still follow the answer, so only a count of the record's
+  copy notices: test/webpki_session_widemul.h requires an end that answers
+  CH_WIDEMUL_CONSTANT_TIME to call no file under its own names.
+
+--- old
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(t);
+#endif
+    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+--- new
+    webpki_ticket_config_hash(cfg, t->ticket_config_hash);

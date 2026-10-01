@@ -1,0 +1,12 @@
+invariant: INV-16
+file: session.h
+catches: tcp_nonblocking_loop_widemul
+reason: tlsi_record_widemul writes the answer into the write direction alone,
+  so every record a session opens runs Poly1305 under 0, the
+  decomposition, whatever it answered. test/tcp_nonblocking_loop_widemul.h
+  counts each end's calls around its own calls and requires an end that
+  answers CH_WIDEMUL_CONSTANT_TIME to call no file under its own names.
+
+--- old
+    t->rd.widemul = t->cfg.widemul;
+--- new

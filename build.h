@@ -72,6 +72,9 @@
 //   CH_AES_RUNTIME         ch_cfg, and with it ch_tls, ch_record and
 //                          ch_quic, whose ch_cfg copy holds the caller's
 //                          aes_instructions
+//   CH_WIDEMUL_RUNTIME     ch_cfg, and with it ch_tls, ch_record and
+//                          ch_quic, whose ch_cfg copy holds the caller's
+//                          widemul, and whose record directions record it
 //
 // Left out, because no public layout or bound reads them: RAND=extern and
 // RAND=drbg, CH_ROLE_BOTH, the other AES implementations, X25519=wide,
@@ -82,7 +85,8 @@
 // CH_TRUST_WEBPKI and CH_KEX_PQ, so a bit for either would repeat those
 // two. docs/decisions.md 56 gives the reason for each, entry 77
 // the reason RAND=session takes a bit where the other two patterns take
-// none, and entry 81 the same reason for AES=runtime.
+// none, and entries 81 and 87 the same reason for AES=runtime and
+// WIDEMUL=runtime.
 #define CH_BUILD_TRUST_CA 0x001U
 #define CH_BUILD_TRUST_WEBPKI 0x002U
 #define CH_BUILD_PIN_ECDSA 0x004U
@@ -95,6 +99,7 @@
 #define CH_BUILD_KEYLOG 0x200U
 #define CH_BUILD_RAND_SESSION 0x400U
 #define CH_BUILD_AES_RUNTIME 0x800U
+#define CH_BUILD_WIDEMUL_RUNTIME 0x1000U
 
 // Each CH_BUILD_IF_ value is its bit when this translation unit defines
 // the define it names, and 0 when it does not. CH_BUILD_AXES is their
@@ -159,12 +164,17 @@
 #else
 #define CH_BUILD_IF_AES_RUNTIME 0U
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+#define CH_BUILD_IF_WIDEMUL_RUNTIME CH_BUILD_WIDEMUL_RUNTIME
+#else
+#define CH_BUILD_IF_WIDEMUL_RUNTIME 0U
+#endif
 #define CH_BUILD_AXES                                                                              \
     (CH_BUILD_IF_TRUST_CA | CH_BUILD_IF_TRUST_WEBPKI | CH_BUILD_IF_PIN_ECDSA |                     \
      CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING |                                 \
      CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
      CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG | CH_BUILD_IF_RAND_SESSION |                        \
-     CH_BUILD_IF_AES_RUNTIME)
+     CH_BUILD_IF_AES_RUNTIME | CH_BUILD_IF_WIDEMUL_RUNTIME)
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role

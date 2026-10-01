@@ -45,6 +45,16 @@ typedef struct {
     // this header (INV-26).
     uint8_t key[AEAD_KEY];
     uint8_t iv[AEAD_NONCE];
+#ifdef CH_WIDEMUL_RUNTIME
+    // The answer ChaCha20-Poly1305's Poly1305 runs under (widemul.h): the
+    // session's ch_cfg.widemul, which each init call writes into both of
+    // the session's directions once it has accepted the configuration.
+    // Keying and KeyUpdate leave it, and a wiped direction reads 0, which
+    // takes the decomposition. An object that holds one multiply needs no
+    // such field and does not declare it. It sits in the four bytes that
+    // seq's alignment leaves after iv, so it adds no byte to a direction.
+    uint8_t widemul;
+#endif
     uint64_t seq;
 #ifdef CH_SUITE_AES_GCM
     // Which AEAD this direction runs, as the suite's code point. A build

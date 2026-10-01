@@ -93,7 +93,7 @@ static void run_x25519(void) {
         const uint8_t *pub = p + 32;
         const uint8_t *shared = p + 64;
         uint8_t out[32];
-        int ok = x25519(out, priv, pub);
+        int ok = widemul_x25519(TEST_WIDEMUL, out, priv, pub);
         switch (wp_x25519[i].kind) {
         case 0: // valid: must accept and match
             if (!ok || memcmp(out, shared, 32) != 0) {
@@ -367,7 +367,7 @@ static void run_rsa_sign(void) {
         memcpy(key.n, p, n_len);
         memcpy(key.d, p + n_len, n_len);
         key.n_len = n_len;
-        rsa_sp1(&key, p + 2 * n_len, sig);
+        widemul_rsa_sp1(TEST_WIDEMUL, &key, p + 2 * n_len, sig);
         if (memcmp(sig, p + 3 * n_len, n_len) != 0) {
             fail("rsa-sign", wp_rsa_sign[i].tc, "signature differs from the vector");
         }

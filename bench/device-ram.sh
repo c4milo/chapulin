@@ -9,7 +9,8 @@
 # modules compile once more with -DCH_NATIVE_WIDEMUL, and their sum is
 # the `total (CH_NATIVE_WIDEMUL)` row: its distance from `total` is the
 # flash the multiply decomposition takes, the figure docs/performance.md
-# states.
+# states. The `total (WIDEMUL=runtime)` row sums the same build holding
+# both multiplies, the native copies among its modules.
 # Writes bench/results-device.csv. Fails without the pinned clang.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -152,6 +153,19 @@ for src in $SRCS; do
     check_su "$TMP/dev-native/$src.o" '^\.text'
     check_su "$TMP/host-native/$src.o" '^__text'
 done
+# The default build on WIDEMUL=runtime, the object that holds both
+# multiplies (docs/decisions.md 87): its modules under
+# -DCH_WIDEMUL_RUNTIME, the native copies among them, for the
+# `total (WIDEMUL=runtime)` row alone.
+RUNTIME_SRCS=$(make -s --no-print-directory -C "$ROOT" print-lib-srcs RAND=extern WIDEMUL=runtime \
+      | tr ' ' '\n' | sed 's/\.c$//' | tr '\n' ' ')
+mkdir "$TMP/dev-runtime" "$TMP/host-runtime"
+for src in $RUNTIME_SRCS; do
+    (cd "$TMP/dev-runtime" && $DEV -DCH_WIDEMUL_RUNTIME "$ROOT/$src.c" -o "$src.o")
+    (cd "$TMP/host-runtime" && $HOSTCC -DCH_WIDEMUL_RUNTIME "$ROOT/$src.c" -o "$src.o")
+    check_su "$TMP/dev-runtime/$src.o" '^\.text'
+    check_su "$TMP/host-runtime/$src.o" '^__text'
+done
 
 # The rows collect under $TMP and move over the committed file only
 # once every row is written, so a failure between here and the end
@@ -195,8 +209,9 @@ emit_row() {
     echo "$2,$TEXT,$RO,$((TEXT + RO)),$FRAME,$FN,$HOSTF,$HFRAME" >> "$OUT"
 }
 
-# Sums the default build's modules from the objects under $TMP/$1
-# (device) and $TMP/$2 (host) and appends them as the row labelled $3.
+# Sums the modules $4 names, the default build's when it names none,
+# from the objects under $TMP/$1 (device) and $TMP/$2 (host) and appends
+# them as the row labelled $3.
 emit_total() {
     T_TEXT=0
     T_RO=0
@@ -204,7 +219,7 @@ emit_total() {
     T_FRAME=0
     T_FRAME_FN=""
     T_HFRAME=0
-    for src in $SRCS; do
+    for src in ${4:-$SRCS}; do
         measure_module "$src" "$1" "$2"
         T_TEXT=$((T_TEXT + TEXT))
         T_RO=$((T_RO + RO))
@@ -224,6 +239,9 @@ emit_total dev host total
 # renders the flash the decomposition takes as the difference between
 # the two total rows' mips_flash_B.
 emit_total dev-native host-native "total (CH_NATIVE_WIDEMUL)"
+# The same build holding both multiplies. Its distance from `total` is
+# the flash WIDEMUL=runtime adds: the native copies and the dispatch.
+emit_total dev-runtime host-runtime "total (WIDEMUL=runtime)" "$RUNTIME_SRCS"
 
 # Out-of-build modules, sized but outside the totals: what a TRUST=raw-ecdsa
 # build swaps in for rsa + rsa_mont.

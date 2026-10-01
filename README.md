@@ -22,7 +22,7 @@ protects you from the bad guys.
 | Cipher suites | `TLS_CHACHA20_POLY1305_SHA256`; `TLS_AES_128_GCM_SHA256` and `TLS_AES_256_GCM_SHA384` with `SUITE=aesgcm` |
 | Key exchange | x25519, the X25519MLKEM768 post-quantum hybrid, and secp256r1. A device build offers one group; web PKI clients and servers hold all three. |
 | Server authentication | Pre-shared key, pinned public key, pinned CA, or web PKI chain with optional SPKI pins |
-| Memory, default build | 3128 B static working set on a 32-bit device, receive buffer included; 4992 B peak stack, measured on arm64; 28.0 kB of flash |
+| Memory, default build | 3128 B static working set on a 32-bit device, receive buffer included; 4992 B peak stack, measured on arm64; 30.2 kB of flash |
 | Dependencies | C11 and libc. No `malloc` anywhere. |
 | License | Apache-2.0 |
 
@@ -127,7 +127,7 @@ first value listed is the default.
 | `EXPORTER` | `off`, `on` | Adds `ch_export`, the TLS exporter |
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |
 | `X25519` | `portable`, `wide` | The x25519 field: 16-bit limbs for any core, or 51-bit limbs for 64-bit hosts |
-| `WIDEMUL` | `decomposed`, `native` | Whether wide multiplies use the CPU instruction, which you must know runs in constant time |
+| `WIDEMUL` | `decomposed`, `native`, `runtime` | Whether wide multiplies use the CPU instruction, which you must know runs in constant time, or both, with each session's configuration naming one |
 
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.

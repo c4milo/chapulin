@@ -391,6 +391,12 @@ static ch_cfg valid_cfg(mock_server *s) {
     }
     fill_alpn();
     memset(s, 0, sizeof *s);
+#ifdef CH_WIDEMUL_RUNTIME
+    // The mock's records run on the copy TEST_WIDEMUL names, as its key
+    // exchange does (test/webpki_session_widemul.h).
+    s->wr.widemul = TEST_WIDEMUL;
+    s->rd.widemul = TEST_WIDEMUL;
+#endif
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -403,6 +409,7 @@ static ch_cfg valid_cfg(mock_server *s) {
     cfg.hostname_len = sizeof host;
     cfg.now_seconds = 1789000000U;
     SESSION_AES_ANSWER(cfg);
+    TEST_WIDEMUL_CFG(cfg);
     return cfg;
 }
 
@@ -431,6 +438,9 @@ static int sends_client_hello(const ch_cfg *cfg) {
 #include "webpki_pins_cases.h"
 #include "webpki_session_cases.h"
 #include "webpki_suite_cases.h"
+#ifdef CH_WIDEMUL_RUNTIME
+#include "webpki_session_widemul.h"
+#endif
 
 int main(void) {
     test_webpki_cfg_anchors();
@@ -470,6 +480,9 @@ int main(void) {
 #ifdef CH_AES_RUNTIME
     test_webpki_runtime_answers();
     test_webpki_runtime_without_aes();
+#endif
+#ifdef CH_WIDEMUL_RUNTIME
+    test_webpki_widemul_answers();
 #endif
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

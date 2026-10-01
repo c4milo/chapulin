@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv.c
+catches: tcp_blocking_loop_widemul
+reason: ch_srv_check stops asking for the caller's answer, and signs with each
+  identity under whatever byte the field holds, so a boot check passes a
+  configuration every init call refuses. test/tcp_blocking_loop_widemul.h
+  requires ch_srv_check to refuse 0 and 3 and to take each answer.
+
+--- old
+    // Both checks sign, under the multiply the caller's answer names.
+    if (!widemul_answer_ok(cfg)) {
+        return CH_EINVAL;
+    }
+--- new
+    // Both checks sign, under the multiply the caller's answer names.

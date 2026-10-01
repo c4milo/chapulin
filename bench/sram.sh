@@ -74,13 +74,20 @@ SESSION_SERVER_RUNTIME=$("$TMP/sz_server_runtime" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $RUNTIME_DEFS -I. -o "$TMP/sz_webpki_runtime" "$TMP/sz.c"
 SESSION_WEBPKI_RUNTIME=$("$TMP/sz_webpki_runtime" | awk '{print $2}')
+# The default build on WIDEMUL=runtime, whose ch_cfg holds the caller's
+# answer about the widening multiply and whose two record directions each
+# hold a copy of it (docs/decisions.md 87). The value is for hosts, so
+# these rows are host figures too.
+cc -std=c11 -DCH_RAND_EXTERN -DCH_WIDEMUL_RUNTIME -I. -o "$TMP/sz_widemul_runtime" "$TMP/sz.c"
+SESSION_WIDEMUL_RUNTIME=$("$TMP/sz_widemul_runtime" | awk '{print $2}')
 # This runs stack.py on arm64, where cc defines __ARM_FEATURE_AES by
 # default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
 # QUIC key set records its suite and its section 6.6 count. The same object
-# on AES=runtime comes third. The report prints all three;
-# docs/performance.md's table does not carry them.
+# on AES=runtime comes third, and fourth that object holding both widening
+# multiplies too. The report prints all four; docs/performance.md's table
+# does not carry them.
 cat > "$TMP/szq.c" <<'EOF'
 #include <stdio.h>
 #include "quic.h"
@@ -99,6 +106,9 @@ QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $RUNTIME_DEFS -I. -o "$TMP/szq_runtime" "$TMP/szq.c"
 QUIC_SESSION_RUNTIME=$("$TMP/szq_runtime" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $RUNTIME_DEFS -DCH_WIDEMUL_RUNTIME -I. -o "$TMP/szq_widemul" "$TMP/szq.c"
+QUIC_SESSION_WIDEMUL=$("$TMP/szq_widemul" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
@@ -157,6 +167,9 @@ echo "static working set:      $((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES)) B 
 echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking): ${QUIC_SESSION} B"
 echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
 echo "ch_quic (the same, SUITE=aesgcm AES=runtime): ${QUIC_SESSION_RUNTIME} B"
+echo "ch_quic (the same, SUITE=aesgcm AES=runtime WIDEMUL=runtime): ${QUIC_SESSION_WIDEMUL} B"
+echo "session struct (WIDEMUL=runtime): ${SESSION_WIDEMUL_RUNTIME} B"
+echo "static working set:      $((SESSION_WIDEMUL_RUNTIME + RXBUF)) B (WIDEMUL=runtime, ${RXBUF} B receive buffer)"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints. STACK_MAKE names each build by its make
@@ -265,6 +278,8 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_server_aes_runtime_arm64 "$((SESSION_SERVER_RUNTIME + RXBUF))"
     row session_struct_webpki_aes_runtime_arm64 "$SESSION_WEBPKI_RUNTIME"
     row static_working_set_webpki_aes_runtime_arm64 "$((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES))"
+    row session_struct_widemul_runtime_arm64 "$SESSION_WIDEMUL_RUNTIME"
+    row static_working_set_widemul_runtime_arm64 "$((SESSION_WIDEMUL_RUNTIME + RXBUF))"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

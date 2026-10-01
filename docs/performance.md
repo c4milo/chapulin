@@ -37,6 +37,8 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `ROLE=server SUITE=aesgcm AES=runtime`** (2048 buffer) | **4328** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm AES=runtime` | 3376 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its floor) | **15714** | — |
+| `ch_tls` under `WIDEMUL=runtime` | 1168 | — |
+| **total static working set, `WIDEMUL=runtime`** (2048 buffer) | **3216** | — |
 
 ### Peak stack
 
@@ -149,6 +151,17 @@ the script prints, is 8 bytes larger too. The value runs on arm64 and
 x86-64 alone, so these rows are host figures as well. `bench/sram.sh` does
 not measure the stack of an `AES=runtime` build.
 
+**`WIDEMUL=runtime`.** The default build on `WIDEMUL=runtime` holds one more
+byte in `ch_cfg`, `widemul`, the caller's answer about the widening
+multiply ([`docs/decisions.md`](decisions.md) 87). With its alignment the
+byte adds 8 bytes to the session struct. Each record direction holds a copy
+of the answer in bytes the alignment of its sequence number left unused, so
+the directions do not grow. In the QUIC object colibri links on
+`AES=runtime`, the byte sits beside `aes_instructions`, and `ch_quic`, which
+the script prints, does not grow either. The value is for hosts, so these
+rows are host figures too, and `bench/sram.sh` does not measure the stack
+of a `WIDEMUL=runtime` build.
+
 ### The receive buffer
 
 You size the receive buffer, and the client advertises that size as its
@@ -258,15 +271,21 @@ not multiply and the verifies read only public bytes.
 
 ### Flash
 
-Flash is 28.0 kB for the default build (`.text` + `.rodata`, `-Os`),
+Flash is 30.2 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](../bench/results-device.csv) sizes the same
 modules over the native multiply.
 
 The `TRUST=raw-ecdsa` build trades 2.2 kB of RSA for 5.8 kB of P-256
-and totals 31.5 kB. Its verify costs 4.0 times the default's on
+and totals 33.7 kB. Its verify costs 4.0 times the default's on
 mips32r2, so the 64-byte pin costs both flash and handshake time.
+
+On `WIDEMUL=runtime` the default build totals 35.9 kB, 5.7 kB more: the
+native copies of `poly1305.c` and `x25519.c` beside the files under their
+own names, and the dispatch between them
+([`docs/decisions.md`](decisions.md) 87). The `total (WIDEMUL=runtime)`
+row of the same file sizes that build.
 
 ### The hybrid key exchange
 

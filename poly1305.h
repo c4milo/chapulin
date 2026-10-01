@@ -23,4 +23,12 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n);
 // Writes the tag and wipes the context.
 void poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]);
 
+#ifdef CH_WIDEMUL_RUNTIME
+// The native copies of the entries above that are built on the widening multiply,
+// which a WIDEMUL=runtime object holds beside them (poly1305_native.c, widemul_native.h)
+// and widemul.h's dispatchers call for CH_WIDEMUL_CONSTANT_TIME.
+void poly1305_update_native(poly1305 *p, const uint8_t *in, size_t n);
+void poly1305_final_native(poly1305 *p, uint8_t tag[POLY1305_TAG]);
+#endif
+
 #endif

@@ -29,7 +29,7 @@ const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
 const Chacha = enum { portable, vector };
-const Widemul = enum { decomposed, native };
+const Widemul = enum { decomposed, native, runtime };
 const Setting = enum { on, off };
 
 /// The build variables, with the Makefile's defaults. rand and kex have no
@@ -108,6 +108,9 @@ const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scala
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
+/// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
+/// WIDEMUL=runtime object compiles a second time, as <file>_native.c.
+const widemul_copied = [_][]const u8{ "poly1305.c", "x25519.c", "mlkem_poly.c", "p256_field.c", "p256_scalar.c", "rsa_sign.c" };
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.
 const certificate_srcs = [_][]const u8{ "pem.c", "x509.c", "x509_der.c", "x509_ca.c" };
@@ -360,6 +363,9 @@ fn refuseUnbuildable(config: Config) void {
     if (config.aes == .runtime and config.transport != .@"quic-nonblocking" and config.suite != .aesgcm) {
         fatal("AES=runtime chooses an AES this object does not carry: use TRANSPORT=quic-nonblocking or SUITE=aesgcm", .{});
     }
+    if (config.widemul == .runtime and config.x25519 == .wide) {
+        fatal("WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable", .{});
+    }
     if (config.tx_record) |text| {
         if (config.transport == .@"quic-nonblocking") {
             fatal("TX_RECORD={s} sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{text});
@@ -441,9 +447,18 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
     if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    // Both multiplies, and each session's answer picks one: the native copy
+    // of every file built on the multiply the object carries
+    // (docs/decisions.md 87).
+    if (config.widemul == .runtime) {
+        defs = concat(b, &.{ defs, &.{"-DCH_WIDEMUL_RUNTIME"} });
+        lib_srcs = concat(b, &.{ lib_srcs, nativeCopies(b, lib_srcs) });
+    }
     // The vector Poly1305 multiplies, so it joins the object only where the
-    // builder states the multiply's timing as well (docs/decisions.md 83).
+    // builder states the multiply's timing as well (docs/decisions.md 83),
+    // or as the native copy a session's answer picks.
     if (config.chacha == .vector and config.widemul == .native) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector.c"} });
+    if (config.chacha == .vector and config.widemul == .runtime) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
     if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });
@@ -666,6 +681,19 @@ fn without(b: *std.Build, list: Names, removed: Names) Names {
     var out = std.ArrayList([]const u8).initCapacity(b.allocator, list.len) catch @panic("OOM");
     for (list) |name| {
         if (!contains(removed, name)) out.appendAssumeCapacity(name);
+    }
+    return out.items;
+}
+
+/// $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),list)): the
+/// native copy of each file of list that widemul_copied names, in list's
+/// order.
+fn nativeCopies(b: *std.Build, list: Names) Names {
+    var out = std.ArrayList([]const u8).initCapacity(b.allocator, list.len) catch @panic("OOM");
+    for (list) |name| {
+        if (contains(&widemul_copied, name)) {
+            out.appendAssumeCapacity(b.fmt("{s}_native.c", .{name[0 .. name.len - 2]}));
+        }
     }
     return out.items;
 }

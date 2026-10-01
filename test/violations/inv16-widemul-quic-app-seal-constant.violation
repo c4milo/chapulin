@@ -1,0 +1,13 @@
+invariant: INV-16
+file: quic.c
+catches: quic_loop_widemul
+reason: a 1-RTT packet ch_quic_seal seals runs its Poly1305 under CH_WIDEMUL_NOT_STATED
+  whatever the session answered, so the answer picks nothing there. The
+  packet is the same. test/quic_loop_widemul.h seals and opens a packet
+  at each level each way and requires an end that answers
+  CH_WIDEMUL_CONSTANT_TIME to call no file under its own names.
+
+--- old
+        return quic_packet_seal(widemul_answer(&q->t.cfg), &q->app_tx, &q->app_hp_tx, level, pn,
+--- new
+        return quic_packet_seal(CH_WIDEMUL_NOT_STATED, &q->app_tx, &q->app_hp_tx, level, pn,

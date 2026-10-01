@@ -1,0 +1,13 @@
+invariant: INV-16
+file: ct.h
+catches: test/widemul-builds.sh
+reason: ct.h takes the X25519=wide field beside WIDEMUL=runtime, so an object
+  built outside the Makefile runs the 64x64->128 multiply its build
+  stated for every session, whatever each session answers.
+  test/widemul-builds.sh requires that build not to compile.
+
+--- old
+#ifdef CH_WIDEMUL_RUNTIME
+#error "X25519=wide states its multiply's timing at build time; WIDEMUL=runtime asks each session"
+#endif
+--- new

@@ -1,0 +1,86 @@
+// The native copy of a file built on ct.h's widening multiply, for a WIDEMUL=runtime object
+// (-DCH_WIDEMUL_RUNTIME). Each <file>_native.c includes this header and then <file>.c, so the
+// copy is the same source text as the file under its own names, compiled once more.
+//
+// CH_WIDEMUL_NATIVE_COPY makes ct.h take the native multiply in this translation unit alone,
+// and ct.h refuses it outside a WIDEMUL=runtime object. The renames below give every function
+// and constant the seven files define outside their own translation unit a second name, the
+// first with _native after it, so the two copies define no name twice. They rename the
+// declarations each file's header gives as well as its definitions, and a call from one of the
+// seven files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
+// copy of the callee. widemul.h's dispatchers call the _native entries for the answer
+// CH_WIDEMUL_CONSTANT_TIME alone.
+//
+// Every name the seven files define outside their unit is here. A name left out is defined by
+// both copies, and the link of the object refuses it.
+#ifndef CH_WIDEMUL_NATIVE_H
+#define CH_WIDEMUL_NATIVE_H
+
+#define CH_WIDEMUL_NATIVE_COPY 1
+
+// poly1305.c, and poly1305_vector.c, which a CHACHA=vector object holds in its native copy
+// alone, because the vector path runs on the native multiply (docs/decisions.md 83).
+#define poly1305_init poly1305_init_native
+#define poly1305_update poly1305_update_native
+#define poly1305_final poly1305_final_native
+#define poly1305_vector_blocks poly1305_vector_blocks_native
+
+// x25519.c.
+#define x25519 x25519_native
+#define x25519_base x25519_base_native
+
+// mlkem_poly.c.
+#define mlk_poly_reduce mlk_poly_reduce_native
+#define mlk_poly_tomont mlk_poly_tomont_native
+#define mlk_poly_add mlk_poly_add_native
+#define mlk_poly_sub mlk_poly_sub_native
+#define mlk_poly_ntt mlk_poly_ntt_native
+#define mlk_poly_invntt mlk_poly_invntt_native
+#define mlk_poly_basemul mlk_poly_basemul_native
+#define mlk_poly_tobytes mlk_poly_tobytes_native
+#define mlk_poly_frombytes mlk_poly_frombytes_native
+#define mlk_polyvec_compress mlk_polyvec_compress_native
+#define mlk_polyvec_decompress mlk_polyvec_decompress_native
+#define mlk_poly_compress mlk_poly_compress_native
+#define mlk_poly_decompress mlk_poly_decompress_native
+#define mlk_poly_frommsg mlk_poly_frommsg_native
+#define mlk_poly_tomsg mlk_poly_tomsg_native
+#define mlk_sample_ntt mlk_sample_ntt_native
+#define mlk_sample_cbd mlk_sample_cbd_native
+
+// p256_field.c.
+#define p256_fe_zero p256_fe_zero_native
+#define p256_fe_one_mont p256_fe_one_mont_native
+#define p256_fe_from_bytes p256_fe_from_bytes_native
+#define p256_fe_to_bytes p256_fe_to_bytes_native
+#define p256_fe_reduced_mask p256_fe_reduced_mask_native
+#define p256_fe_zero_mask p256_fe_zero_mask_native
+#define p256_fe_equal_mask p256_fe_equal_mask_native
+#define p256_fe_cmov p256_fe_cmov_native
+#define p256_fe_cswap p256_fe_cswap_native
+#define p256_fe_add p256_fe_add_native
+#define p256_fe_sub p256_fe_sub_native
+#define p256_fe_neg p256_fe_neg_native
+#define p256_fe_mul p256_fe_mul_native
+#define p256_fe_sqr p256_fe_sqr_native
+#define p256_fe_to_mont p256_fe_to_mont_native
+#define p256_fe_from_mont p256_fe_from_mont_native
+#define p256_fe_inv p256_fe_inv_native
+
+// p256_scalar.c.
+#define p256_scalar_zero p256_scalar_zero_native
+#define p256_scalar_from_bytes p256_scalar_from_bytes_native
+#define p256_scalar_to_bytes p256_scalar_to_bytes_native
+#define p256_scalar_reduced_mask p256_scalar_reduced_mask_native
+#define p256_scalar_zero_mask p256_scalar_zero_mask_native
+#define p256_scalar_cmov p256_scalar_cmov_native
+#define p256_scalar_reduce p256_scalar_reduce_native
+#define p256_scalar_add p256_scalar_add_native
+#define p256_scalar_mul p256_scalar_mul_native
+#define p256_scalar_inverse p256_scalar_inverse_native
+
+// rsa_sign.c.
+#define rsa_pss_sign rsa_pss_sign_native
+#define rsa_sp1 rsa_sp1_native
+
+#endif

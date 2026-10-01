@@ -1,0 +1,12 @@
+invariant: INV-16
+file: p256_sign.c
+catches: widemul_runtime_test
+reason: the inverse of the signing nonce runs under CH_WIDEMUL_NOT_STATED
+  whatever answer the signature was handed. The signature is the same.
+  bin/widemul_runtime_test requires p256_sign to call the native copies
+  alone under the constant-time answer.
+
+--- old
+    widemul_p256_scalar_inverse(widemul, &k_inverse, k);
+--- new
+    widemul_p256_scalar_inverse(CH_WIDEMUL_NOT_STATED, &k_inverse, k);

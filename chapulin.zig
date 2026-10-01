@@ -1,21 +1,18 @@
-//! chapulin's Zig API: the values a session is configured from, the error
-//! each result code maps to, and the build record check. The record-mode
-//! sessions are in chapulin_record.zig and the QUIC sessions in
-//! chapulin_quic.zig. docs/zig.md is the reference.
+//! chapulin's Zig API: the values a session is configured from, the error each result code maps to,
+//! and the build record check. The record-mode sessions are in chapulin_record.zig and the QUIC
+//! sessions in chapulin_quic.zig. docs/zig.md is the reference.
 //!
-//! Each call forwards to the C call of the same name and adds nothing the C
-//! core lacks: it builds ch_cfg from values, maps result codes to errors,
-//! and copies bytes between the caller's slices and the C callbacks. Every
-//! TLS rule stays in C.
+//! Each call forwards to the C call of the same name and adds nothing the C core lacks: it builds
+//! ch_cfg from values, maps result codes to errors, and copies bytes between the caller's slices
+//! and the C callbacks. Every TLS rule stays in C.
 //!
-//! The module is compiled once per object, against that object's
-//! translated headers, `c`. A declaration whose C name the object lacks is
-//! a @compileError that names the build option that adds it.
+//! The module is compiled once per object, against that object's translated headers, `c`. A
+//! declaration whose C name the object lacks is a @compileError that names the build option that
+//! adds it.
 const std = @import("std");
 
-/// The object's public headers, translated by translate-c under the
-/// defines the object compiled with (docs/decisions.md 70). What the API
-/// leaves out is used through it under its C name.
+/// The object's public headers, translated by translate-c under the defines the object compiled
+/// with (docs/decisions.md 70). What the API leaves out is used through it under its C name.
 pub const c = @import("chapulin_c");
 /// Record-mode sessions (TRANSPORT=tcp-nonblocking).
 pub const record = @import("chapulin_record.zig");
@@ -39,22 +36,22 @@ const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
 // RAND=session: each session names its own source of random bytes in ch_cfg (cfg.h), where every
 // other build draws from the image's ch_rand_bytes.
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
-// AES=runtime: each session states the caller's CPU probe in ch_cfg (cfg.h).
+// AES=runtime and WIDEMUL=runtime: each session states what the caller found about its CPU in
+// ch_cfg (cpu_cfg.h).
 const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
+const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
-/// One error per ch_err code a call returns, named as chapulin.hpp's
-/// Status names it. Each call's error set is the part of this one its C
-/// call returns. CH_RECORD_AGAIN and CH_ECLOSED are no error here: record
-/// sessions' read reports the first as pt_len 0, and no call returns the
-/// second. A TCP object's set lacks Discard and AeadLimit, whose codes
-/// only a QUIC object's headers declare.
+/// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
+/// error set is the part of this one its C call returns. CH_RECORD_AGAIN and CH_ECLOSED are no
+/// error here: record sessions' read reports the first as pt_len 0, and no call returns the second.
+/// A TCP object's set lacks Discard and AeadLimit, whose codes only a QUIC object's headers
+/// declare.
 pub const Error = if (@hasDecl(c, "CH_QUIC_DISCARD")) AnyError else error{ Io, Proto, Auth, Cap, Invalid };
 const AnyError = error{
     /// CH_EIO: an output slice could not take what C sent. The session is dead.
     Io,
-    /// CH_EPROTO: a protocol failure, and the session is dead; or bytes for
-    /// a session that failed or closed, or read and write before the
-    /// handshake completed, and the session is as it was.
+    /// CH_EPROTO: a protocol failure, and the session is dead; or bytes for a session that failed
+    /// or closed, or read and write before the handshake completed, and the session is as it was.
     Proto,
     /// CH_EAUTH: authentication failed. The session is dead.
     Auth,
@@ -85,11 +82,10 @@ fn codeOf(comptime err: AnyError) c_int {
     };
 }
 
-/// Nothing for CH_OK, and otherwise the error of E that code stands for. E
-/// is the error set of one C call, a part of Error. A code E does not name
-/// is one that call's header says it never returns, and it panics, as a
-/// broken contract is a programmer error. A program that calls a C
-/// function the API leaves out maps its result with fromCode(Error, code).
+/// Nothing for CH_OK, and otherwise the error of E that code stands for. E is the error set of one
+/// C call, a part of Error. A code E does not name is one that call's header says it never returns,
+/// and it panics, as a broken contract is a programmer error. A program that calls a C function the
+/// API leaves out maps its result with fromCode(Error, code).
 pub fn fromCode(comptime E: type, code: c_int) E!void {
     if (code == c.CH_OK) return;
     inline for (@typeInfo(E).error_set.?) |member| {
@@ -98,8 +94,7 @@ pub fn fromCode(comptime E: type, code: c_int) E!void {
     @panic("chapulin: a C call returned a code its header does not name");
 }
 
-/// A root's subject Name and SubjectPublicKeyInfo, each the whole DER TLV
-/// (webpki_cfg.h).
+/// A root's subject Name and SubjectPublicKeyInfo, each the whole DER TLV (webpki_cfg.h).
 pub const trustAnchor = if (has_webpki) trustAnchorOf else @compileError("trustAnchor needs TRUST=webpki");
 fn trustAnchorOf(subject: []const u8, spki: []const u8) c.ch_trust_anchor {
     return .{ .name = subject.ptr, .name_len = subject.len, .spki = spki.ptr, .spki_len = spki.len };
@@ -117,8 +112,7 @@ fn certOf(der: []const u8) c.ch_cert {
     return .{ .der = der.ptr, .len = der.len };
 }
 
-/// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is
-/// ch_cfg.spki_pins as it is.
+/// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is ch_cfg.spki_pins as it is.
 pub const SpkiPin = [c.SHA256_LEN]u8;
 
 /// How a client judges the server. The variants are the object's trust
@@ -182,6 +176,8 @@ const ClientValues = struct {
     /// What the caller's CPU probe found, under AES=runtime alone: aes_instructions. null leaves
     /// it 0, which init refuses with error.Invalid. void in every other build.
     aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
+    /// The answer about the widening multiply, under WIDEMUL=runtime alone, as aes_instructions is.
+    widemul: if (has_widemul_runtime) ?Widemul else void = if (has_widemul_runtime) null else {},
 
     /// The ch_cfg these values set. A session's init adds its own buffer,
     /// callbacks and io to it, and under RAND=session its source.
@@ -236,6 +232,7 @@ const ClientValues = struct {
             cfg.cipher_suite_count = values.cipher_suites.len;
         }
         if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
+        if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
     }
 };
@@ -249,19 +246,17 @@ fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
 /// ch_ticket on_ticket received, by value, and the identity bytes it
 /// pointed at. A program that copies a Ticket owns zeroing that copy.
 pub const Ticket = struct {
-    /// The ch_ticket on_ticket received. Its identity pointer is null here,
-    /// because the bytes it named are valid during on_ticket alone. psk,
-    /// psk_len, age_add, lifetime_s, epoch, under TRUST=webpki binding and
-    /// under TRANSPORT=quic-nonblocking quic_version are read from it under
-    /// their C names.
+    /// The ch_ticket on_ticket received. Its identity pointer is null here, because the bytes it
+    /// named are valid during on_ticket alone. psk, psk_len, age_add, lifetime_s, epoch, under
+    /// TRUST=webpki binding and under TRANSPORT=quic-nonblocking quic_version are read from it
+    /// under their C names.
     ticket: c.ch_ticket,
     /// The identity bytes, ticket.identity_len of them, presented as psk_id.
     identity: [c.CH_TICKET_ID_MAX]u8,
 
-    /// The fields fromFields takes. binding is the ticket's
-    /// ch_ticket.binding, which a TRUST=webpki object alone has, and
-    /// quic_version its ch_ticket.quic_version, a QUIC object's alone,
-    /// whose null init refuses as a resuming ticket's version.
+    /// The fields fromFields takes. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
+    /// object alone has, and quic_version its ch_ticket.quic_version, a QUIC object's alone, whose
+    /// null init refuses as a resuming ticket's version.
     pub const Fields = if (has_webpki) struct {
         identity: []const u8,
         psk: []const u8,
@@ -279,12 +274,11 @@ pub const Ticket = struct {
         quic_version: if (has_quic) ?quic.Version else void = if (has_quic) null else {},
     };
 
-    /// A Ticket rebuilt from fields a program stored after an earlier
-    /// handshake, for a program that keeps its own ticket value across
-    /// connections and objects. It refuses an identity longer than
-    /// CH_TICKET_ID_MAX or a psk that is not a hash length this object
-    /// holds, SHA256_LEN or, where HKDF_HASH_MAX is SHA384_LEN, that too.
-    /// Setting ticket's fields by hand is not supported.
+    /// A Ticket rebuilt from fields a program stored after an earlier handshake, for a program that
+    /// keeps its own ticket value across connections and objects. It refuses an identity longer
+    /// than CH_TICKET_ID_MAX or a psk that is not a hash length this object holds, SHA256_LEN or,
+    /// where HKDF_HASH_MAX is SHA384_LEN, that too. Setting ticket's fields by hand is not
+    /// supported.
     pub fn fromFields(fields: Fields) error{Invalid}!Ticket {
         const psk_ok = fields.psk.len == c.SHA256_LEN or fields.psk.len == c.HKDF_HASH_MAX;
         if (fields.identity.len > c.CH_TICKET_ID_MAX or !psk_ok) return error.Invalid;
@@ -364,6 +358,8 @@ const ServerValues = struct {
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
     /// What the caller's CPU probe found, under AES=runtime alone, as Client.aes_instructions is.
     aes_instructions: if (has_aes_runtime) ?AesInstructions else void = if (has_aes_runtime) null else {},
+    /// The answer about the widening multiply, under WIDEMUL=runtime alone, as Client.widemul is.
+    widemul: if (has_widemul_runtime) ?Widemul else void = if (has_widemul_runtime) null else {},
 
     /// The ch_cfg these values set, which a session's init completes as it
     /// completes Client.toCfg's. error.Invalid for a chain longer than
@@ -398,6 +394,7 @@ const ServerValues = struct {
         }
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
         if (has_aes_runtime) cfg.aes_instructions = if (values.aes_instructions) |a| @intFromEnum(a) else 0;
+        if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
     }
 
@@ -415,6 +412,10 @@ const ServerValues = struct {
 /// ch_cfg.aes_instructions under AES=runtime (cfg.h): what the caller's own CPU probe found.
 pub const AesInstructions = if (has_aes_runtime) AesAnswer else @compileError("AesInstructions needs AES=runtime");
 const AesAnswer = enum(u8) { present = c.CH_AES_INSTRUCTIONS_PRESENT, absent = c.CH_AES_INSTRUCTIONS_ABSENT };
+
+/// ch_cfg.widemul under WIDEMUL=runtime (cpu_cfg.h): the caller's answer about its multiply.
+pub const Widemul = if (has_widemul_runtime) WidemulAnswer else @compileError("Widemul needs WIDEMUL=runtime");
+const WidemulAnswer = enum(u8) { constant_time = c.CH_WIDEMUL_CONSTANT_TIME, not_stated = c.CH_WIDEMUL_NOT_STATED };
 
 /// ch_tls.group's code points (cfg.h).
 pub const Group = enum(u16) {
@@ -460,9 +461,8 @@ pub fn buildMatches() bool {
     return c.ch_build_matches(info) == 1;
 }
 
-/// What ch_cfg.io points at in every session. context is the caller's, for
-/// ch_keylog: a session's init sets it to null, and the caller writes
-/// session.hook.context after init.
+/// What ch_cfg.io points at in every session. context is the caller's, for ch_keylog: a session's
+/// init sets it to null, and the caller writes session.hook.context after init.
 pub const Hook = extern struct { context: ?*anyopaque = null };
 
 /// What a session stores under RAND=session: the std.Random its values

@@ -1,0 +1,14 @@
+invariant: INV-14
+file: widemul.h
+catches: tcp_blocking_loop_widemul
+reason: widemul_answer_ok admits ch_cfg.widemul at 0, the value a caller that
+  never set the field leaves, and the session runs as though the caller
+  had answered CH_WIDEMUL_NOT_STATED. The ruling is that every caller
+  states its answer (docs/decisions.md 87). The edit keeps 3 refused, so
+  it moves the lower edge alone; test/tcp_blocking_loop_widemul.h
+  requires ch_connect to refuse 0 before a byte leaves.
+
+--- old
+    return cfg->widemul == CH_WIDEMUL_CONSTANT_TIME || cfg->widemul == CH_WIDEMUL_NOT_STATED;
+--- new
+    return cfg->widemul <= CH_WIDEMUL_NOT_STATED;

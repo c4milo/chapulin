@@ -154,12 +154,19 @@ jobs:
       # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
       # so this job runs the vector paths' NEON arms under gcc, the
       # Poly1305 one under the host's CH_NATIVE_WIDEMUL; the check and san
-      # jobs run their SSE2 arms (test/platforms.mk, suite-check).
+      # jobs run their SSE2 arms (test/platforms.mk, suite-check). It also
+      # runs the WIDEMUL=runtime binaries under both answers, whose native
+      # copies take the NEON Poly1305 (docs/decisions.md 87); the check
+      # job runs them on x86-64.
       - run: make suite-check
       # The CHACHA=vector WIDEMUL=native object, which packages the NEON
       # Poly1305 (docs/decisions.md 83); the check job packages its SSE2
       # twin in check-lib-chacha-vector-widemul.
       - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
+      # The same object holding both multiplies, whose native copy of
+      # Poly1305 is the NEON one; the check job packages an SSE2 one in
+      # check-lib-quic-widemul-runtime.
+      - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=runtime
       # The AES=hw binaries on the Arm instructions under gcc, which no
       # other CI job builds (test/platforms.mk, aes-hw-check).
       - run: make aes-hw-check
@@ -202,11 +209,14 @@ jobs:
           cc --version
       # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
       # so this job runs the vector paths' NEON arms under Apple clang, as
-      # the arm64 job runs them under gcc.
+      # the arm64 job runs them under gcc, and the WIDEMUL=runtime binaries
+      # under both answers.
       - run: make suite-check
       # The CHACHA=vector WIDEMUL=native object, which packages the NEON
       # Poly1305 (docs/decisions.md 83).
       - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
+      # The same object holding both multiplies (docs/decisions.md 87).
+      - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=runtime
       # The AES=hw binaries on the Arm instructions. Apple clang predefines
       # __ARM_FEATURE_AES, so AES_HW_PROBE finds them with no flag.
       - run: make aes-hw-check

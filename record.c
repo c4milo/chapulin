@@ -38,10 +38,15 @@ static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const
 #endif
 
 // The answer d's ChaCha20-Poly1305 runs its Poly1305 under (widemul.h):
-// the one this object's build states.
+// the session's, which d records in a WIDEMUL=runtime object, and the
+// one the build states in any other.
 static uint8_t direction_widemul(const rec_dir *d) {
+#ifdef CH_WIDEMUL_RUNTIME
+    return d->widemul;
+#else
     (void)d;
     return WIDEMUL_BUILD_ANSWER;
+#endif
 }
 
 // The AEAD of one record: len bytes of TLSInnerPlaintext at body sealed

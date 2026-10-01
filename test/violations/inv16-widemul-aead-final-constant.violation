@@ -1,0 +1,12 @@
+invariant: INV-16
+file: aead.c
+catches: widemul_runtime_test
+reason: the AEAD's Poly1305 final runs under CH_WIDEMUL_NOT_STATED whatever
+  answer the seal or open was handed. The tag is the same.
+  bin/widemul_runtime_test requires the AEAD to call the native copies
+  alone under the constant-time answer.
+
+--- old
+    widemul_poly1305_final(widemul, &p, tag);
+--- new
+    widemul_poly1305_final(CH_WIDEMUL_NOT_STATED, &p, tag);

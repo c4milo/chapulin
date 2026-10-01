@@ -286,14 +286,14 @@ static void test_rfc8439_poly1305(void) {
         }
         poly1305 p;
         poly1305_init(&p, key);
-        poly1305_update(&p, message, n);
-        poly1305_final(&p, tag);
+        widemul_poly1305_update(TEST_WIDEMUL, &p, message, n);
+        widemul_poly1305_final(TEST_WIDEMUL, &p, tag);
         CHECK(eq_hex(tag, v->tag));
         size_t cut = n < 7 ? n : 7;
         poly1305_init(&p, key);
-        poly1305_update(&p, message, cut);
-        poly1305_update(&p, message + cut, n - cut);
-        poly1305_final(&p, tag);
+        widemul_poly1305_update(TEST_WIDEMUL, &p, message, cut);
+        widemul_poly1305_update(TEST_WIDEMUL, &p, message + cut, n - cut);
+        widemul_poly1305_final(TEST_WIDEMUL, &p, tag);
         CHECK(eq_hex(tag, v->tag));
         if (failures != failures_before) {
             (void)fprintf(stderr, "rfc8439: the checks above ran on %s\n", v->name);

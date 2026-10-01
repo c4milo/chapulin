@@ -258,6 +258,9 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     if (!srv_config_ok(cfg)) {
         return tcp_nonblocking_refuse_init(r);
     }
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(&r->t);
+#endif
     r->hs.t = &r->t;
     r->t.server = 1; // what ch_read refuses a NewSessionTicket on (handshake_post.c)
     // The description a failure carries when no handler chose a more

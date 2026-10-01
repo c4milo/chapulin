@@ -75,4 +75,13 @@ void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1)
 // SHAKE256(seed || nonce).
 void mlk_sample_cbd(mlk_poly *p, const uint8_t seed[32], uint8_t nonce);
 
+#ifdef CH_WIDEMUL_RUNTIME
+// The native copies of the entries above that are built on the widening multiply,
+// which a WIDEMUL=runtime object holds beside them (mlkem_poly_native.c, widemul_native.h)
+// and widemul.h's dispatchers call for CH_WIDEMUL_CONSTANT_TIME.
+void mlk_polyvec_compress_native(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
+void mlk_poly_compress_native(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
+void mlk_poly_tomsg_native(uint8_t msg[32], const mlk_poly *p);
+#endif
+
 #endif

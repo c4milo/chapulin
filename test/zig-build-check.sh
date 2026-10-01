@@ -108,7 +108,9 @@ link_flags=()
 # ch_aes_block that encrypts, and hooks.zig's stops the program. The QUIC
 # object colibri links comes once more on AES=runtime (docs/decisions.md
 # 81), with build.zig adding no instruction feature, and its loop answers
-# that the instructions are present (fixture.zig's aesAnswer).
+# that the instructions are present (fixture.zig's aesAnswer), and a third
+# time holding both widening multiplies too (docs/decisions.md 87), whose
+# loop answers that the multiply runs in constant time (widemulAnswer).
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -118,6 +120,7 @@ configs=(
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes-hw|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw|CH_NATIVE_AES"
     "quic-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime KEYLOG=on|CH_NATIVE_AES"
+    "quic-widemul-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime CHACHA=vector WIDEMUL=runtime KEYLOG=on|CH_NATIVE_AES"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once.
@@ -143,6 +146,8 @@ roster=(
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
     "chacha-vector|RAND=extern CHACHA=vector|"
     "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
+    "widemul-runtime|RAND=extern WIDEMUL=runtime|"
+    "server-widemul-runtime|RAND=extern ROLE=server TRUST=none WIDEMUL=runtime|"
 )
 case ${1:-} in
 "") ;;

@@ -1,0 +1,12 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a WIDEMUL=runtime object stops carrying the native copy of
+  mlkem_poly.c, and its link fails on the _native names widemul.h calls
+  only where something links it. lint-trust-separation's ROLE=server row
+  requires every file of WIDEMUL_COPIED beside its native copy.
+
+--- old
+WIDEMUL_COPIED := poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c
+--- new
+WIDEMUL_COPIED := poly1305.c x25519.c p256_field.c p256_scalar.c rsa_sign.c

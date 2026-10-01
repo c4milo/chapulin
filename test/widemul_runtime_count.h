@@ -1,0 +1,53 @@
+// The calls bin/widemul_runtime_test counts into each copy of the files
+// built on ct.h's widening multiply in a WIDEMUL=runtime object
+// (docs/decisions.md 87). The test/widemul_count_*.c units compile the
+// seven files again, the files under their own names and the native
+// copies, with each entry widemul.h dispatches to under a second name
+// (test/widemul_count_names.h), and test/widemul_runtime_count.c defines
+// the names the dispatchers call, each as a count and a call to the
+// entry it renamed. So the library's sources run unchanged, and the test
+// reads which copy each operation ran.
+//
+// The second names are this test's alone, as test/aes_runtime_count.h's
+// are: the library object compiles the same files under its own names.
+#ifndef CH_TEST_WIDEMUL_RUNTIME_COUNT_H
+#define CH_TEST_WIDEMUL_RUNTIME_COUNT_H
+
+#include <stdint.h>
+
+#include "cpu_cfg.h"
+
+// Calls into the dispatched entries of the files under their own names,
+// which take the 16x16 decomposition.
+extern unsigned long widemul_decomposed_calls;
+// Calls into the dispatched entries of the native copies.
+extern unsigned long widemul_native_calls;
+// Calls into poly1305_vector_native.c's entry, which only
+// poly1305_native.c's block loop makes, under CHACHA=vector.
+extern unsigned long widemul_vector_calls;
+
+// One end's calls into the dispatched entries of each copy, which the
+// loop binaries count around that end's own calls.
+typedef struct {
+    unsigned long native;
+    unsigned long decomposed;
+} widemul_end_calls;
+
+// Adds the calls counted since the counts were last zeroed to *end, and
+// zeroes the counts.
+static inline void widemul_take_calls(widemul_end_calls *end) {
+    end->native += widemul_native_calls;
+    end->decomposed += widemul_decomposed_calls;
+    widemul_native_calls = 0;
+    widemul_decomposed_calls = 0;
+}
+
+// Whether an end ran the copy its answer names and never the other.
+static inline int widemul_ran_own_copy(const widemul_end_calls *end, uint8_t answer) {
+    if (answer == CH_WIDEMUL_CONSTANT_TIME) {
+        return end->native > 0 && end->decomposed == 0;
+    }
+    return end->decomposed > 0 && end->native == 0;
+}
+
+#endif

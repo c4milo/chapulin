@@ -38,7 +38,7 @@ void ct_wipe(void *p, size_t n);
 // says otherwise, which is the safe default: being wrong about a part costs
 // speed, where the old default cost the guarantee silently.
 //
-// Two macros steer it, and CH_CT_WIDEMUL wins when both are set:
+// Three macros steer it, and CH_CT_WIDEMUL wins over the other two:
 //
 //   CH_NATIVE_WIDEMUL  the build asserts that every widening multiply the
 //                      object runs, scalar or vector, takes a time that
@@ -54,6 +54,22 @@ void ct_wipe(void *p, size_t n);
 //                      vendor statement. `make lib WIDEMUL=native` puts it
 //                      in the packaged object, and the object's cc-stamp
 //                      records it.
+//   CH_WIDEMUL_RUNTIME `make lib WIDEMUL=runtime`: the object holds both
+//                      multiplies, and each session's answer picks one
+//                      (ch_cfg.widemul, cpu_cfg.h). Each of the seven
+//                      files built on the multiply compiles twice: under
+//                      its own names on the decomposition, and again as
+//                      <file>_native.c, whose widemul_native.h defines
+//                      CH_WIDEMUL_NATIVE_COPY and names every function
+//                      _native. That copy alone takes the native
+//                      multiply, scalar or vector, and widemul.h's
+//                      dispatchers run it for CH_WIDEMUL_CONSTANT_TIME
+//                      alone. The build states nothing about the part:
+//                      the caller's answer does, for the CPU and the mode
+//                      the session runs in. So the build refuses
+//                      CH_NATIVE_WIDEMUL beside it, which would give the
+//                      decomposed copy the native multiply too
+//                      (docs/decisions.md 87).
 //   CH_CT_WIDEMUL      force the decomposition, whatever else is set.
 //                      bin/timing and proof/ctwidemul_harness.c use it to
 //                      measure and prove the path that ships, and
@@ -72,7 +88,13 @@ void ct_wipe(void *p, size_t n);
 // core that has a variable-time multiplier is not done.
 //
 // See https://github.com/c4milo/chapulin/issues/53.
-#if defined(CH_NATIVE_WIDEMUL) && !defined(CH_CT_WIDEMUL)
+#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_NATIVE_WIDEMUL)
+#error "WIDEMUL=runtime takes the multiply's timing from each session: drop -DCH_NATIVE_WIDEMUL"
+#endif
+#if defined(CH_WIDEMUL_NATIVE_COPY) && !defined(CH_WIDEMUL_RUNTIME)
+#error "a _native copy (widemul_native.h) compiles into a WIDEMUL=runtime object alone"
+#endif
+#if (defined(CH_NATIVE_WIDEMUL) || defined(CH_WIDEMUL_NATIVE_COPY)) && !defined(CH_CT_WIDEMUL)
 #define CH_WIDEMUL_NATIVE 1
 #endif
 
@@ -192,6 +214,12 @@ void ct_wipe(void *p, size_t n);
 #endif
 #ifndef CH_NATIVE_MUL128
 #error "X25519=wide needs -DCH_NATIVE_MUL128: the build asserts the 64x64->128 multiply's timing"
+#endif
+// CH_NATIVE_MUL128 states the 128-bit multiply's timing for every session,
+// and a WIDEMUL=runtime object takes the multiply's timing from each
+// session's answer, so the two do not meet in one object.
+#ifdef CH_WIDEMUL_RUNTIME
+#error "X25519=wide states its multiply's timing at build time; WIDEMUL=runtime asks each session"
 #endif
 
 // The product type of ct_mul128. C11 has no 128-bit integer, and

@@ -1,0 +1,13 @@
+invariant: INV-16
+file: srv_auth.c
+catches: tcp_blocking_loop_widemul
+reason: the server signs with its RSA key under CH_WIDEMUL_NOT_STATED whatever
+  it answered. The signature is the same. The blocking loop's server
+  holds the RSA identity alone, and test/tcp_blocking_loop_widemul.h
+  requires a handshake between two ends that answer
+  CH_WIDEMUL_CONSTANT_TIME to call no file under its own names.
+
+--- old
+        widemul_rsa_pss_sign(widemul_answer(cfg), id->priv, digest, salt, sig, cap, sig_len);
+--- new
+        widemul_rsa_pss_sign(CH_WIDEMUL_NOT_STATED, id->priv, digest, salt, sig, cap, sig_len);

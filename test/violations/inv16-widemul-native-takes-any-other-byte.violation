@@ -1,0 +1,14 @@
+invariant: INV-16
+file: widemul.h
+catches: widemul_runtime_test
+reason: widemul_native runs the native copies for every byte but
+  CH_WIDEMUL_NOT_STATED, so a direction whose answer was never written, 0,
+  runs the native multiply on its key. The init calls refuse such bytes,
+  and the dispatchers must not depend on that (widemul.h).
+  bin/widemul_runtime_test runs every operation under 0, 3, 0x80 and 0xff
+  and requires the decomposition.
+
+--- old
+    return widemul == CH_WIDEMUL_CONSTANT_TIME;
+--- new
+    return widemul != CH_WIDEMUL_NOT_STATED;

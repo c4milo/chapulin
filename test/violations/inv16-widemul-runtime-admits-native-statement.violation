@@ -1,0 +1,14 @@
+invariant: INV-16
+file: ct.h
+catches: test/widemul-builds.sh
+reason: ct.h takes CH_NATIVE_WIDEMUL beside CH_WIDEMUL_RUNTIME, so the files
+  under their own names, which every answer but CH_WIDEMUL_CONSTANT_TIME
+  runs, compile to the native multiply, and the answer picks between two
+  copies of one multiply. test/widemul-builds.sh requires that build not
+  to compile.
+
+--- old
+#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_NATIVE_WIDEMUL)
+#error "WIDEMUL=runtime takes the multiply's timing from each session: drop -DCH_NATIVE_WIDEMUL"
+#endif
+--- new

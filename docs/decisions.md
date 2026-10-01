@@ -4336,3 +4336,177 @@ does nothing more.
     agreed: 0.67, 0.64 and 0.67 of the time before, where the second gave
     0.68, 0.70 and 0.69. OpenSSL seals the same record in 9.4, 10.2 and
     10.2 µs on the same machine.
+
+87. **A `WIDEMUL=runtime` object holds both widening multiplies, and the
+    caller's answer picks one for each session**
+    ([#186](https://github.com/c4milo/chapulin/issues/186)).
+    `WIDEMUL=decomposed`, the default, builds every widening product from
+    `ct.h`'s 16x16 pieces, and `WIDEMUL=native` takes the CPU's multiply on
+    the builder's statement that it runs in constant time
+    ([#53](https://github.com/c4milo/chapulin/issues/53), entry 83). Both
+    fix the multiply when the object is built. On arm64 the multiply runs
+    in constant time only on a core with FEAT_DIT and only while the
+    thread has set PSTATE.DIT, and on x86-64 only on a part in Intel's
+    DOIT list while the operating system has set DOITM. So a host program
+    whose threads differ, or which runs on CPUs that differ, had no object
+    that fit. Camilo decided on 2026-09-30.
+
+    - **The build value.** `WIDEMUL=runtime` defines `CH_WIDEMUL_RUNTIME`
+      and compiles twice each file built on the multiply that the object
+      carries: `poly1305.c`, `x25519.c`, `mlkem_poly.c`, `p256_field.c`,
+      `p256_scalar.c` and `rsa_sign.c` (`WIDEMUL_COPIED` in the Makefile,
+      `widemul_copied` in `build.zig`). Under `CHACHA=vector` it adds
+      `poly1305_vector_native.c`, the vector Poly1305, as a native copy
+      alone, because that path runs on the native multiply only.
+    - **How a file compiles twice.** The file under its own names compiles
+      as a `WIDEMUL=decomposed` object compiles it: `test/widemul-builds.sh`
+      requires the same assembly with the runtime define as without it, so
+      the proofs and the recorded ceilings of that file hold for this copy
+      unchanged. The native copy is `<file>_native.c`, two lines:
+      `#include "widemul_native.h"`, then `#include "<file>.c"`.
+      `widemul_native.h` defines `CH_WIDEMUL_NATIVE_COPY`, which makes
+      `ct.h` take the native multiply in that translation unit alone, and
+      gives each of the 52 names the seven files define outside their unit
+      a second name ending in `_native`. A name missing from that list is
+      defined by both copies, and the link of the object refuses it. An
+      auditor reads one source per file, one two-line wrapper and one
+      list of renames.
+    - **The answer.** `ch_cfg.widemul`, declared only in a
+      `WIDEMUL=runtime` object, takes `CH_WIDEMUL_CONSTANT_TIME`, which
+      says the multiply runs in constant time on this CPU in the mode the
+      session's thread runs in, or `CH_WIDEMUL_NOT_STATED`. `ch_connect`,
+      `ch_record_init`, `ch_quic_init`, `ch_srv_accept`,
+      `ch_srv_record_init`, `ch_srv_quic_init` and `ch_srv_check` return
+      `CH_EINVAL` for any other value, 0 included, before they send
+      anything, so every caller states its answer.
+    - **The mode is the caller's.** Setting PSTATE.DIT on arm64, and the
+      DOITM policy on x86-64, belong to the caller and its operating
+      system. chapulin writes no CPU state and probes nothing (`cpu_cfg.h`),
+      for the reason entry 81 gives for the AES instructions: arm64 code
+      that reads PSTATE.DIT on a core without FEAT_DIT takes SIGILL, and
+      code in user mode cannot read DOITM.
+    - **One branch per operation.** `widemul.h` holds one dispatcher per
+      entry built on the multiply that code outside the seven files calls:
+      `poly1305_update`, `poly1305_final`, `x25519`, `x25519_base`,
+      `mlk_polyvec_compress`, `mlk_poly_compress`, `mlk_poly_tomsg`,
+      `p256_fe_mul`, `p256_fe_sqr`, `p256_fe_to_mont`, `p256_fe_from_mont`,
+      `p256_fe_inv`, `p256_scalar_mul`, `p256_scalar_inverse`,
+      `rsa_pss_sign` and `rsa_sp1`. Each branches once on the answer, which
+      the caller chose and which is not secret: once per Poly1305 update
+      and final, once per X25519 scalar multiplication, once per ML-KEM
+      compression, once per P-256 field or scalar multiply, once per RSA
+      signature, and never once per product. No function pointer is
+      involved. `CH_WIDEMUL_CONSTANT_TIME` runs the native copy, and every
+      other byte runs the file under its own names, so a direction whose
+      answer was never written takes the decomposition.
+    - **Where the answer travels.** Every operation built on the multiply
+      takes the answer as its first argument in every build, and an object
+      that holds one multiply passes `WIDEMUL_BUILD_ANSWER`, which its
+      dispatchers ignore. A session passes its configuration's
+      answer. Each TCP init call writes it into both record directions
+      once it accepts the configuration (`rec_dir.widemul`, in bytes the
+      alignment of the sequence number left unused), and each QUIC packet
+      call reads it from its session.
+    - **The vector Poly1305.** Under `CHACHA=vector` the constant-time
+      answer also runs the vector Poly1305: `poly1305_native.c`'s block
+      loop calls `poly1305_vector_blocks_native`, and `poly1305.c` under
+      its own names calls no vector path (entry 83).
+    - **What the build refuses.** `ct.h` refuses `CH_NATIVE_WIDEMUL` beside
+      `CH_WIDEMUL_RUNTIME`, which would give the files under their own
+      names the native multiply, and a native copy outside a
+      `WIDEMUL=runtime` object. The Makefile, `build.zig` and `ct.h` each
+      refuse `X25519=wide` beside it: that field's `CH_NATIVE_MUL128`
+      states the 64x64->128 multiply's timing when the object is built
+      (entry 52), which is the statement this value moves to each session.
+      A copy of the wide field per answer is left for a later decision.
+    - **The build record** carries `CH_BUILD_WIDEMUL_RUNTIME`, because the
+      field changes the layout of `ch_cfg`, and with it of `ch_tls`,
+      `ch_record` and `ch_quic`, which is entry 77's reason for
+      `RAND=session`.
+    - **The wrappers.** `chapulin.hpp` gains `Widemul` and
+      `Config::widemul()`. The Zig API gains `Widemul` and `widemul` in
+      `Client` and `Server` values, declared where `@hasField` finds the
+      field; null leaves 0, which init refuses.
+    - **The checks.** `bin/widemul_runtime_test` compiles the seven files
+      again under counted names and runs the AEAD, X25519, ML-KEM, P-256,
+      RSA signing and record operations under each answer: the native
+      copies alone under the constant-time answer, the files under their
+      own names alone and as many times under the other, the decomposition
+      under 0, 3, 0x80 and 0xff, the same bytes under all of them, and the
+      vector Poly1305 under the constant-time answer alone. The unit,
+      ML-KEM, P-256 and RSA signing vectors and both Wycheproof legs run
+      once per answer. `bin/tcp_blocking_loop_widemul`,
+      `bin/tcp_nonblocking_loop_widemul`, `bin/quic_loop_widemul` and
+      `bin/webpki_session_widemul` hold the field to 0, 1, 2 and 3 at every
+      init call and `ch_srv_check`, and run a whole handshake for each pair
+      of answers with the same counts. Where both ends are this tree's
+      sessions they count each end's calls around its own calls, so each
+      end runs the copy its own answer names, the QUIC one through a
+      Handshake and a 1-RTT packet each way. `test/widemul-builds.sh` holds
+      `ct.h`'s three refusals, the assembly of each file under its own
+      names, the vector calls, and the Makefile's and `build.zig`'s lists
+      and refusal. `lint-trust-separation` admits the native copies in
+      `WIDEMUL=runtime`'s rows alone and requires each beside its file.
+      `lint-wide-multiply` records each native copy's own ceilings under
+      every spec: the products it asks of the native multiply, which is
+      what the copy is for, and its branches, read against the file under
+      its own names, which keeps its ceilings. `lint-runtime-symbols`
+      admits rv32ic's `__muldi3` in the native copies, which `softmul.c`
+      supplies in constant time. Fifty-three mutants in `test/violations/`
+      break the new rules, and each is caught.
+    - **The proofs.** No harness compiles `CH_WIDEMUL_RUNTIME`, and no copy
+      needs a run of its own. `proof/run.sh` compiles each file on the
+      native multiply, which is the native copy's text under other names,
+      and `ctwidemul` carries those verdicts to the decomposition, which is
+      the file under its own names (docs/verification.md). Under twelve
+      build configurations every harness preprocesses to the text it had
+      before this change, one assertion's line number aside. The
+      dispatchers have no harness; the counting test holds them.
+    - **CI.** The check job runs all of it on x86-64. The arm64 and macOS
+      jobs run the `WIDEMUL=runtime` binaries under both answers in
+      `suite-check` and package a `CHACHA=vector WIDEMUL=runtime` object.
+
+    Cost:
+
+    - Flash. The default build on `WIDEMUL=runtime` takes 35.9 kB on
+      mips32r2 at `-Os`, 5.7 kB more than the default
+      (docs/performance.md). On arm64 at `-O2`, counted as
+      `bench/device-ram.sh` counts host flash, the packaged object grows
+      from 35,754 to 44,647 bytes for the raw client, from 97,264 to
+      139,882 for the server, and from 158,145 to 203,023 for the
+      `CHACHA=vector` QUIC object colibri links on `AES=runtime`. A native
+      copy keeps the entries no dispatcher calls, such as
+      `p256_fe_add_native`, and a link that drops unreferenced functions
+      can remove them.
+    - `ch_cfg` grows 8 bytes on arm64, one byte and its alignment, so the
+      default session struct is 1,168 bytes against 1,160. In colibri's
+      QUIC object the byte sits beside `aes_instructions`, and `ch_quic`
+      does not grow.
+    - One compare and branch per dispatched call. No bench measures a
+      `WIDEMUL=runtime` object.
+    - A constant-time answer on a thread without DIT, or on a part outside
+      the DOIT list, runs the native multiply where it is not constant
+      time. The answer is the caller's, and chapulin cannot check it.
+    - `make check` builds and runs fifteen more binaries, two more
+      Wycheproof legs, three more `lib-check` objects and one more script,
+      and `lint-zig-build` one more configuration.
+
+    Gain: one object serves threads and CPUs whose multiply runs in
+    constant time and those whose multiply does not, and its caller states
+    which at each init, as it states the AES instructions (entry 81).
+
+    Rejected:
+
+    - **The renames in the build.** The Makefile could compile each file a
+      second time with `-D` renames. The renames would then live in the
+      Makefile, in `build.zig` and in every build a firmware tree writes,
+      where a reader of the sources does not see them.
+    - **A template expanded twice.** Each file could define its functions
+      through a naming macro and be included twice with two suffixes. Every
+      function of the seven files would change shape, and the proofs and
+      lints would read macro-built names.
+    - **A function pointer per operation, or a branch per product.** A
+      table of pointers would make every call an indirect call an auditor
+      has to trace to its table, and a branch in each product loop would
+      put the answer in every inner loop. One branch per operation keeps
+      the files as they were.

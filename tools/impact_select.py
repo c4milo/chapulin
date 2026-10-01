@@ -423,6 +423,14 @@ def select_zig(out, changed, legs):
                     f"{path} is read by the TX_RECORD script, which holds "
                     f"build.zig's refusals to make's",
                     ["test/tx-record-builds.sh"])
+        # test/widemul-builds.sh does the same for WIDEMUL=runtime: the
+        # lists build.zig writes for it, and its refusal of X25519=wide
+        # (docs/decisions.md 87).
+        if path in ("build.zig", "build.zig.zon", "test/widemul-builds.sh"):
+            out.add("tests", "test/widemul-builds.sh",
+                    f"{path} is read by the WIDEMUL=runtime script, which "
+                    f"holds build.zig's lists and refusal to make's",
+                    ["test/widemul-builds.sh"])
 
 
 def select_codegen(out, csources, lib):

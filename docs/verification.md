@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 93 C sources in the tree root are compiled into a
+80 of the 100 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 13 sources are in no such harness:
+The other 20 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -51,6 +51,8 @@ The other 13 sources are in no such harness:
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
+| `poly1305_native.c`, `x25519_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a `WIDEMUL=runtime` object, on the native multiply and under the names `widemul_native.h` gives (decision 87). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes `CH_NATIVE_WIDEMUL`: the same text under other names ([The WIDEMUL=runtime copies](#the-widemulruntime-copies)). |
+| `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the `WIDEMUL=runtime` binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
@@ -2533,6 +2535,50 @@ extension: QEMU's arm64 models all implement it, and none turns it off.
 On arm64 the claim rests on the counts and the disassembly. The qemu run
 executes the vectors and the rows the loop binaries hold, and no other
 path.
+
+### The WIDEMUL=runtime copies
+
+A `WIDEMUL=runtime` object compiles each file built on the widening
+multiply twice, and the caller's answer picks a copy for each operation
+(decision 87). No harness compiles `CH_WIDEMUL_RUNTIME`, and neither copy
+needs a run of its own:
+
+- The native copy is its file's text on the native multiply under other
+  names. `proof/run.sh` passes `CH_NATIVE_WIDEMUL` to every harness, so
+  each harness of the file proves that text.
+- The file under its own names compiles to the same assembly with the
+  runtime define as without it, which `test/widemul-builds.sh` requires,
+  so it is the `WIDEMUL=decomposed` build's file. [ctwidemul](#ctwidemul)
+  carries the verdicts above to it, as it carries them to every target
+  that runs the decomposition.
+- Under twelve build configurations every harness preprocesses to the
+  text it had before the change, one assertion's line number aside, so
+  no verdict moved.
+
+What no proof covers is the choice itself: which copy each operation
+runs, and whether each session passes its own answer. Tests hold it:
+
+- `bin/widemul_runtime_test`, in `make check`, compiles the seven files
+  again under counted names and runs the AEAD, X25519, ML-KEM, P-256, RSA
+  signing and record operations under each answer. Under
+  `CH_WIDEMUL_CONSTANT_TIME` they call the native copies alone, under
+  `CH_WIDEMUL_NOT_STATED` the decomposition alone and as many times, and
+  under 0, 3, 0x80 and 0xff the decomposition, with the same bytes out of
+  all of them.
+- `bin/tcp_blocking_loop_widemul`, `bin/tcp_nonblocking_loop_widemul`,
+  `bin/quic_loop_widemul` and `bin/webpki_session_widemul` run whole
+  handshakes on the same counts for each pair of answers. Where both ends
+  are this tree's sessions, each end's calls are counted around its own
+  calls, so a direction, a packet or a signature that runs under another
+  answer than its session's shows.
+- The unit, ML-KEM, P-256 and RSA signing vectors and the Wycheproof suite
+  run once per answer.
+
+A mutant that inverts a dispatcher, or drops the answer at any of the
+places that pass it, computes the same bytes, so only the counts catch
+it; the 47 `inv16-` violations of decision 87 are those mutants. The
+counts say which copy ran, not what the native multiply costs in time:
+that is the caller's answer, which nothing here can check.
 
 ### The subjectAltName walk against a full-length hostname
 

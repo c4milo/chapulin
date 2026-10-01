@@ -9,6 +9,8 @@
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H
 
+#include "test_widemul.h"
+
 // Mock transport: the "server" is a byte queue we stuff records into.
 // The send side captures the client's bytes so tests can decrypt them
 // with the server's copy of the client write key, and fail_after makes
@@ -66,6 +68,12 @@ static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     t->cfg.recv = mock_recv;
     t->cfg.io = m;
     t->cfg.on_ticket = mock_on_ticket;
+    // What an init call writes into a WIDEMUL=runtime session, which this
+    // one never runs (session.h).
+    TEST_WIDEMUL_CFG(t->cfg);
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(t);
+#endif
     memcpy(t->rd_secret, secret, SHA256_LEN);
     rec_dir_init(&t->rd, t->rd_secret);
     uint8_t write_secret[SHA256_LEN];

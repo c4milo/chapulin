@@ -18,6 +18,9 @@
 #else
 #include "rsa.h"
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+#include "widemul.h"
+#endif
 
 #ifdef CH_TRUST_WEBPKI
 // The ALPN rule under TRUST=webpki. webpki_cfg_ok, which trust_config_ok
@@ -196,6 +199,12 @@ int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
     // the Initial packets run on and the suites the hello offers (cfg.h),
     // before the web PKI suite rule reads it.
     if (!suite_aes_instructions_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+#ifdef CH_WIDEMUL_RUNTIME
+    // The caller's answer about the widening multiply (cpu_cfg.h).
+    if (!widemul_answer_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif

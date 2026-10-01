@@ -92,7 +92,7 @@ static void mock_key_exchange(mock_kex *k, uint16_t group, int p256_mode, const 
         return;
     }
     uint8_t server_pub[X25519_LEN];
-    x25519_base(server_pub, server_scalar);
+    widemul_x25519_base(TEST_WIDEMUL, server_pub, server_scalar);
     uint8_t *ecdhe = k->ecdhe;
     uint8_t *pub_at = k->share;
     k->share_len = X25519_LEN;
@@ -109,7 +109,7 @@ static void mock_key_exchange(mock_kex *k, uint16_t group, int p256_mode, const 
     }
     memcpy(pub_at, server_pub, X25519_LEN);
     if (x25519_value != NULL) {
-        CHECK(x25519(ecdhe, server_scalar, x25519_value) == 1);
+        CHECK(widemul_x25519(TEST_WIDEMUL, ecdhe, server_scalar, x25519_value) == 1);
     }
 }
 

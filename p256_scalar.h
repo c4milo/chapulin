@@ -83,4 +83,12 @@ void p256_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b)
 // branch on a, which is the nonce.
 void p256_scalar_inverse(p256_scalar *o, const p256_scalar *a);
 
+#ifdef CH_WIDEMUL_RUNTIME
+// The native copies of the entries above that are built on the widening multiply,
+// which a WIDEMUL=runtime object holds beside them (p256_scalar_native.c, widemul_native.h)
+// and widemul.h's dispatchers call for CH_WIDEMUL_CONSTANT_TIME.
+void p256_scalar_mul_native(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
+void p256_scalar_inverse_native(p256_scalar *o, const p256_scalar *a);
+#endif
+
 #endif

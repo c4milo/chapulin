@@ -109,6 +109,9 @@ static uint32_t axes_from_defines(void) {
 #ifdef CH_AES_RUNTIME
     axes |= CH_BUILD_AES_RUNTIME;
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+    axes |= CH_BUILD_WIDEMUL_RUNTIME;
+#endif
     return axes;
 }
 

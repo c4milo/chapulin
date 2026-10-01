@@ -18,6 +18,9 @@
 #include "srv_auth.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
+#ifdef CH_WIDEMUL_RUNTIME
+#include "widemul.h"
+#endif
 
 // One offered ALPN protocol name: a non-NULL pointer and 1 to
 // CH_ALPN_NAME_MAX bytes, which is the shape cfg.h states for the field.
@@ -191,6 +194,12 @@ int srv_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+    // The caller's answer about the widening multiply (cpu_cfg.h).
+    if (!widemul_answer_ok(cfg)) {
+        return 0;
+    }
+#endif
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
 }
 
@@ -206,6 +215,9 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(t);
+#endif
     return srv_handshake(t);
 }
 #endif
@@ -221,6 +233,12 @@ int ch_srv_check(const ch_cfg *cfg) {
     // either check, whichever identities it holds, as every server init
     // call refuses it.
     if (!rand_source_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+#ifdef CH_WIDEMUL_RUNTIME
+    // Both checks sign, under the multiply the caller's answer names.
+    if (!widemul_answer_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif

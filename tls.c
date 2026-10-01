@@ -11,6 +11,9 @@
 #include "handshake_record.h"
 #include "io.h"
 #include "rand_draw.h"
+#ifdef CH_WIDEMUL_RUNTIME
+#include "widemul.h"
+#endif
 
 // A ROLE=server build compiles nothing from here to the end of
 // ch_connect. tls.h declares ch_connect only in the objects that define
@@ -136,6 +139,12 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+    // The caller's answer about the widening multiply (cpu_cfg.h).
+    if (!widemul_answer_ok(cfg)) {
+        return 0;
+    }
+#endif
 #ifndef CH_KEX_PQ
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy the
@@ -170,6 +179,9 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(t);
+#endif
     int rc = tlsi_epoch_init(t, cfg, psk_ok);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
@@ -367,6 +379,12 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+    // The caller's answer about the widening multiply (cpu_cfg.h).
+    if (!widemul_answer_ok(cfg)) {
+        return 0;
+    }
+#endif
     return webpki_cfg_ok(cfg) && cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF &&
            hspost_ticket_age_ok(cfg);
 }
@@ -382,6 +400,9 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+#ifdef CH_WIDEMUL_RUNTIME
+    tlsi_record_widemul(t);
+#endif
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
     // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
     // refuses the epoch callbacks, as it does in every build but a CA mode.

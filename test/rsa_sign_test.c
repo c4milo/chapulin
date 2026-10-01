@@ -21,6 +21,7 @@
 #include "rsa_sign.h"
 #include "rsa_sign_vectors.h"
 #include "sha256.h"
+#include "test_widemul.h"
 
 // The two bounds rsa.h defines. This binary builds at 512 and signs
 // every vector; a build at the device bound of 384 runs the refusal
@@ -66,6 +67,13 @@ static void load_key(const vector *v) {
     g_key.n_len = v->n_len;
 }
 
+// rsa_pss_sign with g_key, under the answer this binary names
+// (test/test_widemul.h).
+static int sign(const uint8_t msg_hash[SHA256_LEN], const uint8_t *salt, uint8_t *sig, size_t cap,
+                size_t *sig_len) {
+    return widemul_rsa_pss_sign(TEST_WIDEMUL, &g_key, msg_hash, salt, sig, cap, sig_len);
+}
+
 // The known answer, then the round trip: the tree's own verifier accepts
 // what the signer produced, and a second salt gives a different signature
 // that verifies too.
@@ -85,7 +93,7 @@ static void run_vector(const vector *v) {
         size_t small_len = 0;
         memset(&g_key, 0, sizeof g_key);
         g_key.n_len = v->n_len;
-        CHECK(rsa_pss_sign(&g_key, msg_hash, v->salt, small, sizeof small, &small_len) == 0);
+        CHECK(sign(msg_hash, v->salt, small, sizeof small, &small_len) == 0);
         (void)fprintf(stderr, "ok %s refused at this build's modulus bound\n", v->name);
         return;
     }
@@ -93,7 +101,7 @@ static void run_vector(const vector *v) {
     load_key(v);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    CHECK(rsa_pss_sign(&g_key, msg_hash, v->salt, sig, sizeof sig, &sig_len) == 1);
+    CHECK(sign(msg_hash, v->salt, sig, sizeof sig, &sig_len) == 1);
     CHECK(sig_len == v->n_len);
     CHECK(memcmp(sig, v->sig, v->n_len) == 0);
     CHECK(rsa_pss_verify(v->n, v->n_len, msg_hash, sig, sig_len) == 1);
@@ -102,7 +110,7 @@ static void run_vector(const vector *v) {
     memset(other_salt, 0x11, sizeof other_salt);
     uint8_t sig2[CH_RSA_MODULUS_MAX];
     size_t sig2_len = 0;
-    CHECK(rsa_pss_sign(&g_key, msg_hash, other_salt, sig2, sizeof sig2, &sig2_len) == 1);
+    CHECK(sign(msg_hash, other_salt, sig2, sizeof sig2, &sig2_len) == 1);
     CHECK(memcmp(sig2, sig, v->n_len) != 0);
     CHECK(rsa_pss_verify(v->n, v->n_len, msg_hash, sig2, sig2_len) == 1);
 
@@ -128,28 +136,28 @@ static void run_refusals(const vector *v) {
 
     load_key(v);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 1);
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, v->n_len - 1, &sig_len) == 0); // cap one short
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, v->n_len, &sig_len) == 1);     // cap exact
+    CHECK(sign(msg_hash, salt, sig, v->n_len - 1, &sig_len) == 0); // cap one short
+    CHECK(sign(msg_hash, salt, sig, v->n_len, &sig_len) == 1);     // cap exact
 
     load_key(v);
     g_key.n_len = 248; // one 8-byte step below the RSA-2048 floor
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
+    CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = 260; // inside the bounds, not a multiple of 8
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
+    CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = CH_RSA_MODULUS_MAX + 8; // one step above the ceiling
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
+    CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[g_key.n_len - 1] &= (uint8_t)~1U; // even modulus, no Montgomery inverse
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
+    CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[0] &= 0x7f; // top bit clear, so emLen would not be n_len
-    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
+    CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 }
 

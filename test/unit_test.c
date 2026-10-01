@@ -151,15 +151,15 @@ static void test_poly1305(void) {
     const char *msg = "Cryptographic Forum Research Group";
     poly1305 p;
     poly1305_init(&p, key);
-    poly1305_update(&p, (const uint8_t *)msg, strlen(msg));
-    poly1305_final(&p, tag);
+    widemul_poly1305_update(TEST_WIDEMUL, &p, (const uint8_t *)msg, strlen(msg));
+    widemul_poly1305_final(TEST_WIDEMUL, &p, tag);
     CHECK(eq_hex(tag, "a8061dc1305136c6c22b8baf0c0127a9"));
     // Same message, byte-at-a-time.
     poly1305_init(&p, key);
     for (size_t i = 0; i < strlen(msg); i++) {
-        poly1305_update(&p, (const uint8_t *)msg + i, 1);
+        widemul_poly1305_update(TEST_WIDEMUL, &p, (const uint8_t *)msg + i, 1);
     }
-    poly1305_final(&p, tag);
+    widemul_poly1305_final(TEST_WIDEMUL, &p, tag);
     CHECK(eq_hex(tag, "a8061dc1305136c6c22b8baf0c0127a9"));
 }
 
@@ -206,11 +206,11 @@ static void test_x25519(void) {
     // RFC 7748 §5.2 vectors.
     unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4", k);
     unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c", u);
-    CHECK(x25519(out, k, u) == 1);
+    CHECK(widemul_x25519(TEST_WIDEMUL, out, k, u) == 1);
     CHECK(eq_hex(out, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"));
     unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d", k);
     unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493", u);
-    CHECK(x25519(out, k, u) == 1);
+    CHECK(widemul_x25519(TEST_WIDEMUL, out, k, u) == 1);
     CHECK(eq_hex(out, "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957"));
 
     // §5.2 iterated: k = result, u = old k; 1,000 rounds.
@@ -218,7 +218,7 @@ static void test_x25519(void) {
     memcpy(u, k, X25519_LEN);
     for (int i = 0; i < 1000; i++) {
         uint8_t next[X25519_LEN];
-        (void)x25519(next, k, u);
+        (void)widemul_x25519(TEST_WIDEMUL, next, k, u);
         memcpy(u, k, X25519_LEN);
         memcpy(k, next, X25519_LEN);
         if (i == 0) {
@@ -236,18 +236,18 @@ static void test_x25519(void) {
     uint8_t s2[32];
     unhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a", apriv);
     unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb", bpriv);
-    x25519_base(apub, apriv);
+    widemul_x25519_base(TEST_WIDEMUL, apub, apriv);
     CHECK(eq_hex(apub, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"));
-    x25519_base(bpub, bpriv);
+    widemul_x25519_base(TEST_WIDEMUL, bpub, bpriv);
     CHECK(eq_hex(bpub, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"));
-    CHECK(x25519(s1, apriv, bpub) == 1);
-    CHECK(x25519(s2, bpriv, apub) == 1);
+    CHECK(widemul_x25519(TEST_WIDEMUL, s1, apriv, bpub) == 1);
+    CHECK(widemul_x25519(TEST_WIDEMUL, s2, bpriv, apub) == 1);
     CHECK(memcmp(s1, s2, 32) == 0);
     CHECK(eq_hex(s1, "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"));
 
     // All-zero point (low order) must be rejected.
     uint8_t zero[X25519_LEN] = {0};
-    CHECK(x25519(out, apriv, zero) == 0);
+    CHECK(widemul_x25519(TEST_WIDEMUL, out, apriv, zero) == 0);
 }
 
 static void test_ct(void) {

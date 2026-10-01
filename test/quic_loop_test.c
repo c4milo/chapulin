@@ -37,6 +37,7 @@
 #include "rand.h"
 #include "srv_quic.h"
 #include "srv_ticket.h"
+#include "test_widemul.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
 #endif
@@ -152,6 +153,12 @@ static uint8_t client_buf[CH_MIN_RXBUF];
 static uint8_t server_aes = CH_AES_INSTRUCTIONS_PRESENT;
 static uint8_t client_aes = CH_AES_INSTRUCTIONS_PRESENT;
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+// Each end's ch_cfg.widemul: TEST_WIDEMUL unless a row of
+// test/quic_loop_widemul.h says otherwise.
+static uint8_t quic_server_widemul = TEST_WIDEMUL;
+static uint8_t quic_client_widemul = TEST_WIDEMUL;
+#endif
 
 static void server_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
@@ -179,6 +186,9 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_AES_RUNTIME
     cfg->aes_instructions = server_aes;
 #endif
+#ifdef CH_WIDEMUL_RUNTIME
+    cfg->widemul = quic_server_widemul;
+#endif
 }
 
 // The client half both builds share: one offered protocol, the transport
@@ -199,6 +209,9 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 #endif
 #ifdef CH_AES_RUNTIME
     cfg->aes_instructions = client_aes;
+#endif
+#ifdef CH_WIDEMUL_RUNTIME
+    cfg->widemul = quic_client_widemul;
 #endif
 }
 
@@ -373,6 +386,10 @@ static size_t handshake_messages(void) {
 #ifdef CH_AES_RUNTIME
 #include "quic_loop_runtime.h"
 #endif
+// The widening multiply's rows run quic_loop_webpki.h's client and server.
+#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
+#include "quic_loop_widemul.h"
+#endif
 
 int main(int argc, char **argv) {
 #ifdef CH_AES_RUNTIME
@@ -403,6 +420,9 @@ int main(int argc, char **argv) {
 #endif
 #ifdef CH_AES_RUNTIME
     test_quic_runtime();
+#endif
+#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
+    test_quic_widemul();
 #endif
     if (failures == 0) {
         (void)printf("quic_loop: a QUIC client resumed a ticket from this tree's server with no"

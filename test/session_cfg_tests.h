@@ -44,6 +44,7 @@ static void test_epoch_cfg(void) {
     pin[TEST_PIN_LEN - 1] = 1;
     mock_io m = {0};
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -153,6 +154,7 @@ static void test_hello_staging_boundary(void) {
     static uint8_t ek[MLKEM_EK_LEN];
 #endif
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     cfg.psk = identity; // any non-NULL selects the PSK arm
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
@@ -198,6 +200,7 @@ static void test_connect_cfg(void) {
     pin2[TEST_PIN_LEN - 1] = 3; // slot B must be odd too
     mock_io m = {0};
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -271,13 +274,12 @@ static void test_connect_cfg(void) {
     CHECK(CH_MIN_RXBUF == 1189);
 #endif
 
-    // require_pq (docs/decisions.md 12): a classic build offers x25519
-    // alone and cannot satisfy it, so ch_connect refuses the config
-    // before it sends a byte; a hybrid build offers X25519MLKEM768
-    // alone, so the flag passes validation and the handshake checks it
-    // once parse_key_share accepts the ServerHello's key_share. No
-    // ServerHello arrives here either way, so the reported group stays
-    // 0.
+    // require_pq (docs/decisions.md 12): a classic build offers x25519 alone
+    // and cannot satisfy it, so ch_connect refuses the config before it sends
+    // a byte; a hybrid build offers X25519MLKEM768 alone, so the flag passes
+    // validation and the handshake checks it once parse_key_share accepts the
+    // ServerHello's key_share. No ServerHello arrives here either way, so the
+    // reported group stays 0.
     cfg.require_pq = 1;
 #ifdef CH_KEX_PQ
     CHECK(ch_connect(&t, &cfg) == CH_EIO);
@@ -330,6 +332,7 @@ static void test_ticket_age_cfg(void) {
     uint8_t psk[32] = {1};
     mock_io m = {0};
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -412,6 +415,7 @@ static void test_pinned_hello_extensions(void) {
     pin[TEST_PIN_LEN - 1] = 1;
     mock_io m = {0};
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -459,6 +463,7 @@ static void test_psk_hello_bytes(void) {
         random32[i] = (uint8_t)(0x60 + i);
     }
     ch_cfg cfg = {0};
+    TEST_WIDEMUL_CFG(cfg);
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = identity;

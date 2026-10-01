@@ -108,6 +108,9 @@ MEMORY = [
      [["session_struct_webpki_aes_runtime_arm64"]]),
     ("**total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its "
      "floor)", [["static_working_set_webpki_aes_runtime_arm64"]]),
+    ("`ch_tls` under `WIDEMUL=runtime`", [["session_struct_widemul_runtime_arm64"]]),
+    ("**total static working set, `WIDEMUL=runtime`** (2048 buffer)",
+     [["static_working_set_widemul_runtime_arm64"]]),
 ]
 
 
@@ -377,6 +380,27 @@ def check_floor(readme):
     return 0
 
 
+def check_flash_runtime(readme):
+    """The WIDEMUL=runtime total of the device model, and its distance from
+    the default build's, as kB in the prose."""
+    flash = read_csv("bench/results-device.csv", "mips_flash_B")
+    if "total (WIDEMUL=runtime)" not in flash:
+        print("lint-bench-numbers: bench/results-device.csv has no total (WIDEMUL=runtime) row")
+        return 1
+    runtime = flash["total (WIDEMUL=runtime)"]
+    want = ("%.1f kB" % (runtime / 1024), "%.1f kB" % ((runtime - flash["total"]) / 1024))
+    m = re.search(r"On `WIDEMUL=runtime` the default build totals ([0-9.]+ kB), ([0-9.]+ kB) more",
+                  readme)
+    if not m:
+        print("lint-bench-numbers: docs/performance.md does not state the WIDEMUL=runtime flash")
+        return 1
+    if m.groups() != want:
+        print("lint-bench-numbers: docs/performance.md says WIDEMUL=runtime totals %s, %s more; "
+              "the device model says %s, %s more" % (m.groups() + want))
+        return 1
+    return 0
+
+
 def check_flash_ecdsa(readme):
     """The ecdsa trade: RSA out, P-256 in, and the total that leaves."""
     flash = read_csv("bench/results-device.csv", "mips_flash_B")
@@ -460,6 +484,7 @@ def main():
     rc |= check_memory(readme)
     rc |= check_flash(readme)
     rc |= check_flash_ecdsa(readme)
+    rc |= check_flash_runtime(readme)
     rc |= check_floor(readme)
     rc |= check_speed_ecdsa(readme)
     rc |= check_decision_x25519()

@@ -1,0 +1,15 @@
+invariant: INV-16
+file: record.c
+catches: tcp_blocking_loop_widemul
+reason: the record layer runs every record's Poly1305 on the decomposition
+  whatever the session answered, so a caller that stated the multiply's
+  timing gets the slow copy on every record and the answer picks nothing
+  there. The tags are the same. test/tcp_blocking_loop_widemul.h requires
+  a handshake between two ends that answer CH_WIDEMUL_CONSTANT_TIME to
+  call no file under its own names.
+
+--- old
+    return d->widemul;
+--- new
+    (void)d;
+    return CH_WIDEMUL_NOT_STATED;

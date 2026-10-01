@@ -1,0 +1,13 @@
+invariant: INV-16
+file: mlkem.c
+catches: widemul_runtime_test
+reason: the compression of u in ML-KEM encryption runs under
+  CH_WIDEMUL_NOT_STATED whatever answer the operation was handed. The
+  ciphertext is the same. bin/widemul_runtime_test requires encapsulation
+  and decapsulation to call the native copies alone under the
+  constant-time answer.
+
+--- old
+    widemul_mlk_polyvec_compress(widemul, ct, &u);
+--- new
+    widemul_mlk_polyvec_compress(CH_WIDEMUL_NOT_STATED, ct, &u);

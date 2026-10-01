@@ -42,6 +42,17 @@ Other targets:
   part's widening multiply runs in constant time, and every widening
   product then uses the CPU's multiply instead of 16x16 pieces (`ct.h`).
   The default, `WIDEMUL=decomposed`, makes no claim about the part.
+  `WIDEMUL=runtime` holds both multiplies in one object, for a host whose
+  threads or CPUs differ (decision 87). Your program sets
+  `ch_cfg.widemul` in every session's configuration: to
+  `CH_WIDEMUL_CONSTANT_TIME` when the multiply runs in constant time on
+  the CPU and in the mode the session's thread runs in, which on arm64
+  means a core with FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM
+  policy of your operating system, and to `CH_WIDEMUL_NOT_STATED`
+  otherwise. Every init call refuses any other value, 0 included.
+  chapulin sets no CPU mode and probes nothing. Each file built on the
+  multiply is in the object twice, so it is larger, and the value refuses
+  `X25519=wide`, whose build states the multiply's timing once.
   `TX_RECORD=N` sets `CH_TX_PT`, the most plaintext one outgoing record
   carries, to N bytes, a decimal integer from 512 to 16384; the peer's
   `record_size_limit` can still lower it. Empty, the default, leaves 512.

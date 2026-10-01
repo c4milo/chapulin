@@ -1,0 +1,13 @@
+invariant: INV-16
+file: srv_flight.c
+catches: tcp_nonblocking_loop_widemul
+reason: the server derives its x25519 share under CH_WIDEMUL_NOT_STATED
+  whatever it answered. The share is the same.
+  test/tcp_nonblocking_loop_widemul.h counts the server's calls around its
+  own and requires a server that answers CH_WIDEMUL_CONSTANT_TIME to call
+  no file under its own names.
+
+--- old
+    widemul_x25519_base(widemul_answer(&h->t->cfg), h->pub, h->priv);
+--- new
+    widemul_x25519_base(CH_WIDEMUL_NOT_STATED, h->pub, h->priv);

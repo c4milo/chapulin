@@ -63,6 +63,7 @@
 #include "rsa_sign_vectors.h"
 #include "srv_tcp_nonblocking.h"
 #include "tcp_nonblocking.h"
+#include "test_widemul.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -260,6 +261,7 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
+    TEST_WIDEMUL_CFG(*cfg);
 
     memset(&rsa_key, 0, sizeof rsa_key);
     rsa_key.n_len = sizeof rsa_sign_2048_n;
@@ -287,6 +289,7 @@ static void client_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
 #endif
+    TEST_WIDEMUL_CFG(*cfg);
 }
 
 // Moves everything the client owes into the server, and everything the
@@ -384,6 +387,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #include "tcp_nonblocking_failure_alert_tests.h"
 #include "tcp_nonblocking_frame_tests.h"
 #include "tcp_nonblocking_group_tests.h"
+#include "tcp_nonblocking_loop_widemul.h"
 #include "tcp_nonblocking_read_tests.h"
 #include "tcp_nonblocking_record_end_tests.h"
 #include "tcp_nonblocking_resume_tests.h"
@@ -470,6 +474,7 @@ int main(void) {
 #ifdef CH_RAND_SESSION
     test_session();
 #endif
+    test_widemul_answers();
 
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
