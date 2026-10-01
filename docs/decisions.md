@@ -4567,3 +4567,338 @@ does nothing more.
     outside check can no longer miss a source its code calls without
     check failing first. The differential arms are the exception, because
     `bin/diff`, whose list they share, builds in `make check-slow`.
+
+89. **A host object holds every fast path beside the portable code and
+    picks among them at init from `ch_cfg.cpu`, the caller's description
+    of its CPU, and a device object stays portable**
+    ([#181](https://github.com/c4milo/chapulin/issues/181),
+    [#183](https://github.com/c4milo/chapulin/issues/183),
+    [#186](https://github.com/c4milo/chapulin/issues/186)). Four build
+    variables choose the speed paths today: `AES`, `CHACHA`, `WIDEMUL` and
+    `X25519`. Entries 81 and 87 moved two of those choices to each session,
+    one field at a time, and colibri builds `AES=runtime` with
+    `CHACHA=vector`. Camilo ruled on 2026-09-30:
+
+    - **Direction.** A host object, for arm64 or x86-64, compiles each fast
+      path for its own instructions, as `AES=runtime` compiles `aes_hw.c`,
+      beside the portable code, and picks at init. A device object stays
+      portable. `AES=extern` and `WIDEMUL=native` stay as device options.
+      The product variables stay: `TRANSPORT`, `ROLE`, `TRUST`, `KEX`,
+      `RAND` and `SUITE`. `AES`, `CHACHA`, `WIDEMUL` and `X25519` leave the
+      host build, and AVX2 and VAES never become variables.
+    - **Discovery.** The caller probes the CPU and passes the result in.
+      chapulin still probes nothing.
+    - **Shape.** `ch_cfg.cpu` is a `uint32_t` of bits. Every init refuses a
+      value without `CH_CPU_PROBED`. `CH_CPU_CONSTANT_TIME_AES` says the
+      CPU has the AES and carry-less multiply instructions and states that
+      they run in constant time, `CH_CPU_AVX2` says it has AVX2, and
+      `CH_CPU_VAES` that it has VAES and VPCLMULQDQ on 256-bit registers.
+      `CH_CPU_CONSTANT_TIME_MULTIPLY` is the caller's statement about the
+      multiply, and PSTATE.DIT and DOITM are the caller's to set. A caller
+      written before a release that adds a bit leaves that bit clear and
+      runs the slower path. A bit for another architecture is refused, not
+      ignored. The field replaces `ch_cfg.aes_instructions` and
+      `ch_cfg.widemul`.
+
+    Camilo then ruled on four points the direction left open: the host
+    test, the field in a device object, the AES timing statement and the
+    bit that picks the wide X25519 field. He named the AES bit
+    `CH_CPU_CONSTANT_TIME_AES` so that its name states the claim it
+    carries. The sections below state each ruling and its reason. Once the
+    code lands, this entry amends entries 50, 52, 68, 80, 81, 82, 83, 86
+    and 87 where they state a speed variable.
+
+    **The host test.** A target is a host target when its compiler passes
+    the three probes the Makefile runs today for `AES=runtime`,
+    `CHACHA=vector` and `X25519=wide`: it defines `__aarch64__` or
+    `__x86_64__`, it defines `__ARM_NEON` or `__SSE2__` for a little-endian
+    core, and it defines `__SIZEOF_INT128__`. Every
+    LP64 compiler for the two architectures passes all three. The Makefile
+    and `build.zig` run the test, and a host build passes one define,
+    `-DCH_CPU_RUNTIME`, named after `CH_AES_RUNTIME` and
+    `CH_WIDEMUL_RUNTIME`, which it replaces. The sources choose on that
+    define and never on the architecture macros, and `cpu_cfg.h` stops a
+    build that defines it for a target that fails the test. Reason: a
+    firmware tree with its own build, every proof harness, `bench/sram.sh`
+    and the test binaries of the portable code compile the sources without
+    the define, so each gets the code it compiles today. cbmc defines the
+    architecture macros of the machine it runs on, `__aarch64__` and
+    `__ARM_NEON` on an arm64 Mac, so sources that chose on those macros
+    would hand CBMC intrinsics, which it cannot read.
+
+    **The product picks the object on a host target.** A
+    device client, `ROLE=client` with a raw or ca `TRUST`, builds the
+    portable object on every target. Entry 44 calls that client a pinned
+    firmware image, and the Makefile calls it a device client when it
+    refuses `SUITE=aesgcm` for it (entry 45). `TRUST=webpki`, `ROLE=server`
+    and `ROLE=both` build the host object on a host target. So an arm64
+    device that runs Linux and pins its server gets the small object
+    through `TRUST`, and no seventh variable exists. Reasons: the default
+    build, a `TRUST=raw-rsa` client, stays the portable object on every
+    development machine, so `make lib`, the examples, `lint-stack`'s
+    default budget and every firmware caller see what they see today; and
+    a webpki or server program already needs the clock, the hostname and
+    the buffers of a host. Cost: a raw or ca client on a 64-bit host never
+    runs a fast path, and a webpki or server program on an arm64 device
+    always takes the host object. A check that packages the device object
+    of a server, such as today's `AES=extern` server leg, must build for a
+    device target, through `build.zig`'s cross linker or a CI cross lane,
+    or set the result of the host test on its own command line, as
+    `lint-trust-separation` would.
+
+    **No field in a device object.** `ch_cfg.cpu` exists only
+    in a host object, as `aes_instructions` exists only under
+    `AES=runtime`. A device object holds one path per primitive, so the
+    field would choose nothing, and it would add 32 bits to every session's
+    copy of `ch_cfg`. Required there, it would make every firmware caller's
+    init return `CH_EINVAL` until the caller set it, a failure no compiler
+    reports. Accepted as 0 there, its rule would differ between objects
+    anyway. Cost: a program built for both kinds of object writes the
+    field under `#ifdef CH_CPU_RUNTIME`. The build record's bit tells a
+    consumer which layout it has, and `ch_build_matches` refuses a
+    mismatch.
+
+    **`CH_CPU_CONSTANT_TIME_AES` states the timing of the AES
+    instructions.** In a host object the bit says that the CPU has the AES
+    and carry-less multiply instructions, and that the caller states they
+    run in constant time on it, in the mode the session's thread runs in.
+    Its name states that claim, as the multiply bit's name states its own.
+    A host object needs no `CH_NATIVE_AES`, and a host build drops the
+    define. The security argument:
+
+    - **What leaks.** AES-GCM leaks its key through timing only if the AES
+      rounds or the carry-less multiply take a time that depends on their
+      operands. Neither architecture promises fixed timing outside a mode
+      its vendor names. Arm's A64 reference lists AESE, AESD, AESMC,
+      AESIMC, PMULL and PMULL2 as data-independent-time instructions while
+      PSTATE.DIT is 1. Intel's DOIT list names AESENC, AESDEC, AESIMC,
+      AESKEYGENASSIST, PCLMULQDQ, VAESENC and VPCLMULQDQ, which hold on Ice
+      Lake, Gracemont and later parts while the operating system has set
+      DOITM (`cpu_cfg.h`). The same two lists name MADD, UMULH, MUL and
+      MULX, which the multiply bit states.
+    - **Who can state it.** The statement is about one CPU in one mode. A
+      host object runs on CPUs its builder never sees: under `AES=runtime`,
+      `CH_NATIVE_AES` already states the timing of instructions on CPUs
+      nobody named. The caller probes the CPU and sets the mode, so the
+      caller is the one party that can make the statement. Entry 87 moved
+      the multiply's statement to the caller for the same reason.
+    - **What stays.** chapulin infers nothing. A session whose caller
+      leaves the bit clear runs ChaCha20 for every traffic key and runs the
+      table on QUIC's public keys alone (INV-26), as entry 81's absent
+      answer does. The table never takes a traffic key. A device object
+      keeps its build statements, `CH_AES_EXTERN_CONSTANT_TIME` and
+      `CH_NATIVE_WIDEMUL`, because it runs on one part its builder knows.
+    - **What is lost.** Today a builder who will not state the timing
+      builds an object in which no session runs AES-GCM. Afterwards only
+      `SUITE=chacha` does that. A caller can also copy a probe's answer
+      into the bit without meaning the claim. The bit's name and its
+      comment in `cpu_cfg.h` state the claim, and `CH_CPU_PROBED` makes each
+      caller write the field on purpose.
+    - **Rejected.** Keeping the define would leave a host object with a
+      build line about CPUs nobody has seen, beside a multiply statement it
+      takes at run time from the same vendor lists. Making the multiply bit
+      state the AES timing too would make AES-GCM depend on a statement
+      about the multiply, which colibri does not make today.
+
+    **The multiply bit picks the wide field.**
+    `CH_CPU_CONSTANT_TIME_MULTIPLY` states the 64x64->128 multiply as well.
+    Entry 52 kept `CH_NATIVE_MUL128` apart from `CH_NATIVE_WIDEMUL` for two
+    reasons, and neither holds for a caller's bit. Each test binary runs
+    both fields under both values of the bit, so the test flags'
+    `CH_NATIVE_WIDEMUL` no longer picks a field. And the lists a caller can
+    cite, DIT's and DOIT's, name both widths. Under the bit, X25519 runs
+    `x25519_wide.c`, which took 34 µs a scalar multiplication on an M1 Pro
+    against 428 µs for the 16-limb field on the native multiply (entry 52).
+    So `x25519_native.c` goes, and a host object runs the 16-limb field on
+    the decomposition alone. Cost: a caller who can state the 32-bit
+    multiply and not the 64-bit one cannot say so. No part known here
+    separates the two.
+
+    **The mapping.** Each removed value becomes a bit in a host object:
+
+    | Today | In a host object |
+    |---|---|
+    | `AES=hw` with `CH_NATIVE_AES`; `AES=runtime` with `CH_AES_INSTRUCTIONS_PRESENT` | `CH_CPU_CONSTANT_TIME_AES` set |
+    | `AES=soft`; `AES=runtime` with `CH_AES_INSTRUCTIONS_ABSENT` | `CH_CPU_CONSTANT_TIME_AES` clear |
+    | `CHACHA=vector` | no bit: NEON or SSE2 in every session |
+    | `WIDEMUL=native`; `WIDEMUL=runtime` with `CH_WIDEMUL_CONSTANT_TIME` | `CH_CPU_CONSTANT_TIME_MULTIPLY` set |
+    | `WIDEMUL=decomposed`; `WIDEMUL=runtime` with `CH_WIDEMUL_NOT_STATED` | `CH_CPU_CONSTANT_TIME_MULTIPLY` clear |
+    | `X25519=wide` with `CH_NATIVE_MUL128` | `CH_CPU_CONSTANT_TIME_MULTIPLY` set |
+    | `CHACHA=vector WIDEMUL=native`, the vector Poly1305 | `CH_CPU_CONSTANT_TIME_MULTIPLY` set |
+
+    A host build refuses `AES=extern` and `WIDEMUL=native`, which stay for
+    device objects. A host session never runs `chacha20.c`'s loop: every
+    arm64 core has NEON and every x86-64 core SSE2 (entry 82), so no bit
+    turns the vector path off, and `chacha20_block`, which derives the
+    Poly1305 key, stays the portable function. The AVX2 ChaCha20 and the
+    VAES GCM, in development now, are chosen by the predicates added with
+    them. Those predicates read `CH_CPU_AVX2`, and `CH_CPU_VAES` beside
+    `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES instructions
+    at every width. This entry adds no predicate of its own.
+
+    **What init refuses.** `ch_connect`, `ch_record_init`, `ch_quic_init`,
+    `ch_srv_accept`, `ch_srv_record_init`, `ch_srv_quic_init` and
+    `ch_srv_check` return `CH_EINVAL`, before they send anything, for a
+    value without `CH_CPU_PROBED` and for a value with a bit this object
+    does not define for its architecture: `CH_CPU_AVX2` or `CH_CPU_VAES` on
+    arm64, or a bit a later release adds. A defined bit for instructions
+    the object never runs, such as `CH_CPU_CONSTANT_TIME_AES` in a TCP
+    object without `SUITE=aesgcm`, still describes the CPU, and init
+    accepts it. In a `SUITE=aesgcm` object with `CH_CPU_CONSTANT_TIME_AES`
+    clear, init refuses a `cipher_suites` list that names an AES-GCM suite,
+    as it does for entry 81's absent answer.
+
+    **How the object chooses.** Entries 81 and 87 already built the parts.
+    A target pragma compiles each instruction set's functions for those
+    instructions alone, so the rest of the object runs on any CPU of its
+    architecture. Each file built on the multiply compiles twice, the
+    second time as `<file>_native.c`. One branch per operation reads the
+    session's bits, and no function pointer is involved. A host object is
+    compiled for its architecture's base instruction set: a builder who
+    passes `-march` for a newer CPU makes the whole object require that
+    CPU, whatever the bits say.
+
+    **What goes and what merges**, counted at 178f791:
+
+    | What | Today | After |
+    |---|---|---|
+    | Speed variables, and their values | 4, and 11 | 2, and 4, for device objects |
+    | Compiler probes for them | 4 | 1, the host test |
+    | `lib-check` legs in `make check` | 29, 12 for a speed value | 20 |
+    | `lint-zig-build` configurations | 32, 15 for a speed value | 22 |
+    | Wycheproof binaries | 7 | 3 |
+    | Test binaries the four variables add | 37 | about 20 |
+    | `lint-trust-separation` rows that name a speed value | 23 | about 12 |
+    | Native-copy ceilings in `lint-wide-multiply` | 110 | 12 |
+    | Scripts that test the variables' refusals | 3 | 1 |
+    | Speed steps in each of CI's arm64 and macOS jobs | 4 | 2 |
+    | Build-record bits | 2 | 1, `CH_BUILD_CPU_RUNTIME` |
+    | `build.zig` options | 16 | 12 |
+    | `ch_cfg` fields | 2 | 1 |
+    | `chapulin.hpp` types and setters | 4 | 2 |
+    | Zig API types and fields | 6 | 3 |
+    | Timing defines | 4 | 2, for device objects |
+
+    - Nine `lib-check` legs go: the five that name a fast path on a raw
+      client, and the four that repeat a webpki, server or QUIC object the
+      host test now builds. Three stay: a server and colibri's QUIC object,
+      both on `SUITE=aesgcm`, and the device server on `AES=extern`. The
+      eight legs of webpki and server products build the host object with no
+      change to their command lines. Ten Zig configurations go the same way.
+    - The three Wycheproof binaries are the default one, the `AES=extern`
+      one and the host one, which runs once per set of bits that changes a
+      path: four times on arm64, and on x86-64 once more for each of
+      `CH_CPU_AVX2` and `CH_CPU_VAES` once those paths land.
+    - The five equivalence tests stay. Each loop, session and vector test
+      becomes one host binary that runs under every set of bits.
+    - The eight 32-bit specs of `lint-wide-multiply` never compile a native
+      copy, and `x25519_native.c` goes.
+    - Each of CI's arm64 and macOS jobs keeps one host `lib-check` and one
+      disassembly, which then covers every file a target pragma compiles.
+      The mips job's qemu run stays, and runs the host binaries with the
+      bits clear on a CPU without the instructions.
+    - `CH_BUILD_CPU_RUNTIME` takes a new bit, so no record from 0.1.0
+      matches a host object.
+    - `CH_NATIVE_AES` and `CH_NATIVE_MUL128` go. `CH_NATIVE_WIDEMUL` and
+      `CH_AES_EXTERN_CONSTANT_TIME` stay for device objects.
+    - 132 of the 599 mutants in `test/violations/` name a speed variable,
+      its define or one of its files. Most hold code that stays. Each
+      commit re-points or retires the ones that name what it removes.
+
+    **Migration.** Six commits, each through `make check`. Each code commit
+    marks its break with `!` in its header and updates the docs that state
+    what it changes.
+
+    1. The interface: `ch_cfg.cpu` and its bits in `cpu_cfg.h`, the host
+       test in the Makefile and `build.zig`, `CH_CPU_RUNTIME`,
+       `CH_BUILD_CPU_RUNTIME`, the refusals, `Config::cpu()`, the Zig `cpu`
+       fields and the tests of the refusals. No path reads the bits yet:
+       the four variables still choose, and no output byte changes.
+    2. AES. A host object holds the instructions, and in a QUIC object the
+       table for public keys, as `AES=runtime` does, and
+       `CH_CPU_CONSTANT_TIME_AES` picks. `AES=hw`, `AES=runtime`,
+       `aes_instructions` and `CH_NATIVE_AES` go.
+    3. The multiply. A host object holds the native copies, and the
+       multiply bit picks. `WIDEMUL=runtime` and `ch_cfg.widemul` go.
+    4. X25519. The wide field joins every host object under the multiply
+       bit, and `x25519_native.c`, `X25519` and `CH_NATIVE_MUL128` go.
+    5. ChaCha20. The vector path joins every host object, the vector
+       Poly1305 runs under the multiply bit, and `CHACHA` goes.
+    6. CLAUDE.md, with the text Camilo approves.
+
+    Each code commit measures the objects it changes with `bench/sram.sh`
+    and `bench/device-ram.sh`. If the AVX2 or VAES predicates land before
+    commit 1, commit 1 makes them read their bits.
+
+    - **colibri** links `TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki
+      SUITE=aesgcm AES=runtime CHACHA=vector` with `CH_NATIVE_AES` through
+      `build.zig`, and sets `aes_instructions` from stdx's platform probe
+      (https://github.com/c4milo/stdx/issues/15). From commit 1, every init
+      returns `CH_EINVAL` until colibri sets `cpu`. From commit 2,
+      `build.zig` no longer declares `AES=runtime` or `CH_NATIVE_AES`,
+      which `zig build` then refuses. The probe's answer and the timing
+      claim colibri's build stated with `CH_NATIVE_AES` move into
+      `CH_CPU_CONSTANT_TIME_AES`. From commit 5 the same holds for
+      `CHACHA`, and the vector path runs anyway. Its sessions keep their
+      paths: AES-GCM on the instructions under `CH_CPU_CONSTANT_TIME_AES`,
+      and the decomposition unless colibri sets the multiply bit. stdx's
+      probe must learn AVX2 and VAES before colibri can set those bits.
+    - **stompy**'s object is `TRUST=webpki TRANSPORT=tcp-nonblocking
+      ROLE=both` at `TX_RECORD=16384` (entry 71). It is a host object, so
+      from commit 1 every init refuses its configuration until stompy sets
+      `cpu`. If it builds `SUITE=aesgcm AES=hw` with `CH_NATIVE_AES`, as the
+      TCP object entry 80 measured through colibri's h11 client did, commit
+      2 refuses those values, and without `CH_CPU_CONSTANT_TIME_AES` its
+      sessions offer ChaCha20 alone. From commit 5 its ChaCha20 runs the
+      vector path.
+    - **Semver.** Item 4 of SemVer 2.0.0 lets anything change in a 0.y.z
+      release. The series ships as 0.2.0 in `build.zig.zon`, tagged once
+      the nightly passes on its last commit, as 0.1.0 was. colibri and
+      stompy pin chapulin by hash, so each moves from 0.1.0 to 0.2.0 in one
+      step, when it chooses.
+
+    **CLAUDE.md.** Three bullets change, with the text Camilo approves.
+    The protocol bullet states the webpki client's suite order on `AES=hw`
+    with `CH_NATIVE_AES`. The dependency bullet names a variable beside
+    `chacha20_vector.[ch]`, `poly1305_vector.[ch]`, the three
+    implementations behind `aes_block.h`, `ghash_hw.[ch]`, `gcm_hw.[ch]`
+    and `x25519_wide.[ch]`. The constant-time bullet states the widening
+    multiply, the `X25519` and `CHACHA` variables, the `AES` variable and
+    the suite's timing defines. Its paragraphs on the two purposes of AES
+    and on the two key types stay.
+
+    Cost:
+
+    - Every host object holds every path. Entry 87 measured the multiply
+      alone: on arm64 at `-O2`, the server object grows from 97,264 to
+      139,882 bytes when it holds both multiplies, and the AES and vector
+      paths add more. `bench/device-ram.sh` measures each commit.
+    - A host session always runs the vector ChaCha20, which no proof
+      covers. The proved loop runs in device objects alone.
+    - Every host caller writes `ch_cfg.cpu`, and colibri and stompy change
+      their builds and their configurations.
+    - A host object's timing statements move from build lines, which a
+      reviewer reads once, into each caller's code.
+    - A 32-bit target loses two choices: `CHACHA=vector` on 32-bit NEON or
+      SSE2, which no CI leg builds, and `WIDEMUL=runtime`, which entry 87
+      measured on mips32r2 and no consumer links.
+
+    Gain: one object per product and architecture runs on every CPU of
+    that architecture, at the speed its caller describes. Four variables
+    leave the host build, `make check` packages nine fewer objects and
+    `lint-zig-build` builds ten fewer configurations, and an instruction
+    set a later release adds becomes a bit, not a variable.
+
+    Rejected:
+
+    - **The host target alone, for every product.** The default object, a
+      raw client, would become the host object on every development
+      machine. The examples and `lint-stack`'s default budget would then
+      measure the host object, and a firmware's raw client built on a
+      64-bit machine would have a field it lacks on its device.
+    - **A seventh variable that asks for the device object.** It would
+      bring back a speed choice in the build, which the ruling removes, for
+      a case `TRUST` already names.
+    - **Choosing on the architecture macros in the sources.** The proofs
+      would compile intrinsics, and a firmware tree with its own build
+      could not get the portable object for a 64-bit target.
