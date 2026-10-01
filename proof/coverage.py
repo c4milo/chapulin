@@ -27,8 +27,10 @@ disagree; see doc_problems().
 """
 
 import argparse
+import functools
 import pathlib
 import re
+import resource
 import shlex
 import shutil
 import subprocess
@@ -391,26 +393,78 @@ def reach_not_gated():
 # https://github.com/c4milo/chapulin/issues/163. The second half has its
 # answer: a floor line may carry budget=SECONDS, and that harness's cover
 # run gets that limit instead of this one (reach-floors.txt says which,
-# and why). The first half, the formula's memory, is still open.
+# and why). The first half, the formula's memory, was the cover command
+# leaving out --slice-formula (reach_command says why it is there now). In
+# an ubuntu 24.04 amd64 container with the pinned cbmc, hello_build's
+# cover run without it passed 13 GB in 43 s, and with it the run takes
+# 2 s and 76 MB. On arm64 macOS both commands reach 143 of 185 locations,
+# the runner's 77.3%.
 REACH_BUDGET_S = 1800
 
-# No memory cap on a cover run. An address-space limit was tried after
-# the 2026-09-02 runner death: under it cbmc printed "Solver ran out of
-# memory" and then "0 of 182 covered" with exit 0 for hello_build, a
-# harness that reaches 76.9% given the memory -- a false verdict, not a
-# contained failure. What protects the runner is the no-floor list
-# above: the formulas that outgrew it are skipped, and a run that still
-# runs out of memory is reported as such below.
+# Each cover run gets the address-space cap run.sh gives a lone proof: the
+# memory available when the check starts, in whole GiB, less one. On the
+# nightly runner that is 13 GiB, since run.sh's prove-slow log there names
+# an 8 GB budget, the available 14 GiB less 6. The largest sliced cover
+# runs, the x25519 harnesses', peak at 4.9 GB resident and 6.0 GB of
+# address space in an ubuntu 24.04 amd64 container.
+#
+# A 12 GB cap was tried after the 2026-09-02 runner death, and 0ab9862
+# dropped it: under it cbmc printed "Solver ran out of memory" and then
+# "0 of 182 covered" with exit 0 for hello_build, which needed more, and
+# the check took the 0 as a number. reach_table now reads that message and
+# reports "over memory", and with --slice-formula hello_build needs 76 MB.
+# Without a cap, only the no-floor list kept a cover run from using up the
+# runner's memory, and a harness missing from that list ended the job
+# before it wrote the table: hello_build_suite did that on three nightly
+# runs from 2026-09-30. Under a cap, its unsliced command stops with
+# "Solver ran out of memory during propositional reduction" and exit 6.
+def reach_memory_cap():
+    """The cover run's address-space cap in bytes. None where the machine
+    has no /proc/meminfo, as on macOS, which ignores the limit (run.sh's
+    comment on ulimit -v), or reports 2 GiB or less available, a machine
+    run.sh does not size its cap from either."""
+    try:
+        meminfo = pathlib.Path("/proc/meminfo").read_text()
+    except OSError:
+        return None
+    m = re.search(r"^MemAvailable:\s+(\d+) kB$", meminfo, re.M)
+    if not m:
+        return None
+    available_gib = int(m.group(1)) // 1024 ** 2
+    if available_gib <= 2:
+        return None
+    return (available_gib - 1) * 1024 ** 3
+
+
+def cap_address_space(cap):
+    """Set the calling process's address-space limit to cap bytes, or to
+    its hard limit if that is lower. reach_table runs it in each cbmc
+    child before exec."""
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    if hard != resource.RLIM_INFINITY:
+        cap = min(cap, hard)
+    resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
 
 
 def reach_command(name, runs, shared_defines):
     """The cover command for one harness: what its launch line links and
-    bounds, then the defines launch() adds, in run.sh's order."""
+    bounds, then the defines launch() adds, in run.sh's order.
+
+    --slice-formula is the flag run.sh's BASE passes every proof. A cover
+    goal is covered when the path to it is satisfiable, and the slicer
+    keeps every assumption, branch condition and path guard, so no goal
+    changes its answer. What it drops is each assignment that none of
+    them reads, such as the bytes a builder copies into its output.
+    Without it, hello_build_suite's cover run held 13 GB when a 13 GB
+    container stopped it 52 s in, still converting the formula, and the
+    nightly runner died on it three times; with it, the run takes 6 s and
+    0.13 GB. Both readings come from an ubuntu 24.04 amd64 container with
+    the pinned cbmc (https://github.com/c4milo/chapulin/issues/163)."""
     _tier, unwind, linked, unwindset, defines = runs[name]
     cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
     cmd += [str(ROOT / src) for src in sorted(linked)]
     cmd += [*defines, *shared_defines, "-I", str(ROOT),
-            "--cover", "location", "--unwind", str(unwind)]
+            "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
     if unwindset:
         cmd += ["--unwindset", unwindset]
     return cmd
@@ -441,6 +495,8 @@ def reach_table(runs, only=frozenset()):
     budgets = reach_budgets()
     not_gated = reach_not_gated()
     shared_defines = launch_defines()
+    cap = reach_memory_cap()
+    limit = functools.partial(cap_address_space, cap) if cap else None
     out = ["### Reachability at the configured bounds", "",
            "`cbmc --cover location`: the share of program locations the",
            "harness can reach. A low number means the unwind bound stops",
@@ -462,7 +518,8 @@ def reach_table(runs, only=frozenset()):
         print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
         budget = budgets.get(name, REACH_BUDGET_S)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=budget)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=budget,
+                                 preexec_fn=limit)
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out at {budget} s |")
             print(f"proof-reach: {name} timed out at {budget} s", flush=True)

@@ -20,6 +20,19 @@
 # (94.3%) under both commands on 2026-09-02: the fix moved the command,
 # not a floor.
 #
+# The cover command also passes --slice-formula, as run.sh does for every
+# proof. Until 2026-10-01 it did not, so a cover formula kept every value
+# a harness computes and no goal reads, such as the bytes a builder
+# copies into its output, and hello_build_suite's formula needed more
+# memory than the runner has (https://github.com/c4milo/chapulin/issues/163).
+# The slicer drops only those values, so no count moved. In an ubuntu
+# 24.04 amd64 container with the pinned cbmc, the sliced command printed
+# the last nightly's number for 89 of the 117 harnesses outside the
+# no-floor list. Of the other 28, 4 were new, and 24 had sources that
+# changed after that nightly; for each of those 24 the sliced and
+# unsliced commands gave the same count. That fix also moved the command,
+# not a floor.
+#
 # Why a floor rather than a threshold: a harness that stubs its dependencies
 # legitimately reaches less of its translation unit than one that compiles
 # them concretely, so there is no single number that is right for all of
@@ -85,6 +98,14 @@ eeparse_alpn 33.3
 epoch 34.4
 handshake_record 85.5
 hello_build 76.9
+# hello_build_suite and hello_build_webpki took their floors on 2026-10-01
+# from an ubuntu 24.04 amd64 container with the pinned cbmc .deb, before
+# any nightly printed them: the runner died on the first one's cover run
+# on three nights, and the second one was skipped for its cost until the
+# command sliced its formula. The container builds the runner's goto
+# models: aead at 302eaa3 measured 111 of 114 there, the runner's 97.4%.
+hello_build_suite 85.9
+hello_build_webpki 84.3
 hkdf 52.3
 hybrid_secret 16.6
 key_share 21.9
@@ -169,8 +190,11 @@ x25519_tail 52.2
 # https://github.com/c4milo/chapulin/issues/113 (cbmc 6.11.0, built-in
 # solver, no -DCH_NATIVE_WIDEMUL). Of this block only mlkem_poly compiles
 # a ct_widemul-family function, so that define changes its formula
-# alone; the others were measured under the formula the cover command
-# runs now.
+# alone. Every measurement in this block was taken without
+# --slice-formula, which the cover command has passed since 2026-10-01.
+# Slicing changes no count, and it took hello_build_suite's cover run
+# from more than 13 GB to 0.13 GB, so a harness here may converge now:
+# measure it before you move it, and record what the nightly prints.
 # handshake_pin and handshake_psk were still in propositional reduction
 # when the budget killed them, at 8.3 GB and 7.4 GB peak RSS.
 # proof/coverage.py stops a harness at REACH_BUDGET_S, so the nightly
@@ -225,17 +249,6 @@ x25519_tail 52.2
 # is wrong by 800 s, which is how a prediction that pem would still time
 # out survived until this run measured it.
 #
-# hello_build_webpki converges, and it is listed here for the reason
-# hkdf_expand is: the cost. Under the cover command on a development
-# machine on 2026-09-15 (cbmc 6.11.0) it reached 78.8% in 1681 s of the
-# 1800 s budget, and 596 s of that was system time, the profile of a
-# machine paging. That machine runs hello_build's cover in 186 s against
-# the runner's 310, so the runner would reach the budget and report a
-# timeout. A floor plus a timeout fails the check, so this harness carries
-# no floor and is skipped rather than run. hello_build, the same builder
-# without the server_name extension and the five signature schemes,
-# has a floor recorded above at 76.9%.
-#
 # p384 is p256's harness at twelve limbs and times out the same way:
 # under the cover command on a development machine on 2026-09-15
 # (cbmc 6.11.0, -DCH_NATIVE_WIDEMUL) it was still in propositional
@@ -281,7 +294,6 @@ x25519_tail 52.2
 #   handshake_pin
 #   handshake_post
 #   handshake_psk
-#   hello_build_webpki
 #   hkdf384_expand
 #   hkdf384_expand_label
 #   hkdf_expand
