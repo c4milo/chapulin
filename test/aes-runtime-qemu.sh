@@ -45,20 +45,24 @@ flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -
        -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL)
 runtime=(-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
-common=(gcm.c quic_initial.c quic_retry.c quic_packet.c quic_keys.c hkdf.c sha256.c sha512.c
-        sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c)
-lists=$(make -s --no-print-directory print-aes-runtime-loop-srcs) ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-loop-srcs failed" >&2; exit 1; }
+# Each binary links the sources its rule in the Makefile links, one list
+# a line, so each list here is the one check links.
+lists=$(make -s --no-print-directory print-aes-runtime-qemu-srcs) ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs failed" >&2; exit 1; }
 read -r -a quic_srcs <<< "$(sed -n 1p <<< "$lists")"
 read -r -a tcp_srcs <<< "$(sed -n 2p <<< "$lists")"
+read -r -a runtime_test_srcs <<< "$(sed -n 3p <<< "$lists")"
+read -r -a quic_test_hw_srcs <<< "$(sed -n 4p <<< "$lists")"
+[ "${#quic_test_hw_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than four lists" >&2; exit 1; }
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/aes_runtime_test" \
-    test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c aes.c "${common[@]}" || exit 1
+    test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${runtime_test_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
     -o "$out/quic_loop_aes_runtime" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
     -o "$out/webpki_loop_aes_runtime" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -maes -mpclmul -DCH_AES_HW -DCH_AES_256_TEST \
-    -o "$out/quic_test_hw" test/quic_vectors.c aes.c aes_hw.c ghash_hw.c gcm_hw.c "${common[@]}" || exit 1
+    -o "$out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
 
 for b in aes_runtime_test quic_loop_aes_runtime webpki_loop_aes_runtime; do
     "$qemu" -cpu "$cpu" "$out/$b" absent ||

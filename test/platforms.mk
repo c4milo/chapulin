@@ -88,7 +88,8 @@ aes-runtime-disasm:
 # roster differences from the mips lane: it drives a diffspec child
 # over pipe/dup2, which bare metal has no words for, and
 # handshake_sequence_test forks the same child; every Linux lane runs
-# both.
+# both. Each line takes its sources from the variable the binary's own
+# rule in the Makefile reads, as san-check does.
 .PHONY: m3-check
 m3-check:
 	@[ -n "$(M3_CC)" ] || { \
@@ -99,27 +100,28 @@ m3-check:
 	  echo "SKIP m3-check: no qemu-system-arm"; exit 0; }
 	@mkdir -p bin/m3
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/unit test/unit_test.c $(SRCS)
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha3_test test/sha3_test.c sha3.c ct.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha512_test test/sha512_test.c sha512.c sha512_compress.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p384_test test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_pkcs1_test test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
-	$(M3_CC) $(M3_FLAGS) -I. -Itest -o bin/m3/p256_sign_test test/p256_sign_test.c p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(M3_CC) $(M3_FLAGS) -I. -Itest -o bin/m3/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
-	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_SRC) p256.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
+	# No QUIC transport is defined here, so test/wycheproof_test.c runs no
+	# AES-GCM suite and the line leaves aes.c and gcm.c out.
 	@$(call wycheproof_fetch,m3 wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c p256_sign.c \
-	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
+	  $(filter-out aes.c gcm.c,$(WYCHEPROOF_SRCS))
 	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
 	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi

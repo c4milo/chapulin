@@ -57,6 +57,17 @@ quic.c quic_config.c quic_initial.c quic_keys.c quic_packet.c quic_retry.c quic_
 TRUST_WEBPKI_ONLY = ["webpki.c"]
 
 
+def diff_srcs():
+    """The sources the Makefile's bin/diff rule links, DIFF_SRCS. The build
+    below links them beside SRCS, so a source that rule gains is linked
+    here too."""
+    out = subprocess.run(["make", "-s", "--no-print-directory", "print-diff-srcs"],
+                         cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    if not out:
+        sys.exit("make print-diff-srcs printed no sources")
+    return out
+
+
 def spec_ops():
     """Op names the spec's dispatch accepts."""
     text = (ROOT / "spec" / "lean" / "Main.lean").read_text()
@@ -138,7 +149,8 @@ def build_and_run():
              "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", "-DCH_HASH_SHA384",
              f"-I{ROOT}"]
     objs = []
-    for src in (s for s in SRCS if s not in TRUST_WEBPKI_ONLY):
+    linked = SRCS + [s for s in diff_srcs() if s not in SRCS]
+    for src in (s for s in linked if s not in TRUST_WEBPKI_ONLY):
         obj = OUT_DIR / (src[:-2] + ".o")
         subprocess.run(["gcc", *flags, "-c", str(ROOT / src), "-o", str(obj)],
                        check=True, cwd=ROOT)

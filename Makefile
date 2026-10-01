@@ -1246,13 +1246,16 @@ print-aes-hw-probe:
 .PHONY: print-tcp-nonblocking-loop-srcs
 print-tcp-nonblocking-loop-srcs:
 	@echo $(TCP_NONBLOCKING_LOOP_SRCS)
-# test/aes-runtime-qemu.sh builds the two AES=runtime loop binaries for
-# x86-64 from the sources bin/quic_loop_aes_runtime and
-# bin/webpki_loop_aes_runtime link, one list per line, QUIC first.
-.PHONY: print-aes-runtime-loop-srcs
-print-aes-runtime-loop-srcs:
+# test/aes-runtime-qemu.sh builds its four binaries for x86-64 from the
+# sources their rules here link, one list per line: bin/quic_loop_aes_runtime,
+# bin/webpki_loop_aes_runtime, bin/aes_runtime_test beside its three test
+# files, and bin/quic_test_hw beside test/quic_vectors.c.
+.PHONY: print-aes-runtime-qemu-srcs
+print-aes-runtime-qemu-srcs:
 	@echo $(QUIC_LOOP_AES_RUNTIME_SRCS)
 	@echo $(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	@echo $(AES_RUNTIME_TEST_SRCS)
+	@echo $(QUIC_TEST_HW_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1804,9 +1807,16 @@ rand-check:
 # the sanitizer, cross and coverage builds of the same test do too.
 # Whether the packaged object also carries drbg.c is RAND's business,
 # not this binary's.
-bin/drbg_test: test/drbg_test.c drbg.c chacha20.c sha256.c ct.c $(HDRS) $(TESTH)
+#
+# The sources a test binary links sit in a variable when another recipe
+# builds the same test: san-check, cross-check, m3-check, coverage, the
+# CH_CT_WIDEMUL builds and the WIDEMUL=runtime builds read the variable
+# this rule reads, so a source the test comes to need fails check, which
+# builds this rule, before it fails one of those recipes.
+DRBG_TEST_SRCS := drbg.c chacha20.c sha256.c ct.c
+bin/drbg_test: test/drbg_test.c $(DRBG_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
+	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c $(DRBG_TEST_SRCS)
 
 # softmul.c only compiles where there is no hardware multiplier, so the
 # test forces it on and includes the unit. The host has a multiplier,
@@ -1826,9 +1836,10 @@ bin/softmul_test: test/softmul_test.c softmul.c $(HDRS) $(TESTH)
 # CertificateVerify rules, and bin/diff must keep diffing the pinned
 # ones (diff-webpki diffs the others).
 RSA_WIDE_DEF := -DCH_RSA_MODULUS_MAX=512
-bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
+RSA_TEST_SRCS := rsa.c rsa_mont.c sha256.c ct.c
+bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(RSA_TEST_SRCS)
 
 # RSA-PSS signing: the known answers, the round trip through the verifier
 # and the refusals. Its own binary like bin/rsa_test, at the same
@@ -1836,23 +1847,26 @@ bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
 # 384-byte bound the ROLE=server object that now packages rsa_sign.c
 # builds it at. It links rsa.c for the verifier the round trip checks
 # against, which is the same pairing bin/rsa_pkcs1_test uses.
-bin/rsa_sign_test: test/rsa_sign_test.c rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
+RSA_SIGN_TEST_SRCS := rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c
+bin/rsa_sign_test: test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_test.c rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
 
 # SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c stays
 # out of the packaged object until the ML-KEM build calls it
 # (https://github.com/c4milo/chapulin/issues/21).
-bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
+SHA3_TEST_SRCS := sha3.c ct.c
+bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c sha3.c ct.c
+	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c $(SHA3_TEST_SRCS)
 
 # ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
 # own binary, out of the packaged object like sha3
 # (https://github.com/c4milo/chapulin/issues/21).
-bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
+MLKEM_TEST_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c
+bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
 # over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
@@ -1922,11 +1936,13 @@ bin/aes_suite_test: test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) \
 	  test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) aead.c chacha20.c \
 	  poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c
 
-bin/quic_test_hw: test/quic_vectors.c aes.c $(AES_HW_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
-                  hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
+# test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
+QUIC_TEST_HW_SRCS := aes.c $(AES_HW_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
+                     hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ \
-	  test/quic_vectors.c aes.c $(AES_HW_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	  test/quic_vectors.c $(QUIC_TEST_HW_SRCS)
 # AES=hw against AES=soft over the same inputs, the check that holds the
 # instruction path where a proof cannot reach. Both implementations are in one
 # binary under two names, which a library object may never do and a test binary
@@ -1956,11 +1972,10 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # once each, the second with x25519_wide.c under -DCH_X25519_WIDE. The line
 # states CH_NATIVE_MUL128 because ct.h refuses the wide field without it; the
 # portable wrapper reads nothing that macro changes.
-bin/x25519_equiv_test: test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
-                       x25519.c x25519_wide.c ct.c $(HDRS) $(TESTH)
+X25519_EQUIV_TEST_SRCS := test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c
+bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) x25519.c x25519_wide.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_NATIVE_MUL128 -I. -o $@ test/x25519_equiv_test.c test/x25519_equiv_portable.c \
-	  test/x25519_equiv_wide.c ct.c
+	$(CC) $(CFLAGS) -DCH_NATIVE_MUL128 -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
 # The unit suite over the wide field: RFC 7748's vectors in test/unit_test.c,
 # and every handshake the suite drives, with x25519() answering from
 # x25519_wide.c.
@@ -1972,10 +1987,10 @@ bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
 # chacha20_xor is the portable loop, and test/chacha20_equiv_vector.c
 # compiles chacha20_vector.c under the define beside it. ct.c is the wipe
 # of the buffer the vector path's last 1 to 15 bytes pass through.
-bin/chacha20_equiv_test: test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c chacha20_vector.c \
-                         ct.c $(HDRS) $(TESTH)
+CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c chacha20.c ct.c
+bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) chacha20_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c test/chacha20_equiv_vector.c chacha20.c ct.c
+	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS)
 # The vector Poly1305 against poly1305.c's loop, both in one binary:
 # poly1305.c compiles here without -DCH_CHACHA_VECTOR, the portable loop
 # alone, and test/poly1305_equiv_vector.c compiles the vector build of
@@ -1983,11 +1998,10 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c test/chacha20_equiv_vector.c
 # host CFLAGS assert CH_NATIVE_WIDEMUL, which the path needs.
 # test/stack_residue.c copies the stack a call left, for the check that
 # the powers of r are gone (test/poly1305_equiv_residue.h).
-bin/poly1305_equiv_test: test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c \
-                         poly1305_vector.c ct.c $(HDRS) $(TESTH)
+POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c
+bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) poly1305_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
-	  poly1305.c ct.c
+	$(CC) $(CFLAGS) -I. -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
 # The unit suite over the vector paths: RFC 8439's vectors in
 # test/unit_test.c and test/rfc8439_tests.h, and every record the suite
 # seals and opens, with chacha20_xor answering from chacha20_vector.c
@@ -2422,9 +2436,10 @@ bin/srv_flight_test_aes_runtime: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV
 	  sha512_compress.c
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
-bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
+SHA512_TEST_SRCS := sha512.c sha512_compress.c
+bin/sha512_test: test/sha512_test.c $(SHA512_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/sha512_test.c sha512.c sha512_compress.c
+	$(CC) $(CFLAGS) -I. -o $@ test/sha512_test.c $(SHA512_TEST_SRCS)
 # HMAC-SHA-384 and the SHA-384 key schedule against RFC 4231 and a
 # published TLS_AES_256_GCM_SHA384 trace. -DCH_HASH_SHA384 turns SHA-384
 # on in hkdf.c without the AES suite, which needs the AES instructions, so
@@ -2436,9 +2451,10 @@ bin/hkdf384_test: test/hkdf384_test.c $(HKDF384_SRCS) $(HDRS) $(TESTH)
 # P-384 ECDSA verification against RFC 6979 A.2.6 and openssl, and PKCS#1
 # v1.5 against openssl: their own binaries, out of the packaged object
 # like sha3, until TRUST=webpki links them.
-bin/p384_test: test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
+P384_TEST_SRCS := p384.c p384_field.c buf.c sha512.c sha512_compress.c
+bin/p384_test: test/p384_test.c $(P384_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
+	$(CC) $(CFLAGS) -I. -o $@ test/p384_test.c $(P384_TEST_SRCS)
 # The constant-time P-256 field arithmetic, against vectors Python
 # computed. Its own binary for the same reason: nothing links
 # p256_field.c until the P-256 key exchange lands, and the module is
@@ -2446,16 +2462,18 @@ bin/p384_test: test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compre
 # ct-widemul-check below runs the same vectors over ct.h's multiply
 # decomposition, the form that ships to a target whose widening multiply
 # is variable time (https://github.com/c4milo/chapulin/issues/53).
-bin/p256_field_test: test/p256_field_test.c p256_field.c $(HDRS) $(TESTH)
+P256_FIELD_TEST_SRCS := p256_field.c
+bin/p256_field_test: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p256_field_test.c p256_field.c
+	$(CC) $(CFLAGS) -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
 # Constant-time P-256 ECDH: key pairs, shared secrets, the points it
 # refuses and the scalar boundary. Its own binary, like p384_test,
 # because only the server roles and the TRUST=webpki client link
 # p256_ecdh.c, and bin/unit builds neither.
-bin/p256_ecdh_test: test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c $(HDRS) $(TESTH)
+P256_ECDH_TEST_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
+bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
+	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
 # ECDSA P-256 signing against Python's integers and RFC 6979 A.2.5, and
 # every signature checked again by the independent verifier in p256.c.
 # Its own binary, out of the packaged object like p384_test: no client
@@ -2467,9 +2485,10 @@ P256_SIGN_SRC := p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha2
 bin/p256_sign_test: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
-bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c $(HDRS) $(TESTH)
+RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
+bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
 # The TRUST=webpki date reader and hostname matcher at their boundaries:
 # their own binaries, out of the raw and ca objects like sha512, each
 # over the DER primitives it reads through.
@@ -2617,13 +2636,15 @@ bin/pemkey: $(PEMKEY_SRC) rsa.c rsa_mont.c $(HDRS)
 bin/pemkey_ecdsa: $(PEMKEY_SRC) p256.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ $(PEMKEY_SRC) p256.c
-bin/x509strict: $(X509STRICT_SRC) rsa.c rsa_mont.c $(HDRS) $(TESTH)
+X509STRICT_RSA_SRCS := $(X509STRICT_SRC) rsa.c rsa_mont.c
+X509STRICT_ECDSA_SRCS := $(X509STRICT_SRC) p256.c
+bin/x509strict: $(X509STRICT_RSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_SRC) rsa.c rsa_mont.c
+	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_RSA_SRCS)
 
-bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
+bin/x509strict_ecdsa: $(X509STRICT_ECDSA_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ $(X509STRICT_SRC) p256.c
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ $(X509STRICT_ECDSA_SRCS)
 
 # Sequence differential: every server message sequence to a bounded depth
 # (ENUM_DEPTH overrides; the default sweep is ~466k sequences over both modes) against the
@@ -2631,9 +2652,10 @@ bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
 # verifiers, which it stubs — V in a sequence means "signature valid".
 # `--shard K/N` checks the sequences whose index is K mod N, and
 # test/handshake_sequence_shards.sh runs one shard per core.
+HANDSHAKE_SEQUENCE_SRCS = $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 bin/handshake_sequence_test: test/handshake_sequence_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/handshake_sequence_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	$(CC) $(CFLAGS) -I. -o $@ test/handshake_sequence_test.c $(HANDSHAKE_SEQUENCE_SRCS)
 
 bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2689,9 +2711,9 @@ bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
 
-bin/mlkem_test_ct_widemul: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
+bin/mlkem_test_ct_widemul: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
 # The signer multiplies through ct_widemul in three files -- the field,
 # the scalar arithmetic and, through them, every point addition -- so its
 # vectors run over both forms for the reason the two above do.
@@ -2701,9 +2723,9 @@ bin/p256_sign_test_ct_widemul: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(
 
 # p256_field.c multiplies through ct_widemul too, so its vectors run over
 # both forms for the reason the two above do.
-bin/p256_field_test_ct_widemul: test/p256_field_test.c p256_field.c $(HDRS) $(TESTH)
+bin/p256_field_test_ct_widemul: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/p256_field_test.c p256_field.c
+	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
 
 .PHONY: ct-widemul-check
 ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_test_ct_widemul bin/p256_sign_test_ct_widemul
@@ -2744,10 +2766,10 @@ bin/$(1)_widemul_$(5): $(2) $(3) $$(call widemul_native_of,$(3)) $$(HDRS) $$(TES
 endef
 WIDEMUL_RUNTIME_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test
 $(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,unit,test/unit_test.c,$(SRCS),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,mlkem_test,test/mlkem_test.c,mlkem.c mlkem_poly.c sha3.c ct.c,,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,p256_ecdh_test,test/p256_ecdh_test.c,p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c,,$(a))))
+$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),,$(a))))
+$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),,$(a))))
 $(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,rsa_sign_test,test/rsa_sign_test.c,rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c,$(RSA_WIDE_DEF),$(a))))
+$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF),$(a))))
 # The counting test: the seven files again under the second names of
 # test/widemul_count_names.h, in the test/widemul_count_*.c units, in
 # place of the files and their native copies, and the stubs that count
@@ -2873,10 +2895,16 @@ bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(A
 # 512: test/diff_rsa.h and test/diff_rsa_pkcs1.h sample a 4096-bit
 # modulus, which rsa.h admits only at that bound, and the spec verifies
 # any modulus, so the define is what keeps the two sides' domains equal.
-# test/spec_coverage.py passes the same flag.
-bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+# test/spec_coverage.py passes the same flag. diff-ecdsa, diff-pq and
+# diff-webpki link DIFF_SRCS too, beside what their arm adds, and
+# test/spec_coverage.py links it through print-diff-srcs.
+DIFF_SRCS := $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+.PHONY: print-diff-srcs
+print-diff-srcs:
+	@echo $(DIFF_SRCS)
+bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -o $@ test/diff_test.c $(DIFF_SRCS)
 
 # Build and run one test binary: make run-unit, make run-webpki_time_test.
 # check runs every binary on its roster through a check-run- target of
@@ -3395,7 +3423,7 @@ else
 	$(call REQUIRE_MATHLIB,diff-ecdsa)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(DIFF_SRCS)
 	./bin/diff_ecdsa
 endif
 
@@ -3411,7 +3439,7 @@ else
 	$(call REQUIRE_MATHLIB,diff-pq)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(DIFF_SRCS)
 	./bin/diff_pq
 endif
 
@@ -3438,10 +3466,10 @@ else
 	$(call REQUIRE_MATHLIB,diff-webpki)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS)
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS)
 	./bin/diff_webpki
 ifneq ($(AES_HW_PROBE),)
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
@@ -3578,6 +3606,15 @@ COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def 
 # CH_RAND_DRBG in place of the host's pattern.
 COV_DRBG_CC = $(filter-out $(HOST_RAND_DEF),$(COV_CC)) -DCH_RAND_DRBG
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
+# Each leg compiles every source its links read, and each link reads the
+# variable the binary's own rule reads, so a source a test's rule gains
+# is compiled and linked here as well. drbg.c compiles on its own line,
+# under COV_DRBG_CC.
+COV_PIN_SRCS = $(sort $(filter-out test/% drbg.c,$(SRCS) $(DRBG_TEST_SRCS) $(RSA_TEST_SRCS) \
+  $(HANDSHAKE_STRICT_SRCS) $(X509STRICT_RSA_SRCS) $(X509STRICT_ECDSA_SRCS)))
+COV_WEBPKI_SRCS = $(sort $(WEBPKI_TEST_SRCS) $(WEBPKI_SRCS) $(SHA512_TEST_SRCS) $(P384_TEST_SRCS) \
+  $(RSA_PKCS1_TEST_SRCS) $(WEBPKI_TIME_SRC) $(WEBPKI_NAME_SRC) $(WEBPKI_SPKI_SRC) $(WEBPKI_SIGALG_SRC) \
+  $(WEBPKI_CERT_SRC) $(WEBPKI_CHAIN_TEST_SRC) $(HANDSHAKE_STRICT_SRCS))
 .PHONY: coverage
 # What CBMC proves: which sources a running harness compiles, and any
 # harness that exists but no launch line starts. A static scan of a
@@ -3635,19 +3672,19 @@ else
 	@set -e; for pin in rsa ecdsa; do \
 	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
 	  d=bin/cov/$$pin; mkdir -p $$d; \
-	  for f in $(SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  for f in $(COV_PIN_SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
 	  $(COV_DRBG_CC) -c drbg.c -o $$d/drbg.o; \
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
-	  $(COV_DRBG_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/sha256.o $$d/ct.o -o $$d/drbg_test; \
-	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
-	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/handshake_parser_ee.o $$d/buf.o \
+	  $(COV_DRBG_CC) test/drbg_test.c $(patsubst %.c,$$d/%.o,$(DRBG_TEST_SRCS)) -o $$d/drbg_test; \
+	  $(COV_CC) test/rsa_test.c $(patsubst %.c,$$d/%.o,$(RSA_TEST_SRCS)) -o $$d/rsa_test; \
+	  $(COV_CC) test/handshake_strict_test.c $(patsubst %.c,$$d/%.o,$(HANDSHAKE_STRICT_SRCS)) \
 	    -o $$d/handshake_strict_test; \
-	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
-	  strict_objs=""; for f in $(filter-out test/x509_strict_test.c,$(X509STRICT_SRC)); do \
-	    strict_objs="$$strict_objs $$d/$${f%.c}.o"; done; \
-	  $(COV_CC) $$def test/x509_strict_test.c $$strict_objs $$verifier -o $$d/x509strict_test; \
+	  strict_objs="$(patsubst %.c,$$d/%.o,$(filter-out test/%,$(X509STRICT_RSA_SRCS)))"; \
+	  if [ $$pin = ecdsa ]; then \
+	    strict_objs="$(patsubst %.c,$$d/%.o,$(filter-out test/%,$(X509STRICT_ECDSA_SRCS)))"; fi; \
+	  $(COV_CC) $$def test/x509_strict_test.c $$strict_objs -o $$d/x509strict_test; \
 	  $(COV_CC) test/handshake_sequence_test.c \
-	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/handshake_sequence_test; \
+	    $(patsubst %.c,$$d/%.o,$(HANDSHAKE_SEQUENCE_SRCS)) -o $$d/handshake_sequence_test; \
 	  for b in unit rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
 	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
@@ -3661,12 +3698,12 @@ else
 	# binary check runs for the mode, each over the sources its own rule
 	# names. The strictness binary here runs the parsers' webpki arms.
 	@set -e; d=bin/cov/webpki; def=-DCH_TRUST_WEBPKI; mkdir -p $$d; \
-	  for f in $(sort $(WEBPKI_TEST_SRCS) $(WEBPKI_SRCS)); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  for f in $(COV_WEBPKI_SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
 	  link() { name=$$1; shift; objs=""; for f in "$$@"; do objs="$$objs $$d/$${f%.c}.o"; done; \
 	    $(COV_CC) test/$$name.c $$objs -o $$d/$$name; }; \
-	  link sha512_test sha512.c sha512_compress.c; \
-	  link p384_test p384.c p384_field.c buf.c sha512.c sha512_compress.c; \
-	  link rsa_pkcs1_test rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c; \
+	  link sha512_test $(SHA512_TEST_SRCS); \
+	  link p384_test $(P384_TEST_SRCS); \
+	  link rsa_pkcs1_test $(RSA_PKCS1_TEST_SRCS); \
 	  link webpki_time_test $(WEBPKI_TIME_SRC); \
 	  link webpki_name_test $(WEBPKI_NAME_SRC); \
 	  link webpki_spki_test $(WEBPKI_SPKI_SRC); \
@@ -3786,10 +3823,8 @@ WYCHEPROOF_AES_HW = $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSP
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
 WYCHEPROOF_X25519_WIDE = $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
-  $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c \
-  x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c \
-  mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c \
-  aes.c $(AES_IMPL) gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
+  $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) x25519_wide.c \
+  $(AES_IMPL)
 WYCHEPROOF_CHACHA_VECTOR = $(CC) $(CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
   $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) chacha20_vector.c \
   poly1305_vector.c $(AES_IMPL)
@@ -3928,14 +3963,16 @@ wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c aes.c $(AES_IMPL) gcm.c p256_sign.c \
-	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
+	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	./bin/wycheproof_test_ct_widemul
 
 # Sanitizer lane: the deterministic suites under ASan + UBSan, test
 # binaries only — sanitized codegen must never leak into coverage,
 # timing, or release objects, so the lane builds into bin/san with its
-# own compile lines, like coverage does. O picks the optimization
+# own compile lines, like coverage does. Each line takes its sources from
+# the variable the binary's own rule reads, which check builds, so a call
+# one source gains into another fails check before it fails this lane.
+# O picks the optimization
 # level and the output names it, because "passed UBSan" is ambiguous
 # without one: -O0 sees code the optimizer would delete, -O2 is what
 # ships. -fno-sanitize-recover=all turns any finding into an abort, so
@@ -3952,17 +3989,17 @@ san-check:
 	@rm -rf bin/san && mkdir -p bin/san
 	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit_test.c $(SRCS)
-	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c sha512.c sha512_compress.c
+	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -I. -o bin/san/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p384_test test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_field_test test/p256_field_test.c p256_field.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_ecdh_test test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -Itest -o bin/san/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_pkcs1_test test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_sign_test test/rsa_sign_test.c rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_sign_test test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
@@ -3975,19 +4012,18 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_session_test test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
-	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
-	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	  $(HANDSHAKE_SEQUENCE_SRCS)
 	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c aes.c $(AES_IMPL) gcm.c p256_sign.c \
-	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
+	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
 	# The X25519=wide field, where the compiler has unsigned __int128: the
 	# equivalence binary and the Wycheproof suites over it. UBSan finds no
@@ -3995,12 +4031,12 @@ san-check:
 	# check that class with --unsigned-overflow-check instead.
 	@set -e; if [ -n "$(X25519_WIDE_PROBE)" ]; then \
 	  $(CC) $(SAN_CFLAGS) -DCH_NATIVE_MUL128 -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
-	    test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c; \
+	    $(X25519_EQUIV_TEST_SRCS); \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
-	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c aes.c $(AES_IMPL) gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c; \
+	    $(WYCHEPROOF_SRCS) x25519_wide.c $(AES_IMPL); \
 	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
 	else \
 	  echo "SKIP san X25519=wide: $(CC) has no unsigned __int128"; \
@@ -4011,10 +4047,10 @@ san-check:
 	# them, and the Wycheproof suites over both paths.
 	@set -e; if [ -n "$(CHACHA_VECTOR_PROBE)" ]; then \
 	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
-	    test/chacha20_equiv_vector.c chacha20.c ct.c; \
+	    $(CHACHA20_EQUIV_TEST_SRCS); \
 	  echo "== chacha20_equiv_test (SAN -O$(O))"; ./bin/san/chacha20_equiv_test; \
 	  $(CC) $(SAN_CFLAGS) -I. -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
-	    test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c; \
+	    $(POLY1305_EQUIV_TEST_SRCS); \
 	  echo "== poly1305_equiv_test (SAN -O$(O))"; ./bin/san/poly1305_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof CHACHA=vector: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) \
@@ -4045,7 +4081,8 @@ san-selftest:
 # run from bin/cross on purpose: handshake_sequence then skips the Lean-spec
 # comparison (the oracle is a host binary), keeping its direct ordering
 # and alert tables; depth 3 keeps the emulated enumeration to minutes,
-# and the x86 lane owns the deep run.
+# and the x86 lane owns the deep run. Each line takes its sources from
+# the variable the binary's own rule reads, as san-check does.
 CROSS ?=
 RUNNER ?=
 CROSS_EXTRA ?= # extra flags for the cross lane (nightly adds UBSan here)
@@ -4060,33 +4097,32 @@ cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit_test.c $(SRCS)
-	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c sha512.c sha512_compress.c
+	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p384_test test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_field_test test/p256_field_test.c p256_field.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_ecdh_test test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_field_test test/p256_field_test.c $(P256_FIELD_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_ecdh_test test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -Itest -o bin/cross/p256_sign_test test/p256_sign_test.c $(P256_SIGN_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_pkcs1_test test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_pkcs1_test test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c $(MLKEM_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_RSA_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
-	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	  $(HANDSHAKE_SEQUENCE_SRCS)
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c aes.c $(AES_IMPL) gcm.c p256_sign.c \
-	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
+	    $(WYCHEPROOF_SRCS) $(AES_IMPL) ; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
