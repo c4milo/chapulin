@@ -699,7 +699,7 @@ The order of the work, by the instructions each item removes from a handshake:
 4. SHA-256 on the ARMv8 and x86-64 SHA instructions and SHA-512 on the ARMv8.2 ones, behind new
    `ch_cfg.cpu` bits. Hashing takes 0.78 M of the 6.95 M: the transcript and key schedule's
    0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the intrinsics,
-   so equivalence tests against the portable code hold them, as they hold `AES=hw`.
+   so equivalence tests against the portable code hold them, as they hold the AES instructions.
 5. X25519 key generation from a table of multiples of the base point, as BoringSSL computes it,
    which bounds the gain at the key generation's 0.39 M. It needs the same ruling as item 2.
 6. A server whose suite hashes with SHA-384 stops the SHA-256 transcript, 0.08 M.
