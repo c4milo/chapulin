@@ -1,6 +1,9 @@
 // gcm_hw.c's gcm_counter_blocks_hw on the AES instructions, under AES-128
 // and AES-256 round keys, against SP 800-38D §6.5 computed one block at a
 // time on AES=soft: the same output bytes and the same counter afterwards.
+// On an x86-64 CPU with VAES and VPCLMULQDQ, gcm_vaes.c's
+// gcm_counter_blocks_vaes runs the same cases, which test/aes_equiv_vaes.c
+// compiles (test/x86_kernels_cpu.h asks the CPU).
 //
 // gcm_hw.c runs GCM_HW_PASS_BLOCKS counter blocks through the rounds
 // together, so the cases are chosen around that pass:
@@ -19,10 +22,23 @@
 #ifndef CH_AES_EQUIV_COUNTER_H
 #define CH_AES_EQUIV_COUNTER_H
 
+#include "x86_kernels_cpu.h"
+
 // gcm_hw.c's entry, compiled by test/aes_equiv_hw.c under CH_AES_HW, which
-// this binary's main does not define, so gcm_hw.h declares nothing here.
+// this binary's main does not define, so gcm_hw.h declares nothing here,
+// and gcm_vaes.c's, compiled by test/aes_equiv_vaes.c, for the same reason.
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out);
+#ifdef __x86_64__
+void gcm_counter_blocks_vaes(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                             const uint8_t *in, size_t blocks, uint8_t *out);
+#endif
+
+// The entry the cases run on, and its name in a mismatch.
+typedef void (*counter_entry)(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                              const uint8_t *in, size_t blocks, uint8_t *out);
+static counter_entry counter_blocks = gcm_counter_blocks_hw;
+static const char *counter_entry_name = "gcm_counter_blocks_hw";
 
 // gcm_hw.h's GCM_HW_PASS_BLOCKS, for the same reason.
 #define COUNTER_PASS 8
@@ -102,12 +118,11 @@ static void compare_counter(const char *case_name, int aes256, const uint8_t sta
     }
     uint8_t counter[AES_BLOCK];
     memcpy(counter, start, AES_BLOCK);
-    gcm_counter_blocks_hw(hw_keys, aes256 ? AES_256_ROUNDS : AES_128_ROUNDS, counter, in, blocks,
-                          out);
+    counter_blocks(hw_keys, aes256 ? AES_256_ROUNDS : AES_128_ROUNDS, counter, in, blocks, out);
     if (memcmp(out, counter_want, blocks * AES_BLOCK) != 0 ||
         memcmp(counter, want_counter, AES_BLOCK) != 0) {
-        (void)fprintf(stderr, "FAIL %s: %zu blocks, layout %d, AES-%d\n", case_name, blocks,
-                      (int)layout, aes256 ? 256 : 128);
+        (void)fprintf(stderr, "FAIL %s on %s: %zu blocks, layout %d, AES-%d\n", case_name,
+                      counter_entry_name, blocks, (int)layout, aes256 ? 256 : 128);
         print_hex("start  ", start, AES_BLOCK);
         print_hex("counter", counter, AES_BLOCK);
         print_hex("want   ", want_counter, AES_BLOCK);
@@ -126,7 +141,9 @@ static void counter_start(uint8_t start[AES_BLOCK], uint32_t low) {
     start[15] = (uint8_t)low;
 }
 
-static void run_counter_blocks(void) {
+static void run_counter_blocks_on(counter_entry entry, const char *name) {
+    counter_blocks = entry;
+    counter_entry_name = name;
     uint8_t start[AES_BLOCK];
     for (int aes256 = 0; aes256 <= 1; aes256++) {
         for (int layout = 0; layout < COUNTER_LAYOUTS; layout++) {
@@ -152,6 +169,25 @@ static void run_counter_blocks(void) {
         compare_counter("counter blocks random", (int)(rng_next() % 2), start, blocks,
                         (enum counter_layout)(rng_next() % COUNTER_LAYOUTS));
     }
+}
+
+// Every case on gcm_hw.c's entry, then on gcm_vaes.c's where this CPU
+// runs it. Under CH_REQUIRE_X86_KERNELS a CPU without it counts as a
+// failure.
+static void run_counter_blocks(void) {
+    run_counter_blocks_on(gcm_counter_blocks_hw, "gcm_counter_blocks_hw");
+#ifdef __x86_64__
+    if (x86_cpu_has_vaes()) {
+        run_counter_blocks_on(gcm_counter_blocks_vaes, "gcm_counter_blocks_vaes");
+    } else if (x86_kernels_required()) {
+        (void)fprintf(stderr, "aes equivalence: this CPU lacks VAES or VPCLMULQDQ, and "
+                              "CH_REQUIRE_X86_KERNELS is 1\n");
+        failures++;
+    } else {
+        printf("aes equivalence: SKIP gcm_counter_blocks_vaes: this CPU lacks VAES or "
+               "VPCLMULQDQ\n");
+    }
+#endif
 }
 
 #endif

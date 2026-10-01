@@ -178,6 +178,21 @@ jobs:
       # (test/platforms.mk, aes-runtime-disasm).
       - run: make -j"$(nproc)" aes-runtime-disasm
 
+  x86-64-kernels:
+    # The x86-64 kernels every x86-64 object carries beside its 128-bit
+    # paths, the AVX2 ChaCha20 and AES-GCM's VAES and VPCLMULQDQ kernels,
+    # which the library runs on no CPU until use_avx2 and use_vaes read
+    # ch_cfg.cpu (docs/decisions.md 90). The test binaries call them
+    # directly or route their calls to them, and skip a CPU without them
+    # in the check job; this job requires the runner's CPU to have AVX2,
+    # VAES and VPCLMULQDQ, fails where it lacks one, and runs them under
+    # the runner's gcc (test/platforms.mk, x86-64-kernels-check).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make x86-64-kernels-check
+
   macos:
     # macOS on Apple silicon as a supported platform: the arm64 job's
     # roster, built with Apple clang and run natively. No other job

@@ -136,6 +136,13 @@ void ct_wipe(void *p, size_t n);
 //                  answer at run time (cfg.h), and CH_NATIVE_AES keeps
 //                  this meaning: it is the build's statement about the
 //                  instructions where they exist (docs/decisions.md 81).
+//                  It states nothing about the 256-bit forms, VAESENC
+//                  and VPCLMULQDQ on ymm registers, which gcm_vaes.c's
+//                  kernels run. No call runs those until ch_cfg.cpu
+//                  exists, and then only where the caller sets
+//                  CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES, whose
+//                  statement covers the AES instructions at every width
+//                  (docs/decisions.md 89 and 90).
 //   CH_AES_EXTERN_CONSTANT_TIME
 //                  under AES=extern, the build asserts that the peripheral
 //                  behind the image's ch_aes_block runs in constant time,

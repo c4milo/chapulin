@@ -1,0 +1,18 @@
+invariant: INV-16
+file: chacha20.c
+catches: test/chacha-builds.sh
+reason: chacha20.c's use_avx2 answers 1 before ch_cfg.cpu exists to carry
+  the caller's CH_CPU_AVX2 bit, so every x86-64 CHACHA=vector object runs
+  the AVX2 kernel and dies of SIGILL on a CPU without AVX2. Every vector and
+  equivalence case passes on a CPU with it, because the kernel computes
+  the same bytes. The script compiles chacha20.c for x86-64 and requires
+  its object to call chacha20_vector_xor and not the kernel.
+
+--- old
+static int use_avx2(void) {
+    return 0;
+}
+--- new
+static int use_avx2(void) {
+    return 1;
+}

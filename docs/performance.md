@@ -569,13 +569,15 @@ and 46.3, 44.9 and 47.8 where they held 46.3, 44.0 and 47.0. OpenSSL's ChaCha20 
 over 16 KiB on macOS in three one-second runs of `openssl speed -evp chacha20`, against this build's
 8.5, and its whole seal takes 9.4 against 11.8.
 
-No x86-64 machine has timed the vector paths' SSE2 arms or the AES-NI arm of `gcm_hw.c`;
-CI's x86-64 runners test them. A column
-for it needs `make bench-record` on an x86-64 host that runs nothing else, once with gcc and once
-with clang: the script finds the AES instructions there with `-maes -mpclmul`, writes
-`bench/results-record-linux-x86_64-gcc.csv` and its clang twin, and `tools/bench_record.py` then
-takes the two files as columns. An emulated x86-64, such as an OrbStack amd64 container, runs
-translated code, so its times say nothing about those arms.
+No x86-64 machine that runs nothing else has timed the vector paths' SSE2 arms or the AES-NI
+arm of `gcm_hw.c`. bench.yml's `record-x86_64` job times them on a shared GitHub runner, once
+with gcc and once with clang, and on a runner whose CPU has AVX2, VAES and VPCLMULQDQ it adds
+rows marked `AVX2+VAES` for the x86-64 kernels of decision 90, which records their figures. A
+column for this document needs `make bench-record` on an x86-64 host that runs nothing else, once
+with gcc and once with clang: the script finds the AES instructions there with `-maes -mpclmul`,
+writes `bench/results-record-linux-x86_64-gcc.csv` and its clang twin, and
+`tools/bench_record.py` then takes the two files as columns. An emulated x86-64, such as an
+OrbStack amd64 container, runs translated code, so its times say nothing about those arms.
 
 ## The method behind these numbers
 

@@ -611,6 +611,14 @@ def select_lints(out, changed, csources, lib):
                 "chacha20.c calls the vector path under CH_CHACHA_VECTOR, and "
                 "this script compiles it either side of that define",
                 ["test/chacha-builds.sh"])
+    # chacha20_avx2.c turns AVX2 on for its own functions alone, and the
+    # script compiles it for x86-64 with no instruction flag and requires
+    # the kernel there (docs/decisions.md 90).
+    if "chacha20_avx2.c" in csources:
+        out.add("tests", "test/chacha-builds.sh",
+                "chacha20_avx2.c turns AVX2 on for its own functions, and this "
+                "script compiles it for x86-64 with no instruction flag",
+                ["test/chacha-builds.sh"])
     if "poly1305.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
                 "poly1305.c calls the vector path under CH_CHACHA_VECTOR and "

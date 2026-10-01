@@ -85,7 +85,7 @@ const srcs = [_][]const u8{
 };
 
 // The Makefile's named lists, each under its Makefile name.
-const aes_hw_srcs = [_][]const u8{ "aes_hw.c", "ghash_hw.c", "gcm_hw.c" };
+const aes_hw_srcs = [_][]const u8{ "aes_hw.c", "ghash_hw.c", "gcm_hw.c", "gcm_vaes.c" };
 const quic_srcs_after_aes = [_][]const u8{
     "gcm.c",         "quic_keys.c", "quic_packet.c", "quic_initial.c", "quic_retry.c",
     "quic_config.c", "quic_fail.c", "quic_step.c",   "quic.c",
@@ -442,7 +442,7 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     }
     if (config.chacha == .vector) {
         defs = concat(b, &.{ defs, &.{"-DCH_CHACHA_VECTOR"} });
-        lib_srcs = concat(b, &.{ lib_srcs, &.{"chacha20_vector.c"} });
+        lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c" } });
     }
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
@@ -647,7 +647,9 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
 /// nothing, and aes_hw.c's #error stops the build, as it does for a cc the
 /// Makefile's probe finds no flag for. AES=runtime adds nothing: aes_hw.c,
 /// ghash_hw.c and gcm_hw.c turn the instructions on for their own
-/// functions alone.
+/// functions alone. gcm_vaes.c and chacha20_avx2.c add nothing on any
+/// value: they turn VAES, VPCLMULQDQ and AVX2 on for their own functions
+/// alone on x86-64, and have no body elsewhere.
 fn aesTarget(b: *std.Build, target: std.Build.ResolvedTarget, aes: Aes) std.Build.ResolvedTarget {
     if (aes != .hw) return target;
     var query = target.query;

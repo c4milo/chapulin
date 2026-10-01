@@ -33,7 +33,7 @@ make -s bin/quic_driver_test || exit 1
 # second name is the object the GHASH check below reads.
 tu=$(mktemp -t chapulin_cfg_XXXXXX).c
 gcm_obj=$(mktemp -t chapulin_gcm_XXXXXX).o
-trap 'rm -f "$tu" "${tu%.c}" "$gcm_obj" "${gcm_obj%.o}"' EXIT
+trap 'rm -f "$tu" "$tu.s" "${tu%.c}" "$gcm_obj" "${gcm_obj%.o}"' EXIT
 echo '#include "ct.h"' > "$tu"
 cc=${CC:-cc}
 
@@ -308,3 +308,57 @@ for defs in "-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_RUNTIME" \
         exit 1
     fi
 done
+
+# gcm_vaes.c's kernels (docs/decisions.md 90), asked of the pinned clang
+# for x86-64 and arm64 targets whatever the host, freestanding, as
+# test/chacha-builds.sh asks its cross questions. With no flag beyond the
+# ones each AES value compiles with, on AES=hw and on AES=runtime:
+#
+#   - for x86-64, gcm_vaes.c must define the three kernels and run 256-bit
+#     VAESENC and VPCLMULQDQ, which its target attribute turns on, while
+#     gcm_hw.c holds no 256-bit register, so the rest of the object runs on
+#     any x86-64 CPU with AES-NI and PCLMULQDQ;
+#   - gcm_hw.c must call none of the kernels while use_vaes answers 0, so
+#     no object runs them before the caller's CH_CPU_VAES bit can say the
+#     CPU has them;
+#   - for arm64, gcm_vaes.c must define nothing.
+clang_rv=$(make -s --no-print-directory print-clang-rv)
+if [ -z "$clang_rv" ]; then
+    echo "quic-builds: no clang to cross-compile with; see the LLVM_MAJOR pin in tools/toolchain.env" >&2
+    exit 1
+fi
+cross_gcm() { # $1 = target, $2 = source, $3... = flags; writes $gcm_obj and $tu.s
+    local target=$1 source=$2
+    shift 2
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+        -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_NATIVE_AES "$@" -c "$source" -o "$gcm_obj" || exit 1
+    "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+        -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_NATIVE_AES "$@" -S "$source" -o "$tu.s" || exit 1
+}
+vaes_kernels="gcm_counter_blocks_vaes gcm_open_passes_vaes gcm_seal_passes_vaes "
+for aes in "-DCH_AES_HW -maes -mpclmul" "-DCH_AES_RUNTIME"; do
+    # shellcheck disable=SC2086 # one flag per word
+    cross_gcm x86_64-unknown-linux-gnu gcm_vaes.c $aes
+    defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | grep _vaes | sort | tr '\n' ' ')
+    if [ "$defined" != "$vaes_kernels" ] ||
+        ! grep -qE 'vaesenc[[:space:]]+%ymm' "$tu.s" || ! grep -qE 'vpclmulqdq[[:space:]].*%ymm' "$tu.s"; then
+        echo "quic-builds: gcm_vaes.c for x86-64 under $aes defines [$defined]; it must define" \
+            "[$vaes_kernels] on 256-bit VAESENC and VPCLMULQDQ" >&2
+        exit 1
+    fi
+    # shellcheck disable=SC2086 # one flag per word
+    cross_gcm x86_64-unknown-linux-gnu gcm_hw.c $aes
+    if grep -q '%ymm' "$tu.s"; then
+        echo "quic-builds: gcm_hw.c for x86-64 under $aes holds a 256-bit instruction; only gcm_vaes.c may" >&2
+        exit 1
+    fi
+    if nm -u "$gcm_obj" | grep -q '_vaes$'; then
+        echo "quic-builds: gcm_hw.c for x86-64 under $aes calls a VAES kernel while use_vaes answers 0" >&2
+        exit 1
+    fi
+done
+cross_gcm aarch64-none-elf gcm_vaes.c -DCH_AES_RUNTIME
+if nm "$gcm_obj" | grep -q '_vaes$'; then
+    echo "quic-builds: gcm_vaes.c for arm64 defines a kernel; it has a body on x86-64 alone" >&2
+    exit 1
+fi

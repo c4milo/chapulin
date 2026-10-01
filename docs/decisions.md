@@ -4902,3 +4902,140 @@ does nothing more.
     - **Choosing on the architecture macros in the sources.** The proofs
       would compile intrinsics, and a firmware tree with its own build
       could not get the portable object for a 64-bit target.
+
+90. **Every x86-64 object carries an AVX2 ChaCha20 kernel beside its SSE2
+    path, and VAES and VPCLMULQDQ AES-GCM kernels beside its 128-bit
+    loops; the caller's CPU bits are to pick them, and until `ch_cfg.cpu`
+    exists no call runs them.** On GitHub's x86-64 runners a 16 KiB
+    `rec_seal` took about 6 µs on AES-128-GCM where OpenSSL took 4, and
+    about 20 µs on ChaCha20-Poly1305 in a `CHACHA=vector WIDEMUL=native`
+    build where OpenSSL took 7.5. chapulin ran SSE2 and the 128-bit AES-NI
+    and PCLMULQDQ there, on CPUs that have AVX2, VAES and VPCLMULQDQ.
+    Under entry 89 a host object picks its paths at init from
+    `ch_cfg.cpu`, which the caller fills from its own probe, and entry 89
+    names the bits these kernels need: `CH_CPU_AVX2`, `CH_CPU_VAES` and
+    `CH_CPU_CONSTANT_TIME_AES`. chapulin probes nothing.
+
+    - **The ChaCha20 kernel.** `chacha20_avx2.c` holds each of the 16
+      state words of eight consecutive blocks in one 256-bit vector, one
+      block per lane, and runs `chacha20.c`'s rounds on the 16 vectors:
+      one group a pass, because AVX2's 16 registers hold one group's 16
+      words. The rotations by 16 and by 8 move whole bytes, so each is one
+      byte shuffle (VPSHUFB) under a constant order, and the rotations by
+      12 and 7 shift and OR. A 4x4 transpose within each 128-bit half and
+      VPERM2I128, which joins two halves, turn the 16 vectors into 16 rows
+      of 32 bytes in block order. The pass XORs them into the data from
+      the registers in ascending order, so the output may sit on the input
+      or below it, as entry 86's path allows. The last 1 to 31 bytes pass
+      through a buffer of 32 bytes that `ct_wipe` clears.
+    - **The AES-GCM kernels.** `gcm_vaes.c` runs `gcm_hw.c`'s three loops
+      two blocks to a 256-bit register. VAESENC runs one AES round on each
+      half of a register, so each round key is loaded into both halves.
+      The counters keep their bytes reversed, so one 32-bit add per pair
+      of blocks is inc32, and one byte shuffle puts each block back in
+      order. GHASH multiplies a pair of blocks by a pair of powers with one
+      VPCLMULQDQ per product, 12 per pass of eight blocks where
+      `ghash_vector.h` takes 24, adds each sum's two halves, and runs
+      `ghash_vector.h`'s reduction unchanged. The powers are
+      `ghash_vector.h`'s, paired, and read through a volatile lvalue from
+      the state each call wipes, for the reason `ghash_power_at` gives.
+    - **A step of two passes.** The AES rounds run a step at a time, two
+      of `gcm_hw.h`'s passes in eight registers. VAESENC's next round on a
+      register waits on its last, and a step of one pass, four registers,
+      left the AES units idle between rounds. In one run on an EPYC 7763
+      runner that built both in each job, a 16 KiB AES-128-GCM seal took
+      4.66 µs under gcc and 3.36 under clang with steps of one pass, and
+      4.07 and 3.20 with steps of two; the open moved from 3.43 to 3.38
+      and from 3.10 to 3.03. GHASH keeps its
+      pass of eight blocks, so the powers and the reduction stay
+      `ghash_vector.h`'s, and `gcm.c`'s split of a message into passes
+      stays as it was. A call with an odd number of passes ends on a step
+      of one pass, whose rounds still run on eight registers; the four it
+      does not use hold keystream no output takes, and the call's wipe
+      clears them.
+    - **Target attributes, not flags.** Every function in
+      `chacha20_avx2.c` carries `target("avx2")`, and every function in
+      `gcm_vaes.c` `target("aes,pclmul,avx2,vaes,vpclmulqdq")`, applied by
+      one clang attribute push or one gcc target pragma, as entry 81
+      applies AES=runtime's. So an object needs no instruction flag for
+      them, and the rest of it runs on any x86-64 CPU, with AES-NI and
+      PCLMULQDQ under `AES=hw`. `chacha20_avx2.c` joins every x86-64
+      `CHACHA=vector` object and `gcm_vaes.c` every x86-64 `AES=hw` and
+      `AES=runtime` object, and on arm64 both compile to nothing.
+    - **One predicate per path.** `chacha20.c`'s `use_avx2` decides
+      whether `chacha20_xor` runs the kernel in place of
+      `chacha20_vector.c`'s SSE2 path, and `gcm_hw.c`'s `use_vaes` whether
+      its three entries hand their blocks to the kernel of the same shape,
+      so `gcm.c` is unchanged. Both answer 0 until `ch_cfg.cpu` exists.
+      Then `use_avx2` reads `CH_CPU_AVX2`, and `use_vaes` reads
+      `CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES` and answers 1 only where
+      both are set. Under AES=runtime, `ch_cfg.aes_instructions` says only
+      that AES-NI and PCLMULQDQ exist, so it cannot pick the kernels.
+    - **Timing.** The ChaCha20 kernel is constant time by entry 82's
+      construction: adds, exclusive-ors, shifts and byte shuffles under
+      constant orders, with no table, no multiply, and no branch or
+      address on the key, the nonce, the counter or the data. The GCM
+      kernels run VAESENC and VPCLMULQDQ under a traffic key in a
+      SUITE=aesgcm build. Entry 89's `CH_CPU_CONSTANT_TIME_AES` states
+      that the AES instructions and the carry-less multiply run in
+      constant time at every width, and the DOIT list it cites names
+      VAESENC and VPCLMULQDQ; `use_vaes` is to require that bit.
+      `CH_NATIVE_AES` states nothing about the 256-bit forms, and no
+      define makes a kernel run (`ct.h`).
+    - **What tests may ask.** Test code asks its CPU through
+      `__builtin_cpu_supports` and CPUID (`test/x86_kernels_cpu.h`); the
+      library asks nothing. The equivalence tests call the kernels
+      directly, and three binaries and a Wycheproof leg send the library's
+      calls to them through a force-included header that renames the
+      128-bit entry, while the library's own predicates still answer 0.
+      Each skips a CPU without the instructions, and CI's `x86-64-kernels`
+      job, under `CH_REQUIRE_X86_KERNELS=1`, fails on one instead
+      (docs/verification.md, "The x86-64 kernels").
+    - **Left out.** An AVX2 Poly1305, which follows
+      [#186](https://github.com/c4milo/chapulin/issues/186)'s rework of
+      the multiply files. A 512-bit path: on a Xeon Platinum 8370C runner,
+      which has AVX-512, OpenSSL sealed 16 KiB of AES-128-GCM in 1.42 µs
+      where these kernels took 3.29 under clang and 3.64 under gcc. A GHASH
+      pass of sixteen blocks, which would need sixteen powers of H and a
+      pass size `gcm.c` does not know.
+
+    Cost:
+
+    - 339 lines in `chacha20_avx2.[ch]` and 535 in `gcm_vaes.[ch]`, with
+      no harness, because CBMC cannot read an intrinsic.
+    - At `-O2` on x86-64, `chacha20_avx2.o` holds 2,821 bytes of text
+      under gcc 13 and 3,015 under clang 18, and `gcm_vaes.o` 4,542 and
+      7,542, beside `gcm_hw.o`'s 4,996 and 6,723. Every x86-64
+      `CHACHA=vector` object carries the first, and every x86-64 `AES=hw`
+      and `AES=runtime` object the second.
+    - Stack frames: the ChaCha20 kernel's pass takes 904 bytes under gcc
+      and 616 under clang; the GCM seal 1,024 and 1,016, the open 1,024
+      and 984, and counter mode 384 and 376, where `gcm_hw.c`'s seal takes
+      576 and 600.
+    - Three binaries and one Wycheproof leg in `make check` on an x86-64
+      host, and CI's `x86-64-kernels` job.
+
+    Gain, 16 KiB records in µs: the medians bench/record.sh writes, from
+    bench.yml's `record-x86_64` job at 6763ce8 on an AMD EPYC 7763 runner,
+    whose one-minute load average ran from 0.44 to 0.97. "Before" is the
+    128-bit path and "after" the kernels, built in the same job.
+    OpenSSL 3.6.4's figures are the gcc job's; the clang job's differ by
+    0.02 at most.
+
+    | | gcc before | gcc after | clang before | clang after | OpenSSL |
+    |---|---|---|---|---|---|
+    | AES-128-GCM seal | 6.29 | 3.69 | 5.85 | 3.19 | 4.05 |
+    | AES-128-GCM open | 6.10 | 3.39 | 5.34 | 3.03 | 4.12 |
+    | AES-256-GCM seal | 7.06 | 4.14 | 6.50 | 3.61 | 4.36 |
+    | AES-256-GCM open | 6.92 | 3.83 | 5.98 | 3.44 | 4.43 |
+    | ChaCha20-Poly1305 seal | 20.19 | 13.64 | 21.29 | 13.65 | 7.47 |
+    | ChaCha20-Poly1305 open | 19.98 | 13.39 | 21.04 | 13.55 | 7.47 |
+    | ChaCha20 alone | 13.11 | 6.51 | 13.94 | 6.57 | |
+
+    Of the kernels' AES-128-GCM seal, the AEAD took 2.98 µs under gcc and
+    2.63 under clang, and the record layer 0.71 and 0.57. Poly1305 takes
+    6.6 to 6.8 µs of the ChaCha20-Poly1305 rows either way, which
+    [#186](https://github.com/c4milo/chapulin/issues/186) addresses. A
+    run 40 minutes earlier on the same CPU model, at the same kernels,
+    gave gcc's AES-128-GCM seal 4.07 and clang's 3.20, so the gcc figure
+    moved by 10% from one runner to the next.

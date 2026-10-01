@@ -131,12 +131,13 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # declares the key expansion and the block cipher the AES axis picks an
 # implementation for, plus the AES=extern hook. ghash_hw.h joins
 # them because it declares the two GHASH steps AES=hw runs on the
-# carry-less multiply, and both take a hash subkey, and gcm_hw.h because
-# it declares counter mode over whole blocks and the one-pass seal, which
-# take round keys. Every name all five declare must be one
+# carry-less multiply, and both take a hash subkey, and gcm_hw.h and
+# gcm_vaes.h because they declare counter mode over whole blocks and the
+# one-pass seal and open, which take round keys, gcm_vaes.h for the 256-bit
+# kernels gcm_hw.c hands its blocks to. Every name all six declare must be one
 # inv-26-aes-public-keys-only matches, which is what cipher_surface()
 # compares.
-CIPHER_HEADERS = ("aes.h", "aes_block.h", "gcm.h", "ghash_hw.h", "gcm_hw.h")
+CIPHER_HEADERS = ("aes.h", "aes_block.h", "gcm.h", "ghash_hw.h", "gcm_hw.h", "gcm_vaes.h")
 CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"

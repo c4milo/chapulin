@@ -66,6 +66,20 @@ AUDITED = {
         "leg run the published vectors on it. Delete this entry if a harness "
         "can ever compile the file."
     ),
+    "chacha20_avx2.c": (
+        "the CHACHA=vector AVX2 kernel on x86-64, written in AVX2 intrinsics, "
+        "which CBMC cannot read, so no harness compiles the file. Every "
+        "bitwise operator takes unsigned operands: the lane operations run on "
+        "__m256i values through the intrinsics, load32 shifts uint32_t "
+        "values, and the last row's XOR takes two uint8_t bytes, which widen "
+        "to int and hold 0 to 255. The (int) casts hand a uint32_t word to "
+        "_mm256_set1_epi32, a conversion gcc and clang define as keeping its "
+        "32 bits, and no arithmetic runs on the int. bin/chacha20_equiv_test "
+        "holds the kernel to chacha20.c's proven loop on a CPU with AVX2, and "
+        "bin/unit_chacha_avx2 and the x86-64 kernels' Wycheproof leg run the "
+        "published vectors on it. Delete this entry if a harness can ever "
+        "compile the file."
+    ),
     "poly1305_vector.c": (
         "the CHACHA=vector Poly1305, written in NEON or SSE2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "
@@ -134,7 +148,8 @@ def shipped_sources():
     # variables.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
-            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "poly1305_vector.c"}
+            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
+            "poly1305_vector.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

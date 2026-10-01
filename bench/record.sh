@@ -20,13 +20,22 @@
 #   object: the ChaCha20-Poly1305 rows again, because Poly1305 is the one
 #   stage the multiply changes
 #
-#   each of those two with -DCH_CHACHA_VECTOR, chacha20_vector.c and
-#   poly1305_vector.c, which CHACHA=vector puts in an object: the
-#   ChaCha20-Poly1305 rows on the vector paths
+#   each of those two with -DCH_CHACHA_VECTOR, chacha20_vector.c,
+#   chacha20_avx2.c and poly1305_vector.c, which CHACHA=vector puts in an
+#   object: the ChaCha20-Poly1305 rows on the vector paths
 #   (https://github.com/c4milo/chapulin/issues/181), where the compiler
 #   targets NEON or SSE2. poly1305_vector.c compiles to nothing without
 #   -DCH_NATIVE_WIDEMUL, so only the second build runs the vector Poly1305,
 #   as only a CHACHA=vector WIDEMUL=native object carries it
+#
+#   on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ, the second of those
+#   once more with every call routed to the x86-64 kernels: chacha20_xor
+#   to chacha20_avx2.c and gcm_hw.c's entries to gcm_vaes.c, through the
+#   route headers test/chacha20_avx2_route.h and test/gcm_vaes_route.h
+#   (docs/decisions.md 90). Its rows' build column begins "AVX2+VAES".
+#   use_avx2 and use_vaes answer 0 until ch_cfg.cpu exists, so the
+#   library runs neither kernel yet, and this build is how a run times
+#   them
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
@@ -119,15 +128,34 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/record_native" "${SRCS[@]}"
 # The CHACHA=vector builds, on either multiply, where the compiler targets
 # NEON or SSE2 on a little-endian core, as chacha20_vector.h requires.
-VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c poly1305_vector.c bench/record_chacha_vector.c)
+VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c chacha20_avx2.c poly1305_vector.c bench/record_chacha_vector.c)
 VECTOR=""
 VECTOR_NOTE="no CHACHA=vector rows: $CC targets neither NEON nor SSE2 on a little-endian core"
 if printf '#include "chacha20_vector.h"\n' | "${CC_WORDS[@]}" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2>/dev/null; then
     VECTOR=yes
-    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c, poly1305_vector.c and bench/record_chacha_vector.c"
+    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c, chacha20_avx2.c, poly1305_vector.c and bench/record_chacha_vector.c"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -o "$W/record_vector" "${VECTOR_SRCS[@]}"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -o "$W/record_vector_native" \
         "${VECTOR_SRCS[@]}"
+fi
+# The x86-64 kernels' build, where this CPU has their instructions: the
+# CHACHA=vector WIDEMUL=native build with the 128-bit entries routed to
+# the kernels, so it links neither chacha20_vector.c nor gcm_hw.c.
+KERNELS=""
+KERNELS_NOTE="no AVX2+VAES rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
+if [ "$ARCH" = x86_64 ] && [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo &&
+    grep -qw vaes /proc/cpuinfo && grep -qw vpclmulqdq /proc/cpuinfo; then
+    KERNELS=yes
+    KERNELS_NOTE="AVX2+VAES adds -include test/chacha20_avx2_route.h -include test/gcm_vaes_route.h and test/x86_kernels_route.c to the CHACHA=vector WIDEMUL=native build, without chacha20_vector.c and gcm_hw.c"
+    KERNEL_SRCS=()
+    for src in "${VECTOR_SRCS[@]}"; do
+        case "$src" in
+        chacha20_vector.c | gcm_hw.c) ;;
+        *) KERNEL_SRCS+=("$src") ;;
+        esac
+    done
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -include test/chacha20_avx2_route.h \
+        -include test/gcm_vaes_route.h -o "$W/record_kernels" "${KERNEL_SRCS[@]}" test/x86_kernels_route.c
 fi
 if [ -n "$BUILD_ONLY" ]; then
     echo "record bench: --build built every binary and ran nothing" >&2
@@ -194,6 +222,9 @@ LOAD_BEFORE=$(load)
         "$W/record_vector" ${QUICK:+"$QUICK"} chacha20poly1305
         "$W/record_vector_native" ${QUICK:+"$QUICK"} chacha20poly1305
     fi
+    if [ -n "$KERNELS" ]; then
+        "$W/record_kernels" ${QUICK:+"$QUICK"} aes128gcm aes256gcm chacha20poly1305
+    fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"
     fi
@@ -222,7 +253,7 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
     echo "# bench/record.sh on $(cpu) ($ARCH)${BENCH_HOST:+, $BENCH_HOST}, $(uname -s)" \
         "$(uname -r), $(date -u +%Y-%m-%d), tree $TREE"
     echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; WIDEMUL=native adds -DCH_NATIVE_WIDEMUL;" \
-        "$VECTOR_NOTE"
+        "$VECTOR_NOTE; $KERNELS_NOTE"
     echo "# $ZIG_NOTE; ${OPENSSL:-no openssl on PATH}"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns: per record, the median of 5 runs, each the median of 15 batches of at least" \

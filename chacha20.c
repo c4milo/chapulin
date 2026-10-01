@@ -1,7 +1,19 @@
 #include "chacha20.h"
 
 #ifdef CH_CHACHA_VECTOR
+#include "chacha20_avx2.h"
 #include "chacha20_vector.h"
+#endif
+
+#if defined(CH_CHACHA_VECTOR) && defined(__x86_64__)
+// Whether chacha20_xor runs chacha20_avx2.c's AVX2 kernel in place of
+// chacha20_vector.c's SSE2 path. The CH_CPU_AVX2 bit of ch_cfg.cpu, which
+// the caller sets from its own probe of the CPU, decides it once that
+// field exists. Until then it is 0, and no call runs the kernel.
+// chapulin probes no CPU (docs/decisions.md 90).
+static int use_avx2(void) {
+    return 0;
+}
 #endif
 
 static uint32_t rotate_left(uint32_t x, unsigned r) {
@@ -76,6 +88,14 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
     // CHACHA=vector: the same keystream, several blocks at a time
     // (chacha20_vector.h). The loop below is the reference that
     // bin/chacha20_equiv_test compares it with.
+#ifdef __x86_64__
+    // On x86-64, eight blocks a pass in 256-bit vectors where the caller's
+    // answer says the CPU has AVX2 (chacha20_avx2.h).
+    if (use_avx2()) {
+        chacha20_avx2_xor(key, nonce, counter, in, out, n);
+        return;
+    }
+#endif
     chacha20_vector_xor(key, nonce, counter, in, out, n);
 #else
     uint32_t state[16];

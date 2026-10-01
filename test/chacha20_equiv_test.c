@@ -1,25 +1,29 @@
 // CHACHA=vector against CHACHA=portable: the same key, nonce, counter and
 // input, the same output, byte for byte. This is what holds the vector
-// path, because CBMC cannot read an intrinsic: proof/chacha20_harness.c
+// paths, because CBMC cannot read an intrinsic: proof/chacha20_harness.c
 // proves chacha20.c's loop, and this binary holds chacha20_vector.c to
-// that loop's answer. chacha20.c compiles here without -DCH_CHACHA_VECTOR,
-// so chacha20_xor is the portable loop, and test/chacha20_equiv_vector.c
-// compiles chacha20_vector_xor under it, both in one binary.
+// that loop's answer, and on an x86-64 CPU with AVX2 chacha20_avx2.c's
+// kernel too, over the same cases. chacha20.c compiles here without
+// -DCH_CHACHA_VECTOR, so chacha20_xor is the portable loop, and
+// test/chacha20_equiv_vector.c and test/chacha20_equiv_avx2.c compile the
+// two vector sources under it, all in one binary. Whether the CPU has
+// AVX2 is test/x86_kernels_cpu.h's question, which only test code asks.
 //
 // Every comparison checks two things over the bytes a case uses: the
 // output holds the portable path's bytes, and no byte outside the output
 // changed. It does so in each aliasing shape chacha20.h allows: a
 // separate output, the output on the input, and the output below the
 // input, as rec_open decrypts over its header, each at every alignment
-// past a 16-byte boundary.
+// past a 32-byte boundary, which covers every offset inside a row of the
+// 128-bit paths and of the AVX2 kernel.
 //
 // The inputs, in order:
 //
 //   - every length from 0 to LENGTH_MAX, which crosses the path's pass
-//     of eight blocks four times on NEON and its pass of four blocks
-//     eight times on SSE2, so the pass loop, the last partial pass, every
-//     length of that pass, and on NEON a last pass that ends in either
-//     of its two groups all run;
+//     of eight blocks four times on NEON and on AVX2 and its pass of four
+//     blocks eight times on SSE2, so the pass loop, the last partial pass,
+//     every length of that pass, and on NEON a last pass that ends in
+//     either of its two groups all run;
 //   - the counter's last values, 2^32 - 17 to 2^32 - 1, and 0, at every
 //     length to 20 blocks, so the 32-bit counter wraps inside a group, at
 //     the edge between a pass's two groups, at a pass's edge, inside the
@@ -35,11 +39,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-// chacha20_vector.h declares the vector path only under the define. This
-// file compiles no library source, so the define changes nothing else.
+// chacha20_vector.h and chacha20_avx2.h declare the vector paths only
+// under the define. This file compiles no library source, so the define
+// changes nothing else.
 #define CH_CHACHA_VECTOR
 #include "chacha20.h"
+#include "chacha20_avx2.h"
 #include "chacha20_vector.h"
+#include "x86_kernels_cpu.h"
 
 // xorshift64, the generator test/aes_equiv_test.c uses. The default seed
 // is fixed, so an ordinary run replays the same cases and a mismatch
@@ -79,9 +86,9 @@ static void rng_fill(uint8_t *p, size_t n) {
 }
 
 // The vector path computes one pass of eight blocks at a time on NEON,
-// two groups of four side by side, and of four blocks on SSE2. The
-// lengths below count in the larger pass, so each build crosses its own
-// pass's edge at least four times.
+// two groups of four side by side, and on AVX2, and of four blocks on
+// SSE2. The lengths below count in the larger pass, so each path crosses
+// its own pass's edge at least four times.
 #define PASS_BYTES_MAX ((size_t)8 * CHACHA20_BLOCK)
 #define LENGTH_MAX (4 * PASS_BYTES_MAX)
 #define WRAP_BACK_MAX 17
@@ -94,9 +101,9 @@ static void rng_fill(uint8_t *p, size_t n) {
 #define GUARD 32
 #define GUARD_BYTE 0xa5
 // The widest shift below the input the cases use, and how far past a
-// 16-byte boundary a buffer can start.
+// 32-byte boundary a buffer can start.
 #define SHIFT_MAX ((size_t)300)
-#define ALIGN_MAX ((size_t)16)
+#define ALIGN_MAX ((size_t)32)
 
 // The aliasing shapes chacha20.h allows.
 typedef enum { SEPARATE, IN_PLACE, BELOW } shape;
@@ -115,25 +122,46 @@ typedef struct {
 } equiv_case;
 
 // The input bytes, at input_offset, and the portable path's answer.
-static _Alignas(16) uint8_t input_buffer[ALIGN_MAX + LARGE_LENGTH];
+static _Alignas(32) uint8_t input_buffer[ALIGN_MAX + LARGE_LENGTH];
 static uint8_t want[LARGE_LENGTH];
 // The vector path's buffer, and a copy of it made before the call: a
 // guard, the offset, the output, room for the input when it sits past the
 // output, and a guard.
 #define WORK_BYTES (GUARD + ALIGN_MAX + SHIFT_MAX + LARGE_LENGTH + GUARD)
-static _Alignas(16) uint8_t work[WORK_BYTES];
+static _Alignas(32) uint8_t work[WORK_BYTES];
 static uint8_t before[WORK_BYTES];
 
 static int failures = 0;
 static unsigned long compared = 0;
 
+// A vector path under test: its name in the summary and in a mismatch,
+// and its entry. Every case runs on the current one.
+typedef struct {
+    const char *name;
+    void (*xor_bytes)(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                      uint32_t counter, const uint8_t *in, uint8_t *out, size_t n);
+} vector_path;
+
+// The 128-bit path this build compiles, and the AVX2 kernel beside it on
+// x86-64.
+#ifdef __ARM_NEON
+static const vector_path vector_128 = {"CHACHA=vector on NEON", chacha20_vector_xor};
+#else
+static const vector_path vector_128 = {"CHACHA=vector on SSE2", chacha20_vector_xor};
+#endif
+#ifdef __x86_64__
+static const vector_path vector_avx2 = {"the AVX2 kernel", chacha20_avx2_xor};
+#endif
+
+static const vector_path *current = &vector_128;
+
 static void report(const char *case_name, const equiv_case *c, const char *what, size_t at) {
     failures++;
     (void)fprintf(stderr,
-                  "chacha20 equivalence: %s: %s %zu (n %zu, counter 0x%08lx, %s, shift %zu, "
+                  "chacha20 equivalence: %s on %s: %s %zu (n %zu, counter 0x%08lx, %s, shift %zu, "
                   "offset %zu, input offset %zu)\n",
-                  case_name, what, at, c->n, (unsigned long)c->counter, shape_names[c->aliasing],
-                  c->shift, c->offset, c->input_offset);
+                  case_name, current->name, what, at, c->n, (unsigned long)c->counter,
+                  shape_names[c->aliasing], c->shift, c->offset, c->input_offset);
 }
 
 // The vector path once more, on heap buffers of exactly the bytes the
@@ -162,7 +190,7 @@ static size_t exact_run(const equiv_case *c, const uint8_t *source) {
     }
     uint8_t *out = aliasing == SEPARATE ? separate : buffer;
     memcpy(buffer + shift, source, n);
-    chacha20_vector_xor(c->key, c->nonce, c->counter, buffer + shift, out, n);
+    current->xor_bytes(c->key, c->nonce, c->counter, buffer + shift, out, n);
     size_t first = n;
     for (size_t i = 0; i < n && first == n; i++) {
         if (out[i] != want[i]) {
@@ -194,7 +222,7 @@ static void compare(const char *case_name, const equiv_case *c) {
         in = out + c->shift;
     }
     memcpy(before, work, window);
-    chacha20_vector_xor(c->key, c->nonce, c->counter, in, out, c->n);
+    current->xor_bytes(c->key, c->nonce, c->counter, in, out, c->n);
     compared++;
     for (size_t i = 0; i < window; i++) {
         int inside = i >= start && i - start < c->n;
@@ -284,15 +312,34 @@ static void run_large(void) {
     }
 }
 
-int main(void) {
-    uint64_t seed = rng_seed_from_env();
+// Every case on one path, from the same seed as every other path.
+static void run_path(const vector_path *path, uint64_t seed) {
+    current = path;
+    rng_state = seed;
+    unsigned long before_path = compared;
     run_every_length();
     run_counter_wrap();
     run_random();
     run_large();
-    printf("chacha20 equivalence: %lu cases agree between CHACHA=portable and CHACHA=vector "
+    printf("chacha20 equivalence: %lu cases agree between CHACHA=portable and %s "
            "(seed 0x%llx)\n",
-           compared, (unsigned long long)seed);
+           compared - before_path, path->name, (unsigned long long)seed);
+}
+
+int main(void) {
+    uint64_t seed = rng_seed_from_env();
+    run_path(&vector_128, seed);
+#ifdef __x86_64__
+    if (x86_cpu_has_avx2()) {
+        run_path(&vector_avx2, seed);
+    } else if (x86_kernels_required()) {
+        (void)fprintf(stderr, "chacha20 equivalence: this CPU lacks AVX2, and "
+                              "CH_REQUIRE_X86_KERNELS is 1\n");
+        return 1;
+    } else {
+        printf("chacha20 equivalence: SKIP the AVX2 kernel: this CPU lacks AVX2\n");
+    }
+#endif
     if (failures > 0) {
         printf("chacha20 equivalence: %d mismatches\n", failures);
         return 1;

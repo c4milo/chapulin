@@ -58,6 +58,33 @@ else
 	@set -e; for b in $(AES_RUNTIME_BINS); do echo "== $$b (AES=runtime, no flag)"; ./$$b; done
 endif
 
+# The x86-64 kernels, for CI's x86-64-kernels job: chacha20_avx2.c's AVX2
+# ChaCha20 and gcm_vaes.c's VAES and VPCLMULQDQ kernels
+# (docs/decisions.md 90). Every x86-64 CHACHA=vector, AES=hw and
+# AES=runtime object carries them, built with no instruction flag, and the
+# library runs neither until use_avx2 and use_vaes read ch_cfg.cpu, so the
+# test binaries call them directly or route their calls to them. Those
+# binaries skip a CPU without the instructions, in check and everywhere
+# else; this target runs them under CH_REQUIRE_X86_KERNELS=1, so on such
+# a CPU it fails instead, after x86-64-kernels-cpu names the CPU.
+.PHONY: x86-64-kernels-check x86-64-kernels-cpu
+x86-64-kernels-check: x86-64-kernels-cpu bin/chacha20_equiv_test bin/aes_equiv_test $(X86_KERNEL_BINS)
+	@[ -n "$(X86_KERNEL_LEG)" ] || \
+	  { echo "x86-64-kernels-check: $(CC) does not target x86-64 with CHACHA=vector and AES=hw"; exit 1; }
+	@set -e; for b in chacha20_equiv_test aes_equiv_test $(notdir $(X86_KERNEL_BINS)); do \
+	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
+	CH_REQUIRE_X86_KERNELS=1 $(MAKE) --no-print-directory wycheproof
+
+# Whether this machine's CPU has what the x86-64 kernels run: AES-NI,
+# PCLMULQDQ, AVX2, VAES and VPCLMULQDQ, read from /proc/cpuinfo. It
+# names the CPU, and fails where one is missing.
+x86-64-kernels-cpu:
+	@[ -r /proc/cpuinfo ] || { echo "x86-64-kernels-cpu: no /proc/cpuinfo; this target runs on Linux x86-64"; exit 1; }
+	@cpu=$$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -1); \
+	for f in aes pclmulqdq avx2 vaes vpclmulqdq; do grep -qw "$$f" /proc/cpuinfo || \
+	  { echo "x86-64-kernels-cpu: $$cpu lacks $$f"; exit 1; }; done; \
+	echo "x86-64-kernels-cpu: $$cpu has AES-NI, PCLMULQDQ, AVX2, VAES and VPCLMULQDQ"
+
 # test/aes-runtime-qemu.sh: bin/aes_runtime_test and the two AES=runtime
 # loop binaries built for x86-64 and run under qemu-x86_64 on a CPU model
 # with AES-NI and PCLMULQDQ turned off. The answer that the instructions

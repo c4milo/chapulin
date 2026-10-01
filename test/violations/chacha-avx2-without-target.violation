@@ -1,0 +1,23 @@
+invariant: INV-16
+file: chacha20_avx2.c
+catches: test/chacha-builds.sh
+reason: chacha20_avx2.c drops the target attribute that turns AVX2 on for
+  its own functions, so the kernel compiles only where the whole object is
+  built with -mavx2, and an object built that way runs AVX2 in code the
+  caller's CH_CPU_AVX2 bit never chose. The script compiles the file for
+  x86-64 with no instruction flag and requires the kernel on 256-bit
+  registers.
+
+--- old
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((target("avx2"))), apply_to = function)
+#else
+#pragma GCC push_options
+#pragma GCC target("avx2")
+#endif
+--- new
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((cold)), apply_to = function)
+#else
+#pragma GCC push_options
+#endif
