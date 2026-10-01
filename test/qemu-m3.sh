@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c softmul.c"
+SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c ct_wipe.c softmul.c"
 
 # The host build of the same main, same multiply path, host libc.
 host_build() { # $1 = the binary to write

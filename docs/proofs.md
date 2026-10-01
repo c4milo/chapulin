@@ -237,7 +237,9 @@ In order, with precedents:
    shape at every operand range the function can produce.
 4. **Replace a callee with its contract** and prove the contract in
    the callee's own harness (aead over `proof/aead_stubs.h`;
-   x25519_step and x25519_tail over `proof/x25519_stubs.h`). The stub
+   x25519_step and x25519_tail over `proof/x25519_stubs.h`; every
+   harness that calls `ct_wipe` over `proof/ct_wipe_stub.c`, which the
+   launch line links beside `ct.c` in place of `ct_wipe.c`). The stub
    header states what it models and what the composition gives up.
    This works when no property in the caller reads the callee's
    value beyond what the contract states: the ladder's properties are

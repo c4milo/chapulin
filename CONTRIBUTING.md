@@ -41,7 +41,7 @@ tree — the abbreviation budget is spent on this one system.
 | `ch_` | Public API (`tls.[ch]`), and its constants: `CH_EPROTO`, `CH_ASSERT`, ... Nothing else escapes the library; lib-check enforces it |
 | `tlsi_` | Internal-but-cross-file: shared between library files, never for the application |
 | `wb_` / `rb_` | Write and read buffers (`buf.[ch]`) |
-| `ct_` | Constant-time bytes (`ct.[ch]`) |
+| `ct_` | Constant-time bytes (`ct.[ch]` and `ct_wipe.c`) |
 | `ks_` | Key schedule (`keysched.[ch]`) |
 | `rec_` | Record protection (`record.[ch]`) |
 | `hs_` / `hsp_` | Handshake message build and parse (`handshake_message.[ch]`, `handshake_parser.[ch]`) |

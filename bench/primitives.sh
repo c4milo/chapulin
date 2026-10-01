@@ -72,7 +72,7 @@ FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DC
 # calls, and nothing else. CH_RSA_MODULUS_MAX=512 is the bound TRUST=webpki
 # gives rsa.h, so the RSA-4096 rows run.
 PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives_public_key.c
-    drbg.c ct.c buf.c sha256.c sha512.c sha512_compress.c sha3.c hkdf.c chacha20.c poly1305.c
+    drbg.c ct.c ct_wipe.c buf.c sha256.c sha512.c sha512_compress.c sha3.c hkdf.c chacha20.c poly1305.c
     aead.c x25519.c mlkem.c mlkem_poly.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
     rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c)
 # The handshake program links what bin/tcp_nonblocking_loop_test links, under

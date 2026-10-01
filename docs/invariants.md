@@ -2493,9 +2493,10 @@ last `ROLE=server` stub, as the entry said it would.
   and the compressed pair on rv32 — in the twelve arithmetic files
   under the record layer (`BRANCH_SRCS`) and holds each at a ceiling
   measured per compiler (`BRANCH_CEILING`). Those ceilings are not
-  zero: ct.c's two loops, the block loops, x25519's ladder, Keccak's
-  round and lane counters and softmul's fixed 32 and 64 iterations all
-  branch on public counts, and the count cannot tell those from a
+  zero: ct_memeq's loop and ct_wipe's test of n, the block loops,
+  x25519's ladder, Keccak's round and lane counters and softmul's fixed
+  32 and 64 iterations all branch on public counts, and the count cannot
+  tell those from a
   branch on a limb. What it holds is that no count grows. What the
   ceilings record is a choice each compiler made: the compare-carries
   in `ct_widemul_opaque` and the sign masks in `ct_widemul_s`, `cswap`
@@ -3358,6 +3359,13 @@ last `ROLE=server` stub, as the entry said it would.
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
+  That binary compiles `ct_wipe.c` into the same unit as the vector
+  Poly1305, so the compiler can inline `ct_wipe` at the end of the call,
+  as link-time optimization would. `ct-wipe-plain-memset` makes
+  `ct_wipe` call `memset` by name instead of through `ct_wipe.c`'s
+  volatile function pointer; the compiler then deletes the call as a
+  store nothing reads, and the test catches it under Apple clang 21 and
+  gcc 13 (decision 91).
   Inside the `AES=hw` GHASH, `ghash_hw.c`'s data loop computes the powers
   of H it needs, adds up each pass's products in the same state, and wipes
   both with H when each call ends. It reads each power from that state

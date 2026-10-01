@@ -165,7 +165,8 @@ def harnesses():
     out = {}
     for m in re.finditer(r'^launch (\S+) (\w+) (\S+) (\d+) "([^"]*)"(.*)$', text, re.M):
         tier, _mode, name, _unwind, _unwindset, rest = m.groups()
-        sources = set(re.findall(r"\b([a-z0-9_]+\.c)\b", rest))
+        # A path from the root: a shipped source, or a stub in proof/.
+        sources = set(re.findall(r"\b([a-z0-9_/]+\.c)\b", rest))
         sources |= harness_sources(name)
         out[name] = (tier.split(":")[0], sources)
     return out

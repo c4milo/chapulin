@@ -42,6 +42,7 @@
         "cpu_cfg.h",
         "ct.c",
         "ct.h",
+        "ct_wipe.c",
         "drbg.c",
         "drbg.h",
         "gcm.c",

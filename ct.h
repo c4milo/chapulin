@@ -17,8 +17,10 @@ _Static_assert(SIZE_MAX >= 0xFFFFFFFFU, "chapulin needs a size_t of at least 32 
 // 1 if a[0..n) == b[0..n), 0 otherwise. Time depends only on n.
 uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n);
 
-// Zeroizes p[0..n) through a volatile pointer so the store survives
-// dead-store elimination.
+// Writes zero to p[0..n) and nothing else. It calls memset through a
+// volatile function pointer, so no compiler can delete the writes, even
+// when the caller never reads the buffer again (ct.c says why). p may be
+// null when n is 0.
 void ct_wipe(void *p, size_t n);
 
 // Whether the target's widening multiply is constant-time is a claim about

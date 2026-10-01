@@ -7,6 +7,6 @@ reason: build.zig's copy of SRCS loses rsa_mont.c, so the Zig object of every
   the same exports, so only the comparison with make print-lib-srcs objects.
 
 --- old
-    "rsa.c",                 "rsa_mont.c",         "pem.c",               "x509.c",
+    "p256.c",             "rsa.c",                 "rsa_mont.c",         "pem.c",
 --- new
-    "rsa.c",                 "pem.c",               "x509.c",
+    "p256.c",             "rsa.c",                 "pem.c",

@@ -180,7 +180,7 @@ SHELLCHECK ?= shellcheck
 # success.
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
-SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
+SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
@@ -1843,7 +1843,7 @@ rand-check:
 # CH_CT_WIDEMUL builds and the WIDEMUL=runtime builds read the variable
 # this rule reads, so a source the test comes to need fails check, which
 # builds this rule, before it fails one of those recipes.
-DRBG_TEST_SRCS := drbg.c chacha20.c sha256.c ct.c
+DRBG_TEST_SRCS := drbg.c chacha20.c sha256.c ct.c ct_wipe.c
 bin/drbg_test: test/drbg_test.c $(DRBG_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c $(DRBG_TEST_SRCS)
@@ -1866,7 +1866,7 @@ bin/softmul_test: test/softmul_test.c softmul.c $(HDRS) $(TESTH)
 # CertificateVerify rules, and bin/diff must keep diffing the pinned
 # ones (diff-webpki diffs the others).
 RSA_WIDE_DEF := -DCH_RSA_MODULUS_MAX=512
-RSA_TEST_SRCS := rsa.c rsa_mont.c sha256.c ct.c
+RSA_TEST_SRCS := rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c
 bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(RSA_TEST_SRCS)
@@ -1877,7 +1877,7 @@ bin/rsa_test: test/rsa_test.c $(RSA_TEST_SRCS) $(HDRS) $(TESTH)
 # 384-byte bound the ROLE=server object that now packages rsa_sign.c
 # builds it at. It links rsa.c for the verifier the round trip checks
 # against, which is the same pairing bin/rsa_pkcs1_test uses.
-RSA_SIGN_TEST_SRCS := rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c
+RSA_SIGN_TEST_SRCS := rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c ct_wipe.c
 bin/rsa_sign_test: test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS)
@@ -1885,7 +1885,7 @@ bin/rsa_sign_test: test/rsa_sign_test.c $(RSA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
 # SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c stays
 # out of the packaged object until the ML-KEM build calls it
 # (https://github.com/c4milo/chapulin/issues/21).
-SHA3_TEST_SRCS := sha3.c ct.c
+SHA3_TEST_SRCS := sha3.c ct.c ct_wipe.c
 bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c $(SHA3_TEST_SRCS)
@@ -1893,7 +1893,7 @@ bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 # ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
 # own binary, out of the packaged object like sha3
 # (https://github.com/c4milo/chapulin/issues/21).
-MLKEM_TEST_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c
+MLKEM_TEST_SRCS := mlkem.c mlkem_poly.c sha3.c ct.c ct_wipe.c
 bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c $(MLKEM_TEST_SRCS)
@@ -1910,7 +1910,7 @@ bin/mlkem_test: test/mlkem_test.c $(MLKEM_TEST_SRCS) $(HDRS) $(TESTH)
 QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_parser_ee.c \
                     handshake_record.c handshake_auth.c handshake_post.c handshake_flight.c \
                     keysched.c x25519.c \
-                    rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+                    rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
@@ -1927,10 +1927,10 @@ bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TEST
 # a key object. A later lane that adds a vector section for another quic source
 # links that source here.
 bin/quic_test: test/quic_vectors.c aes.c $(AES_IMPL) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
-               hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
+               hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/quic_vectors.c aes.c \
-	  $(AES_IMPL) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	  $(AES_IMPL) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 # The same vectors on AES=hw. CBMC cannot read an intrinsic, so the published
 # standards are how the instruction path answers for itself: FIPS 197 for the
 # cipher, RFC 9001 Appendix A for the Initial keys and the header protection
@@ -1959,16 +1959,16 @@ bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_
 	  $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) gcm.c aes.c $(AES_HW_SRCS) sha512.c sha512_compress.c
 
 bin/aes_suite_test: test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) \
-                    aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c \
+                    aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c \
                     $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
 	  test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) aead.c chacha20.c \
-	  poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c
+	  poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c
 
 # test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
 QUIC_TEST_HW_SRCS := aes.c $(AES_HW_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
-                     hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+                     hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ \
@@ -1979,17 +1979,17 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # may, the way the test binaries compile both PIN algorithms.
 # test/aes_equiv_soft.c and test/aes_equiv_hw.c compile the two sources in
 # under those names, so neither is on the line twice.
-# ct.c is on the line because aes_hw.c wipes its key-schedule word
+# ct_wipe.c is on the line because aes_hw.c wipes its key-schedule word
 # and its cipher state through ct_wipe; quic_aes_soft.c wipes nothing and
 # links nothing, for the reason its file comment gives.
 # test/aes_equiv_vaes.c compiles gcm_vaes.c's kernels, which the counter
 # cases run as well on an x86-64 CPU with VAES and VPCLMULQDQ, and which
 # gcm_hw.c's entries name on x86-64.
 bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
-                    quic_aes_soft.c aes_hw.c gcm_hw.c gcm_vaes.c ct.c $(HDRS) $(TESTH)
+                    quic_aes_soft.c aes_hw.c gcm_hw.c gcm_vaes.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
-	  test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c ct.c
+	  test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c ct.c ct_wipe.c
 # GHASH on the carry-less multiply against gcm.c's portable GHASH, the
 # same check for ghash_hw.c: the multiply, the loop over data and the
 # whole AEAD, each built twice in one binary. The line defines CH_AES_HW, so
@@ -2007,7 +2007,7 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # once each, the second with x25519_wide.c under -DCH_X25519_WIDE. The line
 # states CH_NATIVE_MUL128 because ct.h refuses the wide field without it; the
 # portable wrapper reads nothing that macro changes.
-X25519_EQUIV_TEST_SRCS := test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c
+X25519_EQUIV_TEST_SRCS := test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c ct_wipe.c
 bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) x25519.c x25519_wide.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_NATIVE_MUL128 -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
@@ -2022,9 +2022,9 @@ bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
 # chacha20_xor is the portable loop, and test/chacha20_equiv_vector.c
 # compiles chacha20_vector.c under the define beside it, and
 # test/chacha20_equiv_avx2.c the AVX2 kernel, whose cases run on an
-# x86-64 CPU with AVX2. ct.c is the wipe of the buffer a vector path's
+# x86-64 CPU with AVX2. ct_wipe.c is the wipe of the buffer a vector path's
 # last bytes pass through.
-CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c chacha20.c ct.c
+CHACHA20_EQUIV_TEST_SRCS := test/chacha20_equiv_vector.c test/chacha20_equiv_avx2.c chacha20.c ct.c ct_wipe.c
 bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) $(CHACHA_VECTOR_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS)
@@ -2035,7 +2035,7 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) 
 # host CFLAGS assert CH_NATIVE_WIDEMUL, which the path needs.
 # test/stack_residue.c copies the stack a call left, for the check that
 # the powers of r are gone (test/poly1305_equiv_residue.h).
-POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c
+POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c ct_wipe.c
 bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) poly1305_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
@@ -2066,33 +2066,33 @@ bin/unit_chacha_avx2: test/unit_test.c test/x86_kernels_route.c $(SRCS) chacha20
 	$(CC) $(CFLAGS) -DCH_CHACHA_VECTOR -include test/chacha20_avx2_route.h -I. -Itest -o $@ test/unit_test.c \
 	  test/x86_kernels_route.c $(SRCS) chacha20_avx2.c poly1305_vector.c
 bin/ghash_equiv_vaes: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c test/x86_kernels_route.c \
-                      gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+                      gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -include test/gcm_vaes_route.h \
 	  -I. -Itest -o $@ test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c \
-	  test/x86_kernels_route.c gcm.c aes.c $(filter-out gcm_hw.c,$(AES_HW_SRCS)) hkdf.c sha256.c ct.c
+	  test/x86_kernels_route.c gcm.c aes.c $(filter-out gcm_hw.c,$(AES_HW_SRCS)) hkdf.c sha256.c ct.c ct_wipe.c
 bin/quic_test_vaes: test/quic_vectors.c test/x86_kernels_route.c aes.c $(AES_HW_SRCS) gcm.c quic_keys.c \
                     quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c \
-                    ct.c $(HDRS) $(TESTH)
+                    ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) \
 	  -include test/gcm_vaes_route.h -I. -Itest -o $@ test/quic_vectors.c test/x86_kernels_route.c aes.c \
 	  $(filter-out gcm_hw.c,$(AES_HW_SRCS)) gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c \
-	  sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	  sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c \
                       $(AES_HW_SRCS) \
-                      hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+                      hkdf.c sha256.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -I. -o $@ test/ghash_equiv_test.c \
-	  test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c
+	  test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c ct_wipe.c
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
 # ones call, which is SRV_BELOW: srv_message.c and srv_cookie.c read and write
-# through buf.c, srv_cookie.c calls hkdf.c for the cookie MAC and ct.c for the
-# comparison and the wipe, srv_auth.c calls sha256.c for the CertificateVerify
-# signed content and ct.c for the wipes after it, srv.c compares ALPN names
-# with ct_memeq, srv_handshake.c wipes its handshake_state and fails the
-# session through tlsi_fail, and session.c's alert path pulls the record
+# through buf.c, srv_cookie.c calls hkdf.c for the cookie MAC, ct.c for the
+# comparison and ct_wipe.c for the wipe, srv_auth.c calls sha256.c for the
+# CertificateVerify signed content and ct_wipe.c for the wipes after it, srv.c
+# compares ALPN names with ct_memeq, srv_handshake.c wipes its handshake_state
+# and fails the session through tlsi_fail, and session.c's alert path pulls the record
 # layer, the I/O shim and the key derivation record.c runs with it.
 # srv_parser.c reads through buf.c, hashes the frozen fields through sha256.c
 # and compares ALPN names with ct_memeq. srv_flight.c adds keysched.c for
@@ -2100,7 +2100,7 @@ bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack
 # srv_kex.c adds the key exchange: x25519.c, p256_ecdh.c over the P-256
 # arithmetic SRV_SIGNERS lists, and the ML-KEM-768 and SHA-3 sources
 # every server role carries. No stub is left in the role.
-SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
+SRV_BELOW := buf.c ct.c ct_wipe.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
              keysched.c x25519.c p256_ecdh.c handshake_record.c $(KEX_HYBRID_SRCS)
 # The two signers srv_auth.c calls, each with the arithmetic it computes
 # over, and the two verifiers its boot-time check calls. Every binary
@@ -2145,7 +2145,7 @@ bin/tlsserver_aes_extern: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNE
 # links those sources and their dependencies alone, not the whole role,
 # because the builders, the cookie and the parser are pure functions over
 # caller buffers and touch no session.
-SRV_DEPS := buf.c ct.c sha256.c hkdf.c aead.c chacha20.c poly1305.c
+SRV_DEPS := buf.c ct.c ct_wipe.c sha256.c hkdf.c aead.c chacha20.c poly1305.c
 # The QUIC server driver end to end: this tree's own ClientHello, built by
 # handshake_message.c, through srv_quic.c and out as the flight it pushes.
 # It links both sides of the connection on purpose, which no packaged
@@ -2154,7 +2154,7 @@ SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c sr
                  srv_ticket.c srv_resume.c srv_kex.c p256_ecdh.c $(KEX_HYBRID_SRCS) \
                  srv_parser.c srv_parser_ext.c srv.c handshake_message.c handshake_record.c \
                  quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
-                 aes.c quic_aes_soft.c gcm.c quic_config.c buf.c ct.c sha256.c \
+                 aes.c quic_aes_soft.c gcm.c quic_config.c buf.c ct.c ct_wipe.c sha256.c \
                  hkdf.c keysched.c x25519.c chacha20.c poly1305.c aead.c rsa_sign.c \
                  p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c \
                  quic_token.c
@@ -2209,7 +2209,7 @@ bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES
 # an independent computation, the key update and the §6.6 count
 # (test/quic_suite_test.c), on the AES instructions.
 QUIC_SUITE_TEST_SRCS := quic_packet.c quic_keys.c aes.c $(AES_HW_SRCS) gcm.c hkdf.c \
-                        sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c
+                        sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW \
@@ -2237,20 +2237,20 @@ AES_EXTERN_BINS := bin/quic_test_extern bin/aes_suite_test_extern bin/quic_suite
 # bound (test_extern_layout).
 bin/quic_test_extern: test/quic_vectors.c aes.c $(AES_EXTERN_DEPS) gcm.c quic_keys.c quic_retry.c \
                       quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c \
-                      ct.c $(HDRS) $(TESTH)
+                      ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN $(AES_256_TEST_DEF) -I. -o $@ \
 	  test/quic_vectors.c aes.c $(AES_EXTERN_SRCS) gcm.c quic_keys.c quic_retry.c quic_initial.c \
-	  quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	  quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 # TLS_AES_128_GCM_SHA256 in the record layer against RFC 8448's printed
 # record, as bin/aes_suite_test runs it.
 bin/aes_suite_test_extern: test/aes_suite_test.c record.c gcm.c aes.c $(AES_EXTERN_DEPS) aead.c \
-                           chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c \
+                           chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c \
                            $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/aes_suite_test.c record.c gcm.c aes.c \
 	  $(AES_EXTERN_SRCS) aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c \
-	  ct.c buf.c
+	  ct.c ct_wipe.c buf.c
 # QUIC packet and header protection under both AES suites against the
 # independent computation bin/quic_suite_test checks, AES-256 included.
 bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_HW_SRCS),$(QUIC_SUITE_TEST_SRCS)) \
@@ -2290,18 +2290,18 @@ bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_L
 # bin/aes_runtime_test for x86-64 and runs its absent half on a CPU model
 # without AES-NI and PCLMULQDQ.
 AES_RUNTIME_TEST_SRCS := aes.c gcm.c gcm_vaes.c quic_initial.c quic_retry.c quic_packet.c quic_keys.c \
-                         hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c
+                         hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
 bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
                       $(AES_RUNTIME_TEST_SRCS) $(AES_HW_SRCS) quic_aes_soft.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_RUNTIME_SUITE_DEF) -I. -Itest -o $@ \
 	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c $(AES_RUNTIME_TEST_SRCS)
 bin/aes_suite_test_runtime: test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) aead.c \
-                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c \
+                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c \
                             $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_RUNTIME_SUITE_DEF) -I. -o $@ test/aes_suite_test.c record.c gcm.c aes.c \
-	  $(AES_HW_SRCS) aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c
+	  $(AES_HW_SRCS) aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c
 bin/quic_suite_test_runtime: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) quic_aes_soft.c $(HDRS) \
                              $(TESTH)
 	@mkdir -p bin
@@ -2324,7 +2324,7 @@ bin/quic_loop_aes_runtime: test/quic_loop_test.c test/quic_loop_runtime.h $(QUIC
 # tcp_nonblocking_frame.c comes with the transport, and no
 # tcp_nonblocking_step.c, which is the client's table.
 SRV_TCP_NONBLOCKING_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c tcp_nonblocking.c tcp_nonblocking_frame.c $(KEX_HYBRID_SRCS) \
-                handshake_message.c handshake_record.c record.c session.c buf.c ct.c sha256.c hkdf.c keysched.c \
+                handshake_message.c handshake_record.c record.c session.c buf.c ct.c ct_wipe.c sha256.c hkdf.c keysched.c \
                 x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c p256_ecdh.c \
                 p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
 bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
@@ -2485,7 +2485,7 @@ bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser
 # srv_parse_client_hello itself, so the flight cases drive every answer the
 # parser's contract admits rather than only the ones a real hello produces;
 # that definition and srv_parser.c cannot link into one object.
-SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c p256_ecdh.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
+SRV_FLIGHT_DEPS := buf.c ct.c ct_wipe.c sha256.c hkdf.c keysched.c x25519.c p256_ecdh.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
                    record.c aead.c chacha20.c poly1305.c
 bin/srv_flight_test: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
                      $(HDRS) $(TESTH)
@@ -2513,7 +2513,7 @@ bin/sha512_test: test/sha512_test.c $(SHA512_TEST_SRCS) $(HDRS) $(TESTH)
 # published TLS_AES_256_GCM_SHA384 trace. -DCH_HASH_SHA384 turns SHA-384
 # on in hkdf.c without the AES suite, which needs the AES instructions, so
 # this runs on every host.
-HKDF384_SRCS := hkdf.c keysched.c sha256.c sha512.c sha512_compress.c ct.c
+HKDF384_SRCS := hkdf.c keysched.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c
 bin/hkdf384_test: test/hkdf384_test.c $(HKDF384_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_HASH_SHA384 -I. -o $@ test/hkdf384_test.c $(HKDF384_SRCS)
@@ -2539,7 +2539,7 @@ bin/p256_field_test: test/p256_field_test.c $(P256_FIELD_TEST_SRCS) $(HDRS) $(TE
 # refuses and the scalar boundary. Its own binary, like p384_test,
 # because only the server roles and the TRUST=webpki client link
 # p256_ecdh.c, and bin/unit builds neither.
-P256_ECDH_TEST_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
+P256_ECDH_TEST_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c ct_wipe.c
 bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS)
@@ -2550,19 +2550,19 @@ bin/p256_ecdh_test: test/p256_ecdh_test.c $(P256_ECDH_TEST_SRCS) $(HDRS) $(TESTH
 # stack. p256.c is on the line as the cross-check, not as a dependency --
 # p256_sign.c calls nothing in it, which is the whole point of the file
 # (p256_sign.h).
-P256_SIGN_SRC := p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c
+P256_SIGN_SRC := p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c ct_wipe.c
 bin/p256_sign_test: test/p256_sign_test.c $(P256_SIGN_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -Itest -o $@ test/p256_sign_test.c $(P256_SIGN_SRC)
-RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
+RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c
 bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
 # The TRUST=webpki date reader and hostname matcher at their boundaries:
 # their own binaries, out of the raw and ca objects like sha512, each
 # over the DER primitives it reads through.
-WEBPKI_TIME_SRC := webpki_time.c x509_der.c buf.c ct.c
-WEBPKI_NAME_SRC := webpki_name.c x509_der.c buf.c ct.c
+WEBPKI_TIME_SRC := webpki_time.c x509_der.c buf.c ct.c ct_wipe.c
+WEBPKI_NAME_SRC := webpki_name.c x509_der.c buf.c ct.c ct_wipe.c
 bin/webpki_time_test: test/webpki_time_test.c $(WEBPKI_TIME_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/webpki_time_test.c $(WEBPKI_TIME_SRC)
@@ -2574,7 +2574,7 @@ bin/webpki_name_test: test/webpki_name_test.c $(WEBPKI_NAME_SRC) $(HDRS) $(TESTH
 # RSA_WIDE_DEF, -DCH_RSA_MODULUS_MAX=512, so the RSA-4096 key is the last
 # one the modulus gate admits, as the webpki object will. The dispatch
 # binary links every verifier and both hashes it calls.
-WEBPKI_SPKI_SRC := webpki_spki.c x509_der.c buf.c ct.c
+WEBPKI_SPKI_SRC := webpki_spki.c x509_der.c buf.c ct.c ct_wipe.c
 WEBPKI_SIGALG_SRC := webpki_sigalg.c $(WEBPKI_SPKI_SRC) sha256.c sha512.c sha512_compress.c p256.c \
                      p384.c p384_field.c rsa_pkcs1.c rsa.c rsa_mont.c
 bin/webpki_spki_test: test/webpki_spki_test.c $(WEBPKI_SPKI_SRC) $(HDRS) $(TESTH)
@@ -2694,10 +2694,10 @@ bin/webpki_session_aes_runtime: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) a
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c
+X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
 
 # The provisioning tool the e2e suite feeds real openssl armour to.
-PEMKEY_SRC := test/pemkey.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c
+PEMKEY_SRC := test/pemkey.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
 bin/pemkey: $(PEMKEY_SRC) rsa.c rsa_mont.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ $(PEMKEY_SRC) rsa.c rsa_mont.c
@@ -2847,7 +2847,7 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_field.c test/widemul_count_native_scalar.c \
                        $(if $(CHACHA_VECTOR_PROBE),test/widemul_count_native_vector.c chacha20_vector.c)
-WIDEMUL_COUNT_SRCS := aead.c chacha20.c hkdf.c sha256.c ct.c buf.c record.c mlkem.c sha3.c p256.c \
+WIDEMUL_COUNT_SRCS := aead.c chacha20.c hkdf.c sha256.c ct.c ct_wipe.c buf.c record.c mlkem.c sha3.c p256.c \
                       p256_ecdh.c p256_point.c p256_sign.c rsa.c rsa_mont.c
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                           $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COPIED) poly1305_vector.c $(HDRS) $(TESTH)
@@ -3595,9 +3595,9 @@ endif
 # with x25519() answering from x25519_wide.c. Its own main, because the
 # field changes no other row bin/diff compares; test/diff_x25519_test.c
 # says so, and why the spec needs no second model.
-bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS) $(TESTH)
+bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/diff_x25519_test.c x25519.c x25519_wide.c ct.c
+	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -3607,7 +3607,7 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS
 # each of the three binaries links beside them: quic_keys.c and
 # quic_retry.c, whose version 1 and version 2 rows test/diff_quic.h
 # holds, and the HKDF and constant-time sources they call.
-DIFF_QUIC_SRCS := quic_keys.c quic_retry.c hkdf.c sha256.c ct.c
+DIFF_QUIC_SRCS := quic_keys.c quic_retry.c hkdf.c sha256.c ct.c ct_wipe.c
 bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS)
@@ -3896,7 +3896,7 @@ wycheproof:
 # are how the legs without them run TLS_AES_256_GCM_SHA384's primitives.
 WYCHEPROOF_TEST_DEFS := $(AES_256_TEST_DEF) -DCH_HASH_SHA384
 WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
-  mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c \
+  mlkem.c mlkem_poly.c sha3.c buf.c ct.c ct_wipe.c sha512.c sha512_compress.c p384.c p384_field.c \
   rsa_pkcs1.c rsa_sign.c aes.c gcm.c p256_sign.c p256_ecdh.c p256_point.c \
   p256_scalar.c p256_field.c
 WYCHEPROOF_STAMP_INPUTS = $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm'
@@ -5249,7 +5249,7 @@ lint-impact:
 # lint-wide-multiply and lint-runtime-symbols read what the compiler emits.
 #
 # CODEGEN_SRCS is every source a key, a shared secret, a session secret or
-# record plaintext passes through: the chain from ct.c up to tls.c, plus
+# record plaintext passes through: the chain from ct.c and ct_wipe.c up to tls.c, plus
 # drbg.c (the reference generator ships outside the packaged object, but a
 # firmware that picks RAND=drbg compiles it) and softmul.c (the multiply
 # itself, on a core with none). buf.c is in because the binder and the
@@ -5379,7 +5379,7 @@ lint-impact:
 # held exactly. The divisions are sha3.c's `% 5` over Keccak's lane
 # counters and tls_write.c's one division in ch_writable_len, the caller's
 # buffer length by the length of a record (docs/decisions.md 72).
-WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
+WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
@@ -5853,7 +5853,7 @@ WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sh
 # loops, the dispatcher's test of hash_len, and hkdf_expand's CH_ASSERT on
 # hash_len. hash_len is the suite's, which the ServerHello names in the
 # clear, and none of them reads a key byte.
-BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
+BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c \
                aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c poly1305_vector.c \
                sha512.c \
@@ -5929,40 +5929,40 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # back edge, n against 64. The powers of r and both carries are straight
 # line.
 BRANCH_CEILING := \
-  m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
+  m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
-  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:4 mips32r2/sha256.c:16 mips32r2/sha3.c:29 \
+  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:29 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
   mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
-  mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:4 \
+  mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:1 \
   rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
-  rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:2 m3-gcc/sha256.c:12 \
+  rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
   m3-gcc/sha3.c:24 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
-  m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:2 \
+  m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
   mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
   mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:4 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
+  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:23 \
+  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
-  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
+  rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
@@ -6404,27 +6404,27 @@ endif
 FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 FUZZ_TIME ?= 30
-FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
+FUZZ_RECORD_LINK := record.c ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c handshake_parser_ee.c buf.c
 # handshake_post.c needs handshake.c, and handshake.c needs most of the
 # client, so this list is SRCS less the file the harness includes. A
 # hand-kept list lost the link when 33978f6 moved the flight handlers
 # into handshake_flight.c; SRCS gains every such file.
 FUZZ_HANDSHAKE_POST_LINK := $(filter-out handshake_post.c,$(SRCS))
-FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
+FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c ct_wipe.c sha256.c rsa.c rsa_mont.c
 # The TRUST=webpki walk and every file under it. -DCH_TRUST_WEBPKI is
 # not optional here: ch_cfg declares the anchors, the hostname and the
 # clock only there, and it widens the modulus gate to the RSA-4096 a
 # public root carries.
 FUZZ_WEBPKI_LINK := -DCH_TRUST_WEBPKI webpki.c webpki_cert.c webpki_ext.c webpki_name.c webpki_sigalg.c \
-                    webpki_spki.c webpki_time.c x509_der.c buf.c ct.c sha256.c sha512.c \
+                    webpki_spki.c webpki_time.c x509_der.c buf.c ct.c ct_wipe.c sha256.c sha512.c \
                     sha512_compress.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
 # The two rules SPKI pins run (webpki_pin.c), on a raw public key and on a
 # chain under pins alone, over the walk's files, which hold their entry
 # framing (webpki.c), the raw key's reader (webpki_spki.c) and the leaf's
 # key reader (webpki_cert.c).
 FUZZ_WEBPKI_PIN_LINK := $(FUZZ_WEBPKI_LINK) webpki_pin.c
-FUZZ_HANDSHAKE_RECORD_LINK := handshake_record.c io.c record.c buf.c ct.c sha256.c hkdf.c \
+FUZZ_HANDSHAKE_RECORD_LINK := handshake_record.c io.c record.c buf.c ct.c ct_wipe.c sha256.c hkdf.c \
                     chacha20.c poly1305.c aead.c
 
 .PHONY: fuzz
@@ -6539,7 +6539,7 @@ bench-primitives:
 # from the same two lines with this host's compiler. So a call one of
 # these sources gains into a file the list leaves out, or a define a
 # header comes to require, fails check (docs/decisions.md 88).
-INSN_SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
+INSN_SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
              buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c
 INSN_DEF := -DCH_RAND_EXTERN
 .PHONY: print-insn-lists

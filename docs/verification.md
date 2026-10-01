@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 102 C sources in the tree root are compiled into a
+81 of the 103 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -121,8 +121,37 @@ The entries are grouped by area:
 #### ct
 
 - **Harness:** `ct` (fast)
-- **Proves:** `ct_memeq` matches a plain compare, and `ct_wipe` zeroizes.
+- **Proves:** `ct_memeq` matches a plain compare, and
+  `proof/ct_wipe_stub.c`, the `ct_wipe` contract stub, writes zero to
+  p[0..n) and no byte past it.
 - **Bound:** inputs ≤ 64 B.
+- **Not proved:** the stub is not the `ct_wipe` that ships. It is the
+  byte loop `ct_wipe` was before `ct_wipe.c` began to call `memset`
+  through a volatile function pointer, one volatile store per byte, and
+  every launch line that links `ct.c` links it in place of `ct_wipe.c`.
+  So each of those harnesses proves its own code over the loop, and its
+  formula and its `ct_wipe.0` unwind bound did not change when the
+  shipped body did. The two have one contract, zero over p[0..n) and no
+  other byte written: this harness proves it of the stub and `ct_wipe`
+  proves it of `ct_wipe.c` (docs/decisions.md 91).
+
+#### ct_wipe
+
+- **Harness:** `ct_wipe` (fast)
+- **Proves:** `ct_wipe.c`, the `ct_wipe` that ships, is memory-safe and
+  UB-free, writes zero to p[0..n) and no other byte, and makes no call
+  when n is 0, so a null p with nothing to wipe is safe.
+- **Bound:** none on the length: a heap buffer of every size CBMC's
+  pointer encoding holds, and every offset and n inside it, with one
+  nondet index for every byte.
+- **Not proved:** CBMC reads the volatile pointer as the `memset` it was
+  initialized with and runs its own model of `memset`, so the libc's
+  `memset` is not proved, and neither is the property the pointer exists
+  for, that no compiler deletes the call. That is a property of the
+  compiler's output, not of the C: docs/decisions.md 91 records the
+  disassembly read for each compiler and target, and
+  `bin/poly1305_equiv_test` checks the stack after a wipe whose body the
+  compiler can see.
 
 #### ctwidemul
 

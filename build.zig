@@ -73,15 +73,15 @@ const Axis = struct { defs: Names = &.{}, filter: Names = &.{}, add: Names = &.{
 
 // SRCS in the Makefile, in its order.
 const srcs = [_][]const u8{
-    "ct.c",                  "sha256.c",           "hkdf.c",              "chacha20.c",
-    "poly1305.c",            "aead.c",             "x25519.c",            "p256.c",
-    "rsa.c",                 "rsa_mont.c",         "pem.c",               "x509.c",
-    "x509_der.c",            "x509_ca.c",          "webpki_time.c",       "webpki_name.c",
-    "webpki_spki.c",         "webpki_ext.c",       "buf.c",               "record.c",
-    "keysched.c",            "io.c",               "handshake_message.c", "handshake_parser.c",
-    "handshake_parser_ee.c", "handshake_record.c", "session.c",           "handshake_auth.c",
-    "handshake_flight.c",    "handshake.c",        "handshake_post.c",    "tls.c",
-    "tls_write.c",           "softmul.c",          "build.c",
+    "ct.c",               "ct_wipe.c",             "sha256.c",           "hkdf.c",
+    "chacha20.c",         "poly1305.c",            "aead.c",             "x25519.c",
+    "p256.c",             "rsa.c",                 "rsa_mont.c",         "pem.c",
+    "x509.c",             "x509_der.c",            "x509_ca.c",          "webpki_time.c",
+    "webpki_name.c",      "webpki_spki.c",         "webpki_ext.c",       "buf.c",
+    "record.c",           "keysched.c",            "io.c",               "handshake_message.c",
+    "handshake_parser.c", "handshake_parser_ee.c", "handshake_record.c", "session.c",
+    "handshake_auth.c",   "handshake_flight.c",    "handshake.c",        "handshake_post.c",
+    "tls.c",              "tls_write.c",           "softmul.c",          "build.c",
 };
 
 // The Makefile's named lists, each under its Makefile name.

@@ -67,7 +67,9 @@ def launch_lines():
     runs = {}
     for m in re.finditer(r'^launch (\S+) (\w+) (\S+) (\d+) "([^"]*)"(.*)$', text, re.M):
         tier, _mode, name, unwind, unwindset, rest = m.groups()
-        linked = re.findall(r"\b([a-z0-9_]+\.c)\b", rest)
+        # A linked source is a path from the root: a shipped source, or a
+        # stub in proof/ such as proof/ct_wipe_stub.c.
+        linked = re.findall(r"\b([a-z0-9_/]+\.c)\b", rest)
         # Every flag the launch line carries, -D and otherwise: a launch
         # line that needs --object-bits to prove needs it to cover too,
         # or cbmc stops with "too many addressed objects" and the harness

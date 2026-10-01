@@ -5039,3 +5039,146 @@ does nothing more.
     run 40 minutes earlier on the same CPU model, at the same kernels,
     gave gcc's AES-128-GCM seal 4.07 and clang's 3.20, so the gcc figure
     moved by 10% from one runner to the next.
+91. **`ct_wipe` calls the libc's `memset` through a volatile function
+    pointer, and the proofs read a byte-loop stub with the same
+    contract.** `ct_wipe` stored one byte per iteration through a
+    volatile pointer, and a compiler may not merge volatile stores into
+    wider ones. Since entry 85 a forged AES-GCM open wipes the plaintext
+    it wrote, so refusing a forged 16 KiB record took 8.3 µs on the M1 Pro
+    where a genuine open took 2.6, and every seal and open also wipes its
+    expanded key and the state of its passes once a call. `ct_wipe` now
+    sits in `ct_wipe.c`, which holds
+
+    ```c
+    static void *(*const volatile ct_memset)(void *, int, size_t) = memset;
+    ```
+
+    and calls `memset` through it when n is not 0. `ct.c` keeps
+    `ct_memeq`, and `ct.h` declares both.
+
+    - **Why the compiler keeps the call.** A volatile object is read each
+      time the abstract machine reads it (C11 5.1.2.3p6), so the compiler
+      loads the pointer at every call and cannot tell which function the
+      load returns. It cannot delete a call to a function it does not
+      know, and it cannot treat the call as a `memset` whose stores no
+      later read needs. That holds where it inlines `ct_wipe` into a
+      caller whose buffer ends right after the call, as a consumer's
+      link-time optimization does. `memset` is the libc's, compiled apart
+      from every caller, so it writes each byte.
+    - **What a compiler may still do.** It may compare the loaded pointer
+      with `memset` and drop the call on the branch where the two are
+      equal. gcc and clang make that comparison for an indirect call only
+      from a profile: gcc's value-profile transformations and LLVM's
+      indirect-call promotion read `-fprofile-use` data. A
+      profile-guided build of chapulin needs its output read again.
+    - **n of 0.** C11 7.24.1p2 asks `memset` for a valid pointer even
+      when n is 0, so `ct_wipe` makes no call then, and a caller with
+      nothing to wipe may pass a null pointer. The branch reads the
+      length, which is public.
+    - **The output read.** A scratch unit compiled this `ct_wipe` beside
+      two functions that each pass a stack buffer of 64 bytes or 16 KiB to a
+      function in another unit, wipe it and return, at `-O2` and `-Os`,
+      under Apple clang 21 for arm64 and x86-64 macOS; clang 23.1.2 for
+      arm64 and x86-64 Linux, `thumbv7m-none-eabi -mcpu=cortex-m3`,
+      `mips-linux-musl -march=mips32r2` and `riscv32-unknown-elf
+      -march=rv32imac`; gcc 13.3 for x86-64 and arm64 Linux; the Arm GNU
+      gcc 15.3.1 the m3 lane pins; the mips lane's gcc 12.4; and the
+      riscv32 lane's Bootlin gcc 14.3 at rv32imac and rv32ic. Every clang
+      at both levels, and every gcc at `-O2`, inlines `ct_wipe`, and the
+      caller loads `ct_memset` and calls through it. gcc at `-Os` calls
+      `ct_wipe.part.0`, the out-of-line part of `ct_wipe` after the test
+      of n, which does the same. With `ct_wipe` calling `memset` by name
+      instead, every clang deletes the call at both levels and every gcc
+      at `-O2`; gcc at `-Os` keeps it only because it does not inline
+      `ct_wipe` there.
+    - **The proofs.** 84 launch lines in `proof/run.sh` link `ct.c`, and
+      20 of them bound the loop `ct_wipe.0`. Each now links
+      `proof/ct_wipe_stub.c` beside it, a contract stub that is the loop
+      `ct_wipe` was, so no other harness's formula changed: `ct_memeq` in
+      `ct.c` and `ct_wipe` in the stub are the same tokens as the two
+      bodies `ct.c` held at a104a3e. `proof/ct_harness.c` proves the stub
+      writes zero to p[0..n), as it proved of the loop before, and now
+      also that it writes no byte past them. `proof/ct_wipe_harness.c`
+      proves `ct_wipe.c` memory-safe and UB-free, zero over p[0..n) and
+      no other byte written, over a heap buffer of every size CBMC's
+      pointer encoding holds, in 0.5 s and 22 MB. Of `memset` it proves
+      CBMC's model only. Run one at a time under a 30-minute limit,
+      beside other jobs on the M1 Pro, `ct` proved 63 properties in 12 s,
+      `ct_wipe` 66 in under a second, `aead` 254 in 6 s, `gcm_safety` 457
+      in 254 s, `handshake_post` 765 in 119 s and `record` 412 in 603 s.
+      At a104a3e the last four prove the same counts, and `ct` proves 59,
+      without the check of the bytes past n.
+    - **Tests.** `bin/unit` wipes n bytes for each n from 0 to 32 between
+      guard bytes, and a null pointer with n of 0.
+      `test/poly1305_equiv_vector.c` compiles `ct_wipe.c` into the unit
+      that holds the vector Poly1305, renamed as that unit renames its
+      other calls, so the compiler can inline `ct_wipe` where the call's
+      powers of r end. `ct-wipe-plain-memset` calls `memset` by name, and
+      `bin/poly1305_equiv_test` then finds the powers on the stack, under
+      Apple clang 21 and under gcc 13.3 on arm64 and x86-64 Linux. Every
+      other binary compiles `ct_wipe.c` as a unit of its own, where no
+      compiler can delete either body's call, so no other test notices
+      the mutant.
+    - **Zig.** Zig 0.16's compiler_rt exports a weak `memset` that stores
+      one byte per iteration: built for aarch64 Linux at `ReleaseFast`, it
+      is a loop of `strb`. A Zig program on Linux that links no libc gets
+      that one, so its `ct_wipe` still writes every byte through the same
+      volatile pointer, at about the old loop's speed. colibri and stompy
+      get the speed below when they link a libc or export a faster
+      `memset` of their own, which takes the place of the weak one.
+
+    Rejected:
+
+    - **`memset` and a fence.** C11 names no barrier that keeps stores
+      nothing reads afterwards. `atomic_signal_fence` orders memory
+      against a signal handler, and whether it keeps a `memset` of a
+      buffer whose lifetime then ends is the compiler's choice, not the
+      standard's. An `asm` statement with a memory clobber keeps it, and
+      is GNU C, not C11.
+    - **Wider volatile stores.** A `uint32_t` or `uint64_t` lvalue stored
+      into a byte array breaks the effective-type rule (C11 6.5p7).
+    - **`memset_s`, `explicit_bzero` or `memset_explicit`.** Annex K is
+      optional, and glibc and musl do not ship `memset_s`;
+      `explicit_bzero` is not in C. C23's `memset_explicit` is the
+      standard form of this call, and chapulin builds as C11.
+    - **Keeping the loop.** It costs what the gain below measures.
+    - **A second body in `ct.c` under `__CPROVER__`.** cbmc defines that
+      macro, so `ct.c` could have compiled the loop for the proofs and the
+      `memset` call for every build. Camilo ruled on 2026-10-01 that
+      shipped C carries no verification token (docs/proofs.md, "Prior
+      art"), and the stub on the launch line keeps every formula without
+      one.
+
+    Cost: one indirect call per wipe, one pointer in read-only data, and a
+    branch on n. On mips32r2 `ct.o` and `ct_wipe.o` take 120 bytes where
+    `ct.o` took 100, and `ct_wipe`'s frame grew from 0 to 24
+    (`bench/device-ram.sh`). Where `memset`
+    is itself a byte loop the call adds a little: `bench/insn-mips.sh`
+    links such a `memset`, and there a 1 KiB AEAD seal went from 81,976
+    to 82,006 instructions and its stack from 748 to 756 bytes. On the
+    Cortex-M3, whose newlib `memset` stores words, the same seal went from
+    67,684 to 67,367 instructions.
+
+    Gain, in paired runs on the M1 Pro under macOS's Apple clang 21, then
+    in the OrbStack VM under clang 18 and gcc 13:
+
+    - A forged 16 KiB AES-128-GCM open, timed directly: 8.3, 8.8 and
+      8.6 µs before, 2.5, 3.0 and 2.8 µs after; at 1 KiB, 877, 909 and
+      921 ns before, 248, 264 and 275 ns after.
+    - The record bench's 16 KiB AES-128-GCM seal, `gcm_traffic_seal`:
+      2.59, 2.95 and 2.95 µs before, 2.28, 2.63 and 2.62 µs after; at
+      1 KiB, 556, 586 and 613 ns before, 248, 283 and 278 ns after. The
+      wipe of the expanded key took 93, 95 and 95 ns, and takes 5.5, 4.7
+      and 4.7.
+    - ChaCha20-Poly1305's 16 KiB seal did not move past the runs' spread
+      in the packaged build, and fell by 1% under `CHACHA=vector
+      WIDEMUL=native`, whose vector Poly1305 wipes its powers of r on
+      each call; at 1 KiB that build's seal fell by 9%.
+
+    The CSVs that docs/performance.md renders were measured again for this
+    entry, and two of their changes predate it. `bench/results-device.csv`
+    was older than `handshake_auth.c`, whose object is 736 bytes at
+    a104a3e where the file held 648. And at a104a3e, before this change as
+    after it, the packaged ChaCha20-Poly1305 record takes 2% to 3% longer
+    than in the runs the tables held at 97826ba, and the VM's clang runs
+    the vector Poly1305 in 4.8 µs where those runs took 3.0.

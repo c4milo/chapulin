@@ -1,0 +1,30 @@
+invariant: INV-17
+file: ct_wipe.c
+catches: poly1305_equiv_test
+reason: ct_wipe calls memset by name instead of through the volatile
+  pointer. Where the compiler sees that body at the call, as link-time
+  optimization does, it knows the call stores zeros that nothing reads
+  before the caller's frame ends, and deletes it, so every wipe at the end
+  of a function is gone. Separately compiled, ct_wipe.c still wipes, so no
+  vector notices. bin/poly1305_equiv_test compiles ct_wipe.c into the same
+  unit as poly1305_vector_blocks and looks for the powers of r on the
+  stack below the call.
+
+--- old
+static void *(*const volatile ct_memset)(void *, int, size_t) = memset;
+
+void ct_wipe(void *p, size_t n) {
+    // C11 7.24.1p2 asks memset for a valid pointer even when n is 0, and a
+    // caller with nothing to wipe may hold a null one.
+    if (n != 0) {
+        ct_memset(p, 0, n);
+    }
+}
+--- new
+void ct_wipe(void *p, size_t n) {
+    // C11 7.24.1p2 asks memset for a valid pointer even when n is 0, and a
+    // caller with nothing to wipe may hold a null one.
+    if (n != 0) {
+        memset(p, 0, n);
+    }
+}
