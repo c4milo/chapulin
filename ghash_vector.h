@@ -60,41 +60,34 @@
 // one reduction where the one-block form waited on eight. The powers live
 // in a ghash_state that the file holding it wipes when its entry ends.
 //
-// Two instruction sets, and the compiler picks between them at build
-// time, as it does for aes_hw.c:
+// Two instruction sets, and the architecture picks between them, as it
+// does for aes_hw.c:
 //
-//   __ARM_FEATURE_AES  PMULL, through vmull_p64 in <arm_neon.h>. The Arm
-//                      C Language Extensions put the 64-bit PMULL in the
-//                      AES extension, so the macro that gives
-//                      aes_hw.c its AES instructions gives this header
-//                      its multiply.
-//   __PCLMUL__         PCLMULQDQ, through _mm_clmulepi64_si128 in
-//                      <wmmintrin.h>, on x86-64. x86-64 names it apart
-//                      from AES-NI, so the build needs -mpclmul beside
-//                      -maes, and the Makefile's AES_HW_PROBE asks for
-//                      both.
+//   arm64   PMULL, through vmull_p64 in <arm_neon.h>. The Arm C Language
+//           Extensions put the 64-bit PMULL in the AES extension, so the
+//           target attribute that gives aes_hw.c its AES instructions
+//           gives this header its multiply.
+//   x86-64  PCLMULQDQ, through _mm_clmulepi64_si128 in <wmmintrin.h>.
+//           x86-64 names it apart from AES-NI, so its attribute is
+//           pclmul beside aes.
 //
-// A build that defines neither gets the #error below rather than a
-// silent fall back to gcm.c's portable multiply, because AES=hw is a
-// statement about what the object contains. aes_hw.c states why
-// nothing here probes a CPU at run time.
-//
-// AES=runtime compiles the files that include this header with no
-// instruction flag. The architecture picks the instruction, and the
-// pragma below puts the target attribute that turns it on onto each
-// function here, as each including file's own pragma does onto its
-// functions; aes_hw.c states how each compiler's pragma applies it.
+// A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the files that
+// include this header with no instruction flag. The pragma below puts the
+// target attribute that turns the instruction on onto each function here,
+// as each including file's own pragma does onto its functions; aes_hw.c
+// states how each compiler's pragma applies it, and why nothing here
+// probes a CPU at run time.
 //
 // Timing. No line here branches on an operand or indexes memory with
 // one: every step is a shift, a mask, an exclusive-or, a move between
 // the halves of a register or the instruction. Whether the instruction
 // takes the same number of cycles whatever its operands are is a claim
-// neither macro makes, for the reason aes_hw.c gives for the AES
-// instructions. CH_NATIVE_AES carries that claim for both: it is the
-// build's statement that this part's AES instructions and its carry-less
-// multiply run in constant time. ct.h states the terms, and only a
-// -DCH_SUITE_AES_GCM build needs them, because under the three public keys
-// INV-26 admits, the hash subkey is public too.
+// the instruction's existence does not make, for the reason aes_hw.c
+// gives for the AES instructions. The caller's CH_CPU_CONSTANT_TIME_AES
+// bit carries that claim for both: its statement that this CPU's AES
+// instructions and its carry-less multiply run in constant time. A
+// session needs it only for an AES-GCM suite, because under the three
+// public keys INV-26 admits, the hash subkey is public too.
 //
 // CBMC cannot read an intrinsic, so the proofs stay on gcm.c's portable
 // multiply, and test/ghash_equiv_test.c holds both files that include
@@ -102,7 +95,7 @@
 #ifndef CH_GHASH_VECTOR_H
 #define CH_GHASH_VECTOR_H
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 #include <stdint.h>
@@ -110,20 +103,11 @@
 #include "aes.h"
 
 // Which instruction the multiply below takes: PMULL where GHASH_VECTOR_ARM
-// is defined, and PCLMULQDQ where it is not. Under AES=hw the build's
-// flags say which, and under AES=runtime the architecture does, because
-// no flag turns the instruction on.
-#ifdef CH_AES_RUNTIME
+// is defined, and PCLMULQDQ where it is not. The architecture says which,
+// because no flag turns the instruction on, and cpu_cfg.h has refused
+// every target but these two.
 #ifdef __aarch64__
 #define GHASH_VECTOR_ARM
-#elif !defined(__x86_64__)
-#error "AES=runtime needs an arm64 or x86-64 target, whose carry-less multiply it can run"
-#endif
-#elif defined(__ARM_FEATURE_AES)
-#define GHASH_VECTOR_ARM
-#elif !defined(__PCLMUL__)
-#error                                                                                             \
-    "AES=hw needs the carry-less multiply: compile with -march=armv8-a+crypto or -maes -mpclmul, or build AES=soft"
 #endif
 
 #ifdef GHASH_VECTOR_ARM
@@ -132,11 +116,10 @@
 #include <wmmintrin.h>
 #endif
 
-// Under AES=runtime, every function from here to the pop at the end of
-// this header carries the target attribute that turns the instruction on:
+// Every function from here to the pop at the end of this header carries
+// the target attribute that turns the instruction on:
 // "+aes", the Arm AES extension, which the Arm C Language Extensions give
 // the 64-bit PMULL, or "pclmul", x86-64's PCLMULQDQ.
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #ifdef GHASH_VECTOR_ARM
 #pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
@@ -149,7 +132,6 @@
 #pragma GCC target("+aes")
 #else
 #pragma GCC target("pclmul")
-#endif
 #endif
 #endif
 
@@ -465,14 +447,12 @@ static inline void ghash_hash_pass(ghash_state *s, const uint8_t *data) {
     s->acc = ghash_reduce(&s->sums);
 }
 
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #pragma clang attribute pop
 #else
 #pragma GCC pop_options
 #endif
-#endif
 
-#endif // CH_AES_HW || CH_AES_RUNTIME
+#endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

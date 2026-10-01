@@ -194,8 +194,8 @@ def extra_defines(entries):
     """QUIC_EXTRA_DEFINES as a dict from file to its flags.
 
     Each entry is `name:flag` and a name may carry several flags,
-    separated by commas, because an AES=hw run needs the define and the
-    flag that turns the instructions on. The shape is WIDEMUL_DEFINES's,
+    separated by commas, because a suite run needs the suite define and
+    the host object's, which ct.h requires beside it. The shape is WIDEMUL_DEFINES's,
     for the reason that variable gives: the build already knows which
     file needs which macro, so this lint reads it rather than keeping a
     second copy."""

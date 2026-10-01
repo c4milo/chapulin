@@ -1,14 +1,14 @@
 // The AES-128 key expansion and forward cipher, as two entries over
 // plain byte arrays, and the AES-256 pair beside them in a build that
-// has AES-256 (CH_AES_256, aes.h). The Makefile AES variable picks
-// the one source that defines them: quic_aes_soft.c (AES=soft, the
-// default), aes_hw.c (AES=hw, the compiler's AES intrinsics) or
-// aes_extern.c (AES=extern, a block function the caller supplies).
-// One source per object, the way PIN puts one pinned algorithm in one
-// object. AES=runtime is the one value with two: aes_hw.c defines these
-// entries, and a QUIC object holds quic_aes_soft.c beside it under the
-// aes_soft_ names below, which the caller's probe result chooses between
-// for each public key (docs/decisions.md 81).
+// has AES-256 (CH_AES_256, aes.h). In a device object the Makefile AES
+// variable picks the one source that defines them: quic_aes_soft.c
+// (AES=soft, the default) or aes_extern.c (AES=extern, a block function
+// the caller supplies). A host object (-DCH_CPU_RUNTIME, cpu_cfg.h)
+// compiles aes_hw.c, the compiler's AES intrinsics turned on for its own
+// functions alone, and a QUIC host object holds quic_aes_soft.c beside it
+// under the aes_soft_ names below. The session's CH_CPU_CONSTANT_TIME_AES
+// bit chooses between the two for each public key (docs/decisions.md 81
+// and 89).
 //
 // aes.c is the only library source that calls these. It owns both
 // key types, derives the RFC 9001 §5.2 keys into an aes_public_key,
@@ -23,23 +23,25 @@
 // none of the three implementations can build a key object at all,
 // whatever it does with the bytes it is handed.
 //
-// Detection is the compiler's, at build time, or under AES=runtime the
-// caller's, at run time (ch_cfg.aes_instructions). Nothing here probes a
-// CPU or asks an operating system. aes_hw.c states why.
+// Detection is the caller's, at run time (ch_cfg.cpu). Nothing here
+// probes a CPU or asks an operating system. aes_hw.c states why.
 #ifndef CH_AES_BLOCK_H
 #define CH_AES_BLOCK_H
 
-// All three sources define the same two entries, so two of them in one
-// object would not link. This says so at the preprocessor instead, and
-// it sits outside the transport guard below so it answers whatever build
-// reads this header. The Makefile AES variable cannot produce two of the
-// defines; a firmware tree compiling these sources with its own build
-// system can, which is who this line is for. AES=runtime is the one value
-// that puts two implementations in one object, and it names its own
-// define, CH_AES_RUNTIME, rather than pairing the other two.
-#if defined(CH_AES_HW) + defined(CH_AES_EXTERN) + defined(CH_AES_RUNTIME) > 1
-#error                                                                                             \
-    "CH_AES_HW, CH_AES_EXTERN and CH_AES_RUNTIME are exclusive: declare at most one (docs/quic.md)"
+// aes_hw.c and aes_extern.c define the same entries, so the two in one
+// object would not link. This says so at the preprocessor instead, and it
+// sits outside the transport guard below so it answers whatever build
+// reads this header. The Makefile refuses AES=extern for a host object; a
+// firmware tree compiling these sources with its own build system can
+// still write both defines, which is who this line is for. The two
+// defines that chose the AES instructions when the object was built are
+// gone, and a build that still writes one stops here rather than
+// compiling the table it would otherwise get.
+#if defined(CH_CPU_RUNTIME) && defined(CH_AES_EXTERN)
+#error "CH_AES_EXTERN is a device object's AES: a host object holds the AES instructions"
+#endif
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#error "AES=hw and AES=runtime are gone: a host object holds the AES instructions (decision 89)"
 #endif
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
@@ -106,15 +108,16 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
 #endif
 
 #ifdef CH_AES_TWO_CIPHERS
-// The second cipher of an AES=runtime QUIC object (aes.h). aes_hw.c
-// defines the four entries above on the AES instructions, and
-// quic_aes_soft.c defines these two on the S-box table, with the contracts
-// of aes_expand_round_keys and aes_cipher_block and the same round-key
+// The second cipher of a QUIC host object (aes.h). aes_hw.c defines the
+// four entries above on the AES instructions, and quic_aes_soft.c defines
+// these two on the S-box table, with the contracts of
+// aes_expand_round_keys and aes_cipher_block and the same round-key
 // layout, so a schedule either one expands reads the same to the other.
 // aes.c is their one caller, for a public key alone: the Initial keys of a
-// session whose caller found no AES instructions, and the Retry key. A
-// traffic key never runs on them, because aes_traffic_key_init records the
-// instructions in its schedule (aes_schedule.h).
+// session whose caller did not set CH_CPU_CONSTANT_TIME_AES, and the
+// Retry key. A traffic key never runs on them, because
+// aes_traffic_key_init records the instructions in its schedule
+// (aes_schedule.h).
 void aes_soft_expand_round_keys(const uint8_t key[AES_128_KEY],
                                 uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]);
 void aes_soft_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],

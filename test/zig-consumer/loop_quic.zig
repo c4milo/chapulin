@@ -56,7 +56,7 @@ fn sent(level: quic.Level) []const u8 {
 }
 
 fn clientValues() chapulin.Client {
-    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .quic_version = .v1, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .aes_instructions = fixture.aesAnswer(), .widemul = fixture.widemulAnswer() };
+    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .quic_version = .v1, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .widemul = fixture.widemulAnswer() };
 }
 
 /// A handshake of a version 1 client and server, whose server chooses the

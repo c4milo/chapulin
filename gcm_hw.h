@@ -3,9 +3,9 @@
 // time, and the seal's and the open's counter mode and GHASH in one loop.
 // gcm.c's counter_mode, seal and open call these entries for a schedule
 // the AES instructions run, and run a schedule the table or a peripheral
-// runs one block at a time. The Makefile AES variable compiles gcm_hw.c where it
-// compiles aes_hw.c and ghash_hw.c: AES=hw, and AES=runtime, where gcm.c
-// calls it for a schedule on the instructions alone (aes_schedule.h).
+// runs one block at a time. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h)
+// compiles gcm_hw.c beside aes_hw.c and ghash_hw.c, and gcm.c calls it for
+// a schedule on the instructions alone (aes_schedule.h).
 //
 // A pair of its own rather than more entries in aes_block.h or ghash_hw.h.
 // aes_block.h is the AES block cipher's contract, and ghash_hw.h is
@@ -26,7 +26,7 @@
 #ifndef CH_GCM_HW_H
 #define CH_GCM_HW_H
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 #include <stdint.h>
@@ -91,6 +91,6 @@ void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out);
 
-#endif // CH_AES_HW || CH_AES_RUNTIME
+#endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

@@ -1,7 +1,7 @@
 invariant: INV-17
 file: ghash_vector.h
 catches: ghash_equiv_test
-reason: the AES=hw GHASH state holds the pass's sums after the powers of
+reason: the host object's GHASH state holds the pass's sums after the powers of
   H, past the end of the wipe, which covers the state up to the last
   power the call computed. So the carry-less products of the last pass's
   blocks and powers of H stay in the dead frame after every call, and a

@@ -24,8 +24,8 @@
 
 #include "x86_kernels_cpu.h"
 
-// gcm_hw.c's entry, compiled by test/aes_equiv_hw.c under CH_AES_HW, which
-// this binary's main does not define, so gcm_hw.h declares nothing here,
+// gcm_hw.c's entry, compiled by test/aes_equiv_hw.c under CH_CPU_RUNTIME,
+// which this binary's main does not define, so gcm_hw.h declares nothing here,
 // and gcm_vaes.c's, compiled by test/aes_equiv_vaes.c, for the same reason.
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out);

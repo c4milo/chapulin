@@ -165,39 +165,38 @@ static int open_under(const aes_public_key *k, uint8_t *pkt, size_t pkt_len, siz
     return CH_OK;
 }
 
-// The two entries, once per build: an AES=runtime object's take the
-// caller's answer about the AES instructions first (quic_initial.h). Each
+// The two entries, once per build: a host object's take the session's
+// description of its CPU first (quic_initial.h). Each
 // refuses a version this build derives no keys for before anything is
 // derived, because that version has no salt and no labels here. Then
 // aes_public_key_initial returns CH_EINVAL for a dcid_len above
 // CH_QUIC_DCID_MAX and for an endpoint that is neither of the two, which
 // are the other refusals these entries document, so both bounds are
 // checked in one place; it writes nothing outside k.
-#ifdef CH_AES_RUNTIME
-int quic_initial_seal(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
-                      const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
-                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                      uint8_t *out, size_t cap, size_t *out_len) {
+#ifdef CH_CPU_RUNTIME
+int quic_initial_seal(uint32_t cpu, uint8_t endpoint, uint32_t version, const uint8_t *dcid,
+                      size_t dcid_len, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                      size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                      size_t *out_len) {
     if (!quic_version_derived(version)) {
         return CH_EINVAL;
     }
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, aes_instructions, version, dcid, dcid_len, endpoint);
+    int rc = aes_public_key_initial(&k, cpu, version, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }
     return seal_under(&k, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
 }
 
-int quic_initial_open(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
-                      const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
-                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
+int quic_initial_open(uint32_t cpu, uint8_t endpoint, uint32_t version, const uint8_t *dcid,
+                      size_t dcid_len, uint8_t *pkt, size_t pkt_len, size_t pn_off,
+                      uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
     if (!quic_version_derived(version)) {
         return CH_EINVAL;
     }
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, aes_instructions, version, dcid, dcid_len,
-                                    peer_endpoint(endpoint));
+    int rc = aes_public_key_initial(&k, cpu, version, dcid, dcid_len, peer_endpoint(endpoint));
     if (rc != CH_OK) {
         return rc;
     }

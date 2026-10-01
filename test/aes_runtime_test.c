@@ -1,27 +1,27 @@
-// AES=runtime's two ciphers in one binary (docs/decisions.md 81). An
-// AES=runtime QUIC object runs a public key on the AES instructions or on
-// quic_aes_soft.c's table, as its caller's probe result says
-// (ch_cfg.aes_instructions), and runs every traffic key on the
-// instructions. This binary checks both under each answer:
+// A QUIC host object's two ciphers in one binary (docs/decisions.md 81
+// and 89). A QUIC host object runs a public key on the AES instructions or
+// on quic_aes_soft.c's table, as the CH_CPU_CONSTANT_TIME_AES bit of its
+// caller's ch_cfg.cpu says, and runs every traffic key on the
+// instructions. This binary checks both, with the bit and without it:
 //
 //   - RFC 9001 Appendix A and RFC 9369 Appendix A: the keys, the client
 //     and server Initial packets, every byte, and the Retry tag, of QUIC
 //     version 1 and version 2.
 //   - AES-128-GCM and AES-256-GCM under traffic keys, against the SP
-//     800-38D vectors bin/quic_test_hw checks the AES=hw build against,
+//     800-38D vectors bin/quic_test_hw checks the instructions against,
 //     and the header protection block against FIPS 197.
 //   - Which cipher ran. test/aes_runtime_soft.c and test/aes_runtime_hw.c
 //     count every call into the table, the AES instructions and the
-//     carry-less multiply (test/aes_runtime_count.h). Under the absent
-//     answer no call goes to the instructions or the carry-less multiply;
-//     under the present answer the table runs no Initial key; and it runs
-//     no traffic key under either. A Retry key runs on the table under
-//     either.
+//     carry-less multiply (test/aes_runtime_count.h). Without the bit no
+//     call goes to the instructions or the carry-less multiply; with it
+//     the table runs no Initial key; and it runs no traffic key either
+//     way. A Retry key runs on the table either way.
 //
-// Its one argument picks the answers it runs, "present" or "absent", and
-// with none it runs both. test/aes-runtime-qemu.sh runs "absent" on an
-// x86-64 CPU model without AES-NI and PCLMULQDQ, where either instruction
-// traps, and "present" there to show that it does.
+// Its one argument picks what it runs, "present" for the bit set or
+// "absent" for the bit clear, and with none it runs both.
+// test/aes-runtime-qemu.sh runs "absent" on an x86-64 CPU model without
+// AES-NI and PCLMULQDQ, where either instruction traps, and "present"
+// there to show that it does.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,8 +39,13 @@
 
 #ifndef CH_AES_TWO_CIPHERS
 #error                                                                                             \
-    "bin/aes_runtime_test is the AES=runtime QUIC build: -DCH_AES_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING"
+    "bin/aes_runtime_test is a QUIC host object: -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING"
 #endif
+
+// The two values a caller states: the AES instructions stated, and the
+// probe's bit alone.
+#define RUNTIME_PRESENT (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES)
+#define RUNTIME_ABSENT CH_CPU_PROBED
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -125,11 +130,11 @@ static void reset_counts(void) {
     aes_runtime_clmul_calls = 0;
 }
 
-// Which cipher answer ran for the calls since the last reset: the
-// instructions and the carry-less multiply alone under the present
-// answer, and the table alone under the absent one.
-static void check_ran_on(uint8_t answer) {
-    if (answer == CH_AES_INSTRUCTIONS_PRESENT) {
+// Which cipher ran for the calls since the last reset: the instructions
+// and the carry-less multiply alone when cpu holds the AES bit, and the
+// table alone when it does not.
+static void check_ran_on(uint32_t cpu) {
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) != 0) {
         CHECK(aes_runtime_table_calls == 0);
         CHECK(aes_runtime_instruction_calls > 0 && aes_runtime_clmul_calls > 0);
         return;
@@ -139,18 +144,16 @@ static void check_ran_on(uint8_t answer) {
 }
 
 // A.1: both endpoints' three values, and the cipher each schedule records.
-// A value that is neither answer takes the table, the cipher every CPU
-// runs; every init call refuses such a value first (docs/decisions.md 81).
-static void check_keys(uint8_t answer, const appendix *a) {
-    uint8_t recorded = answer == CH_AES_INSTRUCTIONS_PRESENT ? CH_AES_INSTRUCTIONS_PRESENT
-                                                             : CH_AES_INSTRUCTIONS_ABSENT;
+// A value without the AES bit takes the table, the cipher every CPU runs.
+static void check_keys(uint32_t cpu, const appendix *a) {
+    uint8_t recorded = (cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
     aes_public_key k;
-    CHECK(aes_public_key_initial(&k, answer, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, cpu, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(eq_hex(k.key.round_keys, a->client_key) && eq_hex(k.iv, a->client_iv) &&
           eq_hex(k.hp.round_keys, a->client_hp));
     CHECK(k.key.instructions == recorded && k.hp.instructions == recorded);
-    CHECK(aes_public_key_initial(&k, answer, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
+    CHECK(aes_public_key_initial(&k, cpu, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     CHECK(eq_hex(k.key.round_keys, a->server_key) && eq_hex(k.iv, a->server_iv) &&
           eq_hex(k.hp.round_keys, a->server_hp));
@@ -159,7 +162,7 @@ static void check_keys(uint8_t answer, const appendix *a) {
 
 // A.2: the client's Initial packet sealed by the client entry, all 1200
 // bytes, and opened by the server's.
-static void check_client_initial(uint8_t answer, const appendix *a) {
+static void check_client_initial(uint32_t cpu, const appendix *a) {
     static uint8_t pt[A2_PAYLOAD];
     static uint8_t want[A2_PACKET];
     static uint8_t out[A2_PACKET];
@@ -169,13 +172,13 @@ static void check_client_initial(uint8_t answer, const appendix *a) {
     CHECK(unhex(V2_A2_CRYPTO_FRAME, pt) < sizeof pt);
     CHECK(unhex(a->a2_header, hdr) == sizeof hdr);
     CHECK(unhex(a->a2_packet, want) == sizeof want);
-    CHECK(quic_initial_seal(answer, CH_QUIC_ENDPOINT_CLIENT, a->version, APPENDIX_DCID,
+    CHECK(quic_initial_seal(cpu, CH_QUIC_ENDPOINT_CLIENT, a->version, APPENDIX_DCID,
                             sizeof APPENDIX_DCID, 2, A2_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, out,
                             sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof want && memcmp(out, want, sizeof want) == 0);
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_initial_open(answer, CH_QUIC_ENDPOINT_SERVER, a->version, APPENDIX_DCID,
+    CHECK(quic_initial_open(cpu, CH_QUIC_ENDPOINT_SERVER, a->version, APPENDIX_DCID,
                             sizeof APPENDIX_DCID, out, out_len, A2_HDR - A2_PN_LEN, 0, &pn,
                             &pt_len) == CH_OK);
     CHECK(pn == 2 && pt_len == A2_PAYLOAD && memcmp(&out[A2_HDR], pt, A2_PAYLOAD) == 0);
@@ -183,7 +186,7 @@ static void check_client_initial(uint8_t answer, const appendix *a) {
 
 // A.3: the server's Initial packet sealed by the server entry, every
 // byte, and opened by the client's.
-static void check_server_initial(uint8_t answer, const appendix *a) {
+static void check_server_initial(uint32_t cpu, const appendix *a) {
     static uint8_t pt[A3_PAYLOAD];
     static uint8_t want[A3_PACKET];
     static uint8_t out[A3_PACKET];
@@ -192,13 +195,13 @@ static void check_server_initial(uint8_t answer, const appendix *a) {
     CHECK(unhex(V2_A3_PAYLOAD, pt) == sizeof pt);
     CHECK(unhex(a->a3_header, hdr) == sizeof hdr);
     CHECK(unhex(a->a3_packet, want) == sizeof want);
-    CHECK(quic_initial_seal(answer, CH_QUIC_ENDPOINT_SERVER, a->version, APPENDIX_DCID,
+    CHECK(quic_initial_seal(cpu, CH_QUIC_ENDPOINT_SERVER, a->version, APPENDIX_DCID,
                             sizeof APPENDIX_DCID, 1, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, out,
                             sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof want && memcmp(out, want, sizeof want) == 0);
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_initial_open(answer, CH_QUIC_ENDPOINT_CLIENT, a->version, APPENDIX_DCID,
+    CHECK(quic_initial_open(cpu, CH_QUIC_ENDPOINT_CLIENT, a->version, APPENDIX_DCID,
                             sizeof APPENDIX_DCID, out, out_len, A3_HDR - A3_PN_LEN, 0, &pn,
                             &pt_len) == CH_OK);
     CHECK(pn == 1 && pt_len == A3_PAYLOAD && memcmp(&out[A3_HDR], pt, A3_PAYLOAD) == 0);
@@ -206,8 +209,9 @@ static void check_server_initial(uint8_t answer, const appendix *a) {
 
 // A.4: the tag both Retry calls compute over the Retry pseudo-packet, the
 // original Destination Connection ID with its length byte and then the
-// Retry packet without its tag (RFC 9001 §5.8). It takes no answer: the
-// Retry key runs on the table in every AES=runtime session (aes.h).
+// Retry packet without its tag (RFC 9001 §5.8). It takes no ch_cfg.cpu:
+// the Retry key runs on the table in every session of a QUIC host object
+// (aes.h).
 static void check_retry(const appendix *a) {
     uint8_t packet[A4_RETRY];
     uint8_t pseudo[1 + sizeof APPENDIX_DCID + A4_RETRY - GCM_TAG];
@@ -220,28 +224,31 @@ static void check_retry(const appendix *a) {
     CHECK(quic_retry_tag(a->version, pseudo, sizeof pseudo, tag) == CH_OK);
     CHECK(memcmp(tag, &packet[A4_RETRY - GCM_TAG], GCM_TAG) == 0);
     CHECK(quic_retry_ok(a->version, pseudo, sizeof pseudo, &packet[A4_RETRY - GCM_TAG]) == 1);
-    check_ran_on(CH_AES_INSTRUCTIONS_ABSENT);
+    check_ran_on(RUNTIME_ABSENT);
 }
 
-// Both appendices under one answer, and what ran for them.
-static void check_public_keys(uint8_t answer) {
+// Both appendices under one ch_cfg.cpu, and what ran for them.
+static void check_public_keys(uint32_t cpu) {
     for (size_t i = 0; i < sizeof APPENDICES / sizeof APPENDICES[0]; i++) {
         reset_counts();
-        check_keys(answer, &APPENDICES[i]);
-        check_client_initial(answer, &APPENDICES[i]);
-        check_server_initial(answer, &APPENDICES[i]);
-        check_ran_on(answer);
+        check_keys(cpu, &APPENDICES[i]);
+        check_client_initial(cpu, &APPENDICES[i]);
+        check_server_initial(cpu, &APPENDICES[i]);
+        check_ran_on(cpu);
         check_retry(&APPENDICES[i]);
     }
-    // A value that names neither answer runs the table, and the init calls
-    // refuse it before any key is built.
-    aes_public_key k;
-    reset_counts();
-    CHECK(aes_public_key_initial(&k, 0, CH_QUIC_VERSION_1, APPENDIX_DCID, sizeof APPENDIX_DCID,
-                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
-    CHECK(eq_hex(k.key.round_keys, V1_CLIENT_KEY) &&
-          k.key.instructions == CH_AES_INSTRUCTIONS_ABSENT);
-    CHECK(aes_runtime_instruction_calls == 0 && aes_runtime_table_calls > 0);
+    // Every other bit is the init calls' to judge, and the constructor
+    // reads the AES bit alone: 0, which the init calls refuse, and every
+    // bit but the AES one run the table.
+    static const uint32_t without_aes[2] = {0, ~(uint32_t)CH_CPU_CONSTANT_TIME_AES};
+    for (size_t i = 0; i < 2; i++) {
+        aes_public_key k;
+        reset_counts();
+        CHECK(aes_public_key_initial(&k, without_aes[i], CH_QUIC_VERSION_1, APPENDIX_DCID,
+                                     sizeof APPENDIX_DCID, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
+        CHECK(eq_hex(k.key.round_keys, V1_CLIENT_KEY) && k.key.instructions == AES_ON_TABLE);
+        CHECK(aes_runtime_instruction_calls == 0 && aes_runtime_table_calls > 0);
+    }
 }
 
 // One traffic AEAD case: SP 800-38D's case 4 for AES-128-GCM and case 16
@@ -282,7 +289,7 @@ static void check_traffic_case(const traffic_case *c) {
     size_t n = unhex(c->pt, pt);
     aes_traffic_key k;
     aes_traffic_key_init(&k, key, key_len);
-    CHECK(k.key.instructions == CH_AES_INSTRUCTIONS_PRESENT);
+    CHECK(k.key.instructions == AES_ON_INSTRUCTIONS);
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
     CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
@@ -311,7 +318,7 @@ static void check_traffic_keys(void) {
     check_traffic_block("000102030405060708090a0b0c0d0e0f", "69c4e0d86a7b0430d8cdb78070b4c55a");
     check_traffic_block("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
                         "8ea2b7ca516745bfeafc49904b496089");
-    check_ran_on(CH_AES_INSTRUCTIONS_PRESENT);
+    check_ran_on(RUNTIME_PRESENT);
 }
 
 int main(int argc, char **argv) {
@@ -320,18 +327,21 @@ int main(int argc, char **argv) {
     int absent = strcmp(which, "present") != 0;
     CHECK(present || absent);
     if (present) {
-        check_public_keys(CH_AES_INSTRUCTIONS_PRESENT);
+        check_public_keys(RUNTIME_PRESENT);
         check_traffic_keys();
     }
     if (absent) {
-        check_public_keys(CH_AES_INSTRUCTIONS_ABSENT);
+        check_public_keys(RUNTIME_ABSENT);
     }
     if (failures == 0) {
-        (void)printf("aes_runtime: RFC 9001 and RFC 9369 Appendix A under the %s answer%s, each on"
-                     " the cipher its answer names%s\n",
-                     present && absent ? "present and the absent" : which,
-                     present && absent ? "s" : "",
-                     present ? ", and the traffic keys on the instructions alone" : "");
+        const char *which_bits = "without CH_CPU_CONSTANT_TIME_AES";
+        if (present) {
+            which_bits = absent ? "with CH_CPU_CONSTANT_TIME_AES and without it"
+                                : "with CH_CPU_CONSTANT_TIME_AES";
+        }
+        (void)printf("aes_runtime: RFC 9001 and RFC 9369 Appendix A %s, each on the cipher the bit"
+                     " names%s\n",
+                     which_bits, present ? ", and the traffic keys on the instructions alone" : "");
     }
     return failures != 0;
 }

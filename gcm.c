@@ -14,37 +14,35 @@
 // running multiple in the GF(2^128) multiply, the keystream, the tag mask
 // and the tag this call expected. A public key does not need it; the
 // suite build runs these same bodies under a traffic key, and one body
-// serves both. ct.h refuses that build unless it also takes AES=hw,
-// AES=runtime or AES=extern, and an AES=runtime object runs every traffic
-// key on the instructions (aes.h), so no table in this tree sits
-// underneath it.
+// serves both. ct.h refuses that build outside a host object and
+// AES=extern, and a host object runs every traffic key on the
+// instructions (aes.h), so no table in this tree sits underneath it.
 //
-// GHASH has two bodies, and the Makefile AES variable picks one.
-// AES=soft and AES=extern run the portable multiply below, 128 masked
-// steps per block. AES=hw runs ghash_hw.c's, three carry-less
-// products per block and, once per pass of up to eight blocks, a
-// reduction on the same instruction, and compiles no portable body.
-// An AES=runtime QUIC object (CH_AES_TWO_CIPHERS, aes.h) compiles both
-// and runs ghash_hw.c's for a schedule the AES instructions run and the
+// GHASH has two bodies. A device object, AES=soft or AES=extern, runs
+// the portable multiply below, 128 masked steps per block. A TCP host
+// object (-DCH_CPU_RUNTIME, cpu_cfg.h) runs ghash_hw.c's, three
+// carry-less products per block and, once per pass of up to eight
+// blocks, a reduction on the same instruction, and compiles no portable
+// body. A QUIC host object (CH_AES_TWO_CIPHERS, aes.h) compiles both and
+// runs ghash_hw.c's for a schedule the AES instructions run and the
 // portable one for a schedule the table runs (aes_schedule.h), so a
-// session whose caller found no AES instructions runs no carry-less
-// multiply either. An AES=runtime TCP object holds no table and runs
-// ghash_hw.c's alone, as AES=hw does.
+// session whose caller did not set CH_CPU_CONSTANT_TIME_AES runs no
+// carry-less multiply either.
 // Under an AES=extern suite build the portable multiply runs under a
 // secret hash subkey. Its masks keep every subkey bit off a branch and
 // off a memory index, and it multiplies no integers, so it needs no
 // statement about the part.
 //
 // Counter mode, the seal and the open have one body with one more step
-// under AES=hw and AES=runtime. A schedule the AES instructions run takes
+// in a host object. A schedule the AES instructions run takes
 // counter mode's whole blocks through gcm_hw.c, which runs several blocks
 // at once, and the seal's and the open's whole passes of eight blocks
 // through gcm_hw.c's loops that run counter mode and GHASH over the
 // ciphertext together; the loop that every other schedule runs block by
-// block takes what is left. Everything else here is one body under every
-// AES value.
+// block takes what is left. Everything else here is one body in every
+// object.
 //
-// The open decrypts while it hashes, under every AES value, and compares
+// The open decrypts while it hashes, in every object, and compares
 // the tag once it has written the plaintext. On a mismatch it wipes the
 // n bytes it wrote before it returns, so a failed call returns no
 // plaintext byte (gcm.h, docs/decisions.md entry 85).
@@ -65,7 +63,7 @@
 #include <string.h>
 
 #include "ct.h"
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 #include "ch_assert.h"
 #include "gcm_hw.h"
 #include "ghash_hw.h"
@@ -76,9 +74,9 @@
 static const uint8_t ZERO_BLOCK[AES_BLOCK] = {0};
 
 // The objects that run every schedule on the AES instructions, and so
-// hold ghash_hw.c's GHASH alone: AES=hw, and an AES=runtime object with
-// no table beside the instructions.
-#if defined(CH_AES_HW) || (defined(CH_AES_RUNTIME) && !defined(CH_AES_TWO_CIPHERS))
+// hold ghash_hw.c's GHASH alone: a host object with no table beside the
+// instructions, which is a TCP one.
+#if defined(CH_CPU_RUNTIME) && !defined(CH_AES_TWO_CIPHERS)
 #define GCM_GHASH_CARRYLESS_ALONE
 #endif
 
@@ -159,16 +157,17 @@ static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
 }
 #endif // GCM_GHASH_CARRYLESS_ALONE
 
-// The GHASH body that runs under k. An AES=runtime QUIC object holds two
-// (the paragraph at the top of this file): the carry-less multiply for a
+// The GHASH body that runs under k. A QUIC host object holds two (the
+// paragraph at the top of this file): the carry-less multiply for a
 // schedule on the instructions, and the portable one for a schedule on
 // the table, which only QUIC's public keys use. Every other object holds
-// one body, and k chooses nothing. k->instructions is the caller's probe
-// result or a constant (aes_schedule.h), so the branch reads a public
-// value. counter_mode reads the same predicate.
+// one body, and k chooses nothing. k->instructions comes from the
+// session's CH_CPU_CONSTANT_TIME_AES bit or is a constant
+// (aes_schedule.h), so the branch reads a public value. counter_mode reads
+// the same predicate.
 #ifdef CH_AES_TWO_CIPHERS
 static int on_instructions(const aes_key_schedule *k) {
-    return k->instructions == CH_AES_INSTRUCTIONS_PRESENT;
+    return k->instructions == AES_ON_INSTRUCTIONS;
 }
 
 static void ghash_multiply(const aes_key_schedule *k, uint8_t acc[AES_BLOCK],
@@ -275,7 +274,7 @@ static void increment_counter(uint8_t counter[AES_BLOCK]) {
     }
 }
 
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 // The round count gcm_hw.c's entries take beside k's round keys. A
 // schedule the table expanded never reaches them: every caller below
 // checks on_instructions first, and the assertion holds that, because the
@@ -295,9 +294,8 @@ static size_t instruction_rounds(const aes_key_schedule *k) {
 
 // The whole blocks of counter_mode's input on the AES instructions, which
 // run several blocks at once (gcm_counter_blocks_hw), and the bytes they
-// covered. A schedule the table runs, which only an AES=runtime QUIC
-// object holds, covers none, and counter_mode runs all its blocks one at a
-// time.
+// covered. A schedule the table runs, which only a QUIC host object
+// holds, covers none, and counter_mode runs all its blocks one at a time.
 static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t counter[AES_BLOCK],
                                         const uint8_t *in, size_t n, uint8_t *out) {
 #ifdef CH_AES_TWO_CIPHERS
@@ -348,7 +346,7 @@ static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[
 static void counter_mode(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], const uint8_t *in,
                          size_t n, uint8_t *out) {
     size_t off = 0;
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
     off = counter_mode_whole_blocks(k, counter, in, n, out);
 #endif
     // One buffer for every block, wiped once at the end rather than once
@@ -407,7 +405,7 @@ static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV]
     // hashed once counter mode has written it. done is at most n, so the
     // two pointers stay inside the buffers or one past their end.
     size_t done = 0;
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
     done = whole_passes(k, 1, counter, &h, pt, n, ct);
 #endif
     counter_mode(k, counter, &pt[done], n - done, &ct[done]);
@@ -433,7 +431,7 @@ static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
     // address: gcm_hw.c's loop hashes each pass before it decrypts it, and
     // here GHASH runs over the rest before counter mode writes it.
     size_t done = 0;
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
     done = whole_passes(k, 0, counter, &h, ct, n, pt);
 #endif
     ghash_data(k, h.acc, h.subkey, &ct[done], n - done);

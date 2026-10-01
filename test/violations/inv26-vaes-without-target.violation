@@ -5,9 +5,9 @@ reason: gcm_vaes.c drops the target attribute that turns VAES, VPCLMULQDQ
   and AVX2 on for its own functions, so the kernels compile only where the
   whole object is built with those flags, and an object built that way
   runs them in code the caller's CH_CPU_VAES bit never chose. The script
-  compiles the file for x86-64 on AES=hw and AES=runtime with no flag
-  beyond the ones each value takes, and requires the three kernels on
-  256-bit VAESENC and VPCLMULQDQ.
+  compiles the file for x86-64 in a host object with no flag beyond the
+  host object's define, and requires the three kernels on 256-bit VAESENC
+  and VPCLMULQDQ.
 
 --- old
 #ifdef __clang__

@@ -41,26 +41,21 @@
 // The suites this build holds, SUITE_HELD_COUNT of them, in the order its
 // client offers them and its server prefers them when the caller names no
 // order (docs/decisions.md 80). SUITE_AES_FIRST marks a -DCH_SUITE_AES_GCM
-// build on AES=hw that defines CH_NATIVE_AES: its AES-GCM runs on the AES
-// instructions and the carry-less multiply, which the build asserted run
-// in constant time (ct.h), and it puts TLS_AES_256_GCM_SHA384 first, then
-// TLS_AES_128_GCM_SHA256, then ChaCha20. AES-256 comes first to align
-// with NSA's CNSA 2.0 suite, which requires AES-256 and SHA-384, though
-// every handshake proof covers SHA-256 and the SHA-384 schedule is
-// proved in its own harnesses alone. Every other suite build,
-// AES=extern among them, keeps ChaCha20 first, which runs in constant
-// time by construction, then AES-128-GCM, then AES-256-GCM
-// (docs/decisions.md 58). A build without the define holds ChaCha20
-// alone. Nothing here asks the CPU what it has: a caller that learns it
-// at run time names its own order in ch_cfg.cipher_suites or
-// ch_srv_cfg.cipher_suites, or takes AES=runtime and passes the answer.
-#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_HW) && defined(CH_NATIVE_AES)
-#define SUITE_AES_FIRST
-#endif
-// An AES=runtime suite build asserts the instructions' timing too (ct.h),
-// so the AES-first order is its order where the caller's probe found them;
-// suite_session_default below gives a session without them ChaCha20 alone.
-#if defined(CH_SUITE_AES_GCM) && defined(CH_AES_RUNTIME) && defined(CH_NATIVE_AES)
+// host object (-DCH_CPU_RUNTIME, cpu_cfg.h): a session whose caller set
+// CH_CPU_CONSTANT_TIME_AES runs AES-GCM on the AES instructions and the
+// carry-less multiply, which that bit states run in constant time (ct.h),
+// and it puts TLS_AES_256_GCM_SHA384 first, then TLS_AES_128_GCM_SHA256,
+// then ChaCha20. AES-256 comes first to align with NSA's CNSA 2.0 suite,
+// which requires AES-256 and SHA-384, though every handshake proof covers
+// SHA-256 and the SHA-384 schedule is proved in its own harnesses alone.
+// suite_session_default below gives a session without the bit ChaCha20
+// alone. The other suite build, AES=extern, keeps ChaCha20 first, which
+// runs in constant time by construction, then AES-128-GCM, then
+// AES-256-GCM (docs/decisions.md 58). A build without the define holds
+// ChaCha20 alone. Nothing here asks the CPU what it has: the caller
+// states it in ch_cfg.cpu, and a caller that wants another order names it
+// in ch_cfg.cipher_suites or ch_srv_cfg.cipher_suites.
+#if defined(CH_SUITE_AES_GCM) && defined(CH_CPU_RUNTIME)
 #define SUITE_AES_FIRST
 #endif
 #ifdef CH_SUITE_AES_GCM
@@ -83,18 +78,18 @@ static const uint16_t suite_default_order[SUITE_HELD_COUNT] = {SUITE_CHACHA20_PO
 #endif
 
 // The order a session offers or prefers when its caller names none, with
-// its length in *count: suite_default_order, except in an AES=runtime
-// suite build whose caller's probe found no AES instructions
-// (ch_cfg.aes_instructions), which holds ChaCha20 alone, so it offers
-// and selects no suite it cannot run without them (docs/decisions.md
-// 81). Every value but CH_AES_INSTRUCTIONS_PRESENT takes ChaCha20, the
-// order that runs on any CPU. Public: the hello lists these in the clear.
-#if defined(CH_AES_RUNTIME) && defined(CH_SUITE_AES_GCM)
+// its length in *count: suite_default_order, except in a suite host
+// object whose caller did not set CH_CPU_CONSTANT_TIME_AES in ch_cfg.cpu,
+// which holds ChaCha20 alone, so it offers and selects no suite it cannot
+// run without that statement (docs/decisions.md 81 and 89). Every value
+// without the bit takes ChaCha20, the order that runs on any CPU. Public:
+// the hello lists these in the clear.
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 static const uint16_t suite_order_without_aes[1] = {SUITE_CHACHA20_POLY1305_SHA256};
 #endif
 static inline const uint16_t *suite_session_default(const ch_cfg *cfg, size_t *count) {
-#if defined(CH_AES_RUNTIME) && defined(CH_SUITE_AES_GCM)
-    if (cfg->aes_instructions != CH_AES_INSTRUCTIONS_PRESENT) {
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
+    if ((cfg->cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
         *count = 1;
         return suite_order_without_aes;
     }
@@ -137,26 +132,15 @@ static inline int suite_runs_aes_gcm(uint16_t suite) {
 }
 #endif
 
-#ifdef CH_AES_RUNTIME
-// Whether cfg->aes_instructions states one of the two answers cfg.h names.
-// Every init call of an AES=runtime object refuses a configuration where it
-// does not, 0 included, with CH_EINVAL before anything is sent, so every
-// caller states what its probe found (docs/decisions.md 81).
-static inline int suite_aes_instructions_ok(const ch_cfg *cfg) {
-    return cfg->aes_instructions == CH_AES_INSTRUCTIONS_PRESENT ||
-           cfg->aes_instructions == CH_AES_INSTRUCTIONS_ABSENT;
-}
-
-#ifdef CH_SUITE_AES_GCM
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 // Whether a session configured by cfg may run suite on this CPU: an
-// AES-GCM suite only when the caller's probe found the AES instructions,
-// and ChaCha20 always. Init refuses a caller's suite list that names one it
+// AES-GCM suite only when the caller set CH_CPU_CONSTANT_TIME_AES, and
+// ChaCha20 always. Init refuses a caller's suite list that names one it
 // may not, and a server refuses a retry cookie that names one. A predicate
 // over the caller's configuration and a public code point.
 static inline int suite_runs_here(const ch_cfg *cfg, uint16_t suite) {
-    return !suite_runs_aes_gcm(suite) || cfg->aes_instructions == CH_AES_INSTRUCTIONS_PRESENT;
+    return !suite_runs_aes_gcm(suite) || (cfg->cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
 }
-#endif
 #endif
 
 #ifdef CH_ROLE_SERVER

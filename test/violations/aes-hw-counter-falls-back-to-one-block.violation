@@ -2,17 +2,17 @@ invariant: INV-26
 file: gcm.c
 catches: test/quic-builds.sh
 reason: gcm.c guards its call to the multi-block counter mode on a macro no
-  build defines, so an AES=hw object runs every block of counter mode
-  through the one-block cipher under the AES=hw name, and pays the
-  per-block call and wipe that docs/performance.md measured. Nothing else
-  objects: gcm_counter_blocks_hw still links, and every vector and
-  equivalence test passes, because both paths compute the same bytes.
-  The script compiles gcm.c with -DCH_AES_HW at -O2 and requires its
-  object to call gcm_counter_blocks_hw; at -O0, gcc would still emit the
-  static function that holds the call.
+  build defines, so a host object runs every block of counter mode
+  through the one-block cipher on a schedule the instructions run, and
+  pays the per-block call and wipe that docs/performance.md measured.
+  Nothing else objects: gcm_counter_blocks_hw still links, and every
+  vector and equivalence test passes, because both paths compute the same
+  bytes. The script compiles gcm.c for each host object at -O2 and
+  requires its object to call gcm_counter_blocks_hw; at -O0, gcc would
+  still emit the static function that holds the call.
 
 --- old
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
     off = counter_mode_whole_blocks(k, counter, in, n, out);
 #endif
 --- new

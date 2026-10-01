@@ -490,9 +490,9 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # The same harness in the client that offers both cipher suites
 # (docs/decisions.md entry 45): cipher_suite may carry AES-128-GCM there,
 # and the harness asserts an accepted message carries one of the two
-# offered suites. -DCH_AES_HW and -DCH_NATIVE_AES answer ct.h's refusal of
-# the suite define; the parser runs no cipher, so no AES source is
-# compiled. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l
+# offered suites. -DCH_CPU_RUNTIME, the host object that carries the
+# suite, answers ct.h's refusal of the suite define; the parser runs no
+# cipher, so no AES source is compiled. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l
 # over this script, a spec build running beside it): 761 properties, 76 s,
 # 4.5 GB peak, the parent's shape, and 675 properties, 65 s, 4.1 GB once
 # the EncryptedExtensions parser left handshake_parser.c. The same
@@ -503,7 +503,10 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # properties, 128 s, 5.1 GB peak (the same command, nothing beside it).
 # With TLS_AES_256_GCM_SHA384 as a third offered suite (docs/decisions.md
 # entry 58): 719 properties, 93 s, 4.45 GB peak.
-launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_AES_HW -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=handshake_parser_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 743 properties, 108 s, 6.45 GB peak.
+launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
 # The eeparse lines compile handshake_parser_ee.c, which holds the
@@ -647,7 +650,10 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # the AES-GCM open stub writing its output either way, zeros on a
 # mismatch (docs/decisions.md 85): 570 properties, 17 s, 0.59 GB at a
 # load average near 40.
-launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=record_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 570 properties, 20 s, 0.58 GB peak.
+launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
 # proves one loop step on the shipped step(): from any state with
@@ -838,8 +844,14 @@ launch fast full writable_len 2 "ch_write.1:21"
 # PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast):
 # writable_len_suite 143 properties, 49 s, 72 MB at a load average near
 # 11; writable_len_suite_any 72 properties, under a second, 20 MB.
-launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
-launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 143 properties, 42 s, 0.11 GB peak.
+launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 72 properties, under 1 s, 0.02 GB peak.
+launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
@@ -1040,9 +1052,11 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # hello_build_suite: the same builder in the SUITE=aesgcm TRUST=webpki
 # client, whose cipher_suites are suite.h's default order or a caller's
 # list of 1 to SUITE_HELD_COUNT code points, and whose ticket may carry a
-# SHA-384 binder (docs/decisions.md 80). -DCH_AES_HW and -DCH_NATIVE_AES
-# answer ct.h's refusal of the suite define; the builder runs no cipher,
-# so no AES source is compiled. main.1 is the loop that fills the list and
+# SHA-384 binder (docs/decisions.md 80). -DCH_CPU_RUNTIME answers ct.h's
+# refusal of the suite define, and the harness takes any ch_cfg.cpu, so
+# the default order is the three suites or ChaCha20 alone by the
+# CH_CPU_CONSTANT_TIME_AES bit (docs/decisions.md 89); the builder runs no
+# cipher, so no AES source is compiled. main.1 is the loop that fills the list and
 # write_cipher_suites.0 the loop that writes it, each at most three
 # suites. Measured (cbmc 6.11.0, kissat, PROVE_ONLY=hello_build_suite
 # PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro): 659 properties, 131 s,
@@ -1050,7 +1064,10 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # built fails, and so does one asserting that no hello with a SHA-384
 # binder is built, so both arms are reached. The sufficiency assertion is
 # tight here too: moved to CH_HELLO_MAX - 1 it fails.
-launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES buf.c
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=hello_build_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 671 properties, 134 s, 0.27 GB peak.
+launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
@@ -1374,8 +1391,9 @@ launch fast full aes 45 "fill_nondet.0:177" --object-bits 9 -DCH_TRANSPORT_QUIC_
 # PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak;
 # 619 properties, 25 s, 0.92 GB with version 2's keys (docs/decisions.md 79).
 launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
-# The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
-# contract stubs of the four AES=hw entries the harness defines, because
+# The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, in
+# the TCP host object, which holds the AES instructions alone, over
+# contract stubs of aes_hw.c's four entries the harness defines, because
 # CBMC cannot read the instructions: both key lengths, the round count
 # each writes, and the dispatch that count drives for one block. Counter
 # mode's whole blocks go from gcm.c to gcm_hw.c, which reads the round
@@ -1383,20 +1401,26 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # same way: 140 properties, under 1 s, 0.02 GB peak; 145 properties, under
 # 1 s, 0.02 GB with version 2's keys compiled beside it, and again once the
 # counter-mode dispatch left aes.c.
-launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
-# aes.c in the AES=runtime QUIC suite object, which holds the AES
-# instructions and the table, over contract stubs of both ciphers' eight
-# entries: an Initial key takes the instructions only under the answer
-# CH_AES_INSTRUCTIONS_PRESENT, out of every byte an answer can be, the
-# Retry key takes the table under any, a traffic key of either length
-# never takes the table (docs/decisions.md 81). gcm.c's own check keeps a
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 124 properties, under 1 s, 0.02 GB peak.
+launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+# aes.c in the QUIC host suite object, which holds the AES instructions
+# and the table, over contract stubs of both ciphers' six entries: an
+# Initial key takes the instructions only under a ch_cfg.cpu that holds
+# CH_CPU_CONSTANT_TIME_AES, out of every 32-bit value, the Retry key
+# takes the table under any, a traffic key of either length never takes
+# the table (docs/decisions.md 81 and 89). gcm.c's own check keeps a
 # schedule the table runs out of gcm_hw.c, which no harness reads. HKDF
 # is the stub the aes harness uses. Measured (arm64 macOS, cbmc 6.11.0,
 # kissat, PROVE_NO_CACHE=1 /usr/bin/time -l): 196 properties, 1 s, 0.03 GB
 # peak, and again once the counter-mode entry left aes.c.
-# An Initial key expanded on the instructions under the absent answer
-# fails it (inv26-runtime-absent-expands-on-instructions).
-launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES
+# An Initial key expanded on the instructions without the bit fails it
+# (inv26-runtime-absent-expands-on-instructions).
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=aes_runtime PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 196 properties, 1 s, 0.03 GB peak.
+launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
 # one. ch_aes_block is a contract stub the harness defines, because the
@@ -1424,7 +1448,10 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH
 # the four that version names (docs/decisions.md 79): 142 properties, 2 s,
 # 0.04 GB; 144 properties, 13 s, 0.57 GB once those four are version 1's
 # or version 2's by the version's index.
-launch fast full quic_keys_suite 60 "" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=quic_keys_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 144 properties, 13 s, 0.57 GB peak.
+launch fast full quic_keys_suite 60 "" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
 # call's framing and its verdict and not AES-128-GCM; the harness states
@@ -1477,7 +1504,10 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # const. With the AES-GCM open stub writing its output either way, zeros
 # on a mismatch (docs/decisions.md 85): 1143 properties, 15 s, 0.47 GB at
 # a load average near 40.
-launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=quic_packet_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 1143 properties, 21 s, 0.48 GB peak.
+launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and
 # GHASH on its own. The forward cipher is a contract stub
@@ -1495,8 +1525,8 @@ launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_T
 # 1.8 GB. The property counts are the ones recorded before 234ec4e.
 # gcm_refusal peaked at 0.97 GB at 3ff8517 under the same command,
 # so its weight moves from 1 to 2. Measured again under the same command
-# after gcm.c gained its AES=hw arm, which these lines do not compile
-# because they define no CH_AES_HW, at load averages of 3.4 to 6.0 on ten
+# after gcm.c gained its arm for the AES instructions, which these lines
+# do not compile because they define no host object, at load averages of 3.4 to 6.0 on ten
 # cores: gcm_safety 388 properties, 370 s, 2.6 GB; gcm_refusal
 # 393 properties, 33 s, 1.9 GB; ghash 386 properties, 213 s, 1.8 GB.
 # Measured again after the seal split into hash_start, gcm_hw.c's whole
@@ -1615,14 +1645,21 @@ launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c proof/ct_wipe_stu
 # first. Measured the same way: 41 properties, under 1 s, 0.02 GB peak. A
 # walk that takes the first suite in the order whether or not the client
 # offered it fails three of the assertions.
-launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
-# srv_select_runtime: the default order an AES=runtime session takes from
-# its caller's answer, any byte, which is ChaCha20 alone unless the answer
-# is CH_AES_INSTRUCTIONS_PRESENT, and the same walk over it, which then
-# selects no suite suite_runs_here refuses (docs/decisions.md 81).
-# Measured the same way: 67 properties, under 1 s, 0.02 GB peak. The
-# absent answer given the default order fails it.
-launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=srv_select_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 41 properties, under 1 s, 0.02 GB peak.
+launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
+# srv_select_runtime: the default order a host object's session takes
+# from its ch_cfg.cpu, any 32-bit value, which is ChaCha20 alone unless the
+# value holds CH_CPU_CONSTANT_TIME_AES, and the same walk over it, which
+# then selects no suite suite_runs_here refuses (docs/decisions.md 81 and
+# 89).
+# Measured the same way: 67 properties, under 1 s, 0.02 GB peak. A value
+# without the bit given the default order fails it.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=srv_select_runtime PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 67 properties, under 1 s, 0.02 GB peak.
+launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
 # aead_seal and aead_open are contract stubs the harness defines, which the
@@ -1851,15 +1888,16 @@ launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:
 # taken fails, and the harness's rule narrowed to two suites fails the
 # suite assertion, so the cap the code admits is exact. With the ticket's
 # QUIC version: 724 properties, 6 s, 0.17 GB, measured on 2026-09-29.
-launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_config.c webpki_cfg.c
-# quic_config_webpki_runtime: the same rules in the AES=runtime suite
-# build, which add the caller's answer about the AES instructions, any
-# byte: CH_OK only for one of the two answers, and under the absent one
-# only for a list that names no AES-GCM suite (docs/decisions.md 81).
-# Measured the same way: 782 properties, 4 s, 0.14 GB peak. An
-# answer of 0 admitted, or an AES-GCM suite admitted under the absent
-# answer, fails it.
-launch fast full quic_config_webpki_runtime 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES quic_config.c webpki_cfg.c
+# The suite build is a host object (-DCH_CPU_RUNTIME, docs/decisions.md
+# 89), so the rules add ch_cfg.cpu, any 32-bit value: CH_OK only for a
+# value with CH_CPU_PROBED and no bit cpu_cfg.h leaves undefined for the
+# architecture, and without CH_CPU_CONSTANT_TIME_AES only for a list that
+# names no AES-GCM suite. A value without CH_CPU_PROBED admitted, or an
+# AES-GCM suite admitted without the AES bit, fails it.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
+# the same way on 2026-10-01 (PROVE_ONLY=quic_config_webpki_suite PROVE_NO_CACHE=1
+# /usr/bin/time -l, M1 Pro): 782 properties, 6 s, 0.16 GB peak.
+launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c proof/ct_wipe_stub.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,

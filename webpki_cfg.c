@@ -144,12 +144,12 @@ static int suite_repeats(const ch_cfg *cfg, size_t i) {
     return 0;
 }
 
-#ifdef CH_AES_RUNTIME
+#ifdef CH_CPU_RUNTIME
 // Whether every suite the list names can run on this CPU: none is AES-GCM
-// when an AES=runtime caller's probe found no AES instructions. Such a
-// list is refused rather than cut down to the suites that run, because
-// the caller asked for an offer this session cannot make
-// (docs/decisions.md 81).
+// when the caller of a host object did not set CH_CPU_CONSTANT_TIME_AES.
+// Such a list is refused rather than cut down to the suites that run,
+// because the caller asked for an offer this session cannot make
+// (docs/decisions.md 81 and 89).
 static int client_suites_run_here(const ch_cfg *cfg) {
     for (size_t i = 0; i < cfg->cipher_suite_count; i++) {
         if (!suite_runs_here(cfg, cfg->cipher_suites[i])) {
@@ -165,8 +165,8 @@ static int client_suites_run_here(const ch_cfg *cfg) {
 // SUITE_HELD_COUNT code points, each one this build holds and none
 // repeating another. The count is checked before an entry is read. A
 // count without a list, or a list without a count, is a config with a
-// field missing. An AES=runtime session without the AES instructions
-// also refuses a list that names an AES-GCM suite.
+// field missing. A host session without CH_CPU_CONSTANT_TIME_AES also
+// refuses a list that names an AES-GCM suite.
 static int client_suites_ok(const ch_cfg *cfg) {
     if (cfg->cipher_suites == NULL) {
         return cfg->cipher_suite_count == 0;
@@ -179,7 +179,7 @@ static int client_suites_ok(const ch_cfg *cfg) {
             return 0;
         }
     }
-#ifdef CH_AES_RUNTIME
+#ifdef CH_CPU_RUNTIME
     if (!client_suites_run_here(cfg)) {
         return 0;
     }

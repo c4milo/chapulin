@@ -664,9 +664,10 @@ last `ROLE=server` stub, as the entry said it would.
   three cipher suites (45, 58, 80), and in a resuming hello the ticket and the
   certificate path beside it (55), so the server may resume or
   authenticate with its chain in the same connection. The three suites
-  go in the build's order, AES-256-GCM, AES-128-GCM, then ChaCha20 on
-  `AES=hw` with `CH_NATIVE_AES` and ChaCha20, AES-128-GCM, then
-  AES-256-GCM on every other suite build, or in the caller's
+  go in the build's order, AES-256-GCM, AES-128-GCM, then ChaCha20 in a
+  host object whose caller sets `CH_CPU_CONSTANT_TIME_AES`, ChaCha20 alone
+  in a host object without that bit, and ChaCha20, AES-128-GCM, then
+  AES-256-GCM on `AES=extern`, or in the caller's
   `ch_cfg.cipher_suites`, which names 1 to 3 suites the build holds,
   none twice. There a ServerHello selects either shared
   group, or the hybrid alone under `ch_cfg.require_pq`, and a
@@ -680,15 +681,12 @@ last `ROLE=server` stub, as the entry said it would.
   group when the hello carried no share for it, so a hello that lists the
   hybrid and shares x25519 alone is asked for the hybrid rather than
   answered over x25519. Its suite order is the one its build's client
-  offers in, AES-256-GCM, AES-128-GCM, then ChaCha20 on `AES=hw` with
-  `CH_NATIVE_AES` and ChaCha20, AES-128-GCM, then AES-256-GCM on every
-  other suite build, and it selects the first of them the client listed,
-  or the first of `ch_srv_cfg.cipher_suites` when the caller names an
-  order (decisions.md 58, 80). It never selects a suite the client did
-  not list. An `AES=runtime` session takes the `AES=hw` order when its
-  caller's probe found the AES instructions and ChaCha20 alone when it
-  did not: its client offers no AES-GCM suite, and its server selects
-  none, from a default order or from a retry cookie (decisions.md 81).
+  offers in, and it selects the first of them the client listed, or the
+  first of `ch_srv_cfg.cipher_suites` when the caller names an order
+  (decisions.md 58, 80). It never selects a suite the client did not
+  list. A host session without `CH_CPU_CONSTANT_TIME_AES` holds ChaCha20
+  alone: its client offers no AES-GCM suite, and its server selects none,
+  from a default order or from a retry cookie (decisions.md 81 and 89).
 - **Mechanism.** Absence of selection code; the TRUST build flag picks
   the sigalg of a raw or ca build at compile time, never at runtime.
   The QUIC version rules sit in two places: `quic_version.h`'s
@@ -814,7 +812,7 @@ last `ROLE=server` stub, as the entry said it would.
   `inv07-client-list-admits-unheld-suite`,
   `inv07-client-list-admits-repeat`, `inv07-client-offer-ignores-list`
   and `inv07-client-takes-unlisted-suite`. `test/e2e.sh` has OpenSSL's
-  `s_server` select AES-256-GCM from the `AES=hw` client, ChaCha20 from
+  `s_server` select AES-256-GCM from the host client, ChaCha20 from
   the `AES=extern` one and AES-128-GCM from either under
   `WEBPKI_SUITES=1301,1303`, and has this tree's server select its own
   first suite from an `s_client` that lists AES-128-GCM first.
@@ -1819,12 +1817,7 @@ last `ROLE=server` stub, as the entry said it would.
   derives no keys for, 0 among them; INV-7 states the version rules. INV-38
   states the refusals of a `CH_TX_PT` or a `record_size_limit` out of
   range, and INV-39 the refusal of a message before a key change that
-  does not end its record. In an `AES=runtime` object every init call
-  refuses with `CH_EINVAL`, and sends nothing, a
-  `ch_cfg.aes_instructions` that is neither
-  `CH_AES_INSTRUCTIONS_PRESENT` nor `CH_AES_INSTRUCTIONS_ABSENT`, 0 among
-  them, and under the absent answer a caller's suite list that names an
-  AES-GCM suite (decisions.md 81). In a `WIDEMUL=runtime` object every
+  does not end its record. In a `WIDEMUL=runtime` object every
   init call and `ch_srv_check` refuse with `CH_EINVAL`, and send nothing,
   a `ch_cfg.widemul` that is neither `CH_WIDEMUL_CONSTANT_TIME` nor
   `CH_WIDEMUL_NOT_STATED`, 0 among them (decisions.md 87). In a host
@@ -1832,7 +1825,9 @@ last `ROLE=server` stub, as the entry said it would.
   send nothing, a `ch_cfg.cpu` without `CH_CPU_PROBED`, 0 among them, and
   one with a bit outside `CH_CPU_DEFINED`, the bits the object defines
   for its architecture: `CH_CPU_AVX2` or `CH_CPU_VAES` on arm64, or a bit
-  a later release adds (decisions.md 89).
+  a later release adds, and in a `SUITE=aesgcm` host object a caller's
+  suite list that names an AES-GCM suite under a `ch_cfg.cpu` without
+  `CH_CPU_CONSTANT_TIME_AES` (decisions.md 81 and 89).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -2640,18 +2635,19 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Under `TRANSPORT=quic-nonblocking` this tree carries an AES-128, and
   every key it is given is public. `aes.c` derives the keys and
   `gcm.c` builds the AEAD on them; the key expansion and the block
-  cipher sit in whichever of `quic_aes_soft.c`, `aes_hw.c` and
-  `aes_extern.c` the Makefile `AES` variable picked, behind the
-  contract `aes_block.h` states. Under `AES=hw`, GHASH's multiply by
-  the hash subkey also moves out of `gcm.c`, into `ghash_hw.c`
+  cipher sit in `quic_aes_soft.c` or `aes_extern.c`, whichever a device
+  object's Makefile `AES` variable picked, or in a host object's
+  `aes_hw.c`, behind the contract `aes_block.h` states. In a host object,
+  for a schedule on the AES instructions, GHASH's multiply by the hash
+  subkey also moves out of `gcm.c`, into `ghash_hw.c`
   on the carry-less multiply, behind `ghash_hw.h`, and counter mode's
   whole blocks and the seal's and the open's whole passes into `gcm_hw.c`, behind
   `gcm_hw.h`, which take the round keys `gcm.c` passes; the hash subkey
   is the forward cipher of a zero block under the same key, so it is
-  public exactly when that key is. Only `AES=soft` is table-driven,
-  and the claim below is what lets that one exist; outside a suite build
-  it binds all three the same way, because `AES=extern` cannot state its
-  timing either. There are three, and each has a QUIC version 1 form and a
+  public exactly when that key is. Only the table, `quic_aes_soft.c`, is
+  table-driven, and the claim below is what lets that one exist; outside
+  a suite build it binds every implementation the same way, because
+  `AES=extern` cannot state its timing either. There are three, and each has a QUIC version 1 form and a
   version 2 form: the packet protection key and the header protection
   key, both expanded from `HKDF-Extract` over the version's printed salt,
   RFC 9001 §5.2's or RFC 9369 §3.3.1's, and the Destination Connection ID
@@ -2671,17 +2667,16 @@ last `ROLE=server` stub, as the entry said it would.
   passed to AES, and AES is never a cipher suite. No field of `ch_quic`
   holds an AES key, and no AES key outlives the call that built it.
 
-  `AES=runtime` is the one value whose object holds two of the
-  implementations: `aes_hw.c` with `ghash_hw.c` and `gcm_hw.c`, compiled
-  so that only their own functions carry the AES instructions, and in a
-  QUIC object
-  `quic_aes_soft.c` beside them (docs/decisions.md 81). The caller's
-  answer, `ch_cfg.aes_instructions`, puts each Initial key on one of them:
-  the instructions when the caller's probe found them, and the table
-  otherwise. The Retry key runs on the table under either answer. Every
-  key those two run is public, so the claim above holds for both, and a
-  session whose caller found no instructions runs no AES instruction and
-  no carry-less multiply.
+  A QUIC host object is the one that holds two of the implementations:
+  `aes_hw.c` with `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c`, compiled so
+  that only their own functions carry the AES instructions, and
+  `quic_aes_soft.c` beside them (docs/decisions.md 81 and 89). The
+  `CH_CPU_CONSTANT_TIME_AES` bit of the session's `ch_cfg.cpu` puts each
+  Initial key on one of them: the instructions with the bit, and the
+  table without it. The Retry key runs on the table whatever the bits
+  say. Every key those two run is public, so the claim above holds for
+  both, and a session without the bit runs no AES instruction and no
+  carry-less multiply.
 
   A `-DCH_SUITE_AES_GCM` build adds the second claim, and the traffic
   keys of two suites. That build holds `TLS_AES_128_GCM_SHA256` and
@@ -2692,15 +2687,17 @@ last `ROLE=server` stub, as the entry said it would.
   protection key for the Handshake and 1-RTT levels (RFC 9001 §5.3,
   §5.4.3). The Initial level keeps AES-128-GCM under its public keys in
   every build. Three things bound the traffic keys. `ct.h` refuses the
-  define unless the build takes `AES=hw` or `AES=runtime` and also defines
-  `CH_NATIVE_AES`, which is the build asserting that this part's AES
-  instructions and its carry-less multiply run in constant time, or
-  takes `AES=extern` and defines `CH_AES_EXTERN_CONSTANT_TIME`, which is
-  the build asserting that the peripheral behind the image's
-  `ch_aes_block` runs in constant time. So the table-driven `AES=soft`
-  S-box never sees a secret key, and the image's hook sees one only in a
-  build whose author has stated the peripheral's timing; no mechanism in
-  this tree can observe that timing (docs/decisions.md entry 68). The
+  define unless the build is a host object, whose sessions run AES-GCM
+  only under their caller's `CH_CPU_CONSTANT_TIME_AES`, the caller
+  stating that this CPU's AES instructions and its carry-less multiply
+  run in constant time in the mode its thread runs in, or takes
+  `AES=extern` and defines `CH_AES_EXTERN_CONSTANT_TIME`, which is the
+  build asserting that the peripheral behind the image's `ch_aes_block`
+  runs in constant time. So the table-driven `AES=soft` S-box never sees
+  a secret key, a host object's table never does either, and the image's
+  hook sees one only in a build whose author has stated the peripheral's
+  timing; no mechanism in this tree can observe that timing
+  (docs/decisions.md entries 68 and 89). The
   key has its own type, `aes_traffic_key`,
   whose body lives in `aes_traffic_key.h` alone, so it cannot be passed
   where an `aes_public_key` is expected or the reverse. And `record.c`
@@ -2728,8 +2725,8 @@ last `ROLE=server` stub, as the entry said it would.
   under `hkdf_expand_label(hash_len, secret, "key", ...)` over a traffic
   secret, the key the first claim keeps from AES. `-DCH_SUITE_AES_GCM` is
   how a build declares such a suite, and `ct.h` refuses it unless the
-  build also takes `AES=hw` and asserts `CH_NATIVE_AES`, or takes
-  `AES=extern` and asserts `CH_AES_EXTERN_CONSTANT_TIME`. The rest of this
+  build is a host object, whose caller states the timing in `ch_cfg.cpu`,
+  or takes `AES=extern` and asserts `CH_AES_EXTERN_CONSTANT_TIME`. The rest of this
   entry says what that build owes and what holds it. `docs/server.md`,
   "AES-GCM becomes a cipher suite carrying user data, in two key sizes",
   is the design record.
@@ -2806,42 +2803,44 @@ last `ROLE=server` stub, as the entry said it would.
   the packaged object's exports against `PUBLIC`, which holds no `aes_`
   or `gcm_` symbol, so no caller outside this tree reuses the cipher on
   something else.
-  `lint-trust-separation` holds the `AES` axis to one implementation per
-  object. All three define the same two entries, so a second one would
-  not link, but a linker says nothing about which implementation an
-  object ended up with; the lint reads the packaged source list per axis
-  value instead. Its `AES=hw` row requires `ghash_hw.c` and `gcm_hw.c`
-  beside `aes_hw.c`, and every other row bans them but `AES=runtime`'s.
-  Those rows admit the one pair of implementations an object may hold: the
-  QUIC rows require `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and
-  `quic_aes_soft.c` together, the TCP suite row requires the first three and
-  bans the table, and a TCP
-  `AES=runtime` build without the suite must be refused.
-  `aes-runtime-table-in-tcp-object.violation` puts the table in that TCP
-  suite object, and `test/lint-trust-separation.sh` fails it.
+  `lint-trust-separation` holds a device object to one implementation.
+  The table and `aes_extern.c` define the same two entries, so a second
+  one would not link, but a linker says nothing about which implementation
+  an object ended up with; the lint reads the packaged source list per
+  build instead. Its host rows require `ghash_hw.c`, `gcm_hw.c` and
+  `gcm_vaes.c` beside `aes_hw.c`, and every device row bans them. Those
+  rows admit the one pair of implementations an object may hold: the QUIC
+  host rows require the instructions' four sources and `quic_aes_soft.c`
+  together, the TCP suite host row requires the first four and bans the
+  table, and a build that names an `AES` value for a host object must be
+  refused. `aes-runtime-table-in-tcp-object.violation` puts the table in
+  that TCP suite object, `aes-host-quic-object-loses-table.violation`
+  drops it from the QUIC one, and `aes-host-object-takes-aes-value.violation`
+  lets a host object take an `AES` value; `test/lint-trust-separation.sh`
+  fails each.
   `test/violations/aes-two-implementations-in-one-object.violation` is
   the mutant that proves it fires, and
-  `aes-hw-diverges-from-soft.violation` breaks the `AES=hw` key
+  `aes-hw-diverges-from-soft.violation` breaks the host object's key
   expansion and requires `bin/aes_equiv_test` to fail, which is what
   holds the path no proof reaches (docs/quic.md, "What the AES axis
   proves"). `ghash-hw-reduction-constant.violation` and
-  `ghash-hw-cross-product-halves-swapped.violation` break the `AES=hw`
-  GHASH multiply, and `ghash-hw-powers-reversed.violation` and
+  `ghash-hw-cross-product-halves-swapped.violation` break the host
+  object's GHASH multiply, and `ghash-hw-powers-reversed.violation` and
   `ghash-hw-partial-block-dropped.violation` break its loop over data, the
   first by running a pass's blocks against the powers of H in the wrong
   order and the second by dropping a last partial block; all four require
   `bin/ghash_equiv_test` to fail.
-  `ghash-hw-falls-back-to-portable.violation` lets an `AES=hw` build of
-  `gcm.c` run the portable multiply and requires
-  `test/quic-builds.sh` to fail, and
-  `ghash-hw-source-unpackaged.violation` drops `ghash_hw.c` from
-  the `AES=hw` sources and requires `test/lint-trust-separation.sh` to
+  `ghash-hw-falls-back-to-portable.violation` lets a host object's
+  `gcm.c` run the portable multiply on a schedule the instructions run
+  and requires `test/quic-builds.sh` to fail, and
+  `ghash-hw-source-unpackaged.violation` drops `ghash_hw.c` from the host
+  object's sources and requires `test/lint-trust-separation.sh` to
   fail. `aes-hw-counter-short-pass-dropped.violation` and
   `aes-hw-counter-wrap-carries-into-iv.violation` break `aes_hw.c`'s
   counter mode over whole blocks, which runs eight blocks a pass, and
   require `bin/aes_equiv_test` to fail, and
-  `aes-hw-counter-falls-back-to-one-block.violation` lets an `AES=hw`
-  build of `gcm.c` run every block through the one-block cipher and
+  `aes-hw-counter-falls-back-to-one-block.violation` lets a host
+  object's `gcm.c` run every block through the one-block cipher and
   requires `test/quic-builds.sh` to fail.
 
   **What a secret AES key needs, and what holds it.** The entry above
@@ -2850,24 +2849,23 @@ last `ROLE=server` stub, as the entry said it would.
   the list is here so the suite build's bill is written down rather than
   rediscovered.
 
-  *Two implementations, not three.* `AES=soft` reads a 256-byte S-box at an
+  *The instructions and the peripheral, not the table.* `AES=soft` reads a 256-byte S-box at an
   index computed from the key. `aes_expand_round_keys` substitutes the
   key's own bytes before a block runs, so the leak is there before any
   plaintext exists, and `sub_bytes` substitutes `counter ^ round_key` once
   per round. `gcm_ghash` inherits it: the hash subkey H is
   `aes_encrypt_block` of a zero block, so an `AES=soft` build leaks H
   through the same table even though `multiply_by_subkey` is branchless
-  and index-free. `AES=hw` runs no table. `AES=extern` runs no cipher in
-  this tree at all: what `ch_aes_block` costs belongs to the peripheral,
-  and this tree cannot state it. So `AES=hw` and `AES=extern` are the
-  values a secret key may take, each under its own statement below, and
-  `ct.h` is where that is written: `-DCH_SUITE_AES_GCM` with neither
-  `CH_AES_HW` nor `CH_AES_EXTERN` is a compile error, not a silent fall
-  back to the default. `AES=runtime` takes a secret key under `AES=hw`'s
-  statement, because it runs every traffic key on the same instructions:
-  `aes_traffic_key_init` records the instructions in the key's schedule
-  under either answer, so the table beside them in a QUIC object never
-  sees one.
+  and index-free. The AES instructions run no table. `AES=extern` runs no
+  cipher in this tree at all: what `ch_aes_block` costs belongs to the
+  peripheral, and this tree cannot state it. So a host object's
+  instructions and `AES=extern` are where a secret key may go, each under
+  its own statement below, and `ct.h` is where that is written:
+  `-DCH_SUITE_AES_GCM` with neither `CH_CPU_RUNTIME` nor `CH_AES_EXTERN`
+  is a compile error, not a silent fall back to the default. A host
+  object runs every traffic key on the instructions:
+  `aes_traffic_key_init` records them in the key's schedule whatever the
+  bits say, so the table beside them in a QUIC object never sees one.
 
   *The instruction's timing is asserted, not detected.* `__ARM_FEATURE_AES`
   and `__AES__` say the AES instructions exist, and `__ARM_FEATURE_AES`
@@ -2878,15 +2876,16 @@ last `ROLE=server` stub, as the entry said it would.
   refuses that inference for the widening multiply and asks the build for
   `CH_NATIVE_WIDEMUL` instead
   ([#53](https://github.com/c4milo/chapulin/issues/53)). The AES path
-  follows it: `CH_NATIVE_AES` is the build's assertion, for the AES
-  instructions and for the carry-less multiply GHASH runs on under
-  `AES=hw` (`docs/decisions.md` entry 50), firmware defines it only with
-  a vendor statement that covers both, and `ct.h` refuses
-  `-DCH_SUITE_AES_GCM` on `AES=hw` without it. This is an assertion and
-  not a check, and it is the weakest link in the list; what it buys is
-  that the claim is written in the image's build files by someone who
-  can answer for it, rather than inferred from a macro that does not
-  carry it.
+  follows it: `CH_CPU_CONSTANT_TIME_AES` is the caller's statement, for
+  the AES instructions and for the carry-less multiply GHASH runs on
+  (`docs/decisions.md` entries 50 and 89), made for the CPU it probed and
+  the mode its thread runs in, and a host session without it holds
+  ChaCha20 alone and runs no AES-GCM suite. This is a statement and not a
+  check, and it is the weakest link in the list; what it buys is that the
+  claim is written in the caller's code by someone who can answer for the
+  CPU, rather than inferred from a macro that does not carry it. The
+  build's own statement, `CH_NATIVE_AES`, is gone, and `ct.h` stops a
+  build that still writes it.
 
   *The peripheral's timing is asserted too, and nothing here can observe
   it.* Under `AES=extern` every AES block, public key or traffic key,
@@ -2894,9 +2893,9 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_AES_EXTERN_CONSTANT_TIME` is the build's statement that the
   peripheral behind that hook runs in constant time for AES-128 and
   AES-256 keys, and `ct.h` refuses `-DCH_SUITE_AES_GCM` on `AES=extern`
-  without it. It is its own flag rather than `CH_NATIVE_AES`, because
-  that one names the AES instructions and the carry-less multiply, and an
-  `AES=extern` object runs neither (docs/decisions.md entry 68). It claims
+  without it. It names the peripheral, not the AES instructions and the
+  carry-less multiply, which an `AES=extern` object runs neither of
+  (docs/decisions.md entry 68). It claims
   nothing about GHASH: under `AES=extern`, GHASH runs on `gcm.c`'s
   portable multiply, 128 masked steps per block with no table and no
   multiply instruction, which the branch count below holds. It claims
@@ -2904,7 +2903,7 @@ last `ROLE=server` stub, as the entry said it would.
   such as a key register or a cached expansion; `aes_block.h` leaves that
   to the image. No test, proof or gate in this tree times a peripheral,
   so this statement is the whole of the claim, and it is as weak as
-  `CH_NATIVE_AES` is.
+  `CH_CPU_CONSTANT_TIME_AES` is.
 
   *The codegen gates now measure these files.* `aes.c`,
   `quic_aes_soft.c`, `aes_extern.c` (then `quic_aes_extern.c`) and `gcm.c` moved from
@@ -2951,29 +2950,31 @@ last `ROLE=server` stub, as the entry said it would.
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
   callers, with `aes.c`, `gcm.c`, the three AES
-  implementations, `ghash_hw.c` and `gcm_hw.c` excluded as the
-  definition sites.
+  implementations, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` excluded as
+  the definition sites.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
-  every line: `-DCH_SUITE_AES_GCM` with neither `CH_AES_HW` nor
-  `CH_AES_EXTERN`, `-DCH_SUITE_AES_GCM` on `AES=hw` without
-  `CH_NATIVE_AES`, and `-DCH_SUITE_AES_GCM` on `AES=extern` without
-  `CH_AES_EXTERN_CONSTANT_TIME`. The script compiles one translation unit
-  that reads `ct.h` and nothing else, nine times: each value with its own
-  statement must compile, each refusal is checked on its own so a build
-  that dropped one cannot hide behind the other, and each statement is
-  offered to the other value and to `AES=soft`, where it must not count.
+  every line: `-DCH_SUITE_AES_GCM` with neither `CH_CPU_RUNTIME` nor
+  `CH_AES_EXTERN`, `-DCH_SUITE_AES_GCM` on `AES=extern` without
+  `CH_AES_EXTERN_CONSTANT_TIME`, and `CH_NATIVE_AES` in any build. The
+  script compiles one translation unit that reads `ct.h` and nothing
+  else: the host object and `AES=extern` with its statement must
+  compile, each refusal is checked on its own so a build that dropped one
+  cannot hide behind the other, and the peripheral's statement is offered
+  to `AES=soft`, where it must not count.
   `inv26-aes-suite-without-hardware.violation` deletes the `AES=soft`
-  `#error`, `inv26-aes-suite-without-vendor-statement.violation` the
-  `AES=hw` one and `inv26-aes-extern-suite-without-vendor-statement.violation`
-  the `AES=extern` one. `inv26-aes-extern-suite-takes-native-aes.violation`
-  lets `CH_NATIVE_AES` stand in for the peripheral's statement, and
-  `inv26-aes-hw-suite-takes-extern-statement.violation` lets the
-  peripheral's statement stand in for the instructions'. Each requires
-  that script to fail. `aes-extern-suite-statement-in-makefile.violation`
+  `#error` and `inv26-aes-extern-suite-without-vendor-statement.violation`
+  the `AES=extern` one. `inv26-soft-suite-takes-extern-statement.violation`
+  lets the peripheral's statement stand in on `AES=soft`, and
+  `inv26-native-aes-admitted.violation` lets `CH_NATIVE_AES` compile
+  again. `aes_block.h` refuses `CH_AES_HW` and `CH_AES_RUNTIME`, which
+  chose the instructions when the object was built, and a host object
+  beside `AES=extern`; `aes-gone-defines-admitted.violation` and
+  `aes-host-beside-extern-admitted.violation` remove each refusal. Each
+  requires that script to fail. `aes-extern-suite-statement-in-makefile.violation`
   writes `CH_AES_EXTERN_CONSTANT_TIME` into every `AES=extern` object's
   defines, and `test/lint-trust-separation.sh` fails it: every suite row
-  bans both statements, because only the firmware author may make them.
+  bans the statement, because only the firmware author may make it.
   `inv16-ghash-subkey-select-branch.violation` writes
   `multiply_by_subkey`'s mask as an `if` on the accumulator bit and
   requires `test/lint-wide-multiply.sh` to fail, which is what the new
@@ -2981,12 +2982,11 @@ last `ROLE=server` stub, as the entry said it would.
 
   The same two refusals hold over QUIC, where `quic_packet.c` hands AES
   the Handshake and 1-RTT keys: `test/quic-builds.sh` compiles
-  `quic_packet.c` under the suite with `AES=hw` and `CH_NATIVE_AES` and
-  requires it to compile, and without `CH_NATIVE_AES` and requires ct.h
-  to refuse it, and the same pair on `AES=extern` with and without
-  `CH_AES_EXTERN_CONSTANT_TIME`.
-  `inv26-quic-suite-without-vendor-statement.violation` lets a QUIC
-  build past the `AES=hw` refusal and
+  `quic_packet.c` under the suite in a host object and requires it to
+  compile, and on `AES=soft` and requires ct.h to refuse it, and the same
+  pair on `AES=extern` with and without `CH_AES_EXTERN_CONSTANT_TIME`.
+  `inv26-quic-suite-on-table.violation` lets a QUIC build past the
+  `AES=soft` refusal and
   `inv26-quic-extern-suite-without-vendor-statement.violation` past the
   `AES=extern` one. `quic_aes_soft.c` refuses
   the suite on its own, for a tree that compiles it without reading
@@ -3002,44 +3002,39 @@ last `ROLE=server` stub, as the entry said it would.
   AES-256 and requires `test/lint-trust-separation.sh` to fail.
   `aes256-traffic-key-wrong-round-count` records AES-128's round count
   beside an AES-256 schedule and requires the `aes_traffic` proof
-  to fail, and `aes256-schedule-one-round-key-short` stops the `AES=hw`
-  AES-256 expansion one round key short and requires
+  to fail, and `aes256-schedule-one-round-key-short` stops the host
+  object's AES-256 expansion one round key short and requires
   `bin/aes_equiv_test` to fail. `inv26-quic-hp-key-cut-to-aes128` keys
   QUIC header protection with 16 bytes under every AES suite and
   requires `bin/quic_suite_test`, which checks an AES-256 packet byte for
   byte against an independent computation, to fail; the
   `quic_packet_suite` proof asserts the key length too.
 
-  What holds `AES=runtime`. `bin/aes_runtime_test` compiles
-  `quic_aes_soft.c`, `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` under counting
-  entries
-  and runs RFC 9001 and RFC 9369 Appendix A under both answers and the SP
-  800-38D and FIPS 197 vectors under traffic keys: under the absent answer
-  no call goes to the instructions or the carry-less multiply, under the
-  present one the table runs no Initial key, and the table runs no traffic
-  key. `test/aes-runtime-qemu.sh` runs that binary and both
-  `AES=runtime` loop binaries, built for x86-64, under `qemu-x86_64` on a
-  CPU model without AES-NI and PCLMULQDQ, where the absent answer passes
-  and the present one dies of SIGILL; CI's mips job runs it on every
-  push. On arm64, where no QEMU model drops the AES extension,
-  `test/aes-runtime-disasm.sh` in CI's arm64 job finds the AES and PMULL
-  instructions in `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions
-  alone. The
-  `aes_runtime` proof holds the same three rules over every byte an
-  answer can be, and
-  `srv_select_runtime` and `quic_config_webpki_runtime` hold the default
-  order and the answer rule. `inv26-runtime-absent-runs-aes-instructions`,
+  What holds the host object's two ciphers. `bin/aes_runtime_test`
+  compiles `quic_aes_soft.c`, `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c`
+  under counting entries and runs RFC 9001 and RFC 9369 Appendix A with
+  the `CH_CPU_CONSTANT_TIME_AES` bit and without it, and the SP 800-38D
+  and FIPS 197 vectors under traffic keys: without the bit no call goes
+  to the instructions or the carry-less multiply, with it the table runs
+  no Initial key, and the table runs no traffic key.
+  `test/aes-runtime-qemu.sh` runs that binary and both suite loop
+  binaries, built for x86-64, under `qemu-x86_64` on a CPU model without
+  AES-NI and PCLMULQDQ, where the rows without the bit pass and the rows
+  with it die of SIGILL; CI's mips job runs it on every push. On arm64,
+  where no QEMU model drops the AES extension, `test/aes-runtime-disasm.sh`
+  in CI's arm64 and macOS jobs finds the AES and PMULL instructions in
+  `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions alone. The
+  `aes_runtime` proof holds the same three rules over every 32-bit
+  `ch_cfg.cpu`, and `srv_select_runtime` and `quic_config_webpki_suite`
+  hold the default order and the `ch_cfg.cpu` rule. `inv26-runtime-absent-runs-aes-instructions`,
   `inv26-runtime-absent-runs-carryless-multiply`,
   `inv26-runtime-absent-runs-counter-blocks` and
   `inv26-runtime-traffic-key-on-table` require `bin/aes_runtime_test` to
   fail, `inv26-runtime-absent-expands-on-instructions` requires
   `proof/prove-one.sh aes_runtime` to fail, and
   `inv26-runtime-initial-seal-ignores-answer`, which seals every QUIC
-  Initial packet under the present answer in `quic.c`, requires
-  `test/docker-aes-runtime-qemu.sh` to fail. `test/quic-builds.sh` compiles
-  the refusals: the suite on `AES=runtime` without `CH_NATIVE_AES`,
-  `AES=runtime` beside either other value, and `AES=runtime` in a TCP
-  object without the suite.
+  Initial packet in `quic.c` as though the caller had set the bit,
+  requires `test/docker-aes-runtime-qemu.sh` to fail.
 
   What holds `aes_extern.c`. `test/aes_extern_hook.c` is the hook every
   `AES=extern` test binary links: `quic_aes_soft.c`'s cipher under other
@@ -3415,7 +3410,7 @@ last `ROLE=server` stub, as the entry said it would.
   volatile function pointer; the compiler then deletes the call as a
   store nothing reads, and the test catches it under Apple clang 21 and
   gcc 13 (decision 91).
-  Inside the `AES=hw` GHASH, `ghash_hw.c`'s data loop computes the powers
+  Inside the host object's GHASH, `ghash_hw.c`'s data loop computes the powers
   of H it needs, adds up each pass's products in the same state, and wipes
   both with H when each call ends. It reads each power from that state
   through a volatile lvalue, because both compilers, holding the eight in

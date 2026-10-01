@@ -1,7 +1,7 @@
 invariant: INV-7
 file: srv_flight.c
 catches: srv_flight_test_aes
-reason: a server on AES=hw with CH_NATIVE_AES walks ChaCha20 first when its
+reason: a host object's server under CH_CPU_CONSTANT_TIME_AES walks ChaCha20 first when its
   caller names no order, the order docs/decisions.md 80 replaced, so a
   client that offers all three suites gets ChaCha20 where the server's
   default order names AES-256-GCM. The flight test's hello offers all

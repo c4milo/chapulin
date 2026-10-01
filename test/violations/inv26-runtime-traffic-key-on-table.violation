@@ -1,8 +1,8 @@
 invariant: INV-26
 file: aes.c
 catches: aes_runtime_test
-reason: an AES=runtime QUIC object records the table in a traffic key's
-  schedule, so every AES-128 block under a TLS traffic key runs on
+reason: a QUIC host object records the table in a traffic key's schedule,
+  so every AES-128 block under a TLS traffic key runs on
   quic_aes_soft.c's S-box, which is indexed with the key, and GHASH under
   it runs the portable multiply. The bytes do not change, because both
   ciphers keep one round-key layout, so no vector notices.
@@ -10,6 +10,6 @@ reason: an AES=runtime QUIC object records the table in a traffic key's
   and requires none.
 
 --- old
-    k->key.instructions = CH_AES_INSTRUCTIONS_PRESENT;
+    k->key.instructions = AES_ON_INSTRUCTIONS;
 --- new
-    k->key.instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    k->key.instructions = AES_ON_TABLE;

@@ -120,6 +120,12 @@ int main(void) {
     }
     cfg.psk_len = (nondet_u8() & 1) ? SHA384_LEN : SHA256_LEN;
 #endif
+#ifdef CH_CPU_RUNTIME
+    // A host object's default order reads ch_cfg.cpu: the three suites
+    // under CH_CPU_CONSTANT_TIME_AES and ChaCha20 alone without it
+    // (suite.h). Any value, since the builder checks none of it.
+    cfg.cpu = nondet_u32();
+#endif
 
     size_t cookie_len = nondet_size_t();
     __CPROVER_assume(cookie_len <= HSP_COOKIE_MAX);

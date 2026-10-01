@@ -23,8 +23,9 @@
 // the compiler checks the signature. Then the two defines that stop
 // quic_aes_soft.c are dropped for the one file included after them.
 // That file refuses -DCH_SUITE_AES_GCM, because a library object must
-// never pair its S-box with a traffic key, and compiles its body only
-// when neither CH_AES_HW nor CH_AES_EXTERN is defined. In this
+// never pair its S-box with a traffic key, and compiles its body under
+// aes_block.h's own names only when neither CH_CPU_RUNTIME nor
+// CH_AES_EXTERN is defined. In this
 // translation unit it is test code, and it holds the key a peripheral
 // would hold. A TCP suite binary defines no transport, and the file's
 // body sits behind the transport or the suite define, so the QUIC

@@ -21,7 +21,7 @@
 //!   image.
 //!
 //! A row is the options chapulin's build.zig takes, as NAME=VALUE words:
-//! "RAND=extern TRANSPORT=quic-nonblocking CH_NATIVE_AES=true".
+//! "RAND=extern TRANSPORT=quic-nonblocking AES=extern CH_AES_EXTERN_CONSTANT_TIME=true".
 const std = @import("std");
 
 /// The options chapulin's build.zig takes. A field no row word names stays
@@ -42,7 +42,6 @@ const Options = struct {
     EXPORTER: ?[]const u8 = null,
     KEYLOG: ?[]const u8 = null,
     TX_RECORD: ?[]const u8 = null,
-    CH_NATIVE_AES: ?[]const u8 = null,
     CH_AES_EXTERN_CONSTANT_TIME: ?[]const u8 = null,
     CH_NATIVE_MUL128: ?[]const u8 = null,
 };

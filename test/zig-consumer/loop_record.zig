@@ -59,7 +59,7 @@ const server_alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(http11)};
 const server_now = 1_700_000_000;
 
 pub fn clientValues() chapulin.Client {
-    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .aes_instructions = fixture.aesAnswer(), .widemul = fixture.widemulAnswer() };
+    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .widemul = fixture.widemulAnswer() };
 }
 
 /// The server each handshake below runs against.
@@ -216,7 +216,7 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
 fn refusals() !void {
     if (@hasField(c.ch_cfg, "anchors")) {
         try server.init(serverValues(), &sni_buf);
-        try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .aes_instructions = fixture.aesAnswer(), .widemul = fixture.widemulAnswer() });
+        try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .widemul = fixture.widemulAnswer() });
         to_server = .{};
         to_client = .{};
         _ = try clientToServer();
@@ -225,7 +225,7 @@ fn refusals() !void {
         // The client refused the Certificate after its write key went in,
         // so its unknown_ca is sealed.
         try clientAlertReachesServer(48, record.alert_record_len);
-        try check(client.init(.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .aes_instructions = fixture.aesAnswer(), .widemul = fixture.widemulAnswer() }) == error.Invalid, "a clock of 0 was accepted");
+        try check(client.init(.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom(), .cpu = fixture.cpuAnswer(), .widemul = fixture.widemulAnswer() }) == error.Invalid, "a clock of 0 was accepted");
     }
     // The server's first flight twice, from the same draws: once whole, to
     // learn its length, and once into an output one byte short of it. The
@@ -305,7 +305,8 @@ fn failureAlerts() !void {
     // Its cipher_suite follows the record and message headers,
     // legacy_version, random and the empty legacy_session_id_echo, and
     // holds the suite the server's default order picked: ChaCha20, or
-    // AES-256-GCM on AES=hw (docs/decisions.md 80).
+    // AES-256-GCM in a host object whose server states the AES instructions
+    // (docs/decisions.md 80 and 89).
     try startPair();
     try serverAnswersHello();
     const suite_at = c.REC_HDR + 4 + 2 + 32 + 1;

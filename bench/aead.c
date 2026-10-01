@@ -2,9 +2,10 @@
 // ChaCha20-Poly1305 (aead.c) and AES-128-GCM (gcm.c), each whole and
 // in its two halves. bench/aead.sh builds it once per AES and multiply
 // choice and writes the rows to bench/results-aead-<arch>.csv. The AES
-// value picks both halves of AES-128-GCM: AES=soft runs the S-box cipher
-// and gcm.c's portable GHASH, and AES=hw runs the AES instructions
-// and ghash_hw.c's GHASH on the carry-less multiply.
+// build picks both halves of AES-128-GCM: AES=soft runs the S-box cipher
+// and gcm.c's portable GHASH, and the host object (-DCH_CPU_RUNTIME),
+// whose key states the AES instructions, runs them and ghash_hw.c's GHASH
+// on the carry-less multiply.
 //
 // Each argument names a group of rows to run:
 //
@@ -56,8 +57,8 @@
 static const size_t PAYLOAD_SIZES[] = {64, 1200, 1350, MAX_PAYLOAD};
 #define PAYLOAD_SIZE_COUNT (sizeof PAYLOAD_SIZES / sizeof PAYLOAD_SIZES[0])
 
-#ifdef CH_AES_HW
-#define BUILD_AES "AES=hw"
+#ifdef CH_CPU_RUNTIME
+#define BUILD_AES "host"
 #else
 #define BUILD_AES "AES=soft"
 #endif
@@ -265,8 +266,16 @@ static void set_up(void) {
     fill_random(nonce, sizeof nonce);
     uint8_t dcid[8];
     fill_random(dcid, sizeof dcid);
-    if (aes_public_key_initial(&aes_key, CH_QUIC_VERSION_1, dcid, sizeof dcid,
-                               CH_QUIC_ENDPOINT_CLIENT) != CH_OK) {
+#ifdef CH_CPU_RUNTIME
+    // The host object's Initial key on the AES instructions, the cipher its
+    // traffic keys run on (aes.h).
+    int rc = aes_public_key_initial(&aes_key, CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES,
+                                    CH_QUIC_VERSION_1, dcid, sizeof dcid, CH_QUIC_ENDPOINT_CLIENT);
+#else
+    int rc = aes_public_key_initial(&aes_key, CH_QUIC_VERSION_1, dcid, sizeof dcid,
+                                    CH_QUIC_ENDPOINT_CLIENT);
+#endif
+    if (rc != CH_OK) {
         fail("aes_public_key_initial failed");
     }
 }

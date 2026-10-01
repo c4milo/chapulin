@@ -1,6 +1,6 @@
-// The calls bin/aes_runtime_test counts into each of an AES=runtime
+// The calls bin/aes_runtime_test counts into each of a QUIC host
 // object's two ciphers and into its carry-less multiply
-// (docs/decisions.md 81). test/aes_runtime_soft.c compiles quic_aes_soft.c
+// (docs/decisions.md 81 and 89). test/aes_runtime_soft.c compiles quic_aes_soft.c
 // and test/aes_runtime_hw.c compiles aes_hw.c, ghash_hw.c and gcm_hw.c,
 // each with its entries under second names, and each defines the entries
 // aes.c and gcm.c call as a count and a call to the entry it renamed. So

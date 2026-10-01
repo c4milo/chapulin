@@ -1,0 +1,15 @@
+invariant: INV-36
+file: build.zig
+catches: test/host-builds.sh
+reason: build.zig stops refusing an AES value for a host object, so a Zig
+  build of a server with -DAES=extern on an arm64 or x86-64 target
+  compiles the host object and drops the value, which make refuses
+  (docs/decisions.md 89). test/host-builds.sh asks build.zig for that
+  server's lists on this host and requires the refusal.
+
+--- old
+        if (hostTarget(target) and !deviceClient(config)) {
+            std.process.fatal(
+--- new
+        if (hostTarget(target) and !deviceClient(config) and false) {
+            std.process.fatal(

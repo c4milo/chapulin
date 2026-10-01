@@ -24,7 +24,7 @@ const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking
 const Role = enum { client, server, both };
 const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", webpki, none };
 const Suite = enum { chacha, aesgcm };
-const Aes = enum { soft, hw, @"extern", runtime };
+const Aes = enum { soft, @"extern" };
 const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
@@ -40,7 +40,7 @@ const Config = struct {
     role: Role,
     trust: Trust,
     suite: Suite,
-    aes: Aes,
+    aes: ?Aes,
     rand: ?Rand,
     kex: ?Kex,
     x25519: X25519,
@@ -55,7 +55,6 @@ const Config = struct {
     /// them into a library build, and a builder adds them to CFLAGS. They
     /// default off here for the same reason: each is a claim about the
     /// part that only the firmware author can make.
-    native_aes: bool,
     aes_extern_constant_time: bool,
     native_mul128: bool,
 };
@@ -222,7 +221,7 @@ pub fn build(b: *std.Build) void {
         .role = b.option(Role, "ROLE", "client, server, or both for a host") orelse .client,
         .trust = b.option(Trust, "TRUST", "How the server key is trusted; none for ROLE=server") orelse .@"raw-rsa",
         .suite = b.option(Suite, "SUITE", "chacha, or aesgcm for the AES-GCM suites beside it") orelse .chacha,
-        .aes = b.option(Aes, "AES", "The AES implementation") orelse .soft,
+        .aes = b.option(Aes, "AES", "A device object's AES: soft, or extern for the image's ch_aes_block"),
         .rand = b.option(Rand, "RAND", "The entropy pattern, which has no default (cfg.h)"),
         .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
         .x25519 = b.option(X25519, "X25519", "The X25519 field") orelse .portable,
@@ -231,14 +230,13 @@ pub fn build(b: *std.Build) void {
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
         .tx_record = nonEmpty(b.option([]const u8, "TX_RECORD", "The most plaintext one outgoing TLS record carries, 512 to 16384 (cfg.h's CH_TX_PT)")),
-        .native_aes = b.option(bool, "CH_NATIVE_AES", "State that the AES and carry-less multiply instructions run in constant time (ct.h)") orelse false,
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
         .native_mul128 = b.option(bool, "CH_NATIVE_MUL128", "State that the 64x64->128 multiply runs in constant time (ct.h)") orelse false,
     };
     refuseUnbuildable(config);
-    const standard_target = b.standardTargetOptions(.{});
-    const plan = computePlan(b, config, standard_target.result);
-    const target = aesTarget(b, standard_target, config.aes);
+    const target = b.standardTargetOptions(.{});
+    refuseAesOnHost(config, target.result);
+    const plan = computePlan(b, config, target.result);
     // The flags the sources compile with. The module below is translated
     // under every -D among them, so the object and the module take their
     // defines from this one list.
@@ -362,9 +360,6 @@ fn refuseUnbuildable(config: Config) void {
     if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
         fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
     }
-    if (config.aes == .runtime and config.transport != .@"quic-nonblocking" and config.suite != .aesgcm) {
-        fatal("AES=runtime chooses an AES this object does not carry: use TRANSPORT=quic-nonblocking or SUITE=aesgcm", .{});
-    }
     if (config.widemul == .runtime and config.x25519 == .wide) {
         fatal("WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable", .{});
     }
@@ -397,6 +392,22 @@ fn recordSize(text: []const u8) bool {
     return n >= 512 and n <= 16384;
 }
 
+/// The Makefile's refusal of an AES value for a host object: a host object
+/// holds the AES instructions, and in a QUIC object the table beside them,
+/// and each session picks from ch_cfg.cpu (docs/decisions.md 89). AES=soft
+/// and AES=extern choose a device object's AES, and the values that chose
+/// the instructions when the object was built are gone, so Aes does not
+/// name them and zig build refuses them as it refuses any other value.
+fn refuseAesOnHost(config: Config, target: std.Target) void {
+    if (config.aes) |aes| {
+        if (hostTarget(target) and !deviceClient(config)) {
+            std.process.fatal("AES={t} chooses a device object's AES, and TRUST={t} ROLE={t} on this target builds a host " ++
+                "object, which holds the AES instructions and picks them per session from ch_cfg.cpu " ++
+                "(docs/decisions.md 89): drop AES, or build for a device target", .{ aes, config.trust, config.role });
+        }
+    }
+}
+
 /// The host test, as the Makefile's HOST_TARGET runs it on cc
 /// (docs/decisions.md 89): the target is arm64 or x86-64, and it has NEON or
 /// SSE2 on a little-endian core. Zig names a big-endian arm64 target
@@ -424,15 +435,20 @@ fn deviceClient(config: Config) bool {
 /// LIB_DEF, LIB_SRCS and PUBLIC, assembled from the axis blocks as the
 /// Makefile assembles them, for an object compiled for target.
 fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
-    const aes_impl: Names = switch (config.aes) {
+    // A host object (docs/decisions.md 89): TRUST=webpki, ROLE=server and
+    // ROLE=both on a target that passes the host test. A raw or ca client
+    // builds the portable object on every target.
+    const host = hostTarget(target) and !deviceClient(config);
+    const aes = config.aes orelse .soft;
+    // AES_ADD: a host object holds the AES instructions, and a QUIC one the
+    // table beside them for the public keys of a session whose caller did
+    // not set CH_CPU_CONSTANT_TIME_AES (aes.h); a device object holds the
+    // one implementation AES names.
+    const aes_impl: Names = if (host) &aes_hw_srcs else switch (aes) {
         .soft => &.{"quic_aes_soft.c"},
-        .hw, .runtime => &aes_hw_srcs,
         .@"extern" => &.{"aes_extern.c"},
     };
-    // AES_QUIC_IMPL: under AES=runtime a QUIC object also holds the table
-    // cipher, for the public keys of a session whose caller found no AES
-    // instructions (aes.h).
-    const aes_quic_impl: Names = if (config.aes == .runtime) concat(b, &.{ aes_impl, &.{"quic_aes_soft.c"} }) else aes_impl;
+    const aes_quic_impl: Names = if (host) concat(b, &.{ aes_impl, &.{"quic_aes_soft.c"} }) else aes_impl;
     const suite_add: Names = if (config.suite == .aesgcm)
         concat(b, &.{ &.{"aes.c"}, aes_impl, &.{ "gcm.c", "sha512.c", "sha512_compress.c" } })
     else
@@ -443,7 +459,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // ROLE=both keeps both verifiers, whatever the client half pins.
     const pin_filter: Names = if (config.role == .both) &.{} else pinFilter(config.trust);
 
-    var defs = concat(b, &.{ pinDefs(config.trust), trust.defs, transport.defs, aesDefs(config.aes), if (config.suite == .aesgcm) &.{"-DCH_SUITE_AES_GCM"} else &.{}, role.defs });
+    var defs = concat(b, &.{ pinDefs(config.trust), trust.defs, transport.defs, if (host) &.{} else aesDefs(aes), if (config.suite == .aesgcm) &.{"-DCH_SUITE_AES_GCM"} else &.{}, role.defs });
     var lib_srcs = concat(b, &.{
         without(b, &srcs, concat(b, &.{ pin_filter, trust.filter, transport.filter, role.filter })),
         trust.add,
@@ -455,10 +471,8 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (config.kex == .pq) defs = concat(b, &.{ defs, &.{"-DCH_KEX_PQ"} });
     if (config.kex == .pq or config.trust == .webpki or config.role != .client) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
     // CPU_RUNTIME_DEF: the host object, which each session's ch_cfg.cpu
-    // describes the CPU to (docs/decisions.md 89). TRUST=webpki, ROLE=server
-    // and ROLE=both build it on a target that passes the host test, and a
-    // raw or ca client builds the portable object on every target.
-    if (hostTarget(target) and !deviceClient(config)) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
+    // describes the CPU to.
+    if (host) defs = concat(b, &.{ defs, &.{"-DCH_CPU_RUNTIME"} });
     if (config.x25519 == .wide) {
         defs = concat(b, &.{ defs, &.{"-DCH_X25519_WIDE"} });
         lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
@@ -493,7 +507,6 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (config.rand == .session) defs = concat(b, &.{ defs, &.{"-DCH_RAND_SESSION"} });
 
     // The hardware statements, which the Makefile takes in CFLAGS.
-    if (config.native_aes) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_AES"} });
     if (config.aes_extern_constant_time) defs = concat(b, &.{ defs, &.{"-DCH_AES_EXTERN_CONSTANT_TIME"} });
     if (config.native_mul128) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_MUL128"} });
 
@@ -504,14 +517,14 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
 
     // The hooks the object imports, which the image defines
     // (docs/porting.md) and lib-check admits as undefined. An AES=extern
-    // object imports ch_aes_block where it compiles AES: under QUIC, and
-    // under SUITE=aesgcm.
+    // device object imports ch_aes_block where it compiles AES: under QUIC,
+    // and under SUITE=aesgcm.
     const compiles_aes = config.transport == .@"quic-nonblocking" or config.suite == .aesgcm;
     const hooks = concat(b, &.{
         &.{"ch_assert_fail"},
         if (config.rand == .@"extern") &.{"ch_rand_bytes"} else &.{},
         if (config.keylog == .on) &.{"ch_keylog"} else &.{},
-        if (config.aes == .@"extern" and compiles_aes) &.{"ch_aes_block"} else &.{},
+        if (!host and aes == .@"extern" and compiles_aes) &.{"ch_aes_block"} else &.{},
     });
     return .{
         .srcs = lib_srcs,
@@ -563,9 +576,7 @@ fn pinFilter(trust: Trust) Names {
 fn aesDefs(aes: Aes) Names {
     return switch (aes) {
         .soft => &.{},
-        .hw => &.{"-DCH_AES_HW"},
         .@"extern" => &.{"-DCH_AES_EXTERN"},
-        .runtime => &.{"-DCH_AES_RUNTIME"},
     };
 }
 
@@ -661,31 +672,6 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         }
     }
     return out;
-}
-
-/// AES=hw needs the AES instructions and the carry-less multiply GHASH
-/// runs on, which the Makefile's AES_HW_CFLAGS turns on for cc: aes and
-/// pclmul on x86, and aes on Arm, where the Arm C Language Extensions put
-/// the 64-bit PMULL in the AES extension. Another architecture gets
-/// nothing, and aes_hw.c's #error stops the build, as it does for a cc the
-/// Makefile's probe finds no flag for. AES=runtime adds nothing: aes_hw.c,
-/// ghash_hw.c and gcm_hw.c turn the instructions on for their own
-/// functions alone. gcm_vaes.c and chacha20_avx2.c add nothing on any
-/// value: they turn VAES, VPCLMULQDQ and AVX2 on for their own functions
-/// alone on x86-64, and have no body elsewhere.
-fn aesTarget(b: *std.Build, target: std.Build.ResolvedTarget, aes: Aes) std.Build.ResolvedTarget {
-    if (aes != .hw) return target;
-    var query = target.query;
-    switch (target.result.cpu.arch) {
-        .x86, .x86_64 => {
-            query.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.aes));
-            query.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.pclmul));
-        },
-        .aarch64, .aarch64_be => query.cpu_features_add.addFeature(@intFromEnum(std.Target.aarch64.Feature.aes)),
-        .arm, .armeb, .thumb, .thumbeb => query.cpu_features_add.addFeature(@intFromEnum(std.Target.arm.Feature.aes)),
-        else => return target,
-    }
-    return b.resolveTargetQuery(query);
 }
 
 /// The lists joined in order.

@@ -130,7 +130,7 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # aes_block.h joins the two public cipher headers because it
 # declares the key expansion and the block cipher the AES axis picks an
 # implementation for, plus the AES=extern hook. ghash_hw.h joins
-# them because it declares the two GHASH steps AES=hw runs on the
+# them because it declares the two GHASH steps a host object runs on the
 # carry-less multiply, and both take a hash subkey, and gcm_hw.h and
 # gcm_vaes.h because they declare counter mode over whole blocks and the
 # one-pass seal and open, which take round keys, gcm_vaes.h for the 256-bit

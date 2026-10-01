@@ -34,10 +34,10 @@
 // -DCH_SUITE_AES_GCM as bin/webpki_loop_aes and bin/webpki_loop_aes_extern,
 // it runs each suite end to end (test/webpki_loop_suites.h), and each end
 // writes across its AES-GCM write key's ceiling (test/key_limit_cases.h,
-// docs/decisions.md 78). Built on AES=runtime as bin/webpki_loop_aes_runtime,
-// every row runs with both ends answering that the AES instructions are
-// present, and test/webpki_loop_runtime.h sets each end's answer
-// (docs/decisions.md 81).
+// docs/decisions.md 78). bin/webpki_loop_aes is a host object, so every
+// row runs with both ends stating the AES instructions, and
+// test/webpki_loop_runtime.h sets each end's ch_cfg.cpu with and without
+// that bit (docs/decisions.md 81 and 89).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,6 +52,8 @@
 #include "tcp_nonblocking.h"
 #include "tls.h"
 #include "webpki_ticket.h"
+
+#include "test_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -97,11 +99,11 @@ _Static_assert(CH_MIN_RXBUF >= REC_HDR + CH_HELLO_MAX, "the server buffer holds 
 static uint8_t srv_buf[CH_MIN_RXBUF];
 static uint8_t cli_buf[CH_MIN_RXBUF];
 
-#ifdef CH_AES_RUNTIME
-// Each end's ch_cfg.aes_instructions: present unless a row of
+#ifdef CH_CPU_RUNTIME
+// Each end's ch_cfg.cpu in a host binary: TEST_CPU unless a row of
 // test/webpki_loop_runtime.h says otherwise.
-static uint8_t server_aes = CH_AES_INSTRUCTIONS_PRESENT;
-static uint8_t client_aes = CH_AES_INSTRUCTIONS_PRESENT;
+static uint32_t server_cpu = TEST_CPU;
+static uint32_t client_cpu = TEST_CPU;
 #endif
 
 // What the server pushed and the client has not read, and how many
@@ -179,8 +181,8 @@ static void server_config(ch_cfg *cfg, const uint8_t *key) {
     cfg->srv.ticket_key = key;
     cfg->srv.now_seconds = LOOP_NOW;
     CHECK(r2_identity(&cfg->srv.ecdsa_p256));
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = server_aes;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = server_cpu;
 #endif
 }
 
@@ -195,8 +197,8 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     cfg->recv = held_recv;
     cfg->on_ticket = keep_ticket;
     r2_trust(cfg, root, hostname);
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = client_aes;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = client_cpu;
 #endif
     if (!present) {
         return;
@@ -313,8 +315,8 @@ static void pins_alone_config(ch_cfg *cfg, int present) {
     cfg->on_ticket = keep_ticket;
     cfg->spki_pins = (const uint8_t *)loop_pin;
     cfg->spki_pin_count = 1;
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = client_aes;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = client_cpu;
 #endif
     if (present) {
         cfg->psk = kept.psk;
@@ -395,7 +397,7 @@ static void test_pins_alone_large_leaf(void) {
 int main(int argc, char **argv) {
     ch_cfg scfg;
     ch_cfg ccfg;
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     if (argc > 1 && strcmp(argv[1], "absent") == 0) {
         return check_runtime_absent();
     }
@@ -445,7 +447,7 @@ int main(int argc, char **argv) {
 #ifdef CH_SUITE_AES_GCM
     check_suites();
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     check_runtime();
 #endif
 #if CH_TX_PT > 512

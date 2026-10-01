@@ -8,7 +8,7 @@
 # The programs, and where each one's sources come from:
 #
 #   - `bench/aead.sh --build`: the script's COMMON, and make's AES_HW_SRCS
-#     for the AES=hw binary;
+#     for the host binary;
 #   - `bench/record.sh --build`: the script's SRCS, and make's AES_HW_SRCS;
 #   - `bench/primitives.sh --build`: the script's PRIMITIVE_SRCS, and for
 #     the handshake programs the sources make names for

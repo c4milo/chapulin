@@ -1,11 +1,11 @@
 invariant: INV-7
 file: webpki_cfg.c
-catches: webpki_session_aes_runtime
-reason: an AES=runtime client whose caller's probe found no AES instructions
-  admits a caller's cipher_suites list that names an AES-GCM suite, so
-  its hello offers a suite the session cannot run on that CPU. The ruling
-  refuses such a list at init rather than cutting it down
-  (docs/decisions.md 81). test_webpki_runtime_without_aes requires
+catches: webpki_session_aes
+reason: a host object's client whose caller did not set
+  CH_CPU_CONSTANT_TIME_AES admits a caller's cipher_suites list that names
+  an AES-GCM suite, so its hello offers a suite the session may not run.
+  The ruling refuses such a list at init rather than cutting it down
+  (docs/decisions.md 81 and 89). test_webpki_runtime_without_aes requires
   ch_connect to refuse AES-128-GCM alone and ChaCha20 then AES-256-GCM
   before a byte leaves.
 

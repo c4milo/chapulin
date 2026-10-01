@@ -1,4 +1,4 @@
-// quic_aes_soft.c's two AES=runtime entries under second names, and the
+// quic_aes_soft.c's two entries in a QUIC host object under second names, and the
 // entries aes.c calls in their place, each a count and a call
 // (test/aes_runtime_count.h). The #defines rewrite both the definitions in
 // quic_aes_soft.c and the declarations it reads from aes_block.h, because

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Runs test/aes-runtime-qemu.sh inside an ubuntu container: the AES=runtime
-# answer that the instructions are absent, run under qemu-x86_64 on a CPU
-# model without AES-NI or PCLMULQDQ (docs/decisions.md 81). The mips job
+# Runs test/aes-runtime-qemu.sh inside an ubuntu container: a host
+# object's rows without the CH_CPU_CONSTANT_TIME_AES bit, run under
+# qemu-x86_64 on a CPU model without AES-NI or PCLMULQDQ (docs/decisions.md
+# 81 and 89). The mips job
 # in .github/workflows/check.yml runs the same script on its runner.
 # tools/toolchain.env pins the container, and the container's apt supplies
 # gcc and qemu-user, as the runner's does (Ubuntu 24.04 ships gcc 13.3 and
@@ -22,7 +23,7 @@ if [ "${1:-}" != "--inside" ]; then
     # shellcheck source=tools/toolchain.env
     . tools/toolchain.env
     command -v docker >/dev/null 2>&1 || {
-        echo "SKIP AES=runtime qemu lane: docker not available" >&2
+        echo "SKIP the host object's qemu lane: docker not available" >&2
         exit 0
     }
     exec docker run --rm -v "$PWD":/src -w /src "ubuntu@$UBUNTU_DIGEST" \

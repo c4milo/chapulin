@@ -11,10 +11,6 @@ reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites on
   and requires the refusal.
 
 --- old
-#ifndef CH_AES_EXTERN_CONSTANT_TIME
-#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
-#endif
+#if defined(CH_AES_EXTERN) && !defined(CH_AES_EXTERN_CONSTANT_TIME)
 --- new
-#if !defined(CH_AES_EXTERN_CONSTANT_TIME) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
-#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
-#endif
+#if defined(CH_AES_EXTERN) && !defined(CH_AES_EXTERN_CONSTANT_TIME) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)

@@ -40,30 +40,11 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 	$(MAKE) wycheproof
 
 
-# The AES=hw binaries alone, for CI's linux arm64 job. check runs them in
-# CI on x86-64 alone, and on the development machine's Apple silicon
-# under clang, so this is where gcc's Arm AES and PMULL paths (aes_hw.c,
-# ghash_hw.c) are built and run, under the flags AES_HW_PROBE found:
-# -march=armv8-a+crypto on a gcc whose default target has neither. On CI
-# the probe must find them, or a runner without the instructions would
-# skip in silence. The AES=runtime binaries run here too: that gcc turns
-# the instructions on per function, with no flag at all
-# (docs/decisions.md 81).
-.PHONY: aes-hw-check
-aes-hw-check: $(AES_HW_BINS) $(AES_RUNTIME_BINS)
-ifeq ($(AES_HW_BINS),)
-	$(call REQUIRE_ON_CI,AES=hw instructions)
-	@echo "SKIP aes-hw-check: $(CC) has no AES instructions and no flag turns them on"
-else
-	@set -e; for b in $(AES_HW_BINS); do echo "== $$b ($(or $(AES_HW_CFLAGS),no flag))"; ./$$b; done
-	@set -e; for b in $(AES_RUNTIME_BINS); do echo "== $$b (AES=runtime, no flag)"; ./$$b; done
-endif
-
 # The x86-64 kernels, for CI's x86-64-kernels job: chacha20_avx2.c's AVX2
 # ChaCha20 and gcm_vaes.c's VAES and VPCLMULQDQ kernels
-# (docs/decisions.md 90). Every x86-64 CHACHA=vector, AES=hw and
-# AES=runtime object carries them, built with no instruction flag, and the
-# library runs neither until use_avx2 and use_vaes read ch_cfg.cpu, so the
+# (docs/decisions.md 90). Every x86-64 CHACHA=vector object and host
+# object carries them, built with no instruction flag, and the library
+# runs neither until use_avx2 and use_vaes read ch_cfg.cpu, so the
 # test binaries call them directly or route their calls to them. Those
 # binaries skip a CPU without the instructions, in check and everywhere
 # else; this target runs them under CH_REQUIRE_X86_KERNELS=1, so on such
@@ -71,7 +52,7 @@ endif
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
 x86-64-kernels-check: x86-64-kernels-cpu bin/chacha20_equiv_test bin/aes_equiv_test $(X86_KERNEL_BINS)
 	@[ -n "$(X86_KERNEL_LEG)" ] || \
-	  { echo "x86-64-kernels-check: $(CC) does not target x86-64 with CHACHA=vector and AES=hw"; exit 1; }
+	  { echo "x86-64-kernels-check: $(CC) does not target x86-64 with CHACHA=vector in a host object"; exit 1; }
 	@set -e; for b in chacha20_equiv_test aes_equiv_test $(notdir $(X86_KERNEL_BINS)); do \
 	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
 	CH_REQUIRE_X86_KERNELS=1 $(MAKE) --no-print-directory wycheproof
@@ -86,21 +67,22 @@ x86-64-kernels-cpu:
 	  { echo "x86-64-kernels-cpu: $$cpu lacks $$f"; exit 1; }; done; \
 	echo "x86-64-kernels-cpu: $$cpu has AES-NI, PCLMULQDQ, AVX2, VAES and VPCLMULQDQ"
 
-# test/aes-runtime-qemu.sh: bin/aes_runtime_test and the two AES=runtime
-# loop binaries built for x86-64 and run under qemu-x86_64 on a CPU model
-# with AES-NI and PCLMULQDQ turned off. The answer that the instructions
-# are absent must pass there, and the present answer and an AES=hw build
-# must die of SIGILL. Linux only, with qemu-user; X86_CC names a cross
-# compiler on a host of another architecture (docs/decisions.md 81). CI's
+# test/aes-runtime-qemu.sh: bin/aes_runtime_test and the two suite loop
+# binaries, host objects, built for x86-64 and run under qemu-x86_64 on a
+# CPU model with AES-NI and PCLMULQDQ turned off. Their rows without the
+# CH_CPU_CONSTANT_TIME_AES bit must pass there, and the rows with it and
+# bin/quic_test_hw's vectors must die of SIGILL. Linux only, with
+# qemu-user; X86_CC names a cross compiler on a host of another
+# architecture (docs/decisions.md 81 and 89). CI's
 # mips job runs it, and test/docker-aes-runtime-qemu.sh runs it in a
 # container on any host with docker.
 .PHONY: aes-runtime-qemu
 aes-runtime-qemu:
 	./test/aes-runtime-qemu.sh
 
-# test/aes-runtime-disasm.sh: the three AES=runtime objects check links,
-# built with this host's compiler and disassembled, hold the AES and
-# carry-less multiply instructions in aes_hw.c's and ghash_hw.c's
+# test/aes-runtime-disasm.sh: three host objects, built with this host's
+# compiler and disassembled, hold the AES and carry-less multiply
+# instructions in aes_hw.c's, ghash_hw.c's, gcm_hw.c's and gcm_vaes.c's
 # functions and nowhere else. CI's arm64 job runs it, because no QEMU
 # arm64 model can turn the AES extension off (docs/decisions.md 81). The
 # recipe starts with + so the builds the script runs take this make's job

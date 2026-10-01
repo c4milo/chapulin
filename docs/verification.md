@@ -378,27 +378,29 @@ The entries are grouped by area:
   - `aes_traffic`: `aes_traffic_key_init` writes AES-128's round count
     for a 16-byte key and AES-256's for a 32-byte one, and the dispatch
     runs the cipher that count names, for one block and for counter
-    mode's whole blocks, over contract stubs of the `AES=hw` entries.
+    mode's whole blocks, over contract stubs of `aes_hw.c`'s entries, in
+    the TCP host object, which holds the instructions alone.
 - **Bound:** the full domain.
-- **Not proved:** the `AES=hw` AES-256 cipher a suite build runs. CBMC
+- **Not proved:** the instructions' AES-256 cipher a suite build runs. CBMC
   cannot read an intrinsic, so `bin/aes_equiv_test` holds it to the
   software one over 200,400 pairs.
 
 #### aes_runtime
 
 - **Harness:** `aes_runtime` (fast)
-- **Build:** `TRANSPORT=quic-nonblocking SUITE=aesgcm AES=runtime`, the
-  object that holds the AES instructions and the table.
+- **Build:** `TRANSPORT=quic-nonblocking SUITE=aesgcm` as a host object
+  (`-DCH_CPU_RUNTIME`), the object that holds the AES instructions and
+  the table.
 - **Proves:** `aes.c` is safe over unconstrained inputs and puts each key
-  on the cipher `docs/decisions.md` entry 81 names, over contract stubs of
-  both ciphers' eight entries, each of which asserts the buffers
+  on the cipher `docs/decisions.md` entries 81 and 89 name, over contract
+  stubs of both ciphers' six entries, each of which asserts the buffers
   `aes_block.h` states and whether the key in hand may run on it:
   - an Initial key expands and runs on the instructions only when the
-    caller's answer is `CH_AES_INSTRUCTIONS_PRESENT`, and on the table for
-    every other byte, and both of its schedules record which;
-  - the Retry key expands and runs on the table under any answer;
+    session's `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_AES`, and on the
+    table for every other value, and both of its schedules record which;
+  - the Retry key expands and runs on the table under any value;
   - the table runs no traffic key of either length.
-- **Bound:** the full domain: every byte of the answer, every admitted
+- **Bound:** the full domain: every 32-bit `ch_cfg.cpu`, every admitted
   connection ID length and every endpoint byte.
 - **Not proved:** either cipher's arithmetic, which `aes` proves for the
   table and `bin/aes_equiv_test` tests for the instructions; and `gcm.c`'s
@@ -439,9 +441,10 @@ The entries are grouped by area:
   and A.3's Initial packets and A.4's Retry tag in QUIC version 2, 67
   AES-128-GCM and 66 AES-256-GCM Wycheproof cases on all four build
   legs, and the Lean differential.
-- **The `AES=hw` GHASH and counter mode:** every harness compiles the
-  portable GHASH and the one-block counter loop. An `AES=hw` build runs
-  `ghash_hw.c`'s GHASH on the carry-less multiply instead, three products
+- **The host object's GHASH and counter mode:** every harness compiles
+  the portable GHASH and the one-block counter loop. A host object runs
+  `ghash_hw.c`'s GHASH on the carry-less multiply instead, for a schedule
+  on the AES instructions, three products
   a block and eight blocks a pass against the powers of H each call
   computes, with the reduction on the same instruction, and runs
   counter mode's whole blocks through `gcm_hw.c`'s `gcm_counter_blocks_hw`,
@@ -454,7 +457,7 @@ The entries are grouped by area:
   ciphertext included,
   `bin/aes_equiv_test` holds the multi-block counter mode to the soft
   cipher at every block count through three passes and across the 2^32
-  counter wrap, and the vectors, the Wycheproof `AES=hw` leg and
+  counter wrap, and the vectors, the Wycheproof host leg and
   `bin/diff_quic_hw` run over both.
 
 ### Key exchange
@@ -1169,13 +1172,14 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 #### srv_select_runtime
 
 - **Harness:** `srv_select_runtime` (fast)
-- **Build:** `ROLE=server SUITE=aesgcm AES=runtime`.
+- **Build:** `ROLE=server SUITE=aesgcm` as a host object
+  (`-DCH_CPU_RUNTIME`).
 - **Proves:** `suite_session_default`, the order a session offers or
-  prefers when its caller names none, is ChaCha20 alone for every byte of
-  the caller's answer but `CH_AES_INSTRUCTIONS_PRESENT`, and the build's
-  default order for that one; and `srv_first_offered_suite` over it, from
-  any offer of the three suites, names no suite `suite_runs_here` refuses
-  for the session (`docs/decisions.md` entry 81).
+  prefers when its caller names none, is ChaCha20 alone for every 32-bit
+  `ch_cfg.cpu` without `CH_CPU_CONSTANT_TIME_AES`, and the build's default
+  order for every value with it; and `srv_first_offered_suite` over it,
+  from any offer of the three suites, names no suite `suite_runs_here`
+  refuses for the session (`docs/decisions.md` entries 81 and 89).
 - **Bound:** the full domain.
 
 #### srv_parser_walk
@@ -1569,10 +1573,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 #### quic_config_webpki
 
-- **Harnesses:** `quic_config_webpki` (fast), `quic_config_webpki_suite` (fast), `quic_config_webpki_runtime` (fast)
-- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only,
-  `quic_config_webpki_suite` under `SUITE=aesgcm` too, and
-  `quic_config_webpki_runtime` under `SUITE=aesgcm AES=runtime`.
+- **Harnesses:** `quic_config_webpki` (fast), `quic_config_webpki_suite` (fast)
+- **Build:** `TRUST=webpki TRANSPORT=quic-nonblocking` only, and
+  `quic_config_webpki_suite` under `SUITE=aesgcm` as a host object
+  (`-DCH_CPU_RUNTIME`) too.
 - **Proves:** `ch_quic_init`'s configuration rules under `TRUST=webpki`,
   which are `webpki_cfg_ok`'s, SPKI pins included, plus RFC 9001's
   (`docs/decisions.md` entry 64). `quic_config_ok`:
@@ -1596,12 +1600,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     `SUITE_HELD_COUNT` suites the build holds with none repeated, and
     reads no suite past that cap whatever the count says
     (`docs/decisions.md` entry 80). Narrowing the harness's rule to two
-    suites fails the formula, so the cap it admits is exact;
-  - in `quic_config_webpki_runtime`, answers `CH_OK` only when the
-    caller's `aes_instructions`, any byte, is one of the two answers
-    `cfg.h` names, and under `CH_AES_INSTRUCTIONS_ABSENT` only for a
+    suites fails the formula, so the cap it admits is exact. There it also
+    answers `CH_OK` only when `ch_cfg.cpu`, any 32-bit value, holds
+    `CH_CPU_PROBED` and no bit `cpu_cfg.h` leaves undefined for the
+    architecture, and without `CH_CPU_CONSTANT_TIME_AES` only for a
     `cipher_suites` that names no AES-GCM suite (`docs/decisions.md`
-    entry 81).
+    entries 81 and 89).
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
@@ -2216,8 +2220,9 @@ under the tag the quic_token harness leaves unconstrained, so it rests on
 Constant time comes from construction: no branch and no memory index
 depends on a secret, and no secret key is passed to the AES lookup
 table. A `SUITE=aesgcm` build runs its traffic keys on AES instructions
-or on an AES peripheral, and the build asserts their timing with
-`CH_NATIVE_AES` or `CH_AES_EXTERN_CONSTANT_TIME`; nothing here measures
+or on an AES peripheral: a host object's caller states the instructions'
+timing with `CH_CPU_CONSTANT_TIME_AES`, and an `AES=extern` build states
+the peripheral's with `CH_AES_EXTERN_CONSTANT_TIME`; nothing here measures
 either (INV-26).
 
 `make timing` checks constant time with a Welch's t-test, which is
@@ -2411,8 +2416,8 @@ as an `if`. No gcc measures it.
 passes of eight blocks on NEON, two groups of four side by side, and of
 four blocks on SSE2 (decisions 82 and 86). CBMC cannot unwind an
 intrinsic, so no harness compiles the file, and the
-[chacha20](#chacha20) proof covers `chacha20.c`'s loop alone. As
-`AES=hw` rests on `bin/aes_equiv_test` and the published vectors, the
+[chacha20](#chacha20) proof covers `chacha20.c`'s loop alone. As the
+AES instructions rest on `bin/aes_equiv_test` and the published vectors, the
 vector path rests on these, each in `make check`:
 
 - `bin/chacha20_equiv_test` compares it with `chacha20.c`'s loop over
@@ -2527,55 +2532,55 @@ loop's does under that define, and on construction for the rest: adds,
 masks, fixed shifts and lane moves, with no table. No gcc measures its
 branches.
 
-### The AES=runtime answer that the instructions are absent
+### A host session without the AES bit
 
-An `AES=runtime` session whose caller answers that the CPU lacks the AES
-instructions must run neither AES nor the carry-less multiply (decision
-81). The [aes_runtime](#aes_runtime) proof holds the cipher `aes.c` puts
-each key on, over contract stubs of both ciphers. No proof reads the
-instructions the compiler emits, or the calls the rest of a session
-makes. Three checks stand in:
+A host object's session whose caller did not set
+`CH_CPU_CONSTANT_TIME_AES` must run neither AES nor the carry-less
+multiply (decisions 81 and 89). The [aes_runtime](#aes_runtime) proof
+holds the cipher `aes.c` puts each key on, over contract stubs of both
+ciphers. No proof reads the instructions the compiler emits, or the calls
+the rest of a session makes. Three checks stand in:
 
 - `bin/aes_runtime_test`, in `make check`, counts every call into the
   table, the instructions and the carry-less multiply over RFC 9001 and
-  RFC 9369 Appendix A under both answers. Under the absent answer no call
-  goes to the instructions.
+  RFC 9369 Appendix A with the bit and without it. Without the bit no
+  call goes to the instructions.
 - `test/aes-runtime-qemu.sh`, in CI's mips job on every push, builds that
-  binary and the two `AES=runtime` loop binaries for x86-64 with the
-  runner's gcc. It runs them under `qemu-x86_64 -cpu
+  binary and the two suite loop binaries for x86-64 with the runner's gcc,
+  as host objects. It runs them under `qemu-x86_64 -cpu
   max,-aes,-pclmulqdq`, where either instruction raises SIGILL. The
-  vectors must pass under the absent answer, and so must the whole QUIC
-  and TCP handshakes, resumptions and pin rows with both ends answering
-  absent. The present answer and an `AES=hw` build must die of SIGILL, so
-  a qemu whose CPU model kept the instructions fails the step rather than
-  passing it. `test/docker-aes-runtime-qemu.sh` runs the same script in a
-  container on a development machine.
-- `test/aes-runtime-disasm.sh`, in CI's arm64 job, builds the three
-  `AES=runtime` objects `make check` links, disassembles every source's
-  object, and requires the AES and carry-less multiply instructions in
-  `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions alone. It
+  vectors must pass without the bit, and so must the whole QUIC and TCP
+  handshakes, resumptions and pin rows with both ends stating the probe's
+  bit alone. The rows with the bit, and `bin/quic_test_hw`'s vectors,
+  must die of SIGILL, so a qemu whose CPU model kept the instructions
+  fails the step rather than passing it. `test/docker-aes-runtime-qemu.sh`
+  runs the same script in a container on a development machine.
+- `test/aes-runtime-disasm.sh`, in CI's arm64 and macOS jobs, builds
+  three host objects, disassembles every source's object, and requires
+  the AES and carry-less multiply instructions in `aes_hw.c`'s,
+  `ghash_hw.c`'s, `gcm_hw.c`'s and `gcm_vaes.c`'s functions alone. It
   requires an AES instruction in the first, a carry-less multiply in the
   second and both in the third, so a disassembler that spelled them
   another way would fail it rather than pass it.
 
 `inv26-runtime-initial-seal-ignores-answer` makes `quic.c` seal every
-Initial packet under the present answer. Both ciphers compute the same
-packet, and `bin/aes_runtime_test` links no `quic.c`, so no test on a
-CPU with the instructions sees it; the qemu run catches it.
+Initial packet as though the caller had set the bit. Both ciphers compute
+the same packet, and `bin/aes_runtime_test` links no `quic.c`, so no test
+on a CPU with the instructions sees it; the qemu run catches it.
 
-None of this runs the absent answer on an arm64 CPU without the AES
-extension: QEMU's arm64 models all implement it, and none turns it off.
-On arm64 the claim rests on the counts and the disassembly. The qemu run
-executes the vectors and the rows the loop binaries hold, and no other
-path.
+None of this runs a session without the bit on an arm64 CPU without the
+AES extension: QEMU's arm64 models all implement it, and none turns it
+off. On arm64 the claim rests on the counts and the disassembly. The qemu
+run executes the vectors and the rows the loop binaries hold, and no
+other path.
 
 ### The x86-64 kernels
 
 `chacha20_avx2.c` computes ChaCha20 eight blocks a pass in 256-bit AVX2
 vectors, and `gcm_vaes.c` runs `gcm_hw.c`'s three loops two blocks to a
 256-bit register on VAES and VPCLMULQDQ (decision 90). Every x86-64
-`CHACHA=vector` object carries the first, and every x86-64 `AES=hw` and
-`AES=runtime` object the second, each function turning its instructions
+`CHACHA=vector` object carries the first, and every x86-64 host object
+the second, each function turning its instructions
 on through its own target attribute. `chacha20.c`'s `use_avx2` and
 `gcm_hw.c`'s `use_vaes` answer 0 until `ch_cfg.cpu` carries the caller's
 bits, so no library call runs either kernel yet. CBMC cannot unwind an
@@ -2654,7 +2659,6 @@ constant orders, with no table and no multiply. The GCM kernels' timing
 rests on the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `use_vaes` is
 to require beside `CH_CPU_VAES` and whose statement covers the AES
 instructions and the carry-less multiply at every width (decision 89).
-`CH_NATIVE_AES` states nothing about their 256-bit forms (`ct.h`).
 
 ### The WIDEMUL=runtime copies
 
@@ -2923,8 +2927,8 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    endpoints, 40 traffic secrets' packet keys, 40 key updates and the
    Retry tag at every pseudo-packet length up to 80 bytes, three times:
    - under the build's `AES` value;
-   - under `AES=hw`, the instructions and the carry-less multiply, where
-     the compiler has them;
+   - in a QUIC host object, on the instructions and the carry-less
+     multiply, where the compiler passes the host test;
    - under `AES=extern`, through the stand-in hook
      `test/aes_extern_hook.c`.
 3. The x25519 rows, ten times over the `X25519=wide` field, 1,501

@@ -1,7 +1,7 @@
 invariant: INV-17
 file: ghash_vector.h
 catches: ghash_equiv_test
-reason: the AES=hw GHASH reads each power of H and its halves added
+reason: the host object's GHASH reads each power of H and its halves added
   through an ordinary pointer, so the compiler loads the eight powers once
   and holds them in registers across every pass. They do not fit there
   beside a pass's blocks, and gcc and clang, on ARMv8 and on x86-64, each

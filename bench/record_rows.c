@@ -21,7 +21,7 @@
 #include "suite.h"
 #include "widemul.h"
 
-#if !defined(CH_SUITE_AES_GCM) || !defined(CH_AES_HW)
+#if !defined(CH_SUITE_AES_GCM) || !defined(CH_CPU_RUNTIME)
 #error                                                                                             \
     "bench/record.c times the AES-GCM suites on the AES instructions: build it as bench/record.sh does"
 #endif

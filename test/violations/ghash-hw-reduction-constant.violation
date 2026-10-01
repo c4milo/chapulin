@@ -1,11 +1,11 @@
 invariant: INV-26
 file: ghash_vector.h
 catches: ghash_equiv_test
-reason: the AES=hw reduction multiplies by 0xc400000000000000 where the
+reason: the host object's reduction multiplies by 0xc400000000000000 where the
   reversed field polynomial needs 0xc200000000000000: its x^7 term moves
   from bit 57 to bit 58, where x^6 sits, so every product with a nonzero
   low half is reduced modulo the wrong polynomial and GHASH answers wrong
-  under AES=hw alone. CBMC cannot read an intrinsic, so no proof covers
+  in a host object alone. CBMC cannot read an intrinsic, so no proof covers
   this code, and bin/ghash_equiv_test is what holds it to gcm.c's
   portable multiply: it compares the multiply, the loop over data and the
   whole AEAD byte for byte. The edit lands in ghash_reduce, which is the

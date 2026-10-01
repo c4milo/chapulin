@@ -13,9 +13,16 @@
 
 #ifdef CH_CPU_RUNTIME
 // The description each configuration a host test builds takes, unless one of its rows sets
-// another. No path reads a bit past CH_CPU_PROBED yet, so the probe's bit alone.
+// another. A suite binary's rows run the AES-GCM suites, which a session runs only when its caller
+// sets CH_CPU_CONSTANT_TIME_AES (suite.h), so it states that bit beside the probe's. Every other
+// host binary states the probe's bit alone, so its QUIC Initial packets run on the table, and the
+// suite binaries' rows run them on the instructions.
 #ifndef TEST_CPU
+#ifdef CH_SUITE_AES_GCM
+#define TEST_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES)
+#else
 #define TEST_CPU CH_CPU_PROBED
+#endif
 #endif
 #define TEST_CPU_CFG(cfg) ((cfg).cpu = TEST_CPU)
 

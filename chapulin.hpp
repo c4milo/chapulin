@@ -142,18 +142,6 @@ struct Cpu {
 };
 #endif
 
-#ifdef CH_AES_RUNTIME
-// Whether this CPU has the AES and carry-less multiply instructions, as
-// your own probe found (cfg.h), in an AES=runtime build: the value
-// Config::aes_instructions() writes into ch_cfg.aes_instructions. chapulin
-// probes nothing, and every init refuses a Config that states neither
-// (docs/decisions.md 81).
-enum class AesInstructions : uint8_t {
-    present = CH_AES_INSTRUCTIONS_PRESENT,
-    absent = CH_AES_INSTRUCTIONS_ABSENT,
-};
-#endif
-
 #ifdef CH_WIDEMUL_RUNTIME
 // Whether the widening multiply runs in constant time on this CPU, in the
 // mode your thread runs in, in a WIDEMUL=runtime build: the value
@@ -379,15 +367,6 @@ class Config {
         cfg_.cpu = CH_CPU_PROBED | (found.constant_time_aes ? CH_CPU_CONSTANT_TIME_AES : 0U) |
                    (found.constant_time_multiply ? CH_CPU_CONSTANT_TIME_MULTIPLY : 0U) |
                    (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U);
-        return *this;
-    }
-#endif
-
-#ifdef CH_AES_RUNTIME
-    // Your CPU probe's answer, AES=runtime builds only
-    // (ch_cfg.aes_instructions). Every init refuses a Config without one.
-    Config &aes_instructions(AesInstructions answer) {
-        cfg_.aes_instructions = static_cast<uint8_t>(answer);
         return *this;
     }
 #endif

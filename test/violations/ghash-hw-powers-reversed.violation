@@ -1,7 +1,7 @@
 invariant: INV-26
 file: ghash_vector.h
 catches: ghash_equiv_test
-reason: the AES=hw GHASH pass multiplies its later blocks by the powers of
+reason: the host object's GHASH pass multiplies its later blocks by the powers of
   H in the wrong order, the third block by H^3 where a pass of eight blocks
   needs H^6, so every whole pass hashes to the wrong value. It is the
   mistake an index that counts the other way invites. CBMC cannot read the

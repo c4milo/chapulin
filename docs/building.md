@@ -89,32 +89,24 @@ Other targets:
   `ROLE=server` and `ROLE=both` refuse it too, because a server role
   holds all three groups in every build (decisions 54 and 63).
   `SUITE=aesgcm` adds `TLS_AES_128_GCM_SHA256` and
-  `TLS_AES_256_GCM_SHA384` to a `TRUST=webpki` client or a server role,
-  and it takes one of three `AES` values. `AES=hw` runs AES on the
-  compiler's intrinsics and needs `-DCH_NATIVE_AES` in `CFLAGS`, the
-  statement that the part's AES instructions and carry-less multiply run
-  in constant time (decision 50). `AES=extern` runs every AES block in a
-  `ch_aes_block(key, key_len, in, out)` the image defines, 16-byte and
-  32-byte keys both, and needs `-DCH_AES_EXTERN_CONSTANT_TIME`, the
-  statement that the peripheral behind it runs in constant time
-  (decision 68). The Makefile writes neither statement, `ct.h` refuses
-  the suite without the one its `AES` value needs, and nothing in this
-  tree can check either. The `AES=hw` build offers and prefers
+  `TLS_AES_256_GCM_SHA384` to a `TRUST=webpki` client or a server role.
+  On an arm64 or x86-64 host that object is a host object, below, whose
+  sessions run AES-GCM on the AES instructions and the carry-less
+  multiply where your program sets `CH_CPU_CONSTANT_TIME_AES` (decisions
+  50 and 89). A device object takes `AES=extern`: every AES block runs in
+  a `ch_aes_block(key, key_len, in, out)` the image defines, 16-byte and
+  32-byte keys both, and the build needs `-DCH_AES_EXTERN_CONSTANT_TIME`,
+  the statement that the peripheral behind it runs in constant time
+  (decision 68). The Makefile never writes that statement, `ct.h` refuses
+  the suite on the `AES=soft` table, and nothing in this tree can check a
+  peripheral. A host session with the AES bit offers and prefers
   `TLS_AES_256_GCM_SHA384`, then `TLS_AES_128_GCM_SHA256`, then ChaCha20,
-  and the `AES=extern` build keeps ChaCha20 first (decision 80).
-  `AES=runtime` builds one object for CPUs with and without the AES
-  instructions, on arm64 or x86-64 (decision 81). It needs no instruction
-  flag, because the two files that run the instructions turn them on for
-  their own functions, and under `SUITE=aesgcm` it needs
-  `-DCH_NATIVE_AES` as `AES=hw` does. Your program probes the CPU and
-  sets `ch_cfg.aes_instructions` in every session's configuration to
-  `CH_AES_INSTRUCTIONS_PRESENT` or `CH_AES_INSTRUCTIONS_ABSENT`; every
-  init call refuses any other value, 0 included. Present behaves as
-  `AES=hw`. Absent runs no AES instruction: the session holds ChaCha20
-  alone, a QUIC object runs its Initial packets on the software AES, and
-  init refuses a suite list that names an AES-GCM suite. The value needs
-  an object that carries AES, so a TCP object takes it only with
-  `SUITE=aesgcm`, and the Makefile refuses it otherwise.
+  a host session without it offers ChaCha20 alone, and the `AES=extern`
+  build keeps ChaCha20 first (decision 80). `AES` is a device object's
+  variable alone: `soft`, the default, or `extern`. The Makefile and
+  `build.zig` refuse an `AES` value for a host object, and the values
+  `AES=hw` and `AES=runtime`, which chose the instructions when the object
+  was built, are gone (decision 89).
 - On an arm64 or x86-64 host, `TRUST=webpki`, `ROLE=server` and
   `ROLE=both` build a host object (decision 89). The Makefile and
   `build.zig` run the host test on the compiler: it targets arm64 or
@@ -131,9 +123,15 @@ Other targets:
   `ch_srv_check` refuse a value without `CH_CPU_PROBED`, and one with a
   bit this object does not define for its architecture, such as
   `CH_CPU_AVX2` on arm64. chapulin probes nothing and sets no CPU mode.
-  No path reads the bits after `CH_CPU_PROBED` yet: the `AES`, `CHACHA`,
-  `WIDEMUL` and `X25519` variables still choose what each object runs,
-  until decision 89's later commits move each choice to its bit. A raw or
+  The host object holds the AES instructions, and in a QUIC object the
+  software AES beside them, and `CH_CPU_CONSTANT_TIME_AES` picks: with it
+  the session runs the AES-GCM suites and QUIC's Initial packets on the
+  instructions, and without it the session holds ChaCha20 alone, runs
+  its Initial packets on the software AES, and init refuses a suite list
+  that names an AES-GCM suite. No path reads the other bits yet: the
+  `CHACHA`, `WIDEMUL` and `X25519` variables still choose what each
+  object runs, until decision 89's later commits move each choice to its
+  bit. A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host
@@ -154,7 +152,7 @@ Other targets:
 - A Zig project (Zig 0.16.0) depends on chapulin as a package and gets
   the object `make lib` builds and a Zig API over it. The options are
   the Makefile's variables, with the same names and values, and the
-  three hardware statements the Makefile takes in `CFLAGS` are options
+  two hardware statements the Makefile takes in `CFLAGS` are options
   that default off. `TX_RECORD` takes its number, `.TX_RECORD = 16384`:
 
   ```zig
@@ -165,8 +163,6 @@ Other targets:
       .ROLE = .both,
       .TRUST = .webpki,
       .SUITE = .aesgcm,
-      .AES = .hw,
-      .CH_NATIVE_AES = true,
   });
   module.addImport("chapulin", chapulin.module("chapulin"));
   ```
@@ -188,7 +184,7 @@ Other targets:
   headers as C. `build.zig` compiles every source into one relocatable
   object, and `tools/localize_symbols.zig` makes every symbol but the
   public API local, as `objcopy -G` and `nmedit -s` do for make, so one
-  image links objects of two transports. `make lint-zig-build` builds six
+  image links objects of two transports. `make lint-zig-build` builds eight
   configurations both ways and requires the same sources, defines,
   exports and build record, and builds and runs Zig programs against
   each module (decisions 69, 70 and 73, INV-36).

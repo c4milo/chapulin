@@ -11,7 +11,7 @@ reason: the AES-GCM suite build on AES=extern stops needing
   on AES=extern without the statement and requires the refusal.
 
 --- old
-#ifndef CH_AES_EXTERN_CONSTANT_TIME
+#if defined(CH_AES_EXTERN) && !defined(CH_AES_EXTERN_CONSTANT_TIME)
 #error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
 #endif
 --- new

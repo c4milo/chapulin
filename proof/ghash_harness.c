@@ -20,9 +20,10 @@
 // states what the composition gives up and where the real cipher is
 // proven.
 //
-// The launch line defines no CH_AES_HW, so this proves gcm.c's
-// portable multiply and data loop. An AES=hw build runs ghash_hw.c's
-// in their place, on an instruction CBMC cannot read, and
+// The launch line defines no CH_CPU_RUNTIME, so this proves gcm.c's
+// portable multiply and data loop. A host object runs ghash_hw.c's in
+// their place for a schedule on the AES instructions, on an instruction
+// CBMC cannot read, and
 // test/ghash_equiv_test.c holds those to these byte for byte.
 #include "harness.h"
 

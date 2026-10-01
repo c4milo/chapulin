@@ -100,83 +100,64 @@ void ct_wipe(void *p, size_t n);
 #define CH_WIDEMUL_NATIVE 1
 #endif
 
-// Whether an AES instruction, or the carry-less multiply GHASH runs on under
-// AES=hw, runs in constant time is a claim of the same kind, and so is whether
-// an AES peripheral does under AES=extern. The build makes each claim the same
-// way. -DCH_SUITE_AES_GCM is how a build says it carries a TLS cipher suite
-// whose AEAD is AES-GCM, so its AES key is what hkdf_expand_label derives from
-// a traffic secret. SUITE=aesgcm declares it, and the rules below stop the
-// compiler on that build instead of letting it take whatever the Makefile AES
-// variable defaulted to. The rules sit here rather than in cfg.h, beside
-// CH_NATIVE_WIDEMUL rather than beside the trust modes, because each is one
-// claim about what a part does with secret operands.
+// Whether an AES instruction, or the carry-less multiply GHASH runs on beside
+// it, runs in constant time is a claim of the same kind, and so is whether an
+// AES peripheral does under AES=extern. -DCH_SUITE_AES_GCM is how a build says
+// it carries a TLS cipher suite whose AEAD is AES-GCM, so its AES key is what
+// hkdf_expand_label derives from a traffic secret. SUITE=aesgcm declares it,
+// and the rules below stop the compiler on that build instead of letting it
+// take the table a device object defaults to. The rules sit here rather than
+// in cfg.h, beside CH_NATIVE_WIDEMUL rather than beside the trust modes,
+// because each is one claim about what a part does with secret operands.
 //
-// A suite build takes one of three AES values, and each needs its own claim:
+// A suite build is one of two objects, and each makes its claim in its own
+// place:
 //
-//   CH_AES_HW, CH_AES_RUNTIME or CH_AES_EXTERN
-//                  AES=soft is the default and reads a 256-byte S-box at an
-//                  index computed from the key, so a secret key needs an
-//                  implementation with no table: AES=hw, AES=runtime, whose
-//                  traffic keys run on the instructions alone, or
-//                  AES=extern.
-//   CH_NATIVE_AES  under AES=hw or AES=runtime, the build asserts that this
-//                  part's AES instructions and its carry-less multiply run
-//                  in constant time, where the part has them. AES-GCM needs
-//                  both under one key: the AES rounds
-//                  produce the keystream and the hash subkey, and under
-//                  AES=hw GHASH multiplies by that subkey on PMULL or
-//                  PCLMULQDQ (ghash_hw.c). __ARM_FEATURE_AES, __AES__ and
-//                  __PCLMUL__ say only that the instructions exist, which
-//                  is the inference this header refuses above for the
-//                  multiply; Arm publishes FEAT_DIT and Intel publishes
-//                  DOITM because the architectures leave the timing to the
-//                  implementation. Firmware defines it with a vendor
-//                  statement that covers both instructions, and
-//                  aes_hw.c states what it covers. docs/decisions.md
-//                  entry 50 says why one define carries both. Under
-//                  AES=runtime whether the part has them is the caller's
-//                  answer at run time (cfg.h), and CH_NATIVE_AES keeps
-//                  this meaning: it is the build's statement about the
-//                  instructions where they exist (docs/decisions.md 81).
-//                  It states nothing about the 256-bit forms, VAESENC
-//                  and VPCLMULQDQ on ymm registers, which gcm_vaes.c's
-//                  kernels run. No call runs those until ch_cfg.cpu
-//                  exists, and then only where the caller sets
-//                  CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES, whose
-//                  statement covers the AES instructions at every width
-//                  (docs/decisions.md 89 and 90).
-//   CH_AES_EXTERN_CONSTANT_TIME
-//                  under AES=extern, the build asserts that the peripheral
-//                  behind the image's ch_aes_block runs in constant time,
-//                  for AES-128 and AES-256 keys. GHASH runs on gcm.c's
-//                  portable multiply under that value, 128 masked steps per
-//                  block with no table and no branch on a subkey bit, so the
-//                  flag claims nothing about GHASH. Firmware defines it
-//                  only with a vendor statement about the peripheral.
-//                  Nothing in this tree can observe a peripheral's timing,
-//                  so the statement is the whole claim. It is not
-//                  CH_NATIVE_AES, which names instructions this build does
-//                  not run; docs/decisions.md entry 68 says why.
+//   CH_CPU_RUNTIME a host object (cpu_cfg.h), which holds the AES
+//                  instructions beside the portable code. The claim is the
+//                  caller's, for each session: CH_CPU_CONSTANT_TIME_AES in
+//                  ch_cfg.cpu states that this CPU's AES instructions and
+//                  its carry-less multiply run in constant time, in the
+//                  mode the session's thread runs in. AES-GCM needs both
+//                  under one key: the AES rounds produce the keystream and
+//                  the hash subkey, and GHASH multiplies by that subkey on
+//                  PMULL or PCLMULQDQ (ghash_hw.c). A session without the
+//                  bit offers and selects ChaCha20 alone (suite.h), so no
+//                  traffic key reaches AES there. The statement covers the
+//                  256-bit forms too, VAESENC and VPCLMULQDQ on ymm
+//                  registers, which gcm_vaes.c's kernels are to run where
+//                  the caller also sets CH_CPU_VAES. docs/decisions.md
+//                  entry 50 says why one statement carries both
+//                  instructions, and entry 89 why the caller makes it.
+//   CH_AES_EXTERN and CH_AES_EXTERN_CONSTANT_TIME
+//                  a device object on AES=extern, whose build asserts that
+//                  the peripheral behind the image's ch_aes_block runs in
+//                  constant time, for AES-128 and AES-256 keys. GHASH runs
+//                  on gcm.c's portable multiply under that value, 128
+//                  masked steps per block with no table and no branch on a
+//                  subkey bit, so the flag claims nothing about GHASH.
+//                  Firmware defines it only with a vendor statement about
+//                  the peripheral. Nothing in this tree can observe a
+//                  peripheral's timing, so the statement is the whole
+//                  claim. docs/decisions.md entry 68 says why it stays a
+//                  build statement.
+//
+// A device object on AES=soft reads a 256-byte S-box at an index computed
+// from the key, so it takes no suite. CH_NATIVE_AES, the build's statement
+// about the AES instructions before docs/decisions.md 89, is gone, and a
+// build that still writes it stops here rather than stating nothing.
 //
 // INV-26 in docs/invariants.md states the bound these keep and what the
 // refused build would still owe. test/quic-builds.sh is the catch target.
+#ifdef CH_NATIVE_AES
+#error "CH_NATIVE_AES is gone: a host object's caller states the AES timing (cpu_cfg.h)"
+#endif
 #ifdef CH_SUITE_AES_GCM
-#ifdef CH_AES_HW
-#ifndef CH_NATIVE_AES
-#error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
+#if !defined(CH_CPU_RUNTIME) && !defined(CH_AES_EXTERN)
+#error "CH_SUITE_AES_GCM needs a host object or AES=extern: the AES=soft S-box reads the key"
 #endif
-#elif defined(CH_AES_RUNTIME)
-#ifndef CH_NATIVE_AES
-#error                                                                                             \
-    "CH_SUITE_AES_GCM on AES=runtime needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
-#endif
-#elif defined(CH_AES_EXTERN)
-#ifndef CH_AES_EXTERN_CONSTANT_TIME
+#if defined(CH_AES_EXTERN) && !defined(CH_AES_EXTERN_CONSTANT_TIME)
 #error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
-#endif
-#else
-#error                                                                                             \
-    "CH_SUITE_AES_GCM needs AES=hw, AES=runtime or AES=extern: the AES=soft S-box is indexed with the key"
 #endif
 #endif
 

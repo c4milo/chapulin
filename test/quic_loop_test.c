@@ -147,12 +147,11 @@ static const ch_alpn_protocol server_alpn[2] = {
 static uint8_t server_buf[CH_MIN_RXBUF];
 static uint8_t client_buf[CH_MIN_RXBUF];
 
-#ifdef CH_AES_RUNTIME
-// The answers an AES=runtime row gives each end's ch_cfg.aes_instructions:
-// the instructions present unless the row says otherwise
-// (test/quic_loop_runtime.h).
-static uint8_t server_aes = CH_AES_INSTRUCTIONS_PRESENT;
-static uint8_t client_aes = CH_AES_INSTRUCTIONS_PRESENT;
+#ifdef CH_CPU_RUNTIME
+// Each end's ch_cfg.cpu in a host binary: TEST_CPU unless a row of
+// test/quic_loop_runtime.h says otherwise.
+static uint32_t server_cpu = TEST_CPU;
+static uint32_t client_cpu = TEST_CPU;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
 // Each end's ch_cfg.widemul: TEST_WIDEMUL unless a row of
@@ -184,8 +183,8 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = server_aes;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = server_cpu;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     cfg->widemul = quic_server_widemul;
@@ -208,8 +207,8 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
 #endif
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = client_aes;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = client_cpu;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     cfg->widemul = quic_client_widemul;
@@ -384,7 +383,7 @@ static size_t handshake_messages(void) {
 #ifdef CH_RAND_SESSION
 #include "quic_loop_session.h"
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 #include "quic_loop_runtime.h"
 #endif
 // The widening multiply's rows run quic_loop_webpki.h's client and server.
@@ -397,7 +396,7 @@ static size_t handshake_messages(void) {
 #endif
 
 int main(int argc, char **argv) {
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     if (argc > 1 && strcmp(argv[1], "absent") == 0) {
         return test_quic_runtime_absent();
     }
@@ -423,7 +422,7 @@ int main(int argc, char **argv) {
 #ifdef CH_RAND_SESSION
     test_session();
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_quic_runtime();
 #endif
 #if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)

@@ -53,7 +53,7 @@ GATE_COMMAND = {
     "lint-zig-build-run": "make lint-zig-build",
     **{f"wycheproof-{kind}-{leg}": "make wycheproof"
        for kind in ("leg", "run")
-       for leg in ("default", "aes-hw", "aes-extern", "x25519-wide", "chacha-vector")},
+       for leg in ("default", "host", "aes-extern", "x25519-wide", "chacha-vector")},
 }
 
 # The catches lines a test/violations entry can name for a gate that a
@@ -178,8 +178,8 @@ FULL_COMMANDS = [
     ("nightly", "test/docker-riscv32.sh", "the riscv32 cross lane, which runs "
                                           "cross-check under qemu-riscv32"),
     ("nightly", "test/docker-aes-runtime-qemu.sh",
-     "the AES=runtime lane, which runs the absent answer under qemu-x86_64 "
-     "on a CPU model without AES-NI or PCLMULQDQ"),
+     "the host object's qemu lane, which runs the rows without the AES bit "
+     "under qemu-x86_64 on a CPU model without AES-NI or PCLMULQDQ"),
 ]
 
 
@@ -366,12 +366,12 @@ def select_pairs(out, changed, legs):
 
 # test/docker-aes-runtime-qemu.sh runs test/aes-runtime-qemu.sh, which
 # compiles x86-64 copies of these binaries into bin/qemu/ and runs them
-# under qemu-x86_64 (docs/decisions.md 81). No make rule builds the
+# under qemu-x86_64 (docs/decisions.md 81 and 89). No make rule builds the
 # copies. The script asks make for the two loop binaries' source lists
 # and names the other two binaries' sources itself, and the sources of
 # these four rules hold every file it compiles.
-AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes_runtime",
-                             "bin/webpki_loop_aes_runtime", "bin/quic_test_hw")
+AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
+                             "bin/webpki_loop_aes", "bin/quic_test_hw")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -383,8 +383,8 @@ def select_aes_runtime_qemu(out, changed):
     for path in changed:
         if path in compiled or path in AES_RUNTIME_QEMU_FILES:
             out.add("tests", "test/docker-aes-runtime-qemu.sh",
-                    f"{path} is compiled or run by the AES=runtime lane, which "
-                    f"runs the absent answer on a CPU model without AES-NI",
+                    f"{path} is compiled or run by the host object's qemu lane, "
+                    f"which runs the rows without the AES bit on a CPU model without AES-NI",
                     ["test/docker-aes-runtime-qemu.sh"])
 
 

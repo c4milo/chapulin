@@ -1,0 +1,15 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a QUIC host object stops packaging the table, quic_aes_soft.c,
+  beside the AES instructions, so aes.c calls aes_soft_expand_round_keys
+  and aes_soft_cipher_block for the public keys of a session whose caller
+  did not set CH_CPU_CONSTANT_TIME_AES, and no source in the object
+  defines them. A linker would refuse the image, but it names a missing
+  symbol, not the object that lost its source. The lint's host QUIC rows
+  require the table beside the instructions.
+
+--- old
+             $(if $(filter quic-nonblocking,$(TRANSPORT)),quic_aes_soft.c),$(AES_IMPL)))
+--- new
+             ,$(AES_IMPL)))

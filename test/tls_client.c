@@ -380,6 +380,11 @@ int main(int argc, char **argv) {
     // REQUIRE_PQ in the environment sets ch_cfg.require_pq, so e2e drives
     // the flag without a new positional argument.
     cfg.require_pq = getenv("REQUIRE_PQ") != NULL;
+#ifdef CH_CPU_RUNTIME
+    // bin/tlsclient_webpki_aes, a host object, runs on a CPU with the AES
+    // instructions, and e2e drives its AES-GCM suites (cpu_cfg.h).
+    cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
+#endif
 #ifdef CH_TRUST_WEBPKI
     setup_alpn(&cfg);
 #endif

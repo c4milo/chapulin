@@ -20,7 +20,7 @@
 // In a -DCH_SUITE_AES_GCM build round_keys holds a traffic key itself,
 // not an expansion of it. record.c and quic_packet.c wipe the whole
 // aes_traffic_key on the frame that built it, so the key bytes are
-// wiped there the way round keys are under AES=hw. This file keeps no
+// wiped there the way round keys are on the AES instructions. This file keeps no
 // copy: it has no local that holds a key byte.
 //
 // This build can be the fastest of the three or the slowest, and this

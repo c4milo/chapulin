@@ -5,14 +5,14 @@
 // aes_encrypt_schedule runs that key through the cipher the round count
 // names.
 //
-// A suite build takes AES=hw, whose key expansion and cipher are the AES
-// instructions, or AES=extern, whose cipher is the image's hook, and
-// CBMC can read neither. So the four block entries are contract stubs
-// below: each asserts the buffers aes_block.h says it reads and writes,
-// and havocs what it writes. What this proves is aes.c's own framing
-// over them. The instructions are held to FIPS 197 by
-// test/aes_equiv_test.c, which compares them with quic_aes_soft.c's
-// reference, and proof/aes256_harness.c proves that reference.
+// A suite build is a host object, whose key expansion and cipher are the
+// AES instructions, or AES=extern, whose cipher is the image's hook, and
+// CBMC can read neither. The launch line builds the TCP host object,
+// which holds the instructions alone, so the four block entries are
+// aes_hw.c's. They are contract stubs below: each asserts the buffers
+// aes_block.h says it reads and writes, and havocs what it writes. What this proves is aes.c's own
+// framing over them. The instructions are held to FIPS 197 by test/aes_equiv_test.c, which compares
+// them with quic_aes_soft.c's reference, and proof/aes256_harness.c proves that reference.
 // proof/aes_extern_harness.c proves aes_extern.c's four entries over a
 // stub of the hook.
 //

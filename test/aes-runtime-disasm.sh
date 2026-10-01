@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Shows that an AES=runtime object carries the AES and carry-less multiply
+# Shows that a host object carries the AES and carry-less multiply
 # instructions in aes_hw.c's, ghash_hw.c's, gcm_hw.c's and gcm_vaes.c's
-# functions and nowhere else (docs/decisions.md 81 and 88). gcm_vaes.c
-# holds the 256-bit kernels on x86-64 and nothing on arm64. bin/aes_runtime_test counts the
-# calls into those three files and finds none under the answer that the
-# instructions are absent; this shows that no other file of the object
-# runs them.
+# functions and nowhere else (docs/decisions.md 81, 88 and 89). gcm_vaes.c
+# holds the 256-bit kernels on x86-64 and nothing on arm64.
+# bin/aes_runtime_test counts the calls into those files and finds none
+# without the CH_CPU_CONSTANT_TIME_AES bit; this shows that no other file
+# of the object runs them.
 #
 # QEMU's arm64 models all implement the AES extension, so
-# test/aes-runtime-qemu.sh runs the absent answer on an x86-64 CPU model
-# alone, and on arm64 this script is what reads the object. CI's arm64 job
+# test/aes-runtime-qemu.sh runs the rows without the bit on an x86-64 CPU
+# model alone, and on arm64 this script is what reads the object. CI's arm64 job
 # runs it. It runs on x86-64 as well.
 #
-# It builds the three AES=runtime objects make check links, with this
-# host's compiler and no instruction flag: the TCP server
-# (check-lib-server-aes-runtime), the ROLE=both TRUST=webpki QUIC object
-# (check-lib-quic-aes-runtime) and the raw QUIC client
-# (check-lib-quic-raw-aes-runtime). For each it disassembles every
+# It builds three host objects with this host's compiler and no
+# instruction flag: the TCP server with the suite (check-lib-server-aes),
+# the ROLE=both TRUST=webpki QUIC object with the suite
+# (check-lib-quic-aes), and the TRUST=webpki QUIC client without it, whose
+# AES runs QUIC's public keys alone. For each it disassembles every
 # source's object and requires:
 #
 #   - no AES or carry-less multiply instruction in any object but
@@ -45,7 +45,7 @@ x86_64-*)
     clmul='^v?pclmul'
     ;;
 *)
-    echo "aes-runtime-disasm: $machine is neither arm64 nor x86-64, the two AES=runtime targets" >&2
+    echo "aes-runtime-disasm: $machine is neither arm64 nor x86-64, the two host targets" >&2
     exit 1
     ;;
 esac
@@ -66,21 +66,17 @@ count() {
     awk -v pattern="$2" '$2 ~ pattern { n++ } END { print n + 0 }' <<< "$1"
 }
 
-lib_cflags=$(make -s --no-print-directory print-lib-cflags) || exit 1
-# Each object's make variables. The first two carry SUITE=aesgcm, which
-# ct.h refuses on AES=runtime without the CH_NATIVE_AES statement their
-# check legs make.
+# Each object's make variables. Each is a host object on this compiler,
+# and the HOST_TARGET=yes beside them makes the build fail rather than
+# package a device object where the host test does not pass.
 objects=(
-    "ROLE=server TRUST=none SUITE=aesgcm AES=runtime"
-    "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime KEYLOG=on EXPORTER=off"
-    "TRANSPORT=quic-nonblocking EXPORTER=off AES=runtime"
+    "ROLE=server TRUST=none SUITE=aesgcm"
+    "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm KEYLOG=on EXPORTER=off"
+    "TRANSPORT=quic-nonblocking TRUST=webpki EXPORTER=off"
 )
 rc=0
 for object in "${objects[@]}"; do
-    read -r -a vars <<< "RAND=extern $object"
-    case " $object " in
-    *" SUITE=aesgcm "*) vars+=("CFLAGS=$lib_cflags -DCH_NATIVE_AES") ;;
-    esac
+    read -r -a vars <<< "RAND=extern HOST_TARGET=yes $object"
     lines=$(make -s --no-print-directory "${vars[@]}" lib-pair-object) ||
         { echo "aes-runtime-disasm: [$object]: the build failed" >&2; exit 1; }
     obj=$(tail -n 3 <<< "$lines" | sed -n 1p)

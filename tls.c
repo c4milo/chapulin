@@ -142,14 +142,6 @@ int tlsi_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
-#ifdef CH_AES_RUNTIME
-    // The caller's answer about the AES instructions (cfg.h). A raw or ca
-    // client offers ChaCha20 alone, and the ROLE=both object that holds
-    // one still asks every session for the answer.
-    if (!suite_aes_instructions_ok(cfg)) {
-        return 0;
-    }
-#endif
 #ifdef CH_WIDEMUL_RUNTIME
     // The caller's answer about the widening multiply (cpu_cfg.h).
     if (!widemul_answer_ok(cfg)) {
@@ -384,15 +376,9 @@ int tlsi_config_ok(const ch_cfg *cfg) {
     }
 #endif
 #ifdef CH_CPU_RUNTIME
-    // The caller's description of its CPU (cpu_cfg.h).
-    if (!cpu_bits_ok(cfg)) {
-        return 0;
-    }
-#endif
-#ifdef CH_AES_RUNTIME
-    // The caller's answer about the AES instructions (cfg.h), before
+    // The caller's description of its CPU (cpu_cfg.h), before
     // webpki_cfg_ok's suite rule reads it.
-    if (!suite_aes_instructions_ok(cfg)) {
+    if (!cpu_bits_ok(cfg)) {
         return 0;
     }
 #endif

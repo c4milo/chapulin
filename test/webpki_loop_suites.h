@@ -1,8 +1,8 @@
 // The three cipher suites of a SUITE=aesgcm build, end to end: this
 // tree's TRUST=webpki client against this tree's server, the ROLE=both
 // TRANSPORT=tcp-nonblocking TRUST=webpki object compiled with -DCH_SUITE_AES_GCM.
-// bin/webpki_loop_aes runs them on AES=hw and bin/webpki_loop_aes_extern on
-// AES=extern; test/webpki_loop_test.c includes this
+// bin/webpki_loop_aes runs them in a host object and bin/webpki_loop_aes_extern
+// on AES=extern; test/webpki_loop_test.c includes this
 // file after its fixtures, and a build without the define compiles none
 // of it.
 //
@@ -89,8 +89,8 @@ static void check_ticket_hash_mismatch(void) {
 
 // The default orders, with no ch_srv_cfg.cipher_suites and no
 // ch_cfg.cipher_suites: the client offers all three and the server takes
-// ORDER_DEFAULT_PICK (test/webpki_loop_order.h), AES-256-GCM on AES=hw
-// and ChaCha20 on AES=extern, and the ticket's PSK is as long as that
+// ORDER_DEFAULT_PICK (test/webpki_loop_order.h), AES-256-GCM in a host
+// object and ChaCha20 on AES=extern, and the ticket's PSK is as long as that
 // suite's hash.
 static void check_default_order(void) {
     ch_cfg scfg;
@@ -130,7 +130,8 @@ static int select_under(const client_hello *ch, const uint16_t *order, size_t co
 
 // The server parses that offer to the two AES-GCM bits, and its default
 // order selects the first AES suite in it, whatever order the client
-// listed them in: AES-256-GCM on AES=hw, whose order puts it first, and
+// listed them in: AES-256-GCM in a host object whose server states the
+// AES instructions, as TEST_CPU does here, whose order puts it first, and
 // AES-128-GCM on AES=extern, whose order puts ChaCha20 and then
 // AES-128-GCM first (docs/decisions.md 80). An order that names
 // AES-128-GCM first selects that, and one that names ChaCha20 alone finds
@@ -149,7 +150,7 @@ static void check_h3spec_offer(void) {
     selection sel;
     uint8_t select_alert = 0;
     CHECK(select_under(&ch, NULL, 0, &sel, &select_alert) == CH_OK);
-#if (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) && defined(CH_NATIVE_AES)
+#ifdef CH_CPU_RUNTIME
     CHECK(sel.suite == SUITE_AES_256_GCM_SHA384 && sel.hash_len == SHA384_LEN);
 #else
     CHECK(sel.suite == SUITE_AES_128_GCM_SHA256 && sel.hash_len == SHA256_LEN);

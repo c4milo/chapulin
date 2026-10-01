@@ -21,10 +21,13 @@
 // aes_public_key a body here, which INV-26 admits in a test and the
 // Semgrep rule excludes `test` for.
 //
-// bin/quic_test runs AES=soft, bin/quic_test_hw runs the same vectors on
-// AES=hw, and bin/quic_test_extern runs them on AES=extern, whose
-// ch_aes_block is test/aes_extern_hook.c, so every standard below is
-// answered by all three implementations.
+// bin/quic_test runs AES=soft, bin/quic_test_hw runs the same vectors in a
+// QUIC host object, and bin/quic_test_extern runs them on AES=extern,
+// whose ch_aes_block is test/aes_extern_hook.c, so every standard below is
+// answered by all three implementations. A host object holds the AES
+// instructions and the table, so bin/quic_test_hw runs every vector twice:
+// with test_initial_cpu stating the instructions, and with the probe's bit
+// alone, which puts the Initial keys on the table (test/initial_cpu.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +39,8 @@
 #include "quic_keys.h"
 #include "quic_packet.h"
 #include "quic_retry.h"
+
+#include "initial_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -403,7 +408,7 @@ static void test_appendix_a5_keys(void) {
 // quic_packet.c adds the protected header, the A.3 packet and the round
 // trip here.
 
-int main(void) {
+static void run_vectors(void) {
     test_fips197_blocks();
 #ifdef CH_AES_256
     test_fips197_aes256();
@@ -444,9 +449,22 @@ int main(void) {
     test_handshake_open();
     test_aead_limits();
     test_rfc9369_appendix_a();
+}
+
+int main(void) {
+    run_vectors();
+#ifdef CH_AES_TWO_CIPHERS
+    test_initial_cpu = CH_CPU_PROBED;
+    run_vectors();
+    static const char ciphers[] =
+        ", with the Initial keys on the AES instructions and on the table";
+#else
+    static const char ciphers[] = "";
+#endif
     if (failures == 0) {
         (void)printf("quic vectors: FIPS 197, SP 800-38D, RFC 9001 Appendix A and RFC 9369"
-                     " Appendix A agree\n");
+                     " Appendix A agree%s\n",
+                     ciphers);
     }
     return failures != 0;
 }

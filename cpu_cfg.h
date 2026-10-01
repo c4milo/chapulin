@@ -1,5 +1,5 @@
 // What a caller states about the CPU a session runs on: the bits of ch_cfg.cpu in a host object,
-// and the answers the older fields about that CPU take. cfg.h includes this header.
+// and the answers ch_cfg.widemul takes. cfg.h includes this header.
 //
 // It sits beside cfg.h for the reason srv_cfg.h does: cfg.h stood at 499 lines
 // against the 500-line cap CLAUDE.md sets and make lint-size holds.
@@ -40,6 +40,12 @@
 // AESDEC, AESIMC, AESKEYGENASSIST, PCLMULQDQ, VAESENC and VPCLMULQDQ, which hold on Ice Lake,
 // Gracemont and later parts while the operating system has set DOITM. The bit is the caller's
 // statement, because the caller probes the CPU and sets the mode, and nothing here can check it.
+// A session with the bit runs QUIC's Initial packets and their header protection on the
+// instructions, and in a SUITE=aesgcm object it offers and prefers the AES-GCM suites in
+// docs/decisions.md 80's order. A session without it runs neither instruction: Initial packets
+// take the software AES, whose keys are public (INV-26), the session holds ChaCha20 alone, and
+// init refuses a cipher_suites list that names an AES-GCM suite. A Retry tag takes the software
+// AES whatever the bit says, and a traffic key never does (docs/decisions.md 81).
 //
 // CH_CPU_CONSTANT_TIME_MULTIPLY states that the widening multiply runs in constant time on the
 // CPU, in that mode: MADD, UMULH, MUL and MULX are on the same two lists. On arm64 that needs a
@@ -49,9 +55,9 @@
 // CH_CPU_AVX2 says the CPU has AVX2, and CH_CPU_VAES that it has VAES and VPCLMULQDQ on 256-bit
 // registers. Both are x86-64 bits.
 //
-// No path reads the four bits after CH_CPU_PROBED yet: the AES, CHACHA, WIDEMUL and X25519 build
-// variables still choose what each object runs, and the commits docs/decisions.md 89 lists move
-// each choice to its bit.
+// No path reads the last three bits yet: the CHACHA, WIDEMUL and X25519 build variables still
+// choose what each object runs, and the commits docs/decisions.md 89 lists move each choice to its
+// bit.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64, or a bit
@@ -72,18 +78,6 @@
 #define CH_CPU_DEFINED (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY)
 #endif
 #endif // CH_CPU_RUNTIME
-
-// The two answers ch_cfg.aes_instructions takes in an AES=runtime object (-DCH_AES_RUNTIME,
-// docs/decisions.md 81). 0 is neither, so a configuration that never set the field is
-// refused. The object chooses which AES runs, so it needs one it carries: QUIC's public-key
-// packets or the AES-GCM suites, and a TCP object without SUITE=aesgcm carries neither.
-#ifdef CH_AES_RUNTIME
-#define CH_AES_INSTRUCTIONS_PRESENT 1
-#define CH_AES_INSTRUCTIONS_ABSENT 2
-#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_SUITE_AES_GCM)
-#error "AES=runtime chooses an AES this object does not carry: build it for QUIC or SUITE=aesgcm"
-#endif
-#endif
 
 // The two answers about ct.h's widening multiply. Every operation built on it runs under one of
 // them (widemul.h). CH_WIDEMUL_CONSTANT_TIME says the multiply runs in constant time on this CPU,

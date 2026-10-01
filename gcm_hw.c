@@ -1,6 +1,7 @@
-// AES=hw and AES=runtime: AES-GCM's work over whole blocks on the AES
-// instructions and the carry-less multiply. gcm_hw.h states the two
-// contracts; this file implements them and nothing else.
+// AES-GCM's work over whole blocks on the AES instructions and the
+// carry-less multiply, in a host object (-DCH_CPU_RUNTIME, cpu_cfg.h) that
+// carries AES. gcm_hw.h states the two contracts; this file implements
+// them and nothing else.
 //
 // Counter mode runs GCM_HW_PASS_BLOCKS counter blocks through each round
 // together. The rounds of one block do not depend on another block's, so
@@ -20,22 +21,23 @@
 // arithmetic is ghash_vector.h's, the same steps ghash_hw.c runs, and the
 // last pass's ciphertext is hashed after the loop.
 //
-// Two instruction sets, as for aes_hw.c and ghash_vector.h, and the same
-// macros pick between them: this file needs both the AES instructions and
-// the carry-less multiply, which __ARM_FEATURE_AES names together on Arm
-// and __AES__ and __PCLMUL__ name apart on x86-64. AES=runtime compiles
-// this file with no instruction flag, and the pragma below puts the target
-// attribute on each function in it, "+aes" on arm64 and "aes,pclmul" on
-// x86-64. gcm.c calls this file only for a schedule the AES instructions
-// run (aes_schedule.h). On x86-64 each entry first asks use_vaes whether
-// to hand its blocks to gcm_vaes.c, which runs the same loops two blocks
-// to a 256-bit register on VAES and VPCLMULQDQ (gcm_vaes.h).
+// Two instruction sets, as for aes_hw.c and ghash_vector.h, and the
+// architecture picks between them: this file needs both the AES
+// instructions and the carry-less multiply, which the Arm AES extension
+// holds together and x86-64 names apart, AES-NI and PCLMULQDQ. The object
+// compiles this file with no instruction flag, and the pragma below puts
+// the target attribute on each function in it, "+aes" on arm64 and
+// "aes,pclmul" on x86-64. gcm.c calls this file only for a schedule the
+// AES instructions run (aes_schedule.h). On x86-64 each entry first asks
+// use_vaes whether to hand its blocks to gcm_vaes.c, which runs the same
+// loops two blocks to a 256-bit register on VAES and VPCLMULQDQ
+// (gcm_vaes.h).
 //
 // Timing. No line here branches on an operand or indexes memory with one.
 // The branches read the round count and the block count, which are the
 // suite's and the record's length. aes_hw.c states what the AES
-// instructions can and cannot claim, and CH_NATIVE_AES is the build's
-// statement for both instructions.
+// instructions can and cannot claim, and the caller's
+// CH_CPU_CONSTANT_TIME_AES bit is the statement for both instructions.
 //
 // Every value the seal computes from the key sits in one gcm_hw_state,
 // wiped once when the call ends: the powers of H, the sums of a pass's
@@ -49,7 +51,7 @@
 #include "gcm_hw.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 #include <string.h>
@@ -58,16 +60,9 @@
 #include "gcm_vaes.h"
 #include "ghash_vector.h"
 
-// ghash_vector.h picks the architecture and refuses a build without the
-// carry-less multiply; an AES=hw build for x86-64 needs AES-NI as well.
-#if !defined(CH_AES_RUNTIME) && !defined(GHASH_VECTOR_ARM) && !defined(__AES__)
-#error                                                                                             \
-    "AES=hw needs the AES instructions: compile with -march=armv8-a+crypto or -maes -mpclmul, or build AES=soft"
-#endif
-
-// Under AES=runtime, every function from here to the pop at the end of
-// this file carries the target attribute that turns both instructions on.
-#ifdef CH_AES_RUNTIME
+// Every function from here to the pop at the end of this file carries
+// the target attribute that turns both instructions on. ghash_vector.h
+// picks the architecture.
 #ifdef __clang__
 #ifdef GHASH_VECTOR_ARM
 #pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
@@ -80,7 +75,6 @@
 #pragma GCC target("+aes")
 #else
 #pragma GCC target("aes,pclmul")
-#endif
 #endif
 #endif
 
@@ -298,11 +292,12 @@ static inline void xor_pass_in_place(aes_state states[GCM_HW_PASS_BLOCKS], const
 #ifdef __x86_64__
 // Whether the three entries below hand their blocks to gcm_vaes.c's
 // 256-bit kernels. Two bits of ch_cfg.cpu, which the caller sets from its
-// own probe of the CPU, decide it once that field exists: the kernels run
-// only where CH_CPU_VAES says the CPU has VAES and VPCLMULQDQ and
+// own probe of the CPU, are to decide it: the kernels run only where
+// CH_CPU_VAES says the CPU has VAES and VPCLMULQDQ and
 // CH_CPU_CONSTANT_TIME_AES claims the AES instructions and the carry-less
-// multiply run in constant time. Until then it is 0, and no call runs the
-// kernels. chapulin probes no CPU (docs/decisions.md 90).
+// multiply run in constant time. No call passes the bits here yet, so it
+// is 0, and no call runs the kernels. chapulin probes no CPU
+// (docs/decisions.md 89 and 90).
 static int use_vaes(void) {
     return 0;
 }
@@ -424,13 +419,11 @@ void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
     ct_wipe(&s, sizeof s);
 }
 
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #pragma clang attribute pop
 #else
 #pragma GCC pop_options
 #endif
-#endif
 
-#endif // CH_AES_HW || CH_AES_RUNTIME
+#endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

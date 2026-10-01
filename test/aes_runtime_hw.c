@@ -3,7 +3,7 @@
 // a count and a call (test/aes_runtime_count.h). test/aes_runtime_soft.c
 // states why the #defines come before the includes.
 //
-// The files compile here as an AES=runtime build compiles them: with no
+// The files compile here as a host object compiles them: with no
 // instruction flag, each function turning the instructions on through its
 // own target attribute. The entries below carry none, and call the
 // renamed ones, so a count runs on any CPU, and an instruction runs only

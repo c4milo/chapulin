@@ -107,9 +107,9 @@ static void test_quic_hello_boundary(void) {
     cfg.transport_params_len = sizeof transport;
     cfg.spki_pin_count = 1;
     cfg.anchor_count = 1;
-#ifdef CH_AES_RUNTIME
-    // The answer that offers all three suites, the longest list.
-    cfg.aes_instructions = CH_AES_INSTRUCTIONS_PRESENT;
+#ifdef CH_CPU_RUNTIME
+    // The AES bit, which offers all three suites, the longest list.
+    cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
 #endif
 #define BUILD_HELLO(cap)                                                                           \
     hs_build_client_hello(out, (cap), &cfg, ek, NULL, pub, random32, 0, cookie, sizeof cookie)

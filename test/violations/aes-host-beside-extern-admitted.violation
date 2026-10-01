@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes_block.h
+catches: test/quic-builds.sh
+reason: aes_block.h stops refusing a host object beside AES=extern, so a
+  tree with its own build system compiles aes_hw.c and aes_extern.c into
+  one object. Both define aes_block.h's entries, and the object's link
+  then names a duplicate symbol, not the build choice that caused it.
+  quic-builds.sh compiles aes_block.h under both defines and requires the
+  refusal at the preprocessor.
+
+--- old
+#if defined(CH_CPU_RUNTIME) && defined(CH_AES_EXTERN)
+#error "CH_AES_EXTERN is a device object's AES: a host object holds the AES instructions"
+#endif
+--- new

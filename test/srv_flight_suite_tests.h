@@ -13,17 +13,18 @@
 #include "srv_flight_tests.h"
 
 // Which suite srv_select picks by its default order, in a build that has
-// three (docs/decisions.md 80). bin/srv_flight_test_aes builds on AES=hw
-// with CH_NATIVE_AES, whose order is AES-256-GCM, AES-128-GCM, then
-// ChaCha20. The expectations read the build's defines rather than
-// suite.h, so a build on AES=extern would expect ChaCha20 first.
+// three (docs/decisions.md 80). bin/srv_flight_test_aes builds a host
+// object whose cases state the AES instructions (flight_cpu), whose order
+// is AES-256-GCM, AES-128-GCM, then ChaCha20. The expectations read the
+// build's defines rather than suite.h, so a build on AES=extern would
+// expect ChaCha20 first.
 //
 // It runs only under -DCH_SUITE_AES_GCM. A build with one suite has
 // nothing to choose between, and SRV_SUITE_AES_128_GCM is not declared
 // there at all.
 static void test_flight_select_suite(void) {
     selection sel;
-#if (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) && defined(CH_NATIVE_AES)
+#ifdef CH_CPU_RUNTIME
     const uint16_t first_of_three = SUITE_AES_256_GCM_SHA384;
     const uint16_t first_of_two = SUITE_AES_128_GCM_SHA256;
 #else
@@ -163,18 +164,17 @@ static void test_flight_key_suite(void) {
     CHECK(seals_and_opens(&peer, &sess.rd));
 }
 
-#ifdef CH_AES_RUNTIME
-// An AES=runtime server whose caller found no AES instructions holds
-// ChaCha20 alone (docs/decisions.md 81). From an offer of all three it
-// selects ChaCha20, and from an offer of AES-GCM alone nothing, with
-// handshake_failure. A retry cookie that names AES-128-GCM, which a
-// server with the instructions minted under the same cookie key, is
-// refused with illegal_parameter, because this session cannot run the
-// suite the cookie holds it to; the same cookie opens under the present
-// answer.
+#ifdef CH_CPU_RUNTIME
+// A host object's server whose caller did not set CH_CPU_CONSTANT_TIME_AES
+// holds ChaCha20 alone (docs/decisions.md 81 and 89). From an offer of all
+// three it selects ChaCha20, and from an offer of AES-GCM alone nothing,
+// with handshake_failure. A retry cookie that names AES-128-GCM, which a
+// server with the bit minted under the same cookie key, is refused with
+// illegal_parameter, because this session cannot run the suite the cookie
+// holds it to; the same cookie opens under the bit.
 static void test_flight_without_aes(void) {
     selection sel;
-    flight_aes_answer = CH_AES_INSTRUCTIONS_ABSENT;
+    flight_cpu = CH_CPU_PROBED;
     flight_reset();
     offer_x25519();
     flight_hello.suites =
@@ -185,7 +185,7 @@ static void test_flight_without_aes(void) {
     flight_hello.suites = SRV_SUITE_AES_128_GCM | SRV_SUITE_AES_256_GCM;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
 
-    flight_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
+    flight_cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
     flight_reset();
     srv_begin(&hs);
     offer_x25519();
@@ -201,10 +201,10 @@ static void test_flight_without_aes(void) {
     flight_hello.shares = flight_hello.groups;
     selection second;
     memset(&second, 0, sizeof second);
-    sess.cfg.aes_instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    sess.cfg.cpu = CH_CPU_PROBED;
     CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_EPROTO);
     CHECK(hs.alert == ALERT_ILLEGAL_PARAMETER && second.suite == 0);
-    sess.cfg.aes_instructions = CH_AES_INSTRUCTIONS_PRESENT;
+    sess.cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
     CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_OK);
     CHECK(second.suite == SUITE_AES_128_GCM_SHA256);
 }

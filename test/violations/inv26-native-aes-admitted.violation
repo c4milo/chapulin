@@ -1,0 +1,16 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: ct.h stops refusing CH_NATIVE_AES, the build's statement about the
+  AES instructions before docs/decisions.md 89, so a build line that still
+  writes it compiles and reads as a statement nobody reads. A host
+  object's caller states the timing in ch_cfg.cpu, and a firmware tree
+  that kept the define would believe it still carried the claim.
+  quic-builds.sh compiles ct.h with the define, alone and beside a host
+  suite build, and requires the refusal.
+
+--- old
+#ifdef CH_NATIVE_AES
+#error "CH_NATIVE_AES is gone: a host object's caller states the AES timing (cpu_cfg.h)"
+#endif
+--- new

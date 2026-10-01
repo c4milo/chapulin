@@ -1,0 +1,14 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites on the
+  AES=soft table, so quic_packet.c hands the S-box the Handshake and 1-RTT
+  packet and header protection keys, which come from traffic secrets, and
+  the table is indexed with them. The TLS suite build still refuses the
+  table, so only the QUIC check sees it: quic-builds.sh compiles
+  quic_packet.c under the suite on AES=soft and requires the refusal.
+
+--- old
+#if !defined(CH_CPU_RUNTIME) && !defined(CH_AES_EXTERN)
+--- new
+#if !defined(CH_CPU_RUNTIME) && !defined(CH_AES_EXTERN) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)

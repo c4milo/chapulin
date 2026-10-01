@@ -29,11 +29,11 @@
 // no epoch callback. The age, the lifetime and the ticket's version take
 // any value their types hold. Under SUITE=aesgcm, quic_config_webpki_suite adds the client's
 // suite list: no list and no count, or 1 to SUITE_HELD_COUNT suites the
-// build holds, none repeated, with no entry read past that cap. Under
-// AES=runtime, quic_config_webpki_runtime adds the caller's answer about
-// the AES instructions, any byte: CH_OK only for one of the two answers
-// cfg.h names, and under the absent one only for a list that names no
-// AES-GCM suite (docs/decisions.md 81).
+// build holds, none repeated, with no entry read past that cap. That
+// build is a host object (-DCH_CPU_RUNTIME), which adds ch_cfg.cpu, any
+// 32-bit value: CH_OK only for a value with CH_CPU_PROBED and no bit
+// cpu_cfg.h leaves undefined, and without CH_CPU_CONSTANT_TIME_AES only
+// for a list that names no AES-GCM suite (docs/decisions.md 81 and 89).
 //
 // Three callees are contract stubs, each proven by its own harness.
 // webpki_hostname_ok asserts it may read the name and answers 1 only for
@@ -297,16 +297,17 @@ static int suites_hold(void) {
 }
 #endif
 
-#ifdef CH_AES_RUNTIME
-// The runtime half, as cfg.h states it: one of the two answers, and under
-// the absent one no AES-GCM suite in the caller's list. The loop stops at
-// the list's own size whatever the count says.
-static int answer_holds(void) {
-    if (cfg.aes_instructions == CH_AES_INSTRUCTIONS_PRESENT) {
-        return 1;
-    }
-    if (cfg.aes_instructions != CH_AES_INSTRUCTIONS_ABSENT) {
+#ifdef CH_CPU_RUNTIME
+// The host object's half, as cpu.h and suite.h state it: CH_CPU_PROBED,
+// no bit outside the architecture's defined set, and without the AES bit
+// no AES-GCM suite in the caller's list. The loop stops at the list's own
+// size whatever the count says.
+static int cpu_holds(void) {
+    if ((cfg.cpu & CH_CPU_PROBED) == 0 || (cfg.cpu & ~(uint32_t)CH_CPU_DEFINED) != 0) {
         return 0;
+    }
+    if ((cfg.cpu & CH_CPU_CONSTANT_TIME_AES) != 0) {
+        return 1;
     }
     for (size_t i = 0;
          cfg.cipher_suites != NULL && i < cfg.cipher_suite_count && i < SUITE_HELD_COUNT; i++) {
@@ -327,8 +328,8 @@ int main(void) {
 #ifdef CH_CLIENT_AES_SUITES
     havoc_suites();
 #endif
-#ifdef CH_AES_RUNTIME
-    cfg.aes_instructions = nondet_u8();
+#ifdef CH_CPU_RUNTIME
+    cfg.cpu = nondet_u32();
 #endif
     t.cfg = cfg;
     int rc = quic_config_ok(&t, &cfg);
@@ -341,8 +342,8 @@ int main(void) {
 #ifdef CH_CLIENT_AES_SUITES
         __CPROVER_assert(suites_hold(), "CH_OK keeps the client suite rule");
 #endif
-#ifdef CH_AES_RUNTIME
-        __CPROVER_assert(answer_holds(), "CH_OK keeps the AES instructions answer rule");
+#ifdef CH_CPU_RUNTIME
+        __CPROVER_assert(cpu_holds(), "CH_OK keeps the ch_cfg.cpu rule");
 #endif
     }
     return 0;

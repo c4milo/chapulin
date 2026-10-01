@@ -1,13 +1,15 @@
-// The AES=hw implementation under a second name, and gcm_hw.c's counter
-// mode over whole blocks, which runs on it. test/aes_equiv_soft.c states
-// why the renames are here and what they rewrite; gcm_hw.c's entries have
-// no soft twin to collide with, so they keep their names.
+// The AES instructions' implementation under a second name, and gcm_hw.c's
+// counter mode over whole blocks, which runs on it. test/aes_equiv_soft.c
+// states why the renames are here and what they rewrite; gcm_hw.c's
+// entries have no soft twin to collide with, so they keep their names.
 //
-// CH_AES_HW is defined here rather than on the compile line because the
-// same line compiles test/aes_equiv_soft.c, whose body is guarded off by
-// that macro. Each wrapper turns on its own arm. CH_AES_256_TEST turns on
-// the AES-256 entries, the instructions a -DCH_SUITE_AES_GCM build runs.
-#define CH_AES_HW 1
+// CH_CPU_RUNTIME, the host object's define, is set here rather than on the
+// compile line because the same line compiles test/aes_equiv_soft.c, which
+// needs quic_aes_soft.c under aes_block.h's own entry names: a QUIC host
+// object compiles that file under the aes_soft_ names instead. Each
+// wrapper turns on its own arm. CH_AES_256_TEST turns on the AES-256
+// entries, the instructions a -DCH_SUITE_AES_GCM build runs.
+#define CH_CPU_RUNTIME 1
 #define CH_AES_256_TEST 1
 #define aes_expand_round_keys aes_expand_round_keys_hw
 #define aes_cipher_block aes_cipher_block_hw

@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes_block.h
+catches: test/quic-builds.sh
+reason: aes_block.h stops refusing CH_AES_HW and CH_AES_RUNTIME, the
+  defines that chose the AES instructions when the object was built. A
+  tree with its own build system that still writes one then compiles the
+  AES=soft table under it, with no error, and believes it holds the
+  instructions (docs/decisions.md 89). quic-builds.sh compiles aes_block.h
+  under each define and requires the refusal.
+
+--- old
+#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#error "AES=hw and AES=runtime are gone: a host object holds the AES instructions (decision 89)"
+#endif
+--- new

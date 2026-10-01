@@ -21,6 +21,7 @@
 // the derivation rows below.
 #include "aes_block.h"
 #include "aes_public_key.h"
+#include "initial_cpu.h"
 
 // FIPS 197 fixes the key and the block at 128 bits, so the only domain
 // to sample is their contents.
@@ -50,7 +51,7 @@ static void diff_aes128(void) {
 
 #ifdef CH_AES_256
 // The same over a 256-bit key: TLS_AES_256_GCM_SHA384's cipher, on the
-// software reference under AES=soft and on the instructions under AES=hw.
+// software reference under AES=soft and on the instructions in a host object.
 static void diff_aes256(void) {
     for (int i = 0; i < 200; i++) {
         uint8_t key[AES_256_KEY];

@@ -479,96 +479,90 @@ that does not exist.
 
 ### The AES axis, and what each value means
 
-The Makefile `AES` variable picks which implementation of the AES-128 key
-expansion and forward cipher an object carries. `aes_block.h` states the
-contract all three meet, and `aes.c` calls it: that file owns the
-`aes_public_key`, derives the RFC 9001 keys into it, and hands round keys down
-as plain bytes.
+A device object's Makefile `AES` variable picks which implementation of the
+AES-128 key expansion and forward cipher it carries, and a host object, the
+one `TRUST=webpki`, `ROLE=server` and `ROLE=both` build on arm64 or x86-64
+(`docs/decisions.md` entry 89), carries the AES instructions and takes no
+`AES` value. `aes_block.h` states the contract every implementation meets,
+and `aes.c` calls it: that file owns the `aes_public_key`, derives the RFC
+9001 keys into it, and hands round keys down as plain bytes.
 
-| value | source | what it is |
+| object | source | what it is |
 | --- | --- | --- |
-| `soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
-| `hw` | `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` | the compiler's AES intrinsics, ARMv8 or x86-64, GHASH on the carry-less multiply, and counter mode and the one-pass seal on both |
-| `extern` | `aes_extern.c` | forwards to `ch_aes_block`, which the image defines, with a 16-byte or a 32-byte key |
-| `runtime` | `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c`, and in a QUIC object `quic_aes_soft.c` | `hw`'s three files with the instructions turned on per function, and the table beside them for QUIC's public keys; the caller's answer, `ch_cfg.aes_instructions`, picks for each session |
+| device, `AES=soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
+| device, `AES=extern` | `aes_extern.c` | forwards to `ch_aes_block`, which the image defines, with a 16-byte or a 32-byte key |
+| host | `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c`, and in a QUIC object `quic_aes_soft.c` | the compiler's AES intrinsics, ARMv8 or x86-64, turned on per function, GHASH on the carry-less multiply, and counter mode and the one-pass seal and open on both; the table beside them for QUIC's public keys; the caller's `CH_CPU_CONSTANT_TIME_AES` bit in `ch_cfg.cpu` picks for each session |
 
-`AES=hw` is the one value that changes GHASH and counter mode as well as the
-cipher. Under `CH_AES_HW`, `gcm.c`'s `multiply_by_subkey` and `hash_data` call
-`gcm_multiply_by_subkey_hw` and `gcm_hash_data_hw` in `ghash_hw.c`, which
-compute the same GF(2^128) products with three carry-less 64-bit products per
-block, Karatsuba's form, in vector registers. The data loop multiplies up to eight
-blocks by powers of H, which each call computes first, and reduces once per pass,
-with two more carry-less products. `AES=soft` and `AES=extern` run `gcm.c`'s portable
-multiply, 128 masked steps per block, and compile no `ghash_hw.c`. Counter
-mode's whole blocks go to `gcm_hw.c`'s `gcm_counter_blocks_hw`, which runs
-eight counter blocks through the rounds together and wipes its keystream once
-per call, and a seal's whole passes of eight blocks go to its
-`gcm_seal_passes_hw`, which runs each pass's AES rounds and then GHASH's
-products of the pass before in one loop, so the core runs both instructions at
-once. The table and a peripheral run one block per call, and so does the last
-partial block on every value. `ghash_hw.h` and `gcm_hw.h` state the contracts,
-and `ghash_vector.h` holds the GHASH steps both `.c` files compile. Each is a
+The host object is the one that changes GHASH and counter mode as well as
+the cipher. For a schedule on the instructions, `gcm.c`'s
+`multiply_by_subkey` and `hash_data` call `gcm_multiply_by_subkey_hw` and
+`gcm_hash_data_hw` in `ghash_hw.c`, which compute the same GF(2^128)
+products with three carry-less 64-bit products per block, Karatsuba's form,
+in vector registers. The data loop multiplies up to eight blocks by powers
+of H, which each call computes first, and reduces once per pass, with two
+more carry-less products. A device object runs `gcm.c`'s portable multiply,
+128 masked steps per block, and compiles no `ghash_hw.c`, and so does a
+QUIC host object for a schedule on the table. Counter mode's whole blocks
+go to `gcm_hw.c`'s `gcm_counter_blocks_hw`, which runs eight counter blocks
+through the rounds together and wipes its keystream once per call, and a
+seal's whole passes of eight blocks go to its `gcm_seal_passes_hw`, which
+runs each pass's AES rounds and then GHASH's products of the pass before in
+one loop, so the core runs both instructions at once. The table and a
+peripheral run one block per call, and so does the last partial block in
+every object. `ghash_hw.h` and `gcm_hw.h` state the contracts, and
+`ghash_vector.h` holds the GHASH steps both `.c` files compile. Each is a
 pair of its own rather than more entries in `aes_block.h`, because `aes.c`
 alone calls that header and `gcm.c` alone calls these two.
 
-One implementation per object, the way a `TRUST` value puts one pinned algorithm in one
-object, with one exception. All three define the same two entries, so a second
-one would not link; `lint-trust-separation` checks the packaged source list per
-`AES` value, and
-`test/violations/aes-two-implementations-in-one-object.violation` is the mutant
-that proves it fires. The exception is `AES=runtime`'s QUIC object
-(`docs/decisions.md` entry 81). It holds `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c`
-and `quic_aes_soft.c`, whose two entries take the names
-`aes_soft_expand_round_keys` and `aes_soft_cipher_block` there, so the four link
-together. Each
-`aes_key_schedule` records the cipher that expanded it, and `aes.c` and `gcm.c`
-run it on that one: an Initial key on the instructions when the caller's answer
-is `CH_AES_INSTRUCTIONS_PRESENT` and on the table otherwise, the Retry key on
-the table, and a traffic key on the instructions under either answer. A session
-whose caller answered `CH_AES_INSTRUCTIONS_ABSENT` also holds ChaCha20 alone for
-traffic, so it runs no AES instruction and no carry-less multiply. The lint's
-`AES=runtime` rows admit that pair and no other, and its TCP suite object holds
-no table.
+One implementation per device object, the way a `TRUST` value puts one
+pinned algorithm in one object. The table and `aes_extern.c` define the
+same two entries, so a second one would not link; `lint-trust-separation`
+checks the packaged source list per build, and
+`test/violations/aes-two-implementations-in-one-object.violation` is the
+mutant that proves it fires. The host object's QUIC object is the one pair
+admitted (`docs/decisions.md` entries 81 and 89). It holds `aes_hw.c`,
+`ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c` and `quic_aes_soft.c`, whose two
+entries take the names `aes_soft_expand_round_keys` and
+`aes_soft_cipher_block` there, so the five link together. Each
+`aes_key_schedule` records the cipher that expanded it, and `aes.c` and
+`gcm.c` run it on that one: an Initial key on the instructions when the
+session's `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_AES` and on the table
+otherwise, the Retry key on the table, and a traffic key on the
+instructions whatever the bits say. A session without the bit also holds
+ChaCha20 alone for traffic, so it runs no AES instruction and no
+carry-less multiply. The lint's host rows admit that pair and no other,
+and its TCP suite host object holds no table.
 
 The entries take plain byte arrays rather than an `aes_key_schedule`. That is
 INV-26's first check holding: `aes_public_key.h` is the one file that gives
 `aes_public_key` a body, exactly three sources include it, and an
 implementation that took the struct would have to become a fourth. Taking
-bytes keeps the count at three, so none of the three implementations can build
-a key object at all.
+bytes keeps the count at three, so none of the implementations can build a
+key object at all.
 
-**Detection is the compiler's, at build time, or under `AES=runtime` the
-caller's, at run time.** `aes_hw.c` guards on
-`__ARM_FEATURE_AES` (ARMv8 crypto extensions, `<arm_neon.h>`, `vaeseq_u8` and
-`vaesmcq_u8`) and `__AES__` (x86-64 AES-NI, `<wmmintrin.h>`, `_mm_aesenc_si128`,
-`_mm_aesenclast_si128` and `_mm_aeskeygenassist_si128`). `ghash_hw.c`
-guards on `__ARM_FEATURE_AES` (`vmull_p64`, the 64-bit PMULL the Arm C Language
-Extensions put in the AES extension) and `__PCLMUL__` (x86-64 PCLMULQDQ,
-`_mm_clmulepi64_si128`). x86-64 names the two apart, so an x86-64 build takes
-`-maes -mpclmul`, and the Makefile's `AES_HW_PROBE` accepts that pair only when
-the compiler then defines both `__AES__` and `__PCLMUL__`. Nothing probes a CPU
-and nothing asks an operating system. An arm64 core cannot answer the question
-itself — reading `ID_AA64ISAR0_EL1` from EL0 takes SIGILL — so runtime
-detection means per-OS code, which the C11-and-libc rule forbids and which the
-bare-metal m3 and freertos lanes have nobody to ask. A consumer compiles
-chapulin into its own build, so it already chooses `-march=armv8-a+crypto` or
-`-maes -mpclmul`. A build without the flags takes `AES=soft` and stays correct;
-`AES=hw` without the instructions is a hard `#error`, not a silent fall back,
-because `AES=hw` is a statement about what the object contains. Each of the two
-files carries its own `#error`, so an x86-64 build with `-maes` and no
-`-mpclmul` stops at `ghash_hw.c` rather than running the portable GHASH
-under an `AES=hw` label. The intrinsic headers are the compiler's own, so they
-are not third-party code.
-
-`AES=runtime` compiles both files with no flag. On arm64 and x86-64 the
-architecture picks the instruction set, and a target pragma at the top of each
-file puts the target attribute on each of its functions: `+aes` on arm64, and
-`aes` and `pclmul` on x86-64. The instructions then appear in those two files
-alone, and the rest of the object runs on any CPU of its architecture. The
-caller probes the CPU, and `ch_cfg.aes_instructions` carries what it found;
-every init call refuses a value that is neither `CH_AES_INSTRUCTIONS_PRESENT`
-nor `CH_AES_INSTRUCTIONS_ABSENT`. chapulin still probes nothing. Any other
-architecture stops at each file's `#error`.
+**Detection is the caller's, at run time.** The host test picks the
+architecture when the object is built: the compiler targets arm64 or x86-64,
+NEON or SSE2 on a little-endian core, and has `unsigned __int128`, and the
+object compiles with `-DCH_CPU_RUNTIME`, which `cpu_cfg.h` refuses on any
+other target. `aes_hw.c` uses the ARMv8 crypto extensions on arm64
+(`<arm_neon.h>`, `vaeseq_u8` and `vaesmcq_u8`) and AES-NI on x86-64
+(`<wmmintrin.h>`, `_mm_aesenc_si128`, `_mm_aesenclast_si128` and
+`_mm_aeskeygenassist_si128`). `ghash_hw.c` uses `vmull_p64`, the 64-bit
+PMULL the Arm C Language Extensions put in the AES extension, on arm64, and
+PCLMULQDQ, `_mm_clmulepi64_si128`, on x86-64. Neither file takes an
+instruction flag: a target pragma at the top of each puts the target
+attribute on each of its functions, `+aes` on arm64 and `aes` and `pclmul`
+on x86-64, so the instructions appear in those files alone, and the rest of
+the object runs on any CPU of its architecture. The caller probes the CPU
+and states what it found in `ch_cfg.cpu`; every init call refuses a value
+without `CH_CPU_PROBED`. Nothing here probes a CPU and nothing asks an
+operating system. An arm64 core cannot answer the question itself --
+reading `ID_AA64ISAR0_EL1` from EL0 takes SIGILL -- so runtime detection
+means per-OS code, which the C11-and-libc rule forbids and which the
+bare-metal m3 and freertos lanes have nobody to ask. A builder who passes
+`-march` for a newer CPU makes the whole object require that CPU, whatever
+the bits say. The intrinsic headers are the compiler's own, so they are not
+third-party code.
 
 ### What the AES axis proves
 
@@ -581,17 +575,20 @@ what each one rests on, and nothing more:
 | path | proved | tested |
 | --- | --- | --- |
 | `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, RFC 9369 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
-| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs, and 2,258 cases of the multi-block counter mode against `soft` one block at a time: every block count through three passes and a block, counters that wrap past 2^32 at every place in a pass, and the three layouts `gcm.c` passes. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 617 runs of the data loop over every length from 0 to 415 bytes, which is three passes of eight blocks and more, and 200 random lengths up to 16,384, a check that no power of H, no power's two halves added and none of the last pass's sums stays on the stack below a call to the data loop, the one-pass seal or the one-pass open, nor the last keystream of either, and 3,213 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, which must leave zeros, the in-place seal, and opens in place and five bytes below the ciphertext), every payload length through three passes of the counter mode among them. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
-| `runtime` | `proof/aes_runtime_harness.c`: `aes.c` in the QUIC suite object, over contract stubs of both ciphers' eight entries, is memory-safe and UB-free, puts an Initial key on the instructions only under the answer present out of every byte an answer can be, the Retry key on the table, and a traffic key of either length never on the table. `proof/srv_select_runtime_harness.c` and `proof/quic_config_webpki_runtime_harness.c`: the default order and the answer rule. The ciphers themselves are `soft`'s and `hw`'s rows | `bin/aes_runtime_test`: RFC 9001 and RFC 9369 Appendix A under both answers, the SP 800-38D and FIPS 197 vectors under traffic keys, and a count of every call into the table, the instructions and the carry-less multiply. `test/aes-runtime-qemu.sh`, in CI's mips job: that binary and both loop binaries built for x86-64 under `qemu-x86_64 -cpu max,-aes,-pclmulqdq`, where the absent answer passes and the present one dies of SIGILL. `test/aes-runtime-disasm.sh`, in CI's arm64 job: the three `AES=runtime` objects `make check` links, disassembled, hold the AES and carry-less multiply instructions in `aes_hw.c`'s and `ghash_hw.c`'s functions alone. `bin/aes_suite_test_runtime`, `bin/quic_suite_test_runtime`, the QUIC, record-mode and blocking loop tests, `bin/webpki_session_aes_runtime` and `bin/srv_flight_test_aes_runtime` |
+| host | `proof/aes_runtime_harness.c`: `aes.c` in the QUIC host suite object, over contract stubs of both ciphers' six entries, is memory-safe and UB-free, puts an Initial key on the instructions only under a `ch_cfg.cpu` that holds `CH_CPU_CONSTANT_TIME_AES`, out of every 32-bit value, the Retry key on the table, and a traffic key of either length never on the table. `proof/aes_traffic_harness.c`: the traffic-key constructor in the TCP host object, over stubs of the instructions. `proof/srv_select_runtime_harness.c` and `proof/quic_config_webpki_suite_harness.c`: the default order and the `ch_cfg.cpu` rule. The instructions themselves: nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs, and 2,258 cases of the multi-block counter mode against `soft` one block at a time: every block count through three passes and a block, counters that wrap past 2^32 at every place in a pass, and the three layouts `gcm.c` passes. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 617 runs of the data loop over every length from 0 to 415 bytes, which is three passes of eight blocks and more, and 200 random lengths up to 16,384, a check that no power of H, no power's two halves added and none of the last pass's sums stays on the stack below a call to the data loop, the one-pass seal or the one-pass open, nor the last keystream of either, and 3,213 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, which must leave zeros, the in-place seal, and opens in place and five bytes below the ciphertext), every payload length through three passes of the counter mode among them. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs, once with the Initial keys on the instructions and once on the table. `bin/wycheproof_test_host`: the AES-GCM suite, run once with the AES bit and once without. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the host test passes. `bin/aes_runtime_test`: RFC 9001 and RFC 9369 Appendix A with the bit and without it, the SP 800-38D and FIPS 197 vectors under traffic keys, and a count of every call into the table, the instructions and the carry-less multiply. `test/aes-runtime-qemu.sh`, in CI's mips job: that binary and both suite loop binaries built for x86-64 under `qemu-x86_64 -cpu max,-aes,-pclmulqdq`, where the rows without the bit pass and the rows with it die of SIGILL. `test/aes-runtime-disasm.sh`, in CI's arm64 and macOS jobs: three host objects, disassembled, hold the AES and carry-less multiply instructions in `aes_hw.c`'s, `ghash_hw.c`'s, `gcm_hw.c`'s and `gcm_vaes.c`'s functions alone. `bin/aes_suite_test`, `bin/quic_suite_test`, the QUIC, record-mode and blocking loop tests, `bin/webpki_session_aes` and `bin/srv_flight_test_aes` |
 | `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server legs against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
 
-`bin/ghash_equiv_test` compiles `gcm.c` twice into one binary: once as the
-`AES=hw` build and once, through `test/ghash_equiv_soft.c`, with `CH_AES_HW`
-undefined and the entries renamed, which is the portable GHASH and the one-block
-counter loop the proofs cover. Both copies run `aes_hw.c`'s cipher, so GHASH and
-the multi-block counter mode are the differences between them. Every pair of
-single-bit operands puts each product degree from 0 to 254 through the reduction
-on its own. `test/violations/ghash-hw-reduction-constant.violation` reduces by
+`bin/ghash_equiv_test` is a QUIC host object, whose `gcm.c` holds both
+GHASH bodies and runs the one a schedule names, and it compiles `gcm.c` a
+second time, through `test/ghash_equiv_soft.c`, under renamed entries,
+which reach the portable GHASH's two static steps the proofs cover. The
+AEAD cases run one copy under a schedule on the instructions, with
+`ghash_hw.c`'s GHASH and the multi-block counter mode, and the other under
+a schedule on the table, with the portable GHASH and the one-block counter
+loop; `bin/aes_equiv_test` holds the two block ciphers to each other.
+Every pair of single-bit operands puts each product degree from 0 to 254
+through the reduction on its own.
+`test/violations/ghash-hw-reduction-constant.violation` reduces by
 0xc400000000000000 where the reversed field polynomial needs 0xc200000000000000,
 `ghash-hw-cross-product-halves-swapped.violation` swaps the two halves of the
 middle term, the cross products' sum, `ghash-hw-powers-reversed.violation` runs a pass's blocks
@@ -613,16 +610,16 @@ instruction, not either architecture's arm, so they land on an ARMv8 runner and
 an x86-64 one alike.
 
 Two more mutants hold the build rather than the arithmetic, because the
-equivalence test cannot see an `AES=hw` object that runs the portable GHASH: the
-bytes agree and only the time differs.
-`ghash-hw-falls-back-to-portable.violation` guards `gcm.c`'s `AES=hw` arm
-on a macro no build defines, and `test/quic-builds.sh` fails it, because that
-script compiles `gcm.c` with `-DCH_AES_HW` and requires the object to call
-both `ghash_hw.c` entries. `ghash-hw-source-unpackaged.violation` drops
-`ghash_hw.c` from the `AES=hw` source list, and `lint-trust-separation`
-fails it. `aes-hw-counter-falls-back-to-one-block.violation` does to counter
-mode what the first does to GHASH, and the same script fails it, because it
-also requires the object to call `gcm_counter_blocks_hw`,
+equivalence test cannot see a host object that runs the portable GHASH on a
+schedule the instructions run: the bytes agree and only the time differs.
+`ghash-hw-falls-back-to-portable.violation` guards the TCP host object's
+GHASH on a macro no build defines, and `test/quic-builds.sh` fails it,
+because that script compiles `gcm.c` for each host object and requires the
+object to call both `ghash_hw.c` entries. `ghash-hw-source-unpackaged.violation`
+drops `ghash_hw.c` from the host object's source list, and
+`lint-trust-separation` fails it. `aes-hw-counter-falls-back-to-one-block.violation`
+does to counter mode what the first does to GHASH, and the same script fails
+it, because it also requires the object to call `gcm_counter_blocks_hw`,
 `gcm_seal_passes_hw` and `gcm_open_passes_hw`.
 
 `bin/aes_equiv_test` compares three things. The round keys are compared
@@ -642,17 +639,17 @@ lands on an ARMv8 runner and an x86-64 one alike.
 
 **What none of this proves.** An `AES=extern` build is verified by this tree
 up to the hook and no further: the tests above run a stand-in, and the
-integrator owns the real `ch_aes_block` the way it owns `ch_rand_bytes`. And an `AES=hw` object is
-checked on the architecture the runner has: a run on an ARMv8 host exercises
-the `vaeseq_u8` arm and leaves the AES-NI arm compiled but unrun, and the
-reverse on x86-64. Both arms are exercised only across both CI legs. The same
-holds for `ghash_hw.c`: an ARMv8 runner runs PMULL and leaves the
-PCLMULQDQ arm compiled but unrun. An `AES=runtime` object's absent answer is
-shown to run no instruction on x86-64 alone: QEMU's arm64 models all implement
-the AES extension and none turns it off, so on arm64 that claim rests on
-`bin/aes_runtime_test`'s counts and on `test/aes-runtime-disasm.sh`, which
-finds the instructions in `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s
-functions alone.
+integrator owns the real `ch_aes_block` the way it owns `ch_rand_bytes`. And a
+host object's AES is checked on the architecture the runner has: a run on an
+ARMv8 host exercises the `vaeseq_u8` arm and leaves the AES-NI arm compiled
+but unrun, and the reverse on x86-64. Both arms are exercised only across both
+CI legs. The same holds for `ghash_hw.c`: an ARMv8 runner runs PMULL and
+leaves the PCLMULQDQ arm compiled but unrun. A host session without the AES
+bit is shown to run no instruction on x86-64 alone: QEMU's arm64 models all
+implement the AES extension and none turns it off, so on arm64 that claim
+rests on `bin/aes_runtime_test`'s counts and on `test/aes-runtime-disasm.sh`,
+which finds the instructions in `aes_hw.c`'s, `ghash_hw.c`'s and
+`gcm_hw.c`'s functions alone.
 
 None of the three rows is a timing measurement. Every entry above compares
 bytes, and no check in this tree times an AES instruction or a table lookup.
@@ -660,24 +657,27 @@ What the rows do carry is a branch count: `aes.c`, `quic_aes_soft.c`,
 `aes_extern.c` and `gcm.c` are in `BRANCH_SRCS`, so a compiler that
 lowers one of their masked selects to a conditional branch fails
 `lint-wide-multiply`. `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` are not and
-cannot be: every spec targets a core without the AES or carry-less multiply
-instructions, where each file is its own `#error`. `ghash_vector.h`, which
-the last two compile, holds no select to lower: its multiply is shifts, masks,
-exclusive-ors and the instruction.
+cannot be: every spec targets a core that fails the host test, where
+`cpu_cfg.h` stops the define these files hold their body under.
+`ghash_vector.h`, which the last two compile, holds no select to lower: its
+multiply is shifts, masks, exclusive-ors and the instruction.
 
 So whether an AES instruction, the carry-less multiply or an AES peripheral
-runs in constant time is a claim this tree never checks. It asks the build to
+runs in constant time is a claim this tree never checks. It asks someone to
 make it instead. `-DCH_SUITE_AES_GCM` is how a build says it carries a TLS
 cipher suite whose AEAD is AES-GCM, and therefore hands AES a traffic key;
-`ct.h` refuses that build unless it also takes `AES=hw` or `AES=runtime` and
-defines `CH_NATIVE_AES`, the build's own assertion about the part, which covers
-both instructions (`docs/decisions.md` entries 50 and 81), or takes `AES=extern`
-and defines
-`CH_AES_EXTERN_CONSTANT_TIME`, the build's assertion about the peripheral behind
-`ch_aes_block` (`docs/decisions.md` entry 68). Under `AES=extern` GHASH runs on
-`gcm.c`'s portable multiply, which the branch count above holds, so that flag
-claims nothing about GHASH. No mechanism in this tree can observe a
-peripheral's timing: the statement is the whole of the claim. `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` do not carry it --
+`ct.h` refuses that build unless it is a host object, whose caller states
+in `ch_cfg.cpu`'s `CH_CPU_CONSTANT_TIME_AES` that this CPU's AES
+instructions and carry-less multiply run in constant time in the mode its
+thread runs in, a statement that covers both instructions
+(`docs/decisions.md` entries 50 and 89), or takes `AES=extern` and defines
+`CH_AES_EXTERN_CONSTANT_TIME`, the build's assertion about the peripheral
+behind `ch_aes_block` (`docs/decisions.md` entry 68). A host session
+without the bit runs ChaCha20 for every traffic key. Under `AES=extern`
+GHASH runs on `gcm.c`'s portable multiply, which the branch count above
+holds, so that flag claims nothing about GHASH. No mechanism in this tree
+can observe a peripheral's timing: the statement is the whole of the
+claim. `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` do not carry it --
 they say the instructions exist -- and `ct.h` refuses the same inference for
 the widening multiply
 ([#53](https://github.com/c4milo/chapulin/issues/53)). INV-26 in
@@ -685,13 +685,14 @@ docs/invariants.md states what that build would owe and what is already in
 place for it.
 
 **What the axis does not change.** INV-26 still bounds which keys reach this
-cipher, under every `AES` value. An AES instruction takes no table, so an
-`AES=hw` build carries no S-box lookup where `AES=soft` does; whether its
-latency depends on its operands is the claim `CH_NATIVE_AES` asserts above, and
-that property is what `docs/decisions.md` entry 6 says a secret-key AES suite
+cipher, in every object. An AES instruction takes no table, so a host
+object's traffic keys meet no S-box lookup where a device object on
+`AES=soft` would; whether the instructions' latency depends on their
+operands is the claim `CH_CPU_CONSTANT_TIME_AES` states above, and that
+property is what `docs/decisions.md` entry 6 says a secret-key AES suite
 would need. A key from the TLS key schedule reaches `aes.c` only in a
 `-DCH_SUITE_AES_GCM` build, as an `aes_traffic_key`, and `ct.h` refuses that
-build under `AES=soft` (`docs/decisions.md` entries 45, 58 and 68). An
+build on `AES=soft` (`docs/decisions.md` entries 45, 58 and 68). An
 `AES=extern` build cannot state its timing from this tree: what `ch_aes_block`
 costs is the peripheral's, and the firmware author states it with
 `CH_AES_EXTERN_CONSTANT_TIME` or the suite build does not compile.
@@ -738,7 +739,7 @@ What holds it:
   The computation reproduces Appendix A.5's values from its printed secret
   before it computes these.
 - `bin/quic_loop_aes`: this tree's client against this tree's server in the
-  `ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw` object, one
+  `ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm` host object, one
   row per suite, ChaCha20 included, each a full handshake, the ticket it
   issued resumed, and a 1-RTT key update.
 - `bin/quic_suite_test_extern` and `bin/quic_loop_aes_extern`: the same two
@@ -751,6 +752,12 @@ What holds it:
   16 bytes under every AES suite, and `bin/quic_suite_test` fails on it.
 
 ### What the AES axis costs in time, measured
+
+The two runs below were measured on `AES=hw` objects, the value that chose
+the AES instructions when the object was built. `docs/decisions.md` entry
+89 replaced it with the host object, whose sessions under
+`CH_CPU_CONSTANT_TIME_AES` run the same functions, each turning the
+instructions on for itself. The tables were not measured again.
 
 *Measured*, 2026-09-24, by `bench/aead.sh` (`make bench-aead`), which wrote
 `bench/results-aead-arm64.csv`. The machine is an Apple M1 Pro under macOS

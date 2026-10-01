@@ -15,7 +15,9 @@
 #     each of those targets, so each of its probes is checked alone too.
 #   - build.zig gives the define to the same targets: this host, and
 #     arm64 and x86-64 Linux, and to none of a Cortex-M3 and a big-endian
-#     arm64 core.
+#     arm64 core. It refuses AES=hw and AES=runtime, and an AES value for
+#     a host object, and lists make's sources for a device server on
+#     AES=extern.
 #
 # `make check` runs it (check-host-builds). It is the catch target of the
 # violations that break one of the three: test/violations.py runs a script
@@ -107,4 +109,43 @@ for target in thumb-freestanding-eabi aarch64_be-linux-gnu; do
     esac
 done
 
-echo "host-builds: cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone"
+# The AES variable chooses a device object's AES alone (docs/decisions.md
+# 89). Both builds refuse an AES value for a host object, and build.zig
+# has no name for AES=hw or AES=runtime, which chose the instructions when
+# the object was built. A device object of a server, which a compiler that
+# fails the host test builds, takes AES=extern, and build.zig lists the
+# sources and defines for it that make lists, here for the Cortex-M3.
+aes_server=(RAND=extern ROLE=server TRUST=none SUITE=aesgcm)
+zig_server=()
+for v in "${aes_server[@]}"; do zig_server+=("-D$v"); done
+for value in hw runtime; do
+    if "$zig" build lib-lists --summary none --prefix "$out/aes-$value" --cache-dir bin/zig/cache \
+        -DRAND=extern "-DAES=$value" > "$out/aes-$value.log" 2>&1; then
+        fail "build.zig takes AES=$value"
+    fi
+done
+if "$zig" build lib-lists --summary none --prefix "$out/aes-host" --cache-dir bin/zig/cache \
+    "${zig_server[@]}" -DAES=extern > "$out/aes-host.log" 2>&1; then
+    fail "build.zig takes AES=extern for a server's host object"
+fi
+device=thumb-freestanding-eabi
+"$zig" build lib-lists --summary none --prefix "$out/aes-device" --cache-dir bin/zig/cache \
+    "${zig_server[@]}" -DAES=extern -DCH_AES_EXTERN_CONSTANT_TIME=true "-Dtarget=$device" \
+    > "$out/aes-device.log" 2>&1 || {
+    cat "$out/aes-device.log" >&2
+    fail "build.zig refuses the AES=extern server for $device"
+}
+make_srcs=$(make -s --no-print-directory print-lib-srcs "${aes_server[@]}" AES=extern HOST_TARGET= |
+    tr ' ' '\n' | sed '/^$/d' | sort)
+zig_srcs=$(sort < "$out/aes-device/lib-srcs.txt")
+[ "$make_srcs" = "$zig_srcs" ] || {
+    diff <(printf '%s\n' "$make_srcs") <(printf '%s\n' "$zig_srcs") >&2
+    fail "build.zig compiles other sources than make for the AES=extern server (< make, > zig)"
+}
+case " $(tr '\n' ' ' < "$out/aes-device/lib-def.txt") " in
+*" -DCH_AES_EXTERN "*) ;;
+*) fail "build.zig gives the AES=extern server for $device no -DCH_AES_EXTERN" ;;
+esac
+
+echo "host-builds: cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone," \
+    "and build.zig takes AES for a device object alone"

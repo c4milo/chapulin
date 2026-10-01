@@ -45,8 +45,8 @@ SERVER_ENTRIES = ["_ch_srv_accept", "_ch_read", "_ch_write", "_ch_close"]
 # build that declares no entropy pattern, and the walk links no
 # generator, so it measures the extern shape.
 # STACK_CFLAGS: compile flags beyond the build's defines, such as
-# -DCH_NATIVE_AES, the statement about the hardware that a SUITE=aesgcm
-# build needs and the Makefile never writes.
+# -DCH_AES_EXTERN_CONSTANT_TIME, the statement about the hardware that a
+# SUITE=aesgcm AES=extern build needs and the Makefile never writes.
 # STACK_PRUNE: comma-separated functions removed from the graph, for
 # paths a mode provably never enters, named as the report prints them.
 # PSK mode never calls hsa_server_auth (the psk_selected check in

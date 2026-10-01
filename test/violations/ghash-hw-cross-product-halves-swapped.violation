@@ -1,7 +1,7 @@
 invariant: INV-26
 file: ghash_vector.h
 catches: ghash_equiv_test
-reason: the AES=hw reduction puts the high half of the middle term, the
+reason: the host object's reduction puts the high half of the middle term, the
   cross products' sum Karatsuba's form recovers, where its low half belongs
   and the reverse, so the unreduced product is wrong in its middle two
   words whenever the cross products are nonzero. It is the mistake a

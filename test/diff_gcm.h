@@ -28,9 +28,14 @@
 // The keys SP 800-38D admits are any 16 or 32 bytes, and INV-26 keeps
 // the two constructors in aes.h the only public way to write an
 // aes_public_key, so a row builds the schedule directly the way
-// test/gcm_tests.h does.
+// test/gcm_tests.h does. In a QUIC host object the schedule records the
+// AES instructions, the cipher that build's differential holds to the
+// spec (aes_schedule.h); bin/diff_quic holds the table.
 static void diff_gcm_key(aes_public_key *k, const uint8_t *key, size_t key_len) {
     memset(k, 0, sizeof *k);
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
 #ifdef CH_AES_256
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);

@@ -1,7 +1,7 @@
 invariant: INV-26
 file: gcm_hw.c
 catches: ghash_equiv_test
-reason: the AES=hw one-pass seal hashes the pass before's plaintext where
+reason: the host object's one-pass seal hashes the pass before's plaintext where
   SP 800-38D §7.1 hashes its ciphertext. A seal in place cannot show the
   difference, because the loop reads the pass before's bytes after it
   wrote them over its plaintext, so the two are one buffer; a seal

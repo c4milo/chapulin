@@ -1,5 +1,6 @@
-// AES=hw against AES=soft: same key, same input, same output, byte for
-// byte, for AES-128 and for AES-256. This is what holds the hardware
+// The AES instructions (aes_hw.c, which a host object compiles) against
+// the S-box table (quic_aes_soft.c, AES=soft): same key, same input, same
+// output, byte for byte, for AES-128 and for AES-256. This is what holds the hardware
 // path, because CBMC cannot read an intrinsic — an AES instruction has no
 // C body to unwind, so proof/aes_harness.c and
 // proof/aes256_harness.c prove quic_aes_soft.c and this binary
@@ -24,9 +25,9 @@
 // exactly and the nightly can vary CH_AES_EQUIV_SEED.
 //
 // FIPS 197 and RFC 9001 Appendix A are not repeated here. bin/quic_test
-// holds those vectors and bin/quic_test_hw runs the same binary built
-// AES=hw, so both implementations answer the published standards
-// directly rather than only through each other. docs/quic.md, "What the
+// holds those vectors and bin/quic_test_hw runs the same vectors in a
+// QUIC host object, so both implementations answer the published
+// standards directly rather than only through each other. docs/quic.md, "What the
 // AES axis proves", states the division.
 #include <stdio.h>
 #include <stdlib.h>
@@ -313,7 +314,7 @@ int main(void) {
     run_aes256();
     run_counter_blocks();
     printf("aes equivalence: %lu AES-128 pairs, %lu AES-256 pairs and %lu counter-mode cases "
-           "agree between AES=soft and AES=hw (seed 0x%llx)\n",
+           "agree between the table and the AES instructions (seed 0x%llx)\n",
            compared, compared_256, counter_cases, (unsigned long long)seed);
     if (failures > 0) {
         printf("aes equivalence: %d mismatches\n", failures);

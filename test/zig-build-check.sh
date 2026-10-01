@@ -3,7 +3,7 @@
 # requires the two to agree (docs/decisions.md 69). make lint-zig-build
 # runs it in check with no argument, over the default object, the four
 # colibri links, stompy's, a SUITE=aesgcm record-mode object and colibri's
-# QUIC object on AES=runtime. check-slow
+# QUIC object holding both widening multiplies. check-slow
 # runs it with --roster, which adds the configuration of every lib-check
 # leg in check.
 #
@@ -73,7 +73,9 @@
 # Each configuration builds both objects and compares them in a process
 # of its own, as many at once as the machine has cores. With every object
 # and program built, the seven took 5.1 to 5.3 s on an M-series Mac, and
-# the eight take 4.5 to 5.4 s at a load average of 11 to 13.
+# the eight took 4.5 to 5.4 s at a load average of 11 to 13. The eight
+# left once docs/decisions.md 89 merged the AES rows took 5.4 s at a load
+# average of 8.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -100,27 +102,25 @@ link_flags=()
 # links: its HTTP/2 client and server objects, and its QUIC object under
 # the two trust modes its checks and its interop runner use. Then comes
 # stompy's, colibri's TCP object at TX_RECORD=16384 (docs/decisions.md 71
-# and 73). The last is a record-mode ROLE=both object under SUITE=aesgcm,
+# and 73). Then comes a record-mode ROLE=both object under SUITE=aesgcm,
 # whose loop writes across each AES-GCM write key's ceiling
-# (docs/decisions.md 78). It takes AES=hw, as the QUIC rows do: build.zig
-# adds the AES and carry-less multiply features to the target, and the
-# M-series Macs and CI's x86_64 runner have both. AES=extern would need a
-# ch_aes_block that encrypts, and hooks.zig's stops the program. The QUIC
-# object colibri links comes once more on AES=runtime (docs/decisions.md
-# 81), with build.zig adding no instruction feature, and its loop answers
-# that the instructions are present (fixture.zig's aesAnswer), and a third
-# time holding both widening multiplies too (docs/decisions.md 87), whose
-# loop answers that the multiply runs in constant time (widemulAnswer).
+# (docs/decisions.md 78). It and the QUIC rows are host objects on the
+# M-series Macs and CI's x86_64 runner, which hold the AES instructions,
+# and their loops state CH_CPU_CONSTANT_TIME_AES (fixture.zig's cpuAnswer,
+# docs/decisions.md 89). AES=extern would need a ch_aes_block that
+# encrypts, and hooks.zig's stops the program. The QUIC object colibri
+# links comes once more holding both widening multiplies too
+# (docs/decisions.md 87), whose loop answers that the multiply runs in
+# constant time (widemulAnswer).
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
     "h2-server|RAND=extern TRANSPORT=tcp-nonblocking ROLE=server TRUST=none EXPORTER=on|"
-    "quic|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
-    "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
+    "quic|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm KEYLOG=on|"
+    "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm KEYLOG=on|"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
-    "record-aes-hw|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw|CH_NATIVE_AES"
-    "quic-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime KEYLOG=on|CH_NATIVE_AES"
-    "quic-widemul-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=runtime CHACHA=vector WIDEMUL=runtime KEYLOG=on|CH_NATIVE_AES"
+    "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
+    "quic-widemul-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm CHACHA=vector WIDEMUL=runtime KEYLOG=on|"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once.
@@ -139,10 +139,7 @@ roster=(
     "raw-ecdsa-pq|RAND=extern TRUST=raw-ecdsa KEX=pq|"
     "exporter|RAND=extern EXPORTER=on|"
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
-    "server-aes-hw|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw|CH_NATIVE_AES"
-    "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern|CH_AES_EXTERN_CONSTANT_TIME"
-    "server-aes-runtime|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=runtime|CH_NATIVE_AES"
-    "quic-raw-aes-runtime|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off AES=runtime|"
+    "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
     "chacha-vector|RAND=extern CHACHA=vector|"
     "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
@@ -232,14 +229,15 @@ statement_defs() {
     for v in $1; do printf -- '-D%s ' "$v"; done
 }
 
-# Whether this compiler can build a configuration: AES=hw needs the AES
-# instructions, AES=runtime an arm64 or x86-64 target, X25519=wide
-# unsigned __int128 and CHACHA=vector NEON or SSE2, which the Makefile
-# probes for and check's legs skip without.
+# Whether this compiler can build a configuration: SUITE=aesgcm needs a
+# host object, X25519=wide unsigned __int128 and CHACHA=vector NEON or
+# SSE2, which the Makefile probes for and check's legs skip without. No
+# row here takes AES=extern, whose device object of a server a host
+# compiler does not build (docs/decisions.md 89); test/host-builds.sh
+# holds build.zig's lists for it to make's on a device target.
 buildable() {
     case " $1 " in
-    *" AES=hw "*) [ -n "$probe" ] ;;
-    *" AES=runtime "*) "$cc" -dM -E -x c /dev/null | grep -qwE '__aarch64__|__x86_64__' ;;
+    *" SUITE=aesgcm "*) [ -n "$host" ] ;;
     *" X25519=wide "*) printf 'unsigned __int128 x;\n' | "$cc" -x c -fsyntax-only - 2> /dev/null ;;
     *" CHACHA=vector "*) printf '#include "chacha20_vector.h"\n' | "$cc" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2> /dev/null ;;
     *) true ;;
@@ -254,10 +252,7 @@ buildable() {
 build_make() {
     local name=$1 vars make_cflags=() lines
     read -r -a vars <<< "$2"
-    case " $2 " in
-    *" AES=hw "*) make_cflags=("CFLAGS=$lib_cflags $(statement_defs "$3") ${probe/none/}") ;;
-    *) [ -z "$3" ] || make_cflags=("CFLAGS=$lib_cflags $(statement_defs "$3")") ;;
-    esac
+    [ -z "$3" ] || make_cflags=("CFLAGS=$lib_cflags $(statement_defs "$3")")
     lines=$(mk -j2 lib-pair-object "${vars[@]}" "${make_cflags[@]}") || fail "$name: make lib-pair-object failed"
     printf '%s\n' "$lines" | tail -n 3 > "$out/$name/make-object.txt"
 }
@@ -425,7 +420,7 @@ collect() {
 command -v "$zig" > /dev/null || fail "$zig is missing; the pin is ZIG_VERSION in tools/toolchain.env"
 mkdir -p "$out"
 stage_package
-probe=$(mk print-aes-hw-probe)
+host=$(mk print-host-target)
 lib_cflags=$(mk print-lib-cflags)
 jobs=$(getconf _NPROCESSORS_ONLN 2> /dev/null || echo 4)
 names=()

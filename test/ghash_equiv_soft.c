@@ -1,19 +1,22 @@
-// gcm.c with its portable GHASH, under second names, so one binary
-// can hold the AEAD twice: once over the portable GHASH and once over
-// ghash_hw.c's. test/ghash_equiv_test.c calls both.
+// gcm.c a second time, under second names, so the test can reach the
+// portable GHASH's two static steps, and so one binary holds the AEAD
+// twice. test/ghash_equiv_test.c calls both copies.
 //
-// The line that builds bin/ghash_equiv_test defines CH_AES_HW for every
-// file on it, because gcm.c and ghash_hw.c compiled there are
-// the AES=hw build. This file undefines it before gcm.c is read, so
-// the copy compiled here takes the #else arm: the 128-step multiply and
-// the hash_data loop the proofs in proof/ cover. The AES block cipher is
-// aes_hw.c for both copies, so GHASH is the only difference.
+// The line that builds bin/ghash_equiv_test compiles every file on it as
+// a QUIC host object (-DCH_CPU_RUNTIME), so gcm.c holds both GHASH bodies
+// and runs the one a schedule names (aes_schedule.h): ghash_hw.c's for a
+// schedule on the AES instructions, and the 128-step multiply and the
+// hash_data loop the proofs in proof/ cover for a schedule on the table.
+// The copy here compiles the same way. The test runs the AEAD through it
+// under a schedule on the table, the one-block loop and the portable
+// GHASH, and through the other copy under a schedule on the
+// instructions; bin/aes_equiv_test holds the two block ciphers to each
+// other.
 //
 // The three #defines rewrite both the definitions in gcm.c and the
 // declarations it reads from gcm.h, because they are in effect
 // before that header is read. test/aes_equiv_soft.c renames the AES
 // block cipher the same way.
-#undef CH_AES_HW
 #define gcm_seal gcm_seal_soft
 #define gcm_open gcm_open_soft
 #define gcm_ghash gcm_ghash_soft

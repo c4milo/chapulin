@@ -129,12 +129,12 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // ID, or when endpoint is neither of the two aes.h names. Both check all
 // three before they derive or write anything.
 //
-// An AES=runtime object declares both calls with one more argument
-// first, aes_instructions: the session's ch_cfg.aes_instructions, which
+// A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) declares both calls with
+// one more argument first, cpu: the session's ch_cfg.cpu, which
 // aes_public_key_initial takes to choose the cipher the key runs on, the
-// AES instructions for CH_AES_INSTRUCTIONS_PRESENT and the table for any
-// other value (aes.h). Both keys are public, so either cipher leaks
-// nothing, and the table is the one a CPU without the instructions runs.
+// AES instructions for a value with CH_CPU_CONSTANT_TIME_AES and the table
+// for any other value (aes.h). Both keys are public, so either cipher
+// leaks nothing, and the table is the one any CPU runs.
 
 // Protects one Initial packet under the send key and writes the whole
 // packet into out: the header copied from hdr, the sealed payload after
@@ -212,11 +212,11 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // encrypted packets under one key (rfc9001.txt:1812-1813), and ch_quic
 // counts what it seals at this level in initial_sealed and refuses the
 // 2^23rd before it calls here.
-#ifdef CH_AES_RUNTIME
-int quic_initial_seal(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
-                      const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
-                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                      uint8_t *out, size_t cap, size_t *out_len);
+#ifdef CH_CPU_RUNTIME
+int quic_initial_seal(uint32_t cpu, uint8_t endpoint, uint32_t version, const uint8_t *dcid,
+                      size_t dcid_len, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                      size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                      size_t *out_len);
 #else
 int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
                       uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
@@ -301,26 +301,26 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
 // No other return code exists for this call. It raises no counter
 // itself: the §6.6 counts are per connection and live in ch_quic
 // (docs/quic.md, "What the mode does not do").
-#ifdef CH_AES_RUNTIME
-int quic_initial_open(uint8_t aes_instructions, uint8_t endpoint, uint32_t version,
-                      const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
-                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len);
+#ifdef CH_CPU_RUNTIME
+int quic_initial_open(uint32_t cpu, uint8_t endpoint, uint32_t version, const uint8_t *dcid,
+                      size_t dcid_len, uint8_t *pkt, size_t pkt_len, size_t pn_off,
+                      uint64_t largest_pn, uint64_t *pn, size_t *pt_len);
 #else
 int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, size_t dcid_len,
                       uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                       uint64_t *pn, size_t *pt_len);
 #endif
 
-// The two calls as quic.c makes them, with the session's probe result
-// first. An AES=runtime build passes it on, and every other build never
+// The two calls as quic.c makes them, with the session's ch_cfg.cpu
+// first. A host object passes it on, and every other build never
 // evaluates it, so the expression may name a field that build does not
 // declare, as REC_DIR_INIT_SUITE does with a suite (record.h).
-#ifdef CH_AES_RUNTIME
-#define QUIC_INITIAL_SEAL(aes_instructions, ...) quic_initial_seal((aes_instructions), __VA_ARGS__)
-#define QUIC_INITIAL_OPEN(aes_instructions, ...) quic_initial_open((aes_instructions), __VA_ARGS__)
+#ifdef CH_CPU_RUNTIME
+#define QUIC_INITIAL_SEAL(cpu, ...) quic_initial_seal((cpu), __VA_ARGS__)
+#define QUIC_INITIAL_OPEN(cpu, ...) quic_initial_open((cpu), __VA_ARGS__)
 #else
-#define QUIC_INITIAL_SEAL(aes_instructions, ...) quic_initial_seal(__VA_ARGS__)
-#define QUIC_INITIAL_OPEN(aes_instructions, ...) quic_initial_open(__VA_ARGS__)
+#define QUIC_INITIAL_SEAL(cpu, ...) quic_initial_seal(__VA_ARGS__)
+#define QUIC_INITIAL_OPEN(cpu, ...) quic_initial_open(__VA_ARGS__)
 #endif
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

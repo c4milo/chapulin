@@ -2,7 +2,7 @@
 // the stages that make it up, for https://github.com/c4milo/chapulin/issues/184
 // (AES-GCM) and https://github.com/c4milo/chapulin/issues/181
 // (ChaCha20-Poly1305). bench/record.sh builds it with the flags of a
-// SUITE=aesgcm AES=hw object and writes its rows to
+// SUITE=aesgcm host object and writes its rows to
 // bench/results-record-<os>-<arch>-<compiler>.csv, and docs/performance.md,
 // "Where a record's time goes", reads them.
 //

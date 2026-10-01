@@ -8,7 +8,7 @@
 // rfc9369.txt:181-184).
 //
 // No function here: test/quic_version2_tests.h checks every value, in
-// bin/quic_test and its AES=hw and AES=extern twins, and
+// bin/quic_test and its host and AES=extern twins, and
 // test/quic_version_tests.h opens the A.3 packet at a client that switched
 // to version 2, in bin/quic_driver_test.
 #ifndef CH_QUIC_V2_VECTORS_H

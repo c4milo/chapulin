@@ -1257,12 +1257,13 @@ WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
 # client lists first: its build's first, and TLS_AES_128_GCM_SHA256 for a
 # client whose WEBPKI_SUITES list, ch_cfg.cipher_suites, puts that suite
 # first. The legs run once per client binary: bin/tlsclient_webpki_aes
-# runs AES on the instructions and exists only where the compiler has
-# them, and bin/tlsclient_webpki_aes_extern runs it through ch_aes_block,
+# runs AES on the instructions in a host object and exists only where the
+# compiler passes the host test, and bin/tlsclient_webpki_aes_extern runs
+# it through ch_aes_block,
 # which test/aes_extern_hook.c answers, on every host (docs/decisions.md
 # 68). $1 is the client, $2 the label each leg carries and $3 the code
-# point the client's build lists first: TLS_AES_256_GCM_SHA384 on AES=hw
-# and TLS_CHACHA20_POLY1305_SHA256 on AES=extern.
+# point the client's build lists first: TLS_AES_256_GCM_SHA384 in the
+# host object and TLS_CHACHA20_POLY1305_SHA256 on AES=extern.
 webpki_aes_legs() {
     local client=$1 tag=$2 first=$3
     start_server -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
@@ -1353,11 +1354,11 @@ AES_SUITE_LEG="$AES_SUITE_LEG + webpki-aes-extern x6"
 # TLS_AES_128_GCM_SHA256 first, and the server ignores that order and
 # selects the first of its default one (docs/decisions.md 80). The legs
 # run once per server binary, bin/tlsserver_aes on the AES instructions
-# where the compiler has them and bin/tlsserver_aes_extern through the
-# hook on every host. $1 is the server, $2 the label each leg carries and
-# $3 the suite the server's default order puts first:
-# TLS_AES_256_GCM_SHA384 on AES=hw and TLS_CHACHA20_POLY1305_SHA256 on
-# AES=extern. ---
+# in a host object where the compiler passes the host test and
+# bin/tlsserver_aes_extern through the hook on every host. $1 is the
+# server, $2 the label each leg carries and $3 the suite the server's
+# default order puts first: TLS_AES_256_GCM_SHA384 in the host object and
+# TLS_CHACHA20_POLY1305_SHA256 on AES=extern. ---
 chsrv_aes_legs() {
     local server=$1 tag=$2 first=$3
     CHSRV_BIN=$server start_chserver "$DIR/cert.der" "$PRIV" "$PUB"

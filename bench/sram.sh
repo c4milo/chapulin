@@ -48,13 +48,14 @@ cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -I. -o "$TMP/sz_server" "$TMP/sz.c
 SESSION_SERVER=$("$TMP/sz_server" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
 RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
-# SUITE=aesgcm is measured here with AES=hw and CH_NATIVE_AES, which no
-# device target carries, so its rows are measured on this host alone. An
+# SUITE=aesgcm is measured here in the host object, whose ch_cfg holds
+# the caller's description of its CPU (docs/decisions.md 89) and which no
+# device target builds, so its rows are measured on this host alone. An
 # AES=extern suite build can run on a device, and this script does not
 # measure one (docs/decisions.md 68). Its secrets, its
 # transcript and a ticket's PSK take SHA-384's length, and a webpki
 # ClientHello lists two more suites (docs/decisions.md 58).
-SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES"
+SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME"
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER $SUITE_DEFS -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
 SESSION_SERVER_AES=$("$TMP/sz_server_aes" | awk '{print $2}')
@@ -64,16 +65,6 @@ SESSION_WEBPKI_AES=$("$TMP/sz_webpki_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
 RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
-# The same two suite builds on AES=runtime, whose ch_cfg holds the caller's
-# answer about the AES instructions (docs/decisions.md 81). The value runs
-# on arm64 and x86-64 alone, so these rows are host figures too.
-RUNTIME_DEFS="-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES"
-# shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER $RUNTIME_DEFS -I. -o "$TMP/sz_server_runtime" "$TMP/sz.c"
-SESSION_SERVER_RUNTIME=$("$TMP/sz_server_runtime" | awk '{print $2}')
-# shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $RUNTIME_DEFS -I. -o "$TMP/sz_webpki_runtime" "$TMP/sz.c"
-SESSION_WEBPKI_RUNTIME=$("$TMP/sz_webpki_runtime" | awk '{print $2}')
 # The default build on WIDEMUL=runtime, whose ch_cfg holds the caller's
 # answer about the widening multiply and whose two record directions each
 # hold a copy of it (docs/decisions.md 87). The value is for hosts, so
@@ -88,14 +79,11 @@ cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -I. -o "$TMP/sz_
 SESSION_WEBPKI_HOST=$("$TMP/sz_webpki_host" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -DCH_CPU_RUNTIME -I. -o "$TMP/sz_server_host" "$TMP/sz.c"
 SESSION_SERVER_HOST=$("$TMP/sz_server_host" | awk '{print $2}')
-# This runs stack.py on arm64, where cc defines __ARM_FEATURE_AES by
-# default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
-# QUIC key set records its suite and its section 6.6 count. The same object
-# on AES=runtime comes third, and fourth that object holding both widening
-# multiplies too. The report prints all four; docs/performance.md's table
-# does not carry them.
+# QUIC key set records its suite and its section 6.6 count. Third comes the
+# suite object holding both widening multiplies too. The report prints all
+# three; docs/performance.md's table does not carry them.
 cat > "$TMP/szq.c" <<'EOF'
 #include <stdio.h>
 #include "quic.h"
@@ -112,10 +100,7 @@ QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -I. -o "$TMP/szq_aes" "$TMP/szq.c"
 QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 # shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $RUNTIME_DEFS -I. -o "$TMP/szq_runtime" "$TMP/szq.c"
-QUIC_SESSION_RUNTIME=$("$TMP/szq_runtime" | awk '{print $2}')
-# shellcheck disable=SC2086
-cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $RUNTIME_DEFS -DCH_WIDEMUL_RUNTIME -I. -o "$TMP/szq_widemul" "$TMP/szq.c"
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -DCH_WIDEMUL_RUNTIME -I. -o "$TMP/szq_widemul" "$TMP/szq.c"
 QUIC_SESSION_WIDEMUL=$("$TMP/szq_widemul" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
@@ -168,14 +153,9 @@ echo "session struct (ROLE=server SUITE=aesgcm): ${SESSION_SERVER_AES} B"
 echo "static working set:      $((SESSION_SERVER_AES + RXBUF)) B (ROLE=server SUITE=aesgcm, ${RXBUF} B receive buffer)"
 echo "session struct (TRUST=webpki SUITE=aesgcm): ${SESSION_WEBPKI_AES} B"
 echo "static working set:      $((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm, its ${RXBUF_WEBPKI_AES} B floor)"
-echo "session struct (ROLE=server SUITE=aesgcm AES=runtime): ${SESSION_SERVER_RUNTIME} B"
-echo "static working set:      $((SESSION_SERVER_RUNTIME + RXBUF)) B (ROLE=server SUITE=aesgcm AES=runtime, ${RXBUF} B receive buffer)"
-echo "session struct (TRUST=webpki SUITE=aesgcm AES=runtime): ${SESSION_WEBPKI_RUNTIME} B"
-echo "static working set:      $((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm AES=runtime, its ${RXBUF_WEBPKI_AES} B floor)"
 echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking): ${QUIC_SESSION} B"
 echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
-echo "ch_quic (the same, SUITE=aesgcm AES=runtime): ${QUIC_SESSION_RUNTIME} B"
-echo "ch_quic (the same, SUITE=aesgcm AES=runtime WIDEMUL=runtime): ${QUIC_SESSION_WIDEMUL} B"
+echo "ch_quic (the same, SUITE=aesgcm WIDEMUL=runtime): ${QUIC_SESSION_WIDEMUL} B"
 echo "session struct (WIDEMUL=runtime): ${SESSION_WIDEMUL_RUNTIME} B"
 echo "static working set:      $((SESSION_WIDEMUL_RUNTIME + RXBUF)) B (WIDEMUL=runtime, ${RXBUF} B receive buffer)"
 echo "session struct (TRUST=webpki, host object): ${SESSION_WEBPKI_HOST} B"
@@ -185,9 +165,9 @@ echo "static working set:      $((SESSION_SERVER_HOST + RXBUF)) B (ROLE=server, 
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints. STACK_MAKE names each build by its make
-# variables, and stack.py compiles the sources make packages for it. The
-# suite builds pass CH_NATIVE_AES on its own, in STACK_CFLAGS, because the
-# Makefile writes no statement about the hardware.
+# variables, and stack.py compiles the sources make packages for it. On
+# this host the suite builds are host objects, whose caller states the AES
+# instructions' timing at run time, so they need no flag of their own.
 stack_report() { # $1 = report name, $2.. = VAR=value settings for stack.py
     local name=$1
     shift
@@ -224,10 +204,10 @@ echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulati
 stack_report server "STACK_MAKE=ROLE=server TRUST=none"
 head -1 "$TMP/server.stack"
 echo "-- ROLE=server SUITE=aesgcm; the same walk with SHA-384's schedule and the AES-GCM record path --"
-stack_report server_aes "STACK_MAKE=ROLE=server TRUST=none SUITE=aesgcm AES=hw" STACK_CFLAGS=-DCH_NATIVE_AES
+stack_report server_aes "STACK_MAKE=ROLE=server TRUST=none SUITE=aesgcm"
 head -1 "$TMP/server_aes.stack"
 echo "-- TRUST=webpki SUITE=aesgcm --"
-stack_report webpki_aes "STACK_MAKE=TRUST=webpki SUITE=aesgcm AES=hw" STACK_CFLAGS=-DCH_NATIVE_AES
+stack_report webpki_aes "STACK_MAKE=TRUST=webpki SUITE=aesgcm"
 head -1 "$TMP/webpki_aes.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
@@ -286,10 +266,6 @@ TMPOUT="$TMP/results-sram.csv"
     row receive_buffer_webpki_aes "$RXBUF_WEBPKI_AES"
     row static_working_set_webpki_aes_arm64 "$((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES))"
     row stack_connect_webpki_aes "$(peak webpki_aes ch_connect)"
-    row session_struct_server_aes_runtime_arm64 "$SESSION_SERVER_RUNTIME"
-    row static_working_set_server_aes_runtime_arm64 "$((SESSION_SERVER_RUNTIME + RXBUF))"
-    row session_struct_webpki_aes_runtime_arm64 "$SESSION_WEBPKI_RUNTIME"
-    row static_working_set_webpki_aes_runtime_arm64 "$((SESSION_WEBPKI_RUNTIME + RXBUF_WEBPKI_AES))"
     row session_struct_widemul_runtime_arm64 "$SESSION_WIDEMUL_RUNTIME"
     row static_working_set_widemul_runtime_arm64 "$((SESSION_WIDEMUL_RUNTIME + RXBUF))"
     row session_struct_webpki_host_arm64 "$SESSION_WEBPKI_HOST"

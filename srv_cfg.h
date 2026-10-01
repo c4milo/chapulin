@@ -183,12 +183,13 @@ typedef struct {
     // a -DCH_SUITE_AES_GCM build holds (suite.h). The server selects the
     // first of them the ClientHello lists and ignores the client's own
     // order. NULL with a count of 0 takes suite.h's suite_default_order:
-    // TLS_AES_256_GCM_SHA384 first on AES=hw with CH_NATIVE_AES, and
-    // TLS_CHACHA20_POLY1305_SHA256 first in every other build
-    // (docs/decisions.md 80). A list can put another suite first or leave
-    // one out. Any other shape, a code point this build does not hold or
-    // a count without its list, makes ch_srv_accept return CH_EINVAL
-    // (docs/decisions.md 58).
+    // TLS_AES_256_GCM_SHA384 first in a host object whose caller set
+    // CH_CPU_CONSTANT_TIME_AES, TLS_CHACHA20_POLY1305_SHA256 alone in one
+    // whose caller did not, and TLS_CHACHA20_POLY1305_SHA256 first on
+    // AES=extern (docs/decisions.md 80 and 89). A list can put another
+    // suite first or leave one out. Any other shape, a code point this
+    // build does not hold or a count without its list, makes
+    // ch_srv_accept return CH_EINVAL (docs/decisions.md 58).
     const uint16_t *cipher_suites;
     size_t cipher_suite_count;
 #endif

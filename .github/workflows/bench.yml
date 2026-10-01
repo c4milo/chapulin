@@ -30,9 +30,9 @@ jobs:
         # gcc is the runner's own, as in the check job, and the CSV header
         # records its version. The job reads no pin from
         # tools/toolchain.env, so it runs no load-pins step. bench/aead.sh
-        # probes -maes -mpclmul for the AES=hw build, and it fails rather
-        # than writing a file without that row when the probe finds
-        # nothing.
+        # builds its AES-128-GCM row on the instructions in a host object,
+        # and it fails rather than writing a file without that row when
+        # the compiler fails the host test.
         run: make bench-aead CC=gcc
       - name: Print the CSV on the run page
         run: |

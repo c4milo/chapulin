@@ -51,15 +51,16 @@ static int failures = 0;
 // test/srv_flight_kex_tests.h drives X25519MLKEM768. Every server build
 // holds both, so no build define changes which bytes these compare.
 
-// The answer an AES=runtime build's flight_reset writes into every case's
-// ch_cfg.aes_instructions: the instructions present, unless a case of
-// test/srv_flight_suite_tests.h says otherwise (docs/decisions.md 81).
-// Every other build has no such field, and flight_reset writes nothing.
-#ifdef CH_AES_RUNTIME
-static uint8_t flight_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
-#define FLIGHT_AES_ANSWER(cfg) ((cfg).aes_instructions = flight_aes_answer)
+// The ch_cfg.cpu a host build's flight_reset writes into every case: the
+// probe's bit and the AES instructions, unless a case of
+// test/srv_flight_suite_tests.h says otherwise (docs/decisions.md 81 and
+// 89). Every other build has no such field, and flight_reset writes
+// nothing.
+#ifdef CH_CPU_RUNTIME
+static uint32_t flight_cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
+#define FLIGHT_CPU(cfg) ((cfg).cpu = flight_cpu)
 #else
-#define FLIGHT_AES_ANSWER(cfg) ((void)0)
+#define FLIGHT_CPU(cfg) ((void)0)
 #endif
 
 #include "srv_flight_kex_tests.h"
@@ -79,7 +80,7 @@ int main(void) {
     test_flight_retry_suite();
     test_flight_cookie_suite_length();
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_flight_without_aes();
 #endif
     test_flight_alpn();

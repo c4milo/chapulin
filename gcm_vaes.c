@@ -1,4 +1,4 @@
-// AES=hw and AES=runtime on x86-64: gcm_hw.c's three loops on 256-bit
+// An x86-64 host object's AES-GCM: gcm_hw.c's three loops on 256-bit
 // registers, two blocks to a register. gcm_vaes.h states the contracts.
 // The loops keep gcm_hw.c's order: counter mode, the seal's counter mode
 // and GHASH over the ciphertext written before, and the open's GHASH ahead
@@ -40,7 +40,7 @@
 // caller's CH_CPU_CONSTANT_TIME_AES bit makes for the AES instructions and
 // the carry-less multiply at every width (docs/decisions.md 89), and
 // gcm_hw.c is to run these kernels only where that bit and CH_CPU_VAES are
-// set. CH_NATIVE_AES states nothing about these forms (ct.h).
+// set.
 //
 // Every value the seal computes from the key sits in one gcm_vaes_state,
 // wiped once when the call ends, as gcm_hw.c's gcm_hw_state is. Counter
@@ -53,7 +53,7 @@
 #include "gcm_vaes.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if (defined(CH_AES_HW) || defined(CH_AES_RUNTIME)) && defined(__x86_64__)
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 
 #include <immintrin.h>
 #include <stddef.h>
@@ -463,5 +463,5 @@ void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
 #pragma GCC pop_options
 #endif
 
-#endif // (CH_AES_HW || CH_AES_RUNTIME) && __x86_64__
+#endif // CH_CPU_RUNTIME && __x86_64__
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

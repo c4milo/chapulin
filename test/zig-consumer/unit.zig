@@ -24,7 +24,6 @@ const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 const has_cpu = @hasField(c.ch_cfg, "cpu");
-const has_aes_runtime = @hasField(c.ch_cfg, "aes_instructions");
 const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
 /// Fails naming the first ch_cfg field whose value differs, nested ones
@@ -181,25 +180,6 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
             const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
             const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .cpu = description };
             try expectEqual(code, (try values.toCfg()).cpu);
-        }
-    }
-}
-
-test "Client.toCfg and Server.toCfg under AES=runtime: the probe's answer, and 0 for none" {
-    if (!has_aes_runtime) return error.SkipZigTest;
-    const answers = [_]?chapulin.AesInstructions{ null, .present, .absent };
-    const codes = [_]u8{ 0, c.CH_AES_INSTRUCTIONS_PRESENT, c.CH_AES_INSTRUCTIONS_ABSENT };
-    for (answers, codes) |answer, code| {
-        if (has_client) {
-            const key = [_]u8{0x11} ** 64;
-            const trust: chapulin.Trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } };
-            const values: chapulin.Client = .{ .trust = trust, .aes_instructions = answer };
-            try expectEqual(code, values.toCfg().aes_instructions);
-        }
-        if (has_server) {
-            const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
-            const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .aes_instructions = answer };
-            try expectEqual(code, (try values.toCfg()).aes_instructions);
         }
     }
 }

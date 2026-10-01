@@ -1,18 +1,17 @@
 invariant: INV-26
 file: quic.c
 catches: test/docker-aes-runtime-qemu.sh
-reason: an AES=runtime QUIC session seals its Initial packets under the
-  answer that the AES instructions are present, whatever its caller's
-  probe found, so a session on a CPU without them runs the instructions
-  on its first packet and dies of SIGILL. Both ciphers compute the same
-  packet, so every loop passes on a CPU with the instructions, and
+reason: a QUIC host object's session seals its Initial packets as though
+  its caller had set CH_CPU_CONSTANT_TIME_AES, whatever ch_cfg.cpu says,
+  so a session on a CPU without the AES instructions runs them on its
+  first packet and dies of SIGILL. Both ciphers compute the same packet,
+  so every loop passes on a CPU with the instructions, and
   bin/aes_runtime_test, which counts the calls into aes_hw.c, links no
-  quic.c. test/aes-runtime-qemu.sh runs the handshakes of the absent
-  answer on a CPU model without AES-NI or PCLMULQDQ.
-  The lane skips without docker, and this then reports unguarded rather
-  than caught.
+  quic.c. test/aes-runtime-qemu.sh runs the handshakes without the bit on
+  a CPU model without AES-NI or PCLMULQDQ. The lane skips without docker,
+  and this then reports unguarded rather than caught.
 
 --- old
-    int rc = QUIC_INITIAL_SEAL(q->t.cfg.aes_instructions, CH_QUIC_SELF(q), version, q->initial_dcid,
+    int rc = QUIC_INITIAL_SEAL(q->t.cfg.cpu, CH_QUIC_SELF(q), version, q->initial_dcid,
 --- new
-    int rc = QUIC_INITIAL_SEAL(CH_AES_INSTRUCTIONS_PRESENT, CH_QUIC_SELF(q), version, q->initial_dcid,
+    int rc = QUIC_INITIAL_SEAL(CH_CPU_CONSTANT_TIME_AES, CH_QUIC_SELF(q), version, q->initial_dcid,

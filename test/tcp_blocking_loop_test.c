@@ -141,10 +141,10 @@ static uint8_t cli_buf[CH_MIN_RXBUF];
 
 typedef int (*recv_fn)(void *io, uint8_t *p, size_t n);
 
-#ifdef CH_AES_RUNTIME
-// Both ends' ch_cfg.aes_instructions: present unless a row of
+#ifdef CH_CPU_RUNTIME
+// Both ends' ch_cfg.cpu in a host binary: TEST_CPU unless a row of
 // test/tcp_blocking_loop_runtime.h says otherwise.
-static uint8_t blocking_aes_answer = CH_AES_INSTRUCTIONS_PRESENT;
+static uint32_t blocking_cpu = TEST_CPU;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
 // Each end's ch_cfg.widemul: TEST_WIDEMUL unless a row of
@@ -174,8 +174,8 @@ static void server_config(ch_cfg *cfg, recv_fn recv) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = blocking_aes_answer;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = blocking_cpu;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     cfg->widemul = blocking_server_widemul;
@@ -193,8 +193,8 @@ static void client_config(ch_cfg *cfg, recv_fn recv) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
 #endif
-#ifdef CH_AES_RUNTIME
-    cfg->aes_instructions = blocking_aes_answer;
+#ifdef CH_CPU_RUNTIME
+    cfg->cpu = blocking_cpu;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     cfg->widemul = blocking_client_widemul;
@@ -476,7 +476,7 @@ int main(void) {
 #ifdef CH_RAND_SESSION
     test_session();
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_runtime_answers();
 #endif
 #ifdef CH_WIDEMUL_RUNTIME

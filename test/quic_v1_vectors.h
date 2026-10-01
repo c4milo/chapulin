@@ -8,10 +8,10 @@
 // client-chosen Destination Connection ID 0x8394c8f03e515708
 // (rfc9001.txt:2324-2325).
 //
-// No function here. test/aes_runtime_test.c checks every value under both
-// answers an AES=runtime caller gives (docs/decisions.md 81); bin/quic_test
-// holds the same appendix in test/gcm_tests.h and test/quic_initial_tests.h,
-// against the build's one AES.
+// No function here. test/aes_runtime_test.c checks every value with the
+// CH_CPU_CONSTANT_TIME_AES bit and without it (docs/decisions.md 81 and
+// 89); bin/quic_test holds the same appendix in test/gcm_tests.h and
+// test/quic_initial_tests.h, against the build's own AES.
 #ifndef CH_QUIC_V1_VECTORS_H
 #define CH_QUIC_V1_VECTORS_H
 

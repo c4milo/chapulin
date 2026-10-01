@@ -1,4 +1,5 @@
-// AES=hw: GHASH on the carry-less multiply instruction. ghash_hw.h
+// GHASH on the carry-less multiply instruction, in a host object
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) that carries AES-GCM. ghash_hw.h
 // states the two contracts; this file implements them and nothing else.
 // The arithmetic is ghash_vector.h's, which states what the instruction
 // computes, the bit order, the subkey times x^-1, Karatsuba's three
@@ -12,13 +13,13 @@
 // it when the call ends, the way gcm.c computes H for each call and wipes
 // it.
 //
-// AES=runtime compiles this file with no instruction flag, as it compiles
+// The object compiles this file with no instruction flag, as it compiles
 // aes_hw.c: the architecture picks the instruction, and the pragma below
 // puts the target attribute that turns it on onto each function in this
 // file, as ghash_vector.h's does onto each of its own, and on no function
 // outside them. gcm.c calls this file only for a schedule the AES
-// instructions run (aes_schedule.h), so a session whose caller's probe
-// found no instructions runs no carry-less multiply.
+// instructions run (aes_schedule.h), so a session whose caller did not
+// set CH_CPU_CONSTANT_TIME_AES runs no carry-less multiply.
 //
 // CBMC cannot read an intrinsic, so the proofs stay on gcm.c's
 // portable multiply and test/ghash_equiv_test.c holds this file to it:
@@ -27,7 +28,7 @@
 #include "ghash_hw.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 #include <string.h>
@@ -35,12 +36,11 @@
 #include "ct.h"
 #include "ghash_vector.h"
 
-// Under AES=runtime, every function from here to the pop at the end of
-// this file carries the target attribute that turns the instruction on:
+// Every function from here to the pop at the end of this file carries
+// the target attribute that turns the instruction on:
 // "+aes", the Arm AES extension, which the Arm C Language Extensions give
 // the 64-bit PMULL, or "pclmul", x86-64's PCLMULQDQ. aes_hw.c states how
 // each compiler's pragma applies it.
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #ifdef GHASH_VECTOR_ARM
 #pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
@@ -53,7 +53,6 @@
 #pragma GCC target("+aes")
 #else
 #pragma GCC target("pclmul")
-#endif
 #endif
 #endif
 
@@ -116,13 +115,11 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
     ct_wipe(&s, offsetof(ghash_state, powers) + powers * sizeof s.powers[0]);
 }
 
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #pragma clang attribute pop
 #else
 #pragma GCC pop_options
 #endif
-#endif
 
-#endif // CH_AES_HW || CH_AES_RUNTIME
+#endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

@@ -29,12 +29,17 @@
 // and records which cipher the schedule drives, AES_128_ROUNDS or
 // AES_256_ROUNDS, because one aes_encrypt_schedule serves both.
 //
-// An AES=runtime QUIC object (CH_AES_TWO_CIPHERS, aes.h) also records
-// which of its two ciphers expanded the round keys and runs every block
-// under them: CH_AES_INSTRUCTIONS_PRESENT for the instructions, and any
-// other value for the table. aes_traffic_key_init writes the first
-// always, the Retry constructor the second, and the Initial constructor
-// the caller's probe result, and no other line writes it.
+// A QUIC host object (CH_AES_TWO_CIPHERS, aes.h) also records which of
+// its two ciphers expanded the round keys and runs every block under
+// them: AES_ON_INSTRUCTIONS for the instructions, and any other value for
+// the table. aes_traffic_key_init writes the first always, the Retry
+// constructor AES_ON_TABLE, and the Initial constructor the one the
+// session's CH_CPU_CONSTANT_TIME_AES bit names, and no other line writes
+// it.
+#ifdef CH_AES_TWO_CIPHERS
+#define AES_ON_INSTRUCTIONS 1
+#define AES_ON_TABLE 2
+#endif
 struct aes_key_schedule {
     uint8_t round_keys[AES_SCHEDULE_ROUND_KEYS * AES_BLOCK];
 #ifdef CH_AES_256

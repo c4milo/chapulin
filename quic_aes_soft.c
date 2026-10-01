@@ -11,45 +11,43 @@
 // the ones RFC 9001 fixes for QUIC Initial packets (§5.2), their header
 // protection (§5.1, §5.4.3) and the Retry integrity tag (§5.8), and
 // every one of those is public. No key from the TLS key schedule reaches
-// it. An AES=hw build has no table and no such trade, which is what
-// docs/decisions.md entry 6 says a secret-key AES suite would need, and
-// an AES=extern build has no table in this tree.
+// it. The AES instructions run with no table and no such trade, which is
+// what docs/decisions.md entry 6 says a secret-key AES suite would need,
+// and an AES=extern build has no table in this tree.
 //
-// AES=runtime puts this file in a QUIC object beside aes_hw.c, and its
-// two entries then take names of their own, aes_soft_expand_round_keys
-// and aes_soft_cipher_block (aes_block.h). aes.c hands them QUIC's
-// public keys alone: the Initial keys of a session whose caller's probe
-// found no AES instructions (ch_cfg.aes_instructions), and the Retry key.
-// A traffic key runs on the instructions there, and test/aes_runtime_test.c
-// counts this file's calls to show it (docs/decisions.md 81).
+// A QUIC host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds this file beside
+// aes_hw.c, and its two entries then take names of their own,
+// aes_soft_expand_round_keys and aes_soft_cipher_block (aes_block.h).
+// aes.c hands them QUIC's public keys alone: the Initial keys of a session
+// whose caller did not set CH_CPU_CONSTANT_TIME_AES, and the Retry key. A
+// traffic key runs on the instructions there, and test/aes_cpu_test.c
+// counts this file's calls to show it (docs/decisions.md 81 and 89).
 //
 // This file holds no wipe, where aes_hw.c wipes its round-key word
 // and its cipher state. The bound above is why: a -DCH_SUITE_AES_GCM
 // build is the only one whose key is secret, ct.h refuses that build
-// unless it also takes AES=hw, AES=runtime or AES=extern, and an
-// AES=runtime object hands this file no traffic key, so no key this file
-// expands is ever worth wiping and the stores would cost a device
-// something for nothing.
+// outside a host object and AES=extern, and a host object hands this file
+// no traffic key, so no key this file expands is ever worth wiping and
+// the stores would cost a device something for nothing.
 //
 // Under -DCH_AES_256_TEST it also holds AES-256, as the software
 // reference test/aes_equiv_test.c and proof/aes256_harness.c hold
 // aes_hw.c's AES-256 to, and it is the cipher behind the ch_aes_block
 // the AES=extern test binaries link (test/aes_extern_hook.c). Only tests
 // and proofs define that macro. A library object takes AES-256 only for
-// TLS_AES_256_GCM_SHA384, whose key is secret, and so only with AES=hw or
-// AES=extern.
+// TLS_AES_256_GCM_SHA384, whose key is secret, and so only on the AES
+// instructions of a host object or on AES=extern.
 #include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#ifndef CH_AES_HW
 #ifndef CH_AES_EXTERN
 
 // The fence the paragraph above states, written in this file so that it
 // holds for a tree that compiles this source with its own build system and
 // never reads ct.h's refusal. A suite build hands AES a traffic key, and
 // this S-box is indexed with the key. The one suite build that compiles
-// this file is an AES=runtime QUIC object (CH_AES_TWO_CIPHERS, aes.h),
-// which runs every traffic key on the instructions.
+// this file is a QUIC host object (CH_AES_TWO_CIPHERS, aes.h), which runs
+// every traffic key on the instructions.
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_AES_TWO_CIPHERS)
 #error "CH_SUITE_AES_GCM never compiles AES=soft: its S-box is indexed with the key (INV-26)"
 #endif
@@ -178,9 +176,9 @@ static void cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
     memcpy(out, state, AES_BLOCK);
 }
 
-// The two entries aes_block.h declares. An AES=runtime QUIC object holds
-// aes_hw.c under aes_block.h's own names, so this file's take the aes_soft_
-// names there, and aes.c calls them for public keys alone.
+// The two entries aes_block.h declares. A QUIC host object holds aes_hw.c
+// under aes_block.h's own names, so this file's take the aes_soft_ names
+// there, and aes.c calls them for public keys alone.
 #ifdef CH_AES_TWO_CIPHERS
 void aes_soft_expand_round_keys(const uint8_t key[AES_128_KEY],
                                 uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
@@ -203,9 +201,9 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
 }
 #endif
 
-// An AES=runtime object runs AES-256 on the instructions alone, so the
-// reference below never shares one with them.
-#if defined(CH_AES_256) && !defined(CH_AES_RUNTIME)
+// A host object runs AES-256 on the instructions alone, so the reference
+// below never shares an object with them.
+#if defined(CH_AES_256) && !defined(CH_AES_TWO_CIPHERS)
 // The software AES-256 reference, which only a test binary or a proof
 // harness compiles (-DCH_AES_256_TEST, aes.h). Written apart
 // from the AES-128 pair above rather than folded into it, so that pair
@@ -268,8 +266,7 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
     add_round_key(state, &round_keys[(size_t)AES_256_ROUNDS * AES_BLOCK]);
     memcpy(out, state, AES_BLOCK);
 }
-#endif // CH_AES_256 && !CH_AES_RUNTIME
+#endif // CH_AES_256 && !CH_AES_TWO_CIPHERS
 
 #endif // CH_AES_EXTERN
-#endif // CH_AES_HW
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

@@ -360,7 +360,7 @@ static void test_webpki_hello_boundary(void) {
     long_hostname(name, sizeof name);
     widest_alpn(widest, widest_names);
     ch_cfg cfg = {0};
-    SESSION_AES_ANSWER(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.psk = identity;
     // The longest PSK the build takes, which in a CH_CLIENT_AES_SUITES
     // build is a SHA-384 one with a 48-byte binder.

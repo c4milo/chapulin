@@ -14,13 +14,15 @@
 #                               GHASH
 #   AES=soft CH_NATIVE_WIDEMUL  ChaCha20-Poly1305 and Poly1305 again, over
 #                               the native multiply the host tests assert
-#   AES=hw                      AES-128-GCM over the AES instructions,
+#   host object                 AES-128-GCM over the AES instructions,
 #                               gcm_hw.c's counter mode and one-pass
 #                               loops, and ghash_hw.c's GHASH on PMULL
-#                               or PCLMULQDQ
+#                               or PCLMULQDQ, with the CH_CPU_CONSTANT_TIME_AES
+#                               bit set (docs/decisions.md 89)
 #
-# The AES=hw build links the sources the Makefile's AES_HW_SRCS names,
-# which it reads from `make print-aes-hw-srcs`. The rest of the list is
+# The host build links the sources the Makefile's AES_HW_SRCS names,
+# which it reads from `make print-aes-hw-srcs`, and the table beside
+# them, as a QUIC host object does. The rest of the list is
 # this script's own, so `make check` runs `bench/aead.sh --build`, which
 # builds all three binaries, runs none and writes nothing: a call one of
 # these sources gains into a file the list leaves out fails check
@@ -28,9 +30,6 @@
 #
 # Every build is -O2, the level the packaged object uses. CC picks the
 # compiler (default cc); CI and the x86-64 row use CC=gcc.
-#
-# HW_FLAGS expands as ${HW_FLAGS[@]+"${HW_FLAGS[@]}"}, because bash 3.2,
-# the one macOS ships, calls an empty array unbound under set -u.
 #
 # Timings are properties of the machine that ran them. Never record a run
 # under emulation: `bench/aead.sh --quick` builds everything, takes three
@@ -58,22 +57,11 @@ x86_64 | amd64) ARCH=x86_64 ;;
 esac
 OUT=bench/results-aead-$ARCH.csv
 
-# The flags that turn on the AES and carry-less multiply instructions,
-# probed the way the Makefile's AES_HW_PROBE probes them. clang on Apple
-# silicon predefines __ARM_FEATURE_AES with no flag, and PMULL comes with
-# it; gcc on arm64 Linux needs +crypto; x86-64 needs -maes for AES-NI and
-# -mpclmul for PCLMULQDQ.
-defines() { # $@ = extra flags: the compiler's predefined macros on stdout
-    "$CC" "$@" -dM -E -x c /dev/null 2>/dev/null
-}
-if defines | grep -q __ARM_FEATURE_AES; then
-    HW_FLAGS=()
-elif defines -maes -mpclmul | grep -q __PCLMUL__; then
-    HW_FLAGS=(-maes -mpclmul)
-elif defines -march=armv8-a+crypto | grep -q __ARM_FEATURE_AES; then
-    HW_FLAGS=(-march=armv8-a+crypto)
-else
-    echo "FAIL aead bench: $CC targets no AES instructions, so the AES=hw row cannot build" >&2
+# The host build compiles with no instruction flag: each function in the
+# AES instructions' sources turns them on for itself. A compiler that fails
+# the host test cannot build it (cpu_cfg.h).
+if [ -z "$(make -s --no-print-directory print-host-target CC="$CC")" ]; then
+    echo "FAIL aead bench: $CC fails the host test, so the host row cannot build" >&2
     exit 1
 fi
 
@@ -92,8 +80,7 @@ COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c ct_wipe.c chach
     aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
-"$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" \
-    "${AES_HW_SRCS[@]}"
+"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${COMMON[@]}" "${AES_HW_SRCS[@]}" quic_aes_soft.c
 if [ -n "$BUILD_ONLY" ]; then
     echo "aead bench: --build built every variant and ran nothing" >&2
     exit 0
@@ -129,7 +116,7 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo unknown)
 {
     echo "# bench/aead.sh on $(cpu) ($ARCH), $(uname -s) $(uname -r), $(date -u +%Y-%m-%d)," \
         "tree $TREE"
-    echo "# $("$CC" --version | head -1); ${FLAGS[*]}; AES=hw adds ${HW_FLAGS[*]:-no flag} -DCH_AES_HW"
+    echo "# $("$CC" --version | head -1); ${FLAGS[*]}; the host row adds -DCH_CPU_RUNTIME"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns_per_byte: median of 101 samples of 2 to 4 ms each; mb_per_s: 10^6 bytes per" \
         "second at that median; iqr_pct: 25th to 75th percentile spread, percent of the median"

@@ -1,5 +1,5 @@
-// GHASH on the carry-less multiply instruction (ghash_hw.c, AES=hw)
-// against gcm.c's portable GHASH: same operands, same output, byte
+// GHASH on the carry-less multiply instruction (ghash_hw.c, in a host
+// object) against gcm.c's portable GHASH: same operands, same output, byte
 // for byte. This is what holds the instruction path, because CBMC cannot
 // read an intrinsic: the gcm and ghash harnesses in proof/
 // cover the portable bodies, and this binary carries the instruction path
@@ -13,17 +13,21 @@
 //   the data loop  gcm_hash_data_hw against hash_data, which adds the
 //                  SP 800-38D §6.4 pad of a last block shorter than 16
 //                  bytes
-//   the AEAD       gcm_seal, gcm_open and gcm_ghash over the instruction
-//                  GHASH against the same three over the portable one
+//   the AEAD       gcm_seal, gcm_open and gcm_ghash under a schedule on
+//                  the AES instructions against the same three under a
+//                  schedule on the table
 //
-// Both AEADs run aes_hw.c's cipher. They differ in GHASH and in counter
-// mode: the AES=hw copy runs whole blocks through gcm_hw.c, several at a
+// The binary is a QUIC host object, whose gcm.c runs a schedule on the
+// instructions through ghash_hw.c and gcm_hw.c and a schedule on the
+// table through the portable bodies (test/ghash_equiv_soft.c). The two
+// AEADs differ in GHASH, in counter mode and in the block cipher: the
+// instructions' schedule runs whole blocks through gcm_hw.c, several at a
 // time, and seals whole passes of eight blocks in its loop that runs
-// counter mode and GHASH together, and the portable copy runs every block
+// counter mode and GHASH together, and the table's runs every block
 // through the one-block cipher and GHASH after it, so the AEAD cases hold
 // the multi-block counter mode and the one-pass seal to the one-block
-// loop as well. test/aes_equiv_test.c holds the cipher and the multi-block
-// counter mode to AES=soft.
+// loop as well. test/aes_equiv_test.c holds the instructions' cipher and
+// its multi-block counter mode to the table.
 //
 // The multiply's operands are the edge cases first and then random
 // pairs. The edge cases: zero; the field's one, which is x^0, the most
@@ -35,9 +39,9 @@
 // squaring shape acc == subkey, which ghash_hw.h admits.
 //
 // SP 800-38D and Wycheproof are not repeated here. bin/quic_test_hw and
-// the Wycheproof AES=hw leg run the published vectors over the same
-// AES=hw build, so the instruction path answers the standard directly
-// rather than only through the portable one.
+// the Wycheproof host leg run the published vectors over the same host
+// object, so the instruction path answers the standard directly rather
+// than only through the portable one.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +51,11 @@
 #include "ch_assert.h"
 #include "gcm.h"
 #include "ghash_hw.h"
+
+#ifndef CH_AES_TWO_CIPHERS
+#error                                                                                             \
+    "bin/ghash_equiv_test is a QUIC host object: -DCH_CPU_RUNTIME -DCH_TRANSPORT_QUIC_NONBLOCKING"
+#endif
 
 // hkdf.c asserts its contracts, and aes.c links it for the Initial
 // key constructor. Nothing here trips an assertion, so reaching this is
@@ -311,14 +320,15 @@ static int wiped_to(const uint8_t *p, size_t n) {
 // requires both to give the expected verdict. A genuine tag must open to
 // the plaintext on both, and a wrong one must leave both output buffers
 // wiped: both paths decrypt while they hash, and wipe what they wrote
-// when the tag does not match.
-static void compare_open(const char *case_name, const aes_public_key *k,
-                         const uint8_t nonce[AES_IV], const uint8_t *aad, size_t aad_len, size_t n,
-                         const uint8_t tag[GCM_TAG], int genuine) {
+// when the tag does not match. table and k hold the same round keys on
+// the table and on the instructions.
+static void compare_open(const char *case_name, const aes_public_key *table,
+                         const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, size_t n, const uint8_t tag[GCM_TAG], int genuine) {
     size_t filled = n < MAX_DATA ? n + 1 : n;
     memset(soft_pt, UNWRITTEN, filled);
     memset(hw_pt, UNWRITTEN, filled);
-    int soft_ok = gcm_open_soft(k, nonce, aad, aad_len, hw_ct, n, tag, soft_pt);
+    int soft_ok = gcm_open_soft(table, nonce, aad, aad_len, hw_ct, n, tag, soft_pt);
     int hw_ok = gcm_open(k, nonce, aad, aad_len, hw_ct, n, tag, hw_pt);
     if (soft_ok != genuine || hw_ok != genuine) {
         fail(case_name, genuine ? "an open refused the genuine tag" : "an open took a wrong tag");
@@ -348,14 +358,19 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
     rng_fill(plaintext, n);
     // A key from any 16 bytes, built the way test/gcm_tests.h builds
     // one: the two constructors in aes.h take a connection ID or the
-    // Retry key, and SP 800-38D admits any key.
+    // Retry key, and SP 800-38D admits any key. The same round keys under
+    // each cipher: the two expansions write the same bytes
+    // (aes_block.h), and the schedule names the cipher that runs it.
     aes_public_key k;
     memset(&k, 0, sizeof k);
     aes_expand_round_keys(key, k.key.round_keys);
+    k.key.instructions = AES_ON_INSTRUCTIONS;
+    aes_public_key table = k;
+    table.key.instructions = AES_ON_TABLE;
 
     uint8_t soft_tag[GCM_TAG];
     uint8_t hw_tag[GCM_TAG];
-    gcm_seal_soft(&k, nonce, aad, aad_len, plaintext, n, soft_ct, soft_tag);
+    gcm_seal_soft(&table, nonce, aad, aad_len, plaintext, n, soft_ct, soft_tag);
     gcm_seal(&k, nonce, aad, aad_len, plaintext, n, hw_ct, hw_tag);
     if (memcmp(soft_ct, hw_ct, n) != 0 || memcmp(soft_tag, hw_tag, GCM_TAG) != 0) {
         fail(case_name, "the seals differ");
@@ -366,7 +381,7 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
 
     uint8_t soft_hash[AES_BLOCK];
     uint8_t hw_hash[AES_BLOCK];
-    gcm_ghash_soft(&k, aad, aad_len, hw_ct, n, soft_hash);
+    gcm_ghash_soft(&table, aad, aad_len, hw_ct, n, soft_hash);
     gcm_ghash(&k, aad, aad_len, hw_ct, n, hw_hash);
     if (memcmp(soft_hash, hw_hash, AES_BLOCK) != 0) {
         fail(case_name, "the GHASH outputs differ");
@@ -375,11 +390,11 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
         return;
     }
 
-    compare_open(case_name, &k, nonce, aad, aad_len, n, hw_tag, 1);
+    compare_open(case_name, &table, &k, nonce, aad, aad_len, n, hw_tag, 1);
     uint8_t wrong_tag[GCM_TAG];
     memcpy(wrong_tag, hw_tag, GCM_TAG);
     wrong_tag[rng_next() % GCM_TAG] ^= (uint8_t)(1U << (rng_next() % 8));
-    compare_open(case_name, &k, nonce, aad, aad_len, n, wrong_tag, 0);
+    compare_open(case_name, &table, &k, nonce, aad, aad_len, n, wrong_tag, 0);
 
     memcpy(hw_pt, plaintext, n);
     uint8_t in_place_tag[GCM_TAG];

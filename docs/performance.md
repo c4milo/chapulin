@@ -29,14 +29,10 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15290** |
 | `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1984 | 1824 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4032** | **3872** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2272 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4320** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3368 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15706** | — |
-| `ch_tls` under `ROLE=server SUITE=aesgcm AES=runtime` | 2280 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm AES=runtime`** (2048 buffer) | **4328** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm AES=runtime` | 3376 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm AES=runtime`** (12338 buffer, its floor) | **15714** | — |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2280 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4328** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3376 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15714** | — |
 | `ch_tls` under `WIDEMUL=runtime` | 1168 | — |
 | **total static working set, `WIDEMUL=runtime`** (2048 buffer) | **3216** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
@@ -131,13 +127,14 @@ bytes, through the encapsulation to the client's key into K-PKE encrypt
 and Keccak, above the 5,280 its RSA-PSS signer reaches with the
 encapsulation pruned from the call graph (`STACK_PRUNE=srv_kex_share`).
 
-**`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build with
-`AES=hw` on this host, so its rows are host figures and have no rv32
-column. A suite build with `AES=extern` can run on a device with an AES
-peripheral ([`docs/decisions.md`](decisions.md) 68), and no script here
-measures one on a device target yet. Its session struct is 288 bytes
-larger than the same `ROLE=server` build without the suite, and 304
-larger for `TRUST=webpki`:
+**`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
+host object this host builds for it ([`docs/decisions.md`](decisions.md)
+89), so its rows are host figures and have no rv32 column. A suite build
+with `AES=extern` can run on a device with an AES peripheral
+([`docs/decisions.md`](decisions.md) 68), and no script here measures one
+on a device target yet. Its session struct is 288 bytes larger than the
+same `ROLE=server` host object without the suite, and 304 larger for
+`TRUST=webpki`:
 
 - the transcript runs a SHA-512 context beside SHA-256's;
 - the traffic secrets take SHA-384's 48 bytes;
@@ -146,23 +143,15 @@ larger for `TRUST=webpki`:
 - a webpki client's configuration holds the caller's suite order, a
   pointer and a count ([`docs/decisions.md`](decisions.md) 80).
 
-**`AES=runtime`.** The same two suite builds on `AES=runtime` hold one more
-byte in `ch_cfg`, `aes_instructions`, the caller's answer about the AES
-instructions ([`docs/decisions.md`](decisions.md) 81). The pointer that
-follows it aligns to 8 bytes, so each session struct is 8 bytes larger than
-the `AES=hw` build's, and `ch_quic` in the QUIC object colibri links, which
-the script prints, is 8 bytes larger too. The value runs on arm64 and
-x86-64 alone, so these rows are host figures as well. `bench/sram.sh` does
-not measure the stack of an `AES=runtime` build.
-
 **`WIDEMUL=runtime`.** The default build on `WIDEMUL=runtime` holds one more
 byte in `ch_cfg`, `widemul`, the caller's answer about the widening
 multiply ([`docs/decisions.md`](decisions.md) 87). With its alignment the
 byte adds 8 bytes to the session struct. Each record direction holds a copy
 of the answer in bytes the alignment of its sequence number left unused, so
-the directions do not grow. In the QUIC object colibri links on
-`AES=runtime`, the byte sits beside `aes_instructions`, and `ch_quic`, which
-the script prints, does not grow either. The value is for hosts, so these
+the directions do not grow. In the QUIC object colibri links, a host
+object with the suite, the byte sits in bytes the alignment after `cpu`
+left unused, and `ch_quic`, which the script prints, does not grow
+either. The value is for hosts, so these
 rows are host figures too, and `bench/sram.sh` does not measure the stack
 of a `WIDEMUL=runtime` build.
 
@@ -172,9 +161,8 @@ object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
 ([`docs/decisions.md`](decisions.md) 89). The field is 4 bytes, and with
 the alignment of the pointer after it each session struct is 8 bytes
 larger than the same build's portable object, which the rows without
-"host object" measure. Under `AES=runtime` the field sits in bytes the
-alignment of `aes_instructions` left unused, and the struct does not
-grow. A host object runs on those two architectures alone, so these rows
+"host object" measure, and the `SUITE=aesgcm` rows above are host objects
+too. A host object runs on those two architectures alone, so these rows
 are host figures. The stack peaks of `TRUST=webpki` and `ROLE=server` are
 a host object's too: `bench/stack.py` compiles what make packages for
 those builds on this host.
@@ -343,7 +331,7 @@ to 0.77 ms ([`bench/notes-primitives.md`](../bench/notes-primitives.md)).
 record and splits it into its stages, for [#184](https://github.com/c4milo/chapulin/issues/184)
 (AES-GCM) and [#181](https://github.com/c4milo/chapulin/issues/181) (ChaCha20-Poly1305). It
 compiles the library sources with the flags `make lib` uses and the defines of a
-`SUITE=aesgcm AES=hw` object with `CH_NATIVE_AES`, and builds the ChaCha20-Poly1305 rows a
+`SUITE=aesgcm` host object, and builds the ChaCha20-Poly1305 rows a
 second time with `CHACHA=vector` (decision 82), which with `WIDEMUL=native` runs the vector
 Poly1305 as well (decision 83). It times these on the same buffers:
 
@@ -732,9 +720,9 @@ property, never a cost to trade (`ct.[ch]`).
 - `make check` builds every program those scripts build and runs none of them
   (`test/script-builds.sh`), so a source list that misses a source the code calls fails check
   rather than the next measurement. The instruction-count scripts take their sources and defines from the
-  Makefile's `INSN_SRCS` and `INSN_DEF`, and the AES=hw builds take `AES_HW_SRCS` (decision 88).
+  Makefile's `INSN_SRCS` and `INSN_DEF`, and the host builds take `AES_HW_SRCS` (decision 88).
 - The record split above prints a filter's figures, as an exception to the rule above: a
-  `SUITE=aesgcm AES=hw` build runs on hosts alone, so no device build can judge it, and
+  `SUITE=aesgcm` host object runs on hosts alone, so no device build can judge it, and
   [#184](https://github.com/c4milo/chapulin/issues/184) and
   [#181](https://github.com/c4milo/chapulin/issues/181) asked for the order the split gives. It
   orders candidates. A change it points to still needs a judge's runs on a host that runs nothing

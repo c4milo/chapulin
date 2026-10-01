@@ -1,0 +1,15 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: the suite build on the AES=soft table accepts
+  CH_AES_EXTERN_CONSTANT_TIME in place of a host object or AES=extern. The
+  flag is a statement about the peripheral behind ch_aes_block, and an
+  AES=soft object calls no such hook: its traffic keys go to the S-box,
+  which is indexed with the key, and nothing states anything about it
+  (docs/decisions.md 68). quic-builds.sh compiles the suite on AES=soft
+  with the extern flag alone and requires ct.h to refuse it.
+
+--- old
+#if !defined(CH_CPU_RUNTIME) && !defined(CH_AES_EXTERN)
+--- new
+#if !defined(CH_CPU_RUNTIME) && !defined(CH_AES_EXTERN) && !defined(CH_AES_EXTERN_CONSTANT_TIME)

@@ -74,7 +74,7 @@ Each is a dependency of its own, imported under a name of its own:
 
 ```zig
 const h2 = b.dependency("chapulin", .{ .target = target, .RAND = .@"extern", .TRANSPORT = .@"tcp-nonblocking", .ROLE = .both, .TRUST = .webpki, .EXPORTER = .on });
-const quic = b.dependency("chapulin", .{ .target = target, .RAND = .@"extern", .TRANSPORT = .@"quic-nonblocking", .ROLE = .both, .TRUST = .webpki, .SUITE = .aesgcm, .AES = .hw, .KEYLOG = .on, .CH_NATIVE_AES = true });
+const quic = b.dependency("chapulin", .{ .target = target, .RAND = .@"extern", .TRANSPORT = .@"quic-nonblocking", .ROLE = .both, .TRUST = .webpki, .SUITE = .aesgcm, .KEYLOG = .on });
 module.addImport("chapulin_h2", h2.module("chapulin"));
 module.addImport("chapulin_quic", quic.module("chapulin"));
 ```
@@ -112,7 +112,6 @@ for a `@compileError` declaration too.
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Cpu`, and `Client.cpu` and `Server.cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
-| `AesInstructions`, and `Client.aes_instructions` and `Server.aes_instructions` other than `void` | `ch_cfg.aes_instructions` (AES=runtime) |
 | `Widemul`, and `Client.widemul` and `Server.widemul` other than `void` | `ch_cfg.widemul` (WIDEMUL=runtime) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
 | `Server.choose_version` other than `void` | `ch_srv_cfg.choose_version` (a QUIC server role) |
@@ -179,7 +178,6 @@ The client's trust, whose variants are the object's trust mode's:
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
 | `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses |
-| `aes_instructions`, null by default, `AES=runtime` alone | `aes_instructions`: `.present` or `.absent`, what the caller's CPU probe found, or 0 for null, which `init` refuses |
 | `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`: `.constant_time` or `.not_stated`, the caller's answer about the widening multiply on its CPU and in its thread's mode, or 0 for null, which `init` refuses |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
@@ -246,7 +244,6 @@ over.
 | `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in `toCfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 | `cpu`, null by default, a host object alone | `cpu`, as for a client |
-| `aes_instructions`, null by default, `AES=runtime` alone | `aes_instructions`, as for a client |
 | `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`, as for a client |
 
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
@@ -394,9 +391,10 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 A client in an object without SUITE=aesgcm offers ChaCha20 alone and
 writes no `ch_tls.suite`, so its `suite()` stays null. A SUITE=aesgcm
 TRUST=webpki client offers three, in the order `Client.cipher_suites`
-names or, when it is empty, in the build's order: AES-256-GCM first in an
-object built `AES=hw` with `CH_NATIVE_AES`, and ChaCha20 first in any
-other (docs/decisions.md 80). The API probes no CPU; a program that
+names or, when it is empty, in the build's order: AES-256-GCM first in a
+host object whose `Client.cpu` states `constant_time_aes`, ChaCha20 alone
+in a host object without it, and ChaCha20 first on `AES=extern`
+(docs/decisions.md 80 and 89). The API probes no CPU; a program that
 probes its own passes the order it chose.
 
 A record session's `keyUpdate` is reserved: no C call starts a
@@ -653,8 +651,9 @@ through `cfg.buf`, and passes `cfg.io`, the hook's address, and
 
 `make lint-zig-build` runs `test/zig-build-check.sh`, which builds
 `test/zig-consumer` against the default object, colibri's four objects,
-stompy's (`TX_RECORD=16384`) and a record-mode `ROLE=both` object under
-`SUITE=aesgcm AES=hw`, each through the module alone (INV-36):
+stompy's (`TX_RECORD=16384`), a record-mode `ROLE=both` object under
+`SUITE=aesgcm` and colibri's QUIC object holding both widening multiplies,
+each through the module alone (INV-36):
 
 - `matches.zig` requires `chapulin.c` to declare every export, to
   declare no `ch_` function the object neither exports nor imports (`nm

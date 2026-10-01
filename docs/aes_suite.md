@@ -15,10 +15,11 @@ The scope has landed, and the work went past it:
   keys its records with it (e591002).
 - A `SUITE=aesgcm TRUST=webpki` client offers it beside ChaCha20
   (`docs/decisions.md` entry 45), the decision "Negotiation" below left
-  open. A build on `AES=hw` with `CH_NATIVE_AES` offers and prefers
-  AES-256-GCM, then AES-128-GCM, then ChaCha20 in both roles, and a
-  caller may name a client's order in `ch_cfg.cipher_suites`
-  (`docs/decisions.md` entry 80).
+  open. A host object's session whose caller sets
+  `CH_CPU_CONSTANT_TIME_AES` offers and prefers AES-256-GCM, then
+  AES-128-GCM, then ChaCha20 in both roles, and a caller may name a
+  client's order in `ch_cfg.cipher_suites` (`docs/decisions.md` entries 80
+  and 89).
 - `TLS_AES_256_GCM_SHA384` joined it in both roles, the key schedule runs
   at the selected suite's hash, and QUIC protects its Handshake and 1-RTT
   packets with the suite (`docs/decisions.md` entry 58). The build
@@ -34,22 +35,24 @@ The scope has landed, and the work went past it:
   [#177](https://github.com/c4milo/chapulin/issues/177)). `ch_aes_block`
   takes a key length, and the build states the peripheral's timing with
   `CH_AES_EXTERN_CONSTANT_TIME`, which `ct.h` requires beside
-  `CH_AES_EXTERN` the way it requires `CH_NATIVE_AES` beside
-  `CH_AES_HW`. What that statement rests on is the vendor's word and
+  `CH_AES_EXTERN`. What that statement rests on is the vendor's word and
   nothing this tree can observe. "Where the suite cannot go" below
   predates it.
-- Both suites run on `AES=runtime`, whose one object holds the AES
-  instructions and runs them when the caller's CPU probe found them
-  (`docs/decisions.md` entry 81,
-  [#183](https://github.com/c4milo/chapulin/issues/183)). A session whose
-  caller answers `CH_AES_INSTRUCTIONS_ABSENT` holds ChaCha20 alone, and
-  its init refuses a suite list that names an AES-GCM suite. Every traffic
-  key runs on the instructions under `CH_NATIVE_AES`, the statement
-  `AES=hw` makes; the table a QUIC object holds beside them runs QUIC's
-  public keys alone.
+- Both suites run in the host object, which `TRUST=webpki`,
+  `ROLE=server` and `ROLE=both` build on arm64 and x86-64, whose one object
+  holds the AES instructions and runs them when the caller's
+  `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_AES`, the caller's statement that
+  the instructions run in constant time (`docs/decisions.md` entries 81
+  and 89, [#183](https://github.com/c4milo/chapulin/issues/183)). A session
+  without the bit holds ChaCha20 alone, and its init refuses a suite list
+  that names an AES-GCM suite. Every traffic key runs on the instructions;
+  the table a QUIC object holds beside them runs QUIC's public keys alone.
+  `AES=hw` and `AES=runtime`, which chose the instructions when the object
+  was built, and `CH_NATIVE_AES`, the build's statement about them, are
+  gone.
 
 The rename landed last: `quic_aes.[ch]` and `quic_gcm.[ch]` are now
-`aes.[ch]` and `gcm.[ch]`, and the `AES=hw` and GHASH sources lost the
+`aes.[ch]` and `gcm.[ch]`, and the AES instructions' and GHASH sources lost the
 `quic_` prefix with them. `quic_aes_extern.c` lost it later, as
 `aes_extern.c`, when a suite build began to compile it over TCP.
 `quic_aes_soft.c` keeps it, because only a QUIC build compiles it. The

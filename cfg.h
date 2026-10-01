@@ -39,8 +39,8 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
-// What the fields about the CPU take: ch_cfg.cpu's bits, ch_cfg.aes_instructions's answers, and
-// the two every operation built on the widening multiply runs under.
+// What the fields about the CPU take: ch_cfg.cpu's bits, and the two answers every operation
+// built on the widening multiply runs under.
 #include "cpu_cfg.h"
 
 // The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
@@ -388,16 +388,6 @@ typedef struct {
     int require_pq;
 #ifdef CH_CPU_RUNTIME
     uint32_t cpu; // what the caller states about this CPU, a host object alone (cpu_cfg.h)
-#endif
-#ifdef CH_AES_RUNTIME
-    // Whether this CPU has the AES and carry-less multiply instructions, as the caller's probe
-    // found: CH_AES_INSTRUCTIONS_PRESENT or CH_AES_INSTRUCTIONS_ABSENT. chapulin probes nothing.
-    // Every init call returns CH_EINVAL, and sends nothing, for any other value. Present runs
-    // QUIC's Initial packets and AES-GCM on the instructions, in docs/decisions.md 80's order.
-    // Absent runs neither instruction: Initial packets take the software AES, whose keys are
-    // public (INV-26), the session holds ChaCha20 alone, and init refuses a cipher_suites list
-    // that names an AES-GCM suite. A Retry tag takes the software AES under either answer.
-    uint8_t aes_instructions;
 #endif
 #ifdef CH_WIDEMUL_RUNTIME
     // Whether the widening multiply runs in constant time on this CPU, in the mode the session's

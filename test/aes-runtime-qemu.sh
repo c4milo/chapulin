@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Shows that an AES=runtime session whose caller found no AES instructions
-# runs none (docs/decisions.md 81). It builds three binaries for x86-64,
+# Shows that a host object's session whose caller did not set
+# CH_CPU_CONSTANT_TIME_AES runs no AES instruction (docs/decisions.md 81
+# and 89). It builds four binaries for x86-64, as host objects,
 # statically, and runs them under qemu-x86_64 on a CPU model with AES-NI
 # and PCLMULQDQ turned off, where either instruction raises SIGILL:
 #
 #   - bin/aes_runtime_test "absent" must pass: the published vectors of
 #     RFC 9001 and RFC 9369 Appendix A, byte for byte, on the table and the
 #     portable GHASH.
-#   - bin/quic_loop_aes_runtime and bin/webpki_loop_aes_runtime "absent"
-#     must pass: whole QUIC and TCP handshakes, resumptions and pin rows
-#     between this tree's client and server, both ends answering that the
-#     instructions are absent, in the objects that hold them.
+#   - bin/quic_loop_aes and bin/webpki_loop_aes "absent" must pass: whole
+#     QUIC and TCP handshakes, resumptions and pin rows between this
+#     tree's client and server, both ends stating the probe's bit alone,
+#     in the objects that hold the instructions.
 #   - bin/aes_runtime_test "present" must die of SIGILL, which is what shows
 #     the CPU model traps the instructions, and so that the runs above
 #     executed none.
-#   - bin/quic_test_hw's vectors, built AES=hw, must die of SIGILL too.
+#   - bin/quic_test_hw's vectors, whose first pass states the bit, must die
+#     of SIGILL too.
 #
 # QEMU's arm64 models all implement the AES extension, and none of their
 # properties turns it off (QEMU 8.2 and 10.2), so the arm64 half of the
@@ -43,7 +45,7 @@ out=bin/qemu
 mkdir -p "$out"
 flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -I. -Itest
        -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL)
-runtime=(-DCH_SUITE_AES_GCM -DCH_AES_RUNTIME -DCH_NATIVE_AES)
+runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
 # Each binary links the sources its rule in the Makefile links, one list
 # a line, so each list here is the one check links.
@@ -58,23 +60,23 @@ read -r -a quic_test_hw_srcs <<< "$(sed -n 4p <<< "$lists")"
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/aes_runtime_test" \
     test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${runtime_test_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$out/quic_loop_aes_runtime" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+    -o "$out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$out/webpki_loop_aes_runtime" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -maes -mpclmul -DCH_AES_HW -DCH_AES_256_TEST \
+    -o "$out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
     -o "$out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
 
-for b in aes_runtime_test quic_loop_aes_runtime webpki_loop_aes_runtime; do
+for b in aes_runtime_test quic_loop_aes webpki_loop_aes; do
     "$qemu" -cpu "$cpu" "$out/$b" absent ||
-        { echo "aes-runtime-qemu: $b failed the absent answer on a CPU without AES-NI or PCLMULQDQ" >&2; exit 1; }
+        { echo "aes-runtime-qemu: $b failed its rows without the AES bit on a CPU without AES-NI or PCLMULQDQ" >&2; exit 1; }
 done
 rc=0
 "$qemu" -cpu "$cpu" "$out/aes_runtime_test" present > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 132 ] ||
-    { echo "aes-runtime-qemu: the present answer exited $rc there; SIGILL is 132" >&2; exit 1; }
+    { echo "aes-runtime-qemu: the rows with the AES bit exited $rc there; SIGILL is 132" >&2; exit 1; }
 rc=0
 "$qemu" -cpu "$cpu" "$out/quic_test_hw" > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 132 ] ||
-    { echo "aes-runtime-qemu: the AES=hw vectors exited $rc there; SIGILL is 132" >&2; exit 1; }
-echo "aes-runtime-qemu: on $cpu the absent answer passed in the vectors and both loops," \
-    "and the present answer and AES=hw died of SIGILL"
+    { echo "aes-runtime-qemu: the vectors on the instructions exited $rc there; SIGILL is 132" >&2; exit 1; }
+echo "aes-runtime-qemu: on $cpu the rows without the AES bit passed in the vectors and both" \
+    "loops, and the rows with it died of SIGILL"

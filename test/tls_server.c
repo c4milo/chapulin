@@ -189,6 +189,11 @@ int main(int argc, char **argv) {
         cfg.srv.cookie_key = cookie_key;
         cfg.srv.ticket_key = ticket_key;
         cfg.srv.now_seconds = (uint64_t)time(NULL);
+#ifdef CH_CPU_RUNTIME
+        // bin/tlsserver_aes, a host object, runs on a CPU with the AES
+        // instructions, and e2e drives its AES-GCM suites (cpu_cfg.h).
+        cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
+#endif
         static ch_tls t;
         int rc = ch_srv_accept(&t, &cfg);
         if (rc == CH_OK) {

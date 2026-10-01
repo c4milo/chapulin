@@ -1,10 +1,10 @@
-// The AES=soft implementation under a second name, so one binary can
+// The table implementation, AES=soft, under a second name, so one binary can
 // hold two implementations that define the same two entries.
 //
 // The #defines rewrite both the definitions in quic_aes_soft.c and the
 // declarations it reads from aes_block.h, because they are in
 // effect before that header is read. test/aes_equiv_hw.c is the same
-// file for AES=hw, and test/aes_equiv_test.c calls both.
+// file for the AES instructions, and test/aes_equiv_test.c calls both.
 //
 // CH_AES_256_TEST turns on the AES-256 pair, which quic_aes_soft.c holds
 // as the software reference for tests and proofs alone (aes.h).

@@ -6,10 +6,10 @@
 //
 // A -DCH_SUITE_AES_GCM build runs AES-GCM and AES header protection
 // (§5.4.3) under both AES suites. The keys here come from traffic
-// secrets and are secret, so ct.h refuses the define without AES=hw and
-// CH_NATIVE_AES, or AES=extern and CH_AES_EXTERN_CONSTANT_TIME (INV-26).
-// Every dispatch reads a key set's suite, which
-// the ServerHello named in the clear.
+// secrets and are secret, so ct.h refuses the define outside a host
+// object and AES=extern with CH_AES_EXTERN_CONSTANT_TIME (INV-26). Every
+// dispatch reads a key set's suite, which the ServerHello named in the
+// clear.
 //
 // The §9.5 rule, as code. RFC 9001 §9.5 makes the packet number and its
 // encoded length secret in both directions (rfc9001.txt:2110-2112,

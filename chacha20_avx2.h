@@ -10,7 +10,7 @@
 //
 // Every function in chacha20_avx2.c carries the target attribute that
 // turns AVX2 on for that function alone, as aes_hw.c's functions carry
-// the AES instructions under AES=runtime, so the object needs no compiler
+// the AES instructions in a host object, so the object needs no compiler
 // flag and the rest of it runs on any x86-64 CPU. chapulin probes no CPU:
 // the caller's bit decides whether the kernel runs (docs/decisions.md 89
 // and 90).

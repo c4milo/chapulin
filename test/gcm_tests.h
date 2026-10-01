@@ -108,7 +108,12 @@ static const sp800_38d_case *const SP800_38D_AES256_CASES[] = {
 //
 // A 32-byte key takes the AES-256 schedule, in a build that has AES-256,
 // and the schedule records its round count the way aes_traffic_key_init
-// records it for a traffic key.
+// records it for a traffic key. A QUIC host object's schedule also
+// records its cipher (aes_schedule.h): an AES-256 key runs on the AES
+// instructions, the one AES-256 that object holds, and an AES-128 key on
+// the cipher test_initial_cpu names (test/initial_cpu.h). The two
+// expansions write the same round keys (aes_block.h), so either schedule
+// reads the same to the other cipher.
 static void gcm_test_key(aes_public_key *k, const char *key_hex) {
     uint8_t key[AES_256_KEY];
     size_t key_len = unhex(key_hex, key);
@@ -117,12 +122,19 @@ static void gcm_test_key(aes_public_key *k, const char *key_hex) {
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);
         k->key.rounds = AES_256_ROUNDS;
+#ifdef CH_AES_TWO_CIPHERS
+        k->key.instructions = AES_ON_INSTRUCTIONS;
+#endif
         return;
     }
     k->key.rounds = AES_128_ROUNDS;
 #endif
     CHECK(key_len == AES_128_KEY);
     aes_expand_round_keys(key, k->key.round_keys);
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.instructions =
+        (test_initial_cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
+#endif
 }
 
 // Every SP 800-38D case, four questions each: the ciphertext and the tag

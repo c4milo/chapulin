@@ -1,7 +1,7 @@
 invariant: INV-26
 file: aes_hw.c
 catches: aes_equiv_test
-reason: the AES=hw key expansion starts from the wrong round constant, so
+reason: the host object's key expansion starts from the wrong round constant, so
   it computes a different key schedule from AES=soft and a different
   block from it. CBMC cannot read an intrinsic, so no proof covers this
   file and bin/aes_equiv_test is the whole of what holds it: it runs both

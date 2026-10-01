@@ -2,15 +2,16 @@
 // that take one. aes.h states every contract; this file implements
 // them and nothing else.
 //
-// No cipher here. The Makefile AES variable picks the one source that
-// implements the key expansion and the block cipher — quic_aes_soft.c,
-// aes_hw.c or aes_extern.c — and aes_block.h states the
-// contract all three meet. This file derives the RFC 9001 keys, owns the
-// aes_public_key, and hands round keys down as bytes. An AES=runtime QUIC
-// object holds two of them, aes_hw.c and quic_aes_soft.c, and this file
-// is where a key is put on one: the caller's probe result picks for an
-// Initial key, the table runs the Retry key, and the instructions run
-// every traffic key (CH_AES_TWO_CIPHERS, aes.h).
+// No cipher here. A device object's Makefile AES variable picks the one
+// source that implements the key expansion and the block cipher,
+// quic_aes_soft.c or aes_extern.c, and a host object compiles aes_hw.c;
+// aes_block.h states the contract all three meet. This file derives the
+// RFC 9001 keys, owns the aes_public_key, and hands round keys down as
+// bytes. A QUIC host object holds two of them, aes_hw.c and
+// quic_aes_soft.c, and this file is where a key is put on one: the
+// session's CH_CPU_CONSTANT_TIME_AES bit picks for an Initial key, the
+// table runs the Retry key, and the instructions run every traffic key
+// (CH_AES_TWO_CIPHERS, aes.h).
 //
 // Which keys may arrive here is INV-26 in docs/invariants.md: the
 // Initial keys, which anyone who sees a Destination Connection ID can
@@ -90,25 +91,26 @@ static const uint8_t *retry_key(uint32_t version) {
 
 #ifdef CH_AES_TWO_CIPHERS
 // Whether s runs on the AES instructions rather than on the table. The
-// value is the caller's probe result for an Initial key, the table's for
-// the Retry key and the instructions' for every traffic key
-// (aes_schedule.h), so the branch on it reads a public value.
+// value comes from the session's CH_CPU_CONSTANT_TIME_AES bit for an
+// Initial key, the table's for the Retry key and the instructions' for
+// every traffic key (aes_schedule.h), so the branch on it reads a public
+// value.
 static int on_instructions(const aes_key_schedule *s) {
-    return s->instructions == CH_AES_INSTRUCTIONS_PRESENT;
+    return s->instructions == AES_ON_INSTRUCTIONS;
 }
 
 // FIPS 197 §5.2 for one public AES-128 key into s: on the instructions when
-// aes_instructions is CH_AES_INSTRUCTIONS_PRESENT and on the table for any
-// other value, and s records which. The key is public, so the table leaks
-// nothing (INV-26), and a CPU without the instructions runs none here.
-static void expand_public_key(aes_key_schedule *s, const uint8_t key[AES_128_KEY],
-                              uint8_t aes_instructions) {
-    if (aes_instructions == CH_AES_INSTRUCTIONS_PRESENT) {
-        s->instructions = CH_AES_INSTRUCTIONS_PRESENT;
+// cpu holds CH_CPU_CONSTANT_TIME_AES and on the table for any other value,
+// and s records which. The key is public, so the table leaks nothing
+// (INV-26), and a CPU whose caller set no such bit runs no AES instruction
+// here.
+static void expand_public_key(aes_key_schedule *s, const uint8_t key[AES_128_KEY], uint32_t cpu) {
+    if ((cpu & CH_CPU_CONSTANT_TIME_AES) != 0) {
+        s->instructions = AES_ON_INSTRUCTIONS;
         aes_expand_round_keys(key, s->round_keys);
         return;
     }
-    s->instructions = CH_AES_INSTRUCTIONS_ABSENT;
+    s->instructions = AES_ON_TABLE;
     aes_soft_expand_round_keys(key, s->round_keys);
 }
 #endif // CH_AES_TWO_CIPHERS
@@ -175,19 +177,19 @@ static void initial_rounds(aes_public_key *k) {
 // 9001 fixes for Initial and Retry packets, and the third is header
 // protection, which a TLS record does not have. A suite build compiles
 // the cipher above and none of this. aes_public_key_initial has one
-// definition per build, because an AES=runtime object takes the caller's
-// answer about the AES instructions (aes.h).
-#ifdef CH_AES_RUNTIME
-int aes_public_key_initial(aes_public_key *k, uint8_t aes_instructions, uint32_t version,
-                           const uint8_t *dcid, size_t dcid_len, uint8_t endpoint) {
+// definition per build, because a QUIC host object takes the session's
+// description of its CPU (aes.h).
+#ifdef CH_AES_TWO_CIPHERS
+int aes_public_key_initial(aes_public_key *k, uint32_t cpu, uint32_t version, const uint8_t *dcid,
+                           size_t dcid_len, uint8_t endpoint) {
     uint8_t key[AES_128_KEY];
     uint8_t hp[AES_128_KEY];
     int rc = derive_initial(key, k->iv, hp, version, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }
-    expand_public_key(&k->key, key, aes_instructions);
-    expand_public_key(&k->hp, hp, aes_instructions);
+    expand_public_key(&k->key, key, cpu);
+    expand_public_key(&k->hp, hp, cpu);
     initial_rounds(k);
     return CH_OK;
 }
@@ -208,11 +210,11 @@ int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *d
 #endif
 
 void aes_public_key_retry(aes_public_key *k, uint32_t version) {
-#ifdef CH_AES_RUNTIME
+#ifdef CH_AES_TWO_CIPHERS
     // ch_srv_quic_retry_tag takes no configuration to read the caller's
-    // probe result from, so both Retry calls run the printed key on the
-    // table, which every CPU can run (aes.h).
-    expand_public_key(&k->key, retry_key(version), CH_AES_INSTRUCTIONS_ABSENT);
+    // bits from, so both Retry calls run the printed key on the table,
+    // which every CPU can run (aes.h): 0 sets no bit.
+    expand_public_key(&k->key, retry_key(version), 0);
 #else
     aes_expand_round_keys(retry_key(version), k->key.round_keys);
 #endif
@@ -273,12 +275,12 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     // key_len is the suite's, which the ServerHello named in the clear,
     // so the branch reads a public value. The key itself goes to the AES
     // instructions or to the image's AES peripheral, never to the S-box:
-    // ct.h refuses this build without AES=hw, AES=runtime or AES=extern.
-    // An AES=runtime QUIC object holds the S-box too, for public keys, and
-    // the line below is what keeps this key off it: every block run under
-    // k takes the cipher k records (aes_schedule.h).
+    // ct.h refuses this build outside a host object and AES=extern. A QUIC
+    // host object holds the S-box too, for public keys, and the line below
+    // is what keeps this key off it: every block run under k takes the
+    // cipher k records (aes_schedule.h).
 #ifdef CH_AES_TWO_CIPHERS
-    k->key.instructions = CH_AES_INSTRUCTIONS_PRESENT;
+    k->key.instructions = AES_ON_INSTRUCTIONS;
 #endif
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);

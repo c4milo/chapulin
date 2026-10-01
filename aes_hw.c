@@ -1,39 +1,33 @@
-// AES=hw: the AES-128 key expansion and forward cipher of FIPS 197 on
-// the AES instructions, through the compiler's own intrinsic headers, and
-// the two AES-256 entries in a build that has AES-256 (CH_AES_256,
-// aes.h). aes_block.h states the contracts; this file implements them and
-// nothing else. Both key sizes share one expansion loop and one round
-// loop, so AES-256 adds two entries and no second cipher. Counter mode over
-// whole blocks, several at a time, is gcm_hw.c's.
+// The AES instructions: the AES-128 key expansion and forward cipher of
+// FIPS 197 on them, through the compiler's own intrinsic headers, and the
+// two AES-256 entries in a build that has AES-256 (CH_AES_256, aes.h). A
+// host object (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles this file whenever
+// it carries AES. aes_block.h states the contracts; this file implements
+// them and nothing else. Both key sizes share one expansion loop and one
+// round loop, so AES-256 adds two entries and no second cipher. Counter
+// mode over whole blocks, several at a time, is gcm_hw.c's.
 //
-// Two instruction sets, and the compiler picks between them at build
-// time. __ARM_FEATURE_AES says the ARMv8 crypto extensions are available
-// and <arm_neon.h> declares vaeseq_u8 and vaesmcq_u8; __AES__ says
-// x86-64 AES-NI is available and <wmmintrin.h> declares
+// Two instruction sets, and the architecture picks between them: the
+// ARMv8 crypto extensions on arm64, through <arm_neon.h>'s vaeseq_u8 and
+// vaesmcq_u8, and AES-NI on x86-64, through <wmmintrin.h>'s
 // _mm_aesenc_si128, _mm_aesenclast_si128 and _mm_aeskeygenassist_si128.
-// A build that defines neither gets the #error below rather than a
-// silent fall back to the table, because AES=hw is a statement about
-// what the object contains.
+// cpu_cfg.h refuses a host object for any other target.
+//
+// The object compiles this file with no instruction flag, so the rest of
+// the object runs on any CPU of its architecture. The pragma below puts
+// the target attribute that turns the AES instructions on onto each
+// function in this file and on no function outside it. aes.c calls this
+// file for a traffic key, and for a public key only when the session's
+// caller set CH_CPU_CONSTANT_TIME_AES, so a session without that bit
+// never runs a line of it (docs/decisions.md 81 and 89).
 //
 // Nothing here probes a CPU and nothing here calls an operating system,
 // and that is deliberate rather than a preference. An arm64 core cannot
 // answer the question itself: reading ID_AA64ISAR0_EL1 from EL0 takes
-// SIGILL. So runtime detection means asking the operating system, which
-// is per-OS code this tree cannot carry under its C11-and-libc rule, and
-// which the bare-metal m3 and freertos lanes have nobody to ask. A
-// consumer compiles chapulin into its own build, so it already chooses
-// -march=armv8-a+crypto or -maes; a build without the flag takes
-// AES=soft and stays correct, and a consumer that probes the CPU itself
-// takes AES=runtime and passes the answer.
-//
-// AES=runtime compiles this file with no instruction flag, so the rest of
-// the object runs on any CPU of its architecture. The architecture picks
-// the instruction set, and the pragma below puts the target attribute
-// that turns the AES instructions on onto each function in this file and
-// on no function outside it. aes.c calls this file for a traffic key, and
-// for a public key only when the caller's probe found the instructions
-// (ch_cfg.aes_instructions), so a session whose CPU lacks them never
-// runs a line of it (docs/decisions.md 81).
+// SIGILL. So detection means asking the operating system, which is
+// per-OS code this tree cannot carry under its C11-and-libc rule, and
+// which the bare-metal m3 and freertos lanes have nobody to ask. The
+// caller probes the CPU and states what it found in ch_cfg.cpu.
 //
 // The intrinsic headers are the compiler's own, so they are not third-
 // party code. A third-party AES library would be.
@@ -42,30 +36,22 @@
 // for itself: quic_aes_soft.c indexes a 256-byte S-box with cipher state,
 // and no line here indexes anything with an operand.
 //
-// It cannot state the rest. __ARM_FEATURE_AES and __AES__ say the AES
-// instructions exist. Neither says the instructions take the same number of
-// cycles whatever their operands are, and the architectures do not promise
-// it either: Arm publishes FEAT_DIT and Intel publishes DOITM precisely
-// because the base architectures leave instruction timing to the
-// implementation. ct.h refuses the same inference for the widening
-// multiply, in the same words, and asks the build to assert what the
-// preprocessor cannot read (https://github.com/c4milo/chapulin/issues/53).
+// It cannot state the rest. That the instructions exist says nothing
+// about whether they take the same number of cycles whatever their
+// operands are, and the architectures do not promise it either: Arm
+// publishes FEAT_DIT and Intel publishes DOITM precisely because the base
+// architectures leave instruction timing to the implementation. ct.h
+// refuses the same inference for the widening multiply, in the same
+// words (https://github.com/c4milo/chapulin/issues/53).
 //
-// So one macro carries that claim here, and it is the build's to make:
-//
-//   CH_NATIVE_AES  the build asserts that this part's AES instructions
-//                  run in constant time, and so does the carry-less
-//                  multiply ghash_hw.c runs GHASH on, the other half
-//                  of an AES=hw object. Firmware defines it only with a
-//                  vendor statement that covers both, the way it defines
-//                  CH_NATIVE_WIDEMUL. Nothing in this file reads it.
-//
-// ct.h reads it, and only in a build that declares -DCH_SUITE_AES_GCM:
-// the two AES-GCM cipher suites hand this file a traffic key, AES-128
-// or AES-256, and that build without CH_NATIVE_AES is a compile error
-// rather than an object whose timing nobody stated. Every other build
-// hands it only the three public keys INV-26 names, whose timing leaks
-// nothing an observer does not already hold.
+// So one bit carries that claim, and it is the caller's to make, for the
+// CPU and the mode each session's thread runs in: CH_CPU_CONSTANT_TIME_AES
+// (cpu_cfg.h) states that the AES instructions run in constant time, and
+// so does the carry-less multiply ghash_hw.c runs GHASH on. Nothing in
+// this file reads it. A session takes the AES-GCM suites, and so hands
+// this file a traffic key, AES-128 or AES-256, only with the bit; every
+// other key this file sees is one of the three public keys INV-26 names,
+// whose timing leaks nothing an observer does not already hold.
 //
 // CBMC cannot read an intrinsic, so the proofs stay on the software path
 // and this file is held to it by test/aes_equiv_test.c, which runs both
@@ -73,7 +59,7 @@
 #include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
-#if defined(CH_AES_HW) || defined(CH_AES_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 #include <string.h>
@@ -81,20 +67,11 @@
 #include "ct.h"
 
 // Which instruction set the arms below take: the Arm AES instructions
-// where AES_HW_ARM is defined, and x86-64 AES-NI where it is not. Under
-// AES=hw the build's flags say which, and under AES=runtime the
-// architecture does, because no flag turns the instructions on.
-#ifdef CH_AES_RUNTIME
+// where AES_HW_ARM is defined, and x86-64 AES-NI where it is not. The
+// architecture says which, because no flag turns the instructions on, and
+// cpu_cfg.h has refused every target but these two.
 #ifdef __aarch64__
 #define AES_HW_ARM
-#elif !defined(__x86_64__)
-#error "AES=runtime needs an arm64 or x86-64 target, whose AES instructions it can run"
-#endif
-#elif defined(__ARM_FEATURE_AES)
-#define AES_HW_ARM
-#elif !defined(__AES__)
-#error                                                                                             \
-    "AES=hw needs the AES instructions: compile with -march=armv8-a+crypto or -maes, or build AES=soft"
 #endif
 
 #ifdef AES_HW_ARM
@@ -105,13 +82,12 @@ typedef uint8x16_t aes_state;
 typedef __m128i aes_state;
 #endif
 
-// Under AES=runtime, every function from here to the pop at the end of
-// this file carries the target attribute that turns the AES instructions
-// on: "+aes" is the Arm AES extension, and "aes" is x86-64 AES-NI. GCC's
-// target pragma applies the attribute to each function defined after it,
-// and clang's attribute pragma to each function it covers, so the
-// includes above and every other file of the object stay without it.
-#ifdef CH_AES_RUNTIME
+// Every function from here to the pop at the end of this file carries
+// the target attribute that turns the AES instructions on: "+aes" is the
+// Arm AES extension, and "aes" is x86-64 AES-NI. GCC's target pragma
+// applies the attribute to each function defined after it, and clang's
+// attribute pragma to each function it covers, so the includes above and
+// every other file of the object stay without it.
 #ifdef __clang__
 #ifdef AES_HW_ARM
 #pragma clang attribute push(__attribute__((target("+aes"))), apply_to = function)
@@ -124,7 +100,6 @@ typedef __m128i aes_state;
 #pragma GCC target("+aes")
 #else
 #pragma GCC target("aes")
-#endif
 #endif
 #endif
 
@@ -298,13 +273,11 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
 
 #endif
 
-#ifdef CH_AES_RUNTIME
 #ifdef __clang__
 #pragma clang attribute pop
 #else
 #pragma GCC pop_options
 #endif
-#endif
 
-#endif // CH_AES_HW || CH_AES_RUNTIME
+#endif // CH_CPU_RUNTIME
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

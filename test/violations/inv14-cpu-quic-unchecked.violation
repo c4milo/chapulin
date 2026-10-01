@@ -9,8 +9,9 @@ reason: ch_quic_init of a host object stops asking for the caller's
 
 --- old
 #ifdef CH_CPU_RUNTIME
-    // The caller's description of its CPU (cpu_cfg.h), before any rule
-    // that reads it.
+    // The caller's description of its CPU, which picks the AES the Initial
+    // packets run on and the suites the hello offers (cpu_cfg.h), before
+    // any rule that reads it.
     if (!cpu_bits_ok(cfg)) {
         return CH_EINVAL;
     }

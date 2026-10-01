@@ -236,10 +236,10 @@ rules:
       (§5.8), and every key those three use is public. So quic_initial.c
       and quic_retry.c are the only library sources that may name an
       aes_ or gcm_ entry outside the aes_traffic_ and gcm_traffic_
-      families; aes.c, gcm.c, the three AES implementations the
-      Makefile AES variable chooses among, and ghash_hw.c, gcm_hw.c and
-      gcm_vaes.c, the GHASH and the whole-block counter mode AES=hw adds,
-      are excluded as the definition sites. ch_aes_block
+      families; aes.c, gcm.c, the three AES implementations, and
+      ghash_hw.c, gcm_hw.c and gcm_vaes.c, the GHASH and the whole-block
+      counter mode a host object adds, are excluded as the definition
+      sites. ch_aes_block
       joins the family because an AES=extern build leaves that hook to
       the image, and a library source calling it would run AES on a key
       of its choosing exactly as a call to aes_ would. A use anywhere
@@ -293,10 +293,10 @@ rules:
       protects TLS records, and quic_packet.c, which protects QUIC
       Handshake and 1-RTT packets and their headers, are the two library
       sources that may name them; aes.c and gcm.c are excluded
-      as the definition sites. ct.h refuses that build unless it takes AES=hw or
-      AES=runtime and asserts the instructions' timing (CH_NATIVE_AES), or
-      takes AES=extern and asserts the peripheral's
-      (CH_AES_EXTERN_CONSTANT_TIME), and an AES=runtime object records the
+      as the definition sites. ct.h refuses that build unless it is a
+      host object, whose caller states the instructions' timing in
+      ch_cfg.cpu, or takes AES=extern and asserts the peripheral's
+      (CH_AES_EXTERN_CONSTANT_TIME), and a host object records the
       instructions in every traffic key's schedule, so a traffic key never
       meets the S-box, and aes_traffic_key.h, the type's body,
       is included by the same files and no other, which

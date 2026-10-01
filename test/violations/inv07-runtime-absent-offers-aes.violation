@@ -1,14 +1,14 @@
 invariant: INV-7
 file: suite.h
-catches: webpki_session_aes_runtime
-reason: an AES=runtime session whose caller's probe found no AES
-  instructions takes the AES-first default order, so its client offers
-  AES-256-GCM and AES-128-GCM and its server selects one of them, and the
-  traffic keys then run the AES instructions the caller said the CPU
-  lacks. test_webpki_runtime_answers requires the hello of the absent
-  answer to list ChaCha20 alone.
+catches: webpki_session_aes
+reason: a host object's session whose caller did not set
+  CH_CPU_CONSTANT_TIME_AES takes the AES-first default order whenever any
+  bit is set, so its client offers AES-256-GCM and AES-128-GCM and its
+  server selects one of them, and the traffic keys then run AES
+  instructions whose timing nobody stated. test_webpki_runtime_answers
+  requires the hello under the probe's bit alone to list ChaCha20 alone.
 
 --- old
-    if (cfg->aes_instructions != CH_AES_INSTRUCTIONS_PRESENT) {
+    if ((cfg->cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
 --- new
-    if (cfg->aes_instructions == 0) {
+    if (cfg->cpu == 0) {

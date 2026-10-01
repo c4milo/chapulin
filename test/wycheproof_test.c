@@ -454,7 +454,10 @@ static void run_mlkem_full(void) {
            COUNT(wp_mlkem), WP_MLKEM_SKIPPED);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (!wycheproof_take_cpu(argc, argv)) {
+        return 2;
+    }
     printf("wycheproof vectors at commit %s\n", WYCHEPROOF_COMMIT);
     run_x25519();
     run_ecdh_p256();

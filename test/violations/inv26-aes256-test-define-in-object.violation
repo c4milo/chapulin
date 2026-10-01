@@ -9,6 +9,6 @@ reason: LIB_DEF gains -DCH_AES_256_TEST, the define that compiles the
   its QUIC and SUITE=aesgcm rows ban the define.
 
 --- old
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF))
+             $(CPU_RUNTIME_DEF))
 --- new
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF) -DCH_AES_256_TEST)
+             $(CPU_RUNTIME_DEF) -DCH_AES_256_TEST)

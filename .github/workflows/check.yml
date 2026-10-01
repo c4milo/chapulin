@@ -114,8 +114,9 @@ jobs:
   # The deployment ISA: big-endian mips32r2 under qemu-user. Every
   # byte-exact suite (RFC 8448 traces, Wycheproof, unit vectors) must
   # pass on the target's byte order and code generation, not only on
-  # the x86-64 the other jobs run. The job also runs the AES=runtime
-  # check under qemu-x86_64, which the same qemu-user package carries.
+  # the x86-64 the other jobs run. The job also runs the host object's
+  # rows without the AES bit under qemu-x86_64, which the same qemu-user
+  # package carries.
   mips:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -131,15 +132,15 @@ jobs:
         # none matches, so this step cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
       - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
-      - name: Run the AES=runtime absent answer on an x86-64 CPU without AES-NI or PCLMULQDQ
-        # test/aes-runtime-qemu.sh builds the AES=runtime binaries with the
-        # runner's gcc and runs them under qemu-x86_64 on a CPU model with
-        # both instructions turned off. The answer that the instructions
-        # are absent must pass the vectors and whole QUIC and TCP
-        # handshakes. The present answer and an AES=hw build must die of
+      - name: Run a host object without the AES bit on an x86-64 CPU without AES-NI or PCLMULQDQ
+        # test/aes-runtime-qemu.sh builds host binaries with the runner's
+        # gcc and runs them under qemu-x86_64 on a CPU model with both
+        # instructions turned off. The rows whose ch_cfg.cpu leaves
+        # CH_CPU_CONSTANT_TIME_AES clear must pass the vectors and whole
+        # QUIC and TCP handshakes. The rows with the bit must die of
         # SIGILL, which shows the model traps both instructions, so a qemu
         # that kept them fails this step rather than passing it
-        # (docs/decisions.md 81).
+        # (docs/decisions.md 81 and 89).
         run: make aes-runtime-qemu
 
   arm64:
@@ -157,8 +158,9 @@ jobs:
       # jobs run their SSE2 arms (test/platforms.mk, suite-check). It also
       # runs the WIDEMUL=runtime binaries under both answers, whose native
       # copies take the NEON Poly1305 (docs/decisions.md 87), and the host
-      # object's binaries (docs/decisions.md 89); the check job runs them
-      # on x86-64.
+      # object's binaries, whose AES runs on the Arm instructions under gcc
+      # with and without the CH_CPU_CONSTANT_TIME_AES bit (docs/decisions.md
+      # 89); the check job runs them on x86-64.
       - run: make suite-check
       # The CHACHA=vector WIDEMUL=native object, which packages the NEON
       # Poly1305 (docs/decisions.md 83); the check job packages its SSE2
@@ -168,11 +170,8 @@ jobs:
       # Poly1305 is the NEON one; the check job packages an SSE2 one in
       # check-lib-quic-widemul-runtime.
       - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=runtime
-      # The AES=hw binaries on the Arm instructions under gcc, which no
-      # other CI job builds (test/platforms.mk, aes-hw-check).
-      - run: make aes-hw-check
-      # The three AES=runtime objects under gcc, disassembled: the AES and
-      # PMULL instructions must sit in aes_hw.c's and ghash_hw.c's
+      # Three host objects under gcc, disassembled: the AES and PMULL
+      # instructions must sit in aes_hw.c's, ghash_hw.c's and gcm_hw.c's
       # functions alone. No QEMU arm64 model turns the AES extension off,
       # so this job cannot run the answer that the instructions are absent
       # on a CPU without them, as the mips job does for x86-64
@@ -226,19 +225,18 @@ jobs:
       # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
       # so this job runs the vector paths' NEON arms under Apple clang, as
       # the arm64 job runs them under gcc, the WIDEMUL=runtime binaries
-      # under both answers, and the host object's binaries.
+      # under both answers, and the host object's binaries, whose AES runs
+      # on the Arm instructions.
       - run: make suite-check
       # The CHACHA=vector WIDEMUL=native object, which packages the NEON
       # Poly1305 (docs/decisions.md 83).
       - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
       # The same object holding both multiplies (docs/decisions.md 87).
       - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=runtime
-      # The AES=hw binaries on the Arm instructions. Apple clang predefines
-      # __ARM_FEATURE_AES, so AES_HW_PROBE finds them with no flag.
-      - run: make aes-hw-check
-      # The three AES=runtime objects under Apple clang, disassembled: the
-      # AES and PMULL instructions must sit in aes_hw.c's and ghash_hw.c's
-      # functions alone. macOS ships no nproc, so sysctl counts the cores.
+      # Three host objects under Apple clang, disassembled: the AES and
+      # PMULL instructions must sit in aes_hw.c's, ghash_hw.c's and
+      # gcm_hw.c's functions alone. macOS ships no nproc, so sysctl counts
+      # the cores.
       - run: make -j"$(sysctl -n hw.ncpu)" aes-runtime-disasm
 
   m3:

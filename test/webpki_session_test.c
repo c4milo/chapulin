@@ -376,15 +376,6 @@ static void fill_alpn(void) {
     }
 }
 
-// The answer an AES=runtime build gives a configuration a case builds:
-// the instructions present, the answer that offers all three suites
-// (docs/decisions.md 81). Every other build has no such field.
-#ifdef CH_AES_RUNTIME
-#define SESSION_AES_ANSWER(cfg) ((cfg).aes_instructions = CH_AES_INSTRUCTIONS_PRESENT)
-#else
-#define SESSION_AES_ANSWER(cfg) ((void)0)
-#endif
-
 static ch_cfg valid_cfg(mock_server *s) {
     for (size_t i = 0; i < sizeof anchors / sizeof anchors[0]; i++) {
         anchors[i] =
@@ -409,7 +400,6 @@ static ch_cfg valid_cfg(mock_server *s) {
     cfg.hostname = host;
     cfg.hostname_len = sizeof host;
     cfg.now_seconds = 1789000000U;
-    SESSION_AES_ANSWER(cfg);
     TEST_WIDEMUL_CFG(cfg);
     TEST_CPU_CFG(cfg);
     return cfg;
@@ -480,7 +470,7 @@ int main(void) {
     test_webpki_suite_refusals();
     test_webpki_suite_psk_hash();
 #endif
-#ifdef CH_AES_RUNTIME
+#if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_webpki_runtime_answers();
     test_webpki_runtime_without_aes();
 #endif

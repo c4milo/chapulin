@@ -1,7 +1,7 @@
 invariant: INV-17
 file: ghash_hw.c
 catches: ghash_equiv_test
-reason: the AES=hw GHASH data loop wipes its state only up to the powers
+reason: the host object's GHASH data loop wipes its state only up to the powers
   of the hash subkey, so H * x^-1 to H^8 * x^-1 stay in the dead frame
   after every call, and a later caller's uninitialized stack reads them.
   Each is a function of the key, and the first is the subkey shifted by

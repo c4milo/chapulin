@@ -6,6 +6,36 @@
 #ifndef CH_WYCHEPROOF_AES_GCM_H
 #define CH_WYCHEPROOF_AES_GCM_H
 
+#ifdef CH_CPU_RUNTIME
+// The bits the host leg's binary runs under (cpu_cfg.h): its one argument,
+// a number such as 0x3, or with none every bit the architecture defines.
+// The Makefile runs the binary once for each set of bits that changes a
+// path, and the AES-GCM suites below read the AES bit.
+static uint32_t wycheproof_cpu = CH_CPU_DEFINED;
+#endif
+
+// Takes the host leg's argument into wycheproof_cpu and prints it, and
+// returns 0 for an argument that is not a 32-bit number. Every other leg
+// takes no argument.
+static int wycheproof_take_cpu(int argc, char **argv) {
+#ifdef CH_CPU_RUNTIME
+    if (argc > 1) {
+        char *end = NULL;
+        unsigned long bits = strtoul(argv[1], &end, 0);
+        if (*argv[1] == 0 || *end != 0 || bits > UINT32_MAX) {
+            printf("wycheproof: %s is not a ch_cfg.cpu value\n", argv[1]);
+            return 0;
+        }
+        wycheproof_cpu = (uint32_t)bits;
+    }
+    printf("wycheproof host leg under ch_cfg.cpu 0x%" PRIx32 "\n", wycheproof_cpu);
+#else
+    (void)argc;
+    (void)argv;
+#endif
+    return 1;
+}
+
 // The AES-GCM suite, for gcm.c. Guarded because only a
 // -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles that file, and the generator emits
 // the rows under the same guard, so the legs that build this file
@@ -64,6 +94,12 @@ static void run_aes_gcm(void) {
 #ifdef CH_AES_256
         k.key.rounds = AES_128_ROUNDS;
 #endif
+#ifdef CH_AES_TWO_CIPHERS
+        // A QUIC host object runs this key on the cipher the leg's AES bit
+        // names, as it runs a session's Initial keys (aes_schedule.h).
+        k.key.instructions =
+            (wycheproof_cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
+#endif
         check_aes_gcm("aes_gcm", wp_aes_gcm[i].tc, &k, key + AES_128_KEY, wp_aes_gcm[i].aad_len,
                       wp_aes_gcm[i].msg_len, wp_aes_gcm[i].valid);
     }
@@ -75,16 +111,27 @@ static void run_aes_gcm(void) {
 #ifdef CH_AES_256
 // AEAD_AES_256_GCM, TLS_AES_256_GCM_SHA384's AEAD. Every leg that builds
 // this file passes -DCH_AES_256_TEST, so the AES=soft legs run the
-// software reference, the AES=hw leg the instructions a suite build runs
+// software reference, the host leg the instructions a suite build runs
 // and the AES=extern leg the hook with a 32-byte key, and every leg
-// answers the same suite.
+// answers the same suite. A host object holds AES-256 on the instructions
+// alone, and a session without the AES bit runs no AES-256, so the host
+// leg runs this suite under the bit alone.
 static void run_aes256_gcm(void) {
+#ifdef CH_AES_TWO_CIPHERS
+    if ((wycheproof_cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {
+        printf("wycheproof aes-256-gcm: not run without CH_CPU_CONSTANT_TIME_AES\n");
+        return;
+    }
+#endif
     for (size_t i = 0; i < COUNT(wp_aes256_gcm); i++) {
         const uint8_t *key = wp_aes256_gcm_data + wp_aes256_gcm[i].off;
         aes_public_key k;
         memset(&k, 0, sizeof k);
         aes_expand_round_keys_256(key, k.key.round_keys);
         k.key.rounds = AES_256_ROUNDS;
+#ifdef CH_AES_TWO_CIPHERS
+        k.key.instructions = AES_ON_INSTRUCTIONS;
+#endif
         check_aes_gcm("aes256_gcm", wp_aes256_gcm[i].tc, &k, key + AES_256_KEY,
                       wp_aes256_gcm[i].aad_len, wp_aes256_gcm[i].msg_len, wp_aes256_gcm[i].valid);
     }

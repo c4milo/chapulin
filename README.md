@@ -189,8 +189,8 @@ A platform is listed when CI runs the suites there on every push to main.
 
 | Platform | How the suites run | CI job |
 | --- | --- | --- |
-| Linux x86_64 | Natively, with every lint, proof and sanitizer, and AES=runtime under QEMU user mode on a CPU model without AES-NI or PCLMULQDQ (`make aes-runtime-qemu`) | `check`, `san`, `mips` |
-| Linux arm64 | Natively, the deterministic suites (`make suite-check`), AES=hw on the Arm AES and PMULL instructions (`make aes-hw-check`), and the AES=runtime objects disassembled (`make aes-runtime-disasm`) | `arm64` |
+| Linux x86_64 | Natively, with every lint, proof and sanitizer, and the host object without its AES bit under QEMU user mode on a CPU model without AES-NI or PCLMULQDQ (`make aes-runtime-qemu`) | `check`, `san`, `mips` |
+| Linux arm64 | Natively, the deterministic suites (`make suite-check`), the host object's AES on the Arm AES and PMULL instructions among them, and the host objects disassembled (`make aes-runtime-disasm`) | `arm64` |
 | mips32r2, big-endian | Cross-built, under QEMU user mode (`make cross-check`) | `mips` |
 | riscv32 | Cross-built with a pinned musl toolchain, under QEMU user mode | `riscv32` |
 | Cortex-M3, bare metal | The unmodified suites through semihosting on QEMU (`make m3-check`) | `m3` |

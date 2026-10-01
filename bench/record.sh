@@ -6,15 +6,15 @@
 # clang or gcc. `make bench-record` runs it.
 #
 # It asks make for the flags the library's objects compile with, LIB_CFLAGS,
-# and for the flags AES_HW_PROBE found for the AES instructions, so the
-# bench compiles the library sources as make lib does. CC picks the
-# compiler (default cc). It builds bench/record.c four times, each time
-# with the library sources it times:
+# and whether this compiler passes the host test, so the bench compiles the
+# library sources as make lib does. CC picks the compiler (default cc). It
+# builds bench/record.c four times, each time with the library sources it
+# times:
 #
-#   the SUITE=aesgcm AES=hw object's defines, -DCH_SUITE_AES_GCM -DCH_AES_HW,
-#   with CH_NATIVE_AES, the builder's statement ct.h requires of that
-#   build, and the widening multiply the packaged object ships: the
-#   AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 rows
+#   the SUITE=aesgcm host object's defines, -DCH_SUITE_AES_GCM
+#   -DCH_CPU_RUNTIME, whose traffic keys run on the AES instructions
+#   (docs/decisions.md 89), and the widening multiply the packaged object
+#   ships: the AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 rows
 #
 #   the same with -DCH_NATIVE_WIDEMUL, which WIDEMUL=native puts in an
 #   object: the ChaCha20-Poly1305 rows again, because Poly1305 is the one
@@ -33,9 +33,9 @@
 #   to chacha20_avx2.c and gcm_hw.c's entries to gcm_vaes.c, through the
 #   route headers test/chacha20_avx2_route.h and test/gcm_vaes_route.h
 #   (docs/decisions.md 90). Its rows' build column begins "AVX2+VAES".
-#   use_avx2 and use_vaes answer 0 until ch_cfg.cpu exists, so the
-#   library runs neither kernel yet, and this build is how a run times
-#   them
+#   use_avx2 and use_vaes answer 0 until they read their ch_cfg.cpu bits
+#   (docs/decisions.md 89), so the library runs neither kernel yet, and
+#   this build is how a run times them
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
@@ -54,8 +54,8 @@
 # builds both binaries, runs every row once and writes nothing, which is
 # the form for an emulated machine.
 #
-# The AES=hw sources come from the Makefile's AES_HW_SRCS, through `make
-# print-aes-hw-srcs`. The rest of the list is this script's own, so `make
+# The AES instructions' sources come from the Makefile's AES_HW_SRCS,
+# through `make print-aes-hw-srcs`. The rest of the list is this script's own, so `make
 # check` runs `bench/record.sh --build`, which builds every binary above
 # and stops before the first row: a call one of these sources gains into a
 # file the list leaves out fails check (docs/decisions.md 88).
@@ -73,21 +73,17 @@ CC=${CC:-cc}
 # CC may carry flags of its own, such as -arch x86_64, as it may for make.
 read -r -a CC_WORDS <<<"$CC"
 LIB_CFLAGS=$(make -s --no-print-directory print-lib-cflags CC="$CC")
-AES_HW_PROBE=$(make -s --no-print-directory print-aes-hw-probe CC="$CC")
+HOST_TARGET=$(make -s --no-print-directory print-host-target CC="$CC")
 if [ -z "$LIB_CFLAGS" ]; then
     echo "FAIL record bench: make print-lib-cflags returned no flags" >&2
     exit 1
 fi
-# The probe prints the flags that turn the instructions on, `none` when the
-# compiler has them without a flag, and nothing when it cannot have them.
-case "$AES_HW_PROBE" in
-"")
-    echo "FAIL record bench: $CC targets no AES instructions, so the AES=hw rows cannot build" >&2
+# The AES rows run in a host object, which a compiler that fails the host
+# test cannot build (cpu_cfg.h).
+if [ -z "$HOST_TARGET" ]; then
+    echo "FAIL record bench: $CC fails the host test, so the AES-GCM rows cannot build" >&2
     exit 1
-    ;;
-none) AES_HW_CFLAGS="" ;;
-*) AES_HW_CFLAGS=$AES_HW_PROBE ;;
-esac
+fi
 
 case "$(uname -m)" in
 arm64 | aarch64) ARCH=arm64 ;;
@@ -116,10 +112,9 @@ fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-# LIB_CFLAGS and AES_HW_CFLAGS are lists of flags, so they split on spaces.
+# LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
-FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
-    $AES_HW_CFLAGS -I. -Ibench)
+FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha.c bench/record_aead.c bench/record_stub.c
     record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c poly1305.c ct.c ct_wipe.c hkdf.c sha256.c

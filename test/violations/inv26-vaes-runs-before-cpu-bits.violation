@@ -1,11 +1,10 @@
 invariant: INV-26
 file: gcm_hw.c
 catches: test/quic-builds.sh
-reason: gcm_hw.c's use_vaes answers 1 before ch_cfg.cpu exists to carry
-  the caller's CH_CPU_VAES bit, so every x86-64 AES=hw and AES=runtime
-  object hands its blocks to the VAES kernels and dies of SIGILL on a CPU
-  with AES-NI and PCLMULQDQ and without VAES, which the AES=runtime answer
-  admits. Every vector and equivalence case passes on a CPU with the
+reason: gcm_hw.c's use_vaes answers 1 before it reads the caller's
+  CH_CPU_VAES bit, so every x86-64 host object hands its blocks to the
+  VAES kernels and dies of SIGILL on a CPU with AES-NI and PCLMULQDQ and
+  without VAES, which CH_CPU_CONSTANT_TIME_AES alone describes. Every vector and equivalence case passes on a CPU with the
   instructions.
   The script compiles gcm_hw.c for x86-64 and requires its object to call
   no kernel.

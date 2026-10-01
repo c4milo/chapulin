@@ -109,9 +109,10 @@ negotiates here and nowhere else.
 Built with `SUITE=aesgcm`, the same client offers three cipher suites,
 and `ch_tls.suite` reports the one the server selected. It offers them
 in its build's order: `TLS_AES_256_GCM_SHA384`, `TLS_AES_128_GCM_SHA256`,
-then `TLS_CHACHA20_POLY1305_SHA256` when the build takes `AES=hw` and
-defines `CH_NATIVE_AES`, and ChaCha20 first in every other build. Name
-another order, or leave a suite out, with `ch_cfg.cipher_suites`:
+then `TLS_CHACHA20_POLY1305_SHA256` in a host object whose `ch_cfg.cpu`
+holds `CH_CPU_CONSTANT_TIME_AES`, ChaCha20 alone in a host object without
+that bit, and ChaCha20 first on `AES=extern`. Name another order, or leave
+a suite out, with `ch_cfg.cipher_suites`:
 
 ```c
 static const uint16_t suites[] = {SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
@@ -327,8 +328,9 @@ against it. Built with
 section 9.1 makes mandatory to implement, and `TLS_AES_256_GCM_SHA384`, over
 all three transports, QUIC included, and `ch_srv_cfg.cipher_suites` sets the
 order ([`docs/decisions.md`](decisions.md) entry 58). With no order set it
-prefers the order its build's client offers in, AES-256-GCM first under
-`AES=hw` with `CH_NATIVE_AES` and ChaCha20 first otherwise (entry 80). The
+prefers the order its build's client offers in, AES-256-GCM first in a
+host object whose caller sets `CH_CPU_CONSTANT_TIME_AES` and ChaCha20 first
+otherwise (entries 80 and 89). The
 default build selects ChaCha20 alone and does not meet that section.
 [`docs/aes_suite.md`](aes_suite.md) states what the suite rests on and
 what it still owes.

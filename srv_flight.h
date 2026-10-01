@@ -128,9 +128,10 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 //
 // The suite order is cfg.srv.cipher_suites when the caller names one,
 // and otherwise suite.h's suite_default_order (docs/decisions.md 80):
-// AES-256-GCM, AES-128-GCM, then ChaCha20 in a build on AES=hw that
-// defines CH_NATIVE_AES, and ChaCha20, AES-128-GCM, then AES-256-GCM in
-// every other SUITE=aesgcm build. A build without that suite holds
+// AES-256-GCM, AES-128-GCM, then ChaCha20 in a host object whose caller
+// set CH_CPU_CONSTANT_TIME_AES, ChaCha20 alone in one whose caller did
+// not, and ChaCha20, AES-128-GCM, then AES-256-GCM in a SUITE=aesgcm
+// device object, which takes AES=extern. A build without that suite holds
 // ChaCha20 alone and does not meet §9.1's cipher suite requirement
 // (rfc9846.txt:4540-4543). The group order is srv_kex_group's:
 // X25519MLKEM768 whenever the client listed it, and x25519 otherwise

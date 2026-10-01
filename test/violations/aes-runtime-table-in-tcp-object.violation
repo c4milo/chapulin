@@ -1,16 +1,13 @@
 invariant: INV-26
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: AES=runtime puts the S-box table in every object it builds, the TCP
-  suite object included, where no public key exists for it to run and
-  the only AES keys are traffic keys. AES=runtime is the one value that
-  holds two implementations, and only its QUIC objects hold the table
-  (docs/decisions.md 81). The lint's AES=runtime TCP suite row bans
-  quic_aes_soft.c.
+reason: a TCP host object packages the S-box table beside the AES
+  instructions, where no public key exists for it to run and the only AES
+  keys are traffic keys. A host object holds two ciphers only over QUIC,
+  where the table runs the Initial and Retry keys (docs/decisions.md 81
+  and 89). The lint's TCP suite host row bans quic_aes_soft.c.
 
 --- old
-AES_DEF := -DCH_AES_RUNTIME
-AES_IMPL := $(AES_HW_SRCS)
+             $(if $(filter quic-nonblocking,$(TRANSPORT)),quic_aes_soft.c),$(AES_IMPL)))
 --- new
-AES_DEF := -DCH_AES_RUNTIME
-AES_IMPL := $(AES_HW_SRCS) quic_aes_soft.c
+             quic_aes_soft.c,$(AES_IMPL)))

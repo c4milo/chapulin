@@ -1,0 +1,17 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile stops refusing an AES value for a host object, so
+  `make lib ROLE=server AES=extern` on an arm64 or x86-64 machine builds
+  the host object, which holds the AES instructions, and drops the value
+  without a word: the image's ch_aes_block, which the caller meant to
+  run, never runs (docs/decisions.md 89). The lint's refusal rows build a
+  server's host object under AES=soft and AES=extern and require make to
+  stop.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+ifneq ($(origin AES),file)
+--- new
+ifneq ($(CPU_RUNTIME_DEF),)
+ifneq ($(origin AES),$(origin AES))
