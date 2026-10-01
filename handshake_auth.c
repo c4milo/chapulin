@@ -33,19 +33,19 @@
 #include "webpki_pin.h"
 #endif
 
-#ifdef CH_TRUST_WEBPKI
 // The signed content of RFC 9846 §4.5.2: 64 spaces, the context string,
 // a NUL byte, and the transcript hash. The signature scheme names the
 // hash that covers it, SHA-384 for ecdsa_secp384r1_sha384 and SHA-256
 // for the other two, while the transcript hash is hash_len bytes, 48
 // under TLS_AES_256_GCM_SHA384 and 32 under the other suites, because
 // the cipher suite fixes that one. The two hashes are chosen apart, by
-// two negotiated values, here and nowhere else in the client.
-static void hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_len,
-                                uint8_t out[SHA384_LEN]) {
+// two negotiated values, here and nowhere else in the client. Every
+// trust mode calls this one copy.
+void hsa_hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_len, uint8_t *out) {
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
     memset(pad, ' ', sizeof pad);
+#ifdef CH_TRUST_WEBPKI
     if (scheme == SIGALG_ECDSA_P384_SHA384) {
         sha512 s384;
         sha384_init(&s384);
@@ -55,6 +55,11 @@ static void hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t has
         sha384_final(&s384, out);
         return;
     }
+#else
+    // A raw or ca build accepts its one pinned scheme, and that scheme
+    // names SHA-256, so only a webpki build reads scheme.
+    (void)scheme;
+#endif
     sha256 s;
     sha256_init(&s);
     sha256_update(&s, pad, sizeof pad);
@@ -63,6 +68,7 @@ static void hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t has
     sha256_final(&s, out);
 }
 
+#ifdef CH_TRUST_WEBPKI
 // The one CertificateVerify scheme the leaf's key family can produce.
 // RFC 9846 §4.3.3 binds the hash to the curve for ECDSA and requires
 // RSA-PSS for an RSA key, so each of the three key families the mode
@@ -95,8 +101,8 @@ static int verify_leaf_signature(const webpki_leaf_info *leaf, const uint8_t *si
 // CertificateVerify: parse, rebuild the §4.5.2 signed content over the
 // hash_len-byte transcript hash, and verify against pin slot A then B.
 // The CA and webpki builds swap in the chain's leaf key here. Only a
-// webpki build can run a suite whose hash is not SHA-256, so the raw and
-// ca arms read SHA256_LEN, which hash_len is there.
+// webpki build can run a suite whose hash is not SHA-256, so hash_len
+// is SHA256_LEN in the raw and ca arms.
 static int check_certificate_verify(handshake_state *h, const uint8_t *hash, size_t hash_len) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -131,21 +137,11 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
         return CH_EAUTH;
     }
     uint8_t signed_hash[SHA384_LEN];
-    hash_signed_content(scheme, hash, hash_len, signed_hash);
+    hsa_hash_signed_content(scheme, hash, hash_len, signed_hash);
     int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
 #else
-    // Signed content per §4.5.2: 64 spaces, context string, NUL, transcript.
-    CH_ASSERT(hash_len == SHA256_LEN);
-    static const char ctx[] = "TLS 1.3, server CertificateVerify";
-    uint8_t pad[64];
-    memset(pad, ' ', sizeof pad);
-    sha256 s;
-    sha256_init(&s);
-    sha256_update(&s, pad, sizeof pad);
-    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx); // sizeof keeps the NUL
-    sha256_update(&s, hash, SHA256_LEN);
     uint8_t signed_hash[SHA256_LEN];
-    sha256_final(&s, signed_hash);
+    hsa_hash_signed_content(CH_PIN_SIGALG, hash, hash_len, signed_hash);
 #ifdef CH_TRUST_CA
     // The chain's leaf key signs the handshake; the pins already
     // vouched for the chain in hsa_server_auth.

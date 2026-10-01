@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: diff
+builds: bin/diff
+reason: the client drops the zero byte between the context string and the
+  transcript hash from the SHA-256 signed content (RFC 9846 §4.5.2), so it
+  checks every RSA-PSS and P-256 CertificateVerify over a digest no server
+  signs. bin/diff hashes the spec's hs_verify_content under the scheme and
+  compares that digest with hsa_hash_signed_content's.
+
+--- old
+    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx);
+--- new
+    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx - 1);

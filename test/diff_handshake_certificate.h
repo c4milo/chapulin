@@ -6,6 +6,9 @@
 #define CH_DIFF_HANDSHAKE_CERTIFICATE_H
 
 #include "diff_handshake_parser.h"
+#include "handshake_auth.h"
+#include "hkdf.h"
+#include "sha512.h"
 
 // The certificate_request_context and the CertificateEntry list
 // (§4.5.1), with the row's one deviation written into them.
@@ -175,6 +178,70 @@ static void diff_hs_certificate_verify(void) {
         hspd_request(cmd, sizeof cmd, "hs_certificate_verify", scheme, HSPD_CERTIFICATE_VERIFY,
                      body, w.len);
         expect(cmd, want);
+    }
+}
+
+// The schemes whose signed content the build hashes: the pinned build's
+// one scheme, or the three the webpki build accepts.
+#ifdef CH_TRUST_WEBPKI
+static const uint16_t hspd_content_schemes[] = {SIGALG_RSA_PSS_RSAE_SHA256,
+                                                SIGALG_ECDSA_P256_SHA256, SIGALG_ECDSA_P384_SHA384};
+#else
+static const uint16_t hspd_content_schemes[] = {CH_PIN_SIGALG};
+#endif
+
+// The longest content hs_verify_content returns, in bytes: 64 spaces,
+// the 33-byte context string, the zero byte and a SHA-384 transcript
+// hash.
+#define HSPD_CONTENT_MAX (64 + 33 + 1 + SHA384_LEN)
+
+// One row of the CertificateVerify signed content (RFC 9846 §4.5.2). The
+// spec writes the content with hs_verify_content and hashes it with its
+// own hash op, SHA-384 under ecdsa_secp384r1_sha384 and SHA-256 under the
+// other two schemes. The C side is hsa_hash_signed_content, the call the
+// client verifies with in every trust mode.
+static void hspd_content_row(uint16_t scheme, const uint8_t *hash, size_t hash_len) {
+    uint8_t digest[SHA384_LEN];
+    hsa_hash_signed_content(scheme, hash, hash_len, digest);
+    size_t digest_len = scheme == SIGALG_ECDSA_P384_SHA384 ? SHA384_LEN : SHA256_LEN;
+
+    char hash_hex[2 * HKDF_HASH_MAX + 1];
+    (void)hex_encode(hash_hex, hash, hash_len);
+    char content[2 * HSPD_CONTENT_MAX + 64];
+    char cmd[sizeof content + 16]; // the content and a hash op's name
+    (void)snprintf(cmd, sizeof cmd, "hs_verify_content %s", hash_hex);
+    query(cmd, content, sizeof content);
+    (void)snprintf(cmd, sizeof cmd, "%s %s", digest_len == SHA384_LEN ? "sha384" : "sha256",
+                   content);
+    char want[2 * SHA384_LEN + 1];
+    (void)hex_encode(want, digest, digest_len);
+    expect(cmd, want);
+}
+
+// The transcript hash is SHA256_LEN bytes, or HKDF_HASH_MAX where the
+// build adds SHA-384, as bin/diff does; those are the two lengths the
+// suites use. The first rows fill the transcript hash with 0x00, 0x20 and
+// 0xff, under every scheme and both lengths, and the rest are random.
+// chapulin neither sends nor verifies a client CertificateVerify, so
+// the client's context string is in neither the C nor the spec.
+static void diff_hs_verify_content(void) {
+    static const size_t hash_lens[] = {SHA256_LEN, HKDF_HASH_MAX};
+    static const uint8_t fills[] = {0x00, 0x20, 0xff};
+    size_t scheme_count = sizeof hspd_content_schemes / sizeof hspd_content_schemes[0];
+    uint8_t hash[HKDF_HASH_MAX];
+    for (size_t f = 0; f < sizeof fills; f++) {
+        memset(hash, fills[f], sizeof hash);
+        for (size_t l = 0; l < 2; l++) {
+            for (size_t s = 0; s < scheme_count; s++) {
+                hspd_content_row(hspd_content_schemes[s], hash, hash_lens[l]);
+            }
+        }
+    }
+    for (int i = 0; i < 400; i++) {
+        uint16_t scheme = hspd_content_schemes[rng_below(scheme_count)];
+        size_t hash_len = hash_lens[rng_below(2)];
+        rng_fill(hash, hash_len);
+        hspd_content_row(scheme, hash, hash_len);
     }
 }
 

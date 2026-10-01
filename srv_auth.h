@@ -134,14 +134,12 @@ const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg);
 // one length for both would produce a CertificateVerify no client can
 // verify.
 //
-// The client builds the same content twice already, for the other
-// direction's context string: hash_signed_content at
-// handshake_auth.c:42 under TRUST=webpki, and inline at
-// handshake_auth.c:132-143 otherwise. docs/server.md requires that
-// construction to move to a file both roles compile, so one rule the
-// RFC states once exists once. The move is owed and is not this
-// header's to make; until it lands this is a third copy of the
-// assembly with a different context string.
+// The client builds the same content, with the same context string, in
+// hsa_hash_signed_content (handshake_auth.h), which every client trust
+// mode calls. docs/server.md requires that construction to move to a
+// file both roles compile, so one rule the RFC states once exists once.
+// The move is owed and is not this header's to make; until it is made
+// this is a second copy of the assembly.
 //
 // Requires transcript_hash pointing at hash_len readable bytes, the
 // transcript hash as it stands after the Certificate message;

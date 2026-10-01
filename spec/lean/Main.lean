@@ -461,9 +461,10 @@ def dispatch : List String → Option String
       | .error _ => "ERR hs_certificate_verify reject"
   | ["hs_verify_content", hash] => do
     let h ← hexArg? hash
-    -- RFC 9846 §4.5.2 signs over the transcript hash, which is
-    -- SHA-256 under both cipher suites a client build may offer.
-    guard (h.size == 32)
+    -- RFC 9846 §4.5.2 signs over the transcript hash: SHA-256's 32
+    -- bytes under TLS_CHACHA20_POLY1305_SHA256 and
+    -- TLS_AES_128_GCM_SHA256, SHA-384's 48 under TLS_AES_256_GCM_SHA384.
+    guard (h.size == 32 || h.size == 48)
     return emit (Spec.HandshakeParser.verifyContent h)
   | ["p256_pub", d] => do
     let db ← hexArg? d

@@ -103,6 +103,7 @@ int main(int argc, char **argv) {
     diff_hs_encrypted_exts();
     diff_hs_certificate();
     diff_hs_certificate_verify();
+    diff_hs_verify_content();
     diff_writable_len();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

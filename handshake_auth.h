@@ -2,7 +2,8 @@
 // and the CA build's monotonic revocation rule. Split out of
 // handshake.c, which owns the state machine that calls this; the two
 // entry points below are the only ones it needs. The rest stays
-// private here. A CH_TRANSPORT_QUIC_NONBLOCKING build declares a third, because its
+// private here, except hsa_hash_signed_content, which the differential
+// calls. A CH_TRANSPORT_QUIC_NONBLOCKING build declares a third, because its
 // driver reads one handshake message per call and the flight is two
 // messages.
 #ifndef CH_HANDSHAKE_AUTH_H
@@ -62,6 +63,24 @@ int hsa_server_auth(handshake_state *h);
 // nothing more, and the caller turns the error into quic_fail.
 int hsa_read_certificate_verify(handshake_state *h);
 #endif
+
+// Writes to out the digest a server's CertificateVerify signs (RFC 9846
+// §4.5.2): the hash of 64 bytes of 0x20, the context string "TLS 1.3,
+// server CertificateVerify", one 0x00 byte, and the hash_len-byte
+// transcript hash. The cipher suite fixes the transcript hash, and
+// scheme fixes the hash over the content: SHA-384 for
+// ecdsa_secp384r1_sha384, which only a TRUST=webpki build accepts, and
+// SHA-256 for rsa_pss_rsae_sha256 and ecdsa_secp256r1_sha256.
+// check_certificate_verify calls it in every trust mode.
+// test/diff_handshake_certificate.h compares its digest with the
+// spec's `hs_verify_content` content hashed under the same scheme.
+//
+// Requires hash pointing at hash_len readable bytes, hash_len from
+// SHA256_LEN to HKDF_HASH_MAX, scheme naming a scheme the build
+// accepts, and out pointing at SHA384_LEN writable bytes under
+// ecdsa_secp384r1_sha384 and SHA256_LEN under the other two. Writes the
+// digest and cannot fail.
+void hsa_hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_len, uint8_t *out);
 
 // Raises the stored revocation epoch to the leaf's, once the peer has
 // proved it holds the leaf key. A no-op unless the caller configured

@@ -1056,7 +1056,9 @@ The entries are grouped by area:
   `CH_WEBPKI_KEY_MAX`.
 - **Not proved:** whether a signature is genuine.
   `test/webpki_auth_test.c` tests that over real chains and real
-  signatures.
+  signatures. Nor the bytes of the signed content, which the stubbed
+  hashes never read: the differential compares their digest with the
+  spec's (see [The differential oracle](#the-differential-oracle)).
 
 #### handshake_post
 
@@ -2741,6 +2743,9 @@ computes:
   the Retry integrity tag;
 - P-256 and RSA-PSS;
 - the grammar of the four handshake messages a server sends;
+- the content a server's CertificateVerify signs (RFC 9846 §4.5.2),
+  which the driver hashes under the signature scheme and compares with
+  the digest `hsa_hash_signed_content` writes;
 - the provisioning path: RFC 7468 armour with RFC 4648 base64, and the
   certificate walk that turns one PEM block into the key bytes a pin
   slot takes;
@@ -2766,9 +2771,10 @@ safe.
 `make diff` builds the spec, runs its selftests, and then drives
 comparisons between the C and the spec over a pipe, from a fixed seed:
 
-1. 21,636 random-input comparisons, the SHA-384 rows of HMAC, HKDF,
-   `expand_label` and the key schedule included, and 799 rows of
-   `ch_writable_len`'s arithmetic.
+1. 22,034 random-input comparisons, the SHA-384 rows of HMAC, HKDF,
+   `expand_label` and the key schedule included, 406 rows of the
+   CertificateVerify signed content, and 791 rows of `ch_writable_len`'s
+   arithmetic.
 2. The `TRANSPORT=quic-nonblocking` rows, 1,095 over the AES-128 and
    AES-256 blocks, AES-128-GCM, AES-256-GCM and GHASH, and in both QUIC
    versions the Initial keys at every connection ID length for both

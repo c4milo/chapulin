@@ -1830,9 +1830,13 @@ last `ROLE=server` stub, as the entry said it would.
   and each fails both that test and that harness:
   inv14-webpki-certificate-verify-scheme,
   inv14-webpki-certificate-verify-sha384 and
-  inv14-webpki-certificate-verify-p384-key. The walk's own fail-closed
-  answer is bin/webpki_chain_test's anchor_key_mismatch row, guarded by
-  inv14-webpki-chain-unverified; its issuer validity rows,
+  inv14-webpki-certificate-verify-p384-key. Every client trust mode builds
+  the signed content in `hsa_hash_signed_content`, and bin/diff compares
+  its digest with the spec's `hs_verify_content` hashed under the same
+  scheme; inv14-certificate-verify-content-separator drops the zero
+  byte after the context string, and bin/diff fails. The walk's own
+  fail-closed answer is bin/webpki_chain_test's anchor_key_mismatch
+  row, guarded by inv14-webpki-chain-unverified; its issuer validity rows,
   issuer_expired and issuer_not_yet_valid, are guarded by
   inv14-webpki-issuer-validity, and its list framing test by
   inv14-webpki-entry-extensions. The ALPN rules have boundary rows in

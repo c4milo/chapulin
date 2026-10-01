@@ -250,8 +250,12 @@ Spec.HandshakeParser.parseCertificateVerify : (offer : SignatureOffer) → (msg 
                         -- Line op: `hs_certificate_verify <rsa|p256|webpki> <msg>` →
                         -- `ok <algorithm> <signature>` / `ERR ... reject`.
 Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.5.2's
-                        -- 130 signed octets: 64 spaces, the context string, a
-                        -- zero, the hash. Line op: `hs_verify_content <hash>`.
+                        -- signed octets: 64 spaces, the server's context string,
+                        -- a zero, the hash; 130 octets over a SHA-256 transcript
+                        -- hash and 146 over a SHA-384 one. Line op:
+                        -- `hs_verify_content <hash>`, a 32- or 48-byte hash. The
+                        -- differential hashes the reply under the scheme and
+                        -- compares it with `hsa_hash_signed_content`.
 Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
                         -- rsa_pss_rsae_sha256: SHA-256, MGF1-SHA256, saltLen 32. Domain: any n;
                         -- the C admits 256..CH_RSA_MODULUS_MAX bytes in 8-byte steps (384 in the
