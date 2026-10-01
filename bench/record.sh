@@ -44,13 +44,21 @@
 # Timings belong to the machine that ran them. `bench/record.sh --quick`
 # builds both binaries, runs every row once and writes nothing, which is
 # the form for an emulated machine.
+#
+# The AES=hw sources come from the Makefile's AES_HW_SRCS, through `make
+# print-aes-hw-srcs`. The rest of the list is this script's own, so `make
+# check` runs `bench/record.sh --build`, which builds every binary above
+# and stops before the first row: a call one of these sources gains into a
+# file the list leaves out fails check (docs/decisions.md 88).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 QUICK=""
-if [ "${1:-}" = "--quick" ]; then
-    QUICK=--quick
-fi
+BUILD_ONLY=""
+case "${1:-}" in
+--quick) QUICK=--quick ;;
+--build) BUILD_ONLY=yes ;;
+esac
 
 CC=${CC:-cc}
 # CC may carry flags of its own, such as -arch x86_64, as it may for make.
@@ -90,6 +98,12 @@ else
 fi
 OUT=bench/results-record-$OS-$ARCH-$FAMILY.csv
 
+read -r -a AES_HW_SRCS <<<"$(make -s --no-print-directory print-aes-hw-srcs)"
+if [ "${#AES_HW_SRCS[@]}" -eq 0 ]; then
+    echo "FAIL record bench: make print-aes-hw-srcs returned no sources" >&2
+    exit 1
+fi
+
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
@@ -99,7 +113,7 @@ FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_A
     $AES_HW_CFLAGS -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha.c bench/record_aead.c bench/record_stub.c
-    record.c gcm.c aes.c aes_hw.c ghash_hw.c gcm_hw.c aead.c chacha20.c poly1305.c ct.c hkdf.c sha256.c
+    record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c poly1305.c ct.c hkdf.c sha256.c
     sha512.c sha512_compress.c)
 "${CC_WORDS[@]}" "${FLAGS[@]}" -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/record_native" "${SRCS[@]}"
@@ -114,6 +128,10 @@ if printf '#include "chacha20_vector.h"\n' | "${CC_WORDS[@]}" -DCH_CHACHA_VECTOR
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -o "$W/record_vector" "${VECTOR_SRCS[@]}"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL -o "$W/record_vector_native" \
         "${VECTOR_SRCS[@]}"
+fi
+if [ -n "$BUILD_ONLY" ]; then
+    echo "record bench: --build built every binary and ran nothing" >&2
+    exit 0
 fi
 
 load() { # the three load averages, space separated

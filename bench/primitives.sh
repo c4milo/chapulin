@@ -37,13 +37,22 @@
 # under emulation: `bench/primitives.sh --quick` builds everything, checks
 # every known answer, takes three short samples per row, prints them and
 # writes nothing, which is what an emulated or CI run is for.
+#
+# The handshake programs link the sources the Makefile names for
+# bin/tcp_nonblocking_loop_test. The primitives programs link a list of
+# this script's own, PRIMITIVE_SRCS, so `make check` runs
+# `bench/primitives.sh --build`, which builds every program and runs
+# none: a call one of those sources gains into a file the list leaves out
+# fails check (docs/decisions.md 88).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 QUICK=""
-if [ "${1:-}" = "--quick" ]; then
-    QUICK=--quick
-fi
+BUILD_ONLY=""
+case "${1:-}" in
+--quick) QUICK=--quick ;;
+--build) BUILD_ONLY=yes ;;
+esac
 RUNS=${RUNS:-3}
 CC=${CC:-cc}
 case "$(uname -m)" in
@@ -77,9 +86,18 @@ fi
 HANDSHAKE_DEFS=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM)
 HANDSHAKE_SRCS=(bench/primitives.c bench/primitives_handshake.c drbg.c "${LOOP_SRCS[@]}")
 
+# --build times nothing, so it compiles every program at once, each into
+# a log of its own, and names the programs that failed once all have
+# ended.
+BUILDS=()
 build() { # $1 = program name; the rest = flags and sources
     local name=$1
     shift
+    if [ -n "$BUILD_ONLY" ]; then
+        "$CC" "${FLAGS[@]}" -o "$W/$name" "$@" >"$W/$name.log" 2>&1 &
+        BUILDS+=("$name:$!")
+        return
+    fi
     "$CC" "${FLAGS[@]}" -o "$W/$name" "$@"
 }
 echo "primitives bench: building with $CC" >&2
@@ -115,6 +133,21 @@ build calls_ecdsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functi
     -DCH_PIN_ECDSA "${HANDSHAKE_SRCS[@]}"
 build calls_ecdsa_hybrid "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
     -DCH_PIN_ECDSA -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
+if [ -n "$BUILD_ONLY" ]; then
+    FAILED=""
+    for entry in "${BUILDS[@]}"; do
+        wait "${entry#*:}" || {
+            cat "$W/${entry%%:*}.log" >&2
+            FAILED="$FAILED ${entry%%:*}"
+        }
+    done
+    if [ -n "$FAILED" ]; then
+        echo "primitives bench: --build could not build:$FAILED" >&2
+        exit 1
+    fi
+    echo "primitives bench: --build built every program and ran nothing" >&2
+    exit 0
+fi
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'

@@ -2715,7 +2715,9 @@ padding and block boundaries of the 128-byte block checked either side.
 
 AddressSanitizer and UndefinedBehaviorSanitizer run over every
 deterministic suite (`make san-check`), with a committed canary proving
-the sanitizer is armed.
+the sanitizer is armed. The lane compiles each suite from the variable
+the suite's own rule reads, which `make check` builds, so a source the
+suite comes to need fails check before it fails the lane (INV-40).
 
 ### Line coverage
 

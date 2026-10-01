@@ -1437,6 +1437,49 @@ last `ROLE=server` stub, as the entry said it would.
   the rule in `tools/stamp.py`: name more inputs, never fewer.
 - See `tools/stamp.py` and the Makefile's comment above `check`.
 
+### INV-40 — a build outside check links what its sources call
+
+- **Claim.** A program that a recipe or a script builds outside
+  `make check` takes its sources from a list a rule that check builds
+  links, or `make check` builds the program itself. So a call that one
+  source gains into another fails `make check` before it breaks such a
+  build. The three differential arms and `test/spec_coverage.py` are
+  the exception: they share `bin/diff`'s list, which `make check-slow`
+  builds.
+- **Mechanism.** The lanes that rebuild a test check builds take that
+  test's sources from the variable the test's own rule reads:
+  `san-check`, `cross-check`, `m3-check`, `coverage`, the
+  `CH_CT_WIDEMUL` and `WIDEMUL=runtime` builds and the Wycheproof legs
+  read `DRBG_TEST_SRCS`, `RSA_TEST_SRCS`, `WYCHEPROOF_SRCS` and the
+  rest, and the three differential arms read `DIFF_SRCS`, which
+  `bin/diff` reads. The
+  scripts ask make: `bench/aead.sh` and `bench/record.sh` read
+  `AES_HW_SRCS`, `test/aes-runtime-qemu.sh` reads the lists its four
+  binaries' rules link, `bench/insn-m3.sh`, `bench/insn-mips.sh` and
+  `bench/insn-rv32.sh` read `INSN_SRCS` and `INSN_DEF`, and
+  `test/spec_coverage.py` links `DIFF_SRCS`. What a script still lists
+  itself, `make check` builds without running it: `check-script-builds`
+  runs `test/script-builds.sh`, which runs `bench/aead.sh --build`,
+  `bench/record.sh --build`, `bench/primitives.sh --build` and
+  `test/qemu-m3.sh --build`, and builds `bench/insn_driver.c` from
+  `INSN_SRCS` and `INSN_DEF`.
+- **Check.** `inv40-aead-calls-hkdf` gives `aead.c` a call into
+  `hkdf.c`, which the list `test/qemu-m3.sh` keeps leaves out, and
+  `test/script-builds.sh` catches it: the script's host build stops
+  linking.
+- **Violation.** A PR writes a recipe that names a test's sources
+  itself rather than through the test's variable, or adds a script that
+  compiles a list of its own and that `test/script-builds.sh` does not
+  build. Review holds both: no lint reads a recipe or a script for a
+  literal source list.
+- The host builds check the lists, not each target's flags: a call a
+  source makes only on a device core, such as one `softmul.c` would make
+  where the core has no multiplier, links on the host whatever the list
+  says. `proof/run.sh` names each harness's sources itself, because a
+  harness chooses which callees are stubs, and it rejects a result whose
+  log names a callee with no body.
+- See [decisions: Engineering](decisions.md#engineering), entry 88.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

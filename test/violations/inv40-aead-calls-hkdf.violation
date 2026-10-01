@@ -1,0 +1,35 @@
+invariant: INV-40
+file: aead.c
+catches: test/script-builds.sh
+reason: aead.c gains a call into hkdf.c, the way chacha20_vector.c gained one
+  into ct.c that san-check's list for bin/san/chacha20_equiv_test missed.
+  test/qemu-m3.sh links aead.c from a list of its own that leaves hkdf.c out,
+  so its host build stops linking, and only check's build of the script sees it.
+
+--- old
+#include "ct.h"
+#include "widemul.h"
+
+// MAC input per RFC 8439: aad, pad to 16, ct, pad to 16, le64(aad_len),
+// le64(ctlen). widemul is the answer Poly1305's block loop runs under
+// (widemul.h).
+static void mac(uint8_t widemul, const uint8_t key[CHACHA20_KEY],
+                const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len,
+                const uint8_t *ct, size_t n, uint8_t tag[AEAD_TAG]) {
+    uint8_t otk[CHACHA20_BLOCK];
+    chacha20_block(key, nonce, 0, otk);
+--- new
+#include "ct.h"
+#include "hkdf.h"
+#include "widemul.h"
+
+// MAC input per RFC 8439: aad, pad to 16, ct, pad to 16, le64(aad_len),
+// le64(ctlen). widemul is the answer Poly1305's block loop runs under
+// (widemul.h).
+static void mac(uint8_t widemul, const uint8_t key[CHACHA20_KEY],
+                const uint8_t nonce[CHACHA20_NONCE], const uint8_t *aad, size_t aad_len,
+                const uint8_t *ct, size_t n, uint8_t tag[AEAD_TAG]) {
+    uint8_t otk[CHACHA20_BLOCK];
+    chacha20_block(key, nonce, 0, otk);
+    uint8_t probe[SHA256_LEN];
+    hmac_sha256(otk, sizeof otk, aad, aad_len, probe);

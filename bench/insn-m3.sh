@@ -72,21 +72,30 @@ int main(void) {
 }
 RUNTIME
 
+# The sources and the defines every build takes are the Makefile's
+# INSN_SRCS and INSN_DEF, which the mips and rv32 counts read too and
+# check builds on the host.
+LISTS=$(make -s --no-print-directory print-insn-lists)
+SRCS=$(sed -n 1p <<<"$LISTS")
+DEFS=$(sed -n 2p <<<"$LISTS")
+[ -n "$SRCS" ] || {
+    echo "FAIL m3 insn count: make print-insn-lists returned no sources" >&2
+    exit 1
+}
+
 # The multiply macro is per build (see build below): the insns column
 # is for firmware, which ships the decomposition (LIB_CFLAGS filters
 # CH_NATIVE_WIDEMUL out), and the native_insns column is the same
 # driver over the umull the decomposition exists to avoid.
 CC="$M3_CC -std=c11 -O2 -mcpu=cortex-m3 -mthumb --specs=rdimon.specs \
     -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c \
-    -I. -Ibench"
-SRCS="ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
-      rsa.c rsa_mont.c buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c"
+    -I. -Ibench $DEFS"
 
 # $3 selects the multiply: CH_CT_WIDEMUL is the decomposition firmware
 # ships (ct.h takes it as the default, so the define only names the
 # choice), CH_NATIVE_WIDEMUL the native instruction.
 build() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> binary path on stdout
-    # CC holds the compiler and its flags, SRCS the sixteen source paths;
+    # CC holds the compiler and its flags, SRCS the source paths;
     # the shell must split both into separate arguments. Neither value
     # holds a glob character, so the other half of SC2086 does not apply.
     # shellcheck disable=SC2086

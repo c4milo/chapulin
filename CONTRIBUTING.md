@@ -63,7 +63,9 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   an unchanged tree and in about a minute after an edit, because it
   skips a lint that already passed on the same inputs (INV-37). It runs
   the build, linters, unit and strict-parser tests, Wycheproof vectors,
-  and the packaged-object export list. `make check-slow` runs what costs minutes —
+  and the packaged-object export list, and it builds, without running,
+  each program a bench or platform script compiles from a source list of
+  its own (INV-40). `make check-slow` runs what costs minutes —
   the proofs, e2e against a real server, the spec differential, the
   sequence enumerations — and the nightly runs it. Both must pass; they
   are split by duration, not by importance. The slow proof tier runs as

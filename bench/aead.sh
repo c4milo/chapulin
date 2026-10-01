@@ -19,6 +19,13 @@
 #                               loops, and ghash_hw.c's GHASH on PMULL
 #                               or PCLMULQDQ
 #
+# The AES=hw build links the sources the Makefile's AES_HW_SRCS names,
+# which it reads from `make print-aes-hw-srcs`. The rest of the list is
+# this script's own, so `make check` runs `bench/aead.sh --build`, which
+# builds all three binaries, runs none and writes nothing: a call one of
+# these sources gains into a file the list leaves out fails check
+# (docs/decisions.md 88).
+#
 # Every build is -O2, the level the packaged object uses. CC picks the
 # compiler (default cc); CI and the x86-64 row use CC=gcc.
 #
@@ -34,9 +41,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 QUICK=""
-if [ "${1:-}" = "--quick" ]; then
-    QUICK=--quick
-fi
+BUILD_ONLY=""
+case "${1:-}" in
+--quick) QUICK=--quick ;;
+--build) BUILD_ONLY=yes ;;
+esac
 
 CC=${CC:-cc}
 case "$(uname -m)" in
@@ -68,6 +77,12 @@ else
     exit 1
 fi
 
+read -r -a AES_HW_SRCS <<<"$(make -s --no-print-directory print-aes-hw-srcs)"
+if [ "${#AES_HW_SRCS[@]}" -eq 0 ]; then
+    echo "FAIL aead bench: make print-aes-hw-srcs returned no sources" >&2
+    exit 1
+fi
+
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
@@ -78,7 +93,11 @@ COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c chacha20.c poly
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" \
-    aes_hw.c ghash_hw.c gcm_hw.c
+    "${AES_HW_SRCS[@]}"
+if [ -n "$BUILD_ONLY" ]; then
+    echo "aead bench: --build built every variant and ran nothing" >&2
+    exit 0
+fi
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'

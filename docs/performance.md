@@ -590,6 +590,10 @@ property, never a cost to trade (`ct.[ch]`).
   figures above; a laptop's speed is a filter that orders candidates and lands in no document. A
   figure here is measured, never estimated, and a change to the code re-measures it in the same
   commit (`make lint-bench-numbers`).
+- `make check` builds every program those scripts build and runs none of them
+  (`test/script-builds.sh`), so a source list that misses a source the code calls fails check
+  rather than the next measurement. The instruction-count scripts take their sources and defines from the
+  Makefile's `INSN_SRCS` and `INSN_DEF`, and the AES=hw builds take `AES_HW_SRCS` (decision 88).
 - The record split above prints a filter's figures, as an exception to the rule above: a
   `SUITE=aesgcm AES=hw` build runs on hosts alone, so no device build can judge it, and
   [#184](https://github.com/c4milo/chapulin/issues/184) and

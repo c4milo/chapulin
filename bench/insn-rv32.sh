@@ -28,6 +28,13 @@ if [ "${1:-}" != "--inside" ]; then
         echo "SKIP rv32 insn count: docker not available" >&2
         exit 0
     }
+    INSN_LISTS=$(make -s --no-print-directory print-insn-lists)
+    INSN_SRCS=$(sed -n 1p <<<"$INSN_LISTS")
+    INSN_DEF=$(sed -n 2p <<<"$INSN_LISTS")
+    [ -n "$INSN_SRCS" ] || {
+        echo "FAIL rv32 insn count: make print-insn-lists returned no sources" >&2
+        exit 1
+    }
     TMPOUT=$(mktemp)
     trap 'rm -f "$TMPOUT"' EXIT
     # /src is writable for the toolchain download alone. The CSV comes
@@ -37,6 +44,7 @@ if [ "${1:-}" != "--inside" ]; then
     docker run --rm --platform linux/amd64 \
         -e "RV32_TC_VERSION=$RV32_TC_VERSION" \
         -e "RV32_TC_SHA256=$RV32_TC_SHA256" \
+        -e "INSN_SRCS=$INSN_SRCS" -e "INSN_DEF=$INSN_DEF" \
         -v "$PWD":/src -w /src "ubuntu@$UBUNTU_DIGEST" \
         bash /src/bench/insn-rv32.sh --inside > "$TMPOUT"
     mv "$TMPOUT" bench/results-insn-rv32.csv
@@ -263,17 +271,18 @@ GCC_INCLUDE=$("$GCC" -print-file-name=include)
 CC="$GCC -std=c11 -march=rv32imac -mabi=ilp32 -Os -ffreestanding \
     -nostdinc -isystem $GCC_INCLUDE -nostdlib -static -fno-pic -fno-pie -no-pie \
     -fno-stack-protector -Wl,--no-warn-rwx-segments \
-    -I/src -I/src/bench -I$W/shim -I$W"
-SRCS="/src/ct.c /src/sha256.c /src/hkdf.c /src/chacha20.c /src/poly1305.c \
-      /src/aead.c /src/x25519.c /src/p256.c /src/rsa.c /src/rsa_mont.c \
-      /src/buf.c /src/keysched.c /src/record.c \
-      /src/sha3.c /src/mlkem.c /src/mlkem_poly.c"
+    -I/src -I/src/bench -I$W/shim -I$W ${INSN_DEF:?}"
+# The sources and the defines every build takes are the Makefile's
+# INSN_SRCS and INSN_DEF, which the host half read and passed in; here
+# each source sits under /src.
+read -r -a INSN_NAMES <<<"${INSN_SRCS:?the host half passes INSN_SRCS}"
+SRCS="${INSN_NAMES[*]/#//src/}"
 
 # $3 selects the multiply: CH_CT_WIDEMUL is the decomposition firmware
 # ships (ct.h takes it as the default, so the define only names the
 # choice), CH_NATIVE_WIDEMUL the native instruction.
 build() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> binary path on stdout
-    # CC holds the compiler and its flags, SRCS the sixteen source paths.
+    # CC holds the compiler and its flags, SRCS the source paths.
     # The shell has to split both into separate arguments; quoting either
     # would hand gcc one argument containing spaces. Neither value holds a
     # glob character, so the other half of SC2086 does not apply.

@@ -176,6 +176,14 @@ Other targets:
   versions, and the make and environment variables it runs under, never
   a time (INV-37). `CHECK_NO_STAMPS=1` runs every check. CI starts each
   job without `bin/`, so CI runs every check in full.
+- `make check` builds, and does not run, each program a bench or
+  platform script compiles from a source list of its own:
+  `test/script-builds.sh` runs `bench/aead.sh --build`,
+  `bench/record.sh --build`, `bench/primitives.sh --build` and
+  `test/qemu-m3.sh --build`, and builds `bench/insn_driver.c` from the
+  Makefile's `INSN_SRCS`. The lanes check does not run, such as
+  `san-check`, `cross-check`, `m3-check` and `coverage`, compile each
+  test from the variable its own rule reads (decision 88, INV-40).
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

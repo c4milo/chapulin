@@ -388,6 +388,29 @@ def select_aes_runtime_qemu(out, changed):
                     ["test/docker-aes-runtime-qemu.sh"])
 
 
+# test/script-builds.sh builds the programs the bench and platform
+# scripts compile from source lists of their own (docs/decisions.md 88).
+# Any root source can gain a call into a file one of those lists leaves
+# out, and each script it runs, and the sources under bench/ and
+# test/qemu/ those scripts compile, can break a build of its own.
+SCRIPT_BUILDS_FILES = {"test/script-builds.sh", "bench/aead.sh", "bench/record.sh",
+                       "bench/primitives.sh", "test/qemu-m3.sh"}
+
+
+def select_script_builds(out, changed):
+    """test/script-builds.sh: every root C source, the scripts it runs,
+    and the C under bench/ and test/qemu/ they compile."""
+    for path in changed:
+        root_source = "/" not in path and path.endswith(".c")
+        script_source = (path.startswith(("bench/", "test/qemu/"))
+                         and path.endswith((".c", ".h")))
+        if root_source or script_source or path in SCRIPT_BUILDS_FILES:
+            out.add("tests", "test/script-builds.sh",
+                    f"{path} is compiled or run by test/script-builds.sh, which "
+                    f"builds what scripts compile from their own source lists",
+                    ["test/script-builds.sh"])
+
+
 # The files make lint-zig-build reads beside the packaged sources: the Zig
 # build, the Zig API the package's module is built from, the localizer it
 # runs, what the two scripts compile, the helper that lists the lengths
@@ -663,6 +686,7 @@ def plan(changed, mapping):
     select_modes(out, sources, mapping.lib_legs())
     select_pairs(out, changed, mapping.lib_legs())
     select_aes_runtime_qemu(out, changed)
+    select_script_builds(out, changed)
     select_zig(out, changed, mapping.lib_legs())
     select_codegen(out, csources, lib)
     select_runners(out, changed)

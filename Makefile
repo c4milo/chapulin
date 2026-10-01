@@ -1240,6 +1240,12 @@ print-lib-cflags:
 	@echo $(LIB_CFLAGS)
 print-aes-hw-probe:
 	@echo $(AES_HW_PROBE)
+# bench/aead.sh and bench/record.sh link the AES=hw sources from here
+# rather than from a list of their own: bench/aead.sh's list once lacked
+# gcm_hw.c, and bench.yml's aead job failed to link.
+.PHONY: print-aes-hw-srcs
+print-aes-hw-srcs:
+	@echo $(AES_HW_SRCS)
 # bench/primitives.sh builds its handshake program from the sources
 # bin/tcp_nonblocking_loop_test links, and asks here rather than
 # keeping its own list, for the reason bench/device-ram.sh does.
@@ -2917,8 +2923,9 @@ run-%: bin/%
 .PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
-# and strict-parser binary, the packaged-object export check, and the
-# Wycheproof vectors.
+# and strict-parser binary, the packaged-object export check, the
+# Wycheproof vectors, and a build, not a run, of each program a bench or
+# platform script compiles from a source list of its own.
 #
 # Every part of it is a prerequisite: the linters, each packaged-object
 # leg, each test binary's run, the Wycheproof vectors and the proof scan.
@@ -2966,10 +2973,10 @@ CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-e
               check-lib-server-widemul-runtime check-lib-quic-widemul-runtime check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
 .PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) check-x25519-builds check-chacha-builds \
-        check-widemul-builds check-wycheproof check-skips
+        check-widemul-builds check-script-builds check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
-       check-x25519-builds check-chacha-builds check-widemul-builds check-wycheproof check-skips proof-coverage \
-       proof-reach-smoke
+       check-x25519-builds check-chacha-builds check-widemul-builds check-script-builds check-wycheproof \
+       check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
 
 # A recipe line that runs a script which calls make itself starts with +,
@@ -3037,6 +3044,21 @@ check-chacha-builds:
 # beside it in make and in build.zig (docs/decisions.md 87).
 check-widemul-builds:
 	+@mkdir -p bin/check; ZIG='$(ZIG)' ./test/widemul-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+# The programs the bench and platform scripts compile from source lists of
+# their own, built and not run (test/script-builds.sh names them). No
+# other part of check builds them, so a call a source gains into a file
+# such a list leaves out failed only the script's next run: bench.yml's
+# aead job failed to link that way (docs/decisions.md 88). It costs about
+# 45 s of CPU and 9 s of wall on an M1 Pro, and it is skipped when it
+# passed before on the same inputs: every .c and .h file, the scripts it
+# runs, the Makefile, which they read lists and flags from, the
+# compiler's version and the system's release (tools/stamp.py).
+check-script-builds:
+	+@mkdir -p bin/check; python3 tools/stamp.py check-script-builds --content '*.[ch]' \
+	  --content 'bench/*.sh' --content test/qemu-m3.sh --content test/script-builds.sh \
+	  $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm' -- \
+	  env CC='$(CC)' ./test/script-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The Wycheproof legs, then the total docs/verification.md states against
 # the vectors they ran. The second is not stamped: an edit to the page
@@ -6351,10 +6373,12 @@ quic-footprint:
 # ChaCha20-Poly1305 against AES-128-GCM, timed per byte on this machine,
 # with each AEAD split into its cipher and its hash, under AES=soft and
 # AES=hw. bench/aead.sh states what it builds and writes
-# bench/results-aead-<arch>.csv. It is a measurement, so it is not in
-# `check`: its numbers belong to the machine that ran them, and a run
+# bench/results-aead-<arch>.csv. It is a measurement, so `check` does not
+# run it: its numbers belong to the machine that ran them, and a run
 # takes about half a minute. `bench/aead.sh --quick` builds every variant
-# and writes nothing, which is the form for an emulated machine.
+# and writes nothing, which is the form for an emulated machine, and
+# check-script-builds runs `bench/aead.sh --build`, which builds every
+# variant and runs none.
 # .github/workflows/bench.yml runs the full form on an x86-64 runner when
 # someone starts it by hand.
 .PHONY: bench-aead
@@ -6368,9 +6392,10 @@ bench-aead:
 # they are on PATH. bench/record.sh builds with the flags make lib uses and
 # the ones AES_HW_PROBE finds, states what it builds, and writes
 # bench/results-record-<os>-<arch>-<compiler>.csv, which docs/performance.md
-# reads. Not in `check` for the reason bench-aead is not, and a run takes
-# about a minute. `bench/record.sh --quick` runs every row once and writes
-# nothing.
+# reads. `check` does not run it, for the reason it does not run
+# bench-aead, and a run takes about a minute. `bench/record.sh --quick`
+# runs every row once and writes nothing, and check-script-builds runs
+# `bench/record.sh --build`, which builds every binary and runs none.
 .PHONY: bench-record
 bench-record:
 	CC='$(CC)' bench/record.sh
@@ -6379,10 +6404,28 @@ bench-record:
 # handshakes between this tree's client and server, on this machine.
 # bench/primitives.sh states what it builds and writes
 # bench/results-primitives-<arch>.csv and the handshake call counts beside
-# it; bench/notes-primitives.md ranks the rows. Not in `check` for the
-# reason bench-aead is not, and a run took 2 min 11 s on an M1 Pro.
-# `bench/primitives.sh --quick` builds every program, checks every known
-# answer and writes nothing.
+# it; bench/notes-primitives.md ranks the rows. `check` does not run it,
+# for the reason it does not run bench-aead, and a run took 2 min 11 s on
+# an M1 Pro. `bench/primitives.sh --quick` builds every program, checks
+# every known answer and writes nothing, and check-script-builds runs
+# `bench/primitives.sh --build`, which builds every program and runs none.
 .PHONY: bench-primitives
 bench-primitives:
 	CC='$(CC)' bench/primitives.sh
+
+# The sources bench/insn-m3.sh, bench/insn-mips.sh and bench/insn-rv32.sh
+# link beside bench/insn_driver.c to count each operation's instructions
+# on a device core, and the defines every one of their builds takes: the
+# extern entropy pattern, which cfg.h requires a build to declare and the
+# driver never draws from. The three scripts read both from here, sources
+# first, and test/script-builds.sh, which check runs, builds the driver
+# from the same two lines with this host's compiler. So a call one of
+# these sources gains into a file the list leaves out, or a define a
+# header comes to require, fails check (docs/decisions.md 88).
+INSN_SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
+             buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c
+INSN_DEF := -DCH_RAND_EXTERN
+.PHONY: print-insn-lists
+print-insn-lists:
+	@echo $(INSN_SRCS)
+	@echo $(INSN_DEF)

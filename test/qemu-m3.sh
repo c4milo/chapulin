@@ -9,8 +9,32 @@
 #
 # Needs qemu-system-arm and a clang with the Arm backend. Skips, with
 # the reason, when either is missing.
+#
+# SRCS below is this script's own list, so `make check` runs
+# `test/qemu-m3.sh --build`, which builds the host binary from it with the
+# host compiler, needs neither tool and runs nothing: a call one of these
+# sources gains into a file the list leaves out fails check
+# (docs/decisions.md 88).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c softmul.c"
+
+# The host build of the same main, same multiply path, host libc.
+host_build() { # $1 = the binary to write
+    # SRCS holds the paths as one string, which the shell must split.
+    # shellcheck disable=SC2086
+    cc -Os -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -I. \
+        -o "$1" $SRCS test/qemu/host_runtime.c
+}
+
+if [ "${1:-}" = "--build" ]; then
+    W=$(mktemp -d)
+    trap 'rm -rf "$W"' EXIT
+    host_build "$W/host"
+    echo "qemu-m3: --build built the host binary and ran nothing" >&2
+    exit 0
+fi
 
 CLANG=${CLANG:-$(command -v clang-23 || command -v /opt/homebrew/opt/llvm/bin/clang || command -v clang)}
 LLD=${LLD:-$(command -v ld.lld || echo "$(dirname "$CLANG")/ld.lld")}
@@ -31,8 +55,6 @@ echo 'int probe;' | "$CLANG" -target thumbv7m-none-eabi -c -x c - -o /dev/null 2
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c softmul.c"
-
 # The target build: the shipped multiply path (no CH_NATIVE_WIDEMUL),
 # no libc, everything at address zero per test/qemu/m3.ld.
 # shellcheck disable=SC2086
@@ -42,11 +64,7 @@ SRCS="test/qemu/m3_kat.c sha256.c x25519.c chacha20.c poly1305.c aead.c ct.c sof
     -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -I. \
     -Wl,--entry=reset_handler -T test/qemu/m3.ld -o "$W/m3.elf" $SRCS test/qemu/m3_runtime.c
 
-# The host build of the same main, same multiply path, host libc.
-# shellcheck disable=SC2086
-cc -Os -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -I. \
-    -o "$W/host" $SRCS test/qemu/host_runtime.c
-
+host_build "$W/host"
 "$W/host" > "$W/host.out"
 
 # Semihosting writes CRLF line endings; normalize so the diff and the

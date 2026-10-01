@@ -4510,3 +4510,60 @@ does nothing more.
       has to trace to its table, and a branch in each product loop would
       put the answer in every inner loop. One branch per operation keeps
       the files as they were.
+
+88. **A recipe or script that builds outside `make check` takes its
+    sources from a list a rule check builds links, and check builds what a
+    script still lists itself.** Recipes outside `make check` named their
+    sources by hand, so a change that adds a call from one file into
+    another broke only them. It happened twice on 2026-09-30: the AES=hw
+    build in `bench/aead.sh` lacked `gcm_hw.c`, and bench.yml's aead job
+    failed to link (9b72b67); `san-check`'s build of
+    `bin/san/chacha20_equiv_test` lacked `ct.c` once `chacha20_vector.c`
+    called `ct_wipe`, and CI's san job failed to link (c798fb8). `make
+    check` built neither, so both landed on main.
+
+    - **The lanes.** A test that check builds keeps the sources it links
+      in a variable its rule reads, such as `RSA_TEST_SRCS` or
+      `CHACHA20_EQUIV_TEST_SRCS`, and `san-check`, `cross-check`,
+      `m3-check`, `coverage`, the `CH_CT_WIDEMUL` builds and the
+      `WIDEMUL=runtime` builds read the same variable. The Wycheproof builds read `WYCHEPROOF_SRCS`, and the
+      three differential arms and `test/spec_coverage.py` read
+      `DIFF_SRCS`, which `bin/diff` reads.
+    - **The scripts.** A script asks make where a variable names what it
+      links: `bench/aead.sh` and `bench/record.sh` read `AES_HW_SRCS`
+      (`print-aes-hw-srcs`), and `test/aes-runtime-qemu.sh` reads the
+      lists its four binaries' rules link (`print-aes-runtime-qemu-srcs`).
+      The three instruction-count scripts read one list of sources and
+      defines, `INSN_SRCS` and `INSN_DEF` (`print-insn-lists`), where
+      each kept a copy before.
+    - **What check builds.** The rest of what a script lists is the
+      script's own choice: the AEAD sources a bench times, or the
+      modules the Cortex-M3 known answers need. `check-script-builds`
+      runs `test/script-builds.sh`, which builds every such program with
+      the host's compiler and runs none: `bench/aead.sh --build`,
+      `bench/record.sh --build`, `bench/primitives.sh --build`,
+      `test/qemu-m3.sh --build`, and `bench/insn_driver.c` over
+      `INSN_SRCS` and `INSN_DEF`. The step skips when it passed before on
+      the same inputs (INV-37).
+    - **Found on the way.** The three instruction-count scripts had not
+      compiled since b309c92, when `record.c` began to read `cfg.h`
+      through `suite.h` and their builds declared no entropy pattern.
+      `INSN_DEF` declares `CH_RAND_EXTERN`, which the driver never draws
+      from. `bench/record.sh` had not compiled since 9cf2028, which gave
+      `aead.c`'s `mac` the multiply's answer while
+      `bench/record_aead.c`, which includes `aead.c`, still called it
+      with seven arguments.
+    - **Left as they are.** `proof/run.sh` names each harness's sources
+      itself, because a harness chooses which callees are stubs, and it
+      rejects a result whose log names a callee with no body.
+      `bench/audit-mips.sh` compiles one file at a time and links
+      nothing, and `test/quic-builds.sh` and `test/chacha-builds.sh`
+      compile single files on purpose.
+
+    Cost: one more step in check, which builds 23 programs in about 45 s
+    of CPU and 9 s of wall time on an M1 Pro whenever a `.c` or `.h` file
+    changes; INV-40 states the rule, and `inv40-aead-calls-hkdf` shows the
+    step catches a call a script's list misses. Gain: a source list
+    outside check can no longer miss a source its code calls without
+    check failing first. The differential arms are the exception, because
+    `bin/diff`, whose list they share, builds in `make check-slow`.
