@@ -38,7 +38,7 @@ void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], con
 // Returns 0 on success, nonzero if ek fails the FIPS 203 section 7.2
 // modulus check (a coefficient at or above q). This call and
 // mlkem_decaps take first the answer their compression runs under, a
-// CH_WIDEMUL_ value (widemul.h); key generation compresses nothing.
+// WIDEMUL_ value (widemul.h); key generation compresses nothing.
 int mlkem_encaps_derand(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
                         const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]);
 

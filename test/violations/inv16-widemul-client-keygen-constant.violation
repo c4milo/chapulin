@@ -1,13 +1,13 @@
 invariant: INV-16
 file: handshake_flight.c
-catches: tcp_nonblocking_loop_widemul
-reason: the client derives its x25519 share under CH_WIDEMUL_NOT_STATED
-  whatever it answered. The share is the same.
+catches: tcp_nonblocking_loop_host
+reason: the client derives its x25519 share under WIDEMUL_NOT_STATED whatever
+  its ch_cfg.cpu states. The share is the same.
   test/tcp_nonblocking_loop_widemul.h counts the client's calls around
-  its own and requires a client that answers CH_WIDEMUL_CONSTANT_TIME to
-  call no file under its own names.
+  its own and requires a client whose ch_cfg.cpu holds
+  CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
 
 --- old
     widemul_x25519_base(widemul_answer(&t->cfg), h->pub, h->priv);
 --- new
-    widemul_x25519_base(CH_WIDEMUL_NOT_STATED, h->pub, h->priv);
+    widemul_x25519_base(WIDEMUL_NOT_STATED, h->pub, h->priv);

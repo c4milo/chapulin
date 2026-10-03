@@ -1,13 +1,14 @@
 invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: a CHACHA=vector WIDEMUL=runtime object stops carrying
-  poly1305_vector_native.c, so poly1305_native.c's call to the vector path
-  has no definition. lint-trust-separation's CHACHA=vector WIDEMUL=runtime
-  row requires the file.
+reason: a CHACHA=vector host object stops carrying poly1305_vector_native.c,
+  so poly1305_native.c's call to the vector path has no definition.
+  lint-trust-separation's CHACHA=vector host row requires the file.
 
 --- old
-ifeq ($(CHACHA)-$(WIDEMUL),vector-runtime)
+ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += poly1305_vector_native.c
-endif
+else ifeq ($(WIDEMUL),native)
 --- new
+ifneq ($(CPU_RUNTIME_DEF),)
+else ifeq ($(WIDEMUL),native)

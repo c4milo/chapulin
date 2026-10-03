@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: tcp_nonblocking_loop_host
+reason: widemul_answer gives every session the constant-time answer, so a host
+  session whose caller never stated the multiply's timing runs the native
+  multiply on its keys. Every byte comes out the same.
+  test/tcp_nonblocking_loop_widemul.h requires an end whose ch_cfg.cpu
+  lacks CH_CPU_CONSTANT_TIME_MULTIPLY to call no native copy.
+
+--- old
+    return (cfg->cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME
+                                                           : WIDEMUL_NOT_STATED;
+--- new
+    (void)cfg;
+    return WIDEMUL_CONSTANT_TIME;

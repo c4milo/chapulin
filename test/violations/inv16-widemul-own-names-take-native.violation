@@ -1,15 +1,15 @@
 invariant: INV-16
 file: ct.h
 catches: test/widemul-builds.sh
-reason: ct.h gives every file of a WIDEMUL=runtime object the native multiply,
-  so the files under their own names, which the answer
-  CH_WIDEMUL_NOT_STATED and every refused byte run, are the native copies
-  again under other names. Every test that checks bytes passes, and the
-  dispatch counts still split by name. test/widemul-builds.sh requires
-  each file under its own names to compile to the same assembly with the
-  runtime define as without it.
+reason: ct.h gives every file of a host object the native multiply, so the
+  files under their own names, which a session without
+  CH_CPU_CONSTANT_TIME_MULTIPLY runs, are the native copies again under
+  other names. Every test that checks bytes passes, and the dispatch
+  counts still split by name. test/widemul-builds.sh requires each file
+  under its own names to compile to the same assembly with the host
+  object's define as without it.
 
 --- old
 #if (defined(CH_NATIVE_WIDEMUL) || defined(CH_WIDEMUL_NATIVE_COPY)) && !defined(CH_CT_WIDEMUL)
 --- new
-#if (defined(CH_NATIVE_WIDEMUL) || defined(CH_WIDEMUL_NATIVE_COPY) || defined(CH_WIDEMUL_RUNTIME)) && !defined(CH_CT_WIDEMUL)
+#if (defined(CH_NATIVE_WIDEMUL) || defined(CH_WIDEMUL_NATIVE_COPY) || defined(CH_CPU_RUNTIME)) && !defined(CH_CT_WIDEMUL)

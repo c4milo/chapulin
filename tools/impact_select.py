@@ -447,13 +447,14 @@ def select_zig(out, changed, legs):
                     f"{path} is read by the TX_RECORD script, which holds "
                     f"build.zig's refusals to make's",
                     ["test/tx-record-builds.sh"])
-        # test/widemul-builds.sh does the same for WIDEMUL=runtime: the
-        # lists build.zig writes for it, and its refusal of X25519=wide
-        # (docs/decisions.md 87).
+        # test/widemul-builds.sh does the same for a host object's two
+        # multiplies: the lists build.zig writes for it, and its refusals
+        # of a WIDEMUL value and of X25519=wide (docs/decisions.md 87 and
+        # 89).
         if path in ("build.zig", "build.zig.zon", "test/widemul-builds.sh"):
             out.add("tests", "test/widemul-builds.sh",
-                    f"{path} is read by the WIDEMUL=runtime script, which "
-                    f"holds build.zig's lists and refusal to make's",
+                    f"{path} is read by the widening-multiply script, which "
+                    f"holds build.zig's lists and refusals to make's",
                     ["test/widemul-builds.sh"])
         # test/host-builds.sh does the same for the host test: the define
         # build.zig writes for each target, beside the Makefile's and

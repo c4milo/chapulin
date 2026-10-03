@@ -1478,7 +1478,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** The lanes that rebuild a test check builds take that
   test's sources from the variable the test's own rule reads:
   `san-check`, `cross-check`, `m3-check`, `coverage`, the
-  `CH_CT_WIDEMUL` and `WIDEMUL=runtime` builds and the Wycheproof legs
+  `CH_CT_WIDEMUL` builds, the host object's binaries and the Wycheproof legs
   read `DRBG_TEST_SRCS`, `RSA_TEST_SRCS`, `WYCHEPROOF_SRCS` and the
   rest, and the three differential arms read `DIFF_SRCS`, which
   `bin/diff` reads. The
@@ -1817,10 +1817,7 @@ last `ROLE=server` stub, as the entry said it would.
   derives no keys for, 0 among them; INV-7 states the version rules. INV-38
   states the refusals of a `CH_TX_PT` or a `record_size_limit` out of
   range, and INV-39 the refusal of a message before a key change that
-  does not end its record. In a `WIDEMUL=runtime` object every
-  init call and `ch_srv_check` refuse with `CH_EINVAL`, and send nothing,
-  a `ch_cfg.widemul` that is neither `CH_WIDEMUL_CONSTANT_TIME` nor
-  `CH_WIDEMUL_NOT_STATED`, 0 among them (decisions.md 87). In a host
+  does not end its record. In a host
   object every init call and `ch_srv_check` refuse with `CH_EINVAL`, and
   send nothing, a `ch_cfg.cpu` without `CH_CPU_PROBED`, 0 among them, and
   one with a bit outside `CH_CPU_DEFINED`, the bits the object defines
@@ -2078,14 +2075,6 @@ last `ROLE=server` stub, as the entry said it would.
   bin/srv_quic_test, and inv14-srv-chain-bound-one-past and
   inv14-srv-p256-key-unchecked bin/srv_auth_test;
   inv13-srv-signer-refusal-einval carries the flight's code.
-  The `WIDEMUL=runtime` answer has rows at 0, 1, 2 and 3 at every init
-  call: test/tcp_blocking_loop_widemul.h for `ch_connect`,
-  `ch_srv_accept` and `ch_srv_check`, test/tcp_nonblocking_loop_widemul.h
-  for `ch_record_init` and `ch_srv_record_init`, test/quic_loop_widemul.h
-  for `ch_quic_init` and `ch_srv_quic_init`, and
-  test/webpki_session_widemul.h for the webpki `ch_connect`. Six
-  `inv14-widemul-` violations drop the rule at each place it is written,
-  or admit 0, and each row catches its own.
   The host object's `ch_cfg.cpu` has rows at every init call and
   `ch_srv_check` in the host binaries: test/tcp_blocking_loop_cpu.h for
   `ch_connect`, `ch_srv_accept` and `ch_srv_check`,
@@ -2495,16 +2484,20 @@ last `ROLE=server` stub, as the entry said it would.
   `CH_CT_WIDEMUL` turns it off with the scalar multiply, and
   `test/chacha-builds.sh` checks that `poly1305.c` calls the path under
   both defines and under neither alone (decision 83).
-  A `WIDEMUL=runtime` object holds both multiplies, and the caller's
-  answer picks one for each operation (decision 87). Each file built on
+  A host object holds both multiplies, and the caller's
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` bit in `ch_cfg.cpu` picks one for each
+  operation of a session (decisions 87 and 89). Each file built on
   the multiply compiles under its own names on the decomposition, as a
-  `WIDEMUL=decomposed` object compiles it, and again as its native copy,
-  `<file>_native.c`, on the native multiply, scalar and vector.
-  `widemul.h` runs the native copy for `CH_WIDEMUL_CONSTANT_TIME` alone,
+  `WIDEMUL=decomposed` device object compiles it, and again as its native
+  copy, `<file>_native.c`, on the native multiply, scalar and vector.
+  `widemul_answer` gives a session `WIDEMUL_CONSTANT_TIME` when its
+  `ch_cfg.cpu` holds the bit and `WIDEMUL_NOT_STATED` when it does not, and
+  `widemul.h` runs the native copy for `WIDEMUL_CONSTANT_TIME` alone,
   with one branch per operation on that answer, so every other byte,
-  an unwritten one included, runs the decomposition. `ct.h` refuses
-  `CH_NATIVE_WIDEMUL` beside the value, a native copy outside it, and
-  the `X25519=wide` field beside it.
+  a wiped direction's 0 included, runs the decomposition. `ct.h` refuses
+  `CH_NATIVE_WIDEMUL` in a host object, a native copy outside one, and
+  the `X25519=wide` field in one. A device object holds one multiply, the
+  one its `WIDEMUL` value names, and no host object takes that variable.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -2607,25 +2600,29 @@ last `ROLE=server` stub, as the entry said it would.
   host binary compiles out, and `make test-invariants` requires it to
   fail on a dropped carry in either recombination and on a narrowed
   `ct_widemul_opaque` operand.
-  A `WIDEMUL=runtime` object's native copies hold ceilings of their own
-  in both counts under every spec: the products each asks of the native
-  multiply, which is what the copy is for, and its branches, read
-  against the file under its own names, which keeps the ceilings above.
+  A host object's native copies hold branch ceilings of their own under
+  the two 64-bit specs, read against the file under its own names, which
+  keeps the ceilings above. No 32-bit spec compiles a copy, because a
+  host object targets arm64 or x86-64.
   `test/widemul-builds.sh`, in `make check`, requires that file to
-  compile to the same assembly with the runtime define as without it,
-  `ct.h`'s three refusals, the vector Poly1305 in `poly1305_native.c`
-  alone, and the Makefile's and `build.zig`'s refusal of `X25519=wide`
-  beside the value. `bin/widemul_runtime_test` counts the calls into each
-  copy: the native copies alone under the constant-time answer, the
-  decomposition alone under every other byte. The loop binaries count
+  compile to the same assembly with the host object's define as without
+  it, `ct.h`'s three refusals, the vector Poly1305 in `poly1305_native.c`
+  alone, and the Makefile's and `build.zig`'s lists and refusals: the
+  copies for a host object alone, and no `WIDEMUL` value and no
+  `X25519=wide` for one. `bin/widemul_runtime_test` counts the calls into
+  each copy: the native copies alone under the constant-time answer, the
+  decomposition alone under every other byte, and it holds
+  `widemul_answer` to the multiply bit alone, at the bit by itself and
+  beside every other bit. The host loop binaries count
   each end's calls over whole handshakes, so a record direction, a
-  packet or a signature that does not carry its session's answer shows
-  as a call into the other copy. `lint-trust-separation` admits the
-  native copies in `WIDEMUL=runtime`'s rows alone. Forty-seven
-  `inv16-` violations break those rules: each dispatcher inverted, the
-  answer dropped at each init call and at each layer that passes it,
-  each `ct.h` refusal, and the copies the Makefile lists, and each is
-  caught.
+  packet or a signature that does not carry the answer its session's
+  `ch_cfg.cpu` gives shows as a call into the other copy.
+  `lint-trust-separation` admits the native copies in the host rows
+  alone. Fifty `INV-16` violations break those rules: each dispatcher
+  inverted, the answer read from another bit or from none, the answer
+  dropped at each init call and at each layer that passes it, each `ct.h`
+  refusal, the copies the Makefile lists and the `WIDEMUL` value a host
+  object refuses, and each is caught.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).

@@ -1,22 +1,23 @@
 // The one place an operation built on ct.h's widening multiply chooses the multiply it runs
-// (docs/decisions.md 87, https://github.com/c4milo/chapulin/issues/186).
+// (docs/decisions.md 87 and 89, https://github.com/c4milo/chapulin/issues/186).
 //
 // Seven files multiply through ct.h: poly1305.c, poly1305_vector.c, x25519.c, mlkem_poly.c,
 // p256_field.c, p256_scalar.c and rsa_sign.c. Each entry of theirs that runs the multiply,
 // called from outside them, has a dispatcher below, named for it with the widemul_ prefix. The
-// dispatcher's first argument is the answer the operation runs under, a CH_WIDEMUL_ value
-// (cpu_cfg.h). Every caller outside the seven files calls the dispatcher and passes on the
-// answer it was handed; a session passes its own, widemul_answer. An entry that multiplies
-// nothing, such as poly1305_init or p256_fe_add, is called under its own name.
+// dispatcher's first argument is the answer the operation runs under, a WIDEMUL_ value below.
+// Every caller outside the seven files calls the dispatcher and passes on the answer it was
+// handed; a session passes its own, widemul_answer. An entry that multiplies nothing, such as
+// poly1305_init or p256_fe_add, is called under its own name.
 //
-// An object that holds one multiply compiles each file once, so each dispatcher calls that copy
-// and reads no answer. A WIDEMUL=runtime object (-DCH_WIDEMUL_RUNTIME) compiles each file twice:
-// under its own names on the decomposition, as a WIDEMUL=decomposed object does, and again as
-// <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
-// _native. Its dispatchers run the native copy for CH_WIDEMUL_CONSTANT_TIME and the file under
-// its own names for every other byte. That is one branch per call, on the answer, which the
-// caller chose and which is not secret: never one per product, and through no function pointer.
-// Poly1305 takes one per update and one per final, P-256 one per field or scalar multiply.
+// A device object holds one multiply and compiles each file once, so each dispatcher calls that
+// copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles each file twice:
+// under its own names on the decomposition, as a WIDEMUL=decomposed device object does, and again
+// as <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
+// _native. Its dispatchers run the native copy for WIDEMUL_CONSTANT_TIME and the file under its
+// own names for every other byte. That is one branch per call, on the answer, which the caller's
+// ch_cfg.cpu chose and which is not secret: never one per product, and through no function
+// pointer. Poly1305 takes one per update and one per final, P-256 one per field or scalar
+// multiply.
 #ifndef CH_WIDEMUL_H
 #define CH_WIDEMUL_H
 
@@ -32,24 +33,30 @@
 #include "rsa_sign.h"
 #include "x25519.h"
 
-#ifdef CH_WIDEMUL_RUNTIME
+// The two answers an operation built on the multiply runs under. WIDEMUL_CONSTANT_TIME says the
+// multiply runs in constant time on this CPU, in the mode the session's thread runs in, and takes
+// the native multiply. WIDEMUL_NOT_STATED says nothing states that, and takes ct.h's 16x16
+// decomposition. A host object's session runs under the first when its caller set
+// CH_CPU_CONSTANT_TIME_MULTIPLY in ch_cfg.cpu, and under the second when it did not
+// (widemul_answer). A device object runs every operation under the one its build states,
+// WIDEMUL_BUILD_ANSWER.
+#define WIDEMUL_CONSTANT_TIME 1
+#define WIDEMUL_NOT_STATED 2
 
-// The answer the operations of a session configured by cfg run under: its ch_cfg.widemul,
-// which an init call or ch_srv_check accepted (widemul_answer_ok).
+#ifdef CH_CPU_RUNTIME
+
+// The answer the operations of a session configured by cfg run under: WIDEMUL_CONSTANT_TIME when
+// its ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and WIDEMUL_NOT_STATED when it does not.
+// Every init call and ch_srv_check have accepted the value by then (cpu_bits_ok, cpu.h).
 static inline uint8_t widemul_answer(const ch_cfg *cfg) {
-    return cfg->widemul;
-}
-
-// Whether cfg states one of the two answers cpu_cfg.h names. Every init call and ch_srv_check
-// refuse a configuration this rejects with CH_EINVAL before they send anything.
-static inline int widemul_answer_ok(const ch_cfg *cfg) {
-    return cfg->widemul == CH_WIDEMUL_CONSTANT_TIME || cfg->widemul == CH_WIDEMUL_NOT_STATED;
+    return (cfg->cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME
+                                                           : WIDEMUL_NOT_STATED;
 }
 
 // Whether an operation under the answer widemul runs the native copy: for
-// CH_WIDEMUL_CONSTANT_TIME alone, so every other byte takes the decomposition.
+// WIDEMUL_CONSTANT_TIME alone, so every other byte takes the decomposition.
 static inline int widemul_native(uint8_t widemul) {
-    return widemul == CH_WIDEMUL_CONSTANT_TIME;
+    return widemul == WIDEMUL_CONSTANT_TIME;
 }
 
 static inline void widemul_poly1305_update(uint8_t widemul, poly1305 *p, const uint8_t *in,
@@ -192,14 +199,14 @@ static inline void widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const 
     rsa_sp1(k, em, sig);
 }
 
-#else // !CH_WIDEMUL_RUNTIME
+#else // !CH_CPU_RUNTIME
 
-// The answer every operation of an object that holds one multiply runs under: the one its
-// build states, which ct.h reads from CH_NATIVE_WIDEMUL and CH_CT_WIDEMUL.
+// The answer every operation of a device object runs under: the one its build states, which
+// ct.h reads from CH_NATIVE_WIDEMUL and CH_CT_WIDEMUL.
 #ifdef CH_WIDEMUL_NATIVE
-#define WIDEMUL_BUILD_ANSWER CH_WIDEMUL_CONSTANT_TIME
+#define WIDEMUL_BUILD_ANSWER WIDEMUL_CONSTANT_TIME
 #else
-#define WIDEMUL_BUILD_ANSWER CH_WIDEMUL_NOT_STATED
+#define WIDEMUL_BUILD_ANSWER WIDEMUL_NOT_STATED
 #endif
 
 // The answer the operations of a session configured by cfg run under: the build's.
@@ -302,6 +309,6 @@ static inline void widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const 
     rsa_sp1(k, em, sig);
 }
 
-#endif // CH_WIDEMUL_RUNTIME
+#endif // CH_CPU_RUNTIME
 
 #endif

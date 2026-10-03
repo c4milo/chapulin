@@ -78,7 +78,7 @@ static void seal_record(bench_state *b) {
     memcpy(body, b->app, b->plaintext_len);
     body[b->plaintext_len] = REC_APPDATA;
     if (b->aead == BENCH_CHACHA20_POLY1305) {
-        aead_seal(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body,
+        aead_seal(BENCH_WIDEMUL, b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body,
                   body + b->len);
     } else {
         gcm_traffic_seal(&b->key, b->nonce, b->sealed, REC_HDR, body, b->len, body, body + b->len);
@@ -95,6 +95,8 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len) {
     b->record_len = REC_HDR + b->len + AEAD_TAG;
     b->whole_blocks = b->len / AES_BLOCK;
     rec_dir_init_suite(&b->wr, secret, suite);
+    // What an init call writes into a session's directions (session.h).
+    b->wr.widemul = BENCH_WIDEMUL;
     b->rd = b->wr;
     memcpy(b->nonce, b->wr.iv, AEAD_NONCE); // the IV is the nonce at sequence number 0
     fill_random(b->app, plaintext_len);
@@ -260,7 +262,7 @@ static void run_compute_tag_fixed(bench_state *b) {
 
 static void run_chacha_seal(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    aead_seal(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body,
+    aead_seal(BENCH_WIDEMUL, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body,
               body + b->len);
     consume(body[b->len]);
 }
@@ -268,8 +270,8 @@ static void run_chacha_seal(bench_state *b) {
 static void run_chacha_open(bench_state *b) {
     refill(b);
     uint8_t *body = b->rec + REC_HDR;
-    if (!aead_open(WIDEMUL_BUILD_ANSWER, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len,
-                   body + b->len, b->rec)) {
+    if (!aead_open(BENCH_WIDEMUL, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body + b->len,
+                   b->rec)) {
         fail("aead_open rejected its own record");
     }
     consume(b->rec[0]);
@@ -307,7 +309,7 @@ static void run_mac(bench_state *b) {
 // Poly1305 over the ciphertext alone, from a fresh state, as mac runs it.
 static void run_poly1305_data(bench_state *b) {
     poly1305_init(&b->poly, b->poly_key);
-    poly1305_update(&b->poly, b->rec + REC_HDR, b->len);
+    widemul_poly1305_update(BENCH_WIDEMUL, &b->poly, b->rec + REC_HDR, b->len);
     consume((uint8_t)b->poly.h[0]);
 }
 

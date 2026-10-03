@@ -18,6 +18,9 @@
 #     arm64 core. It refuses AES=hw and AES=runtime, and an AES value for
 #     a host object, and lists make's sources for a device server on
 #     AES=extern.
+#   - HOST_TARGET is the test's result in both builds, which a check sets
+#     on its own command line: empty gives this host's object no define,
+#     and any other text gives a device target's object the define.
 #
 # `make check` runs it (check-host-builds). It is the catch target of the
 # violations that break one of the three: test/violations.py runs a script
@@ -109,6 +112,18 @@ for target in thumb-freestanding-eabi aarch64_be-linux-gnu; do
     esac
 done
 
+# HOST_TARGET sets the test's result, in make and in build.zig alike.
+case " $(make -s --no-print-directory print-lib-def RAND=extern TRUST=webpki ROLE=client HOST_TARGET=) " in
+*" -DCH_CPU_RUNTIME "*) fail "the Makefile gives a TRUST=webpki object -DCH_CPU_RUNTIME under HOST_TARGET set empty" ;;
+esac
+case " $(zig_defs host-target-empty -DHOST_TARGET=) " in
+*" -DCH_CPU_RUNTIME "*) fail "build.zig gives a TRUST=webpki object -DCH_CPU_RUNTIME under HOST_TARGET set empty" ;;
+esac
+case " $(zig_defs host-target-yes -Dtarget=thumb-freestanding-eabi -DHOST_TARGET=yes) " in
+*" -DCH_CPU_RUNTIME "*) ;;
+*) fail "build.zig gives a TRUST=webpki object no -DCH_CPU_RUNTIME under HOST_TARGET=yes" ;;
+esac
+
 # The AES variable chooses a device object's AES alone (docs/decisions.md
 # 89). Both builds refuse an AES value for a host object, and build.zig
 # has no name for AES=hw or AES=runtime, which chose the instructions when
@@ -148,4 +163,4 @@ case " $(tr '\n' ' ' < "$out/aes-device/lib-def.txt") " in
 esac
 
 echo "host-builds: cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone," \
-    "and build.zig takes AES for a device object alone"
+    "both builds take HOST_TARGET as the test's result, and build.zig takes AES for a device object alone"

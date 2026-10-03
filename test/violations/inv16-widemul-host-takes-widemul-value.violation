@@ -1,0 +1,15 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile takes a WIDEMUL value for a host object and builds the
+  host object anyway, so WIDEMUL=native asks for a statement the object
+  does not make: each session's ch_cfg.cpu picks the multiply
+  (docs/decisions.md 89). lint-trust-separation's refused rows require
+  make print-lib-def to fail for WIDEMUL=decomposed and WIDEMUL=native on
+  a host object.
+
+--- old
+ifneq ($(origin WIDEMUL),file)
+$(error WIDEMUL=$(WIDEMUL) chooses a device object's multiply, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which holds both multiplies and picks one per session from ch_cfg.cpu (docs/decisions.md 89): drop WIDEMUL, or set HOST_TARGET empty for the device object)
+endif
+--- new

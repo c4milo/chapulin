@@ -1,21 +1,25 @@
 // bin/widemul_runtime_test: which copy each operation built on ct.h's
-// widening multiply runs, under each answer, in a WIDEMUL=runtime object
-// (docs/decisions.md 87). Every entry widemul.h dispatches to is counted
-// (test/widemul_runtime_count.h), and each operation below runs under
-// CH_WIDEMUL_CONSTANT_TIME and CH_WIDEMUL_NOT_STATED and must:
+// widening multiply runs, under each answer, in a host object
+// (docs/decisions.md 87 and 89). Every entry widemul.h dispatches to is
+// counted (test/widemul_runtime_count.h), and each operation below runs
+// under WIDEMUL_CONSTANT_TIME and WIDEMUL_NOT_STATED and must:
 //
-//   - under CH_WIDEMUL_CONSTANT_TIME, call the native copies alone;
-//   - under CH_WIDEMUL_NOT_STATED, call the files under their own names
+//   - under WIDEMUL_CONSTANT_TIME, call the native copies alone;
+//   - under WIDEMUL_NOT_STATED, call the files under their own names
 //     alone, as many times as the native copies were called above, so no
 //     dispatcher took the other copy for one call among many;
 //   - compute the same bytes under both, and the published ones where a
 //     vector exists.
 //
 // Every other byte an answer can hold, 0, 3, 0x80 and 0xff, must take the
-// decomposition as CH_WIDEMUL_NOT_STATED does: the init calls refuse those
-// values, and the dispatchers must not depend on that. Under CHACHA=vector
-// the constant-time answer must also run the vector Poly1305, and no other
-// answer may.
+// decomposition as WIDEMUL_NOT_STATED does: a wiped record direction reads
+// 0, and no session passes the others, and the dispatchers must not depend
+// on that. Under CHACHA=vector the constant-time answer must also run the
+// vector Poly1305, and no other answer may.
+//
+// widemul_answer, which gives a session its answer, must read
+// CH_CPU_CONSTANT_TIME_MULTIPLY alone: the constant-time answer for every
+// ch_cfg.cpu that holds the bit, and the other for every value without it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -229,8 +233,8 @@ static void check_operation(const char *name, operation op, int runs_vector) {
     static uint8_t other_out[OUT_MAX];
     size_t stated_len = 0;
     size_t other_len = 0;
-    calls stated = counted(op, CH_WIDEMUL_CONSTANT_TIME, stated_out, &stated_len);
-    calls not_stated = counted(op, CH_WIDEMUL_NOT_STATED, other_out, &other_len);
+    calls stated = counted(op, WIDEMUL_CONSTANT_TIME, stated_out, &stated_len);
+    calls not_stated = counted(op, WIDEMUL_NOT_STATED, other_out, &other_len);
     int failed = failures;
     CHECK(stated.native > 0 && stated.decomposed == 0);
     CHECK(not_stated.native == 0 && not_stated.decomposed == stated.native);
@@ -242,10 +246,10 @@ static void check_operation(const char *name, operation op, int runs_vector) {
     CHECK(stated.vector == 0);
 #endif
     CHECK(stated_len == other_len && memcmp(stated_out, other_out, stated_len) == 0);
-    // Every byte the init calls refuse runs as the decomposition does.
-    static const uint8_t refused[] = {0, 3, 0x80, 0xff};
-    for (size_t i = 0; i < sizeof refused; i++) {
-        calls c = counted(op, refused[i], other_out, &other_len);
+    // Every byte that is neither answer runs as the decomposition does.
+    static const uint8_t neither[] = {0, 3, 0x80, 0xff};
+    for (size_t i = 0; i < sizeof neither; i++) {
+        calls c = counted(op, neither[i], other_out, &other_len);
         CHECK(c.native == 0 && c.vector == 0 && c.decomposed == not_stated.decomposed);
         CHECK(stated_len == other_len && memcmp(stated_out, other_out, stated_len) == 0);
     }
@@ -254,7 +258,26 @@ static void check_operation(const char *name, operation op, int runs_vector) {
                  name, stated.native, failures == failed ? "" : " -- FAILED");
 }
 
+// The answer widemul_answer gives each ch_cfg.cpu: the multiply bit alone
+// decides it, at the bit by itself, beside every other bit, and in the two
+// values that differ from those by that bit.
+static void check_answer(void) {
+    static const uint32_t with_bit[] = {CH_CPU_CONSTANT_TIME_MULTIPLY,
+                                        CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY, 0xffffffffU};
+    static const uint32_t without_bit[] = {0, CH_CPU_PROBED,
+                                           0xffffffffU & ~(uint32_t)CH_CPU_CONSTANT_TIME_MULTIPLY};
+    ch_cfg cfg;
+    memset(&cfg, 0, sizeof cfg);
+    for (size_t i = 0; i < sizeof with_bit / sizeof with_bit[0]; i++) {
+        cfg.cpu = with_bit[i];
+        CHECK(widemul_answer(&cfg) == WIDEMUL_CONSTANT_TIME);
+        cfg.cpu = without_bit[i];
+        CHECK(widemul_answer(&cfg) == WIDEMUL_NOT_STATED);
+    }
+}
+
 int main(void) {
+    check_answer();
     check_operation("aead", aead_run, 1);
     check_operation("x25519", x25519_run, 0);
     check_operation("mlkem", mlkem_run, 0);

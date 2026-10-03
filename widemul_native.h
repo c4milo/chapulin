@@ -1,15 +1,15 @@
-// The native copy of a file built on ct.h's widening multiply, for a WIDEMUL=runtime object
-// (-DCH_WIDEMUL_RUNTIME). Each <file>_native.c includes this header and then <file>.c, so the
-// copy is the same source text as the file under its own names, compiled once more.
+// The native copy of a file built on ct.h's widening multiply, for a host object
+// (-DCH_CPU_RUNTIME). Each <file>_native.c includes this header and then <file>.c, so the copy is
+// the same source text as the file under its own names, compiled once more.
 //
 // CH_WIDEMUL_NATIVE_COPY makes ct.h take the native multiply in this translation unit alone,
-// and ct.h refuses it outside a WIDEMUL=runtime object. The renames below give every function
+// and ct.h refuses it outside a host object. The renames below give every function
 // and constant the seven files define outside their own translation unit a second name, the
 // first with _native after it, so the two copies define no name twice. They rename the
 // declarations each file's header gives as well as its definitions, and a call from one of the
 // seven files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
 // copy of the callee. widemul.h's dispatchers call the _native entries for the answer
-// CH_WIDEMUL_CONSTANT_TIME alone.
+// WIDEMUL_CONSTANT_TIME alone.
 //
 // Every name the seven files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it.

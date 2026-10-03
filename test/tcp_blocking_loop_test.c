@@ -142,15 +142,11 @@ static uint8_t cli_buf[CH_MIN_RXBUF];
 typedef int (*recv_fn)(void *io, uint8_t *p, size_t n);
 
 #ifdef CH_CPU_RUNTIME
-// Both ends' ch_cfg.cpu in a host binary: TEST_CPU unless a row of
-// test/tcp_blocking_loop_runtime.h says otherwise.
-static uint32_t blocking_cpu = TEST_CPU;
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-// Each end's ch_cfg.widemul: TEST_WIDEMUL unless a row of
-// test/tcp_blocking_loop_widemul.h says otherwise.
-static uint8_t blocking_client_widemul = TEST_WIDEMUL;
-static uint8_t blocking_server_widemul = TEST_WIDEMUL;
+// Each end's ch_cfg.cpu in a host binary: TEST_CPU unless a row of
+// test/tcp_blocking_loop_runtime.h or test/tcp_blocking_loop_widemul.h
+// says otherwise.
+static uint32_t blocking_client_cpu = TEST_CPU;
+static uint32_t blocking_server_cpu = TEST_CPU;
 #endif
 
 // The rsa_pss identity alone, because the client pins its modulus.
@@ -175,10 +171,7 @@ static void server_config(ch_cfg *cfg, recv_fn recv) {
     attach_source(cfg, &server_source);
 #endif
 #ifdef CH_CPU_RUNTIME
-    cfg->cpu = blocking_cpu;
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-    cfg->widemul = blocking_server_widemul;
+    cfg->cpu = blocking_server_cpu;
 #endif
 }
 
@@ -194,10 +187,7 @@ static void client_config(ch_cfg *cfg, recv_fn recv) {
     attach_source(cfg, &client_source);
 #endif
 #ifdef CH_CPU_RUNTIME
-    cfg->cpu = blocking_cpu;
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-    cfg->widemul = blocking_client_widemul;
+    cfg->cpu = blocking_client_cpu;
 #endif
 }
 
@@ -214,7 +204,7 @@ static void peer_state(ch_tls *t, handshake_state *h, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     memset(h, 0, sizeof *h);
     t->cfg = *cfg;
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(t);
 #endif
     t->peer_limit = CH_TX_PT;
@@ -479,8 +469,8 @@ int main(void) {
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_runtime_answers();
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-    test_widemul_answers();
+#ifdef TEST_WIDEMUL_COUNTED
+    test_multiply_bit();
 #endif
 #ifdef CH_CPU_RUNTIME
     test_cpu_values_at_init();

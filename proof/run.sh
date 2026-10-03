@@ -271,8 +271,23 @@ launch() {
     # decomposition, at the full operand range
     # (https://github.com/c4milo/chapulin/issues/145). Both harnesses
     # override this with CH_CT_WIDEMUL, which ct.h lets win.
-    local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL \
-                -I . --unwind "$unwind")
+    # A host object's line, one that passes -DCH_CPU_RUNTIME, gets no
+    # -DCH_NATIVE_WIDEMUL: ct.h refuses the pair, because a host object
+    # takes the multiply's timing from ch_cfg.cpu (docs/decisions.md 89).
+    # A file a host line compiles under its own names is on the
+    # decomposition, as it is in that object. No host line's formula holds
+    # a widening product: each stubs the AEAD or calls none.
+    local widemul_def="-DCH_NATIVE_WIDEMUL" arg
+    for arg in "$@"; do
+        if [ "$arg" = "-DCH_CPU_RUNTIME" ]; then
+            widemul_def=""
+        fi
+    done
+    local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN)
+    if [ -n "$widemul_def" ]; then
+        args+=("$widemul_def")
+    fi
+    args+=(-I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
     # arm checks its length before expanding, as the caller below does.
     local solver=()
@@ -503,9 +518,10 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # properties, 128 s, 5.1 GB peak (the same command, nothing beside it).
 # With TLS_AES_256_GCM_SHA384 as a third offered suite (docs/decisions.md
 # entry 58): 719 properties, 93 s, 4.45 GB peak.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=handshake_parser_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 743 properties, 108 s, 6.45 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=handshake_parser_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 743 properties, 128 s, 6.13 GB peak.
 launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
@@ -650,9 +666,10 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # the AES-GCM open stub writing its output either way, zeros on a
 # mismatch (docs/decisions.md 85): 570 properties, 17 s, 0.59 GB at a
 # load average near 40.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=record_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 570 properties, 20 s, 0.58 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=record_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 576 properties, 20 s, 0.59 GB peak.
 launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -844,13 +861,15 @@ launch fast full writable_len 2 "ch_write.1:21"
 # PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast):
 # writable_len_suite 143 properties, 49 s, 72 MB at a load average near
 # 11; writable_len_suite_any 72 properties, under a second, 20 MB.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 143 properties, 42 s, 0.11 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=writable_len_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 143 properties, 44 s, 0.07 GB peak.
 launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 72 properties, under 1 s, 0.02 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=writable_len_suite_any PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 72 properties, 1 s, 0.02 GB peak.
 launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
@@ -1064,9 +1083,10 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # built fails, and so does one asserting that no hello with a SHA-384
 # binder is built, so both arms are reached. The sufficiency assertion is
 # tight here too: moved to CH_HELLO_MAX - 1 it fails.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=hello_build_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 671 properties, 134 s, 0.27 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=hello_build_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 671 properties, 165 s, 0.17 GB peak.
 launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,write_alpn.0:9,write_cipher_suites.0:4" -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
@@ -1401,9 +1421,10 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # same way: 140 properties, under 1 s, 0.02 GB peak; 145 properties, under
 # 1 s, 0.02 GB with version 2's keys compiled beside it, and again once the
 # counter-mode dispatch left aes.c.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 124 properties, under 1 s, 0.02 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 124 properties, 1 s, 0.02 GB peak.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes.c in the QUIC host suite object, which holds the AES instructions
 # and the table, over contract stubs of both ciphers' six entries: an
@@ -1417,9 +1438,10 @@ launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_
 # peak, and again once the counter-mode entry left aes.c.
 # An Initial key expanded on the instructions without the bit fails it
 # (inv26-runtime-absent-expands-on-instructions).
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=aes_runtime PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 196 properties, 1 s, 0.03 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=aes_runtime PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 196 properties, 1 s, 0.03 GB peak.
 launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
@@ -1448,9 +1470,10 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c proof/ct_wipe_stub.c -DCH
 # the four that version names (docs/decisions.md 79): 142 properties, 2 s,
 # 0.04 GB; 144 properties, 13 s, 0.57 GB once those four are version 1's
 # or version 2's by the version's index.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=quic_keys_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 144 properties, 13 s, 0.57 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=quic_keys_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 144 properties, 14 s, 0.57 GB peak.
 launch fast full quic_keys_suite 60 "" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
@@ -1504,9 +1527,10 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # const. With the AES-GCM open stub writing its output either way, zeros
 # on a mismatch (docs/decisions.md 85): 1143 properties, 15 s, 0.47 GB at
 # a load average near 40.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=quic_packet_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 1143 properties, 21 s, 0.48 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=quic_packet_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 1143 properties, 20 s, 0.48 GB peak.
 launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and
@@ -1645,9 +1669,10 @@ launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c proof/ct_wipe_stu
 # first. Measured the same way: 41 properties, under 1 s, 0.02 GB peak. A
 # walk that takes the first suite in the order whether or not the client
 # offered it fails three of the assertions.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=srv_select_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 41 properties, under 1 s, 0.02 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=srv_select_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 41 properties, under 1 s, 0.02 GB peak.
 launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # srv_select_runtime: the default order a host object's session takes
 # from its ch_cfg.cpu, any 32-bit value, which is ChaCha20 alone unless the
@@ -1656,9 +1681,10 @@ launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_
 # 89).
 # Measured the same way: 67 properties, under 1 s, 0.02 GB peak. A value
 # without the bit given the default order fails it.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=srv_select_runtime PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 67 properties, under 1 s, 0.02 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=srv_select_runtime PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 67 properties, under 1 s, 0.02 GB peak.
 launch fast full srv_select_runtime 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
@@ -1894,9 +1920,10 @@ launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:
 # architecture, and without CH_CPU_CONSTANT_TIME_AES only for a list that
 # names no AES-GCM suite. A value without CH_CPU_PROBED admitted, or an
 # AES-GCM suite admitted without the AES bit, fails it.
-# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), measured
-# the same way on 2026-10-01 (PROVE_ONLY=quic_config_webpki_suite PROVE_NO_CACHE=1
-# /usr/bin/time -l, M1 Pro): 782 properties, 6 s, 0.16 GB peak.
+# In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
+# -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
+# (PROVE_ONLY=quic_config_webpki_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
+# 782 properties, 6 s, 0.14 GB peak.
 launch fast full quic_config_webpki_suite 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c proof/ct_wipe_stub.c
 # The ROLE=server public calls and the flight driver above them. The

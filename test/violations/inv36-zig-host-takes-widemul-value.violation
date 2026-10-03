@@ -1,0 +1,16 @@
+invariant: INV-36
+file: build.zig
+catches: test/widemul-builds.sh
+reason: build.zig takes a WIDEMUL value for a host object, which the Makefile
+  refuses, so the two builds stop refusing the same values, and
+  WIDEMUL=native writes -DCH_NATIVE_WIDEMUL beside -DCH_CPU_RUNTIME for
+  ct.h to stop. test/widemul-builds.sh requires zig build to refuse
+  WIDEMUL=native and WIDEMUL=decomposed for a host object.
+
+--- old
+    if (config.widemul) |widemul| {
+        std.process.fatal("WIDEMUL={t} chooses a device object's multiply, and TRUST={t} ROLE={t} " ++ builds ++
+            "holds both multiplies and picks one per session from ch_cfg.cpu " ++
+            "(docs/decisions.md 89): drop WIDEMUL" ++ device, .{ widemul, config.trust, config.role });
+    }
+--- new

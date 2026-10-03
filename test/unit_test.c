@@ -367,7 +367,10 @@ static void test_rsa_device_bound(void) {
           0);
 }
 
-int main(void) {
+// A host binary takes the ch_cfg.cpu value it runs under as its one
+// argument (test/test_cpu.h); every other binary takes none.
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     test_ct();
     test_sha256();
     test_hmac_hkdf();

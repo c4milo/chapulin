@@ -1,6 +1,6 @@
 // The calls bin/widemul_runtime_test counts into each copy of the files
-// built on ct.h's widening multiply in a WIDEMUL=runtime object
-// (docs/decisions.md 87). The test/widemul_count_*.c units compile the
+// built on ct.h's widening multiply in a host object (docs/decisions.md 87
+// and 89). The test/widemul_count_*.c units compile the
 // seven files again, the files under their own names and the native
 // copies, with each entry widemul.h dispatches to under a second name
 // (test/widemul_count_names.h), and test/widemul_runtime_count.c defines
@@ -42,12 +42,21 @@ static inline void widemul_take_calls(widemul_end_calls *end) {
     widemul_decomposed_calls = 0;
 }
 
-// Whether an end ran the copy its answer names and never the other.
-static inline int widemul_ran_own_copy(const widemul_end_calls *end, uint8_t answer) {
-    if (answer == CH_WIDEMUL_CONSTANT_TIME) {
+// Whether an end whose ch_cfg.cpu is cpu ran the copy that value names and
+// never the other: the native copies with CH_CPU_CONSTANT_TIME_MULTIPLY,
+// and the files under their own names without it.
+static inline int widemul_ran_own_copy(const widemul_end_calls *end, uint32_t cpu) {
+    if ((cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0) {
         return end->native > 0 && end->decomposed == 0;
     }
     return end->decomposed > 0 && end->native == 0;
+}
+
+// The two descriptions a row gives each end: base with the multiply bit,
+// and base without it.
+static inline uint32_t widemul_row_cpu(uint32_t base, int stated) {
+    uint32_t clear = base & ~(uint32_t)CH_CPU_CONSTANT_TIME_MULTIPLY;
+    return stated ? (clear | CH_CPU_CONSTANT_TIME_MULTIPLY) : clear;
 }
 
 #endif

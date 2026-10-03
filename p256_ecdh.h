@@ -51,7 +51,7 @@
 #define P256_ECDH_DRAWS 4
 
 // Each call below takes first the answer its field and scalar multiplies
-// run under, a CH_WIDEMUL_ value, which it hands to widemul.h's dispatchers.
+// run under, a WIDEMUL_ value, which it hands to widemul.h's dispatchers.
 // A session passes its own (widemul_answer).
 
 // Turns 32 drawn bytes into a key pair: priv = draw, pub = draw * G.

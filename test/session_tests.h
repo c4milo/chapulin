@@ -68,10 +68,10 @@ static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     t->cfg.recv = mock_recv;
     t->cfg.io = m;
     t->cfg.on_ticket = mock_on_ticket;
-    // What an init call writes into a WIDEMUL=runtime session, which this
+    // What an init call writes into a host object's session, which this
     // one never runs (session.h).
-    TEST_WIDEMUL_CFG(t->cfg);
-#ifdef CH_WIDEMUL_RUNTIME
+    TEST_CPU_CFG(t->cfg);
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(t);
 #endif
     memcpy(t->rd_secret, secret, SHA256_LEN);

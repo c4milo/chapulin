@@ -8,8 +8,8 @@ reason: build.zig stops refusing an AES value for a host object, so a Zig
   server's lists on this host and requires the refusal.
 
 --- old
-        if (hostTarget(target) and !deviceClient(config)) {
-            std.process.fatal(
+    if (config.aes) |aes| {
+        std.process.fatal("AES={t} chooses a device object's AES, and TRUST={t} ROLE={t} " ++ builds ++
 --- new
-        if (hostTarget(target) and !deviceClient(config) and false) {
-            std.process.fatal(
+    if (config.aes) |aes| if (false) {
+        std.process.fatal("AES={t} chooses a device object's AES, and TRUST={t} ROLE={t} " ++ builds ++

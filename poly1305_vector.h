@@ -1,5 +1,5 @@
-// CHACHA=vector with WIDEMUL=native, and the native copy of a
-// WIDEMUL=runtime object: Poly1305's block loop (RFC 8439 §2.5) four
+// CHACHA=vector with WIDEMUL=native, and the native copy of a host
+// object: Poly1305's block loop (RFC 8439 §2.5) four
 // blocks at a time, in two lanes of five 26-bit limbs, NEON on
 // arm64 and SSE2 on x86-64. poly1305.c chooses between this path and its
 // own loop in one place, and stays the reference: it absorbs every block
@@ -10,8 +10,8 @@
 // UMULL and UMLAL or SSE2's PMULUDQ, so the path runs only where the
 // build states that every widening multiply the object runs, scalar or
 // vector, takes a time that does not depend on its operands. That is
-// CH_NATIVE_WIDEMUL, which WIDEMUL=native puts in an object (ct.h), or in
-// a WIDEMUL=runtime object the caller's answer CH_WIDEMUL_CONSTANT_TIME,
+// CH_NATIVE_WIDEMUL, which WIDEMUL=native puts in a device object (ct.h),
+// or in a host object the caller's CH_CPU_CONSTANT_TIME_MULTIPLY bit,
 // which runs the native copies alone (widemul.h). CH_CT_WIDEMUL, which
 // forces the 16x16 decomposition, turns the path off.
 // Under CHACHA=vector without the statement, poly1305.c's loop and its
@@ -64,8 +64,8 @@ void poly1305_vector_blocks(poly1305 *p, const uint8_t *m, size_t n);
 
 #endif // CH_POLY1305_VECTOR
 
-#if defined(CH_CHACHA_VECTOR) && defined(CH_WIDEMUL_RUNTIME)
-// The name a WIDEMUL=runtime object defines poly1305_vector_blocks under
+#if defined(CH_CHACHA_VECTOR) && defined(CH_CPU_RUNTIME)
+// The name a host object defines poly1305_vector_blocks under
 // (poly1305_vector_native.c, widemul_native.h), which poly1305_native.c's
 // block loop alone calls.
 void poly1305_vector_blocks_native(poly1305 *p, const uint8_t *m, size_t n);

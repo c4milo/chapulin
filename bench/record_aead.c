@@ -14,5 +14,5 @@
 void bench_aead_mac(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
                     const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                     uint8_t tag[AEAD_TAG]) {
-    mac(WIDEMUL_BUILD_ANSWER, key, nonce, aad, aad_len, ct, n, tag);
+    mac(BENCH_WIDEMUL, key, nonce, aad, aad_len, ct, n, tag);
 }

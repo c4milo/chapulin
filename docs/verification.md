@@ -53,8 +53,8 @@ The other 22 sources are in no such harness:
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_chacha_avx2` and the x86-64 kernels' Wycheproof leg run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `poly1305_native.c`, `x25519_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a `WIDEMUL=runtime` object, on the native multiply and under the names `widemul_native.h` gives (decision 87). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes `CH_NATIVE_WIDEMUL`: the same text under other names ([The WIDEMUL=runtime copies](#the-widemulruntime-copies)). |
-| `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the `WIDEMUL=runtime` binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
+| `poly1305_native.c`, `x25519_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
@@ -2660,59 +2660,76 @@ rests on the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `use_vaes` is
 to require beside `CH_CPU_VAES` and whose statement covers the AES
 instructions and the carry-less multiply at every width (decision 89).
 
-### The WIDEMUL=runtime copies
+### The host object's two multiplies
 
-A `WIDEMUL=runtime` object compiles each file built on the widening
-multiply twice, and the caller's answer picks a copy for each operation
-(decision 87). No harness compiles `CH_WIDEMUL_RUNTIME`, and neither copy
-needs a run of its own:
+A host object compiles each file built on the widening multiply twice,
+and each session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit picks a copy for
+each operation (decisions 87 and 89). `widemul_answer` turns the bit into
+the answer every dispatcher in `widemul.h` takes. No harness compiles a
+native copy, and neither copy needs a run of its own:
 
 - The native copy is its file's text on the native multiply under other
-  names. `proof/run.sh` passes `CH_NATIVE_WIDEMUL` to every harness, so
-  each harness of the file proves that text.
+  names. `proof/run.sh` passes `CH_NATIVE_WIDEMUL` to every harness of
+  those files, so each proves that text.
 - The file under its own names compiles to the same assembly with the
-  runtime define as without it, which `test/widemul-builds.sh` requires,
-  so it is the `WIDEMUL=decomposed` build's file. [ctwidemul](#ctwidemul)
-  carries the verdicts above to it, as it carries them to every target
-  that runs the decomposition.
-- Under twelve build configurations every harness preprocesses to the
-  text it had before the change, one assertion's line number aside, so
-  no verdict moved.
+  host object's define as without it, which `test/widemul-builds.sh`
+  requires, so it is the `WIDEMUL=decomposed` build's file.
+  [ctwidemul](#ctwidemul) carries the verdicts above to it, as it carries
+  them to every target that runs the decomposition.
+- The twelve harnesses that compile the host object's define get no
+  `CH_NATIVE_WIDEMUL`, which `ct.h` refuses beside it. None of their
+  formulas holds a widening product: each stubs the AEAD or calls none.
+  The text of eight of them changed when the answer moved to the bit,
+  because a record direction stores the answer there and `session.h`
+  includes `widemul.h`, and each of the twelve was proved again on that
+  commit.
+- Every other harness preprocesses to the text it had before that
+  commit, so no other verdict moved.
 
 What no proof covers is the choice itself: which copy each operation
-runs, and whether each session passes its own answer. Tests hold it:
+runs, and whether each session passes the answer its own `ch_cfg.cpu`
+gives. Tests hold it:
 
 - `bin/widemul_runtime_test`, in `make check`, compiles the seven files
   again under counted names and runs the AEAD, X25519, ML-KEM, P-256, RSA
   signing and record operations under each answer. Under
-  `CH_WIDEMUL_CONSTANT_TIME` they call the native copies alone, under
-  `CH_WIDEMUL_NOT_STATED` the decomposition alone and as many times, and
+  `WIDEMUL_CONSTANT_TIME` they call the native copies alone, under
+  `WIDEMUL_NOT_STATED` the decomposition alone and as many times, and
   under 0, 3, 0x80 and 0xff the decomposition, with the same bytes out of
-  all of them.
-- `bin/tcp_blocking_loop_widemul`, `bin/tcp_nonblocking_loop_widemul`,
-  `bin/quic_loop_widemul` and `bin/webpki_session_widemul` run whole
-  handshakes on the same counts for each pair of answers. Where both ends
-  are this tree's sessions, each end's calls are counted around its own
-  calls, so a direction, a packet or a signature that runs under another
-  answer than its session's shows.
-- The unit, ML-KEM, P-256 and RSA signing vectors and the Wycheproof suite
-  run once per answer.
+  all of them. It also holds `widemul_answer` to the multiply bit alone:
+  the constant-time answer for a `ch_cfg.cpu` that holds the bit, by
+  itself or beside every other bit, and the other answer for a value
+  without it.
+- `bin/tcp_blocking_loop_host`, `bin/tcp_nonblocking_loop_host`,
+  `bin/quic_loop_host` and `bin/webpki_session_host` run whole
+  handshakes on the same counts for each value of the bit at each end.
+  Where both ends are this tree's sessions,
+  each end's calls are counted around its own calls, so a direction, a
+  packet or a signature that runs under another answer than its session's
+  shows.
+- The unit, ML-KEM, P-256 and RSA signing vectors run once with the bit
+  and once without it, and the Wycheproof suite once for each of the four
+  values the AES bit and the multiply bit give.
 
-A mutant that inverts a dispatcher, or drops the answer at any of the
-places that pass it, computes the same bytes, so only the counts catch
-it; the 47 `inv16-` violations of decision 87 are those mutants. The
-counts say which copy ran, not what the native multiply costs in time:
-that is the caller's answer, which nothing here can check.
+A mutant that inverts a dispatcher, reads the answer from another bit,
+or drops the answer at any of the places that pass it, computes the same
+bytes, so only the counts catch it; those mutants are among the fifty
+`INV-16` violations that hold the host object's multiply
+(docs/invariants.md). The counts say which copy ran, not what the native
+multiply costs in time: that is the caller's statement, which nothing
+here can check.
 
 ### The host object's description of the CPU
 
 On arm64 and x86-64 a `TRUST=webpki` client, `ROLE=server` and
 `ROLE=both` build a host object, `-DCH_CPU_RUNTIME`, whose sessions take
-the caller's description of its CPU in `ch_cfg.cpu` (decision 89). No
-harness compiles the define, and under it no path reads a bit yet: every
-harness preprocesses to the text it had before the change, so no verdict
-moved. What no proof covers is the rule every init call and
-`ch_srv_check` apply to the field, `cpu_bits_ok`. Tests hold it:
+the caller's description of its CPU in `ch_cfg.cpu` (decision 89).
+Twelve harnesses compile the define, each named in its own entry above.
+One of them, `quic_config_webpki_suite`, proves that `ch_quic_init`'s
+configuration check returns `CH_OK` only for a field `cpu_bits_ok`
+admits ([quic_config_webpki](#quic_config_webpki)). No harness drives the
+other init calls or `ch_srv_check`, so no proof covers the rule at those
+calls. Tests hold it at every one:
 
 - `bin/tcp_blocking_loop_host`, `bin/tcp_nonblocking_loop_host`,
   `bin/quic_loop_host` and `bin/webpki_session_host`, in `make check`,

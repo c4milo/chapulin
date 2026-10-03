@@ -48,19 +48,14 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
 }
 #endif
 
-// Gives a test Config the session's source in a RAND=session build, a
-// description of the CPU in a host object and an answer about the
-// widening multiply in a WIDEMUL=runtime build, and does nothing in the
-// others.
+// Gives a test Config the session's source in a RAND=session build and a
+// description of the CPU in a host object, and does nothing in the others.
 static void with_source(chapulin::Config &cfg) {
 #ifdef CH_RAND_SESSION
     cfg.rand_bytes(session_fill, &session_ctx);
 #endif
 #ifdef CH_CPU_RUNTIME
     cfg.cpu(chapulin::Cpu{});
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-    cfg.widemul(chapulin::Widemul::not_stated);
 #endif
     (void)cfg;
 }
@@ -259,9 +254,6 @@ static void test_webpki_config(chapulin::Io io) {
 #ifdef CH_RAND_SESSION
         cfg.rand_bytes(session_fill, &session_ctx);
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-        cfg.widemul(chapulin::Widemul::not_stated);
-#endif
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         CHECK(cfg.raw().cpu == 0);
         chapulin::Session unset;
@@ -371,30 +363,6 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         // not use, and no peer sent one (alert.h).
         CHECK(s.alert_sent() != 0 && s.alert_received() == 0);
     }
-
-#ifdef CH_WIDEMUL_RUNTIME
-    // The answer about the widening multiply is written to ch_cfg.widemul
-    // as given; an unset one stays 0, which connect refuses before any I/O,
-    // and either answer gets to I/O (docs/decisions.md 87).
-    {
-        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
-#ifdef CH_RAND_SESSION
-        cfg.rand_bytes(session_fill, &session_ctx);
-#endif
-        cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
-        CHECK(cfg.raw().widemul == 0);
-        chapulin::Session unset;
-        CHECK(unset.connect(cfg) == chapulin::Status::invalid);
-        cfg.widemul(chapulin::Widemul::constant_time);
-        CHECK(cfg.raw().widemul == CH_WIDEMUL_CONSTANT_TIME);
-        chapulin::Session stated;
-        CHECK(stated.connect(cfg) == chapulin::Status::io);
-        cfg.widemul(chapulin::Widemul::not_stated);
-        CHECK(cfg.raw().widemul == CH_WIDEMUL_NOT_STATED);
-        chapulin::Session not_stated;
-        CHECK(not_stated.connect(cfg) == chapulin::Status::io);
-    }
-#endif
 
     // require_pq: a classic build cannot satisfy it and rejects the
     // config before any I/O; a KEX=pq build lets it through to I/O and

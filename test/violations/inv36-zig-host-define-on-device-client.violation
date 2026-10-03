@@ -8,6 +8,6 @@ reason: build.zig stops telling a device client from a host product, so a
   fails on -DCH_CPU_RUNTIME.
 
 --- old
-    const host = hostTarget(target) and !deviceClient(config);
+    return passed and !deviceClient(config);
 --- new
-    const host = hostTarget(target);
+    return passed;

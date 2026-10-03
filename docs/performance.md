@@ -33,8 +33,6 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4328** | — |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3376 | — |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15714** | — |
-| `ch_tls` under `WIDEMUL=runtime` | 1168 | — |
-| **total static working set, `WIDEMUL=runtime`** (2048 buffer) | **3216** | — |
 | `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
 | **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
 | `ch_tls` under `ROLE=server`, host object | 1992 | — |
@@ -81,13 +79,13 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3104 |
 | peak stack, `ch_connect` (PSK) | 2768 |
 | peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
-| peak stack, `ch_connect` (`TRUST=webpki`) | 16528 |
-| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16656 |
+| peak stack, `ch_connect` (`TRUST=webpki`) | 16560 |
+| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16688 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15872 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_write` / `ch_close` | 944 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 10304 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10448 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 10336 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10480 |
 
 ### What the larger builds pay for
 
@@ -112,7 +110,7 @@ P-256 scalar and point a retry to secp256r1 draws
 larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
-lists, secp256r1 (63). Its `ch_connect` peaks at 16,528 bytes, through
+lists, secp256r1 (63). Its `ch_connect` peaks at 16,560 bytes, through
 ML-KEM's decapsulation, above the 7,344 its chain walk into an RSA-4096
 verify reaches with ML-KEM pruned from the call graph
 (`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`). RSA-4096 is the widest
@@ -122,9 +120,9 @@ modulus a public root carries.
 server holds the hybrid ([`docs/decisions.md`](decisions.md) 54). Its
 ServerHello is built in the clear in the same staging array, and the
 hybrid one carries a 1,120-byte share, so the array holds 1,216 bytes of
-message behind the record header. `ch_srv_accept` peaks at 10,304
+message behind the record header. `ch_srv_accept` peaks at 10,336
 bytes, through the encapsulation to the client's key into K-PKE encrypt
-and Keccak, above the 5,280 its RSA-PSS signer reaches with the
+and Keccak, above the 5,376 its RSA-PSS signer reaches with the
 encapsulation pruned from the call graph (`STACK_PRUNE=srv_kex_share`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
@@ -143,18 +141,6 @@ same `ROLE=server` host object without the suite, and 304 larger for
 - a webpki client's configuration holds the caller's suite order, a
   pointer and a count ([`docs/decisions.md`](decisions.md) 80).
 
-**`WIDEMUL=runtime`.** The default build on `WIDEMUL=runtime` holds one more
-byte in `ch_cfg`, `widemul`, the caller's answer about the widening
-multiply ([`docs/decisions.md`](decisions.md) 87). With its alignment the
-byte adds 8 bytes to the session struct. Each record direction holds a copy
-of the answer in bytes the alignment of its sequence number left unused, so
-the directions do not grow. In the QUIC object colibri links, a host
-object with the suite, the byte sits in bytes the alignment after `cpu`
-left unused, and `ch_quic`, which the script prints, does not grow
-either. The value is for hosts, so these
-rows are host figures too, and `bench/sram.sh` does not measure the stack
-of a `WIDEMUL=runtime` build.
-
 **A host object.** On arm64 and x86-64 the Makefile and `build.zig`
 build a `TRUST=webpki` client, `ROLE=server` and `ROLE=both` as a host
 object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
@@ -162,10 +148,13 @@ object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
 the alignment of the pointer after it each session struct is 8 bytes
 larger than the same build's portable object, which the rows without
 "host object" measure, and the `SUITE=aesgcm` rows above are host objects
-too. A host object runs on those two architectures alone, so these rows
-are host figures. The stack peaks of `TRUST=webpki` and `ROLE=server` are
-a host object's too: `bench/stack.py` compiles what make packages for
-those builds on this host.
+too. Each record direction also holds the answer about the widening
+multiply that `cpu` gives ([`docs/decisions.md`](decisions.md) 87), in
+bytes the alignment of its sequence number left unused, so the directions
+do not grow. A host object runs on those two architectures alone, so
+these rows are host figures. The stack peaks of `TRUST=webpki` and
+`ROLE=server` are a host object's too: `bench/stack.py` compiles what make
+packages for those builds on this host, which holds both multiplies.
 
 ### The receive buffer
 
@@ -285,12 +274,6 @@ modules over the native multiply.
 The `TRUST=raw-ecdsa` build trades 2.2 kB of RSA for 5.8 kB of P-256
 and totals 33.8 kB. Its verify costs 4.0 times the default's on
 mips32r2, so the 64-byte pin costs both flash and handshake time.
-
-On `WIDEMUL=runtime` the default build totals 36.0 kB, 5.7 kB more: the
-native copies of `poly1305.c` and `x25519.c` beside the files under their
-own names, and the dispatch between them
-([`docs/decisions.md`](decisions.md) 87). The `total (WIDEMUL=runtime)`
-row of the same file sizes that build.
 
 ### The hybrid key exchange
 

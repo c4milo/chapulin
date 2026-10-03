@@ -1,13 +1,13 @@
 invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: the Makefile takes X25519=wide beside WIDEMUL=runtime, and ct.h's
-  refusal then stops the compile rather than the configuration.
+reason: the Makefile takes X25519=wide for a host object, and ct.h's refusal
+  then stops the compile rather than the configuration.
   lint-trust-separation's refused row requires make print-lib-def to
   fail for that pair.
 
 --- old
 ifeq ($(X25519),wide)
-$(error WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable)
+$(error X25519=wide states its multiply's timing at build time, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which takes the multiply's timing from each session's ch_cfg.cpu: use X25519=portable)
 endif
 --- new

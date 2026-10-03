@@ -68,9 +68,10 @@
 #define QUICK_BATCH_NS 1000.0 // one operation or a few, for --quick
 #define MAX_ROWS 32
 
-// The build column: the widening multiply, under CHACHA=vector the
-// ChaCha20 path before it, and before that the x86-64 kernels when
-// bench/record.sh routes the build's calls to them.
+// The build column: the widening multiply the rows run on, which the
+// answer BENCH_WIDEMUL picks in the host object (record_stages.h), under
+// CHACHA=vector the ChaCha20 path before it, and before that the x86-64
+// kernels when bench/record.sh routes the build's calls to them.
 #if defined(TEST_ROUTE_AVX2) && defined(TEST_ROUTE_VAES)
 #define KERNEL_LABEL "AVX2+VAES "
 #else
@@ -81,7 +82,7 @@
 #else
 #define CHACHA_LABEL KERNEL_LABEL ""
 #endif
-#ifdef CH_NATIVE_WIDEMUL
+#ifdef BENCH_WIDEMUL_NATIVE
 #define BUILD_LABEL CHACHA_LABEL "WIDEMUL=native"
 #else
 #define BUILD_LABEL CHACHA_LABEL "WIDEMUL=decomposed"

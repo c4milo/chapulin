@@ -106,12 +106,13 @@ link_flags=()
 # whose loop writes across each AES-GCM write key's ceiling
 # (docs/decisions.md 78). It and the QUIC rows are host objects on the
 # M-series Macs and CI's x86_64 runner, which hold the AES instructions,
-# and their loops state CH_CPU_CONSTANT_TIME_AES (fixture.zig's cpuAnswer,
-# docs/decisions.md 89). AES=extern would need a ch_aes_block that
-# encrypts, and hooks.zig's stops the program. The QUIC object colibri
-# links comes once more holding both widening multiplies too
-# (docs/decisions.md 87), whose loop answers that the multiply runs in
-# constant time (widemulAnswer).
+# and their loops state CH_CPU_CONSTANT_TIME_AES and
+# CH_CPU_CONSTANT_TIME_MULTIPLY (fixture.zig's cpuAnswer,
+# docs/decisions.md 89), so they run the AES instructions and the native
+# copies of the files built on the multiply. AES=extern would need a
+# ch_aes_block that encrypts, and hooks.zig's stops the program. The QUIC
+# object colibri links comes once more under CHACHA=vector, as colibri
+# builds it, whose vector Poly1305 is the native copy's.
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -120,10 +121,13 @@ configs=(
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm KEYLOG=on|"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
-    "quic-widemul-runtime|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm CHACHA=vector WIDEMUL=runtime KEYLOG=on|"
+    "quic-chacha-vector|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm CHACHA=vector KEYLOG=on|"
 )
 # The configuration of every other lib-check leg in check, in its order,
-# so every value of every axis meets build.zig at least once.
+# so every value of every axis meets build.zig at least once. The server
+# on AES=extern is a device object, which a host compiler builds when
+# HOST_TARGET, the host test's result, is set empty, in make and in
+# build.zig alike (docs/decisions.md 89).
 roster=(
     "drbg|RAND=drbg|"
     "session|RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both|"
@@ -131,7 +135,6 @@ roster=(
     "ca-ecdsa|RAND=extern TRUST=ca-ecdsa|"
     "webpki|RAND=extern TRUST=webpki|"
     "webpki-tcp-nonblocking|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking|"
-    "webpki-widemul|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native|"
     "quic-raw|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off|"
     "quic-webpki-both|RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off|"
     "server|RAND=extern ROLE=server TRUST=none|"
@@ -140,11 +143,10 @@ roster=(
     "exporter|RAND=extern EXPORTER=on|"
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
+    "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"
     "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
     "chacha-vector|RAND=extern CHACHA=vector|"
     "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
-    "widemul-runtime|RAND=extern WIDEMUL=runtime|"
-    "server-widemul-runtime|RAND=extern ROLE=server TRUST=none WIDEMUL=runtime|"
 )
 case ${1:-} in
 "") ;;
@@ -230,13 +232,12 @@ statement_defs() {
 }
 
 # Whether this compiler can build a configuration: SUITE=aesgcm needs a
-# host object, X25519=wide unsigned __int128 and CHACHA=vector NEON or
-# SSE2, which the Makefile probes for and check's legs skip without. No
-# row here takes AES=extern, whose device object of a server a host
-# compiler does not build (docs/decisions.md 89); test/host-builds.sh
-# holds build.zig's lists for it to make's on a device target.
+# host object or AES=extern, X25519=wide unsigned __int128 and
+# CHACHA=vector NEON or SSE2, which the Makefile probes for and check's
+# legs skip without.
 buildable() {
     case " $1 " in
+    *" AES=extern "*) true ;;
     *" SUITE=aesgcm "*) [ -n "$host" ] ;;
     *" X25519=wide "*) printf 'unsigned __int128 x;\n' | "$cc" -x c -fsyntax-only - 2> /dev/null ;;
     *" CHACHA=vector "*) printf '#include "chacha20_vector.h"\n' | "$cc" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2> /dev/null ;;

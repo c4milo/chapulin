@@ -43,8 +43,10 @@ command -v "$qemu" > /dev/null || { echo "aes-runtime-qemu: $qemu is missing" >&
     { echo "aes-runtime-qemu: $x86_cc does not compile for x86-64; set X86_CC" >&2; exit 1; }
 out=bin/qemu
 mkdir -p "$out"
+# No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
+# both multiplies and whose ct.h refuses the define.
 flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -I. -Itest
-       -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL)
+       -DCH_RAND_EXTERN)
 runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
 # Each binary links the sources its rule in the Makefile links, one list

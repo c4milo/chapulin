@@ -42,6 +42,7 @@ const Options = struct {
     EXPORTER: ?[]const u8 = null,
     KEYLOG: ?[]const u8 = null,
     TX_RECORD: ?[]const u8 = null,
+    HOST_TARGET: ?[]const u8 = null,
     CH_AES_EXTERN_CONSTANT_TIME: ?[]const u8 = null,
     CH_NATIVE_MUL128: ?[]const u8 = null,
 };

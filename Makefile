@@ -425,11 +425,11 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
-# The WIDEMUL=runtime sources and tests (docs/decisions.md 87), which
-# compile only under -DCH_WIDEMUL_RUNTIME: the native copies, the counting
-# test and the units that compile the seven files again under counted
-# names. lint-tidy reads them in passes of their own.
-WIDEMUL_RUNTIME_LINT_C := poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
+# The host object's multiply sources and tests (docs/decisions.md 87 and
+# 89), which compile only under -DCH_CPU_RUNTIME: the native copies, the
+# counting test and the units that compile the seven files again under
+# counted names. lint-tidy reads them in passes of their own.
+WIDEMUL_HOST_LINT_C := poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
                           p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c \
                           test/widemul_runtime_test.c test/widemul_runtime_count.c \
                           test/widemul_count_decomposed.c test/widemul_count_decomposed_field.c \
@@ -455,7 +455,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/x25519_equiv_wide.c \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
-          test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_RUNTIME_LINT_C) \
+          test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -861,9 +861,9 @@ endif
 # HOST_TARGET empty on its command line: that is the host test's result
 # for a device target, and the build then passes no define.
 #
-# No path reads the last three bits of ch_cfg.cpu yet. The CHACHA,
-# WIDEMUL and X25519 variables still choose what each object runs, and
-# the commits entry 89 lists move each choice to its bit.
+# No path reads CH_CPU_AVX2 or CH_CPU_VAES yet. The CHACHA and X25519
+# variables still choose what each object runs, and the commits entry 89
+# lists move each choice to its bit.
 DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
 CPU_RUNTIME_DEF := $(if $(HOST_TARGET),$(if $(DEVICE_CLIENT),,-DCH_CPU_RUNTIME))
 # A host object takes no AES value: it holds the AES instructions and,
@@ -1080,57 +1080,78 @@ ifneq ($(TRUST),webpki)
 $(error SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both)
 endif
 endif
-# The widening multiply the packaged object carries (ct.h). WIDEMUL=
-# decomposed, the default, builds every widening product from 16x16
-# pieces and claims nothing about the CPU. WIDEMUL=native defines
-# CH_NATIVE_WIDEMUL in the object: the builder states that this part's
-# widening multiply runs in constant time, which ct.h says firmware does
-# only with a vendor statement. The host test flags never reach the
-# object (LIB_CFLAGS filters them), so this is the one supported way to
-# ask for the native multiply, and LIB_VARIANT and the object's cc-stamp
-# record the choice.
+# The widening multiply (ct.h). A host object holds both multiplies, and
+# each session's CH_CPU_CONSTANT_TIME_MULTIPLY bit in ch_cfg.cpu picks one
+# for every operation built on the multiply (widemul.h, docs/decisions.md
+# 87 and 89). Each of the seven files built on it that the object carries
+# compiles as a WIDEMUL=decomposed device object compiles it, and once
+# more as its _native.c copy, WIDEMUL_COPIED below; poly1305_vector.c,
+# whose path runs on the native multiply alone, joins as its native copy
+# only. The builder states nothing about the part, so a host object takes
+# no CH_NATIVE_WIDEMUL, and ct.h refuses one beside -DCH_CPU_RUNTIME.
+# X25519=wide is refused there too: the wide field's CH_NATIVE_MUL128
+# states its multiply's timing when the object is built, and a host object
+# asks each session.
 #
-# WIDEMUL=runtime defines CH_WIDEMUL_RUNTIME: the object holds both
-# multiplies, and each session's ch_cfg.widemul picks one for every
-# operation built on the multiply (widemul.h, docs/decisions.md 87). Each
-# of the seven files built on it that the object carries compiles as it
-# does under WIDEMUL=decomposed and once more as its _native.c copy,
-# WIDEMUL_COPIED below; poly1305_vector.c, whose path runs on the native
-# multiply alone, joins as its native copy only. The builder states
-# nothing about the part, so the axis takes no CH_NATIVE_WIDEMUL, and
-# ct.h refuses one beside it. X25519=wide is refused beside it: the wide
-# field's CH_NATIVE_MUL128 states its multiply's timing when the object
-# is built, and this value asks each session.
+# A device object takes the WIDEMUL variable. WIDEMUL=decomposed, the
+# default, builds every widening product from 16x16 pieces and claims
+# nothing about the CPU. WIDEMUL=native defines CH_NATIVE_WIDEMUL in the
+# object: the builder states that this part's widening multiply runs in
+# constant time, which ct.h says firmware does only with a vendor
+# statement. LIB_CFLAGS filters the host test flags out, so no object is
+# compiled with them: this is the one supported way to ask for the native
+# multiply, and LIB_VARIANT and the object's cc-stamp record the choice.
+# A host object takes no WIDEMUL value, as it takes no AES value, and the
+# test is $(origin WIDEMUL) for the same reason.
 WIDEMUL_COPIED := poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c
-# A native copy preprocesses only under -DCH_WIDEMUL_RUNTIME, because ct.h
+# A native copy preprocesses only under -DCH_CPU_RUNTIME, because ct.h
 # refuses one anywhere else, so lint-quic-partition judges each with it.
-QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_WIDEMUL_RUNTIME) \
-                      poly1305_vector_native.c:-DCH_WIDEMUL_RUNTIME
+QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_RUNTIME) \
+                      poly1305_vector_native.c:-DCH_CPU_RUNTIME
+# What a host test binary compiles with, and what it links
+# (docs/decisions.md 89). HOST_CFLAGS is the test flags without the host's
+# CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
+# host object takes the multiply's timing from each session; each rule
+# adds -DCH_CPU_RUNTIME, or HOST_SUITE_DEF, which holds it. host_srcs is
+# $(1) and the native copy of each of its files that is built on the
+# multiply, which widemul.h's dispatchers call. The VECTOR pair adds
+# CHACHA=vector, whose vector Poly1305 a host object holds as the native
+# copy alone.
+HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS))
+widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
+host_srcs = $(1) $(call widemul_native_of,$(1))
+HOST_VECTOR_CFLAGS = $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_CHACHA_VECTOR
+host_vector_srcs = $(call host_srcs,$(1)) $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
+                   $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c)
 WIDEMUL ?= decomposed
-ifeq ($(WIDEMUL),native)
-LIB_DEF += -DCH_NATIVE_WIDEMUL
-else ifeq ($(WIDEMUL),runtime)
+ifneq ($(CPU_RUNTIME_DEF),)
+ifneq ($(origin WIDEMUL),file)
+$(error WIDEMUL=$(WIDEMUL) chooses a device object's multiply, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which holds both multiplies and picks one per session from ch_cfg.cpu (docs/decisions.md 89): drop WIDEMUL, or set HOST_TARGET empty for the device object)
+endif
 ifeq ($(X25519),wide)
-$(error WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable)
+$(error X25519=wide states its multiply's timing at build time, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which takes the multiply's timing from each session's ch_cfg.cpu: use X25519=portable)
 endif
-LIB_DEF += -DCH_WIDEMUL_RUNTIME
 LIB_SRCS += $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(LIB_SRCS)))
+else ifeq ($(WIDEMUL),native)
+LIB_DEF += -DCH_NATIVE_WIDEMUL
 else ifneq ($(WIDEMUL),decomposed)
-$(error WIDEMUL=$(WIDEMUL) is not a multiply; use WIDEMUL=decomposed, WIDEMUL=native or WIDEMUL=runtime)
+$(error WIDEMUL=$(WIDEMUL) is not a multiply; use WIDEMUL=decomposed or WIDEMUL=native)
 endif
-# CHACHA=vector with WIDEMUL=native adds poly1305_vector.c, Poly1305's
-# block loop four blocks at a time on the vector widening multiply, which
-# CH_NATIVE_WIDEMUL covers along with the scalar one (ct.h). Under
-# CHACHA=vector alone the object carries poly1305.c's loop and its 16x16
-# decomposition, and no poly1305_vector.c: poly1305_vector.h turns the
-# path on only when both defines meet. docs/decisions.md entry 83 says
-# why. With WIDEMUL=runtime it adds poly1305_vector_native.c, which
-# poly1305_native.c's loop calls for CH_WIDEMUL_CONSTANT_TIME alone.
-ifeq ($(CHACHA)-$(WIDEMUL),vector-native)
+# CHACHA=vector adds Poly1305's block loop four blocks at a time on the
+# vector widening multiply: to a device object poly1305_vector.c beside
+# WIDEMUL=native, whose CH_NATIVE_WIDEMUL covers it along with the scalar
+# multiply (ct.h), and to a host object poly1305_vector_native.c, which
+# poly1305_native.c's loop calls for a session with the multiply bit
+# alone. A device object under CHACHA=vector alone carries poly1305.c's
+# loop and its 16x16 decomposition, and no poly1305_vector.c:
+# poly1305_vector.h turns the path on only when both defines meet.
+# docs/decisions.md entry 83 says why.
+ifeq ($(CHACHA),vector)
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += poly1305_vector_native.c
+else ifeq ($(WIDEMUL),native)
 LIB_SRCS += poly1305_vector.c
 endif
-ifeq ($(CHACHA)-$(WIDEMUL),vector-runtime)
-LIB_SRCS += poly1305_vector_native.c
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -1277,8 +1298,8 @@ print-tcp-nonblocking-loop-srcs:
 # and bin/quic_test_hw beside test/quic_vectors.c.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
-	@echo $(QUIC_LOOP_AES_SRCS)
-	@echo $(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
+	@echo $(WEBPKI_LOOP_AES_SRCS)
 	@echo $(AES_RUNTIME_TEST_SRCS)
 	@echo $(QUIC_TEST_HW_SRCS)
 
@@ -1406,9 +1427,17 @@ print-aes-runtime-qemu-srcs:
 #
 # The CHACHA rows hold chacha20_vector.c, chacha20_avx2.c and
 # -DCH_CHACHA_VECTOR to the CHACHA=vector object, so the default object
-# carries the portable loop alone, and poly1305_vector.c to the object
-# that is CHACHA=vector and WIDEMUL=native both, so neither axis alone
-# packages the vector Poly1305.
+# carries the portable loop alone, and poly1305_vector.c to the device
+# object that is CHACHA=vector and WIDEMUL=native both, so neither axis
+# alone packages the vector Poly1305.
+#
+# The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
+# asks for it, and every native copy to the host object: a host row
+# requires each file built on the multiply beside its _native.c copy, a
+# CHACHA=vector host row the vector Poly1305 as its native copy alone, and
+# every device row bans the copies. A host object takes no WIDEMUL value,
+# WIDEMUL=runtime is gone, and X25519=wide is refused for a host object
+# (docs/decisions.md 87 and 89).
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
@@ -1479,22 +1508,31 @@ lint-trust-separation-run:
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
 	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c x25519.c" "poly1305_vector.c $$native_files" "" \
-	  "-DCH_NATIVE_WIDEMUL -DCH_WIDEMUL_RUNTIME"; \
+	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
-	  "-DCH_CHACHA_VECTOR -DCH_WIDEMUL_RUNTIME"; \
+	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa CHACHA=vector WIDEMUL=native" "chacha20.c chacha20_vector.c chacha20_avx2.c poly1305.c poly1305_vector.c" \
-	  "$$native_files" "-DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL" "-DCH_WIDEMUL_RUNTIME"; \
-	check "TRUST=raw-rsa WIDEMUL=runtime" "poly1305.c poly1305_native.c x25519.c x25519_native.c" \
-	  "poly1305_vector.c poly1305_vector_native.c mlkem_poly_native.c p256_field_native.c p256_scalar_native.c rsa_sign_native.c" \
-	  "-DCH_WIDEMUL_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
-	check "TRUST=raw-rsa CHACHA=vector WIDEMUL=runtime" "chacha20_vector.c chacha20_avx2.c poly1305.c poly1305_native.c poly1305_vector_native.c" \
-	  "poly1305_vector.c" "-DCH_CHACHA_VECTOR -DCH_WIDEMUL_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
-	check "ROLE=server TRUST=none WIDEMUL=runtime" "poly1305.c poly1305_native.c x25519.c x25519_native.c \
+	  "$$native_files" "-DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c x25519.c x25519_native.c \
+	  mlkem_poly.c mlkem_poly_native.c p256_field.c p256_field_native.c p256_scalar.c p256_scalar_native.c" \
+	  "poly1305_vector.c poly1305_vector_native.c rsa_sign.c rsa_sign_native.c" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
+	check "ROLE=client TRUST=webpki CHACHA=vector HOST_TARGET=yes" "chacha20_vector.c chacha20_avx2.c poly1305.c poly1305_native.c poly1305_vector_native.c" \
+	  "poly1305_vector.c" "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c x25519.c x25519_native.c \
 	  mlkem_poly.c mlkem_poly_native.c p256_field.c p256_field_native.c p256_scalar.c p256_scalar_native.c \
-	  rsa_sign.c rsa_sign_native.c" "poly1305_vector.c poly1305_vector_native.c" "-DCH_WIDEMUL_RUNTIME" \
+	  rsa_sign.c rsa_sign_native.c" "poly1305_vector.c poly1305_vector_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_NATIVE_WIDEMUL"; \
-	n=$$((n + 1)); refused_build "TRUST=raw-rsa X25519=wide WIDEMUL=runtime" \
-	  "X25519=wide states its multiply's timing at build time and WIDEMUL=runtime asks each session" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	check "ROLE=server TRUST=none HOST_TARGET=" "poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c" \
+	  "poly1305_vector.c $$native_files" "" "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "poly1305.c rsa_sign.c" "poly1305_vector.c $$native_files" \
+	  "-DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
+	for value in decomposed native; do \
+	  n=$$((n + 1)); refused_build "ROLE=server TRUST=none HOST_TARGET=yes WIDEMUL=$$value" "a host object holds both multiplies and takes no WIDEMUL value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	done; \
+	n=$$((n + 1)); refused_build "TRUST=raw-rsa WIDEMUL=runtime" \
+	  "WIDEMUL=runtime put both multiplies in an object, and a host object holds them now and picks one per session from ch_cfg.cpu (docs/decisions.md 89)" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	n=$$((n + 1)); refused_build "ROLE=client TRUST=webpki HOST_TARGET=yes X25519=wide" \
+	  "X25519=wide states its multiply's timing at build time and a host object asks each session" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
@@ -1854,7 +1892,7 @@ rand-check:
 #
 # The sources a test binary links sit in a variable when another recipe
 # builds the same test: san-check, cross-check, m3-check, coverage, the
-# CH_CT_WIDEMUL builds and the WIDEMUL=runtime builds read the variable
+# CH_CT_WIDEMUL builds and the host object's builds read the variable
 # this rule reads, so a source the test comes to need fails check, which
 # builds this rule, before it fails one of those recipes.
 DRBG_TEST_SRCS := drbg.c chacha20.c sha256.c ct.c ct_wipe.c
@@ -1974,25 +2012,26 @@ bin/quic_test: test/quic_vectors.c aes.c $(AES_IMPL) gcm.c quic_keys.c quic_retr
 # which both flight binaries replace with test/srv_flight_tests.h's own.
 SRV_FLIGHT_SRCS := srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c srv_ticket.c \
                    srv_resume.c srv_kex.c
-bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
-                         gcm.c aes.c $(AES_HW_SRCS) sha512.c sha512_compress.c $(HDRS) $(TESTH)
+SRV_FLIGHT_AES_SRCS = $(call host_srcs,$(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) gcm.c aes.c \
+                        $(AES_HW_SRCS) sha512.c sha512_compress.c)
+bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -o $@ test/srv_flight_test.c $(SRV_FLIGHT_SRCS) \
-	  $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) gcm.c aes.c $(AES_HW_SRCS) sha512.c sha512_compress.c
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -o $@ test/srv_flight_test.c \
+	  $(SRV_FLIGHT_AES_SRCS)
 
-bin/aes_suite_test: test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) \
-                    aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c \
-                    $(HDRS) $(TESTH)
+AES_SUITE_TEST_SRCS := $(call host_srcs,record.c gcm.c aes.c $(AES_HW_SRCS) aead.c chacha20.c poly1305.c \
+                         hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c)
+bin/aes_suite_test: test/aes_suite_test.c $(AES_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(HOST_SUITE_DEF) -I. -o $@ test/aes_suite_test.c record.c gcm.c aes.c $(AES_HW_SRCS) \
-	  aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c ct_wipe.c buf.c
+	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) -I. -o $@ test/aes_suite_test.c $(AES_SUITE_TEST_SRCS)
 
 # test/aes-runtime-qemu.sh links QUIC_TEST_HW_SRCS too, for x86-64.
-QUIC_TEST_HW_SRCS := aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c quic_keys.c quic_retry.c quic_initial.c \
-                     quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+QUIC_TEST_HW_SRCS := $(call host_srcs,aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c quic_keys.c quic_retry.c \
+                       quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c \
+                       ct_wipe.c)
 bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
 	  test/quic_vectors.c $(QUIC_TEST_HW_SRCS)
 # The AES instructions against the table over the same inputs, the check
 # that holds the instruction path where a proof cannot reach. Both
@@ -2009,10 +2048,13 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # test/aes_equiv_vaes.c compiles gcm_vaes.c's kernels, which the counter
 # cases run as well on an x86-64 CPU with VAES and VPCLMULQDQ, and which
 # gcm_hw.c's entries name on x86-64.
+# The line takes HOST_CFLAGS because two of its units define
+# CH_CPU_RUNTIME, and ct.h refuses the test flags' CH_NATIVE_WIDEMUL
+# beside it. No unit on the line multiplies.
 bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
                     quic_aes_soft.c aes_hw.c gcm_hw.c gcm_vaes.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
 	  test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c ct.c ct_wipe.c
 # GHASH on the carry-less multiply against gcm.c's portable GHASH, the
 # same check for ghash_hw.c: the multiply, the loop over data and the
@@ -2092,19 +2134,19 @@ bin/unit_chacha_avx2: test/unit_test.c test/x86_kernels_route.c $(SRCS) chacha20
 bin/ghash_equiv_vaes: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c test/x86_kernels_route.c \
                       gcm.c aes.c $(AES_HW_SRCS) quic_aes_soft.c hkdf.c sha256.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -include test/gcm_vaes_route.h \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -include test/gcm_vaes_route.h \
 	  -I. -Itest -o $@ test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c \
 	  test/x86_kernels_route.c gcm.c aes.c $(filter-out gcm_hw.c,$(AES_HW_SRCS)) quic_aes_soft.c hkdf.c \
 	  sha256.c ct.c ct_wipe.c
 bin/quic_test_vaes: test/quic_vectors.c test/x86_kernels_route.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) \
 	  -include test/gcm_vaes_route.h -I. -Itest -o $@ test/quic_vectors.c test/x86_kernels_route.c \
 	  $(filter-out gcm_hw.c,$(QUIC_TEST_HW_SRCS))
 bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c \
                       $(AES_HW_SRCS) quic_aes_soft.c hkdf.c sha256.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -I. -o $@ test/ghash_equiv_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -I. -o $@ test/ghash_equiv_test.c \
 	  test/ghash_equiv_soft.c test/stack_residue.c gcm.c aes.c $(AES_HW_SRCS) quic_aes_soft.c hkdf.c sha256.c \
 	  ct.c ct_wipe.c
 # The same two rules for the ROLE=server mode, over the role's sources under
@@ -2146,12 +2188,12 @@ bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c t
 # sessions state the AES instructions (test/tls_server.c), which
 # test/e2e.sh drives with s_client restricted to one suite at a time. A
 # compiler that fails the host test builds none of it, and e2e says so.
-bin/tlsserver_aes: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
-                   handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c $(HDRS) \
-                   $(TESTH)
+TLSSERVER_AES_SRCS = $(call host_srcs,$(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
+                       handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c)
+bin/tlsserver_aes: test/tls_server.c $(TLSSERVER_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
-	  handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER $(HOST_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
+	  $(TLSSERVER_AES_SRCS)
 # The same server on AES=extern, its AES blocks answered by
 # test/aes_extern_hook.c. It needs no AES instruction, so e2e runs it on
 # every host.
@@ -2223,19 +2265,23 @@ bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(T
 # stating the AES instructions, and the rows of test/quic_loop_runtime.h,
 # which set each end's ch_cfg.cpu with and without the AES bit.
 QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_HW_SRCS) quic_aes_soft.c
-bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h test/quic_loop_runtime.h $(QUIC_LOOP_AES_SRCS) \
-                   $(HDRS) $(TESTH)
+bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h test/quic_loop_runtime.h \
+                   $(call host_srcs,$(QUIC_LOOP_AES_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(HOST_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  $(HOST_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
 # QUIC packet and header protection under the two AES-GCM suites against
 # an independent computation, the key update and the §6.6 count
 # (test/quic_suite_test.c), on the AES instructions of a QUIC host object.
-QUIC_SUITE_TEST_SRCS := quic_packet.c quic_keys.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c hkdf.c \
-                        sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+# QUIC_SUITE_TEST_DEVICE_SRCS is the list without a host object's native
+# copies, which bin/quic_suite_test_extern, a device object, links.
+QUIC_SUITE_TEST_DEVICE_SRCS := quic_packet.c quic_keys.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c \
+                               hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c \
+                               ct_wipe.c
+QUIC_SUITE_TEST_SRCS := $(call host_srcs,$(QUIC_SUITE_TEST_DEVICE_SRCS))
 bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -o $@ test/quic_suite_test.c \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -o $@ test/quic_suite_test.c \
 	  $(QUIC_SUITE_TEST_SRCS)
 
 # The AES=extern leg. An AES=extern object runs every AES block on the
@@ -2276,11 +2322,11 @@ bin/aes_suite_test_extern: test/aes_suite_test.c record.c gcm.c aes.c $(AES_EXTE
 	  ct.c ct_wipe.c buf.c
 # QUIC packet and header protection under both AES suites against the
 # independent computation bin/quic_suite_test checks, AES-256 included.
-bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_SRCS)) \
+bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_DEVICE_SRCS)) \
                             $(AES_EXTERN_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_EXTERN_SUITE_DEF) -I. -o $@ \
-	  test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_SRCS)) $(AES_EXTERN_SRCS)
+	  test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS),$(QUIC_SUITE_TEST_DEVICE_SRCS)) $(AES_EXTERN_SRCS)
 # This tree's client against this tree's server over QUIC, on the
 # AES=extern suite object: the rows bin/quic_loop_aes runs, each suite
 # full and resumed. Both ends run the same hook, so a loop alone cannot
@@ -2302,12 +2348,13 @@ bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_L
 # and not on the line (docs/decisions.md 81 and 89). test/aes-runtime-qemu.sh
 # builds it for x86-64 and runs its half without the bit on a CPU model
 # without AES-NI and PCLMULQDQ.
-AES_RUNTIME_TEST_SRCS := aes.c gcm.c gcm_vaes.c quic_initial.c quic_retry.c quic_packet.c quic_keys.c \
-                         hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c ct_wipe.c
+AES_RUNTIME_TEST_SRCS := $(call host_srcs,aes.c gcm.c gcm_vaes.c quic_initial.c quic_retry.c quic_packet.c \
+                           quic_keys.c hkdf.c sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c \
+                           buf.c ct.c ct_wipe.c)
 bin/aes_runtime_test: test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
                       $(AES_RUNTIME_TEST_SRCS) $(AES_HW_SRCS) quic_aes_soft.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
 	  test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c $(AES_RUNTIME_TEST_SRCS)
 
 # The tcp-nonblocking server driver, over the same flight sources the blocking
@@ -2379,13 +2426,13 @@ bin/tcp_blocking_loop_test: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SR
 # half runs tls.c's raw and ca rules: every case above with both ends
 # stating the AES instructions, the rows of test/tcp_blocking_loop_cpu.h
 # and test/tcp_blocking_loop_runtime.h's row (docs/decisions.md 81 and 89).
+TCP_BLOCKING_LOOP_AES_SRCS = $(call host_srcs,$(TCP_BLOCKING_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c sha512.c \
+                               sha512_compress.c)
 bin/tcp_blocking_loop_aes: test/tcp_blocking_loop_test.c test/tcp_blocking_loop_runtime.h \
-                           $(TCP_BLOCKING_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c \
-                           $(HDRS) $(TESTH)
+                           $(TCP_BLOCKING_LOOP_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -I. -o $@ \
-	  test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c sha512.c \
-	  sha512_compress.c
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -I. -o $@ \
+	  test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_AES_SRCS)
 # The same main under RAND=session (docs/decisions.md 77): every case above
 # with the client's source and the server's apart, and
 # test/tcp_blocking_session_tests.h's checks of what each source handed out.
@@ -2442,11 +2489,12 @@ tx-record-check: bin/webpki_loop_tx_record
 # key's ceiling (test/key_limit_cases.h), and test/webpki_loop_runtime.h's
 # rows, which set each end's ch_cfg.cpu with and without the AES bit. A
 # TCP host object holds no table, so the bit chooses the suites alone.
+WEBPKI_LOOP_AES_SRCS = $(call host_srcs,$(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webpki_loop_runtime.h \
-                     $(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c $(HDRS) $(TESTH)
+                     $(WEBPKI_LOOP_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_AES_SRCS)
 # The same loop on the AES=extern suite object, the rows bin/webpki_loop_aes
 # runs. Both ends run the same hook, so a loop alone cannot tell a wrong
 # cipher from a right one; the vectors and the Wycheproof and e2e legs are
@@ -2640,11 +2688,11 @@ bin/webpki_resume_tcp_nonblocking: test/webpki_resume_test.c $(WEBPKI_TCP_NONBLO
 # lists the AES-first order, and the rows of test/webpki_suite_cases.h
 # that clear the bit offer ChaCha20 alone and refuse a list that names an
 # AES-GCM suite (docs/decisions.md 81 and 89).
-bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c \
-                        $(HDRS) $(TESTH)
+WEBPKI_TEST_AES_SRCS = $(call host_srcs,$(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
+bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/webpki_session_test.c \
-	  $(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/webpki_session_test.c \
+	  $(WEBPKI_TEST_AES_SRCS)
 # The same main on the AES=extern suite object, through
 # test/aes_extern_hook.c, on every host. Its ClientHello lists ChaCha20
 # first where bin/webpki_session_aes lists AES-256-GCM first
@@ -2768,41 +2816,38 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 	./bin/p256_sign_test_ct_widemul
 	$(MAKE) wycheproof-ct-widemul
 
-# The WIDEMUL=runtime leg (docs/decisions.md 87). Its binaries compile as a
-# runtime object compiles its sources: -DCH_WIDEMUL_RUNTIME, without the
-# host's CH_NATIVE_WIDEMUL, which ct.h refuses beside it, and each file
-# built on the multiply the binary links both under its own name and as
-# its native copy, widemul_native_of. Where the compiler targets NEON or
-# SSE2, every one of them is CHACHA=vector too, so the vector Poly1305 is
-# the native copy's.
-WIDEMUL_RUNTIME_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)) -DCH_WIDEMUL_RUNTIME \
-                         $(if $(CHACHA_VECTOR_PROBE),-DCH_CHACHA_VECTOR)
-widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1))) \
-                    $(if $(CHACHA_VECTOR_PROBE),$(if $(filter poly1305.c,$(1)),chacha20_vector.c \
-                                                  poly1305_vector_native.c))
-# The unit, ML-KEM, P-256 and RSA signing vectors, each test once per
-# answer: its main hands TEST_WIDEMUL to every call built on the multiply
-# and every configuration it builds (test/test_widemul.h), so the same
-# vectors run through widemul.h's dispatchers on the native copies and
-# then on the decomposition. The Wycheproof legs below do the same.
+# The host object's multiply (docs/decisions.md 87 and 89). Its binaries
+# compile as a host object compiles its sources: -DCH_CPU_RUNTIME, without
+# the host test flags' CH_NATIVE_WIDEMUL, which ct.h refuses beside it
+# (HOST_CFLAGS), and each file built on the multiply the binary links both
+# under its own name and as its native copy (host_srcs). The binaries
+# below are CHACHA=vector too, as the object colibri links is, so the
+# vector Poly1305 is the native copy's (HOST_VECTOR_CFLAGS,
+# host_vector_srcs).
+#
+# The unit, ML-KEM, P-256 and RSA signing vectors, each one host binary
+# that takes the ch_cfg.cpu value it runs under as its argument
+# (test/test_cpu.h): its main hands the answer that value gives to every
+# call built on the multiply and the value to every configuration it
+# builds (test/test_widemul.h), and HOST_VECTOR_CPU runs it with
+# CH_CPU_CONSTANT_TIME_MULTIPLY and without it, so the same vectors run
+# through widemul.h's dispatchers on the native copies and then on the
+# decomposition. The Wycheproof host leg below does the same.
 # bin/widemul_runtime_test counts which copy each operation ran.
-WIDEMUL_RUNTIME_ANSWERS := constant_time not_stated
-WIDEMUL_ANSWER_constant_time := CH_WIDEMUL_CONSTANT_TIME
-WIDEMUL_ANSWER_not_stated := CH_WIDEMUL_NOT_STATED
+HOST_VECTOR_CPU := 0x5 0x1
 # $(1) the binary's stem, $(2) its main, $(3) the library sources it
-# links, $(4) its own flags, $(5) the answer.
-define WIDEMUL_RUNTIME_BIN
-bin/$(1)_widemul_$(5): $(2) $(3) $$(call widemul_native_of,$(3)) $$(HDRS) $$(TESTH)
+# links, $(4) its own flags.
+define HOST_VECTOR_BIN
+bin/$(1)_host: $(2) $(3) $$(call host_vector_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
-	$$(CC) $$(WIDEMUL_RUNTIME_CFLAGS) $(4) -DTEST_WIDEMUL=$$(WIDEMUL_ANSWER_$(5)) -I. -Itest -o $$@ $(2) \
-	  $(3) $$(call widemul_native_of,$(3))
+	$$(CC) $$(HOST_VECTOR_CFLAGS) $(4) -I. -Itest -o $$@ $(2) $$(call host_vector_srcs,$(3))
 endef
-WIDEMUL_RUNTIME_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,unit,test/unit_test.c,$(SRCS),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),,$(a))))
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF),$(a))))
+HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test
+$(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
+$(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
+$(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
+$(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
+$(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
 # The counting test: the seven files again under the second names of
 # test/widemul_count_names.h, in the test/widemul_count_*.c units, in
 # place of the files and their native copies, and the stubs that count
@@ -2810,78 +2855,62 @@ $(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WIDEMUL_RUNTIME_BIN,rsa_sig
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_field.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_field.c test/widemul_count_native_scalar.c \
-                       $(if $(CHACHA_VECTOR_PROBE),test/widemul_count_native_vector.c chacha20_vector.c)
-WIDEMUL_COUNT_SRCS := aead.c chacha20.c hkdf.c sha256.c ct.c ct_wipe.c buf.c record.c mlkem.c sha3.c p256.c \
-                      p256_ecdh.c p256_point.c p256_sign.c rsa.c rsa_mont.c
+                       test/widemul_count_native_vector.c
+WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c ct.c ct_wipe.c buf.c record.c mlkem.c \
+                      sha3.c p256.c p256_ecdh.c p256_point.c p256_sign.c rsa.c rsa_mont.c
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                           $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COPIED) poly1305_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(WIDEMUL_RUNTIME_CFLAGS) -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
+	$(CC) $(HOST_VECTOR_CFLAGS) -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
 	  $(WIDEMUL_COUNT_UNITS) $(WIDEMUL_COUNT_SRCS)
-# A loop binary on the same counting copies: the sources a loop links,
-# with the seven files replaced by the count units and their stubs, so a
-# whole handshake reads which copy each end ran. Every case of the loop
-# runs with both ends answering CH_WIDEMUL_CONSTANT_TIME, and its
-# test/*_widemul.h rows set each end's answer and the refused ones.
-widemul_counted = $(filter-out $(WIDEMUL_COPIED),$(1)) $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c
-bin/tcp_blocking_loop_widemul: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                               test/widemul_runtime_count.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(WIDEMUL_RUNTIME_CFLAGS) -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -I. -Itest -o $@ test/tcp_blocking_loop_test.c $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
-bin/tcp_nonblocking_loop_widemul: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) \
-                                  $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(WIDEMUL_RUNTIME_CFLAGS) -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest -o $@ \
-	  test/tcp_nonblocking_loop_test.c $(call widemul_counted,$(TCP_NONBLOCKING_LOOP_SRCS))
-bin/quic_loop_widemul: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                       test/widemul_runtime_count.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(WIDEMUL_RUNTIME_CFLAGS) -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c \
-	  $(call widemul_counted,$(QUIC_LOOP_WEBPKI_SRCS))
-bin/webpki_session_widemul: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
+# The host object's loop and session binaries (docs/decisions.md 89), each
+# built as a host object builds its sources, on the same counting copies:
+# the sources a loop links, with the seven files replaced by the count
+# units and their stubs (widemul_counted), which each says with
+# -DTEST_WIDEMUL_COUNTED, so a whole handshake reads which copy each end
+# ran. Every case of each runs with both ends
+# describing the CPU as TEST_CPU (test/test_cpu.h), which holds
+# CH_CPU_CONSTANT_TIME_MULTIPLY. Its test/*_cpu.h rows hold ch_cfg.cpu's
+# refusals at ch_connect, ch_record_init, ch_quic_init, ch_srv_accept,
+# ch_srv_record_init, ch_srv_quic_init and ch_srv_check, and its
+# test/*_widemul.h rows set each end's multiply bit. cpu_cfg.h refuses the
+# define on a compiler that fails the host test, so the binaries are named
+# only where HOST_TARGET found one, and check-skips says when it did not.
+widemul_counted = $(filter-out $(WIDEMUL_COPIED),$(1)) $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c \
+                  $(CHACHA_VECTOR_SRCS)
+bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(WIDEMUL_RUNTIME_CFLAGS) -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_TRUST_WEBPKI -I. -Itest -o $@ \
-	  test/webpki_session_test.c $(call widemul_counted,$(WEBPKI_TEST_SRCS))
-WIDEMUL_RUNTIME_BINS := bin/widemul_runtime_test bin/tcp_blocking_loop_widemul bin/tcp_nonblocking_loop_widemul \
-                        bin/quic_loop_widemul bin/webpki_session_widemul \
-                        $(foreach t,$(WIDEMUL_RUNTIME_TESTS),$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),bin/$(t)_widemul_$(a)))
-
-# The host object's binaries (docs/decisions.md 89): each loop and session
-# test that holds the widening multiply's answer at every init call, built
-# as a host object builds its sources, -DCH_CPU_RUNTIME. Every case of each
-# runs with both ends describing the CPU as TEST_CPU (test/test_cpu.h), and
-# its test/*_cpu.h rows hold ch_cfg.cpu's refusals at ch_connect,
-# ch_record_init, ch_quic_init, ch_srv_accept, ch_srv_record_init,
-# ch_srv_quic_init and ch_srv_check. cpu_cfg.h refuses the define on a
-# compiler that fails the host test, so the binaries are named only where
-# HOST_TARGET found one, and check-skips says when it did not.
-bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
+	$(CC) $(HOST_VECTOR_CFLAGS) -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -Itest -o $@ \
+	  test/tcp_blocking_loop_test.c $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
+bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) \
+                               $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_CPU_RUNTIME -I. -o $@ test/tcp_blocking_loop_test.c \
-	  $(TCP_BLOCKING_LOOP_SRCS)
-bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
+	$(CC) $(HOST_VECTOR_CFLAGS) -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
+	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest -o $@ test/tcp_nonblocking_loop_test.c \
+	  $(call widemul_counted,$(TCP_NONBLOCKING_LOOP_SRCS))
+bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(WIDEMUL_COUNT_UNITS) \
+                    test/widemul_runtime_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
-	  -DCH_CPU_RUNTIME -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
-bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(HDRS) $(TESTH)
+	$(CC) $(HOST_VECTOR_CFLAGS) -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
+	  -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
+bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
+                         test/widemul_runtime_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  -DCH_CPU_RUNTIME -I. -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS)
-bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(HOST_VECTOR_CFLAGS) -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_session_test.c \
+	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
 # The binaries of the host object's AES are named here with them: the
 # vectors, the two equivalence tests, the two ciphers' counts, and each
 # suite's record, QUIC, flight, session and loop tests, whose rows run with
 # the CH_CPU_CONSTANT_TIME_AES bit and without it.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
-                                 bin/webpki_session_host bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
+                                 bin/webpki_session_host bin/widemul_runtime_test \
+                                 bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
+# The vector binaries, which check runs once for each value of
+# HOST_VECTOR_CPU through a check-run- target of their own.
+HOST_VECTOR_BINS := $(if $(HOST_TARGET),$(foreach t,$(HOST_VECTOR_TESTS),bin/$(t)_host))
 
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
@@ -2945,11 +2974,10 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 # instructions (test/tls_client.c), so check builds it only where
 # HOST_TARGET found a host compiler, and e2e skips its legs, saying so,
 # where it is absent.
-bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(AES_HW_SRCS) gcm.c \
-                          $(HDRS) $(TESTH)
+bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) \
-	  aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/tls_client.c \
+	  $(WEBPKI_TEST_AES_SRCS)
 # The same client on AES=extern, for e2e's legs against OpenSSL, built
 # on every host because the hook needs no AES instruction.
 bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_DEPS) gcm.c \
@@ -3014,8 +3042,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS) $(X25519_WIDE_BINS)) \
-                  $(patsubst bin/%,%,$(CHACHA_VECTOR_BINS) $(WIDEMUL_RUNTIME_BINS) $(X86_KERNEL_BINS) \
-                  $(HOST_BINS)) \
+                  $(patsubst bin/%,%,$(CHACHA_VECTOR_BINS) $(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
                   tcp_nonblocking_loop_test tcp_nonblocking_loop_pq tcp_blocking_loop_test \
                   quic_loop_test quic_loop_webpki tcp_blocking_loop_session tcp_nonblocking_loop_session \
@@ -3025,16 +3052,18 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa \
                   ticket_epoch_tcp_nonblocking ticket_epoch_quic
 CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
-              check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-tx-record \
+              check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes check-lib-x25519-wide \
-              check-lib-chacha-vector check-lib-chacha-vector-widemul check-lib-widemul-runtime \
-              check-lib-server-widemul-runtime check-lib-quic-widemul-runtime check-lib-pair \
+              check-lib-chacha-vector check-lib-chacha-vector-widemul check-lib-quic-aes-chacha-vector \
+              check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
-.PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) check-x25519-builds check-chacha-builds \
-        check-widemul-builds check-host-builds check-script-builds check-wycheproof check-skips
+CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
+.PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) check-x25519-builds \
+        check-chacha-builds check-widemul-builds check-host-builds check-script-builds check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
+       $(CHECK_RUN_HOST_VECTOR) \
        check-x25519-builds check-chacha-builds check-widemul-builds check-host-builds check-script-builds \
        check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
@@ -3061,6 +3090,16 @@ check-run-$(1): bin/$(1)
 	@mkdir -p bin/check; ./bin/$(1) > bin/check/$$@.log 2>&1; $$(CHECK_REPORT)
 endef
 $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
+# A host vector binary runs once for each ch_cfg.cpu value of
+# HOST_VECTOR_CPU, which it takes as its argument (test/test_cpu.h), and
+# its target fails when any run does.
+define CHECK_RUN_HOST_VECTOR_BIN
+check-run-$(1): bin/$(1)
+	@mkdir -p bin/check; : > bin/check/$$@.log; rc=0; \
+	for bits in $$(HOST_VECTOR_CPU); do ./bin/$(1) $$$$bits >> bin/check/$$@.log 2>&1 || rc=$$$$?; done; \
+	(exit $$$$rc); $$(CHECK_REPORT)
+endef
+$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b))))
 
 # The host object's AES runs: the published vectors on the instructions
 # and on the table, and each instruction path against its software twin
@@ -3101,10 +3140,11 @@ check-x25519-builds:
 check-chacha-builds:
 	+@mkdir -p bin/check; ./test/chacha-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
-# ct.h's rules for a WIDEMUL=runtime build, each file under its own names
-# compiled to its decomposed build's code there, the vector Poly1305
-# called from poly1305_native.c alone, and the refusal of X25519=wide
-# beside it in make and in build.zig (docs/decisions.md 87).
+# ct.h's rules for a host object's two multiplies, each file under its
+# own names compiled to its decomposed build's code there, the vector
+# Poly1305 called from poly1305_native.c alone, and the refusals of a
+# WIDEMUL value and of X25519=wide for a host object in make and in
+# build.zig (docs/decisions.md 87 and 89).
 check-widemul-builds:
 	+@mkdir -p bin/check; ZIG='$(ZIG)' ./test/widemul-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
@@ -3225,12 +3265,6 @@ check-lib-webpki: bin/srv_flight_test
 # (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
 check-lib-webpki-tcp-nonblocking:
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking \
-	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
-# The same object with the native multiply, the build cocuyo links
-# when its builder vouches for the part (WIDEMUL above). The export
-# list must not move; only the arithmetic inside changes.
-check-lib-webpki-widemul:
-	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native \
 	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # TX_RECORD at its ceiling, on the ROLE=both object stompy links for
 # its uploads (docs/decisions.md 71): the export list and build record
@@ -3363,25 +3397,18 @@ else
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern CHACHA=vector WIDEMUL=native \
 	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
-# The object that holds both multiplies (docs/decisions.md 87): the raw
-# client, whose export list must not move, whose frames lint-stack holds
-# to the device budget with both copies in it, and which chapulin.hpp's
-# Config::widemul compiles against; the server, which carries all seven
-# files built on the multiply; and the QUIC object colibri links, with
-# the vector Poly1305 as the native copy's, a host object that holds both
-# AES implementations, where the host test passes.
-check-lib-widemul-runtime: bin/srv_flight_test
-	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check lint-stack RAND=extern WIDEMUL=runtime \
-	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
-check-lib-server-widemul-runtime:
-	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern ROLE=server TRUST=none \
-	  WIDEMUL=runtime > bin/check/$@.log 2>&1; $(CHECK_REPORT)
-check-lib-quic-widemul-runtime:
-ifeq ($(and $(HOST_TARGET),$(CHACHA_VECTOR_PROBE)),)
-	@echo "SKIP lib-check WIDEMUL=runtime over QUIC: $(CC) fails the host test"
+# The QUIC object colibri links, which is CHACHA=vector too: a host
+# object that holds both multiplies, with the vector Poly1305 as the
+# native copy's, and both AES implementations (docs/decisions.md 87 and
+# 89). Every host object holds both multiplies now, so the server's and
+# the webpki client's legs above package them, and check-stack-webpki and
+# check-stack-server hold both copies' frames.
+check-lib-quic-aes-chacha-vector:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lib-check SUITE=aesgcm CHACHA=vector over QUIC: $(CC) fails the host test"
 else
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki \
-	  SUITE=aesgcm CHACHA=vector WIDEMUL=runtime KEYLOG=on EXPORTER=off > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+	  SUITE=aesgcm CHACHA=vector KEYLOG=on EXPORTER=off > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
 # Two objects of different transports in one image (docs/decisions.md
 # 61): four pairs that must link and run, and the two the decision
@@ -3540,7 +3567,7 @@ else
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS)
 	./bin/diff_webpki
 ifneq ($(HOST_TARGET),)
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+	$(CC) $(HOST_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -DCH_TX_PT=16384 -I. -o bin/diff_webpki_aes test/diff_test.c $(call host_srcs,$(DIFF_SRCS) webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c $(WEBPKI_KEX_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) fails the host test"
@@ -3607,7 +3634,7 @@ bin/diff_quic: test/diff_quic_test.c aes.c $(AES_IMPL) gcm.c $(DIFF_QUIC_SRCS) $
 bin/diff_quic_hw: test/diff_quic_test.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c $(DIFF_QUIC_SRCS) $(HDRS) \
                   $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME $(AES_256_TEST_DEF) -I. -o $@ \
 	  test/diff_quic_test.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c $(DIFF_QUIC_SRCS)
 # The same main on AES=extern, with test/aes_extern_hook.c as the hook,
 # so the AES and GCM rows, AES-256 among them, run aes_extern.c's
@@ -3852,16 +3879,13 @@ endef
 .PHONY: wycheproof wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern \
         wycheproof-leg-x25519-wide wycheproof-leg-chacha-vector wycheproof-run-default \
         wycheproof-run-host wycheproof-run-aes-extern wycheproof-run-x25519-wide \
-        wycheproof-run-chacha-vector wycheproof-leg-x86-kernels \
-        $(addprefix wycheproof-leg-widemul-,$(WIDEMUL_RUNTIME_ANSWERS)) \
-        $(addprefix wycheproof-run-widemul-,$(WIDEMUL_RUNTIME_ANSWERS))
+        wycheproof-run-chacha-vector wycheproof-leg-x86-kernels
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern \
-	  wycheproof-leg-x25519-wide wycheproof-leg-chacha-vector wycheproof-leg-x86-kernels \
-	  $(addprefix wycheproof-leg-widemul-,$(WIDEMUL_RUNTIME_ANSWERS))
-# The eight legs build and run four at a time, each about 3 seconds to
+	  wycheproof-leg-x25519-wide wycheproof-leg-chacha-vector wycheproof-leg-x86-kernels
+# The six legs build and run four at a time, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
 # to run on its
@@ -3892,8 +3916,9 @@ WYCHEPROOF_STAMP_INPUTS = $(STAMP_MAKEFILES) --output '$(CC) --version' --output
 # the compile read the same flags and the same sources.
 WYCHEPROOF_DEFAULT = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL)
-WYCHEPROOF_HOST = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME \
-  $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_HW_SRCS) quic_aes_soft.c
+WYCHEPROOF_HOST = $(CC) $(HOST_VECTOR_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
+  $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(call host_vector_srcs,$(WYCHEPROOF_SRCS)) \
+  $(AES_HW_SRCS) quic_aes_soft.c
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
 WYCHEPROOF_X25519_WIDE = $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
@@ -3910,30 +3935,11 @@ WYCHEPROOF_CHACHA_VECTOR = $(CC) $(CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -D
 # instructions, or fails it under CH_REQUIRE_X86_KERNELS=1, so the leg
 # takes no stamp: no stamp key reads the CPU or the environment.
 X86_KERNEL_LEG := $(and $(X86_KERNEL_PROBE),$(CHACHA_VECTOR_PROBE),$(HOST_TARGET))
-WYCHEPROOF_X86_KERNELS = $(CC) $(CFLAGS) -DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) \
+WYCHEPROOF_X86_KERNELS = $(CC) $(HOST_VECTOR_CFLAGS) $(RSA_WIDE_DEF) \
   -DCH_TRANSPORT_QUIC_NONBLOCKING $(WYCHEPROOF_TEST_DEFS) -include test/chacha20_avx2_route.h \
   -include test/gcm_vaes_route.h -I. -Ibin test/wycheproof_test.c test/x86_kernels_route.c \
-  $(WYCHEPROOF_SRCS) chacha20_avx2.c poly1305_vector.c $(filter-out gcm_hw.c,$(AES_HW_SRCS)) quic_aes_soft.c
-# The WIDEMUL=runtime legs, one per answer (docs/decisions.md 87): the
-# object's sources as bin/unit_widemul_* compiles them, the files built on
-# the multiply and their native copies, with every call handed the
-# answer the leg names. So each suite of the seven files runs through
-# widemul.h's dispatchers on the native copies, then on the
-# decomposition.
-WYCHEPROOF_WIDEMUL = $(CC) $(WIDEMUL_RUNTIME_CFLAGS) -DTEST_WIDEMUL=$(WIDEMUL_ANSWER_$(1)) $(RSA_WIDE_DEF) \
-  -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c \
-  $(WYCHEPROOF_SRCS) $(call widemul_native_of,$(WYCHEPROOF_SRCS)) $(AES_IMPL)
-define WYCHEPROOF_WIDEMUL_LEG
-wycheproof-leg-widemul-$(1):
-	@python3 tools/stamp.py wycheproof-widemul-$(1) $$(WYCHEPROOF_STAMP_INPUTS) \
-	  --output '$$(call WYCHEPROOF_WIDEMUL,$(1)) -E' -- $$(MAKE) --no-print-directory wycheproof-run-widemul-$(1)
-wycheproof-run-widemul-$(1):
-	@$$(call WYCHEPROOF_WIDEMUL,$(1)) -o bin/wycheproof_test_widemul_$(1) && \
-	{ ./bin/wycheproof_test_widemul_$(1) > bin/wycheproof_test_widemul_$(1).log 2>&1; rc=$$$$?; \
-	  echo "== bin/wycheproof_test_widemul_$(1) (WIDEMUL=runtime, $$(WIDEMUL_ANSWER_$(1))):"; \
-	  cat bin/wycheproof_test_widemul_$(1).log; exit $$$$rc; }
-endef
-$(foreach a,$(WIDEMUL_RUNTIME_ANSWERS),$(eval $(call WYCHEPROOF_WIDEMUL_LEG,$(a))))
+  $(call host_srcs,$(WYCHEPROOF_SRCS)) chacha20_avx2.c poly1305_vector_native.c \
+  $(filter-out gcm_hw.c,$(AES_HW_SRCS)) quic_aes_soft.c
 wycheproof-leg-default:
 	@python3 tools/stamp.py wycheproof-default $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-default
@@ -3941,18 +3947,22 @@ wycheproof-run-default:
 	@$(WYCHEPROOF_DEFAULT) -o bin/wycheproof_test && \
 	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
 # The host leg (docs/decisions.md 89). New crypto gets its Wycheproof
-# suite on every leg that builds test/wycheproof_test.c, and the AES
+# suite on every leg that builds test/wycheproof_test.c. The AES
 # instructions are a second AES-128 in this tree, so the AES-GCM suite
-# answers for them too. The binary is a QUIC host object, and it runs once
-# for each set of ch_cfg.cpu bits that changes a path, HOST_WYCHEPROOF_CPU:
-# the probe's bit alone, whose AES-128-GCM runs on the table and the
-# portable GHASH, and with CH_CPU_CONSTANT_TIME_AES, whose AES-128-GCM and
-# AES-256-GCM run on the instructions and the carry-less multiply. Every
-# other suite runs the same code each time, and running the whole file is
-# still what the rule asks for and what keeps this leg from rotting when a
-# suite is added. A compiler that fails the host test skips, the way the
-# fetch above skips offline.
-HOST_WYCHEPROOF_CPU := 0x1 0x3
+# answers for them too, and a host object holds each file built on the
+# widening multiply twice, so each suite of those files answers for both
+# copies. The binary is a QUIC host object under CHACHA=vector, and it
+# runs once for each set of ch_cfg.cpu bits that changes a path,
+# HOST_WYCHEPROOF_CPU. Without CH_CPU_CONSTANT_TIME_AES its AES-128-GCM
+# runs on the table and the portable GHASH, and with it AES-128-GCM and
+# AES-256-GCM run on the instructions and the carry-less multiply. Without
+# CH_CPU_CONSTANT_TIME_MULTIPLY every call built on the multiply runs the
+# file under its own names, on the decomposition, and with it the native
+# copy, the vector Poly1305 included (test/test_widemul.h). Running the
+# whole file each time is what the rule asks for and what keeps this leg
+# from rotting when a suite is added. A compiler that fails the host test
+# skips, the way the fetch above skips offline.
+HOST_WYCHEPROOF_CPU := 0x1 0x3 0x5 0x7
 wycheproof-leg-host:
 ifeq ($(HOST_TARGET),)
 	$(call REQUIRE_ON_CI,wycheproof-host)
@@ -4378,9 +4388,9 @@ lint-tracked-ignored:
 # Makefile, the compiler's version, the system's release and the make
 # variables, which name the build, are what they were when it last
 # passed (tools/stamp.py).
-# The host's flags, less CH_NATIVE_WIDEMUL in a WIDEMUL=runtime build,
-# which ct.h refuses beside it.
-STACK_CFLAGS = $(if $(filter -DCH_WIDEMUL_RUNTIME,$(LIB_DEF)),$(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)),$(CFLAGS))
+# The test flags, less CH_NATIVE_WIDEMUL for a host object, which ct.h
+# refuses beside -DCH_CPU_RUNTIME.
+STACK_CFLAGS = $(if $(filter -DCH_CPU_RUNTIME,$(LIB_DEF)),$(HOST_CFLAGS),$(CFLAGS))
 .PHONY: lint-stack-run
 lint-stack:
 	@python3 tools/stamp.py lint-stack --content '*.[ch]' $(STAMP_MAKEFILES) \
@@ -4654,7 +4664,7 @@ else
 	  test/x25519_equiv_portable.c test/hkdf384_test.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
-	  $(WIDEMUL_RUNTIME_LINT_C),$(LINT_C)), \
+	  $(WIDEMUL_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The X25519=wide field. x25519_wide.c guards its body on
 	# -DCH_X25519_WIDE, and x25519.c compiles its dispatch to that field only
@@ -4779,50 +4789,46 @@ else
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/tcp_blocking_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH $(HOST_SUITE_DEF) -I.)
-	# WIDEMUL=runtime (docs/decisions.md 87): the native copies, which ct.h
-	# refuses outside the define; the init calls' refusals and the answer
-	# the record directions hold, which compile only under it, in each
-	# role, trust mode and transport that has them; and the tests built
-	# under it, which name their answer with -DTEST_WIDEMUL. The count
-	# units stay out, for the reason test/aes_equiv_soft.c does below.
-	@$(call TIDY_EACH,$(WIDEMUL_COPIED:.c=_native.c) tls.c record.c test/widemul_runtime_test.c \
+	# The host object's multiply (docs/decisions.md 87 and 89): the native
+	# copies, which ct.h refuses outside -DCH_CPU_RUNTIME; the answer the
+	# record directions hold, which compiles only under it; and the vector
+	# tests and the counting test, built under it. The count units stay
+	# out, for the reason test/aes_equiv_soft.c does below.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,$(WIDEMUL_COPIED:.c=_native.c) record.c test/widemul_runtime_test.c \
 	  test/widemul_runtime_count.c test/unit_test.c test/mlkem_test.c test/p256_ecdh_test.c \
 	  test/p256_sign_test.c test/rsa_sign_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -I. -Itest)
-	@$(call TIDY_EACH,poly1305_native.c poly1305_vector_native.c test/widemul_runtime_test.c \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,poly1305_native.c poly1305_vector_native.c test/widemul_runtime_test.c \
 	  test/widemul_runtime_count.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_CHACHA_VECTOR -I. -Itest)
-	@$(call TIDY_EACH,tls.c test/webpki_session_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_TRUST_WEBPKI -I. -Itest)
-	@$(call TIDY_EACH,srv.c test/tcp_blocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -Itest)
-	@$(call TIDY_EACH,tcp_nonblocking.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
-	@$(call TIDY_EACH,srv_tcp_nonblocking.c test/tcp_nonblocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest)
-	@$(call TIDY_EACH,quic_config.c test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_WIDEMUL_RUNTIME -DTEST_WIDEMUL=CH_WIDEMUL_CONSTANT_TIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_CHACHA_VECTOR -I. -Itest)
 	# A host object (docs/decisions.md 89): the rule every init call and
 	# ch_srv_check apply to ch_cfg.cpu, which compiles only under
 	# -DCH_CPU_RUNTIME, in each role, trust mode and transport that has it,
 	# and the host binaries' rows and the files that set the field, built
-	# under the same define. cpu_cfg.h refuses the define on a compiler
-	# that fails the host test, so the passes run only where HOST_TARGET
-	# found one.
+	# under the same define. The loop and session mains take
+	# -DTEST_WIDEMUL_COUNTED, as their host binaries do, so their rows of
+	# the multiply bit are read too. cpu_cfg.h refuses the define on a
+	# compiler that fails the host test, so the passes run only where
+	# HOST_TARGET found one.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,tls.c srv.c test/tcp_blocking_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
+	  -DCH_ROLE_BOTH -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,tls.c test/webpki_session_test.c examples/webpki_client.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_TRUST_WEBPKI -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI \
+	  -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/tcp_nonblocking_loop_test.c test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  $(call TIDY_EACH,tcp_nonblocking.c srv_tcp_nonblocking.c test/tcp_nonblocking_loop_test.c \
+	  test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
+	  -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,quic_config.c test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
+	  -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
@@ -5006,11 +5012,11 @@ CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
   --inline-suppr --suppress=missingIncludeSystem \
   --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
   $(HOST_RAND_DEF) --force --error-exitcode=1 --quiet
-# The WIDEMUL=runtime native copies, and the units that compile them again
+# A host object's native copies, and the units that compile them again
 # under counted names, define CH_WIDEMUL_NATIVE_COPY, which ct.h refuses
-# outside -DCH_WIDEMUL_RUNTIME. In cppcheck's base configuration that
-# #error is the whole file, so they get a run of their own under that
-# define, with a build directory of its own (docs/decisions.md 87).
+# outside -DCH_CPU_RUNTIME. In cppcheck's base configuration that #error
+# is the whole file, so they get a run of their own under that define,
+# with a build directory of its own (docs/decisions.md 87 and 89).
 WIDEMUL_NATIVE_COPY_C := poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
                          p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c \
                          test/widemul_count_native.c test/widemul_count_native_field.c \
@@ -5022,10 +5028,10 @@ lint-cppcheck-run:
 	mkdir -p $$build; \
 	$(CPPCHECK) $(CPPCHECK_FLAGS) --cppcheck-build-dir=$$build -j$(LINT_JOBS) \
 	  --relative-paths=$(CURDIR) $(addprefix $(CURDIR)/,$(CPPCHECK_C))
-	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) -DCH_WIDEMUL_RUNTIME $(WIDEMUL_NATIVE_COPY_C)' \
+	@build=bin/cppcheck/$$(printf '%s\n' '$(CPPCHECK_FLAGS) -DCH_CPU_RUNTIME $(WIDEMUL_NATIVE_COPY_C)' \
 	  | $(SHA256) | cut -c1-16); \
 	mkdir -p $$build; \
-	$(CPPCHECK) $(CPPCHECK_FLAGS) -DCH_WIDEMUL_RUNTIME --cppcheck-build-dir=$$build -j$(LINT_JOBS) \
+	$(CPPCHECK) $(CPPCHECK_FLAGS) -DCH_CPU_RUNTIME --cppcheck-build-dir=$$build -j$(LINT_JOBS) \
 	  --relative-paths=$(CURDIR) $(addprefix $(CURDIR)/,$(WIDEMUL_NATIVE_COPY_C))
 	# The QEMU and FreeRTOS smoke sources, with two suppressions:
 	# unusedStructMember, because the hardware, not C, reads the vector
@@ -5103,12 +5109,14 @@ bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 
 # The web PKI example needs the TRUST=webpki library, so it links its own
 # copy of the sources that object packages, under that object's defines:
-# -DCH_TRUST_WEBPKI, and -DCH_CPU_RUNTIME where HOST_TARGET makes that
-# object a host object.
-bin/example_webpki: examples/webpki_client.c $(WEBPKI_TEST_SRCS) $(HDRS)
+# -DCH_TRUST_WEBPKI, and where HOST_TARGET makes that object a host
+# object, -DCH_CPU_RUNTIME, no CH_NATIVE_WIDEMUL and the native copies
+# beside the files built on the multiply.
+EXAMPLE_WEBPKI_SRCS := $(if $(HOST_TARGET),$(call host_srcs,$(WEBPKI_TEST_SRCS)),$(WEBPKI_TEST_SRCS))
+bin/example_webpki: examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS) $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI $(if $(HOST_TARGET),-DCH_CPU_RUNTIME) -I. -o $@ examples/webpki_client.c \
-	  $(WEBPKI_TEST_SRCS)
+	$(CC) $(if $(HOST_TARGET),$(HOST_CFLAGS) -DCH_CPU_RUNTIME,$(CFLAGS)) -DCH_TRUST_WEBPKI -I. -o $@ \
+	  examples/webpki_client.c $(EXAMPLE_WEBPKI_SRCS)
 
 .PHONY: examples-check
 examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki
@@ -5412,9 +5420,7 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
                    srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
-                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0 \
-                   poly1305_native.c:0 x25519_native.c:0 mlkem_poly_native.c:0 \
-                   p256_field_native.c:0 p256_scalar_native.c:0 rsa_sign_native.c:0
+                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0
 # The X25519=wide field, x25519_wide.c, is one of three secret-bearing sources
 # no spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, so ct.h makes the field an #error on every one
@@ -5433,15 +5439,10 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
 # more than x25519_wide.c's; it divides nothing and calls no runtime
 # routine. So the three ceilings are zero too.
 #
-# A WIDEMUL=runtime object's native copies join both lists
-# (docs/decisions.md 87). The 32-bit specs read the 32x32->64 multiply
-# the copies take, so each copy's count under each spec is recorded in
-# WIDEMUL_CEILING_SPEC, the number of products the native multiply was
-# asked for: the ceiling is what the copy is, and a count that falls
-# names a copy that no longer takes it. The 64-bit specs are the targets
-# a runtime object is for, and what they hold for a copy is its branch
-# count, as for the vector paths; poly1305_vector_native.c, which no
-# 32-bit spec can compile, is in this list alone.
+# A host object's native copies join this list (docs/decisions.md 87 and
+# 89). A host object targets arm64 or x86-64, so no 32-bit spec compiles a
+# copy, and the 64-bit specs are the targets the copies run on. What they
+# hold for a copy is its branch count, as for the vector paths.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_native.c:0 x25519_native.c:0 mlkem_poly_native.c:0 p256_field_native.c:0 \
                   p256_scalar_native.c:0 rsa_sign_native.c:0 poly1305_vector_native.c:0
@@ -5475,11 +5476,11 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # compile only without the transport and role defines, and
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
-# The native copies of a WIDEMUL=runtime object need -DCH_WIDEMUL_RUNTIME,
-# because ct.h refuses a native copy anywhere else, and -UCH_X25519_WIDE,
-# because the 64-bit specs state the wide field for every file and ct.h
-# refuses it beside WIDEMUL=runtime.
-WIDEMUL_NATIVE_DEFINES := -DCH_WIDEMUL_RUNTIME$(COMMA)-UCH_X25519_WIDE
+# The native copies of a host object need -DCH_CPU_RUNTIME, because ct.h
+# refuses a native copy anywhere else, and -UCH_X25519_WIDE, because the
+# 64-bit specs state the wide field for every file and ct.h refuses it
+# for a host object.
+WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME$(COMMA)-UCH_X25519_WIDE
 # webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen legs compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
 # client offers both groups in every build (docs/decisions.md 53). The server
@@ -5759,61 +5760,22 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # every operand is a public length. Measured with Ubuntu 24.04's
 # mips-linux-gnu-gcc 12.4.0 under this spec's flags; CI run 36285635999
 # failed on it.
-# A WIDEMUL=runtime object's native copies (docs/decisions.md 87) have
-# their own ceilings, in the tables below, which WIDEMUL_CEILING_SPEC and
-# BRANCH_CEILING take in whole. A copy's wide-multiply count is the number
-# of products the native multiply was asked for, read from each spec's
-# assembly at -Os: umull and umlal on the M3, multu and madd on
-# mips32r2, mulhu on rv32imac, and on rv32ic, which has no multiplier,
-# calls to softmul.c's __muldi3, which is constant time there. It is not
-# a leak to hold down but what the copy is for: the copy runs only for
-# the answer CH_WIDEMUL_CONSTANT_TIME, and a count that falls names a
-# copy that no longer takes the native multiply. poly1305_native.c's 25
-# are the block's 25 products; the others are the one multiply of a loop
-# body, or of x25519's carry, that the compiler did not unroll.
-#
-# Each copy's branches were read against the file under its own names,
-# whose branches the notes below record. The copy differs in the
-# multiply alone, which is straight-line code on every spec, so its
-# branches are the file's own loop control: under the three clang specs
-# the branch sites match function by function, differing on the M3 in
-# a branch's width alone, and a count below the file's, as mlkem_poly's
-# 36 against 37 under m3-gcc, is one of those sites the compiler merged with another.
-# The 64-bit specs, whose targets a runtime object is for, hold the same
-# for the copies there, and poly1305_vector_native.c's 4 are
-# poly1305_vector.c's.
+# A host object's native copies (docs/decisions.md 87 and 89) have their
+# own branch ceilings, in the table below, which BRANCH_CEILING takes in
+# whole. The copy differs from the file under its own names in the
+# multiply alone, which is straight-line code, so its branches are the
+# file's own loop control, and each was read against the file's on the
+# 64-bit specs, whose targets a host object is for. poly1305_vector_native.c's
+# 4 are poly1305_vector.c's. No 32-bit spec compiles a copy: a host object
+# targets arm64 or x86-64, so the 96 entries the eight 32-bit specs held
+# for WIDEMUL=runtime's copies went with that value.
 #
 # p256_scalar.c joined BRANCH_SRCS beside its native copy, because the
 # branch count holds both copies of every file built on the multiply.
 # Its branches were read under each spec: loop back edges over the eight
 # limbs and the 256 rounds of p256_scalar_inverse, whose exponent n-2 is
 # a build constant, the same shape as p256_field.c's.
-WIDEMUL_NATIVE_CEILING_SPEC := \
-  m3/poly1305_native.c:25 m3/x25519_native.c:3 m3/mlkem_poly_native.c:6 m3/p256_field_native.c:2 \
-  m3/p256_scalar_native.c:3 m3/rsa_sign_native.c:3 mips32r2/poly1305_native.c:25 mips32r2/x25519_native.c:1 \
-  mips32r2/mlkem_poly_native.c:6 mips32r2/p256_field_native.c:2 mips32r2/p256_scalar_native.c:3 mips32r2/rsa_sign_native.c:3 \
-  rv32imac/poly1305_native.c:25 rv32imac/x25519_native.c:3 rv32imac/mlkem_poly_native.c:6 rv32imac/p256_field_native.c:2 \
-  rv32imac/p256_scalar_native.c:3 rv32imac/rsa_sign_native.c:3 m3-gcc/poly1305_native.c:25 m3-gcc/x25519_native.c:3 \
-  m3-gcc/mlkem_poly_native.c:6 m3-gcc/p256_field_native.c:2 m3-gcc/p256_scalar_native.c:4 m3-gcc/rsa_sign_native.c:3 \
-  mips32r2-gcc/poly1305_native.c:25 mips32r2-gcc/x25519_native.c:3 mips32r2-gcc/mlkem_poly_native.c:6 mips32r2-gcc/p256_field_native.c:2 \
-  mips32r2-gcc/p256_scalar_native.c:4 mips32r2-gcc/rsa_sign_native.c:3 mips32r2-gcc-O2/poly1305_native.c:25 mips32r2-gcc-O2/x25519_native.c:2 \
-  mips32r2-gcc-O2/mlkem_poly_native.c:6 mips32r2-gcc-O2/p256_field_native.c:2 mips32r2-gcc-O2/p256_scalar_native.c:4 mips32r2-gcc-O2/rsa_sign_native.c:3 \
-  rv32imac-gcc/poly1305_native.c:25 rv32imac-gcc/x25519_native.c:3 rv32imac-gcc/mlkem_poly_native.c:6 rv32imac-gcc/p256_field_native.c:2 \
-  rv32imac-gcc/p256_scalar_native.c:3 rv32imac-gcc/rsa_sign_native.c:3 rv32ic-gcc/poly1305_native.c:25 rv32ic-gcc/x25519_native.c:3 \
-  rv32ic-gcc/mlkem_poly_native.c:6 rv32ic-gcc/p256_field_native.c:2 rv32ic-gcc/p256_scalar_native.c:4 rv32ic-gcc/rsa_sign_native.c:3
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  m3/poly1305_native.c:19 m3/x25519_native.c:34 m3/mlkem_poly_native.c:43 m3/p256_field_native.c:24 \
-  m3/p256_scalar_native.c:15 m3/rsa_sign_native.c:29 mips32r2/poly1305_native.c:18 mips32r2/x25519_native.c:31 \
-  mips32r2/mlkem_poly_native.c:36 mips32r2/p256_field_native.c:21 mips32r2/p256_scalar_native.c:14 mips32r2/rsa_sign_native.c:27 \
-  rv32imac/poly1305_native.c:18 rv32imac/x25519_native.c:31 rv32imac/mlkem_poly_native.c:36 rv32imac/p256_field_native.c:21 \
-  rv32imac/p256_scalar_native.c:14 rv32imac/rsa_sign_native.c:27 m3-gcc/poly1305_native.c:14 m3-gcc/x25519_native.c:23 \
-  m3-gcc/mlkem_poly_native.c:36 m3-gcc/p256_field_native.c:14 m3-gcc/p256_scalar_native.c:12 m3-gcc/rsa_sign_native.c:26 \
-  mips32r2-gcc/poly1305_native.c:14 mips32r2-gcc/x25519_native.c:20 mips32r2-gcc/mlkem_poly_native.c:41 mips32r2-gcc/p256_field_native.c:13 \
-  mips32r2-gcc/p256_scalar_native.c:12 mips32r2-gcc/rsa_sign_native.c:23 mips32r2-gcc-O2/poly1305_native.c:21 mips32r2-gcc-O2/x25519_native.c:28 \
-  mips32r2-gcc-O2/mlkem_poly_native.c:38 mips32r2-gcc-O2/p256_field_native.c:24 mips32r2-gcc-O2/p256_scalar_native.c:14 mips32r2-gcc-O2/rsa_sign_native.c:26 \
-  rv32imac-gcc/poly1305_native.c:15 rv32imac-gcc/x25519_native.c:23 rv32imac-gcc/mlkem_poly_native.c:39 rv32imac-gcc/p256_field_native.c:20 \
-  rv32imac-gcc/p256_scalar_native.c:18 rv32imac-gcc/rsa_sign_native.c:27 rv32ic-gcc/poly1305_native.c:15 rv32ic-gcc/x25519_native.c:24 \
-  rv32ic-gcc/mlkem_poly_native.c:39 rv32ic-gcc/p256_field_native.c:20 rv32ic-gcc/p256_scalar_native.c:18 rv32ic-gcc/rsa_sign_native.c:27 \
   arm64/poly1305_native.c:18 arm64/x25519_native.c:28 arm64/mlkem_poly_native.c:33 arm64/p256_field_native.c:16 \
   arm64/p256_scalar_native.c:12 arm64/rsa_sign_native.c:25 x86-64/poly1305_native.c:18 x86-64/x25519_native.c:30 \
   x86-64/mlkem_poly_native.c:34 x86-64/p256_field_native.c:19 x86-64/p256_scalar_native.c:12 x86-64/rsa_sign_native.c:26 \
@@ -5823,8 +5785,7 @@ P256_SCALAR_BRANCH_CEILING := \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
                         mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        mips32r2-gcc-O2/tls_write.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5 \
-                        $(WIDEMUL_NATIVE_CEILING_SPEC)
+                        mips32r2-gcc-O2/tls_write.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a limb or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -6159,17 +6120,11 @@ lint-wide-multiply-gcc:
 # list's absence, and it is re-measured when the stubs among these
 # files are implemented.
 #
-# A WIDEMUL=runtime object's native copies pull __muldi3 there, the
-# 32x32->64 multiply they are compiled to take, which the files under
-# their own names build from __mulsi3's 16x16 pieces. softmul.c supplies
-# it in constant time too, so on rv32ic the copy the answer
-# CH_WIDEMUL_CONSTANT_TIME picks is constant time whatever the answer
-# says (docs/decisions.md 87).
+# A host object's native copies are not here: CODEGEN32_SRCS holds none,
+# because no rv32ic object holds one (docs/decisions.md 89).
 RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3 \
               rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 \
-              tls_write.c:__mulsi3,__udivsi3 poly1305_native.c:__muldi3 x25519_native.c:__muldi3 \
-              mlkem_poly_native.c:__muldi3,__mulsi3 p256_field_native.c:__muldi3 \
-              p256_scalar_native.c:__muldi3 rsa_sign_native.c:__muldi3,__mulsi3
+              tls_write.c:__mulsi3,__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are
 # constant-time only because this file supplies them; if it stopped, the
 # admitted calls would bind to libgcc's and the allowlist would keep

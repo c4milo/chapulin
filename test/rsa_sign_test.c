@@ -161,7 +161,10 @@ static void run_refusals(const vector *v) {
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 }
 
-int main(void) {
+// A host binary takes the ch_cfg.cpu value it runs under as its one
+// argument (test/test_cpu.h); every other binary takes none.
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     const vector vectors[] = {
         {"RSA-2048", rsa_sign_2048_n, rsa_sign_2048_d, sizeof rsa_sign_2048_n, rsa_sign_2048_msg,
          sizeof rsa_sign_2048_msg, rsa_sign_2048_salt, rsa_sign_2048_sig},

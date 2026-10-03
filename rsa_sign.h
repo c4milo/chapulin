@@ -138,10 +138,10 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
 // private key but no PSS signature. Not part of the public API.
 void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
 
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
 // The native copies of the entries above that are built on the widening multiply,
-// which a WIDEMUL=runtime object holds beside them (rsa_sign_native.c, widemul_native.h)
-// and widemul.h's dispatchers call for CH_WIDEMUL_CONSTANT_TIME.
+// which a host object holds beside them (rsa_sign_native.c, widemul_native.h) and
+// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
 int rsa_pss_sign_native(const ch_rsa_priv *k, const uint8_t msg_hash[32],
                         const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
                         size_t *sig_len);

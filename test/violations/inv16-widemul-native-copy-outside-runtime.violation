@@ -1,14 +1,14 @@
 invariant: INV-16
 file: ct.h
 catches: test/widemul-builds.sh
-reason: ct.h takes a native copy outside a WIDEMUL=runtime object, so a build
-  that states nothing about the multiply can carry the native multiply
-  under the _native names, where lint-trust-separation lists files and
-  not what they compile to. test/widemul-builds.sh requires
+reason: ct.h takes a native copy outside a host object, so a build that
+  states nothing about the multiply can carry the native multiply under
+  the _native names, where lint-trust-separation lists files and not what
+  they compile to. test/widemul-builds.sh requires
   -DCH_WIDEMUL_NATIVE_COPY alone not to compile.
 
 --- old
-#if defined(CH_WIDEMUL_NATIVE_COPY) && !defined(CH_WIDEMUL_RUNTIME)
-#error "a _native copy (widemul_native.h) compiles into a WIDEMUL=runtime object alone"
+#if defined(CH_WIDEMUL_NATIVE_COPY) && !defined(CH_CPU_RUNTIME)
+#error "a _native copy (widemul_native.h) compiles into a host object alone"
 #endif
 --- new

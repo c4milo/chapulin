@@ -389,12 +389,6 @@ typedef struct {
 #ifdef CH_CPU_RUNTIME
     uint32_t cpu; // what the caller states about this CPU, a host object alone (cpu_cfg.h)
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-    // Whether the widening multiply runs in constant time on this CPU, in the mode the session's
-    // thread runs in: CH_WIDEMUL_CONSTANT_TIME or CH_WIDEMUL_NOT_STATED, which cpu_cfg.h states
-    // with the caller's part in them. Every init call and ch_srv_check refuse any other value.
-    uint8_t widemul;
-#endif
 
 #ifdef CH_TRUST_WEBPKI
     // Web PKI trust, and a SUITE=aesgcm client's suite order: webpki_cfg.h states the rules.

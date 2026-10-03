@@ -123,11 +123,16 @@ first value listed is the default.
 | `TRANSPORT` | `tcp-blocking`, `tcp-nonblocking`, `quic-nonblocking` | What TLS runs over, and whether chapulin or your code does the I/O |
 | `KEX` | `x25519`, `pq` | The key exchange of a raw or ca client |
 | `SUITE` | `chacha`, `aesgcm` | Adds the AES-GCM suites to a web PKI client or a server |
-| `AES` | `soft`, `hw`, `extern` | Which AES implementation runs, when a build uses AES |
+| `AES` | `soft`, `extern` | A device object's AES, when its build uses AES: the table, for QUIC's public keys alone, or the `ch_aes_block` your image defines |
 | `EXPORTER` | `off`, `on` | Adds `ch_export`, the TLS exporter |
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |
 | `X25519` | `portable`, `wide` | The x25519 field: 16-bit limbs for any core, or 51-bit limbs for 64-bit hosts |
-| `WIDEMUL` | `decomposed`, `native`, `runtime` | Whether wide multiplies use the CPU instruction, which you must know runs in constant time, or both, with each session's configuration naming one |
+| `WIDEMUL` | `decomposed`, `native` | Whether a device object's wide multiplies use the CPU instruction, which you must know runs in constant time |
+
+On arm64 and x86-64, a web PKI client and both server roles build a host
+object. It holds the AES instructions and both multiplies, takes neither
+`AES` nor `WIDEMUL`, and picks for each session from `ch_cfg.cpu`, your
+program's description of the CPU.
 
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.

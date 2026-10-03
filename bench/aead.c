@@ -68,6 +68,17 @@ static const size_t PAYLOAD_SIZES[] = {64, 1200, 1350, MAX_PAYLOAD};
 #define BUILD_LABEL BUILD_AES
 #endif
 
+// The answer the ChaCha20-Poly1305 rows hand the AEAD (widemul.h): the one
+// the build states, in the two device builds that run them. The host
+// build holds both multiplies and runs the gcm group alone, so its copy of
+// those rows, which no run asks for, names the answer of a session without
+// CH_CPU_CONSTANT_TIME_MULTIPLY.
+#ifdef CH_CPU_RUNTIME
+#define BENCH_WIDEMUL WIDEMUL_NOT_STATED
+#else
+#define BENCH_WIDEMUL WIDEMUL_BUILD_ANSWER
+#endif
+
 // The library's one platform hook this link can call. Nothing here trips
 // an assertion, so reaching it is a bug in the bench.
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -149,17 +160,16 @@ static void run_poly1305(size_t n) {
 }
 
 static void run_chachapoly_seal(size_t n) {
-    aead_seal(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, input, n, output, tag);
+    aead_seal(BENCH_WIDEMUL, chacha_key, nonce, aad, AAD_LEN, input, n, output, tag);
     consume(tag, sizeof tag);
 }
 
 static void prepare_chachapoly_open(size_t n) {
-    aead_seal(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, input, n, sealed, sealed_tag);
+    aead_seal(BENCH_WIDEMUL, chacha_key, nonce, aad, AAD_LEN, input, n, sealed, sealed_tag);
 }
 
 static void run_chachapoly_open(size_t n) {
-    if (!aead_open(WIDEMUL_BUILD_ANSWER, chacha_key, nonce, aad, AAD_LEN, sealed, n, sealed_tag,
-                   output)) {
+    if (!aead_open(BENCH_WIDEMUL, chacha_key, nonce, aad, AAD_LEN, sealed, n, sealed_tag, output)) {
         fail("aead_open rejected its own seal");
     }
     consume(&output[n - 1], 1);

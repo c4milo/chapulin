@@ -151,7 +151,10 @@ static void run_agreement(void) {
     CHECK(memcmp(secret_a, P256_ECDH_SHARED[0].shared, sizeof secret_a) != 0);
 }
 
-int main(void) {
+// A host binary takes the ch_cfg.cpu value it runs under as its one
+// argument (test/test_cpu.h); every other binary takes none.
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     run_keygen_cases();
     run_shared_cases();
     run_bad_points();

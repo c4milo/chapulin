@@ -20,7 +20,7 @@ static void test_connect_psk_identity_bounds(void) {
     uint8_t psk[32] = {1};
     mock_io m = {0};
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -53,7 +53,7 @@ static void test_connect_hello_send_fails(void) {
     mock_io m = {0};
     m.fail_after = 1;
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;

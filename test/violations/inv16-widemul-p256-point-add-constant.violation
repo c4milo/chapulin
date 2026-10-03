@@ -2,7 +2,7 @@ invariant: INV-16
 file: p256_point.c
 catches: widemul_runtime_test
 reason: one field multiply of the point addition runs under
-  CH_WIDEMUL_NOT_STATED whatever answer the operation was handed, so one
+  WIDEMUL_NOT_STATED whatever answer the operation was handed, so one
   product in every addition takes the other copy. The points are the
   same. bin/widemul_runtime_test requires the P-256 operations to call
   the native copies alone under the constant-time answer.
@@ -10,4 +10,4 @@ reason: one field multiply of the point addition runs under
 --- old
     widemul_p256_fe_mul(widemul, &t0, &a->x, &b->x);
 --- new
-    widemul_p256_fe_mul(CH_WIDEMUL_NOT_STATED, &t0, &a->x, &b->x);
+    widemul_p256_fe_mul(WIDEMUL_NOT_STATED, &t0, &a->x, &b->x);

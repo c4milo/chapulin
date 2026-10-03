@@ -4,8 +4,9 @@
 # Writes bench/results-aead-<arch>.csv, one file per architecture, so an
 # x86-64 run and an arm64 run sit side by side.
 #
-# It builds bench/aead.c three times, because each build carries one AES
-# implementation and one multiply:
+# It builds bench/aead.c three times. Each of the first two builds carries
+# one AES implementation and one multiply. The host build carries both
+# multiplies, and its rows run AES-128-GCM alone, which uses neither:
 #
 #   AES=soft                    ChaCha20, ChaCha20-Poly1305 and Poly1305
 #                               over the 16x16 multiply the packaged
@@ -80,7 +81,10 @@ COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c ct_wipe.c chach
     aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
-"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${COMMON[@]}" "${AES_HW_SRCS[@]}" quic_aes_soft.c
+# A host object holds each file built on the multiply twice, so the host
+# build links poly1305.c's native copy beside it (docs/decisions.md 89).
+"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${COMMON[@]}" poly1305_native.c "${AES_HW_SRCS[@]}" \
+    quic_aes_soft.c
 if [ -n "$BUILD_ONLY" ]; then
     echo "aead bench: --build built every variant and ran nothing" >&2
     exit 0

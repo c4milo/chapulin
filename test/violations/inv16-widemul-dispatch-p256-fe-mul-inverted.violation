@@ -2,8 +2,8 @@ invariant: INV-16
 file: widemul.h
 catches: widemul_runtime_test
 reason: widemul_p256_fe_mul inverts its branch, so p256_fe_mul runs the native
-  multiply for every answer but CH_WIDEMUL_CONSTANT_TIME, the unset field
-  and CH_WIDEMUL_NOT_STATED among them, and the decomposition for the one
+  multiply for every answer but WIDEMUL_CONSTANT_TIME, a wiped direction's 0
+  and WIDEMUL_NOT_STATED among them, and the decomposition for the one
   answer that states the multiply's timing. Every byte still comes out
   the same. bin/widemul_runtime_test counts the calls into each copy and
   requires the native copies alone under the constant-time answer.

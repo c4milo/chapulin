@@ -29,7 +29,7 @@ const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
 const Chacha = enum { portable, vector };
-const Widemul = enum { decomposed, native, runtime };
+const Widemul = enum { decomposed, native };
 const Setting = enum { on, off };
 
 /// The build variables, with the Makefile's defaults. rand and kex have no
@@ -45,12 +45,17 @@ const Config = struct {
     kex: ?Kex,
     x25519: X25519,
     chacha: Chacha,
-    widemul: Widemul,
+    widemul: ?Widemul,
     exporter: Setting,
     keylog: Setting,
     /// TX_RECORD as the Makefile takes it, the text of a decimal integer,
     /// and null for the default, cfg.h's 512.
     tx_record: ?[]const u8,
+    /// HOST_TARGET as the Makefile takes it: the host test's result, which a
+    /// check sets on its own command line to package a device object on a
+    /// development machine. Empty says the target failed the test, any
+    /// other text that it passed, and null runs the test on the target.
+    host_target: ?[]const u8,
     /// The three hardware statements ct.h reads. The Makefile never writes
     /// them into a library build, and a builder adds them to CFLAGS. They
     /// default off here for the same reason: each is a claim about the
@@ -108,7 +113,7 @@ const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
-/// WIDEMUL=runtime object compiles a second time, as <file>_native.c.
+/// host object compiles a second time, as <file>_native.c.
 const widemul_copied = [_][]const u8{ "poly1305.c", "x25519.c", "mlkem_poly.c", "p256_field.c", "p256_scalar.c", "rsa_sign.c" };
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.
@@ -226,16 +231,17 @@ pub fn build(b: *std.Build) void {
         .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
         .x25519 = b.option(X25519, "X25519", "The X25519 field") orelse .portable,
         .chacha = b.option(Chacha, "CHACHA", "The ChaCha20 keystream: portable C or 128-bit vectors") orelse .portable,
-        .widemul = b.option(Widemul, "WIDEMUL", "The widening multiply (ct.h)") orelse .decomposed,
+        .widemul = b.option(Widemul, "WIDEMUL", "A device object's widening multiply (ct.h): decomposed, or native"),
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
         .tx_record = nonEmpty(b.option([]const u8, "TX_RECORD", "The most plaintext one outgoing TLS record carries, 512 to 16384 (cfg.h's CH_TX_PT)")),
+        .host_target = b.option([]const u8, "HOST_TARGET", "The host test's result, for a check: empty builds the device object on a host target"),
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
         .native_mul128 = b.option(bool, "CH_NATIVE_MUL128", "State that the 64x64->128 multiply runs in constant time (ct.h)") orelse false,
     };
     refuseUnbuildable(config);
     const target = b.standardTargetOptions(.{});
-    refuseAesOnHost(config, target.result);
+    refuseSpeedOnHost(config, target.result);
     const plan = computePlan(b, config, target.result);
     // The flags the sources compile with. The module below is translated
     // under every -D among them, so the object and the module take their
@@ -360,9 +366,6 @@ fn refuseUnbuildable(config: Config) void {
     if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
         fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
     }
-    if (config.widemul == .runtime and config.x25519 == .wide) {
-        fatal("WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable", .{});
-    }
     if (config.tx_record) |text| {
         if (config.transport == .@"quic-nonblocking") {
             fatal("TX_RECORD={s} sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{text});
@@ -392,19 +395,32 @@ fn recordSize(text: []const u8) bool {
     return n >= 512 and n <= 16384;
 }
 
-/// The Makefile's refusal of an AES value for a host object: a host object
-/// holds the AES instructions, and in a QUIC object the table beside them,
-/// and each session picks from ch_cfg.cpu (docs/decisions.md 89). AES=soft
-/// and AES=extern choose a device object's AES, and the values that chose
-/// the instructions when the object was built are gone, so Aes does not
-/// name them and zig build refuses them as it refuses any other value.
-fn refuseAesOnHost(config: Config, target: std.Target) void {
+/// The Makefile's refusals of a speed value for a host object, which holds
+/// each fast path beside the portable code and lets each session pick from
+/// ch_cfg.cpu (docs/decisions.md 89). AES and WIDEMUL choose a device
+/// object's AES and multiply. A host object holds the AES instructions, and
+/// in a QUIC object the table beside them, and both multiplies. The values
+/// that chose a fast path when the object was built are gone, so Aes and
+/// Widemul do not name them, and zig build refuses them as it refuses any
+/// other value. X25519=wide states its multiply's timing at build time,
+/// which a host object asks of each session.
+fn refuseSpeedOnHost(config: Config, target: std.Target) void {
+    if (!hostObject(config, target)) return;
+    const builds = "on this target builds a host object, which ";
+    const device = ", or build the device object: a device target, or HOST_TARGET set empty";
     if (config.aes) |aes| {
-        if (hostTarget(target) and !deviceClient(config)) {
-            std.process.fatal("AES={t} chooses a device object's AES, and TRUST={t} ROLE={t} on this target builds a host " ++
-                "object, which holds the AES instructions and picks them per session from ch_cfg.cpu " ++
-                "(docs/decisions.md 89): drop AES, or build for a device target", .{ aes, config.trust, config.role });
-        }
+        std.process.fatal("AES={t} chooses a device object's AES, and TRUST={t} ROLE={t} " ++ builds ++
+            "holds the AES instructions and picks them per session from ch_cfg.cpu " ++
+            "(docs/decisions.md 89): drop AES" ++ device, .{ aes, config.trust, config.role });
+    }
+    if (config.widemul) |widemul| {
+        std.process.fatal("WIDEMUL={t} chooses a device object's multiply, and TRUST={t} ROLE={t} " ++ builds ++
+            "holds both multiplies and picks one per session from ch_cfg.cpu " ++
+            "(docs/decisions.md 89): drop WIDEMUL" ++ device, .{ widemul, config.trust, config.role });
+    }
+    if (config.x25519 == .wide) {
+        std.process.fatal("X25519=wide states its multiply's timing at build time, and TRUST={t} ROLE={t} " ++ builds ++
+            "takes the multiply's timing from each session's ch_cfg.cpu: use X25519=portable", .{ config.trust, config.role });
     }
 }
 
@@ -423,6 +439,15 @@ fn hostTarget(target: std.Target) bool {
     };
 }
 
+/// Whether config builds a host object for target (docs/decisions.md 89):
+/// TRUST=webpki, ROLE=server and ROLE=both where the host test passed. The
+/// test's result is HOST_TARGET's where a check set it, as the Makefile
+/// takes its own, and hostTarget's answer for the target everywhere else.
+fn hostObject(config: Config, target: std.Target) bool {
+    const passed = if (config.host_target) |text| text.len != 0 else hostTarget(target);
+    return passed and !deviceClient(config);
+}
+
 /// A raw or ca client: the one build whose key exchange KEX chooses, and
 /// the one product that builds the portable object on a host target.
 fn deviceClient(config: Config) bool {
@@ -438,7 +463,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // A host object (docs/decisions.md 89): TRUST=webpki, ROLE=server and
     // ROLE=both on a target that passes the host test. A raw or ca client
     // builds the portable object on every target.
-    const host = hostTarget(target) and !deviceClient(config);
+    const host = hostObject(config, target);
     const aes = config.aes orelse .soft;
     // AES_ADD: a host object holds the AES instructions, and a QUIC one the
     // table beside them for the public keys of a session whose caller did
@@ -483,19 +508,18 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     }
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
-    if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
-    // Both multiplies, and each session's answer picks one: the native copy
-    // of every file built on the multiply the object carries
-    // (docs/decisions.md 87).
-    if (config.widemul == .runtime) {
-        defs = concat(b, &.{ defs, &.{"-DCH_WIDEMUL_RUNTIME"} });
-        lib_srcs = concat(b, &.{ lib_srcs, nativeCopies(b, lib_srcs) });
-    }
-    // The vector Poly1305 multiplies, so it joins the object only where the
-    // builder states the multiply's timing as well (docs/decisions.md 83),
-    // or as the native copy a session's answer picks.
-    if (config.chacha == .vector and config.widemul == .native) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector.c"} });
-    if (config.chacha == .vector and config.widemul == .runtime) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
+    const widemul = config.widemul orelse .decomposed;
+    if (widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    // A host object holds both multiplies, and each session's
+    // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks one: the native copy of every
+    // file built on the multiply the object carries (docs/decisions.md 87
+    // and 89).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, nativeCopies(b, lib_srcs) });
+    // The vector Poly1305 multiplies, so it joins a device object only where
+    // the builder states the multiply's timing as well (docs/decisions.md
+    // 83), and a host object as the native copy the bit picks.
+    if (config.chacha == .vector and !host and widemul == .native) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector.c"} });
+    if (config.chacha == .vector and host) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
     if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });

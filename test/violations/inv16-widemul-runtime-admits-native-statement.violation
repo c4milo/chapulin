@@ -1,14 +1,14 @@
 invariant: INV-16
 file: ct.h
 catches: test/widemul-builds.sh
-reason: ct.h takes CH_NATIVE_WIDEMUL beside CH_WIDEMUL_RUNTIME, so the files
-  under their own names, which every answer but CH_WIDEMUL_CONSTANT_TIME
-  runs, compile to the native multiply, and the answer picks between two
-  copies of one multiply. test/widemul-builds.sh requires that build not
-  to compile.
+reason: ct.h takes CH_NATIVE_WIDEMUL beside CH_CPU_RUNTIME, so the files under
+  their own names, which every session without
+  CH_CPU_CONSTANT_TIME_MULTIPLY runs, compile to the native multiply, and
+  the bit picks between two copies of one multiply.
+  test/widemul-builds.sh requires that build not to compile.
 
 --- old
-#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_NATIVE_WIDEMUL)
-#error "WIDEMUL=runtime takes the multiply's timing from each session: drop -DCH_NATIVE_WIDEMUL"
+#if defined(CH_CPU_RUNTIME) && defined(CH_NATIVE_WIDEMUL)
+#error "a host object takes the multiply's timing from ch_cfg.cpu: drop -DCH_NATIVE_WIDEMUL"
 #endif
 --- new

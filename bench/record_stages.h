@@ -16,6 +16,19 @@
 #include "aes.h"
 #include "gcm.h"
 #include "record.h"
+#include "widemul.h"
+
+// The answer the ChaCha20-Poly1305 rows run under (widemul.h). The bench's
+// object is a host object, which holds both multiplies
+// (docs/decisions.md 89), and bench/record.sh builds each binary twice:
+// with -DBENCH_WIDEMUL_NATIVE its rows run the native copies, as a session
+// whose caller set CH_CPU_CONSTANT_TIME_MULTIPLY does, and without it the
+// files under their own names, on the decomposition.
+#ifdef BENCH_WIDEMUL_NATIVE
+#define BENCH_WIDEMUL WIDEMUL_CONSTANT_TIME
+#else
+#define BENCH_WIDEMUL WIDEMUL_NOT_STATED
+#endif
 
 // bench/record_gcm.c. counter_mode and compute_tag as gcm_traffic_seal
 // calls them: from the counter block after the one nonce names, and with

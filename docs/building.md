@@ -37,22 +37,15 @@ Other targets:
   (decision 43). `KEYLOG=on` hands each traffic secret to a
   `ch_keylog` hook the image defines, for an NSS key log; it adds no
   export, it imports the hook, and it is refused for a client in a raw
-  or ca trust mode (decision 44, INV-29). `WIDEMUL=native` defines
-  `CH_NATIVE_WIDEMUL` in the object: the builder states that this
-  part's widening multiply runs in constant time, and every widening
-  product then uses the CPU's multiply instead of 16x16 pieces (`ct.h`).
-  The default, `WIDEMUL=decomposed`, makes no claim about the part.
-  `WIDEMUL=runtime` holds both multiplies in one object, for a host whose
-  threads or CPUs differ (decision 87). Your program sets
-  `ch_cfg.widemul` in every session's configuration: to
-  `CH_WIDEMUL_CONSTANT_TIME` when the multiply runs in constant time on
-  the CPU and in the mode the session's thread runs in, which on arm64
-  means a core with FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM
-  policy of your operating system, and to `CH_WIDEMUL_NOT_STATED`
-  otherwise. Every init call refuses any other value, 0 included.
-  chapulin sets no CPU mode and probes nothing. Each file built on the
-  multiply is in the object twice, so it is larger, and the value refuses
-  `X25519=wide`, whose build states the multiply's timing once.
+  or ca trust mode (decision 44, INV-29). `WIDEMUL` is a device object's
+  variable alone. `WIDEMUL=native` defines `CH_NATIVE_WIDEMUL` in the
+  object: the builder states that this part's widening multiply runs in
+  constant time, and every widening product then uses the CPU's multiply
+  instead of 16x16 pieces (`ct.h`). The default, `WIDEMUL=decomposed`,
+  makes no claim about the part. A host object, below, holds both
+  multiplies and takes no `WIDEMUL` value, and the value
+  `WIDEMUL=runtime`, which put both in an object when it was built, is
+  gone (decisions 87 and 89).
   `TX_RECORD=N` sets `CH_TX_PT`, the most plaintext one outgoing record
   carries, to N bytes, a decimal integer from 512 to 16384; the peer's
   `record_size_limit` can still lower it. Empty, the default, leaves 512.
@@ -128,14 +121,24 @@ Other targets:
   the session runs the AES-GCM suites and QUIC's Initial packets on the
   instructions, and without it the session holds ChaCha20 alone, runs
   its Initial packets on the software AES, and init refuses a suite list
-  that names an AES-GCM suite. No path reads the other bits yet: the
-  `CHACHA`, `WIDEMUL` and `X25519` variables still choose what each
-  object runs, until decision 89's later commits move each choice to its
-  bit. A raw or
+  that names an AES-GCM suite. The host object also holds each file built
+  on the widening multiply twice, once on `ct.h`'s 16x16 decomposition and
+  once on the CPU's multiply, so it is larger, and
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` picks for every operation of the
+  session: Poly1305, X25519, ML-KEM, P-256 and RSA signing (decision 87).
+  Set the bit when the multiply runs in constant time on the CPU and in
+  the mode the session's thread runs in, which on arm64 means a core with
+  FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your
+  operating system. A host object refuses `X25519=wide`, whose build
+  states the multiply's timing once. No path reads `CH_CPU_AVX2` or
+  `CH_CPU_VAES` yet: the `CHACHA` and `X25519` variables still choose what
+  each object runs, until decision 89's later commits move each choice to
+  its bit. A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host
-  test's result empty on the command line, `HOST_TARGET=`.
+  test's result empty on the command line: `HOST_TARGET=` for make, and
+  `-DHOST_TARGET=` for `zig build`.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program

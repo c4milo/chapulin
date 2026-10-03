@@ -5,26 +5,37 @@
 #ifndef CH_TEST_CPU_H
 #define CH_TEST_CPU_H
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cfg.h"
 
 #ifdef CH_CPU_RUNTIME
 // The description each configuration a host test builds takes, unless one of its rows sets
-// another. A suite binary's rows run the AES-GCM suites, which a session runs only when its caller
-// sets CH_CPU_CONSTANT_TIME_AES (suite.h), so it states that bit beside the probe's. Every other
-// host binary states the probe's bit alone, so its QUIC Initial packets run on the table, and the
-// suite binaries' rows run them on the instructions.
+// another. Every host binary states CH_CPU_CONSTANT_TIME_MULTIPLY, so its operations built on the
+// widening multiply run the native copies, as the host test flags' CH_NATIVE_WIDEMUL runs every
+// other binary's, and its rows that count each copy's calls clear the bit for one end or both. A
+// suite binary's rows run the AES-GCM suites, which a session runs only when its caller sets
+// CH_CPU_CONSTANT_TIME_AES (suite.h), so it states that bit too. Every other host binary leaves
+// it clear, so its QUIC Initial packets run on the table, and the suite binaries' rows run them on
+// the instructions.
 #ifndef TEST_CPU
 #ifdef CH_SUITE_AES_GCM
-#define TEST_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES)
+#define TEST_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY)
 #else
-#define TEST_CPU CH_CPU_PROBED
+#define TEST_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
 #endif
 #endif
-#define TEST_CPU_CFG(cfg) ((cfg).cpu = TEST_CPU)
+
+// The value this binary runs under: TEST_CPU, unless its one argument names another
+// (test_take_cpu). The Makefile runs each vector binary once for each set of bits that changes a
+// path, and the binary hands its answers on from this value (test/test_widemul.h).
+static uint32_t test_cpu = TEST_CPU;
+#define TEST_CPU_CFG(cfg) ((cfg).cpu = test_cpu)
 
 // Every bit a host object defines on the architecture this binary targets: the three of every
 // host object, and on x86-64 CH_CPU_AVX2 and CH_CPU_VAES. It is written here apart from cpu_cfg.h's
@@ -63,7 +74,28 @@ static inline int test_cpu_taken(size_t i) {
 #define TEST_CPU_CFG(cfg) ((void)(cfg))
 #endif
 
-// Clears cfg, and in a host binary gives it TEST_CPU: where every configuration a loop test
+// Takes a host binary's one argument, a number such as 0x5, into test_cpu and prints it, and
+// exits with status 2 for an argument that is not a 32-bit number. With no argument test_cpu
+// keeps TEST_CPU. Every other binary takes no argument and prints nothing.
+static inline void test_take_cpu(int argc, char **argv) {
+#ifdef CH_CPU_RUNTIME
+    if (argc > 1) {
+        char *end = NULL;
+        unsigned long bits = strtoul(argv[1], &end, 0);
+        if (*argv[1] == 0 || *end != 0 || bits > UINT32_MAX) {
+            (void)printf("%s: %s is not a ch_cfg.cpu value\n", argv[0], argv[1]);
+            exit(2);
+        }
+        test_cpu = (uint32_t)bits;
+    }
+    (void)printf("%s under ch_cfg.cpu 0x%" PRIx32 "\n", argv[0], test_cpu);
+#else
+    (void)argc;
+    (void)argv;
+#endif
+}
+
+// Clears cfg, and in a host binary gives it test_cpu: where every configuration a loop test
 // builds starts.
 static inline void test_cfg_clear(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);

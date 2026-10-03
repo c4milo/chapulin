@@ -23,7 +23,9 @@ size or a ticket's age, the API calls the C function that computes it
 ## Adding the dependency
 
 Zig 0.16.0. The package's options are the Makefile's variables
-(docs/building.md):
+(docs/building.md), `HOST_TARGET` among them: a check sets it empty to
+build the device object for a host target, as it sets make's
+(docs/decisions.md 89), and a program leaves it unset:
 
 ```zig
 const chapulin = b.dependency("chapulin", .{
@@ -112,7 +114,6 @@ for a `@compileError` declaration too.
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Cpu`, and `Client.cpu` and `Server.cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
-| `Widemul`, and `Client.widemul` and `Server.widemul` other than `void` | `ch_cfg.widemul` (WIDEMUL=runtime) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
 | `Server.choose_version` other than `void` | `ch_srv_cfg.choose_version` (a QUIC server role) |
 | `Client.cipher_suites` | `ch_cfg.cipher_suites` (SUITE=aesgcm TRUST=webpki) |
@@ -177,8 +178,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
-| `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses |
-| `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`: `.constant_time` or `.not_stated`, the caller's answer about the widening multiply on its CPU and in its thread's mode, or 0 for null, which `init` refuses |
+| `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses. `constant_time_multiply` is the caller's statement about the widening multiply on its CPU and in its thread's mode, and runs the native multiply |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
 callbacks and `io` to it, and under `RAND=session` its source. With a
@@ -244,7 +244,6 @@ over.
 | `choose_version`, null by default, `TRANSPORT=quic-nonblocking` alone | none in `toCfg`: the session's `init` points `srv.choose_version` at its own adapter, which calls this `quic.ChooseVersion` with the session's `hook.context`. null keeps the original version |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 | `cpu`, null by default, a host object alone | `cpu`, as for a client |
-| `widemul`, null by default, `WIDEMUL=runtime` alone | `widemul`, as for a client |
 
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
 `*const [64]u8` and the private scalar as `*const [32]u8`.

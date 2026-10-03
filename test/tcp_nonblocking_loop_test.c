@@ -262,7 +262,6 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &server_source);
 #endif
-    TEST_WIDEMUL_CFG(*cfg);
 
     memset(&rsa_key, 0, sizeof rsa_key);
     rsa_key.n_len = sizeof rsa_sign_2048_n;
@@ -290,7 +289,6 @@ static void client_config(ch_cfg *cfg) {
 #ifdef CH_RAND_SESSION
     attach_source(cfg, &client_source);
 #endif
-    TEST_WIDEMUL_CFG(*cfg);
 }
 
 // Moves everything the client owes into the server, and everything the
@@ -476,7 +474,7 @@ int main(void) {
 #ifdef CH_RAND_SESSION
     test_session();
 #endif
-    test_widemul_answers();
+    test_multiply_bit();
     test_cpu_values_at_init();
 
     if (failures == 0) {

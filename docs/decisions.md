@@ -4616,12 +4616,16 @@ does nothing more.
     LP64 compiler for the two architectures passes all three. The Makefile
     and `build.zig` run the test, and a host build passes one define,
     `-DCH_CPU_RUNTIME`, named after `CH_AES_RUNTIME` and
-    `CH_WIDEMUL_RUNTIME`, which it replaces. The sources choose on that
-    define and never on the architecture macros, and `cpu_cfg.h` stops a
-    build that defines it for a target that fails the test. Reason: a
-    firmware tree with its own build, every proof harness, `bench/sram.sh`
-    and the test binaries of the portable code compile the sources without
-    the define, so each gets the code it compiles today. cbmc defines the
+    `CH_WIDEMUL_RUNTIME`, which it replaces. A source chooses between a
+    host path and the portable code on that define alone, never on an
+    architecture macro. Inside a host path an architecture macro picks the
+    instruction set, as `aes_hw.c` picks the Arm or the x86 AES
+    instructions. `cpu_cfg.h` stops a build that passes the define for a
+    target that fails the test. Reason: a firmware tree with its own
+    build, the proof harnesses of the portable code, the device rows of
+    `bench/sram.sh` and the test binaries of the portable code compile the
+    sources without the define, so each gets the code it compiles today.
+    cbmc defines the
     architecture macros of the machine it runs on, `__aarch64__` and
     `__ARM_NEON` on an arm64 Mac, so sources that chose on those macros
     would hand CBMC intrinsics, which it cannot read.
@@ -4641,10 +4645,15 @@ does nothing more.
     the buffers of a host. Cost: a raw or ca client on a 64-bit host never
     runs a fast path, and a webpki or server program on an arm64 device
     always takes the host object. A check that packages the device object
-    of a server, such as today's `AES=extern` server leg, must build for a
-    device target, through `build.zig`'s cross linker or a CI cross lane,
-    or set the result of the host test on its own command line, as
-    `lint-trust-separation` would.
+    of a server on a host target sets the result of the host test empty on
+    its own command line: `HOST_TARGET=` for make and `-DHOST_TARGET=` for
+    `zig build`. The `AES=extern` server's `lib-check` leg does, and so do
+    its configuration in `lint-zig-build`'s roster and the device rows of
+    `lint-trust-separation`. `HOST_TARGET=yes` names the host object the
+    same way, so the rows that read a host object's sources and defines
+    read the same on every compiler, and `cpu_cfg.h` still stops a compile
+    for a target that fails the test. `test/host-builds.sh` holds both
+    builds to both values.
 
     **No field in a device object.** `ch_cfg.cpu` exists only
     in a host object, as `aes_instructions` exists only under
@@ -4726,8 +4735,12 @@ does nothing more.
     | `X25519=wide` with `CH_NATIVE_MUL128` | `CH_CPU_CONSTANT_TIME_MULTIPLY` set |
     | `CHACHA=vector WIDEMUL=native`, the vector Poly1305 | `CH_CPU_CONSTANT_TIME_MULTIPLY` set |
 
-    A host build refuses `AES=extern` and `WIDEMUL=native`, which stay for
-    device objects. A host session never runs `chacha20.c`'s loop: every
+    A host build refuses every value of `AES` and of `WIDEMUL`, a default
+    value written on its command line included: it holds the AES
+    instructions and both multiplies, so neither variable chooses anything
+    there. `AES=soft`, `AES=extern`, `WIDEMUL=decomposed` and
+    `WIDEMUL=native` stay for device objects. A host session never runs
+    `chacha20.c`'s loop: every
     arm64 core has NEON and every x86-64 core SSE2 (entry 82), so no bit
     turns the vector path off, and `chacha20_block`, which derives the
     Poly1305 key, stays the portable function. The AVX2 ChaCha20 and the
@@ -4773,7 +4786,7 @@ does nothing more.
     | Scripts that test the variables' refusals | 3 | 1 |
     | Speed steps in each of CI's arm64 and macOS jobs | 4 | 2 |
     | Build-record bits | 2 | 1, `CH_BUILD_CPU_RUNTIME` |
-    | `build.zig` options | 16 | 12 |
+    | `build.zig` options | 16 | 13, `HOST_TARGET` among them |
     | `ch_cfg` fields | 2 | 1 |
     | `chapulin.hpp` types and setters | 4 | 2 |
     | Zig API types and fields | 6 | 3 |

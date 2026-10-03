@@ -48,7 +48,7 @@ extern const p256_point p256_point_infinity;
 extern const p256_point p256_point_generator;
 
 // Every call below that multiplies takes first the answer its field
-// multiplies run under, a CH_WIDEMUL_ value, and hands it to widemul.h's
+// multiplies run under, a WIDEMUL_ value, and hands it to widemul.h's
 // dispatchers with each one. p256_point_cswap multiplies nothing.
 
 // o = a + b, by the complete addition formula for curves with a = -3

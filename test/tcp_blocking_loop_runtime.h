@@ -18,9 +18,11 @@ static void test_runtime_answers(void) {
     // A whole handshake with both ends stating no AES instructions: the
     // raw client offers ChaCha20 alone in every build, and the server's
     // default order without the bit holds nothing else.
-    blocking_cpu = CH_CPU_PROBED;
+    blocking_client_cpu = CH_CPU_PROBED;
+    blocking_server_cpu = CH_CPU_PROBED;
     client_reads_flight(0, 0);
-    blocking_cpu = TEST_CPU;
+    blocking_client_cpu = TEST_CPU;
+    blocking_server_cpu = TEST_CPU;
 }
 
 #endif // CH_CPU_RUNTIME && CH_SUITE_AES_GCM

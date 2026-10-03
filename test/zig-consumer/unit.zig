@@ -24,7 +24,6 @@ const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 const has_cpu = @hasField(c.ch_cfg, "cpu");
-const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
 /// Fails naming the first ch_cfg field whose value differs, nested ones
 /// included.
@@ -180,25 +179,6 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
             const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
             const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .cpu = description };
             try expectEqual(code, (try values.toCfg()).cpu);
-        }
-    }
-}
-
-test "Client.toCfg and Server.toCfg under WIDEMUL=runtime: the caller's answer, and 0 for none" {
-    if (!has_widemul_runtime) return error.SkipZigTest;
-    const answers = [_]?chapulin.Widemul{ null, .constant_time, .not_stated };
-    const codes = [_]u8{ 0, c.CH_WIDEMUL_CONSTANT_TIME, c.CH_WIDEMUL_NOT_STATED };
-    for (answers, codes) |answer, code| {
-        if (has_client) {
-            const key = [_]u8{0x11} ** 64;
-            const trust: chapulin.Trust = if (has_webpki) .{ .pins = .{ .pins = &pins } } else .{ .pinned = .{ .server_pubkey = &key } };
-            const values: chapulin.Client = .{ .trust = trust, .widemul = answer };
-            try expectEqual(code, values.toCfg().widemul);
-        }
-        if (has_server) {
-            const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
-            const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .widemul = answer };
-            try expectEqual(code, (try values.toCfg()).widemul);
         }
     }
 }

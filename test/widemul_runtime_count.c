@@ -1,4 +1,4 @@
-// The names widemul.h's dispatchers call in a WIDEMUL=runtime object, each
+// The names widemul.h's dispatchers call in a host object, each
 // defined as a count and a call to the entry test/widemul_count_names.h
 // renamed (test/widemul_runtime_count.h). An entry under its own name
 // counts into widemul_decomposed_calls and one ending in _native into
@@ -223,7 +223,7 @@ void rsa_sp1_native(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
 
 #ifdef CH_CHACHA_VECTOR
 // poly1305_native.c's block loop calls the vector path under the name
-// poly1305_vector.h declares for a WIDEMUL=runtime object.
+// poly1305_vector.h declares for a host object.
 void poly1305_vector_blocks_native_counted(poly1305 *p, const uint8_t *m, size_t n);
 
 void poly1305_vector_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {

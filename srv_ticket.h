@@ -154,7 +154,7 @@ typedef struct {
 // staging before it returns, because the body holds the PSK.
 //
 // This call and srv_ticket_open take first the answer the AEAD's Poly1305
-// runs under, a CH_WIDEMUL_ value (widemul.h): the session's own.
+// runs under, a WIDEMUL_ value (widemul.h): the session's own.
 size_t srv_ticket_seal(uint8_t widemul, const uint8_t key[CH_SRV_TICKET_KEY_LEN],
                        const uint8_t nonce[AEAD_NONCE], const srv_ticket_contents *c, uint8_t *out,
                        size_t cap);

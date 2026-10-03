@@ -258,7 +258,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     if (!srv_config_ok(cfg)) {
         return tcp_nonblocking_refuse_init(r);
     }
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(&r->t);
 #endif
     r->hs.t = &r->t;

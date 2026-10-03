@@ -17,7 +17,7 @@
 // ct gets n bytes of ciphertext; tag is written separately so record-layer
 // callers can place it after the ciphertext. pt == ct allowed (in-place).
 // Both calls take first the answer Poly1305's block loop runs under, a
-// CH_WIDEMUL_ value, and hand it to widemul.h's dispatchers.
+// WIDEMUL_ value, and hand it to widemul.h's dispatchers.
 void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
                const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                uint8_t tag[AEAD_TAG]);

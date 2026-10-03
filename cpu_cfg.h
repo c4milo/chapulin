@@ -1,5 +1,5 @@
-// What a caller states about the CPU a session runs on: the bits of ch_cfg.cpu in a host object,
-// and the answers ch_cfg.widemul takes. cfg.h includes this header.
+// What a caller states about the CPU a session runs on: the bits of ch_cfg.cpu in a host object.
+// cfg.h includes this header.
 //
 // It sits beside cfg.h for the reason srv_cfg.h does: cfg.h stood at 499 lines
 // against the 500-line cap CLAUDE.md sets and make lint-size holds.
@@ -11,9 +11,12 @@
 // build says it is one with -DCH_CPU_RUNTIME. The Makefile and build.zig pass it for a
 // TRUST=webpki client, ROLE=server and ROLE=both when the compiler targets a host: arm64 or
 // x86-64, NEON or SSE2 on a little-endian core, and unsigned __int128. A raw or ca client builds
-// the portable object on every target, and so does every product on any other target. No source
-// chooses a path on the architecture macros. This header reads them for two things: to stop a
-// host object for a target that fails the test, and to name the bits its architecture defines.
+// the portable object on every target, and so does every product on any other target. A source
+// chooses between a host path and the portable code on CH_CPU_RUNTIME alone, never on an
+// architecture macro, so CBMC and a firmware tree's own build get the portable code. Inside a
+// host path an architecture macro picks the instruction set, as aes_hw.c picks the Arm or the x86
+// AES instructions. This header reads them for two things: to stop a host object for a target
+// that fails the test, and to name the bits its architecture defines.
 #ifdef CH_CPU_RUNTIME
 #if !defined(__aarch64__) && !defined(__x86_64__)
 #error "CH_CPU_RUNTIME builds a host object, which targets arm64 or x86-64 (docs/decisions.md 89)"
@@ -50,14 +53,17 @@
 // CH_CPU_CONSTANT_TIME_MULTIPLY states that the widening multiply runs in constant time on the
 // CPU, in that mode: MADD, UMULH, MUL and MULX are on the same two lists. On arm64 that needs a
 // core with FEAT_DIT and a thread that has set PSTATE.DIT, and on x86-64 a part on the DOIT list
-// and the DOITM policy of its operating system.
+// and the DOITM policy of its operating system. A session with the bit runs every operation built
+// on ct.h's widening multiply on the native multiply, the _native copies widemul.h dispatches
+// to, and a session without it on ct.h's 16x16 decomposition, the files under their own names
+// (docs/decisions.md 87 and 89).
 //
 // CH_CPU_AVX2 says the CPU has AVX2, and CH_CPU_VAES that it has VAES and VPCLMULQDQ on 256-bit
 // registers. Both are x86-64 bits.
 //
-// No path reads the last three bits yet: the CHACHA, WIDEMUL and X25519 build variables still
-// choose what each object runs, and the commits docs/decisions.md 89 lists move each choice to its
-// bit.
+// No path reads CH_CPU_AVX2 or CH_CPU_VAES yet. A host object runs X25519 on the 16-limb field
+// under both values of the multiply bit, and the CHACHA build variable still chooses the ChaCha20
+// keystream. The commits docs/decisions.md 89 lists move each choice to its bit.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64, or a bit
@@ -78,24 +84,5 @@
 #define CH_CPU_DEFINED (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY)
 #endif
 #endif // CH_CPU_RUNTIME
-
-// The two answers about ct.h's widening multiply. Every operation built on it runs under one of
-// them (widemul.h). CH_WIDEMUL_CONSTANT_TIME says the multiply runs in constant time on this CPU,
-// in the mode it runs in, and takes the native multiply. CH_WIDEMUL_NOT_STATED says nothing
-// states that, and takes ct.h's 16x16 decomposition. An object whose ct.h takes the native
-// multiply runs every operation under the first, and any other object under the second, but for
-// a WIDEMUL=runtime object (-DCH_WIDEMUL_RUNTIME, docs/decisions.md 87). That object holds both
-// multiplies and takes the answer from each session's ch_cfg.widemul. Every init call and
-// ch_srv_check return CH_EINVAL for any other value, 0 included, before they send anything.
-//
-// The answer is about the CPU and the mode the session's thread runs in, and the caller owns
-// both. On arm64 the architecture states that its multiplies take a time independent of their
-// data only while PSTATE.DIT is 1, on a core that implements FEAT_DIT, so a caller answers
-// CH_WIDEMUL_CONSTANT_TIME for a thread that has set DIT. On x86-64 Intel's DOIT list holds on
-// Ice Lake, Gracemont and later parts only while the operating system has set DOITM, which code
-// in user mode cannot read, so the answer there is the caller's policy (ct.h). chapulin writes
-// no CPU state and probes nothing.
-#define CH_WIDEMUL_CONSTANT_TIME 1
-#define CH_WIDEMUL_NOT_STATED 2
 
 #endif

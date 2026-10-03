@@ -132,26 +132,15 @@ struct Cpu {
     // session's thread runs in: CH_CPU_CONSTANT_TIME_AES.
     bool constant_time_aes = false;
     // You state that the widening multiply runs in constant time on this
-    // CPU, in that mode: CH_CPU_CONSTANT_TIME_MULTIPLY.
+    // CPU, in that mode: CH_CPU_CONSTANT_TIME_MULTIPLY, which runs the
+    // native multiply in place of ct.h's 16x16 decomposition. The mode is
+    // yours to set, DIT on arm64 and DOITM's policy on x86-64.
     bool constant_time_multiply = false;
     // The CPU has AVX2 (CH_CPU_AVX2), and VAES and VPCLMULQDQ on 256-bit
     // registers (CH_CPU_VAES). Both are x86-64 bits, and an arm64 object
     // refuses either.
     bool avx2 = false;
     bool vaes = false;
-};
-#endif
-
-#ifdef CH_WIDEMUL_RUNTIME
-// Whether the widening multiply runs in constant time on this CPU, in the
-// mode your thread runs in, in a WIDEMUL=runtime build: the value
-// Config::widemul() writes into ch_cfg.widemul. The mode is yours to set,
-// DIT on arm64 and DOITM's policy on x86-64 (cpu_cfg.h). chapulin writes
-// no CPU state and probes nothing, and every init refuses a Config that
-// states neither (docs/decisions.md 87).
-enum class Widemul : uint8_t {
-    constant_time = CH_WIDEMUL_CONSTANT_TIME,
-    not_stated = CH_WIDEMUL_NOT_STATED,
 };
 #endif
 
@@ -367,15 +356,6 @@ class Config {
         cfg_.cpu = CH_CPU_PROBED | (found.constant_time_aes ? CH_CPU_CONSTANT_TIME_AES : 0U) |
                    (found.constant_time_multiply ? CH_CPU_CONSTANT_TIME_MULTIPLY : 0U) |
                    (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U);
-        return *this;
-    }
-#endif
-
-#ifdef CH_WIDEMUL_RUNTIME
-    // Your answer about the widening multiply, WIDEMUL=runtime builds only
-    // (ch_cfg.widemul). Every init refuses a Config without one.
-    Config &widemul(Widemul answer) {
-        cfg_.widemul = static_cast<uint8_t>(answer);
         return *this;
     }
 #endif

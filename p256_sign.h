@@ -108,7 +108,7 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]);
 // full.
 //
 // widemul is the answer the scalar and point multiplies run under, a
-// CH_WIDEMUL_ value, which this call hands to widemul.h's dispatchers.
+// WIDEMUL_ value, which this call hands to widemul.h's dispatchers.
 int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
               uint8_t *sig, size_t cap, size_t *sig_len);
 

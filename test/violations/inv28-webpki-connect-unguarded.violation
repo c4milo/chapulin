@@ -22,7 +22,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(t);
 #endif
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
@@ -44,7 +44,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(t);
 #endif
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);

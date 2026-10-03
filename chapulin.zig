@@ -36,10 +36,8 @@ const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
 // RAND=session: each session names its own source of random bytes in ch_cfg (cfg.h), where every
 // other build draws from the image's ch_rand_bytes.
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
-// A host object and WIDEMUL=runtime: each session states what the caller found about its CPU in
-// ch_cfg (cpu_cfg.h).
+// A host object: each session states what the caller found about its CPU in ch_cfg (cpu_cfg.h).
 const has_cpu = @hasField(c.ch_cfg, "cpu");
-const has_widemul_runtime = @hasField(c.ch_cfg, "widemul");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
 /// error set is the part of this one its C call returns. CH_RECORD_AGAIN and CH_ECLOSED are no
@@ -176,9 +174,6 @@ const ClientValues = struct {
     /// What the caller states about its CPU, in a host object alone: cpu. null leaves it 0, which
     /// init refuses with error.Invalid. void in every other build.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
-    /// The answer about the widening multiply, under WIDEMUL=runtime alone: widemul. null leaves it
-    /// 0, which init refuses with error.Invalid. void in every other build.
-    widemul: if (has_widemul_runtime) ?Widemul else void = if (has_widemul_runtime) null else {},
 
     /// The ch_cfg these values set. A session's init adds its own buffer,
     /// callbacks and io to it, and under RAND=session its source.
@@ -233,7 +228,6 @@ const ClientValues = struct {
             cfg.cipher_suite_count = values.cipher_suites.len;
         }
         if (has_cpu) cfg.cpu = cpuBits(values.cpu);
-        if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
     }
 };
@@ -297,8 +291,6 @@ const ServerValues = struct {
     random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
     /// What the caller states about its CPU, in a host object alone, as Client.cpu is.
     cpu: if (has_cpu) ?Cpu else void = if (has_cpu) null else {},
-    /// The answer about the widening multiply, under WIDEMUL=runtime alone, as Client.widemul is.
-    widemul: if (has_widemul_runtime) ?Widemul else void = if (has_widemul_runtime) null else {},
 
     /// The ch_cfg these values set, which a session's init completes as it
     /// completes Client.toCfg's. error.Invalid for a chain longer than
@@ -333,7 +325,6 @@ const ServerValues = struct {
         }
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
         if (has_cpu) cfg.cpu = cpuBits(values.cpu);
-        if (has_widemul_runtime) cfg.widemul = if (values.widemul) |w| @intFromEnum(w) else 0;
         return cfg;
     }
 
@@ -355,7 +346,8 @@ const CpuBits = struct {
     /// CH_CPU_CONSTANT_TIME_AES: the AES and carry-less multiply instructions, which the caller
     /// states run in constant time in the mode the session's thread runs in.
     constant_time_aes: bool = false,
-    /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time.
+    /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time,
+    /// and the session runs the native multiply in place of ct.h's 16x16 decomposition.
     constant_time_multiply: bool = false,
     /// CH_CPU_AVX2 and CH_CPU_VAES: x86-64 bits, which an arm64 object refuses.
     avx2: bool = false,
@@ -369,10 +361,6 @@ fn cpuBits(found: ?CpuBits) u32 {
         (if (cpu.constant_time_multiply) c.CH_CPU_CONSTANT_TIME_MULTIPLY else 0) |
         (if (cpu.avx2) c.CH_CPU_AVX2 else 0) | (if (cpu.vaes) c.CH_CPU_VAES else 0);
 }
-
-/// ch_cfg.widemul under WIDEMUL=runtime (cpu_cfg.h): the caller's answer about its multiply.
-pub const Widemul = if (has_widemul_runtime) WidemulAnswer else @compileError("Widemul needs WIDEMUL=runtime");
-const WidemulAnswer = enum(u8) { constant_time = c.CH_WIDEMUL_CONSTANT_TIME, not_stated = c.CH_WIDEMUL_NOT_STATED };
 
 /// ch_tls.group's code points (cfg.h).
 pub const Group = enum(u16) {

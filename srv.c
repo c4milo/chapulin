@@ -21,9 +21,6 @@
 #ifdef CH_CPU_RUNTIME
 #include "cpu.h"
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-#include "widemul.h"
-#endif
 
 // One offered ALPN protocol name: a non-NULL pointer and 1 to
 // CH_ALPN_NAME_MAX bytes, which is the shape cfg.h states for the field.
@@ -197,12 +194,6 @@ int srv_config_ok(const ch_cfg *cfg) {
         return 0;
     }
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-    // The caller's answer about the widening multiply (cpu_cfg.h).
-    if (!widemul_answer_ok(cfg)) {
-        return 0;
-    }
-#endif
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
 }
 
@@ -218,7 +209,7 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
     tlsi_record_widemul(t);
 #endif
     return srv_handshake(t);
@@ -243,12 +234,6 @@ int ch_srv_check(const ch_cfg *cfg) {
     // Every init call refuses this description of the CPU, so the check
     // refuses it too, before either identity signs.
     if (!cpu_bits_ok(cfg)) {
-        return CH_EINVAL;
-    }
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-    // Both checks sign, under the multiply the caller's answer names.
-    if (!widemul_answer_ok(cfg)) {
         return CH_EINVAL;
     }
 #endif

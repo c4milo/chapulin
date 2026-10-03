@@ -7,6 +7,6 @@ reason: build.zig defines CH_NATIVE_WIDEMUL in every object, not only under
   record, so only the comparison with make print-lib-def objects.
 
 --- old
-    if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    if (widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
 --- new
     defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });

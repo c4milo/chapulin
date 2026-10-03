@@ -1,14 +1,15 @@
 invariant: INV-16
 file: build.zig
 catches: test/widemul-builds.sh
-reason: build.zig takes WIDEMUL=runtime beside X25519=wide, which the
-  Makefile refuses, so the two builds stop refusing the same values. ct.h
-  still stops the compile, but the Zig build writes both defines first,
-  and test/zig-build-check.sh compares only values both builds accept, so
+reason: build.zig takes X25519=wide for a host object, which the Makefile
+  refuses, so the two builds stop refusing the same values. ct.h still
+  stops the compile, but the Zig build writes both defines first, and
+  test/zig-build-check.sh compares only values both builds accept, so
   only the refusal check objects.
 
 --- old
-    if (config.widemul == .runtime and config.x25519 == .wide) {
-        fatal("WIDEMUL=runtime asks each session for the multiply's timing, and X25519=wide states it at build time; use X25519=portable", .{});
+    if (config.x25519 == .wide) {
+        std.process.fatal("X25519=wide states its multiply's timing at build time, and TRUST={t} ROLE={t} " ++ builds ++
+            "takes the multiply's timing from each session's ch_cfg.cpu: use X25519=portable", .{ config.trust, config.role });
     }
 --- new

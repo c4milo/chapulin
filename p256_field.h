@@ -111,10 +111,10 @@ void p256_fe_from_mont(p256_fe *o, const p256_fe *a);
 // every call and reveals nothing about a.
 void p256_fe_inv(p256_fe *o, const p256_fe *a);
 
-#ifdef CH_WIDEMUL_RUNTIME
+#ifdef CH_CPU_RUNTIME
 // The native copies of the entries above that are built on the widening multiply,
-// which a WIDEMUL=runtime object holds beside them (p256_field_native.c, widemul_native.h)
-// and widemul.h's dispatchers call for CH_WIDEMUL_CONSTANT_TIME.
+// which a host object holds beside them (p256_field_native.c, widemul_native.h) and
+// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
 void p256_fe_mul_native(p256_fe *o, const p256_fe *a, const p256_fe *b);
 void p256_fe_sqr_native(p256_fe *o, const p256_fe *a);
 void p256_fe_to_mont_native(p256_fe *o, const p256_fe *a);

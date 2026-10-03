@@ -1,0 +1,13 @@
+invariant: INV-36
+file: build.zig
+catches: test/host-builds.sh
+reason: build.zig ignores HOST_TARGET and runs the host test on the target
+  whatever the option says, so a check that sets the test's result on its
+  command line, as it sets make's, builds a host object where make builds
+  the device object. test/host-builds.sh requires -DHOST_TARGET= to give
+  this host's TRUST=webpki object no -DCH_CPU_RUNTIME.
+
+--- old
+    const passed = if (config.host_target) |text| text.len != 0 else hostTarget(target);
+--- new
+    const passed = hostTarget(target);

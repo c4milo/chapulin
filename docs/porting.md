@@ -57,14 +57,16 @@ and clang defines no `__ARM_FEATURE_DIT` even at `-march=armv8.4-a+dit`.
 `-DCH_CT_WIDEMUL` forces the decomposition and beats `-DCH_NATIVE_WIDEMUL` when
 both are set.
 
-**Your program runs on CPUs, or in thread modes, that differ.** Build
-`WIDEMUL=runtime` and set `ch_cfg.widemul` in each session's configuration:
-`CH_WIDEMUL_CONSTANT_TIME` for a thread whose multiply runs in constant time, on
-arm64 a core with FEAT_DIT where the thread has set PSTATE.DIT, on x86-64 a part
-in Intel's DOIT list where the operating system has set DOITM, and
-`CH_WIDEMUL_NOT_STATED` otherwise. The object holds both multiplies and runs the
-one each session names (decision 87). Nothing in this tree sets either mode or
-reads it.
+**Your program runs on an arm64 or x86-64 host.** A `TRUST=webpki` client,
+`ROLE=server` and `ROLE=both` build a host object there, which holds both
+multiplies and takes neither flag above (decisions 87 and 89). Set
+`CH_CPU_CONSTANT_TIME_MULTIPLY` in `ch_cfg.cpu` for a session whose thread's
+multiply runs in constant time: on arm64 a core with FEAT_DIT where the thread
+has set PSTATE.DIT, on x86-64 a part in Intel's DOIT list where the operating
+system has set DOITM. Leave it clear otherwise. The object runs the native
+multiply for a session with the bit and the decomposition for one without it, so
+one object serves CPUs and thread modes that differ. Nothing in this tree sets
+either mode or reads it.
 
 **Your target is a 64-bit host.** `X25519=wide` gives X25519 a field of five
 51-bit limbs, whose products are 64x64->128 multiplies, in place of the 16-limb

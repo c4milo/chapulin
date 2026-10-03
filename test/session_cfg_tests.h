@@ -44,7 +44,7 @@ static void test_epoch_cfg(void) {
     pin[TEST_PIN_LEN - 1] = 1;
     mock_io m = {0};
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -154,7 +154,7 @@ static void test_hello_staging_boundary(void) {
     static uint8_t ek[MLKEM_EK_LEN];
 #endif
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.psk = identity; // any non-NULL selects the PSK arm
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
@@ -200,7 +200,7 @@ static void test_connect_cfg(void) {
     pin2[TEST_PIN_LEN - 1] = 3; // slot B must be odd too
     mock_io m = {0};
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = mock_send;
@@ -332,7 +332,7 @@ static void test_ticket_age_cfg(void) {
     uint8_t psk[32] = {1};
     mock_io m = {0};
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -415,7 +415,7 @@ static void test_pinned_hello_extensions(void) {
     pin[TEST_PIN_LEN - 1] = 1;
     mock_io m = {0};
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     ch_tls t;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
@@ -463,7 +463,7 @@ static void test_psk_hello_bytes(void) {
         random32[i] = (uint8_t)(0x60 + i);
     }
     ch_cfg cfg = {0};
-    TEST_WIDEMUL_CFG(cfg);
+    TEST_CPU_CFG(cfg);
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = identity;

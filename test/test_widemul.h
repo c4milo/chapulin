@@ -1,28 +1,26 @@
-// The answer a test hands each call built on ct.h's widening multiply
-// (widemul.h): TEST_WIDEMUL, a CH_WIDEMUL_ value. A WIDEMUL=runtime binary
-// names it with -DTEST_WIDEMUL, and the Makefile builds each such test once
-// per answer, so its vectors run on both copies. Every other binary hands
-// on the answer its build states, WIDEMUL_BUILD_ANSWER, which is what the
+// The answer a test hands each call built on ct.h's widening multiply (widemul.h). A host binary
+// (-DCH_CPU_RUNTIME) derives it from test_cpu, the ch_cfg.cpu value the binary runs under
+// (test/test_cpu.h), as widemul_answer derives a session's: the Makefile runs each such binary
+// with CH_CPU_CONSTANT_TIME_MULTIPLY and without it, so its vectors run on both copies. Every
+// other binary hands on the answer its build states, WIDEMUL_BUILD_ANSWER, which is what the
 // library's own sessions pass.
 #ifndef CH_TEST_WIDEMUL_H
 #define CH_TEST_WIDEMUL_H
 
+#include <stdint.h>
+
+#include "test_cpu.h"
 #include "widemul.h"
 
-#ifndef TEST_WIDEMUL
-#ifdef CH_WIDEMUL_RUNTIME
-#error "a WIDEMUL=runtime test binary names its answer with -DTEST_WIDEMUL"
-#endif
-#define TEST_WIDEMUL WIDEMUL_BUILD_ANSWER
-#endif
-
-// Gives a configuration a test builds the answer TEST_WIDEMUL, which a
-// WIDEMUL=runtime object requires of every init call (cpu_cfg.h), and does
-// nothing in any other object, whose ch_cfg has no such field.
-#ifdef CH_WIDEMUL_RUNTIME
-#define TEST_WIDEMUL_CFG(cfg) ((cfg).widemul = TEST_WIDEMUL)
+#ifdef CH_CPU_RUNTIME
+// The answer test_cpu gives.
+static inline uint8_t test_widemul_answer(void) {
+    return (test_cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME
+                                                           : WIDEMUL_NOT_STATED;
+}
+#define TEST_WIDEMUL test_widemul_answer()
 #else
-#define TEST_WIDEMUL_CFG(cfg) ((void)(cfg))
+#define TEST_WIDEMUL WIDEMUL_BUILD_ANSWER
 #endif
 
 #endif

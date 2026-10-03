@@ -149,15 +149,9 @@ static uint8_t client_buf[CH_MIN_RXBUF];
 
 #ifdef CH_CPU_RUNTIME
 // Each end's ch_cfg.cpu in a host binary: TEST_CPU unless a row of
-// test/quic_loop_runtime.h says otherwise.
+// test/quic_loop_runtime.h or test/quic_loop_widemul.h says otherwise.
 static uint32_t server_cpu = TEST_CPU;
 static uint32_t client_cpu = TEST_CPU;
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-// Each end's ch_cfg.widemul: TEST_WIDEMUL unless a row of
-// test/quic_loop_widemul.h says otherwise.
-static uint8_t quic_server_widemul = TEST_WIDEMUL;
-static uint8_t quic_client_widemul = TEST_WIDEMUL;
 #endif
 
 static void server_config(ch_cfg *cfg) {
@@ -186,9 +180,6 @@ static void server_config(ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     cfg->cpu = server_cpu;
 #endif
-#ifdef CH_WIDEMUL_RUNTIME
-    cfg->widemul = quic_server_widemul;
-#endif
 }
 
 // The client half both builds share: one offered protocol, the transport
@@ -209,9 +200,6 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 #endif
 #ifdef CH_CPU_RUNTIME
     cfg->cpu = client_cpu;
-#endif
-#ifdef CH_WIDEMUL_RUNTIME
-    cfg->widemul = quic_client_widemul;
 #endif
 }
 
@@ -386,13 +374,14 @@ static size_t handshake_messages(void) {
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
 #include "quic_loop_runtime.h"
 #endif
-// The widening multiply's rows run quic_loop_webpki.h's client and server.
-#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
-#include "quic_loop_widemul.h"
-#endif
-// So do the host object's rows of ch_cfg.cpu.
+// The host object's rows of ch_cfg.cpu run quic_loop_webpki.h's client and
+// server, and so do the widening multiply's in the binary that counts each
+// copy's calls.
 #if defined(CH_CPU_RUNTIME) && defined(CH_TRUST_WEBPKI)
 #include "quic_loop_cpu.h"
+#endif
+#if defined(TEST_WIDEMUL_COUNTED) && defined(CH_TRUST_WEBPKI)
+#include "quic_loop_widemul.h"
 #endif
 
 int main(int argc, char **argv) {
@@ -425,8 +414,8 @@ int main(int argc, char **argv) {
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
     test_quic_runtime();
 #endif
-#if defined(CH_WIDEMUL_RUNTIME) && defined(CH_TRUST_WEBPKI)
-    test_quic_widemul();
+#if defined(TEST_WIDEMUL_COUNTED) && defined(CH_TRUST_WEBPKI)
+    test_quic_multiply_bit();
 #endif
 #if defined(CH_CPU_RUNTIME) && defined(CH_TRUST_WEBPKI)
     test_quic_cpu_values();
