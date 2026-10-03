@@ -3,6 +3,7 @@
 // exit, and the byte-wise mem routines a freestanding build needs. On
 // the MPS2-AN385 everything -- code, data, stack -- lives in the ZBT
 // SRAM at address zero, so there is no flash-to-RAM copy.
+#include "libc/string.h"
 #include "plat.h"
 #include <stddef.h>
 #include <stdint.h>

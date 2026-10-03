@@ -1507,6 +1507,18 @@ last `ROLE=server` stub, as the entry said it would.
   says. `proof/run.sh` names each harness's sources itself, because a
   harness chooses which callees are stubs, and it rejects a result whose
   log names a callee with no body.
+- The host builds do not check a target's headers either. The
+  Cortex-M3 build of `test/qemu-m3.sh` compiles with `-nostdlibinc`, so
+  a source that gains a libc header compiles on the host and not there:
+  `ct_wipe.c` gained `<string.h>`, and `test/qemu/libc/string.h` now
+  declares what `test/qemu/m3_runtime.c` defines. Only the script's run
+  builds for the Cortex-M3, so on CI the script fails where a tool it
+  needs is missing, and skips only on a development machine. CI's check
+  job once skipped it, for a linker the script looked for under another
+  name, and the broken build went unseen. `inv40-qemu-m3-skips-on-ci`
+  turns the failure back into a skip, and `test/script-builds.sh`
+  catches it: it runs the script with `CI` set and no linker, and
+  requires it to fail.
 - See [decisions: Engineering](decisions.md#engineering), entry 88.
 
 ## Fail-closed

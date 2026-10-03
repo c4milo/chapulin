@@ -1,0 +1,14 @@
+invariant: INV-40
+file: test/qemu-m3.sh
+catches: test/script-builds.sh
+reason: test/qemu-m3.sh skips on CI where a tool is missing, as it did while
+  CI's check job had the linker under a name the script did not look for.
+  The script's run is the one check of its Cortex-M3 build, which stopped
+  compiling when ct_wipe.c gained <string.h>, and no check failed.
+  test/script-builds.sh runs the script with CI set and no linker, and
+  requires it to fail.
+
+--- old
+    if [ -n "${CI:-}" ]; then
+--- new
+    if false; then

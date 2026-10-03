@@ -20,9 +20,15 @@
 #     bench/insn-rv32.sh build with for their device cores, built here
 #     for this host.
 #
-# The five builds run at once, each into a log of its own. The logs print
-# whole, in the order above, once every build has ended, and a failure
-# names its build.
+# It also runs `test/qemu-m3.sh` the way CI would with a tool missing, CI
+# set and no linker, and requires it to fail. That script's run is the one
+# check of its Cortex-M3 build, since the build above is the host binary
+# alone, and a skip on CI hid the Cortex-M3 build while it did not compile
+# (docs/invariants.md, INV-40).
+#
+# The five builds and that run start at once, each into a log of its own.
+# The logs print whole, in the order above, once every one has ended, and
+# a failure names its step.
 cd "$(dirname "$0")/.." || exit 1
 
 work=$(mktemp -d -t chapulin_script_builds_XXXXXX)
@@ -68,18 +74,36 @@ EOF
         echo "script-builds: bench/insn_driver.c linked over make print-insn-lists"
 }
 
-build() { # $1 = one of names below: runs that build into $work/$1.log
+# test/qemu-m3.sh with CI set and a linker that does not exist: it must
+# fail and name what is missing, where a development machine skips.
+qemu_m3_on_ci() {
+    local out
+    if out=$(CI=1 LLD="$work/no-linker" test/qemu-m3.sh 2>&1); then
+        echo "script-builds: test/qemu-m3.sh exited 0 on CI with no linker: $out"
+        return 1
+    fi
+    case $out in
+    "FAIL qemu-m3: "*) echo "script-builds: test/qemu-m3.sh fails on CI where a tool is missing" ;;
+    *)
+        echo "script-builds: test/qemu-m3.sh failed on CI before it named a missing tool: $out"
+        return 1
+        ;;
+    esac
+}
+
+build() { # $1 = one of names below: runs that step into $work/$1.log
     case $1 in
     aead) bench/aead.sh --build ;;
     record) bench/record.sh --build ;;
     primitives) bench/primitives.sh --build ;;
     qemu-m3) test/qemu-m3.sh --build ;;
     insn) insn_build ;;
+    qemu-m3-on-ci) qemu_m3_on_ci ;;
     esac > "$work/$1.log" 2>&1
     echo $? > "$work/$1.rc"
 }
 
-names=(aead record primitives qemu-m3 insn)
+names=(aead record primitives qemu-m3 insn qemu-m3-on-ci)
 for name in "${names[@]}"; do
     build "$name" &
 done
@@ -90,7 +114,7 @@ for name in "${names[@]}"; do
     cat "$work/$name.log"
     status=$(cat "$work/$name.rc" 2> /dev/null || echo 1)
     if [ "$status" -ne 0 ]; then
-        echo "script-builds: the $name build failed with exit $status" >&2
+        echo "script-builds: the $name step failed with exit $status" >&2
         rc=1
     fi
 done

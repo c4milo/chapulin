@@ -593,6 +593,15 @@ jobs:
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
+      - name: Install qemu-system-arm
+        # check-slow's test/qemu-m3.sh runs the crypto on an emulated
+        # Cortex-M3. On CI the script fails where its emulator or its
+        # linker is missing, so no run skips it: this job skipped it
+        # until the script looked for the ld.lld that llvm.sh installs,
+        # ld.lld-<major>, and meanwhile its Cortex-M3 build stopped
+        # compiling unseen (docs/invariants.md, INV-40).
+        run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+
       # proof/run.sh skips any harness whose content key already recorded
       # a success; restoring the marker directory makes CI incremental
       # the same way development machines are.
