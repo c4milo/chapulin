@@ -157,6 +157,11 @@ int main(int argc, char **argv) {
     boot.srv.ecdsa_p256.priv_len = sizeof priv;
     boot.srv.ecdsa_p256.pub = pub;
     boot.srv.ecdsa_p256.pub_len = sizeof pub;
+#ifdef CH_CPU_RUNTIME
+    // ch_srv_check refuses a host object's configuration that does not
+    // describe the CPU, as ch_srv_accept does below (cpu_cfg.h).
+    boot.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
+#endif
     if (ch_srv_check(&boot) != CH_OK) {
         (void)fprintf(stderr, "tlsserver: the key pair does not sign and verify\n");
         return 2;
