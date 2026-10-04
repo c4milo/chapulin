@@ -68,8 +68,12 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   its own (INV-40). `make check-slow` runs what costs minutes —
   the proofs, e2e against a real server, the spec differential, the
   sequence enumerations — and the nightly runs it. Both must pass; they
-  are split by duration, not by importance. The slow proof tier runs as
-  `make prove-slow` in CI and before a release.
+  are split by duration, not by importance. CI runs `make check` on a
+  pull request. On a push to main and each night it also runs the rest
+  of `check-slow`, as three jobs beside that one: `slow` (`make
+  ci-slow`), `mutants` (`make ci-mutants`) and `prove` (`make
+  ci-prove`). The slow proof tier runs as `make prove-slow` in CI and
+  before a release.
 - Dev tooling lives in `tools/`: the lint helper scripts and the node
   packages commitlint needs. Nothing there is built into the library.
 - The lint tools are required, not optional. clang-tidy, clang-format,

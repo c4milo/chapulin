@@ -163,10 +163,9 @@ class Mapping:
         Read from the gate graph: the targets `make check` runs, then
         the ones `make check-slow` adds, then everything else, which only
         the nightly runs. The gates decide where they exist, because a
-        command and its gate can differ — check-slow runs
-        ./bin/handshake_sequence_test, and the plan runs the same binary
-        through `make handshake-sequence`, which builds the oracle
-        first."""
+        command and its gate can differ — check runs ./bin/unit in its
+        check-run-unit target, and the plan runs the same binary through
+        `make run-unit`, which no tier names."""
         found = ["nightly"]
         for gate in gates:
             if gate.startswith("proof/prove-one.sh "):
@@ -192,8 +191,9 @@ class Mapping:
     def gate_targets(self, roots=None):
         """Every target the roots run, through a `$(MAKE) <target>`
         line or through a prerequisite that is itself a phony target.
-        check-slow lists check as a prerequisite and runs
-        ct-widemul-check through $(MAKE), so both edges are followed."""
+        check-slow lists check as a prerequisite and runs ci-slow
+        through $(MAKE), which runs ct-widemul-check the same way, so
+        both edges are followed."""
         found, queue = set(), list(GATE_ROOTS if roots is None else roots)
         while queue:
             target = queue.pop()

@@ -2755,7 +2755,7 @@ bin/handshake_strict_pq: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $
 # as poly1305, x25519 and mlkem_poly inline it is checked against a
 # published vector (https://github.com/c4milo/chapulin/issues/92).
 # ct-widemul-check runs both, then wycheproof-ct-widemul below;
-# check-slow calls it.
+# ci-slow calls it.
 CT_WIDEMUL_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)) -DCH_CT_WIDEMUL
 bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3341,7 +3341,7 @@ check-lib-pair: lint-zig-build $(filter check-lib-%,$(filter-out check-lib-pair,
 	+@mkdir -p bin/check; python3 tools/stamp.py lib-pair-check --content . --output '$(CC) --version' \
 	  --output 'ld -v' --output 'uname -srm' -- env CC='$(CC)' ./test/lib-pair-check.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # lint above holds lint-stack at the budget of the build check was
-# given, 2,560 B for a plain `make check`, the target `make ci` runs.
+# given, 2,560 B for a plain `make check`, the target CI's check job runs.
 # This leg compiles the TRUST=webpki object's sources under their own
 # defines against that build's 4,096 B budget (INV-19), which nothing
 # else in check measures. It took 2.0 to 3.1 s in three timed runs.
@@ -3389,32 +3389,63 @@ impact-run:
 	done < bin/impact.sh; \
 	echo "impact-run: every selected gate passed"
 
-# What CI runs, decided here rather than in the workflow: the workflow
-# calls one target and this file says which tier that means. GitHub sets
-# GITHUB_EVENT_NAME; it is empty on a development machine, where ci runs
-# both halves.
+# What CI runs. .github/workflows/check.yml gives each of four targets a
+# job of its own, so the four run at once on four runners, and each job
+# runs one target, so the workflow holds no list of steps:
+#
+#   job      target      events
+#   check    check       every one
+#   slow     ci-slow     every one but a pull request
+#   mutants  ci-mutants  every one but a pull request
+#   prove    ci-prove    every one but a pull request
 #
 # A pull request gets the one-minute check so review stays fast. A merge to
 # main and the nightly get the slow half too, because that is where a
-# regression must not survive.
+# regression must not survive. The workflow holds that rule, in the `if`
+# of the three jobs.
+#
+# A job starts from a checkout with no bin/ and installs only the tools
+# its target reads, so each ci- target builds every binary its steps run
+# and none assumes that check ran before it. A step a target gains may
+# read a tool the job does not install, so the job's install steps change
+# in the same commit.
+#
+# ci and check-slow run the four one after another in one invocation,
+# which is how a development machine runs them.
 .PHONY: ci
 ci:
-ifeq ($(GITHUB_EVENT_NAME),pull_request)
-	$(MAKE) check
-	@echo "ci: pull request, so the slow half is skipped; a merge to main runs it"
-else
 	$(MAKE) check-slow
-endif
 
-# The slow half. bin/handshake_sequence_pq walks the same message ordering
-# as its classic sibling; what pq changes is share sizes and secret
-# derivation, which handshake_strict_pq, the differential and the e2e pq
-# legs cover. ct-widemul-check costs about 7 s, measured, nearly all of it
-# three compiles that would come out of check's one-minute budget, so it
-# sits here.
-.PHONY: check-slow
-check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa bin/tlsserver \
-            $(if $(HOST_TARGET),bin/tlsserver_aes) bin/tlsserver_aes_extern bin/tlsclient_webpki_aes_extern
+# check, then the slow half: the three ci- targets, one after another.
+.PHONY: check-slow ci-slow ci-mutants ci-prove
+check-slow: check
+	$(MAKE) ci-slow
+	$(MAKE) ci-mutants
+	$(MAKE) ci-prove
+
+# The slow job's target: every step of the slow half but the mutants and
+# the proofs.
+#
+# The prerequisites are what the steps run and do not build. test/e2e.sh
+# runs no make, so its binaries are here: CHECK_BUILDS, the two
+# provisioning tools, the two SUITE=aesgcm servers and the AES=extern
+# webpki client. Its four examples link the packaged object, and RAND has
+# no default, so the recipe builds them through the recursion
+# check-examples uses. bin/handshake_sequence_pq is built and not run: it
+# walks the same message ordering as its classic sibling; what pq changes
+# is share sizes and secret derivation, which handshake_strict_pq, the
+# differential and the e2e pq legs cover, and the nightly runs it.
+#
+# check-skips is a prerequisite because diff, test/e2e.sh and the Zig
+# roster each leave out the host object's rows under a compiler that
+# fails the host test, and on CI that is a failure, here as in check.
+#
+# ct-widemul-check costs about 7 s, measured, nearly all of it three
+# compiles that would come out of check's one-minute budget, so it sits
+# here. handshake-sequence builds the spec's oracle before it runs the
+# enumeration, which compares nothing where the oracle is absent.
+ci-slow: check-skips $(CHECK_BUILDS) bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa \
+         $(if $(HOST_TARGET),bin/tlsserver_aes) bin/tlsserver_aes_extern bin/tlsclient_webpki_aes_extern
 	$(MAKE) ct-widemul-check
 	# check's lint-zig-build holds build.zig to make over the default
 	# object, the four colibri links, stompy's and a SUITE=aesgcm
@@ -3423,11 +3454,16 @@ check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemk
 	# It took 29 s with only those seven objects built.
 	+ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
 	./test/qemu-m3.sh
+	$(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tcp-blocking
 	+./test/e2e.sh
 	$(MAKE) diff
-	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
-	$(MAKE) test-invariants-fast
-	$(MAKE) prove
+	$(MAKE) handshake-sequence
+
+# The mutants job's target: the fast tier of test/violations/.
+ci-mutants: test-invariants-fast
+
+# The prove job's target: the fast tier of the CBMC proofs.
+ci-prove: prove
 
 # The ECDSA-arm differential: bin/diff compiles the RSA parser, so
 # the P-256 certificate rows run against real C only in this variant. The

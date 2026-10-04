@@ -10,6 +10,18 @@ set -euo pipefail
 trap 'rc=$?; [ $rc -eq 0 ] || echo "FAIL e2e: aborted at line $LINENO (exit $rc)" >&2' ERR
 cd "$(dirname "$0")/.."
 
+# A leg whose tool or binary is missing is left out on a development
+# machine, and this prints which. On CI, where GitHub sets CI, the script
+# fails instead: a job that lost an install step would otherwise pass
+# with the leg left out.
+skip() { # $1 = the legs left out, and why
+    if [ -n "${CI:-}" ]; then
+        echo "FAIL e2e: CI must not skip $1" >&2
+        exit 1
+    fi
+    echo "SKIP $1"
+}
+
 # OPENSSL from the environment wins, so a caller can point the suite at
 # a specific build; otherwise take the first OpenSSL 3 on the usual
 # paths. Either way the choice must be OpenSSL 3.
@@ -25,7 +37,7 @@ for c in "$OPENSSL_WANTED" /opt/homebrew/opt/openssl@3/bin/openssl \
     fi
 done
 if [ -z "$OPENSSL" ]; then
-    echo "SKIP e2e: OpenSSL 3 not found (brew install openssl@3)"
+    skip "e2e: OpenSSL 3 not found (brew install openssl@3)"
     exit 0
 fi
 
@@ -370,7 +382,7 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
     }
 else
     CHSRV_PQ_LEG=" (chapulin server pq legs skipped)"
-    echo "SKIP chapulin server pq legs: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+    skip "chapulin server pq legs: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
 # --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
@@ -662,7 +674,7 @@ if "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
     EPOCH_LEGS=yes
 else
     EPOCH_LEGS=no
-    echo "SKIP ca epoch legs: $("$OPENSSL" version) predates x509 -not_before (needs 3.4)"
+    skip "ca epoch legs: $("$OPENSSL" version) predates x509 -not_before (needs 3.4)"
 fi
 
 epoch_leaf() {
@@ -1156,6 +1168,7 @@ if command -v go >/dev/null 2>&1; then
     GO_LEG=" + go x2 + go-resume x2 + go-half-close + go-pq x2 + go-pq-refuses-classic"
 else
     GO_LEG=" (go legs skipped)"
+    skip "go legs: go is not on PATH"
 fi
 
 # --- The same hybrid exchange against OpenSSL's s_server. `openssl
@@ -1216,7 +1229,7 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
     OPENSSL_PQ_LEG="$OPENSSL_PQ_LEG + webpki-pq + webpki-x25519 + webpki-require-pq"
 else
     OPENSSL_PQ_LEG=""
-    echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+    skip "openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
 # --- The web PKI client against a server that holds secp256r1 alone, as
@@ -1338,10 +1351,10 @@ if [ -x ./bin/tlsclient_webpki_aes ]; then
     AES_SUITE_LEG=" + webpki-aes x6"
 else
     AES_SUITE_LEG=""
-    echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
+    skip "webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 [ -x ./bin/tlsclient_webpki_aes_extern ] || {
-    echo "FAIL e2e webpki-aes-extern: bin/tlsclient_webpki_aes_extern is absent; make check-slow builds it"
+    echo "FAIL e2e webpki-aes-extern: bin/tlsclient_webpki_aes_extern is absent; make ci-slow builds it"
     exit 1
 }
 webpki_aes_legs ./bin/tlsclient_webpki_aes_extern webpki-aes-extern 0x1303
@@ -1404,10 +1417,10 @@ if [ -x ./bin/tlsserver_aes ]; then
     CHSRV_AES_LEG=" + chapulin server aesgcm x7"
 else
     CHSRV_AES_LEG=""
-    echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
+    skip "chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
 fi
 [ -x ./bin/tlsserver_aes_extern ] || {
-    echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make check-slow builds it"
+    echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make ci-slow builds it"
     exit 1
 }
 chsrv_aes_legs ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256

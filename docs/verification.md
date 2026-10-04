@@ -76,8 +76,8 @@ disagree with `proof/run.sh`.
 The proofs run in two tiers:
 
 - **Fast tier.** `make check-slow` runs it through `make prove`. CI
-  runs it on every push to main, but not on a pull request, which gets
-  `make check` and no proof leg.
+  runs it in the check workflow's `prove` job on every push to main, but
+  not on a pull request, which gets `make check` and no proof leg.
 - **Slow tier.** `make prove-slow` runs its harnesses. CI runs them
   nightly, one job each.
 

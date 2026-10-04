@@ -3597,8 +3597,8 @@ last `ROLE=server` stub, as the entry said it would.
   for the build it walks. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
-  check`, the target `make ci` runs on a pull request, holds the
-  4,096-byte budget too. `make lint-stack ROLE=server TRUST=none` is
+  check`, the target CI's `check` job runs, holds the 4,096-byte budget
+  too. `make lint-stack ROLE=server TRUST=none` is
   another leg, the one that compiles the server's sources. The
   `TX_RECORD` leg runs it on the `TRUST=webpki ROLE=both` object at
   `TX_RECORD=16384`, the one axis that exists to make a buffer larger.

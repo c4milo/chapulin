@@ -66,11 +66,11 @@ cd "$(dirname "$0")/.." || exit 1
 # through the prove target, and CI runs that on every push to main but
 # not on a pull request, so make check never runs a proof), "slow" (the
 # SAT heavyweights, run by CI and before release), or "all" (default).
-# A harness that takes more than about five minutes on the check job's
-# runner goes to the slow tier. An edit to a header most harnesses read,
-# cfg.h for one, re-proves the whole fast tier, and on 2026-09-24 that
-# took 91 minutes with nine such harnesses in it (353 to 816 s each);
-# they now run nightly, one job each.
+# A harness that takes more than about five minutes on the runner of the
+# check workflow's prove job goes to the slow tier. An edit to a header
+# most harnesses read, cfg.h for one, re-proves the whole fast tier, and
+# on 2026-09-24 that took 91 minutes with nine such harnesses in it (353
+# to 816 s each); they now run nightly, one job each.
 TIER="${1:-all}"
 
 CBMC="${CBMC:-cbmc}"

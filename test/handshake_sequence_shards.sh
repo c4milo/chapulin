@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs a sequence enumeration, bin/handshake_sequence_test or
 # bin/handshake_sequence_pq, as one shard per core, and prints one line
-# with the total. check-slow and the handshake-sequence and
-# handshake-sequence-pq targets run it:
+# with the total. The handshake-sequence and handshake-sequence-pq targets
+# run it, and ci-slow runs the first of them:
 #
 #   ./test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 #

@@ -218,6 +218,16 @@ Other targets:
   Makefile's `INSN_SRCS`. The lanes check does not run, such as
   `san-check`, `cross-check`, `m3-check` and `coverage`, compile each
   test from the variable its own rule reads (decision 88, INV-40).
+- `make check-slow` runs `make check` and then three targets, which CI
+  runs as three jobs beside its `check` job on every push to main and
+  each night. `make ci-slow` runs the vectors over the decomposed
+  multiply, the Zig build over every `lib-check` leg, the crypto on an
+  emulated Cortex-M3, `test/e2e.sh` against real servers, the spec
+  differential and the sequence enumeration, and builds the binaries
+  those steps run. `make ci-mutants` runs the fast tier of
+  `test/violations/`. `make ci-prove` runs the fast-tier proofs. A CI
+  job starts with no `bin/`, so none of the three needs `make check` to
+  have run first. `make ci` runs `make check-slow`.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

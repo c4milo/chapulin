@@ -126,14 +126,15 @@ jobs:
           if-no-files-found: ignore
 
   # The hybrid build's state-machine enumeration. The classic one runs in
-  # check. When each ran as one process, the two together cost 19 of
-  # check's 45 measured minutes against a 45-minute job timeout, so this
-  # one moved here rather than deciding the push lane by the clock. Both
-  # now run one shard per core through test/handshake_sequence_shards.sh,
-  # whose last line is the summary the step below tails. It is the only
-  # place the pq HelloRetryRequest path runs: the client offers one group,
-  # so a real server either takes the share or fails, and only the mock
-  # can send a cookie retry.
+  # the check workflow's slow job. When each ran as one process in its
+  # check job, the two together cost 19 of that job's 45 measured minutes
+  # against a 45-minute job timeout, so this one moved here rather than
+  # deciding the push lane by the clock. Both now run one shard per core
+  # through test/handshake_sequence_shards.sh, whose last line is the
+  # summary the step below tails. It is the only place the pq
+  # HelloRetryRequest path runs: the client offers one group, so a real
+  # server either takes the share or fails, and only the mock can send a
+  # cookie retry.
   handshake-sequence-pq:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

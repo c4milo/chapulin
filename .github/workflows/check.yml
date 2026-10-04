@@ -4,12 +4,13 @@ on:
   push:
     branches: [main] # branch pushes get checked via their PR run
   pull_request:
-  # The slow half runs on merges to main and here. A pull request gets the
-  # one-minute check only, so review stays fast; main and the nightly get
-  # everything.
+  # The slow half is the slow, mutants and prove jobs. They run on merges
+  # to main, here and on a manual run. A pull request gets the one-minute
+  # check and the platform jobs only, so review stays fast; main and the
+  # nightly get everything.
   schedule:
     - cron: "47 2 * * *"
-  workflow_dispatch: # rerun the PR lane on demand; the nightly workflow has its own
+  workflow_dispatch: # every job on demand, on any ref; the nightly workflow has its own
 
 # On main every run finishes, each in a group of its own, so each push
 # gets a verdict and a second push need not wait for the first run to
@@ -323,14 +324,27 @@ jobs:
         run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/rv32tc/bin/riscv32-linux-gcc"
       - run: make cross-check CROSS="$HOME/rv32tc/bin/riscv32-linux-" RUNNER=qemu-riscv32
 
+  # `make check` and nothing after it: every lint, each packaged-object leg
+  # and each test binary's run. Of the four jobs from here down it is the
+  # one a pull request gets, and its id is a required status check
+  # (.github/required-status-checks.txt).
+  #
+  # The slow, mutants and prove jobs below run check-slow's other steps
+  # beside this one, each on a runner of its own, on every event but a
+  # pull request. One job used to run the four parts in a row. On run
+  # 37167172750 that took 48 minutes with no proof to redo: 4 of
+  # installs, 11.6 of `make check`, 8 of the slow job's steps and 24.6 of
+  # the mutants. On run 37162739426 it took 83, 41 of them proofs. Run
+  # 37178050965, the first with the four jobs, finished in 33 minutes,
+  # the time its prove job took to prove 94 harnesses again. The comment
+  # at the Makefile's ci target lists the target each job runs.
   check:
     runs-on: ubuntu-24.04
-    # The PR-lane budget. This job is the long one: it lands between 10
-    # minutes on a warm proof cache and around 35 cold, so the cap sits
-    # at 45 rather than close to the median. The slow proof tier lives
-    # in the nightly workflow; if this job starts approaching the cap,
-    # move work there rather than raising it.
-    timeout-minutes: 180 # the slow half runs here on main and nightly
+    # The PR-lane budget. `make check` costs a minute on a development
+    # machine and took 11.6 here, because CI keeps no stamps and so skips
+    # no lint. If this job starts approaching the cap, move work to the
+    # nightly workflow rather than raising it.
+    timeout-minutes: 45
     env:
       # Only the install paths live here. Every version comes from
       # tools/toolchain.env, which the Makefile includes and the load-pins
@@ -403,10 +417,11 @@ jobs:
 
       - uses: ./.github/actions/load-pins
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
+      # This job installs what `make check` reads and no more. The slow
+      # job installs Go, OpenSSL and qemu-system-arm, which test/e2e.sh
+      # and test/qemu-m3.sh read. The mutants job installs the Arm GNU gcc,
+      # which one catch target reads. The prove job installs kissat and
+      # restores the proof cache.
       - name: Install clang tools (apt.llvm.org, pinned major)
         uses: ./.github/actions/install-llvm
         with:
@@ -418,19 +433,11 @@ jobs:
 
       - name: Install Zig (pinned)
         # make lint-zig-build builds the object with build.zig and holds it
-        # to make's, and check-slow runs the violations that break either.
+        # to make's, and make lint-toolchain holds zig to its pin.
         uses: ./.github/actions/install-zig
         with:
           version: ${{ env.ZIG_VERSION }}
           sha256: ${{ env.ZIG_LINUX_X86_64_SHA256 }}
-
-      - name: Build the pinned OpenSSL and put it on PATH
-        # test/e2e.sh needs options the runner's OpenSSL 3.0 lacks; the
-        # action states which.
-        uses: ./.github/actions/install-openssl
-        with:
-          version: ${{ env.OPENSSL_VERSION }}
-          sha256: ${{ env.OPENSSL_SHA256 }}
 
       - name: Install cppcheck (pinned)
         uses: ./.github/actions/install-cppcheck
@@ -493,8 +500,6 @@ jobs:
             || { echo "cppcheck is not the pinned $CPPCHECK_VERSION"; exit 1; }
           "$CLANG_RV" --version | grep -qE "version $LLVM_MAJOR\\." \
             || { echo "CLANG_RV is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
-          go version | grep -qF "go$GO_VERSION " \
-            || { echo "go is not the pinned $GO_VERSION"; exit 1; }
           "$SHELLCHECK" --version | grep -qF "version: $SHELLCHECK_VERSION" \
             || { echo "shellcheck is not the pinned $SHELLCHECK_VERSION"; exit 1; }
           [ "$(zig version)" = "$ZIG_VERSION" ] \
@@ -512,16 +517,13 @@ jobs:
         run: pip install --require-hashes -r .semgrep/requirements.txt
 
       - name: Install CBMC
+        # check runs no proof. Its proof-reach-smoke runs one cbmc cover
+        # pass, on the epoch harness, under cbmc's own solver, so this job
+        # installs no kissat.
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
           sha256: ${{ env.CBMC_DEB_SHA256 }}
-
-      - name: Build and install kissat at the development version
-        uses: ./.github/actions/install-kissat
-        with:
-          version: ${{ env.KISSAT_VERSION }}
-          sha256: ${{ env.KISSAT_SHA256 }}
 
       - name: Cache Lean toolchain and spec build
         # spec/ depends on Mathlib (spec/lean/lakefile.toml). Mathlib's compiled
@@ -555,7 +557,7 @@ jobs:
 
       - name: Download Mathlib's compiled files
         # After install-elan, which puts lake on PATH. Without these files
-        # make ci's first lake build would compile Mathlib from source; the
+        # lint-spec's lake build would compile Mathlib from source; the
         # Makefile's REQUIRE_MATHLIB fails by name instead.
         uses: ./.github/actions/fetch-mathlib
 
@@ -571,10 +573,147 @@ jobs:
 
       - run: make hooks
 
+      # One target, so the workflow holds no list of what check runs.
+      #
+      # check runs each lint, leg and test run as a prerequisite of its
+      # own, so -j runs them side by side on the runner's cores. Serial,
+      # check took 522 s of this job on run 36228452875.
+      - run: make -j"$(nproc)" check
+      - name: Render what CBMC proves on the run page
+        # check's proof-coverage writes bin/proof-coverage.md, so the table
+        # renders here. The prove job runs the proofs and writes no table.
+        if: always()
+        run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+  # `make ci-slow`: the unit, ML-KEM, P-256 and Wycheproof vectors over the
+  # decomposed multiply, build.zig over every lib-check leg's
+  # configuration, the crypto on an emulated Cortex-M3, e2e against real
+  # servers, the spec differential and the sequence enumeration. Those
+  # steps took 8 minutes of run 37167172750's check job, where check had
+  # built the binaries e2e runs. Here the target builds them first, and
+  # it took 8.7 minutes of run 37178050965.
+  #
+  # The job installs every tool a step of ci-slow reads and no other. On
+  # CI a step fails where its tool is missing, and skips only on a
+  # development machine: the Makefile's REQUIRE_ON_CI holds that for lake
+  # and for the Wycheproof fetch, and test/qemu-m3.sh, test/e2e.sh and
+  # test/zig-build-check.sh hold it for what they read.
+  slow:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+
+      - name: Install Go (pinned)
+        # test/e2e.sh builds test/goecho with it, the crypto/tls server of
+        # its go legs.
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install clang (apt.llvm.org, pinned major)
+        # test/qemu-m3.sh compiles for the Cortex-M3 with the pinned clang
+        # and links with the ld.lld-<major> that llvm.sh installs beside it.
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+
+      - name: Install qemu-system-arm
+        # test/qemu-m3.sh runs the crypto on an emulated Cortex-M3. On CI
+        # the script fails where its emulator or its linker is missing, so
+        # no run skips it: the check job skipped it until the script
+        # looked for the ld.lld that llvm.sh installs, ld.lld-<major>, and
+        # meanwhile its Cortex-M3 build stopped compiling unseen
+        # (docs/invariants.md, INV-40).
+        run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+
+      - name: Install Zig (pinned)
+        # test/zig-build-check.sh --roster builds each lib-check leg's
+        # object with build.zig and holds it to make's.
+        uses: ./.github/actions/install-zig
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          sha256: ${{ env.ZIG_LINUX_X86_64_SHA256 }}
+
+      - name: Build the pinned OpenSSL and put it on PATH
+        # test/e2e.sh needs options the runner's OpenSSL 3.0 lacks; the
+        # action states which.
+        uses: ./.github/actions/install-openssl
+        with:
+          version: ${{ env.OPENSSL_VERSION }}
+          sha256: ${{ env.OPENSSL_SHA256 }}
+
+      - name: Cache Lean toolchain and spec build
+        # make diff and make handshake-sequence compare the C against the
+        # spec's oracle, which lake builds. The key is the check job's.
+        # That job's step of the same name states why Mathlib's compiled
+        # files stay out of this cache and a later step downloads them.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            spec/lean/.lake/build
+          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
+          restore-keys: lean-${{ runner.os }}-
+
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
+
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
+
+      - name: Check tool versions match the pins
+        # lint-toolchain's version check is check's, and ci-slow's steps
+        # run without it. The runner image carries a Go and an OpenSSL of
+        # its own, so assert that the ones on PATH are the pinned ones, and
+        # the same for the clang, its linker and zig.
+        run: |
+          "$CLANG_RV" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "CLANG_RV is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
+          command -v "ld.lld-$LLVM_MAJOR" >/dev/null \
+            || { echo "ld.lld-$LLVM_MAJOR is missing; llvm.sh installs it beside clang"; exit 1; }
+          go version | grep -qF "go$GO_VERSION " \
+            || { echo "go is not the pinned $GO_VERSION"; exit 1; }
+          [ "$(zig version)" = "$ZIG_VERSION" ] \
+            || { echo "zig is not the pinned $ZIG_VERSION"; exit 1; }
+          openssl version | grep -qF "OpenSSL $OPENSSL_VERSION " \
+            || { echo "openssl is not the pinned $OPENSSL_VERSION"; exit 1; }
+
+      # One target: the Makefile holds the list of steps. -j builds the
+      # target's binaries side by side, and its steps then run one after
+      # another.
+      - run: make -j"$(nproc)" ci-slow
+
+  # `make ci-mutants`, the fast tier of test/violations/: each violation
+  # breaks one rule in a copy of the tree, and its catch target must
+  # fail. On two workers (test/violations.py --jobs, half the runner's
+  # cores) it took 24.6 minutes of run 37167172750's check job, and 20 of
+  # run 37178050965 as this job.
+  #
+  # A catch target runs one lint or one script alone, without
+  # lint-toolchain's version check. Where this job lacked a tool, the
+  # target would read the runner image's tool of another version, or fail
+  # on unedited source. So the job installs every tool a fast-tier catch
+  # target reads (FAST_TARGETS in test/violations.py), as the nightly's
+  # test-invariants job does for the whole set. clang-tidy, cppcheck,
+  # OpenSSL, Go and lake are read by slow-tier targets alone, so the
+  # nightly's job installs them and this one does not.
+  mutants:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+
       - name: Install the Arm GNU toolchain (pinned)
-        # check-slow's test-invariants-fast runs the gcc codegen check
-        # (test/lint-wide-multiply-gcc.sh), which needs the Arm GNU gcc
-        # the m3 lane pins.
+        # The gcc codegen check (test/lint-wide-multiply-gcc.sh) is a catch
+        # target and needs the Arm GNU gcc the m3 lane pins.
         uses: ./.github/actions/install-arm-gnu
         with:
           version: ${{ env.ARM_GNU_VERSION }}
@@ -588,14 +727,87 @@ jobs:
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
-      - name: Install qemu-system-arm
-        # check-slow's test/qemu-m3.sh runs the crypto on an emulated
-        # Cortex-M3. On CI the script fails where its emulator or its
-        # linker is missing, so no run skips it: this job skipped it
-        # until the script looked for the ld.lld that llvm.sh installs,
-        # ld.lld-<major>, and meanwhile its Cortex-M3 build stopped
-        # compiling unseen (docs/invariants.md, INV-40).
-        run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+      - name: Install clang tools (apt.llvm.org, pinned major)
+        # The pinned clang compiles for the catch targets that read what a
+        # compiler emits (test/lint-wide-multiply.sh,
+        # test/lint-runtime-symbols.sh, test/lint-stack-walk.sh) and for
+        # the ones that build for another target (test/quic-builds.sh,
+        # test/chacha-builds.sh). llvm-<major> carries llvm-nm,
+        # llvm-objdump, llvm-objcopy and llvm-readelf, which
+        # test/lint-runtime-symbols.sh, test/lint-stack-walk.sh and
+        # test/localize-check.sh read objects with.
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+          llvm: "true"
+
+      - name: Install Zig (pinned)
+        # test/zig-build-check.sh, test/localize-check.sh and
+        # test/tx-record-builds.sh are catch targets, and each runs zig
+        # from PATH.
+        uses: ./.github/actions/install-zig
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          sha256: ${{ env.ZIG_LINUX_X86_64_SHA256 }}
+
+      - name: Install semgrep (hash-pinned)
+        # test/lint-invariants.sh is a catch target. Without semgrep the
+        # Makefile's REQUIRE fires, the script exits 2 on unedited source,
+        # and violations.py reports ERROR rather than a verdict. The check
+        # job installs it the same way.
+        run: pip install --require-hashes -r .semgrep/requirements.txt
+
+      - name: Check tool versions match the pins
+        # lint-wide-multiply and lint-runtime-symbols check their own
+        # clang and llvm-nm (the Makefile's REQUIRE_PINNED). The other
+        # catch targets run the same tools unchecked, and zig and the Arm
+        # GNU gcc from PATH, so assert all four here.
+        run: |
+          "$CLANG_RV" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "CLANG_RV is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
+          "llvm-nm-$LLVM_MAJOR" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "llvm-nm is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
+          [ "$(zig version)" = "$ZIG_VERSION" ] \
+            || { echo "zig is not the pinned $ZIG_VERSION"; exit 1; }
+          [ "$(command -v arm-none-eabi-gcc)" = "$HOME/armtc/bin/arm-none-eabi-gcc" ] \
+            || { echo "arm-none-eabi-gcc on PATH is not the pinned toolchain's"; exit 1; }
+
+      # One target. test-invariants-fast, which it names, runs one
+      # violation per worker itself (test/violations.py --jobs), and -j
+      # gives the builds under those workers the runner's cores.
+      - run: make -j"$(nproc)" ci-mutants
+
+  # `make ci-prove`, the fast tier of the CBMC proofs. proof/run.sh skips
+  # a harness whose content key already recorded a success. So the tier
+  # took 2 seconds of run 37167172750's check job, which found all 116
+  # harnesses recorded, and 41 minutes of run 37162739426's, which proved
+  # 106 of them again after an edit to headers they read. The slow tier
+  # runs in the nightly workflow, one job per harness.
+  prove:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    # A run this cap stops still saves its cache below, so the next run
+    # proves only the harnesses this one did not finish.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+
+      - name: Install CBMC
+        uses: ./.github/actions/install-cbmc
+        with:
+          version: ${{ env.CBMC_VERSION }}
+          sha256: ${{ env.CBMC_DEB_SHA256 }}
+
+      - name: Build and install kissat at the development version
+        # proof/run.sh takes kissat as the SAT back end when it is on PATH,
+        # and the fast tier's timings are kissat's: under cbmc's own solver
+        # the ServerHello parser returned no verdict in 131 minutes.
+        uses: ./.github/actions/install-kissat
+        with:
+          version: ${{ env.KISSAT_VERSION }}
+          sha256: ${{ env.KISSAT_SHA256 }}
 
       # proof/run.sh skips any harness whose content key already recorded
       # a success; restoring the marker directory makes CI incremental
@@ -607,24 +819,9 @@ jobs:
           key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: proofs-${{ runner.os }}-
 
-      # One target. Which tier it means is decided in the Makefile, so the
-      # workflow holds no copy of that rule.
-      #
-      # check runs each lint, leg and test run as a prerequisite of its
-      # own, so -j runs them side by side on the runner's cores. Serial,
-      # check took 522 s of this job on run 36228452875. check-slow's own
-      # steps after it run one after another whatever -j says, and
-      # proof/run.sh schedules the proofs by its memory budget.
-      # test-invariants-fast, one of those steps, runs one violation per
-      # core itself (test/violations.py --jobs); one at a time, it took
-      # 13 minutes of the same run.
-      - run: make -j"$(nproc)" ci
-      - name: Render what CBMC proves on the run page
-        if: always()
-        run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-
-      # The slow-tier proofs run in the nightly workflow; this job
-      # checks pushes and PRs in minutes with the fast tier.
+      # One target. proof/run.sh schedules the proofs by its memory budget,
+      # so the step takes no -j.
+      - run: make ci-prove
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
       # every verified harness has already recorded its key, so the next

@@ -23,8 +23,9 @@ different set of gates.
 ## Selection is never a landing gate
 
 Every change still passes `make check` before it is committed and
-`make check-slow` before it is called done. CI runs `make ci`, and the
-nightly runs everything. Nothing here changes that; CLAUDE.md states
+`make check-slow` before it is called done. CI runs `make check` on a
+pull request and every step of `make check-slow` on a push to main, and
+the nightly runs everything. Nothing here changes that; CLAUDE.md states
 those rules and they stay in force. A selected run answers "did the
 thing I just edited break", not "is this ready to land".
 

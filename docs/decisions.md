@@ -2506,8 +2506,9 @@ does nothing more.
       every result. Five mutants break `build.zig` or the localizer.
     - **The pin.** `tools/toolchain.env` pins `ZIG_VERSION` and the hash of
       the x86_64 Linux tarball, `.github/actions/install-zig` checks the
-      download against it, the check job and the nightly's violation job
-      install it, and `lint-toolchain` checks the version on every machine.
+      download against it, the check workflow's `check`, `slow` and
+      `mutants` jobs and the nightly's violation job install it, and
+      `lint-toolchain` checks the version on every machine.
 
     Cost:
 
@@ -4473,7 +4474,7 @@ does nothing more.
       build configurations every harness preprocesses to the text it had
       before this change, one assertion's line number aside. The
       dispatchers have no harness; the counting test holds them.
-    - **CI.** The check job runs all of it on x86-64. The arm64 and macOS
+    - **CI.** The check workflow runs all of it on x86-64. The arm64 and macOS
       jobs run the `WIDEMUL=runtime` binaries under both answers in
       `suite-check` and package a `CHACHA=vector WIDEMUL=runtime` object.
 
