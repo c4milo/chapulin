@@ -5854,18 +5854,41 @@ does nothing more.
       `ct_wipe.c` calls `memset` (entry 91), so no compiler can move the
       array into the caller's frame. The deepest wide call,
       `p256_wide_mul` with its eight multiples, wrote 1,824 bytes below
-      its caller under gcc 13.3 for x86-64, the most of the five
-      compilers the test ran under: Apple clang 21 for arm64 and x86-64,
-      gcc 13.3 for x86-64, and gcc 14.2 and clang 19 for arm64 Linux.
-      With the wipe the search finds no limb under any of them. A
-      register is out of every wipe's reach, as it is everywhere else in
-      the tree.
+      its caller at `-O2`, under gcc 13.3 for x86-64, the most of the
+      eight compilers the test ran under: Apple clang 21 for arm64 and
+      x86-64, gcc 13.3, gcc 15.2, clang 22 and clang 23 for x86-64, and
+      gcc 15.2 and clang 22 for arm64 Linux. `make lib` and `build.zig`
+      compile at `-O2`. At `-O0` the call wrote 2,288 bytes under clang 22
+      for arm64, the most under any of the eight at `-O0`, `-O1`, `-O3`
+      or `-Os`. With the wipe the search finds no limb under any of them
+      at any of the five levels. A register is out of every wipe's reach,
+      as it is everywhere else in the tree.
+    - **Three routines of `p256_scalar.c` wipe a temporary.** A session
+      with the bit still runs `p256_scalar_add` and
+      `p256_scalar_reduced_mask` on the 32-bit limbs: they multiply
+      nothing. Each names a temporary that gives its operand to whoever
+      reads it: the sum z + r d before its reduction, that sum less n,
+      and the private scalar or the nonce less n. `p256_scalar.h` said no
+      routine there wipes its temporaries. Under gcc 13.3 at `-O1` for
+      x86-64 the search found a limb of z + r d and one of z + r d less n
+      below a signature, in the frame `p256_scalar_add` had used. At
+      `-O2` it found none under any compiler, and only because the wipe
+      after the next wide call covered that frame. So `p256_scalar_add`,
+      `p256_scalar_reduced_mask` and the conditional subtraction they
+      share with `p256_scalar_reduce` and the Montgomery product wipe
+      those three arrays. A device object holds that file too, and this
+      is the one change this entry makes to its code: one wipe of 32
+      bytes more in each Montgomery product modulo n. On the M1 Pro a
+      signature without the bit retired 16,324,856 instructions with the
+      wipes and 16,319,236 without them, and with the bit the difference
+      is below what the count resolves.
     - **What the 32-bit files leave.** The same search, run on a session
       without the bit, finds limbs of the nonce's inverse below a
-      signature and of the shared X coordinate below a key exchange:
-      `p256_scalar.c` and `p256_field.c` wipe fewer of their temporaries.
-      Those files are a device object's too, and this entry leaves them
-      as they are.
+      signature and of the shared X coordinate below a key exchange: the
+      Montgomery product modulo n, `p256_scalar_inverse` and
+      `p256_field.c` wipe none of the temporaries they name
+      (`p256_field.h`). Those files are a device object's too, and but
+      for the three wipes above this entry leaves them as they are.
     - **Proofs.** Eight launch lines, each under `-DCH_CPU_RUNTIME` and
       `--unsigned-overflow-check`. `p256_wide_row` proves on the real
       multiply that one row of a product wraps nothing. `p256_wide_field`
@@ -5880,9 +5903,11 @@ does nothing more.
       of 13 to 17 locals, cbmc's symbolic execution grows with the square
       of the objects it tracks, and the field's chain was stopped after
       11 minutes with no formula. `docs/verification.md`, "p256_wide",
-      lists what is proved and what is not.
+      lists what is proved and what is not. `p256_scalar`, the 32-bit
+      file's harness, counts the bytes `ct_wipe` is handed and so holds
+      that file's three wipes.
     - **Tests.** `bin/p256_equiv_test` runs the wide files and the 32-bit
-      files on the same inputs, 67,069 comparisons of limbs, bytes and
+      files on the same inputs, 67,073 comparisons of limbs, bytes and
       verdicts, and then measures the stack. `tools/p256_wide.py`
       recomputes every constant the wide files hold from the SEC 2
       values, in `make lint`. The host binaries run RFC 6979's vectors,
@@ -5912,7 +5937,8 @@ does nothing more.
       the multiples that skips one, a window with three doublings, a
       doubling without its last step and a dropped correction, and a scan
       that passes over the multiples a digit does not name raises the
-      same branch count.
+      same branch count. Three drop one of `p256_scalar.c`'s wipes, and
+      the `p256_scalar` proof catches each.
 
     Rejected:
 

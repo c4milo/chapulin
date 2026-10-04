@@ -28,7 +28,12 @@
 //   signature, and the nonce and its inverse in the Montgomery domain
 //   modulo n, which is how p256_wide_scalar_inverse holds them between
 //   products. After a key exchange: the private scalar and the shared X
-//   coordinate, as it is and in the Montgomery domain modulo p.
+//   coordinate, as it is and in the Montgomery domain modulo p. And each
+//   of d, the nonce, z + r d and the key exchange's scalar less n modulo
+//   2^256, which is what p256_scalar_reduced_mask and the conditional
+//   subtraction in p256_scalar_add compute into a temporary: the session
+//   runs those two on p256_scalar.c under either answer, and they wipe
+//   that temporary themselves (p256_scalar.h).
 //
 // One limb is enough to fail: a compiler that keeps a secret in slots of
 // its own need not keep its four limbs side by side. A limb of 64 random
@@ -213,6 +218,20 @@ static int residue_holds(const uint32_t limb[8]) {
     return 0;
 }
 
+// Whether the copy holds a limb of a - n modulo 2^256.
+static int residue_holds_less_n(const p256_scalar *a) {
+    static const uint32_t n[8] = {0xfc632551, 0xf3b9cac2, 0xa7179e84, 0xbce6faad,
+                                  0xffffffff, 0xffffffff, 0x00000000, 0xffffffff};
+    uint32_t difference[8];
+    uint64_t borrow = 0;
+    for (size_t i = 0; i < 8; i++) {
+        uint64_t limb = (uint64_t)a->limb[i] - n[i] - borrow;
+        difference[i] = (uint32_t)limb;
+        borrow = (limb >> 32) & 1U;
+    }
+    return residue_holds(difference);
+}
+
 // a * 2^256 mod n, the form p256_wide_scalar.c computes on. p256_scalar.h
 // has no entry into the Montgomery domain, so this multiplies by
 // 2^256 mod n, which is 2^256 - n.
@@ -264,6 +283,9 @@ static void run_residue_sign(void) {
     p256_scalar_mul(&k, &r, &d);
     p256_scalar_add(&k, &z, &k);
     report("residue", "no limb of z + r d below a signature", !residue_holds(k.limb));
+    report("residue", "no limb of z + r d less n below a signature", !residue_holds_less_n(&k));
+    report("residue", "no limb of the private scalar less n below a signature",
+           !residue_holds_less_n(&d));
     p256_scalar_inverse(&k_inverse, &k);
     p256_scalar_mul(&k_inverse, &s, &k_inverse);
     p256_scalar_inverse(&other, &s);
@@ -271,6 +293,7 @@ static void run_residue_sign(void) {
 
     report("residue", "no limb of the private scalar below a signature", !residue_holds(d.limb));
     report("residue", "no limb of the nonce below a signature", !residue_holds(k.limb));
+    report("residue", "no limb of the nonce less n below a signature", !residue_holds_less_n(&k));
     report("residue", "no limb of the nonce's inverse below a signature",
            !residue_holds(k_inverse.limb));
     scalar_to_mont(&other, &k);
@@ -300,6 +323,8 @@ static void run_residue_ecdh(void) {
     p256_fe_from_bytes(&x, residue_shared);
     p256_fe_to_mont(&x_mont, &x);
     report("residue", "no limb of the private scalar below a key exchange", !residue_holds(k.limb));
+    report("residue", "no limb of the private scalar less n below a key exchange",
+           !residue_holds_less_n(&k));
     report("residue", "no limb of the shared secret below a key exchange", !residue_holds(x.limb));
     report("residue", "no limb of the shared secret times R below a key exchange",
            !residue_holds(x_mont.limb));

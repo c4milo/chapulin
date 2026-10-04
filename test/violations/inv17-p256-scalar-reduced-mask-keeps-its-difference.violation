@@ -1,0 +1,17 @@
+invariant: INV-17
+file: p256_scalar.c
+catches: proof/prove-one.sh p256_scalar
+reason: p256_scalar_reduced_mask returns without wiping its difference,
+  which is its operand less n modulo 2^256. The signer calls it on the
+  private key and on each candidate nonce, and the key exchange on its
+  private scalar, so the array gives each of them to whoever reads it.
+  Its lifetime ends with the call, so no vector reads it.
+  proof/p256_scalar_harness.c counts the bytes ct_wipe is handed and
+  requires one array's worth after the call. Each run is a proof, so this
+  belongs to the nightly's test-invariants-proof-backed job.
+
+--- old
+    ct_wipe(discard, sizeof discard);
+    return mask;
+--- new
+    return mask;

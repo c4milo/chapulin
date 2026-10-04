@@ -623,7 +623,12 @@ The entries are grouped by area:
   - both predicates equal `==`;
   - the byte round trip;
   - the two contracts `p256_sign.c` rests on: `p256_scalar_reduce` lands
-    any 256-bit value below n, and `p256_scalar_add` leaves a scalar.
+    any 256-bit value below n, and `p256_scalar_add` leaves a scalar;
+  - the three wipes `p256_scalar.h` states: `p256_scalar_add` hands
+    `ct_wipe` its sum and the conditional subtraction's difference, and
+    `p256_scalar_reduce` and `p256_scalar_reduced_mask` one difference
+    each. The harness defines `ct_wipe`, the stub's loop with a count of
+    the bytes it was handed, and asserts the count after each call.
 
   The Montgomery product is memory-safe. `p256_scalar_inverse`'s 256
   rounds are not unrolled; only its exponent index expressions are
@@ -2214,7 +2219,7 @@ vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 67,069 comparisons, and requires the
+  32-bit files on the same inputs, 67,073 comparisons, and requires the
   same limbs, bytes and verdicts. Both fields keep an element in the
   Montgomery domain with R = 2^256, so each comparison is of limbs taken
   two at a time, not of a value read back through another routine:
@@ -2282,7 +2287,14 @@ its own frame:
 - after a signature and after a key exchange under the constant-time
   answer, no 64-bit limb of the private scalar, the nonce, its inverse,
   z + r d or the shared X coordinate is there, as the value is or in the
-  Montgomery domain.
+  Montgomery domain, and none of the private scalar, the nonce or
+  z + r d less n, which `p256_scalar_reduced_mask` and
+  `p256_scalar_add` compute into temporaries they wipe.
+
+`make check` builds that binary at `-O2`, the level `make lib` and
+`build.zig` compile the object at. The same checks were run by hand at
+`-O0`, `-O1`, `-O3` and `-Os` under eight compilers, and decision 94
+names them and what they found.
 
 `make san-check` runs the binary under ASan and UBSan without these
 three checks: a sanitizer's redzones make its frames several times the
@@ -2290,9 +2302,10 @@ object's, so its depths and its residue are not the object's.
 
 A register is out of every wipe's reach, here as everywhere else in the
 tree. The same search finds limbs of the nonce's inverse and of the
-shared X coordinate below a session that runs the 32-bit files, which
-wipe fewer of their temporaries; decision 94 records that and leaves
-those files as they are.
+shared X coordinate below a session that runs the 32-bit files: the
+Montgomery product modulo n, `p256_scalar_inverse` and `p256_field.c`
+wipe none of the temporaries they name. Decision 94 records that and
+leaves them as they are.
 
 ### x25519's ladder proof abstracts the multiply to its magnitude
 

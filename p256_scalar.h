@@ -19,8 +19,17 @@
 // (p256.h:2-5), must never see either. p256_sign.c calls this file and
 // never that one.
 //
-// No routine here wipes its temporaries; p256_sign.c wipes its own frame
-// once, the way x25519.c's ladder does.
+// Three routines here wipe a temporary they name, because each of those
+// arrays gives a private key, a nonce or z + r*d to whoever reads it:
+// p256_scalar_add its sum, p256_scalar_reduced_mask its difference, and
+// the conditional subtraction of n, which p256_scalar_add,
+// p256_scalar_reduce and the Montgomery product end with, its difference.
+// A session runs p256_scalar_add and p256_scalar_reduced_mask on those
+// secrets under either answer (widemul.h). The Montgomery product,
+// p256_scalar_mul and p256_scalar_inverse wipe none of the temporaries
+// they name, as p256_field.c wipes none of its own, so a session that
+// runs them leaves limbs on its stack (docs/decisions.md 94). p256_sign.c
+// wipes its own frame once, the way x25519.c's ladder does.
 //
 // A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds p256_scalar_mul and
 // p256_scalar_inverse a second time, on four 64-bit limbs

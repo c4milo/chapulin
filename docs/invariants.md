@@ -3596,6 +3596,18 @@ last `ROLE=server` stub, as the entry said it would.
   the private scalar, the nonce, its inverse, z + r d and the shared X
   coordinate. Six `inv17-p256-wide-*-leaves-its-stack` violations each
   drop one dispatcher's wipe, and the binary catches each.
+  A session with the multiply bit still runs `p256_scalar_add` and
+  `p256_scalar_reduced_mask` on the 32-bit limbs, which multiply nothing.
+  Each names a temporary that gives its operand to whoever reads it: the
+  sum z + r d, that sum less n, and the private scalar or the nonce less
+  n. So those two routines and the conditional subtraction they share
+  with `p256_scalar_reduce` wipe the three arrays (`p256_scalar.h`,
+  decision 94). The same binary looks for a limb of each difference too.
+  A temporary's lifetime ends with its call, and whether a limb of it
+  stays depends on the compiler, so `proof/p256_scalar_harness.c` counts
+  the bytes `ct_wipe` is handed after each routine. Three
+  `inv17-p256-scalar-*` violations each drop one wipe, and the proof
+  catches each.
   Inside the host object's GHASH, `ghash_hw.c`'s data loop computes the powers
   of H it needs, adds up each pass's products in the same state, and wipes
   both with H when each call ends. It reads each power from that state

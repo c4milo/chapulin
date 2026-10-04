@@ -20,6 +20,13 @@
 //
 //   the byte marshalling round trip, over any 32 bytes;
 //
+//   the three wipes p256_scalar.h states: p256_scalar_add hands ct_wipe
+//   its sum and the conditional subtraction's difference, and
+//   p256_scalar_reduced_mask and p256_scalar_reduce one difference each.
+//   A temporary's lifetime ends with its call, so no harness can read it
+//   afterwards; this one counts the bytes ct_wipe was handed, and a
+//   routine that returns without one of its wipes leaves the count short;
+//
 //   the bounds of the index expressions p256_scalar_inverse walks its
 //   exponent with, restated in the harness because calling the real
 //   routine drags 512 Montgomery multiplies into the formula.
@@ -44,6 +51,20 @@
 #include "p256_scalar.c"
 
 uint32_t nondet_u32(void);
+
+// The ct_wipe this harness links: proof/ct_wipe_stub.c's loop, which writes
+// zero to p[0..n) and no other byte, and a count of the bytes it was
+// handed, which prove_wipes reads. No other file on the launch line
+// defines ct_wipe.
+static size_t wiped_len;
+
+void ct_wipe(void *p, size_t n) {
+    volatile uint8_t *v = (volatile uint8_t *)p;
+    for (size_t i = 0; i < n; i++) {
+        v[i] = 0;
+    }
+    wiped_len += n;
+}
 
 #define LIMB_COUNT P256_SCALAR_LIMBS
 
@@ -253,6 +274,32 @@ static void prove_safety(void) {
     p256_scalar_mul(&a, &a, &a); // o == a == b
 }
 
+// The wipes of the three routines a session runs on a secret under either
+// answer (p256_scalar.h), over any limbs. Each array is LIMB_COUNT limbs.
+static void prove_wipes(void) {
+    p256_scalar a;
+    p256_scalar b;
+    p256_scalar o;
+    const size_t one = sizeof a.limb;
+
+    scalar_nondet(&a);
+    scalar_nondet(&b);
+    wiped_len = 0;
+    p256_scalar_add(&o, &a, &b);
+    __CPROVER_assert(wiped_len == 2 * one,
+                     "p256_scalar_add wipes its sum and the subtraction's difference");
+
+    scalar_nondet(&a);
+    wiped_len = 0;
+    (void)p256_scalar_reduced_mask(&a);
+    __CPROVER_assert(wiped_len == one, "p256_scalar_reduced_mask wipes its difference");
+
+    scalar_nondet(&a);
+    wiped_len = 0;
+    p256_scalar_reduce(&o, &a);
+    __CPROVER_assert(wiped_len == one, "p256_scalar_reduce wipes the subtraction's difference");
+}
+
 // The index expressions p256_scalar_inverse walks the exponent with,
 // restated here and proven in bounds for every round, plus the
 // signed-overflow freedom of its counter.
@@ -282,6 +329,7 @@ int main(void) {
     prove_scalar_contract();
     prove_marshalling();
     prove_safety();
+    prove_wipes();
     prove_exponent_index_bounds();
     return 0;
 }

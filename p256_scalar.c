@@ -7,10 +7,11 @@
 //
 // The layout and the routine bodies follow p256_field.c deliberately: an
 // auditor who has read that file reads this one by diffing it, and the
-// two differ only in the modulus, the Montgomery constants and the
-// exponent. The two files do not share a modulus argument, because a
-// shared routine that took one would put the field prime and the group
-// order behind the same pointer and let a caller pass the wrong one.
+// two differ only in the modulus, the Montgomery constants, the exponent
+// and three wipes this file has and that one lacks (p256_scalar.h). The
+// two files do not share a modulus argument, because a shared routine
+// that took one would put the field prime and the group order behind the
+// same pointer and let a caller pass the wrong one.
 #include "p256_scalar.h"
 
 #include <stddef.h>
@@ -88,6 +89,9 @@ static void select_limbs(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint3
 // otherwise. high is 0 or 1: a sum of two scalars below n carries at most
 // one bit past the eight limbs, and the CIOS loop below leaves at most one
 // there too (proof/p256_sign_harness.c).
+//
+// reduced is t less n modulo 2^256, which gives t to whoever reads it, so
+// it is wiped: p256_scalar_add hands this routine z + r*d.
 static void reduce_once(uint32_t o[LIMBS], const uint32_t t[LIMBS], uint32_t high) {
     uint32_t reduced[LIMBS];
     uint32_t borrow = sub_limbs(reduced, t, N) & 1U;
@@ -98,6 +102,7 @@ static void reduce_once(uint32_t o[LIMBS], const uint32_t t[LIMBS], uint32_t hig
     // takes the reduced limbs.
     uint64_t below = (uint64_t)high - borrow;
     select_limbs(o, reduced, t, ~(uint32_t)(below >> 32));
+    ct_wipe(reduced, sizeof reduced);
 }
 
 // All ones when v is zero, zero otherwise.
@@ -160,8 +165,12 @@ void p256_scalar_to_bytes(uint8_t out[P256_SCALAR_LEN], const p256_scalar *a) {
 }
 
 uint32_t p256_scalar_reduced_mask(const p256_scalar *a) {
+    // discard is a less n modulo 2^256, which gives a to whoever reads it,
+    // and a is a private key or a nonce here.
     uint32_t discard[LIMBS];
-    return sub_limbs(discard, a->limb, N);
+    uint32_t mask = sub_limbs(discard, a->limb, N);
+    ct_wipe(discard, sizeof discard);
+    return mask;
 }
 
 uint32_t p256_scalar_zero_mask(const p256_scalar *a) {
@@ -184,9 +193,12 @@ void p256_scalar_reduce(p256_scalar *o, const p256_scalar *a) {
 }
 
 void p256_scalar_add(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {
+    // sum is the answer before its reduction. The signer's one call adds z
+    // to r*d, and that sum gives d to whoever holds the signature.
     uint32_t sum[LIMBS];
     uint32_t carry = add_limbs(sum, a->limb, b->limb);
     reduce_once(o->limb, sum, carry);
+    ct_wipe(sum, sizeof sum);
 }
 
 void p256_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {

@@ -735,7 +735,12 @@ launch fast full p256_field 34 ""
 # exponent index expressions are proven in bounds, which is what the
 # unwindset below bounds at 257. Measured (cbmc 6.11.0, kissat,
 # /usr/bin/time -l): 483 properties, 4.6 s, and 60 MB of cbmc, the higher
-# of two runs.
+# of two runs. p256_scalar_add, p256_scalar_reduce and
+# p256_scalar_reduced_mask wipe the temporaries they name
+# (p256_scalar.h), and the harness defines the ct_wipe they call, the
+# loop of proof/ct_wipe_stub.c with a count of the bytes it was handed, so
+# a routine that returns without a wipe fails: 498 properties, 5.1 s, and
+# 66 MB, the higher of two runs.
 launch fast full p256_scalar 34 "prove_exponent_index_bounds.0:257"
 # p256_point is the complete addition and the affine reader over the
 # field stubs in proof/p256_field_stubs.h, the layering hkdf_harness.c
