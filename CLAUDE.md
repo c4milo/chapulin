@@ -79,8 +79,9 @@ Home: github.com/c4milo.
   refused (`handshake_groups.[ch]`, docs/decisions.md 53 and 63).
   ch_cfg.require_pq drops x25519 and secp256r1 from both lists and
   restores the fail-closed pairing (docs/decisions.md 39). Under SUITE=aesgcm it lists
-  TLS_AES_256_GCM_SHA384, then TLS_AES_128_GCM_SHA256, then ChaCha20 on
-  AES=hw with CH_NATIVE_AES, ChaCha20 first on any other build, or the
+  TLS_AES_256_GCM_SHA384, then TLS_AES_128_GCM_SHA256, then ChaCha20 in a
+  host object whose caller sets CH_CPU_CONSTANT_TIME_AES, ChaCha20 alone
+  in a host object whose caller does not, ChaCha20 first on AES=extern, or the
   order ch_cfg.cipher_suites names (CH_CLIENT_AES_SUITES), runs the key
   schedule at the hash of the suite the ServerHello selected, keys every
   record direction and every QUIC Handshake and 1-RTT packet with that
@@ -113,30 +114,37 @@ Home: github.com/c4milo.
   builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
-  pass on NEON, two groups of four side by side, and four on SSE2,
-  CHACHA=vector) + `poly1305.[ch]` with
-  `poly1305_vector.[ch]` (four blocks at a time in two NEON or SSE2
-  lanes, CHACHA=vector with WIDEMUL=native) +
+  pass on NEON, two groups of four side by side, and four on SSE2, every
+  session of a host object) and `chacha20_avx2.[ch]` (eight blocks a pass
+  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) +
+  `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks at a time in
+  two NEON or SSE2 lanes, a host session whose caller sets
+  CH_CPU_CONSTANT_TIME_MULTIPLY) +
   `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
   write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
   and `aes_traffic_key.h` (the `aes_traffic_key` type a SUITE=aesgcm
   build's traffic keys take, whose body sits in that header alone) +
-  `aes_block.h` with one of `quic_aes_soft.c`, `aes_hw.c` or
-  `aes_extern.c` (the AES-128 key expansion and forward cipher of
-  FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` and
-  `aes_extern.c`; the Makefile AES variable picks one, and
-  `quic_aes_soft.c` compiles only in a QUIC build, and a SUITE=aesgcm
-  build refuses it except under AES=runtime, which runs QUIC's public
+  `aes_block.h` with `aes_hw.c` in a host object, beside
+  `quic_aes_soft.c` in a QUIC one, and with one of `quic_aes_soft.c` or
+  `aes_extern.c` in a device object (the AES-128 key expansion and
+  forward cipher of FIPS 197, over plain bytes, and AES-256's on
+  `aes_hw.c` and `aes_extern.c`; a device object's AES variable picks
+  one, `quic_aes_soft.c` compiles only in a QUIC build, and a SUITE=aesgcm
+  build refuses it except in a host object, which runs QUIC's public
   keys alone on it)
   ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
-  (GHASH's multiply and data loop on the carry-less multiply) and
+  (GHASH's multiply and data loop on the carry-less multiply),
   `gcm_hw.[ch]` (counter mode over whole blocks, and the seal's and the
-  open's counter mode and GHASH in one loop), both over `ghash_vector.h`
-  (the GHASH steps they share), AES=hw and AES=runtime ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
-  X25519=wide) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
+  open's counter mode and GHASH in one loop) and `gcm_vaes.[ch]` (the
+  same three loops two blocks to a 256-bit register on VAES and
+  VPCLMULQDQ, x86-64, and the entries that pick between the two for
+  `gcm.c`), all over `ghash_vector.h` (the GHASH steps they share), in a
+  host object alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
+  radix-2^51 field, a host session whose caller sets
+  CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
@@ -224,45 +232,68 @@ Home: github.com/c4milo.
   under the compiler's own names; it compiles to nothing where the
   instruction exists. A multiplier that exists and is variable-time is
   the other half: `ct.h` builds widening products from 16x16 pieces
-  unless the build asserts `CH_NATIVE_WIDEMUL`, which test binaries do
-  and firmware does only with a vendor statement (`make lib
-  WIDEMUL=native` puts it in the packaged object), and
+  unless the build asserts `CH_NATIVE_WIDEMUL`, which the portable code's
+  test binaries do and firmware does only with a vendor statement (`make
+  lib WIDEMUL=native` puts it in a device object), and
   `lint-wide-multiply` holds the count at its recorded ceiling per
   file and compiler, and a native copy's count at that copy's own
   ceiling, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
   shows as a count that grows. The statement covers every widening
-  multiply the object runs, scalar or vector. Under CHACHA=vector it
-  also turns on `poly1305_vector.c`, whose lanes multiply with NEON's
-  UMULL and UMLAL or SSE2's PMULUDQ; without it, a CHACHA=vector object
-  runs `poly1305.c`'s loop and its decomposition (docs/decisions.md 83).
-  `make lib WIDEMUL=runtime` holds both multiplies. Each of the seven
-  files built on it compiles once under its own names on the
-  decomposition and again as `<file>_native.c` under
-  `widemul_native.h`'s renames, and `widemul.h` runs the native copy for
-  a session whose `ch_cfg.widemul` is `CH_WIDEMUL_CONSTANT_TIME`: one
-  branch per operation and no function pointer. The caller owns
-  PSTATE.DIT and DOITM, and chapulin probes nothing. Every init and
-  `ch_srv_check` refuse an unset answer, and `ct.h` refuses
-  `CH_NATIVE_WIDEMUL` or `X25519=wide` beside the value, and a native
-  copy outside it (docs/decisions.md 87).
+  multiply the object runs.
+  A host object is what the Makefile and `build.zig` build where the
+  compiler targets arm64 or x86-64, little-endian with NEON or SSE2 and
+  `unsigned __int128`, and the product is a TRUST=webpki client or a
+  server role: they pass `-DCH_CPU_RUNTIME`. A raw or ca client is a
+  device object on every target, and so is every product on any other
+  target. A source chooses between host code and portable code on that
+  define alone, never on an architecture macro, so CBMC and a firmware
+  tree's own build get the portable code; inside host code an
+  architecture macro picks the instruction set. A host object holds its
+  fast paths beside the portable code, and each session picks among them
+  from `ch_cfg.cpu`, the caller's description of its CPU in `cpu_cfg.h`'s
+  bits. The caller probes the CPU and owns PSTATE.DIT and DOITM, and
+  chapulin probes nothing and sets no mode. Every init and `ch_srv_check`
+  refuse a value without `CH_CPU_PROBED` or with a bit the object does
+  not define for its architecture (`cpu.h`). A device object has no
+  `ch_cfg.cpu`, and the build record's `CH_BUILD_CPU_RUNTIME` tells the
+  two layouts apart. No host object takes an `AES` or `WIDEMUL` value,
+  and no object takes `X25519` or `CHACHA` (docs/decisions.md 89).
+  A host object holds both multiplies. `poly1305.c`, `mlkem_poly.c`,
+  `p256_field.c`, `p256_scalar.c` and `rsa_sign.c` compile once under
+  their own names on the decomposition and again as `<file>_native.c`
+  under `widemul_native.h`'s renames, `poly1305_vector.c` compiles as its
+  native copy alone, and X25519's second copy is `x25519_wide.c`.
+  `widemul.h` runs the native copy for a session whose `ch_cfg.cpu` holds
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`: one branch per operation and no
+  function pointer. The bit is the caller's statement about every
+  widening multiply the session runs, 32x32 and 64x64, scalar and vector:
+  under it Poly1305 runs `poly1305_vector.c`, whose lanes multiply with
+  NEON's UMULL and UMLAL or SSE2's PMULUDQ, and X25519 runs the wide
+  field's five 51-bit limbs. `ct.h` refuses `CH_NATIVE_WIDEMUL` in a host
+  object and a native copy outside one (docs/decisions.md 52, 83 and 87,
+  INV-34).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
-  that way. The Makefile X25519 variable picks the x25519 field:
-  `portable`, the default, is the 16-limb field every core runs, and
-  `wide` is `x25519_wide.c`'s five 51-bit limbs on the 64x64->128
-  multiply, for 64-bit hosts. `ct.h` refuses `wide` unless the compiler
-  has `unsigned __int128` and the build defines `CH_NATIVE_MUL128`, the
-  same kind of claim `CH_NATIVE_WIDEMUL` makes (docs/decisions.md 52,
-  INV-34). The Makefile CHACHA variable picks the ChaCha20 keystream the
-  same way: `portable`, the default and the reference, or `vector`,
-  `chacha20_vector.c`'s passes of eight blocks on NEON and four on SSE2.
-  Every arm64 and x86-64 CPU has those, so the compiler's own
-  `__ARM_NEON` and `__SSE2__` select the path and nothing probes a CPU,
-  and a build whose compiler defines neither stops at an `#error`
-  (docs/decisions.md 82 and 86). CBMC cannot read an intrinsic, so the vector
-  path is held to the portable one by `bin/chacha20_equiv_test`, the RFC
+  that way. No variable picks the X25519 field or the ChaCha20 keystream.
+  Every object holds the 16-limb field and `chacha20.c`'s loop, which stay
+  the references and are all a device object runs. A host object runs
+  ChaCha20 on `chacha20_vector.c`'s passes of eight blocks on NEON and
+  four on SSE2 in every session: every arm64 and x86-64 CPU has those, so
+  no bit picks them, and a host build whose compiler defines neither
+  `__ARM_NEON` nor `__SSE2__` stops at an `#error` (docs/decisions.md 82
+  and 86). On x86-64 two more bits each pick a kernel beside a path every
+  CPU runs, and neither states a timing: `CH_CPU_AVX2` runs the keystream
+  on `chacha20_avx2.c`, and `CH_CPU_VAES` beside
+  `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
+  (docs/decisions.md 90). CBMC cannot read an intrinsic, so the vector
+  paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
-  `poly1305_vector.c` to `poly1305.c`'s loop the same way. AES is admitted for two purposes. The first is the keys RFC
+  `poly1305_vector.c` to `poly1305.c`'s loop the same way, and searches
+  the stack below a call for the powers of r: on x86-64 the path reads
+  its multipliers through volatile pointers, so the powers stay in the
+  one struct the call wipes and in no spill slot the compiler picks
+  (docs/decisions.md 83). `bin/x86_kernels_test` counts which calls run a
+  kernel under each `ch_cfg.cpu` value. AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
@@ -270,13 +301,13 @@ Home: github.com/c4milo.
   table lookup indexed by one leaks nothing an observer does not already
   hold. That is the whole reason the table is allowed at all: the
   public-key argument is what carries it, never a claim that the lookup
-  is constant time. An AES=hw build has no table and no such trade, and
-  this tree cannot state an AES=extern build's timing, so outside a
-  suite build the public-key argument is what carries every AES value
-  and INV-26 bounds all three the same way. The second is a SUITE=aesgcm
-  build's traffic keys: no key from the TLS key schedule is passed to AES
-  outside that build, and that build takes AES=hw or AES=extern and
-  states its timing (below).
+  is constant time. The AES instructions use no table and make no such
+  trade, and this tree cannot state an AES=extern build's timing, so
+  outside a suite build the public-key argument is what carries every AES
+  implementation and INV-26 bounds all three the same way. The second is
+  a SUITE=aesgcm build's traffic keys: no key from the TLS key schedule
+  is passed to AES outside that build, and that build is a host object or
+  takes AES=extern, and a statement covers its timing (below).
   What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
   `aes_public_key`, whose body lives in `aes_public_key.h` alone, so only
   `aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
@@ -295,74 +326,68 @@ Home: github.com/c4milo.
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `aes_hw.c`, `ghash_hw.c` and `gcm_hw.c` cannot join, because
-  every spec targets a core with no AES or carry-less multiply
-  instructions.
-  The Makefile AES variable chooses the implementation the way TRUST
-  chooses the pinned algorithm: `soft` is this S-box, `hw` uses the
-  compiler's own intrinsics under `__ARM_FEATURE_AES` or `__AES__`,
-  `extern` takes a caller-supplied `ch_aes_block`, the way
+  that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` cannot
+  join, because every spec targets a core with no AES or carry-less
+  multiply instructions.
+  A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
+  `gcm_hw.c` and `gcm_vaes.c` turn them on for their own functions alone,
+  so the rest of the object runs on any CPU of its architecture, and GHASH
+  runs on the carry-less multiply, PMULL or PCLMULQDQ, wherever they run.
+  A QUIC host object holds `quic_aes_soft.c`'s table beside them, under
+  `aes_soft_` names, for QUIC's public keys alone, and
+  `lint-trust-separation` admits no other pair. The session's
+  `CH_CPU_CONSTANT_TIME_AES` picks: an Initial key runs on the
+  instructions under the bit and on the table without it, the Retry key
+  runs on the table, and a traffic key runs on the instructions alone.
+  `aes_schedule.h` records which cipher expanded each schedule, and the
+  low byte of the session's `ch_cfg.cpu`, from which `gcm_vaes.h`'s
+  `gcm_use_vaes` picks the 256-bit kernels (docs/decisions.md 81, 89 and
+  90). A device object keeps the Makefile AES
+  variable, the way TRUST chooses the pinned algorithm: `soft` is this
+  S-box, and `extern` takes a caller-supplied `ch_aes_block`, the way
   `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
-  here, and each of the three puts one implementation in an object.
-  `runtime` is the one value that puts two there, and
-  `lint-trust-separation` admits no other pair: `hw`'s three files and, in a
-  QUIC object, `soft`'s S-box, which runs QUIC's public keys alone. The
-  caller's answer in `ch_cfg.aes_instructions` picks between them for
-  each session, and a traffic key runs on the instructions alone
-  (docs/decisions.md 81). `hw` also moves GHASH off `gcm.c`'s
-  portable multiply onto the carry-less multiply, in `ghash_hw.c` and
-  `gcm_hw.c`:
-  PMULL under `__ARM_FEATURE_AES`, which the Arm C Language Extensions
-  put in the AES extension, and PCLMULQDQ under `__PCLMUL__`, which
-  x86-64 turns on with `-mpclmul` beside `-maes`. Under `hw` those macros
-  are the whole detection, and the choice is the compiler's at build
-  time. Under `runtime` the choice is the caller's at run time: the caller
-  probes the CPU and states what it found in `ch_cfg.aes_instructions`,
-  every init refuses an unset answer, and `aes_hw.c`, `ghash_hw.c` and
-  `gcm_hw.c` turn
-  the instructions on for their own functions alone, so the rest of the
-  object runs on any CPU of its architecture. Under every value nothing
-  here probes a CPU and nothing asks an operating system. An
-  arm64 core cannot answer the question itself — reading
+  here. Each puts one implementation in the object, and a host object
+  refuses both. Nothing here probes a CPU and nothing asks an operating
+  system. An arm64 core cannot answer the question itself — reading
   ID_AA64ISAR0_EL1 from EL0 takes SIGILL — so runtime detection means
-  per-OS code this tree cannot carry and which the bare-metal m3 and
-  freertos lanes have nobody to ask. A consumer compiles chapulin into
-  its own build, so it already chooses `-march=armv8-a+crypto` or
-  `-maes -mpclmul`; a build without the flags takes AES=soft and stays
-  correct, and AES=hw without the instructions is an #error rather than
-  a silent fall back. CBMC cannot read an intrinsic, so the proofs stay
-  on the software path and AES=hw is held to it by
+  per-OS code this tree cannot carry, and the caller states what it found
+  in `ch_cfg.cpu`. CBMC cannot read an intrinsic, so the proofs stay on
+  the software path and the instructions are held to it by
   `test/aes_equiv_test.c` and `test/ghash_equiv_test.c`, by the published
-  vectors in `bin/quic_test_hw`, by the Wycheproof AES-GCM suite on that
-  leg and by the AES=hw differential, `bin/diff_quic_hw`. AES=extern is
-  proved over a contract stub of `ch_aes_block`, and its test binaries
-  link `test/aes_extern_hook.c`, a hook over the software cipher, for the
-  same vectors, Wycheproof suite, differential and e2e. docs/quic.md,
-  "What the AES axis proves", states what each value rests on and what
-  none of it proves.
+  vectors in `bin/quic_test_hw`, by the host Wycheproof binary under both
+  values of the bit and by the differential, `bin/diff_quic_hw`.
+  AES=extern is proved over a contract stub of `ch_aes_block`, and its
+  test binaries link `test/aes_extern_hook.c`, a hook over the software
+  cipher, for the same vectors, Wycheproof suite, differential and e2e.
+  docs/quic.md, "What the AES axis proves", states what each path rests
+  on and what none of it proves.
   A secret-key AES suite needs an AES with no table and needs somebody to
   say it is constant time — TLS_AES_128_GCM_SHA256, which strict RFC
   9846 §9.1 server conformance asks for, and TLS_AES_256_GCM_SHA384,
-  which it recommends. The AES axis does not enable them: only a
-  SUITE=aesgcm build carries them, and INV-26 admits their traffic keys
+  which it recommends. Holding an AES implementation does not enable
+  them: only a SUITE=aesgcm build carries them, and INV-26 admits their traffic keys
   there, AES-128 and AES-256, beside the three public keys. `ct.h` is where the
   terms are written, beside the same rule for the widening multiply.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
-  that build is a compile error unless it also takes AES=hw or
-  AES=runtime and defines `CH_NATIVE_AES`, or takes AES=extern and defines
-  `CH_AES_EXTERN_CONSTANT_TIME`. `CH_NATIVE_AES` is the build's assertion that this part's
-  AES instructions and its carry-less multiply run in constant time, the
-  way `CH_NATIVE_WIDEMUL` asserts the widening multiply:
-  `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` say the instructions
-  exist and say nothing about their latency, so firmware defines it only
-  with a vendor statement that covers both. One define carries both
-  because AES-GCM needs both under one key (docs/decisions.md 50).
+  that build is a compile error unless it is a host object, or takes
+  AES=extern and defines `CH_AES_EXTERN_CONSTANT_TIME`. In a host object
+  the statement is the caller's: `CH_CPU_CONSTANT_TIME_AES` says the CPU
+  has the AES and carry-less multiply instructions and that they run in
+  constant time on it, in the mode the session's thread runs in
+  (PSTATE.DIT, DOITM). `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` say
+  the instructions exist and say nothing about their latency, and a host
+  object runs on CPUs its builder never sees, so the caller who probes
+  the CPU makes the statement. One bit carries both because AES-GCM needs
+  both under one key (docs/decisions.md 50 and 89). A session without the
+  bit offers and selects ChaCha20 alone, and init refuses a
+  `cipher_suites` list that names an AES-GCM suite. `ct.h` refuses
+  `CH_NATIVE_AES`, the build statement the bit replaced.
   `CH_AES_EXTERN_CONSTANT_TIME` is the build's assertion that the
   peripheral behind the image's `ch_aes_block(key, key_len, in, out)`
   runs in constant time for 16-byte and 32-byte keys. Under AES=extern
   GHASH runs on gcm.c's portable multiply, so the flag claims nothing
   about GHASH, and no mechanism in this tree can observe a peripheral's
-  timing (docs/decisions.md 68). The Makefile writes neither statement.
+  timing (docs/decisions.md 68). The Makefile never writes it.
   The record layer, QUIC's Handshake and 1-RTT packet and header protection,
   the server's selection and the webpki client's offer run it under
   those terms; QUIC's Initial packets keep AES-128-GCM under their
