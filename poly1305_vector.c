@@ -167,6 +167,22 @@ typedef struct {
     limbs s1, s2, s3, s4;
 } multiplier;
 
+// How multiply_add reads a multiplier. On x86-64 it reads each limb
+// through a volatile pointer, so a product loads its limb from the struct
+// where it uses it. x86-64 has 16 vector registers and a group's two
+// multipliers are 18 vectors, so a compiler that loads them before the
+// loop keeps some in stack slots it picks, which ct_wipe cannot name:
+// Apple clang 21 left r^4 there, and bin/poly1305_equiv_test's residue
+// check found it. Read this way, the powers stay in the one struct the
+// call wipes. arm64 has 32 vector registers and holds both multipliers in
+// them, so the same reads there remove nothing and cost 30 percent more
+// instructions (docs/decisions.md 83).
+#ifdef __ARM_NEON
+typedef const multiplier multiplier_read;
+#else
+typedef const volatile multiplier multiplier_read;
+#endif
+
 // The power lane0 in lane 0 and the power lane1 in lane 1. Each limb is
 // at most 2^26, so 5 times it fits in 32 bits.
 static void multiplier_set(multiplier *by, const uint32_t lane0[5], const uint32_t lane1[5]) {
@@ -186,7 +202,7 @@ static void multiplier_set(multiplier *by, const uint32_t lane0[5], const uint32
 // h0 and h1 last: each of its rounds adds 5 times a carry to limb 0, a
 // step more than the other limbs take, and h1 takes its second carry from
 // limb 0. So the first three products of a sum need not wait for them.
-static inline void multiply_add(sums d[5], const limbs a[5], const multiplier *by) {
+static inline void multiply_add(sums d[5], const limbs a[5], multiplier_read *by) {
     d[0] = sums_multiply_add(d[0], a[2], by->s3);
     d[0] = sums_multiply_add(d[0], a[3], by->s2);
     d[0] = sums_multiply_add(d[0], a[4], by->s1);
@@ -222,8 +238,8 @@ static inline void multiply_add(sums d[5], const limbs a[5], const multiplier *b
 //
 // Every array here is indexed by constants alone: gcc keeps an array that
 // a loop indexes in memory, and reloads it on every group.
-static inline void group_sums(sums d[5], const limbs h[5], const uint8_t *m,
-                              const multiplier *first, const multiplier *second) {
+static inline void group_sums(sums d[5], const limbs h[5], const uint8_t *m, multiplier_read *first,
+                              multiplier_read *second) {
     limbs first_blocks[5];
     limbs second_blocks[5];
     load_blocks(first_blocks, m);
@@ -326,7 +342,8 @@ static void multiply_scalar(uint32_t out[5], const uint32_t left[5], const uint3
 // s, and r and s forge any message under that key, so the call wipes this
 // struct through ct_wipe once, when it ends. One struct makes that one
 // wipe. The registers and the spill slots the compiler picks stay out of
-// its reach, as they do for every wipe written in C.
+// its reach, as they do for every wipe written in C, which is why
+// multiply_add reads the multipliers as multiplier_read says.
 typedef struct {
     uint32_t r2[5];
     uint32_t r3[5];

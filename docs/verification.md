@@ -2563,7 +2563,13 @@ None of this proves the two paths agree on an input no case reaches.
 The limb bounds that keep every sum below 2^64 are argued in the file's
 comments, not proved. The residue check reads the stack one compiler
 left on one call; it cannot see registers, or a spill slot that holds a
-power in a layout it does not search. The path's timing rests on the
+power in a layout it does not search. It runs under CI's gcc and clang
+and under Apple clang on arm64. No CI job builds x86-64 with Apple
+clang, the one compiler that kept powers in spill slots before the
+x86-64 multiply read them through volatile pointers
+([`docs/decisions.md`](decisions.md) 83), so that build's check runs by
+hand: `make CC='cc -arch x86_64' bin/poly1305_equiv_test` on a copy of
+the tree, under Rosetta. The path's timing rests on the
 caller's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit for its multiplies, as the
 native copy of the portable loop does, and on construction for the rest:
 adds, masks, fixed shifts and lane moves, with no table. No gcc measures

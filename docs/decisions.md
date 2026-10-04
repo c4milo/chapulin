@@ -4060,7 +4060,18 @@ does nothing more.
       out of reach, as they do for every wipe written in C.
       `bin/poly1305_equiv_test` copies the stack below a call and requires
       none of the three powers there, in any layout the call holds them
-      in. The wipe came after the scratch timing that set the threshold,
+      in. On x86-64 that check failed under Apple clang 21, a compiler no
+      CI job builds x86-64 with. A group's two multipliers are 18 vectors
+      and x86-64 has 16 vector registers, so that compiler loaded them
+      before the loop and kept key powers in spill slots: 70 spills in a
+      1,104-byte frame. Since 2026-10-04 `multiply_add` reads each limb of
+      a multiplier through a volatile pointer on x86-64, which loads it
+      from the struct where a product uses it. The frame is 536 bytes with
+      one spill, and the check passes under Apple clang 21, gcc 13 and
+      clang 23. arm64 keeps the plain reads: its 32 vector registers hold
+      both multipliers, and the volatile reads there cost 30 percent more
+      instructions and 3 percent more cycles on an M1 Pro and remove
+      nothing. The wipe came after the scratch timing that set the threshold,
       which does not measure it, and after the paired record runs below.
       The record runs docs/performance.md holds now measure the code with
       it.
