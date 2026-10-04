@@ -1,6 +1,6 @@
 .{
     .name = .chapulin,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0xba7cb8d836fddb6e,
     .minimum_zig_version = "0.16.0",
     .paths = .{
