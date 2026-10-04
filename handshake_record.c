@@ -255,16 +255,16 @@ int hsr_peek_type(const handshake_state *h, uint8_t *type) {
 #endif
 
 int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
-    transcript_hash_after(&h->t->transcript, hash_len, NULL, 0, out);
+    TRANSCRIPT_HASH_AFTER_CPU(h->t->cfg.cpu, &h->t->transcript, hash_len, NULL, 0, out);
     return CH_OK;
 }
 
 void hsr_restart_transcript(handshake_state *h, size_t hash_len, const uint8_t *retry, size_t n) {
     uint8_t ch1[HKDF_HASH_MAX];
-    transcript_hash_after(&h->t->transcript, hash_len, NULL, 0, ch1);
+    TRANSCRIPT_HASH_AFTER_CPU(h->t->cfg.cpu, &h->t->transcript, hash_len, NULL, 0, ch1);
     const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, (uint8_t)hash_len};
     transcript_init(&h->t->transcript);
-    transcript_update(&h->t->transcript, synth, sizeof synth);
-    transcript_update(&h->t->transcript, ch1, hash_len);
-    transcript_update(&h->t->transcript, retry, n);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, synth, sizeof synth);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, ch1, hash_len);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, retry, n);
 }

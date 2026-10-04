@@ -21,6 +21,13 @@
 #   - HOST_TARGET is the test's result in both builds, which a check sets
 #     on its own command line: empty gives this host's object no define,
 #     and any other text gives a device target's object the define.
+#   - cpu_cfg.h's CH_CPU_DEFINED holds each architecture's bits of
+#     ch_cfg.cpu and no other: on arm64 the probe's bit, the AES bit, the
+#     multiply bit and the three hash bits, and on x86-64 the first three,
+#     CH_CPU_AVX2, CH_CPU_VAES and the SHA-256 bit (docs/decisions.md 89
+#     and 93). The pinned clang reads the header for both architectures,
+#     so the check holds both sets on any machine, where the rows of
+#     test/test_cpu.h hold the set of the architecture they run on.
 #
 # `make check` runs it (check-host-builds). It is the catch target of the
 # violations that break one of the three: test/violations.py runs a script
@@ -71,6 +78,21 @@ for target in "${refused[@]}"; do
         fail "-DCH_CPU_RUNTIME compiled for $target; cpu_cfg.h must refuse a target that fails the host test"
     fi
 done
+
+# CH_CPU_DEFINED for each architecture, against the bits written out
+# here: 0x01 CH_CPU_PROBED, 0x02 the AES bit, 0x04 the multiply bit, 0x08
+# CH_CPU_AVX2, 0x10 CH_CPU_VAES, 0x20 the SHA-256 bit, 0x40 the SHA-512
+# bit and 0x80 the SHA-3 bit.
+defined_tu=$out/cpu_defined.c
+printf '%s\n' '#include "cpu_cfg.h"' \
+    '_Static_assert(CH_CPU_DEFINED == WANT, "CH_CPU_DEFINED holds another set of bits");' \
+    > "$defined_tu"
+defined() { # $1 = a clang target, $2 = the bits its object defines
+    "$clang_rv" -target "$1" -std=c11 -I. -fsyntax-only -DCH_CPU_RUNTIME "-DWANT=$2" "$defined_tu" ||
+        fail "cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
+}
+defined aarch64-none-elf 0xe7U
+defined x86_64-none-elf 0x3fU
 
 # The Makefile's defines for a TRUST=webpki object under a compiler.
 make_defs() {
@@ -163,4 +185,5 @@ case " $(tr '\n' ' ' < "$out/aes-device/lib-def.txt") " in
 esac
 
 echo "host-builds: cpu_cfg.h, the Makefile and build.zig each give -DCH_CPU_RUNTIME to a host target alone," \
-    "both builds take HOST_TARGET as the test's result, and build.zig takes AES for a device object alone"
+    "CH_CPU_DEFINED holds each architecture's bits, both builds take HOST_TARGET as the test's result," \
+    "and build.zig takes AES for a device object alone"

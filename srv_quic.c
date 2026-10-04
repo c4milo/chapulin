@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "quic_fail.h"
 #include "quic_keys.h"
@@ -42,11 +43,12 @@ static void announce(ch_quic *q, uint8_t level, uint8_t direction) {
 // own, the mirror of quic_step.c's install_handshake_keys, and both
 // directions exist at once because one derivation wrote both.
 static void install_handshake_keys(ch_quic *q) {
+    uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
-    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.c_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_rx, version, q->hs.c_hs, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->handshake_tx, version, q->hs.s_hs, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->handshake_hp_tx, version, q->hs.s_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_rx, version, q->hs.c_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(cpu, &q->handshake_hp_rx, version, q->hs.c_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_tx, version, q->hs.s_hs, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(cpu, &q->handshake_hp_tx, version, q->hs.s_hs, q->t.suite);
     announce(q, CH_LEVEL_HANDSHAKE, CH_KEY_READ);
     announce(q, CH_LEVEL_HANDSHAKE, CH_KEY_WRITE);
 }
@@ -62,15 +64,16 @@ static void install_handshake_keys(ch_quic *q) {
 // set, which is the invariant quic_session.h states and ch_quic_key_update
 // depends on.
 static void install_application_keys(ch_quic *q) {
+    uint32_t cpu = CH_CFG_CPU(q->t.cfg);
     uint32_t version = q->t.quic_negotiated_version;
-    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_tx, version, q->t.wr_secret, q->t.suite);
-    QUIC_KEYS_INIT_SUITE(&q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret, q->t.suite);
-    QUIC_HP_KEY_INIT_SUITE(&q->app_hp_rx, version, q->t.rd_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(cpu, &q->app_hp_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->app_rx[CH_QUIC_KEY_CURRENT], version, q->t.rd_secret, q->t.suite);
+    QUIC_HP_KEY_INIT_SUITE(cpu, &q->app_hp_rx, version, q->t.rd_secret, q->t.suite);
     // The next set starts as the current one, so the update derives it
     // under the suite that set records.
     q->app_rx[CH_QUIC_KEY_NEXT] = q->app_rx[CH_QUIC_KEY_CURRENT];
-    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
+    quic_keys_update(cpu, q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
     announce(q, CH_LEVEL_APPLICATION, CH_KEY_WRITE);
 }
 

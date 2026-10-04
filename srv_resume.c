@@ -161,9 +161,9 @@ static const uint8_t *binder_hash_at(const client_hello *ch, size_t hash_len) {
 // way. Returns 1 when the binder compared equal.
 static int binder_matches(handshake_state *h, const client_hello *ch, const uint8_t *psk,
                           size_t hash_len, uint16_t index) {
-    ks_early(hash_len, psk, hash_len, 1, h->early, h->binder_key);
+    KS_EARLY_CPU(h->t->cfg.cpu, hash_len, psk, hash_len, 1, h->early, h->binder_key);
     uint8_t want[HKDF_HASH_MAX];
-    ks_verify_data(hash_len, h->binder_key, binder_hash_at(ch, hash_len), want);
+    KS_VERIFY_DATA_CPU(h->t->cfg.cpu, hash_len, h->binder_key, binder_hash_at(ch, hash_len), want);
     ct_wipe(h->binder_key, sizeof h->binder_key);
     size_t binder_len = 0;
     const uint8_t *binder = binder_at(ch, index, &binder_len);
@@ -260,14 +260,14 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
     uint8_t res_master[HKDF_HASH_MAX];
-    ks_res_master(hash_len, h->master, hash, res_master);
+    KS_RES_MASTER_CPU(t->cfg.cpu, hash_len, h->master, hash, res_master);
     srv_ticket_contents c;
     memset(&c, 0, sizeof c);
     c.auth_seconds = auth_seconds;
     c.suite = t->suite;
     c.quic_version = session_quic_version(t);
     ticket_alpn(t, &c);
-    ks_res_psk(hash_len, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
+    KS_RES_PSK_CPU(t->cfg.cpu, hash_len, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
     ct_wipe(res_master, sizeof res_master);
 
     uint8_t ticket[SRV_TICKET_LEN];

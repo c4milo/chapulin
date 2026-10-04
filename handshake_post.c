@@ -149,7 +149,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
     // The PSK takes the hash of the suite this session ran
     // (rfc9846.txt:3298-3301), and its length says which one.
     ticket.psk_len = tls_hash_len(t);
-    ks_res_psk(ticket.psk_len, t->res_master, nonce, nonce_len, ticket.psk);
+    KS_RES_PSK_CPU(t->cfg.cpu, ticket.psk_len, t->res_master, nonce, nonce_len, ticket.psk);
 #ifdef CH_TRUST_WEBPKI
     // Binds the ticket to this session's hostname, anchors and SPKI pins,
     // so no other configuration can present it (webpki_ticket.h).

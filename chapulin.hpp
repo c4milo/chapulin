@@ -146,6 +146,18 @@ struct Cpu {
     // blocks two to a register, and without it runs nothing. An x86-64
     // bit as well.
     bool vaes = false;
+    // The CPU has the SHA-256 instructions, and you state that they run
+    // in constant time on it, in that mode: CH_CPU_CONSTANT_TIME_SHA256.
+    // On arm64 that is FEAT_SHA256, and on x86-64 the SHA extensions with
+    // SSSE3 and SSE4.1. No object runs a hash on the instructions yet.
+    bool constant_time_sha256 = false;
+    // The same for the SHA-512 instructions, FEAT_SHA512:
+    // CH_CPU_CONSTANT_TIME_SHA512. An arm64 bit, which an x86-64 object
+    // refuses.
+    bool constant_time_sha512 = false;
+    // The same for the SHA-3 instructions, FEAT_SHA3:
+    // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well.
+    bool constant_time_sha3 = false;
 };
 #endif
 
@@ -360,7 +372,10 @@ class Config {
     Config &cpu(Cpu found) {
         cfg_.cpu = CH_CPU_PROBED | (found.constant_time_aes ? CH_CPU_CONSTANT_TIME_AES : 0U) |
                    (found.constant_time_multiply ? CH_CPU_CONSTANT_TIME_MULTIPLY : 0U) |
-                   (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U);
+                   (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U) |
+                   (found.constant_time_sha256 ? CH_CPU_CONSTANT_TIME_SHA256 : 0U) |
+                   (found.constant_time_sha512 ? CH_CPU_CONSTANT_TIME_SHA512 : 0U) |
+                   (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U);
         return *this;
     }
 #endif

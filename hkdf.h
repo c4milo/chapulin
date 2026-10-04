@@ -106,4 +106,37 @@ void hkdf_expand_label(size_t hash_len, const uint8_t *secret, const char *label
 void hkdf_derive_secret(size_t hash_len, const uint8_t *secret, const char *label,
                         const uint8_t *hash, uint8_t *out);
 
+#if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+// hkdf_extract and hkdf_expand_label for one session of a host object, each with the session's
+// ch_cfg.cpu first and under the same contract, as sha256.h's entries are (docs/decisions.md
+// 93). No object holds a hash on the CPU's instructions yet, so both run the portable call
+// whatever cpu says. keysched.c makes this header's other calls.
+static inline void hkdf_extract_cpu(uint32_t cpu, size_t hash_len, const uint8_t *salt,
+                                    size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                                    uint8_t *prk) {
+    (void)cpu;
+    hkdf_extract(hash_len, salt, salt_len, ikm, ikm_len, prk);
+}
+
+static inline void hkdf_expand_label_cpu(uint32_t cpu, size_t hash_len, const uint8_t *secret,
+                                         const char *label, const uint8_t *ctx, size_t ctx_len,
+                                         uint8_t *out, size_t out_len) {
+    (void)cpu;
+    hkdf_expand_label(hash_len, secret, label, ctx, ctx_len, out, out_len);
+}
+#endif
+
+// The two calls as a source compiled into both objects makes them for a session, with its
+// ch_cfg.cpu first. A host object passes the value to the entry above. A device object holds
+// one path for each hash, so it calls the portable call and never evaluates cpu: the
+// expression may name a field that build does not declare, as AEAD_SEAL_CPU's does (aead.h),
+// and the object's compiled code is the call it made before these names existed.
+#ifdef CH_CPU_RUNTIME
+#define HKDF_EXTRACT_CPU(cpu, ...) hkdf_extract_cpu((cpu), __VA_ARGS__)
+#define HKDF_EXPAND_LABEL_CPU(cpu, ...) hkdf_expand_label_cpu((cpu), __VA_ARGS__)
+#else
+#define HKDF_EXTRACT_CPU(cpu, ...) hkdf_extract(__VA_ARGS__)
+#define HKDF_EXPAND_LABEL_CPU(cpu, ...) hkdf_expand_label(__VA_ARGS__)
+#endif
+
 #endif

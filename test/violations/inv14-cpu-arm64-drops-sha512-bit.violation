@@ -1,0 +1,14 @@
+invariant: INV-14
+file: cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h's arm64 set loses CH_CPU_CONSTANT_TIME_SHA512, so every
+  init call of an arm64 object refuses a caller that states the SHA-512
+  instructions, and no arm64 session can run SHA-384 on them
+  (docs/decisions.md 93). On x86-64 no test row moves, because that set is
+  unchanged, so the catch is the script, which reads the header for both
+  architectures and compares each set with the bits it writes out.
+
+--- old
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
+--- new
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA3)

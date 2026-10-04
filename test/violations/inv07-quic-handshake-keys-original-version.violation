@@ -11,7 +11,7 @@ reason: the ServerHello step derives the Handshake keys under the
 
 --- old
     uint32_t version = q->t.quic_negotiated_version;
-    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.s_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_rx, version, q->hs.s_hs, q->t.suite);
 --- new
     uint32_t version = q->t.cfg.quic_original_version;
-    QUIC_KEYS_INIT_SUITE(&q->handshake_rx, version, q->hs.s_hs, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->handshake_rx, version, q->hs.s_hs, q->t.suite);

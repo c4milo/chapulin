@@ -24,7 +24,7 @@
 #   (docs/decisions.md 83), because Poly1305 is the one stage the bit
 #   changes
 #
-#   0x1f, every bit, on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ:
+#   0x1f, those and the two kernel bits, on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ:
 #   every row again, with the ChaCha20 keystream on chacha20_avx2.c's
 #   kernel and AES-GCM's whole blocks on gcm_vaes.c's
 #   (docs/decisions.md 90). --build compiles this one for every x86-64

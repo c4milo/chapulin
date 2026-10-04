@@ -278,6 +278,26 @@ static void test_webpki_config(chapulin::Io io) {
         CHECK(avx2.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_AVX2) != 0
                                         ? chapulin::Status::io
                                         : chapulin::Status::invalid));
+        // The three hash bits, each to its own bit of ch_cfg.cpu. An
+        // x86-64 object refuses the SHA-512 bit, which is arm64's, as
+        // an arm64 object refuses avx2. No session runs here under a
+        // bit its object defines: a later object runs the instructions
+        // the bit names, which the CPU under this test may lack.
+        chapulin::Cpu hashes;
+        hashes.constant_time_sha256 = true;
+        hashes.constant_time_sha512 = true;
+        hashes.constant_time_sha3 = true;
+        cfg.cpu(hashes);
+        CHECK(cfg.raw().cpu == (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA256 |
+                                CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3));
+        chapulin::Cpu arm64;
+        arm64.constant_time_sha512 = true;
+        cfg.cpu(arm64);
+        CHECK(cfg.raw().cpu == (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512));
+        if ((CH_CPU_DEFINED & CH_CPU_CONSTANT_TIME_SHA512) == 0) {
+            chapulin::Session sha512;
+            CHECK(sha512.connect(cfg) == chapulin::Status::invalid);
+        }
     }
 #endif
     // ALPN: the setter writes both ch_cfg fields, a valid offer reaches

@@ -42,31 +42,41 @@ static uint32_t test_cpu = TEST_CPU;
 // value this binary runs under.
 #define TEST_SESSION_CPU test_cpu
 // Gives d, a record direction a test keys itself, the value an init call writes into a session's
-// directions (record.h). rec_dir_init leaves the field as it found it, so a direction a test
-// declares and keys without this line would read whatever its storage held.
-#define TEST_CPU_DIR(d) ((d).cpu = test_cpu)
+// directions (record.h), before the test keys it: rec_dir_init reads the field for the hash that
+// derives the key and leaves it as it found it, so a direction a test declares and keys without
+// this line first would read whatever its storage held. The write goes through the direction's
+// address, because cppcheck 2.22 reads `(d).cpu = ...` on a direction no call has written yet as
+// a read of the whole direction.
+#define TEST_CPU_DIR(d) ((&(d))->cpu = test_cpu)
 
-// Every bit a host object defines on the architecture this binary targets: the three of every
-// host object, and on x86-64 CH_CPU_AVX2 and CH_CPU_VAES. It is written here apart from cpu_cfg.h's
-// CH_CPU_DEFINED, so a wrong set there fails a row.
-#define TEST_CPU_COMMON (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY)
+// Every bit a host object defines on the architecture this binary targets: the four of every
+// host object, on x86-64 CH_CPU_AVX2 and CH_CPU_VAES, and on arm64 CH_CPU_CONSTANT_TIME_SHA512
+// and CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from cpu_cfg.h's CH_CPU_DEFINED, so a
+// wrong set there fails a row.
+#define TEST_CPU_COMMON                                                                            \
+    (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
+     CH_CPU_CONSTANT_TIME_SHA256)
 #ifdef __x86_64__
 #define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_AVX2 | CH_CPU_VAES)
 #else
-#define TEST_CPU_ALL TEST_CPU_COMMON
+#define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
 #endif
 
 // The values every init call and ch_srv_check refuse: 0, which a caller that never set the field
-// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_VAES, which no
-// architecture defines; the top bit; and on arm64 each x86-64 bit, which an arm64 object refuses
-// rather than ignores. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit
-// the architecture defines.
+// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_CONSTANT_TIME_SHA3,
+// which no architecture defines; the top bit; and each bit of the other architecture, which an
+// object refuses rather than ignores: the two x86-64 bits on arm64, and the SHA-512 and SHA-3
+// bits on x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
+// architecture defines.
 static const uint32_t test_cpu_values[] = {
     0,
     TEST_CPU_ALL & ~(uint32_t)CH_CPU_PROBED,
-    CH_CPU_PROBED | (CH_CPU_VAES << 1),
+    CH_CPU_PROBED | (CH_CPU_CONSTANT_TIME_SHA3 << 1),
     CH_CPU_PROBED | 0x80000000U,
-#ifndef __x86_64__
+#ifdef __x86_64__
+    CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512,
+    CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA3,
+#else
     CH_CPU_PROBED | CH_CPU_AVX2,
     CH_CPU_PROBED | CH_CPU_VAES,
 #endif
@@ -82,7 +92,7 @@ static inline int test_cpu_taken(size_t i) {
 #else
 #define TEST_CPU_CFG(cfg) ((void)(cfg))
 #define TEST_SESSION_CPU 0U
-#define TEST_CPU_DIR(d) ((void)(d))
+#define TEST_CPU_DIR(d) ((void)sizeof(d))
 #endif
 
 // Ends a host binary whose test_cpu names an x86-64 kernel this CPU cannot run. A session whose

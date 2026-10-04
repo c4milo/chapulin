@@ -47,4 +47,20 @@ void sha384_final(sha512 *s, uint8_t out[SHA384_LEN]);
 void sha512_of(const uint8_t *in, size_t n, uint8_t out[SHA512_LEN]);
 void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]);
 
+#if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+// sha512_update and sha384_final for one session of a host object, each with the session's
+// ch_cfg.cpu first and under the same contract, as sha256.h's entries are (docs/decisions.md
+// 93). No object holds SHA-512 on the CPU's instructions yet, so both run the portable call
+// whatever cpu says. sha384_init and sha512_init take no description of the CPU.
+static inline void sha512_update_cpu(uint32_t cpu, sha512 *s, const uint8_t *in, size_t n) {
+    (void)cpu;
+    sha512_update(s, in, n);
+}
+
+static inline void sha384_final_cpu(uint32_t cpu, sha512 *s, uint8_t out[SHA384_LEN]) {
+    (void)cpu;
+    sha384_final(s, out);
+}
+#endif
+
 #endif

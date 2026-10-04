@@ -988,7 +988,7 @@ endif
 # fails instead under CH_REQUIRE_X86_KERNELS=1 (test/test_cpu.h).
 #   0xd   the probe's bit, the multiply bit and CH_CPU_AVX2
 #   0xf   those and the AES bit
-#   0x1f  those and CH_CPU_VAES: every bit
+#   0x1f  those and CH_CPU_VAES: every bit that picks a kernel or a path beside one
 X86_KERNEL_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qw '__x86_64__' && echo yes)
 X86_KERNEL_BINS := $(if $(X86_KERNEL_PROBE),$(if $(HOST_TARGET),bin/x86_kernels_test))
 X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd)

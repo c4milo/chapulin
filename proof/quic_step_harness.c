@@ -187,7 +187,9 @@ static ch_quic q;
 // which is the invariant quic_session.h states. Each is handed the
 // session's negotiated version, the one every Handshake and 1-RTT key is
 // derived under.
-void quic_keys_init(quic_keys *k, uint32_t version, const uint8_t secret[SHA256_LEN]) {
+void quic_keys_init(uint32_t cpu, quic_keys *k, uint32_t version,
+                    const uint8_t secret[SHA256_LEN]) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "keys: set writable");
     __CPROVER_assert(version == q.t.quic_negotiated_version, "keys: the negotiated version");
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "keys: secret readable");
@@ -195,14 +197,17 @@ void quic_keys_init(quic_keys *k, uint32_t version, const uint8_t secret[SHA256_
     fill_nondet(k->iv, sizeof k->iv);
 }
 
-void quic_hp_key_init(quic_hp_key *h, uint32_t version, const uint8_t secret[SHA256_LEN]) {
+void quic_hp_key_init(uint32_t cpu, quic_hp_key *h, uint32_t version,
+                      const uint8_t secret[SHA256_LEN]) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "keys: header key writable");
     __CPROVER_assert(version == q.t.quic_negotiated_version, "keys: the negotiated version");
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "keys: secret readable");
     fill_nondet(h->key, sizeof h->key);
 }
 
-void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
+void quic_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "update: secret writable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "update: set writable");
     __CPROVER_assert(version == q.t.quic_negotiated_version, "update: the negotiated version");

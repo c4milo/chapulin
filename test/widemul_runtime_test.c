@@ -241,10 +241,10 @@ static size_t record_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     }
     rec_dir wr;
     rec_dir rd;
-    rec_dir_init(&wr, secret);
-    rec_dir_init(&rd, secret);
     wr.cpu = cpu_of(widemul);
     rd.cpu = cpu_of(widemul);
+    rec_dir_init(&wr, secret);
+    rec_dir_init(&rd, secret);
     size_t n = 0;
     CHECK(rec_seal(&wr, REC_APPDATA, pt, sizeof pt, out, OUT_MAX, &n) == 0);
     size_t pt_len = 0;

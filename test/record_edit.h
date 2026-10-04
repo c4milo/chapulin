@@ -43,8 +43,8 @@ static void reseal_last_record(uint8_t *wire, size_t *len, size_t cap,
                                const uint8_t secret[SHA256_LEN], size_t extra) {
     static uint8_t pt[0x4000 + 256];
     rec_dir d;
-    rec_dir_init(&d, secret);
     TEST_CPU_DIR(d);
+    rec_dir_init(&d, secret);
     size_t pt_len = 0;
     uint8_t type = 0;
     size_t off = 0;

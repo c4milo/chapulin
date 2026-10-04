@@ -24,12 +24,12 @@ static void record_end_start(record_end_case *c) {
     static uint8_t rxbuf[1024];
     memset(c, 0, sizeof *c);
     ch_rand_bytes(c->peer_secret, sizeof c->peer_secret);
-    rec_dir_init(&c->peer, c->peer_secret);
     TEST_CPU_DIR(c->peer);
+    rec_dir_init(&c->peer, c->peer_secret);
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&c->t, &c->m, rxbuf, sizeof rxbuf, c->peer_secret, wr_secret);
-    rec_dir_init(&c->reader, wr_secret);
     TEST_CPU_DIR(c->reader);
+    rec_dir_init(&c->reader, wr_secret);
 }
 
 // A refused record: ch_read returns CH_EPROTO, the session is dead, and

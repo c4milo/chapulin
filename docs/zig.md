@@ -290,22 +290,27 @@ docs/decisions.md 89). `Client.cpu` and `Server.cpu` are `?Cpu`, null by
 default; in any other object they are `void`, and `Cpu` is a
 `@compileError`.
 
-- **A value states what the caller found.** `Cpu` holds four bools,
-  false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`
-  and `vaes`. `toCfg` writes `CH_CPU_PROBED` and the bit of each one that
-  is true. `Cpu{}` says the caller looked and states nothing more. The
-  first two state a timing, and `cpu_cfg.h` says what each claims. The
-  last two are x86-64's and say what the CPU has: with `avx2` the
-  session's ChaCha20 runs in 256-bit vectors, and with `vaes` beside
-  `constant_time_aes` its AES-GCM runs on VAES and VPCLMULQDQ
-  (docs/decisions.md 90).
+- **A value states what the caller found.** `Cpu` holds seven bools,
+  false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
+  `vaes`, `constant_time_sha256`, `constant_time_sha512` and
+  `constant_time_sha3`. `toCfg` writes `CH_CPU_PROBED` and the bit of each
+  one that is true. `Cpu{}` says the caller looked and states nothing
+  more. The five named `constant_time_` state a timing, and `cpu_cfg.h`
+  says what each claims. `avx2` and `vaes` are x86-64's and say what the
+  CPU has: with `avx2` the session's ChaCha20 runs in 256-bit vectors, and
+  with `vaes` beside `constant_time_aes` its AES-GCM runs on VAES and
+  VPCLMULQDQ (docs/decisions.md 90). The three hash fields say the CPU
+  has the SHA-256, the SHA-512 or the SHA-3 instructions, and no object
+  runs a hash on them yet (docs/decisions.md 93).
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `Server.check` return
   `error.Invalid` with nothing sent. So does `avx2` or `vaes` in an arm64
-  object, which defines neither bit. Both refusals are C's.
+  object, and `constant_time_sha512` or `constant_time_sha3` in an x86-64
+  one: each object defines its own architecture's bits. Both refusals are
+  C's.
 - **The probe is the caller's.** chapulin and its API probe nothing and
-  set no CPU mode. A caller states the two constant-time bits only where
-  it can: on arm64 a core with FEAT_DIT and a thread that has set
+  set no CPU mode. A caller states the constant-time bits only where it
+  can: on arm64 a core with FEAT_DIT and a thread that has set
   PSTATE.DIT, and on x86-64 a part on Intel's DOIT list whose operating
   system has set DOITM.
 

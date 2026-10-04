@@ -22,6 +22,10 @@
 
 // The two versions every row runs under.
 static const uint32_t DIFF_QUIC_VERSIONS[2] = {CH_QUIC_VERSION_1, CH_QUIC_VERSION_2};
+// What every row hands quic_keys.h's calls for a session's ch_cfg.cpu: no
+// description of the CPU, so the derivation's hash runs the portable code
+// in every build of this driver.
+#define DIFF_QUIC_CPU 0U
 
 // The rows per version for the two derivations, and the longest Retry
 // Pseudo-Packet: a 20-byte Original Destination Connection ID with its
@@ -40,8 +44,8 @@ static void diff_quic_packet_keys(void) {
             rng_fill(secret, sizeof secret);
             quic_keys k;
             quic_hp_key h;
-            quic_keys_init(&k, DIFF_QUIC_VERSIONS[v], secret);
-            quic_hp_key_init(&h, DIFF_QUIC_VERSIONS[v], secret);
+            quic_keys_init(DIFF_QUIC_CPU, &k, DIFF_QUIC_VERSIONS[v], secret);
+            quic_hp_key_init(DIFF_QUIC_CPU, &h, DIFF_QUIC_VERSIONS[v], secret);
 
             char secret_hex[2 * SHA256_LEN + 1];
             (void)hex_encode(secret_hex, secret, sizeof secret);
@@ -72,8 +76,8 @@ static void diff_quic_key_update(void) {
             char secret_hex[2 * SHA256_LEN + 1];
             (void)hex_encode(secret_hex, secret, sizeof secret);
             quic_keys k;
-            quic_keys_init(&k, DIFF_QUIC_VERSIONS[v], secret);
-            quic_keys_update(secret, &k, DIFF_QUIC_VERSIONS[v]);
+            quic_keys_init(DIFF_QUIC_CPU, &k, DIFF_QUIC_VERSIONS[v], secret);
+            quic_keys_update(DIFF_QUIC_CPU, secret, &k, DIFF_QUIC_VERSIONS[v]);
 
             char next_hex[2 * SHA256_LEN + 1];
             (void)hex_encode(next_hex, secret, sizeof secret);

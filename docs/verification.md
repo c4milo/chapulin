@@ -2672,16 +2672,16 @@ skips a kernel's cases on a CPU without its instructions:
 **Which calls run a kernel** rests on these:
 
 - `bin/x86_kernels_test` counts the calls into each kernel under each of
-  17 `ch_cfg.cpu` values: the 16 the four bits beside `CH_CPU_PROBED`
-  make, and 0, which a wiped record direction holds. Its rows are
-  `chacha20_xor_cpu` and the two AEAD entries that take a value, a
-  record under each of the three suites, a QUIC 1-RTT packet under each
-  suite and a Handshake packet, an Initial packet, and a traffic key's
-  schedule. Under each value a call must run a kernel exactly when the
-  value names it, and must return the same bytes. The counting entries
-  (`test/x86_kernels_count.c`) forward to the 128-bit paths, so the
-  binary runs no kernel instruction and passes on every x86-64 CPU. An
-  arm64 build of it has no row.
+  17 `ch_cfg.cpu` values: the 16 the four bits from 0x02 to 0x10 make
+  beside `CH_CPU_PROBED`, and 0, which a wiped record direction holds.
+  Its rows are `chacha20_xor_cpu` and the two AEAD entries that take a
+  value, a record under each of the three suites, a QUIC 1-RTT packet
+  under each suite and a Handshake packet, an Initial packet, and a
+  traffic key's schedule. Under each value a call must run a kernel
+  exactly when the value names it, and must return the same bytes. The
+  counting entries (`test/x86_kernels_count.c`) forward to the 128-bit
+  paths, so the binary runs no kernel instruction and passes on every
+  x86-64 CPU. An arm64 build of it has no row.
 - `test/aes-runtime-qemu.sh` runs whole handshakes on CPU models, in CI's
   mips job on every push. On `max,-aes,-pclmulqdq,-avx2` the loops with
   `CH_CPU_AVX2` on both ends must die of SIGILL, which shows the model

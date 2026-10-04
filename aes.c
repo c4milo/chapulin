@@ -129,10 +129,14 @@ static void expand_public_key(aes_key_schedule *s, const uint8_t key[AES_128_KEY
 // into hp. Returns CH_EINVAL and writes nothing when dcid_len is above
 // CH_QUIC_DCID_MAX or endpoint is neither of aes.h's two names, and CH_OK
 // once all three are written. Both aes_public_key_initial entries below
-// call it, and each expands key and hp the way its build runs AES.
-static int derive_initial(uint8_t key[AES_128_KEY], uint8_t iv[AES_IV], uint8_t hp[AES_128_KEY],
-                          uint32_t version, const uint8_t *dcid, size_t dcid_len,
-                          uint8_t endpoint) {
+// call it, and each expands key and hp the way its build runs AES. cpu is
+// the session's ch_cfg.cpu in a QUIC host object, where it picks the code
+// the derivation's SHA-256 runs on (hkdf.h), and 0 in a device
+// object, which holds one path and never reads it.
+static int derive_initial(uint32_t cpu, uint8_t key[AES_128_KEY], uint8_t iv[AES_IV],
+                          uint8_t hp[AES_128_KEY], uint32_t version, const uint8_t *dcid,
+                          size_t dcid_len, uint8_t endpoint) {
+    (void)cpu; // a device object's HKDF takes no description of the CPU (hkdf.h)
     if (dcid_len > CH_QUIC_DCID_MAX) {
         return CH_EINVAL;
     }
@@ -144,20 +148,20 @@ static int derive_initial(uint8_t key[AES_128_KEY], uint8_t iv[AES_IV], uint8_t 
     // (rfc9001.txt:1057-1061). Which endpoint a caller asks for is the
     // caller's; this file reads no role and derives what it is given.
     uint8_t initial_secret[SHA256_LEN];
-    hkdf_extract(SHA256_LEN, initial_salt(version), INITIAL_SALT_LEN, dcid, dcid_len,
-                 initial_secret);
+    HKDF_EXTRACT_CPU(cpu, SHA256_LEN, initial_salt(version), INITIAL_SALT_LEN, dcid, dcid_len,
+                     initial_secret);
     const char *label = endpoint == CH_QUIC_ENDPOINT_CLIENT ? "client in" : "server in";
     // RFC 9001 §5.2 names this one client_initial_secret or
     // server_initial_secret, one per endpoint.
     uint8_t direction_secret[SHA256_LEN];
-    hkdf_expand_label(SHA256_LEN, initial_secret, label, NULL, 0, direction_secret,
-                      sizeof direction_secret);
+    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, initial_secret, label, NULL, 0, direction_secret,
+                          sizeof direction_secret);
     // RFC 9001 §5.1: the version's three labels over that secret, each
     // with a zero-length context (rfc9001.txt:1029-1032).
     quic_labels labels = quic_version_labels(version);
-    hkdf_expand_label(SHA256_LEN, direction_secret, labels.key, NULL, 0, key, AES_128_KEY);
-    hkdf_expand_label(SHA256_LEN, direction_secret, labels.iv, NULL, 0, iv, AES_IV);
-    hkdf_expand_label(SHA256_LEN, direction_secret, labels.hp, NULL, 0, hp, AES_128_KEY);
+    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, direction_secret, labels.key, NULL, 0, key, AES_128_KEY);
+    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, direction_secret, labels.iv, NULL, 0, iv, AES_IV);
+    HKDF_EXPAND_LABEL_CPU(cpu, SHA256_LEN, direction_secret, labels.hp, NULL, 0, hp, AES_128_KEY);
     // No wipe of initial_secret or direction_secret, and none of key and
     // hp in the entries below. Every byte of them is public: RFC 9001 §5
     // says so of the Initial keys (rfc9001.txt:999-1001), and this
@@ -192,7 +196,7 @@ int aes_public_key_initial(aes_public_key *k, uint32_t cpu, uint32_t version, co
                            size_t dcid_len, uint8_t endpoint) {
     uint8_t key[AES_128_KEY];
     uint8_t hp[AES_128_KEY];
-    int rc = derive_initial(key, k->iv, hp, version, dcid, dcid_len, endpoint);
+    int rc = derive_initial(cpu, key, k->iv, hp, version, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }
@@ -206,7 +210,7 @@ int aes_public_key_initial(aes_public_key *k, uint32_t version, const uint8_t *d
                            size_t dcid_len, uint8_t endpoint) {
     uint8_t key[AES_128_KEY];
     uint8_t hp[AES_128_KEY];
-    int rc = derive_initial(key, k->iv, hp, version, dcid, dcid_len, endpoint);
+    int rc = derive_initial(0U, key, k->iv, hp, version, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }

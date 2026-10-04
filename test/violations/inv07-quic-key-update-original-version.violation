@@ -9,6 +9,9 @@ reason: ch_quic_key_update advances the 1-RTT secrets under the original
   version 2 and requires its next packet to open at the server.
 
 --- old
-    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.quic_negotiated_version);
+    uint32_t version = q->t.quic_negotiated_version;
+    quic_keys_update(CH_CFG_CPU(q->t.cfg), q->t.wr_secret, &q->app_tx, version);
 --- new
-    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.cfg.quic_original_version);
+    uint32_t version = q->t.quic_negotiated_version;
+    quic_keys_update(CH_CFG_CPU(q->t.cfg), q->t.wr_secret, &q->app_tx,
+                     q->t.cfg.quic_original_version);

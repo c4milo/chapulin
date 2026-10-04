@@ -83,8 +83,8 @@ static int floor_reassemble(size_t buf_len) {
     uint8_t secret[SHA256_LEN];
     memset(secret, 0x5a, sizeof secret);
     rec_dir server_write;
-    rec_dir_init(&server_write, secret);
     TEST_CPU_DIR(server_write);
+    rec_dir_init(&server_write, secret);
     floor_seal(&server_write, buf_len);
 
     static ch_tls t;

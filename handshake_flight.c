@@ -18,13 +18,13 @@
 #include "webpki_pin.h"
 #endif
 
-// The early secret with no PSK: HKDF-Extract over hash_len zero bytes
-// (RFC 9846 §7.1, rfc9846.txt:4172-4175). The binder key ks_early also
-// derives is never used, so it is wiped here.
-static void early_secret_without_psk(size_t hash_len, uint8_t *early) {
+// The early secret with no PSK, into h->early: HKDF-Extract over hash_len zero bytes (RFC 9846
+// §7.1, rfc9846.txt:4172-4175). The binder key ks_early also derives is never used and dies here.
+static void early_secret_without_psk(handshake_state *h) {
     static const uint8_t no_psk[HKDF_HASH_MAX] = {0};
     uint8_t unused_binder_key[HKDF_HASH_MAX];
-    ks_early(hash_len, no_psk, hash_len, 0, early, unused_binder_key);
+    size_t hash_len = hsr_suite_hash_len(h);
+    KS_EARLY_CPU(h->t->cfg.cpu, hash_len, no_psk, hash_len, 0, h->early, unused_binder_key);
     ct_wipe(unused_binder_key, sizeof unused_binder_key);
 }
 
@@ -53,8 +53,8 @@ void hsf_begin(handshake_state *h) {
     }
     widemul_x25519_base(widemul_answer(&t->cfg), h->pub, h->priv);
     if (t->cfg.psk != NULL) {
-        ks_early(hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early,
-                 h->binder_key);
+        KS_EARLY_CPU(t->cfg.cpu, hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len,
+                     t->cfg.resumption, h->early, h->binder_key);
     }
     // No PSK: h->early stays zero until hsf_accept_server_hello computes
     // it at the hash of the suite the ServerHello names.
@@ -98,10 +98,11 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
         // at the PSK's hash, which also sets the binder's length.
         size_t hash_len = hs_psk_hash_len(&t->cfg);
         uint8_t hash[HKDF_HASH_MAX];
-        transcript_hash_after(&t->transcript, hash_len, out, n - CH_BINDERS_TAIL(hash_len), hash);
-        ks_verify_data(hash_len, h->binder_key, hash, out + n - hash_len);
+        TRANSCRIPT_HASH_AFTER_CPU(t->cfg.cpu, &t->transcript, hash_len, out,
+                                  n - CH_BINDERS_TAIL(hash_len), hash);
+        KS_VERIFY_DATA_CPU(t->cfg.cpu, hash_len, h->binder_key, hash, out + n - hash_len);
     }
-    transcript_update(&t->transcript, out, n);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, out, n);
     return n;
 }
 
@@ -220,18 +221,17 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
             return CH_EPROTO;
         }
     } else {
-        transcript_update(&h->t->transcript, raw, raw_len);
+        TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, raw, raw_len);
     }
     return CH_OK;
 }
 
 #ifdef CH_TRUST_WEBPKI
-// A ServerHello with no pre_shared_key declined the ticket, and a webpki
-// hello offers the certificate path beside it, so the handshake goes on
-// as a full one (docs/decisions.md 55): the PSK's early secret and binder
-// key die here, and the early secret of no PSK replaces them, at the hash
-// the ServerHello's suite names (rfc9846.txt:4182-4185). A pre_shared_key naming any identity but 0
-// is no decline but an illegal_parameter abort (rfc9846.txt:2551-2557).
+// A ServerHello with no pre_shared_key declined the ticket, and a webpki hello offers the
+// certificate path beside it, so the handshake goes on as a full one (docs/decisions.md 55): the
+// PSK's early secret and binder key die here, and the early secret of no PSK replaces them, at
+// the hash the ServerHello's suite names (rfc9846.txt:4182-4185). A pre_shared_key naming any
+// identity but 0 is no decline but an illegal_parameter abort (rfc9846.txt:2551-2557).
 static int decline_psk(handshake_state *h, const server_hello_info *info) {
     if ((info->seen & HSP_SEEN_PRE_SHARED_KEY) != 0) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
@@ -239,7 +239,7 @@ static int decline_psk(handshake_state *h, const server_hello_info *info) {
     }
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
-    early_secret_without_psk(hsr_suite_hash_len(h), h->early);
+    early_secret_without_psk(h);
     return CH_OK;
 }
 #else
@@ -274,7 +274,7 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
 #endif
     int psk_offered = h->t->cfg.psk != NULL;
     if (!psk_offered) {
-        early_secret_without_psk(hsr_suite_hash_len(h), h->early);
+        early_secret_without_psk(h);
     }
     if (psk_offered && !info->psk_ok) {
         int rc = decline_psk(h, info);
@@ -348,7 +348,8 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     size_t hash_len = hsr_suite_hash_len(h);
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
-    ks_handshake(hash_len, h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    KS_HANDSHAKE_CPU(h->t->cfg.cpu, hash_len, h->early, ecdhe, ecdhe_len, hash, h->handshake_secret,
+                     h->c_hs, h->s_hs);
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
@@ -429,7 +430,7 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
         t->cfg.on_transport_params(t->cfg.io, transport_params, transport_params_len);
     }
 #endif
-    transcript_update(&t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, raw, raw_len);
     return CH_OK;
 }
 
@@ -455,41 +456,40 @@ int hsf_read_finished(handshake_state *h) {
         return CH_EPROTO;
     }
     uint8_t want[HKDF_HASH_MAX];
-    ks_verify_data(hash_len, h->s_hs, hash, want);
+    KS_VERIFY_DATA_CPU(h->t->cfg.cpu, hash_len, h->s_hs, hash, want);
     if (!ct_memeq(want, raw + 4, hash_len)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    transcript_update(&h->t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, raw, raw_len);
     h->server_finished_ok = 1;
     return CH_OK;
 }
 
 size_t hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_MAX]) {
     ch_tls *t = h->t;
-    // Running the client Finished before the server proved it holds the
-    // keys would answer an unauthenticated peer, which is programmer
-    // error rather than peer input.
+    // Running the client Finished before the server proved it holds the keys would answer an
+    // unauthenticated peer, which is programmer error rather than peer input.
     CH_ASSERT(h->server_finished_ok);
     size_t hash_len = hsr_suite_hash_len(h);
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
-    ks_master(hash_len, h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
+    KS_MASTER_CPU(t->cfg.cpu, hash_len, h->handshake_secret, hash, h->master, t->wr_secret,
+                  t->rd_secret);
 #ifdef CH_EXPORTER
-    // RFC 9846 §7.5 derives the exporter secret from this transcript,
-    // the same one the application traffic secrets take, so it is
-    // derived here rather than at a point of its own.
-    ks_exp_master(hash_len, h->master, hash, t->exp_master);
+    // RFC 9846 §7.5 derives the exporter secret from this transcript, the same one the application
+    // traffic secrets take, so it is derived here rather than at a point of its own.
+    KS_EXP_MASTER_CPU(t->cfg.cpu, hash_len, h->master, hash, t->exp_master);
 #endif
     finished[0] = HS_FINISHED;
     finished[1] = 0;
     finished[2] = 0;
     finished[3] = (uint8_t)hash_len;
-    ks_verify_data(hash_len, h->c_hs, hash, finished + 4);
+    KS_VERIFY_DATA_CPU(t->cfg.cpu, hash_len, h->c_hs, hash, finished + 4);
     size_t n = 4 + hash_len;
-    transcript_update(&t->transcript, finished, n);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, finished, n);
     (void)hsr_transcript_hash(h, hash_len, hash);
-    ks_res_master(hash_len, h->master, hash, t->res_master);
+    KS_RES_MASTER_CPU(t->cfg.cpu, hash_len, h->master, hash, t->res_master);
 #ifdef CH_KEYLOG
     // After ks_master, which wrote this client's write secret into
     // wr_secret and the server's into rd_secret.

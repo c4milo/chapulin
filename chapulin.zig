@@ -357,6 +357,16 @@ const CpuBits = struct {
     /// CH_CPU_VAES: the CPU also has VAES and VPCLMULQDQ on those registers, and beside
     /// constant_time_aes AES-GCM's whole blocks run two to a register. An x86-64 bit as well.
     vaes: bool = false,
+    /// CH_CPU_CONSTANT_TIME_SHA256: the SHA-256 instructions, which the caller states run in
+    /// constant time in that mode: FEAT_SHA256 on arm64, and on x86-64 the SHA extensions with
+    /// SSSE3 and SSE4.1. No object runs a hash on the instructions yet.
+    constant_time_sha256: bool = false,
+    /// CH_CPU_CONSTANT_TIME_SHA512: the SHA-512 instructions, FEAT_SHA512, under the same
+    /// statement. An arm64 bit, which an x86-64 object refuses.
+    constant_time_sha512: bool = false,
+    /// CH_CPU_CONSTANT_TIME_SHA3: the SHA-3 instructions, FEAT_SHA3, under the same statement. An
+    /// arm64 bit as well.
+    constant_time_sha3: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null.
@@ -364,7 +374,10 @@ fn cpuBits(found: ?CpuBits) u32 {
     const cpu = found orelse return 0;
     return c.CH_CPU_PROBED | (if (cpu.constant_time_aes) c.CH_CPU_CONSTANT_TIME_AES else 0) |
         (if (cpu.constant_time_multiply) c.CH_CPU_CONSTANT_TIME_MULTIPLY else 0) |
-        (if (cpu.avx2) c.CH_CPU_AVX2 else 0) | (if (cpu.vaes) c.CH_CPU_VAES else 0);
+        (if (cpu.avx2) c.CH_CPU_AVX2 else 0) | (if (cpu.vaes) c.CH_CPU_VAES else 0) |
+        (if (cpu.constant_time_sha256) c.CH_CPU_CONSTANT_TIME_SHA256 else 0) |
+        (if (cpu.constant_time_sha512) c.CH_CPU_CONSTANT_TIME_SHA512 else 0) |
+        (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0);
 }
 
 /// ch_tls.group's code points (cfg.h).

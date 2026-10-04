@@ -152,8 +152,8 @@ static void test_flight_key_suite(void) {
     hello_exchange_offering(&sel, SRV_SUITE_AES_128_GCM);
     CHECK(sel.suite == SUITE_AES_128_GCM_SHA256);
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_OK);
-    rec_dir_init_suite(&peer, hs.s_hs, SUITE_AES_128_GCM_SHA256);
     TEST_CPU_DIR(peer);
+    rec_dir_init_suite(&peer, hs.s_hs, SUITE_AES_128_GCM_SHA256);
     CHECK(seals_and_opens(&sess.wr, &peer));
     rec_dir_init_suite(&peer, hs.c_hs, SUITE_AES_128_GCM_SHA256);
     CHECK(seals_and_opens(&peer, &sess.rd));

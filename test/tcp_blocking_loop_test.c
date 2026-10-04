@@ -287,8 +287,8 @@ static void check_client_alert(int keyed) {
     uint8_t type = rec[0];
     if (keyed) {
         rec_dir reader;
-        rec_dir_init(&reader, srv_h.c_hs);
         TEST_CPU_DIR(reader);
+        rec_dir_init(&reader, srv_h.c_hs);
         CHECK(rec_open(&reader, rec, len, pt, sizeof pt, &pt_len, &type) == 0);
     } else {
         CHECK(len == REC_HDR + 2);
@@ -436,8 +436,8 @@ static void server_reads_client(int after_finished, size_t bytes) {
         off += record_at(to_client.bytes, off);
     }
     rec_dir reader;
-    rec_dir_init(&reader, cli_t.rd_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, cli_t.rd_secret);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;

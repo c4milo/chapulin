@@ -94,8 +94,8 @@ static void test_rfc8448_client_finished_record(void) {
 
     rec_dir d;
     memset(&d, 0, sizeof d);
-    rec_dir_init_suite(&d, secret, SUITE_AES_128_GCM_SHA256);
     TEST_CPU_DIR(d);
+    rec_dir_init_suite(&d, secret, SUITE_AES_128_GCM_SHA256);
 
     static uint8_t out[64];
     size_t out_len = 0;
@@ -117,8 +117,8 @@ static void test_rfc8448_record_opens(void) {
 
     rec_dir d;
     memset(&d, 0, sizeof d);
-    rec_dir_init_suite(&d, secret, SUITE_AES_128_GCM_SHA256);
     TEST_CPU_DIR(d);
+    rec_dir_init_suite(&d, secret, SUITE_AES_128_GCM_SHA256);
 
     static uint8_t pt[64];
     size_t pt_len = 0;
@@ -138,10 +138,10 @@ static void test_chacha_still_round_trips(void) {
     rec_dir r;
     memset(&w, 0, sizeof w);
     memset(&r, 0, sizeof r);
-    rec_dir_init_suite(&w, secret, SUITE_CHACHA20_POLY1305_SHA256);
     TEST_CPU_DIR(w);
-    rec_dir_init_suite(&r, secret, SUITE_CHACHA20_POLY1305_SHA256);
+    rec_dir_init_suite(&w, secret, SUITE_CHACHA20_POLY1305_SHA256);
     TEST_CPU_DIR(r);
+    rec_dir_init_suite(&r, secret, SUITE_CHACHA20_POLY1305_SHA256);
 
     static const uint8_t msg[5] = {'s', 'a', 'p', 'o', '!'};
     static uint8_t out[64];
@@ -169,8 +169,8 @@ static void test_aes256_encrypted_extensions_record(void) {
 
     rec_dir w;
     memset(&w, 0, sizeof w);
-    rec_dir_init_suite(&w, secret, SUITE_AES_256_GCM_SHA384);
     TEST_CPU_DIR(w);
+    rec_dir_init_suite(&w, secret, SUITE_AES_256_GCM_SHA384);
     static uint8_t out[64];
     size_t out_len = 0;
     CHECK(rec_seal(&w, REC_HANDSHAKE, pt, sizeof pt, out, sizeof out, &out_len) == 0);
@@ -179,8 +179,8 @@ static void test_aes256_encrypted_extensions_record(void) {
 
     rec_dir r;
     memset(&r, 0, sizeof r);
-    rec_dir_init_suite(&r, secret, SUITE_AES_256_GCM_SHA384);
     TEST_CPU_DIR(r);
+    rec_dir_init_suite(&r, secret, SUITE_AES_256_GCM_SHA384);
     static uint8_t got[64];
     size_t got_len = 0;
     uint8_t type = 0;
@@ -199,15 +199,15 @@ static void test_aes256_key_update(void) {
     hkdf_expand_label(SHA384_LEN, secret, "traffic upd", NULL, 0, want, sizeof want);
     rec_dir w;
     memset(&w, 0, sizeof w);
-    rec_dir_init_suite(&w, secret, SUITE_AES_256_GCM_SHA384);
     TEST_CPU_DIR(w);
+    rec_dir_init_suite(&w, secret, SUITE_AES_256_GCM_SHA384);
     rec_dir_update(secret, &w);
     CHECK(w.suite == SUITE_AES_256_GCM_SHA384);
     CHECK(memcmp(secret, want, sizeof want) == 0);
     rec_dir r;
     memset(&r, 0, sizeof r);
-    rec_dir_init_suite(&r, want, SUITE_AES_256_GCM_SHA384);
     TEST_CPU_DIR(r);
+    rec_dir_init_suite(&r, want, SUITE_AES_256_GCM_SHA384);
 
     static const uint8_t msg[3] = {'k', 'u', '!'};
     static uint8_t out[64];
@@ -229,14 +229,14 @@ static void test_key_update_keeps_suite(void) {
     CHECK(unhex(C_HS_SECRET_HEX, secret) == sizeof secret);
     rec_dir w;
     memset(&w, 0, sizeof w);
-    rec_dir_init_suite(&w, secret, SUITE_AES_128_GCM_SHA256);
     TEST_CPU_DIR(w);
+    rec_dir_init_suite(&w, secret, SUITE_AES_128_GCM_SHA256);
     rec_dir_update(secret, &w);
     CHECK(w.suite == SUITE_AES_128_GCM_SHA256);
     rec_dir r;
     memset(&r, 0, sizeof r);
-    rec_dir_init_suite(&r, secret, SUITE_AES_128_GCM_SHA256);
     TEST_CPU_DIR(r);
+    rec_dir_init_suite(&r, secret, SUITE_AES_128_GCM_SHA256);
 
     static const uint8_t msg[3] = {'k', 'u', '!'};
     static uint8_t out[64];
@@ -264,8 +264,8 @@ static void test_aes_gcm_ceiling(void) {
     for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
         rec_dir d;
         memset(&d, 0, sizeof d);
-        rec_dir_init_suite(&d, secret, suites[i]);
         TEST_CPU_DIR(d);
+        rec_dir_init_suite(&d, secret, suites[i]);
         d.seq = REC_AES_GCM_RECORDS_MAX - 1;
         size_t out_len = 0;
         CHECK(rec_seal(&d, REC_APPDATA, msg, sizeof msg, out, sizeof out, &out_len) == 0);

@@ -165,6 +165,15 @@ static void diff_aead_open(void) {
     }
 }
 
+// Keys d from secret, as rec_dir_init does, on a direction whose other
+// fields are 0. A host object's direction holds its session's ch_cfg.cpu,
+// which rec_dir_init reads and leaves as it found it (record.h), and 0
+// names no fast path, so every row here runs the portable hash.
+static void diff_dir_init(rec_dir *d, const uint8_t *secret) {
+    memset(d, 0, sizeof *d);
+    rec_dir_init(d, secret);
+}
+
 static void diff_rec_seal(void) {
     for (int i = 0; i < 200; i++) {
         uint8_t secret[SHA256_LEN];
@@ -181,7 +190,7 @@ static void diff_rec_seal(void) {
         }
         uint8_t type = (uint8_t)rng_below(256);
         rec_dir d;
-        rec_dir_init(&d, secret);
+        diff_dir_init(&d, secret);
         d.seq = seq; // force the sequence under test
         uint8_t rec[200 + REC_OVERHEAD];
         size_t record_len = 0;
@@ -208,7 +217,7 @@ static void diff_rec_seal(void) {
         static uint8_t pt[0x4000];
         rng_fill(pt, sizeof pt);
         rec_dir d;
-        rec_dir_init(&d, secret);
+        diff_dir_init(&d, secret);
         d.seq = 1;
         static uint8_t rec[0x4000 + REC_OVERHEAD];
         size_t record_len = 0;
@@ -241,7 +250,7 @@ static void diff_rec_seal(void) {
 static size_t recopen_seal(const uint8_t *secret, uint64_t seq, uint8_t type, const uint8_t *pt,
                            size_t n, uint8_t *rec, size_t cap) {
     rec_dir writer;
-    rec_dir_init(&writer, secret);
+    diff_dir_init(&writer, secret);
     writer.seq = seq;
     size_t record_len = 0;
     if (rec_seal(&writer, type, pt, n, rec, cap, &record_len) != 0) {
@@ -254,7 +263,7 @@ static size_t recopen_seal(const uint8_t *secret, uint64_t seq, uint8_t type, co
 static void recopen_verdict(const uint8_t *secret, uint64_t read_seq, const uint8_t *rec,
                             size_t len, char *want, size_t cap) {
     rec_dir reader;
-    rec_dir_init(&reader, secret);
+    diff_dir_init(&reader, secret);
     reader.seq = read_seq;
     uint8_t got[201];
     size_t got_len = 0;
@@ -312,7 +321,7 @@ static void diff_traffic_update(void) {
         char secret_hex[65];
         (void)hex_encode(secret_hex, secret, sizeof secret);
         rec_dir d;
-        rec_dir_init(&d, secret);
+        diff_dir_init(&d, secret);
         rec_dir_update(secret, &d); // advances the secret in place
         char want[65];
         (void)hex_encode(want, secret, sizeof secret);

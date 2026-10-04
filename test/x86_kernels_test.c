@@ -7,8 +7,10 @@
 // tell which ran: test/x86_kernels_count.c counts the calls instead, and
 // runs each on the 128-bit entry, so this binary runs on every x86-64 CPU.
 //
-// Every row runs under each of the 16 values the four bits beside
-// CH_CPU_PROBED make, and under 0, which a wiped record direction holds.
+// Every row runs under each of the 16 values the four bits from 0x02 to
+// 0x10 make beside CH_CPU_PROBED, and under 0, which a wiped record
+// direction holds. Those four are the AES bit, the multiply bit and the two
+// that name a kernel; a hash bit picks no path a row here takes.
 // Under each, a call must run a kernel exactly when the value names it,
 // and must give the same bytes back:
 //
@@ -228,8 +230,8 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
     fill(secret, sizeof secret, 0x55);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, suite);
-    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, suite);
+    quic_keys_init_suite(cpu, &k, CH_QUIC_VERSION_1, secret, suite);
+    quic_hp_key_init_suite(cpu, &h, CH_QUIC_VERSION_1, secret, suite);
     uint8_t pkt[sizeof handshake_hdr + PAYLOAD + AEAD_TAG];
     size_t pkt_len = 0;
     reset_calls();
@@ -338,8 +340,8 @@ static void check_value(uint32_t cpu) {
 
 int main(void) {
     fill(payload, sizeof payload, 0x99);
-    // The four bits beside CH_CPU_PROBED are 0x02 to 0x10, so the 16
-    // values are the probe's bit and each of 0 to 15 shifted up one.
+    // The four bits are 0x02 to 0x10, so the 16 values are the probe's bit
+    // and each of 0 to 15 shifted up one.
     for (uint32_t bits = 0; bits < 16; bits++) {
         check_value(CH_CPU_PROBED | (bits << 1));
     }

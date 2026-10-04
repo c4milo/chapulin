@@ -15,8 +15,8 @@ static void test_post_handshake(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -24,8 +24,8 @@ static void test_post_handshake(void) {
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
-    rec_dir_init(&reader, wr_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, wr_secret);
 
     // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
     uint8_t ticket_msg[4 + 105];
@@ -120,8 +120,8 @@ static void test_peer_close_notify(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -129,8 +129,8 @@ static void test_peer_close_notify(void) {
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     ch_rand_bytes(t.res_master, sizeof t.res_master);
     rec_dir reader;
-    rec_dir_init(&reader, wr_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, wr_secret);
     rec_dir write_key = t.wr;
     // At least as long as a rec_dir key and IV, and as a secret.
     static const uint8_t zero[SHA256_LEN] = {0};
@@ -222,8 +222,8 @@ static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const 
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -327,8 +327,8 @@ static void test_ch_write(void) {
     t.peer_limit = 64; // a small limit makes the boundary cheap to cross
 
     rec_dir reader;
-    rec_dir_init(&reader, wr_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, wr_secret);
     uint8_t msg[65];
     for (size_t i = 0; i < sizeof msg; i++) {
         msg[i] = (uint8_t)i;
@@ -378,11 +378,11 @@ static void test_record_padding(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     rec_dir client;
-    rec_dir_init(&client, secret);
     TEST_CPU_DIR(client);
+    rec_dir_init(&client, secret);
 
     // inner = "pad" + type(APPDATA) + 5 zeros of padding.
     uint8_t inner[9] = {'p', 'a', 'd', REC_APPDATA, 0, 0, 0, 0, 0};
@@ -432,15 +432,15 @@ static void test_seq_exhaustion(void) {
 
     // The last representable sequence still protects a record.
     rec_dir d;
-    rec_dir_init(&d, secret);
     TEST_CPU_DIR(d);
+    rec_dir_init(&d, secret);
     d.seq = UINT64_MAX - 1;
     CHECK(rec_seal(&d, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == 0);
 
     // One past it, both directions refuse before the increment could wrap.
     rec_dir e;
-    rec_dir_init(&e, secret);
     TEST_CPU_DIR(e);
+    rec_dir_init(&e, secret);
     e.seq = UINT64_MAX;
     CHECK(rec_seal(&e, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == -1);
     CHECK(rec_open(&e, rec, sizeof rec, rec, sizeof rec, &n, &type) == -1);
@@ -453,8 +453,8 @@ static void test_alerts_and_epochs(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -475,8 +475,8 @@ static void test_alerts_and_epochs(void) {
     mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
     t2.send_epochs = 0xffffffffffffULL;
     rec_dir server2;
-    rec_dir_init(&server2, secret);
     TEST_CPU_DIR(server2);
+    rec_dir_init(&server2, secret);
     const uint8_t key_update[5] = {24, 0, 0, 1, 1};
     mock_push(&m2, &server2, REC_HANDSHAKE, key_update, sizeof key_update);
     uint8_t s2[SHA256_LEN];

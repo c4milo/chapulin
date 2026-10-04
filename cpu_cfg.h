@@ -72,23 +72,49 @@
 // the 128-bit vector ChaCha20 off: every arm64 CPU has NEON and every x86-64 CPU SSE2
 // (docs/decisions.md 82, 89 and 90).
 //
+// CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
+// the CPU has the instructions of one hash, and state that they run in constant time on it, in
+// the mode the session's thread runs in, as CH_CPU_CONSTANT_TIME_AES states for AES: a hash reads
+// HMAC keys and traffic secrets (docs/decisions.md 93).
+//   - The SHA-256 bit names FEAT_SHA256 on arm64: SHA256H, SHA256H2, SHA256SU0 and SHA256SU1. On
+//     x86-64 it names the SHA extensions with SSSE3 and SSE4.1: SHA256RNDS2, SHA256MSG1 and
+//     SHA256MSG2, and the PSHUFB, PALIGNR and PBLENDW that order the bytes and the state beside
+//     them, so a probe reads all three from CPUID.
+//   - The SHA-512 bit names FEAT_SHA512: SHA512H, SHA512H2, SHA512SU0 and SHA512SU1.
+//   - The SHA-3 bit names FEAT_SHA3: EOR3, RAX1, XAR and BCAX.
+// The last two are arm64 bits: no x86-64 CPU this tree targets has SHA-512 instructions, and
+// x86-64 has no Keccak instruction. Arm's list of data-independent-time instructions under
+// PSTATE.DIT names all twelve arm64 instructions, and Intel's DOIT list names the six x86-64
+// ones. As with the AES bit, the statement is the caller's.
+// No object holds a hash on those instructions yet. A session passes its ch_cfg.cpu to every
+// hash call it makes for its transcript, its key schedule and its record and packet keys, through
+// the entries that end sha256.h, sha512.h, hkdf.h, keysched.h and transcript.h, and each of those
+// entries runs the portable code whatever the value says.
+//
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
-// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64, or a bit
-// a later release adds. A caller written before such a release leaves the new bit clear and runs
-// the slower path. A defined bit for instructions the object never runs, such as
-// CH_CPU_CONSTANT_TIME_AES in an object that carries no AES, still describes the CPU, and init
-// accepts it.
+// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64,
+// CH_CPU_CONSTANT_TIME_SHA512 or CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later release
+// adds. A caller written before such a release leaves the new bit clear and runs the slower
+// path. A defined bit for instructions the object never runs, such as CH_CPU_CONSTANT_TIME_AES in
+// an object that carries no AES, still describes the CPU, and init accepts it. The eight bits
+// fill the low byte of the value, which is the byte an AES key schedule keeps of it
+// (aes_schedule.h).
 #define CH_CPU_PROBED 0x01U
 #define CH_CPU_CONSTANT_TIME_AES 0x02U
 #define CH_CPU_CONSTANT_TIME_MULTIPLY 0x04U
 #define CH_CPU_AVX2 0x08U
 #define CH_CPU_VAES 0x10U
+#define CH_CPU_CONSTANT_TIME_SHA256 0x20U
+#define CH_CPU_CONSTANT_TIME_SHA512 0x40U
+#define CH_CPU_CONSTANT_TIME_SHA3 0x80U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
-     CH_CPU_VAES)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)
 #else
-#define CH_CPU_DEFINED (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY)
+#define CH_CPU_DEFINED                                                                             \
+    (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
+     CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
 #endif
 #endif // CH_CPU_RUNTIME
 

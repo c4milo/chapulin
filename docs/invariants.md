@@ -1834,8 +1834,9 @@ last `ROLE=server` stub, as the entry said it would.
   object every init call and `ch_srv_check` refuse with `CH_EINVAL`, and
   send nothing, a `ch_cfg.cpu` without `CH_CPU_PROBED`, 0 among them, and
   one with a bit outside `CH_CPU_DEFINED`, the bits the object defines
-  for its architecture: `CH_CPU_AVX2` or `CH_CPU_VAES` on arm64, or a bit
-  a later release adds, and in a `SUITE=aesgcm` host object a caller's
+  for its architecture: `CH_CPU_AVX2` or `CH_CPU_VAES` on arm64,
+  `CH_CPU_CONSTANT_TIME_SHA512` or `CH_CPU_CONSTANT_TIME_SHA3` on x86-64,
+  or a bit a later release adds, and in a `SUITE=aesgcm` host object a caller's
   suite list that names an AES-GCM suite under a `ch_cfg.cpu` without
   `CH_CPU_CONSTANT_TIME_AES` (decisions.md 81 and 89).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
@@ -2095,12 +2096,17 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_srv_record_init`, test/quic_loop_cpu.h for `ch_quic_init`,
   `ch_srv_quic_init` and `ch_srv_check`, and test/webpki_session_cpu.h for
   the webpki `ch_connect`. Each refuses 0, every defined bit but
-  `CH_CPU_PROBED`, the first bit past `CH_CPU_VAES`, the top bit and on
-  arm64 each x86-64 bit, and takes `CH_CPU_PROBED` alone and every bit
-  the architecture defines, which test/test_cpu.h writes out apart from
-  `cpu_cfg.h`. Eight `inv14-cpu-` violations drop the rule at each of the
+  `CH_CPU_PROBED`, the first bit past `CH_CPU_CONSTANT_TIME_SHA3`, the top
+  bit and each bit of the other architecture, the two x86-64 bits on
+  arm64 and the SHA-512 and SHA-3 bits on x86-64, and takes
+  `CH_CPU_PROBED` alone and every bit the architecture defines, which
+  test/test_cpu.h writes out apart from `cpu_cfg.h`. Eight `inv14-cpu-` violations drop the rule at each of the
   five places it is written, admit 0, admit an undefined bit, or give each
-  architecture the other's bits, and a row catches each.
+  architecture the other's bits, and a row catches each. Three more move
+  one hash bit in one architecture's set, which the rows of the other
+  architecture cannot see, so test/host-builds.sh reads `CH_CPU_DEFINED`
+  for both under the pinned clang and compares each set with the bits it
+  writes out.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know, or lets a client entry take a PSK

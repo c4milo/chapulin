@@ -26,8 +26,8 @@ static size_t alert_record(uint8_t *out, size_t cap, const uint8_t *alert, size_
     size_t len = REC_HDR + n;
     if (secret != NULL) {
         rec_dir d;
-        rec_dir_init(&d, secret);
         TEST_CPU_DIR(d);
+        rec_dir_init(&d, secret);
         CHECK(rec_seal(&d, REC_ALERT, alert, n, out, cap, &len) == 0);
         return len;
     }

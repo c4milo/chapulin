@@ -32,8 +32,8 @@ static void read_peer_alert(uint8_t level, uint8_t description) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -75,16 +75,16 @@ static void read_alert_of_length(size_t n) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
-    rec_dir_init(&reader, wr_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, wr_secret);
     const uint8_t body[3] = {2, ALERT_HANDSHAKE_FAILURE, 0};
     mock_push(&m, &server, REC_ALERT, body, n);
 
@@ -113,8 +113,8 @@ static void read_alert_inside_message(const uint8_t *alert, size_t n) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -153,16 +153,16 @@ static void test_failure_alert_recorded(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
-    rec_dir_init(&server, secret);
     TEST_CPU_DIR(server);
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
     uint8_t wr_secret[SHA256_LEN];
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
-    rec_dir_init(&reader, wr_secret);
     TEST_CPU_DIR(reader);
+    rec_dir_init(&reader, wr_secret);
     const uint8_t ccs[1] = {1};
     mock_push(&m, &server, REC_CCS, ccs, sizeof ccs);
     uint8_t out[16];
@@ -185,8 +185,8 @@ static void test_failure_alert_recorded(void) {
     mock_io m3 = {0};
     ch_tls t3;
     rec_dir peer;
-    rec_dir_init(&peer, secret);
     TEST_CPU_DIR(peer);
+    rec_dir_init(&peer, secret);
     mock_session(&t3, &m3, rxbuf, sizeof rxbuf, secret, NULL);
     mock_push(&m3, &peer, REC_HANDSHAKE, update_requested, sizeof update_requested);
     m3.fail_after = 1;

@@ -193,7 +193,8 @@ uint8_t quic_retry_ok(uint32_t version, const uint8_t *pseudo, size_t n,
     return nondet_u8() & 1;
 }
 
-void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
+void quic_keys_update(uint32_t cpu, uint8_t secret[SHA256_LEN], quic_keys *k, uint32_t version) {
+    (void)cpu;
     (void)version;
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "update: secret writable");
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "update: set writable");

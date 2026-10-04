@@ -10,7 +10,7 @@ reason: the Finished step derives the 1-RTT keys under the original
 
 --- old
     uint32_t version = q->t.quic_negotiated_version;
-    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);
 --- new
     uint32_t version = q->t.cfg.quic_original_version;
-    QUIC_KEYS_INIT_SUITE(&q->app_tx, version, q->t.wr_secret, q->t.suite);
+    QUIC_KEYS_INIT_SUITE(cpu, &q->app_tx, version, q->t.wr_secret, q->t.suite);

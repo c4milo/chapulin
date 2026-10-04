@@ -172,7 +172,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    transcript_update(&h->t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, raw, raw_len);
     return CH_OK;
 }
 // Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
@@ -318,7 +318,7 @@ int hsa_server_auth(handshake_state *h) {
         return rc;
     }
 #endif
-    transcript_update(&h->t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, raw, raw_len);
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
     // One whole message per call: the QUIC driver returns to its caller

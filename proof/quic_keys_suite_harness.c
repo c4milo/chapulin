@@ -67,16 +67,19 @@ int main(void) {
     expected_hash_len = suite_hash_len(suite);
     expected_key_len = suite_key_len(suite);
     expected_version = nondet_u32();
+    // Any description of the CPU: the three calls hand it to the hash
+    // entries and read none of it themselves (hkdf.h).
+    uint32_t cpu = nondet_u32();
 
     uint8_t secret[HKDF_HASH_MAX];
     fill_nondet(secret, sizeof secret);
     quic_keys k;
-    quic_keys_init_suite(&k, expected_version, secret, suite);
+    quic_keys_init_suite(cpu, &k, expected_version, secret, suite);
     __CPROVER_assert(k.suite == suite && k.sealed == 0, "init: the set records its suite");
 
     fill_nondet(secret, sizeof secret);
     quic_hp_key h;
-    quic_hp_key_init_suite(&h, expected_version, secret, suite);
+    quic_hp_key_init_suite(cpu, &h, expected_version, secret, suite);
     __CPROVER_assert(h.suite == suite, "hp: the key records its suite");
 
     // The update reads and rewrites the same secret. The set's key bytes
@@ -85,7 +88,7 @@ int main(void) {
     fill_nondet(k.key, sizeof k.key);
     fill_nondet(k.iv, sizeof k.iv);
     k.sealed = nondet_u64();
-    quic_keys_update(secret, &k, expected_version);
+    quic_keys_update(cpu, secret, &k, expected_version);
     __CPROVER_assert(k.suite == suite && k.sealed == 0,
                      "update: the suite stays, the count restarts");
     return 0;

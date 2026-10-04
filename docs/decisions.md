@@ -5370,3 +5370,173 @@ does nothing more.
     2137f9d and a recipe line of check-script-builds without its `+`.
     Each passes its check on the Mac and fails it in the container, in
     25 to 31 s for a run of that one target.
+93. **A host session whose caller states the CPU's hash instructions
+    runs SHA-256, SHA-384 and SHA-512 on them, and a hash call takes its
+    session's `ch_cfg.cpu` as an argument.** Camilo set the goal on
+    2026-10-03: pass OpenSSL on every primitive TLS runs, in C an auditor
+    can read, with no assembly. chapulin's SHA-2 is portable C in every
+    object. On an M1 Pro `sha256_of` took 78.7 µs for 16 KiB where
+    OpenSSL 3.6.5 took 7.14, and 753 ns for 64 bytes where it took 155;
+    `sha384_of` took 52.4 µs and 586 ns where it took 12.2 µs and 195 ns
+    (docs/performance.md, "chapulin beside OpenSSL"). Once a session
+    states its multiply, the transcript hashes and the key schedule are
+    0.59 M of a server handshake's 6.95 M instructions
+    (docs/performance.md, "Where a server handshake's instructions go").
+    Camilo ruled on 2026-10-04:
+
+    - **Three bits.** `CH_CPU_CONSTANT_TIME_SHA256`,
+      `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3` join
+      `ch_cfg.cpu`. Each says the CPU has the instructions of one hash
+      and states that they run in constant time in the mode the
+      session's thread runs in, as `CH_CPU_CONSTANT_TIME_AES` does,
+      because a hash reads HMAC keys and traffic secrets.
+    - **What this entry covers.** SHA-256 on arm64's SHA-256
+      instructions and on x86-64's SHA extensions, and SHA-384 and
+      SHA-512 on arm64's SHA-512 instructions. The SHA-3 bit takes its
+      number now, so the three sit together, and Keccak's code is a
+      later change. No x86-64 CPU this tree targets has SHA-512
+      instructions, so the SHA-512 bit is an arm64 bit.
+
+    The rest of this entry is the design those rulings left open. It
+    lands in four commits: the bits and the way a call learns them, with
+    no instruction code; SHA-256; SHA-512; and the measurements. This
+    text is the first commit's, and each later commit adds what it
+    measured.
+
+    **The bits.** `CH_CPU_CONSTANT_TIME_SHA256` is 0x20,
+    `CH_CPU_CONSTANT_TIME_SHA512` 0x40 and `CH_CPU_CONSTANT_TIME_SHA3`
+    0x80. `CH_CPU_DEFINED` holds the first on both architectures and the
+    other two on arm64, so an x86-64 object refuses them as an arm64
+    object refuses `CH_CPU_AVX2` and `CH_CPU_VAES` (entry 89). An arm64
+    object takes the SHA-3 bit and reads it nowhere: it describes the
+    CPU, as `CH_CPU_CONSTANT_TIME_AES` does in an object that holds no
+    AES. The eight bits fill the low byte of the value, which is the byte
+    an AES key schedule keeps of it (`aes_schedule.h`), and `aes.c`'s
+    assertion still holds. The next bit a release adds does not fit that
+    byte.
+
+    What each bit names (`cpu_cfg.h`):
+
+    | Bit | arm64 | x86-64 |
+    |---|---|---|
+    | SHA-256 | FEAT_SHA256: SHA256H, SHA256H2, SHA256SU0, SHA256SU1 | the SHA extensions, SSSE3 and SSE4.1: SHA256RNDS2, SHA256MSG1, SHA256MSG2, with PSHUFB, PALIGNR and PBLENDW beside them |
+    | SHA-512 | FEAT_SHA512: SHA512H, SHA512H2, SHA512SU0, SHA512SU1 | refused |
+    | SHA-3 | FEAT_SHA3: EOR3, RAX1, XAR, BCAX | refused |
+
+    Arm's list of data-independent-time instructions under PSTATE.DIT
+    names all twelve arm64 instructions, and Intel's DOIT list names the
+    six x86-64 ones. As with the AES bit, the statement is the caller's:
+    the caller probes the CPU and sets the mode, and nothing here can
+    check either.
+
+    **How a call learns its session's bits.** A hash call holds no
+    session: `sha256.[ch]`, `sha512.[ch]`, `hkdf.[ch]`, `keysched.[ch]`
+    and `transcript.h` take bytes and a hash length. The value travels
+    in an argument. Each of the five headers ends with an entry for each
+    of its calls a session makes: the call's name with `_cpu` after it,
+    which takes the session's `ch_cfg.cpu` first. An entry is a `static
+    inline` function that a host object alone declares, and the entries
+    are where a hash call reads the value, as `widemul.h`'s are for the
+    multiply. The prototypes above them and the five sources do not
+    change, in either object.
+
+    - **A caller with a session** calls the entry through its name in
+      capitals, `KS_HANDSHAKE_CPU(t->cfg.cpu, ...)`, a macro the same
+      header defines for both objects. In a host object that is the
+      entry. In a device object it is the portable call, and the macro
+      never evaluates the value, so the expression may name the field a
+      device `ch_cfg` does not declare, as `AEAD_SEAL_CPU` does (entry
+      89). A device object's code for the call is the code it had
+      before.
+    - **A caller with no session's value** calls the portable call under
+      its own name and runs the portable code. `drbg.c`, the certificate
+      verifiers, the two signers and the server's cookie and token MACs
+      do, and so do the CertificateVerify content hash, a certificate's
+      TBS hash, an SPKI pin's hash and the webpki ticket binding, whose
+      calls take no configuration today.
+    - **No global, no static state, no function pointer.** An entry
+      branches once on the bit of the hash it runs, which the caller
+      chose and which is not secret: once per update, per final or per
+      key-schedule call.
+
+    What passes the value:
+
+    - the transcript: `handshake_record.c`, `handshake_flight.c`,
+      `handshake_auth.c`, `srv_flight.c` and `srv_out.c`;
+    - the key schedule's eight calls: `handshake_flight.c`,
+      `handshake_post.c`, `srv_flight.c`, `srv_resume.c` and `tls.c`;
+    - a record direction's key and IV, and its KeyUpdate: `record.c`,
+      from the `cpu` the direction already holds. `rec_dir_init` now
+      reads that field, so each init call writes it before it keys a
+      direction, which `tlsi_record_cpu` did already, and a test that
+      keys a direction of its own writes it first;
+    - a QUIC level's keys and their update: `quic_keys.c`, whose five
+      calls take the value first in every build, as `quic_packet.h`'s
+      three do;
+    - the Initial keys: `aes.c`'s derivation, from the value
+      `aes_public_key_initial` already takes in a QUIC host object.
+
+    **Rejected: the value in the hash's context.** A `cpu` field in
+    `sha256` and `sha512` would need no argument past the init call. It
+    changes the struct in `sha256.h` for a host object alone, and that
+    moves every line below it in the text a device build preprocesses.
+    `proof/run.sh` keys each harness by that text: one line added there
+    changes the key of 107 of the 149 harnesses, and one in `sha512.h`
+    of 24. It would also add 8 bytes to each of the two contexts a
+    session's transcript holds.
+
+    **Rejected: a `cpu` parameter on the portable calls.** One line
+    added among `hkdf.h`'s prototypes changes 100 keys, one in
+    `transcript.h` 21 and one in `keysched.h` 7, and every device
+    caller would pass a value its object never reads.
+
+    **Rejected: one new header for every entry.** The first draft held
+    the entries in a header of its own, which each source that calls
+    one included. The include line moved every line below it in that
+    source's text. That draft changed 24 keys, six of them in the slow
+    tier: `handshake_psk`, `handshake_pin`, `handshake_record`,
+    `handshake_post`, `srv_resume` and `record`. Lines after a header's
+    last declaration move nothing, and a device build preprocesses a
+    host-only block and a `#define` to no text, so the entries end the
+    header of their own layer, as `chacha20_xor_cpu` ends `chacha20.h`.
+
+    **What the first commit changes for the proofs.** `proof/run.sh`
+    keys a harness by its preprocessed text, so a harness proves again
+    when a source it compiles changes. This commit changes 23 of the 149
+    keys, and each of the 23 verifies again. Two, `handshake_psk` and
+    `handshake_pin`, are in the slow tier.
+
+    - Eleven are device harnesses. `handshake_psk`, `handshake_pin` and
+      `hybrid_secret` compile `handshake_flight.c`. The file was at the
+      500-line limit, so the calls that now name the value span other
+      lines than before, and `early_secret_without_psk` takes the
+      handshake state. `aes` and `aes256` compile `aes.c`, whose Initial
+      derivation takes the value. `quic_keys`, `quic_initial` and
+      `quic_packet` read `quic_keys.h`, whose five calls gained the
+      argument, and `quic_driver`, `quic_step` and `quic_step_ca`
+      compile a source that passes it.
+    - Twelve are host harnesses, which read the entries and the new
+      value of `CH_CPU_DEFINED`: `handshake_parser_suite`,
+      `record_suite`, `writable_len_suite`, `writable_len_suite_any`,
+      `hello_build_suite`, `aes_traffic`, `aes_runtime`,
+      `quic_keys_suite`, `quic_packet_suite`, `srv_select_suite`,
+      `srv_select_runtime` and `quic_config_webpki_suite`.
+
+    Six sources that call the entries keep their device text:
+    `record.c`, `handshake_record.c`, `handshake_auth.c`,
+    `handshake_post.c`, `srv_out.c` and `srv_resume.c` name an entry on
+    the lines their portable call stood on. `srv_flight.c` and `tls.c`
+    changed the lines their calls span, and no harness `proof/run.sh`
+    launches compiles either.
+
+    Cost of the first commit:
+
+    - 195 lines of entries and macros at the ends of five headers.
+    - Every caller of `quic_keys.h`'s five calls passes one more
+      argument, and a device object's QUIC key derivation takes and
+      ignores it, as it does `quic_packet.h`'s.
+    - A test that keys a record direction of its own writes the
+      direction's `cpu` first, where it wrote it afterwards.
+
+    Gain: none measured yet. No object holds a hash on the instructions,
+    so every entry runs the portable call whatever the value says.

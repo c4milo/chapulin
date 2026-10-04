@@ -195,11 +195,11 @@ static void test_handshake_level_after_switch(void) {
     quic_keys v2_tx;
     quic_hp_key v2_hp_rx;
     quic_hp_key v2_hp_tx;
-    quic_keys_init(&v2_rx, CH_QUIC_VERSION_2, q.hs.s_hs);
-    quic_keys_init(&v1_rx, CH_QUIC_VERSION_1, q.hs.s_hs);
-    quic_keys_init(&v2_tx, CH_QUIC_VERSION_2, q.hs.c_hs);
-    quic_hp_key_init(&v2_hp_rx, CH_QUIC_VERSION_2, q.hs.s_hs);
-    quic_hp_key_init(&v2_hp_tx, CH_QUIC_VERSION_2, q.hs.c_hs);
+    quic_keys_init(TEST_SESSION_CPU, &v2_rx, CH_QUIC_VERSION_2, q.hs.s_hs);
+    quic_keys_init(TEST_SESSION_CPU, &v1_rx, CH_QUIC_VERSION_1, q.hs.s_hs);
+    quic_keys_init(TEST_SESSION_CPU, &v2_tx, CH_QUIC_VERSION_2, q.hs.c_hs);
+    quic_hp_key_init(TEST_SESSION_CPU, &v2_hp_rx, CH_QUIC_VERSION_2, q.hs.s_hs);
+    quic_hp_key_init(TEST_SESSION_CPU, &v2_hp_tx, CH_QUIC_VERSION_2, q.hs.c_hs);
     CHECK(memcmp(&q.handshake_rx, &v2_rx, sizeof v2_rx) == 0);
     CHECK(memcmp(&q.handshake_rx, &v1_rx, sizeof v1_rx) != 0);
     CHECK(memcmp(&q.handshake_tx, &v2_tx, sizeof v2_tx) == 0);
@@ -247,7 +247,7 @@ static void test_switch_after_server_bytes(void) {
     CHECK(ch_quic_negotiated_version(&q) == CH_QUIC_VERSION_1);
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh + 1, sh_len - 1) == CH_OK);
     quic_keys v1_rx;
-    quic_keys_init(&v1_rx, CH_QUIC_VERSION_1, q.hs.s_hs);
+    quic_keys_init(TEST_SESSION_CPU, &v1_rx, CH_QUIC_VERSION_1, q.hs.s_hs);
     CHECK(memcmp(&q.handshake_rx, &v1_rx, sizeof v1_rx) == 0);
     ch_quic_close(&q);
 

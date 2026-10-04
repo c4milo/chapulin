@@ -100,6 +100,14 @@ them; the AES bit's statement covers those forms, and `CH_CPU_VAES` without it
 runs nothing (decision 90). Set each from your probe alone: a session whose bit
 names instructions its CPU lacks faults on the first one.
 
+Three bits state the hash instructions: `CH_CPU_CONSTANT_TIME_SHA256` on both
+architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`
+on arm64. Each says the CPU has the instructions and states that they run in
+constant time in the session's thread's mode, because a hash reads HMAC keys and
+traffic secrets. A session hands its `ch_cfg.cpu` to every hash call of its
+transcript, its key schedule and its record and packet keys, and no object runs
+a hash on the instructions yet (decision 93).
+
 ### Check it on your target, because the compiler can undo it
 
 The decomposition is C, and an optimiser is free to prove one of the four

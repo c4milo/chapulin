@@ -371,11 +371,11 @@ static void test_appendix_a5_keys(void) {
     quic_hp_key h;
 
     memcpy(secret, secret_in, sizeof secret);
-    quic_keys_init(&k, CH_QUIC_VERSION_1, secret);
+    quic_keys_init(TEST_SESSION_CPU, &k, CH_QUIC_VERSION_1, secret);
     CHECK(memcmp(k.key, want_key, sizeof want_key) == 0);
     CHECK(memcmp(k.iv, want_iv, sizeof want_iv) == 0);
 
-    quic_hp_key_init(&h, CH_QUIC_VERSION_1, secret);
+    quic_hp_key_init(TEST_SESSION_CPU, &h, CH_QUIC_VERSION_1, secret);
     CHECK(memcmp(h.key, want_hp, sizeof want_hp) == 0);
 
     // The update writes the new secret back over its argument and
@@ -383,10 +383,10 @@ static void test_appendix_a5_keys(void) {
     // against the RFC's ku, and the key set against a fresh derivation
     // from that ku. A build that re-derived from the old secret would
     // pass the first check and fail the second.
-    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
+    quic_keys_update(TEST_SESSION_CPU, secret, &k, CH_QUIC_VERSION_1);
     CHECK(memcmp(secret, want_ku, sizeof want_ku) == 0);
     quic_keys expect;
-    quic_keys_init(&expect, CH_QUIC_VERSION_1, want_ku);
+    quic_keys_init(TEST_SESSION_CPU, &expect, CH_QUIC_VERSION_1, want_ku);
     CHECK(memcmp(k.key, expect.key, sizeof expect.key) == 0);
     CHECK(memcmp(k.iv, expect.iv, sizeof expect.iv) == 0);
 

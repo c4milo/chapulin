@@ -415,14 +415,14 @@ int ch_quic_key_update(ch_quic *q) {
     if (q->t.state != CH_ST_CONNECTED) {
         return CH_EINVAL;
     }
-    quic_keys_update(q->t.wr_secret, &q->app_tx, q->t.quic_negotiated_version);
+    uint32_t version = q->t.quic_negotiated_version;
+    quic_keys_update(CH_CFG_CPU(q->t.cfg), q->t.wr_secret, &q->app_tx, version);
     q->key_phase ^= 1;
-    // The moves copy key sets and derive nothing; the one derivation
-    // below leaves t.rd_secret naming the new next set again, which is
-    // the invariant quic_session.h states.
+    // The moves copy key sets and derive nothing; the one derivation below leaves t.rd_secret
+    // naming the new next set again, which is the invariant quic_session.h states.
     q->app_rx[CH_QUIC_KEY_PREVIOUS] = q->app_rx[CH_QUIC_KEY_CURRENT];
     q->app_rx[CH_QUIC_KEY_CURRENT] = q->app_rx[CH_QUIC_KEY_NEXT];
-    quic_keys_update(q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], q->t.quic_negotiated_version);
+    quic_keys_update(CH_CFG_CPU(q->t.cfg), q->t.rd_secret, &q->app_rx[CH_QUIC_KEY_NEXT], version);
     return CH_OK;
 }
 

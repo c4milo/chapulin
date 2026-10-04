@@ -119,8 +119,8 @@ static void test_suite_vector(const suite_vector *v) {
     secret_of(v->hash_len, secret);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, v->suite);
-    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_keys_init_suite(TEST_SESSION_CPU, &k, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_hp_key_init_suite(TEST_SESSION_CPU, &h, CH_QUIC_VERSION_1, secret, v->suite);
     CHECK(k.suite == v->suite && h.suite == v->suite && k.sealed == 0);
     CHECK(eq_hex(k.key, v->key_len, v->key));
     CHECK(eq_hex(k.iv, AEAD_NONCE, v->iv));
@@ -128,8 +128,8 @@ static void test_suite_vector(const suite_vector *v) {
 
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(eq_hex(pkt, pkt_len, v->packet));
     CHECK(k.sealed == 1);
 
@@ -139,12 +139,12 @@ static void test_suite_vector(const suite_vector *v) {
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 0, pkt, pkt_len, 1, 0, 0, &key_set,
-                                       &pn, &pt_len) == CH_OK);
+    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 0, pkt, pkt_len, 1, 0, 0,
+                                       &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == 5 && pt_len == sizeof pt);
     CHECK(memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
 
-    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
+    quic_keys_update(TEST_SESSION_CPU, secret, &k, CH_QUIC_VERSION_1);
     CHECK(eq_hex(secret, v->hash_len, v->next_secret));
     CHECK(eq_hex(k.key, v->key_len, v->next_key));
     CHECK(k.suite == v->suite && k.sealed == 0);
@@ -159,30 +159,33 @@ static void test_confidentiality_limit(void) {
     secret_of(sizeof secret, secret);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, SUITE_AES_256_GCM_SHA384);
-    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_keys_init_suite(TEST_SESSION_CPU, &k, CH_QUIC_VERSION_1, secret, SUITE_AES_256_GCM_SHA384);
+    quic_hp_key_init_suite(TEST_SESSION_CPU, &h, CH_QUIC_VERSION_1, secret,
+                           SUITE_AES_256_GCM_SHA384);
     uint8_t pkt[64];
     size_t pkt_len = 0;
     k.sealed = QUIC_CONFIDENTIALITY_LIMIT - 2;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(k.sealed == QUIC_CONFIDENTIALITY_LIMIT - 1);
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(k.sealed == QUIC_CONFIDENTIALITY_LIMIT - 1);
-    quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 7, 2, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    quic_keys_update(TEST_SESSION_CPU, secret, &k, CH_QUIC_VERSION_1);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 7, 2, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
 
     uint8_t chacha_secret[32];
     secret_of(sizeof chacha_secret, chacha_secret);
     quic_keys c;
     quic_hp_key ch;
-    quic_keys_init_suite(&c, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
-    quic_hp_key_init_suite(&ch, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
+    quic_keys_init_suite(TEST_SESSION_CPU, &c, CH_QUIC_VERSION_1, chacha_secret,
+                         SUITE_CHACHA20_POLY1305_SHA256);
+    quic_hp_key_init_suite(TEST_SESSION_CPU, &ch, CH_QUIC_VERSION_1, chacha_secret,
+                           SUITE_CHACHA20_POLY1305_SHA256);
     c.sealed = QUIC_CONFIDENTIALITY_LIMIT;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &c, &ch, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
-                           sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &c, &ch, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr,
+                           pt, sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(c.sealed == QUIC_CONFIDENTIALITY_LIMIT);
 }
 
@@ -209,8 +212,8 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     secret_of(v->hash_len, secret);
     quic_keys k;
     quic_hp_key h;
-    quic_keys_init_suite(&k, CH_QUIC_VERSION_1, secret, v->suite);
-    quic_hp_key_init_suite(&h, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_keys_init_suite(TEST_SESSION_CPU, &k, CH_QUIC_VERSION_1, secret, v->suite);
+    quic_hp_key_init_suite(TEST_SESSION_CPU, &h, CH_QUIC_VERSION_1, secret, v->suite);
     uint8_t body[FAILED_OPEN_MAX];
     for (size_t i = 0; i < payload; i++) {
         body[i] = (uint8_t)(0x30 + i);
@@ -219,8 +222,8 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     uint8_t datagram[2 * (sizeof hdr + FAILED_OPEN_MAX + AEAD_TAG)];
     size_t first_len = 0;
     size_t second_len = 0;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, body,
-                           payload, datagram, sizeof datagram, &first_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr,
+                           body, payload, datagram, sizeof datagram, &first_len) == CH_OK);
     CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 6, 2, second_hdr,
                            sizeof second_hdr, body, payload, &datagram[first_len],
                            sizeof datagram - first_len, &second_len) == CH_OK);

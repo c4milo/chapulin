@@ -37,8 +37,8 @@ static void test_flight_keys(void) {
     // A record this server seals opens under a reader built from the
     // server handshake secret, which is what a swapped assignment breaks.
     rec_dir peer_rd;
-    rec_dir_init(&peer_rd, hs.s_hs);
     TEST_CPU_DIR(peer_rd);
+    rec_dir_init(&peer_rd, hs.s_hs);
     size_t sealed_len = 0;
     size_t plain_len = 0;
     uint8_t inner = 0;
@@ -62,8 +62,8 @@ static void test_flight_keys(void) {
 static void auth_flight(selection *sel, rec_dir *rd) {
     hello_exchange(sel);
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, sel) == CH_OK);
-    rec_dir_init(rd, hs.s_hs);
     TEST_CPU_DIR(*rd);
+    rec_dir_init(rd, hs.s_hs);
     wire_len = 0;
 }
 
@@ -115,8 +115,8 @@ static void feed_client_finished(int correct) {
     if (!correct) {
         msg[4] ^= 0x01;
     }
-    rec_dir_init(&wr, hs.c_hs);
     TEST_CPU_DIR(wr);
+    rec_dir_init(&wr, hs.c_hs);
     CHECK(rec_seal(&wr, REC_HANDSHAKE, msg, sizeof msg, feed, sizeof feed, &n) == 0);
     feed_len = n;
     feed_off = 0;
@@ -191,8 +191,8 @@ static void test_flight_finished_length(void) {
         msg[0] = HS_FINISHED;
         msg[3] = (uint8_t)body;
         ks_verify_data(SHA256_LEN, hs.c_hs, hash, msg + 4);
-        rec_dir_init(&wr, hs.c_hs);
         TEST_CPU_DIR(wr);
+        rec_dir_init(&wr, hs.c_hs);
         CHECK(rec_seal(&wr, REC_HANDSHAKE, msg, 4 + body, feed, sizeof feed, &n) == 0);
         feed_len = n;
         feed_off = 0;

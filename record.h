@@ -48,14 +48,14 @@ typedef struct {
 #ifdef CH_CPU_RUNTIME
     // The session's ch_cfg.cpu, the caller's description of its CPU, which
     // each init call writes into both of the session's directions once it
-    // has accepted the configuration. A record reads its paths from it:
-    // the multiply bit picks Poly1305's copy, CH_CPU_AVX2 ChaCha20's
-    // keystream, and CH_CPU_VAES beside the AES bit AES-GCM's kernels
-    // (cpu_cfg.h). Keying and KeyUpdate leave it, and a wiped direction
-    // reads 0, which names no fast path. A device object holds one path
-    // for each, needs no such field and does not declare it. It fills the
-    // four bytes that seq's alignment leaves after iv, so it adds no byte
-    // to a direction.
+    // has accepted the configuration, before either is keyed. A direction
+    // reads its paths from it: the hash that derives its key and IV
+    // (hkdf.h), and for a record the multiply bit picks Poly1305's
+    // copy, CH_CPU_AVX2 ChaCha20's keystream, and CH_CPU_VAES beside the
+    // AES bit AES-GCM's kernels (cpu_cfg.h). Keying and KeyUpdate read it
+    // and leave it, and a wiped direction reads 0, which names no fast
+    // path. A device object needs no such field and does not declare it.
+    // It fills the four bytes seq's alignment leaves after iv.
     uint32_t cpu;
 #endif
     uint64_t seq;

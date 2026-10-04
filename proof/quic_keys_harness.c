@@ -32,16 +32,16 @@ int main(void) {
     quic_hp_key h;
 
     fill_nondet(secret, sizeof secret);
-    quic_keys_init(&k, nondet_u32(), secret);
+    quic_keys_init(nondet_u32(), &k, nondet_u32(), secret);
 
     fill_nondet(secret, sizeof secret);
-    quic_hp_key_init(&h, nondet_u32(), secret);
+    quic_hp_key_init(nondet_u32(), &h, nondet_u32(), secret);
 
     // The update reads and rewrites the same secret, then rewrites the
     // key set from it. Both operands are havocked again first, so this
     // call reads no value an earlier call left.
     fill_nondet(secret, sizeof secret);
     fill_nondet((uint8_t *)&k, sizeof k);
-    quic_keys_update(secret, &k, nondet_u32());
+    quic_keys_update(nondet_u32(), secret, &k, nondet_u32());
     return 0;
 }

@@ -94,9 +94,10 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len) {
     b->len = plaintext_len + 1;
     b->record_len = REC_HDR + b->len + AEAD_TAG;
     b->whole_blocks = b->len / AES_BLOCK;
-    rec_dir_init_suite(&b->wr, secret, suite);
-    // What an init call writes into a session's directions (session.h).
+    // What an init call writes into a session's directions before one is
+    // keyed (session.h).
     b->wr.cpu = BENCH_CPU;
+    rec_dir_init_suite(&b->wr, secret, suite);
     b->rd = b->wr;
     memcpy(b->nonce, b->wr.iv, AEAD_NONCE); // the IV is the nonce at sequence number 0
     fill_random(b->app, plaintext_len);

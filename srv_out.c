@@ -147,7 +147,7 @@ void srv_frag_flush(srv_frag *f) {
     if (f->rc != CH_OK || f->len == 0) {
         return;
     }
-    transcript_update(&f->h->t->transcript, f->buf, f->len);
+    TRANSCRIPT_UPDATE_CPU(f->h->t->cfg.cpu, &f->h->t->transcript, f->buf, f->len);
     f->rc = srv_out_sealed(f->h, f->buf, f->len);
     f->len = 0;
 }

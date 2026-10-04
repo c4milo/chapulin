@@ -27,8 +27,8 @@
 static void a5_keys(quic_keys *k, quic_hp_key *h) {
     uint8_t secret[SHA256_LEN];
     (void)unhex(A5_SECRET, secret);
-    quic_keys_init(k, CH_QUIC_VERSION_1, secret);
-    quic_hp_key_init(h, CH_QUIC_VERSION_1, secret);
+    quic_keys_init(TEST_SESSION_CPU, k, CH_QUIC_VERSION_1, secret);
+    quic_hp_key_init(TEST_SESSION_CPU, h, CH_QUIC_VERSION_1, secret);
 }
 
 // RFC 9001 Appendix A.5's whole 1-RTT packet, sealed and opened again

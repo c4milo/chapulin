@@ -1,0 +1,15 @@
+invariant: INV-14
+file: cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h's x86-64 set gains CH_CPU_CONSTANT_TIME_SHA512, so an
+  x86-64 object takes a bit that names arm64's SHA-512 instructions and
+  has no path for it, where the ruling is that an object refuses a bit of
+  the other architecture and does not ignore it (docs/decisions.md 89 and
+  93). On arm64 no test row moves, because that set is unchanged, so the
+  catch is the script: it reads the header for both architectures under
+  the pinned clang and compares each set with the bits it writes out.
+
+--- old
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)
+--- new
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512)

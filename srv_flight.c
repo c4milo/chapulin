@@ -81,14 +81,14 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     if (ch->truncated_len != 0) {
         // The transcript a binder covers: everything before this message,
         // then this message up to its binders list (rfc9846.txt:2591-2598).
-        transcript_hash_after(&t->transcript, SHA256_LEN, raw, 4 + ch->truncated_len,
-                              ch->binder_hash);
+        TRANSCRIPT_HASH_AFTER_CPU(t->cfg.cpu, &t->transcript, SHA256_LEN, raw,
+                                  4 + ch->truncated_len, ch->binder_hash);
 #ifdef CH_HASH_SHA384
-        transcript_hash_after(&t->transcript, SHA384_LEN, raw, 4 + ch->truncated_len,
-                              ch->binder_hash_sha384);
+        TRANSCRIPT_HASH_AFTER_CPU(t->cfg.cpu, &t->transcript, SHA384_LEN, raw,
+                                  4 + ch->truncated_len, ch->binder_hash_sha384);
 #endif
     }
-    transcript_update(&t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, raw, raw_len);
     copy_hello_fields(t, ch);
     if (t->cfg.srv.require_server_name && t->sni_len == 0) {
         // §9.2 permits requiring the extension (rfc9846.txt:4609-4612),
@@ -272,7 +272,7 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    transcript_update(&t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
     return srv_out_plain(h, n);
 }
 
@@ -293,13 +293,14 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     if (!sel->psk_selected) {
         static const uint8_t no_psk[HKDF_HASH_MAX] = {0};
         uint8_t binder_key[HKDF_HASH_MAX];
-        ks_early(hash_len, no_psk, hash_len, 0, h->early, binder_key);
+        KS_EARLY_CPU(t->cfg.cpu, hash_len, no_psk, hash_len, 0, h->early, binder_key);
         ct_wipe(binder_key, sizeof binder_key);
     }
 
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
-    ks_handshake(hash_len, h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    KS_HANDSHAKE_CPU(t->cfg.cpu, hash_len, h->early, ikm, ikm_len, hash, h->handshake_secret,
+                     h->c_hs, h->s_hs);
     ct_wipe(ikm, sizeof ikm);
     ct_wipe(h->early, sizeof h->early);
 #ifdef CH_KEYLOG
@@ -354,7 +355,7 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    transcript_update(&t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
@@ -414,7 +415,7 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    transcript_update(&h->t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_CPU(h->t->cfg.cpu, &h->t->transcript, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
@@ -424,24 +425,24 @@ int srv_send_finished(handshake_state *h) {
     uint8_t hash[HKDF_HASH_MAX];
     (void)hsr_transcript_hash(h, hash_len, hash);
     uint8_t verify_data[HKDF_HASH_MAX];
-    ks_verify_data(hash_len, h->s_hs, hash, verify_data);
+    KS_VERIFY_DATA_CPU(t->cfg.cpu, hash_len, h->s_hs, hash, verify_data);
     uint8_t msg[SRV_FINISHED_MAX];
     size_t n = srv_build_finished(msg, sizeof msg, verify_data, hash_len);
     CH_ASSERT(n == 4 + hash_len);
-    transcript_update(&t->transcript, msg, n);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, msg, n);
     int rc = srv_out_sealed(h, msg, n);
     if (rc != CH_OK) {
         return rc;
     }
-    // ks_master writes the client secret first, which is what this
-    // endpoint reads. Only the write direction advances here: the client
-    // Finished still arrives under the handshake key.
+    // ks_master writes the client secret first, which is what this endpoint reads. Only the write
+    // direction advances here: the client Finished still arrives under the handshake key.
     (void)hsr_transcript_hash(h, hash_len, hash);
-    ks_master(hash_len, h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
+    KS_MASTER_CPU(t->cfg.cpu, hash_len, h->handshake_secret, hash, h->master, t->rd_secret,
+                  t->wr_secret);
 #ifdef CH_EXPORTER
     // The client's derivation, mirrored: RFC 9846 §7.5 takes the same
     // transcript the traffic secrets above take.
-    ks_exp_master(hash_len, h->master, hash, t->exp_master);
+    KS_EXP_MASTER_CPU(t->cfg.cpu, hash_len, h->master, hash, t->exp_master);
 #endif
 #ifdef CH_KEYLOG
     // The reverse of the client's pair: here rd_secret holds the client's
@@ -475,12 +476,12 @@ int srv_read_client_finished(handshake_state *h) {
         return CH_EPROTO;
     }
     uint8_t want[HKDF_HASH_MAX];
-    ks_verify_data(hash_len, h->c_hs, hash, want);
+    KS_VERIFY_DATA_CPU(t->cfg.cpu, hash_len, h->c_hs, hash, want);
     if (!ct_memeq(want, raw + 4, hash_len)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    transcript_update(&t->transcript, raw, raw_len);
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, raw, raw_len);
     return CH_OK;
 }
 

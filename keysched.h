@@ -83,4 +83,86 @@ void ks_exporter(size_t hash_len, const uint8_t *exp_master, const char *label,
                  const uint8_t *context, size_t context_len, uint8_t *out, size_t out_len);
 #endif
 
+#if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+// The calls above for one session of a host object, each with the session's ch_cfg.cpu first
+// and under the same contract, as sha256.h's entries are (docs/decisions.md 93). No object
+// holds a hash on the CPU's instructions yet, so each runs the portable call whatever cpu says.
+static inline void ks_early_cpu(uint32_t cpu, size_t hash_len, const uint8_t *psk, size_t psk_len,
+                                int resumption, uint8_t *early, uint8_t *binder_key) {
+    (void)cpu;
+    ks_early(hash_len, psk, psk_len, resumption, early, binder_key);
+}
+
+static inline void ks_verify_data_cpu(uint32_t cpu, size_t hash_len, const uint8_t *key,
+                                      const uint8_t *transcript, uint8_t *out) {
+    (void)cpu;
+    ks_verify_data(hash_len, key, transcript, out);
+}
+
+static inline void ks_handshake_cpu(uint32_t cpu, size_t hash_len, const uint8_t *early,
+                                    const uint8_t *ecdhe, size_t ecdhe_len,
+                                    const uint8_t *transcript, uint8_t *handshake_secret,
+                                    uint8_t *c_hs, uint8_t *s_hs) {
+    (void)cpu;
+    ks_handshake(hash_len, early, ecdhe, ecdhe_len, transcript, handshake_secret, c_hs, s_hs);
+}
+
+static inline void ks_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *handshake_secret,
+                                 const uint8_t *transcript, uint8_t *master, uint8_t *c_ap,
+                                 uint8_t *s_ap) {
+    (void)cpu;
+    ks_master(hash_len, handshake_secret, transcript, master, c_ap, s_ap);
+}
+
+static inline void ks_res_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *master,
+                                     const uint8_t *transcript, uint8_t *res_master) {
+    (void)cpu;
+    ks_res_master(hash_len, master, transcript, res_master);
+}
+
+static inline void ks_res_psk_cpu(uint32_t cpu, size_t hash_len, const uint8_t *res_master,
+                                  const uint8_t *nonce, size_t nonce_len, uint8_t *psk) {
+    (void)cpu;
+    ks_res_psk(hash_len, res_master, nonce, nonce_len, psk);
+}
+
+#ifdef CH_EXPORTER
+static inline void ks_exp_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *master,
+                                     const uint8_t *transcript, uint8_t *exp_master) {
+    (void)cpu;
+    ks_exp_master(hash_len, master, transcript, exp_master);
+}
+
+static inline void ks_exporter_cpu(uint32_t cpu, size_t hash_len, const uint8_t *exp_master,
+                                   const char *label, const uint8_t *context, size_t context_len,
+                                   uint8_t *out, size_t out_len) {
+    (void)cpu;
+    ks_exporter(hash_len, exp_master, label, context, context_len, out, out_len);
+}
+#endif
+#endif
+
+// The calls as a source compiled into both objects makes them for a session, with its
+// ch_cfg.cpu first: a host object passes the value to the entry above, and a device object
+// calls the portable call and never evaluates cpu (hkdf.h states the rule).
+#ifdef CH_CPU_RUNTIME
+#define KS_EARLY_CPU(cpu, ...) ks_early_cpu((cpu), __VA_ARGS__)
+#define KS_VERIFY_DATA_CPU(cpu, ...) ks_verify_data_cpu((cpu), __VA_ARGS__)
+#define KS_HANDSHAKE_CPU(cpu, ...) ks_handshake_cpu((cpu), __VA_ARGS__)
+#define KS_MASTER_CPU(cpu, ...) ks_master_cpu((cpu), __VA_ARGS__)
+#define KS_RES_MASTER_CPU(cpu, ...) ks_res_master_cpu((cpu), __VA_ARGS__)
+#define KS_RES_PSK_CPU(cpu, ...) ks_res_psk_cpu((cpu), __VA_ARGS__)
+#define KS_EXP_MASTER_CPU(cpu, ...) ks_exp_master_cpu((cpu), __VA_ARGS__)
+#define KS_EXPORTER_CPU(cpu, ...) ks_exporter_cpu((cpu), __VA_ARGS__)
+#else
+#define KS_EARLY_CPU(cpu, ...) ks_early(__VA_ARGS__)
+#define KS_VERIFY_DATA_CPU(cpu, ...) ks_verify_data(__VA_ARGS__)
+#define KS_HANDSHAKE_CPU(cpu, ...) ks_handshake(__VA_ARGS__)
+#define KS_MASTER_CPU(cpu, ...) ks_master(__VA_ARGS__)
+#define KS_RES_MASTER_CPU(cpu, ...) ks_res_master(__VA_ARGS__)
+#define KS_RES_PSK_CPU(cpu, ...) ks_res_psk(__VA_ARGS__)
+#define KS_EXP_MASTER_CPU(cpu, ...) ks_exp_master(__VA_ARGS__)
+#define KS_EXPORTER_CPU(cpu, ...) ks_exporter(__VA_ARGS__)
+#endif
+
 #endif
