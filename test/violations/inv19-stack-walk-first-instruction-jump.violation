@@ -5,7 +5,7 @@ reason: at a function's first instruction the walk reads the target
   objdump prints on the branch line instead of the relocation under it,
   as it did before. On arm64 that target is the branch's own address,
   which names the function itself, so a tail call there adds no edge. In
-  the CHACHA=vector WIDEMUL=native build the walk then put ch_write's
+  an object that ran the vector ChaCha20 the walk then put ch_write's
   peak at 960 bytes, where the frames through chacha20_xor's jump to
   chacha20_vector_xor add up to 1,088.
 

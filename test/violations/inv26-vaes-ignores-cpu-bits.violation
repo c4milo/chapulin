@@ -1,0 +1,14 @@
+invariant: INV-26
+file: gcm_vaes.h
+catches: test/quic-builds.sh
+reason: gcm_vaes.h's gcm_use_vaes answers 0 whatever the key's session
+  stated, so no key runs the VAES kernels and CH_CPU_VAES picks nothing.
+  Every vector passes, because the 128-bit loops compute the same bytes;
+  only the time is wrong. The script compiles gcm.c for x86-64 and
+  requires its object to call the three kernels.
+
+--- old
+    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    (void)cpu;
+    return 0;

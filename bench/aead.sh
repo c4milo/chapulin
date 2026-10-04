@@ -81,10 +81,15 @@ COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c ct_wipe.c chach
     aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
-# A host object holds each file built on the multiply twice, so the host
-# build links poly1305.c's native copy beside it (docs/decisions.md 89).
-"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${COMMON[@]}" poly1305_native.c "${AES_HW_SRCS[@]}" \
-    quic_aes_soft.c
+# A host object holds each file built on the multiply twice and the vector
+# ChaCha20 and Poly1305, so the host build links what make names beside
+# poly1305.c and chacha20.c (print-host-srcs, docs/decisions.md 89).
+read -r -a HOST_COMMON <<<"$(make -s --no-print-directory print-host-srcs HOST_SRCS_OF="${COMMON[*]}")"
+if [ "${#HOST_COMMON[@]}" -le "${#COMMON[@]}" ]; then
+    echo "FAIL aead bench: make print-host-srcs added no source for a host object" >&2
+    exit 1
+fi
+"$CC" "${FLAGS[@]}" -DCH_CPU_RUNTIME -o "$W/hw" "${HOST_COMMON[@]}" "${AES_HW_SRCS[@]}" quic_aes_soft.c
 if [ -n "$BUILD_ONLY" ]; then
     echo "aead bench: --build built every variant and ran nothing" >&2
     exit 0

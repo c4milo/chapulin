@@ -239,7 +239,8 @@ rules:
       families; aes.c, gcm.c, the three AES implementations, and
       ghash_hw.c, gcm_hw.c and gcm_vaes.c, the GHASH and the whole-block
       counter mode a host object adds, are excluded as the definition
-      sites. ch_aes_block
+      sites, and gcm_vaes.h with them, whose three inline entries call
+      gcm_hw.c's loops or gcm_vaes.c's kernels for gcm.c. ch_aes_block
       joins the family because an AES=extern build leaves that hook to
       the image, and a library source calling it would run AES on a key
       of its choosing exactly as a call to aes_ would. A use anywhere
@@ -257,7 +258,8 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
                 quic_retry.c, aes.c, gcm.c, quic_aes_soft.c,
-                aes_hw.c, aes_extern.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c]
+                aes_hw.c, aes_extern.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c,
+                gcm_vaes.h]
     pattern-either:
       # A call. `make lint-quic-surface` fails when a function, a
       # function-like macro or a typedef in aes.h, aes_block.h,

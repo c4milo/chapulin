@@ -19,7 +19,7 @@
 
 #define CH_WIDEMUL_NATIVE_COPY 1
 
-// poly1305.c, and poly1305_vector.c, which a CHACHA=vector object holds in its native copy
+// poly1305.c, and poly1305_vector.c, which a host object holds in its native copy
 // alone, because the vector path runs on the native multiply (docs/decisions.md 83).
 #define poly1305_init poly1305_init_native
 #define poly1305_update poly1305_update_native

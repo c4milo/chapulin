@@ -1,0 +1,16 @@
+invariant: INV-26
+file: gcm_vaes.h
+catches: test/quic-builds.sh
+reason: gcm_vaes.h's gcm_use_vaes answers 1 whatever the key's session
+  stated, so every AES-GCM key of an x86-64 host object runs the VAES
+  kernels and dies of SIGILL on a CPU with AES-NI and PCLMULQDQ and
+  without VAES, which CH_CPU_CONSTANT_TIME_AES alone describes. Every
+  vector and equivalence case passes on a CPU with the instructions. The
+  script compiles gcm.c for x86-64 and requires its object to call
+  gcm_hw.c's three entries, the loops a key without CH_CPU_VAES runs.
+
+--- old
+    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    (void)cpu;
+    return 1;

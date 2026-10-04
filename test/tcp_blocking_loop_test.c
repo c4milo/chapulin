@@ -205,7 +205,7 @@ static void peer_state(ch_tls *t, handshake_state *h, const ch_cfg *cfg) {
     memset(h, 0, sizeof *h);
     t->cfg = *cfg;
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     t->peer_limit = CH_TX_PT;
     t->alpn_selected = CH_ALPN_NONE;
@@ -288,6 +288,7 @@ static void check_client_alert(int keyed) {
     if (keyed) {
         rec_dir reader;
         rec_dir_init(&reader, srv_h.c_hs);
+        TEST_CPU_DIR(reader);
         CHECK(rec_open(&reader, rec, len, pt, sizeof pt, &pt_len, &type) == 0);
     } else {
         CHECK(len == REC_HDR + 2);
@@ -436,6 +437,7 @@ static void server_reads_client(int after_finished, size_t bytes) {
     }
     rec_dir reader;
     rec_dir_init(&reader, cli_t.rd_secret);
+    TEST_CPU_DIR(reader);
     uint8_t pt[16];
     size_t pt_len = 0;
     uint8_t type = 0;

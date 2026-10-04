@@ -42,20 +42,15 @@ void ct_wipe(void *p, size_t n);
 //
 // Three macros steer it, and CH_CT_WIDEMUL wins over the other two:
 //
-//   CH_NATIVE_WIDEMUL  the build asserts that every widening multiply the
-//                      object runs, scalar or vector, takes a time that
-//                      does not depend on its operands: the 32x32->64
-//                      multiply below, and under CHACHA=vector the lane
-//                      multiplies of poly1305_vector.c, NEON's UMULL and
-//                      UMLAL or SSE2's PMULUDQ, which this define turns on
-//                      (docs/decisions.md entry 83). A statement that
-//                      covers the scalar multiply alone does not cover a
-//                      CHACHA=vector build. The Makefile passes it for host
-//                      test binaries, where nothing secret is at risk and
-//                      solver time is; firmware passes it only with a
-//                      vendor statement. `make lib WIDEMUL=native` puts it
-//                      in the packaged object, and the object's cc-stamp
-//                      records it.
+//   CH_NATIVE_WIDEMUL  the build of a device object asserts that the
+//                      widening multiply it runs, the 32x32->64 multiply
+//                      below, takes a time that does not depend on its
+//                      operands. The Makefile passes it for the test
+//                      binaries of the portable code, where nothing secret
+//                      is at risk and solver time is; firmware passes it
+//                      only with a vendor statement. `make lib
+//                      WIDEMUL=native` puts it in the packaged object, and
+//                      the object's cc-stamp records it.
 //   CH_CPU_RUNTIME     a host object (cpu_cfg.h), which holds both
 //                      multiplies, and each session's
 //                      CH_CPU_CONSTANT_TIME_MULTIPLY bit in ch_cfg.cpu
@@ -67,7 +62,11 @@ void ct_wipe(void *p, size_t n);
 //                      _native. That copy alone takes the native
 //                      multiply, scalar or vector, and widemul.h's
 //                      dispatchers run it for a session with the bit
-//                      alone. X25519's second copy is x25519_wide.c's
+//                      alone. The vector multiply is the lane multiply of
+//                      poly1305_vector.c, NEON's UMULL and UMLAL or SSE2's
+//                      PMULUDQ, which only that copy holds, so the bit
+//                      states its timing too (docs/decisions.md 83).
+//                      X25519's second copy is x25519_wide.c's
 //                      field, on ct_mul128 below, which the same
 //                      dispatchers run for the same sessions. The build
 //                      states nothing about the part:

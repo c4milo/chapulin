@@ -14,8 +14,13 @@
 // Every other byte an answer can hold, 0, 3, 0x80 and 0xff, must take the
 // decomposition as WIDEMUL_NOT_STATED does: a wiped record direction reads
 // 0, and no session passes the others, and the dispatchers must not depend
-// on that. Under CHACHA=vector the constant-time answer must also run the
-// vector Poly1305, and no other answer may.
+// on that. The constant-time answer must also run the vector Poly1305,
+// and no other answer may.
+//
+// A record direction and the AEAD entries a session calls take the
+// session's ch_cfg.cpu, not an answer (record.h, aead.h), so their rows
+// hand them the value cpu_of gives for the answer, and must count the
+// same.
 //
 // widemul_answer, which gives a session its answer, must read
 // CH_CPU_CONSTANT_TIME_MULTIPLY alone: the constant-time answer for every
@@ -84,23 +89,59 @@ static int eq_hex(const uint8_t *got, const char *hex) {
 // out and returning how many.
 typedef size_t (*operation)(uint8_t widemul, uint8_t out[OUT_MAX]);
 
-// AEAD over 300 bytes, which holds whole groups of four blocks for the
-// CHACHA=vector Poly1305, sealed and then opened.
-static size_t aead_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
-    uint8_t key[AEAD_KEY];
-    uint8_t nonce[AEAD_NONCE] = {7};
-    uint8_t aad[13] = {1, 2, 3};
-    uint8_t pt[300];
-    uint8_t back[300];
-    for (size_t i = 0; i < sizeof key; i++) {
+// The ch_cfg.cpu value a row hands a call that takes one, for the answer
+// widemul: the probe's bit with CH_CPU_CONSTANT_TIME_MULTIPLY for the
+// constant-time answer, the probe's bit alone for the other, and for a
+// byte that is neither 0, which a wiped record direction holds.
+static uint32_t cpu_of(uint8_t widemul) {
+    if (widemul == WIDEMUL_CONSTANT_TIME) {
+        return CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    }
+    return widemul == WIDEMUL_NOT_STATED ? CH_CPU_PROBED : 0;
+}
+
+// The key, nonce, associated data and 300 bytes of plaintext both AEAD
+// rows seal: 300 bytes hold whole groups of four blocks for the vector
+// Poly1305.
+#define AEAD_RUN_LEN 300
+static const uint8_t aead_run_nonce[AEAD_NONCE] = {7};
+static const uint8_t aead_run_aad[13] = {1, 2, 3};
+
+static void aead_run_inputs(uint8_t key[AEAD_KEY], uint8_t pt[AEAD_RUN_LEN]) {
+    for (size_t i = 0; i < AEAD_KEY; i++) {
         key[i] = (uint8_t)(0x80 + i);
     }
-    for (size_t i = 0; i < sizeof pt; i++) {
+    for (size_t i = 0; i < AEAD_RUN_LEN; i++) {
         pt[i] = (uint8_t)i;
     }
-    aead_seal(widemul, key, nonce, aad, sizeof aad, pt, sizeof pt, out, out + sizeof pt);
-    CHECK(aead_open(widemul, key, nonce, aad, sizeof aad, out, sizeof pt, out + sizeof pt, back) ==
-          1);
+}
+
+// aead_seal and aead_open, which take the answer: sealed and then opened.
+static size_t aead_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
+    uint8_t key[AEAD_KEY];
+    uint8_t pt[AEAD_RUN_LEN];
+    uint8_t back[AEAD_RUN_LEN];
+    aead_run_inputs(key, pt);
+    aead_seal(widemul, key, aead_run_nonce, aead_run_aad, sizeof aead_run_aad, pt, sizeof pt, out,
+              out + sizeof pt);
+    CHECK(aead_open(widemul, key, aead_run_nonce, aead_run_aad, sizeof aead_run_aad, out, sizeof pt,
+                    out + sizeof pt, back) == 1);
+    CHECK(memcmp(back, pt, sizeof pt) == 0);
+    return sizeof pt + AEAD_TAG;
+}
+
+// aead_seal_cpu and aead_open_cpu, which a record and a QUIC packet call
+// with the session's ch_cfg.cpu and which take the answer from its
+// multiply bit.
+static size_t aead_cpu_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
+    uint8_t key[AEAD_KEY];
+    uint8_t pt[AEAD_RUN_LEN];
+    uint8_t back[AEAD_RUN_LEN];
+    aead_run_inputs(key, pt);
+    aead_seal_cpu(cpu_of(widemul), key, aead_run_nonce, aead_run_aad, sizeof aead_run_aad, pt,
+                  sizeof pt, out, out + sizeof pt);
+    CHECK(aead_open_cpu(cpu_of(widemul), key, aead_run_nonce, aead_run_aad, sizeof aead_run_aad,
+                        out, sizeof pt, out + sizeof pt, back) == 1);
     CHECK(memcmp(back, pt, sizeof pt) == 0);
     return sizeof pt + AEAD_TAG;
 }
@@ -189,7 +230,7 @@ static size_t rsa_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
 }
 
 // One record sealed and opened by the record layer, whose directions carry
-// the answer as a session's init calls write it (session.h).
+// the session's ch_cfg.cpu as its init call writes it (session.h).
 static size_t record_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     uint8_t secret[SHA256_LEN];
     uint8_t pt[200];
@@ -202,8 +243,8 @@ static size_t record_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     rec_dir rd;
     rec_dir_init(&wr, secret);
     rec_dir_init(&rd, secret);
-    wr.widemul = widemul;
-    rd.widemul = widemul;
+    wr.cpu = cpu_of(widemul);
+    rd.cpu = cpu_of(widemul);
     size_t n = 0;
     CHECK(rec_seal(&wr, REC_APPDATA, pt, sizeof pt, out, OUT_MAX, &n) == 0);
     size_t pt_len = 0;
@@ -239,12 +280,7 @@ static void check_operation(const char *name, operation op, int runs_vector) {
     CHECK(stated.native > 0 && stated.decomposed == 0);
     CHECK(not_stated.native == 0 && not_stated.decomposed == stated.native);
     CHECK(not_stated.vector == 0);
-#ifdef CH_CHACHA_VECTOR
     CHECK(runs_vector ? stated.vector > 0 : stated.vector == 0);
-#else
-    (void)runs_vector;
-    CHECK(stated.vector == 0);
-#endif
     CHECK(stated_len == other_len && memcmp(stated_out, other_out, stated_len) == 0);
     // Every byte that is neither answer runs as the decomposition does.
     static const uint8_t neither[] = {0, 3, 0x80, 0xff};
@@ -253,7 +289,7 @@ static void check_operation(const char *name, operation op, int runs_vector) {
         CHECK(c.native == 0 && c.vector == 0 && c.decomposed == not_stated.decomposed);
         CHECK(stated_len == other_len && memcmp(stated_out, other_out, stated_len) == 0);
     }
-    (void)printf("widemul_runtime: %-6s %5lu calls into the native copies under the constant-time "
+    (void)printf("widemul_runtime: %-17s %5lu calls into the native copies under the constant-time "
                  "answer, as many into the decomposition under the other%s\n",
                  name, stated.native, failures == failed ? "" : " -- FAILED");
 }
@@ -279,6 +315,7 @@ static void check_answer(void) {
 int main(void) {
     check_answer();
     check_operation("aead", aead_run, 1);
+    check_operation("aead of a session", aead_cpu_run, 1);
     check_operation("x25519", x25519_run, 0);
     check_operation("mlkem", mlkem_run, 0);
     check_operation("p256", p256_run, 0);

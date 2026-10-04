@@ -1,7 +1,7 @@
 invariant: INV-16
 file: widemul.h
 catches: widemul_runtime_test
-reason: widemul_answer reads CH_CPU_CONSTANT_TIME_AES in place of
+reason: widemul_of_cpu reads CH_CPU_CONSTANT_TIME_AES in place of
   CH_CPU_CONSTANT_TIME_MULTIPLY, so a caller that stated the AES
   instructions' timing alone runs the native multiply, which nothing
   stated, and one that stated the multiply alone runs the decomposition.
@@ -10,6 +10,6 @@ reason: widemul_answer reads CH_CPU_CONSTANT_TIME_AES in place of
   follow the multiply bit alone.
 
 --- old
-    return (cfg->cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME
+    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME : WIDEMUL_NOT_STATED;
 --- new
-    return (cfg->cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? WIDEMUL_CONSTANT_TIME
+    return (cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? WIDEMUL_CONSTANT_TIME : WIDEMUL_NOT_STATED;

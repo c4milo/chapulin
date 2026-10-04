@@ -129,6 +129,31 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
     return 0;
 }
 
+#ifdef CH_CPU_RUNTIME
+// A host object's quic_packet.c calls the entries that take the session's
+// ch_cfg.cpu (aead.h, aes.h). The two AEAD entries keep aead_seal's and
+// aead_open's contracts, so each is the stub above, and the key's setter
+// writes the one field it names.
+void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                   const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                   uint8_t tag[AEAD_TAG]) {
+    (void)cpu;
+    aead_seal(0, key, nonce, aad, aad_len, pt, n, ct, tag);
+}
+
+int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                  const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+                  const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)cpu;
+    return aead_open(0, key, nonce, aad, aad_len, ct, n, tag, pt);
+}
+
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
+    __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes cpu: schedule writable");
+    k->key.cpu = cpu;
+}
+#endif
+
 #include "quic_packet.c"
 
 #define PKT_MAX 40
@@ -192,7 +217,7 @@ int main(void) {
     fill_nondet(pt, sizeof pt);
     aes_ran = 0;
     chacha_ran = 0;
-    int rc = quic_packet_seal(nondet_u8(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
+    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
                               pt, pt_len, out, cap, &out_len);
     if (rc == CH_OK) {
         __CPROVER_assert(aes_ran == aes && chacha_ran == !aes, "seal: the suite's ciphers");
@@ -216,7 +241,7 @@ int main(void) {
     size_t opened = 0;
     aes_ran = 0;
     chacha_ran = 0;
-    rc = quic_packet_open_handshake(nondet_u8(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(), &pn,
+    rc = quic_packet_open_handshake(nondet_u32(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(), &pn,
                                     &opened);
     __CPROVER_assert(!aes_ran || aes, "open: AES runs only under an AES suite");
     __CPROVER_assert(!chacha_ran || !aes, "open: ChaCha20 runs only under ChaCha20");

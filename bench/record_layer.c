@@ -11,8 +11,8 @@
 // bench/record.c is the bench itself.
 #define gcm_traffic_seal bench_stub_gcm_traffic_seal
 #define gcm_traffic_open bench_stub_gcm_traffic_open
-#define aead_seal bench_stub_aead_seal
-#define aead_open bench_stub_aead_open
+#define aead_seal_cpu bench_stub_aead_seal_cpu
+#define aead_open_cpu bench_stub_aead_open_cpu
 #define rec_dir_init bench_layer_rec_dir_init
 #define rec_dir_init_suite bench_layer_rec_dir_init_suite
 #define rec_dir_update bench_layer_rec_dir_update

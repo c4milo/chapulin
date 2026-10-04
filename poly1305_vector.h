@@ -1,5 +1,5 @@
-// CHACHA=vector with WIDEMUL=native, and the native copy of a host
-// object: Poly1305's block loop (RFC 8439 §2.5) four
+// The native copy of a host object's Poly1305: its block loop (RFC 8439
+// §2.5) four
 // blocks at a time, in two lanes of five 26-bit limbs, NEON on
 // arm64 and SSE2 on x86-64. poly1305.c chooses between this path and its
 // own loop in one place, and stays the reference: it absorbs every block
@@ -7,15 +7,15 @@
 // bin/poly1305_equiv_test compares the two over the same inputs.
 //
 // Each product is a 32x32->64 widening multiply in each lane, NEON's
-// UMULL and UMLAL or SSE2's PMULUDQ, so the path runs only where the
-// build states that every widening multiply the object runs, scalar or
-// vector, takes a time that does not depend on its operands. That is
-// CH_NATIVE_WIDEMUL, which WIDEMUL=native puts in a device object (ct.h),
-// or in a host object the caller's CH_CPU_CONSTANT_TIME_MULTIPLY bit,
-// which runs the native copies alone (widemul.h). CH_CT_WIDEMUL, which
+// UMULL and UMLAL or SSE2's PMULUDQ, so the path runs only where a
+// statement says that every widening multiply the session runs, scalar or
+// vector, takes a time that does not depend on its operands. That is the
+// caller's CH_CPU_CONSTANT_TIME_MULTIPLY bit, under which a host object's
+// session runs the native copies (widemul.h), and this path is in
+// poly1305.c's native copy alone. CH_CT_WIDEMUL, which
 // forces the 16x16 decomposition, turns the path off.
-// Under CHACHA=vector without the statement, poly1305.c's loop and its
-// decomposition run. Beside the multiplies the path runs adds, masks,
+// A session without the bit, and every device object, runs poly1305.c's
+// loop. Beside the multiplies the path runs adds, masks,
 // fixed shifts and lane moves on every lane, with no table, no branch on
 // the key or the message, and no address computed from either. Only the
 // byte count decides how many groups run, and it is public.
@@ -29,10 +29,12 @@
 #include "ct.h"
 #include "poly1305.h"
 
-// ct.h defines CH_WIDEMUL_NATIVE when the build asserts CH_NATIVE_WIDEMUL
-// and does not force the decomposition, so the path's two conditions meet
-// here, and poly1305.c and poly1305_vector.c read this one macro.
-#if defined(CH_CHACHA_VECTOR) && defined(CH_WIDEMUL_NATIVE)
+// ct.h defines CH_WIDEMUL_NATIVE in a native copy that does not force the
+// decomposition, so the path's two conditions, a host object and its
+// native copy, meet here, and poly1305.c and poly1305_vector.c read this
+// one macro. A device object on WIDEMUL=native defines CH_WIDEMUL_NATIVE
+// too and is no host object, so it gets poly1305.c's loop.
+#if defined(CH_CPU_RUNTIME) && defined(CH_WIDEMUL_NATIVE)
 #define CH_POLY1305_VECTOR 1
 #endif
 
@@ -42,7 +44,7 @@
 // chacha20_vector.h's two rules hold for this path too: the compiler
 // targets NEON or SSE2, and the target is little-endian, so each 64-bit
 // lane a block loads into holds its bytes in the order RFC 8439 §2.5.1
-// reads them. The path exists only under CH_CHACHA_VECTOR, and this
+// reads them. The path exists only in a host object, and this
 // include applies the rules to a file that includes this header alone.
 #include "chacha20_vector.h"
 
@@ -64,7 +66,7 @@ void poly1305_vector_blocks(poly1305 *p, const uint8_t *m, size_t n);
 
 #endif // CH_POLY1305_VECTOR
 
-#if defined(CH_CHACHA_VECTOR) && defined(CH_CPU_RUNTIME)
+#ifdef CH_CPU_RUNTIME
 // The name a host object defines poly1305_vector_blocks under
 // (poly1305_vector_native.c, widemul_native.h), which poly1305_native.c's
 // block loop alone calls.

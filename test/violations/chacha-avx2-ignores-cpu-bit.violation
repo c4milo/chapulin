@@ -1,0 +1,14 @@
+invariant: INV-16
+file: chacha20.c
+catches: test/chacha-builds.sh
+reason: chacha20.c's use_avx2 answers 0 whatever the session's ch_cfg.cpu says,
+  so no session runs the AVX2 kernel and CH_CPU_AVX2 picks nothing. Every
+  vector passes, because the SSE2 path computes the same bytes; only the
+  time is wrong. The script compiles chacha20.c for x86-64 and requires
+  chacha20_xor_cpu to call the kernel.
+
+--- old
+    return (cpu & CH_CPU_AVX2) != 0;
+--- new
+    (void)cpu;
+    return 0;

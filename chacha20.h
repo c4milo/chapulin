@@ -23,4 +23,19 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
 void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                     uint32_t counter, uint8_t out[CHACHA20_BLOCK]);
 
+#ifdef CH_CPU_RUNTIME
+// chacha20_xor for one session of a host object: the same bytes under the
+// same contract, on the widest path cpu names. cpu is the session's
+// ch_cfg.cpu. On x86-64 a value with CH_CPU_AVX2 runs chacha20_avx2.c's
+// kernel, eight blocks a pass in 256-bit vectors, and every other value
+// chacha20_vector.c's SSE2 path. On arm64 every value runs that file's
+// NEON path (docs/decisions.md 89 and 90). The AEAD calls it for a record
+// or a packet. chacha20_xor in a host object runs the 128-bit path, which
+// every CPU of the architecture has, for a caller that holds no session's
+// description of the CPU.
+void chacha20_xor_cpu(uint32_t cpu, const uint8_t key[CHACHA20_KEY],
+                      const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, const uint8_t *in,
+                      uint8_t *out, size_t n);
+#endif
+
 #endif

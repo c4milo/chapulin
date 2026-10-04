@@ -1,0 +1,14 @@
+invariant: INV-16
+file: aead.c
+catches: widemul_runtime_test
+reason: aead_open_cpu checks its tag under WIDEMUL_NOT_STATED whatever the
+  session's ch_cfg.cpu states, so every record and packet a session opens
+  runs Poly1305 on the decomposition, and the bit picks nothing there.
+  The verdicts are the same. bin/widemul_runtime_test requires the entry
+  to call the native copies alone under a value with
+  CH_CPU_CONSTANT_TIME_MULTIPLY.
+
+--- old
+    if (!tag_matches(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag)) {
+--- new
+    if (!tag_matches(WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag)) {

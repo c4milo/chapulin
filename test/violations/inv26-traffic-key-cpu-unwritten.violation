@@ -1,0 +1,16 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_cpu writes nothing, so no traffic key records its
+  session's description of the CPU and AES-GCM runs the 128-bit loops for
+  every record and packet, whatever CH_CPU_VAES says. The bytes are the
+  same. bin/aes_runtime_test requires the key's cpu byte to hold the value
+  the call was given.
+
+--- old
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
+    k->key.cpu = (uint8_t)cpu;
+--- new
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
+    (void)k;
+    (void)cpu;

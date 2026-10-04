@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "cfg.h"
+#include "x86_kernels_cpu.h"
 
 #ifdef CH_CPU_RUNTIME
 // The description each configuration a host test builds takes, unless one of its rows sets
@@ -33,9 +34,17 @@
 
 // The value this binary runs under: TEST_CPU, unless its one argument names another
 // (test_take_cpu). The Makefile runs each vector binary once for each set of bits that changes a
-// path, and the binary hands its answers on from this value (test/test_widemul.h).
+// path, and the binary hands its answers on from this value (test/test_widemul.h,
+// test/test_aead.h).
 static uint32_t test_cpu = TEST_CPU;
 #define TEST_CPU_CFG(cfg) ((cfg).cpu = test_cpu)
+// What a test hands a call that takes a session's ch_cfg.cpu first, as quic_packet.h's do: the
+// value this binary runs under.
+#define TEST_SESSION_CPU test_cpu
+// Gives d, a record direction a test keys itself, the value an init call writes into a session's
+// directions (record.h). rec_dir_init leaves the field as it found it, so a direction a test
+// declares and keys without this line would read whatever its storage held.
+#define TEST_CPU_DIR(d) ((d).cpu = test_cpu)
 
 // Every bit a host object defines on the architecture this binary targets: the three of every
 // host object, and on x86-64 CH_CPU_AVX2 and CH_CPU_VAES. It is written here apart from cpu_cfg.h's
@@ -72,11 +81,45 @@ static inline int test_cpu_taken(size_t i) {
 }
 #else
 #define TEST_CPU_CFG(cfg) ((void)(cfg))
+#define TEST_SESSION_CPU 0U
+#define TEST_CPU_DIR(d) ((void)(d))
 #endif
+
+// Ends a host binary whose test_cpu names an x86-64 kernel this CPU cannot run. A session whose
+// caller described the CPU wrongly dies of SIGILL at the kernel's first instruction, and so would
+// this binary, so it prints SKIP and exits with status 0, or fails with status 1 when
+// CH_REQUIRE_X86_KERNELS is 1, which CI's x86-64 kernels job sets (test/x86_kernels_cpu.h). The
+// library asks no CPU anything; a test may. On any other architecture no value names a kernel.
+static inline void test_skip_absent_kernels(const char *binary) {
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+    const char *lacks = NULL;
+    if ((test_cpu & CH_CPU_AVX2) != 0 && !x86_cpu_has_avx2()) {
+        lacks = "AVX2";
+    } else if ((test_cpu & CH_CPU_VAES) != 0 && !x86_cpu_has_vaes()) {
+        lacks = "VAES or VPCLMULQDQ";
+    }
+    if (lacks == NULL) {
+        return;
+    }
+    if (x86_kernels_required()) {
+        (void)fprintf(stderr,
+                      "%s: ch_cfg.cpu 0x%" PRIx32 " names %s, which this CPU lacks, and "
+                      "CH_REQUIRE_X86_KERNELS is 1\n",
+                      binary, test_cpu, lacks);
+        exit(1);
+    }
+    (void)printf("SKIP %s under ch_cfg.cpu 0x%" PRIx32 ": this CPU lacks %s\n", binary, test_cpu,
+                 lacks);
+    exit(0);
+#else
+    (void)binary;
+#endif
+}
 
 // Takes a host binary's one argument, a number such as 0x5, into test_cpu and prints it, and
 // exits with status 2 for an argument that is not a 32-bit number. With no argument test_cpu
-// keeps TEST_CPU. Every other binary takes no argument and prints nothing.
+// keeps TEST_CPU. A value that names an x86-64 kernel the CPU cannot run ends the binary there
+// (test_skip_absent_kernels). Every other binary takes no argument and prints nothing.
 static inline void test_take_cpu(int argc, char **argv) {
 #ifdef CH_CPU_RUNTIME
     if (argc > 1) {
@@ -88,6 +131,7 @@ static inline void test_take_cpu(int argc, char **argv) {
         }
         test_cpu = (uint32_t)bits;
     }
+    test_skip_absent_kernels(argv[0]);
     (void)printf("%s under ch_cfg.cpu 0x%" PRIx32 "\n", argv[0], test_cpu);
 #else
     (void)argc;

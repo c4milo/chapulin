@@ -104,6 +104,7 @@ static void resume_connected(uint64_t now, rec_dir *client_rd) {
     CHECK(srv_read_client_finished(&hs) == CH_OK);
     srv_complete(&hs);
     rec_dir_init(client_rd, sess.wr_secret);
+    TEST_CPU_DIR(*client_rd);
     wire_len = 0;
 }
 

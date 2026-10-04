@@ -96,9 +96,10 @@ jobs:
           version: ${{ env.OPENSSL_VERSION }}
           sha256: ${{ env.OPENSSL_SHA256 }}
       - name: Time one record under gcc
-        # The runner's own gcc, as in the aead job. bench/record.sh probes
-        # -maes -mpclmul for the AES-GCM rows, and it fails rather than
-        # writing a file without them when the probe finds nothing.
+        # The runner's own gcc, as in the aead job. bench/record.sh asks
+        # make whether the compiler passes the host test, and it fails
+        # rather than writing a file without the AES-GCM rows when it
+        # does not.
         run: make bench-record CC=gcc
       - name: Time one record under the pinned clang
         run: make bench-record CC="$CLANG_RV"

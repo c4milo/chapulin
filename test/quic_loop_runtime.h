@@ -22,7 +22,10 @@
 // test/quic_loop_cpu.h holds the values every init call refuses. With
 // "absent" as its argument the binary runs test_quic_runtime_absent
 // alone, which test/aes-runtime-qemu.sh does on a CPU model without the AES
-// instructions and the carry-less multiply.
+// instructions and the carry-less multiply. With "cpu" and two values it
+// runs test_quic_runtime_values alone, one handshake with each end
+// stating a value, which that script does with values that name the
+// x86-64 kernels.
 #ifndef CH_TEST_QUIC_LOOP_RUNTIME_H
 #define CH_TEST_QUIC_LOOP_RUNTIME_H
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
@@ -152,6 +155,26 @@ static int test_quic_runtime_absent(void) {
     if (failures == 0) {
         (void)printf("quic_loop: with both ends stating no AES instructions, every handshake ran"
                      " on ChaCha20 and the table\n");
+    }
+    return failures != 0;
+}
+
+// One whole handshake with the client stating one ch_cfg.cpu value and the
+// server another, each a number such as 0x1f, at the suite both can run:
+// AES-256-GCM where both state the AES instructions, and ChaCha20 where
+// either does not. On a CPU without the instructions of a kernel a value
+// names, the end that states it dies of SIGILL at the kernel's first
+// instruction, as a session whose caller described the CPU wrongly does.
+static int test_quic_runtime_values(const char *client_text, const char *server_text) {
+    uint32_t client_bits = (uint32_t)strtoul(client_text, NULL, 0);
+    uint32_t server_bits = (uint32_t)strtoul(server_text, NULL, 0);
+    int both_aes = (client_bits & server_bits & CH_CPU_CONSTANT_TIME_AES) != 0;
+    check_quic_bits(client_bits, server_bits,
+                    both_aes ? SUITE_AES_256_GCM_SHA384 : SUITE_CHACHA20_POLY1305_SHA256);
+    if (failures == 0) {
+        (void)printf("quic_loop: a handshake ran with the client stating ch_cfg.cpu 0x%x and the"
+                     " server 0x%x\n",
+                     (unsigned)client_bits, (unsigned)server_bits);
     }
     return failures != 0;
 }

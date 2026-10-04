@@ -28,6 +28,7 @@ static void put_alert(wire *w, const uint8_t *secret) {
     if (secret != NULL) {
         rec_dir d;
         rec_dir_init(&d, secret);
+        TEST_CPU_DIR(d);
         CHECK(rec_seal(&d, REC_ALERT, peer_alert, peer_alert_len, rec, sizeof rec, &len) == 0);
     } else {
         const uint8_t hdr[REC_HDR] = {REC_ALERT, 0x03, 0x03, 0, (uint8_t)peer_alert_len};
@@ -182,6 +183,7 @@ static void server_reads_client_ticket(void) {
         HS_NEW_SESSION_TICKET, 0, 0, 14, 0, 0, 0x0e, 0x10, 0, 0, 0, 7, 0, 0, 1, 't', 0, 0};
     rec_dir app;
     rec_dir_init(&app, cli_t.wr_secret);
+    TEST_CPU_DIR(app);
     uint8_t rec[64];
     size_t len = 0;
     CHECK(rec_seal(&app, REC_HANDSHAKE, ticket, sizeof ticket, rec, sizeof rec, &len) == 0);

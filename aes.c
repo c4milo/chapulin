@@ -41,6 +41,13 @@
 #include "quic_version.h"
 #endif
 
+#ifdef CH_CPU_RUNTIME
+// A schedule records its session's ch_cfg.cpu in one byte
+// (aes_schedule.h), so every bit an object defines must sit in the low
+// byte of the value.
+_Static_assert(CH_CPU_DEFINED <= 0xffU, "a schedule's cpu byte holds every defined ch_cfg.cpu bit");
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // The length of an Initial salt, 20 bytes in both QUIC versions RFC 9001 and
 // RFC 9369 define (rfc9001.txt:1066, rfc9369.txt:163-165).
@@ -105,6 +112,7 @@ static int on_instructions(const aes_key_schedule *s) {
 // (INV-26), and a CPU whose caller set no such bit runs no AES instruction
 // here.
 static void expand_public_key(aes_key_schedule *s, const uint8_t key[AES_128_KEY], uint32_t cpu) {
+    s->cpu = (uint8_t)cpu;
     if ((cpu & CH_CPU_CONSTANT_TIME_AES) != 0) {
         s->instructions = AES_ON_INSTRUCTIONS;
         aes_expand_round_keys(key, s->round_keys);
@@ -282,6 +290,10 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
 #ifdef CH_AES_TWO_CIPHERS
     k->key.instructions = AES_ON_INSTRUCTIONS;
 #endif
+#ifdef CH_CPU_RUNTIME
+    // No kernel until aes_traffic_key_cpu names the session's CPU.
+    k->key.cpu = 0;
+#endif
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);
         k->key.rounds = AES_256_ROUNDS;
@@ -290,6 +302,12 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     aes_expand_round_keys(key, k->key.round_keys);
     k->key.rounds = AES_128_ROUNDS;
 }
+
+#ifdef CH_CPU_RUNTIME
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
+    k->key.cpu = (uint8_t)cpu;
+}
+#endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BLOCK],

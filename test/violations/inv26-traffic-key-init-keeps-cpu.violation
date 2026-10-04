@@ -1,0 +1,13 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_init leaves the key's cpu byte as its storage held it,
+  so a key that no call gave a description of the CPU, a header
+  protection key among them, reads whatever the stack held, and gcm.c
+  would pick the VAES kernels from it. bin/aes_runtime_test fills the key
+  with 0xff before the call and requires the byte to read 0 after it.
+
+--- old
+    // No kernel until aes_traffic_key_cpu names the session's CPU.
+    k->key.cpu = 0;
+--- new

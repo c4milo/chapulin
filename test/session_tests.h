@@ -72,7 +72,7 @@ static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     // one never runs (session.h).
     TEST_CPU_CFG(t->cfg);
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     memcpy(t->rd_secret, secret, SHA256_LEN);
     rec_dir_init(&t->rd, t->rd_secret);

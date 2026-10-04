@@ -48,10 +48,10 @@ The other 21 sources are in no such harness:
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
-| `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_vaes`, `bin/quic_test_vaes` and the x86-64 kernels' Wycheproof leg run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
-| `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector path](#the-chachavector-path)). |
-| `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_chacha_avx2` and the x86-64 kernels' Wycheproof leg run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
-| `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
+| `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
+| `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
+| `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
+| `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
@@ -290,10 +290,11 @@ The entries are grouped by area:
 - **Harness:** `chacha20` (fast)
 - **Proves:** safe at any counter, in place and into a distinct buffer.
 - **Bound:** ≤ 160 B: three blocks, full, full and partial.
-- **Not proved:** the `CHACHA=vector` path, whose intrinsics CBMC cannot
-  unwind. The harness compiles `chacha20.c` without `-DCH_CHACHA_VECTOR`,
-  and [The CHACHA=vector path](#the-chachavector-path) states what holds
-  the vector path to this loop.
+- **Not proved:** a host object's vector path, whose intrinsics CBMC
+  cannot unwind. The harness compiles `chacha20.c` without
+  `-DCH_CPU_RUNTIME`, as a device object does, and
+  [The vector ChaCha20](#the-vector-chacha20) states what holds the
+  vector path to this loop.
 
 #### poly1305
 
@@ -304,11 +305,11 @@ The entries are grouped by area:
   path in every alignment.
 - **Not proved:** the five-call shape `aead.c` uses. The aead harnesses
   stub Poly1305, so that shape rests on the unit vectors, Wycheproof and
-  the differential. Nor the `CHACHA=vector` Poly1305, whose intrinsics
+  the differential. Nor a host object's vector Poly1305, whose intrinsics
   CBMC cannot unwind. The harness compiles `poly1305.c` without
-  `-DCH_CHACHA_VECTOR`, so `whole_blocks` calls the loop it proves, and
-  [The CHACHA=vector Poly1305](#the-chachavector-poly1305) states what
-  holds the vector path to that loop.
+  `-DCH_CPU_RUNTIME`, so `whole_blocks` calls the loop it proves, and
+  [The vector Poly1305](#the-vector-poly1305) states what holds the
+  vector path to that loop.
 
 #### aead
 
@@ -2400,7 +2401,7 @@ equality proof stays at 8-bit operands.
 
 The wide X25519 field is one of three secret-bearing sources none of
 those specs can build, since it needs `unsigned __int128`; the others are
-the two `CHACHA=vector` paths (below). It multiplies on
+a host object's two vector paths (below). It multiplies on
 the 64x64->128 instruction. `ct.h` defines that multiply for a host
 object alone, and `widemul.h` runs the field only for a session whose
 caller set `CH_CPU_CONSTANT_TIME_MULTIPLY`, the statement that the
@@ -2416,15 +2417,18 @@ calls at zero and its branch count at the loop control it has, and
 `inv16-x25519-wide-cswap-branch` shows the count sees a `cswap` written
 as an `if`. No gcc measures it.
 
-### The CHACHA=vector path
+### The vector ChaCha20
 
 `chacha20_vector.c` computes ChaCha20 on NEON or SSE2 intrinsics, in
 passes of eight blocks on NEON, two groups of four side by side, and of
-four blocks on SSE2 (decisions 82 and 86). CBMC cannot unwind an
-intrinsic, so no harness compiles the file, and the
-[chacha20](#chacha20) proof covers `chacha20.c`'s loop alone. As the
-AES instructions rest on `bin/aes_equiv_test` and the published vectors, the
-vector path rests on these, each in `make check`:
+four blocks on SSE2 (decisions 82 and 86). Every host object holds it,
+and every host session runs it: in a host object `chacha20_xor` calls it
+in place of `chacha20.c`'s loop, which a device object runs (decision
+89). CBMC cannot unwind an intrinsic, so no harness compiles the file,
+and the [chacha20](#chacha20) proof covers `chacha20.c`'s loop alone. As
+the AES instructions rest on `bin/aes_equiv_test` and the published
+vectors, the vector path rests on these, each in `make check` on a host
+target:
 
 - `bin/chacha20_equiv_test` compares it with `chacha20.c`'s loop over
   49,211 cases:
@@ -2442,40 +2446,58 @@ vector path rests on these, each in `make check`:
   Each case checks every output byte and every byte around the output,
   then runs again on heap buffers of exactly the case's size, which
   `make san-check` runs under AddressSanitizer.
-- `bin/unit_chacha_vector` runs the unit suite on the path: RFC 8439's
-  §2.3.2, §2.4.2, A.2 and A.5 vectors, of which A.2's 375-byte vector
-  and A.5's 265 bytes run a whole group of four blocks and a partial
-  one, and every record the suite seals and opens.
-- The Wycheproof ChaCha20-Poly1305 suite runs on it in a leg of its own,
-  with messages up to 513 bytes.
+- `bin/unit_host`, the unit suite compiled as a host object, runs on the
+  path under each `ch_cfg.cpu` value it takes: RFC 8439's §2.3.2,
+  §2.4.2, A.2 and A.5 vectors, of which A.2's 375-byte vector and A.5's
+  265 bytes run a whole group of four blocks and a partial one, and
+  every record the suite seals and opens.
+- The Wycheproof ChaCha20-Poly1305 suite runs on it in the host binary,
+  under every `ch_cfg.cpu` value that binary takes, with messages up to
+  513 bytes.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
   the pinned clang and holds its conditional branches at 40 and 23,
   every one loop control over a public count or a test of the byte
   count: most of them test whether the last pass's limit covers a row of
   16 bytes. It multiplies nothing.
+- `test/chacha-builds.sh` compiles `chacha20.c` both ways. A host
+  object's `chacha20_xor` must call `chacha20_vector_xor`, and a device
+  object's must call no vector path.
+- `make lint-trust-separation` requires `chacha20_vector.c` and
+  `chacha20_avx2.c` in every host object's source list, bans both from
+  every device object's, and requires the Makefile to refuse the `CHACHA`
+  variable for both.
 
-Seven violations break the path, and each is caught. The equivalence
-test catches `chacha-vector-tail-whole-rows-only`,
+Ten violations break the path or the rule that puts it in a host object
+alone, and each is caught. The equivalence test catches
+`chacha-vector-tail-whole-rows-only`,
 `chacha-vector-counter-carries-into-nonce`,
 `chacha-vector-skips-a-lane` and
 `chacha-vector-blocks-in-descending-order`; `test/chacha-builds.sh`
 catches `chacha-vector-header-admits-any-target`,
 `chacha-vector-header-admits-big-endian` and
-`chacha-vector-falls-back-to-portable`.
+`chacha-vector-falls-back-to-portable`; and `make lint-trust-separation`
+catches `inv16-host-object-drops-vector-chacha`,
+`inv16-device-object-holds-vector-chacha` and
+`inv16-chacha-variable-accepted`.
 
 None of this proves the two paths agree on an input no case reaches.
 The path's timing rests on construction, as the portable loop's does:
 it runs adds, exclusive-ors, shifts and lane moves, with no table and no
-multiply. No gcc measures its branches.
+multiply. No gcc measures its branches. No proof covers the ChaCha20 a
+host session runs: the proved loop runs in a device object alone, which
+is the cost decision 89 states.
 
-### The CHACHA=vector Poly1305
+### The vector Poly1305
 
 `poly1305_vector.c` runs Poly1305's block loop four blocks at a time, in
-two lanes on NEON or SSE2 intrinsics, in a build that defines
-`CH_CHACHA_VECTOR` and asserts `CH_NATIVE_WIDEMUL` (decision 83). CBMC
-cannot unwind an intrinsic, so no harness compiles the file, and the
+two lanes on NEON or SSE2 intrinsics (decision 83). It exists in a host
+object's native copy alone, `poly1305_vector_native.c`, which
+`poly1305_native.c` calls, so a session runs it only where its caller
+set `CH_CPU_CONSTANT_TIME_MULTIPLY` (decision 89). A session without the
+bit, and every device object, runs `poly1305.c`'s loop. CBMC cannot
+unwind an intrinsic, so no harness compiles the file, and the
 [poly1305](#poly1305) proof covers `poly1305.c`'s loop alone. The vector
-path rests on these, each in `make check`:
+path rests on these, each in `make check` on a host target:
 
 - `bin/poly1305_equiv_test` compares it with `poly1305.c`'s loop over
   43,282 cases. Each case compares the accumulator modulo 2^130 - 5
@@ -2501,22 +2523,31 @@ path rests on these, each in `make check`:
   nor one limb every 8 or 16 bytes, as a NEON or SSE2 multiplier holds a
   lane's (test/poly1305_equiv_residue.h). Five words match when they hold
   the power's value modulo 2^130 - 5, whatever their carry form.
-- `bin/unit_chacha_vector` runs the unit suite on the path: RFC 8439's
-  A.3 vectors 2 and 3, 375 bytes each, and A.5's 265 bytes reach it, as
-  does every record the suite seals and opens with 128 bytes of whole
-  blocks or more.
-- The Wycheproof ChaCha20-Poly1305 suite runs on it in the
-  `CHACHA=vector` leg.
-- `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 4 on each: the
-  contract check at the entry and the group loop, all on the byte count.
-  It divides nothing and calls no runtime routine. Its multiplies are the
-  ones `CH_NATIVE_WIDEMUL` asserts, so the count leaves them out, as it
-  leaves out `x25519_wide.c`'s.
-- `test/chacha-builds.sh` compiles `poly1305.c` under each of the two
-  defines alone, under both, and under both with `CH_CT_WIDEMUL`, and
-  requires the call to the path in the build with both defines and
-  nothing more, and in no other.
+- `bin/unit_host` runs the unit suite on the path under a `ch_cfg.cpu`
+  with the multiply bit: RFC 8439's A.3 vectors 2 and 3, 375 bytes each,
+  and A.5's 265 bytes run on it, as does every record the suite seals and
+  opens with 128 bytes of whole blocks or more. Under the probe's bit
+  alone the same suite runs `poly1305.c`'s loop.
+- The Wycheproof ChaCha20-Poly1305 suite runs on it in the host binary's
+  runs with the multiply bit.
+- `bin/widemul_runtime_test` counts the calls into each copy: with the
+  bit an AEAD call and a record run the native copy, and without it
+  neither does. `bin/quic_loop_host` counts the same for the packets of
+  whole QUIC handshakes
+  ([The host object's two multiplies](#the-host-objects-two-multiplies)).
+- `make lint-wide-multiply` compiles the native copy for arm64 and
+  x86-64 under the pinned clang and holds its conditional branches at 4
+  on each: the contract check at the entry and the group loop, all on
+  the byte count. It divides nothing and calls no runtime routine. Its
+  multiplies are the ones the caller's bit states, so the count leaves
+  them out, as it leaves out `x25519_wide.c`'s. Under its own name the
+  file compiles to nothing, and the count holds that at 0.
+- `test/widemul-builds.sh` compiles `poly1305_native.c` as a host object
+  does and requires its call to the path, requires none from `poly1305.c`
+  under its own names, and none from the native copy under
+  `CH_CT_WIDEMUL`. `test/chacha-builds.sh` compiles a device object's
+  `poly1305.c`, with `-DCH_NATIVE_WIDEMUL` and without it, and requires
+  no call to the path.
 
 Nine violations break the path, and each is caught. The equivalence
 test catches `poly1305-vector-last-group-even-powers`,
@@ -2524,19 +2555,19 @@ test catches `poly1305-vector-last-group-even-powers`,
 `poly1305-vector-lane-1-starts-from-h`,
 `poly1305-vector-hands-partial-group`,
 `poly1305-vector-returns-wide-h1` and `poly1305-vector-keeps-powers`,
-which drops the wipe; `test/chacha-builds.sh` catches
-`poly1305-vector-falls-back-to-portable` and
-`poly1305-vector-without-widemul-statement`.
+which drops the wipe; `test/widemul-builds.sh` catches
+`poly1305-vector-falls-back-to-portable`, and `test/chacha-builds.sh`
+catches `poly1305-vector-in-device-object`.
 
 None of this proves the two paths agree on an input no case reaches.
 The limb bounds that keep every sum below 2^64 are argued in the file's
 comments, not proved. The residue check reads the stack one compiler
 left on one call; it cannot see registers, or a spill slot that holds a
-power in a layout it does not search. The path's timing rests on the build's
-`CH_NATIVE_WIDEMUL` statement for its multiplies, as the portable
-loop's does under that define, and on construction for the rest: adds,
-masks, fixed shifts and lane moves, with no table. No gcc measures its
-branches.
+power in a layout it does not search. The path's timing rests on the
+caller's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit for its multiplies, as the
+native copy of the portable loop does, and on construction for the rest:
+adds, masks, fixed shifts and lane moves, with no table. No gcc measures
+its branches.
 
 ### A host session without the AES bit
 
@@ -2554,7 +2585,8 @@ the rest of a session makes. Three checks stand in:
 - `test/aes-runtime-qemu.sh`, in CI's mips job on every push, builds that
   binary and the two suite loop binaries for x86-64 with the runner's gcc,
   as host objects. It runs them under `qemu-x86_64 -cpu
-  max,-aes,-pclmulqdq`, where either instruction raises SIGILL. The
+  max,-aes,-pclmulqdq,-avx2`, where each of those instructions raises
+  SIGILL. The
   vectors must pass without the bit, and so must the whole QUIC and TCP
   handshakes, resumptions and pin rows with both ends stating the probe's
   bit alone. The rows with the bit, and `bin/quic_test_hw`'s vectors,
@@ -2584,18 +2616,31 @@ other path.
 
 `chacha20_avx2.c` computes ChaCha20 eight blocks a pass in 256-bit AVX2
 vectors, and `gcm_vaes.c` runs `gcm_hw.c`'s three loops two blocks to a
-256-bit register on VAES and VPCLMULQDQ (decision 90). Every x86-64
-`CHACHA=vector` object carries the first, and every x86-64 host object
-the second, each function turning its instructions
-on through its own target attribute. `chacha20.c`'s `use_avx2` and
-`gcm_hw.c`'s `use_vaes` answer 0 until `ch_cfg.cpu` carries the caller's
-bits, so no library call runs either kernel yet. CBMC cannot unwind an
-intrinsic, so no harness compiles them, and the [chacha20](#chacha20) and
-GCM proofs cover the portable code they are held to. They rest on these,
-each in `make check` on an x86-64 host. Each binary asks its CPU through
-`__builtin_cpu_supports` and CPUID (`test/x86_kernels_cpu.h`), which only
-test code does, and skips a kernel's cases on a CPU without its
-instructions:
+256-bit register on VAES and VPCLMULQDQ (decision 90). Every x86-64 host
+object carries both, each function turning its instructions on through
+its own target attribute. Two predicates read the caller's bits, and one
+branch per call picks a kernel or the 128-bit path under it (decision
+89):
+
+- `chacha20.c`'s `use_avx2` answers for `CH_CPU_AVX2`. `aead_seal_cpu`
+  and `aead_open_cpu` hand it the session's `ch_cfg.cpu`, which a record
+  direction holds and a QUIC packet call takes, through
+  `chacha20_xor_cpu`. `chacha20_xor`, which takes no value, runs the
+  128-bit path.
+- `gcm_vaes.h`'s `gcm_use_vaes` answers for `CH_CPU_VAES` and
+  `CH_CPU_CONSTANT_TIME_AES` together. It reads the byte each AES key
+  schedule records from its session's `ch_cfg.cpu`, and `gcm.c` asks it
+  only for a schedule the AES instructions run.
+
+CBMC cannot unwind an intrinsic, so no harness compiles the kernels, and
+the [chacha20](#chacha20) and GCM proofs cover the portable code they are
+held to. Two questions need tests: what a kernel computes, and which
+calls run it.
+
+**What a kernel computes** rests on these, each in `make check` on an
+x86-64 host. Each binary asks its CPU through `__builtin_cpu_supports`
+and CPUID (`test/x86_kernels_cpu.h`), which only test code does, and
+skips a kernel's cases on a CPU without its instructions:
 
 - `bin/chacha20_equiv_test` runs its 49,211 cases on the AVX2 kernel
   after the 128-bit path, from the same seed, with buffers at every
@@ -2605,43 +2650,97 @@ instructions:
   `gcm_counter_blocks_vaes` after `gcm_counter_blocks_hw`: every block
   count to three passes and one, so each odd count's last block runs
   through half a register, and counters within two passes of 2^32.
-- `bin/unit_chacha_avx2`, `bin/ghash_equiv_vaes`, `bin/quic_test_vaes`
-  and the x86-64 kernels' Wycheproof leg force-include a route header,
-  `test/chacha20_avx2_route.h` or `test/gcm_vaes_route.h`, that renames
-  the 128-bit entry their library sources call to the kernel, and link
-  the kernel in place of that entry. They run the unit suite with RFC
-  8439's vectors and every record it seals; `bin/ghash_equiv_test`'s
-  3,213 AEAD cases and its stack checks, which look for H, its powers, a
-  pass's sums and a pass's keystream below a seal and an open; FIPS 197's,
-  SP 800-38D's and RFC 9001's vectors; and the Wycheproof
-  ChaCha20-Poly1305 and AES-GCM suites.
+- `bin/unit_host` runs once more under `ch_cfg.cpu` 0xd, which adds
+  `CH_CPU_AVX2`: the unit suite with RFC 8439's vectors and every record
+  it seals, on the AVX2 kernel.
+- `bin/ghash_equiv_test` runs its 3,213 AEAD cases and its stack checks
+  a second time under a key whose schedule names the kernels
+  (`test/ghash_equiv_vaes.h`). The stack checks look for H, its powers,
+  a pass's sums and a pass's keystream below a seal and an open.
+- `bin/quic_test_hw` runs FIPS 197's, SP 800-38D's and RFC 9001's
+  vectors a second time on the kernels (`run_vectors_on_kernels`).
+- The Wycheproof host binary runs twice more, under 0xf and 0x1f: the
+  ChaCha20-Poly1305 suite on the AVX2 kernel, and then the AES-GCM suites
+  on the VAES kernels.
+
+**Which calls run a kernel** rests on these:
+
+- `bin/x86_kernels_test` counts the calls into each kernel under each of
+  17 `ch_cfg.cpu` values: the 16 the four bits beside `CH_CPU_PROBED`
+  make, and 0, which a wiped record direction holds. Its rows are
+  `chacha20_xor_cpu` and the two AEAD entries that take a value, a
+  record under each of the three suites, a QUIC 1-RTT packet under each
+  suite and a Handshake packet, an Initial packet, and a traffic key's
+  schedule. Under each value a call must run a kernel exactly when the
+  value names it, and must return the same bytes. The counting entries
+  (`test/x86_kernels_count.c`) forward to the 128-bit paths, so the
+  binary runs no kernel instruction and passes on every x86-64 CPU. An
+  arm64 build of it has no row.
+- `test/aes-runtime-qemu.sh` runs whole handshakes on CPU models, in CI's
+  mips job on every push. On `max,-aes,-pclmulqdq,-avx2` the loops with
+  `CH_CPU_AVX2` on both ends must die of SIGILL, which shows the model
+  traps AVX2, and so that the rows without the bit ran none of it. On
+  `max,-avx2` the loops with the AES bit must pass on the 128-bit loops,
+  and with `CH_CPU_VAES` added they must die of SIGILL. On `max`, where
+  the qemu has a kernel's instructions, one end runs the kernel and the
+  other the 128-bit path, in both orders, and a whole QUIC handshake and
+  a whole TCP one must complete between them on the suite the two values
+  share. A qemu without a kernel's instructions skips that kernel's mixed
+  rows and says so. The script also builds and runs
+  `bin/x86_kernels_test`, which is the one way an arm64 development
+  machine runs it; `test/docker-aes-runtime-qemu.sh x86-kernels` runs
+  that binary alone.
 - `test/chacha-builds.sh` and `test/quic-builds.sh` compile the kernels
   for x86-64 with no instruction flag under the pinned clang. They
   require each kernel's 256-bit instructions there, no 256-bit register
-  in `chacha20.c`, `chacha20_vector.c` or `gcm_hw.c`, no call to a kernel
-  from `chacha20.c` or `gcm_hw.c` while the two predicates answer 0, and
-  no kernel on arm64.
+  in `chacha20.c`, `chacha20_vector.c`, `gcm.c` or `gcm_hw.c`, and no
+  kernel on arm64. They also read which entries each source calls.
+  `chacha20_xor_cpu`'s own body must call both the kernel and the
+  128-bit path, and `chacha20_xor`'s the 128-bit path alone. `gcm.c`
+  must call all six entries, the three kernels and `gcm_hw.c`'s three,
+  and `gcm_hw.c` no kernel. A predicate that answers one value for every
+  session leaves a call out.
 - `make lint-wide-multiply` holds `chacha20_avx2.c`'s conditional
   branches at 23 on x86-64 and 0 on arm64, each a loop over a public
   count or a test of the byte count. `gcm_vaes.c` sits in
   `WIDEMUL_PUBLIC` beside `gcm_hw.c`.
 
-CI's `x86-64-kernels` job runs the binaries above and the Wycheproof legs
-with `CH_REQUIRE_X86_KERNELS=1`, under which a CPU without AVX2, VAES and
-VPCLMULQDQ fails them rather than skips them, after `make
+CI's `x86-64-kernels` job runs the binaries above and the Wycheproof host
+binary with `CH_REQUIRE_X86_KERNELS=1`, under which a CPU without AVX2,
+VAES and VPCLMULQDQ fails them rather than skips them, after `make
 x86-64-kernels-cpu` names the runner's CPU.
 
-Four violations break the rules the two scripts hold, and each is caught:
-`chacha-avx2-runs-before-cpu-bit` and `chacha-avx2-without-target` by
-`test/chacha-builds.sh`, and `inv26-vaes-runs-before-cpu-bits` and
-`inv26-vaes-without-target` by `test/quic-builds.sh`. A mutant of a
-kernel's arithmetic is caught only on a CPU with the kernel's
-instructions, and `test/violations.py` runs every violation on the host
-that runs it, so on an arm64 host such a mutant would pass as unguarded.
-None is in `test/violations/`. Instead, 27 such mutants were run by hand
-once, built with gcc 13 and run under `qemu-x86_64 -cpu max` from QEMU
-8.2, with VPCLMULQDQ, which QEMU does not implement, replaced by one
-PCLMULQDQ per 128-bit half. The binaries above caught 26:
+Eighteen violations break these rules, and each is caught:
+
+- `test/chacha-builds.sh` catches `chacha-avx2-runs-without-cpu-bit` and
+  `chacha-avx2-ignores-cpu-bit`, a `use_avx2` that answers 1 or 0 for
+  every value, and `chacha-avx2-without-target`.
+- `test/quic-builds.sh` catches `inv26-vaes-runs-without-cpu-bits` and
+  `inv26-vaes-ignores-cpu-bits`, the same two for `gcm_use_vaes`, and
+  `inv26-vaes-without-target`.
+- `bin/aes_runtime_test` catches `inv26-initial-key-drops-cpu`,
+  `inv26-traffic-key-init-keeps-cpu` and
+  `inv26-traffic-key-cpu-unwritten`, which break the byte a schedule
+  records. That byte is written on every architecture, so the binary
+  reads it on arm64 too.
+- `bin/x86_kernels_test` catches the rest, which only an x86-64 binary
+  compiles: `chacha-avx2-reads-vaes-bit`, `inv26-vaes-without-aes-bit`
+  and `inv26-vaes-without-vaes-bit`, a predicate that reads the wrong
+  bit or one bit of two, and `inv16-aead-seal-cpu-drops-avx2`,
+  `inv16-aead-open-cpu-drops-avx2`, `inv26-record-seal-key-drops-cpu`,
+  `inv26-record-open-key-drops-cpu`, `inv26-packet-seal-key-drops-cpu`
+  and `inv26-packet-open-key-drops-cpu`, a call that hands on no value.
+  Each names `test/docker-aes-runtime-qemu.sh x86-kernels` as its catch,
+  so `test/violations.py` runs it in a container on an arm64 host.
+
+A mutant of a kernel's arithmetic is caught only on a CPU with the
+kernel's instructions, and `test/violations.py` runs every violation on
+the host that runs it, so on an arm64 host such a mutant would pass as
+unguarded. None is in `test/violations/`. Instead, 27 such mutants were
+run by hand once, built with gcc 13 and run under `qemu-x86_64 -cpu max`
+from QEMU 8.2, with VPCLMULQDQ, which QEMU does not implement, replaced
+by one PCLMULQDQ per 128-bit half. The binaries of decision 90's commit
+caught 26:
 
 - in the ChaCha20 kernel, the keystream of the upper four blocks, a
   counter lane, a rotation, the order of two rows, which the equivalence
@@ -2655,15 +2754,32 @@ PCLMULQDQ per 128-bit half. The binaries above caught 26:
 
 The one they missed reads the powers without `volatile`. Built with gcc,
 it left no copy of a power on the stack, so the stack checks had nothing
-to find. Built with clang 18, it left copies, and `bin/ghash_equiv_vaes`
-caught it. The reads stay volatile for the reason `ghash_power_at` gives.
+to find. Built with clang 18, it left copies, and the GHASH equivalence
+test's run on the kernels caught it. The reads stay volatile for the
+reason `ghash_power_at` gives. Those runs used binaries that renamed the
+128-bit entries to the kernels; `bin/unit_host`, `bin/ghash_equiv_test`
+and `bin/quic_test_hw` run the same cases on the kernels now, and the 27
+mutants have not been run against them.
 
 None of this proves a kernel agrees with the portable code on an input no
-case reaches. The ChaCha20 kernel's timing rests on construction, as the
-portable loop's does: adds, exclusive-ors, shifts and byte shuffles under
-constant orders, with no table and no multiply. The GCM kernels' timing
-rests on the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `use_vaes` is
-to require beside `CH_CPU_VAES` and whose statement covers the AES
+case reaches. QEMU's `max` model has AVX2 and VAES and no VPCLMULQDQ, in
+8.2, 10.0 and 11.1 alike, so under qemu the AVX2 rows run and every row
+on the VAES kernels skips: no handshake there runs those kernels against
+the 128-bit loops. Those rows run where the CPU has the instructions,
+which among the machines these checks use is the runner of CI's
+`x86-64-kernels` job alone. They ran once by hand at decision 89's fifth
+commit, under QEMU 10.0 and gcc 14, with each VPCLMULQDQ replaced by one
+PCLMULQDQ per 128-bit half, as the 27 mutants did: the lane's handshakes
+with one end on the VAES kernels and the other on the 128-bit loops, the
+two equivalence tests' second pass, `bin/quic_test_hw`'s vectors and the
+Wycheproof host binary under 0x1f, all with `CH_REQUIRE_X86_KERNELS=1`.
+Each passed. That run holds the calls that pick the kernels and the
+kernels' AES rounds, and not the 256-bit multiply itself. The
+ChaCha20 kernel's timing rests on construction, as the portable loop's
+does: adds, exclusive-ors, shifts and byte shuffles under constant
+orders, with no table and no multiply. The GCM kernels' timing rests on
+the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `gcm_use_vaes`
+requires beside `CH_CPU_VAES` and whose statement covers the AES
 instructions and the carry-less multiply at every width (decision 89).
 
 ### The host object's two multiplies
@@ -2865,9 +2981,10 @@ Three more suites run on every push and add evidence rather than proof.
 `make wycheproof` generates (`tools/wycheproof-total.py`).
 
 The x25519 suite's 518 cases run a second time over the wide X25519
-field, in the host leg's runs with the multiply bit, and the
-ChaCha20-Poly1305 suite's 316 cases over the `CHACHA=vector` paths,
-ChaCha20 and Poly1305, in a binary of their own.
+field, in the host leg's runs with the multiply bit. The
+ChaCha20-Poly1305 suite's 316 cases run over the vector ChaCha20 in
+every run of that leg, and over the vector Poly1305 in its runs with the
+multiply bit.
 
 The HMAC-SHA256 suite calls `hmac_sha256` directly. So the MAC that
 Finished, the binders, the QUIC Retry token, the HelloRetryRequest

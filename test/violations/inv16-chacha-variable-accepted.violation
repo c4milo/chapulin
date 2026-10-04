@@ -1,0 +1,14 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile stops refusing the CHACHA variable, so a build that still
+  passes CHACHA=vector for a raw client gets the portable loop with no
+  word said, where its builder expects the vector path.
+  lint-trust-separation's refused rows require make print-lib-def to
+  fail for CHACHA=vector and CHACHA=portable, on a device object and on a
+  host object.
+
+--- old
+ifneq ($(origin CHACHA),undefined)
+--- new
+ifneq (,)

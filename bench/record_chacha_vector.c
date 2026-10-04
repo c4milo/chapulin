@@ -1,20 +1,19 @@
-// The CHACHA=vector source the build runs, compiled with one more entry,
-// for bench/record.c's CHACHA=vector builds only: chacha20_vector.c, or
-// chacha20_avx2.c in the build bench/record.sh routes to the x86-64
-// kernels (test/chacha20_avx2_route.h). The functions this entry runs are
-// static in those files, so this file includes the source. Those builds
-// also link the library's own object of it, so this file first renames
-// the external name the source defines, and nothing calls the renamed
-// function.
-#ifdef TEST_ROUTE_AVX2
+// The vector ChaCha20 source the bench's rows run under BENCH_CPU, compiled
+// with one more entry, for bench/record.c: chacha20_avx2.c where the value
+// names AVX2 on x86-64, and chacha20_vector.c under every other value
+// (record_stages.h). The functions this entry runs are static in those
+// files, so this file includes the source. The bench also links the
+// library's own object of it, so this file first renames the external name
+// the source defines, and nothing calls the renamed function.
+#include "record_stages.h"
+
+#ifdef BENCH_ON_AVX2
 #define chacha20_avx2_xor bench_chacha20_avx2_copy_xor
 #include "chacha20_avx2.c"
 #else
 #define chacha20_vector_xor bench_chacha20_vector_copy_xor
 #include "chacha20_vector.c"
 #endif
-
-#include "record_stages.h"
 
 // The path's xor over n bytes runs one pass per PASS_BYTES bytes and a
 // last one for a shorter tail, and adds the pass's blocks to the block
@@ -23,7 +22,7 @@
 // xor's less the loads, the exclusive-or and the stores of the data. On the
 // AVX2 kernel it takes the kernel's target attribute, because it holds the
 // kernel's 256-bit values.
-#ifdef TEST_ROUTE_AVX2
+#ifdef BENCH_ON_AVX2
 __attribute__((target("avx2"))) void
 bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                              uint32_t counter, size_t n,

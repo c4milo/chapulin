@@ -19,4 +19,13 @@ static inline int cpu_bits_ok(const ch_cfg *cfg) {
 }
 #endif
 
+// cfg's cpu as the argument of a call that takes a session's ch_cfg.cpu in every build, as
+// quic_packet.h's three do: the field in a host object, and 0 in a device object, which declares
+// no such field, holds one path for each primitive, and never evaluates cfg here.
+#ifdef CH_CPU_RUNTIME
+#define CH_CFG_CPU(cfg) ((cfg).cpu)
+#else
+#define CH_CFG_CPU(cfg) 0U
+#endif
+
 #endif

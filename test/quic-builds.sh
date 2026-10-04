@@ -254,10 +254,15 @@ fi
 #     VAESENC and VPCLMULQDQ, which its target attribute turns on, while
 #     gcm_hw.c holds no 256-bit register, so the rest of the object runs on
 #     any x86-64 CPU with AES-NI and PCLMULQDQ;
-#   - gcm_hw.c must call none of the kernels while use_vaes answers 0, so
-#     no object runs them before the caller's CH_CPU_VAES bit can say the
-#     CPU has them;
-#   - for arm64, gcm_vaes.c must define nothing.
+#   - gcm_hw.c must call none of the kernels: it is the 128-bit path
+#     alone, and gcm.c picks between it and the kernels for each key;
+#   - gcm.c for x86-64 must call each of the three kernels and each of
+#     gcm_hw.c's three entries, and hold no 256-bit register itself. A
+#     gcm_use_vaes that answers one value for every key leaves three of the
+#     six calls out, so this holds both answers; bin/x86_kernels_test holds
+#     which bits give which;
+#   - for arm64, gcm_vaes.c must define nothing and gcm.c must call no
+#     kernel.
 clang_rv=$(make -s --no-print-directory print-clang-rv)
 if [ -z "$clang_rv" ]; then
     echo "quic-builds: no clang to cross-compile with; see the LLVM_MAJOR pin in tools/toolchain.env" >&2
@@ -285,11 +290,28 @@ if grep -q '%ymm' "$tu.s"; then
     exit 1
 fi
 if nm -u "$gcm_obj" | grep -q '_vaes$'; then
-    echo "quic-builds: gcm_hw.c for x86-64 calls a VAES kernel while use_vaes answers 0" >&2
+    echo "quic-builds: gcm_hw.c for x86-64 calls a VAES kernel; gcm.c alone picks one" >&2
+    exit 1
+fi
+cross_gcm x86_64-unknown-linux-gnu gcm.c
+if grep -q '%ymm' "$tu.s"; then
+    echo "quic-builds: gcm.c for x86-64 holds a 256-bit instruction; only gcm_vaes.c may" >&2
+    exit 1
+fi
+gcm_entries="gcm_counter_blocks_hw gcm_counter_blocks_vaes gcm_open_passes_hw gcm_open_passes_vaes gcm_seal_passes_hw gcm_seal_passes_vaes "
+called=$(nm -u "$gcm_obj" | awk '{print $NF}' | sed 's/^_//' | grep -E '^gcm_(counter_blocks|open_passes|seal_passes)_(hw|vaes)$' | sort | tr '\n' ' ')
+if [ "$called" != "$gcm_entries" ]; then
+    echo "quic-builds: gcm.c for x86-64 calls [$called]; it must call [$gcm_entries]," \
+        "the 128-bit entries for a key without CH_CPU_VAES and the kernels for one with it" >&2
     exit 1
 fi
 cross_gcm aarch64-none-elf gcm_vaes.c
 if nm "$gcm_obj" | grep -q '_vaes$'; then
     echo "quic-builds: gcm_vaes.c for arm64 defines a kernel; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+cross_gcm aarch64-none-elf gcm.c
+if nm -u "$gcm_obj" | grep -q '_vaes$'; then
+    echo "quic-builds: gcm.c for arm64 calls a VAES kernel, which has a body on x86-64 alone" >&2
     exit 1
 fi

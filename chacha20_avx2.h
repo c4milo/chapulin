@@ -1,10 +1,10 @@
-// CHACHA=vector's AVX2 kernel on x86-64: the ChaCha20 stream cipher of
+// A host object's AVX2 ChaCha20 kernel on x86-64: the stream cipher of
 // RFC 8439 §2.4, eight blocks a pass in 256-bit vectors, each vector
-// holding one word of the eight blocks. Every x86-64 CHACHA=vector object
+// holding one word of the eight blocks. Every x86-64 host object
 // carries it beside chacha20_vector.c's SSE2 path, and chacha20.c's
-// chacha20_xor picks between the two at run time: the kernel runs where
-// the CH_CPU_AVX2 bit of the caller's ch_cfg.cpu says the CPU has AVX2,
-// and on no CPU until that field exists. chacha20.c stays the
+// chacha20_xor_cpu picks between the two for each session: the kernel runs
+// where the CH_CPU_AVX2 bit of the session's ch_cfg.cpu says the CPU has
+// AVX2. chacha20.c's loop stays the
 // reference: bin/chacha20_equiv_test compares the kernel with it over the
 // same inputs on a CPU that has AVX2.
 //
@@ -29,7 +29,7 @@
 
 #include "chacha20.h"
 
-#if defined(CH_CHACHA_VECTOR) && defined(__x86_64__)
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 
 // chacha20_xor's contract, computed a pass of eight blocks at a time: out
 // = in XOR keystream(key, nonce, counter...), with the 32-bit block
@@ -39,11 +39,12 @@
 // written, in ascending order, so each address is written only after it
 // was last read.
 //
-// Requires: a CPU with AVX2. The caller decides that from its answer; on
-// a CPU without AVX2 the first instruction faults.
+// Requires: a CPU with AVX2. chacha20_xor_cpu decides that from the
+// session's CH_CPU_AVX2 bit; on a CPU without AVX2 the first instruction
+// faults.
 void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                        uint32_t counter, const uint8_t *in, uint8_t *out, size_t n);
 
-#endif // CH_CHACHA_VECTOR && __x86_64__
+#endif // CH_CPU_RUNTIME && __x86_64__
 
 #endif

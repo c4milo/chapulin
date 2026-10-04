@@ -1,0 +1,14 @@
+invariant: INV-16
+file: aead.c
+catches: widemul_runtime_test
+reason: aead_seal_cpu computes its tag under WIDEMUL_NOT_STATED whatever the
+  session's ch_cfg.cpu states, so every record and packet a session seals
+  runs Poly1305 on the decomposition, and the bit picks nothing there.
+  The tags are the same. bin/widemul_runtime_test requires the entry to
+  call the native copies alone under a value with
+  CH_CPU_CONSTANT_TIME_MULTIPLY.
+
+--- old
+    mac(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
+--- new
+    mac(WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag);

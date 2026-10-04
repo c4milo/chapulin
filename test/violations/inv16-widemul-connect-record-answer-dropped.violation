@@ -1,17 +1,17 @@
 invariant: INV-16
 file: tls.c
 catches: tcp_blocking_loop_host
-reason: the raw and ca ch_connect stops writing the answer the session's ch_cfg.cpu gives
-  into its record directions, so each record it seals or opens runs
-  Poly1305 under 0, the decomposition, whatever the value states. The key
-  exchange and the signature still follow the bit, so only a count of the
-  record's copy notices: test/tcp_blocking_loop_widemul.h requires an end
-  whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY to call no file
-  under its own names.
+reason: the raw and ca ch_connect stops writing the session's ch_cfg.cpu into its record
+  directions, so each record it seals or opens runs under 0, which names
+  no fast path: Poly1305 on the decomposition, whatever the value states.
+  The key exchange and the signature still follow the multiply bit, so
+  only a count of the record's copy notices: test/tcp_blocking_loop_widemul.h
+  requires an end whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY to
+  call no file under its own names.
 
 --- old
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     int rc = tlsi_epoch_init(t, cfg, psk_ok);
 --- new

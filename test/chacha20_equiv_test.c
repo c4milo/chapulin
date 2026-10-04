@@ -1,13 +1,14 @@
-// CHACHA=vector against CHACHA=portable: the same key, nonce, counter and
-// input, the same output, byte for byte. This is what holds the vector
-// paths, because CBMC cannot read an intrinsic: proof/chacha20_harness.c
-// proves chacha20.c's loop, and this binary holds chacha20_vector.c to
-// that loop's answer, and on an x86-64 CPU with AVX2 chacha20_avx2.c's
-// kernel too, over the same cases. chacha20.c compiles here without
-// -DCH_CHACHA_VECTOR, so chacha20_xor is the portable loop, and
+// A host object's ChaCha20 against a device object's: the same key,
+// nonce, counter and input, the same output, byte for byte. This is what
+// holds the vector paths, because CBMC cannot read an intrinsic:
+// proof/chacha20_harness.c proves chacha20.c's loop, and this binary holds
+// chacha20_vector.c to that loop's answer, and on an x86-64 CPU with AVX2
+// chacha20_avx2.c's kernel too, over the same cases. chacha20.c compiles
+// here without -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, and
 // test/chacha20_equiv_vector.c and test/chacha20_equiv_avx2.c compile the
-// two vector sources under it, all in one binary. Whether the CPU has
-// AVX2 is test/x86_kernels_cpu.h's question, which only test code asks.
+// two vector sources under the define, all in one binary. Whether the CPU
+// has AVX2 is test/x86_kernels_cpu.h's question, which only test code
+// asks.
 //
 // Every comparison checks two things over the bytes a case uses: the
 // output holds the portable path's bytes, and no byte outside the output
@@ -33,16 +34,16 @@
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
 //
 // RFC 8439's vectors are not repeated here. bin/unit runs them on the
-// portable loop and bin/unit_chacha_vector on this path, so both answer
-// the published standard directly and not only through each other.
+// portable loop and bin/unit_host on these paths, so each answers the
+// published standard directly and not only through the others.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// chacha20_vector.h and chacha20_avx2.h declare the vector paths only
-// under the define. This file compiles no library source, so the define
-// changes nothing else.
-#define CH_CHACHA_VECTOR
+// chacha20_vector.h and chacha20_avx2.h declare the vector paths only in
+// a host object, which the define states. This file compiles no library
+// source, so the define changes nothing else.
+#define CH_CPU_RUNTIME
 #include "chacha20.h"
 #include "chacha20_avx2.h"
 #include "chacha20_vector.h"
@@ -145,9 +146,9 @@ typedef struct {
 // The 128-bit path this build compiles, and the AVX2 kernel beside it on
 // x86-64.
 #ifdef __ARM_NEON
-static const vector_path vector_128 = {"CHACHA=vector on NEON", chacha20_vector_xor};
+static const vector_path vector_128 = {"the 128-bit path on NEON", chacha20_vector_xor};
 #else
-static const vector_path vector_128 = {"CHACHA=vector on SSE2", chacha20_vector_xor};
+static const vector_path vector_128 = {"the 128-bit path on SSE2", chacha20_vector_xor};
 #endif
 #ifdef __x86_64__
 static const vector_path vector_avx2 = {"the AVX2 kernel", chacha20_avx2_xor};
@@ -321,7 +322,7 @@ static void run_path(const vector_path *path, uint64_t seed) {
     run_counter_wrap();
     run_random();
     run_large();
-    printf("chacha20 equivalence: %lu cases agree between CHACHA=portable and %s "
+    printf("chacha20 equivalence: %lu cases agree between the portable loop and %s "
            "(seed 0x%llx)\n",
            compared - before_path, path->name, (unsigned long long)seed);
 }

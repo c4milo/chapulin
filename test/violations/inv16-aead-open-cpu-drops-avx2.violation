@@ -1,0 +1,17 @@
+invariant: INV-16
+file: aead.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: aead_open_cpu runs its keystream through chacha20_xor, which takes no
+  description of the CPU, so no record or packet a session opens runs the
+  AVX2 kernel, whatever CH_CPU_AVX2 says. The bytes are the same.
+  bin/x86_kernels_test counts the calls into each kernel under every
+  ch_cfg.cpu value, and test/aes-runtime-qemu.sh builds it for x86-64 and
+  runs it under qemu-x86_64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    chacha20_xor_cpu(cpu, key, nonce, 1, ct, pt, n);
+    return 1;
+--- new
+    chacha20_xor(key, nonce, 1, ct, pt, n);
+    return 1;

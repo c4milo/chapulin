@@ -22,12 +22,15 @@
 #     object runs for a session without the multiply bit is the file a
 #     WIDEMUL=decomposed device object carries, which lint-wide-multiply
 #     measures, and the recorded ceilings hold for it unchanged.
-#   - Under CHACHA=vector, poly1305_native.c calls the vector Poly1305
-#     under its _native name, and poly1305.c calls it under neither name.
-#   - The Makefile and build.zig each write the native copies and the
-#     wide X25519 field for a host object and neither for a device object,
-#     and refuse a WIDEMUL value for a host object, and WIDEMUL=runtime and
-#     every value of X25519 for any, each on its own.
+#   - In a host object poly1305_native.c calls the vector Poly1305 under
+#     its _native name, and poly1305.c calls it under neither name. A
+#     native copy under -DCH_CT_WIDEMUL, which forces the decomposition,
+#     does not call it either.
+#   - The Makefile and build.zig each write the native copies, the wide
+#     X25519 field and the vector ChaCha20 and Poly1305 for a host object
+#     and none of them for a device object, and refuse a WIDEMUL value for
+#     a host object, and WIDEMUL=runtime and every value of X25519 and of
+#     CHACHA for any, each on its own.
 cd "$(dirname "$0")/.." || exit 1
 # make exports the variables its command line set, and a make that read
 # them here would build something else, as test/tx-record-builds.sh says.
@@ -98,25 +101,24 @@ calls() { # $1 = source, $2 = symbol, $3... = extra flags
 }
 
 vector_tu=$work/vector.c
-printf '#define CH_CHACHA_VECTOR\n#include "chacha20_vector.h"\n' > "$vector_tu"
+printf '#define CH_CPU_RUNTIME\n#include "chacha20_vector.h"\n' > "$vector_tu"
 if ! "$cc" -std=c11 -I. -fsyntax-only "$vector_tu" 2>/dev/null; then
     echo "widemul-builds: SKIP the vector call check: $cc targets neither NEON nor SSE2 on a little-endian core"
 else
-    host_vector=(-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME)
-    if ! calls poly1305_native.c poly1305_vector_blocks_native "${host_vector[@]}"; then
-        echo "widemul-builds: poly1305_native.c under CHACHA=vector does not call poly1305_vector_blocks_native" >&2
+    if ! calls poly1305_native.c poly1305_vector_blocks_native -DCH_CPU_RUNTIME; then
+        echo "widemul-builds: poly1305_native.c in a host object does not call poly1305_vector_blocks_native" >&2
         exit 1
     fi
     for symbol in poly1305_vector_blocks poly1305_vector_blocks_native; do
-        if calls poly1305.c "$symbol" "${host_vector[@]}"; then
+        if calls poly1305.c "$symbol" -DCH_CPU_RUNTIME; then
             echo "widemul-builds: poly1305.c in a host object calls $symbol; only its native copy may" >&2
             exit 1
         fi
     done
-fi
-if calls poly1305_native.c poly1305_vector_blocks_native -DCH_CPU_RUNTIME; then
-    echo "widemul-builds: poly1305_native.c without CH_CHACHA_VECTOR calls poly1305_vector_blocks_native" >&2
-    exit 1
+    if calls poly1305_native.c poly1305_vector_blocks_native -DCH_CPU_RUNTIME -DCH_CT_WIDEMUL; then
+        echo "widemul-builds: poly1305_native.c under -DCH_CT_WIDEMUL calls poly1305_vector_blocks_native" >&2
+        exit 1
+    fi
 fi
 
 # Whether every word after the first argument is a word of the first.
@@ -130,7 +132,8 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
         esac
     done
 }
-host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign_native.c)
+host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign_native.c chacha20_vector.c
+            chacha20_avx2.c poly1305_vector_native.c)
 server=(ROLE=server TRUST=none)
 
 # What make prints for one set of variables, and nothing when it refuses
@@ -141,13 +144,13 @@ lib_lists() {
         make -s --no-print-directory print-lib-srcs RAND=extern "$@" 2> /dev/null
 }
 if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${host_words[@]}"; then
-    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies and the wide X25519 field for a host object" >&2
+    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
-*_native.c* | *x25519_wide.c*)
-    echo "widemul-builds: make writes a native copy or the wide X25519 field for a device object" >&2
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector*)
+    echo "widemul-builds: make writes a native copy, the wide X25519 field or a vector path for a device object" >&2
     exit 1
     ;;
 esac
@@ -161,7 +164,7 @@ for refused in WIDEMUL=native WIDEMUL=decomposed; do
         exit 1
     fi
 done
-for refused in X25519=wide X25519=portable; do
+for refused in X25519=wide X25519=portable CHACHA=vector CHACHA=portable; do
     for object in "HOST_TARGET=yes" "HOST_TARGET="; do
         if [ -n "$(lib_lists "${server[@]}" "$object" "$refused")" ]; then
             echo "widemul-builds: make accepted $refused with $object; the variable is gone" >&2
@@ -192,13 +195,13 @@ zig_server=(-DROLE=server -DTRUST=none)
 host_target=-Dtarget=aarch64-linux-gnu
 device_target=-Dtarget=thumb-freestanding-eabi
 if ! has_words "$(zig_lists "${zig_server[@]}" "$host_target")" "${host_words[@]}"; then
-    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies and the wide X25519 field for a host object" >&2
+    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
-*_native.c* | *x25519_wide.c*)
-    echo "widemul-builds: build.zig writes a native copy or the wide X25519 field for a device object" >&2
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector*)
+    echo "widemul-builds: build.zig writes a native copy, the wide X25519 field or a vector path for a device object" >&2
     exit 1
     ;;
 esac
@@ -212,7 +215,7 @@ for refused in -DWIDEMUL=native -DWIDEMUL=decomposed; do
         exit 1
     fi
 done
-for refused in -DX25519=wide -DX25519=portable; do
+for refused in -DX25519=wide -DX25519=portable -DCHACHA=vector -DCHACHA=portable; do
     for object in "$host_target" "$device_target"; do
         if [ -n "$(zig_lists "${zig_server[@]}" "$object" "$refused")" ]; then
             echo "widemul-builds: build.zig accepted $refused for $object; the option is gone" >&2
@@ -226,4 +229,4 @@ if [ -n "$(zig_lists -DWIDEMUL=runtime)" ]; then
 fi
 rm -rf "$out"
 
-echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, and make and build.zig each write the copies and the wide X25519 field for a host object alone, refuse it a WIDEMUL value and refuse every X25519 value"
+echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, and make and build.zig each write the copies, the wide X25519 field and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"

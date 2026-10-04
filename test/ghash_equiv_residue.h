@@ -26,6 +26,11 @@
 // The seal's and the open's runs also look for each block of the last
 // pass's keystream, its ciphertext exclusive-ored with its plaintext.
 //
+// The seal and the open are called through residue_seal_passes and
+// residue_open_passes: gcm_hw.c's entries, and on an x86-64 CPU that has
+// them gcm_vaes.c's in a second run, which keep the same state and wipe
+// it the same way (gcm_vaes.h).
+//
 // The portable multiply and residue_carryless_multiply compute them only
 // after the copy, so their own frames cannot hold them first.
 //
@@ -53,6 +58,14 @@ static uint8_t residue_subkey[AES_BLOCK];
 static uint8_t residue_round_keys[AES_ROUND_KEYS * AES_BLOCK];
 static uint8_t residue_counter[AES_BLOCK];
 
+// The entry each run's seal and open call: gcm_hw.c's, unless the test
+// main names gcm_vaes.c's.
+typedef void (*residue_passes)(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
+                               uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK],
+                               const uint8_t *in, size_t passes, uint8_t *out);
+static residue_passes residue_seal_passes = gcm_seal_passes_hw;
+static residue_passes residue_open_passes = gcm_open_passes_hw;
+
 static __attribute__((noinline)) void residue_hash_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     gcm_hash_data_hw(residue_result, residue_subkey, residue_data, sizeof residue_data);
@@ -62,8 +75,8 @@ static __attribute__((noinline)) void residue_seal_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     uint8_t counter[AES_BLOCK];
     memcpy(counter, residue_counter, AES_BLOCK);
-    gcm_seal_passes_hw(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
-                       residue_data, RESIDUE_PASSES, residue_sealed);
+    residue_seal_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
+                        residue_data, RESIDUE_PASSES, residue_sealed);
 }
 
 // residue_data read as ciphertext, opened into a second buffer.
@@ -71,8 +84,8 @@ static __attribute__((noinline)) void residue_open_call(void) {
     memcpy(residue_result, residue_acc, AES_BLOCK);
     uint8_t counter[AES_BLOCK];
     memcpy(counter, residue_counter, AES_BLOCK);
-    gcm_open_passes_hw(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
-                       residue_data, RESIDUE_PASSES, residue_opened);
+    residue_open_passes(residue_round_keys, AES_128_ROUNDS, counter, residue_result, residue_subkey,
+                        residue_data, RESIDUE_PASSES, residue_opened);
 }
 
 // test/stack_residue.c, compiled as a source of its own.

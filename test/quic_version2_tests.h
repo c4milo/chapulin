@@ -15,7 +15,7 @@
 #include "hkdf.h"
 #include "quic_v2_vectors.h"
 #include "quic_version.h"
-#include "test_widemul.h"
+#include "test_cpu.h"
 
 // A.1's derivation one step at a time, with the salt of RFC 9369 §3.3.1:
 // the initial secret, each endpoint's secret, and each key, where every
@@ -238,7 +238,7 @@ static void test_v2_a5_packet(void) {
     quic_nonce(k.iv, A5_PN, nonce);
     CHECK(eq_hex(nonce, V2_A5_NONCE));
 
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == 21 && eq_hex(out, V2_A5_PACKET));
     CHECK(eq_hex(&out[sizeof hdr], V2_A5_CIPHERTEXT));
@@ -261,7 +261,7 @@ static void test_v2_a5_packet(void) {
     uint8_t key_set = 0xff;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, out, out_len, 1, A5_PN - 1, 0,
+    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 0, out, out_len, 1, A5_PN - 1, 0,
                                        &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == A5_PN && pt_len == 1);
     CHECK(eq_hex(out, V2_A5_HEADER) && out[sizeof hdr] == pt[0]);

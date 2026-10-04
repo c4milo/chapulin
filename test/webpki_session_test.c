@@ -384,10 +384,11 @@ static ch_cfg valid_cfg(mock_server *s) {
     fill_alpn();
     memset(s, 0, sizeof *s);
 #ifdef CH_CPU_RUNTIME
-    // The mock's records run on the copy TEST_WIDEMUL names, as its key
-    // exchange does (test/webpki_session_widemul.h).
-    s->wr.widemul = TEST_WIDEMUL;
-    s->rd.widemul = TEST_WIDEMUL;
+    // The mock's records run on the paths test_cpu names, as its key
+    // exchange runs on the copy that value names
+    // (test/webpki_session_widemul.h).
+    TEST_CPU_DIR(s->wr);
+    TEST_CPU_DIR(s->rd);
 #endif
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;

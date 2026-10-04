@@ -221,7 +221,6 @@ void rsa_sp1_native(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     rsa_sp1_native_counted(k, em, sig);
 }
 
-#ifdef CH_CHACHA_VECTOR
 // poly1305_native.c's block loop calls the vector path under the name
 // poly1305_vector.h declares for a host object.
 void poly1305_vector_blocks_native_counted(poly1305 *p, const uint8_t *m, size_t n);
@@ -230,4 +229,3 @@ void poly1305_vector_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
     widemul_vector_calls++;
     poly1305_vector_blocks_native_counted(p, m, n);
 }
-#endif

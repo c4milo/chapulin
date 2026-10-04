@@ -53,7 +53,7 @@ GATE_COMMAND = {
     "lint-zig-build-run": "make lint-zig-build",
     **{f"wycheproof-{kind}-{leg}": "make wycheproof"
        for kind in ("leg", "run")
-       for leg in ("default", "host", "aes-extern", "chacha-vector")},
+       for leg in ("default", "host", "aes-extern")},
 }
 
 # The catches lines a test/violations entry can name for a gate that a
@@ -154,6 +154,14 @@ LIB_LEGS = [
     ]),
 ]
 
+# The catches lines that name the host object's qemu lane: the lane
+# itself, and the lane with the one argument that makes it fail on a
+# machine whose qemu cannot run the x86-64 kernels' rows. A violation of
+# chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes names the second,
+# because only an x86-64 binary compiles either function.
+AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
+                          "test/docker-aes-runtime-qemu.sh x86-kernels"]
+
 # What "everything" means, in the order to run it: the two tiers, then
 # the legs only the nightly runs. Each entry is (tier, command, reason).
 # full_plan() attaches every gate in the tree to the first command, so a
@@ -178,8 +186,9 @@ FULL_COMMANDS = [
     ("nightly", "test/docker-riscv32.sh", "the riscv32 cross lane, which runs "
                                           "cross-check under qemu-riscv32"),
     ("nightly", "test/docker-aes-runtime-qemu.sh",
-     "the host object's qemu lane, which runs the rows without the AES bit "
-     "under qemu-x86_64 on a CPU model without AES-NI or PCLMULQDQ"),
+     "the host object's qemu lane, which runs the rows of each ch_cfg.cpu "
+     "value under qemu-x86_64 on CPU models without the instructions the "
+     "value does not name"),
 ]
 
 
@@ -190,6 +199,7 @@ def full_plan(mapping, why):
     gates = set(mapping.runnable)
     gates |= {f"proof/prove-one.sh {n}" for n in mapping.harnesses}
     gates |= {f"test/{p.name}" for p in ROOT.glob("test/*.sh")}
+    gates |= set(AES_RUNTIME_QEMU_GATES)
     for tier, command, reason in FULL_COMMANDS:
         entries.append(Entry("everything", command, reason, (), tier))
     # Every gate the tree holds, carried by the first command so a
@@ -366,12 +376,13 @@ def select_pairs(out, changed, legs):
 
 # test/docker-aes-runtime-qemu.sh runs test/aes-runtime-qemu.sh, which
 # compiles x86-64 copies of these binaries into bin/qemu/ and runs them
-# under qemu-x86_64 (docs/decisions.md 81 and 89). No make rule builds the
-# copies. The script asks make for the two loop binaries' source lists
-# and names the other two binaries' sources itself, and the sources of
-# these four rules hold every file it compiles.
+# under qemu-x86_64 (docs/decisions.md 81, 89 and 90). No make rule builds
+# the copies. The script asks make for each binary's source list and
+# names its test files itself, and the sources of these five rules hold
+# every file it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
-                             "bin/webpki_loop_aes", "bin/quic_test_hw")
+                             "bin/webpki_loop_aes", "bin/quic_test_hw",
+                             "bin/x86_kernels_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -384,8 +395,9 @@ def select_aes_runtime_qemu(out, changed):
         if path in compiled or path in AES_RUNTIME_QEMU_FILES:
             out.add("tests", "test/docker-aes-runtime-qemu.sh",
                     f"{path} is compiled or run by the host object's qemu lane, "
-                    f"which runs the rows without the AES bit on a CPU model without AES-NI",
-                    ["test/docker-aes-runtime-qemu.sh"])
+                    f"which runs each ch_cfg.cpu value's rows on CPU models without "
+                    f"the instructions the value does not name",
+                    AES_RUNTIME_QEMU_GATES)
 
 
 # test/script-builds.sh builds the programs the bench and platform
@@ -611,14 +623,14 @@ def select_lints(out, changed, csources, lib):
                 "handshake_message.c refuses the AES suite in a raw or ca "
                 "client, and this script compiles it either side of that",
                 ["test/quic-builds.sh"])
-    # chacha20.c calls the CHACHA=vector path only under CH_CHACHA_VECTOR,
-    # and test/chacha-builds.sh compiles it either side of that define,
-    # beside chacha20_vector.h's two refusals. poly1305.c calls its vector
-    # path only under that define and CH_NATIVE_WIDEMUL, and the script
-    # compiles it under each define alone and under both.
+    # chacha20.c calls the vector ChaCha20 only in a host object, and
+    # test/chacha-builds.sh compiles it either side of that define, beside
+    # chacha20_vector.h's two refusals, and reads which path each of its
+    # two entries calls. A device object's poly1305.c calls no vector
+    # path, and the script compiles it under each multiply.
     if "chacha20.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
-                "chacha20.c calls the vector path under CH_CHACHA_VECTOR, and "
+                "chacha20.c calls the vector paths in a host object alone, and "
                 "this script compiles it either side of that define",
                 ["test/chacha-builds.sh"])
     # chacha20_avx2.c turns AVX2 on for its own functions alone, and the
@@ -631,10 +643,13 @@ def select_lints(out, changed, csources, lib):
                 ["test/chacha-builds.sh"])
     if "poly1305.c" in csources:
         out.add("tests", "test/chacha-builds.sh",
-                "poly1305.c calls the vector path under CH_CHACHA_VECTOR and "
-                "CH_NATIVE_WIDEMUL, and this script compiles it under each "
-                "define alone and under both",
+                "a device object's poly1305.c calls no vector path, and this "
+                "script compiles it under each multiply",
                 ["test/chacha-builds.sh"])
+        out.add("tests", "test/widemul-builds.sh",
+                "poly1305.c's native copy calls the vector Poly1305 in a host "
+                "object, and this script compiles both copies as that object does",
+                ["test/widemul-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.

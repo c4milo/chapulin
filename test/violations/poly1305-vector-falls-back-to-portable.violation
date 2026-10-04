@@ -1,14 +1,14 @@
 invariant: INV-16
 file: poly1305.c
-catches: test/chacha-builds.sh
+catches: test/widemul-builds.sh
 reason: poly1305.c guards its call to the vector path on a macro no
-  build defines, so a CHACHA=vector WIDEMUL=native object runs the
-  portable loop under the vector name. Nothing else objects:
+  build defines, so a host object's native copy runs the portable loop
+  for a session with the multiply bit. Nothing else objects:
   poly1305_vector.c still compiles and links, bin/poly1305_equiv_test
   calls it directly, and every vector and Wycheproof case passes, because
   the portable loop computes the same tags; only the time is wrong. The
-  script compiles poly1305.c under both defines and requires its object
-  to call poly1305_vector_blocks.
+  script compiles poly1305_native.c as a host object does and requires
+  its object to call poly1305_vector_blocks_native.
 
 --- old
 #ifdef CH_POLY1305_VECTOR

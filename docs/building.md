@@ -65,14 +65,12 @@ Other targets:
   `x25519_wide.c`'s five 51-bit limbs, and the `X25519` variable, which
   chose the second for a whole object, is gone, so the Makefile and
   `build.zig` stop on any value of it (decisions 52 and 89, INV-34).
-  `CHACHA=vector` replaces
-  `chacha20.c`'s one-block loop with `chacha20_vector.c`'s eight blocks
-  at a time on NEON or four on SSE2, for an arm64 or x86-64 host:
-  `chacha20_vector.h` stops the build for any other target, and the
-  build states nothing about timing (decision 82). With `WIDEMUL=native`
-  as well, `poly1305_vector.c` runs Poly1305 four blocks at a time on the
-  vector widening multiply, which `CH_NATIVE_WIDEMUL` then covers beside
-  the scalar one (decision 83). It also carries every key
+  No variable chooses the ChaCha20 keystream either: a device object
+  runs `chacha20.c`'s one-block loop, a host object runs
+  `chacha20_vector.c`'s eight blocks at a time on NEON or four on SSE2
+  in every session, and the `CHACHA` variable, which chose the second for
+  a whole object, is gone the same way (decisions 82 and 89). The
+  `TRUST=webpki` object also carries every key
   exchange group it offers, X25519MLKEM768 and x25519 with a share each
   and secp256r1 listed after them for a HelloRetryRequest to ask for, so
   `make TRUST=webpki` refuses a `KEX` value, which would select nothing
@@ -132,10 +130,21 @@ Other targets:
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with
   FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your
-  operating system. No path reads `CH_CPU_AVX2` or
-  `CH_CPU_VAES` yet: the `CHACHA` variable still chooses the ChaCha20
-  keystream each object runs, until decision 89's last code commit moves
-  that choice to the host test and the bits. A raw or
+  operating system. Every host session runs ChaCha20 on
+  `chacha20_vector.c`'s NEON or SSE2 passes, which every core of the two
+  architectures has, so no bit picks them and the path states nothing
+  about timing (decision 82). With the multiply bit the session's
+  Poly1305 runs `poly1305_vector.c`'s four blocks at a time on the vector
+  widening multiply, which the bit states beside the scalar one (decision
+  83). On x86-64, `CH_CPU_AVX2` says the CPU has AVX2 and its operating
+  system saves the 256-bit registers, and the session's ChaCha20 then
+  runs `chacha20_avx2.c`'s kernel. `CH_CPU_VAES` says the CPU also has
+  VAES and VPCLMULQDQ on those registers, and beside
+  `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES
+  instructions at every width, AES-GCM's whole blocks then run
+  `gcm_vaes.c`'s kernels (decision 90). Set each bit from your probe
+  alone: a session whose bit names instructions its CPU lacks faults on
+  the first one. A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host
@@ -157,8 +166,9 @@ Other targets:
 - A Zig project (Zig 0.16.0) depends on chapulin as a package and gets
   the object `make lib` builds and a Zig API over it. The options are
   the Makefile's variables, with the same names and values, and the
-  two hardware statements the Makefile takes in `CFLAGS` are options
-  that default off. `TX_RECORD` takes its number, `.TX_RECORD = 16384`:
+  hardware statement the Makefile takes in `CFLAGS`,
+  `CH_AES_EXTERN_CONSTANT_TIME`, is an option that defaults off.
+  `TX_RECORD` takes its number, `.TX_RECORD = 16384`:
 
   ```zig
   const chapulin = b.dependency("chapulin", .{

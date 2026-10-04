@@ -148,10 +148,10 @@ object, whose `ch_cfg` holds `cpu`, the caller's description of its CPU
 the alignment of the pointer after it each session struct is 8 bytes
 larger than the same build's portable object, which the rows without
 "host object" measure, and the `SUITE=aesgcm` rows above are host objects
-too. Each record direction also holds the answer about the widening
-multiply that `cpu` gives ([`docs/decisions.md`](decisions.md) 87), in
-bytes the alignment of its sequence number left unused, so the directions
-do not grow. A host object runs on those two architectures alone, so
+too. Each record direction also holds a copy of `cpu`, from which a
+record reads its paths ([`docs/decisions.md`](decisions.md) 87 and 89),
+in the 4 bytes the alignment of its sequence number left unused, so the
+directions do not grow. A host object runs on those two architectures alone, so
 these rows are host figures. The stack peaks of `TRUST=webpki` and
 `ROLE=server` are a host object's too: `bench/stack.py` compiles what make
 packages for those builds on this host, which holds both multiplies.
@@ -316,9 +316,11 @@ was the `X25519=wide` build
 record and splits it into its stages, for [#184](https://github.com/c4milo/chapulin/issues/184)
 (AES-GCM) and [#181](https://github.com/c4milo/chapulin/issues/181) (ChaCha20-Poly1305). It
 compiles the library sources with the flags `make lib` uses and the defines of a
-`SUITE=aesgcm` host object, and builds the ChaCha20-Poly1305 rows a
-second time with `CHACHA=vector` (decision 82), which with `WIDEMUL=native` runs the vector
-Poly1305 as well (decision 83). It times these on the same buffers:
+`SUITE=aesgcm` host object, once for each `ch_cfg.cpu` value it times, and every row hands that
+value to the calls a session hands its own to (decision 89). The values are 0x3, the probe's bit
+and the AES bit; 0x7, which adds the multiply bit and so the vector Poly1305 (decision 83); and,
+on an x86-64 CPU with the instructions, 0x1f, which adds the kernels of decision 90. It times
+these on the same buffers:
 
 - `rec_seal`, which copies the caller's plaintext into the record and seals it in place, as
   `ch_write` calls it, and `rec_open`, which opens a record in place, as `ch_read` calls it;
@@ -331,7 +333,7 @@ Poly1305 as well (decision 83). It times these on the same buffers:
   layer's own work.
 
 One stage has no function of its own, so its row is a difference of two timed rows: `chacha20_xor`
-less the block function gives the ChaCha20 exclusive-or. Under `CHACHA=vector` the block function's
+less the block function gives the ChaCha20 exclusive-or. On the vector ChaCha20 the block function's
 row is `chacha20_vector.c`'s passes, eight blocks a pass on NEON and four on SSE2, with each pass's
 keystream stored to a buffer. AES-GCM's exclusive-or has no row: `gcm_hw.c` runs it in the same pass
 as the AES rounds (below), so its time is inside counter mode's and the loops'.
@@ -352,6 +354,24 @@ three columns are three CSVs:
   [`bench/results-record-linux-arm64-clang.csv`](../bench/results-record-linux-arm64-clang.csv);
 - the same VM with gcc 13, the compiler CI runs:
   [`bench/results-record-linux-arm64-gcc.csv`](../bench/results-record-linux-arm64-gcc.csv).
+
+The CSVs and the tables below were measured before decision 89, when build variables chose the
+paths, and their rows keep the names of the builds that produced them:
+
+- a ChaCha20-Poly1305 row with no variable in its name, or with `WIDEMUL=native` alone, ran
+  `chacha20.c`'s loop, which a device object runs. No host session runs it, so
+  `bench/record.sh` no longer times it, and [`bench/aead.sh`](../bench/aead.sh) times it in a
+  device object's sources;
+- `CHACHA=vector` is the path every host session runs, the script's 0x3 rows;
+- `CHACHA=vector WIDEMUL=native` is a host session whose caller set
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`, the script's 0x7 rows;
+- the AES-GCM rows are a host session whose caller set `CH_CPU_CONSTANT_TIME_AES`.
+
+Decision 89 moved the choice of each path from the build to one branch per call on the caller's
+value, and it changed no kernel. No run on the three platforms has replaced the CSVs since, so
+that branch's cost is not in these figures. A fresh run labels its rows `ch_cfg.cpu 0x3`, `0x7`
+and `0x1f`, which [`tools/bench_record.py`](../tools/bench_record.py) does not read yet: whoever
+commits one moves the tool's labels and these tables to it in the same change.
 
 stompy's chapulin compiles with Zig's clang, so the clang columns are the nearest to it. A share
 in parentheses is the stage's part of `rec_seal`. The last two rows of each table are ceilings on
@@ -479,7 +499,8 @@ What the numbers show for AES-GCM:
 For ChaCha20-Poly1305:
 
 - In the packaged build, which multiplies through the 16x16 decomposition `ct.h` builds, Poly1305
-  is the largest stage, about half of the record. colibri's object is such a build. With
+  is the largest stage, about half of the record. A host session without the multiply bit runs
+  that Poly1305, and colibri's sessions are such sessions until it sets the bit. With
   `WIDEMUL=native`, the builder's statement that the multiply runs in constant time, Poly1305 is a
   quarter of a shorter record.
 - The ChaCha20 block function is the next stage. Its share is a third to two fifths of the
@@ -570,9 +591,10 @@ over 16 KiB on macOS in three one-second runs of `openssl speed -evp chacha20`, 
 No x86-64 machine that runs nothing else has timed the vector paths' SSE2 arms or the AES-NI
 arm of `gcm_hw.c`. bench.yml's `record-x86_64` job times them on a shared GitHub runner, once
 with gcc and once with clang, and on a runner whose CPU has AVX2, VAES and VPCLMULQDQ it adds
-rows marked `AVX2+VAES` for the x86-64 kernels of decision 90, which records their figures. A
+the `ch_cfg.cpu 0x1f` rows for the x86-64 kernels of decision 90, which records the figures they
+had when their rows were marked `AVX2+VAES`. A
 column for this document needs `make bench-record` on an x86-64 host that runs nothing else, once
-with gcc and once with clang: the script finds the AES instructions there with `-maes -mpclmul`,
+with gcc and once with clang: the script
 writes `bench/results-record-linux-x86_64-gcc.csv` and its clang twin, and
 `tools/bench_record.py` then takes the two files as columns. An emulated x86-64, such as an
 OrbStack amd64 container, runs translated code, so its times say nothing about those arms.

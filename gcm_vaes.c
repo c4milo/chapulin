@@ -39,8 +39,8 @@
 // take the same time whatever their operands are is the claim the
 // caller's CH_CPU_CONSTANT_TIME_AES bit makes for the AES instructions and
 // the carry-less multiply at every width (docs/decisions.md 89), and
-// gcm_hw.c is to run these kernels only where that bit and CH_CPU_VAES are
-// set.
+// gcm_vaes.h's gcm_use_vaes runs these kernels only where that bit and
+// CH_CPU_VAES are set.
 //
 // Every value the seal computes from the key sits in one gcm_vaes_state,
 // wiped once when the call ends, as gcm_hw.c's gcm_hw_state is. Counter
@@ -71,8 +71,9 @@
 // target attribute that turns on AES-NI, PCLMULQDQ, AVX2, VAES and
 // VPCLMULQDQ, and no function outside it does. clang applies it through
 // one attribute push; gcc's target pragma sets it for each function
-// defined after it, until the pop. gcm_hw.c calls these functions only
-// where the caller's CH_CPU_VAES bit says the CPU has them.
+// defined after it, until the pop. gcm.c calls these functions, through
+// gcm_vaes.h's three entries, only where the bits a key's schedule
+// records say the CPU has them.
 #ifdef __clang__
 #pragma clang attribute push(__attribute__((target("aes,pclmul,avx2,vaes,vpclmulqdq"))),           \
                              apply_to = function)

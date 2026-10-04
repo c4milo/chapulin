@@ -174,7 +174,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     int rc = tlsi_epoch_init(t, cfg, psk_ok);
     if (rc != CH_OK) {
@@ -389,7 +389,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
     // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init

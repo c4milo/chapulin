@@ -1,8 +1,8 @@
 #include "chacha20_avx2.h"
 
-// The whole file compiles only under CH_CHACHA_VECTOR on x86-64
+// The whole file compiles only in a host object on x86-64
 // (chacha20_avx2.h).
-#if defined(CH_CHACHA_VECTOR) && defined(__x86_64__)
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
 
 #include <immintrin.h>
 
@@ -287,4 +287,4 @@ void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHAC
 #pragma GCC pop_options
 #endif
 
-#endif // CH_CHACHA_VECTOR && __x86_64__
+#endif // CH_CPU_RUNTIME && __x86_64__

@@ -1,0 +1,14 @@
+invariant: INV-16
+file: record.c
+catches: tcp_blocking_loop_host
+reason: the record layer opens every ChaCha20-Poly1305 record under the probe's
+  bit alone, whatever the direction's cpu states, so a caller that stated
+  the multiply's timing gets the slow copy on every record it opens. The
+  verdicts are the same. test/tcp_blocking_loop_widemul.h requires a
+  handshake between two ends whose ch_cfg.cpu holds
+  CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
+
+--- old
+    return AEAD_OPEN_CPU(d->cpu, d->key, nonce, rec, REC_HDR, rec + REC_HDR, len,
+--- new
+    return AEAD_OPEN_CPU(CH_CPU_PROBED, d->key, nonce, rec, REC_HDR, rec + REC_HDR, len,

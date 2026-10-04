@@ -31,10 +31,10 @@ int bench_stub_gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AE
     return 1;
 }
 
-void bench_stub_aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY],
-                          const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
-                          const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
-    (void)widemul;
+void bench_stub_aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY],
+                              const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
+                              const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+    (void)cpu;
     (void)key;
     (void)nonce;
     (void)aad;
@@ -45,10 +45,11 @@ void bench_stub_aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY],
     (void)tag;
 }
 
-int bench_stub_aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY],
-                         const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
-                         const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG], uint8_t *pt) {
-    (void)widemul;
+int bench_stub_aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY],
+                             const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
+                             const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
+                             uint8_t *pt) {
+    (void)cpu;
     (void)key;
     (void)nonce;
     (void)aad;

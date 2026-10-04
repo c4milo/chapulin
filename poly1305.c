@@ -89,7 +89,7 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
 }
 
 // Absorbs the n bytes at m, whole blocks. This is the one place that
-// chooses between the loop above and the CHACHA=vector path. Under
+// chooses between the loop above and the vector path. Under
 // CH_POLY1305_VECTOR (poly1305_vector.h), n of POLY1305_VECTOR_MIN or
 // more hands its whole groups of four blocks to poly1305_vector_blocks,
 // and the loop above takes the zero to three blocks after the last group.

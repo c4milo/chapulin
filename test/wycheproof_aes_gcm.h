@@ -8,7 +8,10 @@
 
 // The host leg's binary runs under test_cpu, its one argument
 // (test/test_cpu.h): the Makefile runs it once for each set of bits that
-// changes a path, and the AES-GCM suites below read the AES bit.
+// changes a path. The AES-GCM suites below read the AES bit, and each
+// key's schedule records test_cpu, as a session's does, so on x86-64 a
+// run with CH_CPU_VAES beside the AES bit runs their whole blocks on the
+// VAES kernels (aes_schedule.h).
 
 // The AES-GCM suite, for gcm.c. Guarded because only a
 // -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles that file, and the generator emits
@@ -74,6 +77,9 @@ static void run_aes_gcm(void) {
         k.key.instructions =
             (test_cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
 #endif
+#ifdef CH_CPU_RUNTIME
+        k.key.cpu = (uint8_t)test_cpu;
+#endif
         check_aes_gcm("aes_gcm", wp_aes_gcm[i].tc, &k, key + AES_128_KEY, wp_aes_gcm[i].aad_len,
                       wp_aes_gcm[i].msg_len, wp_aes_gcm[i].valid);
     }
@@ -105,6 +111,9 @@ static void run_aes256_gcm(void) {
         k.key.rounds = AES_256_ROUNDS;
 #ifdef CH_AES_TWO_CIPHERS
         k.key.instructions = AES_ON_INSTRUCTIONS;
+#endif
+#ifdef CH_CPU_RUNTIME
+        k.key.cpu = (uint8_t)test_cpu;
 #endif
         check_aes_gcm("aes256_gcm", wp_aes256_gcm[i].tc, &k, key + AES_256_KEY,
                       wp_aes256_gcm[i].aad_len, wp_aes256_gcm[i].msg_len, wp_aes256_gcm[i].valid);

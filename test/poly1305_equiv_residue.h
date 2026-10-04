@@ -1,4 +1,4 @@
-// What poly1305_vector_blocks leaves on the stack. The call computes r^2,
+// What poly1305_vector_blocks_native leaves on the stack. The call computes r^2,
 // r^3 and r^4, keeps them and the two multipliers built from them in one
 // struct on its frame, and wipes that struct once when it returns. The
 // frame is dead after the return, but its bytes stay in memory below this
@@ -33,7 +33,7 @@ static uint8_t residue_data[RESIDUE_GROUPS * POLY1305_VECTOR_GROUP];
 static __attribute__((noinline)) void residue_call(void) {
     poly1305 p;
     poly1305_init(&p, residue_key);
-    poly1305_vector_blocks(&p, residue_data, sizeof residue_data);
+    poly1305_vector_blocks_native(&p, residue_data, sizeof residue_data);
 }
 
 // test/stack_residue.c, compiled as a source of its own.

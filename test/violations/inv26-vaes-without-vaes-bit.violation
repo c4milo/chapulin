@@ -1,0 +1,17 @@
+invariant: INV-26
+file: gcm_vaes.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: gcm_vaes.h's gcm_use_vaes reads CH_CPU_CONSTANT_TIME_AES alone,
+  so every session that states the AES instructions runs the VAES
+  kernels, and dies of SIGILL on a CPU with AES-NI and PCLMULQDQ and
+  without VAES. The object still calls all six entries, and every vector
+  passes on a CPU with the instructions. bin/x86_kernels_test counts the
+  calls into each kernel under every ch_cfg.cpu value, and
+  test/aes-runtime-qemu.sh builds it for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;

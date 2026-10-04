@@ -1,0 +1,14 @@
+invariant: INV-16
+file: poly1305_vector.h
+catches: test/chacha-builds.sh
+reason: poly1305_vector.h turns the vector Poly1305 on wherever the multiply is
+  native, a device object on WIDEMUL=native among them, so that object
+  calls a path it does not package and that nothing in its build names.
+  A device object holds poly1305.c's loop alone (docs/decisions.md 89).
+  The script compiles poly1305.c with -DCH_NATIVE_WIDEMUL and no host
+  define and requires that its object not call poly1305_vector_blocks.
+
+--- old
+#if defined(CH_CPU_RUNTIME) && defined(CH_WIDEMUL_NATIVE)
+--- new
+#if defined(CH_WIDEMUL_NATIVE)

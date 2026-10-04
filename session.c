@@ -2,11 +2,6 @@
 
 #include "ct.h"
 #include "io.h"
-#ifdef CH_CPU_RUNTIME
-// widemul_answer, which tlsi_record_widemul reads. Only a host object's
-// sessions choose their multiply, so no other build includes it here.
-#include "widemul.h"
-#endif
 
 // A protected record can only be sealed with live keys; before any keys
 // exist the alert goes out in plaintext, and once keys are wiped there is
@@ -28,10 +23,9 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
 }
 
 #ifdef CH_CPU_RUNTIME
-void tlsi_record_widemul(ch_tls *t) {
-    uint8_t answer = widemul_answer(&t->cfg);
-    t->rd.widemul = answer;
-    t->wr.widemul = answer;
+void tlsi_record_cpu(ch_tls *t) {
+    t->rd.cpu = t->cfg.cpu;
+    t->wr.cpu = t->cfg.cpu;
 }
 #endif
 

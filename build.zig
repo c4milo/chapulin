@@ -27,7 +27,6 @@ const Suite = enum { chacha, aesgcm };
 const Aes = enum { soft, @"extern" };
 const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
-const Chacha = enum { portable, vector };
 const Widemul = enum { decomposed, native };
 const Setting = enum { on, off };
 
@@ -42,7 +41,6 @@ const Config = struct {
     aes: ?Aes,
     rand: ?Rand,
     kex: ?Kex,
-    chacha: Chacha,
     widemul: ?Widemul,
     exporter: Setting,
     keylog: Setting,
@@ -54,10 +52,10 @@ const Config = struct {
     /// development machine. Empty says the target failed the test, any
     /// other text that it passed, and null runs the test on the target.
     host_target: ?[]const u8,
-    /// The three hardware statements ct.h reads. The Makefile never writes
-    /// them into a library build, and a builder adds them to CFLAGS. They
-    /// default off here for the same reason: each is a claim about the
-    /// part that only the firmware author can make.
+    /// The hardware statement ct.h reads beside WIDEMUL=native's. The
+    /// Makefile never writes it into a library build, and a builder adds
+    /// it to CFLAGS. It defaults off here for the same reason: it is a
+    /// claim about the part that only the firmware author can make.
     aes_extern_constant_time: bool,
 };
 
@@ -227,7 +225,6 @@ pub fn build(b: *std.Build) void {
         .aes = b.option(Aes, "AES", "A device object's AES: soft, or extern for the image's ch_aes_block"),
         .rand = b.option(Rand, "RAND", "The entropy pattern, which has no default (cfg.h)"),
         .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
-        .chacha = b.option(Chacha, "CHACHA", "The ChaCha20 keystream: portable C or 128-bit vectors") orelse .portable,
         .widemul = b.option(Widemul, "WIDEMUL", "A device object's widening multiply (ct.h): decomposed, or native"),
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
@@ -398,9 +395,10 @@ fn recordSize(text: []const u8) bool {
 /// in a QUIC object the table beside them, and both multiplies. The values
 /// that chose a fast path when the object was built are gone, so Aes and
 /// Widemul do not name them, and zig build refuses them as it refuses any
-/// other value. The X25519 option is gone whole, so zig build refuses it as
-/// it refuses any option this file does not declare: a host object holds
-/// the wide field, and each session's multiply bit picks it.
+/// other value. The X25519 and CHACHA options are gone whole, so zig build
+/// refuses each as it refuses any option this file does not declare: a host
+/// object holds the wide field, which each session's multiply bit picks,
+/// and runs the vector ChaCha20 in every session.
 fn refuseSpeedOnHost(config: Config, target: std.Target) void {
     if (!hostObject(config, target)) return;
     const builds = "on this target builds a host object, which ";
@@ -494,10 +492,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // The wide X25519 field, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89).
     if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
-    if (config.chacha == .vector) {
-        defs = concat(b, &.{ defs, &.{"-DCH_CHACHA_VECTOR"} });
-        lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c" } });
-    }
+    // CHACHA_VECTOR_SRCS: the vector ChaCha20 every session of a host
+    // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
+    // on x86-64 (docs/decisions.md 82, 89 and 90).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c" } });
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
     const widemul = config.widemul orelse .decomposed;
@@ -506,11 +504,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks one: the native copy of every
     // copied file the object carries (docs/decisions.md 87 and 89).
     if (host) lib_srcs = concat(b, &.{ lib_srcs, nativeCopies(b, lib_srcs) });
-    // The vector Poly1305 multiplies, so it joins a device object only where
-    // the builder states the multiply's timing as well (docs/decisions.md
-    // 83), and a host object as the native copy the bit picks.
-    if (config.chacha == .vector and !host and widemul == .native) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector.c"} });
-    if (config.chacha == .vector and host) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
+    // The vector Poly1305 multiplies, so a host object holds it as the
+    // native copy the multiply bit picks, and a device object holds none
+    // (docs/decisions.md 83 and 89).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
     if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });
@@ -521,7 +518,7 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // no generator, exports nothing more and imports no ch_rand_bytes.
     if (config.rand == .session) defs = concat(b, &.{ defs, &.{"-DCH_RAND_SESSION"} });
 
-    // The hardware statements, which the Makefile takes in CFLAGS.
+    // The hardware statement, which the Makefile takes in CFLAGS.
     if (config.aes_extern_constant_time) defs = concat(b, &.{ defs, &.{"-DCH_AES_EXTERN_CONSTANT_TIME"} });
 
     const public_rand: Names = if (config.rand == .drbg) &.{ "ch_drbg_seed", "ch_rand_bytes" } else &.{};

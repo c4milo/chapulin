@@ -59,12 +59,18 @@
 // session without it runs them on ct.h's 16x16 decomposition, the files under their own names,
 // and X25519 on the 16-limb field (docs/decisions.md 52, 87 and 89).
 //
-// CH_CPU_AVX2 says the CPU has AVX2, and CH_CPU_VAES that it has VAES and VPCLMULQDQ on 256-bit
-// registers. Both are x86-64 bits.
-//
-// No path reads CH_CPU_AVX2 or CH_CPU_VAES yet, and the CHACHA build variable still chooses the
-// ChaCha20 keystream. The last code commit docs/decisions.md 89 lists moves that choice to the
-// host test and the bits.
+// CH_CPU_AVX2 says the CPU has AVX2 and its operating system saves the 256-bit registers, which a
+// probe reads from CPUID and XGETBV, and CH_CPU_VAES that the CPU also has VAES and VPCLMULQDQ on
+// those registers. Both are x86-64 bits, and each picks a kernel beside a path every x86-64 CPU
+// runs. Neither states a timing. A session whose bit names instructions its CPU lacks faults on
+// the first one.
+// A session with CH_CPU_AVX2 computes a record's or a packet's ChaCha20 keystream eight blocks a
+// pass in 256-bit vectors, and one without it on SSE2 (chacha20.c's use_avx2). A session with
+// CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES runs AES-GCM's whole blocks two to a 256-bit register,
+// and one with the AES bit alone on the 128-bit instructions (gcm_vaes.h's gcm_use_vaes): the AES
+// bit's statement covers the 256-bit forms, and CH_CPU_VAES without it runs nothing. No bit turns
+// the 128-bit vector ChaCha20 off: every arm64 CPU has NEON and every x86-64 CPU SSE2
+// (docs/decisions.md 82, 89 and 90).
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64, or a bit

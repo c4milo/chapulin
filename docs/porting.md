@@ -76,20 +76,29 @@ states the multiply at both widths: Arm's and Intel's lists name both. No build
 variable chooses the field, and a device object, a 64-bit one among them, holds
 the 16-limb field alone (decisions 52 and 89).
 
-On the same host, `CHACHA=vector` computes ChaCha20 several blocks at a time in
-128-bit vectors, eight on NEON on arm64 and four on SSE2 on x86-64, which every
-core of those architectures has (decisions 82 and 86). `chacha20_vector.h` stops
-the build on any other target and on a big-endian one, and the build needs no
-timing statement: the path runs adds, exclusive-ors and rotations, as the
-portable loop does (decision 82).
+A host object computes ChaCha20 several blocks at a time in 128-bit vectors in
+every session, eight on NEON on arm64 and four on SSE2 on x86-64, which every
+core of those architectures has, so no bit picks the path and no build variable
+chooses it (decisions 82, 86 and 89). The path needs no timing statement: it
+runs adds, exclusive-ors and rotations, as the portable loop does (decision
+82). A device object runs the portable loop alone.
 
-With `WIDEMUL=native` as well, the build runs Poly1305 four blocks at a time on
-the vector unit's widening multiply, NEON's UMULL and UMLAL or SSE2's PMULUDQ.
-`CH_NATIVE_WIDEMUL` states that every widening multiply the object runs, scalar
-or vector, runs in constant time, so a vendor statement behind it must cover
-those instructions as well as the scalar multiply. Without the define, a
-`CHACHA=vector` build runs the portable Poly1305 and its 16x16 decomposition
+A host session with `CH_CPU_CONSTANT_TIME_MULTIPLY` also runs Poly1305 four
+blocks at a time on the vector unit's widening multiply, NEON's UMULL and UMLAL
+or SSE2's PMULUDQ. The bit states that every widening multiply the session
+runs, scalar or vector, runs in constant time, so the vendor statement behind
+it must cover those instructions as well as the scalar multiply. A session
+without the bit runs the portable Poly1305 and its 16x16 decomposition
 (decision 83).
+
+On x86-64 two more bits say what the CPU has, and neither states a timing.
+`CH_CPU_AVX2` says the CPU has AVX2 and its operating system saves the 256-bit
+registers, and it moves the ChaCha20 keystream to 256-bit vectors, eight blocks
+a pass. `CH_CPU_VAES` says the CPU also has VAES and VPCLMULQDQ on those
+registers. Beside `CH_CPU_CONSTANT_TIME_AES` it moves AES-GCM's whole blocks to
+them; the AES bit's statement covers those forms, and `CH_CPU_VAES` without it
+runs nothing (decision 90). Set each from your probe alone: a session whose bit
+names instructions its CPU lacks faults on the first one.
 
 ### Check it on your target, because the compiler can undo it
 

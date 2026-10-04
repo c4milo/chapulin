@@ -38,6 +38,9 @@
 // every bit the reduction moves is set once on its own. Then the
 // squaring shape acc == subkey, which ghash_hw.h admits.
 //
+// On an x86-64 CPU with VAES and VPCLMULQDQ the AEAD cases and the stack
+// residue checks run once more on gcm_vaes.c's kernels (run_on_vaes).
+//
 // SP 800-38D and Wycheproof are not repeated here. bin/quic_test_hw and
 // the Wycheproof host leg run the published vectors over the same host
 // object, so the instruction path answers the standard directly rather
@@ -123,6 +126,12 @@ static int failures = 0;
 static unsigned long multiplies = 0;
 static unsigned long loops = 0;
 static unsigned long aeads = 0;
+
+// The description of the CPU that the AEAD cases' schedule on the
+// instructions records in its one byte, which gcm.c reads to pick
+// gcm_vaes.c's kernels (aes_schedule.h): 0, which names no kernel, until
+// run_on_vaes sets it.
+static uint8_t aead_cpu = 0;
 
 static void print_hex(const char *name, const uint8_t *p, size_t n) {
     (void)fprintf(stderr, "  %s ", name);
@@ -365,6 +374,7 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
     memset(&k, 0, sizeof k);
     aes_expand_round_keys(key, k.key.round_keys);
     k.key.instructions = AES_ON_INSTRUCTIONS;
+    k.key.cpu = aead_cpu;
     aes_public_key table = k;
     table.key.instructions = AES_ON_TABLE;
 
@@ -463,6 +473,8 @@ static void run_aead(void) {
 
 #include "ghash_equiv_residue.h"
 
+#include "ghash_equiv_vaes.h"
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_residue();
@@ -472,6 +484,9 @@ int main(void) {
     run_multiply_random();
     run_hash_data();
     run_aead();
+#ifdef __x86_64__
+    run_on_vaes();
+#endif
     printf("ghash equivalence: %lu multiplies, %lu data loops and %lu AEAD cases agree "
            "between the portable GHASH and the carry-less multiply (seed 0x%llx)\n",
            multiplies, loops, aeads, (unsigned long long)seed);

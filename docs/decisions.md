@@ -3983,7 +3983,7 @@ does nothing more.
     record the unit suite seals; a Wycheproof leg; a packaged-object leg;
     and the codegen gate's two 64-bit specs, which hold its branches at
     12. Seven violations break the path, and each is caught
-    (docs/verification.md, "The CHACHA=vector path").
+    (docs/verification.md, "The vector ChaCha20").
 
     Gain: the record bench's second run, a filter's figures, took a 16
     KiB `rec_seal` from 67.3 to 47.6 µs on macOS clang, from 61.6 to 41.6
@@ -4739,15 +4739,19 @@ does nothing more.
     value written on its command line included: it holds the AES
     instructions and both multiplies, so neither variable chooses anything
     there. `AES=soft`, `AES=extern`, `WIDEMUL=decomposed` and
-    `WIDEMUL=native` stay for device objects. A host session never runs
-    `chacha20.c`'s loop: every
+    `WIDEMUL=native` stay for device objects. Every build refuses `X25519`
+    and `CHACHA`, which choose nothing in either object: a device object
+    holds the 16-limb field and `chacha20.c`'s loop alone. A host session
+    never runs that loop: every
     arm64 core has NEON and every x86-64 core SSE2 (entry 82), so no bit
     turns the vector path off, and `chacha20_block`, which derives the
-    Poly1305 key, stays the portable function. The AVX2 ChaCha20 and the
-    VAES GCM, in development now, are chosen by the predicates added with
-    them. Those predicates read `CH_CPU_AVX2`, and `CH_CPU_VAES` beside
+    Poly1305 key, stays the portable function. Entry 90 added the AVX2
+    ChaCha20 and the VAES GCM with a predicate each, and this entry adds
+    none of its own. `chacha20.c`'s `use_avx2` reads `CH_CPU_AVX2`.
+    `gcm_vaes.h`'s `gcm_use_vaes` reads `CH_CPU_VAES` beside
     `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES instructions
-    at every width. This entry adds no predicate of its own.
+    at every width, from the byte each AES key schedule records of its
+    session's `ch_cfg.cpu`.
 
     **What init refuses.** `ch_connect`, `ch_record_init`, `ch_quic_init`,
     `ch_srv_accept`, `ch_srv_record_init`, `ch_srv_quic_init` and
@@ -4792,6 +4796,12 @@ does nothing more.
     | Zig API types and fields | 6 | 3 |
     | Timing defines | 4 | 2, for device objects |
 
+    The two rows that say "about" were estimates. At the fifth commit
+    the tree holds 24 host test binaries on arm64 and 25 on x86-64
+    (`HOST_BINS`, `HOST_VECTOR_BINS` and `bin/x86_kernels_test`), and 26
+    `lint-trust-separation` rows name a speed variable, 19 of them a build
+    the Makefile must refuse.
+
     - Nine `lib-check` legs go: the five that name a fast path on a raw
       client, and the four that repeat a webpki, server or QUIC object the
       host test now builds. Three stay: a server and colibri's QUIC object,
@@ -4800,8 +4810,9 @@ does nothing more.
       change to their command lines. Ten Zig configurations go the same way.
     - The three Wycheproof binaries are the default one, the `AES=extern`
       one and the host one, which runs once per set of bits that changes a
-      path: four times on arm64, and on x86-64 once more for each of
-      `CH_CPU_AVX2` and `CH_CPU_VAES` once those paths land.
+      path: four times on arm64, and on x86-64 twice more, with
+      `CH_CPU_AVX2` added and then `CH_CPU_VAES`, where the CPU has the
+      instructions.
     - The five equivalence tests stay. Each loop, session and vector test
       becomes one host binary that runs under every set of bits.
     - The eight 32-bit specs of `lint-wide-multiply` never compile a native
@@ -4809,7 +4820,9 @@ does nothing more.
     - Each of CI's arm64 and macOS jobs keeps one host `lib-check` and one
       disassembly, which then covers every file a target pragma compiles.
       The mips job's qemu run stays, and runs the host binaries with the
-      bits clear on a CPU without the instructions.
+      bits clear on a CPU without the instructions. It also runs them on a
+      CPU model for each x86-64 bit, where a session that names
+      instructions the model lacks dies of SIGILL.
     - `CH_BUILD_CPU_RUNTIME` takes a new bit, so no record from 0.1.0
       matches a host object.
     - `CH_NATIVE_AES` and `CH_NATIVE_MUL128` go. `CH_NATIVE_WIDEMUL` and
@@ -4886,7 +4899,15 @@ does nothing more.
     - Every host object holds every path. Entry 87 measured the multiply
       alone: on arm64 at `-O2`, the server object grows from 97,264 to
       139,882 bytes when it holds both multiplies, and the AES and vector
-      paths add more. `bench/device-ram.sh` measures each commit.
+      paths add more. `bench/device-ram.sh` measures each commit. At the
+      fifth commit, under Apple clang 21 at `-O2`, the vector ChaCha20 and
+      Poly1305 add 4,860 bytes of text to an arm64 host object that held
+      neither, and 12,185 on x86-64, where the AVX2 kernel comes with them:
+      the server object holds 144,506 and 182,307 bytes. colibri's QUIC
+      object, which built `CHACHA=vector` before, holds 203,131 and
+      263,631, 396 and 704 more than that build. No session struct grows:
+      a record direction keeps its copy of `cpu` in 4 bytes its alignment
+      left unused.
     - A host session always runs the vector ChaCha20, which no proof
       covers. The proved loop runs in device objects alone.
     - Every host caller writes `ch_cfg.cpu`, and colibri and stompy change
@@ -4921,10 +4942,12 @@ does nothing more.
       would compile intrinsics, and a firmware tree with its own build
       could not get the portable object for a 64-bit target.
 
-90. **Every x86-64 object carries an AVX2 ChaCha20 kernel beside its SSE2
-    path, and VAES and VPCLMULQDQ AES-GCM kernels beside its 128-bit
-    loops; the caller's CPU bits are to pick them, and until `ch_cfg.cpu`
-    exists no call runs them.** On GitHub's x86-64 runners a 16 KiB
+90. **Every x86-64 host object carries an AVX2 ChaCha20 kernel beside its
+    SSE2 path, and VAES and VPCLMULQDQ AES-GCM kernels beside its 128-bit
+    loops, and the caller's CPU bits pick them.** When this entry landed
+    no call ran them, because `ch_cfg.cpu` did not exist yet; the last
+    bullet of the list below says what entry 89's code changed. On
+    GitHub's x86-64 runners a 16 KiB
     `rec_seal` took about 6 µs on AES-128-GCM where OpenSSL took 4, and
     about 20 µs on ChaCha20-Poly1305 in a `CHACHA=vector WIDEMUL=native`
     build where OpenSSL took 7.5. chapulin ran SSE2 and the 128-bit AES-NI
@@ -5016,6 +5039,21 @@ does nothing more.
       where these kernels took 3.29 under clang and 3.64 under gcc. A GHASH
       pass of sixteen blocks, which would need sixteen powers of H and a
       pass size `gcm.c` does not know.
+    - **Since entry 89's code.** Its fifth commit made both predicates
+      read the bits, and four statements above changed with it. Both
+      kernels join every x86-64 host object, which is the one object that
+      holds either. `use_avx2` answers for `chacha20_xor_cpu`, which takes
+      a session's `ch_cfg.cpu` from a record, a packet or an AEAD call;
+      `chacha20_xor` takes no value and runs the SSE2 path. The GCM
+      predicate is `gcm_vaes.h`'s `gcm_use_vaes`, beside three inline
+      entries that `gcm.c` calls, so `gcm_hw.c` is the 128-bit path alone
+      and calls no kernel, and each key's schedule records the low byte of
+      its session's `ch_cfg.cpu` for the predicate to read. The three
+      binaries and the Wycheproof leg that renamed the 128-bit entries are
+      gone: `bin/unit_host`, `bin/ghash_equiv_test`, `bin/quic_test_hw`
+      and the Wycheproof host binary run those cases on the kernels under
+      the `ch_cfg.cpu` values that name them, and `bin/x86_kernels_test`
+      counts which calls run a kernel under each value.
 
     Cost:
 

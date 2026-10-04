@@ -22,7 +22,7 @@ _Static_assert(SUITE_KEY_MAX == AEAD_KEY, "rec_dir.key holds the longest suite k
 static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
                          const uint8_t hdr[REC_HDR], uint8_t *body, size_t len) {
     aes_traffic_key k;
-    aes_traffic_key_init(&k, d->key, suite_key_len(d->suite));
+    aes_traffic_key_init_cpu(&k, d->cpu, d->key, suite_key_len(d->suite));
     gcm_traffic_seal(&k, nonce, hdr, REC_HDR, body, len, body, body + len);
     ct_wipe(&k, sizeof k);
 }
@@ -30,24 +30,12 @@ static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
 static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
                         size_t len, uint8_t *pt) {
     aes_traffic_key k;
-    aes_traffic_key_init(&k, d->key, suite_key_len(d->suite));
+    aes_traffic_key_init_cpu(&k, d->cpu, d->key, suite_key_len(d->suite));
     int ok = gcm_traffic_open(&k, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
     ct_wipe(&k, sizeof k);
     return ok;
 }
 #endif
-
-// The answer d's ChaCha20-Poly1305 runs its Poly1305 under (widemul.h):
-// the session's, which d records in a host object, and the one the build
-// states in a device object.
-static uint8_t direction_widemul(const rec_dir *d) {
-#ifdef CH_CPU_RUNTIME
-    return d->widemul;
-#else
-    (void)d;
-    return WIDEMUL_BUILD_ANSWER;
-#endif
-}
 
 // The AEAD of one record: len bytes of TLSInnerPlaintext at body sealed
 // in place with the tag after them, under whichever AEAD d runs, with
@@ -60,7 +48,7 @@ static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const u
         return;
     }
 #endif
-    aead_seal(direction_widemul(d), d->key, nonce, hdr, REC_HDR, body, len, body, body + len);
+    AEAD_SEAL_CPU(d->cpu, d->key, nonce, hdr, REC_HDR, body, len, body, body + len);
 }
 
 // The other direction: the record at rec holds a header, len bytes of
@@ -75,8 +63,8 @@ static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const ui
         return open_aes_gcm(d, nonce, rec, len, pt);
     }
 #endif
-    return aead_open(direction_widemul(d), d->key, nonce, rec, REC_HDR, rec + REC_HDR, len,
-                     rec + REC_HDR + len, pt);
+    return AEAD_OPEN_CPU(d->cpu, d->key, nonce, rec, REC_HDR, rec + REC_HDR, len,
+                         rec + REC_HDR + len, pt);
 }
 
 #ifdef CH_SUITE_AES_GCM

@@ -1,14 +1,12 @@
 invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: a CHACHA=vector host object stops carrying poly1305_vector_native.c,
-  so poly1305_native.c's call to the vector path has no definition.
-  lint-trust-separation's CHACHA=vector host row requires the file.
+reason: a host object stops carrying poly1305_vector_native.c, so
+  poly1305_native.c's call to the vector path has no definition.
+  lint-trust-separation's host rows require the file.
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += poly1305_vector_native.c
-else ifeq ($(WIDEMUL),native)
+endif
 --- new
-ifneq ($(CPU_RUNTIME_DEF),)
-else ifeq ($(WIDEMUL),native)

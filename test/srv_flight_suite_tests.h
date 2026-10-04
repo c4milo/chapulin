@@ -11,6 +11,7 @@
 #ifdef CH_SUITE_AES_GCM
 
 #include "srv_flight_tests.h"
+#include "test_cpu.h"
 
 // Which suite srv_select picks by its default order, in a build that has
 // three (docs/decisions.md 80). bin/srv_flight_test_aes builds a host
@@ -152,6 +153,7 @@ static void test_flight_key_suite(void) {
     CHECK(sel.suite == SUITE_AES_128_GCM_SHA256);
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_OK);
     rec_dir_init_suite(&peer, hs.s_hs, SUITE_AES_128_GCM_SHA256);
+    TEST_CPU_DIR(peer);
     CHECK(seals_and_opens(&sess.wr, &peer));
     rec_dir_init_suite(&peer, hs.c_hs, SUITE_AES_128_GCM_SHA256);
     CHECK(seals_and_opens(&peer, &sess.rd));

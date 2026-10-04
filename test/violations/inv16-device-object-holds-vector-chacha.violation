@@ -1,0 +1,16 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: every object carries chacha20_vector.c and chacha20_avx2.c, a device
+  object among them. The files compile to nothing there, so nothing
+  fails, and a later change that calls their entries would run a vector
+  path in an object whose builder asked for the portable one.
+  lint-trust-separation's ChaCha20 rows ban both files from every device
+  object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(CHACHA_VECTOR_SRCS)
+endif
+--- new
+LIB_SRCS += $(CHACHA_VECTOR_SRCS)

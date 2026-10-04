@@ -1,14 +1,14 @@
 invariant: INV-16
 file: quic.c
 catches: quic_loop_host
-reason: a Handshake packet ch_quic_open opens runs its Poly1305 under
-  WIDEMUL_NOT_STATED whatever the session's ch_cfg.cpu states, so the bit
-  picks nothing there. The packet is the same. test/quic_loop_widemul.h
-  seals and opens a packet at each level each way and requires an end
-  whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY to call no file
-  under its own names.
+reason: a Handshake packet ch_quic_open opens runs under the probe's bit alone, whatever
+  the session's ch_cfg.cpu states, so no other bit picks a path there and
+  its Poly1305 runs the decomposition. The packet is the same.
+  test/quic_loop_widemul.h seals and opens a packet at each level each way
+  and requires an end whose ch_cfg.cpu holds
+  CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
 
 --- old
-        return quic_packet_open_handshake(widemul_answer(&q->t.cfg), &q->handshake_rx,
+        return quic_packet_open_handshake(CH_CFG_CPU(q->t.cfg), &q->handshake_rx,
 --- new
-        return quic_packet_open_handshake(WIDEMUL_NOT_STATED, &q->handshake_rx,
+        return quic_packet_open_handshake(CH_CPU_PROBED, &q->handshake_rx,

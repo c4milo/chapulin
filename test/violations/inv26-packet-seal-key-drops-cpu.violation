@@ -1,0 +1,18 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: quic_packet.c's seal expands its AES key and never records the
+  session's cpu in it, so every packet it seals under AES-GCM runs
+  gcm_hw.c's 128-bit loops, whatever CH_CPU_VAES says. The bytes are the
+  same.
+  bin/x86_kernels_test counts the calls into each kernel under every
+  ch_cfg.cpu value, and test/aes-runtime-qemu.sh builds it for x86-64 and
+  runs it under qemu-x86_64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+        aes_traffic_key_init_cpu(&key, cpu, k->key, suite_key_len(k->suite));
+        gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
+--- new
+        aes_traffic_key_init(&key, k->key, suite_key_len(k->suite));
+        gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);

@@ -8,36 +8,31 @@
 # It asks make for the flags the library's objects compile with, LIB_CFLAGS,
 # and whether this compiler passes the host test, so the bench compiles the
 # library sources as make lib does. CC picks the compiler (default cc). It
-# builds bench/record.c four times, each time with the library sources it
-# times:
+# builds bench/record.c with the sources and defines of a SUITE=aesgcm host
+# object, -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME, which holds every path
+# (docs/decisions.md 89), once for each ch_cfg.cpu value it times. The
+# value is -DBENCH_CPU on the compile line, every row hands it to the calls
+# a session hands its own to, and the build column names it:
 #
-#   the SUITE=aesgcm host object's defines, -DCH_SUITE_AES_GCM
-#   -DCH_CPU_RUNTIME, whose traffic keys run on the AES instructions and
-#   which holds both widening multiplies (docs/decisions.md 89), with its
-#   rows run on the decomposition, as a session without
-#   CH_CPU_CONSTANT_TIME_MULTIPLY runs them: the AES-128-GCM, AES-256-GCM
-#   and ChaCha20-Poly1305 rows, whose build column says WIDEMUL=decomposed
+#   0x3, the probe's bit and the AES bit: the AES-128-GCM and AES-256-GCM
+#   rows on the AES instructions' 128-bit loops, and the
+#   ChaCha20-Poly1305 rows on the vector ChaCha20, NEON or SSE2, and
+#   Poly1305's loop on the 16x16 decomposition
 #
-#   the same with -DBENCH_WIDEMUL_NATIVE, which hands every row the answer
-#   a session with that bit runs under, so they run the native copies: the
-#   ChaCha20-Poly1305 rows again, because Poly1305 is the one stage the
-#   multiply changes. Their build column says WIDEMUL=native
+#   0x7, those and the multiply bit: the ChaCha20-Poly1305 rows again,
+#   whose Poly1305 then runs the vector path on the native multiply
+#   (docs/decisions.md 83), because Poly1305 is the one stage the bit
+#   changes
 #
-#   each of those two with -DCH_CHACHA_VECTOR, chacha20_vector.c,
-#   chacha20_avx2.c and poly1305_vector_native.c, which CHACHA=vector puts
-#   in a host object: the ChaCha20-Poly1305 rows on the vector paths
-#   (https://github.com/c4milo/chapulin/issues/181), where the compiler
-#   targets NEON or SSE2. The vector Poly1305 is the native copy's alone,
-#   so only the second build's rows run it
+#   0x1f, every bit, on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ:
+#   every row again, with the ChaCha20 keystream on chacha20_avx2.c's
+#   kernel and AES-GCM's whole blocks on gcm_vaes.c's
+#   (docs/decisions.md 90). --build compiles this one for every x86-64
+#   target, and a run takes its rows only where /proc/cpuinfo names the
+#   instructions
 #
-#   on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ, the second of those
-#   once more with every call routed to the x86-64 kernels: chacha20_xor
-#   to chacha20_avx2.c and gcm_hw.c's entries to gcm_vaes.c, through the
-#   route headers test/chacha20_avx2_route.h and test/gcm_vaes_route.h
-#   (docs/decisions.md 90). Its rows' build column begins "AVX2+VAES".
-#   use_avx2 and use_vaes answer 0 until they read their ch_cfg.cpu bits
-#   (docs/decisions.md 89), so the library runs neither kernel yet, and
-#   this build is how a run times them
+# A host object never runs chacha20.c's portable loop, so no row here
+# times it; bench/primitives.sh times it in a device object's sources.
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
@@ -53,7 +48,7 @@
 # zig is the version tools/toolchain.env pins.
 #
 # Timings belong to the machine that ran them. `bench/record.sh --quick`
-# builds both binaries, runs every row once and writes nothing, which is
+# builds every binary, runs every row once and writes nothing, which is
 # the form for an emulated machine.
 #
 # The AES instructions' sources come from the Makefile's AES_HW_SRCS,
@@ -118,42 +113,23 @@ trap 'rm -rf "$W"' EXIT
 # shellcheck disable=SC2206
 FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibench)
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
-    bench/record_chacha.c bench/record_aead.c bench/record_stub.c
-    record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c poly1305.c poly1305_native.c ct.c ct_wipe.c
+    bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
+    record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c chacha20_vector.c chacha20_avx2.c
+    poly1305.c poly1305_native.c poly1305_vector_native.c ct.c ct_wipe.c
     hkdf.c sha256.c sha512.c sha512_compress.c)
-"${CC_WORDS[@]}" "${FLAGS[@]}" -o "$W/record" "${SRCS[@]}"
-"${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_WIDEMUL_NATIVE -o "$W/record_native" "${SRCS[@]}"
-# The CHACHA=vector builds, on either multiply, where the compiler targets
-# NEON or SSE2 on a little-endian core, as chacha20_vector.h requires.
-VECTOR_SRCS=("${SRCS[@]}" chacha20_vector.c chacha20_avx2.c poly1305_vector_native.c
-    bench/record_chacha_vector.c)
-VECTOR=""
-VECTOR_NOTE="no CHACHA=vector rows: $CC targets neither NEON nor SSE2 on a little-endian core"
-if printf '#include "chacha20_vector.h"\n' | "${CC_WORDS[@]}" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2>/dev/null; then
-    VECTOR=yes
-    VECTOR_NOTE="CHACHA=vector adds -DCH_CHACHA_VECTOR, chacha20_vector.c, chacha20_avx2.c, poly1305_vector_native.c and bench/record_chacha_vector.c"
-    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -o "$W/record_vector" "${VECTOR_SRCS[@]}"
-    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DBENCH_WIDEMUL_NATIVE -o "$W/record_vector_native" \
-        "${VECTOR_SRCS[@]}"
-fi
-# The x86-64 kernels' build, where this CPU has their instructions: the
-# CHACHA=vector WIDEMUL=native build with the 128-bit entries routed to
-# the kernels, so it links neither chacha20_vector.c nor gcm_hw.c.
+"${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x3 -o "$W/record" "${SRCS[@]}"
+"${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x7 -o "$W/record_multiply" "${SRCS[@]}"
+# The x86-64 kernels' build. It compiles for every x86-64 target, and its
+# rows run only where this CPU has the kernels' instructions.
 KERNELS=""
-KERNELS_NOTE="no AVX2+VAES rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
-if [ "$ARCH" = x86_64 ] && [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo &&
-    grep -qw vaes /proc/cpuinfo && grep -qw vpclmulqdq /proc/cpuinfo; then
-    KERNELS=yes
-    KERNELS_NOTE="AVX2+VAES adds -include test/chacha20_avx2_route.h -include test/gcm_vaes_route.h and test/x86_kernels_route.c to the CHACHA=vector WIDEMUL=native build, without chacha20_vector.c and gcm_hw.c"
-    KERNEL_SRCS=()
-    for src in "${VECTOR_SRCS[@]}"; do
-        case "$src" in
-        chacha20_vector.c | gcm_hw.c) ;;
-        *) KERNEL_SRCS+=("$src") ;;
-        esac
-    done
-    "${CC_WORDS[@]}" "${FLAGS[@]}" -DCH_CHACHA_VECTOR -DBENCH_WIDEMUL_NATIVE -include test/chacha20_avx2_route.h \
-        -include test/gcm_vaes_route.h -o "$W/record_kernels" "${KERNEL_SRCS[@]}" test/x86_kernels_route.c
+KERNELS_NOTE="no ch_cfg.cpu 0x1f rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
+if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -qw __x86_64__; then
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x1f -o "$W/record_kernels" "${SRCS[@]}"
+    if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo && grep -qw vaes /proc/cpuinfo &&
+        grep -qw vpclmulqdq /proc/cpuinfo; then
+        KERNELS=yes
+        KERNELS_NOTE="ch_cfg.cpu 0x1f adds CH_CPU_AVX2 and CH_CPU_VAES, the AVX2 ChaCha20 and the VAES AES-GCM"
+    fi
 fi
 if [ -n "$BUILD_ONLY" ]; then
     echo "record bench: --build built every binary and ran nothing" >&2
@@ -215,11 +191,7 @@ fi
 LOAD_BEFORE=$(load)
 {
     "$W/record" ${QUICK:+"$QUICK"} aes128gcm aes256gcm chacha20poly1305
-    "$W/record_native" ${QUICK:+"$QUICK"} chacha20poly1305
-    if [ -n "$VECTOR" ]; then
-        "$W/record_vector" ${QUICK:+"$QUICK"} chacha20poly1305
-        "$W/record_vector_native" ${QUICK:+"$QUICK"} chacha20poly1305
-    fi
+    "$W/record_multiply" ${QUICK:+"$QUICK"} chacha20poly1305
     if [ -n "$KERNELS" ]; then
         "$W/record_kernels" ${QUICK:+"$QUICK"} aes128gcm aes256gcm chacha20poly1305
     fi
@@ -250,8 +222,8 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
 {
     echo "# bench/record.sh on $(cpu) ($ARCH)${BENCH_HOST:+, $BENCH_HOST}, $(uname -s)" \
         "$(uname -r), $(date -u +%Y-%m-%d), tree $TREE"
-    echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; WIDEMUL=native adds -DBENCH_WIDEMUL_NATIVE, the answer of a session with CH_CPU_CONSTANT_TIME_MULTIPLY;" \
-        "$VECTOR_NOTE; $KERNELS_NOTE"
+    echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; the build column is the ch_cfg.cpu value the rows run under, -DBENCH_CPU: 0x3 states the AES instructions, and 0x7 adds CH_CPU_CONSTANT_TIME_MULTIPLY, the vector Poly1305;" \
+        "$KERNELS_NOTE"
     echo "# $ZIG_NOTE; ${OPENSSL:-no openssl on PATH}"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns: per record, the median of 5 runs, each the median of 15 batches of at least" \

@@ -36,6 +36,16 @@
 // constructor AES_ON_TABLE, and the Initial constructor the one the
 // session's CH_CPU_CONSTANT_TIME_AES bit names, and no other line writes
 // it.
+//
+// A host object (CH_CPU_RUNTIME, cpu_cfg.h) also records cpu: the low byte
+// of the description of the CPU that the schedule's session gave in
+// ch_cfg.cpu, which holds every bit an object defines (aes.c asserts it).
+// gcm.c reads it to pick gcm_vaes.c's 256-bit kernels for the schedule's
+// whole blocks on x86-64, and nothing else reads it. aes_traffic_key_init
+// and the Retry constructor write 0, which names no kernel,
+// aes_traffic_key_cpu and the Initial constructor write the session's
+// value, and no other line writes it. One byte keeps the schedule a run
+// of bytes with no padding, as its other fields do.
 #ifdef CH_AES_TWO_CIPHERS
 #define AES_ON_INSTRUCTIONS 1
 #define AES_ON_TABLE 2
@@ -47,6 +57,9 @@ struct aes_key_schedule {
 #endif
 #ifdef CH_AES_TWO_CIPHERS
     uint8_t instructions;
+#endif
+#ifdef CH_CPU_RUNTIME
+    uint8_t cpu;
 #endif
 };
 

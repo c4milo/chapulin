@@ -1,16 +1,18 @@
-// The CHACHA=vector Poly1305 against the portable one: the same key and
-// message, the same accumulator modulo 2^130 - 5 after every update and
-// the same tag. This is what holds the vector path, because CBMC cannot
-// read an intrinsic: proof/poly1305_harness.c proves poly1305.c's loop,
-// and this binary holds poly1305_vector.c to that loop's answer.
-// poly1305.c compiles here without -DCH_CHACHA_VECTOR, so poly1305_update
-// is the portable loop alone, and test/poly1305_equiv_vector.c compiles
-// the vector build of poly1305.c beside it as vector_poly1305_update.
+// A host object's vector Poly1305 against the portable one: the same key
+// and message, the same accumulator modulo 2^130 - 5 after every update
+// and the same tag. This is what holds the vector path, because CBMC
+// cannot read an intrinsic: proof/poly1305_harness.c proves poly1305.c's
+// loop, and this binary holds poly1305_vector.c to that loop's answer.
+// poly1305.c compiles here without -DCH_CPU_RUNTIME, so poly1305_update
+// is the portable loop alone, as a device object runs it, and
+// test/poly1305_equiv_vector.c compiles a host object's native copy of
+// poly1305.c beside it, which holds the vector path, as
+// poly1305_update_native.
 //
 // Every case runs the portable path over the whole message in one update,
-// and the vector build over the same message in two or three updates cut
+// and the native copy over the same message in two or three updates cut
 // at odd offsets, so a buffered partial block meets a long update and the
-// cut lands inside a group. The vector build's message sits in a heap
+// cut lands inside a group. The native copy's message sits in a heap
 // buffer that ends where the message ends, so under AddressSanitizer
 // (make san-check) a read past it stops the binary.
 //
@@ -21,7 +23,7 @@
 //   - the keys and messages whose limbs are largest: r clamped from a key
 //     of all 0xff bytes, and blocks of all 0xff, which carry into every
 //     limb, beside r of 0 and blocks of 0;
-//   - poly1305_vector_blocks called alone, from an accumulator that earlier
+//   - poly1305_vector_blocks_native called alone, from an accumulator that earlier
 //     blocks left, for one group to GROUPS_MAX groups, below the threshold
 //     too, with the limb bounds poly1305_vector.h states checked on return,
 //     and once on a group a search found, whose h1 its first carry pass
@@ -34,32 +36,32 @@
 // r a call computed in the stack it leaves behind.
 //
 // RFC 8439's vectors are not repeated here. bin/unit runs them on the
-// portable loop and bin/unit_chacha_vector on this path, so both answer
-// the published standard directly and not only through each other.
+// portable loop and bin/unit_host, with the multiply bit, on this path,
+// so both answer the published standard directly and not only through
+// each other.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// poly1305_vector.h declares the path only when the build defines
-// CH_CHACHA_VECTOR and asserts CH_NATIVE_WIDEMUL, as the host CFLAGS do.
-// This file compiles no library source, so the define changes nothing
-// else. The clang-tidy pass that reads this file passes it too.
-#ifndef CH_CHACHA_VECTOR
-#define CH_CHACHA_VECTOR
-#endif
+// poly1305_vector.h declares the path's group size and threshold only to
+// the native copy of a host object, which the two defines state, the
+// second as widemul_native.h states it. This file compiles no library
+// source, so the defines change nothing else.
+#define CH_CPU_RUNTIME
+#define CH_WIDEMUL_NATIVE_COPY 1
 #include "ch_assert.h"
 #include "poly1305.h"
 #include "poly1305_vector.h"
 
 #ifndef CH_POLY1305_VECTOR
-#error                                                                                             \
-    "bin/poly1305_equiv_test needs CH_NATIVE_WIDEMUL without CH_CT_WIDEMUL, as the host CFLAGS set"
+#error "bin/poly1305_equiv_test needs the vector Poly1305 in a host object's native copy"
 #endif
 
-// test/poly1305_equiv_vector.c: poly1305.c's vector build, renamed.
-void vector_poly1305_init(poly1305 *p, const uint8_t key[POLY1305_KEY]);
-void vector_poly1305_update(poly1305 *p, const uint8_t *in, size_t n);
-void vector_poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]);
+// test/poly1305_equiv_vector.c: a host object's native copy of poly1305.c,
+// under the names widemul_native.h gives it. poly1305.h declares the
+// copy's update and final for a host object, and poly1305_vector.h
+// poly1305_vector_blocks_native, the path's entry in that copy.
+void poly1305_init_native(poly1305 *p, const uint8_t key[POLY1305_KEY]);
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "poly1305 equivalence: CH_ASSERT(%s) failed at %s:%d\n", cond, file,
@@ -132,7 +134,7 @@ static void unhex(const char *hex, uint8_t *out, size_t n) {
 #define RANDOM_CASES 20000
 #define RANDOM_LENGTH_MAX 2048
 #define LARGE_LENGTH ((size_t)65536)
-// How far past a 16-byte boundary the vector build's message can start.
+// How far past a 16-byte boundary the native copy's message can start.
 #define ALIGN_MAX ((size_t)16)
 #define LIMB_MASK 0x3ffffffU
 
@@ -207,10 +209,10 @@ static void compare(const char *case_name, const uint8_t key[POLY1305_KEY], size
     uint8_t *copy = buffer + offset;
     memcpy(copy, message, n);
     poly1305 vector;
-    vector_poly1305_init(&vector, key);
-    vector_poly1305_update(&vector, copy, first_cut);
-    vector_poly1305_update(&vector, copy + first_cut, second_cut - first_cut);
-    vector_poly1305_update(&vector, copy + second_cut, n - second_cut);
+    poly1305_init_native(&vector, key);
+    poly1305_update_native(&vector, copy, first_cut);
+    poly1305_update_native(&vector, copy + first_cut, second_cut - first_cut);
+    poly1305_update_native(&vector, copy + second_cut, n - second_cut);
     free(buffer);
     compared++;
 
@@ -223,7 +225,7 @@ static void compare(const char *case_name, const uint8_t key[POLY1305_KEY], size
     uint8_t want[POLY1305_TAG];
     uint8_t got[POLY1305_TAG];
     poly1305_final(&portable, want);
-    vector_poly1305_final(&vector, got);
+    poly1305_final_native(&vector, got);
     if (memcmp(want, got, sizeof want) != 0) {
         report(case_name, "the tags differ", n, first_cut, second_cut);
     }
@@ -262,7 +264,7 @@ static void run_extremes(void) {
     }
 }
 
-// poly1305_vector_blocks called alone on message[prefix..prefix + n),
+// poly1305_vector_blocks_native called alone on message[prefix..prefix + n),
 // after poly1305_update took the prefix bytes, against the portable path
 // over all of it. On return the accumulator must hold the portable path's
 // value within the bounds poly1305_vector.h states.
@@ -274,7 +276,7 @@ static void compare_direct(const char *case_name, const uint8_t key[POLY1305_KEY
     poly1305 vector;
     poly1305_init(&vector, key);
     poly1305_update(&vector, message, prefix);
-    poly1305_vector_blocks(&vector, message + prefix, n);
+    poly1305_vector_blocks_native(&vector, message + prefix, n);
     compared++;
     if (!same_value(&portable, &vector)) {
         report(case_name, "the accumulators differ modulo 2^130 - 5", n, prefix, prefix);
@@ -354,7 +356,7 @@ int main(void) {
     run_random();
     run_large();
     printf("poly1305 equivalence: %lu cases agree between the portable loop and the "
-           "CHACHA=vector path (seed 0x%llx)\n",
+           "vector path (seed 0x%llx)\n",
            compared, (unsigned long long)seed);
     if (failures > 0) {
         printf("poly1305 equivalence: %d mismatches\n", failures);

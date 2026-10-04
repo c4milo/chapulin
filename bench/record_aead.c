@@ -6,6 +6,8 @@
 // bench/ first, and bench/aead.c is the AEAD bench.
 #define aead_seal bench_aead_copy_seal
 #define aead_open bench_aead_copy_open
+#define aead_seal_cpu bench_aead_copy_seal_cpu
+#define aead_open_cpu bench_aead_copy_open_cpu
 
 #include "../aead.c"
 

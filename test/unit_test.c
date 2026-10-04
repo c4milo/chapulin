@@ -305,6 +305,8 @@ static void test_record(void) {
     rec_dir rx;
     rec_dir_init(&tx, secret);
     rec_dir_init(&rx, secret);
+    TEST_CPU_DIR(tx);
+    TEST_CPU_DIR(rx);
 
     const char *msg = "matando sapos desde 2026";
     uint8_t rec[128];

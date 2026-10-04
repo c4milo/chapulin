@@ -1188,8 +1188,9 @@ entry 19's `record_size_limit` sizes.
 
 `LIB_VARIANT` was `$(PIN)-$(TRUST)-$(KEX)-$(RAND)` at `3432a5d` (`Makefile:287` at `3432a5d`), so
 the axis became a fifth term in it: `TRANSPORT=quic-nonblocking`, against `TRANSPORT=tcp-blocking` as
-the default. `LIB_VARIANT` now names eleven variables, and two more when they
-are set, `TX_RECORD` and `CHACHA=vector` (`LIB_VARIANT` in the `Makefile`); `PIN`
+the default. `LIB_VARIANT` now names ten variables, `TX_RECORD` when it is
+set, and the host test's result for a host object (`LIB_VARIANT` in the
+`Makefile`); `PIN`
 is now half of a `TRUST` value (`docs/decisions.md` entry 40). `TRUST`, `KEX`
 and `RAND` keep their meaning in a QUIC build. One
 key-exchange group per build stays (entry 12), so a `KEX=pq` QUIC build offers

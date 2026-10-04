@@ -39,7 +39,7 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(&r->t);
+    tlsi_record_cpu(&r->t);
 #endif
     // A CA build loads its revocation epoch before the first message,
     // exactly as ch_connect does; every other build answers CH_OK. The

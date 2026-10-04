@@ -51,12 +51,17 @@
 
 #ifdef CH_CPU_RUNTIME
 
-// The answer the operations of a session configured by cfg run under: WIDEMUL_CONSTANT_TIME when
-// its ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and WIDEMUL_NOT_STATED when it does not.
-// Every init call and ch_srv_check have accepted the value by then (cpu_bits_ok, cpu.h).
+// The answer a description of the CPU gives: WIDEMUL_CONSTANT_TIME when cpu, a session's
+// ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_MULTIPLY, and WIDEMUL_NOT_STATED when it does not. A
+// wiped record direction's 0 gives the second.
+static inline uint8_t widemul_of_cpu(uint32_t cpu) {
+    return (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME : WIDEMUL_NOT_STATED;
+}
+
+// The answer the operations of a session configured by cfg run under: the one its ch_cfg.cpu
+// gives. Every init call and ch_srv_check have accepted the value by then (cpu_bits_ok, cpu.h).
 static inline uint8_t widemul_answer(const ch_cfg *cfg) {
-    return (cfg->cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? WIDEMUL_CONSTANT_TIME
-                                                           : WIDEMUL_NOT_STATED;
+    return widemul_of_cpu(cfg->cpu);
 }
 
 // Whether an operation under the answer widemul runs the native copy: for

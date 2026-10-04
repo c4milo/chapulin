@@ -5,21 +5,19 @@
 // one comes from; this file states how each one is met.
 //
 // A -DCH_SUITE_AES_GCM build runs AES-GCM and AES header protection
-// (§5.4.3) under both AES suites. The keys here come from traffic
-// secrets and are secret, so ct.h refuses the define outside a host
-// object and AES=extern with CH_AES_EXTERN_CONSTANT_TIME (INV-26). Every
-// dispatch reads a key set's suite, which the ServerHello named in the
-// clear.
+// (§5.4.3) under both AES suites. The keys here come from traffic secrets
+// and are secret, so ct.h refuses the define outside a host object and
+// AES=extern with CH_AES_EXTERN_CONSTANT_TIME (INV-26). Every dispatch
+// reads a key set's suite, which the ServerHello named in the clear.
 //
 // The §9.5 rule, as code. RFC 9001 §9.5 makes the packet number and its
 // encoded length secret in both directions (rfc9001.txt:2110-2112,
 // rfc9001.txt:2114-2116), so every compare that reads one is mask
 // arithmetic: below_mask over two packet numbers, byte_in_use over the
-// packet number length, and ct_memeq over a key set name. No `if` in
-// this file reads a secret and no array index does either. The compares
-// that do branch read values the caller passed and the wire shows: a
-// buffer capacity, a header length, a packet length and the encryption
-// level.
+// packet number length, and ct_memeq over a key set name. No `if` in this
+// file reads a secret and no array index does either. The compares that
+// do branch read values the caller passed and the wire shows: a buffer
+// capacity, a header length, a packet length and the encryption level.
 #include "quic_packet.h"
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -27,6 +25,7 @@
 #include "buf.h"
 #include "ch_assert.h"
 #include "ct.h"
+#include "widemul.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
 #include "gcm.h"
@@ -36,20 +35,21 @@
 // The AEAD k's suite names, over n bytes of pt sealed into ct with the
 // tag after them. AES round keys die with this frame, and an AES-GCM set
 // counts the packet for §6.6.
-static void seal_body(uint8_t widemul, quic_keys *k, const uint8_t nonce[AEAD_NONCE],
+static void seal_body(uint32_t cpu, quic_keys *k, const uint8_t nonce[AEAD_NONCE],
                       const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
                       uint8_t *ct) {
+    (void)cpu; // a device object's AEAD takes no description of the CPU (aead.h)
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_init(&key, k->key, suite_key_len(k->suite));
+        aes_traffic_key_init_cpu(&key, cpu, k->key, suite_key_len(k->suite));
         gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
         ct_wipe(&key, sizeof key);
         k->sealed++;
         return;
     }
 #endif
-    aead_seal(widemul, k->key, nonce, aad, aad_len, pt, n, ct, ct + n);
+    AEAD_SEAL_CPU(cpu, k->key, nonce, aad, aad_len, pt, n, ct, ct + n);
 }
 
 // The other direction, ct and its tag opened into pt: 1 when the tag
@@ -57,18 +57,19 @@ static void seal_body(uint8_t widemul, quic_keys *k, const uint8_t nonce[AEAD_NO
 // the n bytes it wrote while it hashed (gcm.h), and ChaCha20-Poly1305
 // writes none (aead.h). Neither writes past pt's n bytes, so the tag
 // after them stays as it arrived.
-static int open_body(uint8_t widemul, const quic_keys *k, const uint8_t nonce[AEAD_NONCE],
+static int open_body(uint32_t cpu, const quic_keys *k, const uint8_t nonce[AEAD_NONCE],
                      const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt) {
+    (void)cpu; // as in seal_body
 #ifdef CH_SUITE_AES_GCM
     if (suite_runs_aes_gcm(k->suite)) {
         aes_traffic_key key;
-        aes_traffic_key_init(&key, k->key, suite_key_len(k->suite));
+        aes_traffic_key_init_cpu(&key, cpu, k->key, suite_key_len(k->suite));
         int ok = gcm_traffic_open(&key, nonce, aad, aad_len, ct, n, ct + n, pt);
         ct_wipe(&key, sizeof key);
         return ok;
     }
 #endif
-    return aead_open(widemul, k->key, nonce, aad, aad_len, ct, n, ct + n, pt);
+    return AEAD_OPEN_CPU(cpu, k->key, nonce, aad, aad_len, ct, n, ct + n, pt);
 }
 
 // The packet number space of RFC 9000 §17.1: every packet number is
@@ -302,9 +303,9 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 #endif
 }
 
-int quic_packet_seal(uint8_t widemul, quic_keys *k, const quic_hp_key *h, uint8_t level,
-                     uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
-                     const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
+                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(hdr != NULL);
@@ -350,7 +351,7 @@ int quic_packet_seal(uint8_t widemul, quic_keys *k, const quic_hp_key *h, uint8_
     quic_nonce(k->iv, pn, nonce);
     // §5.3 makes the unprotected header the associated data
     // (rfc9001.txt:1141-1143), and out holds it now.
-    seal_body(widemul, k, nonce, out, hdr_len, pt, pt_len, out + hdr_len);
+    seal_body(cpu, k, nonce, out, hdr_len, pt, pt_len, out + hdr_len);
     ct_wipe(nonce, sizeof nonce);
 
     // §5.4.1 applies header protection after packet protection
@@ -403,13 +404,12 @@ static int unprotect_header(const quic_hp_key *h, uint8_t *pkt, size_t pkt_len, 
 // QUIC_PN_MAX_LEN. Those two make pkt_len - body_off at least
 // QUIC_HP_SAMPLE_LEN, which is AEAD_TAG, so the ciphertext length below
 // does not wrap and is zero at the shortest packet the check admits.
-static int open_payload(uint8_t widemul, const quic_keys *k, uint8_t *pkt, size_t pkt_len,
+static int open_payload(uint32_t cpu, const quic_keys *k, uint8_t *pkt, size_t pkt_len,
                         size_t body_off, uint64_t pn, size_t *pt_len) {
     size_t ct_len = pkt_len - body_off - AEAD_TAG;
     uint8_t nonce[AEAD_NONCE];
     quic_nonce(k->iv, pn, nonce);
-    int opened =
-        open_body(widemul, k, nonce, pkt, body_off, pkt + body_off, ct_len, pkt + body_off);
+    int opened = open_body(cpu, k, nonce, pkt, body_off, pkt + body_off, ct_len, pkt + body_off);
     ct_wipe(nonce, sizeof nonce);
     if (opened == 0) {
         // RFC 9001 §5.5 calls a tag that does not match a discard
@@ -421,9 +421,9 @@ static int open_payload(uint8_t widemul, const quic_keys *k, uint8_t *pkt, size_
     return CH_OK;
 }
 
-int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
-                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
-                               uint64_t *pn, size_t *pt_len) {
+int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
+                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                               size_t *pt_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(pkt != NULL);
@@ -436,7 +436,7 @@ int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_h
         return CH_QUIC_DISCARD;
     }
     size_t opened_len = 0;
-    if (open_payload(widemul, k, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len) != CH_OK) {
+    if (open_payload(cpu, k, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len) != CH_OK) {
         return CH_QUIC_DISCARD;
     }
     *pn = recovered;
@@ -444,7 +444,7 @@ int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_h
     return CH_OK;
 }
 
-int quic_packet_open_application(uint8_t widemul, const quic_keys sets[CH_QUIC_KEY_SETS],
+int quic_packet_open_application(uint32_t cpu, const quic_keys sets[CH_QUIC_KEY_SETS],
                                  const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
                                  size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                                  uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
@@ -471,7 +471,7 @@ int quic_packet_open_application(uint8_t widemul, const quic_keys sets[CH_QUIC_K
     quic_keys chosen;
     quic_keys_select(sets, selected, &chosen);
     size_t opened_len = 0;
-    int rc = open_payload(widemul, &chosen, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len);
+    int rc = open_payload(cpu, &chosen, pkt, pkt_len, pn_off + pn_len, recovered, &opened_len);
     ct_wipe(&chosen, sizeof chosen);
     if (rc != CH_OK) {
         // §5.5's second MUST: a packet that appears to carry a key

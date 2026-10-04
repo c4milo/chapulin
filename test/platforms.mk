@@ -29,33 +29,42 @@ FREERTOS_SRCS = $(filter-out webpki_%.c,$(SRCS))
 # re-building the whole lint toolchain buys nothing. The roster is
 # check's own prerequisite list.
 .PHONY: suite-check
-suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa $(CHACHA_VECTOR_BINS) \
+suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa $(X86_KERNEL_BINS) \
              $(HOST_BINS) $(HOST_VECTOR_BINS)
 	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test \
 	  handshake_strict_test handshake_strict_pq x509strict x509strict_ecdsa; do \
 	  echo "== $$b (native)"; ./bin/$$b; done
-	@set -e; for b in $(notdir $(CHACHA_VECTOR_BINS)); do echo "== $$b (native)"; ./bin/$$b; done
-	@set -e; for b in $(notdir $(HOST_BINS)); do echo "== $$b (host object)"; ./bin/$$b; done
+	@set -e; for b in $(notdir $(X86_KERNEL_BINS) $(HOST_BINS)); do echo "== $$b (host object)"; ./bin/$$b; done
 	@set -e; for b in $(notdir $(HOST_VECTOR_BINS)); do for bits in $(HOST_VECTOR_CPU); do \
 	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
+	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(X86_UNIT_CPU)); do \
+	  echo "== unit_host $$bits (host object)"; ./bin/unit_host $$bits; done
 	$(MAKE) wycheproof
 
 
 # The x86-64 kernels, for CI's x86-64-kernels job: chacha20_avx2.c's AVX2
 # ChaCha20 and gcm_vaes.c's VAES and VPCLMULQDQ kernels
-# (docs/decisions.md 90). Every x86-64 CHACHA=vector object and host
-# object carries them, built with no instruction flag, and the library
-# runs neither until use_avx2 and use_vaes read ch_cfg.cpu, so the
-# test binaries call them directly or route their calls to them. Those
-# binaries skip a CPU without the instructions, in check and everywhere
-# else; this target runs them under CH_REQUIRE_X86_KERNELS=1, so on such
-# a CPU it fails instead, after x86-64-kernels-cpu names the CPU.
+# (docs/decisions.md 90). Every x86-64 host object carries them, built
+# with no instruction flag, and a session runs one where its ch_cfg.cpu
+# names it. The equivalence binaries call the kernels directly,
+# bin/quic_test_hw and bin/ghash_equiv_test run a pass of their vectors
+# and cases on the VAES kernels, and bin/unit_host and the Wycheproof host
+# leg run under the values that name a kernel (X86_UNIT_CPU,
+# X86_WYCHEPROOF_CPU). Each skips a kernel on a CPU without its
+# instructions, in check and everywhere else; this target runs them under
+# CH_REQUIRE_X86_KERNELS=1, so on such a CPU it fails instead, after
+# x86-64-kernels-cpu names the CPU. bin/x86_kernels_test, which counts
+# the calls into the kernels and runs none of their instructions, runs
+# here too.
+X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
-x86-64-kernels-check: x86-64-kernels-cpu bin/chacha20_equiv_test bin/aes_equiv_test $(X86_KERNEL_BINS)
-	@[ -n "$(X86_KERNEL_LEG)" ] || \
-	  { echo "x86-64-kernels-check: $(CC) does not target x86-64 with CHACHA=vector in a host object"; exit 1; }
-	@set -e; for b in chacha20_equiv_test aes_equiv_test $(notdir $(X86_KERNEL_BINS)); do \
+x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bin/unit_host
+	@[ -n "$(X86_KERNEL_BINS)" ] || \
+	  { echo "x86-64-kernels-check: $(CC) does not build a host object for x86-64"; exit 1; }
+	@set -e; for b in $(X86_KERNEL_RUNS); do \
 	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
+	@set -e; for bits in $(X86_UNIT_CPU); do \
+	  echo "== unit_host $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/unit_host $$bits; done
 	CH_REQUIRE_X86_KERNELS=1 $(MAKE) --no-print-directory wycheproof
 
 # Whether this machine's CPU has what the x86-64 kernels run: AES-NI,

@@ -132,6 +132,8 @@ On arm64 and x86-64, a web PKI client and both server roles build a host
 object. It holds the AES instructions, both multiplies and a second
 X25519 field of 51-bit limbs, takes neither `AES` nor `WIDEMUL`, and picks
 for each session from `ch_cfg.cpu`, your program's description of the CPU.
+Every session of a host object runs ChaCha20 in 128-bit vectors, and on
+x86-64 in 256-bit ones where that description names AVX2.
 
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.

@@ -36,16 +36,44 @@ void aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce
     mac(widemul, key, nonce, aad, aad_len, ct, n, tag);
 }
 
-int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
-              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
-              const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+// Whether tag is the MAC of aad and the n bytes at ct under key and nonce:
+// computed whole, compared in constant time, and wiped. Both opens call it
+// before they release a byte of plaintext.
+static int tag_matches(uint8_t widemul, const uint8_t key[AEAD_KEY],
+                       const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
+                       const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG]) {
     uint8_t want[AEAD_TAG];
     mac(widemul, key, nonce, aad, aad_len, ct, n, want);
     uint32_t ok = ct_memeq(want, tag, AEAD_TAG);
     ct_wipe(want, sizeof want);
-    if (!ok) {
+    return ok != 0;
+}
+
+int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+              const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+              const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    if (!tag_matches(widemul, key, nonce, aad, aad_len, ct, n, tag)) {
         return 0;
     }
     chacha20_xor(key, nonce, 1, ct, pt, n);
     return 1;
 }
+
+#ifdef CH_CPU_RUNTIME
+void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                   const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                   uint8_t tag[AEAD_TAG]) {
+    chacha20_xor_cpu(cpu, key, nonce, 1, pt, ct, n);
+    mac(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
+}
+
+int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                  const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+                  const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    if (!tag_matches(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag)) {
+        return 0;
+    }
+    chacha20_xor_cpu(cpu, key, nonce, 1, ct, pt, n);
+    return 1;
+}
+#endif

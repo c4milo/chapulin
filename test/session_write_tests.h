@@ -16,6 +16,7 @@ static void test_key_update_replies(void) {
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
     rec_dir_init(&server, secret);
+    TEST_CPU_DIR(server);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -44,6 +45,7 @@ static void read_key_update_request(uint8_t request) {
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
     rec_dir_init(&server, secret);
+    TEST_CPU_DIR(server);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -51,6 +53,7 @@ static void read_key_update_request(uint8_t request) {
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
     rec_dir_init(&reader, wr_secret);
+    TEST_CPU_DIR(reader);
     const uint8_t key_update[5] = {HS_KEY_UPDATE, 0, 0, 1, request};
     mock_push(&m, &server, REC_HANDSHAKE, key_update, sizeof key_update);
     uint8_t out[16];
@@ -81,6 +84,7 @@ static void read_key_update_body(size_t body_len) {
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
     rec_dir_init(&server, secret);
+    TEST_CPU_DIR(server);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
@@ -88,6 +92,7 @@ static void read_key_update_body(size_t body_len) {
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
     rec_dir reader;
     rec_dir_init(&reader, wr_secret);
+    TEST_CPU_DIR(reader);
     const uint8_t key_update[6] = {HS_KEY_UPDATE, 0, 0, (uint8_t)body_len, 1, 0};
     mock_push(&m, &server, REC_HANDSHAKE, key_update, 4 + body_len);
     uint8_t out[16];

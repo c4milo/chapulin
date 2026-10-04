@@ -10,6 +10,11 @@
 //   - AES-128-GCM and AES-256-GCM under traffic keys, against the SP
 //     800-38D vectors bin/quic_test_hw checks the instructions against,
 //     and the header protection block against FIPS 197.
+//   - What each key schedule records beside its cipher: the description
+//     of the CPU its constructor was given, which gcm.c reads to pick the
+//     VAES kernels on x86-64 (aes_schedule.h). An Initial key records the
+//     session's value, a Retry key and a new traffic key 0, and
+//     aes_traffic_key_cpu the value it is given.
 //   - Which cipher ran. test/aes_runtime_soft.c and test/aes_runtime_hw.c
 //     count every call into the table, the AES instructions and the
 //     carry-less multiply (test/aes_runtime_count.h). Without the bit no
@@ -143,21 +148,27 @@ static void check_ran_on(uint32_t cpu) {
     CHECK(aes_runtime_table_calls > 0);
 }
 
-// A.1: both endpoints' three values, and the cipher each schedule records.
-// A value without the AES bit takes the table, the cipher every CPU runs.
+// A.1: both endpoints' three values, and the cipher and the description of
+// the CPU each schedule records. A value without the AES bit takes the
+// table, the cipher every CPU runs. The key starts from bytes that are
+// neither, so a field the constructor left alone fails a check.
 static void check_keys(uint32_t cpu, const appendix *a) {
     uint8_t recorded = (cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
     aes_public_key k;
+    memset(&k, 0xff, sizeof k);
     CHECK(aes_public_key_initial(&k, cpu, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(eq_hex(k.key.round_keys, a->client_key) && eq_hex(k.iv, a->client_iv) &&
           eq_hex(k.hp.round_keys, a->client_hp));
     CHECK(k.key.instructions == recorded && k.hp.instructions == recorded);
+    CHECK(k.key.cpu == (uint8_t)cpu && k.hp.cpu == (uint8_t)cpu);
+    memset(&k, 0xff, sizeof k);
     CHECK(aes_public_key_initial(&k, cpu, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     CHECK(eq_hex(k.key.round_keys, a->server_key) && eq_hex(k.iv, a->server_iv) &&
           eq_hex(k.hp.round_keys, a->server_hp));
     CHECK(k.key.instructions == recorded && k.hp.instructions == recorded);
+    CHECK(k.key.cpu == (uint8_t)cpu && k.hp.cpu == (uint8_t)cpu);
 }
 
 // A.2: the client's Initial packet sealed by the client entry, all 1200
@@ -225,6 +236,12 @@ static void check_retry(const appendix *a) {
     CHECK(memcmp(tag, &packet[A4_RETRY - GCM_TAG], GCM_TAG) == 0);
     CHECK(quic_retry_ok(a->version, pseudo, sizeof pseudo, &packet[A4_RETRY - GCM_TAG]) == 1);
     check_ran_on(RUNTIME_ABSENT);
+    // The key those two calls build: on the table, with a description of
+    // the CPU that names no kernel.
+    aes_public_key k;
+    memset(&k, 0xff, sizeof k);
+    aes_public_key_retry(&k, a->version);
+    CHECK(k.key.instructions == AES_ON_TABLE && k.key.cpu == 0);
 }
 
 // Both appendices under one ch_cfg.cpu, and what ran for them.
@@ -247,6 +264,7 @@ static void check_public_keys(uint32_t cpu) {
         CHECK(aes_public_key_initial(&k, without_aes[i], CH_QUIC_VERSION_1, APPENDIX_DCID,
                                      sizeof APPENDIX_DCID, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
         CHECK(eq_hex(k.key.round_keys, V1_CLIENT_KEY) && k.key.instructions == AES_ON_TABLE);
+        CHECK(k.key.cpu == (uint8_t)without_aes[i]);
         CHECK(aes_runtime_instruction_calls == 0 && aes_runtime_table_calls > 0);
     }
 }
@@ -288,12 +306,19 @@ static void check_traffic_case(const traffic_case *c) {
     size_t aad_len = unhex(c->aad, aad);
     size_t n = unhex(c->pt, pt);
     aes_traffic_key k;
+    memset(&k, 0xff, sizeof k);
     aes_traffic_key_init(&k, key, key_len);
-    CHECK(k.key.instructions == AES_ON_INSTRUCTIONS);
+    CHECK(k.key.instructions == AES_ON_INSTRUCTIONS && k.key.cpu == 0);
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
     CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
     CHECK(memcmp(opened, pt, n) == 0);
+    // The description a record or a packet gives the key afterwards, and
+    // the same bytes under it.
+    aes_traffic_key_cpu(&k, RUNTIME_PRESENT);
+    CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.instructions == AES_ON_INSTRUCTIONS);
+    gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
+    CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
 }
 
 // FIPS 197 Appendix C.1 and C.3, the forward cipher under a 128-bit and a

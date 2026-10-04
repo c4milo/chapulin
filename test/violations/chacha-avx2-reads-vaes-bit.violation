@@ -1,0 +1,17 @@
+invariant: INV-16
+file: chacha20.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: chacha20.c's use_avx2 reads CH_CPU_VAES in place of CH_CPU_AVX2, so a
+  session whose caller found AVX2 and no VAES runs SSE2, and one whose
+  value held CH_CPU_VAES alone would run the AVX2 kernel. A value with
+  both bits or neither behaves the same, and the object holds both calls,
+  so no vector and no build check notices.
+  bin/x86_kernels_test counts the calls into each kernel under every
+  ch_cfg.cpu value, and test/aes-runtime-qemu.sh builds it for x86-64 and
+  runs it under qemu-x86_64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    return (cpu & CH_CPU_AVX2) != 0;
+--- new
+    return (cpu & CH_CPU_VAES) != 0;

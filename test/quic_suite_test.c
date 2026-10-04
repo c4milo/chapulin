@@ -20,7 +20,7 @@
 #include "ch_assert.h"
 #include "quic_keys.h"
 #include "quic_packet.h"
-#include "test_widemul.h"
+#include "test_cpu.h"
 
 #if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 #error                                                                                             \
@@ -128,7 +128,7 @@ static void test_suite_vector(const suite_vector *v) {
 
     uint8_t pkt[64];
     size_t pkt_len = 0;
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
                            sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(eq_hex(pkt, pkt_len, v->packet));
     CHECK(k.sealed == 1);
@@ -139,7 +139,7 @@ static void test_suite_vector(const suite_vector *v) {
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
-    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, pkt, pkt_len, 1, 0, 0, &key_set,
+    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 0, pkt, pkt_len, 1, 0, 0, &key_set,
                                        &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == 5 && pt_len == sizeof pt);
     CHECK(memcmp(pkt + sizeof hdr, pt, sizeof pt) == 0);
@@ -164,14 +164,14 @@ static void test_confidentiality_limit(void) {
     uint8_t pkt[64];
     size_t pkt_len = 0;
     k.sealed = QUIC_CONFIDENTIALITY_LIMIT - 2;
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
                            sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(k.sealed == QUIC_CONFIDENTIALITY_LIMIT - 1);
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr, pt,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 6, 2, hdr, sizeof hdr, pt,
                            sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(k.sealed == QUIC_CONFIDENTIALITY_LIMIT - 1);
     quic_keys_update(secret, &k, CH_QUIC_VERSION_1);
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 7, 2, hdr, sizeof hdr, pt,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 7, 2, hdr, sizeof hdr, pt,
                            sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
 
     uint8_t chacha_secret[32];
@@ -181,7 +181,7 @@ static void test_confidentiality_limit(void) {
     quic_keys_init_suite(&c, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
     quic_hp_key_init_suite(&ch, CH_QUIC_VERSION_1, chacha_secret, SUITE_CHACHA20_POLY1305_SHA256);
     c.sealed = QUIC_CONFIDENTIALITY_LIMIT;
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &c, &ch, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &c, &ch, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, pt,
                            sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(c.sealed == QUIC_CONFIDENTIALITY_LIMIT);
 }
@@ -219,9 +219,9 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     uint8_t datagram[2 * (sizeof hdr + FAILED_OPEN_MAX + AEAD_TAG)];
     size_t first_len = 0;
     size_t second_len = 0;
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, body,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 5, 2, hdr, sizeof hdr, body,
                            payload, datagram, sizeof datagram, &first_len) == CH_OK);
-    CHECK(quic_packet_seal(TEST_WIDEMUL, &k, &h, CH_LEVEL_APPLICATION, 6, 2, second_hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 6, 2, second_hdr,
                            sizeof second_hdr, body, payload, &datagram[first_len],
                            sizeof datagram - first_len, &second_len) == CH_OK);
     datagram[first_len - 1] ^= 1;
@@ -234,7 +234,7 @@ static void test_failed_open_bytes(const suite_vector *v, size_t payload) {
     uint8_t key_set = 0xff;
     uint64_t pn = 0xdead;
     size_t pt_len = 0xbeef;
-    CHECK(quic_packet_open_application(TEST_WIDEMUL, sets, &h, 0, datagram, first_len, 1, 0, 0,
+    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 0, datagram, first_len, 1, 0, 0,
                                        &key_set, &pn, &pt_len) == CH_QUIC_DISCARD);
     CHECK(key_set == 0xff && pn == 0xdead && pt_len == 0xbeef);
     CHECK(memcmp(datagram, hdr, sizeof hdr) == 0);

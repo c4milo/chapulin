@@ -1,18 +1,18 @@
 #include "chacha20.h"
 
-#ifdef CH_CHACHA_VECTOR
+#ifdef CH_CPU_RUNTIME
 #include "chacha20_avx2.h"
 #include "chacha20_vector.h"
+#include "cpu_cfg.h"
 #endif
 
-#if defined(CH_CHACHA_VECTOR) && defined(__x86_64__)
-// Whether chacha20_xor runs chacha20_avx2.c's AVX2 kernel in place of
-// chacha20_vector.c's SSE2 path. The CH_CPU_AVX2 bit of ch_cfg.cpu, which
-// the caller sets from its own probe of the CPU, decides it once that
-// field exists. Until then it is 0, and no call runs the kernel.
-// chapulin probes no CPU (docs/decisions.md 90).
-static int use_avx2(void) {
-    return 0;
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// Whether chacha20_xor_cpu runs chacha20_avx2.c's AVX2 kernel in place of
+// chacha20_vector.c's SSE2 path: where cpu, the session's ch_cfg.cpu,
+// holds CH_CPU_AVX2, which the caller sets from its own probe of the CPU.
+// chapulin probes no CPU (docs/decisions.md 89 and 90).
+static int use_avx2(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX2) != 0;
 }
 #endif
 
@@ -84,18 +84,11 @@ void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 
 void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                   uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
-#ifdef CH_CHACHA_VECTOR
-    // CHACHA=vector: the same keystream, several blocks at a time
-    // (chacha20_vector.h). The loop below is the reference that
-    // bin/chacha20_equiv_test compares it with.
-#ifdef __x86_64__
-    // On x86-64, eight blocks a pass in 256-bit vectors where the caller's
-    // answer says the CPU has AVX2 (chacha20_avx2.h).
-    if (use_avx2()) {
-        chacha20_avx2_xor(key, nonce, counter, in, out, n);
-        return;
-    }
-#endif
+#ifdef CH_CPU_RUNTIME
+    // A host object: the same keystream, several blocks at a time in
+    // 128-bit vectors (chacha20_vector.h), which every CPU a host object
+    // targets has. The loop below is a device object's, and the reference
+    // that bin/chacha20_equiv_test compares the vector paths with.
     chacha20_vector_xor(key, nonce, counter, in, out, n);
 #else
     uint32_t state[16];
@@ -114,3 +107,22 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_
     }
 #endif
 }
+
+#ifdef CH_CPU_RUNTIME
+void chacha20_xor_cpu(uint32_t cpu, const uint8_t key[CHACHA20_KEY],
+                      const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, const uint8_t *in,
+                      uint8_t *out, size_t n) {
+#ifdef __x86_64__
+    // Eight blocks a pass in 256-bit vectors where the session's caller
+    // says the CPU has AVX2 (chacha20_avx2.h).
+    if (use_avx2(cpu)) {
+        chacha20_avx2_xor(key, nonce, counter, in, out, n);
+        return;
+    }
+#else
+    // arm64 has one vector path, so no bit picks here.
+    (void)cpu;
+#endif
+    chacha20_vector_xor(key, nonce, counter, in, out, n);
+}
+#endif

@@ -1,0 +1,13 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying chacha20_vector.c and chacha20_avx2.c, and
+  its link fails on chacha20_vector_xor, which chacha20.c calls there,
+  only where something links it. lint-trust-separation's ChaCha20 rows
+  require both files in every host object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(CHACHA_VECTOR_SRCS)
+endif
+--- new

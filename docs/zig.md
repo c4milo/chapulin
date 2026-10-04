@@ -293,7 +293,12 @@ default; in any other object they are `void`, and `Cpu` is a
 - **A value states what the caller found.** `Cpu` holds four bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`
   and `vaes`. `toCfg` writes `CH_CPU_PROBED` and the bit of each one that
-  is true. `Cpu{}` says the caller looked and states nothing more.
+  is true. `Cpu{}` says the caller looked and states nothing more. The
+  first two state a timing, and `cpu_cfg.h` says what each claims. The
+  last two are x86-64's and say what the CPU has: with `avx2` the
+  session's ChaCha20 runs in 256-bit vectors, and with `vaes` beside
+  `constant_time_aes` its AES-GCM runs on VAES and VPCLMULQDQ
+  (docs/decisions.md 90).
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `Server.check` return
   `error.Invalid` with nothing sent. So does `avx2` or `vaes` in an arm64

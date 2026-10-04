@@ -441,12 +441,10 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
 void tlsi_wipe(ch_tls *t);
 
 #ifdef CH_CPU_RUNTIME
-// Writes the session's answer about the widening multiply, the one its ch_cfg.cpu gives
-// (widemul_answer), into both record directions, which hand it to the AEAD (record.h). Each TCP
-// init call runs it once it has accepted the configuration, so no record is sealed or opened
-// before it. session.c defines it, because tls.h includes this header and widemul.h is not a
-// public one.
-void tlsi_record_widemul(ch_tls *t);
+// Writes the session's ch_cfg.cpu, the caller's description of its CPU, into both record
+// directions, which read each record's paths from it (record.h). Each TCP init call runs it once
+// it has accepted the configuration, so no record is sealed or opened before it.
+void tlsi_record_cpu(ch_tls *t);
 #endif
 #endif
 

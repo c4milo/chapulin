@@ -46,15 +46,17 @@ typedef struct {
     uint8_t key[AEAD_KEY];
     uint8_t iv[AEAD_NONCE];
 #ifdef CH_CPU_RUNTIME
-    // The answer ChaCha20-Poly1305's Poly1305 runs under (widemul.h): the
-    // one the session's ch_cfg.cpu gives, which each init call writes into
-    // both of the session's directions once it has accepted the
-    // configuration. Keying and KeyUpdate leave it, and a wiped direction
-    // reads 0, which takes the decomposition. A device object holds one
-    // multiply, needs no such field and does not declare it. It sits in
-    // the four bytes that seq's alignment leaves after iv, so it adds no
-    // byte to a direction.
-    uint8_t widemul;
+    // The session's ch_cfg.cpu, the caller's description of its CPU, which
+    // each init call writes into both of the session's directions once it
+    // has accepted the configuration. A record reads its paths from it:
+    // the multiply bit picks Poly1305's copy, CH_CPU_AVX2 ChaCha20's
+    // keystream, and CH_CPU_VAES beside the AES bit AES-GCM's kernels
+    // (cpu_cfg.h). Keying and KeyUpdate leave it, and a wiped direction
+    // reads 0, which names no fast path. A device object holds one path
+    // for each, needs no such field and does not declare it. It fills the
+    // four bytes that seq's alignment leaves after iv, so it adds no byte
+    // to a direction.
+    uint32_t cpu;
 #endif
     uint64_t seq;
 #ifdef CH_SUITE_AES_GCM

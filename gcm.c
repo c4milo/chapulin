@@ -66,6 +66,7 @@
 #ifdef CH_CPU_RUNTIME
 #include "ch_assert.h"
 #include "gcm_hw.h"
+#include "gcm_vaes.h"
 #include "ghash_hw.h"
 #endif
 
@@ -293,7 +294,8 @@ static size_t instruction_rounds(const aes_key_schedule *k) {
 }
 
 // The whole blocks of counter_mode's input on the AES instructions, which
-// run several blocks at once (gcm_counter_blocks_hw), and the bytes they
+// run several blocks at once, on the path the description of the CPU that
+// k records names (gcm_counter_blocks_cpu, gcm_vaes.h), and the bytes they
 // covered. A schedule the table runs, which only a QUIC host object
 // holds, covers none, and counter_mode runs all its blocks one at a time.
 static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t counter[AES_BLOCK],
@@ -304,16 +306,17 @@ static size_t counter_mode_whole_blocks(const aes_key_schedule *k, uint8_t count
     }
 #endif
     size_t blocks = n / AES_BLOCK;
-    gcm_counter_blocks_hw(k->round_keys, instruction_rounds(k), counter, in, blocks, out);
+    gcm_counter_blocks_cpu(k->cpu, k->round_keys, instruction_rounds(k), counter, in, blocks, out);
     return blocks * AES_BLOCK;
 }
 
 // The whole passes of GCM_HW_PASS_BLOCKS blocks on the AES instructions:
 // counter mode and GHASH over the ciphertext in one loop, from h's
-// accumulator, gcm_seal_passes_hw when seal is set and gcm_open_passes_hw
-// when it is not, and the bytes they covered. A schedule the table runs
-// covers none. seal is the caller's own constant, so its branch reads no
-// data.
+// accumulator, gcm_seal_passes_cpu when seal is set and
+// gcm_open_passes_cpu when it is not, each on the path k's description of
+// the CPU names (gcm_vaes.h), and the bytes they covered. A schedule the
+// table runs covers none. seal is the caller's own constant, so its
+// branch reads no data.
 static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[AES_BLOCK],
                            gcm_hash *h, const uint8_t *in, size_t n, uint8_t *out) {
 #ifdef CH_AES_TWO_CIPHERS
@@ -325,9 +328,11 @@ static size_t whole_passes(const aes_key_schedule *k, int seal, uint8_t counter[
     size_t passes = n / pass_bytes;
     size_t rounds = instruction_rounds(k);
     if (seal) {
-        gcm_seal_passes_hw(k->round_keys, rounds, counter, h->acc, h->subkey, in, passes, out);
+        gcm_seal_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, in, passes,
+                            out);
     } else {
-        gcm_open_passes_hw(k->round_keys, rounds, counter, h->acc, h->subkey, in, passes, out);
+        gcm_open_passes_cpu(k->cpu, k->round_keys, rounds, counter, h->acc, h->subkey, in, passes,
+                            out);
     }
     return passes * pass_bytes;
 }

@@ -131,6 +131,31 @@ int aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY], const uint8_t nonce[
     return 0;
 }
 
+#ifdef CH_CPU_RUNTIME
+// A host object's record.c calls the entries that take the session's
+// ch_cfg.cpu (aead.h, aes.h). The two AEAD entries keep aead_seal's and
+// aead_open's contracts, so each is the stub above, and the key's setter
+// writes the one field it names.
+void aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                   const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                   uint8_t tag[AEAD_TAG]) {
+    (void)cpu;
+    aead_seal(0, key, nonce, aad, aad_len, pt, n, ct, tag);
+}
+
+int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE],
+                  const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
+                  const uint8_t tag[AEAD_TAG], uint8_t *pt) {
+    (void)cpu;
+    return aead_open(0, key, nonce, aad, aad_len, ct, n, tag, pt);
+}
+
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
+    __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes cpu: schedule writable");
+    k->key.cpu = cpu;
+}
+#endif
+
 #include "record.c"
 
 #define RECORD_SUITE_PT_MAX 16

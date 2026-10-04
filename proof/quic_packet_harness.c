@@ -179,7 +179,7 @@ static void prove_seal(void) {
     fill_nondet(pt, sizeof pt);
     fill_nondet(out, sizeof out);
 
-    int rc = quic_packet_seal(nondet_u8(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
+    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
                               pt, pt_len, out, cap, &out_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL || rc == CH_ECAP,
                      "quic_packet_seal: it returns one of the three codes its header names");
@@ -210,7 +210,7 @@ static void prove_open(void) {
     fill_nondet((uint8_t *)&h, sizeof h);
     fill_nondet(pkt, sizeof pkt);
 
-    int rc = quic_packet_open_handshake(nondet_u8(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(),
+    int rc = quic_packet_open_handshake(nondet_u32(), &k, &h, pkt, pkt_len, pn_off, nondet_u64(),
                                         &pn, &pt_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD,
                      "quic_packet_open_handshake: it returns one of the two codes its header "
@@ -228,7 +228,7 @@ static void prove_open(void) {
     fill_nondet((uint8_t *)&h, sizeof h);
     fill_nondet(pkt, sizeof pkt);
 
-    rc = quic_packet_open_application(nondet_u8(), sets, &h, nondet_u8(), pkt, pkt_len, pn_off,
+    rc = quic_packet_open_application(nondet_u32(), sets, &h, nondet_u8(), pkt, pkt_len, pn_off,
                                       nondet_u64(), nondet_u64(), &key_set, &pn, &pt_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD,
                      "quic_packet_open_application: it returns one of the two codes its header "

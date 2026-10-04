@@ -17,8 +17,8 @@
 #include "quic.h"
 #include "quic_initial.h"
 #include "quic_packet.h"
+#include "test_cpu.h"
 #include "test_random.h"
-#include "test_widemul.h"
 #include "x25519.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -331,8 +331,8 @@ static void test_close_after_failure(void) {
     CHECK(all_zero(&q.handshake_hp_tx, sizeof q.handshake_hp_tx));
     CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, CH_QUIC_VERSION_1, 8, 1, hdr, sizeof hdr,
                              frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_EINVAL);
-    CHECK(quic_packet_open_handshake(TEST_WIDEMUL, &handshake_tx, &handshake_hp_tx, pkt, pkt_len,
-                                     sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
+    CHECK(quic_packet_open_handshake(TEST_SESSION_CPU, &handshake_tx, &handshake_hp_tx, pkt,
+                                     pkt_len, sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
     CHECK(pn == 7 && pt_len == frame_len && memcmp(pkt + sizeof hdr, frame, frame_len) == 0);
 
     // No 1-RTT keys existed, so no 1-RTT close is owed, and none is left.

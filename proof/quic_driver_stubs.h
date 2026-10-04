@@ -105,10 +105,10 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     return seal_result(hdr, hdr_len, pt, pt_len, out, cap, out_len);
 }
 
-int quic_packet_seal(uint8_t widemul, const quic_keys *k, const quic_hp_key *h, uint8_t level,
+int quic_packet_seal(uint32_t cpu, const quic_keys *k, const quic_hp_key *h, uint8_t level,
                      uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
                      const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
-    (void)widemul;
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(h, sizeof *h), "seal: header key readable");
     __CPROVER_assert(level == CH_LEVEL_HANDSHAKE || level == CH_LEVEL_APPLICATION,
@@ -145,22 +145,22 @@ int quic_initial_open(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
     return open_result(pkt, pkt_len, pn_off, pn, pt_len);
 }
 
-int quic_packet_open_handshake(uint8_t widemul, const quic_keys *k, const quic_hp_key *h,
-                               uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t largest_pn,
-                               uint64_t *pn, size_t *pt_len) {
-    (void)widemul;
+int quic_packet_open_handshake(uint32_t cpu, const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
+                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                               size_t *pt_len) {
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "open: key readable");
     __CPROVER_assert(__CPROVER_r_ok(h, sizeof *h), "open: header key readable");
     (void)largest_pn;
     return open_result(pkt, pkt_len, pn_off, pn, pt_len);
 }
 
-int quic_packet_open_application(uint8_t widemul, const quic_keys sets[CH_QUIC_KEY_SETS],
+int quic_packet_open_application(uint32_t cpu, const quic_keys sets[CH_QUIC_KEY_SETS],
                                  const quic_hp_key *h, uint8_t key_phase, uint8_t *pkt,
                                  size_t pkt_len, size_t pn_off, uint64_t largest_pn,
                                  uint64_t current_phase_lowest_pn, uint8_t *key_set, uint64_t *pn,
                                  size_t *pt_len) {
-    (void)widemul;
+    (void)cpu;
     __CPROVER_assert(__CPROVER_r_ok(sets, CH_QUIC_KEY_SETS * sizeof *sets), "open: sets readable");
     __CPROVER_assert(__CPROVER_r_ok(h, sizeof *h), "open: header key readable");
     __CPROVER_assert(key_phase <= 1, "open: the key phase is one bit");

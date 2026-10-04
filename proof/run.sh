@@ -648,7 +648,10 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wi
 # 58): 435 properties, 596 s, 3.88 GB peak (arm64 macOS, cbmc 6.11.0,
 # kissat, PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -l). With
 # rec_seal's plaintext copy one memmove: 412 properties, 620 s, 4.28 GB
-# maximum resident set, the same command at a load average near 15.
+# maximum resident set, the same command at a load average near 15. With
+# the seal and the open called through aead.h's AEAD_SEAL_CPU and
+# AEAD_OPEN_CPU, which are aead_seal and aead_open in this device build
+# (docs/decisions.md 89): 412 properties, 561 s, 4.45 GB on 2026-10-03.
 launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
 # open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
@@ -669,7 +672,9 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=record_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 576 properties, 20 s, 0.59 GB peak.
+# 576 properties, 20 s, 0.59 GB peak. With the direction's cpu, and
+# aead_seal_cpu, aead_open_cpu and aes_traffic_key_cpu, the entries that
+# take it, stubbed beside the others: 605 properties, 19 s, 0.58 GB.
 launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -1424,7 +1429,9 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 124 properties, 1 s, 0.02 GB peak.
+# 124 properties, 1 s, 0.02 GB peak. With the schedule's cpu byte, which
+# aes_traffic_key_init zeroes and aes_traffic_key_cpu writes: 136
+# properties, under 1 s, 0.02 GB.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes.c in the QUIC host suite object, which holds the AES instructions
 # and the table, over contract stubs of both ciphers' six entries: an
@@ -1441,7 +1448,9 @@ launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=aes_runtime PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 196 properties, 1 s, 0.03 GB peak.
+# 196 properties, 1 s, 0.03 GB peak. With the schedule's cpu byte, which
+# the Initial constructor writes and the Retry constructor zeroes: 214
+# properties, 1 s, 0.03 GB.
 launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
@@ -1530,7 +1539,9 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # In the host object (-DCH_CPU_RUNTIME, docs/decisions.md 89), which gets no
 # -DCH_NATIVE_WIDEMUL, measured the same way on 2026-10-03
 # (PROVE_ONLY=quic_packet_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
-# 1143 properties, 20 s, 0.48 GB peak.
+# 1143 properties, 20 s, 0.48 GB peak. With the ch_cfg.cpu each packet
+# call takes first, and the entries that take it stubbed beside the
+# others: 1154 properties, 11 s, 0.48 GB.
 launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and
@@ -1871,7 +1882,9 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # success assertions fails that one assert (1 of 1773), so the formula
 # reaches a switch that succeeds. With quic_config.c's ticket version rule
 # (docs/decisions.md 79): quic_driver 1790 properties, 93 s, 0.99 GB, on
-# 2026-09-29.
+# 2026-09-29. With the ch_cfg.cpu each packet stub takes first
+# (docs/decisions.md 89): quic_driver 1813 properties, 125 s, 0.99 GB, on
+# 2026-10-03.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where

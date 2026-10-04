@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "test_aead.h"
 #include "test_widemul.h"
 
 // The AES-GCM arm only. A published suite fixes its own key, and INV-26
@@ -142,16 +143,16 @@ static void run_aead(void) {
         uint8_t got_tag[16];
         uint8_t got_pt[1024];
         if (wp_aead[i].valid) {
-            aead_seal(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, msg, n, got_ct, got_tag);
+            TEST_AEAD_SEAL(key, iv, aad, wp_aead[i].aad_len, msg, n, got_ct, got_tag);
             if (memcmp(got_ct, ct, n) != 0 || memcmp(got_tag, tag, 16) != 0) {
                 fail("aead", wp_aead[i].tc, "seal output differs from vector");
             }
-            if (!aead_open(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt) ||
+            if (!TEST_AEAD_OPEN(key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt) ||
                 memcmp(got_pt, msg, n) != 0) {
                 fail("aead", wp_aead[i].tc, "valid case failed to open");
             }
         } else {
-            if (aead_open(TEST_WIDEMUL, key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt)) {
+            if (TEST_AEAD_OPEN(key, iv, aad, wp_aead[i].aad_len, ct, n, tag, got_pt)) {
                 fail("aead", wp_aead[i].tc, "invalid case accepted");
             }
         }

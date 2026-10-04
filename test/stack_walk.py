@@ -13,7 +13,7 @@ each with the frames the .su files give:
 - entry() reaches deep() through first(), whose first instruction is its
   tail call to deep(). The walk once read the target objdump prints on
   that branch line, a placeholder that names first() itself, and dropped
-  the edge. Under CHACHA=vector that took chacha20_xor's jump to
+  the edge. In a host object that took chacha20_xor's jump to
   chacha20_vector_xor out of the call graph.
 - wide() and narrow() each call a static helper() of their own object,
   with a different frame and different callees. The walk once keyed a

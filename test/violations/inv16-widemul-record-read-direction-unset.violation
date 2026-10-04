@@ -1,13 +1,13 @@
 invariant: INV-16
 file: session.c
 catches: tcp_nonblocking_loop_host
-reason: tlsi_record_widemul writes the answer into the write direction alone,
-  so every record a session opens runs Poly1305 under 0, the
-  decomposition, whatever its ch_cfg.cpu states.
+reason: tlsi_record_cpu writes the session's ch_cfg.cpu into the write direction
+  alone, so every record a session opens runs under 0, which names no
+  fast path: Poly1305 on the decomposition, whatever the value states.
   test/tcp_nonblocking_loop_widemul.h counts each end's calls around its
   own calls and requires an end whose ch_cfg.cpu holds
   CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
 
 --- old
-    t->rd.widemul = answer;
+    t->rd.cpu = t->cfg.cpu;
 --- new

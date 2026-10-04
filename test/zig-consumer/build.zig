@@ -36,7 +36,6 @@ const Options = struct {
     AES: ?[]const u8 = null,
     RAND: ?[]const u8 = null,
     KEX: ?[]const u8 = null,
-    CHACHA: ?[]const u8 = null,
     WIDEMUL: ?[]const u8 = null,
     EXPORTER: ?[]const u8 = null,
     KEYLOG: ?[]const u8 = null,

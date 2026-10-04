@@ -1,7 +1,7 @@
 #include "chacha20_vector.h"
 
-// The whole file compiles only under CH_CHACHA_VECTOR (chacha20_vector.h).
-#ifdef CH_CHACHA_VECTOR
+// The whole file compiles only in a host object (chacha20_vector.h).
+#ifdef CH_CPU_RUNTIME
 
 #ifdef __ARM_NEON
 #include <arm_neon.h>
@@ -340,4 +340,4 @@ void chacha20_vector_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CH
     }
 }
 
-#endif // CH_CHACHA_VECTOR
+#endif // CH_CPU_RUNTIME

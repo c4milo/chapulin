@@ -75,7 +75,8 @@
 # and program built, the seven took 5.1 to 5.3 s on an M-series Mac, and
 # the eight took 4.5 to 5.4 s at a load average of 11 to 13. The eight
 # left once docs/decisions.md 89 merged the AES rows took 5.4 s at a load
-# average of 8.
+# average of 8, and the seven left once it removed the CHACHA row took 5.0
+# to 5.1 s at a load average of 28 to 30.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -109,10 +110,10 @@ link_flags=()
 # and their loops state CH_CPU_CONSTANT_TIME_AES and
 # CH_CPU_CONSTANT_TIME_MULTIPLY (fixture.zig's cpuAnswer,
 # docs/decisions.md 89), so they run the AES instructions and the native
-# copies of the files built on the multiply. AES=extern would need a
-# ch_aes_block that encrypts, and hooks.zig's stops the program. The QUIC
-# object colibri links comes once more under CHACHA=vector, as colibri
-# builds it, whose vector Poly1305 is the native copy's.
+# copies of the files built on the multiply, the vector Poly1305 among
+# them, and every session of theirs runs the vector ChaCha20. AES=extern
+# would need a ch_aes_block that encrypts, and hooks.zig's stops the
+# program.
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
@@ -121,7 +122,6 @@ configs=(
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm KEYLOG=on|"
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
-    "quic-chacha-vector|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm CHACHA=vector KEYLOG=on|"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once. The server
@@ -144,8 +144,6 @@ roster=(
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"
-    "chacha-vector|RAND=extern CHACHA=vector|"
-    "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
 )
 case ${1:-} in
 "") ;;
@@ -231,13 +229,12 @@ statement_defs() {
 }
 
 # Whether this compiler can build a configuration: SUITE=aesgcm needs a
-# host object or AES=extern, and CHACHA=vector NEON or SSE2, which the
-# Makefile probes for and check's legs skip without.
+# host object or AES=extern, which the Makefile probes for and check's
+# legs skip without.
 buildable() {
     case " $1 " in
     *" AES=extern "*) true ;;
     *" SUITE=aesgcm "*) [ -n "$host" ] ;;
-    *" CHACHA=vector "*) printf '#include "chacha20_vector.h"\n' | "$cc" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2> /dev/null ;;
     *) true ;;
     esac
 }

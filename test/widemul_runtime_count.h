@@ -24,7 +24,7 @@ extern unsigned long widemul_decomposed_calls;
 // X25519 field, which is X25519's copy on the native multiply.
 extern unsigned long widemul_native_calls;
 // Calls into poly1305_vector_native.c's entry, which only
-// poly1305_native.c's block loop makes, under CHACHA=vector.
+// poly1305_native.c's block loop makes.
 extern unsigned long widemul_vector_calls;
 
 // One end's calls into the dispatched entries of each copy, which the

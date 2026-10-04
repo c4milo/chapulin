@@ -350,8 +350,12 @@ const CpuBits = struct {
     /// and the session runs the native multiply in place of ct.h's 16x16 decomposition, and X25519
     /// on the 51-bit-limb field.
     constant_time_multiply: bool = false,
-    /// CH_CPU_AVX2 and CH_CPU_VAES: x86-64 bits, which an arm64 object refuses.
+    /// CH_CPU_AVX2: the CPU has AVX2 and its operating system saves the 256-bit registers, and the
+    /// session's ChaCha20 keystream runs in 256-bit vectors. An x86-64 bit, which an arm64 object
+    /// refuses.
     avx2: bool = false,
+    /// CH_CPU_VAES: the CPU also has VAES and VPCLMULQDQ on those registers, and beside
+    /// constant_time_aes AES-GCM's whole blocks run two to a register. An x86-64 bit as well.
     vaes: bool = false,
 };
 

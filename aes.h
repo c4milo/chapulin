@@ -166,6 +166,34 @@ typedef struct aes_traffic_key aes_traffic_key;
 // because k holds the expanded secret.
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len);
 
+#ifdef CH_CPU_RUNTIME
+// Records in k the description of the CPU its session gave, the low byte
+// of ch_cfg.cpu, which holds every bit an object defines and which gcm.c
+// reads to pick gcm_vaes.c's 256-bit kernels for k's whole blocks on
+// x86-64 (aes_schedule.h). aes_traffic_key_init records 0,
+// which names no kernel, so a key this call never sees runs the 128-bit
+// loops: a record direction and a QUIC packet call it, and a header
+// protection mask, which is one block, does not.
+//
+// Requires: aes_traffic_key_init wrote k. cpu is a value an init call
+// accepted (cpu.h), or 0.
+void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu);
+#endif
+
+// aes_traffic_key_init for the key a record or a QUIC packet seals or
+// opens under, with its session's ch_cfg.cpu. A host object expands the
+// key and then records the value in it. Every other build expands the key
+// and never evaluates cpu, so the expression may name a field that build
+// does not declare, as REC_DIR_INIT_SUITE does with a suite (record.h). It
+// is a macro under a function's name, in the aes_ family, because
+// inv-26-aes-public-keys-only matches a call by that prefix (INV-26).
+#ifdef CH_CPU_RUNTIME
+#define aes_traffic_key_init_cpu(k, cpu, key, key_len)                                             \
+    (aes_traffic_key_init((k), (key), (key_len)), aes_traffic_key_cpu((k), (cpu)))
+#else
+#define aes_traffic_key_init_cpu(k, cpu, key, key_len) aes_traffic_key_init((k), (key), (key_len))
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // One forward-cipher block under a traffic key: out = CIPH_k(in). It is
 // RFC 9001 §5.4.3's header protection mask, AES-ECB(hp_key, sample)

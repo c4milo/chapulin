@@ -3,6 +3,14 @@
 # their check lines. tools/bench-numbers.py calls check_record, so
 # `make lint-bench-numbers` fails when a table cell or that sentence
 # disagrees with the CSVs, as it does for the other figures in that file.
+#
+# The CSVs in RECORD_CSVS were measured before docs/decisions.md 89, and
+# the build labels below are theirs: the names of the build variables that
+# chose each path then. bench/record.sh now labels its rows by the
+# ch_cfg.cpu value they run under, "ch_cfg.cpu 0x3", "0x7" and "0x1f",
+# and times no row on chacha20.c's portable loop, which no host session
+# runs. So a change that commits a fresh CSV moves these labels, the rows
+# of the ChaCha20-Poly1305 table and docs/performance.md with it.
 import csv
 import math
 import re

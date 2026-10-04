@@ -78,8 +78,8 @@ static void seal_record(bench_state *b) {
     memcpy(body, b->app, b->plaintext_len);
     body[b->plaintext_len] = REC_APPDATA;
     if (b->aead == BENCH_CHACHA20_POLY1305) {
-        aead_seal(BENCH_WIDEMUL, b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body,
-                  body + b->len);
+        aead_seal_cpu(BENCH_CPU, b->wr.key, b->nonce, b->sealed, REC_HDR, body, b->len, body,
+                      body + b->len);
     } else {
         gcm_traffic_seal(&b->key, b->nonce, b->sealed, REC_HDR, body, b->len, body, body + b->len);
     }
@@ -96,7 +96,7 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len) {
     b->whole_blocks = b->len / AES_BLOCK;
     rec_dir_init_suite(&b->wr, secret, suite);
     // What an init call writes into a session's directions (session.h).
-    b->wr.widemul = BENCH_WIDEMUL;
+    b->wr.cpu = BENCH_CPU;
     b->rd = b->wr;
     memcpy(b->nonce, b->wr.iv, AEAD_NONCE); // the IV is the nonce at sequence number 0
     fill_random(b->app, plaintext_len);
@@ -105,6 +105,8 @@ void bench_prepare(bench_state *b, bench_aead aead, size_t plaintext_len) {
     if (aead != BENCH_CHACHA20_POLY1305) {
         static const uint8_t zero[AES_BLOCK] = {0};
         aes_traffic_key_init(&b->key, b->wr.key, suite_key_len(suite));
+        // What a record gives its key after it expands it (record.c).
+        aes_traffic_key_cpu(&b->key, BENCH_CPU);
         aes_encrypt_schedule(&b->key.key, zero, b->subkey);
     }
     seal_record(b);
@@ -207,41 +209,41 @@ static void run_counter_mode_shifted(bench_state *b) {
 }
 
 // Counter mode's whole blocks alone, as counter_mode hands them to the AES
-// instructions: gcm_counter_blocks_hw over every whole block of the
-// record, in place and as the open runs it. counter advances with each call,
-// and the timing reads no value of it.
+// instructions: the entry BENCH_CPU names (record_stages.h) over every whole
+// block of the record, in place and as the open runs it. counter advances
+// with each call, and the timing reads no value of it.
 static void run_counter_blocks_in_place(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    gcm_counter_blocks_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, body,
-                          b->whole_blocks, body);
+    bench_gcm_counter_blocks(b->key.key.round_keys, b->key.key.rounds, b->counter, body,
+                             b->whole_blocks, body);
     consume(body[0]);
 }
 
 static void run_counter_blocks_shifted(bench_state *b) {
-    gcm_counter_blocks_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->rec + REC_HDR,
-                          b->whole_blocks, b->rec);
+    bench_gcm_counter_blocks(b->key.key.round_keys, b->key.key.rounds, b->counter, b->rec + REC_HDR,
+                             b->whole_blocks, b->rec);
     consume(b->rec[0]);
 }
 
-// The seal's whole passes, as seal_schedule hands them to gcm_hw.c:
-// counter mode and GHASH over the ciphertext in one loop, over every whole
-// pass of the record, in place, from the accumulator ghash_data's row
-// uses. Every record size the bench times is whole passes.
+// The seal's whole passes, as seal_schedule hands them to the entry
+// BENCH_CPU names: counter mode and GHASH over the ciphertext in one loop,
+// over every whole pass of the record, in place, from the accumulator
+// ghash_data's row uses. Every record size the bench times is whole passes.
 static void run_seal_passes(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    gcm_seal_passes_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
-                       body, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), body);
+    bench_gcm_seal_passes(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
+                          body, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), body);
     consume(body[0]);
 }
 
-// The open's whole passes, as open_schedule hands them to gcm_hw.c: GHASH
-// over the ciphertext and counter mode in one loop, over every whole pass
-// of the record, from the record's body to the buffer's start, as the open
-// runs it. The loop checks no tag, so the bytes it reads need not be a
-// record, and it needs no refill.
+// The open's whole passes, as open_schedule hands them to the entry
+// BENCH_CPU names: GHASH over the ciphertext and counter mode in one loop,
+// over every whole pass of the record, from the record's body to the
+// buffer's start, as the open runs it. The loop checks no tag, so the bytes
+// it reads need not be a record, and it needs no refill.
 static void run_open_passes(bench_state *b) {
-    gcm_open_passes_hw(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
-                       b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), b->rec);
+    bench_gcm_open_passes(b->key.key.round_keys, b->key.key.rounds, b->counter, b->acc, b->subkey,
+                          b->rec + REC_HDR, b->len / (GCM_HW_PASS_BLOCKS * AES_BLOCK), b->rec);
     consume(b->rec[0]);
 }
 
@@ -262,42 +264,38 @@ static void run_compute_tag_fixed(bench_state *b) {
 
 static void run_chacha_seal(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    aead_seal(BENCH_WIDEMUL, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body,
-              body + b->len);
+    aead_seal_cpu(BENCH_CPU, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body,
+                  body + b->len);
     consume(body[b->len]);
 }
 
 static void run_chacha_open(bench_state *b) {
     refill(b);
     uint8_t *body = b->rec + REC_HDR;
-    if (!aead_open(BENCH_WIDEMUL, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body + b->len,
-                   b->rec)) {
-        fail("aead_open rejected its own record");
+    if (!aead_open_cpu(BENCH_CPU, b->wr.key, b->nonce, b->rec, REC_HDR, body, b->len, body + b->len,
+                       b->rec)) {
+        fail("aead_open_cpu rejected its own record");
     }
     consume(b->rec[0]);
 }
 
-// aead_seal's cipher half: counter 1 is the first data block, RFC 8439
+// aead_seal_cpu's cipher half: counter 1 is the first data block, RFC 8439
 // §2.8.
 static void run_chacha20_xor_in_place(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
-    chacha20_xor(b->wr.key, b->nonce, 1, body, body, b->len);
+    chacha20_xor_cpu(BENCH_CPU, b->wr.key, b->nonce, 1, body, body, b->len);
     consume(body[b->len - 1]);
 }
 
 static void run_chacha20_xor_shifted(bench_state *b) {
-    chacha20_xor(b->wr.key, b->nonce, 1, b->rec + REC_HDR, b->rec, b->len);
+    chacha20_xor_cpu(BENCH_CPU, b->wr.key, b->nonce, 1, b->rec + REC_HDR, b->rec, b->len);
     consume(b->rec[b->len - 1]);
 }
 
-// The keystream alone: chacha20.c's block function, or under CHACHA=vector
-// chacha20_vector.c's passes of several blocks, as chacha20_xor runs them.
+// The keystream alone: the passes of several blocks of the path BENCH_CPU
+// names, as chacha20_xor_cpu runs them.
 static void run_chacha20_blocks(bench_state *b) {
-#ifdef CH_CHACHA_VECTOR
     bench_chacha20_vector_blocks(b->wr.key, b->nonce, 1, b->len, b->keystream);
-#else
-    bench_chacha20_blocks(b->wr.key, b->nonce, 1, b->len, b->keystream);
-#endif
     consume(b->keystream[0]);
 }
 
@@ -380,10 +378,10 @@ static const bench_row CHACHA_ROWS[] = {
     {"mac_fixed",             FIXED,  run_mac_fixed,             0},
 };
 
-// chacha20.c's block is static and its exclusive-or sits in chacha20_xor's
-// loop after each call to it, so no stub can take the block's place. The
-// exclusive-or, its loads and stores and the loop are chacha20_xor less
-// the block function, both timed.
+// A vector path's passes are static and their exclusive-or follows each
+// pass in the path's own loop, so no stub can take a pass's place. The
+// exclusive-or, its loads and stores and the loop are chacha20_xor_cpu less
+// the passes, both timed.
 static const bench_difference CHACHA_DIFFERENCES[] = {
     {"xor_rest_in_place", "chacha20_xor_in_place", "chacha20_blocks"},
     {"xor_rest_shifted",  "chacha20_xor_shifted",  "chacha20_blocks"},

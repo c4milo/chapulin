@@ -53,7 +53,7 @@ AUDITED = {
         "harness of its own."
     ),
     "chacha20_vector.c": (
-        "the CHACHA=vector path, written in NEON or SSE2 intrinsics, which "
+        "a host object's ChaCha20, written in NEON or SSE2 intrinsics, which "
         "CBMC cannot read, so no harness compiles the file. Every bitwise "
         "operator takes unsigned operands: the lane operations run on "
         "uint32x4_t or __m128i values through the intrinsics, load32 shifts "
@@ -62,12 +62,12 @@ AUDITED = {
         "casts hand a uint32_t word to _mm_set1_epi32, a conversion gcc and "
         "clang define as keeping its 32 bits, and no arithmetic runs on the "
         "int. bin/chacha20_equiv_test holds the file to chacha20.c's proven "
-        "loop, and bin/unit_chacha_vector and the CHACHA=vector Wycheproof "
-        "leg run the published vectors on it. Delete this entry if a harness "
-        "can ever compile the file."
+        "loop, and bin/unit_host and the Wycheproof host leg run the "
+        "published vectors on it. Delete this entry if a harness can ever "
+        "compile the file."
     ),
     "chacha20_avx2.c": (
-        "the CHACHA=vector AVX2 kernel on x86-64, written in AVX2 intrinsics, "
+        "a host object's AVX2 ChaCha20 kernel on x86-64, written in AVX2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "
         "bitwise operator takes unsigned operands: the lane operations run on "
         "__m256i values through the intrinsics, load32 shifts uint32_t "
@@ -76,12 +76,12 @@ AUDITED = {
         "_mm256_set1_epi32, a conversion gcc and clang define as keeping its "
         "32 bits, and no arithmetic runs on the int. bin/chacha20_equiv_test "
         "holds the kernel to chacha20.c's proven loop on a CPU with AVX2, and "
-        "bin/unit_chacha_avx2 and the x86-64 kernels' Wycheproof leg run the "
-        "published vectors on it. Delete this entry if a harness can ever "
-        "compile the file."
+        "bin/unit_host and the Wycheproof host leg run the published vectors "
+        "on it there, under a ch_cfg.cpu value with CH_CPU_AVX2. Delete this "
+        "entry if a harness can ever compile the file."
     ),
     "poly1305_vector.c": (
-        "the CHACHA=vector Poly1305, written in NEON or SSE2 intrinsics, "
+        "the vector Poly1305 of a host object's native copy, written in NEON or SSE2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "
         "bitwise operator takes unsigned operands: the lane operations run on "
         "uint32x2_t, uint64x2_t or __m128i values through the intrinsics, "
@@ -91,9 +91,9 @@ AUDITED = {
         "SSE2 arm's (int) casts hand _mm_set_epi32 a limb, 5 times a limb, "
         "LIMB_MASK or HIGH_BIT, each below 2^31, and no arithmetic runs on "
         "the int. bin/poly1305_equiv_test holds the file to poly1305.c's "
-        "proven loop, and bin/unit_chacha_vector and the CHACHA=vector "
-        "Wycheproof leg run the published vectors on it. Delete this entry "
-        "if a harness can ever compile the file."
+        "proven loop, and bin/unit_host and the Wycheproof host leg run the "
+        "published vectors on it, under a ch_cfg.cpu value with the multiply "
+        "bit. Delete this entry if a harness can ever compile the file."
     ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
@@ -144,8 +144,8 @@ def shipped_sources():
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
-    # pin, wide X25519 field and CHACHA=vector sources join through build
-    # variables or the host test.
+    # pin, wide X25519 field and vector ChaCha20 and Poly1305 sources join
+    # through build variables or the host test.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",

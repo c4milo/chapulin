@@ -401,6 +401,9 @@ int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "absent") == 0) {
         return check_runtime_absent();
     }
+    if (argc == 4 && strcmp(argv[1], "cpu") == 0) {
+        return check_runtime_values(argv[2], argv[3]);
+    }
 #endif
     (void)argc;
     (void)argv;

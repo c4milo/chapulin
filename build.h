@@ -71,12 +71,12 @@
 //                          session's rand_bytes and rand_io
 //   CH_CPU_RUNTIME         ch_cfg, and with it ch_tls, ch_record and
 //                          ch_quic, whose ch_cfg copy holds the caller's
-//                          cpu, and whose record directions record the
-//                          multiply's answer: the define of a host object
+//                          cpu, and whose record directions record it:
+//                          the define of a host object
 //
 // Left out, because no public layout or bound reads them: RAND=extern and
-// RAND=drbg, CH_ROLE_BOTH, the AES implementations,
-// CHACHA=vector and the two timing assertions, CH_NATIVE_WIDEMUL (which
+// RAND=drbg, CH_ROLE_BOTH, the AES implementations
+// and the two timing assertions, CH_NATIVE_WIDEMUL (which
 // WIDEMUL=native sets) and CH_AES_EXTERN_CONSTANT_TIME. CH_KEX_TWO_GROUPS and
 // CH_KEX_HYBRID are left out too: cfg.h computes both from
 // CH_TRUST_WEBPKI and CH_KEX_PQ, so a bit for either would repeat those

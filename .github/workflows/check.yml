@@ -136,15 +136,15 @@ jobs:
         # none matches, so this step cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
       - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
-      - name: Run a host object without the AES bit on an x86-64 CPU without AES-NI or PCLMULQDQ
+      - name: Run a host object on x86-64 CPUs without the instructions its ch_cfg.cpu does not name
         # test/aes-runtime-qemu.sh builds host binaries with the runner's
-        # gcc and runs them under qemu-x86_64 on a CPU model with both
-        # instructions turned off. The rows whose ch_cfg.cpu leaves
-        # CH_CPU_CONSTANT_TIME_AES clear must pass the vectors and whole
-        # QUIC and TCP handshakes. The rows with the bit must die of
-        # SIGILL, which shows the model traps both instructions, so a qemu
-        # that kept them fails this step rather than passing it
-        # (docs/decisions.md 81 and 89).
+        # gcc and runs them under qemu-x86_64 on CPU models with AES-NI,
+        # PCLMULQDQ or AVX2 turned off. The rows whose ch_cfg.cpu leaves a
+        # bit clear must pass the vectors and whole QUIC and TCP
+        # handshakes on a model without that bit's instructions. The rows
+        # with the bit must die of SIGILL there, which shows the model
+        # traps the instructions, so a qemu that kept them fails this step
+        # rather than passing it (docs/decisions.md 81, 89 and 90).
         run: make aes-runtime-qemu
 
   arm64:
@@ -156,24 +156,18 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
-      # so this job runs the vector paths' NEON arms under gcc, the
-      # Poly1305 one under the host's CH_NATIVE_WIDEMUL; the check and san
-      # jobs run their SSE2 arms (test/platforms.mk, suite-check). It also
-      # runs the host object's binaries under gcc: with and without the
-      # multiply bit, whose native copies take the NEON Poly1305
-      # (docs/decisions.md 87), and with and without the AES bit, whose AES
-      # runs on the Arm instructions (docs/decisions.md 89). The check job
-      # runs them on x86-64.
+      # suite-check includes the host object's binaries and the Wycheproof
+      # host leg, so this job runs them under gcc: the vector ChaCha20's
+      # NEON arm in every run, with and without the multiply bit, whose
+      # native copies take the NEON Poly1305 (docs/decisions.md 83 and
+      # 87), and with and without the AES bit, whose AES runs on the Arm
+      # instructions (docs/decisions.md 89). The check and san jobs run the
+      # SSE2 arms on x86-64 (test/platforms.mk, suite-check).
       - run: make suite-check
-      # The CHACHA=vector WIDEMUL=native object, which packages the NEON
-      # Poly1305 (docs/decisions.md 83); the check job packages its SSE2
-      # twin in check-lib-chacha-vector-widemul.
-      - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
-      # A CHACHA=vector host object, which holds both multiplies, whose
-      # native copy of Poly1305 is the NEON one; the check job packages an
-      # SSE2 one in check-lib-quic-aes-chacha-vector.
-      - run: make lib-check RAND=extern TRUST=webpki CHACHA=vector
+      # A host object, which holds the vector ChaCha20, both multiplies and
+      # the vector Poly1305 as the native copy's: this job packages the
+      # NEON arms, and the check job the SSE2 ones in check-lib-webpki.
+      - run: make lib-check RAND=extern TRUST=webpki
       # Three host objects under gcc, disassembled: the AES and PMULL
       # instructions must sit in aes_hw.c's, ghash_hw.c's and gcm_hw.c's
       # functions alone. No QEMU arm64 model turns the AES extension off,
@@ -183,12 +177,12 @@ jobs:
       - run: make -j"$(nproc)" aes-runtime-disasm
 
   x86-64-kernels:
-    # The x86-64 kernels every x86-64 object carries beside its 128-bit
-    # paths, the AVX2 ChaCha20 and AES-GCM's VAES and VPCLMULQDQ kernels,
-    # which the library runs on no CPU until use_avx2 and use_vaes read
-    # ch_cfg.cpu (docs/decisions.md 90). The test binaries call them
-    # directly or route their calls to them, and skip a CPU without them
-    # in the check job; this job requires the runner's CPU to have AVX2,
+    # The x86-64 kernels every x86-64 host object carries beside its
+    # 128-bit paths, the AVX2 ChaCha20 and AES-GCM's VAES and VPCLMULQDQ
+    # kernels, which a session runs where its ch_cfg.cpu names them
+    # (docs/decisions.md 89 and 90). The test binaries call them directly
+    # or run under a value that names them, and skip a CPU without them in
+    # the check job; this job requires the runner's CPU to have AVX2,
     # VAES and VPCLMULQDQ, fails where it lacks one, and runs them under
     # the runner's gcc (test/platforms.mk, x86-64-kernels-check).
     runs-on: ubuntu-24.04
@@ -226,18 +220,15 @@ jobs:
           grep -qx "Xcode $XCODE_VERSION" <<< "$version" \
             || { echo "Xcode is not the pinned $XCODE_VERSION: $version"; exit 1; }
           cc --version
-      # suite-check includes the CHACHA=vector binaries and Wycheproof leg,
-      # so this job runs the vector paths' NEON arms under Apple clang, as
-      # the arm64 job runs them under gcc, and the host object's binaries,
-      # with and without the multiply bit and the AES bit, whose AES runs
-      # on the Arm instructions.
+      # suite-check includes the host object's binaries and the Wycheproof
+      # host leg, so this job runs them under Apple clang, as the arm64
+      # job runs them under gcc: the vector ChaCha20's and Poly1305's NEON
+      # arms, with and without the multiply bit and the AES bit, whose AES
+      # runs on the Arm instructions.
       - run: make suite-check
-      # The CHACHA=vector WIDEMUL=native object, which packages the NEON
-      # Poly1305 (docs/decisions.md 83).
-      - run: make lib-check RAND=extern CHACHA=vector WIDEMUL=native
-      # A CHACHA=vector host object, which holds both multiplies
-      # (docs/decisions.md 87 and 89).
-      - run: make lib-check RAND=extern TRUST=webpki CHACHA=vector
+      # A host object, which holds the vector ChaCha20, both multiplies and
+      # the vector Poly1305 (docs/decisions.md 87 and 89).
+      - run: make lib-check RAND=extern TRUST=webpki
       # Three host objects under Apple clang, disassembled: the AES and
       # PMULL instructions must sit in aes_hw.c's, ghash_hw.c's and
       # gcm_hw.c's functions alone. macOS ships no nproc, so sysctl counts

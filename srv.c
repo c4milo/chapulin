@@ -210,7 +210,7 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
 #ifdef CH_CPU_RUNTIME
-    tlsi_record_widemul(t);
+    tlsi_record_cpu(t);
 #endif
     return srv_handshake(t);
 }

@@ -1,25 +1,23 @@
-// The TRANSPORT=quic-nonblocking mode against its published vectors: FIPS 197 for the
-// AES-128 and AES-256 forward ciphers, NIST SP 800-38D for
+// The TRANSPORT=quic-nonblocking mode against its published vectors: FIPS
+// 197 for the AES-128 and AES-256 forward ciphers, NIST SP 800-38D for
 // AEAD_AES_128_GCM, AEAD_AES_256_GCM and GHASH, and RFC 9001 Appendix A
 // for the Initial keys, the header protection masks, the client and
 // server Initial packets and the Retry integrity tag, and RFC 9369
-// Appendix A for the same five in QUIC version 2. The Makefile builds
-// it with -DCH_AES_256_TEST, so the AES-256 rows run on both AES values
-// below. Its own
-// binary because bin/unit includes tls.h and calls rec_seal, which a
-// -DCH_TRANSPORT_QUIC_NONBLOCKING build does not compile; bin/sha3_test and
-// bin/mlkem_test have the same shape for a mode's own sources.
-// docs/quic.md, "Verification owed", names this file and the binary it
-// builds.
+// Appendix A for the same five in QUIC version 2. The Makefile builds it
+// with -DCH_AES_256_TEST, so the AES-256 rows run on both AES values
+// below. Its own binary because bin/unit includes tls.h and calls
+// rec_seal, which a -DCH_TRANSPORT_QUIC_NONBLOCKING build does not compile;
+// bin/sha3_test and bin/mlkem_test have the same shape for a mode's own
+// sources. docs/quic.md, "Verification owed", names this file and the
+// binary it builds.
 //
-// FIPS 197's vectors fix the key, and INV-26 makes the two constructors
-// in aes.h the only public way to write an aes_public_key, so a
-// vector whose key the standard chose reaches the cipher through
-// aes_block.h's two entries instead. Those take plain bytes and are
-// not static, so this file links aes.c and the AES implementation
-// the build picked rather than compiling either in. aes_public_key.h gives
-// aes_public_key a body here, which INV-26 admits in a test and the
-// Semgrep rule excludes `test` for.
+// FIPS 197's vectors fix the key, and INV-26 makes the two constructors in
+// aes.h the only public way to write an aes_public_key, so a vector whose
+// key the standard chose goes to the cipher through aes_block.h's two
+// entries instead. Those take plain bytes and are not static, so this file
+// links aes.c and the AES implementation the build picked rather than
+// compiling either in. aes_public_key.h gives aes_public_key a body here,
+// which INV-26 admits in a test and the Semgrep rule excludes `test` for.
 //
 // bin/quic_test runs AES=soft, bin/quic_test_hw runs the same vectors in a
 // QUIC host object, and bin/quic_test_extern runs them on AES=extern,
@@ -27,7 +25,9 @@
 // answered by all three implementations. A host object holds the AES
 // instructions and the table, so bin/quic_test_hw runs every vector twice:
 // with test_initial_cpu stating the instructions, and with the probe's bit
-// alone, which puts the Initial keys on the table (test/initial_cpu.h).
+// alone, which puts the Initial keys on the table (test/initial_cpu.h). On
+// an x86-64 CPU with VAES and VPCLMULQDQ it runs them a third time, with
+// every bit, on the x86-64 kernels (run_vectors_on_kernels).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +41,8 @@
 #include "quic_retry.h"
 
 #include "initial_cpu.h"
+#include "test_cpu.h"
+#include "x86_kernels_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -451,11 +453,39 @@ static void run_vectors(void) {
     test_rfc9369_appendix_a();
 }
 
+#if defined(CH_AES_TWO_CIPHERS) && defined(__x86_64__)
+// Every vector once more with every bit an x86-64 host object defines, on
+// a CPU that has VAES and VPCLMULQDQ, and so AVX2: gcm.c then runs the
+// whole blocks of the Initial keys and of SP 800-38D's keys on
+// gcm_vaes.c's kernels, and Appendix A.5's packet its ChaCha20 keystream
+// on chacha20_avx2.c's. A CPU without the instructions skips the pass, and
+// under CH_REQUIRE_X86_KERNELS=1 fails it (test/x86_kernels_cpu.h).
+static void run_vectors_on_kernels(void) {
+    if (!x86_cpu_has_vaes()) {
+        if (x86_kernels_required()) {
+            (void)fprintf(stderr, "quic vectors: this CPU lacks VAES or VPCLMULQDQ, and "
+                                  "CH_REQUIRE_X86_KERNELS is 1\n");
+            failures++;
+            return;
+        }
+        (void)printf("quic vectors: SKIP the pass on the x86-64 kernels: this CPU lacks VAES or "
+                     "VPCLMULQDQ\n");
+        return;
+    }
+    test_initial_cpu = TEST_CPU_ALL;
+    test_cpu = TEST_CPU_ALL;
+    run_vectors();
+}
+#endif
+
 int main(void) {
     run_vectors();
 #ifdef CH_AES_TWO_CIPHERS
     test_initial_cpu = CH_CPU_PROBED;
     run_vectors();
+#ifdef __x86_64__
+    run_vectors_on_kernels();
+#endif
     static const char ciphers[] =
         ", with the Initial keys on the AES instructions and on the table";
 #else

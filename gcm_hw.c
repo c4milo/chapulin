@@ -28,10 +28,10 @@
 // compiles this file with no instruction flag, and the pragma below puts
 // the target attribute on each function in it, "+aes" on arm64 and
 // "aes,pclmul" on x86-64. gcm.c calls this file only for a schedule the
-// AES instructions run (aes_schedule.h). On x86-64 each entry first asks
-// use_vaes whether to hand its blocks to gcm_vaes.c, which runs the same
-// loops two blocks to a 256-bit register on VAES and VPCLMULQDQ
-// (gcm_vaes.h).
+// AES instructions run (aes_schedule.h). On x86-64 gcm_vaes.h's
+// gcm_use_vaes hands a schedule's blocks to gcm_vaes.c in place of this
+// file where the session's ch_cfg.cpu names VAES and VPCLMULQDQ: it runs
+// the same loops two blocks to a 256-bit register.
 //
 // Timing. No line here branches on an operand or indexes memory with one.
 // The branches read the round count and the block count, which are the
@@ -57,7 +57,6 @@
 #include <string.h>
 
 #include "ct.h"
-#include "gcm_vaes.h"
 #include "ghash_vector.h"
 
 // Every function from here to the pop at the end of this file carries
@@ -289,28 +288,8 @@ static inline void xor_pass_in_place(aes_state states[GCM_HW_PASS_BLOCKS], const
     }
 }
 
-#ifdef __x86_64__
-// Whether the three entries below hand their blocks to gcm_vaes.c's
-// 256-bit kernels. Two bits of ch_cfg.cpu, which the caller sets from its
-// own probe of the CPU, are to decide it: the kernels run only where
-// CH_CPU_VAES says the CPU has VAES and VPCLMULQDQ and
-// CH_CPU_CONSTANT_TIME_AES claims the AES instructions and the carry-less
-// multiply run in constant time. No call passes the bits here yet, so it
-// is 0, and no call runs the kernels. chapulin probes no CPU
-// (docs/decisions.md 89 and 90).
-static int use_vaes(void) {
-    return 0;
-}
-#endif
-
 void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                            const uint8_t *in, size_t blocks, uint8_t *out) {
-#ifdef __x86_64__
-    if (use_vaes()) {
-        gcm_counter_blocks_vaes(round_keys, rounds, counter, in, blocks, out);
-        return;
-    }
-#endif
     // No block to run, so no keystream to compute or wipe.
     if (blocks == 0) {
         return;
@@ -338,12 +317,6 @@ void gcm_counter_blocks_hw(const uint8_t *round_keys, size_t rounds, uint8_t cou
 void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out) {
-#ifdef __x86_64__
-    if (use_vaes()) {
-        gcm_seal_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
-        return;
-    }
-#endif
     if (passes == 0) {
         return;
     }
@@ -387,12 +360,6 @@ void gcm_seal_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counte
 void gcm_open_passes_hw(const uint8_t *round_keys, size_t rounds, uint8_t counter[AES_BLOCK],
                         uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *in,
                         size_t passes, uint8_t *out) {
-#ifdef __x86_64__
-    if (use_vaes()) {
-        gcm_open_passes_vaes(round_keys, rounds, counter, acc, subkey, in, passes, out);
-        return;
-    }
-#endif
     if (passes == 0) {
         return;
     }

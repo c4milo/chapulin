@@ -1,14 +1,15 @@
 // RFC 8439's block function vector (§2.3.2) and its Appendix A.2 and A.5
 // vectors, which run ChaCha20 over up to 375 bytes: long enough to run
-// the CHACHA=vector path over a whole group of four blocks and a partial
-// one, a whole pass and a partial one on SSE2 and one pass with both its
-// groups on NEON, where test_chacha20's 114 bytes run a partial group
-// alone.
+// a host object's 128-bit path over a whole group of four blocks and a
+// partial one, a whole pass and a partial one on SSE2 and one pass with
+// both its groups on NEON, where test_chacha20's 114 bytes run a partial
+// group alone. The AVX2 kernel takes each in one partial pass.
 // Appendix A.3's Poly1305 vectors follow, the longest of which reach the
-// CHACHA=vector Poly1305. bin/unit runs them on chacha20.c's and
-// poly1305.c's portable loops and bin/unit_chacha_vector on
-// chacha20_vector.c and poly1305_vector.c. Included by test/unit_test.c
-// only, after its CHECK macro, unhex and eq_hex.
+// vector Poly1305. bin/unit runs them on chacha20.c's and poly1305.c's
+// portable loops, and bin/unit_host on the paths the ch_cfg.cpu value it
+// runs under names: chacha20_vector.c or chacha20_avx2.c, and with the
+// multiply bit poly1305_vector.c (test/test_aead.h). Included by
+// test/unit_test.c only, after its CHECK macro, unhex and eq_hex.
 //
 // The RFC's plaintexts are prose, so the table holds each one's SHA-256,
 // computed from the RFC's hex dump, and not its 127 to 375 bytes. The
@@ -21,6 +22,7 @@
 #include "chacha20.h"
 #include "poly1305.h"
 #include "sha256.h"
+#include "test_aead.h"
 #include "test_widemul.h"
 
 // The largest ciphertext below, A.2's second vector.
@@ -103,13 +105,13 @@ static void test_rfc8439_cipher(const rfc8439_cipher_vector *v) {
     unhex(v->key, key);
     unhex(v->nonce, nonce);
     size_t n = unhex(v->ciphertext, ct);
-    chacha20_xor(key, nonce, v->counter, ct, pt, n);
+    TEST_CHACHA20_XOR(key, nonce, v->counter, ct, pt, n);
     sha256_of(pt, n, digest);
     CHECK(eq_hex(digest, v->plaintext_sha256));
-    chacha20_xor(key, nonce, v->counter, pt, pt, n);
+    TEST_CHACHA20_XOR(key, nonce, v->counter, pt, pt, n);
     CHECK(eq_hex(pt, v->ciphertext));
     memcpy(shifted + 5, ct, n);
-    chacha20_xor(key, nonce, v->counter, shifted + 5, shifted, n);
+    TEST_CHACHA20_XOR(key, nonce, v->counter, shifted + 5, shifted, n);
     sha256_of(shifted, n, digest);
     CHECK(eq_hex(digest, v->plaintext_sha256));
     if (failures != failures_before) {
@@ -129,7 +131,7 @@ static void test_rfc8439_appendix(void) {
     chacha20_block(key, nonce, 1, out);
     CHECK(eq_hex(out, block));
     memset(out, 0, sizeof out);
-    chacha20_xor(key, nonce, 1, out, out, sizeof out);
+    TEST_CHACHA20_XOR(key, nonce, 1, out, out, sizeof out);
     CHECK(eq_hex(out, block));
 
     test_rfc8439_cipher(&rfc8439_a2_vector_2);
@@ -147,10 +149,10 @@ static void test_rfc8439_appendix(void) {
     unhex(rfc8439_aead_aad, aad);
     unhex(rfc8439_aead_tag, tag);
     size_t n = unhex(rfc8439_aead_ciphertext, ct);
-    CHECK(aead_open(TEST_WIDEMUL, key, nonce, aad, sizeof aad, ct, n, tag, pt) == 1);
+    CHECK(TEST_AEAD_OPEN(key, nonce, aad, sizeof aad, ct, n, tag, pt) == 1);
     sha256_of(pt, n, digest);
     CHECK(eq_hex(digest, rfc8439_aead_plaintext_sha256));
-    aead_seal(TEST_WIDEMUL, key, nonce, aad, sizeof aad, pt, n, pt, tag);
+    TEST_AEAD_SEAL(key, nonce, aad, sizeof aad, pt, n, pt, tag);
     CHECK(eq_hex(pt, rfc8439_aead_ciphertext));
     CHECK(eq_hex(tag, rfc8439_aead_tag));
 }
@@ -160,7 +162,7 @@ static void test_rfc8439_appendix(void) {
 // bytes, so each of those names the cipher vector whose ciphertext
 // decrypts to its message; the other eight hold their message in hex.
 // Vectors 2 and 3 hold 368 bytes of whole blocks, enough for the
-// CHACHA=vector Poly1305 in bin/unit_chacha_vector, and vectors 5 to 11
+// vector Poly1305 in bin/unit_host, and vectors 5 to 11
 // meet the final reduction's edge cases in both builds.
 typedef struct {
     const char *name;
@@ -280,7 +282,7 @@ static void test_rfc8439_poly1305(void) {
             unhex(v->plaintext_of->key, cipher_key);
             unhex(v->plaintext_of->nonce, nonce);
             n = unhex(v->plaintext_of->ciphertext, message);
-            chacha20_xor(cipher_key, nonce, v->plaintext_of->counter, message, message, n);
+            TEST_CHACHA20_XOR(cipher_key, nonce, v->plaintext_of->counter, message, message, n);
         } else {
             n = unhex(v->message, message);
         }

@@ -113,11 +113,16 @@ static const sp800_38d_case *const SP800_38D_AES256_CASES[] = {
 // instructions, the one AES-256 that object holds, and an AES-128 key on
 // the cipher test_initial_cpu names (test/initial_cpu.h). The two
 // expansions write the same round keys (aes_block.h), so either schedule
-// reads the same to the other cipher.
+// reads the same to the other cipher. The schedule also records
+// test_initial_cpu, as an Initial key's does, so the pass that names VAES
+// runs the vector's whole blocks on gcm_vaes.c's kernels (aes_schedule.h).
 static void gcm_test_key(aes_public_key *k, const char *key_hex) {
     uint8_t key[AES_256_KEY];
     size_t key_len = unhex(key_hex, key);
     memset(k, 0, sizeof *k);
+#ifdef CH_AES_TWO_CIPHERS
+    k->key.cpu = (uint8_t)test_initial_cpu;
+#endif
 #ifdef CH_AES_256
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);

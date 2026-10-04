@@ -2482,40 +2482,50 @@ last `ROLE=server` stub, as the entry said it would.
   it with the 32x32 one, and `widemul.h` runs the field for a session
   with the bit alone. `test/widemul-builds.sh` checks in `make check`
   that a unit outside a host object cannot call it (decisions 52 and 89).
-  The `CHACHA=vector` path computes ChaCha20 on NEON or SSE2 with the
-  operations the portable loop uses, adds, exclusive-ors and fixed
-  rotations on every lane, so it asks for no statement of its own.
-  `chacha20_vector.h` refuses a build for a target with neither
+  A host object computes ChaCha20 on NEON or SSE2 in every session, with
+  the operations the portable loop uses, adds, exclusive-ors and fixed
+  rotations on every lane, so the path asks for no statement and no bit
+  picks it. `chacha20_vector.h` refuses a build for a target with neither
   instruction set or a big-endian one, and `test/chacha-builds.sh`
-  checks both refusals and that a vector object calls the path
-  (decision 82).
-  The `CHACHA=vector` Poly1305 multiplies on NEON's UMULL and UMLAL or
-  SSE2's PMULUDQ, so it runs only where the build asserts
-  `CH_NATIVE_WIDEMUL`, which states that every widening multiply the
-  object runs, scalar or vector, takes a time that does not depend on its
-  operands. `poly1305_vector.h` turns the path on only when
-  `CH_CHACHA_VECTOR` and ct.h's `CH_WIDEMUL_NATIVE` meet, so
-  `CH_CT_WIDEMUL` turns it off with the scalar multiply, and
-  `test/chacha-builds.sh` checks that `poly1305.c` calls the path under
-  both defines and under neither alone (decision 83).
+  checks both refusals, that a host object's `chacha20_xor` calls the
+  path, and that a device object's calls none (decisions 82 and 89). On
+  x86-64 a session whose caller set `CH_CPU_AVX2` computes the keystream
+  on `chacha20_avx2.c`'s kernel, the same operations in 256-bit vectors,
+  which states no timing either (decision 90).
+  A host object's vector Poly1305 multiplies on NEON's UMULL and UMLAL or
+  SSE2's PMULUDQ, so it runs only for a session whose caller set
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`, which states that every widening
+  multiply the session runs, scalar or vector, takes a time that does not
+  depend on its operands. `poly1305_vector.h` turns the path on only
+  where `CH_CPU_RUNTIME` and ct.h's `CH_WIDEMUL_NATIVE` meet, which is a
+  host object's native copy, so `CH_CT_WIDEMUL` turns it off with the
+  scalar multiply, and a device object on `WIDEMUL=native` never holds
+  it. `test/widemul-builds.sh` checks that `poly1305_native.c` calls the
+  path and that `poly1305.c` under its own names does not, and
+  `test/chacha-builds.sh` that a device object's `poly1305.c` calls none
+  (decisions 83 and 89).
   A host object holds both multiplies, and the caller's
   `CH_CPU_CONSTANT_TIME_MULTIPLY` bit in `ch_cfg.cpu` picks one for each
   operation of a session (decisions 87 and 89). Each file built on
   the multiply compiles under its own names on the decomposition, as a
   `WIDEMUL=decomposed` device object compiles it, and again as its native
   copy, `<file>_native.c`, on the native multiply, scalar and vector.
-  `widemul_answer` gives a session `WIDEMUL_CONSTANT_TIME` when its
-  `ch_cfg.cpu` holds the bit and `WIDEMUL_NOT_STATED` when it does not, and
+  `widemul_of_cpu` gives `WIDEMUL_CONSTANT_TIME` for a `ch_cfg.cpu` that
+  holds the bit and `WIDEMUL_NOT_STATED` for any other value, the 0 a
+  wiped record direction holds included. `widemul_answer` gives a session
+  the answer of its own `ch_cfg.cpu`, and a record direction and a QUIC
+  packet call carry the session's value and ask the same function.
   `widemul.h` runs the native copy for `WIDEMUL_CONSTANT_TIME` alone,
-  with one branch per operation on that answer, so every other byte,
-  a wiped direction's 0 included, runs the decomposition. `ct.h` refuses
+  with one branch per operation on that answer, so every other byte runs
+  the decomposition. `ct.h` refuses
   `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one.
   `x25519.c` has no native copy: X25519's second copy in a host object is
   `x25519_wide.c`'s field, which the same answer picks, so a session with
   the bit runs X25519 on the 64x64->128 multiply and one without it on
   the 16-limb field over the decomposition. A device object holds one
-  multiply, the one its `WIDEMUL` value names, and the 16-limb field; no
-  host object takes that variable, and no object takes `X25519`.
+  multiply, the one its `WIDEMUL` value names, the 16-limb field and
+  `chacha20.c`'s loop; no host object takes that variable, and no object
+  takes `X25519` or `CHACHA`.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -2581,11 +2591,14 @@ last `ROLE=server` stub, as the entry said it would.
   read an intrinsic, so `bin/chacha20_equiv_test` holds that path's
   output to `chacha20.c`'s; four `chacha-vector-*` violations break its
   last partial row, its counter, one lane's XOR and its order of writes,
-  and the test catches each. They compile
-  `poly1305_vector.c` too, and hold its conditional branches at 4 on
-  each, the contract check at its entry and its group loop, all on the
-  byte count; its multiplies are the ones `CH_NATIVE_WIDEMUL` asserts, so
-  the count leaves them out. `bin/poly1305_equiv_test` holds its
+  and the test catches each. They compile `chacha20_avx2.c` as well,
+  and hold it at 23 on x86-64 and at 0 on arm64, where it has no body.
+  They compile `poly1305_vector.c`'s native copy too, and hold its
+  conditional branches at 4 on each, the contract check at its entry and
+  its group loop, all on the byte count; its multiplies are the ones the
+  caller's multiply bit states, so the count leaves them out. Under its
+  own names the file has no body, and the count holds that at 0.
+  `bin/poly1305_equiv_test` holds its
   accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
   break its powers, its carries, its lanes, its contract and its limb
   bounds, and the test catches each.
@@ -2626,23 +2639,30 @@ last `ROLE=server` stub, as the entry said it would.
   compile to the same assembly with the host object's define as without
   it, `ct.h`'s two refusals, the vector Poly1305 in `poly1305_native.c`
   alone, and the Makefile's and `build.zig`'s lists and refusals: the
-  copies and the wide X25519 field for a host object alone, no `WIDEMUL`
-  value for one, and no `X25519` value for any object.
+  copies, the wide X25519 field and the vector ChaCha20's two files for a
+  host object alone, no `WIDEMUL` value for one, and no `X25519` or
+  `CHACHA` value for any object.
   `bin/widemul_runtime_test` counts the calls into
   each copy: the native copies alone under the constant-time answer, the
   decomposition alone under every other byte, and it holds
-  `widemul_answer` to the multiply bit alone, at the bit by itself and
-  beside every other bit. The host loop binaries count
+  `widemul_answer`, and the two AEAD entries that take a `ch_cfg.cpu`, to
+  the multiply bit alone, at the bit by itself and beside every other
+  bit. The host loop binaries count
   each end's calls over whole handshakes, so a record direction, a
   packet or a signature that does not carry the answer its session's
   `ch_cfg.cpu` gives shows as a call into the other copy.
-  `lint-trust-separation` admits the native copies in the host rows
-  alone. Fifty `INV-16` violations break those rules: each dispatcher
-  inverted, the answer read from another bit or from none, the answer
-  dropped at each init call and at each layer that passes it, each `ct.h`
-  refusal, the copies and the wide field the Makefile lists, the `WIDEMUL`
-  value a host object refuses and the `X25519` value every object
-  refuses, and each is caught.
+  `lint-trust-separation` admits the native copies, the wide field and
+  the vector ChaCha20's files in the host rows alone. Fifty-six `INV-16`
+  violations break those rules: each dispatcher inverted, the answer read
+  from another bit or from none, the answer dropped at each init call and
+  at each layer that passes it, each `ct.h` refusal, the copies, the wide
+  field and the vector ChaCha20 the Makefile lists, the `WIDEMUL` value a
+  host object refuses and the `X25519` and `CHACHA` values every object
+  refuses, and each is caught. Two more, `inv16-aead-seal-cpu-drops-avx2`
+  and `inv16-aead-open-cpu-drops-avx2`, make an AEAD entry hand its
+  ChaCha20 no `ch_cfg.cpu`; only an x86-64 binary can tell, and
+  `bin/x86_kernels_test` catches both (docs/verification.md, "The x86-64
+  kernels").
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -2694,6 +2714,20 @@ last `ROLE=server` stub, as the entry said it would.
   say. Every key those two run is public, so the claim above holds for
   both, and a session without the bit runs no AES instruction and no
   carry-less multiply.
+
+  On x86-64 a host object's AES-GCM has a second path over whole blocks:
+  `gcm_vaes.c`'s kernels, two blocks to a 256-bit register on VAES and
+  VPCLMULQDQ (docs/decisions.md 90). A key's schedule records the low
+  byte of its session's `ch_cfg.cpu`, which holds every bit an object
+  defines. `aes_public_key_initial` writes it for an Initial key, and
+  `record.c` and `quic_packet.c` write it into each traffic key through
+  `aes_traffic_key_init_cpu`. `gcm_vaes.h`'s `gcm_use_vaes` reads that
+  byte and answers for the kernels only where it holds `CH_CPU_VAES` and
+  `CH_CPU_CONSTANT_TIME_AES` both, and `gcm.c` asks it only for a
+  schedule the instructions run. The AES bit's statement covers the
+  256-bit forms, so the kernels add no statement, and `CH_CPU_VAES`
+  without the AES bit runs nothing. The kernels take the keys the 128-bit
+  loops take, so the two claims bound them the same way.
 
   A `-DCH_SUITE_AES_GCM` build adds the second claim, and the traffic
   keys of two suites. That build holds `TLS_AES_128_GCM_SHA256` and
@@ -2882,7 +2916,9 @@ last `ROLE=server` stub, as the entry said it would.
   is a compile error, not a silent fall back to the default. A host
   object runs every traffic key on the instructions:
   `aes_traffic_key_init` records them in the key's schedule whatever the
-  bits say, so the table beside them in a QUIC object never sees one.
+  bits say, so the table beside them in a QUIC object never sees one. It
+  records no description of the CPU, so a key runs the 128-bit loops
+  until `aes_traffic_key_cpu` writes the session's.
 
   *The instruction's timing is asserted, not detected.* `__ARM_FEATURE_AES`
   and `__AES__` say the AES instructions exist, and `__ARM_FEATURE_AES`
@@ -2967,8 +3003,11 @@ last `ROLE=server` stub, as the entry said it would.
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
   callers, with `aes.c`, `gcm.c`, the three AES
-  implementations, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` excluded as
-  the definition sites.
+  implementations, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c` and
+  `gcm_vaes.h` excluded as the definition sites. The header is there for
+  its three inline entries, which call `gcm_hw.c`'s loops or
+  `gcm_vaes.c`'s kernels for `gcm.c`; a call to one of the three from any
+  other library source still matches the rule in that source.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
   every line: `-DCH_SUITE_AES_GCM` with neither `CH_CPU_RUNTIME` nor
@@ -3036,8 +3075,8 @@ last `ROLE=server` stub, as the entry said it would.
   no Initial key, and the table runs no traffic key.
   `test/aes-runtime-qemu.sh` runs that binary and both suite loop
   binaries, built for x86-64, under `qemu-x86_64` on a CPU model without
-  AES-NI and PCLMULQDQ, where the rows without the bit pass and the rows
-  with it die of SIGILL; CI's mips job runs it on every push. On arm64,
+  AES-NI, PCLMULQDQ and AVX2, where the rows without the bit pass and the
+  rows with it die of SIGILL; CI's mips job runs it on every push. On arm64,
   where no QEMU model drops the AES extension, `test/aes-runtime-disasm.sh`
   in CI's arm64 and macOS jobs finds the AES and PMULL instructions in
   `aes_hw.c`'s, `ghash_hw.c`'s and `gcm_hw.c`'s functions alone. The
@@ -3052,6 +3091,31 @@ last `ROLE=server` stub, as the entry said it would.
   `inv26-runtime-initial-seal-ignores-answer`, which seals every QUIC
   Initial packet in `quic.c` as though the caller had set the bit,
   requires `test/docker-aes-runtime-qemu.sh` to fail.
+
+  What holds the x86-64 kernels to their bits. `test/quic-builds.sh`
+  compiles `gcm.c` for x86-64 and requires calls to all six entries, the
+  three kernels and `gcm_hw.c`'s three, and none from `gcm_hw.c` to a
+  kernel; `inv26-vaes-runs-without-cpu-bits` and
+  `inv26-vaes-ignores-cpu-bits`, a `gcm_use_vaes` that answers 1 or 0 for
+  every byte, leave three of the six out, and `inv26-vaes-without-target`
+  drops the kernels' target attribute. `bin/aes_runtime_test` reads the
+  byte each schedule records: `inv26-initial-key-drops-cpu` leaves an
+  Initial key's unwritten, `inv26-traffic-key-init-keeps-cpu` leaves a
+  traffic key's as the frame held it, and
+  `inv26-traffic-key-cpu-unwritten` makes `aes_traffic_key_cpu` write
+  nothing. `bin/x86_kernels_test` counts the calls into each kernel under
+  every `ch_cfg.cpu` value, on any x86-64 CPU, because its counting
+  entries run the 128-bit loops. It catches `inv26-vaes-without-aes-bit`
+  and `inv26-vaes-without-vaes-bit`, a predicate that reads one bit of
+  the two, and `inv26-record-seal-key-drops-cpu`,
+  `inv26-record-open-key-drops-cpu`, `inv26-packet-seal-key-drops-cpu`
+  and `inv26-packet-open-key-drops-cpu`, a traffic key built with no
+  byte. Only an x86-64 binary compiles those branches, so each names
+  `test/docker-aes-runtime-qemu.sh x86-kernels` as its catch, which
+  builds and runs that binary in a container on any host.
+  `test/aes-runtime-qemu.sh` also runs both suite loops on a CPU model
+  without AVX2, where the rows with the AES bit pass on the 128-bit
+  loops and the rows that add `CH_CPU_VAES` die of SIGILL.
 
   What holds `aes_extern.c`. `test/aes_extern_hook.c` is the hook every
   `AES=extern` test binary links: `quic_aes_soft.c`'s cipher under other
@@ -3415,7 +3479,7 @@ last `ROLE=server` stub, as the entry said it would.
   `wr_secret` byte for byte what they were. Two violations each break
   one half: `inv17-close-notify-keeps-read-key` and
   `inv17-close-notify-wipes-write-key`, which `bin/unit` catches.
-  Wipes inside a call have tests too. The `CHACHA=vector` Poly1305
+  Wipes inside a call have tests too. The vector Poly1305
   wipes the powers of the one-time key's r that it computes, r^2, r^3
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and

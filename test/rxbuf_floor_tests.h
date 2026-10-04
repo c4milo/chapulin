@@ -24,6 +24,7 @@
 #include "handshake_record.h"
 #include "record.h"
 #include "session.h"
+#include "test_cpu.h"
 
 // The largest message the floor reassembles: the buffer minus the
 // header, inner content type and tag of the record that completes it.
@@ -83,6 +84,7 @@ static int floor_reassemble(size_t buf_len) {
     memset(secret, 0x5a, sizeof secret);
     rec_dir server_write;
     rec_dir_init(&server_write, secret);
+    TEST_CPU_DIR(server_write);
     floor_seal(&server_write, buf_len);
 
     static ch_tls t;

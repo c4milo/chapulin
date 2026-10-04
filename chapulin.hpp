@@ -137,10 +137,14 @@ struct Cpu {
     // on the 51-bit-limb field. The mode is yours to set, DIT on arm64 and
     // DOITM's policy on x86-64.
     bool constant_time_multiply = false;
-    // The CPU has AVX2 (CH_CPU_AVX2), and VAES and VPCLMULQDQ on 256-bit
-    // registers (CH_CPU_VAES). Both are x86-64 bits, and an arm64 object
-    // refuses either.
+    // The CPU has AVX2 and its operating system saves the 256-bit
+    // registers: CH_CPU_AVX2, which runs the session's ChaCha20 keystream
+    // in 256-bit vectors. An x86-64 bit, which an arm64 object refuses.
     bool avx2 = false;
+    // The CPU also has VAES and VPCLMULQDQ on those registers:
+    // CH_CPU_VAES, which beside constant_time_aes runs AES-GCM's whole
+    // blocks two to a register, and without it runs nothing. An x86-64
+    // bit as well.
     bool vaes = false;
 };
 #endif

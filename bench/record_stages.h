@@ -15,19 +15,45 @@
 #include "aead.h"
 #include "aes.h"
 #include "gcm.h"
+#include "gcm_hw.h"
+#include "gcm_vaes.h"
 #include "record.h"
 #include "widemul.h"
 
-// The answer the ChaCha20-Poly1305 rows run under (widemul.h). The bench's
-// object is a host object, which holds both multiplies
-// (docs/decisions.md 89), and bench/record.sh builds each binary twice:
-// with -DBENCH_WIDEMUL_NATIVE its rows run the native copies, as a session
-// whose caller set CH_CPU_CONSTANT_TIME_MULTIPLY does, and without it the
-// files under their own names, on the decomposition.
-#ifdef BENCH_WIDEMUL_NATIVE
-#define BENCH_WIDEMUL WIDEMUL_CONSTANT_TIME
+// The ch_cfg.cpu value every row runs under. The bench's object is a host
+// object, which holds every path, and a session's value picks among them
+// (cpu_cfg.h, docs/decisions.md 89). bench/record.sh builds the bench once
+// for each value it times and passes the value on the compile line, as a
+// number such as 0x7, and the rows hand it to the calls a session hands
+// its own to: the record directions, the AEAD entries and the AES traffic
+// key.
+#ifndef BENCH_CPU
+#error "bench/record.sh passes -DBENCH_CPU, the ch_cfg.cpu value the rows run under"
+#endif
+
+// The answer BENCH_CPU gives the calls that take one (widemul.h).
+#define BENCH_WIDEMUL widemul_of_cpu(BENCH_CPU)
+
+// The three entries gcm.c hands a key's whole blocks to under BENCH_CPU, for
+// the rows that time one alone: gcm_vaes.c's kernels where the value names
+// VAES beside the AES bit on x86-64, as gcm_use_vaes picks them, and
+// gcm_hw.c's 128-bit loops under every other value.
+#if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_VAES) != 0 &&                                     \
+    ((BENCH_CPU) & CH_CPU_CONSTANT_TIME_AES) != 0
+#define BENCH_ON_VAES 1
+#define bench_gcm_counter_blocks gcm_counter_blocks_vaes
+#define bench_gcm_seal_passes gcm_seal_passes_vaes
+#define bench_gcm_open_passes gcm_open_passes_vaes
 #else
-#define BENCH_WIDEMUL WIDEMUL_NOT_STATED
+#define bench_gcm_counter_blocks gcm_counter_blocks_hw
+#define bench_gcm_seal_passes gcm_seal_passes_hw
+#define bench_gcm_open_passes gcm_open_passes_hw
+#endif
+
+// Whether the ChaCha20 rows run chacha20_avx2.c's kernel under BENCH_CPU, as
+// chacha20.c's use_avx2 picks it.
+#if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX2) != 0
+#define BENCH_ON_AVX2 1
 #endif
 
 // bench/record_gcm.c. counter_mode and compute_tag as gcm_traffic_seal
@@ -39,17 +65,11 @@ void bench_gcm_compute_tag(const aes_traffic_key *k, const uint8_t nonce[AES_IV]
                            const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                            uint8_t tag[GCM_TAG]);
 
-// bench/record_chacha.c. chacha20.c's block function, called as often
-// and with the same counter as chacha20_xor calls it over n bytes, with
-// each block written to out and no exclusive-or.
-void bench_chacha20_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
-                           uint32_t counter, size_t n, uint8_t out[CHACHA20_BLOCK]);
-
-// bench/record_chacha_vector.c, in the CHACHA=vector builds alone.
-// chacha20_vector.c's passes, run as often and with the same counters as
-// chacha20_vector_xor runs them over n bytes, with each pass's keystream
-// written to out and no exclusive-or. A pass is eight blocks on NEON and
-// four on SSE2, so out holds the larger.
+// bench/record_chacha_vector.c. The passes of the ChaCha20 path BENCH_CPU
+// names, chacha20_vector.c's or the AVX2 kernel's, run as often and with
+// the same counters as the path's xor runs them over n bytes, with each
+// pass's keystream written to out and no exclusive-or. A pass is eight
+// blocks on NEON and on AVX2 and four on SSE2, so out holds the larger.
 #define BENCH_CHACHA20_VECTOR_PASS_MAX (8 * CHACHA20_BLOCK)
 void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
                                   const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, size_t n,
@@ -79,11 +99,11 @@ void bench_stub_gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[A
 int bench_stub_gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV],
                                 const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                                 const uint8_t tag[GCM_TAG], uint8_t *pt);
-void bench_stub_aead_seal(uint8_t widemul, const uint8_t key[AEAD_KEY],
-                          const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
-                          const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]);
-int bench_stub_aead_open(uint8_t widemul, const uint8_t key[AEAD_KEY],
-                         const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
-                         const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG], uint8_t *pt);
+void bench_stub_aead_seal_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY],
+                              const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
+                              const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]);
+int bench_stub_aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY],
+                             const uint8_t nonce[AEAD_NONCE], const uint8_t *aad, size_t aad_len,
+                             const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG], uint8_t *pt);
 
 #endif
