@@ -18,7 +18,7 @@
 #     on, exists under -DCH_CPU_RUNTIME and nowhere else, so no device
 #     object can run it: nothing there states its timing.
 #   - Each of the six files under its own names compiles to the same
-#     assembly with -DCH_CPU_RUNTIME as without it. So the copy a host
+#     object with -DCH_CPU_RUNTIME as without it. So the copy a host
 #     object runs for a session without the multiply bit is the file a
 #     WIDEMUL=decomposed device object carries, which lint-wide-multiply
 #     measures, and the recorded ceilings hold for it unchanged.
@@ -75,10 +75,14 @@ if "$cc" -std=c11 -I. -fsyntax-only "$mul128_tu" 2>/dev/null; then
 fi
 
 # Each file under its own names, with and without the host object's define.
+# The two objects are compared, not the two assembly texts: gcc numbers a
+# label for every function it parses, .LFB6 and the like, so a header that
+# defines one more inline function under -DCH_CPU_RUNTIME, as ct.h does
+# with ct_mul128, changes the text of a file whose code it does not change.
 for f in poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c; do
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -I. -S "$f" -o "$work/decomposed.s" || exit 1
-    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -I. -S "$f" -o "$work/host.s" || exit 1
-    if ! cmp -s "$work/decomposed.s" "$work/host.s"; then
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -I. -c "$f" -o "$work/decomposed.o" || exit 1
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -I. -c "$f" -o "$work/host.o" || exit 1
+    if ! cmp -s "$work/decomposed.o" "$work/host.o"; then
         echo "widemul-builds: $f compiles to other code under -DCH_CPU_RUNTIME than without it; the copy under its own names must be the decomposed build's" >&2
         exit 1
     fi
