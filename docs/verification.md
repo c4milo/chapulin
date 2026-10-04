@@ -2279,9 +2279,9 @@ That the wide files run in constant time rests on how they are written,
 and three checks hold parts of it:
 
 - `make lint-wide-multiply` holds each file's count of conditional
-  branches at its recorded number on arm64 and x86-64, so a select that
-  a compiler turns into a branch, or a scan that passes over the entries
-  a digit does not name, shows as a count that grows.
+  branches at its recorded number on arm64 and x86-64 under clang, so a
+  select that clang turns into a branch, or a scan that passes over the
+  entries a digit does not name, shows as a count that grows.
 - The Semgrep rule `inv-16-p256-wide-no-subscript-by-digit` refuses a
   subscript by a digit's index in `p256_wide_mul.c`. A table read by
   index gives the right value in the same time with one branch fewer, so

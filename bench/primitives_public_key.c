@@ -8,10 +8,12 @@
 // inputs are all public and whose products use the compiler's own
 // multiply, so no bit of ch_cfg.cpu changes them today. secret_key runs
 // x25519.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c,
-// whose products go through ct.h's widening multiply: under
-// CH_CPU_CONSTANT_TIME_MULTIPLY its rows run the native copies of those
-// files and X25519 the wide field, x25519_wide.c, and without the bit the
-// 16x16 decomposition (widemul.h).
+// whose products go through ct.h's widening multiply. Without
+// CH_CPU_CONSTANT_TIME_MULTIPLY its rows run those files on the 16x16
+// decomposition. With the bit they run the native copies of mlkem_poly.c
+// and rsa_sign.c, for X25519 the wide field, x25519_wide.c, and for
+// P-256 the wide files and their table of multiples of G (widemul.h,
+// docs/decisions.md 94).
 //
 // The key generation and encapsulation rows take their random bytes as
 // arguments, as the library's calls do, so they time no draw.

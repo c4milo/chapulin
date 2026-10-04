@@ -329,9 +329,9 @@ judge the change.
 | SHA3-256, 64 bytes | 419 ns | 354 ns | **1.18** | 2.48 µs | 489 ns | **5.06** |
 | X25519 key generation | 34.2 µs | 31.7 µs | **1.08** | 61.3 µs | 33.7 µs | **1.82** |
 | X25519 shared secret | 34.3 µs | 31.2 µs | **1.10** | 61.3 µs | 36.5 µs | **1.68** |
-| P-256 key generation | 610 µs | 9.75 µs | **62.6** | 1.10 ms | 12.2 µs | **90.3** |
-| P-256 shared secret | 612 µs | 41.9 µs | **14.6** | 1.10 ms | 51.7 µs | **21.4** |
-| ECDSA P-256 sign | 669 µs | 18.4 µs | **36.4** | 1.18 ms | 22.2 µs | **53.0** |
+| P-256 key generation | 19.6 µs | 10.3 µs | **1.91** | 1.10 ms | 12.2 µs | **90.3** |
+| P-256 shared secret | 82.1 µs | 42.9 µs | **1.91** | 1.10 ms | 51.7 µs | **21.4** |
+| ECDSA P-256 sign | 50.7 µs | 18.7 µs | **2.72** | 1.18 ms | 22.2 µs | **53.0** |
 | ECDSA P-256 verify | 1.30 ms | 55.9 µs | **23.2** | 2.05 ms | 67.7 µs | **30.2** |
 | ECDSA P-384 verify | 4.19 ms | 318 µs | **13.2** | 6.16 ms | 729 µs | **8.45** |
 | RSA-2048 PSS sign | 37.2 ms | 565 µs, PKCS#1 v1.5 sign | — | 24.3 ms | 660 µs, PKCS#1 v1.5 sign | — |
@@ -354,7 +354,12 @@ The machines, as the CSV headers state them:
 
 - **M1 Pro**: Apple M1 Pro, Darwin 25.6.0, Apple clang version 21.0.0 (clang-2100.3.34.2), OpenSSL
   3.6.5, `ch_cfg.cpu 0x7`; one-minute load average 6.46 before the primitives' run and 7.02 after
-  it, and 7.93 and 6.57 around the AEAD rows' run.
+  it, and 7.93 and 6.57 around the AEAD rows' run. The rows of P-256's key generation, shared
+  secret and signature are a later run's, chapulin's and OpenSSL's, taken after decision 94
+  changed them: the one-minute load average was 71.8 before that run and 16.3 after it, and the
+  CSV's header names its rows and its tree. In that run a row whose code did not change took
+  from 6.9% less to 7.6% more time than in the first run and retired the same instructions to
+  within 0.4%. The three rows retire 232,699, 917,862 and 533,669 instructions.
 - **x86-64 runner**: AMD EPYC 7763 64-Core Processor, Linux 6.17.0-1022-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x1f`; one-minute load average 0.93
   before the primitives' run and 1.00 after it, and 0.60 and 0.87 around the AEAD rows' run.
@@ -415,13 +420,16 @@ What a row compares:
 
 What the M1 Pro's column shows:
 
-- The widest gaps are the public-key operations chapulin computes on 32-bit limbs: P-256, P-384
-  and RSA. `p256_point_base_mul` runs a ladder and keeps no table of multiples of G, and
-  `rsa_sign.c` signs without the CRT (`rsa_sign.h`). "Where a server handshake's instructions go"
-  below orders the work on P-256.
+- The widest gaps are the public-key operations chapulin computes on 32-bit limbs: the P-256 and
+  P-384 verifiers and RSA. `rsa_sign.c` signs without the CRT (`rsa_sign.h`).
 - The hashes come next. chapulin's SHA-256, SHA-512 and Keccak are portable C in every object.
   This M1 Pro has the ARMv8 SHA-256, SHA-512 and SHA-3 instructions, and no chapulin path runs
   them.
+- P-256's key generation, shared secret and signature take 1.9 to 2.7 times OpenSSL's time. Under
+  the multiply bit they run on four 64-bit limbs, and k·G adds entries of a table of multiples of
+  G (decision 94). On the 32-bit limbs they took 15 to 63 times. Decision 94 states what is left:
+  the RFC 6979 nonce, the complete doubling, and a field multiply in C. "Where a server
+  handshake's instructions go" below orders the work.
 - X25519, ML-KEM-768 and the three AEADs are within a quarter of OpenSSL's time, and ML-KEM-768's
   key generation and decapsulation are ahead of it.
 
@@ -430,7 +438,12 @@ What the x86-64 runner's column shows, where it differs:
 - AES-GCM is ahead of OpenSSL. Under `ch_cfg.cpu 0x1f` the seal and the open run the VAES and
   VPCLMULQDQ kernels of decision 90, and with the key expansion they take 0.77 to 0.83 of
   OpenSSL's time on this EPYC 7763.
-- The public-key rows keep their order, and P-256 is further behind: 21 to 90 times.
+- The public-key rows keep their order, and P-256 is further behind: 21 to 90 times. That run is
+  of tree 7935393, before decision 94, so its rows of P-256's key generation, shared secret and
+  signature time the native copies of the 32-bit files, which no object holds now. No x86-64 run
+  has timed the wide files. Decision 94 counts their instructions for x86-64 under QEMU: under
+  gcc 13.3 a signature retires 1.19 M where the native copies retired 17.62 M and OpenSSL 3.0.13
+  retires 0.21 M.
 - chapulin's Keccak is slow there. Under gcc 13 on that CPU, SHA3-256 takes 4.6 times its time on
   the M1 Pro, and ML-KEM-768, which runs on Keccak, 5.3 times. So ML-KEM-768 is 3.8 to 6.8 times
   OpenSSL's time, and SHA3-256 5.1 to 7.7 times.
@@ -847,7 +860,8 @@ What the numbers show:
   `p256_point_base_mul` runs a 256-round Montgomery ladder with two complete additions a round
   on 32-bit limbs, and keeps no table of multiples of G (`p256_point.h`). OpenSSL 3.0's arm64
   build signs with the `ecp_nistz256` assembly, which reads a precomputed table of multiples of G
-  and computes on 64-bit limbs.
+  and computes on 64-bit limbs. Items 2 and 3 below have since changed both for a host session
+  that states its multiply, and this table's objects were not counted again.
 - The rest is small. The transcript and key schedule take 0.59 M: HKDF and its HMAC-SHA384 take
   0.44 M, the SHA-384 transcript 0.07 M, and the SHA-256 transcript, which `transcript.h` runs
   beside SHA-384, 0.08 M. Messages and their records take 0.06 M.
@@ -873,7 +887,10 @@ The order of the work, by the instructions each item removes from a handshake:
    0.17 M. A session without the bit keeps the ladder: the table's additions are the wide
    field's. The key exchange multiplies the peer's point, which no table holds, by four-bit
    windows over eight multiples of it: 0.92 M instructions where the ladder on the wide field
-   took 1.58 M and OpenSSL takes 0.48 M.
+   took 1.58 M and OpenSSL takes 0.48 M. In `bench/primitives.sh`'s pinned ECDSA P-256 handshake
+   on the M1 Pro, with this item and the next, the server's side takes 162 µs where it took
+   784 µs, and both ends retire 12.24 M instructions where they retired 17.23 M. The client's
+   side takes 1.41 ms, of which `p256.c`'s verification on 32-bit limbs is 1.30 ms.
 3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519:
    done (decision 94). On the M1 Pro under Apple clang 21, with the ladder unchanged, a signature
    through `p256_sign` went from 5.52 M instructions to 1.88 M and a key exchange through

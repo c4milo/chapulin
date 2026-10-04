@@ -21,6 +21,10 @@ note does not repeat them.
 - Apple M1 Pro (8 performance and 2 efficiency cores), macOS 26.6.2
   (Darwin 25.6.0), Apple clang 21.0.0, `-std=c11 -O2`, the packaged
   object's level. Tree 26fa782 with the change that added these rows.
+  The p256_ecdh_keygen, p256_ecdh and p256_sign rows and the pinned
+  ECDSA P-256 handshakes are a second run's, of the tree that changed
+  them (docs/decisions.md 94). The CSV's header names that run, and
+  "Load and variance" below states its load.
 - Every timed program is a host object, which holds each fast path
   beside the portable code (docs/decisions.md entry 89), and each row
   runs under two `ch_cfg.cpu` values:
@@ -32,9 +36,10 @@ note does not repeat them.
     which bench/aead.sh times.
   - `0x7` is every bit this CPU has: `CH_CPU_CONSTANT_TIME_AES` and
     `CH_CPU_CONSTANT_TIME_MULTIPLY`. The multiply bit picks the native
-    copies of poly1305.c, mlkem_poly.c, p256_field.c, p256_scalar.c and
-    rsa_sign.c, the vector Poly1305, and x25519_wide.c's field. The AES
-    bit changes no row of this file.
+    copies of poly1305.c, mlkem_poly.c and rsa_sign.c, the vector
+    Poly1305, x25519_wide.c's field, and for P-256's key exchange and
+    signing the wide files and their table of multiples of G
+    (docs/decisions.md 94). The AES bit changes no row of this file.
 - Each row is the median over 5 runs of each run's median of 101
   samples. RSA signing and the RSA handshakes take 11 to 27 samples a
   run; the CSV's samples column says which. The method is in
@@ -50,19 +55,33 @@ note does not repeat them.
 
 ## Load and variance
 
-The committed run started at a 1-minute load average of 6.46 and ended
-at 7.02, and each of its five runs started between 5.86 and 6.46.
+The committed file holds two runs. The first started at a 1-minute load
+average of 6.46 and ended at 7.02, and each of its five runs started
+between 5.86 and 6.46. The second started at 71.8 and ended at 16.3,
+and its five runs started at 71.8, 42.0, 138, 52.5 and 22.8. The second
+gives the p256_ecdh_keygen, p256_ecdh and p256_sign rows, OpenSSL's rows
+for those three, and the ECDSA handshakes.
 
-The CPU clock kept the load out of the figures. Inside one run the
-largest 25th-to-75th percentile spread is 9.4%, on the ECDSA handshake
-under `0x1`, and outside the handshakes 6.4%. Between runs the largest
-spread is 3.4%, on shake256_squeeze at 16 KB, and 1.5% among OpenSSL's
-rows. The hashes, the DRBG and the verifiers run the same code under
-both values, and their two rows differ by 0.7% at most, which is the
-floor a difference between two rows of this file has to pass.
+In the first run the CPU clock kept the load out of the figures. Inside
+one run the largest 25th-to-75th percentile spread is 6.4%, on
+chacha20_poly1305_open at 64 B under `0x1`, and 2.8% among the
+handshakes. Between runs the largest spread is 3.4%, on shake256_squeeze
+at 16 KB, and 1.5% among OpenSSL's rows. The hashes, the DRBG and the
+verifiers run the same code under both values, and their two rows differ
+by 0.7% at most, which is the floor a difference between two rows of the
+first run has to pass.
+
+The second run's rows spread more than the first run's, under a load
+ten times as high. Inside one run they spread by 1.1% to 13.2%, between
+runs by 0.6% to 3.2%, and OpenSSL's three rows by 2.4% to 9.1%. That run
+timed every row, and this file keeps the ones named above. The rows it
+does not keep, whose code was the first run's, took from 6.9% less to
+7.6% more time than the first run's and retired the same instructions to
+within 0.4%. So a time among the second run's rows can be off by several
+percent, and its instruction count is the figure to compare.
 
 The clock cannot keep out a run that macOS places on efficiency cores,
-which take about three times as long for the same code. No row of this
+which take about three times as long for the same code. No row of either
 run shows one: such a run moves a row's spread between runs past 100%,
 and bench/primitives.sh warns of a row that moved by more than half.
 
@@ -86,14 +105,18 @@ the server selects it. Milliseconds:
 | pinned RSA-2048 | 0x7 | 37.9 | 0.39 | 37.5 |
 | pinned RSA-3072 | 0x1 | 201.5 | 2.72 | 198.8 |
 | pinned RSA-3072 | 0x7 | 147.1 | 0.77 | 146.3 |
-| pinned ECDSA P-256 | 0x1 | 6.52 | 3.30 | 3.22 |
-| pinned ECDSA P-256 | 0x7 | 2.19 | 1.40 | 0.78 |
+| pinned ECDSA P-256 | 0x1 | 6.47 | 3.22 | 3.24 |
+| pinned ECDSA P-256 | 0x7 | 1.57 | 1.41 | 0.16 |
 | pinned RSA-2048, hybrid | 0x1 | 61.9 | 2.30 | 59.6 |
 | pinned RSA-2048, hybrid | 0x7 | 38.0 | 0.50 | 37.5 |
 | pinned RSA-3072, hybrid | 0x1 | 202.0 | 2.69 | 199.3 |
 | pinned RSA-3072, hybrid | 0x7 | 147.5 | 0.89 | 146.6 |
-| pinned ECDSA P-256, hybrid | 0x1 | 6.57 | 3.31 | 3.26 |
-| pinned ECDSA P-256, hybrid | 0x7 | 2.34 | 1.51 | 0.82 |
+| pinned ECDSA P-256, hybrid | 0x1 | 6.64 | 3.35 | 3.28 |
+| pinned ECDSA P-256, hybrid | 0x7 | 1.74 | 1.53 | 0.21 |
+
+The four ECDSA rows are the second run's. Before docs/decisions.md 94
+the ECDSA server's side took 0.78 ms under `0x7`, and 0.82 ms with the
+hybrid.
 
 The pairing gives the server no ticket key, so it times no resumed
 handshake.
@@ -116,27 +139,31 @@ parsing.
 |---|---|---:|---:|---:|---:|
 | RSA-3072 client | 0x1 | 68% | 24% | 1.0% | 7.1% |
 | RSA-3072 client | 0x7 | 8.9% | 84% | 3.5% | 3.2% |
-| ECDSA client | 0x1 | 56% | 39% | 0.8% | 3.9% |
-| ECDSA client | 0x7 | 4.9% | 92% | 2.0% | 0.8% |
+| ECDSA client | 0x1 | 58% | 40% | 0.8% | 1.6% |
+| ECDSA client | 0x7 | 4.9% | 92% | 1.9% | 1.2% |
 | RSA-3072 server | 0x1 | 0.9% | 99% | 0.0% | 0.5% |
 | RSA-3072 server | 0x7 | 0.0% | 101% | 0.0% | -1.2% |
-| ECDSA server | 0x1 | 58% | 41% | 0.8% | 0.8% |
-| ECDSA server | 0x7 | 8.7% | 85% | 3.3% | 2.6% |
+| ECDSA server | 0x1 | 57% | 40% | 0.8% | 1.4% |
+| ECDSA server | 0x7 | 42% | 31% | 16% | 10% |
 
-The rest runs from -1.2% to +7.1% of a side. So the public-key
+The rest runs from -1.2% to +10% of a side. So the public-key
 operations account for nearly all of the time, and under `0x7` the
-verifier or the signer alone is 84% or more of every side: the multiply
-bit takes the x25519 pair from 1,856 us to 69 us and leaves the
-verifiers as they are.
+verifier or the signer alone is 84% or more of every side but one: the
+multiply bit takes the x25519 pair from 1,856 us to 69 us and leaves the
+verifiers as they are. The one is the ECDSA server's side. Its signer
+runs the wide P-256 files (docs/decisions.md 94) and takes 51 us, where
+the native copies of the 32-bit files took 669 us and 85% of the side.
+The x25519 pair is now the largest part of that side's 162 us, and the
+17 HKDF-Expand-Label calls take 26 us of it.
 
 What the hybrid adds shows under `0x7`, on the sides short enough to
 resolve it. The client adds two ML-KEM-768 key generations and one
 decapsulation: handshake_flight.c calls mlkem_keygen_dk once to build
 the ClientHello and once before it decapsulates, and
 bench/results-primitives-calls.csv measures that count. Its side grows
-by 105 to 115 us on the three handshakes, where those three rows sum to
+by 112 to 118 us on the three handshakes, where those three rows sum to
 82 us. The server adds one encapsulation, and the ECDSA server's side
-grows by 40 us, against that row's 28 us. The rest of each difference is
+grows by 44 us, against that row's 28 us. The rest of each difference is
 the larger hello and ServerHello to write, hash and parse. An RSA
 server's side takes 37 ms or more, and under `0x1` a client's takes
 2.3 ms or more, so there the difference is below the side's spread.
@@ -157,9 +184,9 @@ has one. The last column says who calls it and how often.
 | rsa_pss_sign_2048 | 57,396 | 37,221 | | server, once, RSA-2048 identity |
 | p384_ecdsa_verify | 4,173 | 4,191 | 318 | client, per P-384 signature, TRUST=webpki |
 | p256_ecdsa_verify | 1,290 | 1,297 | 55.9 | client, once, TRUST=raw-ecdsa; per link, webpki |
-| p256_sign | 1,310 | 669 | 18.4 | server, once, ECDSA identity |
-| p256_ecdh | 1,205 | 612 | 41.9 | both ends, once each, when secp256r1 runs (docs/decisions.md 63) |
-| p256_ecdh_keygen | 1,205 | 610 | 9.8 | both ends, once each, when secp256r1 runs |
+| p256_sign | 1,310 | 50.7 | 18.7 | server, once, ECDSA identity |
+| p256_ecdh | 1,202 | 82.1 | 42.9 | both ends, once each, when secp256r1 runs (docs/decisions.md 63) |
+| p256_ecdh_keygen | 1,200 | 19.6 | 10.3 | both ends, once each, when secp256r1 runs |
 | rsa_pss_verify_4096 | 1,210 | 1,213 | | client, TRUST=webpki |
 | rsa_pkcs1_verify_4096 | 1,203 | 1,211 | | client, per RSA-4096 link, webpki |
 | x25519, x25519_base | 928, 928 | 34.3, 34.2 | 31.2, 31.7 | both ends, once each |
@@ -183,7 +210,10 @@ pinned modes and the verifier is second. Under `0x7` the pair takes
 69 us, under a tenth of either client side, and the verifier is the
 largest cost of every client. For a server with an RSA identity,
 rsa_pss_sign is its whole side, to within the spread, under either
-value.
+value. For a server with an ECDSA identity under `0x7`, the pair is the
+largest cost and the signer, 51 us, the second. The three P-256 rows
+took 669, 612 and 610 us under `0x7` before docs/decisions.md 94, on the
+native copies of the 32-bit files.
 
 ## Ranking: per-byte costs
 
@@ -208,8 +238,8 @@ changes the row.
 A 1,200-byte record costs 3.40 us to seal under `0x1` and 1.21 us under
 `0x7`. Record protection costs as much as the RSA-3072 client handshake
 after about 1,076 KB sealed or opened under `0x1` and 1,141 KB under
-`0x7`, and as much as the ECDSA client handshake after about 1,305 KB
-and 2,077 KB. A connection that moves less than that spends most of its
+`0x7`, and as much as the ECDSA client handshake after about 1,274 KB
+and 2,086 KB. A connection that moves less than that spends most of its
 crypto time in the handshake.
 
 Under `0x1` Poly1305 is the slower half of the AEAD by a factor of four,
@@ -222,18 +252,27 @@ Time under `0x1` over time under `0x7`, from the rows above:
 
 | row | ratio |
 |---|---:|
+| p256_ecdh_keygen | 61.2 |
 | x25519, x25519_base | 27.1 |
+| p256_sign | 25.8 |
+| p256_ecdh | 14.7 |
 | poly1305, 16 KB | 12.1 |
 | chacha20_poly1305_seal, 16 KB | 3.74 |
-| p256_ecdh, p256_ecdh_keygen | 1.97 |
-| p256_sign | 1.96 |
 | rsa_pss_sign_2048 | 1.54 |
 | rsa_pss_sign_3072 | 1.32 |
 | mlkem768 keygen, encaps, decaps | 1.00 to 1.05 |
-| ECDSA handshake, server side | 4.10 |
+| ECDSA handshake, server side | 20.0 |
 | RSA-3072 handshake, client side | 3.53 |
-| ECDSA handshake, client side | 2.35 |
+| ECDSA handshake, client side | 2.29 |
 | RSA-3072 handshake, server side | 1.36 |
+
+The three P-256 rows are docs/decisions.md 94's. Under the bit the field
+has four 64-bit limbs where the 32-bit files have eight limbs. A key
+generation and a signature add 64 entries of a table of multiples of G
+where the ladder runs 512 additions, and a key exchange runs 253
+doublings and 71 additions in the ladder's place. The native copies of
+the 32-bit files, which the bit picked before that entry, gave 1.97 and
+1.96.
 
 Three counts account for most of X25519's 27.1. A field multiply runs 25
 products of 64 by 64 bits where the 16-limb field runs 256 of 32 by 32,
@@ -252,19 +291,23 @@ operation retires, under `0x1` and then under `0x7`:
 | row | `0x1` | `0x7` |
 |---|---:|---:|
 | x25519 | 12,732,157 | 372,816 |
-| p256_sign | 16,326,935 | 5,518,659 |
-| p256_ecdh | 15,107,732 | 5,038,964 |
+| p256_sign | 16,313,966 | 533,669 |
+| p256_ecdh | 15,089,553 | 917,862 |
+| p256_ecdh_keygen | 15,084,008 | 232,699 |
 | rsa_pss_sign_2048 | 754,601,745 | 350,920,892 |
 | rsa_pss_sign_3072 | 2,528,135,677 | 1,167,368,366 |
 | mlkem768_encaps | 439,926 | 422,133 |
 | poly1305, per byte at 16 KB | 20.86 | 2.03 |
-| pinned ECDSA P-256 handshake, both ends | 77,504,973 | 17,232,011 |
+| pinned ECDSA P-256 handshake, both ends | 77,421,775 | 12,242,192 |
 
 The two counts under `0x7` that docs/performance.md, "Where a server
 handshake's instructions go", also holds agree with it: 0.37 M for one
-X25519 scalar multiplication on the wide field against its 0.39 M, and
-5.52 M for one P-256 signature against its 5.51 M, there on a
-Neoverse-N2 build under QEMU.
+X25519 scalar multiplication on the wide field against its 0.39 M, there
+on a Neoverse-N2 build under QEMU, and 0.53 M for one P-256 signature
+against the 0.53 M its plan states for this machine. That section's
+5.51 M for a signature is the 32-bit files on the native multiply, which
+the first run put at 5.52 M and which no object holds now. On them the
+key exchange retired 5.04 M and the ECDSA handshake 17.23 M.
 
 ## Instruction families that could speed each primitive
 
@@ -275,7 +318,8 @@ and FEAT_SHA3 (`sysctl hw.optional.arm`).
 | primitive | arm64 | x86-64 |
 |---|---|---|
 | x25519 (16-bit limbs in int64 words; 51-bit limbs under the multiply bit) | the wide field runs the native 64x64 multiply with UMULH over 51-bit limbs; NEON for two field products at once is still open | the wide field runs MUL; MULX (BMI2) with ADCX and ADOX (ADX), and AVX2 for several field products at once, are still open |
-| RSA verify and sign, P-256 and P-384 (32-bit limbs) | UMULH over 64-bit limbs; NEON UMULL and UMLAL for 32x32 products in lanes | MULX, ADCX and ADOX over 64-bit limbs; AVX2 VPMULUDQ; AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ) |
+| RSA verify and sign, the P-256 and P-384 verifiers (32-bit limbs) | UMULH over 64-bit limbs; NEON UMULL and UMLAL for 32x32 products in lanes | MULX, ADCX and ADOX over 64-bit limbs; AVX2 VPMULUDQ; AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ) |
+| P-256 key exchange and signing (32-bit limbs; four 64-bit limbs under the multiply bit) | the wide files run MUL and UMULH, and clang makes add-with-carry chains of their carries (docs/decisions.md 94) | the wide files run the 64x64->128 multiply; gcc makes no add-with-carry chain of their carries (docs/decisions.md 94), and MULX with ADCX and ADOX is still open |
 | Poly1305 | under the multiply bit it runs four blocks at a time in NEON lanes (docs/decisions.md 83) | under the multiply bit it runs four blocks at a time in SSE2 lanes; an AVX2 Poly1305 is open (docs/decisions.md 90) |
 | ChaCha20 | every host session runs NEON, eight blocks a pass (docs/decisions.md 86) | SSE2, four blocks a pass, and under `CH_CPU_AVX2` eight (docs/decisions.md 90); AVX-512, sixteen, is open |
 | the DRBG, over chacha20_block | NEON for several blocks of a long draw | AVX2 for the same |
@@ -337,6 +381,11 @@ not fixed: earlier runs of this script drew an AMD EPYC 9V74 and a 7763,
 so figures from two runs are not comparable to each other. Linux gives
 the program no instruction count, so that column is empty.
 
+That tree is before docs/decisions.md 94. Under `0x1f` its p256_ecdh,
+p256_ecdh_keygen and p256_sign rows, and the server's side of its ECDSA
+handshakes, time the native copies of the 32-bit files, which no object
+holds now. No x86-64 run has timed the wide P-256 files.
+
 Handshakes, milliseconds:
 
 | handshake | `ch_cfg.cpu` | whole | client side | server side |
@@ -368,7 +417,7 @@ each machine under its widest value:
 | mlkem768 keygen, encaps, decaps | 5.25 to 5.36 |
 | sha3_256, 16 KB | 4.57 |
 | poly1305, 16 KB | 2.38 |
-| p256_ecdh, x25519, p256_sign | 1.80, 1.79, 1.76 |
+| x25519 | 1.79 |
 | p256_ecdsa_verify | 1.58 |
 | p384_ecdsa_verify | 1.47 |
 | chacha20_poly1305_seal, 16 KB | 1.17 |
@@ -379,8 +428,13 @@ each machine under its widest value:
 | chacha20, 16 KB | 0.77 |
 | rsa_pss_sign_2048, rsa_pss_sign_3072 | 0.65, 0.54 |
 
-The multiply bit gains more here than on arm64. Time under `0x1` over
-time under `0x1f`:
+p256_ecdh and p256_sign are not in this table: the arm64 file times the
+wide files for them, and this one the native copies of the 32-bit files.
+On those copies the two took 1.80 and 1.76 times their arm64 time.
+
+On the rows that run the same code in both files, the multiply bit gains
+more here than on arm64 for X25519, the seal, RSA signing and the client
+sides, and less for Poly1305. Time under `0x1` over time under `0x1f`:
 
 | row | ratio |
 |---|---:|
@@ -388,7 +442,7 @@ time under `0x1f`:
 | poly1305, 16 KB | 8.60 |
 | chacha20_poly1305_seal, 16 KB | 5.31 |
 | rsa_pss_sign_3072, rsa_pss_sign_2048 | 3.59, 3.54 |
-| p256_sign, p256_ecdh | 2.56 |
+| p256_sign, p256_ecdh, on the native copies of the 32-bit files | 2.56 |
 | ML-KEM-768 | 1.00 to 1.02 |
 | RSA-3072 handshake, client side | 5.51 |
 | ECDSA handshake, client side | 2.76 |

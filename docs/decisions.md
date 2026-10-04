@@ -5772,13 +5772,16 @@ does nothing more.
       clang makes one add-with-carry instruction of that form. A 128-bit
       sum of three terms compiles to more: under Apple clang 21 at `-O2`
       for arm64 a field add is 26 instructions this way and 46 that way,
-      and a field multiply 141 and 168. gcc makes the chain of neither
-      form: under gcc 14.2 for arm64 a multiply is 275 instructions with
-      the builtins and 266 with the 128-bit sums, where clang 19 makes
-      141 and 172, and under gcc 13.3 for x86-64 it is 460 and 602. So a
-      host object built with gcc runs this arithmetic at about half the
+      and a field multiply 141 and 168. gcc is behind clang. For arm64
+      it makes the chain of neither form: under gcc 14.2 a multiply is
+      275 instructions with the builtins and 266 with the 128-bit sums,
+      where clang 19 makes 141 and 172, and gcc 15.2 makes 275 of the
+      builtins still. For x86-64, gcc 13.3 makes the chain of neither,
+      460 and 602, and gcc 15.2 makes it of the builtins, 248, where
+      clang 23 makes 204. So a host object built with gcc for arm64, or
+      with gcc 13 for x86-64, runs this arithmetic at about half the
       speed of one built with clang, as `build.zig` builds it.
-    - **No borrow from a constant zero.** gcc compiles
+    - **No borrow from a constant zero.** gcc 13.3 compiles
       `__builtin_sub_overflow` of two variables to a subtraction and a
       `setb`, and of a constant zero and a variable to a subtraction and a
       jump on its borrow. Under gcc 13.3 at `-O2` for x86-64,
@@ -5996,6 +5999,15 @@ does nothing more.
     - **128-bit sums for the carries.** A sum of three terms in
       `unsigned __int128` gives the same carry with no builtin, and costs
       the instructions measured above under clang.
+    - **`_addcarry_u64` for the carries on x86-64.** The intrinsic gives
+      gcc 13.3 its chain: a multiply is 293 instructions where the
+      builtins give 460, and a signature retires 0.89 M instructions
+      where it retires 1.19 M. gcc 15.2 and clang 23 make the chain of
+      the builtins already, and the intrinsic costs them instructions: a
+      multiply is 279 against 248 under gcc 15.2 and 218 against 204
+      under clang 23, and a signature 0.87 M against 0.81 M and 0.74 M
+      against 0.71 M. It would be a second form of the two carry steps
+      for one release of one compiler, and CBMC reads no intrinsic.
     - **The wide files for every host session.** The 64x64->128
       multiply's timing is the caller's statement, as the 32x32 one's is
       (entry 89), so a session that has not made it runs the
@@ -6049,7 +6061,42 @@ does nothing more.
     and 19.5 where OpenSSL's took 44,585 and 13.8: 2.6, 1.9 and 1.4 times
     its cycles. `openssl speed -seconds 1 ecdsap256 ecdhp256` gave
     54,758 signatures and 23,811 key exchanges a second in the same
-    minute. What is left:
+    minute. The table's fourth column is the code before the scalar
+    wipes and the negation's new form. With both, a signature retires
+    533,796 instructions, a key exchange 917,577 and a key generation
+    232,596, in 159,160, 251,506 and 61,673 cycles.
+
+    `bench/primitives.sh` times the same three calls beside
+    `openssl speed`, and `docs/performance.md`, "chapulin beside OpenSSL",
+    holds its rows. In a run that started at a load average of 72 and
+    ended at 16 it read a key generation at 19.6 µs, a key exchange at
+    82.1 µs and a signature at 50.7 µs: 1.91, 1.91 and 2.72 times
+    OpenSSL's rows in the same run, where the native copies took 62.6,
+    14.6 and 36.4 times. `openssl speed`'s key generation row, 10.3 µs,
+    is faster than the `EVP_PKEY_keygen` call above. In that script's
+    pinned ECDSA P-256 handshake the server's side took 162 µs where it
+    took 784 µs (`bench/notes-primitives.md`).
+
+    No x86-64 machine here measures time, and the scoreboard's x86-64
+    column is a GitHub runner's, recorded before this entry. So the same
+    three calls were counted in instructions for x86-64, as
+    `bench/insn-mips.sh` counts them for a device: static drivers under
+    qemu-x86_64 11.0.3 with one instruction a translation block, eight
+    calls less a run of none, and four for 0.2.0. OpenSSL is 3.0.13
+    through the same `EVP_PKEY` calls:
+
+    | x86-64, instructions a call | 0.2.0, gcc 13.3 | this entry, gcc 13.3 | this entry, gcc 15.2 | 0.2.0, clang 23 | this entry, clang 23 | OpenSSL |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | `p256_sign` | 17,622,601 | 1,187,575 | 814,440 | 9,866,127 | 710,185 | 207,782 |
+    | `p256_ecdh` | 16,522,239 | 2,757,672 | 1,560,375 | 9,114,389 | 1,286,549 | 536,886 |
+    | `p256_ecdh_keygen` | 16,516,181 | 661,416 | 381,635 | 9,111,000 | 317,663 | 303,589 |
+
+    Under gcc 13.3, which CI and the runner compile with, a signature
+    retires 5.7 times OpenSSL's instructions, a key exchange 5.1 times
+    and a key generation 2.2 times. Under clang 23 they are 3.4, 2.4 and
+    1.05 times.
+
+    What is left:
 
     - **The nonce.** 239,105 of a signature's instructions and 75,272 of
       its cycles are the RFC 6979 derivation, more than OpenSSL's whole
