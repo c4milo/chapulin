@@ -11,11 +11,15 @@ on:
     - cron: "47 2 * * *"
   workflow_dispatch: # rerun the PR lane on demand; the nightly workflow has its own
 
-# One run per branch: a new push supersedes older runs. Cancelled runs
-# still execute their always() cache save, so no proof work is lost.
+# On main every run finishes, each in a group of its own, so each push
+# gets a verdict and a second push need not wait for the first run to
+# end. A run cancelled by the next push left a commit with no verdict,
+# and waiting for each run made a series of commits cost a run's time
+# apiece. On any other ref a new push supersedes older runs. A cancelled
+# run still executes its always() cache save, so no proof work is lost.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.run_id || 'latest' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 
 # Every job runs on a read-only token unless it says otherwise; the
