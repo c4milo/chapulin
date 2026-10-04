@@ -7,7 +7,47 @@
 // square-and-multiply exponentiation; 65537 = 2^16 + 1 costs 16 squares
 // and one multiply. Sizes run up to CH_RSA_MODULUS_MAX bytes (rsa.h):
 // RSA-3072, or RSA-4096 under CH_TRUST_WEBPKI.
+//
+// That is a device object's rsa_vp1, and the reference. A host object
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the few lines of the first arm
+// below in its place: the same exponentiation on rsa_mont64.c's 64-bit
+// limbs, in every session, because nothing here is secret and so no
+// caller has to state the multiply's timing (docs/decisions.md 95).
+// bin/rsa_equiv_test compiles both arms into one binary and requires the
+// same bytes from each.
 #include "rsa.h"
+
+#ifdef CH_CPU_RUNTIME
+
+#include "rsa_mont64.h"
+
+// The bit length of the n_len-byte n: the position of its top set bit,
+// plus one, and 0 for n == 0, which no caller passes. rsa.c holds the
+// same count for emBits; n is public, so both read it byte by byte.
+static size_t bit_length(const uint8_t *n, size_t n_len) {
+    size_t i = 0;
+    while (i < n_len && n[i] == 0) {
+        i++;
+    }
+    if (i == n_len) {
+        return 0;
+    }
+    size_t bits = 8 * (n_len - i);
+    uint8_t top = n[i];
+    while ((top & 0x80) == 0) {
+        bits--;
+        top = (uint8_t)(top << 1);
+    }
+    return bits;
+}
+
+void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
+    rsa_mont64_modulus mod;
+    rsa_mont64_modulus_init(&mod, n, n_len, bit_length(n, n_len));
+    rsa_mont64_public(em, sig, n_len, &mod);
+}
+
+#else // !CH_CPU_RUNTIME
 
 #include <string.h>
 
@@ -153,3 +193,5 @@ void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
     mont_mul(acc, acc, one, m, m0inv, k);
     to_bytes(em, acc, k);
 }
+
+#endif // CH_CPU_RUNTIME

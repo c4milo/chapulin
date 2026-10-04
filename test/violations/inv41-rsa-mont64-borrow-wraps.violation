@@ -1,0 +1,24 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: proof/prove-one.sh rsa_mont64_ops
+reason: at_or_above subtracts with a borrow where it added a complement,
+  so each limb of the comparison wraps below zero whenever the modulus's
+  limb is the larger. The answer happens to stay right, and the file's
+  claim that no sum in it wraps does not. rsa_mont64_ops runs the
+  function with --unsigned-overflow-check on, where that subtraction is
+  a property.
+
+--- old
+    uint64_t carry = 1;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)a[i] + ~m[i] + carry;
+        carry = (uint64_t)(v >> 64);
+    }
+    return (uint64_t)(((ct_u128)top + UINT64_MAX + carry) >> 64);
+--- new
+    uint64_t borrow = 0;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)a[i] - m[i] - borrow;
+        borrow = (uint64_t)(v >> 64) & 1;
+    }
+    return (uint64_t)((((ct_u128)top - borrow) >> 64) & 1) ^ 1;

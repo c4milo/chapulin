@@ -502,6 +502,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // The wide P-256 files, which the same bit picks, in an object that
     // carries the curve (docs/decisions.md 94).
     if (host and contains(lib_srcs, "p256_point.c")) lib_srcs = concat(b, &.{ lib_srcs, &p256_wide_srcs });
+    // RSA_MONT64_SRCS: the 64-bit Montgomery arithmetic rsa_mont.c calls
+    // in a host object, for the public operation of both RSA verifiers in
+    // every session (docs/decisions.md 95).
+    if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{"rsa_mont64.c"} });
     // CHACHA_VECTOR_SRCS: the vector ChaCha20 every session of a host
     // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
     // on x86-64 (docs/decisions.md 82, 89 and 90).

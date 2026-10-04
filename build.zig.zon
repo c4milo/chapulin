@@ -154,6 +154,8 @@
         "rsa.c",
         "rsa.h",
         "rsa_mont.c",
+        "rsa_mont64.c",
+        "rsa_mont64.h",
         "rsa_pkcs1.c",
         "rsa_pkcs1.h",
         "rsa_sign.c",

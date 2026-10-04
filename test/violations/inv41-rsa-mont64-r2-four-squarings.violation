@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_modulus_init squares the Montgomery form of 2^(2k) four
+  times where five are needed, so r2 holds the form of 2^(32k) and not of
+  R, and every number it moves into the Montgomery domain is wrong by that
+  factor. bin/rsa_equiv_test compares the public operation's bytes with
+  the 32-bit arm's.
+
+--- old
+    for (int i = 0; i < 5; i++) {
+        rsa_mont64_mont_mul(mod->r2, mod->r2, mod->r2, mod);
+--- new
+    for (int i = 0; i < 4; i++) {
+        rsa_mont64_mont_mul(mod->r2, mod->r2, mod->r2, mod);

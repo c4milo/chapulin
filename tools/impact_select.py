@@ -682,6 +682,15 @@ def select_lints(out, changed, csources, lib):
                 "poly1305.c's native copy calls the vector Poly1305 in a host "
                 "object, and this script compiles both copies as that object does",
                 ["test/widemul-builds.sh"])
+    # rsa_mont.c calls rsa_mont64.c's arithmetic in a host object alone
+    # (docs/decisions.md 95). Both arms give the same bytes, so no test of
+    # the verifiers tells which one an object compiled, and the script
+    # compiles the file either side of the define and reads its calls.
+    if "rsa_mont.c" in csources or "rsa_mont64.c" in csources:
+        out.add("tests", "test/widemul-builds.sh",
+                "rsa_mont.c calls the 64-bit arithmetic in a host object "
+                "alone, and this script compiles it either side of that define",
+                ["test/widemul-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.

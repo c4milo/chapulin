@@ -184,7 +184,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
@@ -457,6 +457,10 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c \
 # of their own.
 HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c
+# RSA's Montgomery arithmetic on 64-bit limbs and its equivalence test
+# (docs/decisions.md 95), which compile only under -DCH_CPU_RUNTIME.
+# lint-tidy reads them in a pass of their own.
+RSA_MONT64_LINT_C := rsa_mont64.c test/rsa_equiv_test.c test/rsa_equiv_portable.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
@@ -474,6 +478,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           chacha20_vector.c chacha20_avx2.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c \
           test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
+          $(RSA_MONT64_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
@@ -983,6 +988,17 @@ endif
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
 endif
+# RSA's public operation, rsa_vp1, which the two RSA verifiers call. A
+# device object runs it on rsa_mont.c's 32-bit limbs. In a host object
+# rsa_mont.c compiles to a call into rsa_mont64.c, the same exponentiation
+# on 64-bit limbs whose products are 64x64->128 multiplies, and every
+# session runs it: a modulus and a signature are public, so no bit states
+# the multiply's timing for them (docs/decisions.md 95). The file joins
+# every host object that holds rsa_mont.c.
+RSA_MONT64_SRCS := rsa_mont64.c
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181). A device object runs
 # chacha20.c's loop, one 64-byte block at a time in 32-bit words. A host
@@ -1160,7 +1176,8 @@ QUIC_EXTRA_DEFINES += hash_hw.h:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME keys
 # copy of each that has one, the wide field beside x25519.c and the wide
 # P-256 files beside p256_point.c, which widemul.h's dispatchers call, the
 # two vector sources beside chacha20.c, the vector Poly1305, as its
-# native copy, beside poly1305.c, and the hash sources below beside the
+# native copy, beside poly1305.c, the 64-bit Montgomery arithmetic beside
+# rsa_mont.c, which calls it, and the hash sources below beside the
 # files they stand beside.
 HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS))
 widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
@@ -1176,7 +1193,8 @@ hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(
 host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c) \
             $(if $(filter p256_point.c,$(1)),$(P256_WIDE_SRCS)) \
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
-            $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) $(call hash_hw_of,$(1))
+            $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) \
+            $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
 ifneq ($(origin WIDEMUL),file)
@@ -1520,6 +1538,9 @@ print-aes-runtime-qemu-srcs:
 # every object that carries the curve and the wide files to the host
 # object, with no native copy of the field or the scalar in any
 # (docs/decisions.md 94).
+# The RSA rows hold rsa_mont64.c, the 64-bit arithmetic rsa_mont.c calls
+# in a host object, to the host object beside rsa_mont.c, and out of every
+# device object (docs/decisions.md 95).
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
@@ -1600,6 +1621,11 @@ lint-trust-separation-run:
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
+	check "TRUST=raw-rsa" "rsa_mont.c" "rsa_mont64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "rsa_mont64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c" "rsa_mont64.c" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c" "" "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" "poly1305_vector.c" \
 	  "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
@@ -2227,6 +2253,24 @@ bin/p256_equiv_test_builtin: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HD
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_BUILTIN -I. -Itest -o $@ \
 	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+# A host object's RSA arithmetic against the portable code
+# (docs/decisions.md 95). The binary compiles as a host object compiles
+# its sources, so rsa_mont.c is the arm that calls rsa_mont64.c's 64-bit
+# limbs, and test/rsa_equiv_portable.c compiles the same file's 32-bit
+# arm, a device object's, under a second name beside it. It builds at the
+# 512-byte bound, so RSA-4096 runs on both.
+RSA_EQUIV_TEST_SRCS := rsa_mont.c $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+RSA_EQUIV_TEST_UNITS := test/rsa_equiv_test.c test/rsa_equiv_portable.c
+bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+# The RSA-PSS verifier's vectors on a host object's rsa_vp1: bin/rsa_test's
+# main, built as a host object builds its sources. It takes no ch_cfg.cpu
+# value, because no bit picks the public operation. bin/rsa_pkcs1_test_host
+# is the same for the PKCS#1 v1.5 verifier, beside bin/rsa_pkcs1_test.
+bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS))
 # A host object's ChaCha20 against chacha20.c's loop, the paths in one
 # binary under their own names: chacha20.c compiles here without
 # -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, as a device
@@ -2748,6 +2792,11 @@ RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_com
 bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
+# The same vectors on a host object's rsa_vp1, as bin/rsa_test_host runs
+# the RSA-PSS ones.
+bin/rsa_pkcs1_test_host: test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS)) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS))
 # The TRUST=webpki date reader and hostname matcher at their boundaries:
 # their own binaries, out of the raw and ca objects like sha512, each
 # over the DER primitives it reads through.
@@ -3047,7 +3096,8 @@ WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c \
-                      sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(WIDEMUL_COUNT_FIELDS)
+                      sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
+                      $(WIDEMUL_COUNT_FIELDS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                           $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c \
                           $(P256_WIDE_SRCS) $(HDRS) $(TESTH)
@@ -3071,25 +3121,26 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # only where HOST_TARGET found one, and check-skips says when it did not.
 widemul_counted = $(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1)) $(WIDEMUL_COUNT_FIELDS) \
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(CHACHA_VECTOR_SRCS) \
+                  $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
                   $(call hash_hw_of,$(1))
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                            test/widemul_runtime_count.c $(HDRS) $(TESTH)
+                            test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -Itest -o $@ \
 	  test/tcp_blocking_loop_test.c $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
 bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) \
-                               $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(HDRS) $(TESTH)
+                               $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
 	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest -o $@ test/tcp_nonblocking_loop_test.c \
 	  $(call widemul_counted,$(TCP_NONBLOCKING_LOOP_SRCS))
 bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                    test/widemul_runtime_count.c $(HDRS) $(TESTH)
+                    test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
 bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                         test/widemul_runtime_count.c $(HDRS) $(TESTH)
+                         test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_session_test.c \
 	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
@@ -3105,6 +3156,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
+                                 bin/rsa_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
@@ -4299,10 +4351,11 @@ san-check:
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
 	# A host object's paths, where the compiler passes the host test. The
-	# three equivalence binaries: the wide X25519 field, and the vector
+	# four equivalence binaries: the wide X25519 field, the vector
 	# ChaCha20 and Poly1305, which run their cases on heap buffers that end
 	# where each case ends, so ASan sees a read or a write one byte past
-	# them. Then the Wycheproof suites over the host object with the
+	# them, and RSA's 64-bit arithmetic, whose limb arrays sit on the
+	# stack. Then the Wycheproof suites over the host object with the
 	# multiply bit, 0x5, under which the x25519 rows run the wide field,
 	# every other row built on the multiply its native copy, the vector
 	# Poly1305 among them, and ChaCha20 the vector path; on x86-64 they run
@@ -4335,6 +4388,9 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
 	    $(SHA2_EQUIV_TEST_SRCS); \
 	  echo "== sha2_equiv_test (SAN -O$(O))"; ./bin/san/sha2_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
+	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
+	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof host object: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	    $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test_host test/wycheproof_test.c \
@@ -4838,7 +4894,7 @@ else
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c \
-	  $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
+	  $(RSA_MONT64_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
 	# -DCH_CPU_RUNTIME and compiles x25519.c's clamp and all-zero check
@@ -4853,6 +4909,17 @@ else
 	# build.
 	@$(call TIDY_EACH,$(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	# RSA's Montgomery arithmetic on 64-bit limbs (docs/decisions.md 95).
+	# rsa_mont64.c guards its body on -DCH_CPU_RUNTIME and rsa_mont.c
+	# compiles its other arm under it, so the pass above reads the 32-bit
+	# arm and this one reads the 64-bit one, with the equivalence test,
+	# which calls both. test/rsa_equiv_portable.c stays out of every pass,
+	# for the reason test/aes_equiv_soft.c does below. ct.h defines the
+	# 64x64->128 multiply with unsigned __int128, so the pass runs only
+	# where HOST_TARGET found a host compiler.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,rsa_mont64.c rsa_mont.c test/rsa_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on
 	# -DCH_CPU_RUNTIME, and chacha20.c and aead.c hold the entries that
 	# take a session's ch_cfg.cpu under it, so this pass reads the three in
@@ -5378,7 +5445,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # with ten.
 VIOLATION_JOBS ?= $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2); echo $$(( n > 1 ? n / 2 : 1 )))
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test bin/rsa_equiv_test
 	+python3 test/violations.py --tier=fast --jobs $(VIOLATION_JOBS)
 
 # Every violation but the proof-backed ones: the fast tier plus the
@@ -5684,10 +5751,15 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
 # (docs/decisions.md 94): their products are unsigned __int128, and they
 # compile only in a host object. They divide nothing and call no runtime
 # routine, so their ceilings are zero.
+# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit limbs, joins it for
+# x25519_wide.c's reasons (docs/decisions.md 95): its products are
+# unsigned __int128 and its body sits behind -DCH_CPU_RUNTIME. Its
+# multiply is the same 64x64->128 instruction, so its tokens are the
+# divisions and the 128-bit runtime calls too, and its ceiling is zero.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_native.c:0 mlkem_poly_native.c:0 \
                   rsa_sign_native.c:0 poly1305_vector_native.c:0 \
-                  sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 \
+                  sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
@@ -5720,11 +5792,11 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
 # The native copies of a host object need -DCH_CPU_RUNTIME, because ct.h
-# refuses a native copy anywhere else, and x25519_wide.c needs it because
-# its whole body sits behind that define. sha256_hw.c needs it for that
-# reason too, and hkdf_hw.c and keysched_hw.c because hash_hw.h refuses a
-# copy without it; the two copies take -DCH_HASH_SHA384 as hkdf.c and
-# keysched.c do, so the count reads both hashes' arms.
+# refuses a native copy anywhere else, and x25519_wide.c and rsa_mont64.c
+# need it because their whole bodies sit behind that define. sha256_hw.c
+# needs it for that reason too, and hkdf_hw.c and keysched_hw.c because
+# hash_hw.h refuses a copy without it; the two copies take -DCH_HASH_SHA384
+# as hkdf.c and keysched.c do, so the count reads both hashes' arms.
 WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME
 # webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen legs compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
@@ -5751,7 +5823,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    chacha20_vector.c:-DCH_CPU_RUNTIME chacha20_avx2.c:-DCH_CPU_RUNTIME \
                    poly1305_vector.c:-DCH_CPU_RUNTIME \
-                   x25519_wide.c:-DCH_CPU_RUNTIME \
+                   x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -5946,6 +6018,15 @@ WIDEMUL_SPECS := \
 # either family's multiply by a limb as a call to __multi3 fails the zero.
 # No gcc spec measures the field: no CI lane runs a 64-bit gcc through
 # lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
+#
+# rsa_mont64.c's 23 under both specs were read the same way, function by
+# function. Twenty are loop control over a limb count, a byte count, the
+# doublings rsa_mont64_modulus_init counts from its bits argument, its
+# five squarings and the public exponent's sixteen, and the tests that
+# skip a loop of no iterations. The other three are the two CH_ASSERTs on
+# the public lengths the entries take. The comparison and the subtraction
+# that end a multiplication stay a carry and a mask: reduce_once's three
+# are its two loops and the test for no limbs.
 WIDE64_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 WIDE64_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 BRANCH_OPS_ARM64 := b.eq,b.ne,b.cs,b.hs,b.cc,b.lo,b.mi,b.pl,b.vs,b.vc,b.hi,b.ls,b.ge,b.lt,b.gt,b.le,cbz,cbnz,tbz,tbnz
@@ -6151,7 +6232,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                rsa_sign_native.c poly1305_vector_native.c \
-               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c $(P256_WIDE_SRCS)
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c $(P256_WIDE_SRCS)
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -6274,6 +6355,7 @@ BRANCH_CEILING := \
   arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:23 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:23 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
+  arm64/rsa_mont64.c:23 x86-64/rsa_mont64.c:23 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang

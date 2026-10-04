@@ -1,0 +1,17 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: test/widemul-builds.sh
+reason: rsa_mont.c chooses its arm on a define no build passes, so a host
+  object compiles the 32-bit arithmetic and never calls rsa_mont64.c.
+  Every answer stays right and every test of the verifiers passes, at
+  the device object's speed. test/widemul-builds.sh compiles the file as
+  a host object does and requires its calls into rsa_mont64.c.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+
+#include "rsa_mont64.h"
+--- new
+#ifdef CH_CPU_HOST
+
+#include "rsa_mont64.h"

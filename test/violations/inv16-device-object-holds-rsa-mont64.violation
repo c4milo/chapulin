@@ -1,0 +1,16 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: every object that holds rsa_mont.c carries rsa_mont64.c, a device
+  object among them. The file compiles to nothing there, so nothing
+  fails, and a later change that calls its entries would run the
+  64x64->128 multiply in an object whose build states nothing about it.
+  lint-trust-separation's RSA rows ban the file from every device
+  object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+endif
+--- new
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))

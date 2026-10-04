@@ -1,0 +1,50 @@
+// Proves: no sum in rsa_mont64_mont_mul wraps, for any operands, any
+// modulus and any m0inv. The check is --unsigned-overflow-check on the
+// launch line, which makes every unsigned +, - and * a property: each sum
+// of a product, a limb of the running sum and a carry; the sum of the two
+// carries with the running sum's top limb; and every limb of the last
+// subtraction, which adds a complement where a borrow would wrap.
+//
+// The products are the contract in proof/rsa_mont64_stubs.h: any value at
+// or below (2^64 - 1)^2, which rsa_mont64_mul128_harness.c proves of the
+// real multiply. Under it the bound is the one rsa_mont64.c's header
+// states: a product and two limbs are at most 2^128 - 1.
+//
+// It runs the shipped function at four limbs, not at the build's 48 or
+// 64. Four limbs run every statement in every position it has: the first
+// round over a zeroed sum and three rounds over a sum the round before
+// wrote, the first limb of a round and three limbs after it, the top
+// step, and the last subtraction. Each sum reads one product, one limb
+// and one or two carries, and every one of those is an unconstrained
+// 64-bit value or a value the function itself computed from such values,
+// so the limb count is no part of the argument: more limbs repeat the
+// same sums over the same ranges. The whole function at 48 limbs with
+// this check on returned no verdict in five minutes and 8.5 GB;
+// rsa_mont64_mul_harness.c runs it there for its memory accesses.
+//
+// The three calls are the aliasing shapes rsa_mont64_mul_harness.c names.
+#include "rsa_mont64_stubs.h"
+
+#define SUMS_LIMBS 4
+
+int main(void) {
+    rsa_mont64_modulus mod;
+    uint64_t a[RSA_MONT64_LIMBS_MAX];
+    uint64_t b[RSA_MONT64_LIMBS_MAX];
+    uint64_t o[RSA_MONT64_LIMBS_MAX];
+
+    havoc_modulus(&mod, SUMS_LIMBS);
+    havoc_limbs(a, SUMS_LIMBS);
+    havoc_limbs(b, SUMS_LIMBS);
+    rsa_mont64_mont_mul(o, a, b, &mod);
+
+    havoc_modulus(&mod, SUMS_LIMBS);
+    havoc_limbs(a, SUMS_LIMBS);
+    havoc_limbs(b, SUMS_LIMBS);
+    rsa_mont64_mont_mul(b, a, b, &mod);
+
+    havoc_modulus(&mod, SUMS_LIMBS);
+    havoc_limbs(a, SUMS_LIMBS);
+    rsa_mont64_mont_mul(a, a, a, &mod);
+    return 0;
+}

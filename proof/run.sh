@@ -2219,6 +2219,54 @@ launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:12
 # harness holds no ch_rand_bytes stub (docs/decisions.md 77), PROVE_ONLY=rsa_sign
 # PROVE_NO_CACHE=1 /usr/bin/time -l: 755 properties, 8 s, 206 MB.
 launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
+# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit limbs, which a host
+# object runs for rsa_vp1 (docs/decisions.md 95). Every line compiles the
+# file as a host object does, under -DCH_CPU_RUNTIME, which its body and
+# ct.h's ct_mul128 sit behind.
+# rsa_mont64_mul128 proves the bound proof/rsa_mont64_stubs.h states for a
+# product on the real multiply, and every other line but rsa_mont64_ops
+# runs that contract in its place. rsa_mont64_sums, rsa_mont64_ops and
+# rsa_mont64_mul128 add --unsigned-overflow-check, for the reason the
+# wide X25519 field's lines do: the file computes in uint64_t and
+# unsigned __int128, and its header says no sum in it wraps.
+# rsa_mont64_sums runs the multiplication at four limbs with that check
+# on. rsa_mont64_mul, rsa_mont64_init and rsa_mont64_public run it at the
+# build's bound without the check, each for its memory accesses: the
+# multiplication alone in its three aliasing shapes, the modulus setup
+# with its five, and the public operation with its eighteen. The setup
+# also runs neg_inverse, whose arithmetic wraps on purpose. The _webpki
+# lines are the same harnesses at RSA-4096's 64 limbs and 512 bytes.
+# The multiplication whole at 48 limbs with the wrap check on returned no
+# verdict in five minutes at 8.5 GB, which is why the check runs at four
+# limbs and the bound's line runs without it.
+# Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# /usr/bin/time -l ./proof/run.sh all (cbmc 6.11.0, kissat 4.0.4, an M1
+# Pro at load averages of 12 to 35), on 2026-10-04:
+#   rsa_mont64_mul128            3 properties,   1 s,  23 MB
+#   rsa_mont64_sums            364 properties,   4 s, 191 MB
+#   rsa_mont64_ops             373 properties,  35 s, 617 MB
+#   rsa_mont64_ops_webpki      373 properties,  43 s, 897 MB
+#   rsa_mont64_mul             314 properties,  17 s, 404 MB
+#   rsa_mont64_mul_webpki      314 properties,  47 s, 708 MB
+#   rsa_mont64_init            302 properties,  52 s, 821 MB
+#   rsa_mont64_init_webpki     302 properties,  93 s, 1.4 GB
+#   rsa_mont64_public          326 properties, 139 s, 2.4 GB, hence fast:3
+#   rsa_mont64_public_webpki   326 properties, 227 s, 4.2 GB, hence slow
+# The cost of the last four is cbmc's own symbolic execution: 111 and
+# 190 s of the public operation's two times are cbmc's user time, and a
+# stub of the multiply that assumes nothing moved rsa_mont64_mul from
+# 17 s to 16 s. Each multiplication at 48 limbs adds about 6 s, and the
+# public operation makes eighteen.
+launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_sums 6 "ct_wipe.0:41" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_mul 50 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_init 385 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 
 FAIL=0
 i=0

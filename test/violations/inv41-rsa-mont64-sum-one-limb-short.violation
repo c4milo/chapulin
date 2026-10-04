@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: proof/prove-one.sh rsa_mont64_mul
+reason: rsa_mont64_mont_mul's running sum is one limb short, so at the
+  largest limb count the top step reads and writes past the array. A
+  smaller modulus never shows it. rsa_mont64_mul runs the function at
+  that count, where each access is a property.
+
+--- old
+    uint64_t t[RSA_MONT64_LIMBS_MAX + 1];
+--- new
+    uint64_t t[RSA_MONT64_LIMBS_MAX];

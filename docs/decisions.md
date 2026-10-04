@@ -3293,7 +3293,7 @@ does nothing more.
 
 77. **A `RAND=session` object draws every random byte from a source each
     session's `ch_cfg` names, and packages no generator.** colibri's owner
-    ruled in its decision 94 that cocuyo, its sibling project, replays a
+    ruled in its decision 95 that cocuyo, its sibling project, replays a
     connection from a seeded stream. With one `ch_rand_bytes` per image, a
     replay had to know which chapulin calls draw and in what order, and it
     broke with no error when a draw moved from one call to another.
@@ -6200,3 +6200,128 @@ does nothing more.
     - **The field in C.** A field multiply is 141 instructions under
       Apple clang 21: four rows of four products, and a reduction of
       shifts. OpenSSL's arm64 build runs the `ecp_nistz256` assembly.
+95. **A host object computes RSA's public operation on 64-bit limbs, in
+    every session, and a device object keeps its 32-bit limbs.** Camilo
+    set the goal on 2026-10-03: pass OpenSSL on every primitive TLS runs,
+    in C an auditor can read, with no assembly. RSA was the widest gap:
+    `rsa_pss_verify` took 275 µs for RSA-2048 on an M1 Pro, and OpenSSL
+    3.6.5 takes 15 µs. This entry starts with the verifier.
+
+    - **The limb width.** `rsa_mont64.[ch]` holds Montgomery
+      multiplication on limbs of 64 bits, every product through
+      `ct_mul128`, the 64x64->128 multiply `ct.h` defines for a host
+      object alone (entries 52 and 89). An RSA-2048 modulus is 32 limbs
+      where `rsa_mont.c` has 64, so one multiplication runs a quarter of
+      the products.
+    - **No bit picks it.** `rsa_mont.c` compiles to a call into that file
+      under `-DCH_CPU_RUNTIME` and to its own 32-bit arithmetic without
+      it. So a host object holds the 64-bit arm alone and runs it in
+      every session, with `CH_CPU_CONSTANT_TIME_MULTIPLY` or without.
+      `rsa.h` says why the multiply's timing needs no statement there: a
+      modulus, a signature and an encoded message are public. A device
+      object compiles what it compiled before, and that arm stays the
+      reference.
+    - **One pass a round.** A round of the multiplication adds `a[i] * b`
+      and `u * m` to the running sum in one pass over the limbs, each
+      product with a carry of its own. `rsa_mont.c` makes two passes. In
+      a scratch build under Apple clang 21 on the M1 Pro, one
+      multiplication of 16 limbs took 1,114 cycles in one pass and 1,501
+      in two.
+    - **R^2 from doublings and five squarings.** INV-18 leaves a verifier
+      no state between calls, so each call computes R^2 mod n, the
+      constant that moves a number into the Montgomery domain.
+      `rsa_mont.c` doubles 1 modulo n 64 times a limb, with a comparison
+      each time. `rsa_mont64_modulus_init` starts at the modulus's top
+      bit, which is below the modulus, doubles it up to 2^(2k) * R for k
+      limbs, and squares that five times, because (2^(2k))^32 is R. For
+      a modulus with its top bit set that is 2k + 1 doublings, 65 for
+      RSA-2048 where the 32-bit arm runs 4,096.
+    - **The last product leaves the domain.** The power is the base
+      moved into the domain, sixteen squarings, and one product by the
+      base outside the domain, which multiplies by the base and divides
+      by R at once: eighteen multiplications where `rsa_mont.c` runs
+      nineteen.
+    - **Constant time all the same.** No branch and no memory index in
+      `rsa_mont64.c` depends on a limb: a mask chooses the subtraction
+      that ends a multiplication. The verifier needs none of that. It
+      costs nothing the measurements below show, and it leaves one
+      64-bit arithmetic to audit when the signer takes it.
+    - **No sum wraps.** A product is at most (2^64 - 1)^2, and with a
+      limb and a carry added it is at most 2^128 - 1. A subtraction adds
+      a complement, so a borrow carries where it would wrap. The file is
+      written this way so that CBMC's `--unsigned-overflow-check` can
+      hold it (INV-41).
+
+    Measured on an M1 Pro under Apple clang 21 at `-O2`, one
+    `rsa_pss_verify` over the keys of `test/rsa_sign_vectors.h`, by a
+    scratch driver under `/usr/bin/time -l`:
+
+    | | 32-bit limbs | 64-bit limbs | OpenSSL 3.6.5 |
+    |---|---|---|---|
+    | RSA-2048, instructions | 2,473,743 | 574,061 | |
+    | RSA-3072, instructions | 5,389,936 | 1,227,963 | |
+    | RSA-4096, instructions | 9,518,322 | 2,130,548 | |
+    | RSA-2048, cycles | 836,003 | 131,931 | |
+    | RSA-3072, cycles | 1,989,456 | 273,396 | |
+    | RSA-4096, cycles | 3,760,568 | 476,019 | |
+    | RSA-2048, time | 272 µs | 41.8 µs | 15.0 µs |
+    | RSA-3072, time | 657 µs | 89.7 µs | 31.4 µs |
+    | RSA-4096, time | 1,229 µs | 153.6 µs | 54.6 µs |
+
+    The 32-bit column is the device arm on the native multiply. The
+    machine was busy: its one-minute load average fell from 99 to 75
+    during the run. Each time is the best of nine repetitions, and
+    OpenSSL's is from `openssl speed -seconds 1` in the same minute,
+    which counts processor time. The instruction and cycle counts moved
+    by less than 2 percent from a run at a load average of 30.
+
+    C does not pass OpenSSL here. A verification takes 2.8 times
+    OpenSSL's time, and three things make up the difference:
+
+    - **The adds, not the multiplies.** On the M1 the two multiply
+      instructions of a product and every add that sets or reads the
+      carry flag run on the same three ports: a scratch loop of 16
+      multiplies and 20 such adds took 11.7 cycles, 3.1 operations a
+      cycle. The one-pass loop compiles to 4 multiplies and 9 flag
+      operations for two products, 4.2 cycles, where OpenSSL's assembly
+      keeps the carry in the flag across four limbs and spends about 5
+      flag operations on two products.
+    - **No squaring of its own.** OpenSSL squares with about three
+      quarters of a multiplication's products, and sixteen of a
+      verification's eighteen multiplications are squarings.
+    - **R^2 every call.** `openssl speed` verifies under a context it
+      computed once for the key. Here the setup is about 30 percent of a
+      verification's cycles.
+
+    Cost: ten launch lines in `proof/run.sh`, about 11 minutes of proof
+    time on the M1 Pro, 4 of them in the slow tier's one harness, and
+    one equivalence binary in `make check`. A host object's text
+    shrinks: `rsa_mont.o` and `rsa_mont64.o` take 2,722 bytes together
+    where `rsa_mont.o` took 3,348, and the deepest chain under `rsa_vp1`
+    takes 2,160 bytes of stack where it took 2,896, and 2,800 where it
+    took 3,792 at the `TRUST=webpki` bound.
+
+    Gain: a host object verifies an RSA signature in a sixth to an
+    eighth of the cycles. The 32-bit arm and its proofs do not move.
+
+    Rejected:
+
+    - **A multiplication in tiles of four limbs by four**, which holds
+      the running sum's window in locals and lets a compiler chain each
+      add through the carry flag, as OpenSSL's assembly does. In a
+      scratch build one 16-limb multiplication took 845 cycles under
+      Apple clang 21, against 1,114. Under gcc 13.3 and gcc 14.2 in a
+      Linux container on the same machine it took 548 to 949 ns in three spellings of the add,
+      against 322 ns for the one-pass loop. Its speed depends on how one
+      compiler lowers a carry, which the C cannot state.
+    - **A squaring of its own.** Written as loops, with the cross
+      products computed once and doubled before a reduction, it took
+      1,466 cycles against the multiplication's 1,114: it has fewer
+      products and more adds, and the adds are the cost.
+    - **R^2 by long division.** It takes fewer operations. Its quotient
+      estimate needs a correction step that runs for about one digit in
+      2^64, so no input a test draws at random runs that step.
+    - **A context the caller keeps for a key.** It would save the setup
+      on a second verification under one key. A handshake verifies once
+      under each key it meets, and each of the verifier's calls would
+      gain an argument.

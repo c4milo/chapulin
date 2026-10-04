@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_mont_mul copies the running sum out without its last
+  subtraction, so a product at or above the modulus stays there, and the
+  bytes a host object's rsa_vp1 writes are no longer the reduced power.
+  bin/rsa_equiv_test compares them with the 32-bit arm's.
+
+--- old
+    reduce_once(o, t, t[k], m, k);
+--- new
+    memcpy(o, t, k * sizeof(uint64_t));

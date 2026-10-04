@@ -1190,6 +1190,53 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/x25519_equiv_test`.
 - See [decisions: Engineering](decisions.md#engineering), entry 52.
 
+### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
+
+- **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit limbs
+  that a host object runs for `rsa_vp1`, computes for every odd modulus
+  the bytes `rsa_mont.c`'s 32-bit arithmetic computes, which stays the
+  reference. No sum in it wraps: a product of two limbs is at most
+  (2^64 - 1)^2, and with a limb of the running sum and a carry added it
+  is at most 2^128 - 1. The file computes in `uint64_t` and `unsigned
+  __int128`, where C defines every wrap, so a sum that left that range
+  would not fault: it would compute a wrong value.
+- **Mechanism.** Every product is one `ct_mul128`. A round of
+  `rsa_mont64_mont_mul` adds one product, one limb and one carry in each
+  of its two sums, and its top step adds two carries to a limb that is 0,
+  1 or 2. A subtraction adds the complement of the subtrahend and one,
+  so its limbs carry where a borrow would wrap. `rsa_mont.c` compiles to
+  a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
+  arithmetic without it, so an object holds one of the two.
+- **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
+  claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
+  four limbs over any operands, `rsa_mont64_ops` the comparison, the
+  subtraction, the doubling and the byte marshalling at the build's
+  bound, and `rsa_mont64_mul128` proves the real `ct_mul128` meets the
+  bound the others take as a contract (`proof/rsa_mont64_stubs.h`).
+  `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
+  memory accesses of the multiplication, the modulus setup and the
+  public operation at that bound. The values are held by
+  `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c` into one
+  binary and requires the same bytes from each over random moduli at
+  every length, moduli at the limb edges, moduli of every bit length
+  near a limb boundary, and the signatures 0, 1 and n - 1, whose powers
+  are known; by `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host`, the
+  two verifiers' openssl vectors on the 64-bit arm; and by the Wycheproof
+  host leg. `test/widemul-builds.sh` holds each arm to its object.
+- **Violation.** A PR adds both carries into one sum, which can then
+  pass 2^128; makes the running sum one limb short; subtracts with a
+  borrow that wraps; copies a product out without its last subtraction;
+  drops the running sum's top limb; squares R^2's seed four times where
+  five are needed; or stops the low limb's inverse one step short. `make
+  test-invariants` runs the last four as `inv41-rsa-mont64-final-subtract-dropped`,
+  `inv41-rsa-mont64-top-limb-dropped`, `inv41-rsa-mont64-r2-four-squarings`
+  and `inv41-rsa-mont64-inverse-five-steps`, through `bin/rsa_equiv_test`,
+  and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
+  `inv41-rsa-mont64-sum-one-limb-short` and
+  `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
+  nightly's proof-backed job.
+- See [decisions: Engineering](decisions.md#engineering), entry 95.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a
@@ -2670,6 +2717,13 @@ last `ROLE=server` stub, as the entry said it would.
   harnesses of their own
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
+  They compile `rsa_mont64.c` as well, RSA's Montgomery arithmetic on
+  64-bit limbs, and hold its conditional branches at 23 on each: loop
+  control over limb counts, byte counts, the doublings
+  `rsa_mont64_modulus_init` counts from its bits argument and the
+  squarings, and the two `CH_ASSERT`s on public lengths.
+  `inv16-rsa-mont64-subtract-branch` writes the subtraction that ends a
+  multiplication as an `if`, and both counts rise by one.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
@@ -3751,7 +3805,11 @@ last `ROLE=server` stub, as the entry said it would.
   (measured 2,640 with clang 23 on arm64); and 4,096 under
   `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 limbs
   (measured 3,168 with clang 23 on arm64 and 3,128 with Arm GNU gcc 16.2
-  on the Cortex-M3). ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
+  on the Cortex-M3). Those two frames are the 32-bit arithmetic's, which a
+  device object compiles. A host object's `rsa_vp1` calls `rsa_mont64.c`,
+  whose largest frame is `rsa_mont64_public`'s: 848 bytes at the device
+  bound and 1,104 at the `TRUST=webpki` one (Apple clang 21, arm64).
+  ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
   in every build that carries them, `KEX=pq`, every `TRUST=webpki`
   object (decisions.md 53) and every server role (decisions.md 54):
   K-PKE encrypt holds three polynomial vectors

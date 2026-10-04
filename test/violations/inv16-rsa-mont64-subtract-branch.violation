@@ -1,0 +1,20 @@
+invariant: INV-16
+file: rsa_mont64.c
+catches: test/lint-wide-multiply.sh
+reason: reduce_once picks a - m or a with an if where it selected with a
+  mask, so whether a Montgomery product needed its last subtraction
+  decides which path runs. For rsa_vp1 that fact is public, and the file
+  is written to hold a secret operand all the same. The values stay
+  right, so the vectors and bin/rsa_equiv_test pass; the count of what
+  the compiler emits sees it. The pinned clang emits one more conditional
+  branch for rsa_mont64.c on both 64-bit specs, 24 against the 23 its
+  ceiling records.
+
+--- old
+    sub_masked(o, a, m, k, mask_of_bit(at_or_above(a, top, m, k)));
+--- new
+    if (at_or_above(a, top, m, k) != 0) {
+        sub_masked(o, a, m, k, UINT64_MAX);
+    } else {
+        memmove(o, a, k * sizeof(uint64_t));
+    }

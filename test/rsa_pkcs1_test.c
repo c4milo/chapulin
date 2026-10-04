@@ -16,8 +16,11 @@
 // verify; at the device bound of 384 the same test expects the size
 // check to refuse them.
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
+#include "ch_assert.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
 #include "rsa_pkcs1_vectors.h"
@@ -33,6 +36,14 @@ static int failures = 0;
             (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
         }                                                                                          \
     } while (0)
+
+// bin/rsa_pkcs1_test_host links rsa_mont64.c, which asserts the lengths
+// rsa_vp1 hands it. The 32-bit arithmetic of bin/rsa_pkcs1_test asserts
+// nothing.
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
+    (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
+    abort();
+}
 
 // The modulus size check as rsa.h defines it: 256 bytes is the smallest
 // accepted, CH_RSA_MODULUS_MAX the largest — 512 in this binary, 384 at

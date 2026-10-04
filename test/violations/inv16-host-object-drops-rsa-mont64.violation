@@ -1,0 +1,13 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying rsa_mont64.c, and its link fails on
+  rsa_mont64_modulus_init and rsa_mont64_public, which rsa_mont.c calls
+  there, only where something links it. lint-trust-separation's RSA rows
+  require the file in every host object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+endif
+--- new

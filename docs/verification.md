@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-87 of the 110 C sources in the tree root are compiled into a
+88 of the 111 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -33,7 +33,9 @@ The wide X25519 field's harnesses also check unsigned wrap, which C
 defines and the other checks never see, because that field's bounds are
 all on unsigned values (see [x25519_wide](#x25519_wide)). The wide P-256
 files' harnesses check it for the same reason
-(see [p256_wide](#p256_wide)).
+(see [p256_wide](#p256_wide)). So do four of the harnesses of RSA's
+64-bit arithmetic, whose claim is that no sum in it wraps
+(see [rsa_mont64](#rsa_mont64)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
@@ -805,6 +807,59 @@ The entries are grouped by area:
   is hostile except the top one, which each call pins to one of the
   three alignment shapes the decode takes; a symbolic top bit was
   measured at 7 GB of CNF.
+
+#### rsa_mont64
+
+- **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow)
+- **Build:** a host object's Montgomery arithmetic on 64-bit limbs
+  (`rsa_mont64.c`, INV-41), under `-DCH_CPU_RUNTIME`.
+  `rsa_mont64_mul128`, `rsa_mont64_sums` and the two `rsa_mont64_ops`
+  lines add `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_mont64_mul128`: on the real 64x64->128 multiply, the product of
+    any two limbs is at or below (2^64 - 1)^2. Every other line but the
+    two `rsa_mont64_ops` ones replaces the multiply with that bound as a
+    contract (`proof/rsa_mont64_stubs.h`).
+  - `rsa_mont64_sums`: `rsa_mont64_mont_mul` at four limbs, over any
+    operands, any modulus and any `m0inv`, in the three aliasing shapes
+    its callers use, wraps no unsigned value: no sum of a product, a
+    limb and a carry, no top step and no limb of the last subtraction.
+    Four limbs run every statement of the function in every position it
+    takes, and each sum reads only values that are unconstrained there,
+    so the limb count is no part of the argument.
+  - `rsa_mont64_ops`: the byte marshalling over any length from 1 byte
+    to the bound, the comparison, the masked subtraction, the reduction
+    by one subtraction in both of its aliasing shapes, the doubling and
+    the power of two the modulus setup starts from stay inside their
+    arrays and wrap nothing, at the largest limb count. `mask_of_bit` is
+    all ones or all zeros, and `at_or_above` answers one bit.
+  - `rsa_mont64_mul`: the multiplication reads and writes inside its
+    arrays at the largest limb count, in the three aliasing shapes.
+  - `rsa_mont64_init`: `rsa_mont64_modulus_init` whole, over any modulus
+    bytes at the largest length with the top bit's bit length: the
+    marshalling, `neg_inverse`, its 2k + 1 doublings and its five
+    multiplications.
+  - `rsa_mont64_public`: `rsa_mont64_public` whole, over any base bytes
+    and any modulus limbs at the largest length, its eighteen
+    multiplications and two wipes among them. The base is unconstrained,
+    so a base at or above the modulus is covered.
+
+  The `_webpki` lines are the same harnesses at the `CH_TRUST_WEBPKI`
+  bound.
+- **Bound:** 384 bytes and 48 limbs, and 512 bytes and 64 limbs under
+  `CH_TRUST_WEBPKI`; full-range limbs; four limbs for `rsa_mont64_sums`.
+- **Not driven:** the multiplication at the build's limb count with the
+  wrap check on, which returned no verdict in five minutes at 8.5 GB;
+  and a modulus setup for a bit length below the top bit, which runs up
+  to 64 more doublings a limb. Each of those is `double_mod`, which
+  `rsa_mont64_ops` proves for any limbs, and `bin/rsa_equiv_test` runs
+  moduli of bit lengths from 1 up.
+- **Not proved:** any value. That a product is the Montgomery product
+  and below the modulus, that the setup writes R^2 mod m and the inverse
+  of the low limb, and that the public operation writes the 65537th
+  power rest on [tests](#the-host-objects-rsa-arithmetic). The file's
+  timing claim is `make lint-wide-multiply`'s, which counts the
+  conditional branches it compiles to.
 
 #### rsa_sign
 
@@ -3287,6 +3342,57 @@ fifty-eight `INV-16` violations that hold the host object's multiply
 (docs/invariants.md). The counts say which copy ran, not what the native
 multiply costs in time: that is the caller's statement, which nothing
 here can check.
+
+### The host object's RSA arithmetic
+
+A host object computes `rsa_vp1`, the public operation of both RSA
+verifiers, on `rsa_mont64.c`'s 64-bit limbs, and a device object on
+`rsa_mont.c`'s 32-bit limbs, which stay the reference (decision 95).
+`rsa_mont.c` compiles to one arm or the other, so no bit of `ch_cfg.cpu`
+picks between them and no count is needed to say which ran. The proofs
+of [rsa_mont64](#rsa_mont64) hold the 64-bit arm's memory accesses and
+its sums, over a contract of the multiply, and say nothing about a
+value. Tests hold the values:
+
+- `bin/rsa_equiv_test`, in `make check`, compiles both arms into one
+  binary, the device arm under a second name
+  (`test/rsa_equiv_portable.c`), and requires the same bytes from each:
+  over four random odd moduli with the top bit set at each of the 33
+  lengths from 256 to 512 bytes; over moduli of all ones, of the top and
+  bottom bits alone, with a low limb of 1 and of all ones, and with zero
+  limbs between the top and the bottom; and over moduli of 24 bit
+  lengths below the top bit, down to 3 bits, and the moduli 3 and 1, at
+  256, 264 and 512 bytes.
+  Under each it tries the signatures 0, 1, 2, n - 2, n - 1, the top bit
+  alone and random values, 2,028 comparisons in all. The powers of 0, 1
+  and n - 1 are known, so those rows check both arms against the answer
+  and not only against each other. Its random values come from a seed
+  the nightly can vary (`CH_RSA_EQUIV_SEED`).
+- `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` are the mains of
+  `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
+  their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,
+  4032 and 4096 bits, the PKCS#1 v1.5 ones at 2048, 3072, 4032 and 4096,
+  and every refusal, on the 64-bit arm.
+- The Wycheproof host binary runs the RSA-PSS and PKCS#1 v1.5 suites on
+  it, and every host loop, session and webpki test verifies its
+  CertificateVerify and chain signatures on it.
+- `test/widemul-builds.sh` requires `rsa_mont.c` to call `rsa_mont64.c`
+  when it is compiled as a host object compiles it, and not otherwise.
+
+Neither arm defines the result for an even modulus, which is no RSA
+modulus, and the two write different bytes for one, so no row here is
+even. `rsa_pkcs1_verify` refuses an even modulus before the operation
+runs. `rsa_pss_verify` does not, and its decode then judges bytes that
+are no power of the signature in either object.
+
+Eleven violations hold the arm: four break a value and
+`bin/rsa_equiv_test` catches each; three break a sum, a bound or the
+no-wrap form and a proof catches each; one writes the last subtraction
+as a branch and `lint-wide-multiply`'s count catches it; two move the
+file between the host and the device object and `lint-trust-separation`
+catches each; and one keeps a host object on the 32-bit arm, which
+`test/widemul-builds.sh` catches (INV-41 and INV-16 in
+docs/invariants.md).
 
 ### The host object's description of the CPU
 

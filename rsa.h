@@ -37,6 +37,13 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
 // Internal split boundary, defined in rsa_mont.c: em = sig^65537 mod n
 // (RSAVP1), all values n_len big-endian bytes. rsa.c handles every check;
 // the caller here guarantees sig < n. Not part of the public API.
+//
+// A device object computes it on 32-bit limbs and a host object
+// (-DCH_CPU_RUNTIME) on rsa_mont64.c's 64-bit limbs, and the two write
+// the same bytes for every odd n. For an even n, which is no RSA modulus,
+// each writes n_len bytes that are no power of sig, and the two differ:
+// Montgomery arithmetic needs the inverse of n's low limb, which an even
+// limb does not have.
 void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 
 #endif
