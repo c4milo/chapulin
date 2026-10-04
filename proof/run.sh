@@ -2110,7 +2110,8 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
 # 64-bit limbs under p256_wide_field.c and p256_wide_scalar.c, the point
 # formulas in p256_wide_point.c, the two scalar multiplications in
-# p256_wide_mul.c and the stack wipe in p256_wide_wipe.c. Every line compiles
+# p256_wide_mul.c, the table of multiples of G in p256_wide_table.c and the
+# stack wipe in p256_wide_wipe.c. Every line compiles
 # its file as a host object does, under -DCH_CPU_RUNTIME, and every line adds
 # --unsigned-overflow-check, for the reason the wide X25519 lines above give:
 # the limbs are uint64_t and the products unsigned __int128, where C defines
@@ -2126,8 +2127,11 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # the square of the objects it tracks, 32 squarings of the field took 57 s
 # of it where 8 took 3, and the field's whole chain was stopped after 11
 # minutes with no formula yet. p256_wide_point runs the point
-# formulas over the field's stubs, and p256_wide_mul the whole of both scalar
-# multiplications over the point's.
+# formulas over the field's stubs. p256_wide_digit runs the digits of a
+# scalar and the scan of a table row on their real bodies: the digits add up
+# to k | 1 for every k, and the scan returns the row's entry at the index.
+# p256_wide_mul runs the whole of both scalar multiplications over the
+# point's stubs and the shipped table, which is on its line.
 # Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
 # /usr/bin/time -l ./proof/run.sh all (cbmc 6.11.0, kissat 4.0.4, an M1 Pro),
 # on 2026-10-04. Other builds held the machine's load average between 20 and
@@ -2137,8 +2141,9 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_field      822 properties, 10 s,  98 MB
 #   p256_wide_field_mul  613 properties, 11 s, 103 MB
 #   p256_wide_scalar     374 properties, 17 s, 467 MB
-#   p256_wide_point      196 properties,  1 s,  40 MB
-#   p256_wide_mul        278 properties, 24 s, 664 MB
+#   p256_wide_point      217 properties,  1 s,  47 MB
+#   p256_wide_digit      232 properties, 12 s, 154 MB
+#   p256_wide_mul        350 properties, 87 s, 490 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The two lines with --object-bits 10 track more than 256 objects: each
 # product's locals have their addresses taken, and the lines run 14 and 20
@@ -2151,7 +2156,8 @@ launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-chec
 launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_mul 257 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_mul 257 "" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and

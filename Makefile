@@ -188,20 +188,21 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
-        p256_wide_wipe.h \
+        p256_wide_table.h p256_wide_wipe.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
         alert.h widemul.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h
 
-# The wide P-256 files, which a host object holds beside p256_field.c,
+# The wide P-256 files and the table of multiples of G the base
+# multiplication reads, which a host object holds beside p256_field.c,
 # p256_scalar.c and p256_point.c (docs/decisions.md 94): the field and the
 # scalar arithmetic on four 64-bit limbs, the points and the two scalar
 # multiplications over them, and the wipe of the stack their calls used.
 # They are named once, here, for the object, for the test binaries that
 # link a host object's P-256 and for the lints.
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
-                  p256_wide_wipe.c
+                  p256_wide_table.c p256_wide_wipe.c
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -490,6 +491,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/poly1305_equiv_residue.h test/p256_equiv_field.h test/p256_equiv_residue.h \
+         test/p256_equiv_table.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_exact_fill.h \
@@ -3015,15 +3017,15 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # the wide X25519 field and the three wide P-256 files that hold a
 # dispatched entry, and the stubs that count each call
 # (test/widemul_runtime_count.h). WIDEMUL_COUNTED names what the units
-# replace on a link line. p256_field.c and p256_wide_field.c hold no
-# dispatched entry, so a counting binary links both as they are
-# (WIDEMUL_COUNT_FIELDS).
+# replace on a link line. p256_field.c, p256_wide_field.c and the table of
+# multiples of G hold no dispatched entry, so a counting binary links them
+# as they are (WIDEMUL_COUNT_FIELDS).
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_wide.c \
                        test/widemul_count_wide_p256.c
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c
-WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_wipe.c
+WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(WIDEMUL_COUNT_FIELDS)
@@ -6055,13 +6057,19 @@ HASH_HW_BRANCH_CEILING := \
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
-#   p256_wide_mul.c's 1: the ladder's 256 rounds.
-#   p256_wide_wipe.c holds none.
+#   p256_wide_mul.c's 6: the 63 windows the base multiplication adds
+#     after the first, the eight entries a scan of the table reads and
+#     the four limbs of each of an entry's two coordinates, the test for
+#     the top window, whose digit is positive, which reads the window's
+#     number, and the ladder's 256 rounds.
+#   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
+#     holds a branch.
 P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_field.c:8 x86-64/p256_wide_field.c:8 \
   arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
-  arm64/p256_wide_mul.c:1 x86-64/p256_wide_mul.c:1 \
+  arm64/p256_wide_mul.c:6 x86-64/p256_wide_mul.c:6 \
+  arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
@@ -6468,13 +6476,20 @@ lint-runtime-symbols-run:
 lint-bench-numbers:
 	@python3 tools/bench-numbers.py
 
-# The constants of the wide P-256 files (docs/decisions.md 94).
-# tools/p256_wide.py recomputes each one from SEC 2's definition of the
-# curve and compares it with the limbs the source carries, so a wrong
-# limb fails here and names its file. The recipe names the sources the
-# script reads, which is how make impact selects it for them.
+# The constants of the wide P-256 files and the table of multiples of G
+# (docs/decisions.md 94). tools/p256_wide.py recomputes each constant from
+# SEC 2's definition of the curve and compares it with the limbs the
+# source carries, so a wrong limb fails here and names its file. The same
+# script writes p256_wide_table.c, and the second line fails when the
+# checked-in file is not what the script prints: a hand edit of the table,
+# or an edit of the script without its output. The recipe names the files
+# the script reads, which is how make impact selects it for them.
 lint-p256-wide:
 	@python3 tools/p256_wide.py check p256_wide_field.c p256_wide_scalar.c p256_wide_point.c
+	@python3 tools/p256_wide.py table | cmp -s - p256_wide_table.c \
+	  || { echo "lint-p256-wide: p256_wide_table.c is not what tools/p256_wide.py table prints;" \
+	       "regenerate it with: python3 tools/p256_wide.py table > p256_wide_table.c"; exit 1; }
+	@echo "lint-p256-wide: p256_wide_table.c is what tools/p256_wide.py table prints"
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
 # reads the call graph from the relocations objdump prints under each call

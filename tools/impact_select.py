@@ -65,6 +65,7 @@ WRAPPER_GATES = {
     "make handshake-sequence": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_test"],
     "make handshake-sequence-pq": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq"],
     "make lint-stack-walk": ["test/lint-stack-walk.sh"],
+    "make lint-p256-wide": ["test/lint-p256-wide.sh"],
 }
 
 # Targets whose recipe stops unless a variable names what to run, and

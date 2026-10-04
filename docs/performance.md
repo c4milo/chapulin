@@ -866,12 +866,12 @@ The order of the work, by the instructions each item removes from a handshake:
 1. A host session that states its multiply, in 0.2.0, removes 43.9 M of the N2 object's
    50.87 M. That statement is the caller's (decision 89), so this item is colibri's.
 2. k·G from a precomputed table of multiples of G, read by a full scan with mask selection, in
-   place of the ladder. A comb over 64 four-bit windows runs about an eighth of the ladder's 512
-   additions, so it is expected to remove most of the ladder's 4.82 M on the native multiply and
-   of its 14.45 M on the decomposed one. Eight multiples for each of 64 four-bit windows take 32 KiB of affine
-   points, so the table belongs in the host object (decision 89). It reverses the "no
-   precomputed table" statement in `p256_point.h` and `p256_sign.h`, so it needs a ruling first.
-   It needs a CBMC harness for the lookup, and a test that recomputes every table entry from G.
+   place of the ladder: done, for a host session that states its multiply (decision 94). Eight
+   odd multiples for each of 64 four-bit windows take 32 KiB of affine points, and k·G is 64
+   mixed additions. On the M1 Pro under Apple clang 21 a signature went from 1.88 M instructions
+   to 0.53 M and a key generation from 1.58 M to 0.23 M, where OpenSSL 3.6.5 takes 0.18 M and
+   0.17 M. A session without the bit keeps the ladder: the table's additions are the wide
+   field's.
 3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519:
    done (decision 94). On the M1 Pro under Apple clang 21, with the ladder unchanged, a signature
    through `p256_sign` went from 5.52 M instructions to 1.88 M and a key exchange through

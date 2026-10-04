@@ -184,7 +184,8 @@ def shipped_sources():
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
             "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c", "p256_wide_field.c",
-            "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_wipe.c"}
+            "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
+            "p256_wide_wipe.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

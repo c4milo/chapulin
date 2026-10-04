@@ -2540,7 +2540,10 @@ last `ROLE=server` stub, as the entry said it would.
   `chacha20.c`'s loop; no host object takes that variable, and no object
   takes `X25519` or `CHACHA`.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
-  have no table lookups by design.
+  have no table lookups by design. The one table a secret picks from, a
+  host object's multiples of the P-256 generator, is read whole: every
+  entry of a row, in a fixed order, with the entry kept by mask
+  (decision 94).
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
   memcmp/strcmp in library sources, with handshake_parser.c and
   handshake_parser_ee.c allowlisted for their public-data compares — the
@@ -2615,13 +2618,18 @@ last `ROLE=server` stub, as the entry said it would.
   accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
   break its powers, its carries, its lanes, its contract and its limb
   bounds, and the test catches each.
-  The same two specs compile the five wide P-256 files, and hold their
+  The same two specs compile the six wide P-256 files, and hold their
   divisions and 128-bit runtime calls at zero and their conditional
-  branches at 8, 3, 3, 1 and 0 on each: loop control over a public count,
-  the two public tests of a peer's point, and whether a caller asked for
-  Y. `inv16-p256-wide-cswap-branch` writes that field's exchange as an
-  `if` on the mask of a scalar bit, and the count of `p256_wide_field.c`
-  rises to 9. CBMC reads these files, so they have harnesses of their own
+  branches at 8, 3, 3, 6, 0 and 0 on each: loop control over a public
+  count, the two public tests of a peer's point, whether a caller asked
+  for Y, and the test for a scalar's top window, which reads the window's
+  number. `inv16-p256-wide-cswap-branch` writes that field's exchange as
+  an `if` on the mask of a scalar bit, and the count of
+  `p256_wide_field.c` rises to 9.
+  `inv16-p256-wide-table-scan-skips-unselected` makes the scan of the
+  table pass over the entries a digit does not name, and the count of
+  `p256_wide_mul.c` rises to 7. CBMC reads these files, so they have
+  harnesses of their own
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
   `lint-runtime-symbols` builds for rv32ic, where

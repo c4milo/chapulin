@@ -1,5 +1,6 @@
-// P-256 points over the wide field (p256_wide_field.h): the addition formulas, and the two
-// entries of p256_point.h that read and write bytes. A host object (-DCH_CPU_RUNTIME,
+// P-256 points over the wide field (p256_wide_field.h): the two addition formulas the scalar
+// multiplications are built from, and the two entries of p256_point.h that read and write
+// bytes. A host object (-DCH_CPU_RUNTIME,
 // cpu_cfg.h) holds this file beside p256_point.c, and widemul.h runs it for a session whose
 // ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 89 and 94).
 // p256_wide_mul.c holds the two scalar multiplications over these formulas.
@@ -29,6 +30,13 @@ typedef struct {
     p256_wide_fe z;
 } p256_wide_point;
 
+// A finite point in affine coordinates, each in the Montgomery domain. The type has no
+// encoding of the point at infinity.
+typedef struct {
+    p256_wide_fe x;
+    p256_wide_fe y;
+} p256_wide_affine;
+
 // The same point in the other field's limbs.
 void p256_wide_point_from_portable(p256_wide_point *o, const p256_point *a);
 void p256_wide_point_to_portable(p256_point *o, const p256_wide_point *a);
@@ -37,6 +45,12 @@ void p256_wide_point_to_portable(p256_point *o, const p256_wide_point *a);
 // Costello and Batina, EUROCRYPT 2016, Algorithm 4), step for step. It is correct for every
 // pair of inputs, including a = b, a = -b and either operand at infinity. o may alias a or b.
 void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p256_wide_point *b);
+
+// o = a + b for an affine b: the complete mixed addition for curves with a = -3 (the same
+// paper, Algorithm 5), step for step. It is correct for every a: a = b, a = -b and a at
+// infinity among them. o may alias a.
+void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
+                                const p256_wide_affine *b);
 
 // p256_point_from_bytes on the wide field: reads an uncompressed point and returns all ones
 // when the leading byte is 0x04, X and Y are both below p, and the pair satisfies

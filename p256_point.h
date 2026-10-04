@@ -11,10 +11,15 @@
 //
 // Every routine is constant time in every operand: the trip count is a
 // literal, no branch reads a coordinate or a scalar bit, and no memory
-// index comes from either. There is no precomputed table, because a table
+// index comes from either. This file reads no precomputed table: it
+// computes every multiple it adds, so a device object holds none. A table
 // indexed by bits of the nonce is exactly the cache leak that recovers an
-// ECDSA key. p256_point_from_bytes is the one exception and it says so at
-// its own contract: it reads a peer's point, which arrived in the clear.
+// ECDSA key. A host object's second copy of the base multiplication,
+// p256_wide_mul.c, does read a table of multiples of G, and reads it by
+// scanning every entry of a row and keeping one by mask, so no index
+// comes from the nonce there either (p256_wide_table.h, docs/decisions.md
+// 94). p256_point_from_bytes is the one exception and it says so at its
+// own contract: it reads a peer's point, which arrived in the clear.
 //
 // Coordinates are homogeneous projective (X : Y : Z), standing for the
 // affine point (X/Z, Y/Z), with Z = 0 the point at infinity. Every
@@ -92,8 +97,9 @@ void p256_point_cswap(p256_point *a, p256_point *b, uint32_t mask);
 void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
 
 // o = k*G. This is p256_point_mul against p256_point_generator and
-// nothing else: secp256r1's generator gets no precomputed multiples
-// here, so a public key costs exactly what a shared secret costs.
+// nothing else: secp256r1's generator gets no precomputed multiples in
+// this file, so here a public key costs exactly what a shared secret
+// costs.
 void p256_point_base_mul(p256_point *o, const p256_scalar *k);
 
 // Reads an uncompressed point and returns all ones when it is a point

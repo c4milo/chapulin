@@ -5712,7 +5712,8 @@ does nothing more.
     SHA-512 stay on the portable code.
 
 94. **A host object computes P-256 on four 64-bit limbs for a session
-    that states its multiply.** `docs/performance.md`, "Where a server
+    that states its multiply, and k·G from a table of multiples of G.**
+    `docs/performance.md`, "Where a server
     handshake's instructions go", left the ECDSA signature as the largest
     part of a server handshake: 5.51 M instructions on the native
     multiply where OpenSSL took 0.21 M. `p256_field.c` and
@@ -5723,19 +5724,20 @@ does nothing more.
     session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, as
     `x25519_wide.c` is for X25519 (entry 52); k·G from a precomputed
     table of multiples of G; and a device object that keeps today's code
-    and gains no table. This entry records the first. The scalar
-    multiplications here are still `p256_point.c`'s ladder, on the new
-    field, and the table and the key exchange's multiplication each
-    extend the entry when they land.
+    and gains no table. This entry records the first two.
+    `p256_wide_mul`, which the key exchange runs, is still
+    `p256_point.c`'s ladder on the new field, and its own multiplication
+    extends the entry when it lands.
 
     - **The files.** `p256_wide_limb.h` holds the four steps every
       routine is built from: an add with carry, a subtract with borrow,
       one row of a product, and a mask from a bit.
       `p256_wide_field.[ch]` is the field modulo p,
       `p256_wide_scalar.[ch]` the two routines modulo n that multiply,
-      `p256_wide_point.[ch]` the complete addition, the point decode and
-      the affine conversion, and `p256_wide_mul.[ch]` the two scalar
-      multiplications. Every body sits under `CH_CPU_RUNTIME`. The
+      `p256_wide_point.[ch]` the complete addition, the mixed addition,
+      the point decode and the affine conversion, `p256_wide_mul.[ch]`
+      the two scalar multiplications, and `p256_wide_table.[ch]` the
+      table. Every body sits under `CH_CPU_RUNTIME`. The
       Makefile and `build.zig` add the sources to a host object that
       holds `p256_point.c` and to no other object, and
       `lint-trust-separation` holds both halves of that.
@@ -5781,6 +5783,44 @@ does nothing more.
       and its low two limbs four bits at a time. Those four bits index
       the table, and they are bits of a build constant, so the index
       reads the constant and never the scalar.
+    - **The table.** `p256_wide_table.c` holds 64 rows of 8 affine
+      points, 32,768 bytes of constants: entry [i][j] is
+      (2j + 1) 16^i G, each coordinate in the Montgomery domain. Row i is
+      what the four-bit window i of a scalar can add, so k·G is 64
+      additions of one entry each and no doubling, where the ladder ran
+      512 additions. The table is public. It holds multiples of G and
+      nothing of a key.
+    - **Signed odd digits.** `p256_wide_base_mul` computes K G for
+      K = k | 1 and takes G away again, by mask, when k was even. An odd
+      K below 2^256 is 2^255 plus a sum of signs, +1 where the bit above
+      a position is set and -1 where it is clear, and four signs make
+      the digit of a window: odd, between -15 and 15, never zero. So
+      every window adds exactly one entry, whatever the scalar, and a
+      negative digit adds the entry with Y negated, which is why a row
+      holds the eight odd multiples and not sixteen. The top comment of
+      `p256_wide_mul.c` has the derivation, and
+      `proof/p256_wide_digit_harness.c` proves that the 64 digits add up
+      to k | 1 for every k.
+    - **The scan.** A table indexed by bits of the nonce is the cache
+      leak that recovers an ECDSA key, which is why `p256_point.h` said
+      there is no table. `table_select` reads every entry of a row, in
+      the same order for every digit, and keeps one by a mask that is
+      all ones where the entry's number equals the digit's. No address
+      read and no branch depends on the scalar.
+    - **The mixed addition.** A table entry is affine, so
+      `p256_wide_point_add_affine` adds it by Renes, Costello and
+      Batina's Algorithm 5, the complete mixed addition for a = -3: the
+      complete addition with Z2 = 1, 13 products where that one runs 14,
+      and correct for every first operand, the point at infinity and the
+      entry's negative among them.
+    - **The table is generated.** `tools/p256_wide.py table` writes the
+      file from SEC 2's G with the affine group law over Python's
+      integers, and checks each entry against the curve's equation.
+      `make lint-p256-wide` fails when the checked-in file is not what
+      the script prints. `bin/p256_equiv_test` recomputes every entry in
+      C, from `p256_point_generator` with `p256_point_add` and
+      `p256_point_affine`, and no wide routine runs on either side of
+      that comparison.
     - **The stack below a wide call is wiped.** Every wide routine wipes
       the objects it names through `ct_wipe`. A compiler also keeps
       values in stack slots of its own. On arm64 the field multiply keeps
@@ -5806,22 +5846,24 @@ does nothing more.
       `p256_scalar.c` and `p256_field.c` wipe fewer of their temporaries.
       Those files are a device object's too, and this entry leaves them
       as they are.
-    - **Proofs.** Seven launch lines, each under `-DCH_CPU_RUNTIME` and
+    - **Proofs.** Eight launch lines, each under `-DCH_CPU_RUNTIME` and
       `--unsigned-overflow-check`. `p256_wide_row` proves on the real
       multiply that one row of a product wraps nothing. `p256_wide_field`
       proves every routine with no product against a reference that
       branches, and the field's reduction to its bound: any value below
       p 2^256 lands below p. `p256_wide_field_mul` and `p256_wide_scalar`
       run the products over a contract for the row, `p256_wide_point` the
-      formulas over the field's stubs, and `p256_wide_mul` all 256 rounds
-      of both multiplications over the point's. Neither inversion runs
+      formulas over the field's stubs, and `p256_wide_mul` every window
+      of the base multiplication and all 256 rounds of the ladder over
+      the point's. `p256_wide_digit` proves the digits' sum, and that the
+      scan returns the row's entry at the index. Neither inversion runs
       whole: each product takes the address of 13 to 17 locals, cbmc's
       symbolic execution grows with the square of the objects it tracks,
       and the field's chain was stopped after 11 minutes with no formula.
       `docs/verification.md`, "p256_wide", lists what is proved and what
       is not.
     - **Tests.** `bin/p256_equiv_test` runs the wide files and the 32-bit
-      files on the same inputs, 63,455 comparisons of limbs, bytes and
+      files on the same inputs, 66,971 comparisons of limbs, bytes and
       verdicts, and then measures the stack. `tools/p256_wide.py`
       recomputes every constant the wide files hold from the SEC 2
       values, in `make lint`. The host binaries run RFC 6979's vectors,
@@ -5841,7 +5883,14 @@ does nothing more.
       of `p256_wide_field.c` rises from 8 to 9. A proof catches three:
       the scalar's conditional subtraction that ignores the limb above
       the four, a reduction round whose sum can wrap, and an exponent
-      index that reads past its array.
+      index that reads past its array. Seven hold the table. The
+      equivalence binary catches a scan that skips an entry, a table limb
+      off by one and a multiplication that drops the correction for an
+      even scalar. The digit proof catches a digit whose sign reads the
+      wrong bit. A scan that passes over the entries a digit does not
+      name raises the branch count of `p256_wide_mul.c` from 6 to 7.
+      `make lint-p256-wide` catches a table edited by hand and a
+      generator that writes another table.
 
     Rejected:
 
@@ -5859,10 +5908,23 @@ does nothing more.
       multiply's timing is the caller's statement, as the 32x32 one's is
       (entry 89), so a session that has not made it runs the
       decomposition.
+    - **The table for a session without the bit.** The table's additions
+      are the wide field's, so a session that runs the 32-bit files
+      keeps the ladder and reads no table.
+    - **Reading the table by index.** One load in place of a scan of
+      eight entries, and the cache line it touches names four bits of
+      the nonce.
+    - **Sixteen entries a row, with unsigned digits.** A digit of zero
+      would add nothing, so the sequence of operations would depend on
+      the scalar, or a row would need an entry for zero and a masked
+      skip. Signed odd digits need neither and halve the table.
+    - **A wider window.** Five bits make 52 rows of 16 entries, 53,248
+      bytes, for 12 additions fewer. It was not measured.
 
-    Cost: under Apple clang 21 at `-O2` the five wide objects take 7,680
-    bytes of code and constants on arm64, where the two native copies
-    took 5,024, and 9,913 on x86-64, where they took 7,071. One wipe of
+    Cost: under Apple clang 21 at `-O2` the six wide objects take 41,816
+    bytes of code and constants on arm64, 32,768 of them the table,
+    where the two native copies took 5,024, and 44,312 on x86-64, where
+    they took 7,071. One wipe of
     2,400 bytes after each wide call that takes a secret is 239
     instructions on the M1 Pro; a signature makes five and a key exchange
     two. `p256_wide_limb.h` uses two builtins that are not C11.
@@ -5873,13 +5935,15 @@ does nothing more.
     3.6.5 through `EVP_PKEY_sign`, `EVP_PKEY_derive` and
     `EVP_PKEY_keygen`:
 
-    | | 0.2.0, with the bit | this entry, with the bit | without the bit | OpenSSL |
-    | --- | --- | --- | --- | --- |
-    | `p256_sign` | 5,523,706 | 1,881,003 | 16,309,927 | 177,149 |
-    | `p256_ecdh` | 5,039,772 | 1,579,480 | 15,102,085 | 480,768 |
-    | `p256_ecdh_keygen` | 5,039,243 | 1,580,316 | 15,094,662 | 173,882 |
+    | | 0.2.0, with the bit | on 64-bit limbs | and the table | without the bit | OpenSSL |
+    | --- | --- | --- | --- | --- | --- |
+    | `p256_sign` | 5,523,706 | 1,881,003 | 532,126 | 16,309,927 | 177,149 |
+    | `p256_ecdh` | 5,039,772 | 1,579,480 | 1,578,406 | 15,102,085 | 480,768 |
+    | `p256_ecdh_keygen` | 5,039,243 | 1,580,316 | 232,046 | 15,094,662 | 173,882 |
 
-    Both multiplications are still the ladder's 512 complete additions,
-    which is why the signature is ten times OpenSSL's and the key
-    exchange three times. The table and the key exchange's
-    multiplication are what removes them.
+    The key exchange is still the ladder's 512 complete additions, three
+    times OpenSSL's instructions, until its own multiplication lands. A
+    signature is three times OpenSSL's, and 239,372 of its instructions
+    are the RFC 6979 nonce: `p256_sign.c` draws four candidates through
+    HMAC-SHA-256 on `sha256.c`'s portable compression function, which
+    `docs/performance.md`'s plan takes up as its own item.

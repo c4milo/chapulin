@@ -132,9 +132,10 @@ Other targets:
   the multiply at both widths (decisions 52 and 89). P-256 takes its
   second copy the same way: with the bit a session signs and exchanges
   keys on the four 64-bit limbs of `p256_wide_field.c` and
-  `p256_wide_scalar.c`, and without it on `p256_field.c`'s and
-  `p256_scalar.c`'s eight 32-bit limbs on the decomposition (decision
-  94).
+  `p256_wide_scalar.c`, and computes k·G from `p256_wide_table.c`'s
+  32 KiB of multiples of the generator, and without it on
+  `p256_field.c`'s and `p256_scalar.c`'s eight 32-bit limbs on the
+  decomposition, with no table (decision 94).
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with
   FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your

@@ -5,8 +5,9 @@
 // 94).
 //
 // Both take and leave p256_point.h's scalar and point, and keep the wide limbs inside the
-// call. Both are constant time in the scalar and in the point: the trip count is a literal,
-// and no branch and no memory index reads a scalar bit or a coordinate. Both wipe every
+// call. Both are constant time in the scalar and in the point. Every trip count is a literal.
+// Every read of the table scans its whole row and keeps one entry by mask, so no address read
+// depends on the scalar. No branch reads a scalar bit or a coordinate. Both wipe every
 // multiple of the point they held before they return.
 #ifndef CH_P256_WIDE_MUL_H
 #define CH_P256_WIDE_MUL_H
@@ -21,7 +22,9 @@
 // bit, on the wide field.
 void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
 
-// o = k*G, as p256_point_base_mul computes it: p256_wide_mul against secp256r1's generator.
+// o = k*G, as p256_point_base_mul computes it, for secp256r1's generator G: 64 additions of
+// entries of the table of multiples of G (p256_wide_table.h), one for each four-bit window of
+// k, and no doubling.
 void p256_wide_base_mul(p256_point *o, const p256_scalar *k);
 
 #endif // CH_CPU_RUNTIME

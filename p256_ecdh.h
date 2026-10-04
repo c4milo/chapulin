@@ -23,11 +23,15 @@
 // a shared secret are 32 big-endian bytes. The compressed forms are not
 // read, and a peer that sends one is refused.
 //
-// Cost. One key exchange runs 512 point additions: the ladder takes one
-// scalar bit per round, and each round adds and doubles whatever the bit
-// is. There is no precomputed multiple of the generator, so a public key
-// costs the same as a shared secret. A table would cost the SRAM this
-// library does not spend and a masked scan over every entry to read it.
+// Cost. On p256_point.c one key exchange runs 512 point additions: the
+// ladder takes one scalar bit per round, and each round adds and doubles
+// whatever the bit is. That file holds no precomputed multiple of the
+// generator, so there a public key costs the same as a shared secret, and
+// a device object spends no memory on a table. A host session whose
+// caller stated its multiply runs the wide files (docs/decisions.md 94):
+// a public key is 64 additions of entries of a 32 KiB table of multiples
+// of the generator, each read by a masked scan over its row, and a shared
+// secret is the same ladder on the wide field.
 #ifndef CH_P256_ECDH_H
 #define CH_P256_ECDH_H
 

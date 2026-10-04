@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: proof/prove-one.sh p256_wide_digit
+reason: a window's digit takes its sign from the window's own top bit,
+  bit 4i + 3, where the recoding takes it from the bit above the window,
+  bit 4i + 4. The digits then no longer add up to k | 1.
+  proof/p256_wide_digit_harness.c proves that sum for every 256-bit k,
+  where a vector holds it for the scalars it carries. Each run is a
+  proof, so this belongs to the nightly's test-invariants-proof-backed
+  job.
+
+--- old
+        positive = scalar_bit(k, low + WINDOW_BITS);
+--- new
+        positive = scalar_bit(k, low + WINDOW_BITS - 1);

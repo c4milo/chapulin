@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-86 of the 109 C sources in the tree root are compiled into a
+87 of the 110 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -654,11 +654,11 @@ The entries are grouped by area:
 
 #### p256_wide
 
-- **Harnesses:** `p256_wide_row` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
 - **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
-  `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c` and
-  `p256_wide_wipe.c`, decision 94), under `-DCH_CPU_RUNTIME`, with
-  `--unsigned-overflow-check` on every line.
+  `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c`,
+  `p256_wide_table.c` and `p256_wide_wipe.c`, decision 94), under
+  `-DCH_CPU_RUNTIME`, with `--unsigned-overflow-check` on every line.
 - **Proves:**
   - `p256_wide_row`: on the real 64x64->128 multiply, one row of a
     product, x times four limbs plus four limbs, wraps nothing for any
@@ -690,19 +690,28 @@ The entries are grouped by area:
     moves with a loop counter, `exponent_low_nibble`, is in bounds and
     returns a value below 16 at every position the loop passes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
-    shapes, `p256_wide_point_from_bytes` over any 65 bytes and
+    shapes, `p256_wide_point_add_affine` in both of its shapes,
+    `p256_wide_point_from_bytes` over any 65 bytes and
     `p256_wide_point_affine` with and without a y output, over the field
     stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
-  - `p256_wide_mul`: the whole of `p256_wide_mul` and
-    `p256_wide_base_mul`, all 256 rounds of the shipped loop, over the
-    point formulas stubbed to their contracts. The scalar index and
-    shift are in bounds at every round, and every mask handed to
-    `p256_wide_fe_cswap` is 0 or all ones.
+  - `p256_wide_digit`: the digits and the scan of the table, on their
+    real bodies. For every 256-bit k, the 64 signed odd digits
+    `window_digit` returns add up to k | 1, each digit's index is inside
+    a row, its sign is a mask, and the top window's digit is positive.
+    `table_select` returns the row's entry at the index, limb for limb,
+    for any row contents and every index, and `equal_mask` is all ones
+    exactly for equal values.
+  - `p256_wide_mul`: the whole of `p256_wide_base_mul`, every window of
+    the shipped loop, and of `p256_wide_mul`, all 256 rounds, over the
+    point formulas stubbed to their contracts and the shipped table. The
+    scalar's bits, the table's rows and each step of a scan are in
+    bounds at every trip, and every mask handed to `p256_wide_fe_cmov`
+    and `p256_wide_fe_cswap` is 0 or all ones.
   - `p256_wide_wipe`: `p256_wide_wipe_below` calls `wipe_frame` through
     its volatile pointer, and the wipe covers the array of
     `P256_WIDE_BELOW_LEN` bytes and no byte outside it.
 - **Bound:** full-range limbs, any 65-byte point, any scalar, scalar
-  bits 0..255, exponent nibbles 0..31.
+  bits 0..255, windows 0..63, row entries 0..7, exponent nibbles 0..31.
 - **Not proved:**
   - a product's value, and so that the scalar's `mont_mul` leaves a
     value below n, that either inverse computes an inverse and that the
@@ -713,6 +722,11 @@ The entries are grouped by area:
     17 locals, cbmc's symbolic execution grows with the square of the
     objects it tracks, and the field's chain of 267 products was stopped
     after 11 minutes with no formula.
+  - that a scan of the table reads every entry whatever the index
+    holds. A formula over values cannot state it: the code reads
+    `row[j]` for every j of a loop whose count is a literal, and
+    `lint-wide-multiply` holds the file's conditional branches at their
+    ceiling.
   - that the array `p256_wide_wipe_below` wipes lies where the frames of
     the call before it lay. That is the compiler's layout and not a
     property of C.
@@ -2194,12 +2208,13 @@ here and not machine checked.
 
 A host session with the multiply bit signs and exchanges keys on
 `p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_point.c` and
-`p256_wide_mul.c` (decision 94). The 32-bit files carry the Python
+`p256_wide_mul.c`, and computes k·G from `p256_wide_table.c` (decision
+94). The 32-bit files carry the Python
 vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 63,455 comparisons, and requires the
+  32-bit files on the same inputs, 66,971 comparisons, and requires the
   same limbs, bytes and verdicts. Both fields keep an element in the
   Montgomery domain with R = 2^256, so each comparison is of limbs taken
   two at a time, not of a value read back through another routine:
@@ -2211,14 +2226,27 @@ the wide files to the same answers:
   - the complete addition on 3,000 pairs of random coordinates, which
     are on no curve, and on a point with itself, with its negative and
     with the point at infinity on either side;
+  - every one of the 512 entries of the table of multiples of G,
+    recomputed from `p256_point_generator` with `p256_point_add` and
+    `p256_point_affine`: row i starts four doublings above the row
+    before, and each entry must be the affine bytes of the odd multiple
+    it stands for. The entry's limbs leave the Montgomery domain through
+    `p256_field.c`, so no wide routine runs on either side;
+  - the mixed addition on 3,000 pairs of random coordinates and on a
+    point with the generator, the generator with itself, with its
+    negative and with the point at infinity, limb for limb against the
+    complete addition with Z = 1;
   - the point decode on a point and on each way a point is refused, and
     the affine conversion on a finite point and on the point at infinity;
   - both scalar multiplications on 16 scalars at the edges, 0, 1, n - 1,
     n, n + 1 and 2^256 - 1 among them, and on 40 random ones, half of
     them even;
   - a key pair, a signature and a shared secret under both answers.
-- `tools/p256_wide.py`, in `make lint`, recomputes every constant the
-  wide files hold from the SEC 2 values: the prime and the order in
+- `tools/p256_wide.py`, in `make lint`, writes the table from SEC 2's G
+  with Python's integers, and `make lint-p256-wide` fails when the
+  checked-in file is not what it prints. The same script recomputes
+  every constant the wide files hold from the SEC 2 values: the prime
+  and the order in
   64-bit limbs, 2^256 and 2^512 modulo each, the curve's b times 2^256,
   `N0_INV`, and the low half of n - 2 that `p256_wide_scalar_inverse`
   reads four bits at a time. It also checks that the runs of ones each

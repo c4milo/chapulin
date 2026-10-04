@@ -4,11 +4,11 @@
 // coordinate. The real bodies are proven in proof/p256_wide_point_harness.c.
 //
 // Why this exists: one scalar multiplication runs hundreds of point
-// formulas, each of them more than forty field calls, and a formula that
+// formulas, each of them more than thirty field calls, and a formula that
 // unrolled them returned no verdict for p256_point.c's ladder in 42 minutes
-// (proof/run.sh). Over these stubs the whole multiplication is one formula,
-// so every index its loop builds from a counter is proven in bounds on the
-// shipped loop, at every trip.
+// (proof/run.sh). Over these stubs each whole multiplication is one formula,
+// so every index its loops build from a counter is proven in bounds on the
+// shipped loops, at every trip.
 //
 // Every output is stored through the coordinate's own type, never a byte
 // fill of a point (docs/proofs.md).
@@ -48,6 +48,13 @@ void p256_wide_point_to_portable(p256_point *o, const p256_wide_point *a) {
 void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p256_wide_point *b) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "add: first point readable");
     __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b), "add: second point readable");
+    havoc_wide_point(o);
+}
+
+void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
+                                const p256_wide_affine *b) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "add_affine: first point readable");
+    __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b), "add_affine: affine point readable");
     havoc_wide_point(o);
 }
 

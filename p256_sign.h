@@ -40,16 +40,23 @@
 // What the constant-time claim covers, and what it does not.
 //
 // Covered. Every value derived from the private scalar or from the nonce
-// moves through p256_scalar.c and p256_point.c, whose routines have no
-// operand-dependent branch and no operand-dependent memory index. The
-// scalar multiplication runs a literal 256 rounds with the same two
-// point additions in each, so neither the value of the nonce nor its bit
-// length changes how long a signature takes. There is no precomputed
-// multiple of the generator, so there is no table for a cache attacker
-// to watch. The nonce generator runs a literal number of candidates and
-// picks one with mask arithmetic, so a rejected candidate costs the same
-// as an accepted one. Every product goes through ct.h's ct_widemul, so a
-// core whose widening multiply is variable time does not see one.
+// moves through p256_scalar.c and p256_point.c, or, in a host session
+// whose caller stated its multiply, through the wide files that stand in
+// for them (widemul.h, docs/decisions.md 94). Neither set of routines has
+// an operand-dependent branch or an operand-dependent memory index. In
+// p256_point.c the scalar multiplication runs a literal 256 rounds with
+// the same two point additions in each, and reads no precomputed multiple
+// of the generator. In the wide files it adds one entry of a table of
+// multiples of the generator for each of 64 windows of the nonce, and
+// reads that entry by scanning every entry of the window's row and
+// keeping one by mask, so the addresses a cache attacker can watch are the
+// same for every nonce. Either way neither the value of the nonce nor its
+// bit length changes how long a signature takes. The nonce generator runs
+// a literal number of candidates and picks one with mask arithmetic, so a
+// rejected candidate costs the same as an accepted one. Every product of
+// the two files goes through ct.h's ct_widemul, so a core whose widening
+// multiply is variable time does not see one, and the wide files multiply
+// only for a session whose caller stated that multiply's timing.
 //
 // Not covered, first: the outputs. r and s are public -- they go on the
 // wire -- so the DER writer's leading-zero handling reads their values

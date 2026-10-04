@@ -94,6 +94,63 @@ void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p25
     o->z = z3;
 }
 
+// Renes-Costello-Batina Algorithm 5, the complete mixed addition for a = -3, step for step
+// in the paper's order and with the paper's register names. It is Algorithm 4 with Z2 = 1:
+// the products by Z2 are gone, and what is left computes the same three coordinates.
+void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
+                                const p256_wide_affine *b) {
+    p256_wide_fe t0;
+    p256_wide_fe t1;
+    p256_wide_fe t2;
+    p256_wide_fe t3;
+    p256_wide_fe t4;
+    p256_wide_fe x3;
+    p256_wide_fe y3;
+    p256_wide_fe z3;
+
+    p256_wide_fe_mul(&t0, &a->x, &b->x);
+    p256_wide_fe_mul(&t1, &a->y, &b->y);
+    p256_wide_fe_add(&t3, &b->x, &b->y);
+    p256_wide_fe_add(&t4, &a->x, &a->y);
+    p256_wide_fe_mul(&t3, &t3, &t4);
+    p256_wide_fe_add(&t4, &t0, &t1);
+    p256_wide_fe_sub(&t3, &t3, &t4);
+    p256_wide_fe_mul(&t4, &b->y, &a->z);
+    p256_wide_fe_add(&t4, &t4, &a->y);
+    p256_wide_fe_mul(&y3, &b->x, &a->z);
+    p256_wide_fe_add(&y3, &y3, &a->x);
+    p256_wide_fe_mul(&z3, &B_MONT, &a->z);
+    p256_wide_fe_sub(&x3, &y3, &z3);
+    p256_wide_fe_add(&z3, &x3, &x3);
+    p256_wide_fe_add(&x3, &x3, &z3);
+    p256_wide_fe_sub(&z3, &t1, &x3);
+    p256_wide_fe_add(&x3, &t1, &x3);
+    p256_wide_fe_mul(&y3, &B_MONT, &y3);
+    p256_wide_fe_add(&t1, &a->z, &a->z);
+    p256_wide_fe_add(&t2, &t1, &a->z);
+    p256_wide_fe_sub(&y3, &y3, &t2);
+    p256_wide_fe_sub(&y3, &y3, &t0);
+    p256_wide_fe_add(&t1, &y3, &y3);
+    p256_wide_fe_add(&y3, &t1, &y3);
+    p256_wide_fe_add(&t1, &t0, &t0);
+    p256_wide_fe_add(&t0, &t1, &t0);
+    p256_wide_fe_sub(&t0, &t0, &t2);
+    p256_wide_fe_mul(&t1, &t4, &y3);
+    p256_wide_fe_mul(&t2, &t0, &y3);
+    p256_wide_fe_mul(&y3, &x3, &z3);
+    p256_wide_fe_add(&y3, &y3, &t2);
+    p256_wide_fe_mul(&x3, &t3, &x3);
+    p256_wide_fe_sub(&x3, &x3, &t1);
+    p256_wide_fe_mul(&z3, &t4, &z3);
+    p256_wide_fe_mul(&t1, &t3, &t0);
+    p256_wide_fe_add(&z3, &z3, &t1);
+
+    // o may alias a, so the three coordinates move only now.
+    o->x = x3;
+    o->y = y3;
+    o->z = z3;
+}
+
 uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     p256_wide_point point;
     p256_wide_fe x;

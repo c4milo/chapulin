@@ -8,6 +8,10 @@
 //   ladder performs and the shape a formula that wrote a coordinate before
 //   its last read would get wrong;
 //
+//   the same in p256_wide_point_add_affine, in both shapes the base
+//   multiplication uses: separate output, and output over the projective
+//   input;
+//
 //   memory safety in p256_wide_point_from_bytes over any 65 bytes, and that
 //   its answer is 0 or UINT32_MAX, the mask p256_point.h promises, whichever
 //   64-bit mask the field gave it: the low half of a 64-bit mask is a 32-bit
@@ -24,11 +28,10 @@
 // stubbed, so nothing here depends on a field value, and the real field
 // bodies are proven in the three p256_wide_field harnesses.
 //
-// Not proven here: that the 43 steps of p256_wide_point_add compute the
-// group law. bin/p256_equiv_test holds the routine to p256_point_add's
-// coordinates, limb for limb, on random and structured operands, and that
-// routine's steps are checked against an affine reference in
-// test/gen_p256_sign_vectors.py.
+// Not proven here: that the two formulas compute the group law.
+// bin/p256_equiv_test holds both to p256_point_add's coordinates, limb for
+// limb, on random and structured operands, and that routine's steps are
+// checked against an affine reference in test/gen_p256_sign_vectors.py.
 #include "p256_wide_field_stubs.h"
 
 #include "p256_wide_point.c"
@@ -70,6 +73,21 @@ static void prove_add_aliasing(void) {
     p256_wide_point_add(&a, &a, &a); // o == a == b, the ladder's doubling
 }
 
+static void prove_add_affine(void) {
+    p256_wide_point a;
+    p256_wide_point o;
+    p256_wide_affine b;
+
+    wide_point_nondet(&a);
+    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
+        b.x.limb[i] = nondet_u64();
+        b.y.limb[i] = nondet_u64();
+    }
+    p256_wide_point_add_affine(&o, &a, &b);
+    wide_point_nondet(&a);
+    p256_wide_point_add_affine(&a, &a, &b); // o == a, the shape the base multiplication adds in
+}
+
 static void prove_from_bytes(void) {
     uint8_t in[P256_POINT_LEN];
     p256_point o;
@@ -104,6 +122,7 @@ static void prove_copies(void) {
 
 int main(void) {
     prove_add_aliasing();
+    prove_add_affine();
     prove_from_bytes();
     prove_affine();
     prove_copies();

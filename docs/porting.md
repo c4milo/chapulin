@@ -81,7 +81,10 @@ scalar of four 64-bit limbs, `p256_wide_field.c` and `p256_wide_scalar.c`, with
 the point arithmetic over them, beside the eight 32-bit limbs of `p256_field.c`
 and `p256_scalar.c` that every object with the curve holds. A session with the
 bit signs and exchanges keys on the 64-bit limbs, and one without it on the
-32-bit limbs over the decomposition (decision 94).
+32-bit limbs over the decomposition (decision 94). The host object also holds a
+32 KiB table of multiples of the curve's generator, constants that a session with
+the bit reads for a signature's and a key generation's multiplication, every entry
+of a row at each step. A device object holds no table.
 
 A host object computes ChaCha20 several blocks at a time in 128-bit vectors in
 every session, eight on NEON on arm64 and four on SSE2 on x86-64, which every

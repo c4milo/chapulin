@@ -21,8 +21,10 @@
 //     even;
 //   - a signature, a key pair and a shared secret under both answers.
 //
-// test/p256_equiv_residue.h then looks at what the wide calls leave on
-// the stack.
+// test/p256_equiv_table.h recomputes the table of multiples of G that the
+// base multiplication reads, and holds the mixed addition to the complete
+// one. test/p256_equiv_residue.h then looks at what the wide calls leave
+// on the stack.
 //
 // The random inputs come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_P256_EQUIV_SEED.
@@ -378,6 +380,7 @@ static void run_entries(void) {
 }
 
 #include "p256_equiv_residue.h"
+#include "p256_equiv_table.h"
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
@@ -385,6 +388,8 @@ int main(void) {
     run_field_vectors();
     run_scalar();
     run_points();
+    run_table();
+    run_formulas();
     run_decode();
     run_entries();
     run_stack();

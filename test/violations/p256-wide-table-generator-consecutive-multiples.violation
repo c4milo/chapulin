@@ -1,0 +1,15 @@
+invariant: INV-16
+file: tools/p256_wide.py
+catches: test/lint-p256-wide.sh
+reason: the generator steps through a row by adding the row's base point,
+  so a row holds the multiples 1, 2, ..., 8 where the base multiplication
+  reads 1, 3, ..., 15. The script's own check passes, since every entry
+  is still on the curve. make lint-p256-wide compares the script's output
+  with the checked-in table, which bin/p256_equiv_test holds to G, so a
+  generator that drifts from the table fails before anyone regenerates
+  the file with it.
+
+--- old
+            row.append(add(row[-1], twice))
+--- new
+            row.append(add(row[-1], base))
