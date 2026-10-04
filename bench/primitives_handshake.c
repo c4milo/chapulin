@@ -4,14 +4,18 @@
 // test/tcp_nonblocking_loop_test.c drives. bench/primitives.sh builds it from
 // the Makefile's TCP_NONBLOCKING_LOOP_SRCS, the ROLE=both
 // TRANSPORT=tcp-nonblocking source list, once per pinned algorithm: the default
-// build pins an RSA modulus and CH_PIN_ECDSA pins a P-256 point.
+// build pins an RSA modulus and CH_PIN_ECDSA pins a P-256 point. The timed
+// programs are host objects, and both ends' ch_cfg.cpu is the --cpu value
+// (primitives.h).
 //
 // Each sample is one handshake from two fresh sessions to both ends
 // connected. The clock is also read around every call into either
 // driver, so a sample splits into the time spent inside the client's
 // calls and the time spent inside the server's. The two parts do not add
 // up to the whole: the rest is the clock reads themselves and the loop
-// that carries bytes between the ends.
+// that carries bytes between the ends. The whole row also carries the
+// instructions one handshake retired; the two sides carry none, because a
+// count around each call would cost more than the clock read does.
 //
 // The auth mode is pinned for the reason
 // test/tcp_nonblocking_loop_test.c gives: the client pins the server's
@@ -216,10 +220,10 @@ static void configure(const identity *id) {
     client_cfg.server_pubkey = id->pub;
     client_cfg.server_pubkey_len = id->pub_len;
 #ifdef CH_CPU_RUNTIME
-    // The host object's program: both ends state the multiply's timing, so
-    // every operation runs its native copy and X25519 the wide field.
-    server_cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
-    client_cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    // A host object's program: both ends describe the CPU with the value
+    // the run was given, and each init call refuses one it does not take.
+    server_cfg.cpu = bench_cpu;
+    client_cfg.cpu = bench_cpu;
 #endif
 }
 
@@ -311,6 +315,7 @@ static void measure_identity(const identity *id) {
     for (size_t s = 0; s < bench_warmup_count(first); s++) {
         handshake_once();
     }
+    uint64_t instructions = bench_instructions();
     for (size_t s = 0; s < count; s++) {
         start = bench_now_ns();
         handshake_once();
@@ -318,9 +323,11 @@ static void measure_identity(const identity *id) {
         client_part[s] = side_ns[CLIENT];
         server_part[s] = side_ns[SERVER];
     }
-    bench_record(id->name, "op", 0, count, bench_stat_of(whole, count));
-    bench_record(id->client_name, "op", 0, count, bench_stat_of(client_part, count));
-    bench_record(id->server_name, "op", 0, count, bench_stat_of(server_part, count));
+    instructions = bench_instructions() - instructions;
+    bench_print(id->name, "op", 0, count, bench_stat_of(whole, count),
+                (double)instructions / (double)count);
+    bench_print(id->client_name, "op", 0, count, bench_stat_of(client_part, count), 0.0);
+    bench_print(id->server_name, "op", 0, count, bench_stat_of(server_part, count), 0.0);
 }
 
 static void measure_handshakes(void) {

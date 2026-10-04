@@ -14,15 +14,17 @@
 //
 // What a row times. bench/record_rows.c defines one function per row and
 // says what each calls. The whole rows call the library's own objects:
-// rec_seal and rec_open, and the AEAD entries record.c calls. The stage
-// rows call the library's functions where they are external, and entries
-// in the stage sources bench/record_stages.h lists where a stage is
-// static. Two stages have no function of their own: the last partial
+// rec_seal and rec_open, and the AEAD entries record.c calls, alone and
+// with the AES key expanded for the record, as record.c expands it. The
+// stage rows call the library's functions where they are external, and
+// entries in the stage sources bench/record_stages.h lists where a stage
+// is static. Three stages have no function of their own: the last partial
 // block of gcm.c's counter_mode, which is counter_mode less the whole
-// blocks it hands the AES instructions, and the exclusive-or in
-// chacha20_xor's loop. Each is a difference of two timed rows, which
-// record_rows.c lists. Each check line prints a whole and the sum of its
-// parts.
+// blocks it hands the AES instructions; the exclusive-or in the vector
+// ChaCha20's loop; and ChaCha20-Poly1305's work on a record's bytes, which
+// is the AEAD less its tag's fixed work. Each is a difference of two timed
+// rows, which record_rows.c lists. Each check line prints a whole and the
+// sum of its parts.
 //
 // Method, after pepegrillo's docs/performance.md
 // (https://github.com/c4milo/pepegrillo/blob/main/docs/performance.md):

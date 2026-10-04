@@ -4,15 +4,17 @@
 // that answer before any sample is taken, so a broken build fails
 // instead of timing garbage.
 //
-// Two groups, split the way the aead and hash groups are. verify runs
-// p256.c, p384.c, rsa.c and rsa_pkcs1.c, whose inputs are all public and
-// whose products use the compiler's own multiply, so CH_NATIVE_WIDEMUL
-// compiles them to the same code. secret_key runs x25519.c,
-// mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c, whose
-// products go through ct.h's ct_widemul, so bench/primitives.sh times
-// it under both builds. A third group, x25519, holds secret_key's two
-// x25519 rows alone, for the host object's program, which runs them on
-// x25519_wide.c.
+// Two groups. verify runs p256.c, p384.c, rsa.c and rsa_pkcs1.c, whose
+// inputs are all public and whose products use the compiler's own
+// multiply, so no bit of ch_cfg.cpu changes them today. secret_key runs
+// x25519.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c,
+// whose products go through ct.h's widening multiply: under
+// CH_CPU_CONSTANT_TIME_MULTIPLY its rows run the native copies of those
+// files and X25519 the wide field, x25519_wide.c, and without the bit the
+// 16x16 decomposition (widemul.h).
+//
+// The key generation and encapsulation rows take their random bytes as
+// arguments, as the library's calls do, so they time no draw.
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
 // TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont.c's loops
@@ -41,6 +43,10 @@
 #include "rsa_sign_vectors.h"
 #include "rsa_wide_vectors.h"
 #include "widemul.h"
+
+#ifndef CH_CPU_RUNTIME
+#error "bench/primitives.sh builds these rows as a host object, with -DCH_CPU_RUNTIME"
+#endif
 
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -300,7 +306,8 @@ static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN])
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(rsa_pss_sign(k, hash, salt, sig, sizeof sig, &sig_len) == 1, "rsa_pss_sign failed");
+    expect(widemul_rsa_pss_sign(BENCH_WIDEMUL, k, hash, salt, sig, sizeof sig, &sig_len) == 1,
+           "rsa_pss_sign failed");
     expect(rsa_pss_verify(k->n, k->n_len, hash, sig, sig_len) == 1,
            "rsa_pss_verify refused rsa_pss_sign's signature");
 }
@@ -324,7 +331,8 @@ static void run_rsa_sign(const ch_rsa_priv *k) {
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(rsa_pss_sign(k, rsa_message_hash, salt, sig, sizeof sig, &sig_len) == 1,
+    expect(widemul_rsa_pss_sign(BENCH_WIDEMUL, k, rsa_message_hash, salt, sig, sizeof sig,
+                                &sig_len) == 1,
            "rsa_pss_sign failed");
     bench_consume(sig, 1);
 }
@@ -367,7 +375,3 @@ static const bench_row SECRET_KEY_ROWS[] = {
 
 const bench_group BENCH_VERIFY = {"verify", VERIFY_ROWS, COUNT(VERIFY_ROWS), NULL};
 const bench_group BENCH_SECRET_KEY = {"secret_key", SECRET_KEY_ROWS, COUNT(SECRET_KEY_ROWS), NULL};
-// The two x25519 rows alone, the first two of secret_key, for the host
-// object's program: the wide field is the only code its rows run that the
-// CH_NATIVE_WIDEMUL program's do not.
-const bench_group BENCH_X25519 = {"x25519", SECRET_KEY_ROWS, 2, NULL};

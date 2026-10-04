@@ -1,6 +1,6 @@
 // The measurement method bench/primitives.c implements, and the row
 // tables the files beside it hand to it. bench/primitives.sh builds two
-// programs from these files: one times the primitives
+// kinds of program from these files: one times the primitives
 // (primitives_symmetric.c, primitives_public_key.c), and one times whole
 // handshakes between this tree's client and server
 // (primitives_handshake.c). None of this is library code.
@@ -10,16 +10,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// The answer every row built on the widening multiply runs under
-// (widemul.h, which the files that use this include). A device object's
-// program runs the one its build states. The host object's program,
-// built with -DCH_CPU_RUNTIME, runs the answer of a session whose
-// ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY: the native copies, and
-// for X25519 the wide field (docs/decisions.md 89).
 #ifdef CH_CPU_RUNTIME
-#define BENCH_WIDEMUL WIDEMUL_CONSTANT_TIME
-#else
-#define BENCH_WIDEMUL WIDEMUL_BUILD_ANSWER
+// The ch_cfg.cpu value every row runs under, from the --cpu option. Every
+// timed program is a host object, which holds each fast path beside the
+// portable code (cpu_cfg.h, docs/decisions.md 89), and each row hands this
+// value to the call a session hands its own to. BENCH_WIDEMUL is the answer
+// the value gives the calls that take one (widemul.h, which the files that
+// use it include): the native copies and the wide X25519 field under
+// CH_CPU_CONSTANT_TIME_MULTIPLY, and the 16x16 decomposition without it.
+extern uint32_t bench_cpu;
+#define BENCH_WIDEMUL widemul_of_cpu(bench_cpu)
 #endif
 
 // One timed operation. A row whose unit is "byte" runs once per payload
@@ -38,7 +38,7 @@ typedef struct {
 } bench_row;
 
 // A named set of rows, or, when rows is NULL, a group that takes its own
-// samples through measure and hands them to bench_record.
+// samples through measure and hands them to bench_print.
 typedef struct {
     const char *name;
     const bench_row *rows;
@@ -52,14 +52,14 @@ extern const bench_group BENCH_CIPHER;
 extern const bench_group BENCH_AEAD;
 extern const bench_group BENCH_VERIFY;
 extern const bench_group BENCH_SECRET_KEY;
-extern const bench_group BENCH_X25519;
 extern const bench_group BENCH_HANDSHAKE;
 
-// The build this program was compiled as, for the CSV's build column.
-extern const char *const BENCH_BUILD;
-
-// Nanoseconds from a monotonic clock.
+// Nanoseconds of CPU time this thread has run for.
 double bench_now_ns(void);
+
+// The instructions this process has retired, or 0 on a system that gives
+// a program no such count.
+uint64_t bench_instructions(void);
 
 // The median of count samples and the spread between their 25th and
 // 75th percentiles, as a percent of the median. Sorts samples in place.
@@ -78,10 +78,11 @@ bench_stat bench_stat_of(double *samples, size_t count);
 size_t bench_sample_count(double one_sample_ns);
 size_t bench_warmup_count(double one_sample_ns);
 
-// Stores one run's result for one row and size, from count samples.
-// main prints every row once all runs are done, with the median over the
-// runs.
-void bench_record(const char *name, const char *unit, size_t bytes, size_t count, bench_stat s);
+// Prints one row at one size: its median and spread over count samples,
+// and instructions, the count each operation or byte retired, or 0 for a
+// row that has none.
+void bench_print(const char *name, const char *unit, size_t bytes, size_t count, bench_stat s,
+                 double instructions);
 
 // Adds bytes into a volatile, so the compiler cannot drop the work that
 // wrote them.

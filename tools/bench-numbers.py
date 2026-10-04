@@ -17,12 +17,15 @@
 #
 # It compares rendered strings rather than parsing prose, so the rounding
 # rule lives here and the documents follow it. tools/bench_record.py does
-# the same for the record tables bench/record.sh's CSVs fill.
+# the same for the record tables bench/record.sh's CSVs fill, and
+# tools/bench_scoreboard.py for the table that sets chapulin beside
+# OpenSSL, from those CSVs and bench/primitives.sh's.
 import csv
 import re
 import sys
 
 from bench_record import check_record
+from bench_scoreboard import check_scoreboard
 
 MHZ_HZ = 500_000  # 500 MHz at one instruction per cycle, in kilo-instructions
 
@@ -462,9 +465,11 @@ def main():
     rc |= check_speed_ecdsa(readme)
     rc |= check_decision_x25519()
     rc |= check_record(readme)
+    rc |= check_scoreboard(readme)
     if rc == 0:
-        print("lint-bench-numbers: docs/performance.md's figures and record tables, the README's "
-              "At a glance row and docs/decisions.md's x25519 cost match bench/")
+        print("lint-bench-numbers: docs/performance.md's figures, its record tables and its table "
+              "beside OpenSSL, the README's At a glance row and docs/decisions.md's x25519 cost "
+              "match bench/")
     return rc
 
 

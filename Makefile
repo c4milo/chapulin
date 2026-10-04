@@ -6400,8 +6400,8 @@ bench-aead:
 # One TLS record's protection, split into its stages and timed on this
 # machine: rec_seal and rec_open, the AEAD entries record.c calls, and each
 # AEAD's stages, for AES-128-GCM and AES-256-GCM in a host object and for
-# ChaCha20-Poly1305, with OpenSSL and Zig's std.crypto as ceilings when
-# they are on PATH. bench/record.sh builds with the flags make lib uses,
+# ChaCha20-Poly1305, with the OpenSSL test/e2e.sh takes and Zig's
+# std.crypto beside them. bench/record.sh builds with the flags make lib uses,
 # where the host test passes, states what it builds, and writes
 # bench/results-record-<os>-<arch>-<compiler>.csv, which docs/performance.md
 # reads. `check` does not run it, for the reason it does not run
@@ -6413,14 +6413,19 @@ bench-record:
 	CC='$(CC)' bench/record.sh
 
 # Every primitive the tree ships, per byte or per operation, and whole
-# handshakes between this tree's client and server, on this machine.
-# bench/primitives.sh states what it builds and writes
+# handshakes between this tree's client and server, on this machine, in a
+# host object under the ch_cfg.cpu value a caller on this CPU states and
+# under CH_CPU_PROBED alone, with `openssl speed` beside each primitive
+# OpenSSL has. bench/primitives.sh states what it builds and writes
 # bench/results-primitives-<arch>.csv and the handshake call counts beside
-# it; bench/notes-primitives.md ranks the rows. `check` does not run it,
-# for the reason it does not run bench-aead, and a run took 2 min 11 s on
-# an M1 Pro. `bench/primitives.sh --quick` builds every program, checks
-# every known answer and writes nothing, and check-script-builds runs
-# `bench/primitives.sh --build`, which builds every program and runs none.
+# it. docs/performance.md, "chapulin beside OpenSSL", renders its table
+# from that file and bench-record's, tools/bench_scoreboard.py prints the
+# table a run gives, and bench/notes-primitives.md reads the other rows.
+# `check` does not run it, for the reason it does not run bench-aead, and
+# a run took 8 min 41 s on an M1 Pro. `bench/primitives.sh --quick` builds
+# every program, checks every known answer and writes nothing, and
+# check-script-builds runs `bench/primitives.sh --build`, which builds
+# every program and runs none.
 .PHONY: bench-primitives
 bench-primitives:
 	CC='$(CC)' bench/primitives.sh

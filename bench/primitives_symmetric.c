@@ -2,11 +2,14 @@
 // and the DRBG over it, and Poly1305 with the AEAD it completes. Every
 // row reads the same fixed-seed input and times one call the tree makes.
 //
-// Three groups, split by which build choice moves them. hash and cipher
-// call nothing in ct.h's widening multiply, so CH_NATIVE_WIDEMUL
-// compiles them to the same code; aead runs Poly1305, whose limb
-// products go through ct_widemul, so bench/primitives.sh times it under
-// both builds.
+// Three groups. hash holds the rows no bit of ch_cfg.cpu changes today:
+// every session runs the same SHA-2 and Keccak code. cipher holds
+// ChaCha20, whose keystream a host session runs on the vector path its
+// value names, and the DRBG, which calls chacha20_block, the portable
+// function in every object. aead holds Poly1305, whose limb products run
+// on the multiply the value's CH_CPU_CONSTANT_TIME_MULTIPLY bit picks, and
+// the AEAD over both. A device object runs chacha20.c's portable loop in
+// place of the vector path, and bench/aead.sh times that loop.
 #include "aead.h"
 #include "chacha20.h"
 #include "hkdf.h"
@@ -17,6 +20,10 @@
 #include "sha3.h"
 #include "sha512.h"
 #include "widemul.h"
+
+#ifndef CH_CPU_RUNTIME
+#error "bench/primitives.sh builds these rows as a host object, with -DCH_CPU_RUNTIME"
+#endif
 
 #define MAX_PAYLOAD 16384 // one full TLS record, RFC 9846 §5.1
 #define RECORD_AAD_LEN 5  // the record header TLS 1.3 authenticates, RFC 9846 §5.2
@@ -113,7 +120,7 @@ static void run_hkdf_expand_label(size_t n) {
 }
 
 static void run_chacha20(size_t n) {
-    chacha20_xor(key, nonce, 1, input, output, n);
+    chacha20_xor_cpu(bench_cpu, key, nonce, 1, input, output, n);
     bench_consume(&output[n - 1], 1);
 }
 
@@ -127,25 +134,27 @@ static void run_poly1305(size_t n) {
     poly1305 state;
     uint8_t tag[POLY1305_TAG];
     poly1305_init(&state, key);
-    poly1305_update(&state, input, n);
-    poly1305_final(&state, tag);
+    widemul_poly1305_update(BENCH_WIDEMUL, &state, input, n);
+    widemul_poly1305_final(BENCH_WIDEMUL, &state, tag);
     bench_consume(tag, sizeof tag);
 }
 
+// The seal and the open as a record calls them, with its session's
+// ch_cfg.cpu (aead.h).
 static void run_seal(size_t n) {
     uint8_t tag[AEAD_TAG];
-    aead_seal(BENCH_WIDEMUL, key, nonce, aad, sizeof aad, input, n, output, tag);
+    aead_seal_cpu(bench_cpu, key, nonce, aad, sizeof aad, input, n, output, tag);
     bench_consume(tag, sizeof tag);
 }
 
 static void prepare_open(size_t n) {
     prepare_inputs(n);
-    aead_seal(BENCH_WIDEMUL, key, nonce, aad, sizeof aad, input, n, sealed, sealed_tag);
+    aead_seal_cpu(bench_cpu, key, nonce, aad, sizeof aad, input, n, sealed, sealed_tag);
 }
 
 static void run_open(size_t n) {
-    if (!aead_open(BENCH_WIDEMUL, key, nonce, aad, sizeof aad, sealed, n, sealed_tag, output)) {
-        bench_fail("aead_open rejected its own seal");
+    if (!aead_open_cpu(bench_cpu, key, nonce, aad, sizeof aad, sealed, n, sealed_tag, output)) {
+        bench_fail("aead_open_cpu rejected its own seal");
     }
     bench_consume(&output[n - 1], 1);
 }

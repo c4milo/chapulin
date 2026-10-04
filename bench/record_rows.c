@@ -197,6 +197,32 @@ static void run_gcm_open(bench_state *b) {
     consume(b->rec[0]);
 }
 
+// One record's AEAD as record.c's seal_aes_gcm runs it: the key expanded
+// for this record, the seal in place, and the wipe of the expanded key.
+// rec_dir keeps the key's bytes and nothing expanded, so every record pays
+// the expansion.
+static void run_seal_aes_gcm(bench_state *b) {
+    uint8_t *body = b->rec + REC_HDR;
+    aes_traffic_key_init_cpu(&b->scratch, BENCH_CPU, b->wr.key, suite_key_len(suite_of(b->aead)));
+    gcm_traffic_seal(&b->scratch, b->nonce, b->rec, REC_HDR, body, b->len, body, body + b->len);
+    ct_wipe(&b->scratch, sizeof b->scratch);
+    consume(body[b->len]);
+}
+
+// record.c's open_aes_gcm, the same three calls around the open.
+static void run_open_aes_gcm(bench_state *b) {
+    refill(b);
+    uint8_t *body = b->rec + REC_HDR;
+    aes_traffic_key_init_cpu(&b->scratch, BENCH_CPU, b->wr.key, suite_key_len(suite_of(b->aead)));
+    int ok = gcm_traffic_open(&b->scratch, b->nonce, b->rec, REC_HDR, body, b->len, body + b->len,
+                              b->rec);
+    ct_wipe(&b->scratch, sizeof b->scratch);
+    if (!ok) {
+        fail("gcm_traffic_open rejected its own record under a key expanded for it");
+    }
+    consume(b->rec[0]);
+}
+
 static void run_counter_mode_in_place(bench_state *b) {
     uint8_t *body = b->rec + REC_HDR;
     bench_gcm_counter_mode(&b->key, b->nonce, body, b->len, body);
@@ -330,6 +356,8 @@ static const bench_row AES_ROWS[] = {
     {"rec_open_without_aead",   RECORD, run_rec_open_without_aead,   0},
     {"key_expansion",           FIXED,  run_key_expansion,           0},
     {"key_wipe",                FIXED,  run_key_wipe,                0},
+    {"seal_aes_gcm",            ALL,    run_seal_aes_gcm,            0},
+    {"open_aes_gcm",            ALL,    run_open_aes_gcm,            1},
     {"aead_seal",               ALL,    run_gcm_seal,                0},
     {"aead_open",               ALL,    run_gcm_open,                1},
     {"counter_mode_in_place",   ALL,    run_counter_mode_in_place,   0},
@@ -352,13 +380,16 @@ static const bench_difference AES_DIFFERENCES[] = {
 
 // Each whole against its parts. The seal's and the open's two stages are
 // counter mode and GHASH over the ciphertext in one loop, and the tag's
-// fixed work.
+// fixed work. The AEAD keyed for a record is the key's expansion, the
+// AEAD and the wipe.
 static const bench_check AES_CHECKS[] = {
-    {"aead_seal",   {"seal_passes", "compute_tag_fixed", NULL}  },
-    {"aead_open",   {"open_passes", "compute_tag_fixed", NULL}  },
-    {"compute_tag", {"ghash_data", "compute_tag_fixed", NULL}   },
-    {"rec_seal",    {"rec_seal_without_aead", "aead_seal", NULL}},
-    {"rec_open",    {"rec_open_without_aead", "aead_open", NULL}},
+    {"seal_aes_gcm", {"key_expansion", "aead_seal", "key_wipe", NULL}},
+    {"open_aes_gcm", {"key_expansion", "aead_open", "key_wipe", NULL}},
+    {"aead_seal",    {"seal_passes", "compute_tag_fixed", NULL}      },
+    {"aead_open",    {"open_passes", "compute_tag_fixed", NULL}      },
+    {"compute_tag",  {"ghash_data", "compute_tag_fixed", NULL}       },
+    {"rec_seal",     {"rec_seal_without_aead", "aead_seal", NULL}    },
+    {"rec_open",     {"rec_open_without_aead", "aead_open", NULL}    },
 };
 
 // The ChaCha20-Poly1305 rows.
@@ -381,10 +412,15 @@ static const bench_row CHACHA_ROWS[] = {
 // A vector path's passes are static and their exclusive-or follows each
 // pass in the path's own loop, so no stub can take a pass's place. The
 // exclusive-or, its loads and stores and the loop are chacha20_xor_cpu less
-// the passes, both timed.
+// the passes, both timed. The seal's and the open's work on the record's
+// bytes, ChaCha20 over them and Poly1305 over the ciphertext, is the AEAD
+// less the tag's fixed work: OpenSSL 3.6's `speed` times that work alone
+// (bench/record.sh).
 static const bench_difference CHACHA_DIFFERENCES[] = {
     {"xor_rest_in_place", "chacha20_xor_in_place", "chacha20_blocks"},
     {"xor_rest_shifted",  "chacha20_xor_shifted",  "chacha20_blocks"},
+    {"aead_seal_data",    "aead_seal",             "mac_fixed"      },
+    {"aead_open_data",    "aead_open",             "mac_fixed"      },
 };
 
 static const bench_check CHACHA_CHECKS[] = {

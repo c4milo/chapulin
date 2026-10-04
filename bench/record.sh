@@ -32,20 +32,23 @@
 #   instructions
 #
 # A host object never runs chacha20.c's portable loop, so no row here
-# times it; bench/primitives.sh times it in a device object's sources.
+# times it; bench/aead.sh times it in a device object's sources.
 #
 # Each library source compiles as its own translation unit, as make lib
 # compiles it, so no call the library makes across sources is inlined
 # here either. -DCH_RAND_EXTERN names the entropy pattern cfg.h demands;
 # nothing timed draws randomness.
 #
-# Two ceilings on the same machine follow when their tools are on PATH.
-# `openssl speed -aead` seals (and with -decrypt opens) one 16 KiB record
-# per operation, with 13 bytes of associated data and a tag, in five
-# one-second runs of each; OpenSSL divides by the user CPU time its
-# process took. bench/record_zig.zig times Zig's std.crypto over the same
-# records by bench/record.c's method, built ReleaseFast for this CPU, when
-# zig is the version tools/toolchain.env pins.
+# Two other libraries on the same machine follow when their tools are
+# present. `openssl speed -aead` runs over 16 KiB, and with -decrypt the
+# other way, in five one-second runs of each; OpenSSL divides by the user
+# CPU time its process took. The binary is the one test/e2e.sh takes
+# (bench/openssl.sh). What one operation of `speed -aead` holds depends on
+# the release, so each OpenSSL row's stage is openssl_ and the name of the
+# stage here that times the same operation (openssl_stage below).
+# bench/record_zig.zig times Zig's std.crypto over the same records by
+# bench/record.c's method, built ReleaseFast for this CPU, when zig is the
+# version tools/toolchain.env pins.
 #
 # Timings belong to the machine that ran them. `bench/record.sh --quick`
 # builds every binary, runs every row once and writes nothing, which is
@@ -58,6 +61,8 @@
 # file the list leaves out fails check (docs/decisions.md 88).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=bench/openssl.sh
+. bench/openssl.sh
 
 QUICK=""
 BUILD_ONLY=""
@@ -153,9 +158,38 @@ cpu() {
     fi
 }
 
-# One `openssl speed -aead` figure: bytes per second over a 16 KiB record.
+# The stage an OpenSSL row carries: openssl_ and the stage of this bench
+# that times what one operation of that release's `speed -aead` holds.
+# apps/speed.c of each release states it, and the time of a 16-byte
+# operation on an M1 Pro agrees: 155 ns under either AES key length on
+# 3.0.13 against 136 and 144 ns on 3.6.5, and for ChaCha20-Poly1305 386 ns
+# on 3.0.13 against 45 ns on 3.6.5.
+#
+#   OpenSSL 3.0 sets the IV, hashes 13 bytes of associated data, encrypts
+#   the 16 KiB and computes the tag, under a key set before the loop:
+#   aead_seal and aead_open, for the three AEADs. Its open decrypts and
+#   then checks a tag that does not match.
+#
+#   OpenSSL 3.6 does the same for AES-GCM and sets the key as well, for
+#   every operation: seal_aes_gcm and open_aes_gcm, the AEAD under a key
+#   expanded for the record, as record.c runs it. For ChaCha20-Poly1305 it
+#   runs one update over the 16 KiB, with no nonce, associated data or tag:
+#   aead_seal_data and aead_open_data, the AEAD less its tag's fixed work.
+#
+# For a release this script has not read, the stage is the command's name,
+# which no stage here carries, so nothing sets its figure beside one.
+openssl_stage() { # $1 = aes or chacha, $2 = seal or open
+    case "$OPENSSL_LABEL $1" in
+    "OpenSSL 3.0."*) echo "openssl_aead_$2" ;;
+    "OpenSSL 3.6."*" aes") echo "openssl_${2}_aes_gcm" ;;
+    "OpenSSL 3.6."*" chacha") echo "openssl_aead_${2}_data" ;;
+    *) echo "openssl_speed_aead_$2" ;;
+    esac
+}
+
+# One `openssl speed -aead` figure: bytes per second over 16 KiB.
 openssl_rate() { # $1 = cipher, $2 = empty or -decrypt
-    openssl speed -mr -seconds 1 -bytes 16384 -aead -evp "$1" ${2:+"$2"} 2>/dev/null |
+    "$OPENSSL_BIN" speed -mr -seconds 1 -bytes 16384 -aead -evp "$1" ${2:+"$2"} 2>/dev/null |
         awk -F: '/^\+F:/ { print $4 }'
 }
 
@@ -165,7 +199,7 @@ openssl_rows() { # $1 = cipher, $2 = the aead column, $3 = the stage, $4 = empty
     for _ in 1 2 3 4 5; do
         rates+=("$(openssl_rate "$1" "${4:-}")")
     done
-    printf '%s\n' "${rates[@]}" | sort -g | awk -v aead="$2" -v stage="$3" -v build="$OPENSSL" '
+    printf '%s\n' "${rates[@]}" | sort -g | awk -v aead="$2" -v stage="$3" -v build="$OPENSSL_LABEL" '
         { rate[NR] = $1 }
         END {
             ns = 16384 * 1e9 / rate[3]
@@ -183,9 +217,13 @@ if [ -z "$QUICK" ] && [ "$(zig version 2>/dev/null)" = "$ZIG_PIN" ]; then
     ZIG_NOTE="zig $ZIG_PIN rows: bench/record_zig.zig, ReleaseFast, for this CPU"
 fi
 
-OPENSSL=""
-if [ -z "$QUICK" ] && command -v openssl >/dev/null; then
-    OPENSSL=$(openssl version | awk '{ print $1 " " $2 }')
+OPENSSL_BIN=""
+OPENSSL_LABEL=""
+if [ -z "$QUICK" ]; then
+    OPENSSL_BIN=$(openssl_find)
+fi
+if [ -n "$OPENSSL_BIN" ]; then
+    OPENSSL_LABEL=$(openssl_label "$OPENSSL_BIN")
 fi
 
 LOAD_BEFORE=$(load)
@@ -198,13 +236,13 @@ LOAD_BEFORE=$(load)
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"
     fi
-    if [ -n "$OPENSSL" ]; then
-        openssl_rows aes-128-gcm aes128gcm openssl_seal
-        openssl_rows aes-128-gcm aes128gcm openssl_open -decrypt
-        openssl_rows aes-256-gcm aes256gcm openssl_seal
-        openssl_rows aes-256-gcm aes256gcm openssl_open -decrypt
-        openssl_rows chacha20-poly1305 chacha20poly1305 openssl_seal
-        openssl_rows chacha20-poly1305 chacha20poly1305 openssl_open -decrypt
+    if [ -n "$OPENSSL_BIN" ]; then
+        openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes seal)"
+        openssl_rows aes-128-gcm aes128gcm "$(openssl_stage aes open)" -decrypt
+        openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes seal)"
+        openssl_rows aes-256-gcm aes256gcm "$(openssl_stage aes open)" -decrypt
+        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha seal)"
+        openssl_rows chacha20-poly1305 chacha20poly1305 "$(openssl_stage chacha open)" -decrypt
     fi
 } >"$W/rows"
 LOAD_AFTER=$(load)
@@ -224,7 +262,8 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
         "$(uname -r), $(date -u +%Y-%m-%d), tree $TREE"
     echo "# $("${CC_WORDS[@]}" --version | head -1); $CC ${FLAGS[*]}; the build column is the ch_cfg.cpu value the rows run under, -DBENCH_CPU: 0x3 states the AES instructions, and 0x7 adds CH_CPU_CONSTANT_TIME_MULTIPLY, the vector Poly1305;" \
         "$KERNELS_NOTE"
-    echo "# $ZIG_NOTE; ${OPENSSL:-no openssl on PATH}"
+    echo "# $ZIG_NOTE; ${OPENSSL_LABEL:-no OpenSSL 3 found}, whose rows' stages are openssl_" \
+        "and the stage here that times one operation of its \`speed -aead\`"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns: per record, the median of 5 runs, each the median of 15 batches of at least" \
         "1 ms; ns_per_byte and mb_per_s: per byte of the record's plaintext; spread_pct: the" \

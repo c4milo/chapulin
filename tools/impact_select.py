@@ -403,10 +403,11 @@ def select_aes_runtime_qemu(out, changed):
 # test/script-builds.sh builds the programs the bench and platform
 # scripts compile from source lists of their own (docs/decisions.md 88).
 # Any root source can gain a call into a file one of those lists leaves
-# out, and each script it runs, and the sources under bench/ and
-# test/qemu/ those scripts compile, can break a build of its own.
+# out, and each script it runs, bench/openssl.sh, which two of them
+# source, and the sources under bench/ and test/qemu/ those scripts
+# compile, can break a build of its own.
 SCRIPT_BUILDS_FILES = {"test/script-builds.sh", "bench/aead.sh", "bench/record.sh",
-                       "bench/primitives.sh", "test/qemu-m3.sh"}
+                       "bench/primitives.sh", "bench/openssl.sh", "test/qemu-m3.sh"}
 
 
 def select_script_builds(out, changed):

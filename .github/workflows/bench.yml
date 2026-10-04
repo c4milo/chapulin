@@ -1,11 +1,12 @@
 name: bench
 
-# Times ChaCha20-Poly1305 against AES-128-GCM per byte, every primitive
-# and the in-process handshakes, and one TLS record's protection split
-# into its stages, on an x86-64 runner. It writes the partners of
-# bench/results-aead-arm64.csv and bench/results-primitives-arm64.csv, and
-# bench/results-record-linux-x86_64-gcc.csv and its clang twin, which
-# docs/performance.md names.
+# Times ChaCha20-Poly1305 against AES-128-GCM per byte, one TLS record's
+# protection split into its stages, and every primitive and the in-process
+# handshakes with OpenSSL beside them, on an x86-64 runner. It writes the
+# partner of bench/results-aead-arm64.csv, and
+# bench/results-primitives-x86_64.csv and
+# bench/results-record-linux-x86_64-gcc.csv, which fill the x86-64 column
+# of the table in docs/performance.md that sets chapulin beside OpenSSL.
 # Someone starts it by hand and nothing else does: a timing belongs to
 # the machine that ran it, and a shared runner is a loaded machine, so a
 # run is a measurement to read, not a check that passes or fails. No job
@@ -47,50 +48,29 @@ jobs:
           name: results-aead-x86_64
           path: bench/results-aead-x86_64.csv
           if-no-files-found: error
-  primitives-x86_64:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Time every primitive and the handshakes under gcc
-        # The same terms as the aead job: the runner's own gcc, no pin read.
-        run: make bench-primitives CC=gcc
-      - name: Print the CSV on the run page
-        run: |
-          {
-            echo '```'
-            cat bench/results-primitives-x86_64.csv
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Keep the CSVs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: results-primitives-x86_64
-          path: |
-            bench/results-primitives-x86_64.csv
-            bench/results-primitives-calls.csv
-          if-no-files-found: error
   record-x86_64:
+    # One job times the record and the primitives, so the two CSVs that
+    # fill one column of the table beside OpenSSL come from one runner and
+    # one CPU: two jobs may draw two CPU models.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/load-pins
       - name: Install clang (apt.llvm.org, pinned major)
-        # The second run's compiler. The action exports its versioned name
-        # as CLANG_RV.
+        # The record bench's second compiler. The action exports its
+        # versioned name as CLANG_RV.
         uses: ./.github/actions/install-llvm
         with:
           major: ${{ env.LLVM_MAJOR }}
           sha256: ${{ env.LLVM_SH_SHA256 }}
       - name: Build the pinned OpenSSL and put it on PATH
-        # The OpenSSL rows time `openssl speed -aead` on the same machine.
-        # The runner's own OpenSSL is 3.0, and the development machine's
-        # rows come from the pinned release.
+        # The OpenSSL rows time `openssl speed` on the same machine. The
+        # runner's own OpenSSL is 3.0, which has no ML-KEM; the pinned
+        # release has, and each CSV's OpenSSL rows name the version they
+        # timed.
         uses: ./.github/actions/install-openssl
         with:
           version: ${{ env.OPENSSL_VERSION }}
@@ -101,22 +81,30 @@ jobs:
         # rather than writing a file without the AES-GCM rows when it
         # does not.
         run: make bench-record CC=gcc
+      - name: Time every primitive and the handshakes under gcc
+        # The same gcc, with OpenSSL's row beside each primitive it has.
+        # bench/primitives.sh reads /proc/cpuinfo for the ch_cfg.cpu value
+        # a caller on this CPU states, and the CSV's header names it.
+        run: make bench-primitives CC=gcc
       - name: Time one record under the pinned clang
         run: make bench-record CC="$CLANG_RV"
       - name: Print the CSVs on the run page
         # Each CSV's header holds the runner's load average before and
         # after its run.
         run: |
-          for compiler in gcc clang; do
+          for csv in results-primitives-x86_64 results-record-linux-x86_64-gcc \
+            results-record-linux-x86_64-clang; do
             echo '```'
-            cat "bench/results-record-linux-x86_64-$compiler.csv"
+            cat "bench/$csv.csv"
             echo '```'
           done >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the CSVs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: results-record-linux-x86_64
+          name: results-linux-x86_64
           path: |
+            bench/results-primitives-x86_64.csv
+            bench/results-primitives-calls.csv
             bench/results-record-linux-x86_64-gcc.csv
             bench/results-record-linux-x86_64-clang.csv
           if-no-files-found: error
