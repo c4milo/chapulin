@@ -321,41 +321,43 @@ judge the change.
 
 | one operation | M1 Pro, chapulin | M1 Pro, OpenSSL | ratio | x86-64 runner, chapulin | x86-64 runner, OpenSSL | ratio |
 | --- | --- | --- | --- | --- | --- | --- |
-| SHA-256, 16 KiB | 78.7 µs | 7.14 µs | **11.0** | — | — | — |
-| SHA-256, 64 bytes | 753 ns | 155 ns | **4.86** | — | — | — |
-| SHA-384, 16 KiB | 52.4 µs | 12.2 µs | **4.31** | — | — | — |
-| SHA-384, 64 bytes | 586 ns | 195 ns | **3.00** | — | — | — |
-| SHA3-256, 16 KiB | 64.4 µs | 19.2 µs | **3.35** | — | — | — |
-| SHA3-256, 64 bytes | 419 ns | 354 ns | **1.18** | — | — | — |
-| X25519 key generation | 34.2 µs | 31.7 µs | **1.08** | — | — | — |
-| X25519 shared secret | 34.3 µs | 31.2 µs | **1.10** | — | — | — |
-| P-256 key generation | 610 µs | 9.75 µs | **62.6** | — | — | — |
-| P-256 shared secret | 612 µs | 41.9 µs | **14.6** | — | — | — |
-| ECDSA P-256 sign | 669 µs | 18.4 µs | **36.4** | — | — | — |
-| ECDSA P-256 verify | 1.30 ms | 55.9 µs | **23.2** | — | — | — |
-| ECDSA P-384 verify | 4.19 ms | 318 µs | **13.2** | — | — | — |
-| RSA-2048 PSS sign | 37.2 ms | 565 µs, PKCS#1 v1.5 sign | — | — | — | — |
-| RSA-2048 PSS verify | 272 µs | 14.8 µs, PKCS#1 v1.5 verify | — | — | — | — |
-| RSA-2048 PKCS#1 v1.5 verify | 271 µs | 14.8 µs | **18.3** | — | — | — |
-| RSA-3072 PSS sign | 148 ms | 1.65 ms, PKCS#1 v1.5 sign | — | — | — | — |
-| RSA-3072 PSS verify | 650 µs | 31.2 µs, PKCS#1 v1.5 verify | — | — | — | — |
-| RSA-3072 PKCS#1 v1.5 verify | 649 µs | 31.2 µs | **20.8** | — | — | — |
-| ML-KEM-768 key generation | 25.9 µs | 36.6 µs | 0.71 | — | — | — |
-| ML-KEM-768 encapsulation | 28.1 µs | 24.2 µs | **1.16** | — | — | — |
-| ML-KEM-768 decapsulation | 30.2 µs | 37.8 µs | 0.80 | — | — | — |
-| AES-128-GCM, the key set and one 16 KiB record sealed | 2.41 µs | 2.12 µs | **1.13** | — | — | — |
-| AES-128-GCM, the key set and one 16 KiB record opened | 2.49 µs | 2.12 µs | **1.17** | — | — | — |
-| AES-256-GCM, the key set and one 16 KiB record sealed | 2.93 µs | 2.52 µs | **1.16** | — | — | — |
-| AES-256-GCM, the key set and one 16 KiB record opened | 2.96 µs | 2.52 µs | **1.17** | — | — | — |
-| ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag | 11.3 µs | 9.30 µs | **1.22** | — | — | — |
-| ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag | 11.3 µs | 9.28 µs | **1.22** | — | — | — |
+| SHA-256, 16 KiB | 78.7 µs | 7.14 µs | **11.0** | 61.8 µs | 10.4 µs | **5.92** |
+| SHA-256, 64 bytes | 753 ns | 155 ns | **4.86** | 757 ns | 191 ns | **3.96** |
+| SHA-384, 16 KiB | 52.4 µs | 12.2 µs | **4.31** | 46.8 µs | 21.9 µs | **2.14** |
+| SHA-384, 64 bytes | 586 ns | 195 ns | **3.00** | 521 ns | 333 ns | **1.56** |
+| SHA3-256, 16 KiB | 64.4 µs | 19.2 µs | **3.35** | 294 µs | 38.4 µs | **7.66** |
+| SHA3-256, 64 bytes | 419 ns | 354 ns | **1.18** | 2.48 µs | 489 ns | **5.06** |
+| X25519 key generation | 34.2 µs | 31.7 µs | **1.08** | 61.3 µs | 33.7 µs | **1.82** |
+| X25519 shared secret | 34.3 µs | 31.2 µs | **1.10** | 61.3 µs | 36.5 µs | **1.68** |
+| P-256 key generation | 610 µs | 9.75 µs | **62.6** | 1.10 ms | 12.2 µs | **90.3** |
+| P-256 shared secret | 612 µs | 41.9 µs | **14.6** | 1.10 ms | 51.7 µs | **21.4** |
+| ECDSA P-256 sign | 669 µs | 18.4 µs | **36.4** | 1.18 ms | 22.2 µs | **53.0** |
+| ECDSA P-256 verify | 1.30 ms | 55.9 µs | **23.2** | 2.05 ms | 67.7 µs | **30.2** |
+| ECDSA P-384 verify | 4.19 ms | 318 µs | **13.2** | 6.16 ms | 729 µs | **8.45** |
+| RSA-2048 PSS sign | 37.2 ms | 565 µs, PKCS#1 v1.5 sign | — | 24.3 ms | 660 µs, PKCS#1 v1.5 sign | — |
+| RSA-2048 PSS verify | 272 µs | 14.8 µs, PKCS#1 v1.5 verify | — | 308 µs | 18.9 µs, PKCS#1 v1.5 verify | — |
+| RSA-2048 PKCS#1 v1.5 verify | 271 µs | 14.8 µs | **18.3** | 303 µs | 18.9 µs | **16.1** |
+| RSA-3072 PSS sign | 148 ms | 1.65 ms, PKCS#1 v1.5 sign | — | 80.2 ms | 2.01 ms, PKCS#1 v1.5 sign | — |
+| RSA-3072 PSS verify | 650 µs | 31.2 µs, PKCS#1 v1.5 verify | — | 685 µs | 40.0 µs, PKCS#1 v1.5 verify | — |
+| RSA-3072 PKCS#1 v1.5 verify | 649 µs | 31.2 µs | **20.8** | 691 µs | 40.0 µs | **17.3** |
+| ML-KEM-768 key generation | 25.9 µs | 36.6 µs | 0.71 | 137 µs | 36.2 µs | **3.79** |
+| ML-KEM-768 encapsulation | 28.1 µs | 24.2 µs | **1.16** | 148 µs | 21.7 µs | **6.80** |
+| ML-KEM-768 decapsulation | 30.2 µs | 37.8 µs | 0.80 | 162 µs | 33.4 µs | **4.85** |
+| AES-128-GCM, the key set and one 16 KiB record sealed | 2.41 µs | 2.12 µs | **1.13** | 3.21 µs | 4.05 µs | 0.79 |
+| AES-128-GCM, the key set and one 16 KiB record opened | 2.49 µs | 2.12 µs | **1.17** | 3.15 µs | 4.12 µs | 0.77 |
+| AES-256-GCM, the key set and one 16 KiB record sealed | 2.93 µs | 2.52 µs | **1.16** | 3.62 µs | 4.36 µs | 0.83 |
+| AES-256-GCM, the key set and one 16 KiB record opened | 2.96 µs | 2.52 µs | **1.17** | 3.58 µs | 4.42 µs | 0.81 |
+| ChaCha20-Poly1305, 16 KiB encrypted and hashed, no tag | 11.3 µs | 9.30 µs | **1.22** | 13.0 µs | 7.47 µs | **1.75** |
+| ChaCha20-Poly1305, 16 KiB hashed and decrypted, no tag | 11.3 µs | 9.28 µs | **1.22** | 13.1 µs | 7.47 µs | **1.75** |
 
 The machines, as the CSV headers state them:
 
 - **M1 Pro**: Apple M1 Pro, Darwin 25.6.0, Apple clang version 21.0.0 (clang-2100.3.34.2), OpenSSL
   3.6.5, `ch_cfg.cpu 0x7`; one-minute load average 6.46 before the primitives' run and 7.02 after
   it, and 7.93 and 6.57 around the AEAD rows' run.
-- **x86-64 runner**: no run recorded.
+- **x86-64 runner**: AMD EPYC 7763 64-Core Processor, Linux 6.17.0-1022-azure, gcc (Ubuntu
+  13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x1f`; one-minute load average 0.93
+  before the primitives' run and 1.00 after it, and 0.60 and 0.87 around the AEAD rows' run.
 
 [`bench/primitives.sh`](../bench/primitives.sh) (`make bench-primitives`) writes the rows above the
 AEADs to [`bench/results-primitives-arm64.csv`](../bench/results-primitives-arm64.csv) and its
@@ -422,6 +424,21 @@ What the M1 Pro's column shows:
   them.
 - X25519, ML-KEM-768 and the three AEADs are within a quarter of OpenSSL's time, and ML-KEM-768's
   key generation and decapsulation are ahead of it.
+
+What the x86-64 runner's column shows, where it differs:
+
+- AES-GCM is ahead of OpenSSL. Under `ch_cfg.cpu 0x1f` the seal and the open run the VAES and
+  VPCLMULQDQ kernels of decision 90, and with the key expansion they take 0.77 to 0.83 of
+  OpenSSL's time on this EPYC 7763.
+- The public-key rows keep their order, and P-256 is further behind: 21 to 90 times.
+- chapulin's Keccak is slow there. Under gcc 13 on that CPU, SHA3-256 takes 4.6 times its time on
+  the M1 Pro, and ML-KEM-768, which runs on Keccak, 5.3 times. So ML-KEM-768 is 3.8 to 6.8 times
+  OpenSSL's time, and SHA3-256 5.1 to 7.7 times.
+- ChaCha20-Poly1305 and X25519 are further behind than on the M1 Pro, 1.75 and 1.68 to 1.82 times.
+  The Poly1305 there runs in SSE2 lanes, and decision 90 left an AVX2 Poly1305 out.
+- SHA-256 and SHA-384 are closer, 5.9 and 2.1 times at 16 KiB.
+- The runner's CPU changes from run to run, so this column compares rows of one run with each
+  other and never with an earlier run's.
 
 To record a column again after a change to a primitive:
 

@@ -324,9 +324,85 @@ within 3%, except the client side under `0x1`, which this run puts at
 
 ## x86-64
 
-bench.yml's `record-x86_64` job writes
-bench/results-primitives-x86_64.csv on a GitHub-hosted runner, under gcc,
-with the same rows as the arm64 file. No run of these rows is recorded
-yet. The file this note read before was a run of the device object's
-builds at tree 4e02293, on an AMD EPYC 9V74 on 2026-09-24, and it is in
-the history at that tree.
+bench/results-primitives-x86_64.csv is a run of the same script on a
+GitHub-hosted runner: an AMD EPYC 7763 under Linux 6.17, gcc 13.3 at
+`-std=c11 -O2`, tree 7935393, started by hand from
+.github/workflows/bench.yml
+(https://github.com/c4milo/chapulin/actions/runs/37217894560). The CPU
+has AVX2, VAES and VPCLMULQDQ, so its second value is `0x1f`, which adds
+`CH_CPU_AVX2` and `CH_CPU_VAES` to the M1 Pro's `0x7`. The 1-minute load
+average went from 0.93 to 1.00. No row's spread inside a run passed
+4.0%, and no row's spread between runs passed 3.7%. The runner's CPU is
+not fixed: earlier runs of this script drew an AMD EPYC 9V74 and a 7763,
+so figures from two runs are not comparable to each other. Linux gives
+the program no instruction count, so that column is empty.
+
+Handshakes, milliseconds:
+
+| handshake | `ch_cfg.cpu` | whole | client side | server side |
+|---|---|---:|---:|---:|
+| pinned RSA-2048 | 0x1 | 94.8 | 4.36 | 90.4 |
+| pinned RSA-2048 | 0x1f | 24.9 | 0.47 | 24.4 |
+| pinned RSA-3072 | 0x1 | 296.6 | 4.75 | 291.8 |
+| pinned RSA-3072 | 0x1f | 81.2 | 0.86 | 80.3 |
+| pinned ECDSA P-256 | 0x1 | 13.0 | 5.96 | 6.99 |
+| pinned ECDSA P-256 | 0x1f | 3.55 | 2.16 | 1.38 |
+| pinned RSA-2048, hybrid | 0x1 | 95.4 | 4.82 | 90.5 |
+| pinned RSA-2048, hybrid | 0x1f | 25.5 | 0.93 | 24.6 |
+| pinned RSA-3072, hybrid | 0x1 | 297.2 | 5.21 | 292.0 |
+| pinned RSA-3072, hybrid | 0x1f | 81.8 | 1.32 | 80.5 |
+| pinned ECDSA P-256, hybrid | 0x1 | 13.6 | 6.41 | 7.13 |
+| pinned ECDSA P-256, hybrid | 0x1f | 4.11 | 2.62 | 1.49 |
+
+The hybrid resolves on every side here. A client's side grows by 453 to
+459 us under either value, against 437 to 441 us for two key generations
+and one decapsulation, and a server's by 103 to 163 us, against 148 to
+151 us for one encapsulation.
+
+Each row as a multiple of its time in bench/results-primitives-arm64.csv,
+each machine under its widest value:
+
+| row | x86-64 over arm64 |
+|---|---:|
+| shake256_squeeze, shake128_squeeze, 16 KB | 7.47, 7.14 |
+| mlkem768 keygen, encaps, decaps | 5.25 to 5.36 |
+| sha3_256, 16 KB | 4.57 |
+| poly1305, 16 KB | 2.38 |
+| p256_ecdh, x25519, p256_sign | 1.80, 1.79, 1.76 |
+| p256_ecdsa_verify | 1.58 |
+| p384_ecdsa_verify | 1.47 |
+| chacha20_poly1305_seal, 16 KB | 1.17 |
+| rsa_pss_verify_3072 | 1.05 |
+| sha512, 16 KB | 0.90 |
+| hkdf_expand_label | 0.85 |
+| sha256 and hmac_sha256, 16 KB | 0.79, 0.78 |
+| chacha20, 16 KB | 0.77 |
+| rsa_pss_sign_2048, rsa_pss_sign_3072 | 0.65, 0.54 |
+
+The multiply bit gains more here than on arm64. Time under `0x1` over
+time under `0x1f`:
+
+| row | ratio |
+|---|---:|
+| x25519 | 32.7 |
+| poly1305, 16 KB | 8.60 |
+| chacha20_poly1305_seal, 16 KB | 5.31 |
+| rsa_pss_sign_3072, rsa_pss_sign_2048 | 3.59, 3.54 |
+| p256_sign, p256_ecdh | 2.56 |
+| ML-KEM-768 | 1.00 to 1.02 |
+| RSA-3072 handshake, client side | 5.51 |
+| ECDSA handshake, client side | 2.76 |
+
+What these show:
+
+- Keccak is the outlier. SHA-3 and SHAKE take 4.6 to 7.5 times their
+  arm64 time, where every other row takes at most 2.4 times, and ML-KEM,
+  which runs on them, takes 5.3 to 5.4 times. So ML-KEM-768 is 3.8 to
+  6.8 times OpenSSL's time here, where on the M1 Pro it is ahead of
+  OpenSSL or within 16% of it.
+- RSA signing is the one public-key row that runs faster here than on
+  the M1 Pro under the multiply bit, in 0.54 to 0.65 of its time.
+- SHA-256 runs in 0.79 of its arm64 time, without SHA-NI, and ChaCha20 in
+  0.77 of it on the AVX2 kernel.
+- Under `0x1f` the x25519 pair is 14% of an RSA-3072 client side and the
+  verifier 79%; under `0x1` the pair is 84% of it.
