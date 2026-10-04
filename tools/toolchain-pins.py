@@ -3,11 +3,11 @@
 
 Four failures, all silent without this check.
 
-The first is a workflow or a local action that hardcodes a version the pins
-file already carries. That is a second source of truth, and it drifts: the
-pins used to live only in check.yml's env block, so they applied on CI and
-nowhere else, and a development machine linted with whatever clang-tidy it
-carried.
+The first is a workflow, a local action or a local lane's Dockerfile that
+hardcodes a version the pins file already carries. That is a second source
+of truth, and it drifts: the pins used to live only in check.yml's env
+block, so they applied on CI and nowhere else, and a development machine
+linted with whatever clang-tidy it carried.
 
 The second arrived with the fix. A job that reads a pin variable without
 running the action that loads it gets an empty string, and `go-version: ""`
@@ -20,21 +20,23 @@ in an expression. A comment is not a read.
 The third is the one value the first check cannot search for. LLVM_MAJOR
 is a bare number, and a bare "23" also sits inside commit SHAs and
 sha256 values, so the workflows and action.yml files are checked through
-the versioned package names instead. The action scripts carry no hashes:
-there the bare token itself is rejected, so `llvm.sh 23` or `lld-23`
-typed by hand fails as `clang-23` does.
+the versioned package names instead. The action scripts and a Dockerfile
+carry no hashes: there the bare token itself is rejected, so `llvm.sh 23`
+or `lld-23` typed by hand fails as `clang-23` does.
 
 The fourth is a download nothing checks. A version pin names a release,
 and the install step downloads that release's file and unpacks or runs it,
 so the file is checked against its *_SHA256 pin first or the job runs
 whatever the server sent (https://github.com/c4milo/chapulin/issues/142).
-The action scripts exist to install what they fetch, so every fetch there
-needs a check. A workflow step or a local script may also fetch data that
-is nothing to check -- toolchain-pins.yml reads go.dev's release list --
-so there the rule is narrower: a fetch whose URL carries a version pin, on
-the fetch line or through a variable assigned from one earlier in the same
-unit, needs a check. A check is a `sha256sum -c` or `shasum -a 256 -c`
-that follows the fetch before the next one.
+The action scripts and a Dockerfile exist to install what they fetch, so
+every fetch there needs a check. A workflow step or a local script may
+also fetch data that is nothing to check -- toolchain-pins.yml reads
+go.dev's release list -- so there the rule is narrower: a fetch whose URL
+carries a version pin, on the fetch line or through a variable assigned
+from one earlier in the same unit, needs a check. A check is a `sha256sum
+-c` or `shasum -a 256 -c` that follows the fetch before the next one. Both
+are read one command line at a time, with its continuation lines joined,
+so a Dockerfile gives the fetch and the check a RUN instruction each.
 
 Run through `make lint-pins`.
 """
@@ -54,6 +56,11 @@ SCRIPTS = sorted((ROOT / ".github" / "actions").glob("*/*.sh"))
 LOCAL_SCRIPTS = sorted(
     p for d in ("bench", "proof", "test") for p in (ROOT / d).glob("*.sh")
 )
+# The Dockerfile of a local lane's image. It installs what the actions
+# install, from build arguments the lane's script reads from the pins file,
+# so an action script's two rules hold for it: it writes no value that file
+# carries, and a hash check follows every fetch.
+DOCKERFILES = sorted((ROOT / "test").glob("*.Dockerfile"))
 
 # The one loader. It appends every pin to GITHUB_ENV, so a job that runs it
 # has loaded whatever it reads. A job that sources the file by hand and echoes
@@ -221,7 +228,7 @@ def check_hardcoded(problems, pins):
 
     major = bare_major(pins)
 
-    for f in WORKFLOWS + ACTIONS + SCRIPTS:
+    for f in WORKFLOWS + ACTIONS + SCRIPTS + DOCKERFILES:
         text = f.read_text()
         rel = f.relative_to(ROOT)
         for value, name in sorted(hardcoded.items()):
@@ -231,13 +238,15 @@ def check_hardcoded(problems, pins):
                         f"{rel}:{i}: {name} is hardcoded as {value!r}; "
                         f"read it from tools/toolchain.env instead\n    {line.strip()}"
                     )
-        if f.suffix == ".sh":
+        # A Dockerfile holds no hashes either: its pins are build arguments.
+        if f.suffix in (".sh", ".Dockerfile"):
+            source = "the action's input" if f.suffix == ".sh" else "a build argument"
             for i, line in enumerate(text.split("\n"), 1):
                 if major.search(line):
                     problems.append(
                         f"{rel}:{i}: LLVM_MAJOR is hardcoded as the bare "
-                        f"{pins['LLVM_MAJOR']!r}; read the major from the action's "
-                        f"input instead\n    {line.strip()}"
+                        f"{pins['LLVM_MAJOR']!r}; read the major from {source} "
+                        f"instead\n    {line.strip()}"
                     )
         if f.suffix != ".yml":
             continue
@@ -405,6 +414,11 @@ def check_fetches(problems, pins):
                 units.append((wf, where, head + offset + 1, step, set(pins), False))
     for f in LOCAL_SCRIPTS:
         units.append((f, "the script", 1, f.read_text().split("\n"), set(pins), False))
+    for f in DOCKERFILES:
+        # A RUN instruction's command starts after the keyword, and FETCH
+        # reads a command from the start of its line.
+        lines = [re.sub(r"^RUN\s+", "", l) for l in f.read_text().split("\n")]
+        units.append((f, "the image build", 1, lines, set(pins), True))
 
     count = 0
     for f, where, first, lines, names, every in units:

@@ -327,7 +327,8 @@ does nothing more.
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
     two, both major compiler families stay covered without a second CI
-    leg.
+    leg. Entry 92 runs CI's half on a development machine before a
+    push.
 30. **Tool versions pin to the development machine's.** When the local
     toolchain upgrades, the CI pins bump in the same commit. Code never
     adapts to an older checker.
@@ -5250,3 +5251,122 @@ does nothing more.
     after it, the packaged ChaCha20-Poly1305 record takes 2% to 3% longer
     than in the runs the tables held at 97826ba, and the VM's clang runs
     the vector Poly1305 in 4.8 µs where those runs took 3.0.
+
+92. **`test/docker-check.sh` runs CI's `make check` in a container on a
+    development machine.** Entry 29 keeps gcc in CI and clang on the
+    development machines, so a failure that only CI's system finds showed
+    after the push, and each one cost a CI run of an hour or more. Four
+    kinds landed on main that way:
+
+    - gcc's `-Wunused-variable` on statics a test header defined, which
+      clang does not report for a header (fd20bf2, fixed by 3828a6a);
+    - a cppcheck finding that the x86-64 build reports and the arm64
+      build of the same version does not (3371aa2, fixed by 4ee30cc),
+      and one that Homebrew's build does not report (2137f9d, fixed by
+      ec78659);
+    - a script that compared assembly text, which gcc changes for a file
+      whose code it does not change, because it numbers a label for each
+      function it parses (0fca97b, fixed by 74688ae);
+    - GNU make 4.3 printing "Entering directory" lines into what a
+      script read from make, which make 3.81 on macOS never prints
+      (fixed by 02515f2).
+
+    The script runs check under `make -j` with `CI` set, in an x86-64
+    container of Ubuntu 24.04, the system the check job runs on. Its apt
+    supplies gcc 13.3 as `cc` and GNU make 4.3, as the runner's image
+    does.
+
+    - **Two makes, as on CI.** CI runs `make -j ci`, and the `ci` recipe
+      starts the make that runs check. A script that calls make from a
+      recipe of that second make reads GNU make 4.3's "Entering
+      directory" lines unless its recipe line starts with `+`. A make
+      started from a shell prints none either way, so `make -j check`
+      alone passes a line that lacks the `+`. The script writes a
+      makefile of one rule, the `ci` rule with this lane's flags and
+      goals, and runs `make -j` on it.
+    - **The image.** `test/docker-check.Dockerfile` installs what the
+      check job installs for `make check`, in the job's order: LLVM,
+      Zig, cppcheck, shellcheck, semgrep, CBMC and elan. LLVM, Zig,
+      cppcheck, CBMC and elan install through the script CI's action
+      runs, and every version and hash is a build argument the script
+      reads from tools/toolchain.env, so a runner and the image install
+      the same file by the same lines. `make lint-pins` reads the
+      Dockerfile: a version written there fails it, and so does a fetch
+      that no hash check follows. The script tags the image by a hash of
+      the files the build reads and of tools/toolchain.env, so a pin
+      bump builds a new image and an unchanged pin reuses the one
+      already built. The image is 3.6 GB and built in 5 minutes.
+    - **The copy.** make runs on a copy of the tree, made inside the
+      container in 2 seconds: the files `git ls-files -co
+      --exclude-standard` names, so uncommitted work is tested, and
+      HEAD's history from a bundle, which lint-commit-citations reads.
+      The copy's index holds every file, as it will after a commit, so a
+      lint that reads `git ls-files` sees a file before it is added. The
+      tree is mounted read-only, so the machine's own `bin/` and stamps
+      stay as they are.
+    - **Each run copies the tree again.** A copy kept between runs would
+      keep `bin/` and its stamps, and a second run would skip what passed
+      before (INV-37). In one container on the M1 Pro, at load averages
+      of 9 to 14, a run on a new copy took 711 s, a second run with
+      nothing changed 57 s, and a third after one comment line added to
+      `ct.c` 511 s. A fix changes a source, so a kept copy saves 3 of 12
+      minutes on the run that follows one. It can also pass on an object
+      or a stamp an earlier run left, where a CI job starts with no
+      `bin/`. To run one failing target again, name it:
+      `test/docker-check.sh lint-cppcheck` runs that lint alone, in 31 s.
+    - **The slow half's builds.** The check job runs `make check-slow`
+      on a push to main, and that target builds 16 binaries no part of
+      check builds: five for the differential, the two sequence
+      enumerations, `bin/pemkey` and `bin/pemkey_ecdsa`, four with the
+      decomposed multiply, and three AES builds of the test client and
+      server. gcc stopped fd20bf2 at one of them, `bin/diff`. Running
+      them takes Mathlib, the pinned OpenSSL and Go, and compiling them
+      takes gcc alone, so the script builds them beside check and runs
+      none. It reads their names from make's database through
+      `tools/impact_map.py`, so the list follows the Makefile.
+    - **lint-spec and lint-commits do not run.** lint-spec needs the Lean
+      toolchain and Mathlib's compiled files, downloads of 575 MB and
+      440 MB that unpack to about 9 GB, two and a half times the image.
+      It reads the Lean sources under the toolchain
+      `spec/lean/lean-toolchain` names, and no compiler or system.
+      Without the spec's build, `bin/drbg_test` also skips its
+      comparison with the Lean generator. lint-commits needs Node 22.12
+      or later for commitlint: Ubuntu 24.04's apt has 18.19, where
+      commitlint stops at a syntax error, and the check job takes Node
+      from the runner's image, so no pin says which to install. It reads
+      commit messages. `make check` on the development machine runs both
+      lints and gives the verdict CI gives. The script passes make `-o`
+      for each, which names a target make treats as up to date, so every
+      other prerequisite of check runs. elan is in the image all the
+      same: lint-impact reads make's database, and the recipes that run
+      `bin/diff` are in it only where `LAKE` names a command.
+    - **Under Rosetta lint-zig-build does not run either.** An Apple
+      silicon Mac runs the container's x86-64 code under Rosetta. Rosetta
+      stops the translate-c program Zig 0.16 links before its first
+      instruction, with "rosetta error: bss_size overflow", so the lint
+      fails there whatever the tree holds. With that program built in
+      Debug mode (`ZIG_DEBUG_CMD`), Rosetta loads it and the Zig API's
+      unit tests pass, and then every client and server loop fails with
+      `Proto` or `Auth`; the cause is not known. The script reads the
+      CPU's name, which Rosetta gives as VirtualApple, and passes `-o
+      lint-zig-build` there. The lint's verdict for Linux on x86-64
+      stays with CI. Rosetta's CPU also has no AVX2, VAES or
+      VPCLMULQDQ, so each run of a kernel built on them skips, as the
+      check job lets it on a runner without the instructions.
+    - **What `make check` does not read.** The check job also installs
+      Go, the pinned OpenSSL, kissat, the Arm GNU toolchain,
+      qemu-system-arm and actionlint. A run with a stand-in for each on
+      `PATH`, and for the system's openssl, lake and node, logged no
+      call to any of them, so the image holds none of the six.
+
+    Cost: 3.6 GB of image and about 12 minutes a run on the M1 Pro. The
+    image holds the LLVM point release and the apt packages of the day it
+    was built, where a runner installs each run's. The script builds the
+    image without the builder's cache, so `docker image rm` and a run
+    install that day's. Gain: the four kinds above fail before the push.
+    On 0fca97b the run fails at check-widemul-builds, as CI's did, and on
+    74688ae it passes. The other three were written back into today's
+    tree one at a time: the statics of fd20bf2, the shadowed `wire` of
+    2137f9d and a recipe line of check-script-builds without its `+`.
+    Each passes its check on the Mac and fails it in the container, in
+    25 to 31 s for a run of that one target.

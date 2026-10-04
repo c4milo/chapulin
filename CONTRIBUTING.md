@@ -74,6 +74,19 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   ci-slow`), `mutants` (`make ci-mutants`) and `prove` (`make
   ci-prove`). The slow proof tier runs as `make prove-slow` in CI and
   before a release.
+- `test/docker-check.sh` runs `make check` as CI's check job runs it,
+  before a push. CI compiles with gcc 13 on Ubuntu 24.04 x86-64 under GNU
+  make 4.3, and a development Mac compiles with clang under make 3.81, so
+  a gcc warning, a finding only the x86-64 cppcheck reports, or a script
+  that reads what make 4.3 prints fails on CI alone. The script builds
+  an image with CI's system and the pinned tools once, then runs
+  `make check` in a container on a copy of the tree, uncommitted files
+  included, and builds the binaries only `make check-slow` compiles.
+  This machine's `bin/` stays as it is. A run takes about 12 minutes on
+  an M1 Pro, and `test/docker-check.sh lint-cppcheck` runs one target
+  in half a minute. It needs docker and skips without it.
+  docs/decisions.md 92 says what the image holds and which lints it
+  leaves to `make check` on the Mac and to CI.
 - Dev tooling lives in `tools/`: the lint helper scripts and the node
   packages commitlint needs. Nothing there is built into the library.
 - The lint tools are required, not optional. clang-tidy, clang-format,
