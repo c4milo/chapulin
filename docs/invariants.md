@@ -2562,6 +2562,14 @@ last `ROLE=server` stub, as the entry said it would.
   a key exchange and a signature on the wide P-256 files
   (`bin/timing_p256_wide`), which a scan that passes over the entries a
   digit does not name fails.
+  `inv-16-p256-wide-no-borrow-from-zero` refuses the borrow of a
+  subtraction from a constant zero in the wide P-256 files: gcc 13.3 and
+  15.2 for x86-64 compile that borrow to a jump on the value subtracted,
+  a limb of a coordinate, and no check here counts those files' branches
+  under a 64-bit gcc (decision 94).
+  `inv16-p256-wide-zero-mask-borrows-from-zero` and
+  `inv16-p256-wide-neg-borrows-from-zero` write the two routines that
+  did, and the rule catches both.
   Semgrep cannot know a buffer is secret — the real guards remain
   construction and the t-test.
   Those two see source text and one host's timing, and neither can see

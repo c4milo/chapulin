@@ -1,0 +1,18 @@
+invariant: INV-16
+file: p256_wide_field.c
+catches: test/lint-invariants.sh
+reason: zero_mask_word takes its mask from the borrow of 0 - v. The mask
+  is the same, so every vector, proof and count under clang passes. gcc
+  13.3 and 15.2 for x86-64 compile that borrow to a jump on v, and v is
+  the limbs of a coordinate: the Z of a product in
+  p256_wide_point_affine, and the Y p256_wide_fe_neg negates. No check
+  of this tree counts these files' branches under a 64-bit gcc, so the
+  Semgrep rule inv-16-p256-wide-no-borrow-from-zero refuses the call.
+
+--- old
+    uint64_t nonzero = (uint64_t)(((ct_u128)v + UINT64_MAX) >> 64);
+    return p256_wide_mask(nonzero ^ 1U);
+--- new
+    uint64_t borrow = 0;
+    (void)p256_wide_sub_borrow(&borrow, 0, v);
+    return ~p256_wide_mask(borrow);

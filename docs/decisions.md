@@ -5778,6 +5778,26 @@ does nothing more.
       141 and 172, and under gcc 13.3 for x86-64 it is 460 and 602. So a
       host object built with gcc runs this arithmetic at about half the
       speed of one built with clang, as `build.zig` builds it.
+    - **No borrow from a constant zero.** gcc compiles
+      `__builtin_sub_overflow` of two variables to a subtraction and a
+      `setb`, and of a constant zero and a variable to a subtraction and a
+      jump on its borrow. Under gcc 13.3 at `-O2` for x86-64,
+      `p256_wide_fe_neg`, written as 0 - a, jumped on each limb of a
+      coordinate, and under gcc 13.3 and 15.2 the zero and equality
+      masks, written as the borrow of 0 - v, jumped on v. A limb of a
+      coordinate is zero once in 2^64, and no limb of the table is, so
+      the jump goes one way through a signature. A peer chooses its
+      point, though, and can choose one with a zero limb, and the key
+      exchange negates the multiple a digit names. clang makes no such
+      jump for either architecture, and gcc 15.2 makes none for arm64.
+      So `p256_wide_fe_neg` computes p - a as ~a - ~p, a constant taken
+      from a variable, and the two masks come from a 128-bit sum, as
+      `equal_mask` in `p256_wide_mul.c` does. `lint-wide-multiply` counts
+      these files' branches under clang alone, and the Makefile says why
+      no 64-bit gcc spec runs, so no check of this tree sees such a jump.
+      After the change the branches of each wide file under gcc 13.3 and
+      15.2 for x86-64 were read by hand: each is a loop's counter, a byte
+      or a pointer of a public value, or a caller's verdict.
     - **The inversions.** `p256_wide_fe_inv` raises to p - 2 by a fixed
       chain of 255 squarings and 12 multiplies, where `p256_fe_inv` runs
       384 products. `p256_wide_scalar_inverse` raises to n - 2 in 305
@@ -5919,8 +5939,8 @@ does nothing more.
     - **Time and addresses.** `bin/timing_p256_wide`, in `make timing`,
       runs Welch's t-test over a key generation, a key exchange and a
       signature, one fixed scalar against fresh random ones. In six runs
-      on the M1 Pro, at a load average of 20 to 23, the largest |t| of
-      the thirty rows was 4.93, where the test fails at 10. With the
+      on the M1 Pro, at a load average of 30 to 39, the largest |t| of
+      the thirty rows was 4.37, where the test fails at 10. With the
       scan changed to pass over the entries a digit does not name, the
       key generation under the scalar whose windows are all 8 read 126 to
       172 in three runs. With the table read by index every row stayed
@@ -5958,9 +5978,11 @@ does nothing more.
       doubling without its last step and a dropped correction, and a scan
       that passes over the multiples a digit does not name raises the
       same branch count. Two read a row by a digit's index, the table's
-      and the multiples', and the Semgrep rule catches both. Three drop
-      one of `p256_scalar.c`'s wipes, and the `p256_scalar` proof catches
-      each.
+      and the multiples', and the Semgrep rule catches both. Two take a
+      borrow from a constant zero, in the zero mask and in the negation,
+      and the rule `inv-16-p256-wide-no-borrow-from-zero` catches both.
+      Three drop one of `p256_scalar.c`'s wipes, and the `p256_scalar`
+      proof catches each.
 
     Rejected:
 
@@ -6000,9 +6022,9 @@ does nothing more.
       finite point of the curve is exceptional, where Algorithm 6 needs
       none, so it stays out until Camilo rules on that trade.
 
-    Cost: under Apple clang 21 at `-O2` the six wide objects take 42,996
+    Cost: under Apple clang 21 at `-O2` the six wide objects take 43,000
     bytes of code and constants on arm64, 32,768 of them the table,
-    where the two native copies took 5,024, and 45,801 on x86-64, where
+    where the two native copies took 5,024, and 45,817 on x86-64, where
     they took 7,071. One wipe of 2,400 bytes after each wide call that
     takes a secret is 239 instructions on the M1 Pro; a signature makes
     five and a key exchange two. `p256_wide_limb.h` uses two builtins

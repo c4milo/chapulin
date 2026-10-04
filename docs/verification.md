@@ -675,7 +675,9 @@ The entries are grouped by area:
     `p256_wide_fe_sub`, `p256_wide_fe_cmov` and the three predicates
     each match a reference that writes the same choice as a branch, so
     an inverted mask fails here. Add, subtract
-    and negate take elements below p to an element below p. The byte
+    and negate take elements below p to an element below p, and the
+    negative of an element that is not zero is p less it, against a
+    reference that subtracts the limbs as they are. The byte
     marshalling and the copies to and from `p256_field.h`'s limbs
     round-trip. The Montgomery reduction, which for this prime is shifts
     and adds, wraps nothing for any eight limbs, and takes a value below
@@ -2292,6 +2294,13 @@ and three checks hold parts of it:
 Not in the tree: a run under memcheck with every secret marked
 undefined, which reports each branch and each address that depends on
 one. Decision 94 records one such run by hand and what it found.
+
+Not in the tree either: a count of these files' branches under a 64-bit
+gcc. `lint-wide-multiply` counts them under clang, and gcc lowers some
+of the same source otherwise: gcc 13.3 for x86-64 compiled the borrow of
+a subtraction from a constant zero to a jump on a coordinate's limb,
+which the field no longer writes. Decision 94 has what was read by hand
+under gcc 13.3 and 15.2.
 
 What the wide calls leave on the stack is measured, not proved. Each
 routine wipes the objects it names, and `widemul.h` calls

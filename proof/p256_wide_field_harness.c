@@ -113,9 +113,15 @@ static void prove_linear(void) {
     __CPROVER_assert(!elements || ref_below_p(o.limb),
                      "p256_wide_fe_sub: the difference is an element");
 
+    // p - a for an element that is not zero. The routine computes it as ~a - ~p, and the
+    // reference subtracts the limbs as they are.
+    (void)ref_sub(reduced, PRIME, a.limb);
     p256_wide_fe_neg(&o, &a);
     __CPROVER_assert(!elements || ref_below_p(o.limb),
                      "p256_wide_fe_neg: the negative is an element");
+    __CPROVER_assert(!elements || p256_wide_fe_zero_mask(&a) == UINT64_MAX ||
+                         limbs_same(o.limb, reduced),
+                     "p256_wide_fe_neg: p less an element that is not zero");
     __CPROVER_assert(p256_wide_fe_zero_mask(&a) != UINT64_MAX ||
                          p256_wide_fe_zero_mask(&o) == UINT64_MAX,
                      "p256_wide_fe_neg: zero negates to zero, not to p");

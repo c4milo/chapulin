@@ -1,0 +1,34 @@
+invariant: INV-16
+file: p256_wide_field.c
+catches: test/lint-invariants.sh
+reason: p256_wide_fe_neg computes 0 - a limb by limb and adds p when it
+  borrowed. The value is the same, so every vector, proof and count
+  under clang passes. gcc 13.3 for x86-64 compiles each of the four
+  borrows to a jump on a limb of a, and a is the Y of the entry or of the
+  multiple a digit named. No check of this tree counts these files'
+  branches under a 64-bit gcc, so the Semgrep rule
+  inv-16-p256-wide-no-borrow-from-zero refuses the calls.
+
+--- old
+    uint64_t keep = ~p256_wide_fe_zero_mask(a);
+    uint64_t borrow = 0;
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->limb[0], ~P0);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, ~a->limb[1], ~P1);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, ~a->limb[2], ~P2);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, ~a->limb[3], ~P3);
+    o->limb[0] = d0 & keep;
+    o->limb[1] = d1 & keep;
+    o->limb[2] = d2 & keep;
+    o->limb[3] = d3 & keep;
+--- new
+    uint64_t borrow = 0;
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, 0, a->limb[0]);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, 0, a->limb[1]);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, 0, a->limb[2]);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, 0, a->limb[3]);
+    uint64_t wrapped = p256_wide_mask(borrow);
+    uint64_t carry = 0;
+    o->limb[0] = p256_wide_add_carry(&carry, d0, P0 & wrapped);
+    o->limb[1] = p256_wide_add_carry(&carry, d1, P1 & wrapped);
+    o->limb[2] = p256_wide_add_carry(&carry, d2, P2 & wrapped);
+    o->limb[3] = p256_wide_add_carry(&carry, d3, P3 & wrapped);

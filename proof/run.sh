@@ -2143,8 +2143,8 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # 150 on ten cores, so the time is the run's CPU seconds and not its wall
 # clock, which was up to ten times that:
 #   p256_wide_row        128 properties,  3 s, 243 MB
-#   p256_wide_field      798 properties,  9 s,  90 MB
-#   p256_wide_field_mul  591 properties, 12 s, 100 MB
+#   p256_wide_field      856 properties,  9 s,  99 MB
+#   p256_wide_field_mul  648 properties, 10 s, 102 MB
 #   p256_wide_scalar     374 properties, 17 s, 467 MB
 #   p256_wide_point      234 properties,  2 s,  56 MB
 #   p256_wide_digit      265 properties, 23 s, 318 MB
