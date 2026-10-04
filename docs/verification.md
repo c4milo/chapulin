@@ -2480,7 +2480,7 @@ catches `inv16-host-object-drops-vector-chacha`,
 `inv16-device-object-holds-vector-chacha` and
 `inv16-chacha-variable-accepted`.
 
-None of this proves the two paths agree on an input no case reaches.
+None of this proves the two paths agree on an input no case runs.
 The path's timing rests on construction, as the portable loop's does:
 it runs adds, exclusive-ors, shifts and lane moves, with no table and no
 multiply. No gcc measures its branches. No proof covers the ChaCha20 a
@@ -2559,7 +2559,7 @@ which drops the wipe; `test/widemul-builds.sh` catches
 `poly1305-vector-falls-back-to-portable`, and `test/chacha-builds.sh`
 catches `poly1305-vector-in-device-object`.
 
-None of this proves the two paths agree on an input no case reaches.
+None of this proves the two paths agree on an input no case runs.
 The limb bounds that keep every sum below 2^64 are argued in the file's
 comments, not proved. The residue check reads the stack one compiler
 left on one call; it cannot see registers, or a spill slot that holds a
@@ -2768,7 +2768,7 @@ and `bin/quic_test_hw` run the same cases on the kernels now, and the 27
 mutants have not been run against them.
 
 None of this proves a kernel agrees with the portable code on an input no
-case reaches. QEMU's `max` model has AVX2 and VAES and no VPCLMULQDQ, in
+case runs. QEMU's `max` model has AVX2 and VAES and no VPCLMULQDQ, in
 8.2, 10.0 and 11.1 alike, so under qemu the AVX2 rows run and every row
 on the VAES kernels skips: no handshake there runs those kernels against
 the 128-bit loops. Those rows run where the CPU has the instructions,
