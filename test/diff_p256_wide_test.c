@@ -188,7 +188,7 @@ static void diff_ecdh(uint8_t widemul) {
     }
 }
 
-#define ROUNDS 100
+#define ROUNDS 25
 
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";

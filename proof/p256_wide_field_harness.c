@@ -10,9 +10,9 @@
 //   functional equivalence of every masked choice to a reference that writes
 //   the same choice as a branch: reduce_once against `if (value >= p)
 //   subtract`, p256_wide_fe_add and p256_wide_fe_sub against a reference
-//   that carries and borrows in 128-bit sums, p256_wide_fe_cmov and
-//   p256_wide_fe_cswap against `if (mask)`, and the three predicates against
-//   `==` and `<`. An inverted mask fails these;
+//   that carries and borrows in 128-bit sums, p256_wide_fe_cmov against
+//   `if (mask)`, and the three predicates against `==` and `<`. An inverted
+//   mask fails these;
 //
 //   the field contract on the linear routines: given elements below p,
 //   p256_wide_fe_add, p256_wide_fe_sub and p256_wide_fe_neg leave an element
@@ -145,12 +145,6 @@ static void prove_masked(void) {
     p256_wide_fe_cmov(&x, &y, mask);
     __CPROVER_assert(limbs_same(x.limb, mask ? y.limb : before_x.limb),
                      "p256_wide_fe_cmov: moves under the mask and only then");
-    x = before_x;
-    p256_wide_fe_cswap(&x, &y, mask);
-    __CPROVER_assert(limbs_same(x.limb, mask ? before_y.limb : before_x.limb),
-                     "p256_wide_fe_cswap: first operand");
-    __CPROVER_assert(limbs_same(y.limb, mask ? before_x.limb : before_y.limb),
-                     "p256_wide_fe_cswap: second operand");
 
     int zero = 1;
     int same = 1;

@@ -1,5 +1,5 @@
-// The table of multiples of G, and the mixed addition the base
-// multiplication adds its entries with, against p256_point.c and
+// The table of multiples of G, and the two formulas the wide scalar
+// multiplications add to the complete addition, against p256_point.c and
 // p256_field.c.
 //
 // run_table recomputes every entry of p256_wide_table from
@@ -12,10 +12,18 @@
 // table with Python's integers, so this holds the checked-in file to a
 // second computation, in C, by the code the proofs and the vectors hold.
 //
-// run_formulas holds p256_wide_point_add_affine to p256_point_add: the mixed
-// addition computes the coordinates the complete addition computes when the
-// second point's Z is 1, so the two must agree limb for limb on any
-// coordinates at all, on a curve or not.
+// run_formulas holds p256_wide_point_add_affine and p256_wide_point_double
+// to p256_point_add:
+//
+//   the mixed addition computes the coordinates the complete addition
+//   computes when the second point's Z is 1, so the two must agree limb for
+//   limb on any coordinates at all, on a curve or not;
+//
+//   the doubling computes the same point as the complete addition of a
+//   point with itself, in other coordinates, so the two must agree as
+//   points: both at infinity, or the same affine bytes. Its inputs are
+//   multiples of G, with Z 1 and with a Z the additions before left, and
+//   the point at infinity.
 //
 // Included by test/p256_equiv_test.c only, which declares the generator,
 // report and the helpers this file uses.
@@ -90,6 +98,24 @@ static void add_affine_case(const char *name, const p256_point *a, const p256_fe
     report("mixed add", name, ok);
 }
 
+// 2a in both files, as points, in both shapes a caller uses.
+static void double_case(const char *name, const p256_point *a) {
+    p256_point want;
+    p256_point back;
+    p256_wide_point wide_a;
+    p256_wide_point got;
+    p256_point_add(&want, a, a);
+    p256_wide_point_from_portable(&wide_a, a);
+    p256_wide_point_double(&got, &wide_a);
+    p256_wide_point_to_portable(&back, &got);
+    int ok = same_affine(&back, &want);
+    got = wide_a;
+    p256_wide_point_double(&got, &got);
+    p256_wide_point_to_portable(&back, &got);
+    ok &= same_affine(&back, &want);
+    report("double", name, ok);
+}
+
 static void run_formulas(void) {
     p256_point a;
     p256_point b;
@@ -111,6 +137,18 @@ static void run_formulas(void) {
     add_affine_case("the generator and itself", &b, &b.x, &b.y);
     add_affine_case("the generator and its negative", &b, &negated.x, &negated.y);
     add_affine_case("infinity and the generator", &p256_point_infinity, &b.x, &b.y);
+
+    double_case("infinity", &p256_point_infinity);
+    double_case("the generator", &p256_point_generator);
+    for (int i = 0; i < 24; i++) {
+        random_wide_scalar(&k, (uint32_t)i & 1U);
+        p256_point_base_mul(&a, &k);
+        // Four in a row, as a multiplication doubles between windows.
+        for (int doubling = 0; doubling < 4; doubling++) {
+            double_case("a multiple of the generator", &a);
+            p256_point_add(&a, &a, &a);
+        }
+    }
 }
 
 #endif

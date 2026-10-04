@@ -1,4 +1,4 @@
-// P-256 points over the wide field (p256_wide_field.h): the two addition formulas the scalar
+// P-256 points over the wide field (p256_wide_field.h): the three formulas the scalar
 // multiplications are built from, and the two entries of p256_point.h that read and write
 // bytes. A host object (-DCH_CPU_RUNTIME,
 // cpu_cfg.h) holds this file beside p256_point.c, and widemul.h runs it for a session whose
@@ -51,6 +51,10 @@ void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p25
 // infinity among them. o may alias a.
 void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
                                 const p256_wide_affine *b);
+
+// o = 2a: the exception-free doubling for curves with a = -3 (the same paper, Algorithm 6),
+// step for step. It is correct for every a, the point at infinity among them. o may alias a.
+void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a);
 
 // p256_point_from_bytes on the wide field: reads an uncompressed point and returns all ones
 // when the leading byte is 0x04, X and Y are both below p, and the pair satisfies

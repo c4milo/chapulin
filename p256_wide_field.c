@@ -153,14 +153,6 @@ void p256_wide_fe_cmov(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask) {
     o->limb[3] = (a->limb[3] & mask) | (o->limb[3] & ~mask);
 }
 
-void p256_wide_fe_cswap(p256_wide_fe *a, p256_wide_fe *b, uint64_t mask) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        uint64_t exchange = (a->limb[i] ^ b->limb[i]) & mask;
-        a->limb[i] ^= exchange;
-        b->limb[i] ^= exchange;
-    }
-}
-
 void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     uint64_t carry = 0;
     uint64_t s0 = p256_wide_add_carry(&carry, a->limb[0], b->limb[0]);

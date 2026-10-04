@@ -667,9 +667,9 @@ The entries are grouped by area:
     128-bit reference, and each carry out is 0 or 1.
   - `p256_wide_field`: every routine with no product, on its real body.
     The conditional subtraction of p, `p256_wide_fe_add`,
-    `p256_wide_fe_sub`, `p256_wide_fe_cmov`, `p256_wide_fe_cswap` and
-    the three predicates each match a reference that writes the same
-    choice as a branch, so an inverted mask fails here. Add, subtract
+    `p256_wide_fe_sub`, `p256_wide_fe_cmov` and the three predicates
+    each match a reference that writes the same choice as a branch, so
+    an inverted mask fails here. Add, subtract
     and negate take elements below p to an element below p. The byte
     marshalling and the copies to and from `p256_field.h`'s limbs
     round-trip. The Montgomery reduction, which for this prime is shifts
@@ -690,23 +690,23 @@ The entries are grouped by area:
     moves with a loop counter, `exponent_low_nibble`, is in bounds and
     returns a value below 16 at every position the loop passes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
-    shapes, `p256_wide_point_add_affine` in both of its shapes,
-    `p256_wide_point_from_bytes` over any 65 bytes and
+    shapes, `p256_wide_point_add_affine` and `p256_wide_point_double`
+    in both of theirs, `p256_wide_point_from_bytes` over any 65 bytes and
     `p256_wide_point_affine` with and without a y output, over the field
     stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
   - `p256_wide_digit`: the digits and the scan of the table, on their
     real bodies. For every 256-bit k, the 64 signed odd digits
     `window_digit` returns add up to k | 1, each digit's index is inside
     a row, its sign is a mask, and the top window's digit is positive.
-    `table_select` returns the row's entry at the index, limb for limb,
-    for any row contents and every index, and `equal_mask` is all ones
-    exactly for equal values.
-  - `p256_wide_mul`: the whole of `p256_wide_base_mul`, every window of
-    the shipped loop, and of `p256_wide_mul`, all 256 rounds, over the
-    point formulas stubbed to their contracts and the shipped table. The
-    scalar's bits, the table's rows and each step of a scan are in
-    bounds at every trip, and every mask handed to `p256_wide_fe_cmov`
-    and `p256_wide_fe_cswap` is 0 or all ones.
+    `table_select` and `multiple_select` return the row's entry at the
+    index, limb for limb, for any row contents and every index, and
+    `equal_mask` is all ones exactly for equal values.
+  - `p256_wide_mul`: the whole of `p256_wide_base_mul` and of
+    `p256_wide_mul`, every window of the shipped loops, over the point
+    formulas stubbed to their contracts and the shipped table. The
+    scalar's bits, the table's rows, the eight multiples of the point
+    and each step of a scan are in bounds at every trip, and every mask
+    handed to `p256_wide_fe_cmov` is 0 or all ones.
   - `p256_wide_wipe`: `p256_wide_wipe_below` calls `wipe_frame` through
     its volatile pointer, and the wipe covers the array of
     `P256_WIDE_BELOW_LEN` bytes and no byte outside it.
@@ -715,7 +715,7 @@ The entries are grouped by area:
 - **Not proved:**
   - a product's value, and so that the scalar's `mont_mul` leaves a
     value below n, that either inverse computes an inverse and that the
-    point formula computes the group law.
+    three point formulas compute the group law.
   - `p256_wide_fe_inv` and `p256_wide_scalar_inverse` whole. Each is a
     fixed chain of the calls proven above, in the shapes proven above,
     at counts that are literals. Each product takes the address of 13 to
@@ -2195,7 +2195,7 @@ This rests on tests for the same reason. The 355 Wycheproof
 `ecdh_secp256r1` cases and `test/p256_ecdh_test.c`'s Python-computed key
 pairs and shared secrets are what says the ladder computes the right
 point; the proofs cover its memory safety and its range check.
-`bin/diff_p256_wide` adds 100 key generations and 100 key exchanges
+`bin/diff_p256_wide` adds 25 key generations and 25 key exchanges
 against the Lean spec under each answer
 ([What `make diff` runs](#what-make-diff-runs)).
 
@@ -2214,7 +2214,7 @@ vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 66,971 comparisons, and requires the
+  32-bit files on the same inputs, 67,069 comparisons, and requires the
   same limbs, bytes and verdicts. Both fields keep an element in the
   Montgomery domain with R = 2^256, so each comparison is of limbs taken
   two at a time, not of a value read back through another routine:
@@ -2236,6 +2236,11 @@ the wide files to the same answers:
     point with the generator, the generator with itself, with its
     negative and with the point at infinity, limb for limb against the
     complete addition with Z = 1;
+  - the doubling on the point at infinity, on the generator and on 24
+    random multiples of it, four doublings in a row from each, against
+    the complete addition of the point with itself. The two formulas
+    give the same point in other coordinates, so the comparison is of
+    the affine bytes;
   - the point decode on a point and on each way a point is refused, and
     the affine conversion on a finite point and on the point at infinity;
   - both scalar multiplications on 16 scalars at the edges, 0, 1, n - 1,
@@ -3191,8 +3196,8 @@ gives. Tests hold it:
 
 A mutant that inverts a dispatcher, reads the answer from another bit,
 or drops the answer at any of the places that pass it, computes the same
-bytes, so only the counts catch it; those mutants are among the fifty
-`INV-16` violations that hold the host object's multiply
+bytes, so only the counts catch it; those mutants are among the
+fifty-eight `INV-16` violations that hold the host object's multiply
 (docs/invariants.md). The counts say which copy ran, not what the native
 multiply costs in time: that is the caller's statement, which nothing
 here can check.
@@ -3431,8 +3436,8 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 801 comparisons, where the compiler
-   passes the host test: 100 key generations, signatures and key
+4. The constant-time P-256 rows, 201 comparisons, where the compiler
+   passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
    answer the spec. The key generation must write the spec's public

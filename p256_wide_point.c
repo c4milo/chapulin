@@ -151,6 +151,58 @@ void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
     o->z = z3;
 }
 
+// Renes-Costello-Batina Algorithm 6, the exception-free doubling for a = -3, step for step in
+// the paper's order and with the paper's register names.
+void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
+    p256_wide_fe t0;
+    p256_wide_fe t1;
+    p256_wide_fe t2;
+    p256_wide_fe t3;
+    p256_wide_fe x3;
+    p256_wide_fe y3;
+    p256_wide_fe z3;
+
+    p256_wide_fe_sqr(&t0, &a->x);
+    p256_wide_fe_sqr(&t1, &a->y);
+    p256_wide_fe_sqr(&t2, &a->z);
+    p256_wide_fe_mul(&t3, &a->x, &a->y);
+    p256_wide_fe_add(&t3, &t3, &t3);
+    p256_wide_fe_mul(&z3, &a->x, &a->z);
+    p256_wide_fe_add(&z3, &z3, &z3);
+    p256_wide_fe_mul(&y3, &B_MONT, &t2);
+    p256_wide_fe_sub(&y3, &y3, &z3);
+    p256_wide_fe_add(&x3, &y3, &y3);
+    p256_wide_fe_add(&y3, &x3, &y3);
+    p256_wide_fe_sub(&x3, &t1, &y3);
+    p256_wide_fe_add(&y3, &t1, &y3);
+    p256_wide_fe_mul(&y3, &x3, &y3);
+    p256_wide_fe_mul(&x3, &x3, &t3);
+    p256_wide_fe_add(&t3, &t2, &t2);
+    p256_wide_fe_add(&t2, &t2, &t3);
+    p256_wide_fe_mul(&z3, &B_MONT, &z3);
+    p256_wide_fe_sub(&z3, &z3, &t2);
+    p256_wide_fe_sub(&z3, &z3, &t0);
+    p256_wide_fe_add(&t3, &z3, &z3);
+    p256_wide_fe_add(&z3, &z3, &t3);
+    p256_wide_fe_add(&t3, &t0, &t0);
+    p256_wide_fe_add(&t0, &t3, &t0);
+    p256_wide_fe_sub(&t0, &t0, &t2);
+    p256_wide_fe_mul(&t0, &t0, &z3);
+    p256_wide_fe_add(&y3, &y3, &t0);
+    p256_wide_fe_mul(&t0, &a->y, &a->z);
+    p256_wide_fe_add(&t0, &t0, &t0);
+    p256_wide_fe_mul(&z3, &t0, &z3);
+    p256_wide_fe_sub(&x3, &x3, &z3);
+    p256_wide_fe_mul(&z3, &t0, &t1);
+    p256_wide_fe_add(&z3, &z3, &z3);
+    p256_wide_fe_add(&z3, &z3, &z3);
+
+    // o may alias a, so the three coordinates move only now.
+    o->x = x3;
+    o->y = y3;
+    o->z = z3;
+}
+
 uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     p256_wide_point point;
     p256_wide_fe x;

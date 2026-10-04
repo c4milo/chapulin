@@ -1,0 +1,18 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: multiple_select starts its scan at the second of the eight
+  multiples of the point, so a digit of size 1 selects nothing and
+  p256_wide_mul adds all-zero coordinates in place of the point itself.
+  Every other digit is right, so one window in eight is wrong for a
+  random scalar. bin/p256_equiv_test holds the multiplication to
+  p256_point_mul on scalars whose windows hold every digit, and
+  proof/p256_wide_digit_harness.c proves the scan returns the multiple at
+  every index.
+
+--- old
+    o->z = FE_ZERO;
+    for (uint64_t j = 0; j < ENTRIES; j++) {
+--- new
+    o->z = FE_ZERO;
+    for (uint64_t j = 1; j < ENTRIES; j++) {

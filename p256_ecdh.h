@@ -31,7 +31,8 @@
 // caller stated its multiply runs the wide files (docs/decisions.md 94):
 // a public key is 64 additions of entries of a 32 KiB table of multiples
 // of the generator, each read by a masked scan over its row, and a shared
-// secret is the same ladder on the wide field.
+// secret is 253 doublings and 71 additions over eight multiples of the
+// peer's point, each read by the same scan.
 #ifndef CH_P256_ECDH_H
 #define CH_P256_ECDH_H
 

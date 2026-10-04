@@ -60,8 +60,6 @@ uint64_t p256_wide_fe_equal_mask(const p256_wide_fe *a, const p256_wide_fe *b);
 
 // o = a when mask is all ones, o unchanged when mask is zero.
 void p256_wide_fe_cmov(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask);
-// Exchanges a and b when mask is all ones, leaves both when mask is zero.
-void p256_wide_fe_cswap(p256_wide_fe *a, p256_wide_fe *b, uint64_t mask);
 
 // o = a + b mod p, o = a - b mod p, o = -a mod p (and 0 for a = 0).
 void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b);

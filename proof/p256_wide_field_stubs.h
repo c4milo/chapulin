@@ -97,13 +97,6 @@ void p256_wide_fe_cmov(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask) {
     havoc_wide_fe(o);
 }
 
-void p256_wide_fe_cswap(p256_wide_fe *a, p256_wide_fe *b, uint64_t mask) {
-    __CPROVER_assert(mask == 0 || mask == UINT64_MAX,
-                     "p256_wide_fe_cswap: the mask its caller builds is 0 or all ones");
-    havoc_wide_fe(a);
-    havoc_wide_fe(b);
-}
-
 void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     check_wide_fe_readable(a);
     check_wide_fe_readable(b);

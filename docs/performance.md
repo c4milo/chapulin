@@ -871,7 +871,9 @@ The order of the work, by the instructions each item removes from a handshake:
    mixed additions. On the M1 Pro under Apple clang 21 a signature went from 1.88 M instructions
    to 0.53 M and a key generation from 1.58 M to 0.23 M, where OpenSSL 3.6.5 takes 0.18 M and
    0.17 M. A session without the bit keeps the ladder: the table's additions are the wide
-   field's.
+   field's. The key exchange multiplies the peer's point, which no table holds, by four-bit
+   windows over eight multiples of it: 0.92 M instructions where the ladder on the wide field
+   took 1.58 M and OpenSSL takes 0.48 M.
 3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519:
    done (decision 94). On the M1 Pro under Apple clang 21, with the ladder unchanged, a signature
    through `p256_sign` went from 5.52 M instructions to 1.88 M and a key exchange through
@@ -882,6 +884,8 @@ The order of the work, by the instructions each item removes from a handshake:
    `ch_cfg.cpu` bits. Hashing takes 0.78 M of the 6.95 M: the transcript and key schedule's
    0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the intrinsics,
    so equivalence tests against the portable code hold them, as they hold the AES instructions.
+   Since decision 94 the RFC 6979 nonce is the largest part of a signature: 0.24 M of its 0.53 M
+   instructions on the M1 Pro, where OpenSSL's whole signature takes 0.18 M.
 5. X25519 key generation from a table of multiples of the base point, as BoringSSL computes it,
    which bounds the gain at the key generation's 0.39 M. It needs the same ruling as item 2.
 6. A server whose suite hashes with SHA-384 stops the SHA-256 transcript, 0.08 M.

@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: p256_equiv_test
+reason: the doubling leaves out the last of Algorithm 6's 34 steps, the
+  second doubling of Z3, so Z is half what the formula gives and the
+  result is another point. No fault follows: every coordinate is still a
+  field element. bin/p256_equiv_test holds the doubling to the complete
+  addition of a point with itself on multiples of the generator and on
+  the point at infinity.
+
+--- old
+    p256_wide_fe_add(&z3, &z3, &z3);
+    p256_wide_fe_add(&z3, &z3, &z3);
+--- new
+    p256_wide_fe_add(&z3, &z3, &z3);

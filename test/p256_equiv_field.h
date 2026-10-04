@@ -107,18 +107,12 @@ static void field_case(const char *name, const p256_fe *a, const p256_fe *b, int
     ok &= same_mask(p256_wide_fe_equal_mask(&wa, &wb), p256_fe_equal_mask(a, b));
     ok &= same_mask(p256_wide_fe_equal_mask(&wa, &wa), p256_fe_equal_mask(a, a));
 
-    // Both masks through the select and the exchange.
+    // Both masks through the select.
     wo = wa;
     p256_wide_fe_cmov(&wo, &wb, 0);
     ok &= same_fe(&wo, a);
     p256_wide_fe_cmov(&wo, &wb, WIDE_ONES);
     ok &= same_fe(&wo, b);
-    p256_wide_fe first = wa;
-    p256_wide_fe second = wb;
-    p256_wide_fe_cswap(&first, &second, 0);
-    ok &= same_fe(&first, a) && same_fe(&second, b);
-    p256_wide_fe_cswap(&first, &second, WIDE_ONES);
-    ok &= same_fe(&first, b) && same_fe(&second, a);
 
     // The byte marshalling, through the other field's bytes.
     uint8_t portable_bytes[P256_FE_LEN];

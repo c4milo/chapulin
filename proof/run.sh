@@ -2138,16 +2138,17 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # 150 on ten cores, so the time is the run's CPU seconds and not its wall
 # clock, which was up to ten times that:
 #   p256_wide_row        128 properties,  3 s, 243 MB
-#   p256_wide_field      822 properties, 10 s,  98 MB
-#   p256_wide_field_mul  613 properties, 11 s, 103 MB
+#   p256_wide_field      798 properties,  9 s,  90 MB
+#   p256_wide_field_mul  591 properties, 12 s, 100 MB
 #   p256_wide_scalar     374 properties, 17 s, 467 MB
-#   p256_wide_point      217 properties,  1 s,  47 MB
-#   p256_wide_digit      232 properties, 12 s, 154 MB
-#   p256_wide_mul        350 properties, 87 s, 490 MB
+#   p256_wide_point      234 properties,  2 s,  56 MB
+#   p256_wide_digit      265 properties, 23 s, 318 MB
+#   p256_wide_mul        304 properties, 95 s, 375 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The two lines with --object-bits 10 track more than 256 objects: each
 # product's locals have their addresses taken, and the lines run 14 and 20
-# products.
+# products. p256_wide_mul's ct_wipe bound is the 768 bytes of the eight
+# multiples p256_wide_mul wipes.
 # The field multiply over the real products instead of the contract also
 # converged, 694 properties in 165 s at 474 MB, and has no line: it states the
 # row's claim four more times and nothing else.
@@ -2157,7 +2158,7 @@ launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --un
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_mul 257 "" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and

@@ -1,14 +1,13 @@
 // The two P-256 scalar multiplications over the wide field (see p256_wide_mul.h for the
 // contracts).
 //
-// p256_wide_base_mul writes the scalar as 64 signed odd digits, one for each four-bit window,
-// and adds one entry of the table of multiples of G (p256_wide_table.h) for each digit. It
-// never doubles. p256_wide_mul is p256_point.c's ladder on the wide field: 256 rounds, each
-// one masked exchange, one addition, one doubling by the same addition, and the exchange
-// back.
+// Both write the scalar as 64 signed odd digits, one for each four-bit window, and add one
+// multiple of the point for each digit. p256_wide_base_mul reads the multiple from the table
+// of multiples of G (p256_wide_table.h) and never doubles. p256_wide_mul reads it from eight
+// multiples of its point, which it computes first, and doubles four times between windows.
 //
-// The digits. The base multiplication computes K times G for K = k | 1, which is odd, and
-// takes G away again when k was even. Write b_j for bit j of K, so b_0 is 1. Then
+// The digits. Both compute K times the point for K = k | 1, which is odd, and take the point
+// away again when k was even. Write b_j for bit j of K, so b_0 is 1. Then
 //
 //     K = 2^255 + sum over j from 0 to 254 of s_j 2^j,  with s_j = 2 b_(j+1) - 1,
 //
@@ -18,11 +17,12 @@
 //     d_i = s_(4i) + 2 s_(4i+1) + 4 s_(4i+2) + 8 s_(4i+3),
 //
 // with the 2^255 term standing in for s_255, so K is the sum of d_i 16^i. A digit is odd and
-// lies between -15 and 15, and none is zero, so every window adds exactly one entry and the
-// sequence of operations is the same for every scalar. A digit's sign is the sign of its top
-// term: bit 4i + 4 of k, and positive for the top window. With v the three bits 4i + 1 to
-// 4i + 3 of k, a positive digit is 2v + 1 and a negative one is -(2 (7 - v) + 1). Bit 0 of k
-// is read once, for the correction at the end: K's bit 0 is 1 whatever k's is.
+// lies between -15 and 15, and none is zero, so every window adds exactly one multiple and
+// the sequence of operations is the same for every scalar. A digit's sign is the sign of its
+// top term, s_(4i+3): positive when bit 4i + 4 of k is set, and always positive for the top
+// window. With v the three bits 4i + 1 to 4i + 3 of k, a positive digit is 2v + 1 and a
+// negative one is -(2 (7 - v) + 1). Bit 0 of k is read once, for the correction at the end:
+// K's bit 0 is 1 whatever k's is.
 // proof/p256_wide_digit_harness.c proves that the digits add up to k | 1 for every k.
 #include "p256_wide_mul.h"
 
@@ -100,6 +100,20 @@ static void table_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES
     }
 }
 
+// The same scan over eight projective points.
+static void multiple_select(p256_wide_point *o, const p256_wide_point row[ENTRIES],
+                            uint64_t index) {
+    o->x = FE_ZERO;
+    o->y = FE_ZERO;
+    o->z = FE_ZERO;
+    for (uint64_t j = 0; j < ENTRIES; j++) {
+        uint64_t mask = equal_mask(j, index);
+        fe_keep(&o->x, &row[j].x, mask);
+        fe_keep(&o->y, &row[j].y, mask);
+        fe_keep(&o->z, &row[j].z, mask);
+    }
+}
+
 // o = a where mask is all ones, o unchanged where it is zero.
 static void point_cmov(p256_wide_point *o, const p256_wide_point *a, uint64_t mask) {
     p256_wide_fe_cmov(&o->x, &a->x, mask);
@@ -114,6 +128,16 @@ static void digit_entry(p256_wide_affine *o, p256_wide_fe *negated, const p256_s
                         size_t window) {
     digit d = window_digit(k, window);
     table_select(o, p256_wide_table[window], d.index);
+    p256_wide_fe_neg(negated, &o->y);
+    p256_wide_fe_cmov(&o->y, negated, d.negative);
+}
+
+// The same from the eight multiples of a point, multiple[j] = (2j + 1) times it.
+static void digit_multiple(p256_wide_point *o, p256_wide_fe *negated,
+                           const p256_wide_point multiple[ENTRIES], const p256_scalar *k,
+                           size_t window) {
+    digit d = window_digit(k, window);
+    multiple_select(o, multiple, d.index);
     p256_wide_fe_neg(negated, &o->y);
     p256_wide_fe_cmov(&o->y, negated, d.negative);
 }
@@ -147,42 +171,42 @@ void p256_wide_base_mul(p256_point *o, const p256_scalar *k) {
     ct_wipe(&negated, sizeof negated);
 }
 
-// Exchanges a and b when mask is all ones, leaves both when it is zero.
-static void point_cswap(p256_wide_point *a, p256_wide_point *b, uint64_t mask) {
-    p256_wide_fe_cswap(&a->x, &b->x, mask);
-    p256_wide_fe_cswap(&a->y, &b->y, mask);
-    p256_wide_fe_cswap(&a->z, &b->z, mask);
-}
-
-// One round of the Montgomery ladder, for bit i of k: p256_point.c's ladder_round on the wide
-// field. The bit becomes a mask through p256_wide_mask and decides nothing else.
-static void ladder_round(p256_wide_point *r0, p256_wide_point *r1, p256_wide_point *sum,
-                         const p256_scalar *k, int i) {
-    uint64_t bit = (k->limb[i >> 5] >> (i & 31)) & 1U;
-    uint64_t mask = p256_wide_mask(bit);
-    point_cswap(r0, r1, mask);
-    p256_wide_point_add(sum, r0, r1);
-    p256_wide_point_add(r0, r0, r0);
-    *r1 = *sum;
-    point_cswap(r0, r1, mask);
-}
-
 void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
-    p256_wide_point r0;
-    p256_wide_point r1;
+    p256_wide_point multiple[ENTRIES]; // multiple[j] = (2j + 1) * p
+    p256_wide_point twice;
     p256_wide_point sum;
+    p256_wide_point entry;
+    p256_wide_point corrected;
+    p256_wide_fe negated;
 
-    p256_wide_point_from_portable(&r0, &p256_point_infinity);
-    p256_wide_point_from_portable(&r1, p);
-    // Most significant bit first: 256 rounds, each the same work whatever the bit holds.
-    for (int i = P256_SCALAR_LIMBS * 32 - 1; i >= 0; i--) {
-        ladder_round(&r0, &r1, &sum, k, i);
+    p256_wide_point_from_portable(&multiple[0], p);
+    p256_wide_point_double(&twice, &multiple[0]);
+    for (size_t j = 1; j < ENTRIES; j++) {
+        p256_wide_point_add(&multiple[j], &multiple[j - 1], &twice);
     }
-    p256_wide_point_to_portable(o, &r0);
+    // Most significant window first: four doublings move the sum up one window, and the
+    // window's digit adds its multiple.
+    digit_multiple(&sum, &negated, multiple, k, WINDOWS - 1);
+    for (size_t window = WINDOWS - 1; window > 0; window--) {
+        for (int i = 0; i < WINDOW_BITS; i++) {
+            p256_wide_point_double(&sum, &sum);
+        }
+        digit_multiple(&entry, &negated, multiple, k, window - 1);
+        p256_wide_point_add(&sum, &sum, &entry);
+    }
+    // The digits are those of k | 1, so an even k takes p away again, by mask.
+    entry = multiple[0];
+    p256_wide_fe_neg(&entry.y, &entry.y);
+    p256_wide_point_add(&corrected, &sum, &entry);
+    point_cmov(&sum, &corrected, p256_wide_mask(scalar_bit(k, 0) ^ 1U));
+    p256_wide_point_to_portable(o, &sum);
 
-    ct_wipe(&r0, sizeof r0);
-    ct_wipe(&r1, sizeof r1);
+    ct_wipe(multiple, sizeof multiple);
+    ct_wipe(&twice, sizeof twice);
     ct_wipe(&sum, sizeof sum);
+    ct_wipe(&entry, sizeof entry);
+    ct_wipe(&corrected, sizeof corrected);
+    ct_wipe(&negated, sizeof negated);
 }
 
 #endif // CH_CPU_RUNTIME

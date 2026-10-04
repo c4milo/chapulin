@@ -4,7 +4,7 @@
 //
 //   the digits add up to the scalar. For every k, the 64 digits window_digit
 //   returns, each (2 index + 1) with its sign, times 16 to the window, sum
-//   to k | 1 modulo 2^256. The base multiplication rests on that sum, and
+//   to k | 1 modulo 2^256. Both scalar multiplications rest on that sum, and
 //   a digit read from the wrong bits, a sign taken from the wrong bit or a
 //   top window that reads a bit past the scalar fails it. The sum runs in
 //   the reference arithmetic of proof/p256_wide_reference.h, 128-bit sums
@@ -15,9 +15,10 @@
 //   digit reads is inside the scalar: the shifts and the limb index are
 //   proven in bounds for every window;
 //
-//   table_select returns the row's entry at the index, limb for limb, for
-//   every index below the row's length and any row contents. A scan that
-//   skips an entry, stops early or keeps two entries fails here;
+//   table_select and multiple_select return the row's entry at the index,
+//   limb for limb, for every index below the row's length and any row
+//   contents. A scan that skips an entry, stops early or keeps two entries
+//   fails here;
 //
 //   equal_mask gives all ones exactly when its two values are the same, for
 //   any two 64-bit values, and wraps nothing (--unsigned-overflow-check on
@@ -79,22 +80,32 @@ static void fe_nondet(p256_wide_fe *f) {
 // to a second member of an array element at a symbolic index: with
 // `const uint64_t *p = row[index].y.limb`, it fails `p[0] ==
 // row[index].y.limb[0]`. The code under test takes no such pointer: every
-// row index in table_select is a loop counter.
+// row index in table_select and multiple_select is a loop counter.
 static void prove_selects(void) {
     p256_wide_affine affine_row[ENTRIES];
+    p256_wide_point point_row[ENTRIES];
     for (size_t j = 0; j < ENTRIES; j++) {
         fe_nondet(&affine_row[j].x);
         fe_nondet(&affine_row[j].y);
+        fe_nondet(&point_row[j].x);
+        fe_nondet(&point_row[j].y);
+        fe_nondet(&point_row[j].z);
     }
     uint64_t index = nondet_u64();
     __CPROVER_assume(index < ENTRIES);
 
     p256_wide_affine affine;
+    p256_wide_point point;
     table_select(&affine, affine_row, index);
+    multiple_select(&point, point_row, index);
     for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
         __CPROVER_assert(affine.x.limb[i] == affine_row[index].x.limb[i] &&
                              affine.y.limb[i] == affine_row[index].y.limb[i],
                          "table_select: the entry at the index, and no other");
+        __CPROVER_assert(point.x.limb[i] == point_row[index].x.limb[i] &&
+                             point.y.limb[i] == point_row[index].y.limb[i] &&
+                             point.z.limb[i] == point_row[index].z.limb[i],
+                         "multiple_select: the multiple at the index, and no other");
     }
 }
 

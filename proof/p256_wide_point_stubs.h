@@ -58,4 +58,9 @@ void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
     havoc_wide_point(o);
 }
 
+void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double: point readable");
+    havoc_wide_point(o);
+}
+
 #endif

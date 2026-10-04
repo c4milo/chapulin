@@ -4,13 +4,15 @@
 //   memory safety and absence of UB in p256_wide_point_add over
 //   unconstrained coordinates, in every aliasing shape its callers use:
 //   separate output, output over the first input, output over the second,
-//   and both inputs and the output one object, which is the doubling the
-//   ladder performs and the shape a formula that wrote a coordinate before
-//   its last read would get wrong;
+//   and both inputs and the output one object, and the shape a formula that wrote a coordinate
+//   before its last read would get wrong;
 //
 //   the same in p256_wide_point_add_affine, in both shapes the base
 //   multiplication uses: separate output, and output over the projective
 //   input;
+//
+//   the same in p256_wide_point_double, separate output and output over
+//   the input, which is how a multiplication doubles between windows;
 //
 //   memory safety in p256_wide_point_from_bytes over any 65 bytes, and that
 //   its answer is 0 or UINT32_MAX, the mask p256_point.h promises, whichever
@@ -28,10 +30,12 @@
 // stubbed, so nothing here depends on a field value, and the real field
 // bodies are proven in the three p256_wide_field harnesses.
 //
-// Not proven here: that the two formulas compute the group law.
-// bin/p256_equiv_test holds both to p256_point_add's coordinates, limb for
-// limb, on random and structured operands, and that routine's steps are
-// checked against an affine reference in test/gen_p256_sign_vectors.py.
+// Not proven here: that the three formulas compute the group law.
+// bin/p256_equiv_test holds the two additions to p256_point_add's
+// coordinates, limb for limb, on random and structured operands, and the
+// doubling to the point p256_point_add gives for a point with itself. That
+// routine's steps are checked against an affine reference in
+// test/gen_p256_sign_vectors.py.
 #include "p256_wide_field_stubs.h"
 
 #include "p256_wide_point.c"
@@ -70,7 +74,7 @@ static void prove_add_aliasing(void) {
     p256_wide_point_add(&b, &a, &b); // o == b
 
     wide_point_nondet(&a);
-    p256_wide_point_add(&a, &a, &a); // o == a == b, the ladder's doubling
+    p256_wide_point_add(&a, &a, &a); // o == a == b
 }
 
 static void prove_add_affine(void) {
@@ -86,6 +90,16 @@ static void prove_add_affine(void) {
     p256_wide_point_add_affine(&o, &a, &b);
     wide_point_nondet(&a);
     p256_wide_point_add_affine(&a, &a, &b); // o == a, the shape the base multiplication adds in
+}
+
+static void prove_double(void) {
+    p256_wide_point a;
+    p256_wide_point o;
+
+    wide_point_nondet(&a);
+    p256_wide_point_double(&o, &a);
+    wide_point_nondet(&a);
+    p256_wide_point_double(&a, &a); // o == a, the shape a multiplication doubles in
 }
 
 static void prove_from_bytes(void) {
@@ -123,6 +137,7 @@ static void prove_copies(void) {
 int main(void) {
     prove_add_aliasing();
     prove_add_affine();
+    prove_double();
     prove_from_bytes();
     prove_affine();
     prove_copies();

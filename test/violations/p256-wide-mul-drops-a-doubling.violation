@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: p256_wide_mul doubles three times between windows where a
+  four-bit window needs four, so every digit but the last lands one bit
+  too low. bin/p256_equiv_test holds the multiplication to p256_point_mul
+  on edge and random scalars.
+
+--- old
+        for (int i = 0; i < WINDOW_BITS; i++) {
+            p256_wide_point_double(&sum, &sum);
+--- new
+        for (int i = 1; i < WINDOW_BITS; i++) {
+            p256_wide_point_double(&sum, &sum);

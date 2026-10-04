@@ -6046,29 +6046,30 @@ HASH_HW_BRANCH_CEILING := \
 # recorded, and the counts are the same on both specs. Every one closes a
 # loop over a public count or tests a public value, and none reads a limb
 # or a scalar bit.
-#   p256_wide_field.c's 8: the four limbs in each of the two copies to and
-#     from p256_field.h's element and in the exchange, the four limbs and
-#     the eight bytes of each in the two marshalling routines, and
-#     sqr_times' count, a constant at every call. The add, the subtract,
-#     the multiply and the three predicates are straight line.
+#   p256_wide_field.c's 7: the four limbs in each of the two copies to and
+#     from p256_field.h's element, the four limbs and the eight bytes of
+#     each in the two marshalling routines, and sqr_times' count, a
+#     constant at every call. The add, the subtract, the multiply and the
+#     three predicates are straight line.
 #   p256_wide_scalar.c's 3: the fourteen powers the inverse computes, the
 #     32 groups of four bits of the exponent n-2, a build constant, and
 #     sqr_times' count. The Montgomery product is straight line.
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
-#   p256_wide_mul.c's 6: the 63 windows the base multiplication adds
-#     after the first, the eight entries a scan of the table reads and
-#     the four limbs of each of an entry's two coordinates, the test for
-#     the top window, whose digit is positive, which reads the window's
-#     number, and the ladder's 256 rounds.
+#   p256_wide_mul.c's 12: the 63 windows each multiplication adds after
+#     its first, the eight entries a scan reads and the four limbs of each
+#     coordinate, two for a table entry and three for a multiple of the
+#     point, the seven multiples p256_wide_mul computes, the four
+#     doublings between windows, and the test for the top window, whose
+#     digit is positive, which reads the window's number.
 #   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
 #     holds a branch.
 P256_WIDE_BRANCH_CEILING := \
-  arm64/p256_wide_field.c:8 x86-64/p256_wide_field.c:8 \
+  arm64/p256_wide_field.c:7 x86-64/p256_wide_field.c:7 \
   arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
-  arm64/p256_wide_mul.c:6 x86-64/p256_wide_mul.c:6 \
+  arm64/p256_wide_mul.c:12 x86-64/p256_wide_mul.c:12 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0
 P256_SCALAR_BRANCH_CEILING := \
