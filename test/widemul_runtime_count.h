@@ -1,8 +1,8 @@
 // The calls bin/widemul_runtime_test counts into each copy of the files
 // built on ct.h's widening multiply in a host object (docs/decisions.md 87
-// and 89). The test/widemul_count_*.c units compile the
-// seven files again, the files under their own names and the native
-// copies, with each entry widemul.h dispatches to under a second name
+// and 89). The test/widemul_count_*.c units compile the files built on
+// the multiply again, the files under their own names, the native
+// copies and the wide X25519 field, with each entry widemul.h dispatches to under a second name
 // (test/widemul_count_names.h), and test/widemul_runtime_count.c defines
 // the names the dispatchers call, each as a count and a call to the
 // entry it renamed. So the library's sources run unchanged, and the test
@@ -20,7 +20,8 @@
 // Calls into the dispatched entries of the files under their own names,
 // which take the 16x16 decomposition.
 extern unsigned long widemul_decomposed_calls;
-// Calls into the dispatched entries of the native copies.
+// Calls into the dispatched entries of the native copies, and of the wide
+// X25519 field, which is X25519's copy on the native multiply.
 extern unsigned long widemul_native_calls;
 // Calls into poly1305_vector_native.c's entry, which only
 // poly1305_native.c's block loop makes, under CHACHA=vector.

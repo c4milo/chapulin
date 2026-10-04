@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-81 of the 103 C sources in the tree root are compiled into a
+81 of the 102 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -29,7 +29,7 @@ proof shows the source is free of:
   `x25519`, `x25519_mul_alias_a`, `x25519_mul_alias_b`,
   `x25519_mul_inputs_alias` and `x25519_sqr` (see [x25519](#x25519)).
 
-The `X25519=wide` field's harnesses also check unsigned wrap, which C
+The wide X25519 field's harnesses also check unsigned wrap, which C
 defines and the other checks never see, because that field's bounds are
 all on unsigned values (see [x25519_wide](#x25519_wide)).
 
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 22 sources are in no such harness:
+The other 21 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -53,7 +53,7 @@ The other 22 sources are in no such harness:
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_chacha_avx2` and the x86-64 kernels' Wycheproof leg run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The CHACHA=vector Poly1305](#the-chachavector-poly1305)). |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `poly1305_native.c`, `x25519_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `poly1305_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
@@ -494,8 +494,8 @@ The entries are grouped by area:
 #### x25519_wide
 
 - **Harnesses:** `x25519_wide_mul` (fast), `x25519_wide_sqr` (fast), `x25519_wide_ops` (fast), `x25519_wide_step` (fast), `x25519_wide_invert` (fast), `x25519_wide_tail` (fast), `x25519_wide_mul128` (fast)
-- **Build:** `X25519=wide` (`x25519_wide.c`, INV-34), with
-  `--unsigned-overflow-check` on every line.
+- **Build:** a host object's wide field (`x25519_wide.c`, INV-34), under
+  `-DCH_CPU_RUNTIME`, with `--unsigned-overflow-check` on every line.
 - **Proves:**
   - On the real 64x64->128 multiply, `mul` and `sqr` over any operands
     whose limbs are under 2^54 wrap nothing: every column sum stays
@@ -515,7 +515,11 @@ The entries are grouped by area:
     `x25519_wide_ladder()`'s prologue.
 
   One step over the real products also converged, in 64 s at 4.5 GB,
-  and has no launch line.
+  and has no launch line. The field's two entries, `x25519_wide` and
+  `x25519_wide_base`, are `x25519.c`'s clamp and all-zero check compiled
+  a second time around this ladder. No harness drives them: [x25519](#x25519)
+  proves that text around the 16-limb ladder, and the vectors below run
+  it around this one.
 - **Bound:** operand limbs < 2^54; between the ladder's operations,
   limb 1 < 2^51 + 2^20 and every other limb < 2^51.
 
@@ -2082,10 +2086,11 @@ the Lean spec mints and the C must accept. CBMC proves the pieces; it
 does not run a scalar multiplication or a 3072-bit exponentiation
 whole.
 
-The `X25519=wide` field rests on the same vectors, on its own Wycheproof
-leg and Lean differential binary, and on `bin/x25519_equiv_test`. In
-`make check`, that binary compares the wide field with the 16-limb field
-over 12,175 inputs:
+The wide X25519 field rests on the same vectors, which `bin/unit_host`
+and the Wycheproof host leg run on it under the multiply bit, on its own
+Lean differential binary, and on `bin/x25519_equiv_test`. In
+`make check`, that binary compares the wide field with the 16-limb field,
+each as a host object compiles it, over 12,175 inputs:
 
 - the RFC vectors and the 1,000-round chain;
 - every low-order and non-canonical u-coordinate;
@@ -2391,14 +2396,15 @@ cases are also checked over the decomposition as poly1305, x25519 and
 mlkem_poly inline it. That is evidence at those inputs, while the
 equality proof stays at 8-bit operands.
 
-#### The X25519=wide field
+#### The wide X25519 field
 
-The `X25519=wide` field is one of three secret-bearing sources none of
+The wide X25519 field is one of three secret-bearing sources none of
 those specs can build, since it needs `unsigned __int128`; the others are
 the two `CHACHA=vector` paths (below). It multiplies on
-the 64x64->128 instruction, and `ct.h` refuses the build unless it
-defines `CH_NATIVE_MUL128`, its own statement that this instruction runs
-in constant time:
+the 64x64->128 instruction. `ct.h` defines that multiply for a host
+object alone, and `widemul.h` runs the field only for a session whose
+caller set `CH_CPU_CONSTANT_TIME_MULTIPLY`, the statement that the
+multiply runs in constant time at both widths (decision 89):
 
 - Arm lists MUL and UMULH as data-independent while PSTATE.DIT is set;
 - Intel lists MUL and MULX in its DOIT instructions, which on recent
@@ -2662,9 +2668,12 @@ instructions and the carry-less multiply at every width (decision 89).
 
 ### The host object's two multiplies
 
-A host object compiles each file built on the widening multiply twice,
-and each session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit picks a copy for
-each operation (decisions 87 and 89). `widemul_answer` turns the bit into
+A host object holds each operation built on the widening multiply
+twice, and each session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit picks a
+copy for each operation (decisions 87 and 89). Five files compile twice,
+the second time as a native copy, and X25519's second copy is the wide
+field, which has harnesses of its own ([x25519_wide](#x25519_wide)).
+`widemul_answer` turns the bit into
 the answer every dispatcher in `widemul.h` takes. No harness compiles a
 native copy, and neither copy needs a run of its own:
 
@@ -2690,10 +2699,12 @@ What no proof covers is the choice itself: which copy each operation
 runs, and whether each session passes the answer its own `ch_cfg.cpu`
 gives. Tests hold it:
 
-- `bin/widemul_runtime_test`, in `make check`, compiles the seven files
+- `bin/widemul_runtime_test`, in `make check`, compiles the files built
+  on the multiply and the wide field
   again under counted names and runs the AEAD, X25519, ML-KEM, P-256, RSA
   signing and record operations under each answer. Under
-  `WIDEMUL_CONSTANT_TIME` they call the native copies alone, under
+  `WIDEMUL_CONSTANT_TIME` they call the native copies alone, and X25519
+  the wide field, under
   `WIDEMUL_NOT_STATED` the decomposition alone and as many times, and
   under 0, 3, 0x80 and 0xff the decomposition, with the same bytes out of
   all of them. It also holds `widemul_answer` to the multiply bit alone:
@@ -2853,9 +2864,10 @@ Three more suites run on every push and add evidence rather than proof.
 `make check` fails when that total differs from the sum of the vectors
 `make wycheproof` generates (`tools/wycheproof-total.py`).
 
-The x25519 suite's 518 cases run a second time over the `X25519=wide`
-field, in its own binary, and the ChaCha20-Poly1305 suite's 316 cases
-over the `CHACHA=vector` paths, ChaCha20 and Poly1305, in another.
+The x25519 suite's 518 cases run a second time over the wide X25519
+field, in the host leg's runs with the multiply bit, and the
+ChaCha20-Poly1305 suite's 316 cases over the `CHACHA=vector` paths,
+ChaCha20 and Poly1305, in a binary of their own.
 
 The HMAC-SHA256 suite calls `hmac_sha256` directly. So the MAC that
 Finished, the binders, the QUIC Retry token, the HelloRetryRequest
@@ -2948,8 +2960,8 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
      multiply, where the compiler passes the host test;
    - under `AES=extern`, through the stand-in hook
      `test/aes_extern_hook.c`.
-3. The x25519 rows, ten times over the `X25519=wide` field, 1,501
-   comparisons, where the compiler has `unsigned __int128`. The spec
+3. The x25519 rows, ten times over the wide X25519 field, 1,501
+   comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the

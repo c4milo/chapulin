@@ -1,0 +1,15 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: every object carries x25519_wide.c, a device object among them. The
+  file compiles to nothing there, so nothing fails, and a later change
+  that calls its entries would run the 64x64->128 multiply where no
+  session states its timing. lint-trust-separation's X25519 rows ban the
+  file from every device object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += x25519_wide.c
+endif
+--- new
+LIB_SRCS += x25519_wide.c

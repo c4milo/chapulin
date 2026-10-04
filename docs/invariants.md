@@ -1139,12 +1139,13 @@ last `ROLE=server` stub, as the entry said it would.
   and `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
   runs one harness and fails unless it verifies; the nightly gives that
   class its own job.
-- This entry is the `X25519=portable` field's, the default. INV-34 is
-  the same claim for `X25519=wide`.
+- This entry is the 16-limb field's, which every object holds. INV-34 is
+  the same claim for the wide field a host object holds beside it.
 
-### INV-34 — the X25519=wide ladder stays inside its proven limb range
+### INV-34 — the wide X25519 ladder stays inside its proven limb range
 
-- **Claim.** In an `X25519=wide` build, between the ladder's operations
+- **Claim.** In a host object's wide X25519 field (`x25519_wide.c`),
+  between the ladder's operations
   limbs 0, 2, 3 and 4 of `a`, `b`, `c` and `d` lie in [0, 2^51), limb 1
   lies in [0, 2^51 + 2^20), and every limb of `x` lies in [0, 2^51).
   Every product the field computes takes a first operand under 2^55 and
@@ -2475,11 +2476,12 @@ last `ROLE=server` stub, as the entry said it would.
   The x25519 ladder proofs rest on a product bound instead, and
   `proof/x25519_mul_ct_harness.c` proves it on the decomposition at the
   ladder's full operand range.
-  The `X25519=wide` field multiplies on a different instruction, the
-  64x64->128 multiply, and `ct.h` refuses that build unless it asserts
-  `CH_NATIVE_MUL128`, the same claim about that instruction, and unless
-  the compiler has `unsigned __int128`. `test/x25519-builds.sh` checks
-  both refusals in `make check` (decision 52).
+  The wide X25519 field multiplies on a different instruction, the
+  64x64->128 multiply. `ct.h` defines that multiply for a host object
+  alone, where the session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit states
+  it with the 32x32 one, and `widemul.h` runs the field for a session
+  with the bit alone. `test/widemul-builds.sh` checks in `make check`
+  that a unit outside a host object cannot call it (decisions 52 and 89).
   The `CHACHA=vector` path computes ChaCha20 on NEON or SSE2 with the
   operations the portable loop uses, adds, exclusive-ors and fixed
   rotations on every lane, so it asks for no statement of its own.
@@ -2507,9 +2509,13 @@ last `ROLE=server` stub, as the entry said it would.
   `widemul.h` runs the native copy for `WIDEMUL_CONSTANT_TIME` alone,
   with one branch per operation on that answer, so every other byte,
   a wiped direction's 0 included, runs the decomposition. `ct.h` refuses
-  `CH_NATIVE_WIDEMUL` in a host object, a native copy outside one, and
-  the `X25519=wide` field in one. A device object holds one multiply, the
-  one its `WIDEMUL` value names, and no host object takes that variable.
+  `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one.
+  `x25519.c` has no native copy: X25519's second copy in a host object is
+  `x25519_wide.c`'s field, which the same answer picks, so a session with
+  the bit runs X25519 on the 64x64->128 multiply and one without it on
+  the 16-limb field over the decomposition. A device object holds one
+  multiply, the one its `WIDEMUL` value names, and the 16-limb field; no
+  host object takes that variable, and no object takes `X25519`.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -2562,7 +2568,7 @@ last `ROLE=server` stub, as the entry said it would.
   No spec above can compile `x25519_wide.c`, because none of their
   targets has `unsigned __int128`, so two 64-bit specs compile it and
   nothing else (`WIDE64_CEILING`): arm64 and x86-64 under the pinned
-  clang, with the defines an `X25519=wide` build states. They hold its
+  clang, with the host object's define. They hold its
   divisions and 128-bit runtime calls at zero and its conditional
   branches at 16 and 20, every one loop control over a public count.
   `inv16-x25519-wide-cswap-branch` writes that field's `cswap` as an
@@ -2595,9 +2601,9 @@ last `ROLE=server` stub, as the entry said it would.
   without `lint-toolchain`; `test/pinned-checkers.sh` hands them older and
   newer stand-ins. Twenty-three of the `inv16-*` violations
   in `test/violations/` prove each detection catches its mutant, among
-  them `inv16-x25519-wide-without-timing-assertion`, which drops `ct.h`'s
-  refusal of an `X25519=wide` build without `CH_NATIVE_MUL128` and which
-  `test/x25519-builds.sh` catches, and
+  them `inv16-mul128-outside-host-object`, which defines `ct.h`'s
+  64x64->128 multiply outside a host object and which
+  `test/widemul-builds.sh` catches, and
   `inv16-wide-multiply-takes-unpinned-clang`,
   `inv16-runtime-symbols-takes-unpinned-clang` and
   `inv16-runtime-symbols-takes-unpinned-llvm-nm`, which drop those version
@@ -2618,10 +2624,11 @@ last `ROLE=server` stub, as the entry said it would.
   host object targets arm64 or x86-64.
   `test/widemul-builds.sh`, in `make check`, requires that file to
   compile to the same assembly with the host object's define as without
-  it, `ct.h`'s three refusals, the vector Poly1305 in `poly1305_native.c`
+  it, `ct.h`'s two refusals, the vector Poly1305 in `poly1305_native.c`
   alone, and the Makefile's and `build.zig`'s lists and refusals: the
-  copies for a host object alone, and no `WIDEMUL` value and no
-  `X25519=wide` for one. `bin/widemul_runtime_test` counts the calls into
+  copies and the wide X25519 field for a host object alone, no `WIDEMUL`
+  value for one, and no `X25519` value for any object.
+  `bin/widemul_runtime_test` counts the calls into
   each copy: the native copies alone under the constant-time answer, the
   decomposition alone under every other byte, and it holds
   `widemul_answer` to the multiply bit alone, at the bit by itself and
@@ -2633,8 +2640,9 @@ last `ROLE=server` stub, as the entry said it would.
   alone. Fifty `INV-16` violations break those rules: each dispatcher
   inverted, the answer read from another bit or from none, the answer
   dropped at each init call and at each layer that passes it, each `ct.h`
-  refusal, the copies the Makefile lists and the `WIDEMUL` value a host
-  object refuses, and each is caught.
+  refusal, the copies and the wide field the Makefile lists, the `WIDEMUL`
+  value a host object refuses and the `X25519` value every object
+  refuses, and each is caught.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).

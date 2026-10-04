@@ -30,11 +30,16 @@ bench/results-aead-arm64.csv; this note does not repeat it.
   program links builds to a byte-identical object either way (compared
   with clang 21), so the CSV times only the aead, secret_key and
   handshake groups twice.
-- `X25519=wide` is the build that replaces x25519.c's 16-limb field with
+- `X25519=wide` is the build that replaced x25519.c's 16-limb field with
   x25519_wide.c's five 51-bit limbs on the 64x64->128 multiply
-  (docs/decisions.md entry 52). It changes one choice from the default
+  (docs/decisions.md entry 52). It changed one choice from the default
   and no other module, so the CSV times the two x25519 rows and the
-  handshakes under it, and nothing else.
+  handshakes under it, and nothing else. The build is gone since these
+  runs: a host object holds that field beside the 16-limb one, and a
+  session whose caller sets `CH_CPU_CONSTANT_TIME_MULTIPLY` runs it with
+  the native copies of the other files (docs/decisions.md entry 89).
+  bench/primitives.sh now times that session in its
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` rows, which no file here records yet.
 
 ## Load and variance
 

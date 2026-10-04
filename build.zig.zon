@@ -215,7 +215,6 @@
         "widemul_native.h",
         "x25519.c",
         "x25519.h",
-        "x25519_native.c",
         "x25519_wide.c",
         "x25519_wide.h",
         "x509.c",

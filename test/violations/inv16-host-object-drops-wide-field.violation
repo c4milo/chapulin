@@ -1,0 +1,13 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying x25519_wide.c, and its link fails on
+  x25519_wide and x25519_wide_base, which widemul.h calls, only where
+  something links it. lint-trust-separation's X25519 rows require the
+  file in every host object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += x25519_wide.c
+endif
+--- new

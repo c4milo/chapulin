@@ -1,4 +1,4 @@
-// Proves: what the X25519=wide ladder does after its loop keeps every limb
+// Proves: what the wide X25519 field's ladder does after its loop keeps every limb
 // inside INV-34's bounds, and the output form of mul, sqr and mul_a24 under
 // the multiply contract -- the rest of the induction x25519_wide_step starts.
 //

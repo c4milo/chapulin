@@ -1,7 +1,7 @@
 invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: a device object on WIDEMUL=native carries x25519_native.c, a file
+reason: a device object on WIDEMUL=native carries poly1305_native.c, a file
   only a host object may hold. ct.h refuses it at compile time, and
   lint-trust-separation's WIDEMUL=native rows ban every *_native.c file
   from the object's source list.
@@ -12,4 +12,4 @@ LIB_DEF += -DCH_NATIVE_WIDEMUL
 --- new
 else ifeq ($(WIDEMUL),native)
 LIB_DEF += -DCH_NATIVE_WIDEMUL
-LIB_SRCS += x25519_native.c
+LIB_SRCS += poly1305_native.c

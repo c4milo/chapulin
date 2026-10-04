@@ -5,15 +5,19 @@
 // p256_field.c, p256_scalar.c and rsa_sign.c. Each entry of theirs that runs the multiply,
 // called from outside them, has a dispatcher below, named for it with the widemul_ prefix. The
 // dispatcher's first argument is the answer the operation runs under, a WIDEMUL_ value below.
-// Every caller outside the seven files calls the dispatcher and passes on the answer it was
+// Every caller outside those files calls the dispatcher and passes on the answer it was
 // handed; a session passes its own, widemul_answer. An entry that multiplies nothing, such as
 // poly1305_init or p256_fe_add, is called under its own name.
 //
 // A device object holds one multiply and compiles each file once, so each dispatcher calls that
-// copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles each file twice:
-// under its own names on the decomposition, as a WIDEMUL=decomposed device object does, and again
+// copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds each operation
+// twice. poly1305.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c compile under their
+// own names on the decomposition, as a WIDEMUL=decomposed device object compiles them, and again
 // as <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
-// _native. Its dispatchers run the native copy for WIDEMUL_CONSTANT_TIME and the file under its
+// _native. poly1305_vector.c compiles as its native copy alone. x25519.c compiles under its own
+// names alone, and X25519's second copy is x25519_wide.c, the radix-2^51 field on the 64x64->128
+// multiply (x25519_wide.h). The dispatchers run the native copy, and for X25519 the wide field,
+// for WIDEMUL_CONSTANT_TIME, and the file under its
 // own names for every other byte. That is one branch per call, on the answer, which the caller's
 // ch_cfg.cpu chose and which is not secret: never one per product, and through no function
 // pointer. Poly1305 takes one per update and one per final, P-256 one per field or scalar
@@ -32,10 +36,12 @@
 #include "poly1305.h"
 #include "rsa_sign.h"
 #include "x25519.h"
+#include "x25519_wide.h"
 
 // The two answers an operation built on the multiply runs under. WIDEMUL_CONSTANT_TIME says the
 // multiply runs in constant time on this CPU, in the mode the session's thread runs in, and takes
-// the native multiply. WIDEMUL_NOT_STATED says nothing states that, and takes ct.h's 16x16
+// the native multiply, 32x32->64 and 64x64->128 alike. WIDEMUL_NOT_STATED says nothing states
+// that, and takes ct.h's 16x16
 // decomposition. A host object's session runs under the first when its caller set
 // CH_CPU_CONSTANT_TIME_MULTIPLY in ch_cfg.cpu, and under the second when it did not
 // (widemul_answer). A device object runs every operation under the one its build states,
@@ -80,7 +86,7 @@ static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],
                                  const uint8_t scalar[X25519_LEN],
                                  const uint8_t point[X25519_LEN]) {
     if (widemul_native(widemul)) {
-        return x25519_native(out, scalar, point);
+        return x25519_wide(out, scalar, point);
     }
     return x25519(out, scalar, point);
 }
@@ -88,7 +94,7 @@ static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],
 static inline void widemul_x25519_base(uint8_t widemul, uint8_t out[X25519_LEN],
                                        const uint8_t scalar[X25519_LEN]) {
     if (widemul_native(widemul)) {
-        x25519_base_native(out, scalar);
+        x25519_wide_base(out, scalar);
         return;
     }
     x25519_base(out, scalar);

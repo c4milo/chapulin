@@ -1,0 +1,18 @@
+invariant: INV-16
+file: ct.h
+catches: test/widemul-builds.sh
+reason: ct.h defines ct_mul128 wherever the compiler has unsigned __int128,
+  so a device object built for a 64-bit core can run the 64x64->128
+  multiply, and nothing there states its timing: only a host object's
+  session does, with CH_CPU_CONSTANT_TIME_MULTIPLY in ch_cfg.cpu. The
+  architectures do not promise that timing, which is why Arm publishes
+  FEAT_DIT and Intel its DOIT list. Every source still compiles and every
+  vector passes. test/widemul-builds.sh requires a unit that calls
+  ct_mul128 without -DCH_CPU_RUNTIME not to compile.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+// The product type of ct_mul128. C11 has no 128-bit integer, and
+--- new
+#ifdef __SIZEOF_INT128__
+// The product type of ct_mul128. C11 has no 128-bit integer, and

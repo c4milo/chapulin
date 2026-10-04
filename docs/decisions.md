@@ -4896,6 +4896,10 @@ does nothing more.
     - A 32-bit target loses two choices: `CHACHA=vector` on 32-bit NEON or
       SSE2, which no CI leg builds, and `WIDEMUL=runtime`, which entry 87
       measured on mips32r2 and no consumer links.
+    - A 64-bit target that is neither arm64 nor x86-64, such as riscv64,
+      loses `X25519=wide`, which it could build: the wide field is in a
+      host object alone, and the host test names two architectures. No CI
+      leg built it there.
 
     Gain: one object per product and architecture runs on every CPU of
     that architecture, at the speed its caller describes. Four variables

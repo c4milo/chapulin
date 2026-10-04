@@ -2058,8 +2058,9 @@ launch fast full x25519_mul 20 ""
 # summed with kissat, which fast:3 covers.
 launch fast:3 full x25519_mul_ct 20 ""
 launch fast full x25519_ops 260 ""
-# The X25519=wide field, x25519_wide.c, and its ladder (INV-34). Every line
-# compiles the field under the two defines ct.h requires of it, and every
+# The wide X25519 field, x25519_wide.c, and its ladder (INV-34). Every line
+# compiles the field as a host object does, under -DCH_CPU_RUNTIME, which
+# its body and ct.h's ct_mul128 sit behind, and every
 # line adds --unsigned-overflow-check. The field computes in uint64_t and
 # unsigned __int128, where C defines every wrap, so the checks this script
 # passes by default see none of them; with the flag, each column sum, each
@@ -2073,24 +2074,26 @@ launch fast full x25519_ops 260 ""
 # 64x64->128 product of operands with their top bits clear converges in
 # seconds with every check on. Measured one line at a time with
 # PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast
-# (cbmc 6.11.0, kissat 4.0.4, an arm64 development machine under load):
-#   x25519_wide_mul128     3 properties, 0.4 s, 20 MB
-#   x25519_wide_mul     1448 properties, 3.6 s, 620 MB
-#   x25519_wide_sqr     1447 properties, 1.8 s, 287 MB
-#   x25519_wide_ops     1598 properties, 1.2 s, 41 MB
-#   x25519_wide_step    1494 properties, 3.4 s, 213 MB
-#   x25519_wide_tail    1496 properties, 2.1 s, 138 MB
-#   x25519_wide_invert  1472 properties, 17.8 s, 2.7 GB, hence fast:3
+# (cbmc 6.11.0, kissat 4.0.4, an M1 Pro), on 2026-10-03, once the file
+# compiled x25519.c's clamp and all-zero check inside it, whose two entries
+# add 15 properties to each line that compiles the file:
+#   x25519_wide_mul128     3 properties, 1 s, 20 MB
+#   x25519_wide_mul     1463 properties, 4 s, 618 MB
+#   x25519_wide_sqr     1462 properties, 2 s, 292 MB
+#   x25519_wide_ops     1613 properties, 2 s, 44 MB
+#   x25519_wide_step    1509 properties, 6 s, 224 MB
+#   x25519_wide_tail    1511 properties, 4 s, 141 MB
+#   x25519_wide_invert  1487 properties, 19 s, 2.7 GB, hence fast:3
 # One step over the real products instead of the contract also converged,
 # in 64 s at 4.5 GB, past what this tier admits; it has no line, and the
 # contract's composition is what x25519_wide_step states.
-launch fast full x25519_wide_mul128 2 "" -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full x25519_wide_mul 6 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full x25519_wide_sqr 6 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_mul 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_sqr 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and
 # ct_wipe each loop 112 times, past the global bound. Measured (cbmc

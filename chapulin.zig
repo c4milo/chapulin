@@ -347,7 +347,8 @@ const CpuBits = struct {
     /// states run in constant time in the mode the session's thread runs in.
     constant_time_aes: bool = false,
     /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time,
-    /// and the session runs the native multiply in place of ct.h's 16x16 decomposition.
+    /// and the session runs the native multiply in place of ct.h's 16x16 decomposition, and X25519
+    /// on the 51-bit-limb field.
     constant_time_multiply: bool = false,
     /// CH_CPU_AVX2 and CH_CPU_VAES: x86-64 bits, which an arm64 object refuses.
     avx2: bool = false,

@@ -19,7 +19,7 @@
 #include "chacha20.h"
 
 // Everything below exists only in a build that defines CH_CHACHA_VECTOR,
-// the way x25519_wide.h's field exists only under CH_X25519_WIDE.
+// the way x25519_wide.h's field exists only in a host object.
 #ifdef CH_CHACHA_VECTOR
 
 // The compiler's own macros are the whole detection, and nothing probes a

@@ -1,11 +1,13 @@
 // The second names bin/widemul_runtime_test gives the entries widemul.h
 // dispatches to, for the test/widemul_count_*.c units that compile the
-// seven files built on ct.h's widening multiply once more
+// files built on ct.h's widening multiply once more
 // (test/widemul_runtime_count.h). A unit that includes widemul_native.h
 // first compiles the native copy, and its entries end in _native_counted;
 // any other compiles the files under their own names, and its entries end
 // in _decomposed_counted. test/widemul_runtime_count.c defines the names
 // the library calls, each as a count and a call to the second name.
+// x25519.c has no native copy: X25519's second copy is x25519_wide.c,
+// which test/widemul_count_wide.c compiles under second names of its own.
 //
 // Every other name the files define keeps the name the library gives it,
 // widemul_native.h's in a native unit, so a call from one entry to
@@ -17,8 +19,6 @@
 #ifdef CH_WIDEMUL_NATIVE_COPY
 #undef poly1305_update
 #undef poly1305_final
-#undef x25519
-#undef x25519_base
 #undef mlk_polyvec_compress
 #undef mlk_poly_compress
 #undef mlk_poly_tomsg
@@ -33,8 +33,6 @@
 #undef rsa_sp1
 #define poly1305_update poly1305_update_native_counted
 #define poly1305_final poly1305_final_native_counted
-#define x25519 x25519_native_counted
-#define x25519_base x25519_base_native_counted
 #define mlk_polyvec_compress mlk_polyvec_compress_native_counted
 #define mlk_poly_compress mlk_poly_compress_native_counted
 #define mlk_poly_tomsg mlk_poly_tomsg_native_counted

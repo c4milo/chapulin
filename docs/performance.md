@@ -301,12 +301,14 @@ keeps the 16-bit-limb x25519 as the default and the device path. It
 does so for its machine-checked overflow proof, and because a 32-bit
 core has no wider multiply to run a faster field on.
 
-A 64-bit host that opens many short connections can build
-`X25519=wide` instead (decision 52): five 51-bit limbs whose products
-run on the 64x64->128 multiply. On an Apple M1 Pro a scalar
-multiplication takes 34 µs there against 953 µs in the default build,
-and the client side of a pinned RSA-3072 handshake falls from 2.57 ms
-to 0.77 ms ([`bench/notes-primitives.md`](../bench/notes-primitives.md)).
+A host object holds a second field for a session whose caller sets
+`CH_CPU_CONSTANT_TIME_MULTIPLY` (decisions 52 and 89): five 51-bit limbs
+whose products run on the 64x64->128 multiply. On an Apple M1 Pro a
+scalar multiplication took 34 µs on that field against 953 µs on the
+16-limb one over the decomposition, and the client side of a pinned
+RSA-3072 handshake fell from 2.57 ms to 0.77 ms, measured when the field
+was the `X25519=wide` build
+([`bench/notes-primitives.md`](../bench/notes-primitives.md)).
 
 ### Where a record's time goes
 
@@ -638,9 +640,13 @@ What the numbers show:
 - The multiply decomposition is most of the gap. `WIDEMUL=native` alone takes the N2 handshake
   from 50.87 M to 10.48 M, and `X25519=wide` then takes it to 6.95 M. X25519 then costs 0.79 M,
   against OpenSSL's 0.89 M. In 0.2.0 a host session gets both from `CH_CPU_CONSTANT_TIME_MULTIPLY`
-  (decision 89). At a104a3e the default object takes 42.37 M on the base armv8-a, as at c798fb8,
-  and a `WIDEMUL=runtime` object answered `CH_WIDEMUL_CONSTANT_TIME` takes 12.08 M, 0.02 M above
-  `WIDEMUL=native`'s 12.07 M.
+  (decision 89). At the commit that moved the wide field under that bit, the same object as a host
+  object, built for the base armv8-a with no `AES` value, takes 7.06 M when its `ch_cfg.cpu` holds
+  the AES bit and the multiply bit, and 42.30 M with the AES bit alone: callgrind as above, 7,061,840
+  and 42,302,196 instructions in the second connection. At a104a3e the default object took 42.37 M
+  on the base armv8-a, as at c798fb8, and a `WIDEMUL=runtime` object answered
+  `CH_WIDEMUL_CONSTANT_TIME` took 12.08 M, 0.02 M above `WIDEMUL=native`'s 12.07 M. That object
+  ran the 16-limb field on the native multiply, which no object holds now.
 - The CPU target costs instructions only on the decomposed multiply. Built for `neoverse_n2`,
   `x25519.c`'s `mul` holds SVE instructions that clang 21 emits for that CPU, and it runs 5,452
   instructions a call where the base build's runs 4,079: 8.39 M more over the 6,114 calls of a

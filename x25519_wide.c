@@ -1,7 +1,8 @@
-// X25519=wide: the field arithmetic mod p = 2^255-19 and the Montgomery
+// The wide X25519 field, which a host object holds beside x25519.c's
+// (x25519_wide.h): the field arithmetic mod p = 2^255-19 and the Montgomery
 // ladder of RFC 7748 section 5, in radix 2^51. An element is five limbs
 // of 51 bits in uint64_t, and every product is one ct_mul128, the
-// 64x64->128 multiply ct.h defines only for this build. It runs the same
+// 64x64->128 multiply ct.h defines only for a host object. It runs the same
 // ladder step as x25519.c's 16-limb field, in the same order, on a tenth of
 // the multiplies: 25 products per field multiply instead of 256.
 //
@@ -29,10 +30,12 @@
 // Constant time: no branch and no memory index depends on a limb or on a
 // scalar bit. cswap selects with a mask, the loops count public numbers,
 // and the one instruction whose timing the C cannot state is the multiply,
-// which is what CH_NATIVE_MUL128 asserts (ct.h).
+// which is what the session's CH_CPU_CONSTANT_TIME_MULTIPLY bit states
+// (cpu_cfg.h): widemul.h calls this file's entries for a session with the
+// bit alone.
 #include "x25519_wide.h"
 
-#ifdef CH_X25519_WIDE
+#ifdef CH_CPU_RUNTIME
 
 #include <stddef.h>
 
@@ -345,4 +348,13 @@ void x25519_wide_ladder(uint8_t out[X25519_LEN], const uint8_t clamped[X25519_LE
     ct_wipe(f, sizeof f);
 }
 
-#endif // CH_X25519_WIDE
+// The two entries, x25519_wide and x25519_wide_base. x25519.c holds the
+// clamp and the all-zero check of both fields, so the two cannot differ:
+// under CH_X25519_WIDE it compiles those alone, around x25519_wide_ladder,
+// and the renames give its two entries this field's names.
+#define CH_X25519_WIDE 1
+#define x25519 x25519_wide
+#define x25519_base x25519_wide_base
+#include "x25519.c"
+
+#endif // CH_CPU_RUNTIME

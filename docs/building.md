@@ -60,13 +60,12 @@ Other targets:
   `session`. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
-  value names no algorithm. `X25519=wide` replaces the default 16-limb
-  X25519 field with `x25519_wide.c`'s five 51-bit limbs, for a 64-bit
-  host: `ct.h` stops the build unless the compiler has
-  `unsigned __int128` and the build adds `-DCH_NATIVE_MUL128` to
-  `CFLAGS`, its statement that the part's 64x64->128 multiply runs in
-  constant time in the mode the part runs in (decision 52, INV-34). The
-  Makefile never writes that define itself. `CHACHA=vector` replaces
+  value names no algorithm. No variable chooses the X25519 field: every
+  object holds the 16-limb one, a host object, below, also holds
+  `x25519_wide.c`'s five 51-bit limbs, and the `X25519` variable, which
+  chose the second for a whole object, is gone, so the Makefile and
+  `build.zig` stop on any value of it (decisions 52 and 89, INV-34).
+  `CHACHA=vector` replaces
   `chacha20.c`'s one-block loop with `chacha20_vector.c`'s eight blocks
   at a time on NEON or four on SSE2, for an arm64 or x86-64 host:
   `chacha20_vector.h` stops the build for any other target, and the
@@ -125,15 +124,18 @@ Other targets:
   on the widening multiply twice, once on `ct.h`'s 16x16 decomposition and
   once on the CPU's multiply, so it is larger, and
   `CH_CPU_CONSTANT_TIME_MULTIPLY` picks for every operation of the
-  session: Poly1305, X25519, ML-KEM, P-256 and RSA signing (decision 87).
+  session: Poly1305, ML-KEM, P-256 and RSA signing (decision 87). X25519
+  takes its second copy from another file: with the bit a session runs
+  `x25519_wide.c`'s five 51-bit limbs on the 64x64->128 multiply, and
+  without it the 16-limb field on the decomposition, so the bit states
+  the multiply at both widths (decisions 52 and 89).
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with
   FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your
-  operating system. A host object refuses `X25519=wide`, whose build
-  states the multiply's timing once. No path reads `CH_CPU_AVX2` or
-  `CH_CPU_VAES` yet: the `CHACHA` and `X25519` variables still choose what
-  each object runs, until decision 89's later commits move each choice to
-  its bit. A raw or
+  operating system. No path reads `CH_CPU_AVX2` or
+  `CH_CPU_VAES` yet: the `CHACHA` variable still chooses the ChaCha20
+  keystream each object runs, until decision 89's last code commit moves
+  that choice to the host test and the bits. A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host

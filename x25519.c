@@ -2,11 +2,12 @@
 
 #include "ct.h"
 
-// The field the ladder runs over is a build choice, the Makefile X25519
-// variable: X25519=portable (the default) compiles the 16-limb field below,
-// and X25519=wide compiles x25519_wide.c's radix-2^51 field in its place. One
-// object carries one field. The clamp and the all-zero check sit after both,
-// in clamp_and_ladder() and x25519(), so one line decides each whichever
+// A device object compiles this file once, with the 16-limb field below. A
+// host object compiles it a second time inside x25519_wide.c, which defines
+// CH_X25519_WIDE and renames the two entries: that copy holds no field of
+// its own and calls x25519_wide.c's radix-2^51 ladder (docs/decisions.md
+// 89). The clamp and the all-zero check sit after both fields, in
+// clamp_and_ladder() and x25519(), so one line decides each whichever
 // field runs (INV-3).
 #ifdef CH_X25519_WIDE
 #include "x25519_wide.h"

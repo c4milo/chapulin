@@ -1,8 +1,9 @@
-// The X25519=wide arm of the differential oracle: the x25519 rows of
+// The wide field's arm of the differential oracle: the x25519 rows of
 // test/diff_x25519.h, run against the same Lean spec process test/diff_test.c
-// drives, over x25519_wide.c. The Makefile builds it with -DCH_X25519_WIDE,
-// so x25519() answers from the radix-2^51 field here and from the 16-limb
-// field in bin/diff.
+// drives, over x25519_wide.c. The Makefile builds it as a host object's
+// source, with -DCH_CPU_RUNTIME, and the two renames below send the rows'
+// calls to the radix-2^51 field's entries here, where bin/diff runs them on
+// the 16-limb field.
 //
 // Its own main rather than a second build of test/diff_test.c, because the
 // field changes nothing else that binary compares: every other row would
@@ -24,13 +25,18 @@
 
 #include "diff_driver.h"
 
-#include "diff_x25519.h"
-
-// A build without the define would diff the 16-limb field a second time and
-// report success for the wrong field.
-#ifndef CH_X25519_WIDE
-#error "test/diff_x25519_test.c diffs X25519=wide: build it with -DCH_X25519_WIDE"
+// A build without the define declares no wide field, so it could only diff
+// the 16-limb field a second time and report success for the wrong one.
+#ifndef CH_CPU_RUNTIME
+#error "test/diff_x25519_test.c diffs the wide X25519 field: build it with -DCH_CPU_RUNTIME"
 #endif
+// After x25519.h's declarations, so the renames change the rows' calls and
+// no declaration.
+#include "x25519_wide.h"
+#define x25519 x25519_wide
+#define x25519_base x25519_wide_base
+
+#include "diff_x25519.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);

@@ -215,6 +215,12 @@ static void configure(const identity *id) {
     client_cfg.recv = never_recv;
     client_cfg.server_pubkey = id->pub;
     client_cfg.server_pubkey_len = id->pub_len;
+#ifdef CH_CPU_RUNTIME
+    // The host object's program: both ends state the multiply's timing, so
+    // every operation runs its native copy and X25519 the wide field.
+    server_cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    client_cfg.cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY;
+#endif
 }
 
 // Moves everything the client owes into the server. Returns 0 on the

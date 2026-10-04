@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # chacha20_vector.h's two refusals of a CHACHA=vector build, and the calls
 # that make the build run the vector paths, checked the way
-# test/x25519-builds.sh checks ct.h's rules for X25519=wide. `make check`
+# test/widemul-builds.sh checks ct.h's rules for a host object. `make check`
 # runs it, and it is the catch target of the violations that drop a
 # refusal or a call (https://github.com/c4milo/chapulin/issues/181).
 #

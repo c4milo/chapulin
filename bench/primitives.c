@@ -51,14 +51,13 @@
 #define RUNS_MAX 9
 #define RESULTS_MAX 160
 
-// bench/primitives.sh changes one build choice at a time from the default, so
-// no build here defines both.
-#if defined(CH_NATIVE_WIDEMUL) && defined(CH_X25519_WIDE)
-#error "bench/primitives.sh times CH_NATIVE_WIDEMUL and X25519=wide one at a time"
-#elif defined(CH_NATIVE_WIDEMUL)
+// The build column. bench/primitives.sh builds a device object's sources
+// on each of its two multiplies, and a host object's, whose rows run under
+// the multiply bit (primitives.h). ct.h refuses the two defines together.
+#if defined(CH_NATIVE_WIDEMUL)
 const char *const BENCH_BUILD = "CH_NATIVE_WIDEMUL";
-#elif defined(CH_X25519_WIDE)
-const char *const BENCH_BUILD = "X25519=wide";
+#elif defined(CH_CPU_RUNTIME)
+const char *const BENCH_BUILD = "CH_CPU_CONSTANT_TIME_MULTIPLY";
 #else
 const char *const BENCH_BUILD = "default";
 #endif

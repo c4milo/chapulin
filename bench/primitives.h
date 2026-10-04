@@ -10,6 +10,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// The answer every row built on the widening multiply runs under
+// (widemul.h, which the files that use this include). A device object's
+// program runs the one its build states. The host object's program,
+// built with -DCH_CPU_RUNTIME, runs the answer of a session whose
+// ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY: the native copies, and
+// for X25519 the wide field (docs/decisions.md 89).
+#ifdef CH_CPU_RUNTIME
+#define BENCH_WIDEMUL WIDEMUL_CONSTANT_TIME
+#else
+#define BENCH_WIDEMUL WIDEMUL_BUILD_ANSWER
+#endif
+
 // One timed operation. A row whose unit is "byte" runs once per payload
 // size in sizes and reports nanoseconds per payload byte. A row whose
 // unit is "op" runs once per entry in sizes as well, and reports

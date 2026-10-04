@@ -126,13 +126,12 @@ first value listed is the default.
 | `AES` | `soft`, `extern` | A device object's AES, when its build uses AES: the table, for QUIC's public keys alone, or the `ch_aes_block` your image defines |
 | `EXPORTER` | `off`, `on` | Adds `ch_export`, the TLS exporter |
 | `KEYLOG` | `off`, `on` | Hands each traffic secret to a hook you define, for an NSS key log |
-| `X25519` | `portable`, `wide` | The x25519 field: 16-bit limbs for any core, or 51-bit limbs for 64-bit hosts |
 | `WIDEMUL` | `decomposed`, `native` | Whether a device object's wide multiplies use the CPU instruction, which you must know runs in constant time |
 
 On arm64 and x86-64, a web PKI client and both server roles build a host
-object. It holds the AES instructions and both multiplies, takes neither
-`AES` nor `WIDEMUL`, and picks for each session from `ch_cfg.cpu`, your
-program's description of the CPU.
+object. It holds the AES instructions, both multiplies and a second
+X25519 field of 51-bit limbs, takes neither `AES` nor `WIDEMUL`, and picks
+for each session from `ch_cfg.cpu`, your program's description of the CPU.
 
 [`docs/building.md`](docs/building.md) explains each value, what it adds
 to the object, and the checks a build refuses to pass without.

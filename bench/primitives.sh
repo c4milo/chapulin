@@ -6,28 +6,36 @@
 # handshake calls each primitive. bench/notes-primitives.md reads both.
 #
 # It builds bench/primitives.c into eleven timed programs and three
-# counting ones, because the multiply, the X25519 field, the key exchange
-# and the pinned algorithm are build choices:
+# counting ones, because the multiply, the key exchange and the pinned
+# algorithm are build choices, and a host object picks its multiply and
+# its X25519 field for each session:
 #
 #   primitives                  every primitive, over the 16x16 multiply
-#                               the packaged object ships (ct.h)
+#                               a device object ships (ct.h)
 #   primitives CH_NATIVE_WIDEMUL
 #                               the aead and secret_key groups again, over
-#                               the native multiply the host tests assert;
+#                               the native multiply WIDEMUL=native states;
 #                               the other groups compile to the same code
-#   primitives X25519=wide      the two x25519 rows again, over
-#                               x25519_wide.c, the only code that build
-#                               changes; built only where the compiler has
-#                               unsigned __int128
-#   handshake, default, CH_NATIVE_WIDEMUL, X25519=wide and KEX=pq, once
-#   pinning an RSA modulus and once pinning a P-256 point (-DCH_PIN_ECDSA);
-#   the KEX=pq client offers X25519MLKEM768 alone and the server selects it
+#   primitives CH_CPU_CONSTANT_TIME_MULTIPLY
+#                               the two x25519 rows again, in a host
+#                               object's sources under the multiply bit,
+#                               which run x25519_wide.c: the one code its
+#                               rows run that the build above does not
+#                               (docs/decisions.md 89); built only where
+#                               the compiler passes the host test
+#   handshake, default, CH_NATIVE_WIDEMUL, CH_CPU_CONSTANT_TIME_MULTIPLY
+#   and KEX=pq, once pinning an RSA modulus and once pinning a P-256 point
+#   (-DCH_PIN_ECDSA); the host object's program holds both multiplies and
+#   both ends state the bit; the KEX=pq client offers X25519MLKEM768 alone
+#   and the server selects it
 #   calls, the RSA and ECDSA handshake programs and the ECDSA hybrid one
 #                               again with -finstrument-functions, which
 #                               count calls and time nothing
 #
-# Each non-default build changes one choice from the default, so a row's
-# difference from its default row is that choice's alone.
+# Each device build changes one choice from the default, so a row's
+# difference from its default row is that choice's alone. The host
+# object's rows change two from the CH_NATIVE_WIDEMUL rows: the X25519
+# field, and one branch on the answer per operation.
 #
 # Every timed build is -O2, the level the packaged object uses. CC picks
 # the compiler (default cc); the x86-64 row uses CC=gcc. RUNS (default 3)
@@ -112,20 +120,28 @@ build handshake_ecdsa_native "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_NATIVE_W
 # LOOP_SRCS already holds its sources; -DCH_KEX_PQ makes the client offer it.
 build handshake_rsa_hybrid "${HANDSHAKE_DEFS[@]}" -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
 build handshake_ecdsa_hybrid "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
-# The X25519=wide programs, with the timing assertion ct.h asks of that build.
-# A compiler without unsigned __int128 cannot build the field, so it skips.
-WIDE=""
-if "$CC" -dM -E -x c /dev/null | grep -q __SIZEOF_INT128__; then
-    WIDE=yes
-    X25519_WIDE=(-DCH_X25519_WIDE -DCH_NATIVE_MUL128)
-    build primitives_x25519_wide -DCH_RSA_MODULUS_MAX=512 "${X25519_WIDE[@]}" \
-        "${PRIMITIVE_SRCS[@]}" x25519_wide.c
-    build handshake_rsa_x25519_wide "${HANDSHAKE_DEFS[@]}" "${X25519_WIDE[@]}" \
-        "${HANDSHAKE_SRCS[@]}" x25519_wide.c
-    build handshake_ecdsa_x25519_wide "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA "${X25519_WIDE[@]}" \
-        "${HANDSHAKE_SRCS[@]}" x25519_wide.c
+# The host object's programs, where the compiler passes the host test: the
+# two source lists as a host object holds them, with the native copies and
+# the wide X25519 field make adds (print-host-srcs), under
+# -DCH_CPU_RUNTIME. A compiler that fails the test skips them.
+HOST=""
+if [ "$(make -s --no-print-directory print-host-target CC="$CC")" = yes ]; then
+    HOST=yes
+    read -r -a HOST_PRIMITIVE_SRCS <<<"$(make -s --no-print-directory print-host-srcs \
+        HOST_SRCS_OF="${PRIMITIVE_SRCS[*]}")"
+    read -r -a HOST_HANDSHAKE_SRCS <<<"$(make -s --no-print-directory print-host-srcs \
+        HOST_SRCS_OF="${HANDSHAKE_SRCS[*]}")"
+    if [ "${#HOST_PRIMITIVE_SRCS[@]}" -le "${#PRIMITIVE_SRCS[@]}" ] ||
+        [ "${#HOST_HANDSHAKE_SRCS[@]}" -le "${#HANDSHAKE_SRCS[@]}" ]; then
+        echo "FAIL primitives bench: make print-host-srcs added no source for a host object" >&2
+        exit 1
+    fi
+    build primitives_host -DCH_RSA_MODULUS_MAX=512 -DCH_CPU_RUNTIME "${HOST_PRIMITIVE_SRCS[@]}"
+    build handshake_rsa_host "${HANDSHAKE_DEFS[@]}" -DCH_CPU_RUNTIME "${HOST_HANDSHAKE_SRCS[@]}"
+    build handshake_ecdsa_host "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_CPU_RUNTIME \
+        "${HOST_HANDSHAKE_SRCS[@]}"
 else
-    echo "primitives bench: $CC has no unsigned __int128, so X25519=wide is skipped" >&2
+    echo "primitives bench: $CC fails the host test, so the host object's rows are skipped" >&2
 fi
 build calls_rsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
     "${HANDSHAKE_SRCS[@]}"
@@ -179,18 +195,18 @@ run() { # $1 = program; the rest = groups. Rows to rows, run notes to notes.
 LOAD_BEFORE=$(load)
 run primitives hash cipher aead verify secret_key
 run primitives_native aead secret_key
-if [ -n "$WIDE" ]; then
-    run primitives_x25519_wide x25519
+if [ -n "$HOST" ]; then
+    run primitives_host x25519
 fi
 run handshake_rsa handshake
 run handshake_rsa_native handshake
-if [ -n "$WIDE" ]; then
-    run handshake_rsa_x25519_wide handshake
+if [ -n "$HOST" ]; then
+    run handshake_rsa_host handshake
 fi
 run handshake_ecdsa handshake
 run handshake_ecdsa_native handshake
-if [ -n "$WIDE" ]; then
-    run handshake_ecdsa_x25519_wide handshake
+if [ -n "$HOST" ]; then
+    run handshake_ecdsa_host handshake
 fi
 run handshake_rsa_hybrid handshake
 run handshake_ecdsa_hybrid handshake
@@ -212,7 +228,8 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo unknown)
     echo "# $("$CC" --version | head -1); ${FLAGS[*]}"
     echo "# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds ${HANDSHAKE_DEFS[*]}," \
         "and -DCH_PIN_ECDSA for the ecdsa rows"
-    echo "# the X25519=wide rows add -DCH_X25519_WIDE -DCH_NATIVE_MUL128 and x25519_wide.c"
+    echo "# the CH_CPU_CONSTANT_TIME_MULTIPLY rows add -DCH_CPU_RUNTIME, the native copies and x25519_wide.c," \
+        "and run under that bit"
     echo "# the _hybrid handshake rows add -DCH_KEX_PQ: the client offers X25519MLKEM768 alone"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     cat "$W/notes"

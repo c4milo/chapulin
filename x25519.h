@@ -17,13 +17,4 @@ int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
 // out = scalar * base point (9); the keygen path, never low-order.
 void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
 
-#ifdef CH_CPU_RUNTIME
-// The native copies of the entries above that are built on the widening multiply,
-// which a host object holds beside them (x25519_native.c, widemul_native.h) and
-// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
-int x25519_native(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
-                  const uint8_t point[X25519_LEN]);
-void x25519_base_native(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
-#endif
-
 #endif

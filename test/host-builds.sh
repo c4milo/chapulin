@@ -9,7 +9,7 @@
 #     probe and passes the others, so each of the header's refusals is
 #     checked alone; two of them borrow a macro with -D or -U to get
 #     there. The pinned clang cross-compiles for each with no toolchain
-#     beside it, the way test/x25519-builds.sh compiles for the Cortex-M3.
+#     beside it, the way lint-wide-multiply compiles for the Cortex-M3.
 #   - the Makefile's HOST_TARGET gives a TRUST=webpki object
 #     -DCH_CPU_RUNTIME under this host's cc, and none under a compiler for
 #     each of those targets, so each of its probes is checked alone too.

@@ -36,7 +36,6 @@ const Options = struct {
     AES: ?[]const u8 = null,
     RAND: ?[]const u8 = null,
     KEX: ?[]const u8 = null,
-    X25519: ?[]const u8 = null,
     CHACHA: ?[]const u8 = null,
     WIDEMUL: ?[]const u8 = null,
     EXPORTER: ?[]const u8 = null,
@@ -44,7 +43,6 @@ const Options = struct {
     TX_RECORD: ?[]const u8 = null,
     HOST_TARGET: ?[]const u8 = null,
     CH_AES_EXTERN_CONSTANT_TIME: ?[]const u8 = null,
-    CH_NATIVE_MUL128: ?[]const u8 = null,
 };
 
 /// One dependency a program imports, under the name the program imports

@@ -427,9 +427,9 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # clang-format still covers it, and so does lint-runtime-symbols.
 # The host object's multiply sources and tests (docs/decisions.md 87 and
 # 89), which compile only under -DCH_CPU_RUNTIME: the native copies, the
-# counting test and the units that compile the seven files again under
-# counted names. lint-tidy reads them in passes of their own.
-WIDEMUL_HOST_LINT_C := poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
+# counting test and the units that compile the files built on the multiply
+# again under counted names. lint-tidy reads them in passes of their own.
+WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c p256_field_native.c \
                           p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c \
                           test/widemul_runtime_test.c test/widemul_runtime_count.c \
                           test/widemul_count_decomposed.c test/widemul_count_decomposed_field.c \
@@ -451,8 +451,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c chacha20_avx2.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c \
-          test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c \
-          test/x25519_equiv_wide.c \
+          test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) \
@@ -861,9 +860,9 @@ endif
 # HOST_TARGET empty on its command line: that is the host test's result
 # for a device target, and the build then passes no define.
 #
-# No path reads CH_CPU_AVX2 or CH_CPU_VAES yet. The CHACHA and X25519
-# variables still choose what each object runs, and the commits entry 89
-# lists move each choice to its bit.
+# No path reads CH_CPU_AVX2 or CH_CPU_VAES yet. The CHACHA variable still
+# chooses the ChaCha20 keystream each object runs, and the last code commit
+# entry 89 lists moves that choice to the host test and the bits.
 DEVICE_CLIENT := $(filter client-raw-rsa client-raw-ecdsa client-ca-rsa client-ca-ecdsa,$(ROLE)-$(TRUST))
 CPU_RUNTIME_DEF := $(if $(HOST_TARGET),$(if $(DEVICE_CLIENT),,-DCH_CPU_RUNTIME))
 # A host object takes no AES value: it holds the AES instructions and,
@@ -931,39 +930,25 @@ endif
 ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST))$(filter server both,$(ROLE)),)
 LIB_SRCS += $(KEX_HYBRID_SRCS)
 endif
-# The X25519 field, which both KEX values run: X25519=portable (default) is
+# The X25519 field, which both KEX values run. Every object holds
 # x25519.c's 16 limbs of 16 bits, whose products are 32x32 multiplies that
-# ct.h can build from 16x16 pieces on any core, and X25519=wide adds
+# ct.h can build from 16x16 pieces on any core. A host object also holds
 # x25519_wide.c, five limbs of 51 bits whose products are 64x64->128
-# multiplies. One field per object, the way AES names one implementation:
-# x25519.c compiles its own field only without -DCH_X25519_WIDE and calls
-# x25519_wide.c's ladder only with it. docs/decisions.md entry 52 says why
-# the values are named for the multiply each field needs.
+# multiplies, and widemul.h runs it for a session whose ch_cfg.cpu holds
+# CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 52 and 89). The host
+# test requires unsigned __int128, the type of those products, which no
+# 32-bit target here has.
 #
-# The wide field is a host-side choice. ct.h stops the build unless the
-# compiler has unsigned __int128, which no 32-bit target here has, and
-# unless the build defines CH_NATIVE_MUL128, its assertion that the part's
-# 64x64->128 multiply runs in constant time. The Makefile does not define
-# it for the packaged object, because it is a claim about hardware and the
-# mode that hardware runs in; the test binaries that build the field state
-# it on their own lines, the way the AES=extern suite's binaries state
-# CH_AES_EXTERN_CONSTANT_TIME.
-X25519 ?= portable
-ifeq ($(X25519),wide)
-LIB_DEF += -DCH_X25519_WIDE
-LIB_SRCS += x25519_wide.c
-else ifneq ($(X25519),portable)
-$(error X25519=$(X25519) is not an X25519 field; use X25519=portable or X25519=wide)
+# No variable chooses the field. X25519=wide chose it for a whole object
+# until the field moved under the bit, and a build that still passes the
+# variable would get the 16-limb field with no word said, so any value of
+# it stops the build here.
+ifneq ($(origin X25519),undefined)
+$(error X25519=$(X25519) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the wide X25519 field and run it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and every other object runs the 16-limb field (docs/decisions.md 89))
 endif
-# The defines every test binary that builds the wide field passes: the
-# field and the timing assertion ct.h requires beside it.
-X25519_WIDE_DEF := -DCH_X25519_WIDE -DCH_NATIVE_MUL128
-# Whether this compiler can build the wide field at all, read from what it
-# predefines rather than assumed from the host: a cross compiler for a
-# 32-bit core has no __SIZEOF_INT128__, and the targets that read this skip
-# there rather than stop at ct.h's #error.
-X25519_WIDE_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -q '__SIZEOF_INT128__' && echo yes)
-X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25519_wide)
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += x25519_wide.c
+endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181): CHACHA=portable
 # (default) is chacha20.c's loop, one 64-byte block at a time in 32-bit
@@ -979,8 +964,8 @@ X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25
 # The vector path is a host-side choice. chacha20_vector.h stops the build
 # when the compiler targets neither NEON nor SSE2, or targets a big-endian
 # core, so CHACHA=vector never falls back to the portable loop without
-# saying so. It asks for no timing statement of its own, where X25519=wide
-# asks for CH_NATIVE_MUL128: it runs the operations chacha20.c runs, adds,
+# saying so. It asks for no timing statement of its own, where the wide
+# X25519 field asks for the multiply bit: it runs the operations chacha20.c runs, adds,
 # exclusive-ors, shifts and lane moves, with no multiply, no table and no
 # division, so it rests on what the portable loop rests on. The vector
 # Poly1305 does multiply, so it joins the object only beside WIDEMUL=native
@@ -1083,15 +1068,14 @@ endif
 # The widening multiply (ct.h). A host object holds both multiplies, and
 # each session's CH_CPU_CONSTANT_TIME_MULTIPLY bit in ch_cfg.cpu picks one
 # for every operation built on the multiply (widemul.h, docs/decisions.md
-# 87 and 89). Each of the seven files built on it that the object carries
-# compiles as a WIDEMUL=decomposed device object compiles it, and once
-# more as its _native.c copy, WIDEMUL_COPIED below; poly1305_vector.c,
+# 87 and 89). Each file built on it that the object carries compiles as a
+# WIDEMUL=decomposed device object compiles it. Five of them compile once
+# more as their _native.c copies, WIDEMUL_COPIED below; poly1305_vector.c,
 # whose path runs on the native multiply alone, joins as its native copy
-# only. The builder states nothing about the part, so a host object takes
-# no CH_NATIVE_WIDEMUL, and ct.h refuses one beside -DCH_CPU_RUNTIME.
-# X25519=wide is refused there too: the wide field's CH_NATIVE_MUL128
-# states its multiply's timing when the object is built, and a host object
-# asks each session.
+# only; and x25519.c has no native copy, because X25519's second copy is
+# the wide field above. The builder states nothing about the part, so a
+# host object takes no CH_NATIVE_WIDEMUL, and ct.h refuses one beside
+# -DCH_CPU_RUNTIME.
 #
 # A device object takes the WIDEMUL variable. WIDEMUL=decomposed, the
 # default, builds every widening product from 16x16 pieces and claims
@@ -1103,7 +1087,7 @@ endif
 # multiply, and LIB_VARIANT and the object's cc-stamp record the choice.
 # A host object takes no WIDEMUL value, as it takes no AES value, and the
 # test is $(origin WIDEMUL) for the same reason.
-WIDEMUL_COPIED := poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c
+WIDEMUL_COPIED := poly1305.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c
 # A native copy preprocesses only under -DCH_CPU_RUNTIME, because ct.h
 # refuses one anywhere else, so lint-quic-partition judges each with it.
 QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_RUNTIME) \
@@ -1113,13 +1097,13 @@ QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_R
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
 # host object takes the multiply's timing from each session; each rule
 # adds -DCH_CPU_RUNTIME, or HOST_SUITE_DEF, which holds it. host_srcs is
-# $(1) and the native copy of each of its files that is built on the
-# multiply, which widemul.h's dispatchers call. The VECTOR pair adds
+# $(1), the native copy of each of its files that has one, and the wide
+# field beside x25519.c, which widemul.h's dispatchers call. The VECTOR pair adds
 # CHACHA=vector, whose vector Poly1305 a host object holds as the native
 # copy alone.
 HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS))
 widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
-host_srcs = $(1) $(call widemul_native_of,$(1))
+host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c)
 HOST_VECTOR_CFLAGS = $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_CHACHA_VECTOR
 host_vector_srcs = $(call host_srcs,$(1)) $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
                    $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c)
@@ -1127,9 +1111,6 @@ WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
 ifneq ($(origin WIDEMUL),file)
 $(error WIDEMUL=$(WIDEMUL) chooses a device object's multiply, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which holds both multiplies and picks one per session from ch_cfg.cpu (docs/decisions.md 89): drop WIDEMUL, or set HOST_TARGET empty for the device object)
-endif
-ifeq ($(X25519),wide)
-$(error X25519=wide states its multiply's timing at build time, and TRUST=$(TRUST) ROLE=$(ROLE) on this compiler builds a host object, which takes the multiply's timing from each session's ch_cfg.cpu: use X25519=portable)
 endif
 LIB_SRCS += $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(LIB_SRCS)))
 else ifeq ($(WIDEMUL),native)
@@ -1240,19 +1221,17 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # SUITE belongs here for the same reason: -DCH_SUITE_AES_GCM changes
 # record.o and adds three objects, so the two suites must not share a
 # directory.
-# X25519 belongs here for SUITE's reason: -DCH_X25519_WIDE changes x25519.o
-# and adds x25519_wide.o.
 # TX_RECORD belongs here because -DCH_TX_PT can change sizeof(ch_tls) and
 # so every object that reads it. It is added only when set, so the default
 # object keeps the directory it had.
-# CHACHA belongs here for X25519's reason: -DCH_CHACHA_VECTOR changes
+# CHACHA belongs here for SUITE's reason: -DCH_CHACHA_VECTOR changes
 # chacha20.o and adds chacha20_vector.o. It is added only for the vector
 # value, for TX_RECORD's reason.
 # The host test's result belongs here because -DCH_CPU_RUNTIME changes
 # ch_cfg and every object that reads it, and a check can build a server's
 # device object beside its host object. It is added only for a host
 # object, for TX_RECORD's reason.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(filter vector,$(CHACHA)),-chacha-vector)$(if $(CPU_RUNTIME_DEF),-host)
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)$(if $(TX_RECORD),-tx$(TX_RECORD))$(if $(filter vector,$(CHACHA)),-chacha-vector)$(if $(CPU_RUNTIME_DEF),-host)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1292,6 +1271,12 @@ print-aes-hw-srcs:
 .PHONY: print-tcp-nonblocking-loop-srcs
 print-tcp-nonblocking-loop-srcs:
 	@echo $(TCP_NONBLOCKING_LOOP_SRCS)
+# bench/primitives.sh builds its host object programs from HOST_SRCS_OF, a
+# list it passes, as a host object holds those sources: with the native
+# copy of each file that has one and the wide X25519 field (host_srcs).
+.PHONY: print-host-srcs
+print-host-srcs:
+	@echo $(call host_srcs,$(HOST_SRCS_OF))
 # test/aes-runtime-qemu.sh builds its four binaries for x86-64 from the
 # sources their rules here link, one list per line: bin/quic_loop_aes,
 # bin/webpki_loop_aes, bin/aes_runtime_test beside its three test files,
@@ -1433,11 +1418,15 @@ print-aes-runtime-qemu-srcs:
 #
 # The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
 # asks for it, and every native copy to the host object: a host row
-# requires each file built on the multiply beside its _native.c copy, a
+# requires each copied file beside its _native.c copy, a
 # CHACHA=vector host row the vector Poly1305 as its native copy alone, and
 # every device row bans the copies. A host object takes no WIDEMUL value,
-# WIDEMUL=runtime is gone, and X25519=wide is refused for a host object
-# (docs/decisions.md 87 and 89).
+# and WIDEMUL=runtime is gone (docs/decisions.md 87 and 89).
+#
+# The X25519 rows hold x25519.c to every object and x25519_wide.c to the
+# host object, with no native copy of x25519.c in any, and require every
+# value of the X25519 variable to stop the build, which is gone
+# (docs/decisions.md 89).
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
@@ -1500,29 +1489,39 @@ lint-trust-separation-run:
 	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
-	check "TRUST=raw-rsa X25519=portable" "x25519.c" "x25519_wide.c" "" "-DCH_X25519_WIDE"; \
-	check "TRUST=raw-rsa X25519=wide" "x25519.c x25519_wide.c" "" "-DCH_X25519_WIDE" "-DCH_NATIVE_MUL128"; \
+	check "TRUST=raw-rsa" "x25519.c" "x25519_wide.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "x25519.c x25519_wide.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "x25519.c x25519_wide.c" "x25519_native.c" "-DCH_CPU_RUNTIME" \
+	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "x25519.c" "x25519_wide.c x25519_native.c" "" \
+	  "-DCH_X25519_WIDE -DCH_NATIVE_MUL128 -DCH_CPU_RUNTIME"; \
+	for value in portable wide; do \
+	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
+	    n=$$((n + 1)); refused_build "$$axis X25519=$$value" "X25519 is gone: a host object holds the wide field and each session's ch_cfg.cpu picks it" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
+	  done; \
+	done; \
 	check "TRUST=raw-rsa CHACHA=portable" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c" "" "-DCH_CHACHA_VECTOR"; \
 	check "TRUST=raw-rsa CHACHA=vector" "chacha20.c chacha20_vector.c chacha20_avx2.c poly1305.c" "poly1305_vector.c" "-DCH_CHACHA_VECTOR" \
 	  "-DCH_NATIVE_WIDEMUL"; \
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
-	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c x25519.c" "poly1305_vector.c $$native_files" "" \
+	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c $$native_files" "" \
 	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa CHACHA=vector WIDEMUL=native" "chacha20.c chacha20_vector.c chacha20_avx2.c poly1305.c poly1305_vector.c" \
 	  "$$native_files" "-DCH_CHACHA_VECTOR -DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c x25519.c x25519_native.c \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c \
 	  mlkem_poly.c mlkem_poly_native.c p256_field.c p256_field_native.c p256_scalar.c p256_scalar_native.c" \
 	  "poly1305_vector.c poly1305_vector_native.c rsa_sign.c rsa_sign_native.c" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
 	check "ROLE=client TRUST=webpki CHACHA=vector HOST_TARGET=yes" "chacha20_vector.c chacha20_avx2.c poly1305.c poly1305_native.c poly1305_vector_native.c" \
 	  "poly1305_vector.c" "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c x25519.c x25519_native.c \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c \
 	  mlkem_poly.c mlkem_poly_native.c p256_field.c p256_field_native.c p256_scalar.c p256_scalar_native.c \
 	  rsa_sign.c rsa_sign_native.c" "poly1305_vector.c poly1305_vector_native.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_NATIVE_WIDEMUL"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "poly1305.c x25519.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c" \
+	check "ROLE=server TRUST=none HOST_TARGET=" "poly1305.c mlkem_poly.c p256_field.c p256_scalar.c rsa_sign.c" \
 	  "poly1305_vector.c $$native_files" "" "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
 	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "poly1305.c rsa_sign.c" "poly1305_vector.c $$native_files" \
 	  "-DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
@@ -1531,8 +1530,6 @@ lint-trust-separation-run:
 	done; \
 	n=$$((n + 1)); refused_build "TRUST=raw-rsa WIDEMUL=runtime" \
 	  "WIDEMUL=runtime put both multiplies in an object, and a host object holds them now and picks one per session from ch_cfg.cpu (docs/decisions.md 89)" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
-	n=$$((n + 1)); refused_build "ROLE=client TRUST=webpki HOST_TARGET=yes X25519=wide" \
-	  "X25519=wide states its multiply's timing at build time and a host object asks each session" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
 	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
@@ -2067,22 +2064,17 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # why hkdf.c and sha256.c link. test/stack_residue.c copies the stack a
 # call left, for the check that the powers of H and a pass's sums are gone
 # (test/ghash_equiv_residue.h).
-# X25519=wide against X25519=portable, both fields in one binary under two
-# names, the way bin/aes_equiv_test holds both AES implementations:
-# test/x25519_equiv_portable.c and test/x25519_equiv_wide.c compile x25519.c
-# once each, the second with x25519_wide.c under -DCH_X25519_WIDE. The line
-# states CH_NATIVE_MUL128 because ct.h refuses the wide field without it; the
-# portable wrapper reads nothing that macro changes.
-X25519_EQUIV_TEST_SRCS := test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c ct_wipe.c
-bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) x25519.c x25519_wide.c $(HDRS) $(TESTH)
+# The wide X25519 field against the 16-limb one, both in one binary under
+# the names the library gives them, as a host object holds them: x25519.c
+# on ct.h's 16x16 decomposition and x25519_wide.c, which compiles x25519.c
+# once more for its clamp and all-zero check. The binary is a host
+# object's, so HOST_BINS names it. bin/unit_host runs RFC 7748's vectors
+# and the unit suite's handshakes on the wide field, with the multiply bit,
+# and on the 16-limb one, without it.
+X25519_EQUIV_TEST_SRCS := x25519.c x25519_wide.c ct.c ct_wipe.c
+bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_NATIVE_MUL128 -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
-# The unit suite over the wide field: RFC 7748's vectors in test/unit_test.c,
-# and every handshake the suite drives, with x25519() answering from
-# x25519_wide.c.
-bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/unit_test.c $(SRCS) x25519_wide.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS)
 # CHACHA=vector against CHACHA=portable, both paths in one binary under
 # their own names: chacha20.c compiles here without -DCH_CHACHA_VECTOR, so
 # chacha20_xor is the portable loop, and test/chacha20_equiv_vector.c
@@ -2848,24 +2840,27 @@ $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
-# The counting test: the seven files again under the second names of
-# test/widemul_count_names.h, in the test/widemul_count_*.c units, in
-# place of the files and their native copies, and the stubs that count
-# each call (test/widemul_runtime_count.h).
+# The counting test: the files built on the multiply again under the
+# second names of test/widemul_count_names.h, in the
+# test/widemul_count_*.c units, in place of the files, their native copies
+# and the wide X25519 field, and the stubs that count each call
+# (test/widemul_runtime_count.h). WIDEMUL_COUNTED names what the units
+# replace on a link line.
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_field.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_field.c test/widemul_count_native_scalar.c \
-                       test/widemul_count_native_vector.c
+                       test/widemul_count_native_vector.c test/widemul_count_wide.c
+WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c ct.c ct_wipe.c buf.c record.c mlkem.c \
                       sha3.c p256.c p256_ecdh.c p256_point.c p256_sign.c rsa.c rsa_mont.c
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
-                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COPIED) poly1305_vector.c $(HDRS) $(TESTH)
+                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_VECTOR_CFLAGS) -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
 	  $(WIDEMUL_COUNT_UNITS) $(WIDEMUL_COUNT_SRCS)
 # The host object's loop and session binaries (docs/decisions.md 89), each
 # built as a host object builds its sources, on the same counting copies:
-# the sources a loop links, with the seven files replaced by the count
+# the sources a loop links, with the files built on the multiply replaced by the count
 # units and their stubs (widemul_counted), which each says with
 # -DTEST_WIDEMUL_COUNTED, so a whole handshake reads which copy each end
 # ran. Every case of each runs with both ends
@@ -2876,7 +2871,7 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # test/*_widemul.h rows set each end's multiply bit. cpu_cfg.h refuses the
 # define on a compiler that fails the host test, so the binaries are named
 # only where HOST_TARGET found one, and check-skips says when it did not.
-widemul_counted = $(filter-out $(WIDEMUL_COPIED),$(1)) $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c \
+widemul_counted = $(filter-out $(WIDEMUL_COUNTED),$(1)) $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c \
                   $(CHACHA_VECTOR_SRCS)
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(HDRS) $(TESTH)
@@ -2904,7 +2899,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 # suite's record, QUIC, flight, session and loop tests, whose rows run with
 # the CH_CPU_CONSTANT_TIME_AES bit and without it.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
-                                 bin/webpki_session_host bin/widemul_runtime_test \
+                                 bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
@@ -3035,13 +3030,12 @@ CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient
                 $(if $(HOST_TARGET),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/tlsclient_tcp_nonblocking \
                 bin/tlsserver
 # The binaries check runs. The host object's are named only where the
-# host test passed, and the X25519=wide ones only where the compiler has
-# unsigned __int128; check-skips says which were left out.
+# host test passed; check-skips says which were left out.
 CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha512_test \
                   hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
-                  quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS) $(X25519_WIDE_BINS)) \
+                  quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
                   $(patsubst bin/%,%,$(CHACHA_VECTOR_BINS) $(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
                   tcp_nonblocking_loop_test tcp_nonblocking_loop_pq tcp_blocking_loop_test \
@@ -3055,16 +3049,16 @@ CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-e
               check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
-              check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes check-lib-x25519-wide \
+              check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-chacha-vector check-lib-chacha-vector-widemul check-lib-quic-aes-chacha-vector \
               check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
-.PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) check-x25519-builds \
+.PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) \
         check-chacha-builds check-widemul-builds check-host-builds check-script-builds check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
        $(CHECK_RUN_HOST_VECTOR) \
-       check-x25519-builds check-chacha-builds check-widemul-builds check-host-builds check-script-builds \
+       check-chacha-builds check-widemul-builds check-host-builds check-script-builds \
        check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
 
@@ -3074,8 +3068,9 @@ check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CH
 # script's make no jobserver, and that make warns and prints its
 # "Entering directory" lines to stdout even with --no-print-directory, so
 # a script that reads a value from make reads those lines too. That is
-# how test/x25519-builds.sh failed on CI run 36277795480, the first
-# make -j ci. make 3.81 prints no such lines, so macOS never shows it.
+# how test/x25519-builds.sh, which test/widemul-builds.sh has since taken
+# over, failed on CI run 36277795480, the first make -j ci. make 3.81
+# prints no such lines, so macOS never shows it.
 #
 # What a leg or a run ends with: its held output, and on a failure one
 # line that names the target and its exit status.
@@ -3110,16 +3105,15 @@ $(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST
 # same published vectors, the record layer's RFC 8448 record, the QUIC
 # suite computation and both loops, on aes_extern.c over
 # test/aes_extern_hook.c; they need no instruction, so they never skip.
-# The X25519=wide runs are the unit suite with x25519() answering from
-# x25519_wide.c and the field against the 16-limb one over the same
-# inputs. A compiler that fails the host test builds none of the first
-# set, and one without unsigned __int128 neither of the X25519=wide set. The CHACHA=vector runs are the unit suite with chacha20_xor
+# The wide X25519 field's runs are bin/unit_host's, with the multiply bit,
+# and bin/x25519_equiv_test's, the field against the 16-limb one over the
+# same inputs. A compiler that fails the host test builds none of the
+# host object's binaries. The CHACHA=vector runs are the unit suite with chacha20_xor
 # answering from chacha20_vector.c and the vector path against the
 # portable loop over the same inputs; a compiler that targets neither
 # NEON nor SSE2 builds neither, and on CI, whose runners all have one of
 # the two, that skip is a failure.
 check-skips:
-	@[ -n "$(X25519_WIDE_BINS)" ] || echo "SKIP X25519=wide: $(CC) has no unsigned __int128"
 	@[ -n "$(X86_KERNEL_BINS)" ] || echo "SKIP the x86-64 kernels' routed binaries: $(CC) does not target x86-64"
 ifeq ($(HOST_BINS),)
 	$(call REQUIRE_ON_CI,the host test: arm64 or x86-64 with NEON or SSE2 and unsigned __int128)
@@ -3130,10 +3124,6 @@ ifeq ($(CHACHA_VECTOR_BINS),)
 	@echo "SKIP CHACHA=vector: $(CC) targets neither NEON nor SSE2 on a little-endian core"
 endif
 
-# ct.h's two refusals of a wide build that lacks what it needs.
-check-x25519-builds:
-	+@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
-
 # chacha20_vector.h's two refusals, chacha20.c's call to the vector path
 # in a CHACHA=vector build, and poly1305.c's call to its vector path in a
 # build that adds CH_NATIVE_WIDEMUL.
@@ -3142,8 +3132,9 @@ check-chacha-builds:
 
 # ct.h's rules for a host object's two multiplies, each file under its
 # own names compiled to its decomposed build's code there, the vector
-# Poly1305 called from poly1305_native.c alone, and the refusals of a
-# WIDEMUL value and of X25519=wide for a host object in make and in
+# Poly1305 called from poly1305_native.c alone, the 64x64->128 multiply in
+# a host object alone, and the refusals of a WIDEMUL value for a host
+# object and of the X25519 variable for every object in make and in
 # build.zig (docs/decisions.md 87 and 89).
 check-widemul-builds:
 	+@mkdir -p bin/check; ZIG='$(ZIG)' ./test/widemul-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
@@ -3362,18 +3353,6 @@ ifeq ($(HOST_TARGET),)
 else
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki \
 	  SUITE=aesgcm KEYLOG=on EXPORTER=off > bin/check/$@.log 2>&1; $(CHECK_REPORT)
-endif
-# The wide X25519 field, packaged. ct.h refuses it without the build's
-# own CH_NATIVE_MUL128, which the Makefile never writes into a library
-# build, so this leg states it the way the AES=extern leg states
-# CH_AES_EXTERN_CONSTANT_TIME, and lint-stack holds the field's frames to
-# the device budget. Both run only where the compiler has unsigned __int128.
-check-lib-x25519-wide:
-ifeq ($(X25519_WIDE_PROBE),)
-	@echo "SKIP lib-check X25519=wide: $(CC) has no unsigned __int128"
-else
-	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern X25519=wide \
-	  CFLAGS='$(CFLAGS) -DCH_NATIVE_MUL128' > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 endif
 # The vector ChaCha20, packaged, and its frames held to the device budget
 # by lint-stack. Both run only where the compiler targets NEON or SSE2 on a
@@ -3595,21 +3574,22 @@ else
 endif
 	$(MAKE) bin/diff_quic_extern
 	./bin/diff_quic_extern
-ifneq ($(X25519_WIDE_PROBE),)
+ifneq ($(HOST_TARGET),)
 	$(MAKE) bin/diff_x25519_wide
 	./bin/diff_x25519_wide
 else
-	@echo "SKIP diff's X25519=wide binary: $(CC) has no unsigned __int128"
+	@echo "SKIP diff's wide X25519 binary: $(CC) fails the host test"
 endif
 endif
 
-# The X25519=wide arm: the x25519 rows against spec/lean/Spec/X25519.lean
-# with x25519() answering from x25519_wide.c. Its own main, because the
-# field changes no other row bin/diff compares; test/diff_x25519_test.c
-# says so, and why the spec needs no second model.
+# The wide field's arm: the x25519 rows against spec/lean/Spec/X25519.lean
+# with x25519_wide.c's entries answering, built as a host object builds
+# that file. Its own main, because the field changes no other row bin/diff
+# compares; test/diff_x25519_test.c says so, and why the spec needs no
+# second model.
 bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wipe.c
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/diff_x25519_test.c x25519_wide.c ct.c ct_wipe.c
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -3877,15 +3857,15 @@ if [ "$$(git -C $(WYCHEPROOF_DIR) rev-parse HEAD 2>/dev/null)" != "$(WYCHEPROOF_
 endef
 
 .PHONY: wycheproof wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern \
-        wycheproof-leg-x25519-wide wycheproof-leg-chacha-vector wycheproof-run-default \
-        wycheproof-run-host wycheproof-run-aes-extern wycheproof-run-x25519-wide \
+        wycheproof-leg-chacha-vector wycheproof-run-default \
+        wycheproof-run-host wycheproof-run-aes-extern \
         wycheproof-run-chacha-vector wycheproof-leg-x86-kernels
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(MAKE) --no-print-directory -j4 wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern \
-	  wycheproof-leg-x25519-wide wycheproof-leg-chacha-vector wycheproof-leg-x86-kernels
-# The six legs build and run four at a time, each about 3 seconds to
+	  wycheproof-leg-chacha-vector wycheproof-leg-x86-kernels
+# The five legs build and run four at a time, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
 # to run on its
@@ -3921,9 +3901,6 @@ WYCHEPROOF_HOST = $(CC) $(HOST_VECTOR_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUI
   $(AES_HW_SRCS) quic_aes_soft.c
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
-WYCHEPROOF_X25519_WIDE = $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
-  $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) x25519_wide.c \
-  $(AES_IMPL)
 WYCHEPROOF_CHACHA_VECTOR = $(CC) $(CFLAGS) -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
   $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) \
   $(CHACHA_VECTOR_SRCS) poly1305_vector.c $(AES_IMPL)
@@ -3958,7 +3935,8 @@ wycheproof-run-default:
 # AES-256-GCM run on the instructions and the carry-less multiply. Without
 # CH_CPU_CONSTANT_TIME_MULTIPLY every call built on the multiply runs the
 # file under its own names, on the decomposition, and with it the native
-# copy, the vector Poly1305 included (test/test_widemul.h). Running the
+# copy, the vector Poly1305 included, and X25519 the wide field, whose
+# 518 cases the x25519 suite then answers for (test/test_widemul.h). Running the
 # whole file each time is what the rule asks for and what keeps this leg
 # from rotting when a suite is added. A compiler that fails the host test
 # skips, the way the fetch above skips offline.
@@ -3989,23 +3967,6 @@ wycheproof-run-aes-extern:
 	@$(WYCHEPROOF_AES_EXTERN) -o bin/wycheproof_test_aes_extern && \
 	{ ./bin/wycheproof_test_aes_extern > bin/wycheproof_test_aes_extern.log 2>&1; rc=$$?; \
 	  echo "== bin/wycheproof_test_aes_extern (AES=extern):"; cat bin/wycheproof_test_aes_extern.log; exit $$rc; }
-# The X25519=wide leg, for the host leg's reason: the field is a
-# second X25519 in this tree, so the x25519 suite's 518 cases answer for
-# it too. Only the x25519 rows differ from the first binary. A compiler
-# without unsigned __int128 cannot build the field, and skips; every CI
-# host has the type, so there the skip is a failure.
-wycheproof-leg-x25519-wide:
-ifeq ($(X25519_WIDE_PROBE),)
-	@[ -z "$$CI" ] || { echo "wycheproof X25519=wide: $(CC) has no unsigned __int128 on CI; the gate must not skip"; exit 1; }
-	@echo "SKIP wycheproof X25519=wide: $(CC) has no unsigned __int128"
-else
-	@python3 tools/stamp.py wycheproof-x25519-wide $(WYCHEPROOF_STAMP_INPUTS) \
-	  --output '$(WYCHEPROOF_X25519_WIDE) -E' -- $(MAKE) --no-print-directory wycheproof-run-x25519-wide
-endif
-wycheproof-run-x25519-wide:
-	@$(WYCHEPROOF_X25519_WIDE) -o bin/wycheproof_test_x25519_wide && \
-	{ ./bin/wycheproof_test_x25519_wide > bin/wycheproof_test_x25519_wide.log 2>&1; rc=$$?; \
-	  echo "== bin/wycheproof_test_x25519_wide (X25519=wide):"; cat bin/wycheproof_test_x25519_wide.log; exit $$rc; }
 # The CHACHA=vector leg, for the same reason: the vector paths are a
 # second ChaCha20 and, under the host's CH_NATIVE_WIDEMUL, a second
 # Poly1305 in this tree, so the ChaCha20-Poly1305 suite answers for them
@@ -4096,6 +4057,9 @@ wycheproof-ct-widemul:
 O ?= 2
 SAN_CFLAGS = $(filter-out -O2,$(CFLAGS)) -O$(O) -g \
   -fsanitize=address,undefined -fno-sanitize-recover=all
+# The same for a host object's binary: without the host test flags'
+# CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME.
+SAN_HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(SAN_CFLAGS))
 .PHONY: san-check san-selftest
 san-check:
 	@rm -rf bin/san && mkdir -p bin/san
@@ -4137,21 +4101,23 @@ san-check:
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
-	# The X25519=wide field, where the compiler has unsigned __int128: the
-	# equivalence binary and the Wycheproof suites over it. UBSan finds no
-	# unsigned wrap, which C does not call undefined; the field's proofs
+	# The wide X25519 field, where the compiler passes the host test: the
+	# equivalence binary, and the Wycheproof suites over the host object
+	# with the multiply bit, 0x5, under which the x25519 rows run the field
+	# and every other row built on the multiply its native copy. UBSan finds
+	# no unsigned wrap, which C does not call undefined; the field's proofs
 	# check that class with --unsigned-overflow-check instead.
-	@set -e; if [ -n "$(X25519_WIDE_PROBE)" ]; then \
-	  $(CC) $(SAN_CFLAGS) -DCH_NATIVE_MUL128 -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
+	@set -e; if [ -n "$(HOST_TARGET)" ]; then \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
 	    $(X25519_EQUIV_TEST_SRCS); \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
-	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
-	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
-	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
-	    $(WYCHEPROOF_SRCS) x25519_wide.c $(AES_IMPL); \
-	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
+	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof host object: the fetch above skipped"; exit 0; }; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_CHACHA_VECTOR $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
+	    $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test_host test/wycheproof_test.c \
+	    $(call host_vector_srcs,$(WYCHEPROOF_SRCS)) $(AES_HW_SRCS) quic_aes_soft.c; \
+	  echo "== wycheproof_test_host 0x5 (SAN -O$(O))"; ./bin/san/wycheproof_test_host 0x5; \
 	else \
-	  echo "SKIP san X25519=wide: $(CC) has no unsigned __int128"; \
+	  echo "SKIP san wide X25519 field: $(CC) fails the host test"; \
 	fi
 	# The CHACHA=vector paths, where the compiler targets NEON or SSE2: the
 	# two equivalence binaries, which run their cases on heap buffers that
@@ -4661,19 +4627,18 @@ else
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
-	  test/x25519_equiv_portable.c test/hkdf384_test.c \
-	  test/x25519_equiv_wide.c test/diff_x25519_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
+	  test/x25519_equiv_test.c test/hkdf384_test.c \
+	  test/diff_x25519_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
 	  $(WIDEMUL_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
-	# The X25519=wide field. x25519_wide.c guards its body on
-	# -DCH_X25519_WIDE, and x25519.c compiles its dispatch to that field only
-	# under it, so the pass above reads the 16-limb field and this one reads
-	# the other, with the differential main that refuses any other build.
-	# The two test/x25519_equiv_*.c wrappers stay out of both, for the
-	# reason test/aes_equiv_soft.c does below.
-	@$(call TIDY_EACH,x25519.c x25519_wide.c test/diff_x25519_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(X25519_WIDE_DEF) -I.)
+	# The wide X25519 field. x25519_wide.c guards its body on
+	# -DCH_CPU_RUNTIME and compiles x25519.c's clamp and all-zero check
+	# inside it, so the pass above reads the 16-limb field and this one
+	# reads the other, with the equivalence test, which calls both, and the
+	# differential main, which refuses any other build.
+	@$(call TIDY_EACH,x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
 	# The CHACHA=vector paths. chacha20_vector.c guards its body on
 	# -DCH_CHACHA_VECTOR, and poly1305_vector.c on that define beside
 	# -DCH_NATIVE_WIDEMUL; chacha20.c and poly1305.c call them only under
@@ -5017,7 +4982,7 @@ CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
 # outside -DCH_CPU_RUNTIME. In cppcheck's base configuration that #error
 # is the whole file, so they get a run of their own under that define,
 # with a build directory of its own (docs/decisions.md 87 and 89).
-WIDEMUL_NATIVE_COPY_C := poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
+WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c p256_field_native.c \
                          p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c \
                          test/widemul_count_native.c test/widemul_count_native_field.c \
                          test/widemul_count_native_scalar.c test/widemul_count_native_vector.c
@@ -5421,12 +5386,13 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
                    sha512.c:0 sha512_compress.c:0 handshake_groups.c:0
-# The X25519=wide field, x25519_wide.c, is one of three secret-bearing sources
+# The wide X25519 field, x25519_wide.c, is one of three secret-bearing sources
 # no spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
-# which no 32-bit target has, so ct.h makes the field an #error on every one
-# of them. WIDE64_SPECS below measure it instead, on 64-bit targets, and this
-# list is what they compile, file:ceiling as above. Its multiply is the
-# 64x64->128 instruction CH_NATIVE_MUL128 asserts, so that spec's tokens are
+# which no 32-bit target has, and it compiles only in a host object, which
+# cpu_cfg.h refuses on every one of them. WIDE64_SPECS below measure it
+# instead, on 64-bit targets, and this list is what they compile,
+# file:ceiling as above. Its multiply is the 64x64->128 instruction the
+# session's multiply bit states, so that spec's tokens are
 # the divisions and the 128-bit runtime calls, and the ceiling is zero.
 # The others are the CHACHA=vector paths, chacha20_vector.c,
 # chacha20_avx2.c and poly1305_vector.c: they need NEON, SSE2 or AVX2,
@@ -5444,7 +5410,7 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
 # copy, and the 64-bit specs are the targets the copies run on. What they
 # hold for a copy is its branch count, as for the vector paths.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
-                  poly1305_native.c:0 x25519_native.c:0 mlkem_poly_native.c:0 p256_field_native.c:0 \
+                  poly1305_native.c:0 mlkem_poly_native.c:0 p256_field_native.c:0 \
                   p256_scalar_native.c:0 rsa_sign_native.c:0 poly1305_vector_native.c:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
@@ -5477,10 +5443,9 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
 # The native copies of a host object need -DCH_CPU_RUNTIME, because ct.h
-# refuses a native copy anywhere else, and -UCH_X25519_WIDE, because the
-# 64-bit specs state the wide field for every file and ct.h refuses it
-# for a host object.
-WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME$(COMMA)-UCH_X25519_WIDE
+# refuses a native copy anywhere else, and x25519_wide.c needs it because
+# its whole body sits behind that define.
+WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME
 # webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen legs compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
 # client offers both groups in every build (docs/decisions.md 53). The server
@@ -5506,6 +5471,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    chacha20_vector.c:-DCH_CHACHA_VECTOR chacha20_avx2.c:-DCH_CHACHA_VECTOR \
                    poly1305_vector.c:-DCH_CHACHA_VECTOR$(COMMA)-DCH_NATIVE_WIDEMUL \
+                   x25519_wide.c:-DCH_CPU_RUNTIME \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:-DCH_CHACHA_VECTOR$(COMMA)$(WIDEMUL_NATIVE_DEFINES)
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
@@ -5679,16 +5645,18 @@ WIDEMUL_SPECS := \
   rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV):$(BRANCH_OPS_RV) \
   rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I):$(BRANCH_OPS_RV)
 # The two 64-bit specs, which compile WIDE64_CEILING's files and nothing else,
-# under the pinned clang with the defines an X25519=wide build states. Their
-# multiply tokens are the divisions and the 128-bit runtime calls: a
-# 64x64->128 multiply is the instruction the field is built on, and
-# CH_NATIVE_MUL128 is the build's statement about its timing, so counting it
+# under the pinned clang, each file with the defines WIDEMUL_DEFINES gives
+# it. Their multiply tokens are the divisions and the 128-bit runtime calls: a
+# 64x64->128 multiply is the instruction the wide field is built on, and
+# the session's multiply bit is the statement about its timing, so counting it
 # would hold nothing. What these specs hold is the branch count, which is the
 # field's claim that no instruction branches on a limb or a scalar bit: every
 # branch x25519_wide.c emits under both is loop control over a public count
 # -- the 255 ladder steps, the five limbs, the 40 bytes ct_wipe clears, the
 # eight bytes load_le64 reads, and sqr_times' count -- and cswap and pack's
-# conditional subtraction stay masks. arm64 counts b.<cond>, spelled out so
+# conditional subtraction stay masks. x25519.c's clamp and all-zero check,
+# which the file compiles inside it, add no branch under either spec.
+# arm64 counts b.<cond>, spelled out so
 # the dot cannot match bl, and cbz, cbnz, tbz and tbnz. x86-64 counts every
 # j<cond>, by prefixes that cannot match jmp. A compiler run that emits
 # either family's multiply by a limb as a call to __multi3 fails the zero.
@@ -5698,10 +5666,9 @@ WIDE64_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 WIDE64_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 BRANCH_OPS_ARM64 := b.eq,b.ne,b.cs,b.hs,b.cc,b.lo,b.mi,b.pl,b.vs,b.vc,b.hi,b.ls,b.ge,b.lt,b.gt,b.le,cbz,cbnz,tbz,tbnz
 BRANCH_OPS_X86 := ja,jb,jc,je,jg,jl,jn,jo,jp,jr,js,jz
-WIDE64_FLAGS := -DCH_X25519_WIDE,-DCH_NATIVE_MUL128
 WIDE64_SPECS := \
-  arm64:clang:aarch64-none-elf:-march=armv8-a,$(WIDE64_FLAGS):$(WIDE64_OPS_ARM64):$(BRANCH_OPS_ARM64) \
-  x86-64:clang:x86_64-unknown-linux-gnu:-march=x86-64,$(WIDE64_FLAGS):$(WIDE64_OPS_X86):$(BRANCH_OPS_X86)
+  arm64:clang:aarch64-none-elf:-march=armv8-a:$(WIDE64_OPS_ARM64):$(BRANCH_OPS_ARM64) \
+  x86-64:clang:x86_64-unknown-linux-gnu:-march=x86-64:$(WIDE64_OPS_X86):$(BRANCH_OPS_X86)
 WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
@@ -5776,8 +5743,8 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # limbs and the 256 rounds of p256_scalar_inverse, whose exponent n-2 is
 # a build constant, the same shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  arm64/poly1305_native.c:18 arm64/x25519_native.c:28 arm64/mlkem_poly_native.c:33 arm64/p256_field_native.c:16 \
-  arm64/p256_scalar_native.c:12 arm64/rsa_sign_native.c:25 x86-64/poly1305_native.c:18 x86-64/x25519_native.c:30 \
+  arm64/poly1305_native.c:18 arm64/mlkem_poly_native.c:33 arm64/p256_field_native.c:16 \
+  arm64/p256_scalar_native.c:12 arm64/rsa_sign_native.c:25 x86-64/poly1305_native.c:18 \
   x86-64/mlkem_poly_native.c:34 x86-64/p256_field_native.c:19 x86-64/p256_scalar_native.c:12 x86-64/rsa_sign_native.c:26 \
   arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4
 P256_SCALAR_BRANCH_CEILING := \
@@ -5838,7 +5805,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c \
                aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c poly1305_vector.c \
                sha512.c \
-               sha512_compress.c p256_scalar.c poly1305_native.c x25519_native.c mlkem_poly_native.c p256_field_native.c \
+               sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c p256_field_native.c \
                p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
@@ -5863,7 +5830,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # the control path.
 #
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
-# moved into clamp_and_ladder(), which X25519=wide shares. Both branches
+# moved into clamp_and_ladder(), which the wide field shares. Both branches
 # that function adds were read: a bne that closes the 32-byte copy loop,
 # and a beq that tests the stack-protector canary this toolchain adds to a
 # function holding an array. ladder() lost the copy loop's branch, so the
@@ -6350,25 +6317,26 @@ endif
 bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS)
-# The same t-test with x25519() answering from the X25519=wide field. It
-# states CH_NATIVE_MUL128 because ct.h refuses the field without it, and
-# what this binary measures is whether that assertion holds on this host:
-# whether the ladder's time moves with the scalar while the 64x64->128
-# multiply runs in the mode the host runs it in. It cannot say what another
-# part does, which is ct.h's point.
-bin/timing_x25519_wide: test/timing_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
+# The same t-test over the wide X25519 field, built as a host object builds
+# its sources, with -DTEST_X25519_WIDE so that the x25519 row calls the
+# field's entry. What this binary measures is whether the caller's multiply
+# bit would be true on this host: whether the ladder's time moves with the
+# scalar while the 64x64->128 multiply runs in the mode the host runs it
+# in. It cannot say what another part does, which is ct.h's point.
+bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL $(X25519_WIDE_DEF) -I. -o $@ test/timing_test.c $(SRCS) x25519_wide.c
+	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_X25519_WIDE -I. -o $@ test/timing_test.c \
+	  $(call host_srcs,$(SRCS))
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.
 .PHONY: timing
-timing: bin/timing $(if $(X25519_WIDE_PROBE),bin/timing_x25519_wide)
+timing: bin/timing $(if $(HOST_TARGET),bin/timing_x25519_wide)
 	./bin/timing
-ifneq ($(X25519_WIDE_PROBE),)
+ifneq ($(HOST_TARGET),)
 	./bin/timing_x25519_wide
 else
-	@echo "SKIP timing X25519=wide: $(CC) has no unsigned __int128"
+	@echo "SKIP timing of the wide X25519 field: $(CC) fails the host test"
 endif
 
 # libFuzzer harnesses for the attacker-facing parsers in fuzz/. Each target

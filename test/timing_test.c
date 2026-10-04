@@ -22,15 +22,19 @@
 // exit far past the threshold at these sizes.
 #define FAST_N 200000
 #define X25519_N 2000
-// bin/timing_x25519_wide builds this file with -DCH_X25519_WIDE, and that
-// field is about twelve times faster, so it takes ten times the samples in
-// less time and names its row apart.
-#ifdef CH_X25519_WIDE
+// bin/timing_x25519_wide builds this file as a host object's test with
+// -DTEST_X25519_WIDE, and the x25519 row then calls the wide field's
+// entry. That field is about twelve times faster, so it takes ten times the
+// samples in less time and names its row apart.
+#ifdef TEST_X25519_WIDE
+#include "x25519_wide.h"
 #undef X25519_N
 #define X25519_N 20000
 #define X25519_ROW "x25519_wide"
+#define X25519_BASE x25519_wide_base
 #else
 #define X25519_ROW "x25519"
+#define X25519_BASE x25519_base
 #endif
 #define WARMUP 4096
 #define T_MAX 10.0
@@ -221,7 +225,7 @@ static void x_prep(int class_id) {
 
 static void x_run(void) {
     uint8_t out[X25519_LEN];
-    x25519_base(out, x_scalar);
+    X25519_BASE(out, x_scalar);
     sink ^= out[0];
 }
 

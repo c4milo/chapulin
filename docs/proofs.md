@@ -204,7 +204,7 @@ proofs that read a value.
 checks signed overflow, which C calls undefined, and nothing about
 unsigned arithmetic, which C defines to wrap. A proof about a field
 held in `uint64_t` and `unsigned __int128` would then pass a sum that
-wrapped, because no check sees one. The `X25519=wide` launch lines add
+wrapped, because no check sees one. The wide X25519 field's launch lines add
 `--unsigned-overflow-check`, which makes every `+`, `-` and `*` on an
 unsigned type a property, so each column sum, carry and `a + 2p - b`
 of that field is one. The flag also fails every wrap written on

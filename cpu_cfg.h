@@ -55,15 +55,16 @@
 // core with FEAT_DIT and a thread that has set PSTATE.DIT, and on x86-64 a part on the DOIT list
 // and the DOITM policy of its operating system. A session with the bit runs every operation built
 // on ct.h's widening multiply on the native multiply, the _native copies widemul.h dispatches
-// to, and a session without it on ct.h's 16x16 decomposition, the files under their own names
-// (docs/decisions.md 87 and 89).
+// to, and X25519 on x25519_wide.c's field, whose 64x64->128 multiply the bit states as well. A
+// session without it runs them on ct.h's 16x16 decomposition, the files under their own names,
+// and X25519 on the 16-limb field (docs/decisions.md 52, 87 and 89).
 //
 // CH_CPU_AVX2 says the CPU has AVX2, and CH_CPU_VAES that it has VAES and VPCLMULQDQ on 256-bit
 // registers. Both are x86-64 bits.
 //
-// No path reads CH_CPU_AVX2 or CH_CPU_VAES yet. A host object runs X25519 on the 16-limb field
-// under both values of the multiply bit, and the CHACHA build variable still chooses the ChaCha20
-// keystream. The commits docs/decisions.md 89 lists move each choice to its bit.
+// No path reads CH_CPU_AVX2 or CH_CPU_VAES yet, and the CHACHA build variable still chooses the
+// ChaCha20 keystream. The last code commit docs/decisions.md 89 lists moves that choice to the
+// host test and the bits.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64, or a bit

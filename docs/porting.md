@@ -68,16 +68,13 @@ multiply for a session with the bit and the decomposition for one without it, so
 one object serves CPUs and thread modes that differ. Nothing in this tree sets
 either mode or reads it.
 
-**Your target is a 64-bit host.** `X25519=wide` gives X25519 a field of five
-51-bit limbs, whose products are 64x64->128 multiplies, in place of the 16-limb
-field every other build runs. A 32-bit core cannot build it: `ct.h` stops the
-build where the compiler has no `unsigned __int128`. On a host that can, the
-build must also pass `-DCH_NATIVE_MUL128`, the same kind of statement as
-`-DCH_NATIVE_WIDEMUL` about a different instruction, and it holds only in the
-mode the vendor names: PSTATE.DIT set on an Arm core with FEAT_DIT, DOITM
-enabled on an Intel part that enumerates it. Nothing in this tree sets either
-mode. `CH_NATIVE_WIDEMUL` does not select the wide field and does not imply
-`CH_NATIVE_MUL128` (decision 52).
+The same bit picks the X25519 field. A host object holds a second field of five
+51-bit limbs, `x25519_wide.c`, whose products are 64x64->128 multiplies, beside
+the 16-limb field every object holds. A session with the bit runs the wide
+field, and one without it the 16-limb field on the decomposition, so the bit
+states the multiply at both widths: Arm's and Intel's lists name both. No build
+variable chooses the field, and a device object, a 64-bit one among them, holds
+the 16-limb field alone (decisions 52 and 89).
 
 On the same host, `CHACHA=vector` computes ChaCha20 several blocks at a time in
 128-bit vectors, eight on NEON on arm64 and four on SSE2 on x86-64, which every

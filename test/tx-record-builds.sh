@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The range and the refusals of the TX_RECORD axis (docs/decisions.md 71),
-# checked the way test/x25519-builds.sh checks ct.h's refusals: the value
+# checked the way test/widemul-builds.sh checks ct.h's refusals: the value
 # at each edge builds, and the value one past it does not. `make
 # tx-record-check` runs it, from the TX_RECORD leg of `make check`, and it
 # is the catch target of the violations that widen a refusal:

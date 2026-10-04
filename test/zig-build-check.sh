@@ -144,7 +144,6 @@ roster=(
     "server-quic-keylog|RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on|"
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"
-    "x25519-wide|RAND=extern X25519=wide|CH_NATIVE_MUL128"
     "chacha-vector|RAND=extern CHACHA=vector|"
     "chacha-vector-widemul|RAND=extern CHACHA=vector WIDEMUL=native|"
 )
@@ -232,14 +231,12 @@ statement_defs() {
 }
 
 # Whether this compiler can build a configuration: SUITE=aesgcm needs a
-# host object or AES=extern, X25519=wide unsigned __int128 and
-# CHACHA=vector NEON or SSE2, which the Makefile probes for and check's
-# legs skip without.
+# host object or AES=extern, and CHACHA=vector NEON or SSE2, which the
+# Makefile probes for and check's legs skip without.
 buildable() {
     case " $1 " in
     *" AES=extern "*) true ;;
     *" SUITE=aesgcm "*) [ -n "$host" ] ;;
-    *" X25519=wide "*) printf 'unsigned __int128 x;\n' | "$cc" -x c -fsyntax-only - 2> /dev/null ;;
     *" CHACHA=vector "*) printf '#include "chacha20_vector.h"\n' | "$cc" -DCH_CHACHA_VECTOR -I. -x c -fsyntax-only - 2> /dev/null ;;
     *) true ;;
     esac

@@ -1,8 +1,8 @@
 // The names widemul.h's dispatchers call in a host object, each
 // defined as a count and a call to the entry test/widemul_count_names.h
 // renamed (test/widemul_runtime_count.h). An entry under its own name
-// counts into widemul_decomposed_calls and one ending in _native into
-// widemul_native_calls.
+// counts into widemul_decomposed_calls, and one ending in _native, or one
+// of the wide X25519 field's two, into widemul_native_calls.
 #include "widemul_runtime_count.h"
 
 #include "poly1305_vector.h"
@@ -38,9 +38,9 @@ void rsa_sp1_decomposed_counted(const ch_rsa_priv *k, const uint8_t *em, uint8_t
 
 void poly1305_update_native_counted(poly1305 *p, const uint8_t *in, size_t n);
 void poly1305_final_native_counted(poly1305 *p, uint8_t tag[POLY1305_TAG]);
-int x25519_native_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
-                          const uint8_t point[X25519_LEN]);
-void x25519_base_native_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
+int x25519_wide_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+                        const uint8_t point[X25519_LEN]);
+void x25519_wide_base_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
 void mlk_polyvec_compress_native_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
 void mlk_poly_compress_native_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
 void mlk_poly_tomsg_native_counted(uint8_t msg[32], const mlk_poly *p);
@@ -148,15 +148,15 @@ void poly1305_final_native(poly1305 *p, uint8_t tag[POLY1305_TAG]) {
     poly1305_final_native_counted(p, tag);
 }
 
-int x25519_native(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
-                  const uint8_t point[X25519_LEN]) {
+int x25519_wide(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+                const uint8_t point[X25519_LEN]) {
     widemul_native_calls++;
-    return x25519_native_counted(out, scalar, point);
+    return x25519_wide_counted(out, scalar, point);
 }
 
-void x25519_base_native(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
+void x25519_wide_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     widemul_native_calls++;
-    x25519_base_native_counted(out, scalar);
+    x25519_wide_base_counted(out, scalar);
 }
 
 void mlk_polyvec_compress_native(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v) {

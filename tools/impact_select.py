@@ -53,7 +53,7 @@ GATE_COMMAND = {
     "lint-zig-build-run": "make lint-zig-build",
     **{f"wycheproof-{kind}-{leg}": "make wycheproof"
        for kind in ("leg", "run")
-       for leg in ("default", "host", "aes-extern", "x25519-wide", "chacha-vector")},
+       for leg in ("default", "host", "aes-extern", "chacha-vector")},
 }
 
 # The catches lines a test/violations entry can name for a gate that a
@@ -448,9 +448,9 @@ def select_zig(out, changed, legs):
                     f"build.zig's refusals to make's",
                     ["test/tx-record-builds.sh"])
         # test/widemul-builds.sh does the same for a host object's two
-        # multiplies: the lists build.zig writes for it, and its refusals
-        # of a WIDEMUL value and of X25519=wide (docs/decisions.md 87 and
-        # 89).
+        # multiplies and its wide X25519 field: the lists build.zig writes
+        # for it, and its refusals of a WIDEMUL value and of the X25519
+        # option (docs/decisions.md 87 and 89).
         if path in ("build.zig", "build.zig.zon", "test/widemul-builds.sh"):
             out.add("tests", "test/widemul-builds.sh",
                     f"{path} is read by the widening-multiply script, which "

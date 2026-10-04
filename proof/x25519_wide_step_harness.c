@@ -1,4 +1,4 @@
-// Proves: one step of the X25519=wide ladder keeps every limb inside
+// Proves: one step of the wide X25519 field's ladder keeps every limb inside
 // INV-34's bounds, starting from any state inside them -- the inductive step
 // for x25519_wide.c, as x25519_step_harness.c is for the 16-limb field.
 //

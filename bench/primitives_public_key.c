@@ -11,7 +11,8 @@
 // mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c, whose
 // products go through ct.h's ct_widemul, so bench/primitives.sh times
 // it under both builds. A third group, x25519, holds secret_key's two
-// x25519 rows alone, for the X25519=wide build.
+// x25519 rows alone, for the host object's program, which runs them on
+// x25519_wide.c.
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
 // TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont.c's loops
@@ -98,21 +99,23 @@ static void expect(int ok, const char *what) {
 static void run_x25519(size_t n) {
     (void)n;
     uint8_t out[X25519_LEN];
-    expect(x25519(out, X25519_SCALAR, X25519_POINT) == 1, "x25519 refused its vector");
+    expect(widemul_x25519(BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
+           "x25519 refused its vector");
     bench_consume(out, 1);
 }
 
 static void prepare_x25519(size_t n) {
     (void)n;
     uint8_t out[X25519_LEN];
-    expect(x25519(out, X25519_SCALAR, X25519_POINT) == 1, "x25519 refused its vector");
+    expect(widemul_x25519(BENCH_WIDEMUL, out, X25519_SCALAR, X25519_POINT) == 1,
+           "x25519 refused its vector");
     expect(memcmp(out, X25519_WANT, sizeof out) == 0, "x25519 missed RFC 7748 §5.2");
 }
 
 static void run_x25519_base(size_t n) {
     (void)n;
     uint8_t out[X25519_LEN];
-    x25519_base(out, X25519_SCALAR);
+    widemul_x25519_base(BENCH_WIDEMUL, out, X25519_SCALAR);
     bench_consume(out, 1);
 }
 
@@ -131,9 +134,9 @@ static void prepare_mlkem(size_t n) {
     uint8_t ss[MLKEM_SS_LEN];
     uint8_t decapsulated[MLKEM_SS_LEN];
     mlkem_keygen_derand(mlkem_ek, mlkem_dk, MLKEM_D, MLKEM_Z);
-    expect(mlkem_encaps_derand(WIDEMUL_BUILD_ANSWER, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+    expect(mlkem_encaps_derand(BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
            "encaps refused its ek");
-    mlkem_decaps(WIDEMUL_BUILD_ANSWER, decapsulated, mlkem_ct, mlkem_dk);
+    mlkem_decaps(BENCH_WIDEMUL, decapsulated, mlkem_ct, mlkem_dk);
     expect(memcmp(ss, decapsulated, sizeof ss) == 0, "decaps disagrees with encaps");
     expect(memcmp(ss, MLKEM_K_WANT, sizeof ss) == 0, "ML-KEM missed its FIPS 203 answer");
 }
@@ -141,7 +144,7 @@ static void prepare_mlkem(size_t n) {
 static void run_mlkem_encaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    expect(mlkem_encaps_derand(WIDEMUL_BUILD_ANSWER, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+    expect(mlkem_encaps_derand(BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
            "encaps refused its ek");
     bench_consume(ss, 1);
 }
@@ -149,7 +152,7 @@ static void run_mlkem_encaps(size_t n) {
 static void run_mlkem_decaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(WIDEMUL_BUILD_ANSWER, ss, mlkem_ct, mlkem_dk);
+    mlkem_decaps(BENCH_WIDEMUL, ss, mlkem_ct, mlkem_dk);
     bench_consume(ss, 1);
 }
 
@@ -164,7 +167,7 @@ static void run_p256_sign(size_t n) {
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
     const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign(WIDEMUL_BUILD_ANSWER, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
+    expect(p256_sign(BENCH_WIDEMUL, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
            "p256_sign failed");
     bench_consume(sig, 1);
 }
@@ -174,7 +177,7 @@ static void prepare_p256_sign(size_t n) {
     uint8_t sig[P256_SIG_MAX];
     size_t sig_len = 0;
     const p256_sign_vector *v = &p256_sign_vectors[0];
-    expect(p256_sign(WIDEMUL_BUILD_ANSWER, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
+    expect(p256_sign(BENCH_WIDEMUL, v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1,
            "p256_sign failed");
     expect(sig_len == v->sig_len && memcmp(sig, v->sig, sig_len) == 0,
            "p256_sign missed RFC 6979 A.2.5");
@@ -188,8 +191,8 @@ static void run_p256_ecdh_keygen(size_t n) {
     (void)n;
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
-    expect(p256_ecdh_keygen(WIDEMUL_BUILD_ANSWER, P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar, priv,
-                            pub) == 1,
+    expect(p256_ecdh_keygen(BENCH_WIDEMUL, P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE].scalar, priv, pub) ==
+               1,
            "p256_ecdh_keygen refused its draw");
     bench_consume(pub, 1);
 }
@@ -199,7 +202,7 @@ static void prepare_p256_ecdh_keygen(size_t n) {
     uint8_t priv[P256_SCALAR_LEN];
     uint8_t pub[P256_POINT_LEN];
     const p256_ecdh_keygen_case *c = &P256_ECDH_KEYGEN[ECDH_KEYGEN_CASE];
-    expect(p256_ecdh_keygen(WIDEMUL_BUILD_ANSWER, c->scalar, priv, pub) == 1,
+    expect(p256_ecdh_keygen(BENCH_WIDEMUL, c->scalar, priv, pub) == 1,
            "p256_ecdh_keygen refused its draw");
     expect(memcmp(pub, c->pub, sizeof pub) == 0, "p256_ecdh_keygen missed its vector");
 }
@@ -208,8 +211,7 @@ static void run_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(WIDEMUL_BUILD_ANSWER, c->priv, c->peer, shared) == 1,
-           "p256_ecdh refused its vector");
+    expect(p256_ecdh(BENCH_WIDEMUL, c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
     bench_consume(shared, 1);
 }
 
@@ -217,8 +219,7 @@ static void prepare_p256_ecdh(size_t n) {
     (void)n;
     uint8_t shared[P256_SECRET_LEN];
     const p256_ecdh_shared_case *c = &P256_ECDH_SHARED[ECDH_SHARED_CASE];
-    expect(p256_ecdh(WIDEMUL_BUILD_ANSWER, c->priv, c->peer, shared) == 1,
-           "p256_ecdh refused its vector");
+    expect(p256_ecdh(BENCH_WIDEMUL, c->priv, c->peer, shared) == 1, "p256_ecdh refused its vector");
     expect(memcmp(shared, c->shared, sizeof shared) == 0, "p256_ecdh missed its vector");
 }
 
@@ -366,6 +367,7 @@ static const bench_row SECRET_KEY_ROWS[] = {
 
 const bench_group BENCH_VERIFY = {"verify", VERIFY_ROWS, COUNT(VERIFY_ROWS), NULL};
 const bench_group BENCH_SECRET_KEY = {"secret_key", SECRET_KEY_ROWS, COUNT(SECRET_KEY_ROWS), NULL};
-// The two x25519 rows alone, the first two of secret_key, for the
-// X25519=wide build: the field is the only code that build changes.
+// The two x25519 rows alone, the first two of secret_key, for the host
+// object's program: the wide field is the only code its rows run that the
+// CH_NATIVE_WIDEMUL program's do not.
 const bench_group BENCH_X25519 = {"x25519", SECRET_KEY_ROWS, 2, NULL};

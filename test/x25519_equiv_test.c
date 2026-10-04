@@ -1,4 +1,5 @@
-// X25519=wide against X25519=portable: the same scalar and u-coordinate
+// The wide X25519 field against the 16-limb one, as a host object holds
+// them (docs/decisions.md 89): the same scalar and u-coordinate
 // into both fields, the same 32 bytes and the same return value out. The
 // 16-limb field carries ten CBMC harnesses, the Lean differential and a
 // prior Coq proof of its limb scheme; this binary is what carries the
@@ -23,17 +24,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The two fields under the names the library gives them: x25519 and
+// x25519_base, the 16-limb field on ct.h's 16x16 decomposition, and
+// x25519_wide and x25519_wide_base. The binary is built as a host object
+// builds x25519.c and x25519_wide.c, so both are the code widemul.h
+// dispatches between.
 #include "x25519.h"
-
-// The two fields, each compiled under its own name by
-// test/x25519_equiv_portable.c and test/x25519_equiv_wide.c. Declared here
-// rather than in a header because the renaming is this binary's alone.
-int x25519_portable(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
-                    const uint8_t point[X25519_LEN]);
-void x25519_base_portable(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
-int x25519_wide(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
-                const uint8_t point[X25519_LEN]);
-void x25519_base_wide(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]);
+#include "x25519_wide.h"
 
 // xorshift64, as test/aes_equiv_test.c writes it and for its reasons: a
 // fixed default seed, so a mismatch reproduces bit for bit, and an
@@ -101,7 +98,7 @@ static void unhex(const char *hex, uint8_t out[X25519_LEN]) {
 static int compare(const char *case_name, const uint8_t scalar[X25519_LEN],
                    const uint8_t point[X25519_LEN], uint8_t out[X25519_LEN]) {
     uint8_t portable_out[X25519_LEN];
-    int portable_ok = x25519_portable(portable_out, scalar, point);
+    int portable_ok = x25519(portable_out, scalar, point);
     int wide_ok = x25519_wide(out, scalar, point);
     if (portable_ok != wide_ok || memcmp(portable_out, out, X25519_LEN) != 0) {
         failures++;
@@ -120,8 +117,8 @@ static int compare(const char *case_name, const uint8_t scalar[X25519_LEN],
 static void compare_base(const char *case_name, const uint8_t scalar[X25519_LEN],
                          uint8_t out[X25519_LEN]) {
     uint8_t portable_out[X25519_LEN];
-    x25519_base_portable(portable_out, scalar);
-    x25519_base_wide(out, scalar);
+    x25519_base(portable_out, scalar);
+    x25519_wide_base(out, scalar);
     if (memcmp(portable_out, out, X25519_LEN) != 0) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the fields differ on the base point\n", case_name);
@@ -292,7 +289,7 @@ int main(void) {
                      (unsigned long long)seed);
         return 1;
     }
-    (void)printf("x25519_equiv: %lu inputs, X25519=wide == X25519=portable (seed 0x%016llx)\n",
+    (void)printf("x25519_equiv: %lu inputs, the wide field == the 16-limb field (seed 0x%016llx)\n",
                  compared, (unsigned long long)seed);
     return 0;
 }

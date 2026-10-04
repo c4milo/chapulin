@@ -1,6 +1,6 @@
 // The contract x25519_wide_step and x25519_wide_tail replace the 64x64->128
 // multiply with, and the limb bounds both harnesses share. They prove the
-// X25519=wide ladder keeps every limb inside INV-34's bounds, the way
+// wide X25519 field's ladder keeps every limb inside INV-34's bounds, the way
 // proof/x25519_stubs.h serves the 16-limb ladder.
 //
 // Why this exists: one ladder step runs 190 products, each a 64x64

@@ -4,14 +4,15 @@
 //
 // CH_WIDEMUL_NATIVE_COPY makes ct.h take the native multiply in this translation unit alone,
 // and ct.h refuses it outside a host object. The renames below give every function
-// and constant the seven files define outside their own translation unit a second name, the
+// and constant the copied files define outside their own translation unit a second name, the
 // first with _native after it, so the two copies define no name twice. They rename the
 // declarations each file's header gives as well as its definitions, and a call from one of the
-// seven files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
+// copied files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
 // copy of the callee. widemul.h's dispatchers call the _native entries for the answer
-// WIDEMUL_CONSTANT_TIME alone.
+// WIDEMUL_CONSTANT_TIME alone. x25519.c is not copied: its second copy in a host object is
+// x25519_wide.c's field (x25519_wide.h).
 //
-// Every name the seven files define outside their unit is here. A name left out is defined by
+// Every name the copied files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it.
 #ifndef CH_WIDEMUL_NATIVE_H
 #define CH_WIDEMUL_NATIVE_H
@@ -24,10 +25,6 @@
 #define poly1305_update poly1305_update_native
 #define poly1305_final poly1305_final_native
 #define poly1305_vector_blocks poly1305_vector_blocks_native
-
-// x25519.c.
-#define x25519 x25519_native
-#define x25519_base x25519_base_native
 
 // mlkem_poly.c.
 #define mlk_poly_reduce mlk_poly_reduce_native
