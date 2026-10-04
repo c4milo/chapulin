@@ -55,6 +55,22 @@ rules:
       - pattern: memcmp(...)
       - pattern: strcmp(...)
 
+  - id: inv-16-p256-wide-no-subscript-by-digit
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: p256_wide_mul.c reads a row of the table of multiples of
+      G, and the eight multiples of a point, whole: every entry in
+      order, with one kept by mask. A digit's index is bits of a nonce
+      or of a private scalar, so a subscript by it is a load whose
+      address names them, which the cache keeps (docs/decisions.md 94).
+      Scan the row as table_select does.
+    paths:
+      include: ['p256_wide_mul.c']
+    pattern-either:
+      - pattern: $ROW[index]
+      - pattern: $ROW[$DIGIT.index]
+
   - id: inv-23-no-division-in-mlkem
     languages: [c]
     severity: ERROR

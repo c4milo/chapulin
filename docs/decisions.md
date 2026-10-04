@@ -5916,6 +5916,26 @@ does nothing more.
       runs a key generation, a signature and a key exchange against the
       Lean spec under each answer, in `make diff`.
       `bin/widemul_runtime_test` counts the calls into each copy.
+    - **Time and addresses.** `bin/timing_p256_wide`, in `make timing`,
+      runs Welch's t-test over a key generation, a key exchange and a
+      signature, one fixed scalar against fresh random ones. In six runs
+      on the M1 Pro, at a load average of 20 to 23, the largest |t| of
+      the thirty rows was 4.93, where the test fails at 10. With the
+      scan changed to pass over the entries a digit does not name, the
+      key generation under the scalar whose windows are all 8 read 126 to
+      172 in three runs. With the table read by index every row stayed
+      below 6 in three runs: that leak is in the cache, and the time does
+      not show it. So memcheck ran the wide entries and the scalar
+      helpers by hand with every secret marked undefined, under gcc 15.2
+      and clang 22 for arm64 Linux. It reported no branch and no address
+      that depends on a secret in them, and it reported both changed
+      copies: a branch in the scan that passes over entries, and an
+      address in the read by index. In `p256_sign.c` and `p256_ecdh.c` it
+      reported the branches on a verdict and on r and s that
+      `p256_sign.h` and `p256_ecdh.h` state, and no other. No target of
+      this tree runs memcheck, so the Semgrep rule
+      `inv-16-p256-wide-no-subscript-by-digit` is what refuses a read by
+      index.
     - **Mutants.** Seven invert a dispatcher and one hands the key
       exchange's multiplication a constant answer, and the counts catch
       each. Two change which objects hold the wide files, and
@@ -5937,8 +5957,10 @@ does nothing more.
       the multiples that skips one, a window with three doublings, a
       doubling without its last step and a dropped correction, and a scan
       that passes over the multiples a digit does not name raises the
-      same branch count. Three drop one of `p256_scalar.c`'s wipes, and
-      the `p256_scalar` proof catches each.
+      same branch count. Two read a row by a digit's index, the table's
+      and the multiples', and the Semgrep rule catches both. Three drop
+      one of `p256_scalar.c`'s wipes, and the `p256_scalar` proof catches
+      each.
 
     Rejected:
 

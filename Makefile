@@ -6671,16 +6671,26 @@ bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(T
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_X25519_WIDE -I. -o $@ test/timing_test.c \
 	  $(call host_srcs,$(SRCS))
+# The same t-test over the wide P-256 files and the table of multiples of
+# G (docs/decisions.md 94), with -DTEST_P256_WIDE: a key generation, a key
+# exchange and a signature under the constant-time answer, each a fixed
+# scalar against fresh random ones. The sources are the equivalence
+# binary's, less the stack helper it alone calls.
+P256_TIMING_SRCS := $(filter-out test/stack_residue.c,$(P256_EQUIV_TEST_SRCS))
+bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_P256_WIDE -I. -o $@ test/timing_test.c $(P256_TIMING_SRCS)
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.
 .PHONY: timing
-timing: bin/timing $(if $(HOST_TARGET),bin/timing_x25519_wide)
+timing: bin/timing $(if $(HOST_TARGET),bin/timing_x25519_wide bin/timing_p256_wide)
 	./bin/timing
 ifneq ($(HOST_TARGET),)
 	./bin/timing_x25519_wide
+	./bin/timing_p256_wide
 else
-	@echo "SKIP timing of the wide X25519 field: $(CC) fails the host test"
+	@echo "SKIP timing of the wide X25519 field and the wide P-256 files: $(CC) fails the host test"
 endif
 
 # libFuzzer harnesses for the attacker-facing parsers in fuzz/. Each target

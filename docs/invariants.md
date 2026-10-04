@@ -2550,6 +2550,18 @@ last `ROLE=server` stub, as the entry said it would.
   allowlist is file-wide, so review holds the line on any new compare
   added to either file; `make timing` (Welch's
   t-test) gives statistical evidence.
+  `inv-16-p256-wide-no-subscript-by-digit` refuses a subscript by a
+  digit's index in `p256_wide_mul.c`, the one file that reads the table
+  of multiples of G and the eight multiples of a peer's point. A read by
+  index gives the right value in the same time and with one branch
+  fewer, so no vector, proof, branch count or t-test sees it, and the
+  address it loads names bits of a nonce to the cache.
+  `inv16-p256-wide-table-read-by-index` and
+  `inv16-p256-wide-multiple-read-by-index` make that edit, and the rule
+  catches both. `make timing` runs the same t-test over a key generation,
+  a key exchange and a signature on the wide P-256 files
+  (`bin/timing_p256_wide`), which a scan that passes over the entries a
+  digit does not name fails.
   Semgrep cannot know a buffer is secret — the real guards remain
   construction and the t-test.
   Those two see source text and one host's timing, and neither can see

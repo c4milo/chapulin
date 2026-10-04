@@ -2273,6 +2273,26 @@ the wide files to the same answers:
   under the constant-time answer and the 32-bit files alone under every
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
 
+That the wide files run in constant time rests on how they are written,
+and three checks hold parts of it:
+
+- `make lint-wide-multiply` holds each file's count of conditional
+  branches at its recorded number on arm64 and x86-64, so a select that
+  a compiler turns into a branch, or a scan that passes over the entries
+  a digit does not name, shows as a count that grows.
+- The Semgrep rule `inv-16-p256-wide-no-subscript-by-digit` refuses a
+  subscript by a digit's index in `p256_wide_mul.c`. A table read by
+  index gives the right value in the same time with one branch fewer, so
+  nothing else in the tree sees it.
+- `make timing`, which no check runs, builds `bin/timing_p256_wide`:
+  Welch's t-test over a key generation, a key exchange and a signature on
+  the wide files, one fixed scalar against fresh random ones. It is
+  evidence about one host, not proof.
+
+Not in the tree: a run under memcheck with every secret marked
+undefined, which reports each branch and each address that depends on
+one. Decision 94 records one such run by hand and what it found.
+
 What the wide calls leave on the stack is measured, not proved. Each
 routine wipes the objects it names, and `widemul.h` calls
 `p256_wide_wipe_below` after each wide call whose operands are secret,

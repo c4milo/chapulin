@@ -36,6 +36,17 @@
 #define X25519_ROW "x25519"
 #define X25519_BASE x25519_base
 #endif
+// bin/timing_p256_wide builds this file with -DTEST_P256_WIDE over a host
+// object's P-256 sources alone, and runs the P-256 rows below in place of
+// the four above them.
+#ifdef TEST_P256_WIDE
+#include "p256_ecdh.h"
+#include "p256_sign.h"
+#include "widemul.h"
+#define P256_KEYGEN_N 20000
+#define P256_ECDH_N 10000
+#define P256_SIGN_N 10000
+#endif
 #define WARMUP 4096
 #define T_MAX 10.0
 
@@ -147,6 +158,7 @@ static double measure(prep_fn prep, run_fn run, size_t n, size_t warm) {
     return welch_t(latency[0], n, latency[1], n);
 }
 
+#ifndef TEST_P256_WIDE
 // ct_memeq: equal buffers vs a difference at byte 0. An early-exit
 // compare finishes after one byte for class 1 and drives t positive.
 static uint8_t eq_a[64];
@@ -228,6 +240,60 @@ static void x_run(void) {
     X25519_BASE(out, x_scalar);
     sink ^= out[0];
 }
+#else
+// The wide P-256 files, through the entries a session calls, under the
+// constant-time answer (widemul.h, docs/decisions.md 94): one fixed scalar
+// against fresh random ones. A multiplication whose time moves with a
+// window's digit shows here: a scan that passes over the entries the digit
+// does not name took the key generation's rows past the threshold when it
+// was tried (docs/decisions.md 94). main sets p256_fixed to a random
+// scalar and then to the one whose four-bit windows are all 8, so that
+// every window of it names the same entry of its row.
+static uint8_t p256_fixed[P256_SCALAR_LEN];
+static uint8_t p256_now[P256_SCALAR_LEN];
+static uint8_t p256_peer[P256_POINT_LEN];
+static uint8_t p256_hash[32];
+
+// A scalar below n: n is above 2^255, and the top bit is clear. It is zero
+// with a probability no run meets.
+static void p256_random_scalar(uint8_t out[P256_SCALAR_LEN]) {
+    ch_rand_bytes(out, P256_SCALAR_LEN);
+    out[0] &= 0x7f;
+}
+
+static void p256_prep(int class_id) {
+    p256_random_scalar(p256_now);
+    if (class_id == 0) {
+        memcpy(p256_now, p256_fixed, sizeof p256_now);
+    }
+}
+
+// k*G from the table: a key generation.
+static void p256_keygen_run(void) {
+    uint8_t priv[P256_SCALAR_LEN];
+    uint8_t pub[P256_POINT_LEN];
+    sink ^= (uint32_t)p256_ecdh_keygen(WIDEMUL_CONSTANT_TIME, p256_now, priv, pub);
+    sink ^= pub[P256_POINT_LEN - 1];
+}
+
+// k*P over eight multiples of the peer's point: a key exchange.
+static void p256_ecdh_run(void) {
+    uint8_t shared[P256_SECRET_LEN];
+    sink ^= (uint32_t)p256_ecdh(WIDEMUL_CONSTANT_TIME, p256_now, p256_peer, shared);
+    sink ^= shared[0];
+}
+
+// A signature under the scalar as the private key. RFC 6979 derives the
+// nonce from the key and the hash, so the fixed class signs under one
+// nonce and the random class under fresh ones.
+static void p256_sign_run(void) {
+    uint8_t sig[P256_SIG_MAX];
+    size_t sig_len = 0;
+    sink ^=
+        (uint32_t)p256_sign(WIDEMUL_CONSTANT_TIME, p256_now, p256_hash, sig, sizeof sig, &sig_len);
+    sink ^= sig[0];
+}
+#endif
 
 static void report(const char *name, double t) {
     int ok = fabs(t) < T_MAX;
@@ -237,6 +303,30 @@ static void report(const char *name, double t) {
     }
 }
 
+#ifdef TEST_P256_WIDE
+int main(void) {
+    uint8_t draw[P256_SCALAR_LEN];
+    uint8_t peer_priv[P256_SCALAR_LEN];
+    ch_rand_bytes((uint8_t *)&rng_state, sizeof rng_state);
+    rng_state |= 1;
+    p256_random_scalar(draw);
+    if (!p256_ecdh_keygen(WIDEMUL_CONSTANT_TIME, draw, peer_priv, p256_peer)) {
+        (void)fprintf(stderr, "timing: no peer key\n");
+        return 1;
+    }
+    ch_rand_bytes(p256_hash, sizeof p256_hash);
+
+    p256_random_scalar(p256_fixed);
+    report("keygen", measure(p256_prep, p256_keygen_run, P256_KEYGEN_N, 64));
+    report("ecdh", measure(p256_prep, p256_ecdh_run, P256_ECDH_N, 64));
+    report("sign", measure(p256_prep, p256_sign_run, P256_SIGN_N, 64));
+    memset(p256_fixed, 0x88, sizeof p256_fixed);
+    p256_fixed[0] = 0x08;
+    report("keygen same", measure(p256_prep, p256_keygen_run, P256_KEYGEN_N, 64));
+    report("ecdh same", measure(p256_prep, p256_ecdh_run, P256_ECDH_N, 64));
+    return failures ? 1 : 0;
+}
+#else
 int main(void) {
     ch_rand_bytes((uint8_t *)&rng_state, sizeof rng_state);
     rng_state |= 1;
@@ -252,3 +342,4 @@ int main(void) {
     report(X25519_ROW, measure(x_prep, x_run, X25519_N, 32));
     return failures ? 1 : 0;
 }
+#endif

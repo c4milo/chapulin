@@ -1,0 +1,25 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: test/lint-invariants.sh
+reason: table_select loads the one entry its digit names, so the address
+  of the load is three bits of the signing nonce, and the cache line it
+  touched says which. The value is right, so the vectors, the
+  equivalence binary and the proofs all pass, the scan's branch is gone,
+  so the branch count falls, and the time does not move with the digit,
+  so the t-test passes. The Semgrep rule
+  inv-16-p256-wide-no-subscript-by-digit refuses the subscript.
+
+--- old
+static void table_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES], uint64_t index) {
+    o->x = FE_ZERO;
+    o->y = FE_ZERO;
+    for (uint64_t j = 0; j < ENTRIES; j++) {
+        uint64_t mask = equal_mask(j, index);
+        fe_keep(&o->x, &row[j].x, mask);
+        fe_keep(&o->y, &row[j].y, mask);
+    }
+}
+--- new
+static void table_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES], uint64_t index) {
+    *o = row[index];
+}

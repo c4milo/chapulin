@@ -1,0 +1,24 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: test/lint-invariants.sh
+reason: multiple_select loads the one multiple of the peer's point its
+  digit names, so the address of the load is three bits of the key
+  exchange's private scalar, and the cache line it touched says which.
+  The value is right, so the vectors, the equivalence binary and the
+  proofs all pass, and the branch count falls. The Semgrep rule
+  inv-16-p256-wide-no-subscript-by-digit refuses the subscript.
+
+--- old
+    o->x = FE_ZERO;
+    o->y = FE_ZERO;
+    o->z = FE_ZERO;
+    for (uint64_t j = 0; j < ENTRIES; j++) {
+        uint64_t mask = equal_mask(j, index);
+        fe_keep(&o->x, &row[j].x, mask);
+        fe_keep(&o->y, &row[j].y, mask);
+        fe_keep(&o->z, &row[j].z, mask);
+    }
+}
+--- new
+    *o = row[index];
+}
