@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-81 of the 106 C sources in the tree root are compiled into a
+86 of the 109 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -31,14 +31,16 @@ proof shows the source is free of:
 
 The wide X25519 field's harnesses also check unsigned wrap, which C
 defines and the other checks never see, because that field's bounds are
-all on unsigned values (see [x25519_wide](#x25519_wide)).
+all on unsigned values (see [x25519_wide](#x25519_wide)). The wide P-256
+files' harnesses check it for the same reason
+(see [p256_wide](#p256_wide)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
 
 ### Sources with no launched harness
 
-The other 25 sources are in no such harness:
+The other 23 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -56,7 +58,7 @@ The other 25 sources are in no such harness:
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `poly1305_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `poly1305_native.c`, `mlkem_poly_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
@@ -649,6 +651,78 @@ The entries are grouped by area:
 - **Bound:** full-range coordinates.
 - **Not proved:** the 256-round loop whole. It calls nothing but that
   round; unrolled whole, it returned no verdict in 42 minutes.
+
+#### p256_wide
+
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
+  `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c` and
+  `p256_wide_wipe.c`, decision 94), under `-DCH_CPU_RUNTIME`, with
+  `--unsigned-overflow-check` on every line.
+- **Proves:**
+  - `p256_wide_row`: on the real 64x64->128 multiply, one row of a
+    product, x times four limbs plus four limbs, wraps nothing for any
+    operands, so the limb it returns holds everything above the four.
+    The add with carry and the subtract with borrow each match a
+    128-bit reference, and each carry out is 0 or 1.
+  - `p256_wide_field`: every routine with no product, on its real body.
+    The conditional subtraction of p, `p256_wide_fe_add`,
+    `p256_wide_fe_sub`, `p256_wide_fe_cmov`, `p256_wide_fe_cswap` and
+    the three predicates each match a reference that writes the same
+    choice as a branch, so an inverted mask fails here. Add, subtract
+    and negate take elements below p to an element below p. The byte
+    marshalling and the copies to and from `p256_field.h`'s limbs
+    round-trip. The Montgomery reduction, which for this prime is shifts
+    and adds, wraps nothing for any eight limbs, and takes a value below
+    p * 2^256, which every product of two elements is, to a value below
+    p.
+  - `p256_wide_field_mul`: `p256_wide_fe_mul`, `p256_wide_fe_sqr`, the
+    two domain conversions and `sqr_times` are safe and wrap nothing in
+    every aliasing shape a point formula and the inversion use. Each row
+    of a product is a contract there, any four limbs and any limb above
+    them, which `p256_wide_row` proves of the real row.
+  - `p256_wide_scalar`: the same for the arithmetic modulo the group
+    order, whose reduction rounds are products. The conditional
+    subtraction of n matches a reference that branches, a round's carry
+    out is 0 or 1, and `mont_mul`, `sqr_times` and
+    `p256_wide_scalar_mul` are safe in every aliasing shape
+    `p256_sign.c` and the inverse use. The one read in the inverse that
+    moves with a loop counter, `exponent_low_nibble`, is in bounds and
+    returns a value below 16 at every position the loop passes.
+  - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
+    shapes, `p256_wide_point_from_bytes` over any 65 bytes and
+    `p256_wide_point_affine` with and without a y output, over the field
+    stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
+  - `p256_wide_mul`: the whole of `p256_wide_mul` and
+    `p256_wide_base_mul`, all 256 rounds of the shipped loop, over the
+    point formulas stubbed to their contracts. The scalar index and
+    shift are in bounds at every round, and every mask handed to
+    `p256_wide_fe_cswap` is 0 or all ones.
+  - `p256_wide_wipe`: `p256_wide_wipe_below` calls `wipe_frame` through
+    its volatile pointer, and the wipe covers the array of
+    `P256_WIDE_BELOW_LEN` bytes and no byte outside it.
+- **Bound:** full-range limbs, any 65-byte point, any scalar, scalar
+  bits 0..255, exponent nibbles 0..31.
+- **Not proved:**
+  - a product's value, and so that the scalar's `mont_mul` leaves a
+    value below n, that either inverse computes an inverse and that the
+    point formula computes the group law.
+  - `p256_wide_fe_inv` and `p256_wide_scalar_inverse` whole. Each is a
+    fixed chain of the calls proven above, in the shapes proven above,
+    at counts that are literals. Each product takes the address of 13 to
+    17 locals, cbmc's symbolic execution grows with the square of the
+    objects it tracks, and the field's chain of 267 products was stopped
+    after 11 minutes with no formula.
+  - that the array `p256_wide_wipe_below` wipes lies where the frames of
+    the call before it lay. That is the compiler's layout and not a
+    property of C.
+  - the host half of `widemul.h`'s dispatchers. No harness compiles
+    `p256_sign.c` or `p256_ecdh.c` with the host object's define:
+    [p256_sign](#p256_sign) and [p256_ecdh](#p256_ecdh) prove them over
+    the device half, which calls the 32-bit files.
+
+  [The wide P-256 files](#the-wide-p-256-files) says what holds each of
+  these.
 
 #### p256_sign
 
@@ -2107,11 +2181,85 @@ This rests on tests for the same reason. The 355 Wycheproof
 `ecdh_secp256r1` cases and `test/p256_ecdh_test.c`'s Python-computed key
 pairs and shared secrets are what says the ladder computes the right
 point; the proofs cover its memory safety and its range check.
+`bin/diff_p256_wide` adds 100 key generations and 100 key exchanges
+against the Lean spec under each answer
+([What `make diff` runs](#what-make-diff-runs)).
 
 The complete addition formula is correct when a point is added to
 itself or to the point at infinity, which is what lets the ladder run
 without a branch. That is Renes, Costello and Batina's theorem, tested
 here and not machine checked.
+
+### The wide P-256 files
+
+A host session with the multiply bit signs and exchanges keys on
+`p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_point.c` and
+`p256_wide_mul.c` (decision 94). The 32-bit files carry the Python
+vectors, RFC 6979's and the proofs of their masks; these checks carry
+the wide files to the same answers:
+
+- `bin/p256_equiv_test`, in `make check`, runs the wide files and the
+  32-bit files on the same inputs, 63,455 comparisons, and requires the
+  same limbs, bytes and verdicts. Both fields keep an element in the
+  Montgomery domain with R = 2^256, so each comparison is of limbs taken
+  two at a time, not of a value read back through another routine:
+  - every field routine on 20,000 random pairs, a quarter of whose limbs
+    are all ones and a quarter zero, on the elements at the edges and on
+    values at and above p, and the wide field on
+    `test/p256_field_vectors.h`'s values, which Python computed;
+  - both scalar routines on random scalars and on the ones at the edges;
+  - the complete addition on 3,000 pairs of random coordinates, which
+    are on no curve, and on a point with itself, with its negative and
+    with the point at infinity on either side;
+  - the point decode on a point and on each way a point is refused, and
+    the affine conversion on a finite point and on the point at infinity;
+  - both scalar multiplications on 16 scalars at the edges, 0, 1, n - 1,
+    n, n + 1 and 2^256 - 1 among them, and on 40 random ones, half of
+    them even;
+  - a key pair, a signature and a shared secret under both answers.
+- `tools/p256_wide.py`, in `make lint`, recomputes every constant the
+  wide files hold from the SEC 2 values: the prime and the order in
+  64-bit limbs, 2^256 and 2^512 modulo each, the curve's b times 2^256,
+  `N0_INV`, and the low half of n - 2 that `p256_wide_scalar_inverse`
+  reads four bits at a time. It also checks that the runs of ones each
+  inversion chain writes are p - 2 and the high half of n - 2.
+- `bin/p256_sign_test_host` and `bin/p256_ecdh_test_host` run RFC 6979
+  A.2.5 and the Python vectors once with the bit and once without it,
+  and the Wycheproof host binary runs the 355 `ecdh_secp256r1` cases and
+  signs and verifies every P-256 message in the corpus in each of its
+  runs with the bit.
+- `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
+  signature and a key exchange against the Lean spec under each answer
+  ([What `make diff` runs](#what-make-diff-runs)).
+- `bin/widemul_runtime_test` counts the calls: the wide entries alone
+  under the constant-time answer and the 32-bit files alone under every
+  other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
+
+What the wide calls leave on the stack is measured, not proved. Each
+routine wipes the objects it names, and `widemul.h` calls
+`p256_wide_wipe_below` after each wide call whose operands are secret,
+because a compiler keeps values in stack slots no `ct_wipe` can name.
+`bin/p256_equiv_test` checks three things on a copy of the stack below
+its own frame:
+
+- each wide entry writes within `P256_WIDE_BELOW_LEN` bytes of its
+  caller, so the wipe covers every frame the call used;
+- after each of the six dispatchers that hand a wide entry a secret, the
+  stack holds zero where the wipe's array lay;
+- after a signature and after a key exchange under the constant-time
+  answer, no 64-bit limb of the private scalar, the nonce, its inverse,
+  z + r d or the shared X coordinate is there, as the value is or in the
+  Montgomery domain.
+
+`make san-check` runs the binary under ASan and UBSan without these
+three checks: a sanitizer's redzones make its frames several times the
+object's, so its depths and its residue are not the object's.
+
+A register is out of every wipe's reach, here as everywhere else in the
+tree. The same search finds limbs of the nonce's inverse and of the
+shared X coordinate below a session that runs the 32-bit files, which
+wipe fewer of their temporaries; decision 94 records that and leaves
+those files as they are.
 
 ### x25519's ladder proof abstracts the multiply to its magnitude
 
@@ -2959,9 +3107,11 @@ measures it.
 
 A host object holds each operation built on the widening multiply
 twice, and each session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit picks a
-copy for each operation (decisions 87 and 89). Five files compile twice,
-the second time as a native copy, and X25519's second copy is the wide
-field, which has harnesses of its own ([x25519_wide](#x25519_wide)).
+copy for each operation (decisions 87 and 89). Three files compile twice,
+the second time as a native copy. X25519's second copy is the wide
+field and P-256's is the wide files (decision 94), and both have
+harnesses of their own ([x25519_wide](#x25519_wide),
+[p256_wide](#p256_wide)).
 `widemul_answer` turns the bit into
 the answer every dispatcher in `widemul.h` takes. No harness compiles a
 native copy, and neither copy needs a run of its own:
@@ -2992,8 +3142,8 @@ gives. Tests hold it:
   on the multiply and the wide field
   again under counted names and runs the AEAD, X25519, ML-KEM, P-256, RSA
   signing and record operations under each answer. Under
-  `WIDEMUL_CONSTANT_TIME` they call the native copies alone, and X25519
-  the wide field, under
+  `WIDEMUL_CONSTANT_TIME` they call the native copies alone, X25519
+  the wide field and P-256 the wide files, under
   `WIDEMUL_NOT_STATED` the decomposition alone and as many times, and
   under 0, 3, 0x80 and 0xff the decomposition, with the same bytes out of
   all of them. It also holds `widemul_answer` to the multiply bit alone:
@@ -3253,6 +3403,14 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
+4. The constant-time P-256 rows, 801 comparisons, where the compiler
+   passes the host test: 100 key generations, signatures and key
+   exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
+   under each answer, so the wide P-256 files and the 32-bit files each
+   answer the spec. The key generation must write the spec's public
+   key. The spec's verifier must accept the signature and refuse it for
+   a hash with one byte changed. The key exchange with the spec's point
+   b G must give the X coordinate of the spec's (a b) G.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

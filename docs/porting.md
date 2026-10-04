@@ -76,6 +76,13 @@ states the multiply at both widths: Arm's and Intel's lists name both. No build
 variable chooses the field, and a device object, a 64-bit one among them, holds
 the 16-limb field alone (decisions 52 and 89).
 
+The bit picks P-256's arithmetic the same way. A host object holds a field and a
+scalar of four 64-bit limbs, `p256_wide_field.c` and `p256_wide_scalar.c`, with
+the point arithmetic over them, beside the eight 32-bit limbs of `p256_field.c`
+and `p256_scalar.c` that every object with the curve holds. A session with the
+bit signs and exchanges keys on the 64-bit limbs, and one without it on the
+32-bit limbs over the decomposition (decision 94).
+
 A host object computes ChaCha20 several blocks at a time in 128-bit vectors in
 every session, eight on NEON on arm64 and four on SSE2 on x86-64, which every
 core of those architectures has, so no bit picks the path and no build variable

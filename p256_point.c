@@ -9,7 +9,6 @@
 #include "ct.h"
 #include "p256_field.h"
 #include "p256_scalar.h"
-#include "widemul.h"
 
 // The curve coefficient b and the generator G, each already multiplied by
 // R = 2^256 so that they sit in the Montgomery domain the routines below
@@ -57,7 +56,7 @@ const p256_point p256_point_infinity = {
 // folding steps together for speed, makes the two unreadable against each
 // other. Every step is a field operation over operands already below p,
 // so nothing here can overflow.
-void p256_point_add(uint8_t widemul, p256_point *o, const p256_point *a, const p256_point *b) {
+void p256_point_add(p256_point *o, const p256_point *a, const p256_point *b) {
     p256_fe t0;
     p256_fe t1;
     p256_fe t2;
@@ -67,31 +66,31 @@ void p256_point_add(uint8_t widemul, p256_point *o, const p256_point *a, const p
     p256_fe y3;
     p256_fe z3;
 
-    widemul_p256_fe_mul(widemul, &t0, &a->x, &b->x);
-    widemul_p256_fe_mul(widemul, &t1, &a->y, &b->y);
-    widemul_p256_fe_mul(widemul, &t2, &a->z, &b->z);
+    p256_fe_mul(&t0, &a->x, &b->x);
+    p256_fe_mul(&t1, &a->y, &b->y);
+    p256_fe_mul(&t2, &a->z, &b->z);
     p256_fe_add(&t3, &a->x, &a->y);
     p256_fe_add(&t4, &b->x, &b->y);
-    widemul_p256_fe_mul(widemul, &t3, &t3, &t4);
+    p256_fe_mul(&t3, &t3, &t4);
     p256_fe_add(&t4, &t0, &t1);
     p256_fe_sub(&t3, &t3, &t4);
     p256_fe_add(&t4, &a->y, &a->z);
     p256_fe_add(&x3, &b->y, &b->z);
-    widemul_p256_fe_mul(widemul, &t4, &t4, &x3);
+    p256_fe_mul(&t4, &t4, &x3);
     p256_fe_add(&x3, &t1, &t2);
     p256_fe_sub(&t4, &t4, &x3);
     p256_fe_add(&x3, &a->x, &a->z);
     p256_fe_add(&y3, &b->x, &b->z);
-    widemul_p256_fe_mul(widemul, &x3, &x3, &y3);
+    p256_fe_mul(&x3, &x3, &y3);
     p256_fe_add(&y3, &t0, &t2);
     p256_fe_sub(&y3, &x3, &y3);
-    widemul_p256_fe_mul(widemul, &z3, &B_MONT, &t2);
+    p256_fe_mul(&z3, &B_MONT, &t2);
     p256_fe_sub(&x3, &y3, &z3);
     p256_fe_add(&z3, &x3, &x3);
     p256_fe_add(&x3, &x3, &z3);
     p256_fe_sub(&z3, &t1, &x3);
     p256_fe_add(&x3, &t1, &x3);
-    widemul_p256_fe_mul(widemul, &y3, &B_MONT, &y3);
+    p256_fe_mul(&y3, &B_MONT, &y3);
     p256_fe_add(&t1, &t2, &t2);
     p256_fe_add(&t2, &t1, &t2);
     p256_fe_sub(&y3, &y3, &t2);
@@ -101,14 +100,14 @@ void p256_point_add(uint8_t widemul, p256_point *o, const p256_point *a, const p
     p256_fe_add(&t1, &t0, &t0);
     p256_fe_add(&t0, &t1, &t0);
     p256_fe_sub(&t0, &t0, &t2);
-    widemul_p256_fe_mul(widemul, &t1, &t4, &y3);
-    widemul_p256_fe_mul(widemul, &t2, &t0, &y3);
-    widemul_p256_fe_mul(widemul, &y3, &x3, &z3);
+    p256_fe_mul(&t1, &t4, &y3);
+    p256_fe_mul(&t2, &t0, &y3);
+    p256_fe_mul(&y3, &x3, &z3);
     p256_fe_add(&y3, &y3, &t2);
-    widemul_p256_fe_mul(widemul, &x3, &t3, &x3);
+    p256_fe_mul(&x3, &t3, &x3);
     p256_fe_sub(&x3, &x3, &t1);
-    widemul_p256_fe_mul(widemul, &z3, &t4, &z3);
-    widemul_p256_fe_mul(widemul, &t1, &t3, &t0);
+    p256_fe_mul(&z3, &t4, &z3);
+    p256_fe_mul(&t1, &t3, &t0);
     p256_fe_add(&z3, &z3, &t1);
 
     // o may alias a or b, so the three coordinates move only now, after
@@ -133,18 +132,18 @@ void p256_point_cswap(p256_point *a, p256_point *b, uint32_t mask) {
 // subtraction of one, never by negating the bit: `0 - bit` is the shape
 // gcc rewrites into a multiply by a secret bit (ct.h,
 // https://github.com/c4milo/chapulin/issues/106).
-static void ladder_round(uint8_t widemul, p256_point *r0, p256_point *r1, p256_point *sum,
-                         const p256_scalar *k, int i) {
+static void ladder_round(p256_point *r0, p256_point *r1, p256_point *sum, const p256_scalar *k,
+                         int i) {
     uint32_t bit = (k->limb[i >> 5] >> (i & 31)) & 1U;
     uint32_t mask = ~(bit - 1U); // clear bit -> zero, set bit -> all ones
     p256_point_cswap(r0, r1, mask);
-    p256_point_add(widemul, sum, r0, r1);
-    p256_point_add(widemul, r0, r0, r0);
+    p256_point_add(sum, r0, r1);
+    p256_point_add(r0, r0, r0);
     *r1 = *sum;
     p256_point_cswap(r0, r1, mask);
 }
 
-void p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k, const p256_point *p) {
+void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
     p256_point r0 = p256_point_infinity;
     p256_point r1 = *p;
     p256_point sum;
@@ -152,7 +151,7 @@ void p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k, const 
     // Most significant bit first: 256 rounds, each the same work whatever
     // the bit holds.
     for (int i = P256_SCALAR_LIMBS * 32 - 1; i >= 0; i--) {
-        ladder_round(widemul, &r0, &r1, &sum, k, i);
+        ladder_round(&r0, &r1, &sum, k, i);
     }
     *o = r0;
 
@@ -161,11 +160,11 @@ void p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k, const 
     ct_wipe(&sum, sizeof sum);
 }
 
-void p256_point_base_mul(uint8_t widemul, p256_point *o, const p256_scalar *k) {
-    p256_point_mul(widemul, o, k, &p256_point_generator);
+void p256_point_base_mul(p256_point *o, const p256_scalar *k) {
+    p256_point_mul(o, k, &p256_point_generator);
 }
 
-uint32_t p256_point_from_bytes(uint8_t widemul, p256_point *o, const uint8_t in[P256_POINT_LEN]) {
+uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     p256_fe x;
     p256_fe y;
     p256_fe lhs;
@@ -183,15 +182,15 @@ uint32_t p256_point_from_bytes(uint8_t widemul, p256_point *o, const uint8_t in[
         return 0;
     }
 
-    widemul_p256_fe_to_mont(widemul, &o->x, &x);
-    widemul_p256_fe_to_mont(widemul, &o->y, &y);
+    p256_fe_to_mont(&o->x, &x);
+    p256_fe_to_mont(&o->y, &y);
     o->z = p256_fe_one_mont;
 
     // y^2 = x^3 - 3x + b. Three additions stand in for the constant 3,
     // which keeps one more derived constant out of the file.
-    widemul_p256_fe_sqr(widemul, &lhs, &o->y);
-    widemul_p256_fe_sqr(widemul, &rhs, &o->x);
-    widemul_p256_fe_mul(widemul, &rhs, &rhs, &o->x);
+    p256_fe_sqr(&lhs, &o->y);
+    p256_fe_sqr(&rhs, &o->x);
+    p256_fe_mul(&rhs, &rhs, &o->x);
     p256_fe_add(&three_x, &o->x, &o->x);
     p256_fe_add(&three_x, &three_x, &o->x);
     p256_fe_sub(&rhs, &rhs, &three_x);
@@ -199,20 +198,19 @@ uint32_t p256_point_from_bytes(uint8_t widemul, p256_point *o, const uint8_t in[
     return p256_fe_equal_mask(&lhs, &rhs);
 }
 
-uint32_t p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
-                           const p256_point *a) {
+uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const p256_point *a) {
     p256_fe z_inverse;
     p256_fe coord;
 
     // p256_fe_inv sends 0 to 0, so an infinite point leaves zero bytes
     // here and the mask below is what tells the caller to discard them.
-    widemul_p256_fe_inv(widemul, &z_inverse, &a->z);
-    widemul_p256_fe_mul(widemul, &coord, &a->x, &z_inverse);
-    widemul_p256_fe_from_mont(widemul, &coord, &coord);
+    p256_fe_inv(&z_inverse, &a->z);
+    p256_fe_mul(&coord, &a->x, &z_inverse);
+    p256_fe_from_mont(&coord, &coord);
     p256_fe_to_bytes(x, &coord);
     if (y != NULL) {
-        widemul_p256_fe_mul(widemul, &coord, &a->y, &z_inverse);
-        widemul_p256_fe_from_mont(widemul, &coord, &coord);
+        p256_fe_mul(&coord, &a->y, &z_inverse);
+        p256_fe_from_mont(&coord, &coord);
         p256_fe_to_bytes(y, &coord);
     }
 
@@ -222,6 +220,6 @@ uint32_t p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN], uint8_t y[P2
     return finite;
 }
 
-uint32_t p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN], const p256_point *a) {
-    return p256_point_affine(widemul, out, NULL, a);
+uint32_t p256_point_affine_x(uint8_t out[P256_FE_LEN], const p256_point *a) {
+    return p256_point_affine(out, NULL, a);
 }

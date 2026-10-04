@@ -2107,6 +2107,52 @@ launch fast full x25519_wide_ops 256 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTI
 launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
+# 64-bit limbs under p256_wide_field.c and p256_wide_scalar.c, the point
+# formulas in p256_wide_point.c, the two scalar multiplications in
+# p256_wide_mul.c and the stack wipe in p256_wide_wipe.c. Every line compiles
+# its file as a host object does, under -DCH_CPU_RUNTIME, and every line adds
+# --unsigned-overflow-check, for the reason the wide X25519 lines above give:
+# the limbs are uint64_t and the products unsigned __int128, where C defines
+# every wrap.
+# The layers are p256_field's, one field over. p256_wide_row runs the one
+# routine every product goes through, p256_wide_limb.h's row, on the real
+# 64x64->128 multiply. p256_wide_field runs every routine with no product on
+# its real body, and the Montgomery reduction, which for this prime is shifts
+# and adds, to its bound. p256_wide_field_mul and p256_wide_scalar run the
+# products over the row's contract, proof/p256_wide_stubs.h, in every shape
+# the two inverses call them in, and neither inverse runs whole: each product
+# takes the address of 13 to 17 locals, cbmc's symbolic execution grows with
+# the square of the objects it tracks, 32 squarings of the field took 57 s
+# of it where 8 took 3, and the field's whole chain was stopped after 11
+# minutes with no formula yet. p256_wide_point runs the point
+# formulas over the field's stubs, and p256_wide_mul the whole of both scalar
+# multiplications over the point's.
+# Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# /usr/bin/time -l ./proof/run.sh all (cbmc 6.11.0, kissat 4.0.4, an M1 Pro),
+# on 2026-10-04. Other builds held the machine's load average between 20 and
+# 150 on ten cores, so the time is the run's CPU seconds and not its wall
+# clock, which was up to ten times that:
+#   p256_wide_row        128 properties,  3 s, 243 MB
+#   p256_wide_field      822 properties, 10 s,  98 MB
+#   p256_wide_field_mul  613 properties, 11 s, 103 MB
+#   p256_wide_scalar     374 properties, 17 s, 467 MB
+#   p256_wide_point      196 properties,  1 s,  40 MB
+#   p256_wide_mul        278 properties, 24 s, 664 MB
+#   p256_wide_wipe        40 properties,  1 s,  25 MB
+# The two lines with --object-bits 10 track more than 256 objects: each
+# product's locals have their addresses taken, and the lines run 14 and 20
+# products.
+# The field multiply over the real products instead of the contract also
+# converged, 694 properties in 165 s at 474 MB, and has no line: it states the
+# row's claim four more times and nothing else.
+launch fast full p256_wide_row 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_mul 257 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and
 # ct_wipe each loop 112 times, past the global bound. Measured (cbmc

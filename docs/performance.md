@@ -872,10 +872,12 @@ The order of the work, by the instructions each item removes from a handshake:
    points, so the table belongs in the host object (decision 89). It reverses the "no
    precomputed table" statement in `p256_point.h` and `p256_sign.h`, so it needs a ruling first.
    It needs a CBMC harness for the lookup, and a test that recomputes every table entry from G.
-3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519,
-   where the wide field took 0.39 M a scalar multiplication against 2.16 M. On P-256 it is
-   expected to cut the signature's 0.50 M of inversions and scalar arithmetic and whatever the
-   table leaves of k·G by a similar factor. It needs a harness and a spec over 64-bit limbs.
+3. A 64-bit-limb P-256 field and scalar under the multiply bit, as `x25519_wide.c` is for X25519:
+   done (decision 94). On the M1 Pro under Apple clang 21, with the ladder unchanged, a signature
+   through `p256_sign` went from 5.52 M instructions to 1.88 M and a key exchange through
+   `p256_ecdh` from 5.04 M to 1.58 M, where OpenSSL 3.6.5 takes 0.18 M and 0.48 M. The Lean spec
+   computes modulo p and n and states no limb, so it serves both copies, and
+   `bin/diff_p256_wide` runs each against it.
 4. SHA-256 on the ARMv8 and x86-64 SHA instructions and SHA-512 on the ARMv8.2 ones, behind new
    `ch_cfg.cpu` bits. Hashing takes 0.78 M of the 6.95 M: the transcript and key schedule's
    0.59 M, the nonce's 0.19 M and the signed content's 0.01 M. CBMC cannot read the intrinsics,

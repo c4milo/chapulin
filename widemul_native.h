@@ -9,8 +9,9 @@
 // declarations each file's header gives as well as its definitions, and a call from one of the
 // copied files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
 // copy of the callee. widemul.h's dispatchers call the _native entries for the answer
-// WIDEMUL_CONSTANT_TIME alone. x25519.c is not copied: its second copy in a host object is
-// x25519_wide.c's field (x25519_wide.h).
+// WIDEMUL_CONSTANT_TIME alone. x25519.c, p256_field.c and p256_scalar.c are not copied: their
+// second copies in a host object are x25519_wide.c's field (x25519_wide.h) and the wide P-256
+// files (p256_wide_field.h).
 //
 // Every name the copied files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it.
@@ -44,37 +45,6 @@
 #define mlk_poly_tomsg mlk_poly_tomsg_native
 #define mlk_sample_ntt mlk_sample_ntt_native
 #define mlk_sample_cbd mlk_sample_cbd_native
-
-// p256_field.c.
-#define p256_fe_zero p256_fe_zero_native
-#define p256_fe_one_mont p256_fe_one_mont_native
-#define p256_fe_from_bytes p256_fe_from_bytes_native
-#define p256_fe_to_bytes p256_fe_to_bytes_native
-#define p256_fe_reduced_mask p256_fe_reduced_mask_native
-#define p256_fe_zero_mask p256_fe_zero_mask_native
-#define p256_fe_equal_mask p256_fe_equal_mask_native
-#define p256_fe_cmov p256_fe_cmov_native
-#define p256_fe_cswap p256_fe_cswap_native
-#define p256_fe_add p256_fe_add_native
-#define p256_fe_sub p256_fe_sub_native
-#define p256_fe_neg p256_fe_neg_native
-#define p256_fe_mul p256_fe_mul_native
-#define p256_fe_sqr p256_fe_sqr_native
-#define p256_fe_to_mont p256_fe_to_mont_native
-#define p256_fe_from_mont p256_fe_from_mont_native
-#define p256_fe_inv p256_fe_inv_native
-
-// p256_scalar.c.
-#define p256_scalar_zero p256_scalar_zero_native
-#define p256_scalar_from_bytes p256_scalar_from_bytes_native
-#define p256_scalar_to_bytes p256_scalar_to_bytes_native
-#define p256_scalar_reduced_mask p256_scalar_reduced_mask_native
-#define p256_scalar_zero_mask p256_scalar_zero_mask_native
-#define p256_scalar_cmov p256_scalar_cmov_native
-#define p256_scalar_reduce p256_scalar_reduce_native
-#define p256_scalar_add p256_scalar_add_native
-#define p256_scalar_mul p256_scalar_mul_native
-#define p256_scalar_inverse p256_scalar_inverse_native
 
 // rsa_sign.c.
 #define rsa_pss_sign rsa_pss_sign_native

@@ -1,0 +1,17 @@
+invariant: INV-16
+file: widemul.h
+catches: widemul_runtime_test
+reason: widemul_p256_point_affine_x inverts its branch, so the operation runs
+  p256_wide_point_affine, on the native 64x64->128 multiply, for every answer but
+  WIDEMUL_CONSTANT_TIME, a wiped direction's 0 and WIDEMUL_NOT_STATED among
+  them, and p256_point_affine_x on the decomposition for the one answer
+  that states the multiply's timing. Every byte still comes out the same.
+  bin/widemul_runtime_test counts the calls into each copy and requires
+  the wide files alone under the constant-time answer.
+
+--- old
+    if (widemul_native(widemul)) {
+        uint32_t finite = p256_wide_point_affine(out, NULL, a);
+--- new
+    if (!widemul_native(widemul)) {
+        uint32_t finite = p256_wide_point_affine(out, NULL, a);

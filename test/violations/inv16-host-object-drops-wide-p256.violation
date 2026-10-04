@@ -1,0 +1,13 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying the wide P-256 files, and its link
+  fails on the six entries widemul.h calls only where something links it.
+  lint-trust-separation's P-256 rows require the five files in every host
+  object that carries the curve.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
+endif
+--- new

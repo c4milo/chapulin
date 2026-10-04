@@ -25,6 +25,12 @@
 // belongs in its own file pair rather than in a second modulus argument
 // here. Point arithmetic, point validation and the key exchange itself
 // are callers, not part of the field.
+//
+// A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds a second field beside
+// this one, p256_wide_field.h, the same elements on four 64-bit limbs,
+// which a session runs when its caller states the multiply's timing. This
+// pair is the reference that one is held to, and it is the one field a
+// device object carries (docs/decisions.md 94).
 #ifndef CH_P256_FIELD_H
 #define CH_P256_FIELD_H
 
@@ -110,16 +116,5 @@ void p256_fe_from_mont(p256_fe *o, const p256_fe *a);
 // constant of this build, so the instruction sequence is the same for
 // every call and reveals nothing about a.
 void p256_fe_inv(p256_fe *o, const p256_fe *a);
-
-#ifdef CH_CPU_RUNTIME
-// The native copies of the entries above that are built on the widening multiply,
-// which a host object holds beside them (p256_field_native.c, widemul_native.h) and
-// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
-void p256_fe_mul_native(p256_fe *o, const p256_fe *a, const p256_fe *b);
-void p256_fe_sqr_native(p256_fe *o, const p256_fe *a);
-void p256_fe_to_mont_native(p256_fe *o, const p256_fe *a);
-void p256_fe_from_mont_native(p256_fe *o, const p256_fe *a);
-void p256_fe_inv_native(p256_fe *o, const p256_fe *a);
-#endif
 
 #endif

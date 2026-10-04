@@ -1,0 +1,16 @@
+invariant: INV-16
+file: p256_wide_scalar.c
+catches: proof/prove-one.sh p256_wide_scalar
+reason: the conditional subtraction of n ignores the limb above the four,
+  so a Montgomery product that carried past 2^256 keeps its low four
+  limbs unreduced when they are below n. That needs a carry out of the
+  last reduction round, which random scalars seldom give, so a vector may
+  miss it. proof/p256_wide_scalar_harness.c holds reduce_once to a
+  reference that branches, for any four limbs and either value of the
+  limb above. Each run is a proof, so this belongs to the nightly's
+  test-invariants-proof-backed job.
+
+--- old
+    uint64_t keep = p256_wide_mask(borrow & (high ^ 1U));
+--- new
+    uint64_t keep = p256_wide_mask(borrow);

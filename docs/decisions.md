@@ -5710,3 +5710,176 @@ does nothing more.
     Gain of the third commit: the fourth commit's table in
     docs/performance.md holds the measured rows. On x86-64 SHA-384 and
     SHA-512 stay on the portable code.
+
+94. **A host object computes P-256 on four 64-bit limbs for a session
+    that states its multiply.** `docs/performance.md`, "Where a server
+    handshake's instructions go", left the ECDSA signature as the largest
+    part of a server handshake: 5.51 M instructions on the native
+    multiply where OpenSSL took 0.21 M. `p256_field.c` and
+    `p256_scalar.c` multiply eight 32-bit limbs through `ct_widemul`, and
+    a host object compiled each a second time as a native copy (entry
+    87). Camilo ruled three things for P-256 in a host object: a field
+    and a scalar on 64-bit limbs and `unsigned __int128`, run for a
+    session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, as
+    `x25519_wide.c` is for X25519 (entry 52); k·G from a precomputed
+    table of multiples of G; and a device object that keeps today's code
+    and gains no table. This entry records the first. The scalar
+    multiplications here are still `p256_point.c`'s ladder, on the new
+    field, and the table and the key exchange's multiplication each
+    extend the entry when they land.
+
+    - **The files.** `p256_wide_limb.h` holds the four steps every
+      routine is built from: an add with carry, a subtract with borrow,
+      one row of a product, and a mask from a bit.
+      `p256_wide_field.[ch]` is the field modulo p,
+      `p256_wide_scalar.[ch]` the two routines modulo n that multiply,
+      `p256_wide_point.[ch]` the complete addition, the point decode and
+      the affine conversion, and `p256_wide_mul.[ch]` the two scalar
+      multiplications. Every body sits under `CH_CPU_RUNTIME`. The
+      Makefile and `build.zig` add the sources to a host object that
+      holds `p256_point.c` and to no other object, and
+      `lint-trust-separation` holds both halves of that.
+    - **The same numbers in both fields.** Both keep an element in the
+      Montgomery domain with R = 2^256, so a wide element is the 32-bit
+      element with its limbs taken two at a time, and a `p256_point` or a
+      `p256_scalar` one file wrote is one the other reads. The wide
+      entries take and leave those two types and keep the 64-bit limbs
+      inside a call, so `p256_sign.c`, `p256_ecdh.c` and everything above
+      them hold one representation, and a test can compare the two files
+      limb for limb.
+    - **The dispatch moved up one layer.** `widemul.h` had five
+      dispatchers at the field's products and two at the scalar's. It
+      now has five at `p256_point.h`'s entries, the two multiplications,
+      the decode and the two affine conversions, and the same two at the
+      scalar's. `p256_point.c` lost its `widemul` parameter, calls
+      `p256_field.c` by name and compiles once. Each dispatcher is one
+      branch on the caller's value and no function pointer, as entry 87
+      set, and a session without the bit runs the 32-bit files on the
+      decomposition, as it did. `p256_field_native.c` and
+      `p256_scalar_native.c` are gone: with them a host object would hold
+      three P-256 fields, and no session would run the second.
+    - **Two reductions.** p's low limb is 2^64 - 1, so -p^-1 mod 2^64 is
+      1: the multiplier of a Montgomery round is the low limb u itself,
+      and u (p + 1) / 2^64 is u (2^192 - 2^160 + 2^128 + 2^32), four
+      shifted copies of u. The field's reduction has no product. The
+      group order has no such form, so each of its rounds multiplies the
+      low limb by `N0_INV` and adds one row of u n.
+    - **Carries from the compiler's builtins.** `p256_wide_add_carry` and
+      `p256_wide_sub_borrow` take their carry from
+      `__builtin_add_overflow` and `__builtin_sub_overflow`, which are
+      not C11. gcc and clang both define them, and a host object already
+      needs one of the two compilers for `unsigned __int128` (entry 52).
+      clang makes one add-with-carry instruction of that form. A 128-bit
+      sum of three terms compiles to more: under Apple clang 21 at `-O2`
+      for arm64 a field add is 26 instructions this way and 46 that way,
+      and a field multiply 141 and 168.
+    - **The inversions.** `p256_wide_fe_inv` raises to p - 2 by a fixed
+      chain of 255 squarings and 12 multiplies, where `p256_fe_inv` runs
+      384 products. `p256_wide_scalar_inverse` raises to n - 2 in 305
+      products, where `p256_scalar_inverse` runs 427: a table of the
+      first fifteen powers, the exponent's top two limbs as runs of ones,
+      and its low two limbs four bits at a time. Those four bits index
+      the table, and they are bits of a build constant, so the index
+      reads the constant and never the scalar.
+    - **The stack below a wide call is wiped.** Every wide routine wipes
+      the objects it names through `ct_wipe`. A compiler also keeps
+      values in stack slots of its own. On arm64 the field multiply keeps
+      every limb in registers, and on x86-64, which has half as many,
+      Apple clang 21 keeps ten limbs of each multiply in such slots:
+      `bin/p256_equiv_test` found a limb of the nonce's inverse there
+      after a signature and a limb of the shared X coordinate after a key
+      exchange. So `widemul.h` calls `p256_wide_wipe_below` after each
+      wide call whose operands are secret. That function's frame is one
+      array of `P256_WIDE_BELOW_LEN` bytes, 2,400, which lies where the
+      frames of the call before it lay, and it wipes the array. It calls
+      the function that holds the array through a volatile pointer, as
+      `ct_wipe.c` calls `memset` (entry 91), so no compiler can move the
+      array into the caller's frame. The deepest wide call wrote 928 bytes
+      below its caller under the five compilers the test ran under:
+      Apple clang 21 for arm64 and x86-64, gcc 13.3 for x86-64, and gcc
+      14.2 and clang 19 for arm64 Linux. With the wipe the search finds
+      no limb under any of them. A register is out of every wipe's reach,
+      as it is everywhere else in the tree.
+    - **What the 32-bit files leave.** The same search, run on a session
+      without the bit, finds limbs of the nonce's inverse below a
+      signature and of the shared X coordinate below a key exchange:
+      `p256_scalar.c` and `p256_field.c` wipe fewer of their temporaries.
+      Those files are a device object's too, and this entry leaves them
+      as they are.
+    - **Proofs.** Seven launch lines, each under `-DCH_CPU_RUNTIME` and
+      `--unsigned-overflow-check`. `p256_wide_row` proves on the real
+      multiply that one row of a product wraps nothing. `p256_wide_field`
+      proves every routine with no product against a reference that
+      branches, and the field's reduction to its bound: any value below
+      p 2^256 lands below p. `p256_wide_field_mul` and `p256_wide_scalar`
+      run the products over a contract for the row, `p256_wide_point` the
+      formulas over the field's stubs, and `p256_wide_mul` all 256 rounds
+      of both multiplications over the point's. Neither inversion runs
+      whole: each product takes the address of 13 to 17 locals, cbmc's
+      symbolic execution grows with the square of the objects it tracks,
+      and the field's chain was stopped after 11 minutes with no formula.
+      `docs/verification.md`, "p256_wide", lists what is proved and what
+      is not.
+    - **Tests.** `bin/p256_equiv_test` runs the wide files and the 32-bit
+      files on the same inputs, 63,455 comparisons of limbs, bytes and
+      verdicts, and then measures the stack. `tools/p256_wide.py`
+      recomputes every constant the wide files hold from the SEC 2
+      values, in `make lint`. The host binaries run RFC 6979's vectors,
+      Python's and the Wycheproof ECDH and ECDSA suites once with the
+      bit, on the wide files, and once without it. `bin/diff_p256_wide`
+      runs a key generation, a signature and a key exchange against the
+      Lean spec under each answer, in `make diff`.
+      `bin/widemul_runtime_test` counts the calls into each copy.
+    - **Mutants.** Seven invert a dispatcher and one hands the key
+      exchange's multiplication a constant answer, and the counts catch
+      each. Two change which objects hold the wide files, and
+      `lint-trust-separation` catches both. Six drop the stack wipe after
+      one dispatcher, and three break a value: the field's conditional
+      subtraction inverted, a row's carry dropped and a reduction
+      round's carry dropped. `bin/p256_equiv_test` catches those nine.
+      One writes the field's exchange as an `if`, and the branch count
+      of `p256_wide_field.c` rises from 8 to 9. A proof catches three:
+      the scalar's conditional subtraction that ignores the limb above
+      the four, a reduction round whose sum can wrap, and an exponent
+      index that reads past its array.
+
+    Rejected:
+
+    - **Native copies kept beside the wide files.** A session with the
+      bit would run the wide files and one without it the decomposition,
+      so no session would run a native copy of the 32-bit files.
+    - **Dispatch at the field, as before.** The wide field has its own
+      element type, so a dispatcher at each field routine would convert
+      limbs at every call, and one point addition would take 43 branches
+      on the answer where it now takes none.
+    - **128-bit sums for the carries.** A sum of three terms in
+      `unsigned __int128` gives the same carry with no builtin, and costs
+      the instructions measured above under clang.
+    - **The wide files for every host session.** The 64x64->128
+      multiply's timing is the caller's statement, as the 32x32 one's is
+      (entry 89), so a session that has not made it runs the
+      decomposition.
+
+    Cost: under Apple clang 21 at `-O2` the five wide objects take 7,680
+    bytes of code and constants on arm64, where the two native copies
+    took 5,024, and 9,913 on x86-64, where they took 7,071. One wipe of
+    2,400 bytes after each wide call that takes a secret is 239
+    instructions on the M1 Pro; a signature makes five and a key exchange
+    two. `p256_wide_limb.h` uses two builtins that are not C11.
+
+    Gain, through the library's entries on the M1 Pro under Apple clang
+    21 at `-O2`, in instructions retired per call (`/usr/bin/time -l`
+    over 2,000 calls, less a run of none), with the same calls of OpenSSL
+    3.6.5 through `EVP_PKEY_sign`, `EVP_PKEY_derive` and
+    `EVP_PKEY_keygen`:
+
+    | | 0.2.0, with the bit | this entry, with the bit | without the bit | OpenSSL |
+    | --- | --- | --- | --- | --- |
+    | `p256_sign` | 5,523,706 | 1,881,003 | 16,309,927 | 177,149 |
+    | `p256_ecdh` | 5,039,772 | 1,579,480 | 15,102,085 | 480,768 |
+    | `p256_ecdh_keygen` | 5,039,243 | 1,580,316 | 15,094,662 | 173,882 |
+
+    Both multiplications are still the ladder's 512 complete additions,
+    which is why the signature is ten times OpenSSL's and the key
+    exchange three times. The table and the key exchange's
+    multiplication are what removes them.

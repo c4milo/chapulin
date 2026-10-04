@@ -2512,10 +2512,11 @@ last `ROLE=server` stub, as the entry said it would.
   (decisions 83 and 89).
   A host object holds both multiplies, and the caller's
   `CH_CPU_CONSTANT_TIME_MULTIPLY` bit in `ch_cfg.cpu` picks one for each
-  operation of a session (decisions 87 and 89). Each file built on
-  the multiply compiles under its own names on the decomposition, as a
-  `WIDEMUL=decomposed` device object compiles it, and again as its native
-  copy, `<file>_native.c`, on the native multiply, scalar and vector.
+  operation of a session (decisions 87 and 89). `poly1305.c`,
+  `mlkem_poly.c` and `rsa_sign.c` each compile under their own names on
+  the decomposition, as a `WIDEMUL=decomposed` device object compiles
+  them, and again as a native copy, `<file>_native.c`, on the native
+  multiply, scalar and vector.
   `widemul_of_cpu` gives `WIDEMUL_CONSTANT_TIME` for a `ch_cfg.cpu` that
   holds the bit and `WIDEMUL_NOT_STATED` for any other value, the 0 a
   wiped record direction holds included. `widemul_answer` gives a session
@@ -2528,7 +2529,13 @@ last `ROLE=server` stub, as the entry said it would.
   `x25519.c` has no native copy: X25519's second copy in a host object is
   `x25519_wide.c`'s field, which the same answer picks, so a session with
   the bit runs X25519 on the 64x64->128 multiply and one without it on
-  the 16-limb field over the decomposition. A device object holds one
+  the 16-limb field over the decomposition. P-256 has no native copy
+  either: `p256_field.c`, `p256_scalar.c` and `p256_point.c` compile
+  under their own names alone, and the second copy is the wide files,
+  `p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_point.c` and
+  `p256_wide_mul.c`, four limbs of 64 bits on the same 64x64->128
+  multiply (decision 94). The same answer picks them, at the point's five
+  entries and the scalar's two that multiply. A device object holds one
   multiply, the one its `WIDEMUL` value names, the 16-limb field and
   `chacha20.c`'s loop; no host object takes that variable, and no object
   takes `X25519` or `CHACHA`.
@@ -2608,6 +2615,15 @@ last `ROLE=server` stub, as the entry said it would.
   accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
   break its powers, its carries, its lanes, its contract and its limb
   bounds, and the test catches each.
+  The same two specs compile the five wide P-256 files, and hold their
+  divisions and 128-bit runtime calls at zero and their conditional
+  branches at 8, 3, 3, 1 and 0 on each: loop control over a public count,
+  the two public tests of a peer's point, and whether a caller asked for
+  Y. `inv16-p256-wide-cswap-branch` writes that field's exchange as an
+  `if` on the mask of a scalar bit, and the count of `p256_wide_field.c`
+  rises to 9. CBMC reads these files, so they have harnesses of their own
+  (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
+  every routine to the 32-bit files on the same inputs.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
@@ -2657,8 +2673,9 @@ last `ROLE=server` stub, as the entry said it would.
   each end's calls over whole handshakes, so a record direction, a
   packet or a signature that does not carry the answer its session's
   `ch_cfg.cpu` gives shows as a call into the other copy.
-  `lint-trust-separation` admits the native copies, the wide field and
-  the vector ChaCha20's files in the host rows alone. Fifty-six `INV-16`
+  `lint-trust-separation` admits the native copies, the wide field, the
+  wide P-256 files and the vector ChaCha20's files in the host rows
+  alone. Fifty-eight `INV-16`
   violations break those rules: each dispatcher inverted, the answer read
   from another bit or from none, the answer dropped at each init call and
   at each layer that passes it, each `ct.h` refusal, the copies, the wide
@@ -3562,6 +3579,17 @@ last `ROLE=server` stub, as the entry said it would.
   volatile function pointer; the compiler then deletes the call as a
   store nothing reads, and the test catches it under Apple clang 21 and
   gcc 13 (decision 91).
+  The wide P-256 files wipe every object they name that held a secret,
+  and a compiler also keeps limbs in stack slots no `ct_wipe` can name.
+  So `widemul.h` calls `p256_wide_wipe_below` after each wide call whose
+  operands are secret, which wipes the `P256_WIDE_BELOW_LEN` bytes of
+  stack under the dispatcher's caller, where the frames of that call lay
+  (decision 94). `bin/p256_equiv_test` requires each wide entry to write
+  inside that length, requires zero below each of the six dispatchers,
+  and looks below a signature and a key exchange for any 64-bit limb of
+  the private scalar, the nonce, its inverse, z + r d and the shared X
+  coordinate. Six `inv17-p256-wide-*-leaves-its-stack` violations each
+  drop one dispatcher's wipe, and the binary catches each.
   Inside the host object's GHASH, `ghash_hw.c`'s data loop computes the powers
   of H it needs, adds up each pass's products in the same state, and wipes
   both with H when each call ends. It reads each power from that state

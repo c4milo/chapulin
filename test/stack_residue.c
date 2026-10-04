@@ -1,20 +1,34 @@
 // Copies n bytes from below to copy and writes zero over each after the
 // copy, one byte at a time through a volatile pointer.
-// test/ghash_equiv_residue.h and test/poly1305_equiv_residue.h hand it a
-// local array that their caller never wrote, so the bytes are whatever an
-// earlier call left on the stack there. It is a source of its own so that
-// the compiler that builds the caller cannot see the read, and does not
-// refuse the unwritten array as a value used before it is set.
+// test/ghash_equiv_residue.h, test/poly1305_equiv_residue.h and
+// test/p256_equiv_residue.h hand it a local array that their caller never
+// wrote, so the bytes are whatever an earlier call left on the stack
+// there. It is a source of its own so that the compiler that builds the
+// caller cannot see the read, and does not refuse the unwritten array as a
+// value used before it is set.
+//
+// stack_residue_fill writes value over n bytes at below the same way, for
+// the caller that wants to know afterwards which of them a call wrote
+// (test/p256_equiv_residue.h). It sits here for the same reason: a
+// compiler that saw the writes into an array nothing reads would refuse
+// the array as set and never used.
 #include <stddef.h>
 #include <stdint.h>
 
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
+void stack_residue_fill(volatile uint8_t *below, size_t n, uint8_t value);
 const char *stack_residue_unsearched(void);
 
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy) {
     for (size_t i = 0; i < n; i++) {
         copy[i] = below[i];
         below[i] = 0;
+    }
+}
+
+void stack_residue_fill(volatile uint8_t *below, size_t n, uint8_t value) {
+    for (size_t i = 0; i < n; i++) {
+        below[i] = value;
     }
 }
 

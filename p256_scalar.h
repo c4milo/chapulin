@@ -21,6 +21,11 @@
 //
 // No routine here wipes its temporaries; p256_sign.c wipes its own frame
 // once, the way x25519.c's ladder does.
+//
+// A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds p256_scalar_mul and
+// p256_scalar_inverse a second time, on four 64-bit limbs
+// (p256_wide_scalar.h), which a session runs when its caller states the
+// multiply's timing (docs/decisions.md 94).
 #ifndef CH_P256_SCALAR_H
 #define CH_P256_SCALAR_H
 
@@ -82,13 +87,5 @@ void p256_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b)
 // nothing about a. A binary extended Euclid would be shorter and would
 // branch on a, which is the nonce.
 void p256_scalar_inverse(p256_scalar *o, const p256_scalar *a);
-
-#ifdef CH_CPU_RUNTIME
-// The native copies of the entries above that are built on the widening multiply,
-// which a host object holds beside them (p256_scalar_native.c, widemul_native.h) and
-// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
-void p256_scalar_mul_native(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
-void p256_scalar_inverse_native(p256_scalar *o, const p256_scalar *a);
-#endif
 
 #endif

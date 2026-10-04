@@ -196,12 +196,12 @@ static int compute_signature(uint8_t widemul, const p256_scalar *k, const p256_s
     uint8_t x_bytes[P256_FE_LEN];
     int rc = 0;
 
-    p256_point_base_mul(widemul, &point, k);
+    widemul_p256_point_base_mul(widemul, &point, k);
     // The point is k*G for a k in [1, n-1], so it is never the point at
     // infinity and the mask is always all ones. Reading it anyway keeps a
     // faulted multiplication from producing a signature over bytes that
     // are not a coordinate.
-    if (p256_point_affine_x(widemul, x_bytes, &point)) {
+    if (widemul_p256_point_affine_x(widemul, x_bytes, &point)) {
         p256_scalar_from_bytes(&r, x_bytes);
         p256_scalar_reduce(&r, &r);
         signature_scalar(widemul, &s, k, d, z, &r);

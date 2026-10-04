@@ -177,13 +177,14 @@ def shipped_sources():
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
-    # pin, wide X25519 field, vector ChaCha20 and Poly1305 sources and
-    # SHA-256 and SHA-512 on the CPU's instructions join through build
-    # variables or the host test.
+    # pin, wide X25519 field, wide P-256, vector ChaCha20 and Poly1305
+    # sources and SHA-256 and SHA-512 on the CPU's instructions join through
+    # build variables or the host test.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
-            "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c"}
+            "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c", "p256_wide_field.c",
+            "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_wipe.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

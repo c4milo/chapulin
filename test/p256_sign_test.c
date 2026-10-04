@@ -41,7 +41,11 @@ static int same_bytes(const uint8_t *a, const uint8_t *b, size_t n) {
 }
 
 // a + b mod n, a * b mod n and a^-1 mod n against Python's answers, in
-// both the aliased and the separate output shapes a caller uses.
+// both the aliased and the separate output shapes a caller uses. The two
+// that multiply go through widemul.h's dispatchers, as p256_sign.c calls
+// them, so a host binary's run with the multiply bit puts the vectors
+// through p256_wide_scalar.c and its run without it through
+// p256_scalar.c.
 static void test_scalar_arithmetic(void) {
     for (size_t i = 0; i < sizeof p256_scalar_vectors / sizeof p256_scalar_vectors[0]; i++) {
         const p256_scalar_vector *v = &p256_scalar_vectors[i];
@@ -57,11 +61,11 @@ static void test_scalar_arithmetic(void) {
         p256_scalar_to_bytes(out, &got);
         CHECK(same_bytes(out, v->sum, 32));
 
-        p256_scalar_mul(&got, &a, &b);
+        widemul_p256_scalar_mul(TEST_WIDEMUL, &got, &a, &b);
         p256_scalar_to_bytes(out, &got);
         CHECK(same_bytes(out, v->product, 32));
 
-        p256_scalar_inverse(&got, &a);
+        widemul_p256_scalar_inverse(TEST_WIDEMUL, &got, &a);
         p256_scalar_to_bytes(out, &got);
         CHECK(same_bytes(out, v->inverse, 32));
 
@@ -73,12 +77,12 @@ static void test_scalar_arithmetic(void) {
         CHECK(same_bytes(out, v->sum, 32));
 
         got = a;
-        p256_scalar_mul(&got, &got, &b);
+        widemul_p256_scalar_mul(TEST_WIDEMUL, &got, &got, &b);
         p256_scalar_to_bytes(out, &got);
         CHECK(same_bytes(out, v->product, 32));
 
         got = a;
-        p256_scalar_inverse(&got, &got);
+        widemul_p256_scalar_inverse(TEST_WIDEMUL, &got, &got);
         p256_scalar_to_bytes(out, &got);
         CHECK(same_bytes(out, v->inverse, 32));
     }

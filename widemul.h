@@ -1,27 +1,31 @@
 // The one place an operation built on ct.h's widening multiply chooses the multiply it runs
-// (docs/decisions.md 87 and 89, https://github.com/c4milo/chapulin/issues/186).
+// (docs/decisions.md 87, 89 and 94, https://github.com/c4milo/chapulin/issues/186).
 //
 // Seven files multiply through ct.h: poly1305.c, poly1305_vector.c, x25519.c, mlkem_poly.c,
 // p256_field.c, p256_scalar.c and rsa_sign.c. Each entry of theirs that runs the multiply,
-// called from outside them, has a dispatcher below, named for it with the widemul_ prefix. The
-// dispatcher's first argument is the answer the operation runs under, a WIDEMUL_ value below.
-// Every caller outside those files calls the dispatcher and passes on the answer it was
-// handed; a session passes its own, widemul_answer. An entry that multiplies nothing, such as
-// poly1305_init or p256_fe_add, is called under its own name.
+// called from outside them, has a dispatcher below, named for it with the widemul_ prefix. For
+// P-256 the entries are p256_scalar.c's two and the five of p256_point.c, the one file that
+// calls p256_field.c. The dispatcher's first argument is the answer the operation runs under, a
+// WIDEMUL_ value below. Every caller outside those files calls the dispatcher and passes on the
+// answer it was handed; a session passes its own, widemul_answer. An entry that multiplies
+// nothing, such as poly1305_init or p256_scalar_add, is called under its own name.
 //
 // A device object holds one multiply and compiles each file once, so each dispatcher calls that
 // copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds each operation
-// twice. poly1305.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c compile under their
-// own names on the decomposition, as a WIDEMUL=decomposed device object compiles them, and again
-// as <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
-// _native. poly1305_vector.c compiles as its native copy alone. x25519.c compiles under its own
-// names alone, and X25519's second copy is x25519_wide.c, the radix-2^51 field on the 64x64->128
-// multiply (x25519_wide.h). The dispatchers run the native copy, and for X25519 the wide field,
-// for WIDEMUL_CONSTANT_TIME, and the file under its
-// own names for every other byte. That is one branch per call, on the answer, which the caller's
-// ch_cfg.cpu chose and which is not secret: never one per product, and through no function
-// pointer. Poly1305 takes one per update and one per final, P-256 one per field or scalar
-// multiply.
+// twice. poly1305.c, mlkem_poly.c and rsa_sign.c compile under their own names on the
+// decomposition, as a WIDEMUL=decomposed device object compiles them, and again as
+// <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
+// _native. poly1305_vector.c compiles as its native copy alone. x25519.c, p256_field.c,
+// p256_scalar.c and p256_point.c compile under their own names alone, and their second copies
+// are other files on the 64x64->128 multiply: x25519_wide.c, the radix-2^51 field
+// (x25519_wide.h), and for P-256 the four limbs of 64 bits in p256_wide_field.c and
+// p256_wide_scalar.c, under p256_wide_point.c and p256_wide_mul.c. The dispatchers run the
+// native copy, and for X25519 and P-256 the wide files, for WIDEMUL_CONSTANT_TIME, and the
+// file under its own names for every other byte. That is one branch per call, on the answer,
+// which the caller's ch_cfg.cpu chose and which is not secret: never one per product, and
+// through no function pointer. Poly1305 takes one per update and one per final, and P-256 one
+// per scalar multiplication, point decode, affine conversion and product modulo the group
+// order.
 #ifndef CH_WIDEMUL_H
 #define CH_WIDEMUL_H
 
@@ -31,8 +35,12 @@
 #include "cfg.h"
 #include "ct.h"
 #include "mlkem_poly.h"
-#include "p256_field.h"
+#include "p256_point.h"
 #include "p256_scalar.h"
+#include "p256_wide_mul.h"
+#include "p256_wide_point.h"
+#include "p256_wide_scalar.h"
+#include "p256_wide_wipe.h"
 #include "poly1305.h"
 #include "rsa_sign.h"
 #include "x25519.h"
@@ -132,51 +140,59 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
     mlk_poly_tomsg(msg, p);
 }
 
-static inline void widemul_p256_fe_mul(uint8_t widemul, p256_fe *o, const p256_fe *a,
-                                       const p256_fe *b) {
+static inline void widemul_p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k,
+                                          const p256_point *p) {
     if (widemul_native(widemul)) {
-        p256_fe_mul_native(o, a, b);
+        p256_wide_mul(o, k, p);
+        p256_wide_wipe_below();
         return;
     }
-    p256_fe_mul(o, a, b);
+    p256_point_mul(o, k, p);
 }
 
-static inline void widemul_p256_fe_sqr(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline void widemul_p256_point_base_mul(uint8_t widemul, p256_point *o,
+                                               const p256_scalar *k) {
     if (widemul_native(widemul)) {
-        p256_fe_sqr_native(o, a);
+        p256_wide_base_mul(o, k);
+        p256_wide_wipe_below();
         return;
     }
-    p256_fe_sqr(o, a);
+    p256_point_base_mul(o, k);
 }
 
-static inline void widemul_p256_fe_to_mont(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_from_bytes(uint8_t widemul, p256_point *o,
+                                                     const uint8_t in[P256_POINT_LEN]) {
     if (widemul_native(widemul)) {
-        p256_fe_to_mont_native(o, a);
-        return;
+        return p256_wide_point_from_bytes(o, in);
     }
-    p256_fe_to_mont(o, a);
+    return p256_point_from_bytes(o, in);
 }
 
-static inline void widemul_p256_fe_from_mont(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN],
+                                                 uint8_t y[P256_FE_LEN], const p256_point *a) {
     if (widemul_native(widemul)) {
-        p256_fe_from_mont_native(o, a);
-        return;
+        uint32_t finite = p256_wide_point_affine(x, y, a);
+        p256_wide_wipe_below();
+        return finite;
     }
-    p256_fe_from_mont(o, a);
+    return p256_point_affine(x, y, a);
 }
 
-static inline void widemul_p256_fe_inv(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],
+                                                   const p256_point *a) {
     if (widemul_native(widemul)) {
-        p256_fe_inv_native(o, a);
-        return;
+        uint32_t finite = p256_wide_point_affine(out, NULL, a);
+        p256_wide_wipe_below();
+        return finite;
     }
-    p256_fe_inv(o, a);
+    return p256_point_affine_x(out, a);
 }
 
 static inline void widemul_p256_scalar_mul(uint8_t widemul, p256_scalar *o, const p256_scalar *a,
                                            const p256_scalar *b) {
     if (widemul_native(widemul)) {
-        p256_scalar_mul_native(o, a, b);
+        p256_wide_scalar_mul(o, a, b);
+        p256_wide_wipe_below();
         return;
     }
     p256_scalar_mul(o, a, b);
@@ -185,7 +201,8 @@ static inline void widemul_p256_scalar_mul(uint8_t widemul, p256_scalar *o, cons
 static inline void widemul_p256_scalar_inverse(uint8_t widemul, p256_scalar *o,
                                                const p256_scalar *a) {
     if (widemul_native(widemul)) {
-        p256_scalar_inverse_native(o, a);
+        p256_wide_scalar_inverse(o, a);
+        p256_wide_wipe_below();
         return;
     }
     p256_scalar_inverse(o, a);
@@ -268,30 +285,34 @@ static inline void widemul_mlk_poly_tomsg(uint8_t widemul, uint8_t msg[32], cons
     mlk_poly_tomsg(msg, p);
 }
 
-static inline void widemul_p256_fe_mul(uint8_t widemul, p256_fe *o, const p256_fe *a,
-                                       const p256_fe *b) {
+static inline void widemul_p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k,
+                                          const p256_point *p) {
     (void)widemul;
-    p256_fe_mul(o, a, b);
+    p256_point_mul(o, k, p);
 }
 
-static inline void widemul_p256_fe_sqr(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline void widemul_p256_point_base_mul(uint8_t widemul, p256_point *o,
+                                               const p256_scalar *k) {
     (void)widemul;
-    p256_fe_sqr(o, a);
+    p256_point_base_mul(o, k);
 }
 
-static inline void widemul_p256_fe_to_mont(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_from_bytes(uint8_t widemul, p256_point *o,
+                                                     const uint8_t in[P256_POINT_LEN]) {
     (void)widemul;
-    p256_fe_to_mont(o, a);
+    return p256_point_from_bytes(o, in);
 }
 
-static inline void widemul_p256_fe_from_mont(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN],
+                                                 uint8_t y[P256_FE_LEN], const p256_point *a) {
     (void)widemul;
-    p256_fe_from_mont(o, a);
+    return p256_point_affine(x, y, a);
 }
 
-static inline void widemul_p256_fe_inv(uint8_t widemul, p256_fe *o, const p256_fe *a) {
+static inline uint32_t widemul_p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN],
+                                                   const p256_point *a) {
     (void)widemul;
-    p256_fe_inv(o, a);
+    return p256_point_affine_x(out, a);
 }
 
 static inline void widemul_p256_scalar_mul(uint8_t widemul, p256_scalar *o, const p256_scalar *a,

@@ -1,0 +1,16 @@
+invariant: INV-16
+file: p256_wide_field.c
+catches: proof/prove-one.sh p256_wide_field
+reason: the multiple of p's top limb loses the subtraction that keeps its
+  high limb at or under 2^64 - 2^32, so that limb is u itself and adding
+  the carry of the round before wraps when u is 2^64 - 1. uint64_t
+  defines the wrap, so nothing faults and the round drops 2^64.
+  proof/p256_wide_field_harness.c runs reduce() under
+  --unsigned-overflow-check, which makes that sum a property. Each run is
+  a proof, so this belongs to the nightly's test-invariants-proof-backed
+  job.
+
+--- old
+    uint64_t multiple_high = p256_wide_sub_borrow(&borrow, u, u >> 32);
+--- new
+    uint64_t multiple_high = u;

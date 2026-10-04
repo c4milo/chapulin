@@ -55,18 +55,18 @@ static void prove_add_aliasing(void) {
 
     point_nondet(&a);
     point_nondet(&b);
-    p256_point_add(nondet_u8(), &o, &a, &b);
+    p256_point_add(&o, &a, &b);
 
     point_nondet(&a);
     point_nondet(&b);
-    p256_point_add(nondet_u8(), &a, &a, &b); // o == a
+    p256_point_add(&a, &a, &b); // o == a
 
     point_nondet(&a);
     point_nondet(&b);
-    p256_point_add(nondet_u8(), &b, &a, &b); // o == b
+    p256_point_add(&b, &a, &b); // o == b
 
     point_nondet(&a);
-    p256_point_add(nondet_u8(), &a, &a, &a); // o == a == b, the ladder's doubling
+    p256_point_add(&a, &a, &a); // o == a == b, the ladder's doubling
 }
 
 static void prove_affine_x(void) {
@@ -75,7 +75,7 @@ static void prove_affine_x(void) {
 
     point_nondet(&a);
     fill_nondet(out, sizeof out);
-    uint32_t finite = p256_point_affine_x(nondet_u8(), out, &a);
+    uint32_t finite = p256_point_affine_x(out, &a);
     __CPROVER_assert(finite == 0 || finite == UINT32_MAX,
                      "p256_point_affine_x: the answer is a mask, not a flag");
 }

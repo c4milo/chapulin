@@ -108,9 +108,15 @@ const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
 const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
-/// host object compiles a second time, as <file>_native.c. x25519.c is not
-/// among them: X25519's second copy is x25519_wide.c's field.
-const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c", "p256_field.c", "p256_scalar.c", "rsa_sign.c" };
+/// host object compiles a second time, as <file>_native.c. x25519.c,
+/// p256_field.c and p256_scalar.c are not among them: their second copies
+/// are x25519_wide.c's field and the wide P-256 files.
+const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c", "rsa_sign.c" };
+/// P256_WIDE_SRCS: the wide P-256 files a host object holds beside
+/// p256_point.c (docs/decisions.md 94).
+const p256_wide_srcs = [_][]const u8{
+    "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_wipe.c",
+};
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.
 const certificate_srcs = [_][]const u8{ "pem.c", "x509.c", "x509_der.c", "x509_ca.c" };
@@ -492,6 +498,9 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // The wide X25519 field, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks (docs/decisions.md 52 and 89).
     if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
+    // The wide P-256 files, which the same bit picks, in an object that
+    // carries the curve (docs/decisions.md 94).
+    if (host and contains(lib_srcs, "p256_point.c")) lib_srcs = concat(b, &.{ lib_srcs, &p256_wide_srcs });
     // CHACHA_VECTOR_SRCS: the vector ChaCha20 every session of a host
     // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
     // on x86-64 (docs/decisions.md 82, 89 and 90).

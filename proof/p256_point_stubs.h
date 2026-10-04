@@ -42,8 +42,7 @@ static void havoc_point(p256_point *o) {
     }
 }
 
-void p256_point_add(uint8_t widemul, p256_point *o, const p256_point *a, const p256_point *b) {
-    (void)widemul;
+void p256_point_add(p256_point *o, const p256_point *a, const p256_point *b) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "add: first point readable");
     __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b), "add: second point readable");
     havoc_point(o);
@@ -55,29 +54,24 @@ void p256_point_cswap(p256_point *a, p256_point *b, uint32_t mask) {
     havoc_point(b);
 }
 
-void p256_point_mul(uint8_t widemul, p256_point *o, const p256_scalar *k, const p256_point *p) {
-    (void)widemul;
+void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "mul: scalar readable");
     __CPROVER_assert(__CPROVER_r_ok(p, sizeof *p), "mul: point readable");
     havoc_point(o);
 }
 
-void p256_point_base_mul(uint8_t widemul, p256_point *o, const p256_scalar *k) {
-    (void)widemul;
+void p256_point_base_mul(p256_point *o, const p256_scalar *k) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "base_mul: scalar readable");
     havoc_point(o);
 }
 
-uint32_t p256_point_from_bytes(uint8_t widemul, p256_point *o, const uint8_t in[P256_POINT_LEN]) {
-    (void)widemul;
+uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     __CPROVER_assert(__CPROVER_r_ok(in, P256_POINT_LEN), "from_bytes: input readable");
     havoc_point(o);
     return nondet_mask();
 }
 
-uint32_t p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
-                           const p256_point *a) {
-    (void)widemul;
+uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const p256_point *a) {
     __CPROVER_assert(__CPROVER_w_ok(x, P256_FE_LEN), "affine: x writable");
     __CPROVER_assert(y == NULL || __CPROVER_w_ok(y, P256_FE_LEN), "affine: y writable or absent");
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "affine: point readable");
@@ -88,8 +82,8 @@ uint32_t p256_point_affine(uint8_t widemul, uint8_t x[P256_FE_LEN], uint8_t y[P2
     return nondet_mask();
 }
 
-uint32_t p256_point_affine_x(uint8_t widemul, uint8_t out[P256_FE_LEN], const p256_point *a) {
-    return p256_point_affine(widemul, out, NULL, a);
+uint32_t p256_point_affine_x(uint8_t out[P256_FE_LEN], const p256_point *a) {
+    return p256_point_affine(out, NULL, a);
 }
 
 #endif

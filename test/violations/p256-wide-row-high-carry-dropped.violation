@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: p256_equiv_test
+reason: the row of a product returns the limb above its four without the
+  carry out of the high halves' chain, so a product whose chain carried
+  is short by 2^256 at that row. Nothing faults: uint64_t arithmetic
+  defines every wrap, and the field and the scalar both go on computing
+  with a wrong value. bin/p256_equiv_test holds every product to
+  p256_field.c's and p256_scalar.c's.
+
+--- old
+    return (uint64_t)(p3 >> 64) + low_carry + high_carry;
+--- new
+    return (uint64_t)(p3 >> 64) + low_carry;

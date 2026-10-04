@@ -125,11 +125,16 @@ Other targets:
   on the widening multiply twice, once on `ct.h`'s 16x16 decomposition and
   once on the CPU's multiply, so it is larger, and
   `CH_CPU_CONSTANT_TIME_MULTIPLY` picks for every operation of the
-  session: Poly1305, ML-KEM, P-256 and RSA signing (decision 87). X25519
+  session: Poly1305, ML-KEM and RSA signing (decision 87). X25519
   takes its second copy from another file: with the bit a session runs
   `x25519_wide.c`'s five 51-bit limbs on the 64x64->128 multiply, and
   without it the 16-limb field on the decomposition, so the bit states
-  the multiply at both widths (decisions 52 and 89).
+  the multiply at both widths (decisions 52 and 89). P-256 takes its
+  second copy the same way: with the bit a session signs and exchanges
+  keys on the four 64-bit limbs of `p256_wide_field.c` and
+  `p256_wide_scalar.c`, and without it on `p256_field.c`'s and
+  `p256_scalar.c`'s eight 32-bit limbs on the decomposition (decision
+  94).
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with
   FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your

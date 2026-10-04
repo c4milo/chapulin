@@ -1,0 +1,16 @@
+invariant: INV-17
+file: widemul.h
+catches: p256_equiv_test
+reason: widemul_p256_scalar_mul no longer calls p256_wide_wipe_below
+  after the wide call. Every object that call names is still wiped, so
+  the vectors and the residue checks on arm64 pass: what stays is
+  whatever the compiler spilled of the private scalar and the nonce's
+  inverse, in the frames under the dispatcher's caller.
+  bin/p256_equiv_test calls each dispatcher over a painted stack and
+  requires zero where the wipe's array lay.
+
+--- old
+        p256_wide_scalar_mul(o, a, b);
+        p256_wide_wipe_below();
+--- new
+        p256_wide_scalar_mul(o, a, b);

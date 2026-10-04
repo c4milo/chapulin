@@ -1,8 +1,9 @@
 // The names widemul.h's dispatchers call in a host object, each
 // defined as a count and a call to the entry test/widemul_count_names.h
 // renamed (test/widemul_runtime_count.h). An entry under its own name
-// counts into widemul_decomposed_calls, and one ending in _native, or one
-// of the wide X25519 field's two, into widemul_native_calls.
+// counts into widemul_decomposed_calls, and one ending in _native, one of
+// the wide X25519 field's two, or one of the wide P-256 files' six, into
+// widemul_native_calls.
 #include "widemul_runtime_count.h"
 
 #include "poly1305_vector.h"
@@ -24,11 +25,12 @@ void mlk_polyvec_compress_decomposed_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES]
                                              const mlk_polyvec *v);
 void mlk_poly_compress_decomposed_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
 void mlk_poly_tomsg_decomposed_counted(uint8_t msg[32], const mlk_poly *p);
-void p256_fe_mul_decomposed_counted(p256_fe *o, const p256_fe *a, const p256_fe *b);
-void p256_fe_sqr_decomposed_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_to_mont_decomposed_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_from_mont_decomposed_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_inv_decomposed_counted(p256_fe *o, const p256_fe *a);
+void p256_point_mul_decomposed_counted(p256_point *o, const p256_scalar *k, const p256_point *p);
+void p256_point_base_mul_decomposed_counted(p256_point *o, const p256_scalar *k);
+uint32_t p256_point_from_bytes_decomposed_counted(p256_point *o, const uint8_t in[P256_POINT_LEN]);
+uint32_t p256_point_affine_decomposed_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                                              const p256_point *a);
+uint32_t p256_point_affine_x_decomposed_counted(uint8_t out[P256_FE_LEN], const p256_point *a);
 void p256_scalar_mul_decomposed_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_scalar_inverse_decomposed_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_pss_sign_decomposed_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
@@ -44,13 +46,13 @@ void x25519_wide_base_counted(uint8_t out[X25519_LEN], const uint8_t scalar[X255
 void mlk_polyvec_compress_native_counted(uint8_t out[MLK_POLYVEC_COMP_BYTES], const mlk_polyvec *v);
 void mlk_poly_compress_native_counted(uint8_t out[MLK_POLY_COMP_BYTES], const mlk_poly *p);
 void mlk_poly_tomsg_native_counted(uint8_t msg[32], const mlk_poly *p);
-void p256_fe_mul_native_counted(p256_fe *o, const p256_fe *a, const p256_fe *b);
-void p256_fe_sqr_native_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_to_mont_native_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_from_mont_native_counted(p256_fe *o, const p256_fe *a);
-void p256_fe_inv_native_counted(p256_fe *o, const p256_fe *a);
-void p256_scalar_mul_native_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
-void p256_scalar_inverse_native_counted(p256_scalar *o, const p256_scalar *a);
+void p256_wide_mul_counted(p256_point *o, const p256_scalar *k, const p256_point *p);
+void p256_wide_base_mul_counted(p256_point *o, const p256_scalar *k);
+uint32_t p256_wide_point_from_bytes_counted(p256_point *o, const uint8_t in[P256_POINT_LEN]);
+uint32_t p256_wide_point_affine_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                                        const p256_point *a);
+void p256_wide_scalar_mul_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
+void p256_wide_scalar_inverse_counted(p256_scalar *o, const p256_scalar *a);
 int rsa_pss_sign_native_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
                                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
                                 size_t *sig_len);
@@ -92,29 +94,29 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
     mlk_poly_tomsg_decomposed_counted(msg, p);
 }
 
-void p256_fe_mul(p256_fe *o, const p256_fe *a, const p256_fe *b) {
+void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
     widemul_decomposed_calls++;
-    p256_fe_mul_decomposed_counted(o, a, b);
+    p256_point_mul_decomposed_counted(o, k, p);
 }
 
-void p256_fe_sqr(p256_fe *o, const p256_fe *a) {
+void p256_point_base_mul(p256_point *o, const p256_scalar *k) {
     widemul_decomposed_calls++;
-    p256_fe_sqr_decomposed_counted(o, a);
+    p256_point_base_mul_decomposed_counted(o, k);
 }
 
-void p256_fe_to_mont(p256_fe *o, const p256_fe *a) {
+uint32_t p256_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     widemul_decomposed_calls++;
-    p256_fe_to_mont_decomposed_counted(o, a);
+    return p256_point_from_bytes_decomposed_counted(o, in);
 }
 
-void p256_fe_from_mont(p256_fe *o, const p256_fe *a) {
+uint32_t p256_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN], const p256_point *a) {
     widemul_decomposed_calls++;
-    p256_fe_from_mont_decomposed_counted(o, a);
+    return p256_point_affine_decomposed_counted(x, y, a);
 }
 
-void p256_fe_inv(p256_fe *o, const p256_fe *a) {
+uint32_t p256_point_affine_x(uint8_t out[P256_FE_LEN], const p256_point *a) {
     widemul_decomposed_calls++;
-    p256_fe_inv_decomposed_counted(o, a);
+    return p256_point_affine_x_decomposed_counted(out, a);
 }
 
 void p256_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {
@@ -174,39 +176,35 @@ void mlk_poly_tomsg_native(uint8_t msg[32], const mlk_poly *p) {
     mlk_poly_tomsg_native_counted(msg, p);
 }
 
-void p256_fe_mul_native(p256_fe *o, const p256_fe *a, const p256_fe *b) {
+void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
     widemul_native_calls++;
-    p256_fe_mul_native_counted(o, a, b);
+    p256_wide_mul_counted(o, k, p);
 }
 
-void p256_fe_sqr_native(p256_fe *o, const p256_fe *a) {
+void p256_wide_base_mul(p256_point *o, const p256_scalar *k) {
     widemul_native_calls++;
-    p256_fe_sqr_native_counted(o, a);
+    p256_wide_base_mul_counted(o, k);
 }
 
-void p256_fe_to_mont_native(p256_fe *o, const p256_fe *a) {
+uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {
     widemul_native_calls++;
-    p256_fe_to_mont_native_counted(o, a);
+    return p256_wide_point_from_bytes_counted(o, in);
 }
 
-void p256_fe_from_mont_native(p256_fe *o, const p256_fe *a) {
+uint32_t p256_wide_point_affine(uint8_t x[P256_FE_LEN], uint8_t y[P256_FE_LEN],
+                                const p256_point *a) {
     widemul_native_calls++;
-    p256_fe_from_mont_native_counted(o, a);
+    return p256_wide_point_affine_counted(x, y, a);
 }
 
-void p256_fe_inv_native(p256_fe *o, const p256_fe *a) {
+void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {
     widemul_native_calls++;
-    p256_fe_inv_native_counted(o, a);
+    p256_wide_scalar_mul_counted(o, a, b);
 }
 
-void p256_scalar_mul_native(p256_scalar *o, const p256_scalar *a, const p256_scalar *b) {
+void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
     widemul_native_calls++;
-    p256_scalar_mul_native_counted(o, a, b);
-}
-
-void p256_scalar_inverse_native(p256_scalar *o, const p256_scalar *a) {
-    widemul_native_calls++;
-    p256_scalar_inverse_native_counted(o, a);
+    p256_wide_scalar_inverse_counted(o, a);
 }
 
 int rsa_pss_sign_native(const ch_rsa_priv *k, const uint8_t msg_hash[32],

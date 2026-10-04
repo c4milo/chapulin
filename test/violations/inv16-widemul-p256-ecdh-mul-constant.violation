@@ -1,0 +1,16 @@
+invariant: INV-16
+file: p256_ecdh.c
+catches: widemul_runtime_test
+reason: the scalar multiplication of the key exchange runs under
+  WIDEMUL_NOT_STATED whatever answer the exchange was handed, so a session
+  whose caller states the multiply runs p256_point_mul on the
+  decomposition between a point decode and an affine conversion on the
+  wide field. The shared secret is the same, because the two files hold
+  the same numbers in a p256_point. bin/widemul_runtime_test requires the
+  P-256 operations to call the wide files alone under the constant-time
+  answer.
+
+--- old
+    widemul_p256_point_mul(widemul, &product, &k, &peer);
+--- new
+    widemul_p256_point_mul(WIDEMUL_NOT_STATED, &product, &k, &peer);
