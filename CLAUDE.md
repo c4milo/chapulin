@@ -105,15 +105,21 @@ Home: github.com/c4milo.
   closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
-  compiler cannot remove) ← `sha256.[ch]` + `sha3.[ch]` +
+  compiler cannot remove) ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
+  FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
+  sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
-  them test-only) ←
+  them test-only) with `sha512_hw.c` (both on FEAT_SHA512, an arm64 host
+  object with SUITE=aesgcm, a session whose caller sets
+  CH_CPU_CONSTANT_TIME_SHA512) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
-  SHA-384) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
+  SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
+  and `keysched.c` compiled once more over the hash instructions, a host
+  object) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
   pass on NEON, two groups of four side by side, and four on SSE2, every
   session of a host object) and `chacha20_avx2.[ch]` (eight blocks a pass
   in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) +
@@ -146,8 +152,13 @@ Home: github.com/c4milo.
   radix-2^51 field, a host session whose caller sets
   CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
-  server role and TRUST=webpki) +
-  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
+  server role and TRUST=webpki) with the `p256_wide_*` files (the same
+  arithmetic on four 64-bit limbs, and k·G from a table of multiples of
+  G that is read whole and kept by mask, a host session whose caller
+  sets CH_CPU_CONSTANT_TIME_MULTIPLY) +
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) with `rsa_mont64.[ch]`
+  (the same public operation on 64-bit limbs, every session of a host
+  object) + `p384.[ch]`/
   `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
@@ -259,20 +270,25 @@ Home: github.com/c4milo.
   `ch_cfg.cpu`, and the build record's `CH_BUILD_CPU_RUNTIME` tells the
   two layouts apart. No host object takes an `AES` or `WIDEMUL` value,
   and no object takes `X25519` or `CHACHA` (docs/decisions.md 89).
-  A host object holds both multiplies. `poly1305.c`, `mlkem_poly.c`,
-  `p256_field.c`, `p256_scalar.c` and `rsa_sign.c` compile once under
-  their own names on the decomposition and again as `<file>_native.c`
-  under `widemul_native.h`'s renames, `poly1305_vector.c` compiles as its
-  native copy alone, and X25519's second copy is `x25519_wide.c`.
+  A host object holds both multiplies. `poly1305.c` and `mlkem_poly.c`
+  compile once under their own names on the decomposition and again as
+  `<file>_native.c` under `widemul_native.h`'s renames, and
+  `poly1305_vector.c` compiles as its native copy alone. Three more take
+  their second copy from other files on the 64x64->128 multiply:
+  X25519's is `x25519_wide.c`, P-256's is the `p256_wide_*` files, and
+  RSA signing's is `rsa_sign64.c`, which signs by the Chinese remainder
+  theorem and checks each signature with the public exponent before it
+  returns it (docs/decisions.md 94 and 95).
   `widemul.h` runs the native copy for a session whose `ch_cfg.cpu` holds
   `CH_CPU_CONSTANT_TIME_MULTIPLY`: one branch per operation and no
   function pointer. The bit is the caller's statement about every
   widening multiply the session runs, 32x32 and 64x64, scalar and vector:
   under it Poly1305 runs `poly1305_vector.c`, whose lanes multiply with
-  NEON's UMULL and UMLAL or SSE2's PMULUDQ, and X25519 runs the wide
-  field's five 51-bit limbs. `ct.h` refuses `CH_NATIVE_WIDEMUL` in a host
-  object and a native copy outside one (docs/decisions.md 52, 83 and 87,
-  INV-34).
+  NEON's UMULL and UMLAL or SSE2's PMULUDQ, X25519 runs the wide
+  field's five 51-bit limbs, P-256 runs the wide files' four 64-bit
+  limbs, and RSA signs with `rsa_sign64.c`. `ct.h` refuses
+  `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one
+  (docs/decisions.md 52, 83, 87, 94 and 95, INV-34).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way. No variable picks the X25519 field or the ChaCha20 keystream.
   Every object holds the 16-limb field and `chacha20.c`'s loop, which stay
@@ -285,7 +301,16 @@ Home: github.com/c4milo.
   CPU runs, and neither states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c`, and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
-  (docs/decisions.md 90). CBMC cannot read an intrinsic, so the vector
+  (docs/decisions.md 90). Three bits each state a hash's instructions
+  and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
+  runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
+  on `sha256_hw.c`. `CH_CPU_CONSTANT_TIME_SHA512`, an arm64 bit, runs its
+  SHA-384 on `sha512_hw.c`. `CH_CPU_CONSTANT_TIME_SHA3`, an arm64 bit,
+  picks nothing yet. A hash call takes the session's `ch_cfg.cpu` first,
+  through the `_cpu` entries that end `sha256.h`, `sha512.h`, `hkdf.h`,
+  `keysched.h` and `transcript.h`, and a call that takes no value runs
+  the portable code (docs/decisions.md 93). CBMC cannot read an
+  intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
   `poly1305_vector.c` to `poly1305.c`'s loop the same way, and searches
@@ -293,7 +318,13 @@ Home: github.com/c4milo.
   its multipliers through volatile pointers, so the powers stay in the
   one struct the call wipes and in no spill slot the compiler picks
   (docs/decisions.md 83). `bin/x86_kernels_test` counts which calls run a
-  kernel under each `ch_cfg.cpu` value. AES is admitted for two purposes. The first is the keys RFC
+  kernel under each `ch_cfg.cpu` value. `bin/sha2_equiv_test` holds
+  `sha256_hw.c` and `sha512_hw.c` to the portable hashes the same way and
+  searches the stack below each call, and `bin/hash_runtime_test` counts
+  which calls run a hash's instructions under each value.
+  `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
+  files and `rsa_sign64.c` to the files under their own names, and search
+  the stack each call leaves. AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
@@ -326,9 +357,10 @@ Home: github.com/c4milo.
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` cannot
-  join, because every spec targets a core with no AES or carry-less
-  multiply instructions.
+  that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` have
+  not joined: the 32-bit specs' cores have no such instructions, and the
+  two 64-bit specs, under which `sha256_hw.c` and `sha512_hw.c` hold a
+  branch ceiling through their own target attribute, do not list them.
   A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
   `gcm_hw.c` and `gcm_vaes.c` turn them on for their own functions alone,
   so the rest of the object runs on any CPU of its architecture, and GHASH
@@ -396,12 +428,16 @@ Home: github.com/c4milo.
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs
   thirty minutes. A change is not finished until `check-slow` passes,
-  and the nightly runs it. Every module carries a
+  and the nightly runs it. Every module of portable C carries a
   CBMC harness in `proof/` proving memory safety and absence of UB
   (bounds, pointer validity, arithmetic overflow, division) over
   unconstrained inputs at the module's real bound. Crypto primitives
   additionally prove functional equivalence to a tiny reference spec at
-  bounded sizes, plus RFC test vectors in `test/unit_test.c`.
+  bounded sizes, plus RFC test vectors in `test/unit_test.c`. A file of
+  intrinsics carries no harness, because CBMC cannot read an intrinsic:
+  an equivalence test holds it to the proven portable code, and
+  docs/verification.md lists each source no harness compiles and what
+  holds it.
   docs/verification.md states exactly what is proved, at what bounds,
   and what is only tested — never overclaim.
 - Write harnesses by docs/proofs.md. The rules that keep formulas
