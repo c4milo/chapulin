@@ -691,6 +691,15 @@ def select_lints(out, changed, csources, lib):
                 "rsa_mont.c calls the 64-bit arithmetic in a host object "
                 "alone, and this script compiles it either side of that define",
                 ["test/widemul-builds.sh"])
+    # p256.c hands a signature to p256_wide_verify.c in a host object alone
+    # (docs/decisions.md 96). Both arms give the same verdict, so no test
+    # of the verifier tells which one an object compiled, and the script
+    # compiles the file either side of the define and reads its call.
+    if "p256.c" in csources or "p256_wide_verify.c" in csources:
+        out.add("tests", "test/widemul-builds.sh",
+                "p256.c calls the wide verifier in a host object alone, and "
+                "this script compiles it either side of that define",
+                ["test/widemul-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.

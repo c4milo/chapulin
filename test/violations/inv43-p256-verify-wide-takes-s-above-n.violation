@@ -1,0 +1,13 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: p256_verify_equiv_test
+reason: the host verifier checks r against 1..n-1 and not s. s + n is the
+  same number modulo n, so the equation holds for it, and one signature
+  then has a second encoding the 32-bit verifier refuses.
+  bin/p256_verify_equiv_test computes signatures whose s is 1, 2 and 3
+  and requires both verifiers to refuse each with n added to s.
+
+--- old
+    if (!scalar_in_range(&r) || !scalar_in_range(&s)) {
+--- new
+    if (!scalar_in_range(&r)) {

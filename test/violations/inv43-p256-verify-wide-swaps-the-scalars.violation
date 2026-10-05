@@ -1,0 +1,12 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: p256_verify_equiv_test
+reason: the host verifier multiplies G by u2 and the key by u1, so no
+  signature a signer wrote verifies. bin/p256_verify_equiv_test requires
+  the 32-bit verifier's verdict on signatures p256_sign.c wrote and on
+  ones the test computed.
+
+--- old
+    double_scalar_mul(&result, &u1, &u2, &q);
+--- new
+    double_scalar_mul(&result, &u2, &u1, &q);

@@ -30,6 +30,10 @@
 #     its public operation, and in a device object calls neither: the
 #     device arm holds the 32-bit arithmetic itself, and no bit of
 #     ch_cfg.cpu picks between the two (docs/decisions.md 95).
+#   - p256.c in a host object hands the signature it read to
+#     p256_wide_verify.c, and in a device object does not: the device arm
+#     holds the 32-bit arithmetic itself, and no bit of ch_cfg.cpu picks
+#     between the two (docs/decisions.md 96).
 #   - The Makefile and build.zig each write the native copies, the wide
 #     X25519 field, RSA's 64-bit arithmetic and signer and the vector
 #     ChaCha20 and Poly1305 for a host object and none of them for a
@@ -139,6 +143,18 @@ for symbol in rsa_mont64_modulus_init rsa_mont64_public; do
         exit 1
     fi
 done
+
+# p256.c's two arms. The host arm hands r and s to p256_wide_verify.c, and
+# the device arm is the 32-bit arithmetic, which calls nothing outside its
+# file but the byte reader, memset and memcpy.
+if ! calls p256.c p256_wide_verify_rs -DCH_CPU_RUNTIME; then
+    echo "widemul-builds: p256.c in a host object does not call p256_wide_verify_rs" >&2
+    exit 1
+fi
+if calls p256.c p256_wide_verify_rs; then
+    echo "widemul-builds: p256.c in a device object calls p256_wide_verify_rs; a host object alone holds p256_wide_verify.c" >&2
+    exit 1
+fi
 
 # Whether every word after the first argument is a word of the first.
 has_words() { # $1 = a list of words, $2... = the words it must hold

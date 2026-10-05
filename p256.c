@@ -5,11 +5,34 @@
 // per modulus so the field prime p and the group order n share every
 // routine; inverses are Fermat powers. Points are Jacobian (Z == 0 is
 // infinity). Clarity over speed: this runs once per connection.
+//
+// That is a device object's arithmetic, and the reference. A host object
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles none of it: its entry reads the
+// signature with the same DER reader and hands r and s to
+// p256_wide_verify.c, which checks the same equation on the wide P-256
+// files' four 64-bit limbs, in every session, because nothing here is
+// secret and so no caller has to state the multiply's timing
+// (docs/decisions.md 96). bin/p256_verify_equiv_test compiles both arms
+// into one binary and requires one verdict from them.
 #include "p256.h"
 
 #include <string.h>
 
 #include "buf.h"
+
+#ifdef CH_CPU_RUNTIME
+
+#include "p256_wide_verify.h"
+
+// The host arm's check of r and s: p256_wide_verify.c's. This is the one
+// place the file picks an arm, so an object compiles one check and the
+// entry below calls it under one name.
+static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
+                     const uint8_t s_be[32]) {
+    return p256_wide_verify_rs(pub, msg_hash, r_be, s_be);
+}
+
+#else // !CH_CPU_RUNTIME
 
 #define LIMBS 8 // limb: one 32-bit word of a big number; P-256 = 8 limbs
 
@@ -306,60 +329,10 @@ static int on_curve(const uint32_t x[LIMBS], const uint32_t y[LIMBS]) {
     return fe_cmp(lhs, rhs) == 0;
 }
 
-// One strict-DER INTEGER carrying an ECDSA scalar: minimal length, no
-// negatives, at most one leading zero and only when the next byte's high
-// bit needs it. Writes the value big-endian into v[32].
-static int der_scalar(rbuf *r, uint8_t v[32]) {
-    if (rb_u8(r) != 0x02) {
-        return 0;
-    }
-    size_t len = rb_u8(r);
-    if (r->err || len < 1 || len > 33) {
-        return 0;
-    }
-    const uint8_t *c = rb_bytes(r, len);
-    if (c == NULL || (c[0] & 0x80)) {
-        return 0; // short input, or a negative value
-    }
-    if (len > 1 && c[0] == 0 && !(c[1] & 0x80)) {
-        return 0; // non-minimal leading zero
-    }
-    if (len == 33 && c[0] != 0) {
-        return 0; // 33 content bytes only ever pad a high bit
-    }
-    size_t skip = c[0] == 0 ? 1 : 0; // covers INTEGER 0 too: range check kills it
-    memset(v, 0, 32);
-    memcpy(v + (32 - (len - skip)), c + skip, len - skip);
-    return 1;
-}
-
-// ECDSA-Sig-Value: SEQUENCE of exactly two INTEGERs filling sig_len.
-// Everything here is under 128 bytes, so any long-form length is
-// non-minimal and rejected by the < 0x80 checks (der_scalar's len cap
-// covers the inner ones).
-static int der_parse(const uint8_t *sig, size_t sig_len, uint8_t r_be[32], uint8_t s_be[32]) {
-    rbuf rb;
-    rb_init(&rb, sig, sig_len);
-    if (rb_u8(&rb) != 0x30) {
-        return 0;
-    }
-    size_t len = rb_u8(&rb);
-    if (rb.err || len >= 0x80 || len != rb_left(&rb)) {
-        return 0;
-    }
-    if (!der_scalar(&rb, r_be) || !der_scalar(&rb, s_be)) {
-        return 0;
-    }
-    return rb_left(&rb) == 0 && !rb.err;
-}
-
-int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
-                      size_t sig_len) {
-    uint8_t r_be[32];
-    uint8_t s_be[32];
-    if (!der_parse(sig_der, sig_len, r_be, s_be)) {
-        return 0;
-    }
+// Whether (r, s) is a signature of msg_hash under pub, for r and s as 32
+// big-endian bytes each: FIPS 186-4's verification on the limbs above.
+static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
+                     const uint8_t s_be[32]) {
     uint32_t r[LIMBS];
     uint32_t s[LIMBS];
     fe_from_bytes(r, r_be);
@@ -417,4 +390,65 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
         (void)fe_sub_raw(x1, x1, MODN.m);
     }
     return fe_cmp(x1, r) == 0;
+}
+
+#endif // CH_CPU_RUNTIME
+
+// One strict-DER INTEGER carrying an ECDSA scalar: minimal length, no
+// negatives, at most one leading zero and only when the next byte's high
+// bit needs it. Writes the value big-endian into v[32].
+static int der_scalar(rbuf *r, uint8_t v[32]) {
+    if (rb_u8(r) != 0x02) {
+        return 0;
+    }
+    size_t len = rb_u8(r);
+    if (r->err || len < 1 || len > 33) {
+        return 0;
+    }
+    const uint8_t *c = rb_bytes(r, len);
+    if (c == NULL || (c[0] & 0x80)) {
+        return 0; // short input, or a negative value
+    }
+    if (len > 1 && c[0] == 0 && !(c[1] & 0x80)) {
+        return 0; // non-minimal leading zero
+    }
+    if (len == 33 && c[0] != 0) {
+        return 0; // 33 content bytes only ever pad a high bit
+    }
+    size_t skip = c[0] == 0 ? 1 : 0; // covers INTEGER 0 too: range check kills it
+    memset(v, 0, 32);
+    memcpy(v + (32 - (len - skip)), c + skip, len - skip);
+    return 1;
+}
+
+// ECDSA-Sig-Value: SEQUENCE of exactly two INTEGERs filling sig_len.
+// Everything here is under 128 bytes, so any long-form length is
+// non-minimal and rejected by the < 0x80 checks (der_scalar's len cap
+// covers the inner ones).
+static int der_parse(const uint8_t *sig, size_t sig_len, uint8_t r_be[32], uint8_t s_be[32]) {
+    rbuf rb;
+    rb_init(&rb, sig, sig_len);
+    if (rb_u8(&rb) != 0x30) {
+        return 0;
+    }
+    size_t len = rb_u8(&rb);
+    if (rb.err || len >= 0x80 || len != rb_left(&rb)) {
+        return 0;
+    }
+    if (!der_scalar(&rb, r_be) || !der_scalar(&rb, s_be)) {
+        return 0;
+    }
+    return rb_left(&rb) == 0 && !rb.err;
+}
+
+// The entry of both arms: one DER reader, then the arm's check of r and
+// s.
+int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
+                      size_t sig_len) {
+    uint8_t r_be[32];
+    uint8_t s_be[32];
+    if (!der_parse(sig_der, sig_len, r_be, s_be)) {
+        return 0;
+    }
+    return verify_rs(pub, msg_hash, r_be, s_be);
 }

@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-89 of the 111 C sources in the tree root are compiled into a
+90 of the 112 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -591,6 +591,9 @@ The entries are grouped by area:
 - **Proves:** the DER parser and limb marshalling stay safe on hostile
   signatures; a carry lemma covers the Montgomery multiply.
 - **Bound:** signatures ≤ 80 B.
+- **Build:** a device object's arm of `p256.c`. A host object's arm reads
+  the signature with the same DER parser and hands r and s to
+  `p256_wide_verify.c` ([p256_wide_verify](#p256_wide_verify)).
 
 #### p256_field
 
@@ -761,6 +764,34 @@ The entries are grouped by area:
 
   [The wide P-256 files](#the-wide-p-256-files) says what holds each of
   these.
+
+#### p256_wide_verify
+
+- **Harness:** `p256_wide_verify` (fast)
+- **Build:** a host object's ECDSA P-256 verifier, `p256_wide_verify.c`
+  (decision 96), under `-DCH_CPU_RUNTIME`.
+- **Proves:** `p256_wide_verify_rs` over any key, hash, r and s, with
+  the nine entries of the wide files it calls stubbed to their
+  contracts, and `p256_scalar.c`'s marshalling, reduction and range
+  predicates on their real bodies:
+  - it answers 0 or 1;
+  - it answers 0 for an r or an s outside 1..n-1, and calls no entry of
+    the wide files for one;
+  - it answers 0 for a key the decoder refuses and for an R at
+    infinity, and 1 only after the decoder took the key and the affine
+    conversion gave an X;
+  - the encoding it hands the decoder starts with 0x04;
+  - every scalar it hands `p256_wide_scalar_inverse` and
+    `p256_wide_scalar_mul` is below n.
+
+  Asserting that the verdict is never 1 fails, so an accepting verdict
+  is reached.
+- **Bound:** any 64-byte key, any 32-byte hash, any 32-byte r and s.
+- **Not proved:** that the equation holds for a signature and for no
+  other pair: the stubs write unconstrained limbs.
+  `bin/p256_verify_equiv_test` holds the verdict to `p256.c`'s 32-bit
+  arm and the Wycheproof host leg to Wycheproof's; see
+  [The wide P-256 files](#the-wide-p-256-files).
 
 #### p256_sign
 
@@ -2406,6 +2437,27 @@ the wide files to the same answers:
   Under clang it runs what `bin/p256_equiv_test` runs. Under gcc for
   x86-64 it is the one binary of check that runs the builtins, so CI
   holds what that form computes too.
+- `bin/p256_verify_equiv_test`, in `make check`, holds a host object's
+  verifier, `p256_wide_verify.c`, to `p256.c`'s 32-bit arm, which
+  `test/p256_verify_portable.c` compiles under a second name. It
+  requires one verdict from the two, and the verdict each case names,
+  over 995 inputs:
+  - signatures `p256_sign.c` wrote under both of its answers, each with
+    one bit changed in the hash, in the key and in the signature;
+  - signatures the test computes on `p256_scalar.c` and `p256_point.c`,
+    an arithmetic that is neither verifier's: an s of 1, 2 and 3, and
+    each with n added; a hash at or above n; a hash of zero, where u1
+    is zero; u2 of one, where R is the key; u1·G equal to u2·Q, where
+    the last addition is a doubling; and their negatives, where R is
+    the point at infinity;
+  - r and s at 0, n - 1, n and 2^256 - 1; a key with a coordinate at p
+    or above, a key off the curve and a key of zeros; and DER that is
+    cut short, runs long, has another tag or pads an INTEGER.
+
+  `bin/p256_equiv_test` reads the signatures it makes with that 32-bit
+  arm, which the wide files do not compute. The Wycheproof host leg
+  runs Wycheproof's ECDSA P-256 vectors on the host verifier, among
+  them the signatures whose k·G has an X of n or more.
 - `test/aes-runtime-qemu.sh`, which the mips job of `check.yml` runs on
   every push, builds `bin/p256_equiv_test` with gcc for x86-64, the two
   intrinsics named, and for arm64, the 128-bit sums named, and runs each

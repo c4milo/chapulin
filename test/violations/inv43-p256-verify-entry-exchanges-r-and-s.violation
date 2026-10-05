@@ -1,0 +1,12 @@
+invariant: INV-43
+file: p256.c
+catches: p256_verify_equiv_test
+reason: p256_ecdsa_verify hands the host verifier s where it takes r and r
+  where it takes s. The DER reader and the device arm are untouched, so
+  bin/unit and the 32-bit arm's proofs pass. bin/p256_verify_equiv_test
+  holds the host arm to the device arm on every signature it tries.
+
+--- old
+    return p256_wide_verify_rs(pub, msg_hash, r_be, s_be);
+--- new
+    return p256_wide_verify_rs(pub, msg_hash, s_be, r_be);

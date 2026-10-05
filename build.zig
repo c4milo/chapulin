@@ -117,7 +117,7 @@ const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c" };
 /// p256_point.c (docs/decisions.md 94).
 const p256_wide_srcs = [_][]const u8{
     "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
-    "p256_wide_wipe.c",
+    "p256_wide_wipe.c",  "p256_wide_verify.c",
 };
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.

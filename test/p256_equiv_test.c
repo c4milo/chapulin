@@ -52,6 +52,13 @@
 #include "p256_wide_scalar.h"
 #include "widemul.h"
 
+// p256.c's 32-bit arm, a device object's (test/p256_verify_portable.c).
+// The wide files compute none of it, so it reads each signature
+// independently of them; a host object's own verifier runs on them
+// (p256_wide_verify.c).
+int p256_ecdsa_verify_portable(const uint8_t pub[64], const uint8_t msg_hash[32],
+                               const uint8_t *sig_der, size_t sig_len);
+
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
@@ -344,7 +351,7 @@ static void signature_case(const uint8_t priv[P256_SCALAR_LEN], const uint8_t pu
     }
     ok &= sig_len[0] == sig_len[1];
     ok &= memcmp(sig[0], sig[1], sig_len[0]) == 0;
-    ok &= p256_ecdsa_verify(pub + 1, hash, sig[1], sig_len[1]) == 1;
+    ok &= p256_ecdsa_verify_portable(pub + 1, hash, sig[1], sig_len[1]) == 1;
     report("entries", "a signature under both answers", ok);
 }
 

@@ -199,7 +199,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
-        p256_wide_table.h p256_wide_wipe.h \
+        p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
@@ -213,7 +213,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 # They are named once, here, for the object, for the test binaries that
 # link a host object's P-256 and for the lints.
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
-                  p256_wide_table.c p256_wide_wipe.c
+                  p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -489,6 +489,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           chacha20_vector.c chacha20_avx2.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c \
           test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
+          test/p256_verify_equiv_test.c test/p256_verify_portable.c \
           $(RSA_HOST_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
@@ -1216,7 +1217,8 @@ widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),sha512_hw.c) \
              $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c)
 host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c) \
-            $(if $(filter p256_point.c,$(1)),$(P256_WIDE_SRCS)) \
+            $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
+            $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
             $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
@@ -2260,7 +2262,7 @@ bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS
 # 6979's vectors and Python's on the wide files, with the multiply bit, and
 # on the files under their own names, without it.
 P256_EQUIV_TEST_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
-                        p256.c sha256.c hkdf.c buf.c ct.c ct_wipe.c test/stack_residue.c
+                        test/p256_verify_portable.c sha256.c hkdf.c buf.c ct.c ct_wipe.c test/stack_residue.c
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
@@ -2273,6 +2275,20 @@ bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) 
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM -I. -Itest -o $@ \
 	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+# A host object's ECDSA P-256 verifier against the portable one
+# (docs/decisions.md 96). The binary compiles as a host object compiles
+# its sources, so p256.c is the arm that calls p256_wide_verify.c, and
+# test/p256_verify_portable.c compiles the same file's 32-bit arm, a
+# device object's, under a second name beside it. The signer and the
+# 32-bit point and scalar files link so that the test computes its own
+# signatures on an arithmetic that is neither verifier's.
+P256_VERIFY_EQUIV_TEST_SRCS := p256.c p256_sign.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
+                               sha256.c hkdf.c buf.c ct.c ct_wipe.c
+P256_VERIFY_EQUIV_TEST_UNITS := test/p256_verify_equiv_test.c test/p256_verify_portable.c
+bin/p256_verify_equiv_test: $(P256_VERIFY_EQUIV_TEST_UNITS) $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(P256_VERIFY_EQUIV_TEST_UNITS) \
+	  $(P256_VERIFY_EQUIV_TEST_SRCS)
 # The same binary on the overflow builtins, the form clang compiles. CI's
 # check job and test/docker-check.sh compile with gcc for x86-64, which
 # picks the intrinsics, so this rule names the builtins and a machine
@@ -3195,6 +3211,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
                                  bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
+                                 bin/p256_verify_equiv_test \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
@@ -4975,8 +4992,13 @@ else
 	# The wide P-256 files, whose bodies sit behind -DCH_CPU_RUNTIME too,
 	# with the equivalence test, which calls them and the files under
 	# their own names, and the differential main, which refuses any other
-	# build.
-	@$(call TIDY_EACH,$(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c, \
+	# build. p256.c compiles its other arm under the define, the one that
+	# calls p256_wide_verify.c, so the pass above reads the 32-bit arm and
+	# this one reads the host arm, with the verifiers' equivalence test.
+	# test/p256_verify_portable.c stays out of every pass, for the reason
+	# test/aes_equiv_soft.c does below.
+	@$(call TIDY_EACH,$(P256_WIDE_SRCS) p256.c test/p256_equiv_test.c test/diff_p256_wide_test.c \
+	  test/p256_verify_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	# RSA's arithmetic on 64-bit limbs and the signer built on it
 	# (docs/decisions.md 95). rsa_mont64.c and rsa_sign64.c guard their
@@ -6266,13 +6288,18 @@ HASH_HW_BRANCH_CEILING := \
 #     digit is positive, which reads the window's number.
 #   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
 #     holds a branch.
+#   p256_wide_verify.c's 5: the range checks of r and of s, the decoder's
+#     verdict on the key, the affine conversion's on R and the last
+#     comparison's. Every one reads a signature, a key or a hash, which
+#     are public (docs/decisions.md 96).
 P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_field.c:7 x86-64/p256_wide_field.c:7 \
   arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
   arm64/p256_wide_mul.c:12 x86-64/p256_wide_mul.c:12 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
-  arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0
+  arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
+  arm64/p256_wide_verify.c:5 x86-64/p256_wide_verify.c:5
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18

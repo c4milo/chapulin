@@ -83,11 +83,20 @@ def expand(text, variables, depth=0):
     A reference inside a make function expands to the variable's whole
     value: $(filter-out p256.c,$(SRCS)) yields every name in SRCS,
     p256.c included. That over-selects by design — the rule at the top
-    of this file — and it keeps this from reimplementing make."""
+    of this file — and it keeps this from reimplementing make.
+
+    $(call NAME,arguments) yields NAME's whole value beside its
+    arguments, for the same reason: host_srcs adds the files a host
+    object holds beside the ones it is handed, and a recipe that
+    compiles $(call host_srcs,$(WYCHEPROOF_SRCS)) compiles them too.
+    Reading the arguments alone left every such file out of the
+    Wycheproof host leg's sources."""
     if depth > 8:
         return text
+    out = re.sub(r"\$[({]call ([A-Za-z_][A-Za-z0-9_]*),",
+                 lambda m: variables.get(m.group(1), "") + " $(called " + m.group(1) + ",", text)
     out = re.sub(r"\$[({]([A-Za-z_][A-Za-z0-9_]*)[)}]",
-                 lambda m: variables.get(m.group(1), ""), text)
+                 lambda m: variables.get(m.group(1), ""), out)
     return out if out == text else expand(out, variables, depth + 1)
 
 

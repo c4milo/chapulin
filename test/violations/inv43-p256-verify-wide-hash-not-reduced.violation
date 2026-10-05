@@ -1,0 +1,15 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: proof/prove-one.sh p256_wide_verify
+reason: the host verifier multiplies the hash by s's inverse without
+  reducing it modulo n first, and p256_wide_scalar_mul takes scalars
+  below n. A hash of n or more is one in 2^32, and the wide product
+  happens to give the right residue for one, so bin/p256_verify_equiv_test
+  passes on its hashes of n and above. The proof's stub of the product
+  asserts that both operands are below n.
+
+--- old
+    p256_scalar_reduce(&e, &e);
+    p256_wide_scalar_inverse(&w, &s);
+--- new
+    p256_wide_scalar_inverse(&w, &s);

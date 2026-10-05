@@ -1337,6 +1337,52 @@ last `ROLE=server` stub, as the entry said it would.
   `rsa_sign64_crt` proof refutes.
 - See [decisions: Engineering](decisions.md#engineering), entry 95.
 
+### INV-43 — a host object's ECDSA P-256 verifier gives the portable code's verdict
+
+- **Claim.** `p256_wide_verify.c`, which a host object runs for
+  `p256_ecdsa_verify` in every session, answers for every key, hash and
+  signature what `p256.c`'s 32-bit arithmetic answers, which stays the
+  reference. It refuses what FIPS 186-4 6.4.2 refuses before any
+  arithmetic, an r or an s outside 1..n-1, a coordinate at or above p
+  and a key off the curve, and it refuses an R at infinity.
+- **Mechanism.** `p256.c` reads the DER signature with one reader for
+  both arms and hands r and s to the arm its build compiled: a call into
+  `p256_wide_verify.c` under `-DCH_CPU_RUNTIME`, and its own 32-bit
+  arithmetic without it, so an object holds one of the two. The host arm
+  computes on the wide P-256 files: `p256_wide_scalar.c` for s's inverse
+  and the two products, `p256_wide_mul.c` for u1·G and u2·Q,
+  `p256_wide_point.c`'s complete addition for their sum, and
+  `p256_scalar.c` for the range predicates and the reductions modulo n.
+  Those files are constant time (INV-16), which a verifier does not
+  need: every input is public, so no bit of `ch_cfg.cpu` picks the arm
+  and no caller states the multiply's timing for it (decision 96).
+- **Check.** `bin/p256_verify_equiv_test` compiles both arms into one
+  binary and requires one verdict from them, and the verdict each case
+  names, over signatures `p256_sign.c` wrote, signatures the test
+  computed on a third arithmetic with the scalars at their edges, the
+  two cases where u1·G and u2·Q are equal or negatives, r and s at the
+  ends of their range, keys no point encodes and DER no reader takes.
+  The Wycheproof host leg runs Wycheproof's ECDSA P-256 vectors on the
+  host arm, among them the signatures whose k·G has an X of n or more.
+  CBMC's `p256_wide_verify` proves, over contracts of the wide entries,
+  the refusals no test can hold: 0 for an r or an s outside 1..n-1 with
+  no arithmetic run, 0 for a key the decoder refused and for an R at
+  infinity, and only scalars below n handed to the wide scalar
+  routines. `test/widemul-builds.sh` compiles `p256.c` either side of
+  the define and holds each arm to its object.
+- **Violation.** A PR multiplies G by u2 and the key by u1; checks r's
+  range and not s's, which gives one signature a second encoding;
+  compares R's X with r without reducing it modulo n; multiplies a hash
+  it did not reduce; reads an X for an R at infinity; admits zero for r
+  and s; computes on a key the decoder refused; leaves u1·G out of the
+  sum; compares R's X with s; exchanges r and s at the entry; or chooses
+  `p256.c`'s arm on a define no build passes. The eleven `inv43-*`
+  violations are these. Six fail `bin/p256_verify_equiv_test`, one the
+  Wycheproof host leg, one `test/widemul-builds.sh`, and four the
+  `p256_wide_verify` proof: with one of those four applied every test
+  passes, because the arithmetic after the missing check gives an X
+  that matches r one time in 2^256.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a

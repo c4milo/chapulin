@@ -111,6 +111,7 @@ hybrid_secret 16.6
 key_share 21.9
 keysched 87.0
 p256_mul 86.7
+p256_wide_verify 77.2
 p384_mul 86.7
 # pem and pem_ecdsa carry their own budget, 2700 s, where every other
 # cover run gets 1800 s (https://github.com/c4milo/chapulin/issues/163).

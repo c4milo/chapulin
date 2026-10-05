@@ -1,0 +1,13 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: proof/prove-one.sh p256_wide_verify
+reason: the host verifier admits zero for r and for s. A zero s has the
+  inverse zero, so R is the point at infinity, and a zero r never equals
+  an X the equation computed: every test passes. FIPS 186-4 6.4.2
+  refuses both before any arithmetic, and the proof requires the verdict
+  0 and no call into the wide files for a pair outside 1..n-1.
+
+--- old
+    return p256_scalar_zero_mask(a) == 0 && p256_scalar_reduced_mask(a) != 0;
+--- new
+    return p256_scalar_reduced_mask(a) != 0;

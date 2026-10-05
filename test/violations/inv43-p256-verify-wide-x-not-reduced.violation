@@ -1,0 +1,14 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: test/wycheproof.sh
+reason: the host verifier compares R's affine X with r without reducing it
+  modulo n. X is below p and r is below n, so the two differ only for an
+  X of n or more, which is one point in 2^128: no random signature shows
+  it. Wycheproof's ECDSA vectors hold signatures whose k*G has such an
+  X, and its host leg runs them on this file.
+
+--- old
+    p256_scalar_reduce(&v, &v);
+    p256_scalar_to_bytes(v_be, &v);
+--- new
+    p256_scalar_to_bytes(v_be, &v);

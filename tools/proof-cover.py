@@ -185,7 +185,7 @@ def shipped_sources():
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
             "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c", "p256_wide_field.c",
             "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
-            "p256_wide_wipe.c", "rsa_mont64.c", "rsa_sign64.c"}
+            "p256_wide_wipe.c", "p256_wide_verify.c", "rsa_mont64.c", "rsa_sign64.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

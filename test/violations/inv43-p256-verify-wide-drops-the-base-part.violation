@@ -1,0 +1,12 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: p256_verify_equiv_test
+reason: the host verifier takes u2*Q for R and leaves u1*G out of the sum,
+  so it accepts only a signature whose hash is zero modulo n.
+  bin/p256_verify_equiv_test requires the 32-bit verifier's verdict on
+  every signature it tries.
+
+--- old
+    p256_wide_point_add(&sum, &sum, &addend);
+--- new
+    sum = addend;

@@ -1,0 +1,21 @@
+invariant: INV-43
+file: p256.c
+catches: test/widemul-builds.sh
+reason: p256.c chooses its arm on a define no build passes, so a host
+  object compiles the 32-bit arithmetic and never calls
+  p256_wide_verify.c. Every verdict stays right and every test of the
+  verifier passes, at the device object's speed. test/widemul-builds.sh
+  compiles the file as a host object does and requires its call into
+  p256_wide_verify.c. The file picks its arm in one place, so this edit
+  compiles under every compiler: with a second test of the define at
+  the entry, gcc 13 compiled the entry's call without its declaration
+  and the object still called the wide verifier.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+
+#include "p256_wide_verify.h"
+--- new
+#ifdef CH_CPU_HOST
+
+#include "p256_wide_verify.h"

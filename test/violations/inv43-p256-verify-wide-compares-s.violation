@@ -1,0 +1,12 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: p256_verify_equiv_test
+reason: the host verifier compares R's X with s where the equation names r,
+  so it refuses every signature a signer wrote and accepts a pair whose
+  s is that X. bin/p256_verify_equiv_test requires the 32-bit verifier's
+  verdict on every signature it tries.
+
+--- old
+    return ct_memeq(v_be, r_be, P256_SCALAR_LEN) != 0;
+--- new
+    return ct_memeq(v_be, s_be, P256_SCALAR_LEN) != 0;

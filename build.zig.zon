@@ -111,6 +111,8 @@
         "p256_wide_scalar.h",
         "p256_wide_table.c",
         "p256_wide_table.h",
+        "p256_wide_verify.c",
+        "p256_wide_verify.h",
         "p256_wide_wipe.c",
         "p256_wide_wipe.h",
         "p384.c",

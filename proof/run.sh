@@ -2192,6 +2192,14 @@ launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTI
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# p256_wide_verify: the host object's ECDSA P-256 verifier over contracts of
+# the nine wide entries it calls, with p256_scalar.c's marshalling,
+# reduction and range predicates on their real bodies
+# (docs/decisions.md 96). The bound is the 64 bytes of the key that
+# fill_nondet writes. The line runs without --unsigned-overflow-check, as
+# p256_scalar's does: p256_scalar.c builds its masks and its borrows from
+# sums that wrap on purpose, and p256_wide_verify.c adds nothing itself.
+launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and
 # ct_wipe each loop 112 times, past the global bound. Measured (cbmc

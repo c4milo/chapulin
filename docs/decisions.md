@@ -6748,3 +6748,73 @@ does nothing more.
     - **`rsa_vp1` for the check.** It is the same arithmetic behind a
       scan of the modulus for its bit length, which a key the test
       admitted does not need.
+
+96. **A host object verifies ECDSA P-256 on the wide files, in every
+    session, and a device object keeps its 32-bit limbs.** After entries
+    93 to 95 the two ECDSA verifiers were the widest gaps in
+    `docs/performance.md`'s table beside OpenSSL: `p256_ecdsa_verify`
+    took 1.21 ms on an M1 Pro where OpenSSL 3.6.5 takes 53 µs. A
+    TRUST=webpki client pays it once for each P-256 link of a chain, and
+    every client that pins an ECDSA key once a handshake. Camilo said to
+    start with the verifiers on 2026-10-05.
+
+    - **The arithmetic.** `p256.c` computed a verification on eight
+      32-bit limbs of its own, with a ladder of 256 doublings for each of
+      the two scalar multiplications. A host object already holds P-256
+      on four 64-bit limbs, the wide files of entry 94, with their
+      proofs, their equivalence test and their table of multiples of G.
+      `p256_wide_verify.c` is FIPS 186-4 6.4.2's check on them:
+      `p256_wide_scalar.c` for s's inverse and the two products,
+      `p256_wide_base_mul` for u1·G, which is 64 additions of table
+      entries, `p256_wide_mul` for u2·Q, and one complete addition. It
+      is 93 lines and holds no formula of its own.
+    - **No bit picks it.** A key, a hash and a signature are public, so
+      the multiply's timing needs no statement from anybody, as entry 95
+      found for RSA's public operation. Every session of a host object
+      runs the wide verifier, and a device object compiles `p256.c`'s
+      32-bit arithmetic, which stays the reference.
+    - **One DER reader.** `p256.c` reads the signature for both arms and
+      hands r and s to the arm its build compiled, so the two cannot
+      differ in which signatures they parse.
+    - **Constant-time code for public inputs.** The wide files scan
+      their tables and select by mask, which a verifier does not need.
+      It calls them because they are the 64-bit P-256 arithmetic the
+      object holds and an auditor has read, and a second, variable-time
+      set of formulas for the verifier would be more to audit than the
+      time it saves is worth here.
+    - **The counts.** `test/widemul_count_wide_p256.c` compiles the
+      verifier inside the counting unit, so its calls into the six
+      dispatched entries count for neither answer: a count still says
+      which copy a session's secret operations ran, and a session that
+      states nothing still counts none on the wide files.
+    - **What holds it.** INV-43. `bin/p256_verify_equiv_test` requires
+      one verdict from the two arms, and the verdict each case names,
+      over 995 inputs; `bin/p256_equiv_test` now reads its signatures
+      with the 32-bit arm, so its verifier stays independent of the wide
+      files; the Wycheproof host leg runs the ECDSA P-256 vectors on the
+      wide verifier; and the `p256_wide_verify` proof (601 properties,
+      1 s, 37 MB) holds the four refusals no test can see. Eleven
+      `inv43-*` violations each fail one of them.
+
+    Measured on the M1 Pro under Apple clang 21, with
+    `bench/primitives.c`'s verify rows under `0x67`, three runs:
+    `p256_ecdsa_verify` takes 97.8 µs and retires 1,172,366
+    instructions, where the 32-bit limbs took 1.21 ms and 9,578,994.
+    That is 1.8 times OpenSSL's 53 µs, where it was 23 times.
+    `docs/performance.md`'s table takes the row from its next run.
+    Gain: a host object verifies an ECDSA P-256 signature in a twelfth
+    of the time, with no arithmetic it did not already hold.
+
+    Rejected:
+
+    - **A variable-time verifier on the wide field.** Shamir's trick
+      shares the doublings of two ladders, and u1·G here has none to
+      share: it is 64 table additions. What a variable-time verifier
+      would save is the complete doubling's 13 products against a
+      Jacobian doubling's 8, and the scans of the tables, for a second
+      set of point formulas with their exceptional cases. Nobody
+      measured that saving.
+    - **The multiply bit.** It states a timing, and nothing here has one
+      to hide.
+    - **P-384 in the same change.** No object holds P-384 on 64-bit
+      limbs, so that verifier needs a field of its own first.

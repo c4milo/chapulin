@@ -1,0 +1,16 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: proof/prove-one.sh p256_wide_verify
+reason: the host verifier reads an X for R whatever the affine conversion
+  answers, so it compares r with what the conversion wrote for the point
+  at infinity. The conversion writes zero there and r is not zero, so
+  every test passes. The proof's stub of the conversion writes any
+  bytes, and the proof requires the verdict 0 when it reports
+  infinity.
+
+--- old
+    if (p256_wide_point_affine(x, NULL, &result) == 0) {
+        return 0;
+    }
+--- new
+    (void)p256_wide_point_affine(x, NULL, &result);

@@ -1,0 +1,16 @@
+invariant: INV-43
+file: p256_wide_verify.c
+catches: proof/prove-one.sh p256_wide_verify
+reason: the host verifier computes on whatever the decoder left for a key
+  it refused: a coordinate at or above p, or a pair off the curve. The
+  limbs are then no point, and their X matches r one time in 2^256, so
+  bin/p256_verify_equiv_test passes on its keys off the curve. The
+  proof's stub of the decoder answers either verdict, and the proof
+  requires the verdict 0 when it refuses.
+
+--- old
+    if (p256_wide_point_from_bytes(&q, encoded) == 0) {
+        return 0;
+    }
+--- new
+    (void)p256_wide_point_from_bytes(&q, encoded);
