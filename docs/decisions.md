@@ -5711,6 +5711,54 @@ does nothing more.
     docs/performance.md holds the measured rows. On x86-64 SHA-384 and
     SHA-512 stay on the portable code.
 
+    **The fourth commit: the measurements.** docs/performance.md's
+    table beside OpenSSL holds a run of `bench/primitives.sh` on each
+    machine at 1f4a922, after entries 94 and 95 landed: an M1 Pro under
+    Apple clang 21 at a load average of 2.5 to 4.5, and an AMD EPYC 7763
+    under gcc 13.3 at 1.0 (`bench/results-primitives-arm64.csv` and its
+    x86-64 twin). One operation under `CH_CPU_PROBED` alone, under every
+    bit the CPU has, and OpenSSL's time for it in the same run:
+
+    | one operation | M1 Pro, `0x1` | `0x67` | OpenSSL 3.6.5 | ratio | EPYC 7763, `0x1` | `0x3f` | OpenSSL 3.6.4 | ratio |
+    |---|---|---|---|---|---|---|---|---|
+    | SHA-256, 16 KiB | 74.0 µs | 6.70 µs | 6.72 µs | 1.00 | 61.8 µs | 10.4 µs | 10.4 µs | 1.00 |
+    | SHA-256, 64 bytes | 709 ns | 103 ns | 148 ns | 0.69 | 775 ns | 170 ns | 191 ns | 0.89 |
+    | HMAC-SHA-256, 64 bytes | 1.68 µs | 193 ns | no row | | 1.65 µs | 337 ns | no row | |
+    | HKDF-Expand-Label | 1.44 µs | 206 ns | no row | | 1.29 µs | 324 ns | no row | |
+    | SHA-384, 16 KiB | 49.4 µs | 11.5 µs | 11.5 µs | 1.00 | 45.4 µs | 45.4 µs | 21.9 µs | 2.07 |
+    | SHA-384, 64 bytes | 552 ns | 187 ns | 183 ns | 1.02 | 503 ns | 504 ns | 332 ns | 1.52 |
+
+    SHA-256 takes OpenSSL's time over 16 KiB on both machines and less
+    over 64 bytes. SHA-384 takes OpenSSL's time on the M1 Pro. On x86-64
+    it stays behind, 2.07 and 1.52 times: the SHA-512 bit is an arm64
+    bit, so that row is the portable code under either value.
+
+    A count of instructions does not move with load. The M1 Pro's run
+    counted:
+
+    | instructions retired | portable code, `0x1` | `0x67` |
+    |---|---|---|
+    | SHA-256, a byte of 16 KiB | 49.44 | 1.64 |
+    | SHA-256, a byte of 64 bytes | 121.16 | 13.44 |
+    | SHA-384, a byte of 16 KiB | 31.91 | 4.29 |
+    | SHA-384, a byte of 64 bytes | 77.16 | 20.43 |
+    | SHA-512, a byte of 16 KiB | 31.92 | 4.29 |
+    | HMAC-SHA-256, a byte of 64 bytes | 284.95 | 28.78 |
+    | HKDF-Expand-Label, one call | 14,764 | 2,090 |
+
+    A run at 02435f9, before entry 94 changed P-256, counted 16,570,459
+    instructions for the two ends of a pinned ECDSA P-256 handshake
+    under `0x67`, where the run before it had counted 17,232,011 under
+    `0x7`, which states the multiply and no hash. So the SHA-256 bit
+    removes about 0.66 M instructions from the two ends of a
+    TLS_CHACHA20_POLY1305_SHA256 handshake.
+
+    What stays on the portable code is every call that takes no
+    session's value, which this entry lists above under how a call
+    learns its session's bits. The largest in a handshake is the
+    signer's RFC 6979 nonce in `p256_sign.c`: 0.24 M of a signature's
+    0.53 M instructions (entry 94).
+
 94. **A host object computes P-256 on four 64-bit limbs for a session
     that states its multiply: k·G from a table of multiples of G, and
     k·P from eight multiples of P.** `docs/performance.md`, "Where a

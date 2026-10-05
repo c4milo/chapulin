@@ -17,8 +17,8 @@
 #
 # check_scoreboard also holds one sentence under "Where the time goes" to
 # the first machine's CSV: what the wide X25519 field takes beside the
-# 16-limb one, and a client's side of a handshake with and without the
-# multiply bit.
+# 16-limb one, and a client's side of a handshake under the widest value,
+# which the machine's line states, and under CH_CPU_PROBED alone.
 import csv
 import os
 import re
@@ -87,6 +87,12 @@ AEADS = [
 ]
 
 CPU_LABEL = "ch_cfg.cpu "
+# The bits of ch_cfg.cpu that change a row bench/record.sh times: the probe's
+# bit, the AES and multiply bits and the two x86-64 kernel bits (cpu_cfg.h).
+# A record's protection hashes nothing, so that script states no hash bit,
+# and the widest value of its CSV is the primitives' widest value without
+# the three hash bits (docs/decisions.md 93).
+RECORD_BITS = 0x1f
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")
 LOAD_LINE = re.compile(r"^# load average \(1, 5, 15 min\) before: (\S+) .*; after: (\S+) ")
@@ -221,19 +227,26 @@ def facts(comments, rows):
 def machine_line(name, primitives, record):
     """The sentence that states one machine: its CPU, system, compiler and
     OpenSSL, the ch_cfg.cpu value its chapulin rows ran under, and the load
-    average around each of its two runs. None when the two CSVs disagree
-    about the machine or about the widest value they ran under."""
+    average around each of its two runs. Where the primitives' value holds
+    a hash bit, the sentence states the AEAD rows' value beside it. None
+    when the two CSVs disagree about the machine, or about the widest value
+    they ran under in a bit a record reads."""
     if primitives is None or record is None:
         return "**%s**: no run recorded" % name
     ours = facts(*primitives)
     aead = facts(*record)
     if ours["value"] is None:
         return "**%s**: no run recorded" % name
-    if any(ours[k] != aead[k] for k in ("cpu", "os", "compiler", "openssl", "value")):
+    if any(ours[k] != aead[k] for k in ("cpu", "os", "compiler", "openssl")):
         return None
-    return ("**%s**: %s, %s, %s, %s, `ch_cfg.cpu 0x%x`; one-minute load average %s before the "
+    if aead["value"] is None or ours["value"] & RECORD_BITS != aead["value"]:
+        return None
+    values = "`ch_cfg.cpu 0x%x`" % ours["value"]
+    if aead["value"] != ours["value"]:
+        values += ", and `0x%x` for the AEAD rows, which no hash bit changes" % aead["value"]
+    return ("**%s**: %s, %s, %s, %s, %s; one-minute load average %s before the "
             "primitives' run and %s after it, and %s and %s around the AEAD rows' run"
-            % (name, ours["cpu"], ours["os"], ours["compiler"], ours["openssl"], ours["value"],
+            % (name, ours["cpu"], ours["os"], ours["compiler"], ours["openssl"], values,
                ours["before"], ours["after"], aead["before"], aead["after"]))
 
 
@@ -267,9 +280,14 @@ def table_rows(text):
 
 
 # The sentence that states the wide X25519 field's gain on the first machine.
+# Its handshake figures are the widest value's and CH_CPU_PROBED's. The
+# sentence names the first as the value the machine's line states, because
+# a run after docs/decisions.md 93 states the hash instructions beside the
+# multiply, and the handshake's hashes then run on them.
 FIELD = re.compile(r"a scalar multiplication takes (\S+ \S+) on that field against (\S+ \S+) on "
                    r"the 16-limb one over the decomposition, and the client side of a pinned "
-                   r"RSA-3072 handshake takes (\S+ \S+) with the bit against (\S+ \S+) without it")
+                   r"RSA-3072 handshake takes (\S+ \S+) under the value that machine's line "
+                   r"states below against (\S+ \S+) under `CH_CPU_PROBED` alone")
 
 
 def check_field(prose):
@@ -309,8 +327,9 @@ def check_scoreboard(text):
     prose = re.sub(r"\s+", " ", text)
     for name, line in lines:
         if line is None:
-            print("lint-bench-numbers: the two CSVs of %s name two machines, compilers, OpenSSL "
-                  "versions or widest ch_cfg.cpu values, so its column mixes two runs" % name)
+            print("lint-bench-numbers: the two CSVs of %s name two machines, compilers or OpenSSL "
+                  "versions, or widest ch_cfg.cpu values that differ in a bit a record reads, so "
+                  "its column mixes two runs" % name)
             rc = 1
         elif line not in prose:
             print("lint-bench-numbers: docs/performance.md does not state %s as its CSVs do: %s"

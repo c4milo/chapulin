@@ -459,7 +459,7 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo "${BENCH_TREE:-unknown}
         "ecdsa rows, and -DCH_KEX_PQ for the _hybrid rows, whose client offers X25519MLKEM768 alone"
     echo "# every timed program is a host object, and the build column is the ch_cfg.cpu value" \
         "its rows run under: $CPU_NOTHING is $(cpu_names "$CPU_NOTHING") alone, and $CPU_ALL is every" \
-        "bit this CPU has: $(cpu_names "$CPU_ALL")"
+        "bit this CPU has that an object reads: $(cpu_names "$CPU_ALL")"
     if [ -n "$OPENSSL_BIN" ]; then
         echo "# $OPENSSL_LABEL rows: \`$OPENSSL_BIN speed -mr -seconds 1\`, one second a run:" \
             "sha256, sha384 and sha3_256 are -evp over -bytes; x25519_base and p256_ecdh_keygen" \
