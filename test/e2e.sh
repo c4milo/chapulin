@@ -2,11 +2,13 @@
 # End-to-end: real handshakes and app data against openssl s_server and a Go
 # crypto/tls server, all TLS 1.3 with our single suite. -rev echoes each
 # line reversed, proving app data moves both ways.
-set -euo pipefail
+set -eEuo pipefail
 
 # Several openssl calls send stderr to /dev/null so the transcript stays
 # readable, which means set -e can kill the run with nothing printed.
-# Twice that hid a real break, so say where it happened.
+# Twice that hid a real break, so say where it happened. set -E is what
+# runs the trap for a command that fails inside a function: without it
+# the nightly of 2026-10-05 ended in read_port with exit 2 and no line.
 trap 'rc=$?; [ $rc -eq 0 ] || echo "FAIL e2e: aborted at line $LINENO (exit $rc)" >&2' ERR
 cd "$(dirname "$0")/.."
 
@@ -108,7 +110,11 @@ start_goecho() {
 read_port() {
     local pid=$1 log=$2 script=$3
     for _ in $(seq 1 40); do
-        SRV_PORT=$(sed -n "$script" "$log" 2>/dev/null | head -1)
+        # The server's own shell creates the log, so the first read can
+        # come before the file exists. sed then exits nonzero, and under
+        # set -e a failed assignment ends the script. "|| true" leaves
+        # SRV_PORT empty for that pass, and the next pass reads again.
+        SRV_PORT=$(sed -n "$script" "$log" 2>/dev/null | head -1) || true
         [ -n "$SRV_PORT" ] && return 0
         kill -0 "$pid" 2>/dev/null || {
             echo "FAIL e2e: server exited before it reported a port"
