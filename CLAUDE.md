@@ -155,11 +155,15 @@ Home: github.com/c4milo.
   server role and TRUST=webpki) with the `p256_wide_*` files (the same
   arithmetic on four 64-bit limbs, and k·G from a table of multiples of
   G that is read whole and kept by mask, a host session whose caller
-  sets CH_CPU_CONSTANT_TIME_MULTIPLY) +
+  sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` runs
+  `p256.[ch]`'s verification on them in every session of a host
+  object) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) with `rsa_mont64.[ch]`
   (the same public operation on 64-bit limbs, every session of a host
   object) + `p384.[ch]`/
-  `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
+  `p384_field.[ch]` with the `p384_wide_*` files (the same verification
+  on six 64-bit limbs, every session of a host object) +
+  `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
@@ -324,7 +328,10 @@ Home: github.com/c4milo.
   which calls run a hash's instructions under each value.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
   files and `rsa_sign64.c` to the files under their own names, and search
-  the stack each call leaves. AES is admitted for two purposes. The first is the keys RFC
+  the stack each call leaves. `bin/p256_verify_equiv_test` and
+  `bin/p384_equiv_test` hold a host object's two ECDSA verifiers to the
+  32-bit arms of `p256.c` and `p384.c`, which stay the references
+  (docs/decisions.md 96 and 97). AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
