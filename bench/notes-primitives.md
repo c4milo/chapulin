@@ -16,6 +16,52 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run this note reads, and what a later run changed
+
+Every figure below this section is one run of tree 1f4a922 on
+2026-10-05, and `git show 1642d3ae:bench/results-primitives-arm64.csv`
+prints the file it came from. The CSVs in the tree now hold a run of
+tree e54b20c3, taken the same day on the same two CPUs, after
+docs/decisions.md 96 and 97 moved the two ECDSA verifiers to 64-bit
+limbs in every session of a host object. No bit of `ch_cfg.cpu` picks
+either verifier, so the rows moved under both values.
+
+That changed the two verify rows and the handshakes whose client checks
+a pinned ECDSA P-256 key. This table holds them, the earlier run first.
+No other chapulin row moved by more than 5% on the M1 Pro or 12% on the
+x86-64 runner, so the sections below still state the earlier run's
+figures for the rest.
+
+| row | machine | `ch_cfg.cpu` | 1f4a922 | e54b20c3 |
+|---|---|---|---:|---:|
+| p256_ecdsa_verify, us | M1 Pro | either | 1,214 | 97.8 |
+| p384_ecdsa_verify, us | M1 Pro | 0x1, 0x67 | 3,937, 3,935 | 258, 265 |
+| pinned ECDSA P-256, whole, ms | M1 Pro | 0x1, 0x67 | 6.07, 1.41 | 4.90, 0.29 |
+| pinned ECDSA P-256, client side, ms | M1 Pro | 0x1, 0x67 | 3.02, 1.29 | 1.88, 0.17 |
+| pinned ECDSA P-256, hybrid, whole, ms | M1 Pro | 0x1, 0x67 | 6.25, 1.55 | 5.05, 0.41 |
+| pinned ECDSA P-256, hybrid, client side, ms | M1 Pro | 0x1, 0x67 | 3.14, 1.40 | 1.98, 0.26 |
+| p256_ecdsa_verify, us | x86-64 | either | 2,043 | 187 to 189 |
+| p384_ecdsa_verify, us | x86-64 | either | 6,389 | 702 |
+| pinned ECDSA P-256, whole, ms | x86-64 | 0x1, 0x3f | 12.9, 2.35 | 11.1, 0.54 |
+| pinned ECDSA P-256, client side, ms | x86-64 | 0x1, 0x3f | 5.96, 2.14 | 4.14, 0.32 |
+| pinned ECDSA P-256, hybrid, whole, ms | x86-64 | 0x1, 0x3f | 13.6, 2.95 | 11.7, 1.13 |
+| pinned ECDSA P-256, hybrid, client side, ms | x86-64 | 0x1, 0x3f | 6.42, 2.58 | 4.60, 0.77 |
+
+Where the sections below read those rows, the later run says this
+instead:
+
+- An ECDSA client's side under `0x67` is 0.17 ms, of which the verifier
+  is 57% and the x25519 pair 38%, where the verifier was 94% and the
+  pair 5%. Under `0x1` the pair is 93% of that side and the verifier 5%,
+  where they were 58% and 40%. On the x86-64 runner under `0x3f` the
+  verifier is 59% and the pair 38%.
+- The verifier is still the largest cost of every client under `0x67`,
+  and the x25519 pair of every client under `0x1`.
+- In the ranking of once-per-handshake costs, p256_ecdsa_verify falls
+  from 1,214 us to 97.8 us, between p256_ecdh at 77 us and
+  rsa_pss_verify_3072 at 86 us, and p384_ecdsa_verify from 3,937 us to
+  about 260 us.
+
 ## Machine and method
 
 - Apple M1 Pro (8 performance and 2 efficiency cores), macOS 26.6.2
