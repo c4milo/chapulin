@@ -2275,6 +2275,11 @@ the wide files to the same answers:
   two intrinsics under gcc for x86-64, which is what CI's check job and
   `test/docker-check.sh` compile with. No machine that runs check picks
   the sums, so the second binary names them.
+- `bin/p256_equiv_test_builtin`, in `make check`, is that binary with
+  the two carry steps on the overflow builtins, the form clang compiles.
+  Under clang it runs what `bin/p256_equiv_test` runs. Under gcc for
+  x86-64 it is the one binary of check that runs the builtins, so CI
+  holds what that form computes too.
 - `test/aes-runtime-qemu.sh`, which the mips job of `check.yml` runs on
   every push, builds `bin/p256_equiv_test` with gcc for x86-64, the two
   intrinsics named, and for arm64, the 128-bit sums named, and runs each

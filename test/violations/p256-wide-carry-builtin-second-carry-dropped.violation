@@ -1,12 +1,14 @@
 invariant: INV-16
 file: p256_wide_limb.h
-catches: p256_equiv_test
+catches: p256_equiv_test_builtin
 reason: the form of the add with carry that clang compiles keeps the carry
   of a + b and drops the carry of adding the carry in, so a limb sum of
   2^64 - 1 with a carry in of 1 returns 0 and no carry out. Nothing
   faults, and the field and the scalar go on computing with a value that
-  is short by 2^64 at that limb. bin/p256_equiv_test holds every sum to
-  p256_field.c's and p256_scalar.c's.
+  is short by 2^64 at that limb. gcc for x86-64, which CI compiles with,
+  reads another form, so bin/p256_equiv_test never compiles the line
+  there: bin/p256_equiv_test_builtin names the form and holds every sum
+  on it to p256_field.c's and p256_scalar.c's.
 
 --- old
     *carry = first | second;

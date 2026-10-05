@@ -2575,7 +2575,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv16-p256-wide-gcc-x86-64-reads-the-builtins` hand gcc the builtins,
   and the lint catches both. What each form computes is held apart from
   which one a compiler reads: `bin/p256_equiv_test` runs the form its
-  compiler picks, `bin/p256_equiv_test_sum` the sums, and
+  compiler picks, `bin/p256_equiv_test_sum` the sums,
+  `bin/p256_equiv_test_builtin` the builtins, and
   `test/docker-aes-runtime-qemu.sh p256-equiv` the intrinsics as gcc
   compiles them for x86-64 and the sums as it compiles them for arm64,
   each under qemu. Five `p256-wide-carry-*` violations break one form

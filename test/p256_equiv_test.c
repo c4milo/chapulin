@@ -26,10 +26,11 @@
 // one. test/p256_equiv_residue.h then looks at what the wide calls leave
 // on the stack.
 //
-// The Makefile builds this file twice. bin/p256_equiv_test runs the form
-// of p256_wide_limb.h's two carry steps that its compiler picks, and
+// The Makefile builds this file three times. bin/p256_equiv_test runs the
+// form of p256_wide_limb.h's two carry steps that its compiler picks.
 // bin/p256_equiv_test_sum names the 128-bit sums, which gcc picks outside
-// x86-64 and no machine that runs check does.
+// x86-64 and no machine that runs check does. bin/p256_equiv_test_builtin
+// names the overflow builtins, which clang picks and CI's gcc does not.
 //
 // The random inputs come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_P256_EQUIV_SEED.

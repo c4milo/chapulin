@@ -36,10 +36,11 @@
 // clang 21 at -O2 for arm64 a field multiply is 141 instructions on the builtins and 166 on
 // the sums.
 //
-// The harnesses in proof/, the rule of bin/p256_equiv_test_sum and two rows of
-// test/aes-runtime-qemu.sh define P256_WIDE_CARRY and so name the form themselves. CBMC reads
-// no intrinsic, and it reads one form on every machine that way. The tests run a form whatever
-// compiler builds them.
+// The harnesses in proof/, the rules of bin/p256_equiv_test_sum and bin/p256_equiv_test_builtin
+// and two rows of test/aes-runtime-qemu.sh define P256_WIDE_CARRY and so name the form
+// themselves. CBMC reads no intrinsic, and it reads one form on every machine that way. The
+// tests run a form whatever compiler builds them, the builtins under gcc among them: a test
+// binary holds what a form computes, and no session runs it.
 #define P256_WIDE_CARRY_BUILTIN 1
 #define P256_WIDE_CARRY_INTRINSIC 2
 #define P256_WIDE_CARRY_SUM 3

@@ -2219,6 +2219,14 @@ bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) 
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM -I. -Itest -o $@ \
 	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+# The same binary on the overflow builtins, the form clang compiles. CI's
+# check job and test/docker-check.sh compile with gcc for x86-64, which
+# picks the intrinsics, so this rule names the builtins and a machine
+# whose compiler is gcc runs them too (docs/decisions.md 94).
+bin/p256_equiv_test_builtin: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_BUILTIN -I. -Itest -o $@ \
+	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
 # A host object's ChaCha20 against chacha20.c's loop, the paths in one
 # binary under their own names: chacha20.c compiles here without
 # -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, as a device
@@ -3094,7 +3102,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 # CPU's instructions.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
                                  bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
-                                 bin/p256_equiv_test bin/p256_equiv_test_sum \
+                                 bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \

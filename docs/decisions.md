@@ -5988,7 +5988,8 @@ does nothing more.
       verdicts, and then measures the stack. It runs the form of the
       carry steps its compiler picks, and `bin/p256_equiv_test_sum` is
       the same binary on the 128-bit sums, which no machine that runs
-      check picks. `tools/p256_wide.py`
+      check picks. `bin/p256_equiv_test_builtin` is the same binary on
+      the builtins, which CI's gcc does not pick. `tools/p256_wide.py`
       recomputes every constant the wide files hold from the SEC 2
       values, in `make lint`. The host binaries run RFC 6979's vectors,
       Python's and the Wycheproof ECDH and ECDSA suites once with the
@@ -6049,7 +6050,9 @@ does nothing more.
       Seven hold the carry steps. Two hand gcc the builtins, for every
       machine and for x86-64 alone, and `make lint-p256-wide` catches
       both. One drops the second carry of the builtins' add, and
-      `bin/p256_equiv_test` catches it. Two break the 128-bit sums, the
+      `bin/p256_equiv_test_builtin` catches it under clang and under
+      gcc, which compiles the builtins for no other binary. Two break
+      the 128-bit sums, the
       carry in left out of the add and the borrow out not inverted, and
       `bin/p256_equiv_test_sum` catches both. Two break the intrinsics,
       the carry in left out of `_addcarry_u64` and the operands of
