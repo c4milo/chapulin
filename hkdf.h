@@ -128,11 +128,17 @@ void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *la
 // sha256.h.
 #ifndef CH_HASH_HW_H
 // Whether a call of this header or of keysched.h that runs the hash hash_len names runs the
-// copy on the instructions: for SHA-256 where sha256_on_instructions says so, and for no other
-// hash, because no object holds SHA-384 on instructions yet. hash_len is the suite's, which the
-// ServerHello names in the clear. Every call of hkdf.c and keysched.c runs the one hash its
-// hash_len names, so a copy that holds two hashes still runs each on its own bit alone.
+// copy on the instructions: for SHA-256 where sha256_on_instructions says so, and for SHA-384
+// where sha512_on_instructions does. hash_len is the suite's, which the ServerHello names in
+// the clear. Every call of hkdf.c and keysched.c runs the one hash its hash_len names, so a
+// copy that holds two hashes still runs each on its own bit alone: a session that stated one
+// hash's instructions and not the other's never runs the other's.
 static inline int hash_on_instructions(uint32_t cpu, size_t hash_len) {
+#ifdef CH_HASH_SHA384
+    if (hash_len == SHA384_LEN) {
+        return sha512_on_instructions(cpu);
+    }
+#endif
     return hash_len == SHA256_LEN && sha256_on_instructions(cpu);
 }
 

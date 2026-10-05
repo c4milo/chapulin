@@ -1,0 +1,15 @@
+invariant: INV-16
+file: hash_hw.h
+catches: test/hash-builds.sh
+reason: hash_hw.h no longer renames sha384_final on arm64, so the copies
+  hkdf_hw.c and keysched_hw.c hold start each SHA-384 hash on the SHA-512
+  instructions and end it on sha512.c. Every digest is the same, because
+  the two paths keep one state, so no vector fails; a session that stated
+  the instructions runs part of its SHA-384 calls on the portable code.
+  The script reads the symbols each copy calls, for arm64 under the
+  pinned clang, and requires the three SHA-384 calls on their _hw names
+  and none on sha512.c's.
+
+--- old
+#define sha384_final sha384_final_hw
+--- new

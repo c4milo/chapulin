@@ -99,6 +99,11 @@ static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
     if ((value & CH_CPU_CONSTANT_TIME_SHA256) != 0 && !cpu_has_sha256_instructions()) {
         absent |= CH_CPU_CONSTANT_TIME_SHA256;
     }
+#ifdef __aarch64__
+    if ((value & CH_CPU_CONSTANT_TIME_SHA512) != 0 && !cpu_has_sha512_instructions()) {
+        absent |= CH_CPU_CONSTANT_TIME_SHA512;
+    }
+#endif
     return absent;
 }
 
@@ -115,10 +120,15 @@ static inline uint32_t test_cpu_value(size_t i) {
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs
-// a hash on, where this CPU has the instructions, so 0 on a CPU with none of them. Where the
-// environment requires the instructions (test/hash_instructions_cpu.h), a CPU that lacks any
-// ends the binary with status 1.
+// a hash on, the SHA-256 bit and on arm64 the SHA-512 bit, where this CPU has the
+// instructions, so 0 on a CPU with none of them. Where the environment requires the
+// instructions (test/hash_instructions_cpu.h), a CPU that lacks any ends the binary with
+// status 1.
+#ifdef __aarch64__
+#define TEST_CPU_HASH_BITS (CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512)
+#else
 #define TEST_CPU_HASH_BITS CH_CPU_CONSTANT_TIME_SHA256
+#endif
 static inline uint32_t test_cpu_hash_bits(void) {
     uint32_t absent = test_cpu_absent_hash_bits(TEST_CPU_HASH_BITS);
     if (absent != 0 && hash_instructions_required()) {
@@ -153,9 +163,15 @@ static inline const char *test_cpu_lacks(int *required) {
     }
 #endif
     *required = hash_instructions_required();
-    if ((test_cpu_absent_hash_bits(test_cpu) & CH_CPU_CONSTANT_TIME_SHA256) != 0) {
+    uint32_t absent = test_cpu_absent_hash_bits(test_cpu);
+    if ((absent & CH_CPU_CONSTANT_TIME_SHA256) != 0) {
         return "the SHA-256 instructions";
     }
+#ifdef __aarch64__
+    if ((absent & CH_CPU_CONSTANT_TIME_SHA512) != 0) {
+        return "the SHA-512 instructions";
+    }
+#endif
     return NULL;
 }
 #endif

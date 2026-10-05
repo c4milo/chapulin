@@ -64,6 +64,18 @@ static inline int cpu_has_sha256_instructions(void) {
 #endif
 }
 
+#ifdef __aarch64__
+// What CH_CPU_CONSTANT_TIME_SHA512 names: FEAT_SHA512, an arm64 feature.
+// An x86-64 object refuses the bit, and no x86-64 binary asks.
+static inline int cpu_has_sha512_instructions(void) {
+#ifdef __APPLE__
+    return apple_cpu_reports("hw.optional.arm.FEAT_SHA512");
+#else
+    return (getauxval(AT_HWCAP) & HWCAP_SHA512) != 0;
+#endif
+}
+#endif
+
 // Whether a binary whose CPU lacks a hash's instructions must fail rather
 // than skip.
 static inline int hash_instructions_required(void) {

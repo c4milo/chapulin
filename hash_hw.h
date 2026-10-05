@@ -14,14 +14,14 @@
 //
 // Every call in the two files runs the one hash its hash_len argument names, so a copy that
 // holds two hashes still runs each on its own bit alone: the entries pick a copy by the bit of
-// that hash (hkdf.h's hash_on_instructions). SHA-384 has no entry on the instructions yet, so
-// the copies' SHA-384 arms call sha512.c's portable code, and no entry calls a copy at that
-// hash length.
+// that hash (hkdf.h's hash_on_instructions). On x86-64 no object holds SHA-384 on instructions,
+// so there the copies' SHA-384 arms call sha512.c's portable code, and no entry calls a copy at
+// that hash length.
 //
 // Every name the copied files define outside their unit is here. A name left out is defined by
-// both copies, and the link of the object refuses it. sha256.h, hkdf.h and keysched.h read
-// CH_HASH_HW_H: a copy takes their declarations of the _hw names and none of their entries,
-// whose two arms the renames would send to one path.
+// both copies, and the link of the object refuses it. sha256.h, sha512.h, hkdf.h and
+// keysched.h read CH_HASH_HW_H: a copy takes their declarations of the _hw names and none of
+// their entries, whose two arms the renames would send to one path.
 #ifndef CH_HASH_HW_H
 #define CH_HASH_HW_H
 
@@ -34,6 +34,16 @@
 #define sha256_update sha256_update_hw
 #define sha256_final sha256_final_hw
 #define sha256_of sha256_of_hw
+
+// sha512.c's five calls that hash, on arm64, where sha512_hw.c holds them. sha512_init and
+// sha384_init keep their names.
+#ifdef __aarch64__
+#define sha512_update sha512_update_hw
+#define sha512_final sha512_final_hw
+#define sha384_final sha384_final_hw
+#define sha512_of sha512_of_hw
+#define sha384_of sha384_of_hw
+#endif
 
 // hkdf.c.
 #define hmac_sha256 hmac_sha256_hw

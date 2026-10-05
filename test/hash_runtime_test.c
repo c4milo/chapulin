@@ -1,32 +1,39 @@
-// bin/hash_runtime_test: which SHA-256 a host object's hash calls run under
-// each ch_cfg.cpu value (docs/decisions.md 93). sha256.h's
-// sha256_on_instructions picks sha256_hw.c's code where the value holds
-// CH_CPU_CONSTANT_TIME_SHA256, and hkdf.h's hash_on_instructions picks the
-// copies hkdf_hw.c and keysched_hw.c hold where the hash a call runs is
-// SHA-256 and the value holds that bit. The two paths compute the same
-// bytes, so no vector can tell which ran: test/hash_runtime_count.c counts
-// the calls into each instead, and runs both on sha256.c's code, so this
-// binary runs no hash instruction and gives the same verdict on every CPU.
+// bin/hash_runtime_test: which SHA-256 and which SHA-512 a host object's
+// hash calls run under each ch_cfg.cpu value (docs/decisions.md 93).
+// sha256.h's sha256_on_instructions picks sha256_hw.c's code where the
+// value holds CH_CPU_CONSTANT_TIME_SHA256, sha512.h's
+// sha512_on_instructions picks sha512_hw.c's on arm64 where it holds
+// CH_CPU_CONSTANT_TIME_SHA512, and hkdf.h's hash_on_instructions picks the
+// copies hkdf_hw.c and keysched_hw.c hold where the value holds the bit of
+// the hash a call runs. The two paths of a hash compute the same bytes, so
+// no vector can tell which ran: test/hash_runtime_count.c counts the calls
+// into each instead, and runs every one on the portable code, so this
+// binary runs no hash instruction and gives the same verdict on every CPU
+// of its architecture.
 //
 // Every row runs under each of the 128 values the seven bits beside
 // CH_CPU_PROBED make, and under 0, which a wiped record direction holds. A
 // row is one call that takes a session's value. It runs first under
 // CH_CPU_PROBED alone, which names no instruction, and that run's calls
-// into sha256.c are the row's count. Under the value, the row must then:
+// into sha256.c and sha512.c are the row's counts. Under the value, the row
+// must then, for each of the two hashes:
 //
 //   - make every one of those calls on the instructions where the value
-//     holds the SHA-256 bit, and none on sha256.c;
-//   - make every one on sha256.c where it does not, and none on the
-//     instructions;
+//     holds the hash's bit, and none on the portable code;
+//   - make every one on the portable code where it does not, and none on
+//     the instructions;
 //   - write the same bytes either way.
 //
 // So a predicate that reads another bit fails under the values that hold
 // one bit and not the other, an entry that leaves a call on the other path
-// fails its count, and a copy that calls sha256.c under its own name fails
-// it too. A row that runs SHA-384 makes no SHA-256 call under any value.
+// fails its count, a copy that calls the portable hash under its own name
+// fails it too, and a SHA-384 call that follows the SHA-256 bit, or a
+// SHA-256 call that follows the SHA-512 bit, fails under a value with one
+// of the two. An x86-64 object holds SHA-512 on sha512.c alone, so there
+// every SHA-512 call must run it under every value.
 //
-// The rows: sha256.h's three entries; hkdf.h's five and keysched.h's, at
-// each hash length the build holds; transcript.h's two; a record
+// The rows: sha256.h's three entries and sha512.h's five; hkdf.h's five
+// and keysched.h's, at each hash length; transcript.h's two; a record
 // direction's keying and its KeyUpdate, which read the direction's cpu,
 // under each suite; and in a QUIC build a level's keys, their update and
 // an Initial packet. The Makefile builds the file twice: as a QUIC object
@@ -40,9 +47,9 @@
 // binaries on a CPU model without any of them.
 //
 // What the instructions compute is held elsewhere: bin/sha2_equiv_test
-// calls them against the portable code, and bin/unit_host and the
-// Wycheproof host leg run the published vectors on them where the CPU has
-// them.
+// calls them against the portable code, and the host vector binaries and
+// the Wycheproof host leg run the published vectors on them where the CPU
+// has them.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +60,7 @@
 #include "keysched.h"
 #include "record.h"
 #include "sha256.h"
+#include "sha512.h"
 #include "suite.h"
 #include "transcript.h"
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -108,14 +116,27 @@ static void fill(uint8_t *p, size_t n, uint8_t seed) {
 }
 
 // What a value names, written here apart from the library's predicates so
-// that a wrong predicate fails a row.
+// that a wrong predicate fails a row: the SHA-256 instructions under the
+// SHA-256 bit, and the SHA-512 instructions under the SHA-512 bit on arm64
+// and under no value on x86-64.
 static int names_sha256(uint32_t cpu) {
     return (cpu & CH_CPU_CONSTANT_TIME_SHA256) != 0;
+}
+
+static int names_sha512(uint32_t cpu) {
+#ifdef __aarch64__
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0;
+#else
+    (void)cpu;
+    return 0;
+#endif
 }
 
 static void reset_calls(void) {
     memset(&sha256_portable_calls, 0, sizeof sha256_portable_calls);
     memset(&sha256_hw_calls, 0, sizeof sha256_hw_calls);
+    memset(&sha512_portable_calls, 0, sizeof sha512_portable_calls);
+    memset(&sha512_hw_calls, 0, sizeof sha512_hw_calls);
 }
 
 static int same_calls(const hash_calls *a, const hash_calls *b) {
@@ -135,37 +156,51 @@ typedef struct {
     void (*call)(uint32_t cpu);
 } row;
 
+// Whether one hash's calls since the last reset are the counted ones, all
+// on the path on_instructions names.
+static int calls_on(int on_instructions, const hash_calls *counted, const hash_calls *portable,
+                    const hash_calls *hw) {
+    const hash_calls *taken = on_instructions ? hw : portable;
+    const hash_calls *left = on_instructions ? portable : hw;
+    return same_calls(taken, counted) && no_calls(left);
+}
+
 // The row under cpu, against the same row under CH_CPU_PROBED alone.
 static void check_row(const row *r, uint32_t cpu) {
     uint8_t want[OUTPUT];
     memset(output, 0, sizeof output);
     reset_calls();
     r->call(CH_CPU_PROBED);
-    hash_calls counted = sha256_portable_calls;
-    int probed_alone_ok = no_calls(&sha256_hw_calls);
+    hash_calls counted256 = sha256_portable_calls;
+    hash_calls counted512 = sha512_portable_calls;
+    int probed_alone_ok = no_calls(&sha256_hw_calls) && no_calls(&sha512_hw_calls);
     memcpy(want, output, sizeof want);
 
     memset(output, 0, sizeof output);
     reset_calls();
     r->call(cpu);
-    const hash_calls *taken = names_sha256(cpu) ? &sha256_hw_calls : &sha256_portable_calls;
-    const hash_calls *left = names_sha256(cpu) ? &sha256_portable_calls : &sha256_hw_calls;
-    int paths_ok = same_calls(taken, &counted) && no_calls(left);
+    int sha256_ok =
+        calls_on(names_sha256(cpu), &counted256, &sha256_portable_calls, &sha256_hw_calls);
+    int sha512_ok =
+        calls_on(names_sha512(cpu), &counted512, &sha512_portable_calls, &sha512_hw_calls);
     int bytes_ok = memcmp(output, want, sizeof want) == 0;
     CHECK(probed_alone_ok);
-    CHECK(paths_ok);
+    CHECK(sha256_ok);
+    CHECK(sha512_ok);
     CHECK(bytes_ok);
-    if (!probed_alone_ok || !paths_ok || !bytes_ok) {
+    if (!probed_alone_ok || !sha256_ok || !sha512_ok || !bytes_ok) {
         (void)fprintf(stderr,
                       "hash runtime: %s at hash length %zu, suite 0x%04x, under ch_cfg.cpu 0x%x: "
-                      "sha256.c took %lu updates, %lu finals and %lu whole messages, and the "
-                      "instructions %lu, %lu and %lu; CH_CPU_PROBED alone gave sha256.c %lu, %lu "
-                      "and %lu\n",
+                      "SHA-256 made %lu, %lu and %lu calls on sha256.c and %lu, %lu and %lu on "
+                      "the instructions, and SHA-512 %lu, %lu and %lu on sha512.c and %lu, %lu "
+                      "and %lu on the instructions\n",
                       r->name, row_hash_len, (unsigned)row_suite, (unsigned)cpu,
                       sha256_portable_calls.updates, sha256_portable_calls.finals,
                       sha256_portable_calls.whole_messages, sha256_hw_calls.updates,
-                      sha256_hw_calls.finals, sha256_hw_calls.whole_messages, counted.updates,
-                      counted.finals, counted.whole_messages);
+                      sha256_hw_calls.finals, sha256_hw_calls.whole_messages,
+                      sha512_portable_calls.updates, sha512_portable_calls.finals,
+                      sha512_portable_calls.whole_messages, sha512_hw_calls.updates,
+                      sha512_hw_calls.finals, sha512_hw_calls.whole_messages);
     }
 }
 
@@ -182,19 +217,51 @@ static void row_sha256_of(uint32_t cpu) {
     sha256_of_cpu(cpu, input, INPUT, output);
 }
 
-// The calls that take no value run sha256.c, whatever a session states.
+// sha512.h's entries: SHA-512 and SHA-384, each streamed and in one call.
+static void row_sha512_update_final(uint32_t cpu) {
+    sha512 s;
+    sha512_init(&s);
+    sha512_update_cpu(cpu, &s, input, 70);
+    sha512_update_cpu(cpu, &s, input + 70, INPUT - 70);
+    sha512_final_cpu(cpu, &s, output);
+}
+
+static void row_sha384_update_final(uint32_t cpu) {
+    sha512 s;
+    sha384_init(&s);
+    sha512_update_cpu(cpu, &s, input, INPUT);
+    sha384_final_cpu(cpu, &s, output);
+}
+
+static void row_sha512_of(uint32_t cpu) {
+    sha512_of_cpu(cpu, input, INPUT, output);
+}
+
+static void row_sha384_of(uint32_t cpu) {
+    sha384_of_cpu(cpu, input, INPUT, output);
+}
+
+// The calls that take no value run the portable code, whatever a session
+// states.
 static void check_plain_names(void) {
     sha256 s;
+    sha512 wide;
     reset_calls();
     sha256_init(&s);
     sha256_update(&s, input, INPUT);
     sha256_final(&s, output);
     sha256_of(input, INPUT, output);
+    sha384_init(&wide);
+    sha512_update(&wide, input, INPUT);
+    sha384_final(&wide, output);
+    sha512_of(input, INPUT, output);
     hmac_sha256(key, KEY, input, INPUT, output);
+    hmac(SHA384_LEN, key, KEY, input, INPUT, output);
     hkdf_expand_label(SHA256_LEN, pseudorandom_key, "key", NULL, 0, output, 32);
     ks_verify_data(SHA256_LEN, pseudorandom_key, transcript_hash, output);
-    CHECK(no_calls(&sha256_hw_calls));
-    CHECK(!no_calls(&sha256_portable_calls));
+    ks_verify_data(SHA384_LEN, pseudorandom_key, transcript_hash, output);
+    CHECK(no_calls(&sha256_hw_calls) && no_calls(&sha512_hw_calls));
+    CHECK(!no_calls(&sha256_portable_calls) && !no_calls(&sha512_portable_calls));
 }
 
 // hkdf.h's entries. hmac_sha256_cpu runs SHA-256 at every hash length.
@@ -330,6 +397,10 @@ static void row_quic_initial(uint32_t cpu) {
 static const row fixed_rows[] = {
     {"sha256_update_cpu and sha256_final_cpu", row_sha256_update_final},
     {"sha256_of_cpu",                          row_sha256_of          },
+    {"sha512_update_cpu and sha512_final_cpu", row_sha512_update_final},
+    {"sha512_update_cpu and sha384_final_cpu", row_sha384_update_final},
+    {"sha512_of_cpu",                          row_sha512_of          },
+    {"sha384_of_cpu",                          row_sha384_of          },
     {"hmac_sha256_cpu",                        row_hmac_sha256        },
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     {"quic_initial_seal",                      row_quic_initial       },
@@ -404,7 +475,9 @@ int main(void) {
     if (failures == 0) {
         (void)printf("hash runtime: under each of 129 ch_cfg.cpu values, every SHA-256 call of "
                      "every row ran on the instructions where CH_CPU_CONSTANT_TIME_SHA256 was "
-                     "set, and on sha256.c anywhere else\n");
+                     "set and on sha256.c anywhere else, and every SHA-512 call where "
+                     "CH_CPU_CONSTANT_TIME_SHA512 was set in an arm64 object and on sha512.c "
+                     "anywhere else\n");
     }
     return failures != 0;
 }

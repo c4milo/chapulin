@@ -112,6 +112,22 @@ AUDITED = {
         "on it, under a ch_cfg.cpu value with the SHA-256 bit. Delete this "
         "entry if a harness can ever compile the file."
     ),
+    "sha512_hw.c": (
+        "an arm64 host object's SHA-512 and SHA-384 on FEAT_SHA512's "
+        "instructions, written in intrinsics CBMC cannot read, so no harness "
+        "compiles the file, and with no body on any other target. Every "
+        "bitwise operator takes unsigned operands: the rounds and the schedule "
+        "run on uint64x2_t values through the intrinsics, finalize shifts the "
+        "uint64_t byte count and store_digest the uint64_t words of the state, "
+        "and each result narrows to uint8_t. The framing adds and subtracts "
+        "size_t byte counts that the context's fill, below 128, bounds, and "
+        "the round loop's size_t counters stop at 40. "
+        "bin/sha2_equiv_test holds the file to sha512.c's and "
+        "sha512_compress.c's proven code on arm64, and bin/sha512_test_host, "
+        "bin/hkdf384_test_host and the Wycheproof host leg run the published "
+        "vectors on it, under a ch_cfg.cpu value with the SHA-512 bit. Delete "
+        "this entry if a harness can ever compile the file."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` in "
@@ -162,12 +178,12 @@ def shipped_sources():
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
     # pin, wide X25519 field, vector ChaCha20 and Poly1305 sources and
-    # SHA-256 on the CPU's instructions join through build variables or the
-    # host test.
+    # SHA-256 and SHA-512 on the CPU's instructions join through build
+    # variables or the host test.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
-            "poly1305_vector.c", "sha256_hw.c"}
+            "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

@@ -19,10 +19,12 @@
 #            runs the 128-bit vector path, as every host session's does; a
 #            device object runs chacha20.c's portable loop, which
 #            bench/aead.sh times
-#   0x27 ... every bit this CPU has, the value a caller on it would state
-#            (cpu_value below): the native copies, the wide X25519 field,
-#            the vector Poly1305, SHA-256 on the CPU's SHA-256 instructions,
-#            and on x86-64 the AVX2 ChaCha20
+#   0x67 ... every bit this CPU has that an object reads, the value a
+#            caller on it would state (cpu_value below): the native
+#            copies, the wide X25519 field, the vector Poly1305, SHA-256
+#            on the CPU's SHA-256 instructions, on arm64 SHA-384 and
+#            SHA-512 on its SHA-512 instructions, and on x86-64 the AVX2
+#            ChaCha20
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256
@@ -197,6 +199,7 @@ CPU_CONSTANT_TIME_MULTIPLY=0x4
 CPU_AVX2=0x8
 CPU_VAES=0x10
 CPU_CONSTANT_TIME_SHA256=0x20
+CPU_CONSTANT_TIME_SHA512=0x40
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -213,9 +216,11 @@ reports() { # $1 = the list, space separated; the rest = the words
 # The ch_cfg.cpu value a caller on this CPU would state: CH_CPU_PROBED, the
 # multiply bit, the AES bit where the CPU reports the AES instructions and
 # the carry-less multiply, the SHA-256 bit where it reports the SHA-256
+# instructions, on arm64 the SHA-512 bit where it reports the SHA-512
 # instructions, and on x86-64 the AVX2 and VAES bits where it reports
-# those. BENCH_CPU from the environment wins, for a system this function
-# has no probe for. The three timing bits also state that the
+# those. It leaves out CH_CPU_CONSTANT_TIME_SHA3, which no object reads
+# yet. BENCH_CPU from the environment wins, for a system this function
+# has no probe for. The four timing bits also state that the
 # instructions run in constant time in the thread's mode. The bench sets
 # no such mode, neither PSTATE.DIT nor DOITM: it times the paths the bits
 # pick and states nothing a deployment could rely on.
@@ -236,6 +241,9 @@ cpu_value() {
         if [ "$(sysctl -n hw.optional.arm.FEAT_SHA256 2>/dev/null)" = 1 ]; then
             features="$features sha2"
         fi
+        if [ "$(sysctl -n hw.optional.arm.FEAT_SHA512 2>/dev/null)" = 1 ]; then
+            features="$features sha512"
+        fi
         ;;
     "Linux arm64") features=$(sed -n 's/^Features[[:space:]]*: //p' /proc/cpuinfo | head -1) ;;
     "Linux x86_64") features=$(sed -n 's/^flags[[:space:]]*: //p' /proc/cpuinfo | head -1) ;;
@@ -254,6 +262,11 @@ cpu_value() {
         { [ "$ARCH" = x86_64 ] && reports "$features" sha_ni ssse3 sse4_1; }; then
         value=$((value | CPU_CONSTANT_TIME_SHA256))
     fi
+    # arm64 Linux names FEAT_SHA512 sha512. An x86-64 object refuses the
+    # bit.
+    if [ "$ARCH" = arm64 ] && reports "$features" sha512; then
+        value=$((value | CPU_CONSTANT_TIME_SHA512))
+    fi
     if [ "$ARCH" = x86_64 ] && reports "$features" avx2; then
         value=$((value | CPU_AVX2))
         if reports "$features" vaes vpclmulqdq; then
@@ -263,24 +276,17 @@ cpu_value() {
     printf '0x%x\n' "$value"
 }
 
-# The names of the bits a value holds, for the CSV's header.
+# The names of the bits a value holds, for the CSV's header. Each word of
+# the list names one variable above and the bit of cpu_cfg.h it stands for.
 cpu_names() { # $1 = a ch_cfg.cpu value
-    local names=CH_CPU_PROBED
-    if [ $(($1 & CPU_CONSTANT_TIME_AES)) -ne 0 ]; then
-        names="$names, CH_CPU_CONSTANT_TIME_AES"
-    fi
-    if [ $(($1 & CPU_CONSTANT_TIME_MULTIPLY)) -ne 0 ]; then
-        names="$names, CH_CPU_CONSTANT_TIME_MULTIPLY"
-    fi
-    if [ $(($1 & CPU_AVX2)) -ne 0 ]; then
-        names="$names, CH_CPU_AVX2"
-    fi
-    if [ $(($1 & CPU_VAES)) -ne 0 ]; then
-        names="$names, CH_CPU_VAES"
-    fi
-    if [ $(($1 & CPU_CONSTANT_TIME_SHA256)) -ne 0 ]; then
-        names="$names, CH_CPU_CONSTANT_TIME_SHA256"
-    fi
+    local names=CH_CPU_PROBED bit variable
+    for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
+        CONSTANT_TIME_SHA512; do
+        variable=CPU_$bit
+        if [ $(($1 & ${!variable})) -ne 0 ]; then
+            names="$names, CH_CPU_$bit"
+        fi
+    done
     printf '%s\n' "$names"
 }
 

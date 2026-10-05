@@ -1,0 +1,19 @@
+invariant: INV-17
+file: sha512_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: sha384_of_hw returns without wiping the context it hashed in, so its
+  dead frame keeps the end of the input and the digest's words.
+  HMAC-SHA-384 hashes a key longer than a block through this call, and
+  the bytes left are the key's last ones and the value HMAC then uses as
+  its key. The digest is still right, so no vector sees it.
+  bin/sha2_equiv_test copies the stack below one sha384_of_hw call and
+  looks for two 64-bit words in a row that the call computed from its
+  input. The script runs the arm64 binary under qemu-aarch64. The lane
+  skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    sha384_final_hw(&s, out);
+    ct_wipe(&s, sizeof s);
+--- new
+    sha384_final_hw(&s, out);

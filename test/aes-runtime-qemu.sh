@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Shows that a host object's session runs an x86-64 instruction set only
-# where its caller's ch_cfg.cpu names it (docs/decisions.md 81, 89, 90
-# and 93). It builds eight binaries for x86-64, as host objects, statically,
-# and runs them under qemu-x86_64 on CPU models with instructions turned
-# off, where each such instruction raises SIGILL.
+# Shows that a host object's session runs an instruction set only where its
+# caller's ch_cfg.cpu names it (docs/decisions.md 81, 89, 90 and 93). It
+# builds host binaries for x86-64 and for arm64, statically, and runs them
+# under qemu-x86_64 and qemu-aarch64 on CPU models that lack instructions,
+# where each such instruction raises SIGILL.
 #
-# On a model without AES-NI, PCLMULQDQ and AVX2:
+# The x86-64 half, on a model without AES-NI, PCLMULQDQ and AVX2:
 #
 #   - bin/aes_runtime_test "absent" must pass: the published vectors of
 #     RFC 9001 and RFC 9369 Appendix A, byte for byte, on the table and the
@@ -60,13 +60,8 @@
 # the SHA extensions fails these rows and does not skip them:
 #
 #   - bin/sha2_equiv_test must pass: sha256_hw.c against sha256.c over
-#     every length and split it tries, and no schedule or state word of a
-#     call in the stack the call leaves (test/sha2_equiv_test.c). With
-#     "sha2-equiv" as this script's argument it builds and runs that
-#     binary alone, which is what the violations of sha256_hw.c's
-#     constants and of its wipe name as their catch: the run gives one
-#     verdict on every machine, where the machine's own CPU may lack the
-#     instructions.
+#     every length and split it tries, and no value of a call in the stack
+#     the call leaves (test/sha2_equiv_test.c).
 #   - each loop with one end stating the SHA-256 bit and the other not, in
 #     both orders, must pass: 0x25 against 0x5 and 0x27 against 0x7, so
 #     the instructions and sha256.c compute the same transcript hashes
@@ -76,10 +71,7 @@
 #
 #   - bin/x86_kernels_test must pass. It counts the calls the library
 #     sends to each kernel under each ch_cfg.cpu value and runs none of a
-#     kernel's instructions (test/x86_kernels_test.c). With "x86-kernels"
-#     as this script's argument it builds and runs that binary alone,
-#     which is what the violations of chacha20.c's use_avx2 and
-#     gcm_vaes.h's gcm_use_vaes name as their catch.
+#     kernel's instructions (test/x86_kernels_test.c).
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -88,18 +80,53 @@
 #     ch_cfg.cpu value and run no instruction a bit names
 #     (test/hash_runtime_test.c).
 #
-# QEMU's arm64 models all implement the AES and SHA-256 extensions, and
-# none of their properties turns either off (QEMU 8.2 and 10.2), so the
-# arm64 half of the claim rests on the call counts bin/aes_runtime_test
-# and bin/hash_runtime_test read and on test/aes-runtime-disasm.sh, which
-# finds the instructions in aes_hw.c's, ghash_hw.c's, gcm_hw.c's and
-# sha256_hw.c's functions alone.
+# The arm64 half holds the SHA-512 bit, which an arm64 object alone
+# defines. QEMU's cortex-a72 model has FEAT_AES, FEAT_PMULL and FEAT_SHA256
+# and no FEAT_SHA512, and its max model has all four. On cortex-a72:
 #
-# Linux only: qemu-user runs a Linux binary. X86_CC names an x86-64
-# compiler, cc by default, which must be one on an x86-64 host;
-# x86_64-linux-gnu-gcc cross-compiles from an arm64 one. The mips job in
-# .github/workflows/check.yml runs this script on every push, because the
-# qemu-user package it installs carries qemu-x86_64, and
+#   - each loop with "cpu 0x25 0x25" and with "cpu 0x27 0x27", both ends
+#     leaving CH_CPU_CONSTANT_TIME_SHA512 clear, must pass: the second runs
+#     AES-256-GCM, whose key schedule and transcript run SHA-384, on
+#     sha512.c.
+#   - each loop with "cpu 0x65 0x65" and with "cpu 0x67 0x67", the same
+#     values with the bit, must die of SIGILL: a session with the bit
+#     hashes its transcript on sha512_hw.c's instructions.
+#   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass
+#     as an arm64 object, which alone compiles the SHA-512 entries they
+#     count.
+#
+# On max, with CH_REQUIRE_HASH_INSTRUCTIONS=1:
+#
+#   - bin/sha2_equiv_test must pass: sha256_hw.c's arm64 arm against
+#     sha256.c and sha512_hw.c against sha512.c.
+#   - each loop with one end stating the SHA-512 bit and the other not, in
+#     both orders, must pass: 0x65 against 0x25 and 0x67 against 0x27.
+#
+# No QEMU arm64 model turns FEAT_AES or FEAT_SHA256 off (QEMU 8.2 and
+# 10.2), so for those two the arm64 half of the claim rests on the call
+# counts bin/aes_runtime_test and bin/hash_runtime_test read and on
+# test/aes-runtime-disasm.sh, which finds the instructions in aes_hw.c's,
+# ghash_hw.c's, gcm_hw.c's and sha256_hw.c's functions alone.
+#
+# One argument runs part of this, which is what a violation names as its
+# catch when its edit shows on one architecture alone, so that its verdict
+# is the same on every machine:
+#
+#   x86-kernels       bin/x86_kernels_test for x86-64, for the violations
+#                     of chacha20.c's use_avx2 and gcm_vaes.h's
+#                     gcm_use_vaes
+#   sha2-equiv        bin/sha2_equiv_test for x86-64 and for arm64, for the
+#                     violations of what sha256_hw.c and sha512_hw.c
+#                     compute and wipe
+#   arm64-hash-count  the two counting binaries for arm64, for the
+#                     violations of the entries an arm64 object alone
+#                     compiles
+#
+# Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
+# two compilers. Each is cc by default where cc targets its architecture,
+# and x86_64-linux-gnu-gcc or aarch64-linux-gnu-gcc where it does not. The
+# mips job in .github/workflows/check.yml runs this script on every push,
+# because the qemu-user package it installs carries both emulators, and
 # test/docker-aes-runtime-qemu.sh runs it in a container elsewhere.
 cd "$(dirname "$0")/.." || exit 1
 # Several runs below must die of SIGILL. Under a core limit above 0,
@@ -109,25 +136,49 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count]" >&2
     exit 2
     ;;
 esac
-x86_cc=${X86_CC:-cc}
-qemu=${QEMU_X86_64:-qemu-x86_64}
-command -v "$qemu" > /dev/null || { echo "aes-runtime-qemu: $qemu is missing" >&2; exit 1; }
-"$x86_cc" -dM -E -x c /dev/null | grep -qw __x86_64__ ||
-    { echo "aes-runtime-qemu: $x86_cc does not compile for x86-64; set X86_CC" >&2; exit 1; }
-out=bin/qemu
-mkdir -p "$out"
+
+# The compiler for one architecture: the one the environment names, or cc
+# where cc targets the architecture, or the cross gcc.
+compiler_for() { # $1 = the environment's value, $2 = the target's macro, $3 = the cross gcc
+    local cc=$1
+    if [ -z "$cc" ]; then
+        cc=$3
+        cc -dM -E -x c /dev/null 2> /dev/null | grep -qw "$2" && cc=cc
+    fi
+    "$cc" -dM -E -x c /dev/null 2> /dev/null | grep -qw "$2" ||
+        { echo "aes-runtime-qemu: $cc does not compile for $2; set X86_CC or ARM64_CC" >&2; exit 1; }
+    printf '%s\n' "$cc"
+}
+# A part that runs one architecture's binaries needs that architecture's
+# compiler and emulator alone.
+x86_cc=""
+arm64_cc=""
+x86_qemu=${QEMU_X86_64:-qemu-x86_64}
+arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
+if [ "$only" != arm64-hash-count ]; then
+    x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
+    command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
+fi
+if [ "$only" != x86-kernels ]; then
+    arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
+    command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
+fi
+x86_out=bin/qemu
+arm64_out=bin/qemu-arm64
+mkdir -p "$x86_out" "$arm64_out"
 # No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
 # both multiplies and whose ct.h refuses the define.
 flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -I. -Itest
        -DCH_RAND_EXTERN)
 runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
+exporter=(-DCH_EXPORTER -DHKDF_LABEL_MAX=32)
 # Each binary links the sources its rule in the Makefile links, one list
 # a line, so each list here is the one check links.
 lists=$(make -s --no-print-directory print-aes-runtime-qemu-srcs) ||
@@ -143,21 +194,26 @@ read -r -a hash_count_quic_srcs <<< "$(sed -n 8p <<< "$lists")"
 [ "${#hash_count_quic_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than eight lists" >&2; exit 1; }
 
-# Runs one binary of $out on a CPU model and requires its exit status. A
-# run that must pass prints what it wrote when it does not.
-expect() { # $1 = model, $2 = the status, $3 = what a wrong status means, $4... = binary and arguments
-    local model=$1 want=$2 meaning=$3 rc=0
-    shift 3
-    "$qemu" -cpu "$model" "$out/$1" "${@:2}" > "$out/row.log" 2>&1 || rc=$?
+# Runs one binary on a CPU model and requires its exit status. A run that
+# must pass prints what it wrote when it does not.
+expect_on() { # $1 = qemu, $2 = its binaries' directory, $3 = model, $4 = the status, $5 = what a wrong status means, $6... = binary and arguments
+    local emulator=$1 out=$2 model=$3 want=$4 meaning=$5 rc=0
+    shift 5
+    "$emulator" -cpu "$model" "$out/$1" "${@:2}" > "$out/row.log" 2>&1 || rc=$?
     [ "$rc" -eq "$want" ] && return 0
     [ "$want" -ne 0 ] || cat "$out/row.log" >&2
-    echo "aes-runtime-qemu: on $model, $* exited $rc and not $want: $meaning" >&2
+    echo "aes-runtime-qemu: $emulator on $model, $* exited $rc and not $want: $meaning" >&2
     exit 1
 }
+expect() { expect_on "$x86_qemu" "$x86_out" "$@"; }
+expect_arm64() { expect_on "$arm64_qemu" "$arm64_out" "$@"; }
 sigill=132
+# QEMU's arm64 model without FEAT_SHA512, which has FEAT_AES, FEAT_PMULL
+# and FEAT_SHA256.
+no_sha512=cortex-a72
 
-if [ "$only" != sha2-equiv ]; then
-    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/x86_kernels_test" \
+if [ -z "$only" ] || [ "$only" = x86-kernels ]; then
+    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/x86_kernels_test" \
         test/x86_kernels_test.c test/x86_kernels_count.c "${kernels_test_srcs[@]}" || exit 1
     expect max 0 "a call ran a kernel its ch_cfg.cpu value does not name, or ran none where it does" \
         x86_kernels_test
@@ -167,31 +223,55 @@ if [ "$only" = x86-kernels ]; then
     exit 0
 fi
 
-# sha256_hw.c against sha256.c, on the model with every instruction. The
-# binary fails where the model lacks the SHA extensions, so this row
-# cannot pass by skipping.
-"$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_EXPORTER -DHKDF_LABEL_MAX=32 \
-    -o "$out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
-CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
-    "sha256_hw.c and sha256.c disagree, a call left its schedule or its state on the stack, or this qemu's max model lacks the SHA extensions" \
-    sha2_equiv_test
+if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
+    # sha256_hw.c against sha256.c, and on arm64 sha512_hw.c against
+    # sha512.c, each on the model with every instruction. The binary fails
+    # where the model lacks a hash's instructions, so these rows cannot pass
+    # by skipping.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
+        -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
+        "sha256_hw.c and sha256.c disagree, a call left a value it computed on the stack, or this qemu's max model lacks the SHA extensions" \
+        sha2_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
+        -o "$arm64_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
+        "sha256_hw.c or sha512_hw.c disagrees with the portable code, a call left a value it computed on the stack, or this qemu's max model lacks FEAT_SHA256 or FEAT_SHA512" \
+        sha2_equiv_test
+fi
 if [ "$only" = sha2-equiv ]; then
-    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c on the SHA extensions"
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c on x86-64 and arm64, and sha512_hw.c to sha512.c on arm64"
     exit 0
 fi
 
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/aes_runtime_test" \
+# The two counting binaries for arm64, which alone compiles the SHA-512
+# entries. They run no hash instruction, so the model without FEAT_SHA512
+# runs them.
+"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$arm64_out/hash_runtime_test" \
+    test/hash_runtime_test.c "${hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
+"$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$arm64_out/hash_runtime_exporter_test" \
+    test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
+for b in hash_runtime_test hash_runtime_exporter_test; do
+    expect_arm64 "$no_sha512" 0 \
+        "a hash call ran on a path its ch_cfg.cpu value does not name" "$b"
+done
+if [ "$only" = arm64-hash-count ]; then
+    echo "aes-runtime-qemu: the two counting binaries counted each hash's calls under every ch_cfg.cpu value in an arm64 object"
+    exit 0
+fi
+
+"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/aes_runtime_test" \
     test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${runtime_test_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+    -o "$x86_out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+    -o "$x86_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
-    -o "$out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/hash_runtime_test" \
+    -o "$x86_out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/hash_runtime_test" \
     test/hash_runtime_test.c "${hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" "${runtime[@]}" -DCH_EXPORTER -DHKDF_LABEL_MAX=32 \
-    -o "$out/hash_runtime_exporter_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$x86_out/hash_runtime_exporter_test" \
+    test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
 loops=(quic_loop_aes webpki_loop_aes)
 
 # No AES-NI, PCLMULQDQ or AVX2.
@@ -233,7 +313,7 @@ expect "$no_sha" 0 "a row without the SHA-256 bit derived its Initial keys on a 
     aes_runtime_test present
 
 # None of the instructions a ch_cfg.cpu bit names. The two binaries that
-# count each hash's calls run both paths on sha256.c's code and seal
+# count each hash's calls run every path on the portable code and seal
 # their Initial packet on the table, so they must pass here.
 no_named="$bare,-sha-ni"
 for b in hash_runtime_test hash_runtime_exporter_test; do
@@ -254,7 +334,7 @@ done
 # Every instruction this qemu has. One end on a kernel and the other on
 # the 128-bit path must compute the same records and packets. The probe is
 # the one the test binaries ask their CPU with (test/x86_kernels_cpu.h).
-cat > "$out/probe.c" << 'PROBE'
+cat > "$x86_out/probe.c" << 'PROBE'
 #include <stdio.h>
 
 #include "x86_kernels_cpu.h"
@@ -265,8 +345,8 @@ int main(void) {
     return 0;
 }
 PROBE
-"$x86_cc" "${flags[@]}" -o "$out/probe" "$out/probe.c" || exit 1
-cpuid=$("$qemu" -cpu max "$out/probe") ||
+"$x86_cc" "${flags[@]}" -o "$x86_out/probe" "$x86_out/probe.c" || exit 1
+cpuid=$("$x86_qemu" -cpu max "$x86_out/probe") ||
     { echo "aes-runtime-qemu: the CPU probe failed on max" >&2; exit 1; }
 mixed="no handshake between a kernel and a 128-bit path: this qemu's max model lacks AVX2"
 if grep -qw avx2 <<< "$cpuid"; then
@@ -283,10 +363,35 @@ if grep -qw avx2 <<< "$cpuid"; then
         done
     fi
 fi
+
+# The arm64 half: the two loops as an arm64 host object, whose sessions
+# hash SHA-384 on the SHA-512 instructions exactly where their ch_cfg.cpu
+# holds the SHA-512 bit.
+"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
+    -o "$arm64_out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
+    -o "$arm64_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+for b in "${loops[@]}"; do
+    for bits in 0x25 0x27; do
+        expect_arm64 "$no_sha512" 0 "a session without the SHA-512 bit ran a SHA-512 instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+    for bits in 0x65 0x67; do
+        expect_arm64 "$no_sha512" "$sigill" "a session with the SHA-512 bit ran no SHA-512 instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x65 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x25 0x65
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x67 0x27
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x27 0x67
+done
+
 echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU_AVX2 passed in the" \
     "vectors and both loops, and the rows with either died of SIGILL; on $no_avx2 the rows with" \
     "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on $no_sha the rows" \
     "without the SHA-256 bit passed and the rows with it died of SIGILL; on $no_named the two" \
     "binaries that count each hash's calls passed; on max, sha256_hw.c" \
     "agreed with sha256.c, one end on the SHA extensions and the other on sha256.c agreed, and" \
-    "$mixed"
+    "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
+    "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \
+    "instructions and the other on sha512.c agreed"

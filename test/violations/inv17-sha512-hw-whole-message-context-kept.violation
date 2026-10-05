@@ -1,0 +1,16 @@
+invariant: INV-17
+file: sha512_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: sha512_of_hw returns without wiping the context it hashed in, so its
+  dead frame keeps the end of the input and the digest's eight words. The
+  digest is still right, so no vector sees it. bin/sha2_equiv_test copies
+  the stack below one sha512_of_hw call and looks for two 64-bit words in
+  a row that the call computed from its input. The script runs the arm64
+  binary under qemu-aarch64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    sha512_final_hw(&s, out);
+    ct_wipe(&s, sizeof s);
+--- new
+    sha512_final_hw(&s, out);

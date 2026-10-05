@@ -1,0 +1,23 @@
+invariant: INV-16
+file: sha512_hw.c
+catches: test/hash-builds.sh
+reason: sha512_hw.c drops the target attribute that turns the SHA-512
+  instructions on for its own functions, so the file compiles only where
+  the whole object is built with the instruction flag, and an object
+  built that way may run them in code no CH_CPU_CONSTANT_TIME_SHA512 bit
+  ever chose. The script compiles the file for arm64 with no instruction
+  flag and requires the five entries and the instructions there.
+
+--- old
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((target("sha3"))), apply_to = function)
+#else
+#pragma GCC push_options
+#pragma GCC target("+sha3")
+#endif
+--- new
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((cold)), apply_to = function)
+#else
+#pragma GCC push_options
+#endif

@@ -1,0 +1,18 @@
+invariant: INV-16
+file: hkdf.h
+catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
+reason: hkdf.h's hash_on_instructions answers for a SHA-384 call with the
+  SHA-256 bit. An arm64 session that stated the SHA-256 instructions alone
+  then runs HMAC-SHA-384 and its key schedule in the copies, whose SHA-384
+  runs on the SHA-512 instructions it never stated, and one that stated
+  the SHA-512 instructions alone runs sha512.c (docs/decisions.md 93). The
+  bytes are the same. On x86-64 the copies' SHA-384 runs sha512.c, so only
+  an arm64 object shows it: bin/hash_runtime_test counts each hash's calls
+  apart, under values that hold one bit and not the other, and the script
+  runs the arm64 binaries under qemu-aarch64. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+        return sha512_on_instructions(cpu);
+--- new
+        return sha256_on_instructions(cpu);

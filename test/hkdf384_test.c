@@ -16,6 +16,14 @@
 //
 // Its own binary built with -DCH_HASH_SHA384, so it runs on every host,
 // with or without the AES instructions a suite build needs.
+//
+// The calls but the first go through test/test_hash.h. bin/hkdf384_test
+// makes the portable calls. bin/hkdf384_test_host makes them as a host
+// object's session does, and the Makefile runs it once more on arm64 under
+// a ch_cfg.cpu value with CH_CPU_CONSTANT_TIME_SHA512, where HMAC-SHA-384
+// and the key schedule run on the copies over sha512_hw.c
+// (docs/decisions.md 93). hmac_sha384 has no entry that takes a value, so
+// its one direct call runs sha512.c in every binary.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +32,7 @@
 #include "hkdf.h"
 #include "keysched.h"
 #include "sha512.h"
+#include "test_hash.h"
 
 #ifndef CH_HASH_SHA384
 #error "test/hkdf384_test.c runs the SHA-384 key schedule: build it with -DCH_HASH_SHA384"
@@ -79,15 +88,15 @@ static void test_rfc4231_sha384(void) {
                  "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59c"
                  "faea9ea9076ede7f4af152e8b2fa9cb6"));
 
-    hmac(SHA384_LEN, (const uint8_t *)"Jefe", 4, (const uint8_t *)"what do ya want for nothing?",
-         28, out);
+    TEST_HMAC(SHA384_LEN, (const uint8_t *)"Jefe", 4,
+              (const uint8_t *)"what do ya want for nothing?", 28, out);
     CHECK(eq_hex(out, sizeof out,
                  "af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e"
                  "8e2240ca5e69e2c78b3239ecfab21649"));
 
     memset(key, 0xaa, 20);
     memset(data, 0xdd, 50);
-    hmac(SHA384_LEN, key, 20, data, 50, out);
+    TEST_HMAC(SHA384_LEN, key, 20, data, 50, out);
     CHECK(eq_hex(out, sizeof out,
                  "88062608d3e6ad8a0aa2ace014c8a86f0aa635d947ac9febe83ef4e55966144b"
                  "2a5ab39dc13814b94e3ab6e101a34f27"));
@@ -96,7 +105,7 @@ static void test_rfc4231_sha384(void) {
         key[i] = (uint8_t)(i + 1);
     }
     memset(data, 0xcd, 50);
-    hmac(SHA384_LEN, key, 25, data, 50, out);
+    TEST_HMAC(SHA384_LEN, key, 25, data, 50, out);
     CHECK(eq_hex(out, sizeof out,
                  "3e8a69b7783c25851933ab6290af6ca77a9981480850009cc5577c6e1f573b4e"
                  "6801dd23c4a7d679ccf8a386c674cffb"));
@@ -104,12 +113,13 @@ static void test_rfc4231_sha384(void) {
     // Cases 6 and 7: a key longer than SHA-384's 128-byte block, which
     // HMAC hashes first (RFC 2104 §2).
     memset(key, 0xaa, sizeof key);
-    hmac(SHA384_LEN, key, sizeof key,
-         (const uint8_t *)"Test Using Larger Than Block-Size Key - Hash Key First", 54, out);
+    TEST_HMAC(SHA384_LEN, key, sizeof key,
+              (const uint8_t *)"Test Using Larger Than Block-Size Key - Hash Key First", 54, out);
     CHECK(eq_hex(out, sizeof out,
                  "4ece084485813e9088d2c63a041bc5b44f9ef1012a2b588f3cd11f05033ac4c6"
                  "0c2ef6ab4030fe8296248df163f44952"));
-    hmac(SHA384_LEN, key, sizeof key, (const uint8_t *)big_key_data, strlen(big_key_data), out);
+    TEST_HMAC(SHA384_LEN, key, sizeof key, (const uint8_t *)big_key_data, strlen(big_key_data),
+              out);
     CHECK(eq_hex(out, sizeof out,
                  "6617178e941f020d351e2f254e8fd32c602420feb0b8fb9adccebb82461e99c5"
                  "a678cc31e799176d3860e6110c46523e"));
@@ -119,8 +129,8 @@ static void test_rfc4231_sha384(void) {
 // the same "Jefe" input, 32 bytes.
 static void test_dispatch_sha256(void) {
     uint8_t out[SHA256_LEN];
-    hmac(SHA256_LEN, (const uint8_t *)"Jefe", 4, (const uint8_t *)"what do ya want for nothing?",
-         28, out);
+    TEST_HMAC(SHA256_LEN, (const uint8_t *)"Jefe", 4,
+              (const uint8_t *)"what do ya want for nothing?", 28, out);
     CHECK(eq_hex(out, sizeof out,
                  "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"));
 }
@@ -134,7 +144,7 @@ static void test_sha384_schedule(void) {
     static const uint8_t no_psk[SHA384_LEN] = {0};
     uint8_t early[SHA384_LEN];
     uint8_t binder_key[SHA384_LEN];
-    ks_early(SHA384_LEN, no_psk, sizeof no_psk, 0, early, binder_key);
+    TEST_KS_EARLY(SHA384_LEN, no_psk, sizeof no_psk, 0, early, binder_key);
     CHECK(eq_hex(early, sizeof early,
                  "7ee8206f5570023e6dc7519eb1073bc4e791ad37b5c382aa10ba18e2357e7169"
                  "71f9362f2c2fe2a76bfd78dfec4ea9b5"));
@@ -149,8 +159,8 @@ static void test_sha384_schedule(void) {
     uint8_t handshake_secret[SHA384_LEN];
     uint8_t c_hs[SHA384_LEN];
     uint8_t s_hs[SHA384_LEN];
-    ks_handshake(SHA384_LEN, early, shared, sizeof shared, hello_hash, handshake_secret, c_hs,
-                 s_hs);
+    TEST_KS_HANDSHAKE(SHA384_LEN, early, shared, sizeof shared, hello_hash, handshake_secret, c_hs,
+                      s_hs);
     CHECK(eq_hex(handshake_secret, sizeof handshake_secret,
                  "bdbbe8757494bef20de932598294ea65b5e6bf6dc5c02a960a2de2eaa9b07c92"
                  "9078d2caa0936231c38d1725f179d299"));
@@ -163,19 +173,20 @@ static void test_sha384_schedule(void) {
 
     uint8_t key[32];
     uint8_t iv[12];
-    hkdf_expand_label(SHA384_LEN, s_hs, "key", NULL, 0, key, sizeof key);
-    hkdf_expand_label(SHA384_LEN, s_hs, "iv", NULL, 0, iv, sizeof iv);
+    TEST_HKDF_EXPAND_LABEL(SHA384_LEN, s_hs, "key", NULL, 0, key, sizeof key);
+    TEST_HKDF_EXPAND_LABEL(SHA384_LEN, s_hs, "iv", NULL, 0, iv, sizeof iv);
     CHECK(eq_hex(key, sizeof key,
                  "9f13575ce3f8cfc1df64a77ceaffe89700b492ad31b4fab01c4792be1b266b7f"));
     CHECK(eq_hex(iv, sizeof iv, "9563bc8b590f671f488d2da3"));
-    hkdf_expand_label(SHA384_LEN, c_hs, "key", NULL, 0, key, sizeof key);
-    hkdf_expand_label(SHA384_LEN, c_hs, "iv", NULL, 0, iv, sizeof iv);
+    TEST_HKDF_EXPAND_LABEL(SHA384_LEN, c_hs, "key", NULL, 0, key, sizeof key);
+    TEST_HKDF_EXPAND_LABEL(SHA384_LEN, c_hs, "iv", NULL, 0, iv, sizeof iv);
     CHECK(eq_hex(key, sizeof key,
                  "1135b4826a9a70257e5a391ad93093dfd7c4214812f493b3e3daae1eb2b1ac69"));
     CHECK(eq_hex(iv, sizeof iv, "4256d2e0e88babdd05eb2f27"));
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     test_rfc4231_sha384();
     test_dispatch_sha256();
     test_sha384_schedule();

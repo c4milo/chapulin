@@ -1,0 +1,15 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object packages sha512_hw.c wherever it packages sha512.c,
+  with or without SUITE=aesgcm. A TRUST=webpki object without the suite
+  hashes certificates with sha512.c through calls that take no ch_cfg.cpu,
+  so no call in it runs sha512_hw.c, and the object would hold SHA-512
+  instructions nothing in it can run (docs/decisions.md 93). The lint
+  reads each object's source list and refuses sha512_hw.c in a host object
+  without the suite.
+
+--- old
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,sha512_hw.c),$(call hash_hw_of,$(LIB_SRCS)))
+--- new
+LIB_SRCS += $(call hash_hw_of,$(LIB_SRCS))

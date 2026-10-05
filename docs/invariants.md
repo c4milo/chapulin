@@ -2671,43 +2671,69 @@ last `ROLE=server` stub, as the entry said it would.
   kernels").
   A host object holds SHA-256 on the CPU's SHA-256 instructions,
   `sha256_hw.c`, beside `sha256.c`: FEAT_SHA256 on arm64, and the SHA
-  extensions with SSSE3 and SSE4.1 on x86-64 (decision 93). A hash reads
-  HMAC keys and traffic secrets, so the instructions run only for a
-  session whose caller set `CH_CPU_CONSTANT_TIME_SHA256`, which states
-  that they take a time that does not depend on their operands in the
-  mode the session's thread runs in. `sha256.h`'s
-  `sha256_on_instructions` reads the bit, and `hkdf.h`'s
-  `hash_on_instructions` reads it for a call whose `hash_len` names
-  SHA-256. The entries that end `sha256.h`, `hkdf.h` and `keysched.h`
-  each take the session's `ch_cfg.cpu` first and branch once on one of
-  the two, and `hkdf_hw.c` and `keysched_hw.c` are those files compiled
-  once more with their SHA-256 calls on the instructions (`hash_hw.h`).
-  A call that takes no value runs `sha256.c` in every object, so a
-  caller with no session's value runs no hash instruction. `sha256_hw.c`
-  reads no table with a secret index and branches on lengths alone: the
-  two 64-bit specs hold its conditional branches at 8 on each, the HKDF
-  copy's at 16 and the key schedule copy's at 0, and each branch was
-  read against its source.
+  extensions with SSSE3 and SSE4.1 on x86-64. An arm64 host object with
+  `SUITE=aesgcm` holds SHA-384 and SHA-512 on FEAT_SHA512's
+  instructions, `sha512_hw.c`, beside `sha512.c` (decision 93). A hash
+  reads HMAC keys and traffic secrets, so each hash's instructions run
+  only for a session whose caller set that hash's bit,
+  `CH_CPU_CONSTANT_TIME_SHA256` or `CH_CPU_CONSTANT_TIME_SHA512`, which
+  states that they take a time that does not depend on their operands in
+  the mode the session's thread runs in. `sha256.h`'s
+  `sha256_on_instructions` and `sha512.h`'s `sha512_on_instructions`
+  each read one bit, and `hkdf.h`'s `hash_on_instructions` reads the bit
+  of the hash a call's `hash_len` names. The entries that end
+  `sha256.h`, `sha512.h`, `hkdf.h` and `keysched.h` each take the
+  session's `ch_cfg.cpu` first and branch once on one of the three, and
+  `hkdf_hw.c` and `keysched_hw.c` are those files compiled once more
+  with their hash calls on the instructions (`hash_hw.h`). A session
+  that states one hash's instructions runs the other hash on the
+  portable code. `sha512_hw.c`'s target attribute turns on FEAT_SHA3's
+  four instructions beside FEAT_SHA512's, a compiler writes them for an
+  exclusive OR in plain C, and the SHA-512 bit does not name them, so
+  the file computes no exclusive OR and its object holds none of the
+  four. A call that takes no value runs the portable code in
+  every object, so a caller with no session's value runs no hash
+  instruction. Neither file reads a table with a secret index, and both
+  branch on lengths alone: the two 64-bit specs hold `sha256_hw.c`'s
+  conditional branches at 8 on each, `sha512_hw.c`'s at 12 on arm64 and
+  0 on x86-64, where it has no body, the HKDF copy's at 16 and the key
+  schedule copy's at 0, and each branch was read against its source.
   `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test` count the
-  calls into each path under 129 `ch_cfg.cpu` values, and
-  `test/hash-builds.sh` holds the instructions to `sha256_hw.c` and each
-  copy's calls to the `_hw` names, for x86-64 and arm64 under the pinned
-  clang (docs/verification.md, "The hash instructions"). Nine violations
-  break those rules. `inv16-sha256-instructions-without-bit` inverts the
-  predicate and `inv16-sha256-reads-sha512-bit` reads another hash's
-  bit; `inv16-hkdf-extract-entry-inverted` and
+  calls into each path of each hash under 129 `ch_cfg.cpu` values, and
+  `test/hash-builds.sh` holds each hash's instructions to its file and
+  each copy's calls to the `_hw` names, for x86-64 and arm64 under the
+  pinned clang (docs/verification.md, "The hash instructions").
+  Eighteen violations break those rules.
+  `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
+  and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
+  `inv16-hkdf-extract-entry-inverted` and
   `inv16-ks-exporter-entry-inverted` each invert one entry, and
   `inv16-record-keys-direction-under-every-bit` keys a record direction
   under a value with every bit. The counting tests catch those five.
-  `inv16-hash-copy-final-on-portable` leaves one of a copy's three hash
-  calls on `sha256.c`, and `inv16-sha256-hw-without-target` drops the
-  file's target attribute; `test/hash-builds.sh` catches both.
+  `inv16-sha512-instructions-without-bit`,
+  `inv16-sha512-reads-sha256-bit` and
+  `inv16-sha512-update-entry-inverted` do the same to `sha512.h`, and
+  `inv16-sha384-call-follows-sha256-bit` answers for a SHA-384 call with
+  the SHA-256 bit. Only an arm64 object compiles what those four edit, so
+  the counting tests catch them built for arm64, under `qemu-aarch64`.
+  `inv16-hash-copy-final-on-portable` and
+  `inv16-hash-copy-sha384-final-on-portable` each leave one of a copy's
+  hash calls on the portable code, and
+  `inv16-sha256-hw-without-target` and `inv16-sha512-hw-without-target`
+  each drop a file's target attribute, and
+  `inv16-sha512-hw-runs-sha3-instruction` computes a round's sum through
+  FEAT_SHA3's EOR3; `test/hash-builds.sh` catches the five.
+  `inv16-sha512-hw-packaged-without-suite` packages `sha512_hw.c`
+  in a host object none of whose calls runs it, and
+  `lint-trust-separation` catches it.
   `inv16-transcript-hashed-under-every-bit` hashes a client's first
   message under a value with every bit, which no count sees, and the
   qemu lane catches it on a CPU model without the SHA extensions.
-  `sha256-hw-round-constant-off-by-one` changes one constant, and
-  `bin/sha2_equiv_test` catches it under `qemu-x86_64`, whose `max`
-  model has the instructions on every host.
+  `sha256-hw-round-constant-off-by-one` and
+  `sha512-hw-round-constant-off-by-one` each change one constant, and
+  `bin/sha2_equiv_test` catches them under `qemu-x86_64` and
+  `qemu-aarch64`, whose `max` models have the instructions on every
+  host.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -3562,26 +3588,36 @@ last `ROLE=server` stub, as the entry said it would.
   packet after it in one datagram, and requires the failed open to leave
   the header unprotected, as it does before the AEAD runs, zeros in the
   payload, and the tag and the packet after it as they arrived.
-  `sha256_hw.c` keeps every value its compression function computes
-  from a block in one `block_state`, and wipes it when the call ends: the
-  message schedule, the working variables and the state the block began
-  with. Under HMAC the first block is the key, and the state after it
-  stands for the key (decision 93). It reads the state a block began
-  with through a volatile lvalue, because gcc 13 on x86-64, holding that
-  state in a register across the sixty-four rounds, put one half in a
-  stack slot of its own. `sha256_of_hw` also wipes the context it hashes
-  in. `bin/sha2_equiv_test` copies the stack below five kinds of call and
-  requires no four words in a row that the call computed from its input
-  (`test/sha2_equiv_residue.h`). Four violations each undo one of those:
-  `inv17-sha256-hw-block-state-kept` drops the wipe of the
-  `block_state`, `inv17-sha256-hw-whole-message-context-kept` the wipe of
-  the context, and `inv17-sha256-hw-start-state-in-spill-slot` the
-  volatile read, and `inv17-sha256-hw-round-input-outside-block-state`
-  moves a round's input out of the `block_state`. The binary catches
-  each under `qemu-x86_64`, the target where the last two show.
+  `sha256_hw.c` and `sha512_hw.c` each keep every value their
+  compression function computes from a block in one `block_state`, and
+  wipe it when the call ends: the message schedule, the working
+  variables and the state the block began with. Under HMAC the first
+  block is the key, and the state after it stands for the key (decision
+  93). Each reads the state a block began with through a volatile
+  lvalue, because gcc 13 on x86-64, holding that state in a register
+  across SHA-256's sixty-four rounds, put one half in a stack slot of
+  its own. `sha256_of_hw`, `sha384_of_hw` and `sha512_of_hw` also wipe
+  the context they hash in. `bin/sha2_equiv_test` copies the stack below
+  five kinds of SHA-256 call and six kinds of SHA-512 call, and requires
+  no four 32-bit words in a row, or two 64-bit ones, that the call
+  computed from its input (`test/sha2_equiv_residue.h`,
+  `test/sha2_equiv_residue512.h`). Eight violations each undo one of
+  those. `inv17-sha256-hw-block-state-kept` and
+  `inv17-sha512-hw-block-state-kept` drop the wipe of a `block_state`;
+  `inv17-sha256-hw-whole-message-context-kept`,
+  `inv17-sha384-hw-whole-message-context-kept` and
+  `inv17-sha512-hw-whole-message-context-kept` the wipe of a context;
+  `inv17-sha256-hw-start-state-in-spill-slot` the volatile read; and
+  `inv17-sha256-hw-round-input-outside-block-state` and
+  `inv17-sha512-hw-round-sum-outside-block-state` each move one value of
+  a round out of the `block_state`. The binary catches each under
+  `qemu-x86_64` or `qemu-aarch64`, the target its edit shows on. No
+  violation drops `sha512_hw.c`'s volatile read: on arm64 neither
+  compiler measured puts the state in a slot of its own without it.
   `sha256.c`'s `compress` wipes neither its schedule array nor its
-  working variables, and `sha256_of` does not wipe its context
-  (`sha256.h`); decision 93 leaves that file as it was.
+  working variables, `sha512_compress.c`'s the same, and `sha256_of`,
+  `sha384_of` and `sha512_of` do not wipe their contexts (`sha256.h`,
+  `sha512.h`); decision 93 leaves those files as they were.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

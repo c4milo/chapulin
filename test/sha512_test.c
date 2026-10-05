@@ -12,10 +12,17 @@
 // the 0x80 and the 16-byte length in the same block, 112 forces a
 // second block, 113 fills part of it. 127, 128 and 129 do the same for
 // the block itself.
+//
+// The calls go through test/test_hash.h. bin/sha512_test makes the
+// portable calls. bin/sha512_test_host makes them as a host object's
+// session does, and the Makefile runs it once more on arm64 under a
+// ch_cfg.cpu value with CH_CPU_CONSTANT_TIME_SHA512, where every vector
+// here runs on sha512_hw.c's instructions (docs/decisions.md 93).
 #include <stdio.h>
 #include <string.h>
 
 #include "sha512.h"
+#include "test_hash.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -40,7 +47,7 @@ static void check_sha512(const uint8_t *msg, size_t n, const char *want_hex) {
     uint8_t want[SHA512_LEN];
     unhex(want_hex, want, sizeof want);
     uint8_t got[SHA512_LEN];
-    sha512_of(msg, n, got);
+    TEST_SHA512_OF(msg, n, got);
     CHECK(memcmp(got, want, sizeof got) == 0);
 }
 
@@ -48,7 +55,7 @@ static void check_sha384(const uint8_t *msg, size_t n, const char *want_hex) {
     uint8_t want[SHA384_LEN];
     unhex(want_hex, want, sizeof want);
     uint8_t got[SHA384_LEN];
-    sha384_of(msg, n, got);
+    TEST_SHA384_OF(msg, n, got);
     CHECK(memcmp(got, want, sizeof got) == 0);
 }
 
@@ -135,10 +142,10 @@ static void test_sha384_vectors(void) {
     uint8_t chunk[1000];
     memset(chunk, 'a', sizeof chunk);
     for (int i = 0; i < 1000; i++) {
-        sha512_update(&s, chunk, sizeof chunk);
+        TEST_SHA512_UPDATE(&s, chunk, sizeof chunk);
     }
     uint8_t got[SHA384_LEN];
-    sha384_final(&s, got);
+    TEST_SHA384_FINAL(&s, got);
     uint8_t want[SHA384_LEN];
     unhex("9d0e1809716474cb086e834e310a4a1ced149e9c00f248527972cec5704c2a5b"
           "07b8b3dc38ecc4ebae97ddd87f3d8985",
@@ -156,9 +163,9 @@ static void test_streaming(void) {
         msg[i] = (uint8_t)(i * 31 + 5);
     }
     uint8_t whole512[SHA512_LEN];
-    sha512_of(msg, sizeof msg, whole512);
+    TEST_SHA512_OF(msg, sizeof msg, whole512);
     uint8_t whole384[SHA384_LEN];
-    sha384_of(msg, sizeof msg, whole384);
+    TEST_SHA384_OF(msg, sizeof msg, whole384);
 
     static const size_t splits[] = {0, 1, 111, 112, 113, 127, 128, 129, 299, 300};
     for (size_t i = 0; i < sizeof splits / sizeof splits[0]; i++) {
@@ -166,21 +173,22 @@ static void test_streaming(void) {
         sha512 s;
         uint8_t out512[SHA512_LEN];
         sha512_init(&s);
-        sha512_update(&s, msg, at);
-        sha512_update(&s, msg + at, sizeof msg - at);
-        sha512_final(&s, out512);
+        TEST_SHA512_UPDATE(&s, msg, at);
+        TEST_SHA512_UPDATE(&s, msg + at, sizeof msg - at);
+        TEST_SHA512_FINAL(&s, out512);
         CHECK(memcmp(out512, whole512, sizeof out512) == 0);
 
         uint8_t out384[SHA384_LEN];
         sha384_init(&s);
-        sha512_update(&s, msg, at);
-        sha512_update(&s, msg + at, sizeof msg - at);
-        sha384_final(&s, out384);
+        TEST_SHA512_UPDATE(&s, msg, at);
+        TEST_SHA512_UPDATE(&s, msg + at, sizeof msg - at);
+        TEST_SHA384_FINAL(&s, out384);
         CHECK(memcmp(out384, whole384, sizeof out384) == 0);
     }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     test_sha512_vectors();
     test_sha384_vectors();
     test_streaming();

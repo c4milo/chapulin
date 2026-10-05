@@ -39,6 +39,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
 	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(X86_UNIT_CPU) $(HASH_UNIT_CPU)); do \
 	  echo "== unit_host $$bits (host object)"; ./bin/unit_host $$bits; done
+	@set -e; for b in $(if $(HOST_VECTOR_BINS),$(HASH_VECTOR_HOST)); do for bits in $(HASH512_UNIT_CPU); do \
+	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
 	$(MAKE) wycheproof
 
 

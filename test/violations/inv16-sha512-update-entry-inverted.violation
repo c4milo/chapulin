@@ -1,0 +1,20 @@
+invariant: INV-16
+file: sha512.h
+catches: test/docker-aes-runtime-qemu.sh arm64-hash-count
+reason: sha512_update_cpu calls sha512_hw.c for a value that does not name
+  the SHA-512 instructions, and sha512.c for one that does. An arm64
+  session without CH_CPU_CONSTANT_TIME_SHA512 then hashes its transcript's
+  SHA-384 half on instructions its caller never stated
+  (docs/decisions.md 93). The digest is the same, because the two paths
+  keep one state. bin/hash_runtime_test counts the updates each path takes
+  under every ch_cfg.cpu value. Only an arm64 object compiles this entry
+  with two paths, so the catch is the script, which runs the arm64
+  binaries under qemu-aarch64. The lane skips without docker, and this
+  then reports unguarded rather than caught.
+
+--- old
+    if (sha512_on_instructions(cpu)) {
+        sha512_update_hw(s, in, n);
+--- new
+    if (!sha512_on_instructions(cpu)) {
+        sha512_update_hw(s, in, n);

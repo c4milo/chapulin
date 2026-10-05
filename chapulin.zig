@@ -363,8 +363,8 @@ const CpuBits = struct {
     /// on them.
     constant_time_sha256: bool = false,
     /// CH_CPU_CONSTANT_TIME_SHA512: the SHA-512 instructions, FEAT_SHA512, under the same
-    /// statement. An arm64 bit, which an x86-64 object refuses. No object runs SHA-512 on the
-    /// instructions yet.
+    /// statement. An arm64 bit, which an x86-64 object refuses. Under TLS_AES_256_GCM_SHA384 the
+    /// session then hashes its transcript and derives its keys over SHA-384 on them.
     constant_time_sha512: bool = false,
     /// CH_CPU_CONSTANT_TIME_SHA3: the SHA-3 instructions, FEAT_SHA3, under the same statement. An
     /// arm64 bit as well, and no object runs SHA-3 on the instructions yet.

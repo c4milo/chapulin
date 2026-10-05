@@ -5626,3 +5626,87 @@ does nothing more.
 
     Gain of the second commit: the fourth commit's table in
     docs/performance.md holds the measured rows.
+
+    **The third commit: SHA-384 and SHA-512 on arm64's SHA-512
+    instructions.** An arm64 host object with `SUITE=aesgcm` gains
+    `sha512_hw.c`: the compression function on FEAT_SHA512's four
+    instructions and the five calls `sha512.h` declares around it, under
+    the file's own target attribute. `sha512.h` ends with five entries
+    that read `CH_CPU_CONSTANT_TIME_SHA512` through
+    `sha512_on_instructions`, and `hash_on_instructions` answers for a
+    SHA-384 call with that bit. On arm64 `hash_hw.h` sends the copies'
+    SHA-384 calls to `sha512_hw.c`, so `hkdf_hw.c` and `keysched_hw.c`
+    hold both hashes on their instructions, and an entry picks a copy by
+    the bit of the hash its call runs.
+
+    - **Each hash follows its own bit.** A session that states one
+      hash's instructions and not the other's runs the other on the
+      portable code. Every call of `hkdf.c` and `keysched.c` runs the
+      one hash its `hash_len` names, so one pair of copies serves both
+      bits. An arm64 CPU may have FEAT_SHA256 without FEAT_SHA512, and
+      the counting test runs every row under each of the four
+      combinations of the two bits.
+    - **x86-64.** No x86-64 CPU this tree targets has SHA-512
+      instructions. `sha512_hw.c` has no body there,
+      `sha512_on_instructions` answers no for every value, and the
+      copies' SHA-384 calls stay on `sha512.c`.
+    - **Where the file is packaged.** Only a `SUITE=aesgcm` object runs
+      SHA-384 under a session's value, in its transcript and its key
+      schedule. A `TRUST=webpki` object without the suite hashes
+      certificates with `sha512.c` through calls that take no value, so
+      no call in it would run `sha512_hw.c`, and it leaves the file out.
+    - **FEAT_SHA3's instructions stay out.** The compilers turn
+      FEAT_SHA512's instructions on under the feature name `sha3`,
+      which holds FEAT_SHA3's EOR3, RAX1, XAR and BCAX as well, and
+      with it on they write those for plain C: for a generic arm64
+      target the pinned clang wrote EOR3 for an exclusive OR of three
+      vectors, and for a loop over three arrays that it turned into
+      vectors. The SHA-512 bit states nothing about them. So
+      `sha512_hw.c` computes no exclusive OR, and
+      `test/hash-builds.sh` and `test/aes-runtime-disasm.sh` require
+      that its object holds none of the four.
+    - **One call of each loop body, for gcc.** The eighty rounds run as
+      five groups of sixteen, and the schedule's next sixteen words come
+      before each group but the first. With `sixteen_rounds` called from
+      two places, gcc 13.3 at `-O2` kept it a function of its own and
+      passed the state through memory at each call: 14.67 µs for 16 KiB
+      of SHA-384, where one loop with one call took 12.13. clang 18 took
+      12.21 and 12.08. Each figure is the fastest of 51 samples of a
+      loop over `sha384_of_hw`, in an arm64 container on the M1 Pro.
+    - **The state a block began with.** `kept` reads the four vectors
+      through a volatile pointer, as in `sha256_hw.c`. arm64 has 32
+      vector registers, and neither compiler measured puts those vectors
+      in a stack slot of its own without the read, so no mutant shows
+      what the read prevents there. It is there for the reason
+      `sha256_hw.c`'s is: where a value lies must not depend on a
+      compiler's register allocation. With it the four vectors lie in
+      the `block_state`, and the equivalence test finds them when the
+      wipe is dropped.
+
+    What holds the path is in docs/verification.md, "The hash
+    instructions". The qemu lane gains an arm64 half, because only an
+    arm64 object compiles this commit's entries: it builds for arm64
+    with the cross gcc and runs under `qemu-aarch64`, whose `cortex-a72`
+    model has FEAT_SHA256 and no FEAT_SHA512. So a mutant of an
+    arm64-only line gets the same verdict on an x86-64 machine.
+
+    **What the third commit changes for the proofs.** It changes the
+    keys of the same twelve host harnesses and of no device harness, and
+    each of the twelve verifies again.
+
+    Cost of the third commit:
+
+    - The `ROLE=both` `SUITE=aesgcm` QUIC object's code grows by 3,516
+      bytes on arm64 under Apple clang 21. A host object without the
+      suite does not grow.
+    - One more source in a `SUITE=aesgcm` host object's list, in the
+      Makefile and in `build.zig`.
+    - CI's mips job installs the aarch64 cross gcc, and its qemu step
+      runs the arm64 rows as well.
+    - The arm64-only test headers are read by clang-tidy on an arm64
+      host alone, as the x86-64 kernels' counting test is on an x86-64
+      one.
+
+    Gain of the third commit: the fourth commit's table in
+    docs/performance.md holds the measured rows. On x86-64 SHA-384 and
+    SHA-512 stay on the portable code.

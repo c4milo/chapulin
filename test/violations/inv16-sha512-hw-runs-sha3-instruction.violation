@@ -1,0 +1,20 @@
+invariant: INV-16
+file: sha512_hw.c
+catches: test/hash-builds.sh
+reason: sha512_hw.c passes a round's words plus their constants through
+  veor3q_u64, one of FEAT_SHA3's four instructions, which the file's
+  target attribute turns on beside FEAT_SHA512's. The other two operands
+  are one vector read twice through its volatile pointer, so neither
+  compiler removes the exclusive ORs, the value is the same, every digest
+  is right and no vector or equivalence case sees the edit. A session
+  whose caller stated CH_CPU_CONSTANT_TIME_SHA512 then runs an
+  instruction that bit does not name, on a statement about its timing
+  nobody made (docs/decisions.md 93). The script compiles the file for
+  arm64 under the pinned clang and requires none of the four in its
+  object.
+
+--- old
+    c->with_constants = vaddq_u64(current, vld1q_u64(&K[2 * pair]));
+--- new
+    c->with_constants = veor3q_u64(vaddq_u64(current, vld1q_u64(&K[2 * pair])), kept(&c->ab_start),
+                                   kept(&c->ab_start));

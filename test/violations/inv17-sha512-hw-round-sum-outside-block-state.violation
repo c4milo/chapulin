@@ -1,0 +1,23 @@
+invariant: INV-17
+file: sha512_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: round_pair keeps what SHA512H returns in a local of its own, which
+  the compiler must hold in memory, where it belongs in the block_state.
+  compress_blocks wipes the block_state alone, so its dead frame keeps
+  the last two sums of the last block: each is a round's T1, which with
+  the public constants gives the working variables and the schedule words
+  that went into it. Every digest is still right. bin/sha2_equiv_test
+  copies the stack below each kind of call and looks for two 64-bit words
+  in a row that the call computed from its input, each round's T1 among
+  them. The script runs the arm64 binary under qemu-aarch64. The lane
+  skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    c->half = vsha512hq_u64(c->sum, vextq_u64(*ef, *gh, 1), vextq_u64(*cd, *ef, 1));
+    *gh = vsha512h2q_u64(c->half, *cd, *ab);
+    *cd = vaddq_u64(*cd, c->half);
+--- new
+    volatile words half = vsha512hq_u64(c->sum, vextq_u64(*ef, *gh, 1), vextq_u64(*cd, *ef, 1));
+    *gh = vsha512h2q_u64(half, *cd, *ab);
+    *cd = vaddq_u64(*cd, half);

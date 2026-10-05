@@ -374,7 +374,7 @@ QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
 QUIC_UNPROBED := $(if $(HOST_TARGET),,aes_hw.c ghash_hw.c ghash_vector.h gcm_hw.c gcm_vaes.c)
 # The hash sources of a host object hold their body under the same define
 # (docs/decisions.md 93), so the lint skips them on such a compiler too.
-QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c hash_hw.h hkdf_hw.c keysched_hw.c)
+QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c sha512_hw.c hash_hw.h hkdf_hw.c keysched_hw.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -440,11 +440,12 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c p256_field_native.c
                           test/widemul_count_native_field.c test/widemul_count_native_scalar.c \
                           test/widemul_count_native_vector.c
 # The host object's hash sources and tests (docs/decisions.md 93), which
-# compile only under -DCH_CPU_RUNTIME: SHA-256 on the CPU's instructions,
-# the two copies over it, the equivalence test, and the counting test with
-# its counting entries. lint-tidy reads them in passes of their own.
-HASH_HOST_LINT_C := sha256_hw.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c test/hash_runtime_test.c \
-                    test/hash_runtime_count.c
+# compile only under -DCH_CPU_RUNTIME: SHA-256 and SHA-512 on the CPU's
+# instructions, the two copies over them, the equivalence test, and the
+# counting test with its counting entries. lint-tidy reads them in passes
+# of their own.
+HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
+                    test/hash_runtime_test.c test/hash_runtime_count.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
@@ -470,7 +471,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
-         test/sha2_equiv_residue.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/initial_cpu.h \
+         test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
+         test/sha2_equiv_residue512.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
@@ -1007,13 +1009,24 @@ X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f)
 # their hashes on the CPU's hash instructions (docs/decisions.md 93). The
 # unit suite runs FIPS 180-4's, RFC 4231's and RFC 5869's vectors and keys
 # every record direction under the first, and the Wycheproof host binary
-# runs its HMAC and HKDF suites under the second. A binary run under a
-# value that names instructions its CPU lacks skips, and fails instead
-# under CH_REQUIRE_HASH_INSTRUCTIONS=1 (test/test_cpu.h).
+# runs its HMAC and HKDF suites under the second. On arm64 two more values
+# add the SHA-512 bit, which an x86-64 object refuses. The two SHA-512
+# vector binaries run under the third: FIPS 180-4's SHA-384 and SHA-512
+# vectors, RFC 4231's and the TLS_AES_256_GCM_SHA384 key schedule on the
+# SHA-512 instructions. The Wycheproof host binary runs once more under
+# the fourth, its HMAC-SHA-384 and HKDF-SHA-384 suites on them. The
+# SHA-512 values are apart from the SHA-256 ones because a binary run
+# under a value that names instructions its CPU lacks skips, and an arm64
+# CPU may have FEAT_SHA256 without FEAT_SHA512. Under
+# CH_REQUIRE_HASH_INSTRUCTIONS=1 such a binary fails instead
+# (test/test_cpu.h).
 #   0x25  the probe's bit, the multiply bit and CH_CPU_CONSTANT_TIME_SHA256
 #   0x27  those and the AES bit
+#   0x65  the first with CH_CPU_CONSTANT_TIME_SHA512, on arm64
+#   0x67  the second with it, on arm64
 HASH_UNIT_CPU := 0x25
-HASH_WYCHEPROOF_CPU := 0x27
+HASH_WYCHEPROOF_CPU := 0x27 $(if $(X86_KERNEL_PROBE),,0x67)
+HASH512_UNIT_CPU := $(if $(X86_KERNEL_PROBE),,0x65)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
 # that exports nothing pays neither: docs/performance.md's SRAM numbers
@@ -1112,7 +1125,7 @@ QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_R
 # -DCH_CPU_RUNTIME too, because hash_hw.h refuses one anywhere else
 # (docs/decisions.md 93), and sha256_hw.c holds its body under the define.
 QUIC_EXTRA_DEFINES += hash_hw.h:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME keysched_hw.c:-DCH_CPU_RUNTIME \
-                      sha256_hw.c:-DCH_CPU_RUNTIME
+                      sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME
 # What a host test binary compiles with, and what it links
 # (docs/decisions.md 89). HOST_CFLAGS is the test flags without the host's
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
@@ -1127,11 +1140,13 @@ HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS))
 widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 # What a host object holds beside its hash files (docs/decisions.md 93):
 # sha256_hw.c, SHA-256 on the CPU's SHA-256 instructions, beside sha256.c,
-# and hkdf.c and keysched.c compiled once more over it, as hkdf_hw.c and
-# keysched_hw.c. A session's CH_CPU_CONSTANT_TIME_SHA256 bit picks them,
-# and a device object holds none.
-hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter hkdf.c,$(1)),hkdf_hw.c) \
-             $(if $(filter keysched.c,$(1)),keysched_hw.c)
+# sha512_hw.c, SHA-512 and SHA-384 on arm64's SHA-512 instructions, beside
+# sha512.c, and hkdf.c and keysched.c compiled once more over them, as
+# hkdf_hw.c and keysched_hw.c. A session's CH_CPU_CONSTANT_TIME_SHA256 and
+# CH_CPU_CONSTANT_TIME_SHA512 bits pick them, and a device object holds
+# none. sha512_hw.c has no body on x86-64, which has no such instructions.
+hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),sha512_hw.c) \
+             $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c)
 host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c) \
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
             $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) $(call hash_hw_of,$(1))
@@ -1158,9 +1173,13 @@ LIB_SRCS += poly1305_vector_native.c
 endif
 # A host object holds SHA-256 on the CPU's instructions and the two copies
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
-# object holds the portable hash alone.
+# object holds the portable hash alone. It holds sha512_hw.c only with
+# SUITE=aesgcm, whose key schedule and transcript run SHA-384 under a
+# session's value. A TRUST=webpki object without the suite hashes
+# certificates with sha512.c through calls that take no value, so no call
+# in it would run sha512_hw.c, and it leaves the file out.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(call hash_hw_of,$(LIB_SRCS))
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,sha512_hw.c),$(call hash_hw_of,$(LIB_SRCS)))
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -1302,12 +1321,12 @@ print-tcp-nonblocking-loop-srcs:
 .PHONY: print-host-srcs
 print-host-srcs:
 	@echo $(call host_srcs,$(HOST_SRCS_OF))
-# test/aes-runtime-qemu.sh builds its eight binaries for x86-64 from the
-# sources their rules here link, one list per line: bin/quic_loop_aes,
-# bin/webpki_loop_aes, bin/aes_runtime_test beside its three test files,
-# bin/quic_test_hw beside test/quic_vectors.c, bin/x86_kernels_test
-# beside its two, bin/sha2_equiv_test beside its one, and the two lists
-# bin/hash_runtime_test links beside its one, of which
+# test/aes-runtime-qemu.sh builds its binaries for x86-64 and for arm64
+# from the sources their rules here link, one list per line:
+# bin/quic_loop_aes, bin/webpki_loop_aes, bin/aes_runtime_test beside its
+# three test files, bin/quic_test_hw beside test/quic_vectors.c,
+# bin/x86_kernels_test beside its two, bin/sha2_equiv_test beside its one,
+# and the two lists bin/hash_runtime_test links beside its one, of which
 # bin/hash_runtime_exporter_test links the first.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
@@ -1450,7 +1469,9 @@ print-aes-runtime-qemu-srcs:
 #
 # The hash rows hold sha256_hw.c, hkdf_hw.c and keysched_hw.c to the host
 # object, over TCP and over QUIC, beside the three files they stand
-# beside, so a device object carries the portable hash alone
+# beside, so a device object carries the portable hash alone. They hold
+# sha512_hw.c to the host object with SUITE=aesgcm: a host object without
+# the suite packages sha512.c for its certificates and no sha512_hw.c
 # (docs/decisions.md 93).
 #
 # The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
@@ -1552,12 +1573,19 @@ lint-trust-separation-run:
 	  done; \
 	done; \
 	hash_hw="sha256_hw.c hkdf_hw.c keysched_hw.c"; \
-	check "TRUST=raw-rsa" "sha256.c hkdf.c keysched.c" "$$hash_hw" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "" "-DCH_CPU_RUNTIME" ""; \
+	check "TRUST=raw-rsa" "sha256.c hkdf.c keysched.c" "$$hash_hw sha512_hw.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha256.c hkdf.c keysched.c sha512.c $$hash_hw" "sha512_hw.c" \
+	  "-DCH_CPU_RUNTIME" "-DCH_SUITE_AES_GCM"; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "sha512_hw.c" "-DCH_CPU_RUNTIME" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki EXPORTER=off HOST_TARGET=yes" \
-	  "sha256.c hkdf.c keysched.c $$hash_hw" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "sha256.c hkdf.c keysched.c" "$$hash_hw" "" "-DCH_CPU_RUNTIME"; \
+	  "sha256.c hkdf.c keysched.c $$hash_hw" "sha512_hw.c" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "sha256.c hkdf.c keysched.c" "$$hash_hw sha512_hw.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "sha512.c sha512_hw.c $$hash_hw" "" \
+	  "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" \
+	  "sha512.c sha512_hw.c $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "sha512_hw.c $$hash_hw" \
+	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
 	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c $$native_files" "" \
@@ -2160,33 +2188,35 @@ bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) 
 # (test/sha2_equiv_residue.h). On a CPU without the instructions the
 # binary skips.
 SHA2_EQUIV_TEST_DEFS := -DCH_CPU_RUNTIME -DCH_HASH_SHA384 $(EXPORTER_DEF)
-SHA2_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,sha256.c hkdf.c keysched.c) sha512.c \
+SHA2_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,sha256.c hkdf.c keysched.c sha512.c) \
                         sha512_compress.c ct.c ct_wipe.c
 bin/sha2_equiv_test: test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS) hkdf.c keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o $@ test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS)
-# Which SHA-256 a host object's hash calls run under each ch_cfg.cpu value
-# (docs/decisions.md 93). test/hash_runtime_count.c defines sha256.c's
-# three calls that hash and sha256_hw.c's three, each as a count and a
-# call to sha256.c's code, and the binary links it in place of both files.
+# Which SHA-256 and which SHA-512 a host object's hash calls run under
+# each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
+# defines sha256.c's three calls that hash, sha512.c's five and the same
+# calls of sha256_hw.c and sha512_hw.c, each as a count and a call to the
+# portable code, and the binary links it in place of the four files.
 # So no hash instruction runs, the binary gives one verdict on every CPU,
 # and its counts say which path the library chose. The first binary is a
 # QUIC object with the suites, whose rows hold a record direction and a
 # QUIC level's keys. The second is a TCP object with the suites and the
 # exporter, which a QUIC object does not hold, so the two exporter entries
 # have a row.
+HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c sha512_hw.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c \
-                          $(filter-out sha256.c sha256_hw.c,$(call host_srcs,record.c aes.c $(AES_HW_SRCS) gcm.c \
-                          aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c sha512_compress.c buf.c \
-                          ct.c ct_wipe.c))
+                          $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,record.c aes.c $(AES_HW_SRCS) \
+                          gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
+                          sha512_compress.c buf.c ct.c ct_wipe.c))
 HASH_RUNTIME_QUIC_SRCS := quic_packet.c quic_keys.c quic_initial.c quic_aes_soft.c
 bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) sha256.c \
-                       hkdf.c keysched.c $(HDRS) $(TESTH)
+                       sha512.c hkdf.c keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS)
-bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) sha256.c hkdf.c keysched.c \
-                                $(HDRS) $(TESTH)
+bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) sha256.c sha512.c hkdf.c \
+                                keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -I. -Itest -o $@ test/hash_runtime_test.c \
 	  $(HASH_RUNTIME_TEST_SRCS)
@@ -2913,12 +2943,19 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
-HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test
+HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_sign_test,test/p256_sign_test.c,$(P256_SIGN_SRC),))
 $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST_SRCS),$(RSA_WIDE_DEF)))
+# FIPS 180-4's SHA-384 and SHA-512 vectors, RFC 4231's HMAC-SHA-384 and
+# the TLS_AES_256_GCM_SHA384 key schedule, as a host object's session runs
+# them: under HASH512_UNIT_CPU beside the two values every vector binary
+# takes, which on arm64 names the SHA-512 instructions. sha512_hw.c wipes
+# what it computes, so the first links ct_wipe.c beside the hash.
+$(eval $(call HOST_VECTOR_BIN,sha512_test,test/sha512_test.c,$(SHA512_TEST_SRCS) ct_wipe.c,))
+$(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-DCH_HASH_SHA384))
 # The counting test: the files built on the multiply again under the
 # second names of test/widemul_count_names.h, in the
 # test/widemul_count_*.c units, in place of the files, their native copies
@@ -3175,14 +3212,15 @@ $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
 # HOST_VECTOR_CPU, which it takes as its argument (test/test_cpu.h), and
 # its target fails when any run does. $(2) names the values a binary runs
 # under beside those: the unit suite's, X86_UNIT_CPU on x86-64 and
-# HASH_UNIT_CPU.
+# HASH_UNIT_CPU, and HASH512_UNIT_CPU for the two SHA-512 vector binaries.
 define CHECK_RUN_HOST_VECTOR_BIN
 check-run-$(1): bin/$(1)
 	@mkdir -p bin/check; : > bin/check/$$@.log; rc=0; \
 	for bits in $$(HOST_VECTOR_CPU) $(2); do ./bin/$(1) $$$$bits >> bin/check/$$@.log 2>&1 || rc=$$$$?; done; \
 	(exit $$$$rc); $$(CHECK_REPORT)
 endef
-$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter unit_host,$(b)),$(X86_UNIT_CPU) $(HASH_UNIT_CPU)))))
+HASH_VECTOR_HOST := sha512_test_host hkdf384_test_host
+$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter unit_host,$(b)),$(X86_UNIT_CPU) $(HASH_UNIT_CPU))$(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
 
 # The host object's AES runs: the published vectors on the instructions
 # and on the table, and each instruction path against its software twin
@@ -4731,10 +4769,12 @@ else
 	@$(call TIDY_EACH,gcm_vaes.c gcm.c test/x86_kernels_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
-	# A host object's SHA-256 on the CPU's instructions (docs/decisions.md
-	# 93). sha256_hw.c holds one arm for each architecture, so two passes
-	# read it for a named target whatever the host, as the pass above reads
-	# the kernels: x86-64 and arm64, freestanding. The two copies and the
+	# A host object's SHA-256 and SHA-512 on the CPU's instructions
+	# (docs/decisions.md 93). sha256_hw.c holds one arm for each
+	# architecture, so two passes read it for a named target whatever the
+	# host, as the pass above reads the kernels: x86-64 and arm64,
+	# freestanding. The arm64 pass reads sha512_hw.c too, which has no body
+	# on x86-64. The two copies and the
 	# files they copy follow under the host's own target with the defines
 	# the equivalence test's binary takes, so the pass reads the entries
 	# that end sha256.h, hkdf.h and keysched.h too, and then the two test
@@ -4743,7 +4783,7 @@ else
 	@$(call TIDY_EACH,sha256_hw.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
-	@$(call TIDY_EACH,sha256_hw.c, \
+	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
@@ -5527,14 +5567,15 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 
 #
 # A host object's hash sources join it too (docs/decisions.md 93):
 # sha256_hw.c, whose SHA-256 instructions no 32-bit spec targets and which
-# compiles under its own target attribute on both 64-bit specs, and
-# hkdf_hw.c and keysched_hw.c, the copies of hkdf.c and keysched.c over it,
-# which hash_hw.h refuses outside a host object. They multiply and divide
-# nothing, and what the specs hold for each is its branch count.
+# compiles under its own target attribute on both 64-bit specs,
+# sha512_hw.c, which does the same on arm64 and has no body on x86-64, and
+# hkdf_hw.c and keysched_hw.c, the copies of hkdf.c and keysched.c over
+# them, which hash_hw.h refuses outside a host object. They multiply and
+# divide nothing, and what the specs hold for each is its branch count.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_native.c:0 mlkem_poly_native.c:0 p256_field_native.c:0 \
                   p256_scalar_native.c:0 rsa_sign_native.c:0 poly1305_vector_native.c:0 \
-                  sha256_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0
+                  sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -5600,7 +5641,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    x25519_wide.c:-DCH_CPU_RUNTIME \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
-                   sha256_hw.c:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
+                   hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
@@ -5892,9 +5934,16 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 # dispatcher's two tests of hash_len, hkdf_expand's three contract checks
 # and its output loop, and hkdf_expand_label's three contract checks and
 # its test of an empty context. keysched_hw.c is calls in a straight line.
+# sha512_hw.c's twelve on arm64 are sha512_update_hw's four tests, the
+# ones sha256_hw.c's update makes; in compress_blocks the loop over the
+# blocks, the loop over five groups of sixteen rounds and its test for
+# the first group, which takes the block's own words; finalize's test of
+# where the padding ends; and the two loops that write the digest's words
+# and their bytes, once in each final. Every one reads a length or a
+# count. On x86-64 the file has no body and no branch.
 HASH_HW_BRANCH_CEILING := \
   arm64/sha256_hw.c:8 x86-64/sha256_hw.c:8 arm64/hkdf_hw.c:16 x86-64/hkdf_hw.c:16 \
-  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0
+  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:12 x86-64/sha512_hw.c:0
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
@@ -5955,7 +6004,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c p256_field_native.c \
                p256_scalar_native.c rsa_sign_native.c poly1305_vector_native.c \
-               sha256_hw.c hkdf_hw.c keysched_hw.c
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured

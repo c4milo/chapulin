@@ -510,9 +510,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{"poly1305_vector_native.c"} });
     // hash_hw_of: SHA-256 on the CPU's SHA-256 instructions beside
     // sha256.c, and hkdf.c and keysched.c compiled once more over it, which
-    // a session's CH_CPU_CONSTANT_TIME_SHA256 bit picks (docs/decisions.md
-    // 93).
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, hashHwSources(b, lib_srcs) });
+    // a session's CH_CPU_CONSTANT_TIME_SHA256 bit picks. With SUITE=aesgcm,
+    // whose key schedule and transcript run SHA-384 under a session's
+    // value, SHA-512 on arm64's SHA-512 instructions stands beside
+    // sha512.c too (docs/decisions.md 93).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, hashHwSources(b, lib_srcs, config.suite == .aesgcm) });
     if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });
@@ -725,16 +727,21 @@ fn nativeCopies(b: *std.Build, list: Names) Names {
     return out.items;
 }
 
-/// The Makefile's hash_hw_of: what a host object holds beside the hash
-/// files of list, in the Makefile's order.
-fn hashHwSources(b: *std.Build, list: Names) Names {
+/// The Makefile's hash_hw_of as it packages an object: what a host object
+/// holds beside the hash files of list, in the Makefile's order. It holds
+/// sha512_hw.c only where suite says the object runs SHA-384 under a
+/// session's value.
+fn hashHwSources(b: *std.Build, list: Names, suite: bool) Names {
     const pairs = [_][2][]const u8{
         .{ "sha256.c", "sha256_hw.c" },
+        .{ "sha512.c", "sha512_hw.c" },
         .{ "hkdf.c", "hkdf_hw.c" },
         .{ "keysched.c", "keysched_hw.c" },
     };
     var out = std.ArrayList([]const u8).initCapacity(b.allocator, pairs.len) catch @panic("OOM");
     for (pairs) |pair| {
+        const is_sha512 = std.mem.eql(u8, pair[0], "sha512.c");
+        if (is_sha512 and !suite) continue;
         if (contains(list, pair[0])) out.appendAssumeCapacity(pair[1]);
     }
     return out.items;

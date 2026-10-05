@@ -157,11 +157,14 @@ Other targets:
   run SHA-256, and HMAC, HKDF and the key schedule over it, on the
   instructions, in `sha256_hw.c` and the copies `hkdf_hw.c` and
   `keysched_hw.c`, which every host object holds beside the portable
-  files. Without the bit they run `sha256.c`. A certificate's hash, a
-  signature's and the DRBG's take no `cpu` and run the portable code in
-  every object. No object runs SHA-512 or SHA-3 on its instructions yet,
-  so the other two bits pick nothing and SHA-384 runs `sha512.c`
-  (decision 93). A raw or
+  files. Without the bit they run `sha256.c`. With
+  `CH_CPU_CONSTANT_TIME_SHA512` an arm64 session runs SHA-384, the hash
+  of TLS_AES_256_GCM_SHA384, on the SHA-512 instructions, in
+  `sha512_hw.c`, which a `SUITE=aesgcm` host object holds beside
+  `sha512.c`, and without it on `sha512.c`. Each hash follows its own
+  bit alone. A certificate's hash, a signature's and the DRBG's take no
+  `cpu` and run the portable code in every object. No object runs SHA-3
+  on its instructions yet, so that bit picks nothing (decision 93). A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host

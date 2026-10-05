@@ -90,11 +90,13 @@
 // schedule and its record and packet keys, through the entries that end sha256.h, sha512.h,
 // hkdf.h, keysched.h and transcript.h. With CH_CPU_CONSTANT_TIME_SHA256 those entries run SHA-256,
 // and HMAC, HKDF and the key schedule over it, on the instructions (sha256_hw.c, hash_hw.h), and
-// without it on sha256.c. A session whose bit names instructions its CPU lacks faults on the
-// first one. A hash call that takes no value runs the portable code in every object: a
-// certificate's, a signature's and the DRBG's are such calls. No object holds SHA-512 or SHA-3 on
-// its instructions yet, so those two bits pick nothing, and SHA-384 runs sha512.c under every
-// value.
+// without it on sha256.c. With CH_CPU_CONSTANT_TIME_SHA512 an arm64 session runs SHA-384, the
+// hash of TLS_AES_256_GCM_SHA384, and HMAC, HKDF and the key schedule over it on the SHA-512
+// instructions (sha512_hw.c), and without it on sha512.c. Each hash follows its own bit alone. A
+// session whose bit names instructions its CPU lacks faults on the first one. A hash call that
+// takes no value runs the portable code in every object: a certificate's, a signature's and the
+// DRBG's are such calls. No object holds SHA-3 on its instructions yet, so that bit picks
+// nothing.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64,

@@ -6,7 +6,9 @@
 // object's hash sources, so sha256_update is the portable call and
 // sha256_update_hw the one on the instructions, and it calls each by name:
 // no ch_cfg.cpu value picks between them here. bin/hash_runtime_test holds
-// the entries that pick.
+// the entries that pick. On arm64 the binary then holds sha512_hw.c to
+// sha512.c the same way, for SHA-384 and SHA-512
+// (test/sha2_equiv_sha512.h).
 //
 // Every case hashes the message on the portable path in one call. It then
 // hashes a copy in three updates and a final, each on the path one bit of
@@ -42,8 +44,10 @@
 // both answer the published standard directly and not only through each
 // other.
 //
-// On a CPU without the instructions the binary skips, and fails instead
-// under CH_REQUIRE_HASH_INSTRUCTIONS=1 (test/hash_instructions_cpu.h).
+// On a CPU without the SHA-256 instructions the binary skips, and on one
+// without the SHA-512 instructions it skips that half. Under
+// CH_REQUIRE_HASH_INSTRUCTIONS=1 it fails instead
+// (test/hash_instructions_cpu.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -271,6 +275,9 @@ static void run_empty(void) {
 
 #include "sha2_equiv_copies.h"
 #include "sha2_equiv_residue.h"
+#ifdef __aarch64__
+#include "sha2_equiv_sha512.h"
+#endif
 
 int main(void) {
     if (!cpu_has_sha256_instructions()) {
@@ -290,6 +297,9 @@ int main(void) {
     run_empty();
     run_copies();
     run_residue();
+#ifdef __aarch64__
+    run_sha512();
+#endif
     if (failures != 0) {
         (void)fprintf(stderr, "sha2 equivalence: %d failure(s), seed 0x%016llx\n", failures,
                       (unsigned long long)seed);

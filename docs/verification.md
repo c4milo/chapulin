@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-81 of the 105 C sources in the tree root are compiled into a
+81 of the 106 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 24 sources are in no such harness:
+The other 25 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -53,7 +53,8 @@ The other 24 sources are in no such harness:
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
-| `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c` and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
+| `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
+| `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c`, `p256_field_native.c`, `p256_scalar_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
@@ -2794,112 +2795,143 @@ instructions and the carry-less multiply at every width (decision 89).
 
 `sha256_hw.c` computes SHA-256 on the CPU's SHA-256 instructions:
 FEAT_SHA256 on arm64, and the SHA extensions with SSSE3 and SSE4.1 on
-x86-64 (decision 93). Every host object carries it beside `sha256.c`,
-each of its functions turning the instructions on through the file's own
-target attribute. It also carries `hkdf.c` and `keysched.c` a second
-time, as `hkdf_hw.c` and `keysched_hw.c`: the same source text under the
-names `hash_hw.h` gives, with its SHA-256 calls on `sha256_hw.c`. Two
-predicates read the caller's bit, and one branch per call picks a path:
+x86-64. `sha512_hw.c` computes SHA-384 and SHA-512 on arm64's SHA-512
+instructions, FEAT_SHA512, and has no body on x86-64 (decision 93).
+Every host object carries the first beside `sha256.c`, and a host object
+with `SUITE=aesgcm` the second beside `sha512.c`. Each function turns
+its instructions on through its file's own target attribute. A host
+object also carries `hkdf.c` and `keysched.c` a second time, as
+`hkdf_hw.c` and `keysched_hw.c`: the same source text under the names
+`hash_hw.h` gives, with its SHA-256 calls on `sha256_hw.c` and, on
+arm64, its SHA-384 calls on `sha512_hw.c`. Three predicates read the
+caller's bits, and one branch per call picks a path:
 
 - `sha256.h`'s `sha256_on_instructions` answers for
   `CH_CPU_CONSTANT_TIME_SHA256`. The three entries that end `sha256.h`
-  ask it, and `transcript.h`'s two call those.
+  ask it.
+- `sha512.h`'s `sha512_on_instructions` answers for
+  `CH_CPU_CONSTANT_TIME_SHA512` on arm64, and no on x86-64. The five
+  entries that end `sha512.h` ask it. `transcript.h`'s two entries call
+  both headers', so each hash of a transcript follows its own bit.
 - `hkdf.h`'s `hash_on_instructions` answers for a call that names its
-  hash by `hash_len`: the same bit where the hash is SHA-256, and no for
-  SHA-384. The entries that end `hkdf.h` and `keysched.h` ask it.
+  hash by `hash_len`: the SHA-256 bit where the hash is SHA-256, and the
+  SHA-512 bit where it is SHA-384. The entries that end `hkdf.h` and
+  `keysched.h` ask it.
 
-A call that takes no value runs `sha256.c`. The DRBG, the certificate
-verifiers, the signers, the cookie and token MACs, the CertificateVerify
-content hash, an SPKI pin's hash, the server's hash of a ClientHello's
-frozen bytes and the webpki ticket binding make such calls, and each
-starts and ends its context on that path.
+A call that takes no value runs the portable code. The DRBG, the
+certificate verifiers, the signers, the cookie and token MACs, the
+CertificateVerify content hash, an SPKI pin's hash, the server's hash of
+a ClientHello's frozen bytes and the webpki ticket binding make such
+calls, and each starts and ends its context on that path.
 
-CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c`,
-and the [sha256](#sha256), [hkdf](#hkdf) and
-[keysched](#keysched-keysched384) proofs cover the portable code it is
-held to. `hkdf_hw.c` and `keysched_hw.c` are the text those harnesses
-prove, under other names. The twelve harnesses that compile the host
-object's define read the entries, and the three whose code calls a copy,
-`aes_runtime`, `record_suite` and `quic_keys_suite`, define it as the
-stub of the call it copies. Two questions need tests: what the
-instructions compute, and which calls run them.
+CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c` or
+`sha512_hw.c`, and the [sha256](#sha256), [sha512](#sha512),
+[hkdf](#hkdf), [hkdf384](#hkdf384) and [keysched](#keysched-keysched384)
+proofs cover the portable code they are held to. `hkdf_hw.c` and
+`keysched_hw.c` are the text those harnesses prove, under other names.
+The twelve harnesses that compile the host object's define read the
+entries, and the three whose code calls a copy, `aes_runtime`,
+`record_suite` and `quic_keys_suite`, define it as the stub of the call
+it copies. Two questions need tests: what the instructions compute, and
+which calls run them.
 
 **What the instructions compute** rests on these. Each binary asks its
 CPU (`test/hash_instructions_cpu.h`), which only test code does, and
-skips on a CPU without the instructions, or fails under
+skips what the CPU has no instructions for, or fails under
 `CH_REQUIRE_HASH_INSTRUCTIONS=1`:
 
-- `bin/sha2_equiv_test`, in `make check`, runs 75,467 cases. Each hashes
-  a message on `sha256.c` in one call, and a copy of it in three updates
+- `bin/sha2_equiv_test`, in `make check`, runs 75,467 SHA-256 cases, and
+  on arm64 148,479 more for SHA-384 and SHA-512. Each hashes a message
+  on the portable code in one call, and a copy of it in three updates
   and a final, each on the path one bit of the case's mask names, so a
   context passes between the two paths at each call. It compares the two
-  contexts before the final, then the digests, and `sha256_of_hw`'s
-  digest. The inputs are every length from 0 to 273 bytes cut at every
-  offset below 130, messages of all 0x00 and all 0xff at every length
-  next to a block boundary, 20,000 random lengths, cuts, alignments and
-  masks, 16,385 bytes and 64 KiB, an update of no bytes from a NULL
-  pointer, and 2,000 random inputs to each call of the two copies
-  against the file under its own names.
-- The same binary copies the stack below five kinds of call, which
-  between them run every call `sha256_hw.c` makes to its compression
-  function. In each copy it requires no four words in a row that the
-  call computed from its input: a schedule word, either partial sum
-  before one, a schedule word plus its constant, a working variable
-  after any round, or a state word (`test/sha2_equiv_residue.h`).
+  contexts before the final, then the digests, and the digest of the
+  call that takes a whole message. The SHA-256 inputs are every length
+  from 0 to 273 bytes cut at every offset below 130, messages of all
+  0x00 and all 0xff at every length next to a block boundary, 20,000
+  random lengths, cuts, alignments and masks, 16,385 bytes and 64 KiB,
+  an update of no bytes from a NULL pointer, and 2,000 random inputs to
+  each call of the two copies against the file under its own names. The
+  SHA-512 inputs are the same shapes at its 128-byte block, every length
+  to 529 bytes cut below 258, with each case run as SHA-384 or as
+  SHA-512, and the copies at SHA-384's hash length.
+- The same binary copies the stack below five kinds of SHA-256 call and
+  six kinds of SHA-512 call, which between them run every call each file
+  makes to its compression function. In each copy it requires no four
+  32-bit words in a row, or two 64-bit ones, that the call computed from
+  its input: a schedule word, a partial sum before one, a schedule word
+  plus its constant, a working variable after any round, a round's T1,
+  or a state word (`test/sha2_equiv_residue.h`,
+  `test/sha2_equiv_residue512.h`).
 - `bin/unit_host` runs once more under `ch_cfg.cpu` 0x25, which adds the
   SHA-256 bit: FIPS 180-4's vectors, RFC 4231's and RFC 5869's on the
   instructions, and every record direction the suite keys.
-- The Wycheproof host binary runs once more under 0x27: the HMAC-SHA-256
-  and HKDF-SHA-256 suites on the instructions.
+- On arm64 `bin/sha512_test_host` and `bin/hkdf384_test_host` run once
+  more under 0x65, which adds the SHA-512 bit: FIPS 180-4's SHA-384 and
+  SHA-512 vectors, RFC 6234's million-byte message, RFC 4231's
+  HMAC-SHA-384 cases and a TLS_AES_256_GCM_SHA384 key schedule on the
+  instructions.
+- The Wycheproof host binary runs once more under 0x27, its HMAC-SHA-256
+  and HKDF-SHA-256 suites on the instructions, and on arm64 under 0x67,
+  its HMAC-SHA-384 and HKDF-SHA-384 suites too.
 - `bin/quic_test_hw` runs RFC 9001's and RFC 9369's Appendix A once more
-  with the bit, whose keys HKDF then derives on the instructions.
+  with the SHA-256 bit, whose keys HKDF then derives on the instructions.
 - `bin/quic_loop_aes` and `bin/webpki_loop_aes` run whole handshakes
-  with one end's hashes on the instructions and the other's on
-  `sha256.c`, in both orders, under ChaCha20 and under AES-256-GCM, and
-  the four host loop binaries run one with every bit the architecture
-  defines.
+  with one end's hashes on the instructions and the other's on the
+  portable code, in both orders, under ChaCha20 and under AES-256-GCM,
+  whose key schedule runs SHA-384. The four host loop binaries run one
+  with every bit the architecture defines.
 
 **Which calls run the instructions** rests on these:
 
 - `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test`, in
-  `make check`, count the calls into each path under 129 `ch_cfg.cpu`
-  values: the 128 the seven bits beside `CH_CPU_PROBED` make, and 0. The
-  counting entries (`test/hash_runtime_count.c`) run both paths on
-  `sha256.c`'s code, and the row that seals an Initial packet clears
-  the value's AES, AVX2 and VAES bits, so its AES-GCM runs on the table.
-  So the binaries run no instruction a bit names and give one verdict
-  on every CPU. A row is one call that takes a session's value:
-  `sha256.h`'s three entries, `hkdf.h`'s five and `keysched.h`'s eight
-  at each hash length, the transcript, a record direction's keying and
-  KeyUpdate under each suite, and a QUIC level's keys, their update and
-  an Initial packet. Under each value a row must make every SHA-256 call
-  it makes under `CH_CPU_PROBED` alone on the instructions where the
-  value holds the bit, and on `sha256.c` where it does not, and write
-  the same bytes.
+  `make check`, count the calls into each path of each hash under 129
+  `ch_cfg.cpu` values: the 128 the seven bits beside `CH_CPU_PROBED`
+  make, and 0. The counting entries (`test/hash_runtime_count.c`) run
+  every path on the portable code, and the row that seals an Initial
+  packet clears the value's AES, AVX2 and VAES bits, so its AES-GCM runs
+  on the table. So the binaries run no instruction a bit names and give
+  one verdict on every CPU of their architecture. A row is one call
+  that takes a session's value: `sha256.h`'s three entries and
+  `sha512.h`'s five, `hkdf.h`'s five and `keysched.h`'s eight at each
+  hash length, the transcript, a record direction's keying and KeyUpdate
+  under each suite, and a QUIC level's keys, their update and an Initial
+  packet. Under each value a row must make every SHA-256 call it makes
+  under `CH_CPU_PROBED` alone on the instructions where the value holds
+  the SHA-256 bit and on `sha256.c` where it does not, the same for its
+  SHA-512 calls and the SHA-512 bit, and write the same bytes. An x86-64
+  binary requires every SHA-512 call on `sha512.c` under every value.
 - `test/hash-builds.sh`, in `make check`, compiles the hash sources for
   x86-64 and arm64 with no instruction flag under the pinned clang. It
-  requires SHA-256 instructions in `sha256_hw.c` and in no other hash
-  source, the three entries defined there, each copy's calls on the
-  `_hw` names and the files' own on the portable ones, and no `_hw`
-  symbol in a device object's sources.
+  requires SHA-256 instructions in `sha256_hw.c`, SHA-512 instructions
+  in arm64's `sha512_hw.c`, and neither in any other hash source; none
+  of FEAT_SHA3's four instructions in `sha512_hw.c`, whose target
+  attribute turns them on beside FEAT_SHA512's; each file's entries
+  defined, and none in x86-64's `sha512_hw.c`; each copy's calls on the
+  `_hw` names its target has and the files' own on the portable ones;
+  and no `_hw` symbol in a device object's sources.
 - `test/aes-runtime-disasm.sh` disassembles three packaged host objects
   built with the host's compiler and requires every SHA-256 instruction
-  in `sha256_hw.o`.
+  in `sha256_hw.o`, every SHA-512 instruction in `sha512_hw.o`, and none
+  of FEAT_SHA3's four in `sha512_hw.o`.
 - `test/aes-runtime-qemu.sh` runs whole handshakes on CPU models, in
-  CI's mips job on every push. On `max,-sha-ni` the loops whose ends
-  leave the bit clear must pass, and with the bit on both ends they must
-  die of SIGILL, which shows the model traps the instructions, and so
-  that the rows without the bit ran none. `bin/aes_runtime_test`, whose
-  rows derive Initial keys and state no hash bit, must pass there too.
-  On `max` it runs `bin/sha2_equiv_test` and the handshakes with one end
-  on the instructions, with `CH_REQUIRE_HASH_INSTRUCTIONS=1`. On a model
-  without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions the two
-  counting binaries must pass.
+  CI's mips job on every push. On x86-64's `max,-sha-ni` the loops whose
+  ends leave the SHA-256 bit clear must pass, and with the bit on both
+  ends they must die of SIGILL, which shows the model traps the
+  instructions, and so that the rows without the bit ran none.
+  `bin/aes_runtime_test`, whose rows derive Initial keys and state no
+  hash bit, must pass there too. On an x86-64 model without AES-NI,
+  PCLMULQDQ, AVX2 and the SHA extensions the two counting binaries must
+  pass. On arm64's `cortex-a72`, which has FEAT_SHA256 and no
+  FEAT_SHA512, the same holds for the SHA-512 bit, and the two counting
+  binaries run there as an arm64 object. On each `max` it runs
+  `bin/sha2_equiv_test` and the handshakes with one end on the
+  instructions, with `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 
 The counting tests hold the entries and the calls their rows make. They
 do not hold every call site of a session: a site that hands an entry
 another value than its session's computes the same bytes. The qemu rows
-hold the sites a whole handshake runs, on x86-64, and
+hold the sites a whole handshake runs, and
 `inv16-transcript-hashed-under-every-bit` is the mutant of one.
 
 The stack checks ran clean under Apple clang 21 on arm64, and in a
@@ -2911,12 +2943,17 @@ checks hold the compilers they ran under and no other. A binary built
 without optimization keeps every temporary in a stack slot, and one
 under AddressSanitizer has frames of the sanitizer's own layout, so
 either skips the search and says so (`test/stack_residue.c`): the
-sanitizer lane runs the cases and not the search.
+sanitizer lane runs the cases and not the search. `sha512_hw.c` reads
+the state a block began with through a volatile pointer, as
+`sha256_hw.c` does. On arm64 neither compiler put that state in a stack
+slot of its own without the read, so no mutant shows what the read
+prevents there.
 
 No QEMU arm64 model turns FEAT_SHA256 off, so on arm64 the claim that a
-session without the bit runs no SHA-256 instruction rests on the counts,
-on `test/hash-builds.sh` and on the disassembly. The timing of the
-instructions rests on the caller's bit alone: nothing here measures it.
+session without the SHA-256 bit runs no SHA-256 instruction rests on the
+counts, on `test/hash-builds.sh` and on the disassembly. The timing of
+either hash's instructions rests on the caller's bit alone: nothing here
+measures it.
 
 ### The host object's two multiplies
 

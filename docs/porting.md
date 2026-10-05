@@ -107,11 +107,13 @@ constant time in the session's thread's mode, because a hash reads HMAC keys and
 traffic secrets. A session hands its `ch_cfg.cpu` to every hash call of its
 transcript, its key schedule and its record and packet keys. With the SHA-256
 bit those calls run SHA-256, and HMAC, HKDF and the key schedule over it, on
-the instructions, and without it on the portable code. The vendor statement
-behind the bit must cover the instructions `cpu_cfg.h` lists for it. A hash
-call that takes no `ch_cfg.cpu`, such as a certificate's, a signature's or the
-DRBG's, runs the portable code in every object. No object runs SHA-512 or SHA-3
-on its instructions yet, so the other two bits pick nothing (decision 93).
+the instructions, and without it on the portable code. With the SHA-512 bit an
+arm64 session does the same for SHA-384, the hash of TLS_AES_256_GCM_SHA384,
+and each hash follows its own bit alone. The vendor statement behind a bit must
+cover the instructions `cpu_cfg.h` lists for it. A hash call that takes no
+`ch_cfg.cpu`, such as a certificate's, a signature's or the DRBG's, runs the
+portable code in every object. No object runs SHA-3 on its instructions yet, so
+that bit picks nothing (decision 93).
 
 ### Check it on your target, because the compiler can undo it
 

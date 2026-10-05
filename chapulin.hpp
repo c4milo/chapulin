@@ -154,7 +154,8 @@ struct Cpu {
     bool constant_time_sha256 = false;
     // The same for the SHA-512 instructions, FEAT_SHA512:
     // CH_CPU_CONSTANT_TIME_SHA512. An arm64 bit, which an x86-64 object
-    // refuses. No object runs SHA-512 on the instructions yet.
+    // refuses. Under TLS_AES_256_GCM_SHA384 the session then hashes its
+    // transcript and derives its keys over SHA-384 on them.
     bool constant_time_sha512 = false;
     // The same for the SHA-3 instructions, FEAT_SHA3:
     // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well, and no object

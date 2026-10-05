@@ -159,6 +159,7 @@
         "sha512.h",
         "sha512_compress.c",
         "sha512_compress.h",
+        "sha512_hw.c",
         "softmul.c",
         "srv.c",
         "srv.h",

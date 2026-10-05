@@ -127,7 +127,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
+      # The aarch64 cross gcc builds the arm64 half of the host object's
+      # qemu lane below, which qemu-user's qemu-aarch64 runs.
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross
       - name: Count wide multiplies, divisions and conditional branches under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships gcc, whose lowering is its own measurement: it once put
@@ -137,7 +139,7 @@ jobs:
         # none matches, so this step cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
       - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
-      - name: Run a host object on x86-64 CPUs without the instructions its ch_cfg.cpu does not name
+      - name: Run a host object on x86-64 and arm64 CPU models without the instructions its ch_cfg.cpu does not name
         # test/aes-runtime-qemu.sh builds host binaries with the runner's
         # gcc and runs them under qemu-x86_64 on CPU models with AES-NI,
         # PCLMULQDQ, AVX2 or the SHA extensions turned off. The rows whose
@@ -146,7 +148,10 @@ jobs:
         # instructions. The rows with the bit must die of SIGILL there,
         # which shows the model traps the instructions, so a qemu that
         # kept them fails this step rather than passing it. On the model
-        # with every instruction it holds sha256_hw.c to sha256.c
+        # with every instruction it holds sha256_hw.c to sha256.c. It
+        # then builds for arm64 with the cross gcc and does the same for
+        # the SHA-512 bit under qemu-aarch64, on the cortex-a72 model,
+        # which has no FEAT_SHA512, and on max
         # (docs/decisions.md 81, 89, 90 and 93).
         run: make aes-runtime-qemu
 

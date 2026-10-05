@@ -1,0 +1,19 @@
+invariant: INV-17
+file: sha512_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: compress_blocks returns without wiping its block_state, so its dead
+  frame keeps the last block's message schedule and the state before it.
+  Under HMAC-SHA-384 the first block is the key, and the state after it
+  stands for the key: whoever reads it computes any MAC under that key.
+  Every digest is still right, so no vector sees it. bin/sha2_equiv_test
+  copies the stack below each kind of call and looks for two 64-bit words
+  in a row that the call computed from its input. The file has a body on
+  arm64 alone, so the catch is the script, which runs the arm64 binary
+  under qemu-aarch64. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    run_blocks(&c, h, p, blocks);
+    ct_wipe(&c, sizeof c);
+--- new
+    run_blocks(&c, h, p, blocks);

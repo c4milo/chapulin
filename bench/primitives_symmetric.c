@@ -4,8 +4,10 @@
 //
 // Three groups. hash holds SHA-256, HMAC and HKDF over it, which a host
 // session runs on the CPU's SHA-256 instructions where its value holds
-// CH_CPU_CONSTANT_TIME_SHA256 (docs/decisions.md 93), and SHA-384, SHA-512
-// and Keccak, whose code no bit changes today. cipher holds
+// CH_CPU_CONSTANT_TIME_SHA256, SHA-384 and SHA-512, which an arm64 one
+// runs on the SHA-512 instructions where it holds
+// CH_CPU_CONSTANT_TIME_SHA512 (docs/decisions.md 93), and Keccak, whose
+// code no bit changes today. cipher holds
 // ChaCha20, whose keystream a host session runs on the vector path its
 // value names, and the DRBG, which calls chacha20_block, the portable
 // function in every object. aead holds Poly1305, whose limb products run
@@ -73,13 +75,13 @@ static void run_sha256(size_t n) {
 
 static void run_sha384(size_t n) {
     uint8_t digest[SHA384_LEN];
-    sha384_of(input, n, digest);
+    sha384_of_cpu(bench_cpu, input, n, digest);
     bench_consume(digest, sizeof digest);
 }
 
 static void run_sha512(size_t n) {
     uint8_t digest[SHA512_LEN];
-    sha512_of(input, n, digest);
+    sha512_of_cpu(bench_cpu, input, n, digest);
     bench_consume(digest, sizeof digest);
 }
 
