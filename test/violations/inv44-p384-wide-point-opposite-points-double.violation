@@ -1,0 +1,21 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the addition doubles its left operand for a point and its
+  negative, where the sum is infinity. With the key -G and scalars
+  that differ by five, each digit of the second scalar adds the
+  negative of what the first just added. bin/p384_equiv_test verifies
+  that signature and wants 1.
+
+--- old
+        if (p384_wide_is_zero(rr)) {
+            point_double(o, a);
+        } else {
+            memset(o, 0, sizeof *o);
+        }
+--- new
+        if (p384_wide_is_zero(rr)) {
+            point_double(o, a);
+        } else {
+            point_double(o, a);
+        }

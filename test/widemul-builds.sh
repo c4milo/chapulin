@@ -34,6 +34,12 @@
 #     p256_wide_verify.c, and in a device object does not: the device arm
 #     holds the 32-bit arithmetic itself, and no bit of ch_cfg.cpu picks
 #     between the two (docs/decisions.md 96).
+#   - p384.c in a host object hands the signature it read to
+#     p384_wide_verify.c and calls none of p384_field.c, which has no body
+#     there; in a device object it calls p384_field.c and not the 64-bit
+#     verifier, and the three 64-bit files have no body (docs/decisions.md
+#     97). The Makefile and build.zig each write the three 64-bit files
+#     for a TRUST=webpki host object and none of them for a device object.
 #   - The Makefile and build.zig each write the native copies, the wide
 #     X25519 field, RSA's 64-bit arithmetic and signer and the vector
 #     ChaCha20 and Poly1305 for a host object and none of them for a
@@ -109,6 +115,14 @@ calls() { # $1 = source, $2 = symbol, $3... = extra flags
     nm -u "$work/object.o" | grep -qE "(^|[[:space:]_])$symbol\$"
 }
 
+# Whether the object of one source defines a symbol.
+defines() { # $1 = source, $2 = symbol, $3... = extra flags
+    local src=$1 symbol=$2
+    shift 2
+    "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -I. "$@" -c "$src" -o "$work/object.o" || exit 1
+    nm "$work/object.o" | grep -qE "[[:space:]][TDRS][[:space:]]_?$symbol\$"
+}
+
 vector_tu=$work/vector.c
 printf '#define CH_CPU_RUNTIME\n#include "chacha20_vector.h"\n' > "$vector_tu"
 if ! "$cc" -std=c11 -I. -fsyntax-only "$vector_tu" 2>/dev/null; then
@@ -156,6 +170,34 @@ if calls p256.c p256_wide_verify_rs; then
     exit 1
 fi
 
+# p384.c's two arms, and the two fields. The host arm hands r and s to
+# p384_wide_verify.c and calls nothing of p384_field.c, which has no body
+# in a host object. The device arm is the reverse.
+if ! calls p384.c p384_wide_verify_rs -DCH_CPU_RUNTIME || calls p384.c p384_mod_mul -DCH_CPU_RUNTIME; then
+    echo "widemul-builds: p384.c in a host object must call p384_wide_verify_rs and nothing of p384_field.c" >&2
+    exit 1
+fi
+if calls p384.c p384_wide_verify_rs || ! calls p384.c p384_mod_mul; then
+    echo "widemul-builds: p384.c in a device object must call p384_field.c and not p384_wide_verify_rs; a host object alone holds p384_wide_verify.c" >&2
+    exit 1
+fi
+if defines p384_field.c p384_mont_mul -DCH_CPU_RUNTIME || ! defines p384_field.c p384_mont_mul; then
+    echo "widemul-builds: p384_field.c must define its routines in a device object and nothing in a host object" >&2
+    exit 1
+fi
+if ! defines p384_wide_field.c p384_wide_mont_mul -DCH_CPU_RUNTIME || defines p384_wide_field.c p384_wide_mont_mul; then
+    echo "widemul-builds: p384_wide_field.c must define its routines in a host object and nothing in a device object" >&2
+    exit 1
+fi
+if ! defines p384_wide_point.c p384_wide_double_mul -DCH_CPU_RUNTIME || defines p384_wide_point.c p384_wide_double_mul; then
+    echo "widemul-builds: p384_wide_point.c must define its entries in a host object and nothing in a device object" >&2
+    exit 1
+fi
+if ! defines p384_wide_verify.c p384_wide_verify_rs -DCH_CPU_RUNTIME || defines p384_wide_verify.c p384_wide_verify_rs; then
+    echo "widemul-builds: p384_wide_verify.c must define the verifier in a host object and nothing in a device object" >&2
+    exit 1
+fi
+
 # Whether every word after the first argument is a word of the first.
 has_words() { # $1 = a list of words, $2... = the words it must hold
     local list=" $1 " word
@@ -169,6 +211,7 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
 }
 host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign64.c chacha20_vector.c
             chacha20_avx2.c poly1305_vector_native.c rsa_mont64.c)
+p384_words=(p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c)
 server=(ROLE=server TRUST=none)
 
 # What make prints for one set of variables, and nothing when it refuses
@@ -191,6 +234,23 @@ case " $device " in
 esac
 if ! has_words "$device" -DCH_NATIVE_WIDEMUL; then
     echo "widemul-builds: make must write -DCH_NATIVE_WIDEMUL for a device object on WIDEMUL=native" >&2
+    exit 1
+fi
+# P-384 is a TRUST=webpki object's, so the lists that hold or lack its
+# 64-bit files are that product's.
+if ! has_words "$(lib_lists TRUST=webpki HOST_TARGET=yes | tr '\n' ' ')" "${p384_words[@]}"; then
+    echo "widemul-builds: make must write P-384's 64-bit field, points and verifier for a TRUST=webpki host object" >&2
+    exit 1
+fi
+device=$(lib_lists TRUST=webpki HOST_TARGET= | tr '\n' ' ')
+case " $device " in
+*p384_wide*)
+    echo "widemul-builds: make writes P-384's 64-bit files for a device object" >&2
+    exit 1
+    ;;
+esac
+if ! has_words "$device" p384.c p384_field.c; then
+    echo "widemul-builds: make must write p384.c and p384_field.c for a TRUST=webpki device object" >&2
     exit 1
 fi
 for refused in WIDEMUL=native WIDEMUL=decomposed; do
@@ -242,6 +302,21 @@ case " $device " in
 esac
 if ! has_words "$device" -DCH_NATIVE_WIDEMUL; then
     echo "widemul-builds: build.zig must write -DCH_NATIVE_WIDEMUL for a device object on WIDEMUL=native" >&2
+    exit 1
+fi
+if ! has_words "$(zig_lists -DTRUST=webpki "$host_target")" "${p384_words[@]}"; then
+    echo "widemul-builds: build.zig must write P-384's 64-bit field, points and verifier for a TRUST=webpki host object" >&2
+    exit 1
+fi
+device=$(zig_lists -DTRUST=webpki "$device_target")
+case " $device " in
+*p384_wide*)
+    echo "widemul-builds: build.zig writes P-384's 64-bit files for a device object" >&2
+    exit 1
+    ;;
+esac
+if ! has_words "$device" p384.c p384_field.c; then
+    echo "widemul-builds: build.zig must write p384.c and p384_field.c for a TRUST=webpki device object" >&2
     exit 1
 fi
 for refused in -DWIDEMUL=native -DWIDEMUL=decomposed; do

@@ -1,0 +1,11 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: p384_equiv_test
+reason: the host verifier multiplies G by u2 and the key by u1, so no
+  signature verifies. bin/p384_equiv_test requires p384.c's verdict,
+  and 1, on the signatures it builds.
+
+--- old
+    p384_wide_double_mul(&sum, u1, u2, &q);
+--- new
+    p384_wide_double_mul(&sum, u2, u1, &q);

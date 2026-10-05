@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-90 of the 112 C sources in the tree root are compiled into a
+93 of the 115 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -35,8 +35,10 @@ all on unsigned values (see [x25519_wide](#x25519_wide)). The wide P-256
 files' harnesses check it for the same reason
 (see [p256_wide](#p256_wide)). So do four of the harnesses of RSA's
 64-bit arithmetic, whose claim is that no sum in it wraps
-(see [rsa_mont64](#rsa_mont64)), and the two that prove how the signer on
-those limbs reads an exponent (see [rsa_sign64](#rsa_sign64)).
+(see [rsa_mont64](#rsa_mont64)), the two that prove how the signer on
+those limbs reads an exponent (see [rsa_sign64](#rsa_sign64)), and the
+harness of P-384's 64-bit field, whose claim is the same
+(see [p384_wide](#p384_wide)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
@@ -827,6 +829,53 @@ The entries are grouped by area:
 - **Not proved:** the two 384-iteration loop drivers, `point_mul` and
   `p384_mod_inverse`, are not unrolled; their bodies are the proven
   pieces.
+
+#### p384_wide
+
+- **Harnesses:** `p384_wide_field` (fast), `p384_wide_point` (fast), `p384_wide_digits` (fast), `p384_wide_verify` (fast)
+- **Build:** a host object's ECDSA P-384 verifier on six 64-bit limbs,
+  `p384_wide_field.c`, `p384_wide_point.c` and `p384_wide_verify.c`
+  (decision 97, INV-44), under `-DCH_CPU_RUNTIME`. `p384_wide_field`
+  adds `--unsigned-overflow-check`.
+- **Proves:** three layers, each over a contract of the one below it:
+  - `p384_wide_field`: every routine of the field but the Fermat loop,
+    in every shape of its arguments a caller uses, for any limbs, any
+    modulus record and any m0inv, with the 64x64->128 multiply replaced
+    by the contract `rsa_mont64_mul128` proves of it. No access is out
+    of bounds and no sum wraps.
+  - `p384_wide_point`: the doubling, the addition, the table of a
+    point's eight odd multiples, the key's decoding and the comparison
+    of x with r, over contracts of the field's product, sum and
+    difference. Every operand the points hand the field is below p, and
+    a key the decoder takes is three coordinates below p.
+  - `p384_wide_digits`: the signed digits of any 384-bit scalar, on
+    their real body. The count fits the array, every digit is zero or
+    odd in [-15, 15], the digits past the count are zero, and adding
+    any such digit reads the table inside its eight entries.
+  - `p384_wide_verify`: the whole of `p384_wide_verify_rs` over any
+    key, hash, r and s, with the points' four entries and the field's
+    product and inverse stubbed to their contracts. It answers 0 or 1;
+    it answers 0 for an r or an s outside 1..n-1, and calls no entry of
+    the points and no product for one; it answers 0 for a key the
+    decoder refuses and for a sum at infinity, and 1 only after the
+    decoder took the key and the comparison said so; and every scalar
+    it hands the field is below n, the one it inverts not zero.
+
+  Asserting in `p384_wide_verify` that the verdict is never 1 fails, so
+  an accepting verdict is reached.
+- **Bound:** any 96-byte key, any 48-byte hash, any 48-byte r and s; any
+  limbs, any points, any scalar.
+- **Not proved:** `p384_wide_mod_inverse`'s 384 rounds and
+  `p384_wide_double_mul`'s 385 are not unrolled. Their bodies are the
+  proven pieces, and the bit walk of the first and the two digit arrays
+  of the second are proven in bounds for every round. No harness says
+  that a product is the Montgomery product, that a result is below the
+  modulus, that the digits spell the scalar, or that the equation holds
+  for a signature and for no other pair: the stubs write unconstrained
+  limbs. `bin/p384_equiv_test` holds each routine of the field to
+  `p384_field.c`'s result and the verdict to `p384.c`'s 32-bit arm, and
+  the Wycheproof host leg holds the verdict to Wycheproof's; see
+  [The host object's P-384](#the-host-objects-p-384).
 
 #### rsa
 
@@ -2554,6 +2603,70 @@ shared X coordinate below a session that runs the 32-bit files: the
 Montgomery product modulo n, `p256_scalar_inverse` and `p256_field.c`
 wipe none of the temporaries they name. Decision 94 records that and
 leaves them as they are.
+
+### The host object's P-384
+
+A host object verifies ECDSA P-384 on six 64-bit limbs
+(`p384_wide_field.c`, `p384_wide_point.c` and `p384_wide_verify.c`,
+decision 97), and a device object on `p384.c`'s twelve 32-bit limbs
+over `p384_field.c`, which stay the reference. The 64-bit files carry
+the four proofs of [p384_wide](#p384_wide), which hold their memory
+accesses, their sums and what they hand each other. That they compute
+the right number, and the right verdict, rests on these:
+
+- `bin/p384_equiv_test`, in `make check`, compiles both arms into one
+  binary: `test/p384_portable.c` compiles `p384_field.c` and `p384.c`'s
+  32-bit arm, the verifier under a second name. It first holds the
+  field: each constant must be one number at both widths, and each
+  routine must leave `p384_field.c`'s number, for both moduli, on every
+  pair of thirteen operands at the moduli's edges and on 300 pairs with
+  a random operand, in each shape of its arguments. That is 23,406
+  results. It then requires one verdict from the two verifiers, and the
+  verdict each case names, over 186 inputs:
+  - signatures of random keys and scalars, each with s negated and with
+    one bit changed in the hash, in the key, in r and in s;
+  - signatures in which the verifier's two scalars are chosen: zero and
+    one, the values either side of a signed digit's window, the values
+    just under n, and the ones whose digits carry out of bit 383;
+  - the keys G, 2G, -G and -2G and a random one, with scalars for which
+    u1·G is u2·Q, or its negative, or either but for five times G, so
+    that an addition inside the pass meets its own operand or its
+    negative;
+  - a hash at 0, 1, n - 1, n, n + 1 and 2^384 - 1; an s of 1, 2 and 3,
+    and each with n added;
+  - the point whose x is n + 2, where r is 2 and x's second value
+    verifies; the point whose x is 0 with r = p - n, where r + n is p;
+    and a random point with r = x + 2^384 - n, where r + n is x only
+    after it wraps;
+  - r and s at 0, n and 2^384 - 1;
+  - a key whose x is p, the negative of the key, a key whose y is p, a
+    key whose x is 2^384 - 1, a key of zeros, and a key off the curve
+    under the signature its own multiple makes, which verifies if
+    nothing checks the key;
+  - a signature whose DER is cut short, runs long, has another tag or
+    pads an INTEGER it need not.
+
+  Every key and signature is computed on the 32-bit arm's field and
+  points, so a case's signature is right when the reference is, and the
+  cases that state a verdict hold both arms to it. The random values
+  come from a seeded generator, and `CH_P384_EQUIV_SEED` varies the
+  seed.
+- `bin/p384_test_host`, in `make check`, is `bin/p384_test`'s main
+  built as a host object builds its sources: the RFC 6979 A.2.6
+  vectors, the three openssl signatures, the mutations and the
+  strict-DER boundary, on the host arm.
+- The Wycheproof host leg runs Wycheproof's ECDSA P-384 vectors on the
+  host arm, and the other legs run them on the 32-bit arm.
+- `test/widemul-builds.sh`, in `make check`, compiles `p384.c` either
+  side of `-DCH_CPU_RUNTIME` and requires the host arm to call
+  `p384_wide_verify_rs` and nothing of `p384_field.c`, and the device
+  arm the reverse. It requires `p384_field.c` to define its routines in
+  a device object alone and the three 64-bit files in a host object
+  alone, and `make` and `build.zig` each to write the three for a
+  TRUST=webpki host object and none of them for a device object.
+
+Twenty-four `inv44-*` mutants in `test/violations/` each fail one of
+these or the `p384_wide_verify` proof (INV-44).
 
 ### x25519's ladder proof abstracts the multiply to its magnitude
 

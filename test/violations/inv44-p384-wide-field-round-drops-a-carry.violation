@@ -1,0 +1,12 @@
+invariant: INV-44
+file: p384_wide_field.c
+catches: p384_equiv_test
+reason: a round of the Montgomery product drops the carry out of its
+  second pass, so a running sum of 2^384 or more loses its top bit.
+  bin/p384_equiv_test requires every product at the edges of each
+  modulus and on random operands to be p384_field.c's.
+
+--- old
+    t[P384_WIDE_LIMBS] = t[P384_WIDE_LIMBS + 1] + (uint64_t)(top >> 64);
+--- new
+    t[P384_WIDE_LIMBS] = t[P384_WIDE_LIMBS + 1];

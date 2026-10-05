@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the decoder takes a key that is on no curve but the one its
+  own coordinates pick. The point formulas never read b, so u2 times
+  that key is a point there, and with a hash of zero it is the whole
+  sum: a signature built from it verifies. bin/p384_equiv_test builds
+  that signature and wants 0.
+
+--- old
+    return on_curve(q->x, q->y);
+--- new
+    (void)on_curve;
+    return 1;

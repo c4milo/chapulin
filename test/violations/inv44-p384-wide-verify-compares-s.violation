@@ -1,0 +1,11 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: p384_equiv_test
+reason: the host verifier compares the sum's x with s, so no signature
+  verifies. bin/p384_equiv_test requires p384.c's verdict, and 1, on
+  the signatures it builds.
+
+--- old
+    return p384_wide_point_x_is_r(&sum, r);
+--- new
+    return p384_wide_point_x_is_r(&sum, s);

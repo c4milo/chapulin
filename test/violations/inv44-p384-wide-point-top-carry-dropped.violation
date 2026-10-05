@@ -1,0 +1,12 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the digit a carry out of bit 383 makes is written as zero, so
+  a scalar whose top bits are all set loses 2^384. bin/p384_equiv_test
+  verifies signatures whose scalars are just under n and one whose top
+  five bits are set.
+
+--- old
+    digits[SCALAR_BITS] = (int8_t)carry;
+--- new
+    digits[SCALAR_BITS] = 0;

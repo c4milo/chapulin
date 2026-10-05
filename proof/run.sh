@@ -2200,6 +2200,28 @@ launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DC
 # p256_scalar's does: p256_scalar.c builds its masks and its borrows from
 # sums that wrap on purpose, and p256_wide_verify.c adds nothing itself.
 launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# P-384 on six 64-bit limbs, which a host object verifies with
+# (docs/decisions.md 97): three layers, each over a contract of the one
+# below it. p384_wide_field runs every routine of p384_wide_field.c but
+# the Fermat loop over a contract of the multiply, the one
+# rsa_mont64_mul128 above proves of ct_mul128, with
+# --unsigned-overflow-check on, so no sum in the file wraps.
+# p384_wide_point runs the points of p384_wide_point.c over contracts of
+# the field's product, sum and difference, which proof/p384_wide_stubs.h
+# holds. p384_wide_digits runs the signed digits of any scalar on their
+# real body, whose loop walks 384 bits, and the addition of any one
+# digit. One harness for both ran 148 s in 3.4 GB. p384_wide_verify runs
+# the whole of p384_wide_verify.c over contracts of the points. The
+# global unwind of 97 covers the 96 bytes of a key. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l):
+#   p384_wide_field   513 properties, 59 s, 1.7 GB, hence fast:3
+#   p384_wide_point   608 properties, 94 s, 2.6 GB, hence fast:4
+#   p384_wide_digits  611 properties, 19 s, 377 MB
+#   p384_wide_verify  511 properties,  1 s,  29 MB
+launch fast:3 full p384_wide_field 49 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:4 full p384_wide_point 97 "" -DCH_CPU_RUNTIME
+launch fast full p384_wide_digits 9 "signed_digits.0:385" -DCH_CPU_RUNTIME
+launch fast full p384_wide_verify 97 "" -DCH_CPU_RUNTIME
 # drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
 # stub, then wipes the 112-byte context, so the stub's fill_nondet and
 # ct_wipe each loop 112 times, past the global bound. Measured (cbmc

@@ -119,6 +119,9 @@ const p256_wide_srcs = [_][]const u8{
     "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
     "p256_wide_wipe.c",  "p256_wide_verify.c",
 };
+/// P384_WIDE_SRCS: P-384's field, points and verifier on six 64-bit
+/// limbs, which a host object holds beside p384.c (docs/decisions.md 97).
+const p384_wide_srcs = [_][]const u8{ "p384_wide_field.c", "p384_wide_point.c", "p384_wide_verify.c" };
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.
 const certificate_srcs = [_][]const u8{ "pem.c", "x509.c", "x509_der.c", "x509_ca.c" };
@@ -503,6 +506,9 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // The wide P-256 files, which the same bit picks, in an object that
     // carries the curve (docs/decisions.md 94).
     if (host and contains(lib_srcs, "p256_point.c")) lib_srcs = concat(b, &.{ lib_srcs, &p256_wide_srcs });
+    // P-384's 64-bit field, points and verifier, which p384.c calls in a
+    // host object, in every session (docs/decisions.md 97).
+    if (host and contains(lib_srcs, "p384.c")) lib_srcs = concat(b, &.{ lib_srcs, &p384_wide_srcs });
     // RSA_MONT64_SRCS: the 64-bit Montgomery arithmetic rsa_mont.c calls
     // in a host object, for the public operation of both RSA verifiers in
     // every session (docs/decisions.md 95).

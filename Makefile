@@ -200,6 +200,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
         p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h \
+        p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
@@ -214,6 +215,13 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 # link a host object's P-256 and for the lints.
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
                   p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c
+
+# P-384 on six 64-bit limbs: the field, the points and the verifier over
+# them, which a host object holds in place of p384_field.c and of p384.c's
+# 32-bit arm (docs/decisions.md 97). They are named once, here, for the
+# object, for the test binaries that link a host object's P-384 and for
+# the lints.
+P384_WIDE_SRCS := p384_wide_field.c p384_wide_point.c p384_wide_verify.c
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -490,6 +498,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
+          $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
+          test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
@@ -1012,6 +1022,17 @@ RSA_MONT64_SRCS := rsa_mont64.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
+# ECDSA P-384, which a TRUST=webpki client checks a chain's signatures
+# with. A device object runs p384.c's 32-bit arm over p384_field.c. In a
+# host object p384.c compiles to a call into p384_wide_verify.c, the same
+# equation on six 64-bit limbs over p384_wide_point.c and
+# p384_wide_field.c, and p384_field.c compiles to nothing. Every session
+# runs it: a key, a hash and a signature are public, so no bit states the
+# multiply's timing for them (docs/decisions.md 97). The three files join
+# every host object that holds p384.c.
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter p384.c,$(LIB_SRCS)),$(P384_WIDE_SRCS))
+endif
 # RSA-PSS signing, which a server role runs. A device object signs with
 # rsa_sign.c's ladder on 32-bit limbs. A host object holds that ladder for
 # a session that does not state its multiply, and beside it rsa_sign64.c,
@@ -1219,6 +1240,7 @@ hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(
 host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c) \
             $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
             $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
+            $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
             $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
@@ -1625,7 +1647,7 @@ lint-trust-separation-run:
 	check() { n=$$((n + 1)); row "$$@" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & }; \
 	webpki_files=$$(git ls-files 'webpki*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
-	webpki_only="sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
+	webpki_only="sha512.c sha512_compress.c p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
 	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
 	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "TRUST=ca-rsa" "pem.c x509.c x509_der.c x509_ca.c rsa.c rsa_mont.c" "p256.c $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
@@ -1652,6 +1674,8 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "rsa_mont.c" "rsa_mont64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c rsa_sign.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "rsa_mont64.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
@@ -2815,6 +2839,29 @@ P384_TEST_SRCS := p384.c p384_field.c buf.c sha512.c sha512_compress.c
 bin/p384_test: test/p384_test.c $(P384_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/p384_test.c $(P384_TEST_SRCS)
+# The same vectors on a host object's verifier, as bin/rsa_test_host runs
+# RSA's: p384.c compiles the arm that calls p384_wide_verify.c
+# (docs/decisions.md 97). It takes no ch_cfg.cpu value, because no bit
+# picks a verifier. ct_wipe.c links for sha512_hw.c, which host_srcs
+# writes beside sha512.c and which wipes its working state.
+P384_TEST_HOST_SRCS := $(call host_srcs,$(P384_TEST_SRCS)) ct_wipe.c
+bin/p384_test_host: test/p384_test.c $(P384_TEST_HOST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o $@ test/p384_test.c $(P384_TEST_HOST_SRCS)
+# A host object's P-384 against the portable files (docs/decisions.md 97):
+# the field routine by routine, and then the verifier's verdicts. The
+# binary compiles as a host object compiles its sources, so p384.c is the
+# arm that calls p384_wide_verify.c and p384_field.c has no body, and
+# test/p384_portable.c compiles what a device object holds beside them,
+# the verifier under a second name.
+P384_EQUIV_TEST_SRCS := p384.c p384_field.c $(P384_WIDE_SRCS) buf.c
+P384_EQUIV_TEST_UNITS := test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
+                         test/p384_portable.c
+bin/p384_equiv_test: $(P384_EQUIV_TEST_UNITS) $(P384_EQUIV_TEST_SRCS) $(HDRS) $(TESTH) \
+                     test/p384_equiv.h test/p384_portable.h
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ $(P384_EQUIV_TEST_UNITS) \
+	  $(P384_EQUIV_TEST_SRCS)
 # The constant-time P-256 field arithmetic, against vectors Python
 # computed. Its own binary for the same reason: nothing links
 # p256_field.c until the P-256 key exchange lands, and the module is
@@ -3179,6 +3226,7 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 widemul_counted = $(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1)) $(WIDEMUL_COUNT_FIELDS) \
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(CHACHA_VECTOR_SRCS) \
                   $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
+                  $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
                   $(call hash_hw_of,$(1))
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
@@ -3211,7 +3259,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
                                  bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
-                                 bin/p256_verify_equiv_test \
+                                 bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
@@ -4977,6 +5025,8 @@ else
 	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
 	  test/x25519_equiv_test.c $(P256_WIDE_SRCS) test/p256_equiv_test.c test/hkdf384_test.c \
+	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
+	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c \
@@ -4999,6 +5049,14 @@ else
 	# test/aes_equiv_soft.c does below.
 	@$(call TIDY_EACH,$(P256_WIDE_SRCS) p256.c test/p256_equiv_test.c test/diff_p256_wide_test.c \
 	  test/p256_verify_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
+	# P-384's 64-bit field, points and verifier (docs/decisions.md
+	# 97), whose bodies sit behind -DCH_CPU_RUNTIME, with p384.c, which
+	# compiles the arm that calls them under the define, and the three
+	# units of the equivalence test that are its own. test/p384_portable.c stays out of every
+	# pass, for the reason test/aes_equiv_soft.c does below.
+	@$(call TIDY_EACH,$(P384_WIDE_SRCS) p384.c test/p384_equiv_test.c test/p384_equiv_field.c \
+	  test/p384_equiv_sign.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	# RSA's arithmetic on 64-bit limbs and the signer built on it
 	# (docs/decisions.md 95). rsa_mont64.c and rsa_sign64.c guard their
@@ -5686,7 +5744,8 @@ lint-impact:
 #     multiply-accumulates, measured, over a server or CA public key, a
 #     transcript hash and a signature, and the client never signs, so
 #     there is no signing entry point to add a secret to.
-#   p384.c, p384_field.c, rsa_pkcs1.c: the same verify-only shape for the
+#   p384.c, p384_field.c, p384_wide_field.c, p384_wide_point.c,
+#     p384_wide_verify.c, rsa_pkcs1.c: the same verify-only shape for the
 #     signatures a public chain carries under TRUST=webpki — a CA's key,
 #     a certificate's digest and its signature, every byte from the wire
 #     or from the caller's anchor table, and the client never signs.
@@ -5930,7 +5989,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
-                  p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
+                  p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
+                  webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
                   aes_hw.c ghash_hw.c gcm_hw.c gcm_vaes.c quic_initial.c quic_retry.c build.c
 

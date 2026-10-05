@@ -436,9 +436,9 @@ What the M1 Pro's column shows:
   that takes no `ch_cfg.cpu` value still runs portable C: a certificate's, a signer's and the
   DRBG's.
 - The widest gaps in this run are the two ECDSA verifiers, 23 and 13 times, on 32-bit limbs. The
-  run predates decision 96: a host object now verifies P-256 on the wide files, in 98 µs on this
-  machine where the 32-bit limbs took 1.21 ms, and the next run records that row. `p384.c` still
-  verifies on 32-bit limbs.
+  run predates decisions 96 and 97. A host object now verifies P-256 on the wide files, in 98 µs
+  on this machine where the 32-bit limbs took 1.21 ms, and P-384 on six 64-bit limbs, in 261 µs
+  where they took 3.94 ms, which is 0.87 of OpenSSL's time. The next run records both rows.
 - SHA3-256 takes 3.35 times OpenSSL's time over 16 KiB. chapulin's Keccak is portable C in every
   object. This M1 Pro has the ARMv8 SHA-3 instructions, and no chapulin path runs them:
   `CH_CPU_CONSTANT_TIME_SHA3` picks nothing yet.

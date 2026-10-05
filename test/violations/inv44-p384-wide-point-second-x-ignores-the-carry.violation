@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the comparison takes r + n modulo 2^384 for a second value of
+  x, so r = x + 2^384 - n, which is in range for nearly every x,
+  passes for a point whose x is not r modulo n. bin/p384_equiv_test
+  builds that signature and wants 0.
+
+--- old
+    if (p384_wide_add_raw(r_plus_n, r, p384_wide_modn.m) != 0 ||
+        p384_wide_compare(r_plus_n, p384_wide_modp.m) >= 0) {
+--- new
+    (void)p384_wide_add_raw(r_plus_n, r, p384_wide_modn.m);
+    if (p384_wide_compare(r_plus_n, p384_wide_modp.m) >= 0) {

@@ -1,0 +1,13 @@
+invariant: INV-44
+file: p384_wide_field.c
+catches: p384_equiv_test
+reason: the Montgomery product's last subtraction looks at the low six
+  limbs and not at the limb above them, so a sum of 2^384 or more,
+  which about half of all products have, is returned without its
+  subtraction. bin/p384_equiv_test requires every product to be
+  p384_field.c's.
+
+--- old
+    if (t[P384_WIDE_LIMBS] || p384_wide_compare(t, mod->m) >= 0) {
+--- new
+    if (p384_wide_compare(t, mod->m) >= 0) {

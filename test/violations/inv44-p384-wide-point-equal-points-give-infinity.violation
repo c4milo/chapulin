@@ -1,0 +1,20 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the addition answers infinity for two equal points, where the
+  sum is their double. With the key G and equal scalars the first
+  digit of the second scalar adds the point the first one just added.
+  bin/p384_equiv_test verifies that signature and wants 1.
+
+--- old
+        if (p384_wide_is_zero(rr)) {
+            point_double(o, a);
+        } else {
+            memset(o, 0, sizeof *o);
+        }
+--- new
+        if (p384_wide_is_zero(rr)) {
+            memset(o, 0, sizeof *o);
+        } else {
+            memset(o, 0, sizeof *o);
+        }

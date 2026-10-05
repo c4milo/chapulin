@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: proof/prove-one.sh p384_wide_verify
+reason: the host verifier multiplies a hash it did not reduce modulo
+  n. The Montgomery product happens to take any left operand, so every
+  verdict stays right, and a hash of n or more is one hash in 2^190.
+  p384_wide_field.h takes operands below the modulus, and the proof
+  requires that of every scalar the verifier hands a product.
+
+--- old
+    if (p384_wide_compare(e, p384_wide_modn.m) >= 0) {
+        (void)p384_wide_sub_raw(e, e, p384_wide_modn.m);
+    }
+--- new

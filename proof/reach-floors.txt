@@ -113,6 +113,15 @@ keysched 87.0
 p256_mul 86.7
 p256_wide_verify 77.2
 p384_mul 86.7
+# The four p384_wide harnesses took their floors on 2026-10-05 from an
+# ubuntu 24.04 amd64 container with the pinned cbmc, before any nightly
+# printed them. Each compiles the whole of p384_wide_field.c, and the
+# three that run over contracts never call the routines a contract
+# replaces, which is most of what they leave out.
+p384_wide_digits 46.0
+p384_wide_field 89.4
+p384_wide_point 60.8
+p384_wide_verify 63.4
 # pem and pem_ecdsa carry their own budget, 2700 s, where every other
 # cover run gets 1800 s (https://github.com/c4milo/chapulin/issues/163).
 # Their nightly cover runs took 1664 s and 1505 s on 2026-09-21, 1113 s

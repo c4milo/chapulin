@@ -1,0 +1,17 @@
+invariant: INV-44
+file: p384_field.c
+catches: test/widemul-builds.sh
+reason: p384_field.c keeps its body under a define no build passes, so
+  a host object carries the 32-bit field beside the 64-bit one, with
+  nothing to call it. test/widemul-builds.sh compiles the file as a
+  host object does and requires an object that defines none of its
+  routines.
+
+--- old
+#ifndef CH_CPU_RUNTIME
+
+#include <string.h>
+--- new
+#ifndef CH_CPU_HOST
+
+#include <string.h>

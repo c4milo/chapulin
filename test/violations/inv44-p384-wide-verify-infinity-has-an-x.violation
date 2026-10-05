@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: p384_equiv_test
+reason: the host verifier compares x for a sum at infinity. Infinity's
+  limbs are zeros, so X equals r times Z^2 for every r, and a
+  signature whose two parts cancel verifies. bin/p384_equiv_test
+  builds one for each of five keys and wants 0.
+
+--- old
+    if (p384_wide_point_is_infinity(&sum)) {
+        return 0;
+    }
+--- new
+    (void)p384_wide_point_is_infinity(&sum);

@@ -1,0 +1,12 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: a negative digit adds its multiple where it must subtract it,
+  so the sum is wrong for every scalar whose digits hold one.
+  bin/p384_equiv_test requires p384.c's verdict, and 1, on signatures
+  of random scalars.
+
+--- old
+        p384_wide_mod_sub(term.y, zero, term.y, &p384_wide_modp);
+--- new
+        (void)zero;

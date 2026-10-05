@@ -700,6 +700,17 @@ def select_lints(out, changed, csources, lib):
                 "p256.c calls the wide verifier in a host object alone, and "
                 "this script compiles it either side of that define",
                 ["test/widemul-builds.sh"])
+    # The same for P-384 (docs/decisions.md 97): p384.c hands a signature
+    # to p384_wide_verify.c in a host object alone, and p384_field.c has a
+    # body in a device object alone.
+    p384_files = {"p384.c", "p384_field.c", "p384_wide_field.c", "p384_wide_point.c",
+                  "p384_wide_verify.c"}
+    if p384_files & set(csources):
+        out.add("tests", "test/widemul-builds.sh",
+                "p384.c calls the 64-bit verifier in a host object alone, and "
+                "this script compiles it and p384_field.c either side of that "
+                "define",
+                ["test/widemul-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
     # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.

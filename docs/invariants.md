@@ -1383,6 +1383,72 @@ last `ROLE=server` stub, as the entry said it would.
   passes, because the arithmetic after the missing check gives an X
   that matches r one time in 2^256.
 
+### INV-44 — a host object's ECDSA P-384 verifier gives the portable code's verdict
+
+- **Claim.** `p384_wide_verify.c`, which a host object runs for
+  `p384_ecdsa_verify` in every session, answers for every key, hash and
+  signature what `p384.c`'s 32-bit arithmetic answers, which stays the
+  reference. It refuses what FIPS 186-4 6.4.2 refuses before any
+  arithmetic, an r or an s outside 1..n-1, a coordinate at or above p
+  and a key off the curve, and it refuses a sum at infinity. Each
+  routine of `p384_wide_field.c` leaves the number the routine of the
+  same name in `p384_field.c` leaves.
+- **Mechanism.** `p384.c` reads the DER signature with one reader for
+  both arms and hands r and s to the arm its build compiled: a call into
+  `p384_wide_verify.c` under `-DCH_CPU_RUNTIME`, and its own 32-bit
+  arithmetic without it. `p384_field.c` has a body in a device object
+  alone and the three 64-bit files in a host object alone, so an object
+  holds one arithmetic. The host arm computes on six 64-bit limbs:
+  `p384_wide_field.c` for both moduli, and `p384_wide_point.c` for the
+  key, for u1·G + u2·Q in one pass over both scalars' signed digits,
+  and for the comparison of the sum's x with r, which tests X against
+  r·Z² and against (r + n)·Z² when r + n is below p. All of it is
+  variable time, as `p384.c` is: every input is public, so no bit of
+  `ch_cfg.cpu` picks the arm and no caller states the multiply's timing
+  for it (decision 97).
+- **Check.** `bin/p384_equiv_test` compiles both arms and both fields
+  into one binary. It requires each routine of the field to leave
+  `p384_field.c`'s number, for both moduli, on every pair of thirteen
+  operands at the moduli's edges and on random pairs, in each shape of
+  its arguments, and each constant to be one number at both widths. It
+  then requires one verdict from the two verifiers, and the verdict
+  each case names, over signatures of random scalars with one bit
+  changed, scalars chosen either side of a digit's window and just
+  under n, keys for which an addition inside the pass meets its own
+  operand or its negative, hashes at and above n, a point whose x is
+  above n, the values of r that are one modulus away from a point's x,
+  r and s at the ends of their range, keys no point encodes, a key off
+  the curve under the signature its multiple makes, and DER no reader
+  takes. `bin/p384_test_host` runs the RFC 6979 vectors on the host
+  arm, and the Wycheproof host leg runs Wycheproof's ECDSA P-384
+  vectors on it. CBMC's `p384_wide_field` proves that no sum in the
+  field wraps; `p384_wide_point` and `p384_wide_digits` that the points
+  hand the field operands below p and read their table and their
+  digits in bounds; and `p384_wide_verify`, over contracts of the
+  points, the refusals no test can hold: 0 for an r or an s outside
+  1..n-1 with no arithmetic run, and only scalars below n handed to the
+  field. `test/widemul-builds.sh` compiles `p384.c` and each field
+  either side of the define and holds each to its object.
+- **Violation.** In the field, a PR changes the high half of the
+  constant that clears a round's low limb; drops a round's last carry;
+  returns the plain subtraction's carry for its borrow; or leaves the
+  carry out of the sum's, or the top limb out of the product's, last
+  subtraction. In the points, it adds a negative digit's multiple;
+  drops the digit a carry out of bit 383 makes; answers infinity for
+  two equal points, or a double for a point and its negative; takes
+  r + n modulo 2^384, or at p and above, or never, for x's second
+  value; or takes a key off the curve or with a coordinate at p. In the
+  verifier, it exchanges the two scalars; compares x with s; compares x
+  for a sum at infinity; computes on a key the decoder refused; admits
+  zero, or n, for r and s; or multiplies a hash it did not reduce. At
+  the entry, it exchanges r and s, chooses `p384.c`'s arm on a define
+  no build passes, or keeps `p384_field.c`'s body in a host object. The
+  twenty-four `inv44-*` violations are these. Nineteen fail
+  `bin/p384_equiv_test`, two `test/widemul-builds.sh`, and three the
+  `p384_wide_verify` proof: with one of those three applied every test
+  passes, because zero and n give the verdict a refusal gives, and the
+  Montgomery product reduces a hash that was not.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a

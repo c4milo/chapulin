@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384.c
+catches: p384_equiv_test
+reason: the entry both arms share hands s where the arm reads r, so no
+  signature verifies in a host object or a device object.
+  bin/p384_equiv_test requires 1 from both arms on the signatures it
+  builds.
+
+--- old
+    return verify_rs(pub, msg_hash, r_be, s_be);
+}
+--- new
+    return verify_rs(pub, msg_hash, s_be, r_be);
+}

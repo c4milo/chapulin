@@ -6818,3 +6818,94 @@ does nothing more.
       to hide.
     - **P-384 in the same change.** No object holds P-384 on 64-bit
       limbs, so that verifier needs a field of its own first.
+97. **A host object verifies ECDSA P-384 on six 64-bit limbs, in every
+    session, and a device object keeps its 32-bit limbs.** After entry
+    96, P-384 was the widest gap in `docs/performance.md`'s table beside
+    OpenSSL: `p384_ecdsa_verify` took 3.94 ms on an M1 Pro where OpenSSL
+    3.6.5 takes 302 µs. A TRUST=webpki client pays it once for each
+    P-384 link of a chain. Entry 96 left it out because no object held
+    P-384 on 64-bit limbs.
+
+    - **Three files.** `p384_wide_field.c` is `p384_field.c` routine for
+      routine on six limbs of 64 bits: every product is one `ct_mul128`,
+      and every sum is written so that it cannot wrap.
+      `p384_wide_point.c` holds the points and the sum u1·G + u2·Q, and
+      `p384_wide_verify.c` is FIPS 186-4 6.4.2's check over the two. In
+      a host object `p384.c` compiles to its DER reader and a call into
+      the verifier, and `p384_field.c` compiles to nothing. A device
+      object compiles `p384.c` and `p384_field.c` as before, and they
+      stay the reference.
+    - **What the limbs save.** A Montgomery product of twelve 32-bit
+      limbs is 288 multiplies, and one of six 64-bit limbs is 72.
+    - **What the points save.** Three changes, each the form a
+      verifier takes when nothing it reads is secret. A coordinate stays
+      in the Montgomery domain from the key's decoding to the last
+      comparison, so a field product is one Montgomery product where
+      `p384.c` runs two. u1·G + u2·Q is one pass over both scalars, each
+      written as signed digits that are zero or odd in [-15, 15] with
+      four zeros after each digit that is not zero: 384 doublings and
+      about 128 additions from two tables of eight odd multiples, where
+      two ladders ran 768 doublings and about 384 additions. And the
+      sum's affine x is never computed: x mod n is r exactly when X is
+      r·Z², or is (r + n)·Z² with r + n below p, which is two products
+      where the inversion of Z was about 700.
+    - **Six rounds, written out.** `p384_wide_mont_mul` calls its round
+      six times and does not loop. Apple clang 21 keeps the running sum
+      in registers across six calls and in memory across a loop's
+      iterations: one verification of RFC 6979's vector took 258 µs
+      with the calls and 301 µs with the loop.
+    - **Digits one position at a time.** `signed_digits` visits each of
+      the 384 bit positions once and counts the positions a digit's
+      window covers, where the usual form advances by one position or
+      by five. The position is then a constant in each round CBMC
+      unwinds: the proof of the first form ran out of memory at 7 GB,
+      and this one takes 19 s.
+    - **No bit picks it.** A key, a hash and a signature are public, as
+      entries 95 and 96 found. Every session of a host object runs the
+      64-bit verifier.
+    - **Variable time, unlike entry 96's.** That verifier calls the
+      constant-time wide P-256 files because the object already held
+      them. Nothing held P-384 on 64-bit limbs, the tree has no P-384
+      signer and no P-384 key exchange, and the reference these files
+      are held to is variable time too, so they are written for a
+      verifier alone and say so.
+    - **What holds it.** INV-44. `bin/p384_equiv_test` holds each
+      routine of the field to `p384_field.c`'s result and the verifier
+      to `p384.c`'s verdict, over 23,406 field results and 186
+      verdicts; `bin/p384_test_host` runs the RFC 6979 vectors on the
+      host arm, and the Wycheproof host leg the ECDSA P-384 vectors.
+      Four proofs: `p384_wide_field` (513 properties, 59 s, 1.7 GB),
+      `p384_wide_point` (608, 94 s, 2.6 GB), `p384_wide_digits` (611,
+      19 s, 377 MB) and `p384_wide_verify` (511, 1 s, 29 MB), which
+      holds the refusals no test can see. `test/widemul-builds.sh`
+      holds each arm and each field to its object. Twenty-four
+      `inv44-*` violations each fail one of them.
+
+    Measured on the M1 Pro under Apple clang 21, with
+    `bench/primitives.c`'s verify rows under `0x67`, three runs:
+    `p384_ecdsa_verify` takes 261 µs and retires 3,381,565
+    instructions, where the 32-bit limbs took 3.94 ms and 34,399,679.
+    That is 0.87 of OpenSSL's 302 µs, where it was 13 times.
+    `docs/performance.md`'s table takes the row from its next run.
+    Gain: a host object verifies an ECDSA P-384 signature in a
+    fifteenth of the time.
+
+    Rejected:
+
+    - **`p384_field.c` and `p384.c` compiled at two limb widths from
+      one text.** The reference and the fast path would then be one
+      text, and an equivalence test would compare an algorithm with
+      itself. Two texts cost an auditor a second field to read, and
+      each holds the other.
+    - **`rsa_mont64.c`'s arithmetic.** It multiplies modulo any odd
+      number and a TRUST=webpki host object holds it. It reads its
+      operands through volatile pointers and wipes its working limbs
+      on every product, for RSA's secret exponent, and its limb count
+      is a variable. A verifier needs none of the three. Nobody
+      measured P-384 on it.
+    - **A table of multiples of G in the source, a product specialised
+      to p, and a squaring of its own.** Each would save more, and each
+      is more to audit. Nobody measured them: the verifier is under
+      OpenSSL's time on this machine without them.
+    - **The multiply bit.** It states a timing, and nothing here has one
+      to hide.

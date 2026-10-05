@@ -1,0 +1,13 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: proof/prove-one.sh p384_wide_verify
+reason: the host verifier admits zero for r and for s. A zero s has
+  the inverse zero, so both scalars are zero and the sum is infinity,
+  and a zero r never equals an x: every test passes. FIPS 186-4 6.4.2
+  refuses both before any arithmetic, and the proof requires the
+  verdict 0 and no call into the points for a pair outside 1..n-1.
+
+--- old
+    return !p384_wide_is_zero(a) && p384_wide_compare(a, p384_wide_modn.m) < 0;
+--- new
+    return p384_wide_compare(a, p384_wide_modn.m) < 0;

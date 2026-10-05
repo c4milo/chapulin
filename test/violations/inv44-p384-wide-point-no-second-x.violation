@@ -1,0 +1,13 @@
+invariant: INV-44
+file: p384_wide_point.c
+catches: p384_equiv_test
+reason: the comparison never tries r + n, so a signature whose point
+  has an x above n, where r is x - n, does not verify.
+  bin/p384_equiv_test verifies one built on the point whose x is n +
+  2.
+
+--- old
+    return x_is(sum, zz, r_plus_n);
+--- new
+    (void)r_plus_n;
+    return 0;

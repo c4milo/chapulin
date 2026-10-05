@@ -1,0 +1,13 @@
+invariant: INV-44
+file: p384_wide_field.c
+catches: p384_equiv_test
+reason: the plain subtraction returns its carry where its caller reads
+  a borrow, so p384_wide_mod_sub adds the modulus back to every
+  difference that did not borrow and to none that did.
+  bin/p384_equiv_test requires the borrow and the difference to be
+  p384_field.c's.
+
+--- old
+    return carry ^ 1;
+--- new
+    return carry;

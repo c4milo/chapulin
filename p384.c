@@ -4,11 +4,35 @@
 // infinity), the group law, and the verify equation over strict-DER
 // signatures. It is p256.c line for line at 12 limbs. Clarity over
 // speed: this runs once per connection.
+//
+// That is a device object's arithmetic, and the reference. A host object
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles none of it: its entry reads the
+// signature with the same DER reader and hands r and s to
+// p384_wide_verify.c, which checks the same equation on six 64-bit limbs,
+// in every session, because nothing here is secret and so no caller has
+// to state the multiply's timing (docs/decisions.md 97).
+// bin/p384_equiv_test compiles both arms into one binary and requires one
+// verdict from them.
 #include "p384.h"
 
 #include <string.h>
 
 #include "buf.h"
+
+#ifdef CH_CPU_RUNTIME
+
+#include "p384_wide_verify.h"
+
+// The host arm's check of r and s: p384_wide_verify.c's. This is the one
+// place the file picks an arm, so an object compiles one check and the
+// entry below calls it under one name.
+static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
+                     const uint8_t r_be[P384_LEN], const uint8_t s_be[P384_LEN]) {
+    return p384_wide_verify_rs(pub, msg_hash, r_be, s_be);
+}
+
+#else // !CH_CPU_RUNTIME
+
 #include "p384_field.h"
 
 #define SCALAR_BITS 384
@@ -158,64 +182,10 @@ static int on_curve(const uint32_t x[P384_LIMBS], const uint32_t y[P384_LIMBS]) 
     return p384_compare(lhs, rhs) == 0;
 }
 
-// One strict-DER INTEGER carrying an ECDSA scalar: minimal length, no
-// negatives, at most one leading zero and only when the next byte's high
-// bit needs it. A scalar below n fits 48 bytes, so the content is at
-// most 49 bytes: 48 plus the one leading zero. Writes the value
-// big-endian into v[48].
-static int der_scalar(rbuf *r, uint8_t v[P384_LEN]) {
-    if (rb_u8(r) != 0x02) {
-        return 0;
-    }
-    size_t len = rb_u8(r);
-    if (r->err || len < 1 || len > P384_LEN + 1) {
-        return 0;
-    }
-    const uint8_t *c = rb_bytes(r, len);
-    if (c == NULL || (c[0] & 0x80)) {
-        return 0; // short input, or a negative value
-    }
-    if (len > 1 && c[0] == 0 && !(c[1] & 0x80)) {
-        return 0; // non-minimal leading zero
-    }
-    if (len == P384_LEN + 1 && c[0] != 0) {
-        return 0; // 49 content bytes only ever pad a high bit
-    }
-    size_t skip = c[0] == 0 ? 1 : 0; // covers INTEGER 0 too: range check kills it
-    memset(v, 0, P384_LEN);
-    memcpy(v + (P384_LEN - (len - skip)), c + skip, len - skip);
-    return 1;
-}
-
-// ECDSA-Sig-Value: SEQUENCE of exactly two INTEGERs filling sig_len.
-// Each INTEGER is at most 2 + 49 bytes, so the SEQUENCE content is at
-// most 2*(2+49) = 102 bytes, under 128: any long-form length is
-// non-minimal and rejected by the < 0x80 check here (der_scalar's len
-// cap covers the inner ones).
-static int der_parse(const uint8_t *sig, size_t sig_len, uint8_t r_be[P384_LEN],
-                     uint8_t s_be[P384_LEN]) {
-    rbuf rb;
-    rb_init(&rb, sig, sig_len);
-    if (rb_u8(&rb) != 0x30) {
-        return 0;
-    }
-    size_t len = rb_u8(&rb);
-    if (rb.err || len >= 0x80 || len != rb_left(&rb)) {
-        return 0;
-    }
-    if (!der_scalar(&rb, r_be) || !der_scalar(&rb, s_be)) {
-        return 0;
-    }
-    return rb_left(&rb) == 0 && !rb.err;
-}
-
-int p384_ecdsa_verify(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
-                      const uint8_t *sig_der, size_t sig_len) {
-    uint8_t r_be[P384_LEN];
-    uint8_t s_be[P384_LEN];
-    if (!der_parse(sig_der, sig_len, r_be, s_be)) {
-        return 0;
-    }
+// Whether (r, s) is a signature of msg_hash under pub, for r and s as 48
+// big-endian bytes each: FIPS 186-4's verification on the limbs above.
+static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
+                     const uint8_t r_be[P384_LEN], const uint8_t s_be[P384_LEN]) {
     uint32_t r[P384_LIMBS];
     uint32_t s[P384_LIMBS];
     p384_from_bytes(r, r_be);
@@ -275,4 +245,67 @@ int p384_ecdsa_verify(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P3
         (void)p384_sub_raw(x1, x1, p384_modn.m);
     }
     return p384_compare(x1, r) == 0;
+}
+
+#endif // CH_CPU_RUNTIME
+
+// One strict-DER INTEGER carrying an ECDSA scalar: minimal length, no
+// negatives, at most one leading zero and only when the next byte's high
+// bit needs it. A scalar below n fits 48 bytes, so the content is at
+// most 49 bytes: 48 plus the one leading zero. Writes the value
+// big-endian into v[48].
+static int der_scalar(rbuf *r, uint8_t v[P384_LEN]) {
+    if (rb_u8(r) != 0x02) {
+        return 0;
+    }
+    size_t len = rb_u8(r);
+    if (r->err || len < 1 || len > P384_LEN + 1) {
+        return 0;
+    }
+    const uint8_t *c = rb_bytes(r, len);
+    if (c == NULL || (c[0] & 0x80)) {
+        return 0; // short input, or a negative value
+    }
+    if (len > 1 && c[0] == 0 && !(c[1] & 0x80)) {
+        return 0; // non-minimal leading zero
+    }
+    if (len == P384_LEN + 1 && c[0] != 0) {
+        return 0; // 49 content bytes only ever pad a high bit
+    }
+    size_t skip = c[0] == 0 ? 1 : 0; // covers INTEGER 0 too: range check kills it
+    memset(v, 0, P384_LEN);
+    memcpy(v + (P384_LEN - (len - skip)), c + skip, len - skip);
+    return 1;
+}
+
+// ECDSA-Sig-Value: SEQUENCE of exactly two INTEGERs filling sig_len.
+// Each INTEGER is at most 2 + 49 bytes, so the SEQUENCE content is at
+// most 2*(2+49) = 102 bytes, under 128: any long-form length is
+// non-minimal and rejected by the < 0x80 check here (der_scalar's len
+// cap covers the inner ones).
+static int der_parse(const uint8_t *sig, size_t sig_len, uint8_t r_be[P384_LEN],
+                     uint8_t s_be[P384_LEN]) {
+    rbuf rb;
+    rb_init(&rb, sig, sig_len);
+    if (rb_u8(&rb) != 0x30) {
+        return 0;
+    }
+    size_t len = rb_u8(&rb);
+    if (rb.err || len >= 0x80 || len != rb_left(&rb)) {
+        return 0;
+    }
+    if (!der_scalar(&rb, r_be) || !der_scalar(&rb, s_be)) {
+        return 0;
+    }
+    return rb_left(&rb) == 0 && !rb.err;
+}
+
+int p384_ecdsa_verify(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
+                      const uint8_t *sig_der, size_t sig_len) {
+    uint8_t r_be[P384_LEN];
+    uint8_t s_be[P384_LEN];
+    if (!der_parse(sig_der, sig_len, r_be, s_be)) {
+        return 0;
+    }
+    return verify_rs(pub, msg_hash, r_be, s_be);
 }

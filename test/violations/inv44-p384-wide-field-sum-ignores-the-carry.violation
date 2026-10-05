@@ -1,0 +1,14 @@
+invariant: INV-44
+file: p384_wide_field.c
+catches: p384_equiv_test
+reason: the modular sum subtracts the modulus when the low 384 bits
+  are at or above it and not when the sum carried out of them, so (m -
+  1) + (m - 1) keeps 2^384 too little. bin/p384_equiv_test adds the
+  edges of each modulus to each other.
+
+--- old
+    uint64_t carry = p384_wide_add_raw(o, a, b);
+    if (carry || p384_wide_compare(o, mod->m) >= 0) {
+--- new
+    (void)p384_wide_add_raw(o, a, b);
+    if (p384_wide_compare(o, mod->m) >= 0) {

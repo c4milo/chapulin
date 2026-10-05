@@ -1,0 +1,18 @@
+invariant: INV-44
+file: p384.c
+catches: test/widemul-builds.sh
+reason: p384.c chooses its arm on a define no build passes, so a host
+  object compiles the 32-bit arithmetic and never calls
+  p384_wide_verify.c. test/widemul-builds.sh compiles the file as a
+  host object does and requires its call into p384_wide_verify.c and
+  none into p384_field.c. The file picks its arm in one place, so this
+  edit compiles under every compiler.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+
+#include "p384_wide_verify.h"
+--- new
+#ifdef CH_CPU_HOST
+
+#include "p384_wide_verify.h"

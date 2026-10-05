@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-# Prints the P-384 constants p384_field.c and p384.c embed, in the exact
-# C layout: 12 little-endian uint32 limbs per number, the Montgomery
-# entry constant r2 = 2^768 mod m and the word inverse m0inv = -m^-1
-# mod 2^32 for both moduli.
+# Prints the P-384 constants the C files embed, in the exact C layout.
+# For p384_field.c and p384.c that is 12 little-endian uint32 limbs per
+# number, and for p384_wide_field.c and p384_wide_verify.c, which a host
+# object holds, 6 little-endian uint64 limbs. Both layouts carry the
+# Montgomery entry constant r2 = 2^768 mod m, which is one number at
+# either width, and the word inverse m0inv = -m^-1 modulo 2^32 or 2^64
+# for both moduli. It also prints the two points test/p384_equiv_test.c
+# builds the signatures at the edges of x mod n from.
 #
 # Every curve parameter is read back from openssl before it is printed:
 # `openssl ecparam -name secp384r1 -param_enc explicit -text -noout`
@@ -15,9 +19,8 @@ import re
 import subprocess
 import sys
 
-LIMBS = 12
-LIMB_BITS = 32
-R = 1 << (LIMBS * LIMB_BITS)
+BITS = 384
+R = 1 << BITS
 
 # SEC 2 secp384r1.
 P = (1 << 384) - (1 << 128) - (1 << 96) + (1 << 32) - 1
@@ -64,48 +67,86 @@ def check_against_openssl():
     assert (GY * GY - (GX ** 3 + A * GX + B)) % P == 0, "G is not on the curve"
 
 
-def limbs(value):
-    """value as LIMBS little-endian 32-bit words."""
+def limbs(value, limb_bits):
+    """value as little-endian words of limb_bits bits each."""
     assert 0 <= value < R
-    return [(value >> (LIMB_BITS * i)) & 0xffffffff for i in range(LIMBS)]
+    mask = (1 << limb_bits) - 1
+    return [(value >> (limb_bits * i)) & mask
+            for i in range(BITS // limb_bits)]
 
 
-def c_array(words, indent):
-    """The limbs as a C initializer, six per line, clang-format style."""
+def c_array(words, indent, limb_bits):
+    """The limbs as a C initializer, 192 bits per line."""
+    per_line = 192 // limb_bits
+    digits = limb_bits // 4
     lines = []
-    for i in range(0, len(words), 6):
-        lines.append(indent + ", ".join(f"0x{w:08x}" for w in words[i:i + 6]))
+    for i in range(0, len(words), per_line):
+        lines.append(indent + ", ".join(f"0x{w:0{digits}x}"
+                                        for w in words[i:i + per_line]))
     return ",\n".join(lines)
 
 
-def print_modulus(name, m):
+def print_modulus(struct, name, m, limb_bits):
     r2 = (R * R) % m
-    m0inv = (-pow(m, -1, 1 << LIMB_BITS)) % (1 << LIMB_BITS)
-    assert (m * m0inv) % (1 << LIMB_BITS) == (1 << LIMB_BITS) - 1
-    print(f"const p384_modulus {name} = {{")
-    print("    {" + c_array(limbs(m), "     ").lstrip() + "},")
-    print("    {" + c_array(limbs(r2), "     ").lstrip() + "},")
-    print(f"    0x{m0inv:08x},")
+    word = 1 << limb_bits
+    m0inv = (-pow(m, -1, word)) % word
+    assert (m * m0inv) % word == word - 1
+    print(f"const {struct} {name} = {{")
+    print("    {" + c_array(limbs(m, limb_bits), "     ", limb_bits).lstrip()
+          + "},")
+    print("    {" + c_array(limbs(r2, limb_bits), "     ", limb_bits).lstrip()
+          + "},")
+    print(f"    0x{m0inv:0{limb_bits // 4}x},")
     print("};")
     print()
 
 
-def print_array(name, value):
-    print(f"static const uint32_t {name}[P384_LIMBS] = {{")
-    print(c_array(limbs(value), "    "))
+def print_array(limb, count, name, value, limb_bits):
+    print(f"static const {limb} {name}[{count}] = {{")
+    print(c_array(limbs(value, limb_bits), "    ", limb_bits))
     print("};")
     print()
+
+
+def point_at_or_above(x):
+    """The curve point with the smallest x at or above x, and its even y.
+
+    p is 3 modulo 4, so a square's root is its (p + 1) / 4 power.
+    """
+    while True:
+        rhs = (x ** 3 + A * x + B) % P
+        y = pow(rhs, (P + 1) // 4, P)
+        if (y * y) % P == rhs:
+            return x, y if y % 2 == 0 else P - y
+        x += 1
 
 
 def main():
     check_against_openssl()
     print("// p384_field.c")
-    print_modulus("p384_modp", P)
-    print_modulus("p384_modn", N)
+    print_modulus("p384_modulus", "p384_modp", P, 32)
+    print_modulus("p384_modulus", "p384_modn", N, 32)
     print("// p384.c")
-    print_array("B", B)
-    print_array("GX", GX)
-    print_array("GY", GY)
+    for name, value in (("B", B), ("GX", GX), ("GY", GY)):
+        print_array("uint32_t", "P384_LIMBS", name, value, 32)
+    print("// p384_wide_field.c")
+    print_modulus("p384_wide_modulus", "p384_wide_modp", P, 64)
+    print_modulus("p384_wide_modulus", "p384_wide_modn", N, 64)
+    print("// p384_wide_verify.c")
+    for name, value in (("B", B), ("GX", GX), ("GY", GY)):
+        print_array("uint64_t", "P384_WIDE_LIMBS", name, value, 64)
+    # Two points for test/p384_equiv_test.c. One has an x above n, so that
+    # x mod n is x - n: an x of n itself is r = 0, which no signature
+    # carries, so the search starts one above it. The other has the
+    # smallest x there is, so that x + p still fits 48 bytes.
+    print("// test/p384_equiv_test.c")
+    for name, start in (("LARGE", N + 1), ("SMALL", 0)):
+        x, y = point_at_or_above(start)
+        assert start <= x < P and (y * y - (x ** 3 + A * x + B)) % P == 0
+        print(f"{name}_X = {x:096x}")
+        print(f"{name}_Y = {y:096x}")
+    print(f"// LARGE_X - n = {point_at_or_above(N + 1)[0] - N}, "
+          f"SMALL_X + p < 2^384: {point_at_or_above(0)[0] + P < R}")
 
 
 if __name__ == "__main__":

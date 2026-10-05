@@ -4,7 +4,13 @@
 // modulus so the field prime p and the group order n share every
 // routine; inverses are Fermat powers. Clarity over speed: this runs
 // once per connection.
+//
+// A device object holds this file. A host object (-DCH_CPU_RUNTIME)
+// compiles none of it and holds p384_wide_field.c, the same routines on
+// six 64-bit limbs, in its place (docs/decisions.md 97).
 #include "p384_field.h"
+
+#ifndef CH_CPU_RUNTIME
 
 #include <string.h>
 
@@ -161,3 +167,5 @@ void p384_mod_inverse(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
     }
     p384_mont_mul(o, acc, one, mod); // strip the R factor
 }
+
+#endif // !CH_CPU_RUNTIME

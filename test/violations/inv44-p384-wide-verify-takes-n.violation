@@ -1,0 +1,12 @@
+invariant: INV-44
+file: p384_wide_verify.c
+catches: proof/prove-one.sh p384_wide_verify
+reason: the host verifier admits n for r and for s, the first value
+  past the range. n is zero modulo n, so the arithmetic after it gives
+  the verdict zero gives, and every test passes. The proof requires
+  the verdict 0 and no call into the points for a pair outside 1..n-1.
+
+--- old
+    return !p384_wide_is_zero(a) && p384_wide_compare(a, p384_wide_modn.m) < 0;
+--- new
+    return !p384_wide_is_zero(a) && p384_wide_compare(a, p384_wide_modn.m) <= 0;
