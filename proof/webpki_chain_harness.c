@@ -11,7 +11,7 @@
 // that verified the last of them lies inside the spki of the anchor at
 // anchor_index, which is below anchor_count.
 //
-// Layered, the webpki_cert pattern. The five calls the walk makes are
+// Layered, the webpki_cert pattern. The six calls the walk makes are
 // stubs that assert what the walk passes them and havoc their outputs
 // within exactly what their own harnesses prove:
 //
@@ -27,6 +27,13 @@
 //   - webpki_verify and webpki_match_san (webpki_sigalg, webpki_name):
 //     a nondet verdict over inputs the stub asserts are readable
 //   - webpki_pack_seconds (webpki_time): a packed date in range
+//   - ct_memeq (ct): it may read n bytes of each operand, which the stub
+//     asserts, and answers 0 or 1. For each certificate it reads, the
+//     walk compares two Names once for each anchor, once for the
+//     issuer and once for the self-issued test, and the real loop,
+//     unrolled to the list's length at each of them, is what took the
+//     solver past the runner's address-space cap (proof/run.sh has the
+//     measurements)
 //
 // So the object under proof is the walk itself: the entry framing, the
 // anchor loop, the count of certificates read and of the non-self-issued
@@ -40,6 +47,7 @@
 #include "harness.h"
 
 #include "buf.h"
+#include "ct.h"
 #include "handshake_message.h"
 #include "webpki.h"
 
@@ -195,6 +203,14 @@ uint64_t webpki_pack_seconds(uint64_t now_seconds) {
     uint64_t packed = nondet_u64();
     __CPROVER_assume(packed >= PACKED_MIN && packed <= PACKED_MAX);
     return packed;
+}
+
+// ct_memeq's contract (ct.h): it reads n bytes of each operand and
+// answers whether they are equal. The ct harness proves the body.
+uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n) {
+    __CPROVER_assert(n == 0 || (__CPROVER_r_ok(a, n) && __CPROVER_r_ok(b, n)),
+                     "ct_memeq stub: both operands are readable");
+    return nondet_u8() & 1;
 }
 
 #include "webpki.c"

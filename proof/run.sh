@@ -1338,7 +1338,22 @@ launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0
 # measured 1204 properties, 131 s and 4.6 GB the same day, so the peak had
 # already moved past the 3.6 GB recorded above; fast:8 covers the highest
 # peak seen.
-launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c ct.c proof/ct_wipe_stub.c
+# ct_memeq is a stub of its contract since 2026-10-05, the sixth. With the
+# real loop, how much the solver needed followed the order in which cbmc
+# numbered its symbols more than what the C said. In an Ubuntu 24.04
+# x86-64 container with the pinned cbmc and kissat (PROVE_ONLY=webpki_chain
+# PROVE_NO_CACHE=1, peaks read from /proc/<pid>/status), the tree at
+# 02435f99 proved 1204 properties in 131 s with kissat's address space at
+# 3.0 GB. The tree at 767c86ca differs from it, for this formula, in the
+# prototypes of six p256_point.h functions the walk never calls, and
+# there kissat reached 11.4 GB and the 12 GB cap of a fast:8 job ended
+# it, on CI twice and in the container. With the stub: 1176 properties,
+# 74 s, kissat 4.2 GB of address space and 2.4 GB resident; with one, two
+# and five unused prototypes at the top of the harness, 4.2, 4.2 and 2.7
+# GB; and an assert of 0 at the CH_OK tail fails that one assert (1 of
+# 1177, 110 s, 4.4 GB). fast:8 stays, whose 12 GB cap is 2.7 times the
+# highest of those peaks.
+launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c
 # webpki_pin: the SPKI pin calls of webpki_pin.c (webpki_pin.h). The raw
 # public key half runs at its real bound, a list one byte past an entry at
 # CH_WEBPKI_SPKI_MAX, so both sides of the entry cap and of the exact fill

@@ -2013,12 +2013,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 - **Harness:** `webpki_chain` (fast)
 - **Proves:** `webpki_verify_chain` over any CertificateEntry list and
-  any anchor array, with the five calls it makes
+  any anchor array, with the six calls it makes
   (`webpki_parse_certificate`, `webpki_read_spki`, `webpki_verify`,
-  `webpki_match_san`, `webpki_pack_seconds`) stubbed to the contracts
-  their own harnesses prove:
+  `webpki_match_san`, `webpki_pack_seconds`, `ct_memeq`) stubbed to the
+  contracts their own harnesses prove:
   - it returns `CH_OK`, `CH_EPROTO` or `CH_EAUTH`;
-  - a refusal names one of the four alerts `webpki.h`'s table lists;
+  - a refusal names one of the five alerts `webpki.h`'s table lists;
   - a success keeps the caller's alert and copies out a leaf key of at
     most `CH_WEBPKI_KEY_MAX` bytes under one of the three key
     algorithms.
@@ -2029,7 +2029,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   `CH_WEBPKI_CHAIN_MAX` one are inside it; 2 anchors of ≤ 8 B each.
 - **Not proved:** which chains it accepts. The verify and match stubs
   answer an unconstrained verdict, so the formula says nothing about
-  soundness. `Spec.Webpki.verifyChain_ok` states that an accepted chain
+  soundness. The `ct_memeq` stub asserts that it may read both Names and
+  answers an unconstrained verdict too, so the formula does not say
+  which Names the walk finds equal; the [ct](#ct) harness proves the
+  comparison. `Spec.Webpki.verifyChain_ok` states that an accepted chain
   has a verified signature path to an anchor, and
   `test/webpki_chain_test.c` and `test/diff_webpki_chain.h` test it over
   the corpus; see

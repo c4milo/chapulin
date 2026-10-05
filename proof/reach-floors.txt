@@ -156,7 +156,7 @@ softmul 91.3
 # arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
 # before, already under the 56.5 recorded here.
 webpki_cert 56.1
-webpki_chain 79.6
+webpki_chain 80.5
 webpki_ext 40.0
 webpki_ext_one 51.4
 webpki_ext_walk 54.8
