@@ -2123,7 +2123,17 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # every wrap.
 # The layers are p256_field's, one field over. p256_wide_row runs the one
 # routine every product goes through, p256_wide_limb.h's row, on the real
-# 64x64->128 multiply. p256_wide_field runs every routine with no product on
+# 64x64->128 multiply, and holds the header's two carry steps to a 128-bit
+# reference. Those steps have three forms, and the compiler picks one
+# (P256_WIDE_CARRY in the header). cbmc takes its preprocessor from the
+# machine it runs on, clang's on a Mac and gcc's on a runner, so each
+# harness that reads the steps names the form: the builtins, which clang
+# compiles. p256_wide_row_sum is p256_wide_row once more on the 128-bit
+# sums, which gcc compiles outside x86-64. One reference holds both, so a
+# verdict over one form is a verdict over the other. gcc's form for x86-64
+# is two intrinsics, which cbmc cannot read: bin/p256_equiv_test and the
+# vectors hold it, under gcc.
+# p256_wide_field runs every routine with no product on
 # its real body, and the Montgomery reduction, which for this prime is shifts
 # and adds, to its bound. p256_wide_field_mul and p256_wide_scalar run the
 # products over the row's contract, proof/p256_wide_stubs.h, in every shape
@@ -2143,6 +2153,7 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # 150 on ten cores, so the time is the run's CPU seconds and not its wall
 # clock, which was up to ten times that:
 #   p256_wide_row        128 properties,  3 s, 243 MB
+#   p256_wide_row_sum    116 properties,  4 s, 154 MB
 #   p256_wide_field      856 properties,  9 s,  99 MB
 #   p256_wide_field_mul  648 properties, 10 s, 102 MB
 #   p256_wide_scalar     374 properties, 17 s, 467 MB
@@ -2158,6 +2169,7 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # converged, 694 properties in 165 s at 474 MB, and has no line: it states the
 # row's claim four more times and nothing else.
 launch fast full p256_wide_row 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_row_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check

@@ -156,7 +156,7 @@ LIB_LEGS = [
 ]
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the two arguments that run one binary
+# itself, and the lane with one of the four arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -164,11 +164,15 @@ LIB_LEGS = [
 # computes or wipes names sha2-equiv, because the machine's own CPU may
 # lack the instructions and the qemu models have them. A violation of an
 # entry only an arm64 object compiles with two paths names
-# arm64-hash-count, which runs the counting binaries built for arm64.
+# arm64-hash-count, which runs the counting binaries built for arm64. A
+# violation of the x86-64 intrinsics in p256_wide_limb.h's carry steps
+# names p256-equiv, because only gcc for x86-64 reads that form and the
+# lane compiles with it.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
-                          "test/docker-aes-runtime-qemu.sh arm64-hash-count"]
+                          "test/docker-aes-runtime-qemu.sh arm64-hash-count",
+                          "test/docker-aes-runtime-qemu.sh p256-equiv"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the legs only the nightly runs. Each entry is (tier, command, reason).
@@ -385,14 +389,15 @@ def select_pairs(out, changed, legs):
 # test/docker-aes-runtime-qemu.sh runs test/aes-runtime-qemu.sh, which
 # compiles x86-64 and arm64 copies of these binaries into bin/qemu/ and
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
-# (docs/decisions.md 81, 89, 90 and 93). No make rule builds the copies.
-# The script asks make for each binary's source list and names its test
-# files itself, and the sources of these eight rules hold every file it
-# compiles.
+# (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
+# copies. The script asks make for each binary's source list and names its
+# test files itself, and the sources of these nine rules hold every file
+# it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
                              "bin/x86_kernels_test", "bin/sha2_equiv_test",
-                             "bin/hash_runtime_test", "bin/hash_runtime_exporter_test")
+                             "bin/hash_runtime_test", "bin/hash_runtime_exporter_test",
+                             "bin/p256_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 

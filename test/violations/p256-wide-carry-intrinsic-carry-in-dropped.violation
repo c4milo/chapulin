@@ -1,0 +1,17 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: test/docker-aes-runtime-qemu.sh p256-equiv
+reason: the form of the add with carry that gcc reads for x86-64 hands
+  _addcarry_u64 a carry in of zero, so every chain of limbs drops the
+  carries between them. CBMC reads no intrinsic, so no proof covers the
+  form, and clang reads another, so on a machine whose compiler is clang
+  no test binary compiles the line. The script builds
+  bin/p256_equiv_test for x86-64 on the intrinsics and runs it under
+  qemu-x86_64, where it holds every sum to p256_field.c's and
+  p256_scalar.c's. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    *carry = _addcarry_u64((unsigned char)*carry, a, b, &sum);
+--- new
+    *carry = _addcarry_u64(0, a, b, &sum);

@@ -33,6 +33,10 @@
 
 #include "harness.h"
 
+// The two carry steps as clang compiles them. p256_wide_row_harness.c holds
+// this form and the 128-bit sums to one reference, so what a harness over
+// this header proves holds on both.
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
 #include "p256_wide_limb.h"
 // From here on the row the wide files call is the contract below.
 #define p256_wide_mul_row stub_mul_row

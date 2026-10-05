@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: p256_equiv_test_sum
+reason: the 128-bit sum, the form of the add with carry that gcc compiles
+  for a machine other than x86-64, adds its two limbs and leaves the
+  carry in out, so every chain of limbs drops the carries between them.
+  No compiler check runs on picks this form, so bin/p256_equiv_test
+  never compiles the line: bin/p256_equiv_test_sum names the form and
+  holds every sum on it to p256_field.c's and p256_scalar.c's.
+
+--- old
+    ct_u128 sum = (ct_u128)a + b + *carry;
+--- new
+    ct_u128 sum = (ct_u128)a + b;

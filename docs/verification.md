@@ -659,7 +659,7 @@ The entries are grouped by area:
 
 #### p256_wide
 
-- **Harnesses:** `p256_wide_row` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
 - **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
   `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c`,
   `p256_wide_table.c` and `p256_wide_wipe.c`, decision 94), under
@@ -670,6 +670,16 @@ The entries are grouped by area:
     operands, so the limb it returns holds everything above the four.
     The add with carry and the subtract with borrow each match a
     128-bit reference, and each carry out is 0 or 1.
+  - `p256_wide_row_sum`: `p256_wide_row` once more, on another form of
+    those two steps. `p256_wide_limb.h` holds three forms and picks one
+    by the compiler: the overflow builtins under clang, a 128-bit sum
+    under gcc for a machine other than x86-64, and two intrinsics under
+    gcc for x86-64. cbmc runs the preprocessor of the machine it is on,
+    so each harness names its form. `p256_wide_row` and the three
+    harnesses below read the builtins, and this one reads the sums. One
+    reference holds both forms, so the two return the same limb and the
+    same carry for every operand, and a verdict over one form is a
+    verdict over the other.
   - `p256_wide_field`: every routine with no product, on its real body.
     The conditional subtraction of p, `p256_wide_fe_add`,
     `p256_wide_fe_sub`, `p256_wide_fe_cmov` and the three predicates
@@ -729,6 +739,10 @@ The entries are grouped by area:
     17 locals, cbmc's symbolic execution grows with the square of the
     objects it tracks, and the field's chain of 267 products was stopped
     after 11 minutes with no formula.
+  - the form of the two carry steps that gcc compiles for x86-64,
+    `_addcarry_u64` and `_subborrow_u64`. cbmc reads no intrinsic, and
+    `bin/p256_equiv_test` holds that form under gcc and under
+    qemu-x86_64.
   - that a scan of the table reads every entry whatever the index
     holds. A formula over values cannot state it: the code reads
     `row[j]` for every j of a loop whose count is a literal, and
@@ -2254,6 +2268,20 @@ the wide files to the same answers:
     n, n + 1 and 2^256 - 1 among them, and on 40 random ones, half of
     them even;
   - a key pair, a signature and a shared secret under both answers.
+- `bin/p256_equiv_test_sum`, in `make check`, is that binary with the
+  two carry steps of `p256_wide_limb.h` on the 128-bit sums, the form
+  gcc compiles for a machine other than x86-64. `bin/p256_equiv_test`
+  runs the form its compiler picks: the builtins under clang, and the
+  two intrinsics under gcc for x86-64, which is what CI's check job and
+  `test/docker-check.sh` compile with. No machine that runs check picks
+  the sums, so the second binary names them.
+- `test/aes-runtime-qemu.sh`, which the mips job of `check.yml` runs on
+  every push, builds `bin/p256_equiv_test` with gcc for x86-64, the two
+  intrinsics named, and for arm64, the 128-bit sums named, and runs each
+  under qemu. `test/docker-aes-runtime-qemu.sh p256-equiv` runs those two
+  rows alone on any machine with docker, and the two violations of the
+  intrinsics name it as their catch: a machine whose compiler is clang
+  compiles no line of that form.
 - `tools/p256_wide.py`, in `make lint`, writes the table from SEC 2's G
   with Python's integers, and `make lint-p256-wide` fails when the
   checked-in file is not what it prints. The same script recomputes
@@ -2276,12 +2304,19 @@ the wide files to the same answers:
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
 
 That the wide files run in constant time rests on how they are written,
-and three checks hold parts of it:
+and four checks hold parts of it:
 
 - `make lint-wide-multiply` holds each file's count of conditional
   branches at its recorded number on arm64 and x86-64 under clang, so a
   select that clang turns into a branch, or a scan that passes over the
   entries a digit does not name, shows as a count that grows.
+- `make lint-p256-wide` runs `tools/p256-wide-carry.py`, which reads
+  `p256_wide_limb.h` as clang preprocesses it and as gcc does, for arm64
+  and for x86-64, and requires the overflow builtins in the two carry
+  steps under clang and under no gcc. gcc expands such a builtin to an
+  add and a jump on the add's carry, which is a limb's, and removes the
+  jump only where its if-conversion passes run. Every value stays right
+  either way, so no test binary sees which form gcc read.
 - The Semgrep rule `inv-16-p256-wide-no-subscript-by-digit` refuses a
   subscript by a digit's index in `p256_wide_mul.c`. A table read by
   index gives the right value in the same time with one branch fewer, so
@@ -2297,10 +2332,11 @@ one. Decision 94 records one such run by hand and what it found.
 
 Not in the tree either: a count of these files' branches under a 64-bit
 gcc. `lint-wide-multiply` counts them under clang, and gcc lowers some
-of the same source otherwise: gcc 13.3 for x86-64 compiled the borrow of
-a subtraction from a constant zero to a jump on a coordinate's limb,
-which the field no longer writes. Decision 94 has what was read by hand
-under gcc 13.3 and 15.2.
+of the same source otherwise: it made jumps of the overflow builtins,
+which is why it compiles another form of the two carry steps. Decision
+94 has what was read by hand under gcc 13.3 and 15.2: every conditional
+branch of the wide files at `-O0`, `-Og`, `-O1`, `-O2`, `-O3` and `-Os`,
+and at `-O2` with both if-conversion passes turned off.
 
 What the wide calls leave on the stack is measured, not proved. Each
 routine wipes the objects it names, and `widemul.h` calls

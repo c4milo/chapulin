@@ -2562,11 +2562,30 @@ last `ROLE=server` stub, as the entry said it would.
   a key exchange and a signature on the wide P-256 files
   (`bin/timing_p256_wide`), which a scan that passes over the entries a
   digit does not name fails.
+  `make lint-p256-wide` holds the form of the wide P-256 files' two
+  carry steps that each compiler reads (`tools/p256-wide-carry.py`): the
+  overflow builtins under clang, and under gcc two intrinsics for x86-64
+  and a 128-bit sum for any other machine. gcc expands a builtin to an
+  add and a jump on the add's carry, a limb's, and removes the jump only
+  where its if-conversion passes run, so at `-Og` the wide files held 73
+  such jumps on the builtins, and no check here counts those files'
+  branches under a 64-bit gcc (decision 94). Every value is the same on
+  each form, so no test binary sees which one gcc read.
+  `inv16-p256-wide-gcc-reads-the-builtins` and
+  `inv16-p256-wide-gcc-x86-64-reads-the-builtins` hand gcc the builtins,
+  and the lint catches both. What each form computes is held apart from
+  which one a compiler reads: `bin/p256_equiv_test` runs the form its
+  compiler picks, `bin/p256_equiv_test_sum` the sums, and
+  `test/docker-aes-runtime-qemu.sh p256-equiv` the intrinsics as gcc
+  compiles them for x86-64 and the sums as it compiles them for arm64,
+  each under qemu. Five `p256-wide-carry-*` violations break one form
+  each.
   `inv-16-p256-wide-no-borrow-from-zero` refuses the borrow of a
-  subtraction from a constant zero in the wide P-256 files: gcc 13.3 and
-  15.2 for x86-64 compile that borrow to a jump on the value subtracted,
-  a limb of a coordinate, and no check here counts those files' branches
-  under a 64-bit gcc (decision 94).
+  subtraction from a constant zero in the wide P-256 files: on the
+  builtins, gcc 13.3 and 15.2 for x86-64 compiled that borrow to a jump
+  on the value subtracted, a limb of a coordinate, at `-O2`, where the
+  passes run. gcc reads the builtins no more, and the rule stays for a
+  build that names them (decision 94).
   `inv16-p256-wide-zero-mask-borrows-from-zero` and
   `inv16-p256-wide-neg-borrows-from-zero` write the two routines that
   did, and the rule catches both.

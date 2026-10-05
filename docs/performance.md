@@ -442,7 +442,7 @@ What the x86-64 runner's column shows, where it differs:
   of tree 7935393, before decision 94, so its rows of P-256's key generation, shared secret and
   signature time the native copies of the 32-bit files, which no object holds now. No x86-64 run
   has timed the wide files. Decision 94 counts their instructions for x86-64 under QEMU: under
-  gcc 13.3 a signature retires 1.19 M where the native copies retired 17.62 M and OpenSSL 3.0.13
+  gcc 13.3 a signature retires 0.89 M where the native copies retired 17.62 M and OpenSSL 3.0.13
   retires 0.21 M.
 - chapulin's Keccak is slow there. Under gcc 13 on that CPU, SHA3-256 takes 4.6 times its time on
   the M1 Pro, and ML-KEM-768, which runs on Keccak, 5.3 times. So ML-KEM-768 is 3.8 to 6.8 times

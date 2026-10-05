@@ -129,9 +129,10 @@ uint64_t p256_wide_fe_reduced_mask(const p256_wide_fe *a) {
 
 // All ones when v is zero, zero otherwise. Adding 2^64 - 1 to v, 128 bits wide so that nothing
 // wraps, carries into bit 64 exactly when v is not zero, as p256_wide_mul.c's equal_mask has
-// it. The borrow of 0 - v says the same, and gcc 13.3 and 15.2 for x86-64 compile that borrow
-// to a jump on v, which here is a coordinate (docs/decisions.md 94). So no step of this file
-// subtracts from a constant zero.
+// it. The borrow of 0 - v says the same, and on the overflow builtins gcc 13.3 and 15.2 for
+// x86-64 compiled that borrow to a jump on v, which here is a coordinate (docs/decisions.md
+// 94). gcc reads another form of the step by default (p256_wide_limb.h), and a build that names
+// the builtins reads this file too. So no step of this file subtracts from a constant zero.
 static uint64_t zero_mask_word(uint64_t v) {
     uint64_t nonzero = (uint64_t)(((ct_u128)v + UINT64_MAX) >> 64);
     return p256_wide_mask(nonzero ^ 1U);
@@ -182,8 +183,9 @@ void p256_wide_fe_neg(p256_wide_fe *o, const p256_wide_fe *a) {
     // p - a is the answer for every element but zero, whose answer is zero. It is computed as
     // ~a - ~p, which is the same number: (2^256 - 1 - a) - (2^256 - 1 - p). a is below p, so ~a
     // is above ~p and nothing borrows out. 0 - a subtracts every limb from a constant zero, and
-    // p - a subtracts one from p's third limb, which is zero, and gcc 13.3 for x86-64 compiles
-    // the borrow of such a step to a jump on the limb (docs/decisions.md 94).
+    // p - a subtracts one from p's third limb, which is zero, and on the overflow builtins gcc
+    // 13.3 for x86-64 compiled the borrow of such a step to a jump on the limb
+    // (docs/decisions.md 94).
     uint64_t keep = ~p256_wide_fe_zero_mask(a);
     uint64_t borrow = 0;
     uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->limb[0], ~P0);

@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: p256_equiv_test_sum
+reason: the 128-bit form of the subtract with borrow computes
+  2^64 + a - b - borrow, whose bit 64 is set when the subtraction did
+  not borrow, and returns that bit as the borrow out without inverting
+  it. So a chain borrows where it must not and does not where it must,
+  and the conditional subtraction after every product keeps the wrong
+  value. bin/p256_equiv_test_sum runs this form and holds every
+  difference on it to p256_field.c's and p256_scalar.c's.
+
+--- old
+    *borrow = (uint64_t)(difference >> 64) ^ 1U;
+--- new
+    *borrow = (uint64_t)(difference >> 64);

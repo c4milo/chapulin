@@ -5764,43 +5764,84 @@ does nothing more.
       shifted copies of u. The field's reduction has no product. The
       group order has no such form, so each of its rounds multiplies the
       low limb by `N0_INV` and adds one row of u n.
-    - **Carries from the compiler's builtins.** `p256_wide_add_carry` and
-      `p256_wide_sub_borrow` take their carry from
-      `__builtin_add_overflow` and `__builtin_sub_overflow`, which are
-      not C11. gcc and clang both define them, and a host object already
-      needs one of the two compilers for `unsigned __int128` (entry 52).
-      clang makes one add-with-carry instruction of that form. A 128-bit
-      sum of three terms compiles to more: under Apple clang 21 at `-O2`
-      for arm64 a field add is 26 instructions this way and 46 that way,
-      and a field multiply 141 and 168. gcc is behind clang. For arm64
-      it makes the chain of neither form: under gcc 14.2 a multiply is
-      275 instructions with the builtins and 266 with the 128-bit sums,
-      where clang 19 makes 141 and 172, and gcc 15.2 makes 275 of the
-      builtins still. For x86-64, gcc 13.3 makes the chain of neither,
-      460 and 602, and gcc 15.2 makes it of the builtins, 248, where
-      clang 23 makes 204. So a host object built with gcc for arm64, or
-      with gcc 13 for x86-64, runs this arithmetic at about half the
-      speed of one built with clang, as `build.zig` builds it.
-    - **No borrow from a constant zero.** gcc 13.3 compiles
-      `__builtin_sub_overflow` of two variables to a subtraction and a
-      `setb`, and of a constant zero and a variable to a subtraction and a
-      jump on its borrow. Under gcc 13.3 at `-O2` for x86-64,
-      `p256_wide_fe_neg`, written as 0 - a, jumped on each limb of a
-      coordinate, and under gcc 13.3 and 15.2 the zero and equality
-      masks, written as the borrow of 0 - v, jumped on v. A limb of a
-      coordinate is zero once in 2^64, and no limb of the table is, so
-      the jump goes one way through a signature. A peer chooses its
-      point, though, and can choose one with a zero limb, and the key
-      exchange negates the multiple a digit names. clang makes no such
-      jump for either architecture, and gcc 15.2 makes none for arm64.
-      So `p256_wide_fe_neg` computes p - a as ~a - ~p, a constant taken
-      from a variable, and the two masks come from a 128-bit sum, as
-      `equal_mask` in `p256_wide_mul.c` does. `lint-wide-multiply` counts
-      these files' branches under clang alone, and the Makefile says why
-      no 64-bit gcc spec runs, so no check of this tree sees such a jump.
-      After the change the branches of each wide file under gcc 13.3 and
-      15.2 for x86-64 were read by hand: each is a loop's counter, a byte
-      or a pointer of a public value, or a caller's verdict.
+    - **The two carry steps have three forms.** Every sum and every
+      difference of limbs goes through `p256_wide_add_carry` and
+      `p256_wide_sub_borrow`, and `P256_WIDE_CARRY` in `p256_wide_limb.h`
+      names the form a build compiles. The compiler picks it. clang
+      compiles `__builtin_add_overflow` and `__builtin_sub_overflow`,
+      which are not C11; a host object already needs gcc or clang for
+      `unsigned __int128` (entry 52). gcc for x86-64 compiles the
+      intrinsics `_addcarry_u64` and `_subborrow_u64`. gcc for any other
+      machine compiles a 128-bit sum. A field multiply at `-O2`, in
+      instructions:
+
+      | | builtins | intrinsics | 128-bit sums |
+      | --- | --- | --- | --- |
+      | Apple clang 21, arm64 | **141** | | 166 |
+      | clang 22, arm64 | **133** | | 168 |
+      | clang 23, x86-64 | **204** | 218 | 268 |
+      | gcc 15.2, arm64 | 275 | | **253** |
+      | gcc 13.3, x86-64 | 460 | **285** | 607 |
+      | gcc 15.2, x86-64 | 248 | **270** | 595 |
+
+      The bold number is the form that compiler picks. clang makes one
+      add-with-carry instruction of a builtin, so the builtins are its
+      shortest form on both machines. Each count is of a build with
+      `-fno-stack-protector`. Ubuntu's gcc and Alpine's turn the stack
+      protector on, and an intrinsic hands its limb back through a
+      pointer, so each field routine on the intrinsics then carries the
+      protector's check as well: 293 instructions a multiply under gcc
+      13.3, and 61 an add where the count without it is 50.
+    - **gcc compiles no overflow builtin.** gcc expands
+      `__builtin_add_overflow` to an add and a jump on the add's carry,
+      and leaves the jump for its two if-conversion passes to remove.
+      The carry is a limb's, so the jump is on a secret. At `-O0` the
+      passes do not run and at `-Og` gcc turns them off: under gcc 13.3
+      and 15.2 for x86-64 the builtins left 73 such jumps in the wide
+      files at `-Og`, and under gcc 15.2 for arm64 74. At `-O2` with
+      `-fno-if-conversion -fno-if-conversion2` they left 214 under gcc
+      13.3 for x86-64 and 211 under gcc 15.2 for arm64. So under gcc the
+      builtins ran in constant time only where a pass removed every one
+      of those jumps, and the first reading found two routines where it
+      had not: under
+      gcc 13.3 at `-O2` for x86-64, `p256_wide_fe_neg`, written as
+      0 - a, jumped on each limb of a coordinate, and under gcc 13.3 and
+      15.2 the zero and equality masks, written as the borrow of 0 - v,
+      jumped on v. A peer chooses its point and can choose one with a
+      zero limb, and the key exchange negates the multiple a digit
+      names. gcc expands an intrinsic to its instruction, and a 128-bit
+      sum to an add and an add with carry. With either, the same search
+      finds no jump on a carry at `-O0`, `-Og`, `-O1`, `-O2`, `-O3` or
+      `-Os`, nor at `-O2` with both passes off. For the sums that holds
+      of the spelling the header has: the difference is taken from a
+      with bit 64 set by an OR, and with the 2^64 added instead, gcc
+      15.2 for arm64 folded a constant subtrahend into it at `-O2` and,
+      with the passes off, left two jumps on the carry of the add that
+      remained. clang makes a flag of a builtin and no
+      jump at each of those levels, for arm64 and for x86-64. The
+      intrinsics are x86-64's alone, and the sums cost gcc for x86-64
+      twice the instructions, which is why gcc has two forms.
+    - **What the first reading changed in the field.** That reading was
+      of gcc on the builtins, and its fix was in `p256_wide_field.c`:
+      `p256_wide_fe_neg` computes p - a as ~a - ~p, a constant taken
+      from a variable, and the zero and equality masks come from a
+      128-bit sum, as `equal_mask` in `p256_wide_mul.c` does. Both stay,
+      and so does the Semgrep rule that refuses a borrow from a constant
+      zero: a build can still name the builtins under gcc through
+      `P256_WIDE_CARRY`, as the proofs do where cbmc runs gcc's
+      preprocessor.
+    - **What holds the choice.** `lint-wide-multiply` counts the wide
+      files' branches under clang alone, and the Makefile says why no
+      64-bit gcc spec runs, so no count sees which form gcc compiled.
+      `tools/p256-wide-carry.py`, in `make lint-p256-wide`, preprocesses
+      the header as clang reads it and with `__clang__` undefined, which
+      is how gcc reads it, for arm64 and for x86-64, and requires the
+      builtins in the two steps under clang and under no gcc. With the
+      forms in place the conditional branches of each wide file under
+      gcc 13.3 and 15.2 for x86-64 and gcc 15.2 for arm64 were read by
+      hand at the six levels and with the passes off: each is a loop's
+      counter, a byte or a pointer of a public value, a caller's
+      verdict or the stack protector's check.
     - **The inversions.** `p256_wide_fe_inv` raises to p - 2 by a fixed
       chain of 255 squarings and 12 multiplies, where `p256_fe_inv` runs
       384 products. `p256_wide_scalar_inverse` raises to n - 2 in 305
@@ -5876,12 +5917,14 @@ does nothing more.
       the function that holds the array through a volatile pointer, as
       `ct_wipe.c` calls `memset` (entry 91), so no compiler can move the
       array into the caller's frame. The deepest wide call,
-      `p256_wide_mul` with its eight multiples, wrote 1,824 bytes below
+      `p256_wide_mul` with its eight multiples, wrote 1,872 bytes below
       its caller at `-O2`, under gcc 13.3 for x86-64, the most of the
       eight compilers the test ran under: Apple clang 21 for arm64 and
       x86-64, gcc 13.3, gcc 15.2, clang 22 and clang 23 for x86-64, and
       gcc 15.2 and clang 22 for arm64 Linux. `make lib` and `build.zig`
-      compile at `-O2`. At `-O0` the call wrote 2,288 bytes under clang 22
+      compile at `-O2`. `bin/p256_equiv_test_sum`, which names the
+      128-bit sums where gcc 13.3 for x86-64 picks the intrinsics, wrote
+      1,904 there. At `-O0` the call wrote 2,288 bytes under clang 22
       for arm64, the most under any of the eight at `-O0`, `-O1`, `-O3`
       or `-Os`. With the wipe the search finds no limb under any of them
       at any of the five levels. A register is out of every wipe's reach,
@@ -5912,9 +5955,20 @@ does nothing more.
       `p256_field.c` wipe none of the temporaries they name
       (`p256_field.h`). Those files are a device object's too, and but
       for the three wipes above this entry leaves them as they are.
-    - **Proofs.** Eight launch lines, each under `-DCH_CPU_RUNTIME` and
+    - **Proofs.** Nine launch lines, each under `-DCH_CPU_RUNTIME` and
       `--unsigned-overflow-check`. `p256_wide_row` proves on the real
-      multiply that one row of a product wraps nothing. `p256_wide_field`
+      multiply that one row of a product wraps nothing, and holds the
+      two carry steps to a 128-bit reference. cbmc runs the preprocessor
+      of the machine it is on, clang's on a Mac and gcc's on a runner,
+      so each harness that reads the steps names the form: the
+      builtins. `p256_wide_row_sum` is the same proof on the 128-bit
+      sums. One reference holds both, so a verdict over one form is a
+      verdict over the other. CBMC reads no intrinsic, so the form gcc
+      compiles for x86-64 has no proof: `bin/p256_equiv_test` and the
+      vectors hold it under gcc, in CI's check job, in
+      `test/docker-check.sh` and, under qemu-x86_64, in
+      `test/aes-runtime-qemu.sh`, which runs the sums as gcc for arm64
+      compiles them too. `p256_wide_field`
       proves every routine with no product against a reference that
       branches, and the field's reduction to its bound: any value below
       p 2^256 lands below p. `p256_wide_field_mul` and `p256_wide_scalar`
@@ -5931,7 +5985,10 @@ does nothing more.
       that file's three wipes.
     - **Tests.** `bin/p256_equiv_test` runs the wide files and the 32-bit
       files on the same inputs, 67,073 comparisons of limbs, bytes and
-      verdicts, and then measures the stack. `tools/p256_wide.py`
+      verdicts, and then measures the stack. It runs the form of the
+      carry steps its compiler picks, and `bin/p256_equiv_test_sum` is
+      the same binary on the 128-bit sums, which no machine that runs
+      check picks. `tools/p256_wide.py`
       recomputes every constant the wide files hold from the SEC 2
       values, in `make lint`. The host binaries run RFC 6979's vectors,
       Python's and the Wycheproof ECDH and ECDSA suites once with the
@@ -5953,7 +6010,12 @@ does nothing more.
       and clang 22 for arm64 Linux. It reported no branch and no address
       that depends on a secret in them, and it reported both changed
       copies: a branch in the scan that passes over entries, and an
-      address in the read by index. In `p256_sign.c` and `p256_ecdh.c` it
+      address in the read by index. Under gcc 15.2, which reads the
+      128-bit sums there, it ran the wide entries at `-O0` and `-Og` as
+      well and reported none. With the builtins named in their place it
+      reported 783 jumps at `-Og`, each at one of the four lines that
+      name a builtin, and none at `-O2`. In `p256_sign.c` and
+      `p256_ecdh.c` it
       reported the branches on a verdict and on r and s that
       `p256_sign.h` and `p256_ecdh.h` state, and no other. No target of
       this tree runs memcheck, so the Semgrep rule
@@ -5984,6 +6046,18 @@ does nothing more.
       and the multiples', and the Semgrep rule catches both. Two take a
       borrow from a constant zero, in the zero mask and in the negation,
       and the rule `inv-16-p256-wide-no-borrow-from-zero` catches both.
+      Seven hold the carry steps. Two hand gcc the builtins, for every
+      machine and for x86-64 alone, and `make lint-p256-wide` catches
+      both. One drops the second carry of the builtins' add, and
+      `bin/p256_equiv_test` catches it. Two break the 128-bit sums, the
+      carry in left out of the add and the borrow out not inverted, and
+      `bin/p256_equiv_test_sum` catches both. Two break the intrinsics,
+      the carry in left out of `_addcarry_u64` and the operands of
+      `_subborrow_u64` exchanged. No compiler on a development Mac reads
+      that form, so their catch is
+      `test/docker-aes-runtime-qemu.sh p256-equiv`, which builds
+      `bin/p256_equiv_test` with gcc, for x86-64 on the intrinsics and
+      for arm64 on the sums, and runs each under qemu.
       Three drop one of `p256_scalar.c`'s wipes, and the `p256_scalar`
       proof catches each.
 
@@ -5996,18 +6070,26 @@ does nothing more.
       element type, so a dispatcher at each field routine would convert
       limbs at every call, and one point addition would take 43 branches
       on the answer where it now takes none.
-    - **128-bit sums for the carries.** A sum of three terms in
-      `unsigned __int128` gives the same carry with no builtin, and costs
-      the instructions measured above under clang.
-    - **`_addcarry_u64` for the carries on x86-64.** The intrinsic gives
-      gcc 13.3 its chain: a multiply is 293 instructions where the
-      builtins give 460, and a signature retires 0.89 M instructions
-      where it retires 1.19 M. gcc 15.2 and clang 23 make the chain of
-      the builtins already, and the intrinsic costs them instructions: a
-      multiply is 279 against 248 under gcc 15.2 and 218 against 204
-      under clang 23, and a signature 0.87 M against 0.81 M and 0.74 M
-      against 0.71 M. It would be a second form of the two carry steps
-      for one release of one compiler, and CBMC reads no intrinsic.
+    - **One form of the carry steps for every compiler.** The 128-bit
+      sums are C with one extension, have no jump under either compiler
+      and CBMC reads them, and they cost clang 18 to 31 percent more
+      instructions a multiply and gcc for x86-64 twice the intrinsics'.
+      The builtins are clang's shortest form and gcc's jumps. The
+      intrinsics are x86-64's alone.
+    - **The builtins under gcc at `-O2` and above.** gcc 15.2 for x86-64
+      makes add-with-carry of most pairs of builtins itself, 248
+      instructions a multiply where the intrinsics give 270, and at
+      `-O1` and above no jump on a carry was found in what it or gcc
+      13.3 emits. That is a property of two passes, of the level, and of
+      the release: `-Og` has the jumps, and the first reading found two
+      shapes the passes had left at `-O2`.
+    - **A compare for the carry.** `sum < a` names no builtin, and gcc
+      leaves no jump of it at any of the six levels. At `-O2` with both
+      passes off it leaves 164 or 165 jumps on a carry under each of the
+      three gcc builds, so there it rests on the same two passes, and a
+      multiply is 331 to 484 instructions.
+    - **The intrinsics under clang for x86-64.** A multiply is 218
+      instructions where the builtins give 204.
     - **The wide files for every host session.** The 64x64->128
       multiply's timing is the caller's statement, as the 32x32 one's is
       (entry 89), so a session that has not made it runs the
@@ -6039,8 +6121,9 @@ does nothing more.
     where the two native copies took 5,024, and 45,817 on x86-64, where
     they took 7,071. One wipe of 2,400 bytes after each wide call that
     takes a secret is 239 instructions on the M1 Pro; a signature makes
-    five and a key exchange two. `p256_wide_limb.h` uses two builtins
-    that are not C11.
+    five and a key exchange two. `p256_wide_limb.h` names two builtins
+    that are not C11 under clang, and two intrinsics of `<immintrin.h>`
+    under gcc for x86-64.
 
     Gain, through the library's entries on the M1 Pro under Apple clang
     21 at `-O2`, in instructions retired per call (`/usr/bin/time -l`
@@ -6087,14 +6170,19 @@ does nothing more.
 
     | x86-64, instructions a call | 0.2.0, gcc 13.3 | this entry, gcc 13.3 | this entry, gcc 15.2 | 0.2.0, clang 23 | this entry, clang 23 | OpenSSL |
     | --- | --- | --- | --- | --- | --- | --- |
-    | `p256_sign` | 17,622,601 | 1,187,575 | 814,440 | 9,866,127 | 710,185 | 207,782 |
-    | `p256_ecdh` | 16,522,239 | 2,757,672 | 1,560,375 | 9,114,389 | 1,286,549 | 536,886 |
-    | `p256_ecdh_keygen` | 16,516,181 | 661,416 | 381,635 | 9,111,000 | 317,663 | 303,589 |
+    | `p256_sign` | 17,622,601 | 888,541 | 868,716 | 9,866,127 | 710,197 | 207,770 |
+    | `p256_ecdh` | 16,522,239 | 1,818,992 | 1,746,829 | 9,114,389 | 1,286,547 | 536,863 |
+    | `p256_ecdh_keygen` | 16,516,181 | 442,083 | 424,837 | 9,111,000 | 317,660 | 303,603 |
 
     Under gcc 13.3, which CI and the runner compile with, a signature
-    retires 5.7 times OpenSSL's instructions, a key exchange 5.1 times
-    and a key generation 2.2 times. Under clang 23 they are 3.4, 2.4 and
-    1.05 times.
+    retires 4.3 times OpenSSL's instructions, a key exchange 3.4 times
+    and a key generation 1.5 times. Under clang 23 they are 3.4, 2.4 and
+    1.05 times. The gcc columns are on the two intrinsics, with the
+    stack protector both gcc builds turn on. On the builtins gcc 13.3
+    retired 1,187,575, 2,757,672 and 661,416, and gcc 15.2 retired
+    814,440, 1,560,375 and 381,635: the intrinsics cost gcc 15.2 seven
+    to twelve percent, and with them it has no jump on a carry below
+    `-O1`.
 
     What is left:
 

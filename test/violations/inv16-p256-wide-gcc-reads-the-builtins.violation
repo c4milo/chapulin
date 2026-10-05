@@ -1,0 +1,17 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: test/lint-p256-wide.sh
+reason: the header picks the overflow builtins for every compiler that
+  defines __GNUC__, which gcc does as clang does. gcc expands a builtin
+  to an add and a jump on the add's carry, a limb's, and removes the
+  jump only where its if-conversion passes run: at -Og the wide files
+  would hold 73 such jumps. Every value stays right and every test
+  binary passes, under clang and under gcc. tools/p256-wide-carry.py
+  reads the header as gcc reads it and refuses a builtin there.
+
+--- old
+#ifdef __clang__
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
+--- new
+#ifdef __GNUC__
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN

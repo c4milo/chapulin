@@ -14,12 +14,25 @@
 //
 //   p256_wide_mask gives all ones for 1 and zero for 0.
 //
+// The two carry steps have three forms, and P256_WIDE_CARRY names the one a
+// build compiles (p256_wide_limb.h). This harness reads the builtins, the
+// form clang compiles, and p256_wide_row_sum_harness.c includes it to read
+// the 128-bit sums, the form gcc compiles outside x86-64. The assertions
+// below hold each form to the same 128-bit reference, so the two forms
+// return the same limb and the same carry for every operand, and what a
+// harness proves over one form holds over the other. The third form,
+// gcc's for x86-64, is two intrinsics. CBMC reads none, so that form rests
+// on bin/p256_equiv_test and the vectors under gcc.
+//
 // Not proven here: that the five limbs a row leaves are x times b plus the
 // four it was handed. Equality of two multipliers is the SAT instance
 // docs/proofs.md says does not converge, so the product's value rests on
 // bin/p256_equiv_test and the vectors, as p256_field.c's does on its own.
 #include "harness.h"
 
+#ifndef P256_WIDE_CARRY
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
+#endif
 #include "p256_wide_limb.h"
 
 uint64_t nondet_u64(void);

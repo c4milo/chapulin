@@ -1,0 +1,17 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: test/lint-p256-wide.sh
+reason: the header picks the overflow builtins for gcc on x86-64, where
+  it must pick the two intrinsics. gcc for another machine still reads
+  the 128-bit sums, so only the x86-64 reading shows it. Every value
+  stays right, and at -O2 gcc's if-conversion passes remove the jumps
+  it makes of the builtins, so no test binary and no count objects.
+  tools/p256-wide-carry.py reads the header as gcc reads it for x86-64
+  and refuses a builtin there.
+
+--- old
+#elif defined(__x86_64__)
+#define P256_WIDE_CARRY P256_WIDE_CARRY_INTRINSIC
+--- new
+#elif defined(__x86_64__)
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN

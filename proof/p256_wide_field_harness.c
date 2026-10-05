@@ -38,6 +38,10 @@
 
 #include "p256_wide_reference.h"
 
+// The two carry steps as clang compiles them. p256_wide_row_harness.c holds
+// this form and the 128-bit sums to one reference, so what this harness
+// proves holds on both.
+#define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
 #include "p256_wide_field.c"
 
 #define LIMBS P256_WIDE_FE_LIMBS

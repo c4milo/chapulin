@@ -1353,8 +1353,9 @@ print-host-srcs:
 # bin/quic_loop_aes, bin/webpki_loop_aes, bin/aes_runtime_test beside its
 # three test files, bin/quic_test_hw beside test/quic_vectors.c,
 # bin/x86_kernels_test beside its two, bin/sha2_equiv_test beside its one,
-# and the two lists bin/hash_runtime_test links beside its one, of which
-# bin/hash_runtime_exporter_test links the first.
+# the two lists bin/hash_runtime_test links beside its one, of which
+# bin/hash_runtime_exporter_test links the first, and bin/p256_equiv_test
+# beside its one.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1365,6 +1366,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(SHA2_EQUIV_TEST_SRCS)
 	@echo $(HASH_RUNTIME_TEST_SRCS)
 	@echo $(HASH_RUNTIME_QUIC_SRCS)
+	@echo $(P256_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2208,6 +2210,15 @@ P256_EQUIV_TEST_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
+# The same binary on the 128-bit sums, the form of p256_wide_limb.h's two
+# carry steps that gcc compiles for a machine other than x86-64. The
+# binary above runs the form its compiler picks: the builtins under clang
+# and the intrinsics under gcc for x86-64. check runs on no machine whose
+# compiler picks the sums, so this rule names them (docs/decisions.md 94).
+bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM -I. -Itest -o $@ \
+	  test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
 # A host object's ChaCha20 against chacha20.c's loop, the paths in one
 # binary under their own names: chacha20.c compiles here without
 # -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, as a device
@@ -3083,7 +3094,7 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 # CPU's instructions.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
                                  bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
-                                 bin/p256_equiv_test \
+                                 bin/p256_equiv_test bin/p256_equiv_test_sum \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
@@ -6485,12 +6496,25 @@ lint-bench-numbers:
 # checked-in file is not what the script prints: a hand edit of the table,
 # or an edit of the script without its output. The recipe names the files
 # the script reads, which is how make impact selects it for them.
+# tools/p256-wide-carry.py then reads which form of p256_wide_limb.h's two
+# carry steps each compiler reads: the builtins as clang reads the header,
+# and as gcc reads it the intrinsics for x86-64 and the 128-bit sums for
+# arm64. gcc expands a builtin to a jump on a limb's carry, and no lane runs
+# a 64-bit gcc through lint-wide-multiply, so this is the check that fails
+# when gcc reads one. The script runs clang's preprocessor and no more of
+# it, and the text it reads is the header's own, so it asks for no pinned
+# version.
 lint-p256-wide:
 	@python3 tools/p256_wide.py check p256_wide_field.c p256_wide_scalar.c p256_wide_point.c
 	@python3 tools/p256_wide.py table | cmp -s - p256_wide_table.c \
 	  || { echo "lint-p256-wide: p256_wide_table.c is not what tools/p256_wide.py table prints;" \
 	       "regenerate it with: python3 tools/p256_wide.py table > p256_wide_table.c"; exit 1; }
 	@echo "lint-p256-wide: p256_wide_table.c is what tools/p256_wide.py table prints"
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
+else
+	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_limb.h
+endif
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
 # reads the call graph from the relocations objdump prints under each call

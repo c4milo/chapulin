@@ -72,6 +72,13 @@
 #   - bin/x86_kernels_test must pass. It counts the calls the library
 #     sends to each kernel under each ch_cfg.cpu value and runs none of a
 #     kernel's instructions (test/x86_kernels_test.c).
+#   - bin/p256_equiv_test must pass for x86-64 and for arm64: the wide
+#     P-256 files against the files under their own names
+#     (test/p256_equiv_test.c), on the two forms of p256_wide_limb.h's
+#     carry steps that gcc reads, the intrinsics for x86-64 and the
+#     128-bit sums for arm64 (docs/decisions.md 94). clang reads a third
+#     form, so a machine whose compiler is clang compiles no line of the
+#     intrinsics.
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -121,6 +128,9 @@
 #   arm64-hash-count  the two counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles
+#   p256-equiv        bin/p256_equiv_test for x86-64 and for arm64, for the
+#                     violations of the intrinsics in p256_wide_limb.h's
+#                     carry steps
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -136,9 +146,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv]" >&2
     exit 2
     ;;
 esac
@@ -191,8 +201,9 @@ read -r -a kernels_test_srcs <<< "$(sed -n 5p <<< "$lists")"
 read -r -a sha2_equiv_srcs <<< "$(sed -n 6p <<< "$lists")"
 read -r -a hash_count_srcs <<< "$(sed -n 7p <<< "$lists")"
 read -r -a hash_count_quic_srcs <<< "$(sed -n 8p <<< "$lists")"
-[ "${#hash_count_quic_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than eight lists" >&2; exit 1; }
+read -r -a p256_equiv_srcs <<< "$(sed -n 9p <<< "$lists")"
+[ "${#p256_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than nine lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -220,6 +231,28 @@ if [ -z "$only" ] || [ "$only" = x86-kernels ]; then
 fi
 if [ "$only" = x86-kernels ]; then
     echo "aes-runtime-qemu: bin/x86_kernels_test counted each kernel's calls under every ch_cfg.cpu value"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = p256-equiv ]; then
+    # The wide P-256 files against the files under their own names, on the
+    # two forms of the carry steps that gcc reads: the intrinsics for
+    # x86-64 and the 128-bit sums for arm64. Each define names its form, so
+    # a row runs it under any compiler, and not the form that compiler
+    # would pick.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_INTRINSIC \
+        -o "$x86_out/p256_equiv_test" test/p256_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
+    expect max 0 \
+        "the wide P-256 files on the x86-64 intrinsics and the files under their own names disagree, or a wide call left a limb on the stack" \
+        p256_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM \
+        -o "$arm64_out/p256_equiv_test" test/p256_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "the wide P-256 files on the 128-bit sums and the files under their own names disagree, or a wide call left a limb on the stack" \
+        p256_equiv_test
+fi
+if [ "$only" = p256-equiv ]; then
+    echo "aes-runtime-qemu: bin/p256_equiv_test held the wide P-256 files to the files under their own names, on the intrinsics for x86-64 and on the 128-bit sums for arm64"
     exit 0
 fi
 

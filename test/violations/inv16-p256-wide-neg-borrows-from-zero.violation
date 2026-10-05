@@ -3,9 +3,11 @@ file: p256_wide_field.c
 catches: test/lint-invariants.sh
 reason: p256_wide_fe_neg computes 0 - a limb by limb and adds p when it
   borrowed. The value is the same, so every vector, proof and count
-  under clang passes. gcc 13.3 for x86-64 compiles each of the four
-  borrows to a jump on a limb of a, and a is the Y of the entry or of the
-  multiple a digit named. No check of this tree counts these files'
+  under clang passes. On the overflow builtins, gcc 13.3 for x86-64
+  compiled each of the four borrows to a jump on a limb of a at -O2, and
+  a is the Y of the entry or of the multiple a digit named. gcc reads
+  another form of the step by default, and a build that names the
+  builtins reads this one. No check of this tree counts these files'
   branches under a 64-bit gcc, so the Semgrep rule
   inv-16-p256-wide-no-borrow-from-zero refuses the calls.
 
