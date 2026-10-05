@@ -2,7 +2,8 @@
 // defined as a count and a call to the entry test/widemul_count_names.h
 // renamed (test/widemul_runtime_count.h). An entry under its own name
 // counts into widemul_decomposed_calls, and one ending in _native, one of
-// the wide X25519 field's two, or one of the wide P-256 files' six, into
+// the wide X25519 field's two, one of the wide P-256 files' six, or one of
+// the 64-bit RSA signer's three, into
 // widemul_native_calls.
 #include "widemul_runtime_count.h"
 
@@ -53,10 +54,11 @@ uint32_t p256_wide_point_affine_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_F
                                         const p256_point *a);
 void p256_wide_scalar_mul_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_wide_scalar_inverse_counted(p256_scalar *o, const p256_scalar *a);
-int rsa_pss_sign_native_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                                const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                                size_t *sig_len);
-void rsa_sp1_native_counted(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+int rsa_sign64_pss_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
+                           size_t *sig_len);
+int rsa_sign64_sp1_counted(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+int rsa_sign64_key_ok_counted(const ch_rsa_priv *k);
 
 void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
     widemul_decomposed_calls++;
@@ -207,16 +209,21 @@ void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
     p256_wide_scalar_inverse_counted(o, a);
 }
 
-int rsa_pss_sign_native(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                        const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                        size_t *sig_len) {
+int rsa_sign64_pss(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                   const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
+                   size_t *sig_len) {
     widemul_native_calls++;
-    return rsa_pss_sign_native_counted(k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_sign64_pss_counted(k, msg_hash, salt, sig, cap, sig_len);
 }
 
-void rsa_sp1_native(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     widemul_native_calls++;
-    rsa_sp1_native_counted(k, em, sig);
+    return rsa_sign64_sp1_counted(k, em, sig);
+}
+
+int rsa_sign64_key_ok(const ch_rsa_priv *k) {
+    widemul_native_calls++;
+    return rsa_sign64_key_ok_counted(k);
 }
 
 // poly1305_native.c's block loop calls the vector path under the name

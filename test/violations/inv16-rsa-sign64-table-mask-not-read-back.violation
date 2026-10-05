@@ -1,0 +1,18 @@
+invariant: INV-16
+file: rsa_sign64.c
+catches: test/lint-invariants.sh
+reason: table_select writes each mask through its volatile pointer and
+  then uses the value it computed and not the one it would read back, so
+  the compiler still knows which entry the mask keeps. The pinned clang
+  happens to emit no branch for this form on either 64-bit spec, so the
+  branch count passes, and another compiler or another release is free
+  to test the two positions as clang did for the form with no pointer.
+  inv-16-rsa-table-read refuses a mask in table_select that is taken
+  straight from mask_of_bit.
+
+--- old
+        *hidden = mask_of_bit(differ ^ 1);
+        uint64_t mask = *hidden;
+--- new
+        uint64_t mask = mask_of_bit(differ ^ 1);
+        *hidden = mask;

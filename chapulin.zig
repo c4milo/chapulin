@@ -256,7 +256,8 @@ pub const RsaPssIdentity = if (has_server) struct {
     chain: []const c.ch_cert,
     /// The modulus, big-endian: pub, pub_len.
     public_key: []const u8,
-    /// The modulus and the private exponent: priv, priv_len = @sizeOf(c.ch_rsa_priv).
+    /// The modulus and the private exponent, and in a host object the five
+    /// integers of the CRT (rsa_sign.h): priv, priv_len = @sizeOf(c.ch_rsa_priv).
     private_key: *const c.ch_rsa_priv,
 } else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both");
 

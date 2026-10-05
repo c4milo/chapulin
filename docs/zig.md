@@ -248,7 +248,9 @@ over.
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
 `*const [64]u8` and the private scalar as `*const [32]u8`.
 `RsaPssIdentity` takes the chain, the modulus and a
-`*const c.ch_rsa_priv`. `toCfg()` answers `error.Invalid` for a chain
+`*const c.ch_rsa_priv`. In a host object that struct holds the key's five
+CRT integers after its modulus and private exponent (`rsa_sign.h`), and a
+session that states its multiply signs with them. `toCfg()` answers `error.Invalid` for a chain
 longer than `chain_count`'s `u8` holds, and `check()` runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
 It takes no session.

@@ -9,9 +9,9 @@
 // declarations each file's header gives as well as its definitions, and a call from one of the
 // copied files to another, as poly1305.c's call to poly1305_vector_blocks, calls the native
 // copy of the callee. widemul.h's dispatchers call the _native entries for the answer
-// WIDEMUL_CONSTANT_TIME alone. x25519.c, p256_field.c and p256_scalar.c are not copied: their
-// second copies in a host object are x25519_wide.c's field (x25519_wide.h) and the wide P-256
-// files (p256_wide_field.h).
+// WIDEMUL_CONSTANT_TIME alone. x25519.c, p256_field.c, p256_scalar.c and rsa_sign.c are not
+// copied: their second copies in a host object are x25519_wide.c's field (x25519_wide.h), the
+// wide P-256 files (p256_wide_field.h) and rsa_sign64.c's limbs (rsa_sign64.h).
 //
 // Every name the copied files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it.
@@ -45,9 +45,5 @@
 #define mlk_poly_tomsg mlk_poly_tomsg_native
 #define mlk_sample_ntt mlk_sample_ntt_native
 #define mlk_sample_cbd mlk_sample_cbd_native
-
-// rsa_sign.c.
-#define rsa_pss_sign rsa_pss_sign_native
-#define rsa_sp1 rsa_sp1_native
 
 #endif

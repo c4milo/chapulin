@@ -11,8 +11,13 @@
 // One call per aliasing shape the callers use, with every operand
 // havocked before each: the output apart from both operands, as the
 // first product of rsa_mont64_public writes it; the output on the second
-// operand, as its last product does; and all three the same array, as a
-// squaring is called.
+// operand, as its last product does; the output on the first operand, as
+// rsa_sign64_power multiplies its running power by a table entry; and all
+// three the same array, as a squaring is called.
+//
+// rsa_mont64_mul_add, the plain product and sum, runs once at half the
+// largest limb count, a prime's, which is the largest its one caller
+// passes: its output is twice its operands' limbs.
 //
 // This line runs without --unsigned-overflow-check. That every sum in
 // the function stays inside 128 bits is rsa_mont64_sums_harness.c's
@@ -43,6 +48,17 @@ int main(void) {
 
     havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
     havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_mont_mul(a, a, b, &mod);
+
+    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
     rsa_mont64_mont_mul(a, a, a, &mod);
+
+    uint64_t product[RSA_MONT64_LIMBS_MAX];
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX / 2);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX / 2);
+    havoc_limbs(o, RSA_MONT64_LIMBS_MAX / 2);
+    rsa_mont64_mul_add(product, a, b, o, RSA_MONT64_LIMBS_MAX / 2);
     return 0;
 }

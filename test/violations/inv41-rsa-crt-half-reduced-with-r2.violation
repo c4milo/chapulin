@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: message_mod_prime multiplies the message's high limbs by R^2 where R^3 is
+  needed, so the message is reduced to high + low * R modulo the prime
+  where high * R + low is wanted, and each half is the power of another
+  number. The signature's check refuses the result, so nothing wrong
+  leaves; every signature fails. bin/rsa_sign_equiv_test signs under four
+  keys and requires the ladder's bytes.
+
+--- old
+    rsa_mont64_mont_mul(high, high, r3, mod);
+--- new
+    rsa_mont64_mont_mul(high, high, mod->r2, mod);

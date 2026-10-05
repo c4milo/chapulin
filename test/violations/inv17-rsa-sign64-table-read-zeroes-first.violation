@@ -1,0 +1,37 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: test/lint-invariants.sh
+reason: table_select writes zeros to its output in a loop of its own and
+  then adds each entry under its mask, as its first form did. A compiler
+  makes that loop a call to the C library's fill. The digit is computed
+  before the call and read after it, so clang for arm64 keeps it in a
+  register a callee saves, and the multiplication after the read saves
+  that register in its frame: four bits of the private exponent in a
+  dead frame, which no wipe names. bin/rsa_sign_equiv_test finds them
+  under clang for arm64, as one byte that differs between the stacks two
+  exponents leave. Under gcc, and under clang for x86-64, the digit sits
+  in another register and that test passes, so it cannot hold the rule
+  where CI compiles. inv-16-rsa-table-read refuses a write to the output
+  that is not the select of an entry under its mask.
+
+--- old
+    for (uint64_t entry = 0; entry < TABLE_ENTRIES; entry++) {
+        uint64_t differ = ((entry ^ index) + (TABLE_ENTRIES - 1)) >> WINDOW_BITS;
+        *hidden = mask_of_bit(differ ^ 1);
+        uint64_t mask = *hidden;
+        for (size_t i = 0; i < k; i++) {
+            o[i] = (o[i] & ~mask) | (table->powers[entry][i] & mask);
+        }
+    }
+--- new
+    for (size_t i = 0; i < k; i++) {
+        o[i] = 0;
+    }
+    for (uint64_t entry = 0; entry < TABLE_ENTRIES; entry++) {
+        uint64_t differ = ((entry ^ index) + (TABLE_ENTRIES - 1)) >> WINDOW_BITS;
+        *hidden = mask_of_bit(differ ^ 1);
+        uint64_t mask = *hidden;
+        for (size_t i = 0; i < k; i++) {
+            o[i] |= table->powers[entry][i] & mask;
+        }
+    }

@@ -1,0 +1,15 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: rsa_sign64_key_ok returns without wiping the product of the two
+  primes. Under a key it admits that product is the modulus. Under a key
+  with one bit of a prime changed it is not, and it and the modulus have
+  the other prime as their common divisor. bin/rsa_sign_equiv_test runs
+  the key test on a key with one bit of q changed, copies the stack below
+  it and finds two limbs of the product that are not the modulus's.
+
+--- old
+    ct_wipe(q, sizeof q);
+    ct_wipe(product, sizeof product);
+--- new
+    ct_wipe(q, sizeof q);

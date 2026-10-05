@@ -30,9 +30,10 @@
 // headers the signers' own binaries read, so no key is hand-copied
 // here: p256_sign_vectors[0] carries the RFC 6979 A.2.5 scalar with its
 // point, and rsa_sign_2048_n with rsa_sign_2048_d is the RSA-2048 pair
-// test/gen_rsa_sign_vectors.py printed.
+// test/gen_rsa_sign_vectors.py printed, which rsa_sign_key.h loads with
+// the key's CRT integers in a host build.
 #include "p256_sign_vectors.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 
 // hkdf.c and srv_auth.c seed CH_ASSERT at their contract points, and srv_cookie.c and
 // srv_auth.c call them now that both are implemented, so this binary links the handler
@@ -145,10 +146,7 @@ static void provision_ecdsa(ch_cfg *cfg) {
 }
 
 static void provision_rsa(ch_cfg *cfg) {
-    memset(&rsa_key, 0, sizeof rsa_key);
-    rsa_key.n_len = sizeof rsa_sign_2048_n;
-    memcpy(rsa_key.n, rsa_sign_2048_n, sizeof rsa_sign_2048_n);
-    memcpy(rsa_key.d, rsa_sign_2048_d, sizeof rsa_sign_2048_d);
+    test_rsa_sign_key_2048(&rsa_key);
     cfg->srv.rsa_pss.chain = chain;
     cfg->srv.rsa_pss.chain_count = 1;
     cfg->srv.rsa_pss.priv = &rsa_key;

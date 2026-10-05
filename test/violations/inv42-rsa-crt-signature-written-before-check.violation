@@ -1,0 +1,19 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: rsa_sign_test_host
+reason: write_if_verified writes the candidate to sig before it checks
+  it, and returns 0 when the check fails. A caller that reads the return
+  value is told, and the bytes of a faulted signature are in its buffer
+  all the same: srv_auth.c wipes them, and another caller need not.
+  bin/rsa_sign_test_host fills sig before each faulted call and requires
+  every byte as it was after an error.
+
+--- old
+    int verified = signature_verifies(k, em, candidate);
+    if (verified) {
+        memcpy(sig, candidate, k->n_len);
+    }
+    return verified;
+--- new
+    memcpy(sig, candidate, k->n_len);
+    return signature_verifies(k, em, candidate);

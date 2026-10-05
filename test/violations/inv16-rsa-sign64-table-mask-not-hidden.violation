@@ -1,0 +1,21 @@
+invariant: INV-16
+file: rsa_sign64.c
+catches: test/lint-invariants.sh
+reason: table_select uses the mask it computed, with no volatile pointer
+  between the computation and the use, so the compiler knows the mask is
+  all ones at the entry whose position is the digit and zero elsewhere.
+  clang for x86-64 then compiles the scan to a comparison of the two
+  positions, a branch on it and a read of the one entry that matched:
+  both follow a digit of the private exponent. Every byte still comes out
+  the same, so the vectors and the equivalence test pass. The file's
+  count of conditional branches is no reliable sign of it: the comparison
+  adds one branch on the x86-64 spec, which a branch gained or lost
+  elsewhere in the file can hide, and none on the arm64 spec, where the
+  select is a csel. inv-16-rsa-table-read refuses a mask in table_select
+  that is taken straight from mask_of_bit.
+
+--- old
+        *hidden = mask_of_bit(differ ^ 1);
+        uint64_t mask = *hidden;
+--- new
+        uint64_t mask = mask_of_bit(differ ^ 1);

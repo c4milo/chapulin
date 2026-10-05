@@ -38,7 +38,7 @@
 #include "rand.h"
 #include "record.h"
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "sha256.h"
 #include "widemul.h"
 #include "widemul_runtime_count.h"
@@ -211,10 +211,7 @@ static size_t rsa_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     static ch_rsa_priv key;
     uint8_t hash[SHA256_LEN];
     sha256 h;
-    memset(&key, 0, sizeof key);
-    memcpy(key.n, rsa_sign_2048_n, sizeof rsa_sign_2048_n);
-    memcpy(key.d, rsa_sign_2048_d, sizeof rsa_sign_2048_d);
-    key.n_len = sizeof rsa_sign_2048_n;
+    test_rsa_sign_key_2048(&key);
     sha256_init(&h);
     sha256_update(&h, rsa_sign_2048_msg, sizeof rsa_sign_2048_msg);
     sha256_final(&h, hash);
@@ -225,7 +222,7 @@ static size_t rsa_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     // RSASP1 on the signature's own representative gives the signature.
     uint8_t em[sizeof rsa_sign_2048_n] = {0};
     em[sizeof em - 1] = 2;
-    widemul_rsa_sp1(widemul, &key, em, out + sig_len);
+    CHECK(widemul_rsa_sp1(widemul, &key, em, out + sig_len) == 1);
     return 2 * sig_len;
 }
 
@@ -294,6 +291,26 @@ static void check_operation(const char *name, operation op, int runs_vector) {
                  name, stated.native, failures == failed ? "" : " -- FAILED");
 }
 
+// The RSA key test, the one dispatched entry whose other copy multiplies
+// nothing: rsa_pss_sign_key_ok reads two public bytes of the modulus, and
+// rsa_sign64_key_ok multiplies the key's primes on the native multiply. So
+// the dispatcher runs the 64-bit signer's test for the constant-time
+// answer alone, and makes no native call for any other byte.
+static void check_rsa_key_test(void) {
+    static ch_rsa_priv key;
+    test_rsa_sign_key_2048(&key);
+    widemul_native_calls = 0;
+    widemul_decomposed_calls = 0;
+    CHECK(widemul_rsa_pss_sign_key_ok(WIDEMUL_CONSTANT_TIME, &key) == 1);
+    CHECK(widemul_native_calls == 1 && widemul_decomposed_calls == 0);
+    static const uint8_t others[] = {WIDEMUL_NOT_STATED, 0, 3, 0x80, 0xff};
+    for (size_t i = 0; i < sizeof others; i++) {
+        widemul_native_calls = 0;
+        CHECK(widemul_rsa_pss_sign_key_ok(others[i], &key) == 1);
+        CHECK(widemul_native_calls == 0);
+    }
+}
+
 // The answer widemul_answer gives each ch_cfg.cpu: the multiply bit alone
 // decides it, at the bit by itself, beside every other bit, and in the two
 // values that differ from those by that bit.
@@ -320,6 +337,7 @@ int main(void) {
     check_operation("mlkem", mlkem_run, 0);
     check_operation("p256", p256_run, 0);
     check_operation("rsa", rsa_run, 0);
+    check_rsa_key_test();
     check_operation("record", record_run, 1);
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

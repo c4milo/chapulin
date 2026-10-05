@@ -74,9 +74,10 @@ uint8_t srv_identity_live(const ch_cfg *cfg);
 // For each one: its key lengths are the ones srv_cfg.h states, with an
 // RSA pub_len of at most SRV_SIG_MAX, because the flight signs into that
 // many bytes; the scheme's signer takes its private key
-// (p256_sign_key_ok in p256_sign.h, rsa_pss_sign_key_ok in rsa_sign.h);
-// and a Certificate message can carry its chain (srv_certificate_fits,
-// srv_message.h).
+// (p256_sign_key_ok in p256_sign.h, rsa_pss_sign_key_ok in rsa_sign.h,
+// and for a host session that states its multiply rsa_sign64_key_ok in
+// rsa_sign64.h); and a Certificate message can carry its chain
+// (srv_certificate_fits, srv_message.h).
 //
 // Each test is a fact about the configuration. srv_config_ok and
 // ch_srv_check ask this before a session starts, so a configuration
@@ -159,13 +160,14 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // the selected scheme names.
 //
 // The two signers are p256_sign.c for SIGALG_ECDSA_P256_SHA256 and
-// rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256, and srv_cfg.h states the
-// type each one reads through ch_identity.priv. This call tests
-// priv_len against the size of that type and passes the pointer on, so
-// it reads no byte of a private key itself. An RSA-PSS signature takes
-// a 32-byte salt this call draws through rand_draw from the source cfg
-// names, so a server signing with the RSA identity needs entropy per
-// handshake; the ECDSA nonce is derived and draws none.
+// rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256, in whose place a host
+// session that states its multiply runs rsa_sign64.c, and srv_cfg.h
+// states the type each one reads through ch_identity.priv. This call
+// tests priv_len against the size of that type and passes the pointer
+// on, so it reads no byte of a private key itself. An RSA-PSS signature
+// takes a 32-byte salt this call draws through rand_draw from the
+// source cfg names, so a server signing with the RSA identity needs
+// entropy per handshake; the ECDSA nonce is derived and draws none.
 //
 // Two obligations belong to the signer and are stated here because the
 // caller cannot check them. Every routine that touches the private

@@ -25,8 +25,15 @@
 // range rsa_mont64_modulus_init's CH_ASSERT gives it: bits - 1 is below
 // 8 * m_len, and 8 * m_len is at most 64 * k.
 //
-// What this does not drive: rsa_mont64_mont_mul, which
-// rsa_mont64_mul_harness.c and rsa_mont64_sums_harness.c prove;
+// The sum, the difference and the reduction. rsa_mont64_add and
+// rsa_mont64_sub run over any operands and any modulus, with the output
+// apart from both operands, on the first and on the second, and
+// rsa_mont64_reduce_once with its output apart from its input and on it.
+// The difference's second loop adds the modulus back under a mask and
+// drops a carry out of the top limb, which is a cast and not a wrap.
+//
+// What this does not drive: rsa_mont64_mont_mul and rsa_mont64_mul_add,
+// which rsa_mont64_mul_harness.c and rsa_mont64_sums_harness.c prove;
 // rsa_mont64_modulus_init and rsa_mont64_public whole, which
 // rsa_mont64_init_harness.c and rsa_mont64_public_harness.c prove; and
 // neg_inverse, whose arithmetic wraps on purpose.
@@ -96,10 +103,59 @@ static void prove_power_of_two(void) {
     power_of_two(x, k, bit);
 }
 
+// A modulus record of the largest limb count, every limb unconstrained.
+static void havoc_record(rsa_mont64_modulus *mod) {
+    havoc_limbs(mod->m, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(mod->r2, RSA_MONT64_LIMBS_MAX);
+    mod->m0inv = nondet_u64();
+    mod->limbs = RSA_MONT64_LIMBS_MAX;
+}
+
+static void prove_modular(void) {
+    rsa_mont64_modulus mod;
+    uint64_t a[RSA_MONT64_LIMBS_MAX];
+    uint64_t b[RSA_MONT64_LIMBS_MAX];
+    uint64_t o[RSA_MONT64_LIMBS_MAX];
+
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_add(o, a, b, &mod);
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_add(a, a, b, &mod);
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_add(b, a, b, &mod);
+
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_sub(o, a, b, &mod);
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_sub(a, a, b, &mod);
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_sub(b, a, b, &mod);
+
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_reduce_once(o, a, &mod);
+    havoc_record(&mod);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_reduce_once(a, a, &mod);
+}
+
 int main(void) {
     prove_marshalling();
     prove_mask();
     prove_limb_helpers();
     prove_power_of_two();
+    prove_modular();
     return 0;
 }

@@ -86,6 +86,81 @@ rules:
     paths:
       include: ['p256_wide_*.c', 'p256_wide_limb.h']
     pattern: p256_wide_sub_borrow($BORROW, 0, $VALUE)
+  - id: inv-16-rsa-table-read
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: rsa_sign64.c reads its table of powers whole. table_select
+      visits all sixteen entries and keeps one by a mask, so neither an
+      address nor the number of entries read depends on a digit of the
+      private exponent. That makes two rules. The file subscripts the
+      table by a constant or a loop counter and by nothing else: semgrep
+      cannot know a value is public, so a new subscript is argued here.
+      And table_select holds no if, no conditional expression and no
+      statement that leaves a loop early, and it reads each mask back
+      through its volatile pointer before it uses it: a compiler that
+      knows how a mask was computed may branch on what it was computed
+      from, and clang for x86-64 did. It ends by writing zero through
+      that pointer, so the limb the masks went through does not end on
+      the last one: no test can look for a limb of all ones or of zeros,
+      so this rule holds that write. And table_select writes its output
+      in one statement, the select of an entry under its mask, and calls
+      nothing but mask_of_bit: a loop that fills the output with zeros
+      first is one a compiler makes a call, and clang for arm64 kept the
+      digit across that call in a register the next multiplication saved
+      in its frame.
+    paths:
+      include: [rsa_sign64.c]
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: $TABLE.powers[$INDEX]
+              - pattern: $TABLE->powers[$INDEX]
+          - metavariable-regex:
+              metavariable: $INDEX
+              regex: ^(?!(0|1|i|i - 1|entry)$)
+      - patterns:
+          - pattern-inside: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern-either:
+              - pattern: |
+                  if ($COND) {
+                    ...
+                  }
+              - pattern: '$COND ? $A : $B'
+              - pattern: break;
+              - pattern: continue;
+              - pattern: return;
+              - pattern: goto $LABEL;
+              - pattern: $TYPE $MASK = mask_of_bit(...);
+      - patterns:
+          - pattern: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern-not: |
+              static void table_select(...) {
+                ...
+                *hidden = 0;
+              }
+      - patterns:
+          - pattern-inside: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern-either:
+              - pattern: o[$I] = $VALUE;
+              - pattern: o[$I] |= $VALUE;
+              - pattern: o[$I] ^= $VALUE;
+              - pattern: o[$I] &= $VALUE;
+              - patterns:
+                  - pattern: $CALLEE(...)
+                  - metavariable-regex:
+                      metavariable: $CALLEE
+                      regex: ^(?!mask_of_bit$)
+          - pattern-not: o[$I] = (o[$I] & ~mask) | (table->powers[entry][$I] & mask);
 
   - id: inv-23-no-division-in-mlkem
     languages: [c]

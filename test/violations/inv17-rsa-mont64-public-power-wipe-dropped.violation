@@ -1,0 +1,14 @@
+invariant: INV-17
+file: rsa_mont64.c
+catches: rsa_sign_equiv_test
+reason: rsa_mont64_public returns without wiping its running power. In
+  the signer's check that power ends as the encoded message when the
+  check passes, and as a value that with the message factors the modulus
+  when it fails. bin/rsa_sign_equiv_test copies the stack below one
+  signature and finds two limbs of the encoded message there.
+
+--- old
+    ct_wipe(x, sizeof x);
+    ct_wipe(acc, sizeof acc);
+--- new
+    ct_wipe(x, sizeof x);

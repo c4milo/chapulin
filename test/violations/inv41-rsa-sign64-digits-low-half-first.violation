@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: exponent_digit reads the low half of each byte before the high
+  half, so the window raises the message to the exponent with the two
+  digits of every byte exchanged. An exponent whose bytes each hold one
+  digit twice, such as 0 or all ones, still gives the right power.
+  bin/rsa_sign_equiv_test runs the exponents 16 and 17, the top bit alone
+  and random ones, and requires the ladder's bytes.
+
+--- old
+    return ((uint64_t)e[i >> 1] >> (WINDOW_BITS * (1 - (i & 1)))) & (TABLE_ENTRIES - 1);
+--- new
+    return ((uint64_t)e[i >> 1] >> (WINDOW_BITS * (i & 1))) & (TABLE_ENTRIES - 1);

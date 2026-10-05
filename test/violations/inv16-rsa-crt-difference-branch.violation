@@ -1,0 +1,27 @@
+invariant: INV-16
+file: rsa_mont64.c
+catches: test/lint-wide-multiply.sh
+reason: rsa_mont64_sub adds the modulus back with an if where it added it
+  under a mask, so whether the first half of a CRT signature is below the
+  second decides which path runs, and that comparison is a fact about the
+  private key and the message. The values stay right, so the vectors and
+  the equivalence tests pass; the count of what the compiler emits sees
+  it. The pinned clang emits more conditional branches for rsa_mont64.c
+  than the 32 its ceiling records on both 64-bit specs.
+
+--- old
+    uint64_t mask = mask_of_bit(carry ^ 1);
+    carry = 0;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)o[i] + (m[i] & mask) + carry;
+        o[i] = (uint64_t)v;
+        carry = (uint64_t)(v >> 64);
+    }
+--- new
+    if (carry == 0) {
+        for (size_t i = 0; i < k; i++) {
+            ct_u128 v = (ct_u128)o[i] + m[i] + carry;
+            o[i] = (uint64_t)v;
+            carry = (uint64_t)(v >> 64);
+        }
+    }

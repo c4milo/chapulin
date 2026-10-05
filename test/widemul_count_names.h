@@ -11,6 +11,9 @@
 // test/widemul_count_wide.c and test/widemul_count_wide_p256.c compile
 // under second names of their own.
 //
+// rsa_sign.c has no native copy either: RSA signing's second copy is
+// rsa_sign64.c, which test/widemul_count_sign64.c compiles the same way.
+//
 // Every other name the files define keeps the name the library gives it,
 // widemul_native.h's in a native unit, so a call from one entry to
 // another, as rsa_pss_sign's to rsa_sp1 or p256_point_base_mul's to
@@ -24,15 +27,11 @@
 #undef mlk_polyvec_compress
 #undef mlk_poly_compress
 #undef mlk_poly_tomsg
-#undef rsa_pss_sign
-#undef rsa_sp1
 #define poly1305_update poly1305_update_native_counted
 #define poly1305_final poly1305_final_native_counted
 #define mlk_polyvec_compress mlk_polyvec_compress_native_counted
 #define mlk_poly_compress mlk_poly_compress_native_counted
 #define mlk_poly_tomsg mlk_poly_tomsg_native_counted
-#define rsa_pss_sign rsa_pss_sign_native_counted
-#define rsa_sp1 rsa_sp1_native_counted
 #else
 #define poly1305_update poly1305_update_decomposed_counted
 #define poly1305_final poly1305_final_decomposed_counted

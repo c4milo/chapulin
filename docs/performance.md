@@ -84,8 +84,8 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`KEX=pq`) | 15872 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_write` / `ch_close` | 944 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 10336 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10480 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 11424 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 11600 |
 
 ### What the larger builds pay for
 
@@ -111,19 +111,32 @@ larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
 lists, secp256r1 (63). Its `ch_connect` peaks at 16,560 bytes, through
-ML-KEM's decapsulation, above the 7,344 its chain walk into an RSA-4096
-verify reaches with ML-KEM pruned from the call graph
-(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`). RSA-4096 is the widest
+ML-KEM's decapsulation. With ML-KEM pruned from the call graph
+(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`) the deepest chain is the
+chain walk into an RSA-4096 verify, at 6,368 bytes: this host builds the
+host object, whose verify runs on 64-bit limbs
+([`docs/decisions.md`](decisions.md) 95). On the 32-bit limbs a device
+object runs, the same walk takes 7,344 bytes
+(`STACK_MAKE='TRUST=webpki HOST_TARGET='`). RSA-4096 is the widest
 modulus a public root carries.
 
 **`ROLE=server`.** A server build pays them as well, because every
 server holds the hybrid ([`docs/decisions.md`](decisions.md) 54). Its
 ServerHello is built in the clear in the same staging array, and the
 hybrid one carries a 1,120-byte share, so the array holds 1,216 bytes of
-message behind the record header. `ch_srv_accept` peaks at 10,336
-bytes, through the encapsulation to the client's key into K-PKE encrypt
-and Keccak, above the 5,376 its RSA-PSS signer reaches with the
-encapsulation pruned from the call graph (`STACK_PRUNE=srv_kex_share`).
+message behind the record header. `ch_srv_accept` peaks at 11,424
+bytes in the host object this host builds, through `rsa_sign64.c`'s
+RSA-PSS signer, which holds a modulus record for each prime, the
+signature it checks and a table of sixteen powers
+([`docs/decisions.md`](decisions.md) 95). With that signer pruned from
+the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest chain is the
+encapsulation to the client's key into K-PKE encrypt and Keccak, at
+10,336 bytes, and with the encapsulation pruned as well
+(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is `rsa_sign.c`'s
+ladder, at 5,376. A device object holds the ladder alone: its
+`ch_srv_accept` peaks at 10,304 bytes, through the encapsulation, and
+its signer's chain takes 5,280
+(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
 host object this host builds for it ([`docs/decisions.md`](decisions.md)

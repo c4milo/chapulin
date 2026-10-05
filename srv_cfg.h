@@ -94,17 +94,20 @@ typedef struct {
 // p256_ecdsa_verify reads (p256.h). So priv_len is 32 and pub_len is 64.
 //
 // rsa_pss: priv points at one ch_rsa_priv (rsa_sign.h), which holds the
-// modulus, the private exponent and their length, so priv_len is
-// sizeof(ch_rsa_priv). pub points at the modulus alone, big-endian, and
-// pub_len is its length, the n_len rsa_pss_verify admits: 256 to
-// CH_RSA_MODULUS_MAX and a multiple of 8. An RSA-PSS signature is
-// exactly pub_len bytes, which is the length srv_sign_certificate_verify
-// tests the caller's buffer against.
+// modulus, the private exponent and their length, and in a host object
+// the five integers of the Chinese remainder theorem after them, so
+// priv_len is sizeof(ch_rsa_priv). pub points at the modulus alone,
+// big-endian, and pub_len is its length, the n_len rsa_pss_verify
+// admits: 256 to CH_RSA_MODULUS_MAX and a multiple of 8. An RSA-PSS
+// signature is exactly pub_len bytes, which is the length
+// srv_sign_certificate_verify tests the caller's buffer against.
 //
 // These calls read the bytes behind the two pointers and no other line
 // does: p256_sign and rsa_pss_sign read priv, and so do their key tests,
 // p256_sign_key_ok and rsa_pss_sign_key_ok, when a server checks its
-// configuration; ch_srv_check's boot-time self-test reads pub through
+// configuration; in a host object rsa_sign64_pss and rsa_sign64_key_ok
+// read it in their place for a session that states its multiply
+// (rsa_sign64.h); ch_srv_check's boot-time self-test reads pub through
 // the matching verifier. srv_auth.c reads the two lengths and passes the
 // pointers on. A slot whose lengths, key or chain the flight could not
 // use makes ch_srv_accept return CH_EINVAL (srv.h).

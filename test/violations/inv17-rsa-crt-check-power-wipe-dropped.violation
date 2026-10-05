@@ -1,0 +1,14 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: signature_verifies returns without wiping the power it compared.
+  That power is the encoded message when the check passes, and a value
+  that with the message factors the modulus when it fails.
+  bin/rsa_sign_equiv_test copies the stack below one signature and finds
+  the encoded message's bytes there.
+
+--- old
+    int same = ct_memeq(power, em, k->n_len) != 0;
+    ct_wipe(power, sizeof power);
+--- new
+    int same = ct_memeq(power, em, k->n_len) != 0;

@@ -6200,12 +6200,16 @@ does nothing more.
     - **The field in C.** A field multiply is 141 instructions under
       Apple clang 21: four rows of four products, and a reduction of
       shifts. OpenSSL's arm64 build runs the `ecp_nistz256` assembly.
-95. **A host object computes RSA's public operation on 64-bit limbs, in
-    every session, and a device object keeps its 32-bit limbs.** Camilo
+95. **A host object computes RSA on 64-bit limbs: the public operation
+    in every session, and the private one in a session that states its
+    multiply, by the Chinese remainder theorem with a check of every
+    signature. A device object keeps its 32-bit limbs, its ladder and
+    its key of two integers.** Camilo
     set the goal on 2026-10-03: pass OpenSSL on every primitive TLS runs,
     in C an auditor can read, with no assembly. RSA was the widest gap:
     `rsa_pss_verify` took 275 µs for RSA-2048 on an M1 Pro, and OpenSSL
-    3.6.5 takes 15 µs. This entry starts with the verifier.
+    3.6.5 takes 15 µs. The verifier comes first here, then the signer's
+    window, then the CRT.
 
     - **The limb width.** `rsa_mont64.[ch]` holds Montgomery
       multiplication on limbs of 64 bits, every product through
@@ -6293,13 +6297,18 @@ does nothing more.
       computed once for the key. Here the setup is about 30 percent of a
       verification's cycles.
 
-    Cost: ten launch lines in `proof/run.sh`, about 11 minutes of proof
-    time on the M1 Pro, 4 of them in the slow tier's one harness, and
-    one equivalence binary in `make check`. A host object's text
-    shrinks: `rsa_mont.o` and `rsa_mont64.o` take 2,722 bytes together
-    where `rsa_mont.o` took 3,348, and the deepest chain under `rsa_vp1`
-    takes 2,160 bytes of stack where it took 2,896, and 2,800 where it
-    took 3,792 at the `TRUST=webpki` bound.
+    Cost: ten launch lines in `proof/run.sh`, about 11 minutes of
+    processor time on the M1 Pro, 4 of them in the slow tier's one
+    harness, and one equivalence binary in `make check`. The deepest
+    chain under `rsa_vp1` takes 2,176 bytes of stack where it took
+    2,896, and 2,816 where it took 3,792 at the `TRUST=webpki` bound. A
+    host object's text does not shrink with it. Under Apple clang 21 at
+    `-O2`, `rsa_mont.o` and `rsa_mont64.o` took 2,876 bytes together
+    with the verifier's entries alone, where a device object's
+    `rsa_mont.o` takes 3,348. They take 3,418 now, because
+    `rsa_mont64.o` also holds the four entries the signer's
+    recombination calls below, and a `TRUST=webpki` client object holds
+    them without a caller.
 
     Gain: a host object verifies an RSA signature in a sixth to an
     eighth of the cycles. The 32-bit arm and its proofs do not move.
@@ -6311,9 +6320,10 @@ does nothing more.
       add through the carry flag, as OpenSSL's assembly does. In a
       scratch build one 16-limb multiplication took 845 cycles under
       Apple clang 21, against 1,114. Under gcc 13.3 and gcc 14.2 in a
-      Linux container on the same machine it took 548 to 949 ns in three spellings of the add,
-      against 322 ns for the one-pass loop. Its speed depends on how one
-      compiler lowers a carry, which the C cannot state.
+      Linux container on the same machine it took 548 to 949 ns in three
+      spellings of the add, against 322 ns for the one-pass loop. Its
+      speed depends on how one compiler lowers a carry, which the C
+      cannot state.
     - **A squaring of its own.** Written as loops, with the cross
       products computed once and doubled before a reduction, it took
       1,466 cycles against the multiplication's 1,114: it has fewer
@@ -6325,3 +6335,368 @@ does nothing more.
       on a second verification under one key. A handshake verifies once
       under each key it meets, and each of the verifier's calls would
       gain an argument.
+
+    **The signer.** `rsa_sign64.[ch]` signs on the same limbs, for a
+    session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, as
+    `x25519_wide.c` is the X25519 such a session runs (entry 89). A
+    session without the bit runs `rsa_sign.c`'s ladder on the 16x16
+    decomposition, and a device object holds that ladder alone.
+    `rsa_sign_native.c`, the ladder's copy on the native multiply, is
+    gone: a session that states its multiply ran it, and now runs this
+    file.
+
+    - **A bit picks it.** The private exponent is secret, so the
+      multiply's timing needs the caller's statement, which the
+      verifier's did not.
+    - **A fixed window of four bits.** A step squares four times and
+      multiplies once by one of the base's sixteen powers, where the
+      ladder multiplies and squares once for every bit: five
+      multiplications for four bits where the ladder runs eight. Four
+      bits are one hexadecimal digit, so a step reads its digit with a
+      shift and a mask of one byte.
+    - **The whole table at every step.** `table_select` reads all sixteen
+      entries and keeps one by a mask, so neither an address nor the
+      number of entries read depends on a digit. The entry for digit 0
+      is 1, so a zero digit runs the same multiplication as any other,
+      and the step count is two for each byte of the exponent, leading
+      zeros included. The branch count of `lint-wide-multiply` does not
+      hold this by itself: a read that stops at the entry it wants
+      compiles to the same count. A Semgrep rule,
+      `inv-16-rsa-table-read`, refuses a subscript of the table that is
+      no constant and no loop counter, and an `if` or a `break` inside
+      `table_select` (INV-16).
+    - **A mask the compiler cannot read.** A mask that keeps one entry
+      is all ones at that entry and zero at the others, and a compiler
+      that sees how it was computed knows which entry. The first form
+      of `table_select` computed each mask and used it, and clang for
+      x86-64 compiled the scan to a comparison of the entry's position
+      with the digit, a branch on it, and a read of the one entry that
+      matched: a branch and a memory access that follow the private
+      exponent. Apple clang 21 did so at `-O2` and the pinned clang 23
+      at `-Os`. clang for arm64 made the same select a `csel`, and gcc
+      13.3 kept the mask arithmetic for both targets. The branch count
+      of `lint-wide-multiply` did not stop it: the ceiling for the
+      x86-64 spec was recorded from that build, and its two branches
+      more than the arm64 spec's were not read one by one. Each mask
+      now goes through a volatile pointer before it is used, so the
+      value the loop ands an entry with is one the compiler knows
+      nothing about, and the last write through that pointer is a
+      zero. `inv-16-rsa-table-read` refuses a mask taken straight from
+      `mask_of_bit` and a `table_select` that does not end with that
+      write. `make timing` has a row for the read, an exponent of zero
+      bytes against random ones under a modulus of two limbs: built
+      for x86-64 and run under Rosetta it reports |t| of 187 to 1,676
+      for the first form and under 3 for this one.
+    - **No zeros written first.** The first form of `table_select` also
+      wrote zeros to its output in a loop of its own and then added each
+      entry under its mask. clang compiled that loop to a call to the C
+      library's fill. The digit was computed before the call and read
+      after it, so clang for arm64 kept it in a register a callee saves,
+      and `rsa_mont64_mont_mul`, which the step calls next, saved that
+      register in its frame. After a signature the four low bits of dq
+      lay in a dead frame about 10 kB down the stack, under Apple clang
+      21, clang 18 and the pinned clang 23 at `-O2`. gcc 13.3, clang
+      for x86-64 and the pinned clang at `-Os` kept the digit in a
+      register no callee saves. The read now writes its output in one
+      statement: the entry under an all-ones mask, and the limbs the
+      output already holds under a zero one. So the function calls
+      nothing, and its loop over the limbs is neither a fill nor a
+      copy, the two loops a compiler replaces with a call.
+      `inv-16-rsa-table-read` refuses any other write to the output and
+      any call there but `mask_of_bit`. A mask the compiler can read
+      still becomes a branch under this form: clang for x86-64 compares
+      the entry's position with the digit and loads the one entry, so
+      the volatile pointer stays.
+    - **One encoder.** `rsa_sign64.c` compiles `rsa_sign.c`'s key test
+      and PSS encoder around its own exponentiation, as `x25519_wide.c`
+      compiles `x25519.c`'s clamp, so the two signers cannot encode
+      differently.
+    - **Five values read where a product uses them.** A round of the
+      multiplication reads `b[0]`, `m[0]` and `m0inv` once, and the
+      round's limb `a[i]` and its multiple `u` at every product, and
+      all five are the same for a whole round. A compiler loads such a
+      value before the loop that uses it, and when it runs out of
+      registers it keeps the copy in a stack slot of its own, which
+      `ct_wipe` cannot name. Apple clang 21 for x86-64 kept `b[0]`
+      there: after a signature that slot held a limb of the table entry
+      the exponent's last digit names. gcc 13.3 for x86-64 kept `a[i]`
+      and `u` there: after a multiplication its slots held the top limb
+      of one operand and the last round's multiple. The residue check
+      in `bin/rsa_sign_equiv_test`, run for one limb, found `b[0]` and
+      `a[i]`, each in a build for x86-64 made by hand, and gcc's
+      assembly showed `u` beside `a[i]`: no CI job builds either pair,
+      as entry 83 says of the same finding in the vector Poly1305.
+      `rsa_mont64_mont_mul` now reads the first four through volatile
+      pointers where a product uses them. It keeps `u` in a limb above
+      its running sum, which its wipe covers, and reads it there the
+      same way. That is two more loads a product: on the M1 Pro a
+      verification and a signature retire 8 to 10 percent more
+      instructions for them and take 2 to 4 percent more cycles.
+      Run for one limb, the check then finds nothing under Apple clang
+      21 for arm64 and x86-64 and under gcc 13.3 for both.
+
+    Measured as the verifier was, one `rsa_pss_sign` over the same keys,
+    with the window over the whole modulus and the private exponent d,
+    as this signer ran before the CRT below, and before a product read
+    `a[i]` and `u` from memory:
+
+    | | ladder, decomposed | ladder, native | window, 64-bit limbs | OpenSSL 3.6.5 |
+    |---|---|---|---|---|
+    | RSA-2048, instructions | 757,135,863 | 353,703,161 | 54,517,116 | |
+    | RSA-3072, instructions | 2,530,150,856 | 1,169,794,038 | 177,747,470 | |
+    | RSA-4096, instructions | 5,973,549,189 | 2,753,154,122 | 415,477,586 | |
+    | RSA-2048, cycles | 181,631,296 | 115,710,272 | 12,245,379 | |
+    | RSA-3072, cycles | 611,958,796 | 453,010,046 | 39,322,985 | |
+    | RSA-4096, cycles | 1,470,625,613 | 1,150,188,714 | 87,171,979 | |
+    | RSA-2048, time | 57.8 ms | 37.6 ms | 3.74 ms | 0.56 ms |
+    | RSA-3072, time | 196.9 ms | 147.1 ms | 12.24 ms | 1.64 ms |
+    | RSA-4096, time | 477.6 ms | 380.0 ms | 29.13 ms | 3.61 ms |
+
+    The two ladder columns are `rsa_sign.c` on each multiply: what a
+    host session ran without the bit, and still runs, and what it ran
+    with the bit before this entry. The machine's one-minute load
+    average was between 24 and 56 while these ran. Each time is the best
+    of five repetitions or more, and OpenSSL's is from `openssl speed
+    -seconds 1` in the same minutes. The cycle counts moved by up to 8
+    percent between two runs under that load.
+
+    That did not pass OpenSSL either: a signature took 6.7 to 8.1 times
+    OpenSSL's time. OpenSSL signs with the Chinese remainder theorem,
+    two exponentiations over half the limbs with half the exponent,
+    which is about a quarter of the work, and this signer ran one over
+    the whole modulus. The rest is the multiplication's cost above.
+
+    Cost: four launch lines, one more equivalence binary in `make
+    check`, one more differential binary in `make diff` and one Semgrep
+    rule. The table's sixteen entries are more than `lint-stack` gives a
+    frame, so `rsa_sign64.c` has a ceiling of its own there (INV-19).
+    Gain: by the window alone a host object signed in a ninth to a
+    thirteenth of the cycles the native ladder took.
+
+    Rejected:
+
+    - **A window of five bits.** In a scratch build it ran 0.7 percent
+      fewer instructions and 1.2 percent more cycles than four, with a
+      table twice the size to read at every step.
+    - **A sliding window.** It skips runs of zero bits, so the number of
+      multiplications is the exponent's bit pattern.
+    - **A native copy of the ladder beside the window.** Two signers on
+      the native multiply would be two to test for one session.
+
+    **The CRT.** Camilo ruled on 2026-10-03 that RSA signing takes the
+    Chinese remainder theorem in a host object alone, that each
+    signature is verified with the public exponent before it leaves the
+    signer, and that a signature which fails is an error on which the
+    session fails closed. That reverses what `rsa_sign.h` said for a
+    host object, and the header now says what each object does.
+
+    - **The key.** In a host object `ch_rsa_priv` holds p, q, dp, dq and
+      qinv after n, d and `n_len`: the two primes, d mod (p - 1), d mod
+      (q - 1) and q^-1 mod p, the names RFC 8017 3.2 gives them. Each is
+      `n_len / 2` raw big-endian bytes, left-padded with zeros, as n and
+      d are `n_len`: a provisioning step writes them with no parser. The
+      five sit after `n_len`, so `rsa_sign.c` compiles to the same code
+      in both objects, which `test/widemul-builds.sh` holds. The key
+      keeps d, because a session that does not state its multiply signs
+      with the ladder over n and d and reads none of the five. The
+      struct grows from 776 bytes to 1,736 at the 384-byte bound, and
+      from 1,032 to 2,312 at the 512-byte one, and the build record's
+      `sizeof_ch_rsa_priv` follows it.
+    - **A device object does not.** Its key stays the two integers a
+      provisioning step can write, its signer stays one arithmetic path,
+      and a fault has no recombination to split. A device is also the
+      part an attacker can hold, which is where a fault is cheapest to
+      cause, and a check is the one defense here. A host has the
+      64x64->128 multiply that makes the CRT worth its code, and a key
+      store that holds seven integers as easily as two.
+    - **The message modulo a prime, with no division.** The encoded
+      message is twice a prime's length. With k the prime's limbs and
+      R = 2^(64k) it is high * R + low, so three Montgomery
+      multiplications and one sum give it in the prime's domain: R^3
+      from R^2, high times R^3, low times R^2, and their sum modulo the
+      prime. No step needs high or low below the prime.
+    - **Garner's formula, with masks.** s = m2 + q * h, with
+      h = qinv * (m1 - m2) mod p. m2 is below q, and q is below twice p
+      because the two primes have one length, so one subtraction of p
+      under a mask reduces it. The difference adds p back under a mask
+      when it borrowed. No step compares, and none branches on a limb.
+    - **The check.** `rsa_sign64_sp1` raises the signature it computed
+      to 65537 modulo n and compares the result with the encoded message
+      before it writes a byte to its caller. A CRT signature with one
+      wrong half differs from the right one modulo one prime alone, so
+      it and the message factor n: a fault makes such a value, and so
+      does a key whose dp, dq or qinv is wrong. The power is
+      `rsa_mont64_public`, which is why the verifier's arithmetic was
+      written constant time: here its base is a value that must not
+      leave. A failure returns 0 and writes nothing, `rsa_sign64_pss`
+      returns 0, and `srv_sign_certificate_verify` already answered a
+      signer's 0 with a wiped buffer, `CH_EAUTH` and internal_error
+      (INV-42). The check takes about 2 to 4 percent of a signature.
+      The check and the copy are one function, `write_if_verified`, the
+      one place the file writes a signature. No test can show that a
+      comparison leaves out a byte: a faulted candidate's power differs
+      from the message in nearly every byte, so a comparison of all but
+      one still refuses every fault a test makes. So the
+      `rsa_sign64_crt` harness states it: over any power the public
+      operation may write, the check passes exactly when every byte is
+      the message's, and the caller's buffer keeps every byte it held
+      unless the check passed. It states the key test the same way,
+      over every limb of the product.
+    - **The key test.** `rsa_sign64_key_ok` admits a key
+      `rsa_pss_sign_key_ok` admits whose p times q is n, computed and
+      compared in constant time. The modulus is odd and has its top bit,
+      so that one product also says each prime is odd and has the top
+      bit of its `n_len / 2` bytes, which is what the arithmetic needs
+      of them. A key whose primes are not both that long is refused; a
+      key generator makes them so. dp, dq and qinv get no test of their
+      own: a wrong one fails the check, and `ch_srv_check` signs once
+      with each key, so a server refuses such a key before a session
+      starts. The test runs before every signature and at every init,
+      and it costs one product of two primes.
+    - **Proved in pieces.** `rsa_sign64_crt` proves the reduction, the
+      recombination, the key test, the check and the write, each whole,
+      at the largest modulus and at 8 bytes below it, where a prime is
+      half a limb past a whole number. `rsa_sign64_sp1` itself is two
+      calls of the exponentiation between them and is not run whole.
+    - **Every wipe has a run that looks for what it wipes.** A
+      signature's own frame is the last one written when it returns,
+      and the frames of what it called are not: the recombination and
+      the check write over the exponentiation's, and the
+      exponentiation over the reduction's. So the stack after a
+      signature cannot show whether one of those wiped what it held,
+      and a candidate is secret only when its check failed. Dropping
+      each wipe of the two files in turn showed it: the residue check
+      as it stood missed six of twenty-one, the entry the last step
+      read among them, and looked at no refused signature and no key
+      test. `bin/rsa_sign_equiv_test` now makes seven runs for a key: a
+      signature, a signature under a key with one bit of dp changed, the
+      key test, the key test with one bit of q changed, and the
+      reduction, the exponentiation and the recombination each on its
+      own, the two static ones through a second compilation of the file
+      (`test/rsa_sign_equiv_pieces.c`). With each wipe dropped in turn
+      the binary fails, under Apple clang 21 for arm64 and x86-64 and
+      under gcc 13.3 for both, and one violation file holds each
+      (INV-17).
+    - **One stack after two secrets.** A run that looks for a value
+      finds what it can compute and tell from noise, which is two limbs
+      side by side. The digit the first form of the read left is four
+      bits, and every run above passed with it in a frame. So the
+      binary also makes one call under two inputs that differ in a
+      secret and in nothing a caller sees, and requires the two stacks
+      it copies to be equal in every byte
+      (`test/rsa_sign_equiv_differential.h`). Nine such runs for each of
+      three keys: the exponentiation under dp and under dq, and of two
+      bases; a signature under a key and under that key with its primes
+      exchanged, which signs the same bytes with no CRT integer where
+      the key has it; a signature of two messages; a refused signature
+      under two wrong keys; the key test under exchanged primes and
+      under two wrong keys; the reduction modulo each prime; and the
+      recombination under exchanged primes. One function makes every
+      call of a run from one address and computes nothing from the
+      run's turn, so the registers a callee saves hold the same values
+      at each call, and a byte that differs is the call's own.
+      With the first form of the read three of the nine fail under
+      clang for arm64 at `-O2`, each on the one byte that holds the
+      digit. With this one all pass under Apple clang 21 for arm64 and
+      x86-64, the pinned clang 23 at `-O2` and `-Os`, gcc 13.3 for both
+      and clang 18 for arm64. `inv17-rsa-sign64-digit-kept-in-frame`
+      keeps the digit in a local of the exponentiation and the runs
+      catch it. `inv17-rsa-sign64-table-read-zeroes-first` restores the
+      loop of zeros, and the Semgrep rule holds that one, because only
+      clang for arm64 turns it into a byte that differs.
+    - **What no run holds.** A register no callee saves keeps what the
+      last arithmetic left in it when a signature returns, and no C
+      names it. On Darwin a function whose frame is over a page calls
+      the system's stack probe first, and the probe stores two of those
+      registers under the stack pointer. The function that copies the
+      stack is one such, so the comparison leaves out the 16 bytes its
+      own probe writes: with them in, the run over the reduction
+      differed in one, a carry of the reduction's last sum. And a
+      compiler that was not asked to optimize keeps every local in its
+      frame. Built at `-O0` under Apple clang, the nine runs differ in 8
+      to 249 bytes each, and the runs that look for values find two
+      limbs of a signature's half. So the binary makes no run over the
+      stack in such a build, nor under AddressSanitizer, whose frames
+      are its own: it asks `test/stack_residue.c`, as entry 93's search
+      does, and the sanitizer lane runs the binary's other cases at both
+      levels. What this entry says of the wipes is said of an optimized
+      object.
+
+    Measured as above, one `rsa_pss_sign`:
+
+    | | window over n | CRT, checked | OpenSSL 3.6.5 |
+    |---|---|---|---|
+    | RSA-2048, instructions | 54,517,116 | 15,523,185 | |
+    | RSA-3072, instructions | 177,747,470 | 48,583,621 | |
+    | RSA-4096, instructions | 415,477,586 | 110,934,564 | |
+    | RSA-2048, cycles | 12,245,379 | 3,291,803 | |
+    | RSA-3072, cycles | 39,322,985 | 10,412,857 | |
+    | RSA-4096, cycles | 87,171,979 | 24,213,683 | |
+    | RSA-2048, time | 3.74 ms | 1.13 ms | 0.61 ms |
+    | RSA-3072, time | 12.24 ms | 3.53 ms | 1.72 ms |
+    | RSA-4096, time | 29.13 ms | 8.25 ms | 4.07 ms |
+
+    The window's column is the table above. The CRT's was taken at a load
+    average of 110, so its times are the process's own processor time
+    over 120 to 800 signatures, which is what `openssl speed` reports,
+    and OpenSSL's are from the same minute. OpenSSL ran about a tenth
+    slower there than at a load average of 25, where it took 0.56, 1.64
+    and 3.61 ms. Between three runs the cycle counts moved by up to
+    8 percent and the instruction counts by 2. Those counts are from
+    before a product read `a[i]` and `u` from memory, and before the
+    read of the table stopped writing zeros first. With the two reads a
+    signature retired 16,912,000, 53,008,000 and 121,330,000
+    instructions. With the read as it is now it retires 16,945,000,
+    53,095,000 and 121,470,000, a fifth of a percent more, and takes
+    3,390,000, 10,760,000 and 25,260,000 cycles, the median of three
+    runs at a load average of 76 to 104, between which the cycle counts
+    moved by up to 3 percent.
+
+    `openssl speed` signs with PKCS#1 v1.5 padding and chapulin with
+    PSS. The private operation is the same under both, and the encoding
+    beside it is nine SHA-256 blocks for RSA-2048, so the rows compare
+    the private operation.
+
+    C does not pass OpenSSL: a signature takes 1.9 to 2.1 times
+    OpenSSL's time. What remains is the multiplication. OpenSSL's
+    assembly spends about 5 flag operations on two products where this
+    loop compiles to 9, it squares with about three quarters of a
+    multiplication's products where this file multiplies, and four
+    fifths of a signature's multiplications are squarings. A window of
+    five bits and a squaring written in C were measured above and gain
+    nothing. A multiplication in a reduced radix, which keeps the carry
+    out of the inner loop as `x25519_wide.c` does, is not tried here.
+
+    Cost: `ch_rsa_priv` more than doubles in a host object, and a caller
+    provisions five more integers. Two more launch lines, which bring
+    the signer's six to about 8 minutes of processor time, two rows of
+    `make timing` and the violation files INV-16, INV-17, INV-41 and
+    INV-42 name. A CRT
+    signature holds two modulus records and the candidate at once, so
+    `rsa_sign64_sp1` is the file's largest frame: 4,368 bytes at the
+    384-byte bound and 5,776 at the 512-byte one under Apple clang 21.
+    The signer's chain is now the deepest of a host server object:
+    `bench/sram.sh` measures `ch_srv_accept`'s peak at 11,424 bytes
+    where the encapsulation's chain took 10,336, and at 11,600 where it
+    took 10,480 under `SUITE=aesgcm`. A device server object's peak
+    does not move. A host server object holds `rsa_sign64.o`'s 4,027
+    bytes of text beside `rsa_sign.o`'s 4,771.
+    Gain: a host object signs RSA-2048 in a thirty-fifth of the cycles
+    the native ladder took, and returns no signature it has not
+    verified.
+
+    Rejected:
+
+    - **A key of the five integers alone.** A host session that does not
+      state its multiply signs with the ladder, which needs d.
+    - **A check of each half modulo its prime.** It is cheaper than the
+      power modulo n, and it would not see a fault in the recombination.
+    - **A second signature to compare with.** It doubles the cost and
+      repeats a fault that is in the key.
+    - **Blinding.** It needs a modular inverse of a random value and a
+      source of randomness inside the signer, and `rsa_sign.h` says why
+      the tree has neither there. The check is what the ruling asked
+      for.
+    - **`rsa_vp1` for the check.** It is the same arithmetic behind a
+      scan of the modulus for its bit length, which a key the test
+      admitted does not need.

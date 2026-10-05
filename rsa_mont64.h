@@ -68,6 +68,24 @@ void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m
 void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod);
 
+// o = a + b mod m, for a and b below m. o may be a or b.
+void rsa_mont64_add(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                    const rsa_mont64_modulus *mod);
+
+// o = a - b mod m, for a and b below m. o may be a or b.
+void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                    const rsa_mont64_modulus *mod);
+
+// o = a mod m, for a below 2m: one subtraction of m, chosen by a mask.
+// o may be a.
+void rsa_mont64_reduce_once(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod);
+
+// o = a * b + c, the plain product and not a Montgomery one: a, b and c
+// are k limbs each and o is 2k limbs, which the sum always fits. o
+// overlaps none of the three.
+void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const uint64_t *c,
+                        size_t k);
+
 // out = base^65537 mod m (RSAVP1, RFC 8017 5.2.2), base and out both len
 // big-endian bytes, len <= 8 * mod->limbs. It takes any base of that
 // length: the result is a function of base mod m.

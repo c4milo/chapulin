@@ -19,7 +19,7 @@
 #include "ch_assert.h"
 #include "rsa.h"
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "sha256.h"
 #include "test_widemul.h"
 
@@ -49,8 +49,8 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // that pair must produce.
 typedef struct {
     const char *name;
+    test_rsa_sign_key key;
     const uint8_t *n;
-    const uint8_t *d;
     size_t n_len;
     const uint8_t *msg;
     size_t msg_len;
@@ -58,13 +58,21 @@ typedef struct {
     const uint8_t *sig;
 } vector;
 
+#define VECTOR(bits)                                                                               \
+    {"RSA-" #bits,           TEST_RSA_SIGN_KEY(bits),                                              \
+     rsa_sign_##bits##_n,    sizeof rsa_sign_##bits##_n,                                           \
+     rsa_sign_##bits##_msg,  sizeof rsa_sign_##bits##_msg,                                         \
+     rsa_sign_##bits##_salt, rsa_sign_##bits##_sig}
+
 static ch_rsa_priv g_key;
 
 static void load_key(const vector *v) {
-    memset(&g_key, 0, sizeof g_key);
-    memcpy(g_key.n, v->n, v->n_len);
-    memcpy(g_key.d, v->d, v->n_len);
-    g_key.n_len = v->n_len;
+    test_rsa_sign_key_load(&g_key, &v->key);
+}
+
+// The key test of the signer this binary names (test/test_widemul.h).
+static int key_ok(void) {
+    return widemul_rsa_pss_sign_key_ok(TEST_WIDEMUL, &g_key);
 }
 
 // rsa_pss_sign with g_key, under the answer this binary names
@@ -135,48 +143,113 @@ static void run_refusals(const vector *v) {
     memset(msg_hash, 0x42, sizeof msg_hash);
 
     load_key(v);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 1);
+    CHECK(key_ok() == 1);
     CHECK(sign(msg_hash, salt, sig, v->n_len - 1, &sig_len) == 0); // cap one short
     CHECK(sign(msg_hash, salt, sig, v->n_len, &sig_len) == 1);     // cap exact
 
     load_key(v);
     g_key.n_len = 248; // one 8-byte step below the RSA-2048 floor
     CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
+    CHECK(key_ok() == 0);
     g_key.n_len = 260; // inside the bounds, not a multiple of 8
     CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
+    CHECK(key_ok() == 0);
     g_key.n_len = CH_RSA_MODULUS_MAX + 8; // one step above the ceiling
     CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
+    CHECK(key_ok() == 0);
 
     load_key(v);
     g_key.n[g_key.n_len - 1] &= (uint8_t)~1U; // even modulus, no Montgomery inverse
     CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
+    CHECK(key_ok() == 0);
 
     load_key(v);
     g_key.n[0] &= 0x7f; // top bit clear, so emLen would not be n_len
     CHECK(sign(msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
-    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
+    CHECK(key_ok() == 0);
 }
+
+#ifdef CH_CPU_RUNTIME
+// One call with a key whose CRT integer at byte was changed by one bit.
+// It reports whether the call signed, and requires that a call that did
+// not sign wrote no byte of sig and left sig_len alone.
+static int signs_with_bit_flipped(const vector *v, uint8_t *byte, const uint8_t *msg_hash) {
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    uint8_t untouched[CH_RSA_MODULUS_MAX];
+    size_t sig_len = 12345;
+    memset(sig, 0xa5, sizeof sig);
+    memset(untouched, 0xa5, sizeof untouched);
+    *byte ^= 0x04;
+    int signed_ok = sign(msg_hash, v->salt, sig, sizeof sig, &sig_len);
+    *byte ^= 0x04;
+    if (!signed_ok) {
+        CHECK(memcmp(sig, untouched, sizeof sig) == 0);
+        CHECK(sig_len == 12345);
+    }
+    return signed_ok;
+}
+
+// A fault in one half of the CRT, modeled as one bit of one of the five
+// integers changed: each makes that half, or the recombination, compute
+// another value than the key's, as a fault in the arithmetic would. A
+// signature computed that way and returned would factor the modulus, so
+// the 64-bit signer must return an error and no signature bytes. The
+// ladder reads none of the five, so under its answer every call signs.
+static void run_faults(const vector *v) {
+    uint8_t msg_hash[SHA256_LEN];
+    memset(msg_hash, 0x37, sizeof msg_hash);
+    int crt_runs = TEST_WIDEMUL == WIDEMUL_CONSTANT_TIME;
+    size_t half_len = v->n_len / 2;
+    load_key(v);
+    uint8_t *integers[] = {g_key.p, g_key.q, g_key.dp, g_key.dq, g_key.qinv};
+    static const char *const names[] = {"p", "q", "dp", "dq", "qinv"};
+    for (size_t i = 0; i < sizeof integers / sizeof integers[0]; i++) {
+        // The first byte, the last, and one in the middle.
+        size_t at[] = {0, half_len / 2, half_len - 1};
+        for (size_t j = 0; j < sizeof at / sizeof at[0]; j++) {
+            int signed_ok = signs_with_bit_flipped(v, &integers[i][at[j]], msg_hash);
+            if (signed_ok == crt_runs) {
+                failures++;
+                (void)fprintf(stderr, "FAIL %s: a bit of %s changed at byte %zu, and the %s\n",
+                              v->name, names[i], at[j],
+                              crt_runs ? "64-bit signer returned a signature"
+                                       : "ladder, which reads none of the five, refused");
+            }
+        }
+    }
+    // The primes are held to the modulus by the key test, before a
+    // signature starts; the other three only by the signature's check.
+    if (crt_runs) {
+        g_key.p[half_len - 1] ^= 0x04;
+        CHECK(key_ok() == 0);
+        g_key.p[half_len - 1] ^= 0x04;
+        g_key.dp[half_len - 1] ^= 0x04;
+        CHECK(key_ok() == 1);
+        g_key.dp[half_len - 1] ^= 0x04;
+    }
+    // The key as it was signs again.
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    size_t sig_len = 0;
+    CHECK(sign(msg_hash, v->salt, sig, sizeof sig, &sig_len) == 1);
+    (void)fprintf(stderr, "ok %s faults\n", v->name);
+}
+#endif
 
 // A host binary takes the ch_cfg.cpu value it runs under as its one
 // argument (test/test_cpu.h); every other binary takes none.
 int main(int argc, char **argv) {
     test_take_cpu(argc, argv);
-    const vector vectors[] = {
-        {"RSA-2048", rsa_sign_2048_n, rsa_sign_2048_d, sizeof rsa_sign_2048_n, rsa_sign_2048_msg,
-         sizeof rsa_sign_2048_msg, rsa_sign_2048_salt, rsa_sign_2048_sig},
-        {"RSA-3072", rsa_sign_3072_n, rsa_sign_3072_d, sizeof rsa_sign_3072_n, rsa_sign_3072_msg,
-         sizeof rsa_sign_3072_msg, rsa_sign_3072_salt, rsa_sign_3072_sig},
-        {"RSA-4096", rsa_sign_4096_n, rsa_sign_4096_d, sizeof rsa_sign_4096_n, rsa_sign_4096_msg,
-         sizeof rsa_sign_4096_msg, rsa_sign_4096_salt, rsa_sign_4096_sig},
-    };
+    const vector vectors[] = {VECTOR(2048), VECTOR(2112), VECTOR(3072), VECTOR(4096)};
     for (size_t i = 0; i < sizeof vectors / sizeof vectors[0]; i++) {
         run_vector(&vectors[i]);
     }
     run_refusals(&vectors[0]);
+#ifdef CH_CPU_RUNTIME
+    // RSA-2048, and RSA-2112, whose primes are half a limb past a whole
+    // number of 64-bit limbs.
+    run_faults(&vectors[0]);
+    run_faults(&vectors[1]);
+#endif
 
     if (failures != 0) {
         (void)fprintf(stderr, "rsa_sign_test: %d failure(s)\n", failures);

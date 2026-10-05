@@ -14,8 +14,8 @@
 // No line here reads a byte behind ch_identity.priv. This file tests
 // priv_len against the size of the type the scheme's signer declares
 // and hands the pointer on, to the signer or to the signer's own key
-// test, so the private key is read inside p256_sign.c and rsa_sign.[ch]
-// and nowhere else.
+// test, so the private key is read inside p256_sign.c, rsa_sign.[ch]
+// and, in a host object, rsa_sign64.[ch], and nowhere else.
 #include "srv_auth.h"
 
 #ifdef CH_ROLE_SERVER
@@ -148,24 +148,27 @@ static int key_lengths_match(const ch_identity *id, uint16_t sigalg) {
 // key, and a Certificate message can carry its chain. Each is a fact
 // about the configuration, so srv_identities_usable asks all three
 // before a session starts rather than when the flight signs.
-static int identity_usable(const ch_identity *id, uint16_t sigalg) {
+static int identity_usable(const ch_cfg *cfg, const ch_identity *id, uint16_t sigalg) {
     if (!key_lengths_match(id, sigalg) || !srv_certificate_fits(id)) {
         return 0;
     }
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
         return p256_sign_key_ok(id->priv);
     }
-    return rsa_pss_sign_key_ok(id->priv);
+    // The key test of the signer this configuration's sessions run
+    // (widemul.h): in a host object that states its multiply, the test
+    // that the key's primes multiply to its modulus as well.
+    return widemul_rsa_pss_sign_key_ok(widemul_answer(cfg), id->priv);
 }
 
 int srv_identities_usable(const ch_cfg *cfg) {
     uint8_t live = srv_identity_live(cfg);
     if ((live & SRV_IDENTITY_ECDSA_P256) != 0 &&
-        !identity_usable(&cfg->srv.ecdsa_p256, SIGALG_ECDSA_P256_SHA256)) {
+        !identity_usable(cfg, &cfg->srv.ecdsa_p256, SIGALG_ECDSA_P256_SHA256)) {
         return 0;
     }
     if ((live & SRV_IDENTITY_RSA_PSS) != 0 &&
-        !identity_usable(&cfg->srv.rsa_pss, SIGALG_RSA_PSS_RSAE_SHA256)) {
+        !identity_usable(cfg, &cfg->srv.rsa_pss, SIGALG_RSA_PSS_RSAE_SHA256)) {
         return 0;
     }
     return 1;

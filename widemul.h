@@ -12,20 +12,21 @@
 //
 // A device object holds one multiply and compiles each file once, so each dispatcher calls that
 // copy and reads no answer. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds each operation
-// twice. poly1305.c, mlkem_poly.c and rsa_sign.c compile under their own names on the
-// decomposition, as a WIDEMUL=decomposed device object compiles them, and again as
-// <file>_native.c on the native multiply, with every name widemul_native.h lists ending in
-// _native. poly1305_vector.c compiles as its native copy alone. x25519.c, p256_field.c,
-// p256_scalar.c and p256_point.c compile under their own names alone, and their second copies
-// are other files on the 64x64->128 multiply: x25519_wide.c, the radix-2^51 field
-// (x25519_wide.h), and for P-256 the four limbs of 64 bits in p256_wide_field.c and
-// p256_wide_scalar.c, under p256_wide_point.c and p256_wide_mul.c. The dispatchers run the
-// native copy, and for X25519 and P-256 the wide files, for WIDEMUL_CONSTANT_TIME, and the
-// file under its own names for every other byte. That is one branch per call, on the answer,
-// which the caller's ch_cfg.cpu chose and which is not secret: never one per product, and
-// through no function pointer. Poly1305 takes one per update and one per final, and P-256 one
-// per scalar multiplication, point decode, affine conversion and product modulo the group
-// order.
+// twice. poly1305.c and mlkem_poly.c compile under their own names on the decomposition, as a
+// WIDEMUL=decomposed device object compiles them, and again as <file>_native.c on the native
+// multiply, with every name widemul_native.h lists ending in _native. poly1305_vector.c
+// compiles as its native copy alone. x25519.c, p256_field.c, p256_scalar.c, p256_point.c and
+// rsa_sign.c compile under their own names alone, and their second copies are other files on
+// the 64x64->128 multiply: x25519_wide.c, the radix-2^51 field (x25519_wide.h), for P-256 the
+// four limbs of 64 bits in p256_wide_field.c and p256_wide_scalar.c, under p256_wide_point.c
+// and p256_wide_mul.c, and for RSA signing rsa_sign64.c, the Chinese remainder theorem over
+// 64-bit limbs (rsa_sign64.h). The dispatchers run the native copy, and for X25519, P-256 and
+// RSA signing those files, for WIDEMUL_CONSTANT_TIME, and the file under its own names for
+// every other byte. That is one branch per call, on the answer, which the caller's ch_cfg.cpu
+// chose and which is not secret: never one per product, and through no function pointer.
+// Poly1305 takes one per update and one per final, P-256 one per scalar multiplication, point
+// decode, affine conversion and product modulo the group order, and RSA one per signature and
+// one per key test.
 #ifndef CH_WIDEMUL_H
 #define CH_WIDEMUL_H
 
@@ -43,6 +44,7 @@
 #include "p256_wide_wipe.h"
 #include "poly1305.h"
 #include "rsa_sign.h"
+#include "rsa_sign64.h"
 #include "x25519.h"
 #include "x25519_wide.h"
 
@@ -213,18 +215,30 @@ static inline int widemul_rsa_pss_sign(uint8_t widemul, const ch_rsa_priv *k,
                                        const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
                                        size_t cap, size_t *sig_len) {
     if (widemul_native(widemul)) {
-        return rsa_pss_sign_native(k, msg_hash, salt, sig, cap, sig_len);
+        return rsa_sign64_pss(k, msg_hash, salt, sig, cap, sig_len);
     }
     return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
 }
 
-static inline void widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
-                                   uint8_t *sig) {
+// The private operation: 1 when sig was written. The 64-bit signer
+// returns 0 for a signature that failed its check (rsa_sign64.h), and the
+// ladder has no check to fail.
+static inline int widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
+                                  uint8_t *sig) {
     if (widemul_native(widemul)) {
-        rsa_sp1_native(k, em, sig);
-        return;
+        return rsa_sign64_sp1(k, em, sig);
     }
     rsa_sp1(k, em, sig);
+    return 1;
+}
+
+// The key test of the signer the answer picks: the 64-bit signer's reads
+// the primes, which only a session that states its multiply may multiply.
+static inline int widemul_rsa_pss_sign_key_ok(uint8_t widemul, const ch_rsa_priv *k) {
+    if (widemul_native(widemul)) {
+        return rsa_sign64_key_ok(k);
+    }
+    return rsa_pss_sign_key_ok(k);
 }
 
 #else // !CH_CPU_RUNTIME
@@ -335,10 +349,16 @@ static inline int widemul_rsa_pss_sign(uint8_t widemul, const ch_rsa_priv *k,
     return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
 }
 
-static inline void widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
-                                   uint8_t *sig) {
+static inline int widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
+                                  uint8_t *sig) {
     (void)widemul;
     rsa_sp1(k, em, sig);
+    return 1;
+}
+
+static inline int widemul_rsa_pss_sign_key_ok(uint8_t widemul, const ch_rsa_priv *k) {
+    (void)widemul;
+    return rsa_pss_sign_key_ok(k);
 }
 
 #endif // CH_CPU_RUNTIME

@@ -14,10 +14,14 @@ The hash is SHA-256 (`hLen = 32`), the mask generator is MGF1 with
 SHA-256 (§B.2.1), and the salt length is fixed at 32. EMSA-PSS-ENCODE
 (§9.1.1) and EMSA-PSS-VERIFY (§9.1.2) run over `ByteArray`.
 
-Signing lives here so the oracle can mint signatures the C verifier must
-accept; the C side only ever verifies. `pssSign` (aliased `rsaSign`)
-takes the private exponent and an explicit salt, so a fixed salt gives a
-reproducible signature.
+Signing lives here so the oracle can mint signatures: ones the C
+verifier must accept (`test/diff_rsa.h`), and ones the C signers must
+write byte for byte (`test/diff_rsa_sign_test.c`). `pssSign` (aliased
+`rsaSign`) takes the private exponent and an explicit salt, so a fixed
+salt gives a reproducible signature. RSASP1 is stated as `m^d mod n` and
+names no route to that power. The C computes it by a ladder over `n` and
+`d` and, in a host object, by the Chinese remainder theorem from the
+key's primes, and the differential holds both to this one definition.
 
 The modulus is any `Nat`. The C verifier admits 256 to
 `CH_RSA_MODULUS_MAX` bytes in 8-byte steps — 384 in the device modes and

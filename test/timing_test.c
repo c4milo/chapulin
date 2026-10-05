@@ -47,6 +47,16 @@
 #define P256_ECDH_N 10000
 #define P256_SIGN_N 10000
 #endif
+// bin/timing_rsa_sign64 builds this file as a host object's test with
+// -DTEST_RSA_SIGN64 and runs two more rows after the four: the 64-bit
+// Montgomery multiplication and the windowed exponentiation a host object
+// signs RSA with (rsa_sign64.h).
+#ifdef TEST_RSA_SIGN64
+#include "rsa_mont64.h"
+#include "rsa_sign64.h"
+#define RSA_POWER_N 20000
+#define RSA_MUL_REPS 64
+#endif
 #define WARMUP 4096
 #define T_MAX 10.0
 
@@ -295,6 +305,89 @@ static void p256_sign_run(void) {
 }
 #endif
 
+#ifdef TEST_RSA_SIGN64
+// Both rows run under a modulus drawn once: random bytes with the top bit
+// and the low bit set, which is all Montgomery arithmetic needs of one.
+// The multiplication's is 128 bytes, 16 limbs, the size one half of an
+// RSA-2048 signature runs at. The exponentiation's is 16 bytes, two limbs,
+// so that the read of the table is a large share of a step and a
+// difference in it is not lost among the multiplications.
+#define RSA_MODULUS_LEN 128
+#define RSA_SMALL_LEN 16
+static rsa_mont64_modulus rsa_mod;
+static rsa_mont64_modulus rsa_small;
+static uint64_t rsa_a[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_b[RSA_MONT64_LIMBS_MAX];
+static uint8_t rsa_exponent[RSA_MODULUS_LEN];
+
+// mod = the record of a fresh random odd modulus of len bytes with its top
+// bit set.
+static void rsa_random_modulus(rsa_mont64_modulus *mod, size_t len) {
+    uint8_t bytes[RSA_MODULUS_LEN];
+    ch_rand_bytes(bytes, len);
+    bytes[0] |= 0x80;
+    bytes[len - 1] |= 1;
+    rsa_mont64_modulus_init(mod, bytes, len, 8 * len);
+}
+
+// o = fresh random limbs below mod's modulus: random bytes with the top
+// bit clear, under a modulus whose top bit is set.
+static void rsa_random_below(uint64_t *o, const rsa_mont64_modulus *mod) {
+    uint8_t bytes[RSA_MODULUS_LEN];
+    size_t len = 8 * mod->limbs;
+    ch_rand_bytes(bytes, len);
+    bytes[0] &= 0x7f;
+    rsa_mont64_from_bytes(o, mod->limbs, bytes, len);
+}
+
+// rsa_mont64_mont_mul: one fixed pair of operands vs fresh random pairs.
+// The fixed pair needs the subtraction that ends a multiplication every
+// time or never, and a random pair some of the time, so a subtraction
+// behind a branch shows here. Both classes draw a fresh pair and both
+// copy a pair into the operands, the fixed one or the fresh one, so the
+// classes differ in the operands' values and not in how they were
+// written: a row that wrote one class with rsa_mont64_from_bytes and the
+// other with memcpy measured the writes, at |t| of 10 to 16.
+static uint64_t rsa_a_fixed[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_b_fixed[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_a_fresh[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_b_fresh[RSA_MONT64_LIMBS_MAX];
+
+static void rsa_mul_prep(int class_id) {
+    rsa_random_below(rsa_a_fresh, &rsa_mod);
+    rsa_random_below(rsa_b_fresh, &rsa_mod);
+    memcpy(rsa_a, class_id == 0 ? rsa_a_fixed : rsa_a_fresh, sizeof rsa_a);
+    memcpy(rsa_b, class_id == 0 ? rsa_b_fixed : rsa_b_fresh, sizeof rsa_b);
+}
+
+static void rsa_mul_run(void) {
+    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    for (int r = 0; r < RSA_MUL_REPS; r++) {
+        rsa_mont64_mont_mul(out, rsa_a, rsa_b, &rsa_mod);
+    }
+    sink ^= (uint32_t)out[0];
+}
+
+// rsa_sign64_power: an exponent of zero bytes vs fresh random exponents,
+// over one random base. Every digit of the first names the table's first
+// entry, so a read that stops at its entry, a branch on a digit or a step
+// that skips a zero digit shows here.
+static uint64_t rsa_small_base[RSA_MONT64_LIMBS_MAX];
+
+static void rsa_power_prep(int class_id) {
+    ch_rand_bytes(rsa_exponent, sizeof rsa_exponent);
+    if (class_id == 0) {
+        memset(rsa_exponent, 0, sizeof rsa_exponent);
+    }
+}
+
+static void rsa_power_run(void) {
+    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    rsa_sign64_power(out, rsa_small_base, rsa_exponent, sizeof rsa_exponent, &rsa_small);
+    sink ^= (uint32_t)out[0];
+}
+#endif
+
 static void report(const char *name, double t) {
     int ok = fabs(t) < T_MAX;
     (void)printf("%-12s |t| = %6.2f  %s\n", name, fabs(t), ok ? "ok" : "LEAK");
@@ -340,6 +433,18 @@ int main(void) {
     report("poly1305", measure(poly_prep, poly_run, FAST_N, WARMUP));
     report("chacha20_xor", measure(chacha_prep, chacha_run, FAST_N, WARMUP));
     report(X25519_ROW, measure(x_prep, x_run, X25519_N, 32));
+#ifdef TEST_RSA_SIGN64
+    rsa_random_modulus(&rsa_mod, RSA_MODULUS_LEN);
+    rsa_random_below(rsa_a_fixed, &rsa_mod);
+    rsa_random_below(rsa_b_fixed, &rsa_mod);
+    report("rsa64_mul", measure(rsa_mul_prep, rsa_mul_run, FAST_N, WARMUP));
+    // The exponentiation's base: one random value below its modulus, moved
+    // into the modulus's domain, the same for both classes.
+    rsa_random_modulus(&rsa_small, RSA_SMALL_LEN);
+    rsa_random_below(rsa_small_base, &rsa_small);
+    rsa_mont64_mont_mul(rsa_small_base, rsa_small_base, rsa_small.r2, &rsa_small);
+    report("rsa64_power", measure(rsa_power_prep, rsa_power_run, RSA_POWER_N, 32));
+#endif
     return failures ? 1 : 0;
 }
 #endif

@@ -1,0 +1,15 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: proof/prove-one.sh rsa_sign64_crt
+reason: signature_verifies compares all but the last byte of the power
+  with the encoded message, so a candidate whose power differs from the
+  message in that byte alone passes and is written. No test can find
+  this: a faulted candidate's power differs from the message in nearly
+  every byte, so each fault bin/rsa_sign_test_host makes is still
+  refused, and every good signature still passes. The rsa_sign64_crt
+  harness states the check over every byte the public operation wrote.
+
+--- old
+    int same = ct_memeq(power, em, k->n_len) != 0;
+--- new
+    int same = ct_memeq(power, em, k->n_len - 1) != 0;

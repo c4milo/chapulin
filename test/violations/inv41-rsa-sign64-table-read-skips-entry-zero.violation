@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: table_select starts its scan at entry 1, so a zero digit of the
+  exponent reads no entry: the output keeps the entry the step before
+  read, and the step multiplies by that where the table holds 1. Every
+  exponent with a zero digit then gives a wrong power. A key's private
+  exponent has about one zero digit in sixteen, so a vector over one key
+  may still fail; bin/rsa_sign_equiv_test runs exponents whose high or
+  low digits are all zero and requires the ladder's bytes.
+
+--- old
+    for (uint64_t entry = 0; entry < TABLE_ENTRIES; entry++) {
+--- new
+    for (uint64_t entry = 1; entry < TABLE_ENTRIES; entry++) {

@@ -2230,10 +2230,14 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # wide X25519 field's lines do: the file computes in uint64_t and
 # unsigned __int128, and its header says no sum in it wraps.
 # rsa_mont64_sums runs the multiplication at four limbs with that check
-# on. rsa_mont64_mul, rsa_mont64_init and rsa_mont64_public run it at the
-# build's bound without the check, each for its memory accesses: the
-# multiplication alone in its three aliasing shapes, the modulus setup
-# with its five, and the public operation with its eighteen. The setup
+# on, and beside it the product and sum the CRT's recombination calls.
+# rsa_mont64_ops runs the marshalling and that recombination's sum,
+# difference and reduction at the build's bound, with the check on.
+# rsa_mont64_mul, rsa_mont64_init and rsa_mont64_public run the
+# multiplication at the build's bound without the check, each for its
+# memory accesses: the multiplication alone in its four aliasing shapes
+# and the product and sum at a prime's limbs, the modulus setup with its
+# five, and the public operation with its eighteen. The setup
 # also runs neg_inverse, whose arithmetic wraps on purpose. The _webpki
 # lines are the same harnesses at RSA-4096's 64 limbs and 512 bytes.
 # The multiplication whole at 48 limbs with the wrap check on returned no
@@ -2241,32 +2245,76 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # limbs and the bound's line runs without it.
 # Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
 # /usr/bin/time -l ./proof/run.sh all (cbmc 6.11.0, kissat 4.0.4, an M1
-# Pro at load averages of 12 to 35), on 2026-10-04:
-#   rsa_mont64_mul128            3 properties,   1 s,  23 MB
-#   rsa_mont64_sums            364 properties,   4 s, 191 MB
-#   rsa_mont64_ops             373 properties,  35 s, 617 MB
-#   rsa_mont64_ops_webpki      373 properties,  43 s, 897 MB
-#   rsa_mont64_mul             314 properties,  17 s, 404 MB
-#   rsa_mont64_mul_webpki      314 properties,  47 s, 708 MB
-#   rsa_mont64_init            302 properties,  52 s, 821 MB
-#   rsa_mont64_init_webpki     302 properties,  93 s, 1.4 GB
-#   rsa_mont64_public          326 properties, 139 s, 2.4 GB, hence fast:3
-#   rsa_mont64_public_webpki   326 properties, 227 s, 4.2 GB, hence slow
-# The cost of the last four is cbmc's own symbolic execution: 111 and
-# 190 s of the public operation's two times are cbmc's user time, and a
-# stub of the multiply that assumes nothing moved rsa_mont64_mul from
-# 17 s to 16 s. Each multiplication at 48 limbs adds about 6 s, and the
-# public operation makes eighteen.
+# Pro), on 2026-10-04. The machine's load average was 11 to 142 for all
+# but the first line, so the time is the processor time of cbmc
+# and the solver, user and system, where wall time measured the load:
+#   rsa_mont64_mul128            3 properties,   1 s, 22 MB
+#   rsa_mont64_ops             610 properties,  21 s, 1.2 GB
+#   rsa_mont64_ops_webpki      610 properties,  31 s, 1.5 GB
+#   rsa_mont64_sums            589 properties,   6 s, 298 MB
+#   rsa_mont64_mul             521 properties,  28 s, 538 MB
+#   rsa_mont64_mul_webpki      521 properties,  43 s, 953 MB
+#   rsa_mont64_init            509 properties,  59 s, 785 MB
+#   rsa_mont64_init_webpki     509 properties, 105 s, 1.3 GB
+#   rsa_mont64_public          533 properties, 138 s, 2.1 GB, hence fast:3
+#   rsa_mont64_public_webpki   533 properties, 216 s, 4.0 GB, hence slow
+# The cost of the last four is cbmc's own symbolic execution. A stub of
+# the multiply that assumes nothing moved rsa_mont64_mul by a second.
+# Each multiplication at 48 limbs adds about 6 s, and the public operation
+# makes eighteen.
 launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_sums 6 "ct_wipe.0:41" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_mul 50 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_mont64_init 385 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:393" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:521" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_sign64.c, the RSA signer on those limbs, which a host object runs
+# for a session that states its multiply (docs/decisions.md 95). It
+# multiplies only through rsa_mont64.c, so rsa_sign64_power's and
+# rsa_sign64_crt's lines run the contracts in proof/rsa_sign64_stubs.h in
+# place of that file's entries, and the rsa_mont64 lines above discharge
+# them.
+# rsa_sign64_window proves the two pieces that read an exponent, the digit
+# and the read of the table, with --unsigned-overflow-check on.
+# rsa_sign64_power runs the exponentiation whole for its memory accesses,
+# once at the longest exponent a key has over one limb and once at a
+# prime's largest limb count under a two-byte exponent. Its unwind is one
+# past the step count, and the wipe's is one past the table's bytes.
+# The two bounds at once returned no verdict in fifteen minutes when the
+# table held whole moduli, 768 steps of 48 limbs, with cbmc still
+# unwinding.
+# rsa_sign64_crt runs the five pieces a CRT signature joins, each whole:
+# the reduction of the message modulo a prime, Garner's recombination,
+# the key test, the check of a signature and the copy to the caller, at
+# the largest modulus and, where a length decides an index, at 8 bytes
+# below it. It states what the last three compare and copy over the
+# bytes and limbs the contracts wrote, which proof/rsa_sign64_stubs.h
+# keeps. rsa_sign64_sp1 itself is not run: whole, it is rsa_sign64_power
+# at both bounds at once, twice. Its unwind is one past the modulus's
+# bytes.
+# Measured as the lines above were, on 2026-10-04, at a load average of
+# about 100:
+#   rsa_sign64_window          374 properties,   8 s, 340 MB
+#   rsa_sign64_window_webpki   374 properties,  10 s, 371 MB
+#   rsa_sign64_power           719 properties, 132 s, 434 MB
+#   rsa_sign64_power_webpki    719 properties, 257 s, 576 MB
+#   rsa_sign64_crt             772 properties,  20 s, 586 MB
+#   rsa_sign64_crt_webpki      772 properties,  28 s, 893 MB
+# rsa_sign64_power took 40 s and 63 s before table_select read each mask
+# back through a volatile pointer, and 116 s and 219 s at a load average
+# of 12 to 41 while it still wrote zeros to its output first. The window
+# lines took 190 MB and 232 MB then: the output's own limbs are an input
+# of the read now.
+launch fast full rsa_sign64_window 385 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_sign64_window_webpki 513 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_sign64_power 385 "ct_wipe.0:3073" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_power_webpki 513 "ct_wipe.0:4097" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_crt 385 "ct_wipe.0:385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_crt_webpki 513 "ct_wipe.0:513" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 
 FAIL=0
 i=0

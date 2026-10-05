@@ -20,17 +20,28 @@ byte with what the encoder built. A wrong salt length, a wrong mask or a
 wrong exponent fails here instead of shipping a vector that agrees with
 a matching bug in C.
 
-Three key sizes: RSA-2048, the floor rsa.h admits; RSA-3072, the top of
-the device range; and RSA-4096, the top of the TRUST=webpki range, which
-test/rsa_sign_test.c signs because it builds with
--DCH_RSA_MODULUS_MAX=512 as bin/rsa_test does.
+Four key sizes: RSA-2048, the floor rsa.h admits; RSA-2112, whose primes
+are 132 bytes, a length that is no multiple of the 8 bytes of a 64-bit
+limb; RSA-3072, the top of the device range; and RSA-4096, the top of
+the TRUST=webpki range, which test/rsa_sign_test.c signs because it
+builds with -DCH_RSA_MODULUS_MAX=512 as bin/rsa_test does.
+
+Each key carries the five integers of the Chinese remainder theorem
+beside its modulus and private exponent: the primes p and q, dp = d mod
+(p - 1), dq = d mod (q - 1) and qinv = q^-1 mod p, each left-padded to
+half the modulus's length, the shape ch_rsa_priv holds them in for a
+host object (rsa_sign.h). openssl prints them, and the script checks
+each against the definition before it writes it.
 
 The exact commands, per key size:
 
   openssl genrsa -out key.pem <bits>
   openssl rsa -in key.pem -pubout -out pub.pem
   openssl rsa -in key.pem -noout -modulus            (the modulus)
-  openssl rsa -in key.pem -noout -text               (the private exponent)
+  openssl rsa -in key.pem -noout -text               (the private exponent,
+                                                      and prime1, prime2,
+                                                      exponent1, exponent2
+                                                      and coefficient)
   openssl dgst -sha256 -verify pub.pem -signature sig
     -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32
     -sigopt rsa_mgf1_md:sha256 msg
@@ -62,6 +73,7 @@ OUT = HERE / "rsa_sign_vectors.h"
 # regeneration.
 KEYS = [
     (2048, b"chapulin rsa2048", 0x5a),
+    (2112, b"chapulin rsa2112", 0x69),
     (3072, b"chapulin rsa3072", 0xa5),
     (4096, b"chapulin rsa4096", 0x3c),
 ]
@@ -93,6 +105,24 @@ def text_field(text, name):
     if m is None:
         sys.exit(f"openssl rsa -text printed no {name}")
     return int(re.sub(r"[^0-9a-f]", "", m.group(1)), 16)
+
+
+def crt_integers(text, n, d, bits):
+    """p, q, dp, dq and qinv as openssl printed them, each checked against
+    RFC 8017 3.2's definition and against the shape ch_rsa_priv takes:
+    half the modulus's bytes, with the top bit of each prime set."""
+    p = text_field(text, "prime1")
+    q = text_field(text, "prime2")
+    dp = text_field(text, "exponent1")
+    dq = text_field(text, "exponent2")
+    qinv = text_field(text, "coefficient")
+    half = len(n) // 2
+    n_int = int.from_bytes(n, "big")
+    if p * q != n_int or p.bit_length() != 8 * half or q.bit_length() != 8 * half:
+        sys.exit(f"the primes do not have the shape ch_rsa_priv takes at {bits}")
+    if dp != d % (p - 1) or dq != d % (q - 1) or qinv * q % p != 1:
+        sys.exit(f"a CRT integer does not match its definition at {bits}")
+    return [v.to_bytes(half, "big") for v in (p, q, dp, dq, qinv)]
 
 
 def mgf1(seed, length):
@@ -145,6 +175,7 @@ def main():
                 sys.exit(f"modulus shape wrong at {bits}")
             text = sh(ossl, "rsa", "-in", str(key), "-noout", "-text").decode()
             d = text_field(text, "privateExponent")
+            p, q, dp, dq, qinv = crt_integers(text, n, d, bits)
 
             salt = bytes([salt_byte]) * SLEN
             em = pss_encode(hashlib.sha256(message).digest(), salt, len(n))
@@ -169,6 +200,15 @@ def main():
                                f"RSA-{bits} modulus, {len(n)} bytes big-endian."))
             out.append(c_array(f"{name}_d", d.to_bytes(len(n), "big"),
                                f"RSA-{bits} private exponent, left-padded to {len(n)} bytes."))
+            half = len(n) // 2
+            out.append(c_array(f"{name}_p", p, f"RSA-{bits} first prime, {half} bytes."))
+            out.append(c_array(f"{name}_q", q, f"RSA-{bits} second prime, {half} bytes."))
+            out.append(c_array(f"{name}_dp", dp,
+                               f"RSA-{bits} d mod (p - 1), left-padded to {half} bytes."))
+            out.append(c_array(f"{name}_dq", dq,
+                               f"RSA-{bits} d mod (q - 1), left-padded to {half} bytes."))
+            out.append(c_array(f"{name}_qinv", qinv,
+                               f"RSA-{bits} q^-1 mod p, left-padded to {half} bytes."))
             out.append(c_array(f"{name}_msg", message,
                                "The signed message. The test hashes it with the library's"
                                "\nown SHA-256, so no digest is hardcoded here."))
@@ -178,6 +218,14 @@ def main():
                                "The signature rsa_pss_sign must produce over that salt."))
     out.append("#endif")
     OUT.write_text("\n".join(out).replace("\n\n\n", "\n\n") + "\n")
+    # clang-format chooses the row length of an array whose last row is
+    # short, and RSA-2112's primes are 132 bytes, so the formatter make
+    # lint-format runs writes the layout that lint holds.
+    fmt = shutil.which("clang-format",
+                       path="/opt/homebrew/opt/llvm/bin:" + (os.environ.get("PATH") or ""))
+    if fmt is None:
+        sys.exit("clang-format not found: the header would fail make lint-format")
+    sh(fmt, "-i", str(OUT))
     print(f"wrote {OUT}")
 
 

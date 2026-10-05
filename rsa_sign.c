@@ -28,6 +28,17 @@
 #define HLEN 32               // SHA-256 output
 #define SLEN RSA_PSS_SALT_LEN // salt length, fixed by rsa_pss_rsae_sha256
 
+// A device object compiles this file once, with the ladder below. A host
+// object compiles it a second time inside rsa_sign64.c, which defines
+// CH_RSA_SIGN64 and renames the entry: that copy holds no exponentiation
+// of its own and calls rsa_sign64.c's (docs/decisions.md 95). The test
+// of cap and the PSS encoder sit after the ladder, so one line decides
+// each whichever signer runs, and rsa_pss_sign() names each signer's key
+// test and private operation where it calls them.
+#ifdef CH_RSA_SIGN64
+#include "rsa_sign64.h"
+#else
+
 // One 32-bit limb per 4 bytes of modulus: RSA-3072 is 96 limbs, RSA-4096
 // is 128. The count follows the one bound rsa.h defines, as rsa_mont.c's
 // does, so both files size their arrays from the same number.
@@ -231,6 +242,7 @@ void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     ct_wipe(x1, sizeof x1);
     ct_wipe(x2, sizeof x2);
 }
+#endif // CH_RSA_SIGN64
 
 // MGF1 (RFC 8017 B.2.1) with SHA-256: mask[0..len) is the leftmost len
 // bytes of Hash(seed || counter) blocks, counter a 4-byte big-endian
@@ -305,18 +317,35 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], const uint8_t salt[SLEN]
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
                  const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
     // The length bound, an odd modulus and its top bit: rsa_sign.h says
-    // why each one.
+    // why each one. The 64-bit signer's test adds that the key's primes
+    // multiply to its modulus (rsa_sign64.h).
+#ifdef CH_RSA_SIGN64
+    if (!rsa_sign64_key_ok(k)) {
+        return 0;
+    }
+#else
     if (!rsa_pss_sign_key_ok(k)) {
         return 0;
     }
+#endif
     if (cap < k->n_len) {
         return 0;
     }
 
     uint8_t em[CH_RSA_MODULUS_MAX];
     emsa_pss_encode(msg_hash, salt, em, k->n_len);
+#ifdef CH_RSA_SIGN64
+    // The 64-bit signer returns 0 for a signature that failed its check,
+    // and has written no byte of it. The ladder has no check to fail.
+    int written = rsa_sign64_sp1(k, em, sig);
+    ct_wipe(em, sizeof em);
+    if (!written) {
+        return 0;
+    }
+#else
     rsa_sp1(k, em, sig);
     ct_wipe(em, sizeof em);
+#endif
     *sig_len = k->n_len;
     return 1;
 }

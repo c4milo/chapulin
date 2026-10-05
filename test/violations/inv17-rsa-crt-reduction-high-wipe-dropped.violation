@@ -1,0 +1,16 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: message_mod_prime returns without wiping high, which holds the
+  message's high limbs times R^2 reduced modulo the prime: a public
+  number modulo a prime, which with that number gives the prime. Inside a
+  signature a later call's frame is written over that one, so
+  bin/rsa_sign_equiv_test calls the reduction on its own
+  (test/rsa_sign_equiv_pieces.c), copies the stack below it and finds two
+  limbs of the value there.
+
+--- old
+    ct_wipe(low, sizeof low);
+    ct_wipe(high, sizeof high);
+--- new
+    ct_wipe(low, sizeof low);

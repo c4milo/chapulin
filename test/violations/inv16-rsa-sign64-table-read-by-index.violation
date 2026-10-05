@@ -1,0 +1,18 @@
+invariant: INV-16
+file: rsa_sign64.c
+catches: test/lint-invariants.sh
+reason: table_select copies the one entry its index names, where it read
+  all sixteen and kept one by a mask. The index is a digit of the private
+  exponent, so the address the copy reads depends on it, which an
+  attacker who shares the data cache can watch. Every byte still comes
+  out the same and no branch is added, so the vectors, the equivalence
+  test and the branch count all pass. inv-16-rsa-table-read refuses a
+  subscript of the table that is no constant and no loop counter.
+
+--- old
+        for (size_t i = 0; i < k; i++) {
+            o[i] = (o[i] & ~mask) | (table->powers[entry][i] & mask);
+        }
+--- new
+        (void)mask;
+        memcpy(o, table->powers[index], k * sizeof(uint64_t));

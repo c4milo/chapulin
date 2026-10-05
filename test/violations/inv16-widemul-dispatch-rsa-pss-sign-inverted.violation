@@ -1,16 +1,17 @@
 invariant: INV-16
 file: widemul.h
 catches: widemul_runtime_test
-reason: widemul_rsa_pss_sign inverts its branch, so rsa_pss_sign runs the native
-  multiply for every answer but WIDEMUL_CONSTANT_TIME, a wiped direction's 0
-  and WIDEMUL_NOT_STATED among them, and the decomposition for the one
-  answer that states the multiply's timing. Every byte still comes out
-  the same. bin/widemul_runtime_test counts the calls into each copy and
-  requires the native copies alone under the constant-time answer.
+reason: widemul_rsa_pss_sign inverts its branch, so a signature runs
+  rsa_sign64.c's limbs on the native multiply for every answer but
+  WIDEMUL_CONSTANT_TIME, a wiped direction's 0 and WIDEMUL_NOT_STATED
+  among them, and the ladder on the decomposition for the one answer that
+  states the multiply's timing. Every byte still comes out the same.
+  bin/widemul_runtime_test counts the calls into each signer and requires
+  the 64-bit one alone under the constant-time answer.
 
 --- old
     if (widemul_native(widemul)) {
-        return rsa_pss_sign_native(k, msg_hash, salt, sig, cap, sig_len);
+        return rsa_sign64_pss(k, msg_hash, salt, sig, cap, sig_len);
 --- new
     if (!widemul_native(widemul)) {
-        return rsa_pss_sign_native(k, msg_hash, salt, sig, cap, sig_len);
+        return rsa_sign64_pss(k, msg_hash, salt, sig, cap, sig_len);

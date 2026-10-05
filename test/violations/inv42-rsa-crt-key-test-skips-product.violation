@@ -1,0 +1,16 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: rsa_sign_test_host
+reason: rsa_sign64_key_ok computes the product of the primes and admits
+  the key whatever it is. A key whose p or q is not a factor of its
+  modulus then passes ch_srv_check's key test, and the arithmetic runs
+  under a modulus record built for a number that may be even or short.
+  The signature's check still refuses what comes out, so no vector
+  notices. bin/rsa_sign_test_host changes one bit of p and requires the
+  key test to refuse the key.
+
+--- old
+    return differ == 0;
+--- new
+    (void)differ;
+    return 1;

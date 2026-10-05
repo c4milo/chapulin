@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "rsa_sign_key.h"
 #include "test_aead.h"
 #include "test_hash.h"
 #include "test_widemul.h"
@@ -370,8 +371,9 @@ static void run_rsa_sign(void) {
         memcpy(key.n, p, n_len);
         memcpy(key.d, p + n_len, n_len);
         key.n_len = n_len;
-        widemul_rsa_sp1(TEST_WIDEMUL, &key, p + 2 * n_len, sig);
-        if (memcmp(sig, p + 3 * n_len, n_len) != 0) {
+        test_rsa_sign_key_load_crt(&key, p + 4 * n_len); // the row's five CRT integers
+        int signed_ok = widemul_rsa_sp1(TEST_WIDEMUL, &key, p + 2 * n_len, sig);
+        if (!signed_ok || memcmp(sig, p + 3 * n_len, n_len) != 0) {
             fail("rsa-sign", wp_rsa_sign[i].tc, "signature differs from the vector");
         }
     }

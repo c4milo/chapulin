@@ -18,32 +18,58 @@
 #include "rsa.h" // CH_RSA_MODULUS_MAX
 
 // The private key, whole, in one caller-owned struct: no heap here and
-// none behind it. Both integers are raw big-endian bytes of exactly
-// n_len bytes, the shape ch_cfg.server_pubkey already uses for a
-// modulus, so a provisioning step writes them without a parser.
+// none behind it. Every integer is raw big-endian bytes of a fixed
+// length, the shape ch_cfg.server_pubkey already uses for a modulus, so
+// a provisioning step writes them without a parser.
 //
 // n_len is 256 to CH_RSA_MODULUS_MAX and a multiple of 8, the bound
-// rsa.h defines for the verifier. d is left-padded with zero bytes to
-// n_len whatever its own value is; rsa_pss_sign reads all 8 * n_len bit
-// positions either way, so the padding costs time and leaks nothing.
+// rsa.h defines for the verifier. n and d are n_len bytes each. d is
+// left-padded with zero bytes to n_len whatever its own value is;
+// rsa_pss_sign reads all 8 * n_len bit positions either way, so the
+// padding costs time and leaks nothing.
 //
-// The struct is 2 * CH_RSA_MODULUS_MAX + sizeof(size_t) bytes: 776 with
-// the device bound of 384, 1,032 with the TRUST=webpki bound of 512. A
-// caller that holds it in .bss holds it for the life of the image, so
-// wipe it with ct_wipe when a key is retired.
+// A device object's key is those two integers, 2 * CH_RSA_MODULUS_MAX +
+// sizeof(size_t) bytes: 776 with the device bound of 384. Its signer is
+// the ladder in rsa_sign.c, one exponentiation over the whole modulus,
+// with no CRT: no p, q, dP, dQ or qInv in the key and no code that reads
+// them. That costs about four times a CRT signature, and buys three
+// things a device values more -- the key stays two integers a
+// provisioning step can write, there is one arithmetic path for an
+// auditor to read instead of two plus a recombination, and the Bellcore
+// fault attack, which factors the modulus from a single faulted CRT
+// signature, has nothing to work on. A device is also the part an
+// attacker can hold, which is where a fault is cheapest to cause.
 //
-// What this file leaves out of the key is the CRT: no p, q, dP, dQ or
-// qInv, and no code that reads them. One exponentiation over the whole
-// modulus costs about four times a CRT signature, and buys three things
-// the tree values more -- the key stays two integers a provisioning
-// step can write, there is one arithmetic path for an auditor to read
-// instead of two plus a recombination, and the Bellcore fault attack,
-// which factors the modulus from a single faulted CRT signature, has
-// nothing to work on here.
+// A host object's key (-DCH_CPU_RUNTIME, cpu_cfg.h) holds five more
+// integers, the CRT's, under the names and the meanings RFC 8017 3.2
+// gives them: the primes p and q, dp = d mod (p - 1), dq = d mod (q - 1)
+// and qinv = q^-1 mod p. Each is n_len / 2 bytes, left-padded with zero
+// bytes, and each prime has the top bit of its n_len / 2 bytes set,
+// which is the shape a key generator produces. A session that states its
+// multiply (CH_CPU_CONSTANT_TIME_MULTIPLY) signs with the five, in
+// rsa_sign64.c, and that signer checks each signature with the public
+// exponent before it returns it, which is what answers the Bellcore
+// attack there (rsa_sign64.h, docs/decisions.md 95). A session that does
+// not state it signs with the ladder over n and d and reads none of the
+// five, so a caller that never states its multiply may leave them zero.
+// The struct is then 2 * CH_RSA_MODULUS_MAX + 5 * (CH_RSA_MODULUS_MAX /
+// 2) + sizeof(size_t) bytes: 1,736 with the bound of 384 and 2,312 with
+// the bound of 512. The five sit after n_len, so the ladder reads n, d
+// and n_len where a device object's key has them.
+//
+// A caller that holds the struct in .bss holds it for the life of the
+// image, so wipe it with ct_wipe when a key is retired.
 typedef struct {
     uint8_t n[CH_RSA_MODULUS_MAX]; // modulus, big-endian, n_len bytes
     uint8_t d[CH_RSA_MODULUS_MAX]; // private exponent, big-endian, n_len bytes
     size_t n_len;                  // 256..CH_RSA_MODULUS_MAX, a multiple of 8
+#ifdef CH_CPU_RUNTIME
+    uint8_t p[CH_RSA_MODULUS_MAX / 2];    // first prime, big-endian, n_len / 2 bytes
+    uint8_t q[CH_RSA_MODULUS_MAX / 2];    // second prime, n_len / 2 bytes
+    uint8_t dp[CH_RSA_MODULUS_MAX / 2];   // d mod (p - 1), n_len / 2 bytes
+    uint8_t dq[CH_RSA_MODULUS_MAX / 2];   // d mod (q - 1), n_len / 2 bytes
+    uint8_t qinv[CH_RSA_MODULUS_MAX / 2]; // q^-1 mod p, n_len / 2 bytes
+#endif
 } ch_rsa_priv;
 
 // Whether k is a key rsa_pss_sign signs with: n_len inside the bound
@@ -71,7 +97,11 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
     return 1;
 }
 
-// What the constant-time claim covers, and what it does not.
+// What the constant-time claim covers, and what it does not. This is the
+// claim for the ladder in rsa_sign.c, which a device object runs and a
+// host object runs for a session that does not state its multiply. A
+// host object's session that states it signs with rsa_sign64.c, by the
+// CRT, and rsa_sign64.h holds the claim for that signer.
 //
 // Covered. The exponentiation is a Montgomery ladder whose trip count is
 // exactly 8 * n_len iterations, so neither the value of d nor its bit
@@ -96,11 +126,13 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // multiply per bit already denies simple power analysis the shape of d;
 // what is missing is the defense against the differential form.
 //
-// Not covered, second: fault injection. This file does not verify the
+// Not covered, second: fault injection. The ladder does not verify the
 // signature before returning it, so a fault during the exponentiation
 // produces a wrong signature. The peer rejects it and the handshake
 // fails, which costs the server a connection; it does not hand out the
-// key, because there is no CRT recombination here for a fault to split.
+// key, because the ladder has no CRT recombination for a fault to
+// split. rsa_sign64.c has one, and verifies every signature for that
+// reason.
 //
 // Not covered, third: the modulus and the encoded message are public,
 // and the code treats them as public. Their bit lengths steer loop
@@ -137,15 +169,5 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
 // drive the exponentiation against third-party vectors, which carry a
 // private key but no PSS signature. Not part of the public API.
 void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
-
-#ifdef CH_CPU_RUNTIME
-// The native copies of the entries above that are built on the widening multiply,
-// which a host object holds beside them (rsa_sign_native.c, widemul_native.h) and
-// widemul.h's dispatchers call for WIDEMUL_CONSTANT_TIME.
-int rsa_pss_sign_native(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                        const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
-                        size_t *sig_len);
-void rsa_sp1_native(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
-#endif
 
 #endif

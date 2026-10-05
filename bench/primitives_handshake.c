@@ -65,7 +65,7 @@
 #include "p256_sign_vectors.h"
 #else
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #endif
 
 #define CLIENT 0
@@ -155,7 +155,7 @@ typedef struct {
     const uint8_t *pub;
     size_t pub_len;
 #ifndef CH_PIN_ECDSA
-    const uint8_t *d;
+    test_rsa_sign_key key;
 #endif
 } identity;
 
@@ -170,10 +170,10 @@ static ch_rsa_priv rsa_key;
 static const identity IDENTITIES[] = {
     {"handshake_pinned_rsa2048" KEX_TAG, "handshake_pinned_rsa2048" KEX_TAG "_client_side",
      "handshake_pinned_rsa2048" KEX_TAG "_server_side", rsa_sign_2048_n, sizeof rsa_sign_2048_n,
-     rsa_sign_2048_d},
+     TEST_RSA_SIGN_KEY(2048)},
     {"handshake_pinned_rsa3072" KEX_TAG, "handshake_pinned_rsa3072" KEX_TAG "_client_side",
      "handshake_pinned_rsa3072" KEX_TAG "_server_side", rsa_sign_3072_n, sizeof rsa_sign_3072_n,
-     rsa_sign_3072_d},
+     TEST_RSA_SIGN_KEY(3072)},
 };
 #endif
 #define IDENTITY_COUNT (sizeof IDENTITIES / sizeof IDENTITIES[0])
@@ -187,10 +187,7 @@ static void set_identity(ch_identity *slot, const identity *id) {
     slot->priv = p256_sign_vectors[0].priv;
     slot->priv_len = sizeof p256_sign_vectors[0].priv;
 #else
-    memset(&rsa_key, 0, sizeof rsa_key);
-    rsa_key.n_len = id->pub_len;
-    memcpy(rsa_key.n, id->pub, id->pub_len);
-    memcpy(rsa_key.d, id->d, id->pub_len);
+    test_rsa_sign_key_load(&rsa_key, &id->key);
     slot->priv = &rsa_key;
     slot->priv_len = sizeof rsa_key;
 #endif

@@ -541,7 +541,10 @@ ones, because a leak of either is permanent.
 The design puts every value computed from a long-term key in one file per
 family, `p256_sign.c` and `rsa_sign.c`, named so an auditor finds them without
 reading the build. Both are new `WIDEMUL_CEILING` entries with measured
-ceilings.
+ceilings. A host object has a second RSA file, `rsa_sign64.c`, which computes
+over `rsa_mont64.c`: the two hold every value a host session that states its
+multiply computes from an RSA key, and both have ceilings too
+(`docs/decisions.md` 95).
 
 ### AES-GCM becomes a cipher suite carrying user data, in two key sizes
 
@@ -1443,11 +1446,11 @@ arithmetic is deliberately variable time". A private exponentiation is the
 opposite case.
 
 The cost against the existing verify path is a ratio, not a rewrite.
-`rsa_mont.c` has four `mont_mul` call sites (`:143`, `:146`, `:148`, `:153`)
+`rsa_mont.c` has four `mont_mul` call sites (`:183`, `:186`, `:188`, `:193`)
 and runs 19 of them for the public exponent 65537, derived from the loop bound
-at `rsa_mont.c:145`:
+at `rsa_mont.c:185`:
 
-    rsa_mont.c:145        for (int i = 0; i < 16; i++) {
+    rsa_mont.c:185        for (int i = 0; i < 16; i++) {
 
 A 3072-bit private exponent needs roughly 3,072 squarings plus multiplies, in a
 ladder whose operand selection is branchless and whose table reads, if it uses
@@ -1461,6 +1464,31 @@ one multiplication and one squaring per exponent bit, over every one of the
 the window's 16 * n_len bytes of stack. A ladder step selects with mask
 arithmetic, so no table read has to be a scan.
 
+That ladder is the signer of a device object, and of a host object's session
+that does not state its multiply. It has no CRT, and `rsa_sign.h` says why a
+device does not: its key stays the two integers a provisioning step can write,
+its signer stays one arithmetic path, and a fault has no recombination to
+split, on the part an attacker can hold.
+
+A host object (`-DCH_CPU_RUNTIME`) holds a second signer beside the ladder,
+`rsa_sign64.[ch]`, and a session that states its multiply
+(`CH_CPU_CONSTANT_TIME_MULTIPLY`) signs with it. There `ch_rsa_priv` holds p,
+q, dP, dQ and qInv after n, d and `n_len`, each `n_len / 2` raw big-endian
+bytes. The signer runs the Chinese remainder theorem over 64-bit limbs: one
+exponentiation modulo each prime, each a 4-bit window whose table reads are
+constant-time scans, joined by Garner's formula with masks. It then raises the
+signature to the public exponent and compares it with the encoded message
+before it writes a byte, and a signature that fails is an error: the flight
+answers internal_error and the session fails closed. `ch_srv_check` holds the
+primes to the modulus and signs once with each key, so a key with a wrong CRT
+integer is refused at boot. `docs/decisions.md` 95 has the measurements and
+the reasons, and INV-42 the tests.
+
+That signer does share its arithmetic with the verify side, which the ladder
+does not: both run `rsa_mont64.c` in a host object. The file is constant time
+in every limb, for the signer's sake, and the verifier runs it because one
+64-bit arithmetic is less to audit than two (INV-41).
+
 The signing frame is *measured* now, by the method `make lint-stack` uses,
 which is `-Wframe-larger-than` per function; the three frames below sit on one
 call chain, so the peak is their sum. At the device bound of RSA-3072, under
@@ -1468,6 +1496,14 @@ the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os: `rsa_pss_sign` 1,072 bytes,
 `rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at -O2 on
 arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the
 TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304.
+A host object's 64-bit signer is four frames on one chain, `rsa_sign64_pss`,
+`rsa_sign64_sp1`, `rsa_sign64_power` and `rsa_mont64_mont_mul`: under Apple
+clang 21 at -O2 on arm64 they are 1,152, 4,368, 3,408 and 496, so 9,424, at the
+bound of RSA-3072, and 1,408, 5,776, 4,496 and 624, so 12,304, at the bound of
+RSA-4096. That chain is the deepest of a host server object: `bench/sram.sh`
+measures `ch_srv_accept`'s peak at 11,424 bytes through it, where the
+encapsulation's chain takes 10,336 (`docs/performance.md`, "What the larger
+builds pay for").
 
 Two of those three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a
 device build, and the `ROLE=server` object packages `rsa_sign.c` now. The

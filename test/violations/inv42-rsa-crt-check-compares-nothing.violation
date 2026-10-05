@@ -1,0 +1,16 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: rsa_sign_test_host
+reason: signature_verifies compares the encoded message with itself, so
+  every candidate passes and rsa_sign64_sp1 returns whatever the CRT
+  computed. A fault in one half, or a key with a wrong dp, then leaves the
+  signer as a value that differs from the signature modulo one prime
+  alone, and one such value with the message factors the modulus. Every
+  good signature still comes out right, so the vectors and the
+  equivalence test pass. bin/rsa_sign_test_host changes one bit of each
+  CRT integer and requires an error.
+
+--- old
+    int same = ct_memeq(power, em, k->n_len) != 0;
+--- new
+    int same = ct_memeq(em, em, k->n_len) != 0;

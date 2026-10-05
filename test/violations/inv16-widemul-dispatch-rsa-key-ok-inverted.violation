@@ -1,0 +1,18 @@
+invariant: INV-16
+file: widemul.h
+catches: widemul_runtime_test
+reason: widemul_rsa_pss_sign_key_ok inverts its branch, so a session that
+  does not state its multiply runs rsa_sign64_key_ok, which multiplies the
+  key's primes on the native multiply, and a session that states it runs
+  the test that reads no prime. Every key a test provisions is well
+  formed, so both tests admit it and nothing else notices.
+  bin/widemul_runtime_test counts the calls into the 64-bit signer's test
+  and requires one under the constant-time answer and none under any
+  other.
+
+--- old
+    if (widemul_native(widemul)) {
+        return rsa_sign64_key_ok(k);
+--- new
+    if (!widemul_native(widemul)) {
+        return rsa_sign64_key_ok(k);

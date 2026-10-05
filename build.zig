@@ -109,9 +109,10 @@ const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// WIDEMUL_COPIED: the files built on ct.h's widening multiply that a
 /// host object compiles a second time, as <file>_native.c. x25519.c,
-/// p256_field.c and p256_scalar.c are not among them: their second copies
-/// are x25519_wide.c's field and the wide P-256 files.
-const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c", "rsa_sign.c" };
+/// p256_field.c, p256_scalar.c and rsa_sign.c are not among them: their
+/// second copies are x25519_wide.c's field, the wide P-256 files and
+/// rsa_sign64.c's limbs.
+const widemul_copied = [_][]const u8{ "poly1305.c", "mlkem_poly.c" };
 /// P256_WIDE_SRCS: the wide P-256 files a host object holds beside
 /// p256_point.c (docs/decisions.md 94).
 const p256_wide_srcs = [_][]const u8{
@@ -506,6 +507,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // in a host object, for the public operation of both RSA verifiers in
     // every session (docs/decisions.md 95).
     if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{"rsa_mont64.c"} });
+    // RSA_SIGN64_SRCS: the signer on those limbs, which a session's
+    // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks over rsa_sign.c's ladder
+    // (docs/decisions.md 95).
+    if (host and contains(lib_srcs, "rsa_sign.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{"rsa_sign64.c"} });
     // CHACHA_VECTOR_SRCS: the vector ChaCha20 every session of a host
     // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
     // on x86-64 (docs/decisions.md 82, 89 and 90).

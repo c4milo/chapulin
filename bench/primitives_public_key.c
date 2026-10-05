@@ -10,18 +10,18 @@
 // x25519.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c,
 // whose products go through ct.h's widening multiply. Without
 // CH_CPU_CONSTANT_TIME_MULTIPLY its rows run those files on the 16x16
-// decomposition. With the bit they run the native copies of mlkem_poly.c
-// and rsa_sign.c, for X25519 the wide field, x25519_wide.c, and for
-// P-256 the wide files and their table of multiples of G (widemul.h,
-// docs/decisions.md 94).
+// decomposition. With the bit they run the native copy of mlkem_poly.c,
+// for X25519 the wide field, x25519_wide.c, for P-256 the wide files and
+// their table of multiples of G, and for RSA signing rsa_sign64.c's limbs
+// (widemul.h, docs/decisions.md 94 and 95).
 //
 // The key generation and encapsulation rows take their random bytes as
 // arguments, as the library's calls do, so they time no draw.
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
-// TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont.c's loops
-// run over the modulus length, not that bound, so the 2048 and 3072 rows
-// time the same work a device build does.
+// TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont64.c's loops
+// run over the modulus's limbs, not that bound, so the 2048 and 3072
+// rows time the work a host object does at the device bound.
 #include <string.h>
 
 #include "mlkem.h"
@@ -42,7 +42,7 @@
 #include "p256_sign_vectors.h"
 #include "rsa_pkcs1_vectors.h"
 #include "rsa_pkcs1_wide_vectors.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "rsa_wide_vectors.h"
 #include "widemul.h"
 
@@ -293,13 +293,6 @@ static void run_rsa_pkcs1_verify_4096(size_t n) {
            "rsa_pkcs1_verify refused its 4096-bit vector");
 }
 
-static void load_rsa_key(ch_rsa_priv *k, const uint8_t *n, const uint8_t *d, size_t len) {
-    memset(k, 0, sizeof *k);
-    k->n_len = len;
-    memcpy(k->n, n, len);
-    memcpy(k->d, d, len);
-}
-
 // The salt comes from ch_rand_bytes, drbg.c here, as a server draws one
 // per signature (srv_auth.c), so the signature differs from the vector's;
 // prepare checks the verifier takes it.
@@ -316,13 +309,13 @@ static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN])
 
 static void prepare_rsa_sign_2048(size_t n) {
     prepare_rsa_message_hash(n);
-    load_rsa_key(&rsa_2048_key, rsa_sign_2048_n, rsa_sign_2048_d, sizeof rsa_sign_2048_n);
+    test_rsa_sign_key_load(&rsa_2048_key, &(test_rsa_sign_key)TEST_RSA_SIGN_KEY(2048));
     sign_and_check(&rsa_2048_key, rsa_message_hash);
 }
 
 static void prepare_rsa_sign_3072(size_t n) {
     prepare_rsa_message_hash(n);
-    load_rsa_key(&rsa_3072_key, rsa_sign_3072_n, rsa_sign_3072_d, sizeof rsa_sign_3072_n);
+    test_rsa_sign_key_load(&rsa_3072_key, &(test_rsa_sign_key)TEST_RSA_SIGN_KEY(3072));
     sign_and_check(&rsa_3072_key, rsa_message_hash);
 }
 

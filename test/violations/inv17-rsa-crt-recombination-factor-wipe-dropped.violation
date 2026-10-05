@@ -1,0 +1,15 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: crt_combine returns without wiping h, Garner's factor qinv * (m1
+  - m2) mod p, which with the signature and q's multiple of it gives a
+  prime. Inside a signature a later call's frame is written over that
+  one, so bin/rsa_sign_equiv_test calls the recombination on its own
+  (test/rsa_sign_equiv_pieces.c), copies the stack below it and finds two
+  limbs of the value there.
+
+--- old
+    ct_wipe(t, sizeof t);
+    ct_wipe(h, sizeof h);
+--- new
+    ct_wipe(t, sizeof t);

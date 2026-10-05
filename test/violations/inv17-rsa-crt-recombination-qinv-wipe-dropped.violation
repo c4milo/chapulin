@@ -1,0 +1,15 @@
+invariant: INV-17
+file: rsa_sign64.c
+catches: rsa_sign_equiv_test
+reason: crt_combine returns without wiping t, which ends as the limbs of
+  qinv after it held the second half of the signature modulo p. Inside a
+  signature a later call's frame is written over that one, so
+  bin/rsa_sign_equiv_test calls the recombination on its own
+  (test/rsa_sign_equiv_pieces.c), copies the stack below it and finds two
+  limbs of the value there.
+
+--- old
+    rsa_mont64_mul_add(s, mod_q->m, h, m2, k);
+    ct_wipe(t, sizeof t);
+--- new
+    rsa_mont64_mul_add(s, mod_q->m, h, m2, k);

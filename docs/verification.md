@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-88 of the 111 C sources in the tree root are compiled into a
+89 of the 111 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -35,14 +35,15 @@ all on unsigned values (see [x25519_wide](#x25519_wide)). The wide P-256
 files' harnesses check it for the same reason
 (see [p256_wide](#p256_wide)). So do four of the harnesses of RSA's
 64-bit arithmetic, whose claim is that no sum in it wraps
-(see [rsa_mont64](#rsa_mont64)).
+(see [rsa_mont64](#rsa_mont64)), and the two that prove how the signer on
+those limbs reads an exponent (see [rsa_sign64](#rsa_sign64)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
 
 ### Sources with no launched harness
 
-The other 23 sources are in no such harness:
+The other 22 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -60,7 +61,7 @@ The other 23 sources are in no such harness:
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `poly1305_native.c`, `mlkem_poly_native.c`, `rsa_sign_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
@@ -821,9 +822,11 @@ The entries are grouped by area:
     two `rsa_mont64_ops` ones replaces the multiply with that bound as a
     contract (`proof/rsa_mont64_stubs.h`).
   - `rsa_mont64_sums`: `rsa_mont64_mont_mul` at four limbs, over any
-    operands, any modulus and any `m0inv`, in the three aliasing shapes
+    operands, any modulus and any `m0inv`, in the four aliasing shapes
     its callers use, wraps no unsigned value: no sum of a product, a
     limb and a carry, no top step and no limb of the last subtraction.
+    Nor does `rsa_mont64_mul_add`, the plain product and sum, at four
+    limbs.
     Four limbs run every statement of the function in every position it
     takes, and each sum reads only values that are unconstrained there,
     so the limb count is no part of the argument.
@@ -832,9 +835,14 @@ The entries are grouped by area:
     by one subtraction in both of its aliasing shapes, the doubling and
     the power of two the modulus setup starts from stay inside their
     arrays and wrap nothing, at the largest limb count. `mask_of_bit` is
-    all ones or all zeros, and `at_or_above` answers one bit.
+    all ones or all zeros, and `at_or_above` answers one bit. So do
+    `rsa_mont64_add` and `rsa_mont64_sub`, with the output apart from
+    both operands, on the first and on the second, and
+    `rsa_mont64_reduce_once`.
   - `rsa_mont64_mul`: the multiplication reads and writes inside its
-    arrays at the largest limb count, in the three aliasing shapes.
+    arrays at the largest limb count, in the four aliasing shapes, and
+    `rsa_mont64_mul_add` at half that count, a prime's, into twice as
+    many limbs.
   - `rsa_mont64_init`: `rsa_mont64_modulus_init` whole, over any modulus
     bytes at the largest length with the top bit's bit length: the
     marshalling, `neg_inverse`, its 2k + 1 doublings and its five
@@ -860,6 +868,66 @@ The entries are grouped by area:
   power rest on [tests](#the-host-objects-rsa-arithmetic). The file's
   timing claim is `make lint-wide-multiply`'s, which counts the
   conditional branches it compiles to.
+
+#### rsa_sign64
+
+- **Harnesses:** `rsa_sign64_window` (fast), `rsa_sign64_window_webpki` (fast), `rsa_sign64_power` (fast), `rsa_sign64_power_webpki` (fast), `rsa_sign64_crt` (fast), `rsa_sign64_crt_webpki` (fast)
+- **Build:** a host object's RSA signer on 64-bit limbs
+  (`rsa_sign64.c`, INV-41 and INV-42), under `-DCH_CPU_RUNTIME`. The two
+  `rsa_sign64_window` lines add `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_sign64_window`: `exponent_digit` returns the high half of byte
+    i / 2 for an even i and the low half for an odd one, for any
+    exponent bytes and any i below twice the bound, so a digit is a
+    table index. `table_select` writes exactly the entry at its index,
+    for any table, any index below 16 and any limbs in its output
+    before the call, at a prime's largest limb count. `mask_of_bit` is
+    all ones or all zeros.
+  - `rsa_sign64_power`: `rsa_sign64_power` reads and writes inside its
+    arrays at each of its two bounds: the longest exponent a key has,
+    half the modulus's bytes, over a modulus of one limb, and a prime's
+    largest limb count under an exponent of two bytes, with the output
+    apart from the base and on it.
+  - `rsa_sign64_crt`: the five pieces a CRT signature joins read and
+    write inside their arrays, each whole: `message_mod_prime`, which
+    splits the message into its low limbs and the limbs above them;
+    `crt_combine`, Garner's formula into twice a prime's limbs;
+    `rsa_sign64_key_ok`, which multiplies the primes and compares the
+    product with the modulus; `signature_verifies`, the check of a
+    signature; and `write_if_verified`, which copies a candidate to the
+    caller. All but the second run at the largest modulus and at 8
+    bytes below it, where each prime is half a limb past a whole number
+    of limbs.
+  - `rsa_sign64_crt` also states what three of them compare and copy,
+    over any bytes and limbs the contracts below may write: the check
+    raises the whole candidate modulo the key's modulus and returns 1
+    exactly when every byte of the power is the byte of the encoded
+    message; `write_if_verified` leaves every byte of the caller's
+    buffer as it was unless that check passed, and then the buffer
+    holds the candidate; and the key test returns 1 exactly when every
+    limb of the product is the limb of the modulus (INV-42).
+
+  Every call into `rsa_mont64.c` is a contract
+  (`proof/rsa_sign64_stubs.h`) that asserts what the real entry needs,
+  and the [rsa_mont64](#rsa_mont64) harnesses discharge them. The
+  `_webpki` lines are the same harnesses at the `CH_TRUST_WEBPKI` bound.
+- **Bound:** 384 bytes, 48 limbs and primes of 24, and 512 bytes, 64
+  limbs and primes of 32 under `CH_TRUST_WEBPKI`.
+- **Not driven:** `rsa_sign64_power` at both bounds at once, which
+  returned no verdict in fifteen minutes when the table held whole
+  moduli; no index in the function is computed from both lengths.
+  `rsa_sign64_sp1` whole, which is that exponentiation at both bounds,
+  twice: its own statements are two modulus setups, the message's
+  marshalling, the pieces above and seven wipes.
+  `rsa_sign64_pss` is `rsa_sign.c`'s text, which [rsa_sign](#rsa_sign)
+  proves.
+- **Not proved:** any value, that `table_select` reads every entry
+  whatever its index is, and that a compiler emits no branch for its
+  mask. The values rest on [tests](#the-host-objects-rsa-arithmetic) and
+  on the signer's own check of every signature (INV-42). The read of
+  the whole table rests on a Semgrep rule, and the mask on that rule,
+  on the branch counts of two builds and on a reading of the assembly
+  of nine (INV-16).
 
 #### rsa_sign
 
@@ -3281,11 +3349,12 @@ measures it.
 
 A host object holds each operation built on the widening multiply
 twice, and each session's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit picks a
-copy for each operation (decisions 87 and 89). Three files compile twice,
+copy for each operation (decisions 87 and 89). Two files compile twice,
 the second time as a native copy. X25519's second copy is the wide
-field and P-256's is the wide files (decision 94), and both have
-harnesses of their own ([x25519_wide](#x25519_wide),
-[p256_wide](#p256_wide)).
+field, P-256's is the wide files (decision 94) and RSA signing's is the
+signer on 64-bit limbs (decision 95), and each has harnesses of its own
+([x25519_wide](#x25519_wide), [p256_wide](#p256_wide),
+[rsa_sign64](#rsa_sign64)).
 `widemul_answer` turns the bit into
 the answer every dispatcher in `widemul.h` takes. No harness compiles a
 native copy, and neither copy needs a run of its own:
@@ -3385,6 +3454,59 @@ even. `rsa_pkcs1_verify` refuses an even modulus before the operation
 runs. `rsa_pss_verify` does not, and its decode then judges bytes that
 are no power of the signature in either object.
 
+A host object signs on those limbs too, in a session that states its
+multiply: `rsa_sign64.c`, by the Chinese remainder theorem from the
+key's primes, beside `rsa_sign.c`'s ladder over n and d, which stays the
+reference (decision 95). The proofs of [rsa_sign64](#rsa_sign64) hold
+how it reads an exponent and its memory accesses. Tests hold the values:
+
+- `bin/rsa_sign_equiv_test`, in `make check`, requires the ladder's
+  bytes from the 64-bit signer under the four keys of
+  `test/rsa_sign_vectors.h`, which openssl minted with their CRT
+  integers: RSA-2048, RSA-2112, whose primes are 132 bytes, half a limb
+  past a whole number of 64-bit limbs, RSA-3072 and RSA-4096. Under each
+  it signs the messages 0, 1 and n - 1, which are their own signatures,
+  and random ones: 19 comparisons.
+- The same binary holds the window, `rsa_sign64_power`, to the ladder
+  under random moduli of 256 bytes, the longest prime the build takes:
+  over the exponents 0, 1, 2, 15, 16 and 17, all ones, the top bit
+  alone, every digit value in turn and zero high or low digits, and
+  random moduli, exponents and messages. The powers 0 and 1 are known,
+  so those rows check both against the answer. Under moduli of 8, 12,
+  128 and 132 bytes and exponents of 1 byte, 5 bytes and the modulus's
+  length it holds the window to a square-and-multiply over
+  `rsa_mont64_mont_mul` that reads one bit a step and keeps no table,
+  and requires that zero bytes ahead of an exponent change nothing: 110
+  comparisons.
+- It also copies the stack a call left, under three of the keys. Seven
+  runs for a key look for what the call computed from the private key
+  and require no two limbs of it side by side: a signature, a refused
+  one, the key test on a key it admits and on one it refuses, and the
+  reduction, the exponentiation and the recombination each on its own.
+  Nine more make one call under two secrets that a caller cannot tell
+  apart and require the two stacks equal in every byte, which holds a
+  value shorter than a limb (INV-17): 42 comparisons. A binary built
+  without optimization or under AddressSanitizer makes none of the
+  sixteen and says why (`test/stack_residue.c`), so the sanitizer lane
+  runs the binary's other 129 comparisons and no run over the stack.
+- `bin/rsa_sign_test_host` signs the four keys through
+  `widemul_rsa_pss_sign` under each value of the multiply bit and
+  requires OpenSSL's bytes. It changes one bit of each CRT integer and
+  requires an error and no signature bytes from the 64-bit signer
+  (INV-42). The Wycheproof host binary runs `widemul_rsa_sp1` over the
+  PKCS#1 v1.5 generation vectors under each value too, with the CRT
+  integers of Wycheproof's own keys.
+- `bin/widemul_runtime_test` counts the calls into each signer and into
+  the 64-bit signer's key test, and requires them for a session that
+  states its multiply and for no other, and every host loop that
+  authenticates with the RSA identity reads the same counts over a whole
+  handshake.
+- `bin/diff_rsa_sign64`, in `make diff`, has the Lean spec sign random
+  digests under random salts with the four keys, from n and d, and
+  requires its bytes from both signers: 21 comparisons. The spec states
+  RSASP1 as m^d mod n over `Nat` and has no model of the CRT; the
+  comparison is what holds the CRT to it.
+
 Eleven violations hold the arm: four break a value and
 `bin/rsa_equiv_test` catches each; three break a sum, a bound or the
 no-wrap form and a proof catches each; one writes the last subtraction
@@ -3392,7 +3514,19 @@ as a branch and `lint-wide-multiply`'s count catches it; two move the
 file between the host and the device object and `lint-trust-separation`
 catches each; and one keeps a host object on the 32-bit arm, which
 `test/widemul-builds.sh` catches (INV-41 and INV-16 in
-docs/invariants.md).
+docs/invariants.md). Forty-one hold the signer: three break a value and
+`bin/rsa_sign_equiv_test` catches each; twenty-one drop a wipe, one for
+each wipe of the two files, and the same binary's copy of the stack
+catches each; one keeps a digit of the exponent in a frame, which that
+binary's two stacks catch; three break the check of a signature or the
+key test, which `bin/rsa_sign_test_host` catches; two leave one byte or
+one limb out of a comparison, which the `rsa_sign64_crt` proof catches;
+six change the read of the table, by its subscript, its scan, its masks
+or the zeros it does not write, which `lint-invariants` catches; three
+invert a dispatch, which `bin/widemul_runtime_test` catches; one adds a
+difference's modulus back by a branch, which `lint-wide-multiply`'s
+count catches; and one puts the signer in a device object, which
+`lint-trust-separation` catches (INV-41, INV-42, INV-16 and INV-17).
 
 ### The host object's description of the CPU
 

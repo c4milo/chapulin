@@ -1195,7 +1195,12 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit limbs
   that a host object runs for `rsa_vp1`, computes for every odd modulus
   the bytes `rsa_mont.c`'s 32-bit arithmetic computes, which stays the
-  reference. No sum in it wraps: a product of two limbs is at most
+  reference. `rsa_sign64.c`, the signer on those limbs that a host
+  session runs when it states its multiply, computes a signature from
+  the key's primes by the Chinese remainder theorem, and writes for
+  every key and every encoded message the bytes `rsa_sign.c`'s ladder
+  writes from n and d, which stays the reference too. No sum in
+  `rsa_mont64.c` wraps: a product of two limbs is at most
   (2^64 - 1)^2, and with a limb of the running sum and a carry added it
   is at most 2^128 - 1. The file computes in `uint64_t` and `unsigned
   __int128`, where C defines every wrap, so a sum that left that range
@@ -1207,6 +1212,15 @@ last `ROLE=server` stub, as the entry said it would.
   so its limbs carry where a borrow would wrap. `rsa_mont.c` compiles to
   a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
   arithmetic without it, so an object holds one of the two.
+  `rsa_sign64.c` multiplies only through that file. It reduces the
+  encoded message modulo each prime with three multiplications and a
+  sum, raises each to dp or dq, reading the exponent one hexadecimal
+  digit a step, squaring four times and multiplying by the table entry
+  the digit names, and joins the halves by Garner's formula, which
+  `rsa_mont64.c`'s sum, difference and plain product compute. It
+  compiles `rsa_sign.c`'s PSS encoder around that, so the two signers
+  encode alike. A host object holds both signers, and `widemul.h` picks
+  one for a session from its multiply bit (INV-16).
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
   four limbs over any operands, `rsa_mont64_ops` the comparison, the
@@ -1223,6 +1237,25 @@ last `ROLE=server` stub, as the entry said it would.
   are known; by `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the Wycheproof
   host leg. `test/widemul-builds.sh` holds each arm to its object.
+  For the signer, `rsa_sign64_window` proves, with the wrap check on,
+  that a digit is the half of the byte its index names and that the read
+  of the table writes the entry at its index, `rsa_sign64_power` proves
+  the exponentiation's memory accesses at the longest exponent and at
+  the largest limb count, and `rsa_sign64_crt` those of the reduction,
+  the recombination, the key test and the signature's check, each over
+  contracts of `rsa_mont64.c`'s entries (`proof/rsa_sign64_stubs.h`).
+  `rsa_mont64_ops`, `rsa_mont64_sums` and `rsa_mont64_mul` hold the sum,
+  the difference and the plain product as they hold the multiplication.
+  `bin/rsa_sign_equiv_test` requires the ladder's bytes from the 64-bit
+  signer under four keys openssl minted, RSA-2048, RSA-2112, whose
+  primes are half a limb past a whole number, RSA-3072 and RSA-4096,
+  over the messages 0, 1 and n - 1 and random ones. It holds the window
+  to the ladder under random moduli of 256 bytes over exponents whose
+  digits sit at an edge, and at smaller sizes to a square-and-multiply
+  that keeps no table. `bin/rsa_sign_test_host` requires OpenSSL's
+  signatures from both signers, the Wycheproof host leg runs the private
+  operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
+  in `make diff`, requires the Lean spec's signatures from each.
 - **Violation.** A PR adds both carries into one sum, which can then
   pass 2^128; makes the running sum one limb short; subtracts with a
   borrow that wraps; copies a product out without its last subtraction;
@@ -1234,7 +1267,74 @@ last `ROLE=server` stub, as the entry said it would.
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
   `inv41-rsa-mont64-sum-one-limb-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
-  nightly's proof-backed job.
+  nightly's proof-backed job. Or a PR starts the read of the table at
+  its second entry, or reads the low half of each exponent byte first:
+  `inv41-rsa-sign64-table-read-skips-entry-zero` and
+  `inv41-rsa-sign64-digits-low-half-first`, which
+  `bin/rsa_sign_equiv_test` catches. Or it reduces the message's high
+  limbs with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
+  the signature's check then refuses every signature (INV-42), and the
+  same binary reports it.
+- See [decisions: Engineering](decisions.md#engineering), entry 95.
+
+### INV-42 — a host object returns no RSA signature it has not verified
+
+- **Claim.** `rsa_sign64_sp1`, the private operation a host session runs
+  by the Chinese remainder theorem when it states its multiply, writes a
+  signature only after it raised it to the public exponent modulo n and
+  found the encoded message. A signature that fails that check is an
+  error: the call returns 0 and writes no byte of it, `rsa_sign64_pss`
+  returns 0, and the session fails closed with internal_error (INV-13).
+  The key it signs with has primes whose product is its modulus, which
+  `rsa_sign64_key_ok` tests before every signature and at every init
+  and `ch_srv_check`.
+- **Mechanism.** A CRT signature computed with one wrong half differs
+  from the right one modulo one prime alone, so the difference between
+  its 65537th power and the message shares that prime with n, and one
+  such value factors the modulus (Boneh, DeMillo and Lipton). A fault in
+  the arithmetic makes one, and so does a key whose dp, dq or qinv does
+  not belong to its modulus. The check's power is `rsa_mont64_public`,
+  the arithmetic the verifier runs, which is constant time in its base,
+  and the comparison is `ct_memeq`; the power is wiped. The candidate
+  stays in a buffer of the call's own until the check passes.
+  `srv_sign_certificate_verify` wipes its output and answers `CH_EAUTH`
+  when a signer returns 0, and `ch_srv_check` signs once with each
+  provisioned key, so a key with a wrong integer is refused before a
+  session starts. A device object's signer has no CRT and no check, and
+  `rsa_sign.h` says why.
+- **Check.** `bin/rsa_sign_test_host` changes one bit of each of the five
+  CRT integers of an RSA-2048 and an RSA-2112 key, at its first byte,
+  its last and one between. From the 64-bit signer it requires an error,
+  every byte of the output buffer as it was and the length as it was,
+  and from the key test a refusal of a changed prime. Under the answer
+  that runs the ladder the same calls must sign, because the ladder
+  reads none of the five. `bin/rsa_sign_equiv_test` and the Wycheproof
+  host leg require the check to pass on every signature a good key
+  makes. No test can show that a comparison leaves out a byte or a
+  limb: a faulted candidate's power differs from the message in nearly
+  every byte, and a changed bit of a prime moves the low limbs of the
+  product. So CBMC's `rsa_sign64_crt` states three things over what the
+  contracts of `rsa_mont64.c` may write, at both shapes of the limb
+  counts: the check raises the whole candidate modulo the key's modulus
+  and passes exactly when every byte of the power is the message's;
+  `write_if_verified`, the one function that writes a signature, leaves
+  every byte of the caller's buffer as it was unless the check passed,
+  and then the buffer holds the candidate; and the key test admits a key
+  exactly when every limb of the product is the modulus's. The check
+  answers a fault that changes the signature. It does not answer one
+  that skips the check, and no test here injects a fault into a running
+  signature: a changed key integer stands in for one.
+- **Violation.** A PR compares the encoded message with itself, writes
+  the candidate to the caller's buffer before the check, or admits a key
+  without comparing the product of its primes:
+  `inv42-rsa-crt-check-compares-nothing`,
+  `inv42-rsa-crt-signature-written-before-check` and
+  `inv42-rsa-crt-key-test-skips-product`, each of which
+  `bin/rsa_sign_test_host` catches. Or it compares all but the last
+  byte of the power, or all but the top limb of the product, which every
+  test passes: `inv42-rsa-crt-check-skips-last-byte` and
+  `inv42-rsa-crt-key-test-skips-top-limb`, each of which the
+  `rsa_sign64_crt` proof refutes.
 - See [decisions: Engineering](decisions.md#engineering), entry 95.
 
 ### INV-35 — the build record holds what the object was compiled with
@@ -2718,12 +2818,58 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
   They compile `rsa_mont64.c` as well, RSA's Montgomery arithmetic on
-  64-bit limbs, and hold its conditional branches at 23 on each: loop
+  64-bit limbs, and hold its conditional branches at 32 on each: loop
   control over limb counts, byte counts, the doublings
   `rsa_mont64_modulus_init` counts from its bits argument and the
   squarings, and the two `CH_ASSERT`s on public lengths.
   `inv16-rsa-mont64-subtract-branch` writes the subtraction that ends a
-  multiplication as an `if`, and both counts rise by one.
+  multiplication as an `if`, and `inv16-rsa-crt-difference-branch` the
+  step that adds the modulus back to a difference; both counts rise by
+  one under each.
+  They compile `rsa_sign64.c` too, the signer on those limbs, and hold
+  its conditional branches at 26 on arm64 and 27 on x86-64: loop control
+  over the table's entries, the exponents' digits, the four squarings
+  and the limbs, the `CH_ASSERT`s on public lengths, one of which is two
+  tests on x86-64, the key test's three on the modulus's length and two
+  of its bits, the seven of `rsa_sign.c`'s encoder, which it compiles,
+  and one on whether the signature passed its check, which the caller
+  sees as the return value.
+  The count does not hold the read of the table by itself. A read that
+  stops at the entry it wants compiles to the same counts. And the
+  first form of `table_select`, which used each mask as it computed it,
+  compiled under clang for x86-64 to a comparison of the entry's
+  position with the digit and a branch on it, and the ceiling for that
+  spec then, 29, was recorded from that build (decision 95). So a Semgrep
+  rule, `inv-16-rsa-table-read`, refuses five things: a subscript of the
+  table that is no constant and no loop counter; an `if`, a conditional
+  expression or a statement that leaves a loop inside `table_select`; a
+  mask there that is taken straight from `mask_of_bit` and not read back
+  through the volatile pointer; a `table_select` that does not end by
+  writing zero through that pointer; and a write to its output that is
+  not the select of an entry under its mask, or a call there to anything
+  but `mask_of_bit`, which INV-17 gives the reason for.
+  `inv16-rsa-sign64-table-read-by-index` copies the one entry the digit
+  names, `inv16-rsa-sign64-table-read-stops-early` leaves the scan at
+  it, `inv16-rsa-sign64-table-mask-not-hidden` uses each mask as it
+  computed it, with no pointer, and
+  `inv16-rsa-sign64-table-mask-not-read-back` writes the mask through
+  the pointer and uses the value it computed, and `lint-invariants`
+  catches each. `bin/timing_rsa_sign64`, which `make
+  timing` runs, times the read under an exponent of zero bytes against
+  random ones. The conditional branches of both files were read in the
+  assembly of nine builds, and each depends on a length, a counter, a
+  `CH_ASSERT` or a verdict the caller sees: the pinned clang 23 at `-Os`
+  and at `-O2` for arm64 and x86-64, Apple clang 21 at `-O2` for both,
+  gcc 13.3 at `-O2` for both and clang 18 at `-O2` for arm64. A build
+  outside that list is held by the rule and by the counts of the two
+  specs. Two older violations invert
+  the dispatch that picks a signer for a session,
+  `inv16-widemul-dispatch-rsa-pss-sign-inverted` and
+  `inv16-widemul-dispatch-rsa-sp1-inverted`, and a third the dispatch of
+  the key test, `inv16-widemul-dispatch-rsa-key-ok-inverted`, which would
+  multiply a key's primes on the native multiply in a session that did
+  not state it. `bin/widemul_runtime_test`, which counts the calls into
+  each signer, catches all three.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
@@ -3672,6 +3818,75 @@ last `ROLE=server` stub, as the entry said it would.
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
+  `rsa_mont64.c` and `rsa_sign64.c` wipe every array they hold a value
+  computed from an RSA key in, twenty-one wipes: the multiplication's
+  running sum, with the round's multiple above it; the public
+  operation's base and power, which in the signer's check are a
+  candidate and what it was raised to; the exponentiation's table and
+  the entry its last step read; the reduction's two products and R^3;
+  the recombination's qinv and factor; the key test's two primes and
+  their product; the check's power; and in `rsa_sign64_sp1` the two
+  primes' modulus records, the message's limbs, the two halves, and the
+  candidate as limbs and as bytes. Any one of those with the message
+  factors the modulus, the candidate when its check failed.
+  `bin/rsa_sign_equiv_test` copies the stack below a call and requires
+  no two limbs side by side of a value the call held, in seven runs
+  under each of an RSA-2048, an RSA-2112 and an RSA-4096 key: a
+  signature; a signature under a key with one bit of dp changed, which
+  the check refuses; the key test; the key test with one bit of q
+  changed, which it refuses; and the reduction, the exponentiation and
+  the recombination each called on its own, because inside a signature a
+  later call's frame is written over theirs
+  (`test/rsa_sign_equiv_pieces.c`). One violation file drops each wipe:
+  `inv17-rsa-mont64-running-sum-wipe-dropped`,
+  `inv17-rsa-mont64-public-base-wipe-dropped`,
+  `inv17-rsa-mont64-public-power-wipe-dropped`,
+  `inv17-rsa-sign64-table-wipe-dropped`,
+  `inv17-rsa-sign64-last-entry-wipe-dropped`, and under
+  `inv17-rsa-crt-` the names `reduction-low`, `reduction-high`,
+  `reduction-r3`, `recombination-qinv`, `recombination-factor`,
+  `key-test-p`, `key-test-q`, `key-test-product`, `check-power`,
+  `prime-record`, `second-prime-record`, `message-limbs`, `first-half`,
+  `second-half`, `refused-signature-limbs` and `refused-candidate`, each
+  ending in `-wipe-dropped`. The test catches each under Apple clang 21
+  for arm64 and x86-64 and under gcc 13.3 for both. `table_select` ends
+  by writing zero through the pointer its masks went through, so the
+  limb behind it does not end on the last one; no test can look for a
+  limb of all ones or of zeros, so the Semgrep rule of INV-16 holds that
+  write, and `inv17-rsa-sign64-table-mask-left-in-limb` drops it. One
+  limb alone is no finding in those runs, because no wipe written in C
+  names a register a callee saved or a slot the compiler picked; run
+  with `CH_RSA_RESIDUE_LIMBS=1` they look for one, which is how the
+  slots that `rsa_mont64_mont_mul`'s volatile reads removed were found
+  (decision 95).
+  A value shorter than a limb is one those runs cannot look for, and
+  the first form of `table_select` left one: clang for arm64 kept the
+  digit a step read in a register a callee saves, across a call it made
+  from the loop that wrote zeros to the output, and the next
+  multiplication saved that register in its frame. So the binary makes
+  nine more runs for each key, each one call under two inputs that
+  differ in a secret and in nothing a caller sees, and requires the two
+  stacks equal in every byte (`test/rsa_sign_equiv_differential.h`):
+  the exponentiation under dp and under dq and of two bases, a
+  signature under a key and under it with its primes exchanged, a
+  signature of two messages, a refused signature under two wrong keys,
+  the key test under exchanged primes and under two wrong keys, the
+  reduction modulo each prime and the recombination under exchanged
+  primes. `table_select` now writes its output in one statement and
+  calls nothing. `inv17-rsa-sign64-digit-kept-in-frame` keeps the digit
+  in a local of the exponentiation, and the nine runs catch it;
+  `inv17-rsa-sign64-table-read-zeroes-first` restores the loop of zeros,
+  and the Semgrep rule of INV-16 catches it, because only clang for
+  arm64 makes that loop a byte that differs.
+  Two things no run holds. A register no callee saves keeps what the
+  last arithmetic left in it, and code that runs later may store it:
+  Darwin's stack probe stores two, so the comparison leaves out the 16
+  bytes the probe of its own copy writes. And a compiler that was not
+  asked to optimize keeps every local in its frame, where no wipe names
+  it: built at `-O0` the nine runs differ in 8 to 249 bytes each. The
+  binary makes no run over the stack in such a build or under
+  AddressSanitizer, by the answer `test/stack_residue.c` gives every
+  such search, and this claim is for an optimized object.
   That binary compiles `ct_wipe.c` into the same unit as the vector
   Poly1305, so the compiler can inline `ct_wipe` at the end of the call,
   as link-time optimization would. `ct-wipe-plain-memset` makes
@@ -3809,6 +4024,13 @@ last `ROLE=server` stub, as the entry said it would.
   device object compiles. A host object's `rsa_vp1` calls `rsa_mont64.c`,
   whose largest frame is `rsa_mont64_public`'s: 848 bytes at the device
   bound and 1,104 at the `TRUST=webpki` one (Apple clang 21, arm64).
+  `rsa_sign64.c`, which a host object alone holds, gets 6,656: a CRT
+  signature holds a modulus record for each prime, the message, both
+  halves and the candidate at once (measured worst: `rsa_sign64_sp1` at
+  4,368 at the 384-byte bound and 5,776 at the 512-byte one with Apple
+  clang 21 on arm64, and 4,544 and 6,016 with gcc 13.3 on x86-64), and
+  its exponentiation a table of sixteen powers, each as long as a prime
+  (3,408 and 4,496, and 3,328 and 4,416).
   ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
   in every build that carries them, `KEX=pq`, every `TRUST=webpki`
   object (decisions.md 53) and every server role (decisions.md 54):
@@ -3825,7 +4047,8 @@ last `ROLE=server` stub, as the entry said it would.
   variable frames everywhere, and `make lint-stack` compiles the
   sources this build packages, under the defines it packages them
   with, at `-Wframe-larger-than=$(STACK_BUDGET)`, or
-  `$(STACK_BUDGET_KEX_HYBRID)` for the ML-KEM sources, so
+  `$(STACK_BUDGET_KEX_HYBRID)` for the ML-KEM sources and
+  `$(STACK_BUDGET_RSA_SIGN64)` for the 64-bit RSA signer, so
   docs/performance.md's stack numbers are a compile-time contract, not a bench
   observation. Until the hybrid build landed the recipe iterated
   `$(SRCS)` without `$(LIB_DEF)`, so it measured the default build

@@ -23,7 +23,7 @@
 #include "rand_session.h"
 #include "rsa.h"
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "srv.h"
 #include "srv_auth.h"
 
@@ -96,10 +96,7 @@ static const ch_cert salt_chain[1] = {
 static ch_rsa_priv salt_key;
 
 static void rsa_identity_config(ch_cfg *cfg) {
-    memset(&salt_key, 0, sizeof salt_key);
-    salt_key.n_len = sizeof rsa_sign_2048_n;
-    memcpy(salt_key.n, rsa_sign_2048_n, sizeof rsa_sign_2048_n);
-    memcpy(salt_key.d, rsa_sign_2048_d, sizeof rsa_sign_2048_d);
+    test_rsa_sign_key_2048(&salt_key);
     memset(cfg, 0, sizeof *cfg);
     cfg->srv.rsa_pss.chain = salt_chain;
     cfg->srv.rsa_pss.chain_count = 1;

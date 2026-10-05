@@ -31,8 +31,9 @@
 #     device arm holds the 32-bit arithmetic itself, and no bit of
 #     ch_cfg.cpu picks between the two (docs/decisions.md 95).
 #   - The Makefile and build.zig each write the native copies, the wide
-#     X25519 field, RSA's 64-bit arithmetic and the vector ChaCha20 and
-#     Poly1305 for a host object and none of them for a device object, and
+#     X25519 field, RSA's 64-bit arithmetic and signer and the vector
+#     ChaCha20 and Poly1305 for a host object and none of them for a
+#     device object, and
 #     refuse a WIDEMUL value for a host object, and WIDEMUL=runtime and
 #     every value of X25519 and of CHACHA for any, each on its own.
 cd "$(dirname "$0")/.." || exit 1
@@ -150,7 +151,7 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
         esac
     done
 }
-host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign_native.c chacha20_vector.c
+host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign64.c chacha20_vector.c
             chacha20_avx2.c poly1305_vector_native.c rsa_mont64.c)
 server=(ROLE=server TRUST=none)
 
@@ -162,13 +163,13 @@ lib_lists() {
         make -s --no-print-directory print-lib-srcs RAND=extern "$@" 2> /dev/null
 }
 if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${host_words[@]}"; then
-    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and the vector ChaCha20 and Poly1305 for a host object" >&2
+    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *rsa_mont64.c*)
-    echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or a vector path for a device object" >&2
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *rsa_mont64.c* | *rsa_sign64.c*)
+    echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
     exit 1
     ;;
 esac
@@ -213,13 +214,13 @@ zig_server=(-DROLE=server -DTRUST=none)
 host_target=-Dtarget=aarch64-linux-gnu
 device_target=-Dtarget=thumb-freestanding-eabi
 if ! has_words "$(zig_lists "${zig_server[@]}" "$host_target")" "${host_words[@]}"; then
-    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and the vector ChaCha20 and Poly1305 for a host object" >&2
+    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *rsa_mont64.c*)
-    echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or a vector path for a device object" >&2
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *rsa_mont64.c* | *rsa_sign64.c*)
+    echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
     exit 1
     ;;
 esac
@@ -247,4 +248,4 @@ if [ -n "$(zig_lists -DWIDEMUL=runtime)" ]; then
 fi
 rm -rf "$out"
 
-echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"
+echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"

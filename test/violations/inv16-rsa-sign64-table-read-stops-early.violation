@@ -1,0 +1,22 @@
+invariant: INV-16
+file: rsa_sign64.c
+catches: test/lint-invariants.sh
+reason: table_select leaves its scan once it has passed the entry its
+  index names, so how many entries a step reads is the digit of the
+  private exponent it is on. Every byte still comes out the same, so the
+  vectors and the equivalence test pass, and the pinned clang emits as
+  many conditional branches as before on both 64-bit specs, so the
+  branch count passes too. inv-16-rsa-table-read refuses an if or a break
+  inside table_select.
+
+--- old
+        for (size_t i = 0; i < k; i++) {
+            o[i] = (o[i] & ~mask) | (table->powers[entry][i] & mask);
+        }
+--- new
+        for (size_t i = 0; i < k; i++) {
+            o[i] = (o[i] & ~mask) | (table->powers[entry][i] & mask);
+        }
+        if (entry == index) {
+            break;
+        }

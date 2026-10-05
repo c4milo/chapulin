@@ -27,10 +27,10 @@ session_struct_server_arm64,1984
 session_struct_server_rv32,1824
 static_working_set_server_arm64,4032
 static_working_set_server_rv32,3872
-stack_accept_server,10336
+stack_accept_server,11424
 session_struct_server_aes_arm64,2280
 static_working_set_server_aes_arm64,4328
-stack_accept_server_aes,10480
+stack_accept_server_aes,11600
 session_struct_webpki_aes_arm64,3376
 receive_buffer_webpki_aes,12338
 static_working_set_webpki_aes_arm64,15714

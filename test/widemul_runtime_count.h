@@ -20,8 +20,9 @@
 // Calls into the dispatched entries of the files under their own names,
 // which take the 16x16 decomposition.
 extern unsigned long widemul_decomposed_calls;
-// Calls into the dispatched entries of the native copies, and of the wide
-// X25519 field, which is X25519's copy on the native multiply.
+// Calls into the dispatched entries of the native copies, of the wide
+// X25519 field, which is X25519's copy on the native multiply, and of the
+// 64-bit RSA signer, which is RSA signing's.
 extern unsigned long widemul_native_calls;
 // Calls into poly1305_vector_native.c's entry, which only
 // poly1305_native.c's block loop makes.

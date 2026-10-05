@@ -60,7 +60,7 @@
 #include "rand.h"
 #include "record.h"
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "srv_tcp_nonblocking.h"
 #include "tcp_nonblocking.h"
 #include "test_cpu.h"
@@ -263,10 +263,7 @@ static void server_config(ch_cfg *cfg) {
     attach_source(cfg, &server_source);
 #endif
 
-    memset(&rsa_key, 0, sizeof rsa_key);
-    rsa_key.n_len = sizeof rsa_sign_2048_n;
-    memcpy(rsa_key.n, rsa_sign_2048_n, sizeof rsa_sign_2048_n);
-    memcpy(rsa_key.d, rsa_sign_2048_d, sizeof rsa_sign_2048_d);
+    test_rsa_sign_key_2048(&rsa_key);
     cfg->srv.rsa_pss.chain = chain;
     cfg->srv.rsa_pss.chain_count = 1;
     cfg->srv.rsa_pss.priv = &rsa_key;

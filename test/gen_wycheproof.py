@@ -516,6 +516,71 @@ RSA_SIGN_ROWS = {2048: 2, 3072: 1, 4096: 1}
 # other than 65537, a modulus outside 256..512 bytes or not a multiple
 # of 8, a modulus with its top bit clear or its low bit clear, and a
 # signature that is not n_len bytes.
+#
+# A host object's signer takes the key's five CRT integers too
+# (rsa_sign.h), so each row carries them, from the group's PKCS#8 key:
+# p, q, dP, dQ and qInv, each left-padded to half the modulus's length.
+# rsa_sign64.c refuses a key whose primes are not both that long, so a
+# group with such a key is skipped here, for every build: each runs the
+# same rows.
+def der_item(buf, at):
+    """One DER item at buf[at]: its tag, its content, and where the next
+    item starts. Definite lengths only, which is all DER has."""
+    tag = buf[at]
+    length = buf[at + 1]
+    at += 2
+    if length & 0x80:
+        count = length & 0x7f
+        length = int.from_bytes(buf[at:at + count], "big")
+        at += count
+    if at + length > len(buf):
+        raise SystemExit("rsa sign: a DER item runs past its buffer")
+    return tag, buf[at:at + length], at + length
+
+
+def rsa_private_key_integers(pkcs8):
+    """The nine INTEGERs of the RSAPrivateKey (RFC 8017 A.1.2) inside a
+    PKCS#8 PrivateKeyInfo (RFC 5208 5): version, n, e, d, p, q, dP, dQ and
+    qInv."""
+    _, info, _ = der_item(pkcs8, 0)
+    _, _, at = der_item(info, 0)             # version
+    _, _, at = der_item(info, at)            # privateKeyAlgorithm
+    tag, octets, _ = der_item(info, at)      # privateKey
+    if tag != 0x04:
+        raise SystemExit("rsa sign: PKCS#8 holds no private key octets")
+    tag, key, _ = der_item(octets, 0)
+    if tag != 0x30:
+        raise SystemExit("rsa sign: the private key is no RSAPrivateKey")
+    integers = []
+    at = 0
+    while at < len(key) and len(integers) < 9:
+        tag, value, at = der_item(key, at)
+        if tag != 0x02:
+            raise SystemExit("rsa sign: RSAPrivateKey holds a field that is no INTEGER")
+        integers.append(int.from_bytes(value, "big"))
+    if len(integers) != 9:
+        raise SystemExit("rsa sign: RSAPrivateKey holds fewer than nine integers")
+    return integers
+
+
+def crt_integers(group, n, priv):
+    """p, q, dP, dQ and qInv as bytes of half the modulus's length, or
+    None when the primes do not have that length. Each is checked against
+    the key the group states and against RFC 8017 3.2's definition."""
+    _, n_der, e, d, p, q, dp, dq, qinv = rsa_private_key_integers(
+        bytes_of(group["privateKeyPkcs8"]))
+    n_int = int.from_bytes(n, "big")
+    d_int = int.from_bytes(priv, "big")
+    if n_der != n_int or d != d_int or e != 65537 or p * q != n_int:
+        raise SystemExit("rsa sign: the PKCS#8 key is not the group's key")
+    if dp != d % (p - 1) or dq != d % (q - 1) or qinv * q % p != 1:
+        raise SystemExit("rsa sign: a CRT integer does not match its definition")
+    half = len(n) // 2
+    if p.bit_length() != 8 * half or q.bit_length() != 8 * half:
+        return None
+    return b"".join(v.to_bytes(half, "big") for v in (p, q, dp, dq, qinv))
+
+
 def gen_rsa_sign(files, out):
     blob = Blob()
     rows = []
@@ -533,6 +598,10 @@ def gen_rsa_sign(files, out):
                     or not n[0] & 0x80 or not n[-1] & 1 or len(priv) > len(n)):
                 skipped += len(g["tests"])
                 continue
+            crt = crt_integers(g, n, priv)
+            if crt is None:
+                skipped += len(g["tests"])
+                continue
             n_int = int.from_bytes(n, "big")
             for t in g["tests"]:
                 if taken >= want:
@@ -543,14 +612,15 @@ def gen_rsa_sign(files, out):
                     skipped += 1
                     continue
                 em = pow(int.from_bytes(sig, "big"), e, n_int).to_bytes(len(n), "big")
-                off = blob.add(n + priv.rjust(len(n), b"\x00") + em + sig)
+                off = blob.add(n + priv.rjust(len(n), b"\x00") + em + sig + crt)
                 rows.append((uint_of(t["tcId"], 0xffffffff, "rsa sign tcId"), off,
                              uint_of(len(n), 0xffff, "rsa sign n_len")))
                 taken += 1
     emit_blob(out, "wp_rsa_sign_data", blob)
     # Four values of n_len bytes each at off: the modulus, the private
     # exponent left-padded to that length, the encoded message and the
-    # signature it must produce.
+    # signature it must produce. Then five of n_len / 2 bytes each: p, q,
+    # dP, dQ and qInv.
     out.append(
         "static const struct { uint32_t tc; uint32_t off; uint16_t n_len; } wp_rsa_sign[] = {"
     )

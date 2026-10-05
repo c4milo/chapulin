@@ -22,7 +22,11 @@
 // this check on returned no verdict in five minutes and 8.5 GB;
 // rsa_mont64_mul_harness.c runs it there for its memory accesses.
 //
-// The three calls are the aliasing shapes rsa_mont64_mul_harness.c names.
+// The four calls are the aliasing shapes rsa_mont64_mul_harness.c names.
+//
+// rsa_mont64_mul_add, the plain product and sum, runs the same sum of a
+// product, a limb and a carry, so one call at four limbs holds it to the
+// same bound.
 #include "rsa_mont64_stubs.h"
 
 #define SUMS_LIMBS 4
@@ -45,6 +49,17 @@ int main(void) {
 
     havoc_modulus(&mod, SUMS_LIMBS);
     havoc_limbs(a, SUMS_LIMBS);
+    havoc_limbs(b, SUMS_LIMBS);
+    rsa_mont64_mont_mul(a, a, b, &mod);
+
+    havoc_modulus(&mod, SUMS_LIMBS);
+    havoc_limbs(a, SUMS_LIMBS);
     rsa_mont64_mont_mul(a, a, a, &mod);
+
+    uint64_t product[2 * SUMS_LIMBS];
+    havoc_limbs(a, SUMS_LIMBS);
+    havoc_limbs(b, SUMS_LIMBS);
+    havoc_limbs(o, SUMS_LIMBS);
+    rsa_mont64_mul_add(product, a, b, o, SUMS_LIMBS);
     return 0;
 }

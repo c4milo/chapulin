@@ -117,28 +117,44 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod) {
     size_t k = mod->limbs;
     const uint64_t *m = mod->m;
-    // t is k + 1 limbs: the running sum, below 2m after every round when
-    // b is below m, so its top limb is 0 or 1.
-    uint64_t t[RSA_MONT64_LIMBS_MAX + 1];
-    memset(t, 0, (k + 1) * sizeof(uint64_t));
+    // t is k + 2 limbs. The first k + 1 are the running sum, below 2m
+    // after every round when b is below m, so its top limb is 0 or 1. The
+    // limb above them holds u, the round's multiple of m.
+    uint64_t t[RSA_MONT64_LIMBS_MAX + 2];
+    memset(t, 0, (k + 2) * sizeof(uint64_t));
+    // Five values are read once a round or once a product and are the
+    // same for a whole round: b[0], m[0], m0inv, the round's limb a[i]
+    // and u. A compiler loads such a value before the loop that uses it,
+    // and when it runs out of registers it keeps the copy in a stack slot
+    // of its own, which ct_wipe cannot name. Apple clang 21 for x86-64
+    // left b[0] in one, and gcc 13 for x86-64 left a[i] and u, and the
+    // residue check in bin/rsa_sign_equiv_test found b[0] and a[i]. So
+    // each is read through a volatile pointer where a product uses it,
+    // and no copy outlives the product. u is computed here and has no
+    // other home, so it is kept in t's last limb, which the wipe below
+    // covers.
+    const volatile uint64_t *b_first = b;
+    const volatile uint64_t *m_first = m;
+    const volatile uint64_t *m0inv = &mod->m0inv;
+    volatile uint64_t *u = &t[k + 1];
     // Round i adds a[i] * b and u * m to t and moves t down one limb. u is
     // the multiple of m that makes the low limb of that sum zero, which is
     // what lets the limb go. One pass over the limbs carries both
     // products, each with its own carry: the sum of the a[i] * b terms
     // feeds the sum of the u * m terms, limb by limb.
     for (size_t i = 0; i < k; i++) {
-        uint64_t x = a[i];
-        ct_u128 ab = ct_mul128(x, b[0]) + t[0];
+        const volatile uint64_t *a_limb = &a[i];
+        ct_u128 ab = ct_mul128(*a_limb, *b_first) + t[0];
         // u is the low limb of that sum times m0inv, modulo 2^64: the
         // low half of one more product.
-        uint64_t u = (uint64_t)ct_mul128((uint64_t)ab, mod->m0inv);
-        ct_u128 um = ct_mul128(u, m[0]) + (uint64_t)ab;
+        *u = (uint64_t)ct_mul128((uint64_t)ab, *m0inv);
+        ct_u128 um = ct_mul128(*u, *m_first) + (uint64_t)ab;
         uint64_t ab_carry = (uint64_t)(ab >> 64);
         uint64_t um_carry = (uint64_t)(um >> 64);
         for (size_t j = 1; j < k; j++) {
-            ab = ct_mul128(x, b[j]) + t[j] + ab_carry;
+            ab = ct_mul128(*a_limb, b[j]) + t[j] + ab_carry;
             ab_carry = (uint64_t)(ab >> 64);
-            um = ct_mul128(u, m[j]) + (uint64_t)ab + um_carry;
+            um = ct_mul128(*u, m[j]) + (uint64_t)ab + um_carry;
             um_carry = (uint64_t)(um >> 64);
             t[j - 1] = (uint64_t)um;
         }
@@ -148,8 +164,72 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
     }
     reduce_once(o, t, t[k], m, k);
     // t held a * b / R before its last subtraction, which is as secret as
-    // the product.
-    ct_wipe(t, (k + 1) * sizeof(uint64_t));
+    // the product, and the last round's u above it.
+    ct_wipe(t, (k + 2) * sizeof(uint64_t));
+}
+
+void rsa_mont64_add(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                    const rsa_mont64_modulus *mod) {
+    size_t k = mod->limbs;
+    uint64_t carry = 0;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)a[i] + b[i] + carry;
+        o[i] = (uint64_t)v;
+        carry = (uint64_t)(v >> 64);
+    }
+    // The sum is below 2m, and carry is its limb above the k.
+    reduce_once(o, o, carry, mod->m, k);
+}
+
+void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                    const rsa_mont64_modulus *mod) {
+    size_t k = mod->limbs;
+    const uint64_t *m = mod->m;
+    // a - b by the complement, as sub_masked subtracts: the carry out is
+    // 1 when a is at or above b and 0 when the subtraction borrowed.
+    uint64_t carry = 1;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)a[i] + ~b[i] + carry;
+        o[i] = (uint64_t)v;
+        carry = (uint64_t)(v >> 64);
+    }
+    // After a borrow the limbs hold a - b + 2^(64k). Adding m under the
+    // mask of the borrow brings them to a - b + m, and the carry out of
+    // the top limb, which is that 2^(64k), is dropped.
+    uint64_t mask = mask_of_bit(carry ^ 1);
+    carry = 0;
+    for (size_t i = 0; i < k; i++) {
+        ct_u128 v = (ct_u128)o[i] + (m[i] & mask) + carry;
+        o[i] = (uint64_t)v;
+        carry = (uint64_t)(v >> 64);
+    }
+}
+
+void rsa_mont64_reduce_once(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
+    reduce_once(o, a, 0, mod->m, mod->limbs);
+}
+
+void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const uint64_t *c,
+                        size_t k) {
+    for (size_t i = 0; i < k; i++) {
+        o[i] = c[i];
+        o[k + i] = 0;
+    }
+    // Row i adds a[i] * b at limb i. A product, a limb of o and a carry
+    // are at most 2^128 - 1 together, as in rsa_mont64_mont_mul. The limb
+    // of a is read through a volatile pointer at each product, for the
+    // reason that function reads b[0] that way: a copy a compiler keeps
+    // for the row may be in a stack slot no wipe names.
+    for (size_t i = 0; i < k; i++) {
+        const volatile uint64_t *a_limb = &a[i];
+        uint64_t carry = 0;
+        for (size_t j = 0; j < k; j++) {
+            ct_u128 v = ct_mul128(*a_limb, b[j]) + o[i + j] + carry;
+            o[i + j] = (uint64_t)v;
+            carry = (uint64_t)(v >> 64);
+        }
+        o[i + k] = carry;
+    }
 }
 
 void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len, size_t bits) {

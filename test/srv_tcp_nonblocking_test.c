@@ -26,7 +26,7 @@
 #include "rand.h"
 #include "record.h"
 #include "rsa_sign.h"
-#include "rsa_sign_vectors.h"
+#include "rsa_sign_key.h"
 #include "srv_auth.h"
 #include "srv_message.h"
 #include "srv_parser.h"
@@ -136,10 +136,7 @@ static void provision(ch_cfg *cfg) {
     cfg->srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
     cfg->srv.ecdsa_p256.pub_len = sizeof p256_sign_vectors[0].pub;
 
-    memset(&rsa_key, 0, sizeof rsa_key);
-    rsa_key.n_len = sizeof rsa_sign_2048_n;
-    memcpy(rsa_key.n, rsa_sign_2048_n, sizeof rsa_sign_2048_n);
-    memcpy(rsa_key.d, rsa_sign_2048_d, sizeof rsa_sign_2048_d);
+    test_rsa_sign_key_2048(&rsa_key);
     cfg->srv.rsa_pss.chain = chain;
     cfg->srv.rsa_pss.chain_count = 1;
     cfg->srv.rsa_pss.priv = &rsa_key;

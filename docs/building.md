@@ -136,6 +136,13 @@ Other targets:
   32 KiB of multiples of the generator, and without it on
   `p256_field.c`'s and `p256_scalar.c`'s eight 32-bit limbs on the
   decomposition, with no table (decision 94).
+  RSA signing takes its second copy from another file too: with the bit
+  a session signs with `rsa_sign64.c`, by the Chinese remainder theorem
+  on 64-bit limbs from the five CRT integers a host object's
+  `ch_rsa_priv` holds, and checks each signature before it returns it;
+  without it, with `rsa_sign.c`'s ladder over n and d on the
+  decomposition. Both RSA verifiers run on 64-bit limbs in every session
+  of a host object, because they read no secret (decision 95).
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with
   FEAT_DIT and PSTATE.DIT set, and on x86-64 the DOITM policy of your

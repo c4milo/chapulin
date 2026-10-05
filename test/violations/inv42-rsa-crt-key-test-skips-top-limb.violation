@@ -1,0 +1,19 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: proof/prove-one.sh rsa_sign64_crt
+reason: rsa_sign64_key_ok compares all but the top limb of p * q with the
+  modulus, so a key whose primes multiply to a value that differs from
+  the modulus in that limb alone is admitted, and the arithmetic then
+  runs over primes the test did not hold to the modulus. One changed bit
+  of a prime moves the product's low limbs too, so the faulted keys
+  bin/rsa_sign_test_host makes are still refused. The rsa_sign64_crt
+  harness states the test over every limb the product has.
+
+--- old
+    for (size_t i = 0; i < 2 * limbs; i++) {
+        differ |= product[i] ^ n[i];
+    }
+--- new
+    for (size_t i = 0; i + 1 < 2 * limbs; i++) {
+        differ |= product[i] ^ n[i];
+    }
