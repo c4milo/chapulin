@@ -30,6 +30,7 @@
 
 #include "ch_assert.h"
 #include "test_aead.h"
+#include "test_hash.h"
 #include "test_widemul.h"
 
 // The AES-GCM arm only. A published suite fixes its own key, and INV-26
@@ -173,8 +174,8 @@ static void run_hkdf(void) {
         const uint8_t *okm = info + wp_hkdf[i].info_len;
         uint8_t prk[SHA256_LEN];
         uint8_t out[8160];
-        hkdf_extract(SHA256_LEN, salt, wp_hkdf[i].salt_len, ikm, wp_hkdf[i].ikm_len, prk);
-        hkdf_expand(SHA256_LEN, prk, info, wp_hkdf[i].info_len, out, wp_hkdf[i].size);
+        TEST_HKDF_EXTRACT(SHA256_LEN, salt, wp_hkdf[i].salt_len, ikm, wp_hkdf[i].ikm_len, prk);
+        TEST_HKDF_EXPAND(SHA256_LEN, prk, info, wp_hkdf[i].info_len, out, wp_hkdf[i].size);
         int match = wp_hkdf[i].okm_len == wp_hkdf[i].size && memcmp(out, okm, wp_hkdf[i].size) == 0;
         if (wp_hkdf[i].valid && !match) {
             fail("hkdf", wp_hkdf[i].tc, "valid case mismatched");
@@ -207,7 +208,7 @@ static void run_hmac(void) {
             continue;
         }
         uint8_t out[SHA256_LEN];
-        hmac_sha256(key, wp_hmac[i].key_len, msg, wp_hmac[i].msg_len, out);
+        TEST_HMAC_SHA256(key, wp_hmac[i].key_len, msg, wp_hmac[i].msg_len, out);
         int match = memcmp(out, tag, tag_len) == 0;
         if (wp_hmac[i].valid && !match) {
             fail("hmac", wp_hmac[i].tc, "valid case mismatched");
@@ -234,8 +235,9 @@ static void run_hkdf384(void) {
         const uint8_t *info = salt + wp_hkdf384[i].salt_len;
         const uint8_t *okm = info + wp_hkdf384[i].info_len;
         uint8_t prk[SHA384_LEN];
-        hkdf_extract(SHA384_LEN, salt, wp_hkdf384[i].salt_len, ikm, wp_hkdf384[i].ikm_len, prk);
-        hkdf_expand(SHA384_LEN, prk, info, wp_hkdf384[i].info_len, out, wp_hkdf384[i].size);
+        TEST_HKDF_EXTRACT(SHA384_LEN, salt, wp_hkdf384[i].salt_len, ikm, wp_hkdf384[i].ikm_len,
+                          prk);
+        TEST_HKDF_EXPAND(SHA384_LEN, prk, info, wp_hkdf384[i].info_len, out, wp_hkdf384[i].size);
         size_t size = wp_hkdf384[i].size;
         int match = wp_hkdf384[i].okm_len == size && memcmp(out, okm, size) == 0;
         if (wp_hkdf384[i].valid != match) {
@@ -258,7 +260,7 @@ static void run_hmac384(void) {
             continue;
         }
         uint8_t out[SHA384_LEN];
-        hmac_sha384(key, wp_hmac384[i].key_len, msg, wp_hmac384[i].msg_len, out);
+        TEST_HMAC(SHA384_LEN, key, wp_hmac384[i].key_len, msg, wp_hmac384[i].msg_len, out);
         int match = memcmp(out, tag, tag_len) == 0;
         if (wp_hmac384[i].valid != match) {
             fail("hmac384", wp_hmac384[i].tc, match ? "invalid case matched" : "valid mismatched");

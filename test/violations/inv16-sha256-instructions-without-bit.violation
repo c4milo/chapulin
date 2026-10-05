@@ -1,0 +1,16 @@
+invariant: INV-16
+file: sha256.h
+catches: hash_runtime_test
+reason: sha256.h's sha256_on_instructions answers yes for a value without
+  CH_CPU_CONSTANT_TIME_SHA256, so a session whose caller never stated the
+  timing of the SHA-256 instructions hashes its transcript and derives its
+  keys on them, and on a CPU without them it dies of SIGILL at its first
+  message (docs/decisions.md 93). The two paths compute the same bytes, so
+  no vector can tell. bin/hash_runtime_test counts the calls into each
+  path under every ch_cfg.cpu value and runs both on sha256.c's code, so
+  its verdict is the same on every CPU.
+
+--- old
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA256) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA256) == 0;

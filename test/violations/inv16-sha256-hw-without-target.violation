@@ -1,0 +1,32 @@
+invariant: INV-16
+file: sha256_hw.c
+catches: test/hash-builds.sh
+reason: sha256_hw.c drops the target attribute that turns the SHA-256
+  instructions on for its own functions, so the file compiles only where
+  the whole object is built with the instruction flags, and an object
+  built that way may run them in code no CH_CPU_CONSTANT_TIME_SHA256 bit
+  ever chose. The script compiles the file for x86-64 and for arm64 with
+  no instruction flag and requires the three entries and the instructions
+  there.
+
+--- old
+#ifdef __clang__
+#ifdef SHA256_HW_ARM
+#pragma clang attribute push(__attribute__((target("+sha2"))), apply_to = function)
+#else
+#pragma clang attribute push(__attribute__((target("sha,ssse3,sse4.1"))), apply_to = function)
+#endif
+#else
+#pragma GCC push_options
+#ifdef SHA256_HW_ARM
+#pragma GCC target("+sha2")
+#else
+#pragma GCC target("sha,ssse3,sse4.1")
+#endif
+#endif
+--- new
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((cold)), apply_to = function)
+#else
+#pragma GCC push_options
+#endif

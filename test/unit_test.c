@@ -19,6 +19,7 @@
 #include "rand.h"
 #include "record.h"
 #include "sha256.h"
+#include "test_hash.h"
 #include "test_random.h"
 #include "test_widemul.h"
 #include "tls.h"
@@ -61,24 +62,37 @@ static int eq_hex(const uint8_t *got, const char *hex) {
     return memcmp(got, want, n) == 0;
 }
 
+// FIPS 180-4's SHA-256 examples, through the entries a session of this binary's object calls
+// (test/test_hash.h): the portable code, and in a host binary run under the SHA-256 bit, the
+// CPU's SHA-256 instructions.
 static void test_sha256(void) {
     uint8_t d[SHA256_LEN];
-    sha256_of((const uint8_t *)"", 0, d);
+    TEST_SHA256_OF((const uint8_t *)"", 0, d);
     CHECK(eq_hex(d, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
-    sha256_of((const uint8_t *)"abc", 3, d);
+    TEST_SHA256_OF((const uint8_t *)"abc", 3, d);
     CHECK(eq_hex(d, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     const char *two = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
-    sha256_of((const uint8_t *)two, strlen(two), d);
+    TEST_SHA256_OF((const uint8_t *)two, strlen(two), d);
     CHECK(eq_hex(d, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"));
     // Streaming across odd boundaries must match one-shot.
     sha256 s;
     sha256_init(&s);
     for (size_t i = 0; i < strlen(two); i++) {
-        sha256_update(&s, (const uint8_t *)two + i, 1);
+        TEST_SHA256_UPDATE(&s, (const uint8_t *)two + i, 1);
     }
     uint8_t d2[SHA256_LEN];
-    sha256_final(&s, d2);
+    TEST_SHA256_FINAL(&s, d2);
     CHECK(memcmp(d, d2, SHA256_LEN) == 0);
+    // One million times "a", the third example: 15,625 blocks, taken 1,000 bytes an update, so
+    // an update holds whole blocks and leaves a partial one for the next.
+    static uint8_t chunk[1000];
+    memset(chunk, 'a', sizeof chunk);
+    sha256_init(&s);
+    for (size_t i = 0; i < 1000; i++) {
+        TEST_SHA256_UPDATE(&s, chunk, sizeof chunk);
+    }
+    TEST_SHA256_FINAL(&s, d);
+    CHECK(eq_hex(d, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"));
 }
 
 static void test_hmac_hkdf(void) {
@@ -86,15 +100,16 @@ static void test_hmac_hkdf(void) {
     uint8_t key[131];
     uint8_t out[SHA256_LEN];
     memset(key, 0x0b, 20);
-    hmac_sha256(key, 20, (const uint8_t *)"Hi There", 8, out);
+    TEST_HMAC_SHA256(key, 20, (const uint8_t *)"Hi There", 8, out);
     CHECK(eq_hex(out, "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"));
-    hmac_sha256((const uint8_t *)"Jefe", 4, (const uint8_t *)"what do ya want for nothing?", 28,
-                out);
+    TEST_HMAC_SHA256((const uint8_t *)"Jefe", 4, (const uint8_t *)"what do ya want for nothing?",
+                     28, out);
     CHECK(eq_hex(out, "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"));
     // RFC 4231 case 6: 131-byte key forces the hash-the-key path.
     memset(key, 0xaa, 131);
-    hmac_sha256(key, 131, (const uint8_t *)"Test Using Larger Than Block-Size Key - Hash Key First",
-                54, out);
+    TEST_HMAC_SHA256(key, 131,
+                     (const uint8_t *)"Test Using Larger Than Block-Size Key - Hash Key First", 54,
+                     out);
     CHECK(eq_hex(out, "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"));
     // The block-size boundary (RFC 2104 §2): a 64-byte key is used as it
     // is, and a 65-byte key is hashed first. Key bytes 0, 1, 2, ...; the
@@ -102,9 +117,9 @@ static void test_hmac_hkdf(void) {
     for (size_t i = 0; i < 65; i++) {
         key[i] = (uint8_t)i;
     }
-    hmac_sha256(key, 64, (const uint8_t *)"chapulin hmac key boundary", 26, out);
+    TEST_HMAC_SHA256(key, 64, (const uint8_t *)"chapulin hmac key boundary", 26, out);
     CHECK(eq_hex(out, "49806c179f5bedbbe28bd7f3607ff99b468e6f568ee7d1cb24a5dddefa0ea2c4"));
-    hmac_sha256(key, 65, (const uint8_t *)"chapulin hmac key boundary", 26, out);
+    TEST_HMAC_SHA256(key, 65, (const uint8_t *)"chapulin hmac key boundary", 26, out);
     CHECK(eq_hex(out, "b23cee979aeb89a51ede4850d4779591edc21f1908b43499bd665310bcc74a8c"));
 
     // RFC 5869 case 1.
@@ -116,9 +131,9 @@ static void test_hmac_hkdf(void) {
     memset(ikm, 0x0b, sizeof ikm);
     unhex("000102030405060708090a0b0c", salt);
     unhex("f0f1f2f3f4f5f6f7f8f9", info);
-    hkdf_extract(SHA256_LEN, salt, sizeof salt, ikm, sizeof ikm, prk);
+    TEST_HKDF_EXTRACT(SHA256_LEN, salt, sizeof salt, ikm, sizeof ikm, prk);
     CHECK(eq_hex(prk, "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"));
-    hkdf_expand(SHA256_LEN, prk, info, sizeof info, okm, sizeof okm);
+    TEST_HKDF_EXPAND(SHA256_LEN, prk, info, sizeof info, okm, sizeof okm);
     CHECK(eq_hex(okm, "3cb25f25faacd57a90434f64d0362f2a"
                       "2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
                       "34007208d5b887185865"));

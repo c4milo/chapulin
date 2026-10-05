@@ -140,12 +140,14 @@ jobs:
       - name: Run a host object on x86-64 CPUs without the instructions its ch_cfg.cpu does not name
         # test/aes-runtime-qemu.sh builds host binaries with the runner's
         # gcc and runs them under qemu-x86_64 on CPU models with AES-NI,
-        # PCLMULQDQ or AVX2 turned off. The rows whose ch_cfg.cpu leaves a
-        # bit clear must pass the vectors and whole QUIC and TCP
-        # handshakes on a model without that bit's instructions. The rows
-        # with the bit must die of SIGILL there, which shows the model
-        # traps the instructions, so a qemu that kept them fails this step
-        # rather than passing it (docs/decisions.md 81, 89 and 90).
+        # PCLMULQDQ, AVX2 or the SHA extensions turned off. The rows whose
+        # ch_cfg.cpu leaves a bit clear must pass the vectors and whole
+        # QUIC and TCP handshakes on a model without that bit's
+        # instructions. The rows with the bit must die of SIGILL there,
+        # which shows the model traps the instructions, so a qemu that
+        # kept them fails this step rather than passing it. On the model
+        # with every instruction it holds sha256_hw.c to sha256.c
+        # (docs/decisions.md 81, 89, 90 and 93).
         run: make aes-runtime-qemu
 
   arm64:
@@ -171,10 +173,11 @@ jobs:
       - run: make lib-check RAND=extern TRUST=webpki
       # Three host objects under gcc, disassembled: the AES and PMULL
       # instructions must sit in aes_hw.c's, ghash_hw.c's and gcm_hw.c's
-      # functions alone. No QEMU arm64 model turns the AES extension off,
-      # so this job cannot run the answer that the instructions are absent
-      # on a CPU without them, as the mips job does for x86-64
-      # (test/platforms.mk, aes-runtime-disasm).
+      # functions alone, and the SHA-256 instructions in sha256_hw.c's.
+      # No QEMU arm64 model turns either extension off, so this job
+      # cannot run the answer that the instructions are absent on a CPU
+      # without them, as the mips job does for x86-64 (test/platforms.mk,
+      # aes-runtime-disasm).
       - run: make -j"$(nproc)" aes-runtime-disasm
 
   x86-64-kernels:
@@ -185,7 +188,9 @@ jobs:
     # or run under a value that names them, and skip a CPU without them in
     # the check job; this job requires the runner's CPU to have AVX2,
     # VAES and VPCLMULQDQ, fails where it lacks one, and runs them under
-    # the runner's gcc (test/platforms.mk, x86-64-kernels-check).
+    # the runner's gcc (test/platforms.mk, x86-64-kernels-check). It
+    # requires the SHA extensions the same way, and runs sha256_hw.c's
+    # x86-64 arm on them (docs/decisions.md 93).
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -232,8 +237,8 @@ jobs:
       - run: make lib-check RAND=extern TRUST=webpki
       # Three host objects under Apple clang, disassembled: the AES and
       # PMULL instructions must sit in aes_hw.c's, ghash_hw.c's and
-      # gcm_hw.c's functions alone. macOS ships no nproc, so sysctl counts
-      # the cores.
+      # gcm_hw.c's functions alone, and the SHA-256 instructions in
+      # sha256_hw.c's. macOS ships no nproc, so sysctl counts the cores.
       - run: make -j"$(sysctl -n hw.ncpu)" aes-runtime-disasm
 
   m3:

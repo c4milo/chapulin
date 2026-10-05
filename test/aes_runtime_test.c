@@ -254,10 +254,15 @@ static void check_public_keys(uint32_t cpu) {
         check_ran_on(cpu);
         check_retry(&APPENDICES[i]);
     }
-    // Every other bit is the init calls' to judge, and the constructor
-    // reads the AES bit alone: 0, which the init calls refuse, and every
-    // bit but the AES one run the table.
-    static const uint32_t without_aes[2] = {0, ~(uint32_t)CH_CPU_CONSTANT_TIME_AES};
+    // The constructor reads the AES bit for the cipher, and hands the value
+    // to HKDF, whose entry reads the SHA-256 bit (docs/decisions.md 93): a
+    // value with that bit derives the keys on instructions this CPU may
+    // lack. Every other bit is the init calls' to judge. So 0, which the
+    // init calls refuse, and every bit but the AES one and the three hash
+    // bits run the table.
+    static const uint32_t without_aes[2] = {
+        0, ~(uint32_t)(CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_SHA256 |
+                       CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)};
     for (size_t i = 0; i < 2; i++) {
         aes_public_key k;
         reset_counts();

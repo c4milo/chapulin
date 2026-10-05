@@ -84,18 +84,53 @@ void ks_exporter(size_t hash_len, const uint8_t *exp_master, const char *label,
 #endif
 
 #if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+// The calls above in the copy on the CPU's hash instructions (keysched_hw.c, docs/decisions.md
+// 93): keysched.c compiled once more under the names hash_hw.h gives, over hkdf_hw.c's HKDF.
+// Each has the contract of the call it is named for, and requires the CPU the hash it runs
+// requires on the instructions. keysched_hw.c reads these declarations beside the definitions
+// it compiles, so the compiler holds the two spellings of each name to one type.
+void ks_early_hw(size_t hash_len, const uint8_t *psk, size_t psk_len, int resumption,
+                 uint8_t *early, uint8_t *binder_key);
+void ks_verify_data_hw(size_t hash_len, const uint8_t *key, const uint8_t *transcript,
+                       uint8_t *out);
+void ks_handshake_hw(size_t hash_len, const uint8_t *early, const uint8_t *ecdhe, size_t ecdhe_len,
+                     const uint8_t *transcript, uint8_t *handshake_secret, uint8_t *c_hs,
+                     uint8_t *s_hs);
+void ks_master_hw(size_t hash_len, const uint8_t *handshake_secret, const uint8_t *transcript,
+                  uint8_t *master, uint8_t *c_ap, uint8_t *s_ap);
+void ks_res_master_hw(size_t hash_len, const uint8_t *master, const uint8_t *transcript,
+                      uint8_t *res_master);
+void ks_res_psk_hw(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce,
+                   size_t nonce_len, uint8_t *psk);
+#ifdef CH_EXPORTER
+void ks_exp_master_hw(size_t hash_len, const uint8_t *master, const uint8_t *transcript,
+                      uint8_t *exp_master);
+void ks_exporter_hw(size_t hash_len, const uint8_t *exp_master, const char *label,
+                    const uint8_t *context, size_t context_len, uint8_t *out, size_t out_len);
+#endif
+
+// A copy on the instructions reads the declarations above and none of the entries below, as in
+// sha256.h.
+#ifndef CH_HASH_HW_H
 // The calls above for one session of a host object, each with the session's ch_cfg.cpu first
-// and under the same contract, as sha256.h's entries are (docs/decisions.md 93). No object
-// holds a hash on the CPU's instructions yet, so each runs the portable call whatever cpu says.
+// and under the same contract, as sha256.h's entries are. Each runs the copy on the
+// instructions where hash_on_instructions says the hash hash_len names runs there (hkdf.h),
+// and the portable call for any other value: one branch per call.
 static inline void ks_early_cpu(uint32_t cpu, size_t hash_len, const uint8_t *psk, size_t psk_len,
                                 int resumption, uint8_t *early, uint8_t *binder_key) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_early_hw(hash_len, psk, psk_len, resumption, early, binder_key);
+        return;
+    }
     ks_early(hash_len, psk, psk_len, resumption, early, binder_key);
 }
 
 static inline void ks_verify_data_cpu(uint32_t cpu, size_t hash_len, const uint8_t *key,
                                       const uint8_t *transcript, uint8_t *out) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_verify_data_hw(hash_len, key, transcript, out);
+        return;
+    }
     ks_verify_data(hash_len, key, transcript, out);
 }
 
@@ -103,42 +138,62 @@ static inline void ks_handshake_cpu(uint32_t cpu, size_t hash_len, const uint8_t
                                     const uint8_t *ecdhe, size_t ecdhe_len,
                                     const uint8_t *transcript, uint8_t *handshake_secret,
                                     uint8_t *c_hs, uint8_t *s_hs) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_handshake_hw(hash_len, early, ecdhe, ecdhe_len, transcript, handshake_secret, c_hs,
+                        s_hs);
+        return;
+    }
     ks_handshake(hash_len, early, ecdhe, ecdhe_len, transcript, handshake_secret, c_hs, s_hs);
 }
 
 static inline void ks_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *handshake_secret,
                                  const uint8_t *transcript, uint8_t *master, uint8_t *c_ap,
                                  uint8_t *s_ap) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_master_hw(hash_len, handshake_secret, transcript, master, c_ap, s_ap);
+        return;
+    }
     ks_master(hash_len, handshake_secret, transcript, master, c_ap, s_ap);
 }
 
 static inline void ks_res_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *master,
                                      const uint8_t *transcript, uint8_t *res_master) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_res_master_hw(hash_len, master, transcript, res_master);
+        return;
+    }
     ks_res_master(hash_len, master, transcript, res_master);
 }
 
 static inline void ks_res_psk_cpu(uint32_t cpu, size_t hash_len, const uint8_t *res_master,
                                   const uint8_t *nonce, size_t nonce_len, uint8_t *psk) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_res_psk_hw(hash_len, res_master, nonce, nonce_len, psk);
+        return;
+    }
     ks_res_psk(hash_len, res_master, nonce, nonce_len, psk);
 }
 
 #ifdef CH_EXPORTER
 static inline void ks_exp_master_cpu(uint32_t cpu, size_t hash_len, const uint8_t *master,
                                      const uint8_t *transcript, uint8_t *exp_master) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_exp_master_hw(hash_len, master, transcript, exp_master);
+        return;
+    }
     ks_exp_master(hash_len, master, transcript, exp_master);
 }
 
 static inline void ks_exporter_cpu(uint32_t cpu, size_t hash_len, const uint8_t *exp_master,
                                    const char *label, const uint8_t *context, size_t context_len,
                                    uint8_t *out, size_t out_len) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_exporter_hw(hash_len, exp_master, label, context, context_len, out, out_len);
+        return;
+    }
     ks_exporter(hash_len, exp_master, label, context, context_len, out, out_len);
 }
+#endif
 #endif
 #endif
 

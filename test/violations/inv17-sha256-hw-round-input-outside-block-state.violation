@@ -1,0 +1,24 @@
+invariant: INV-17
+file: sha256_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: the x86-64 rounds keep four schedule words plus their constants in a
+  local of their own, which the compiler must hold in memory, where they
+  belong in the block_state. compress_blocks wipes the block_state alone,
+  so its dead frame keeps the last four sums of the last block. The
+  constants are public, so the sums give the schedule words, and under
+  HMAC the first block's schedule is the key's. Every digest is still
+  right. bin/sha2_equiv_test copies the stack below each kind of call and
+  looks for four words in a row that the call computed from its input,
+  each schedule word plus its constant among them. The edit is in the
+  x86-64 arm, so the catch is the script, which builds the binary for
+  x86-64 and runs it under qemu-x86_64. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    c->with_constants = _mm_add_epi32(current, load_words(&K[4 * group]));
+    c->cdgh = _mm_sha256rnds2_epu32(c->cdgh, c->abef, c->with_constants);
+    c->abef = _mm_sha256rnds2_epu32(c->abef, c->cdgh, _mm_shuffle_epi32(c->with_constants, 0x0e));
+--- new
+    volatile words with_constants = _mm_add_epi32(current, load_words(&K[4 * group]));
+    c->cdgh = _mm_sha256rnds2_epu32(c->cdgh, c->abef, with_constants);
+    c->abef = _mm_sha256rnds2_epu32(c->abef, c->cdgh, _mm_shuffle_epi32(with_constants, 0x0e));

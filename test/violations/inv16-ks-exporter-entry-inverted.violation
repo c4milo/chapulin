@@ -1,0 +1,17 @@
+invariant: INV-16
+file: keysched.h
+catches: hash_runtime_exporter_test
+reason: ks_exporter_cpu calls the copy on the instructions for a value that
+  does not name them, and keysched.c for one that does, so ch_export in a
+  session without CH_CPU_CONSTANT_TIME_SHA256 runs SHA-256 instructions
+  over the exporter secret (docs/decisions.md 93). The bytes are the same.
+  A QUIC object holds no exporter, so bin/hash_runtime_exporter_test, the
+  counting test built as a TCP object with the exporter, is the binary
+  that holds this entry's row.
+
+--- old
+    if (hash_on_instructions(cpu, hash_len)) {
+        ks_exporter_hw(hash_len, exp_master, label, context, context_len, out, out_len);
+--- new
+    if (!hash_on_instructions(cpu, hash_len)) {
+        ks_exporter_hw(hash_len, exp_master, label, context, context_len, out, out_len);

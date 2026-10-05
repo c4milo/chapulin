@@ -1,0 +1,17 @@
+invariant: INV-16
+file: hkdf.h
+catches: hash_runtime_test
+reason: hkdf_extract_cpu calls the copy on the instructions for a value that
+  does not name them, and hkdf.c for one that does. The early secret, the
+  handshake secret and a QUIC Initial secret of a session without
+  CH_CPU_CONSTANT_TIME_SHA256 then run SHA-256 instructions over the PSK
+  and the key exchange's output (docs/decisions.md 93). The bytes are the
+  same. bin/hash_runtime_test counts the calls each entry makes into each
+  path under every ch_cfg.cpu value.
+
+--- old
+    if (hash_on_instructions(cpu, hash_len)) {
+        hkdf_extract_hw(hash_len, salt, salt_len, ikm, ikm_len, prk);
+--- new
+    if (!hash_on_instructions(cpu, hash_len)) {
+        hkdf_extract_hw(hash_len, salt, salt_len, ikm, ikm_len, prk);

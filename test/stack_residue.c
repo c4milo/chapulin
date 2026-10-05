@@ -9,10 +9,34 @@
 #include <stdint.h>
 
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy);
+const char *stack_residue_unsearched(void);
 
 void stack_residue_take(volatile uint8_t *below, size_t n, uint8_t *copy) {
     for (size_t i = 0; i < n; i++) {
         copy[i] = below[i];
         below[i] = 0;
     }
+}
+
+// Why a search of this binary's stack for what a call left would hold no
+// claim about the code an object's caller runs, or NULL where it holds
+// one. An unoptimized build gives every temporary a stack slot of its own,
+// an instruction's operands among them, so no source could keep a value
+// out of the stack there. AddressSanitizer lays a frame out its own way,
+// and may keep a frame's variables off the stack the search reads. The
+// sanitizer lane says it is one with -DTEST_ADDRESS_SANITIZER (Makefile,
+// SAN_CFLAGS): gcc and clang name the sanitizer by different means, and
+// the lane's own define reads the same under both. One command compiles
+// every source of a test binary, so this file's answer is the binary's. A
+// test whose search looks for any value a call computed asks, and skips
+// the search where the answer is a reason (test/sha2_equiv_residue.h).
+const char *stack_residue_unsearched(void) {
+#ifndef __OPTIMIZE__
+    return "this binary is not optimized, and an unoptimized build keeps every temporary in a "
+           "stack slot";
+#elif defined(TEST_ADDRESS_SANITIZER)
+    return "this binary runs under AddressSanitizer, which lays each frame out its own way";
+#else
+    return NULL;
+#endif
 }

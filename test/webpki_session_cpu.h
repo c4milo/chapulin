@@ -16,7 +16,7 @@ static void test_webpki_cpu_values(void) {
     for (size_t i = 0; i < TEST_CPU_VALUES; i++) {
         mock_server s;
         ch_cfg cfg = valid_cfg(&s);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         CHECK(test_cpu_taken(i) ? sends_client_hello(&cfg) : refused(&cfg));
     }
 }

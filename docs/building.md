@@ -153,8 +153,15 @@ Other targets:
   FEAT_SHA512 and FEAT_SHA3, and on x86-64 the SHA extensions with SSSE3
   and SSE4.1 for the SHA-256 bit alone (`cpu_cfg.h`). A session hands its
   `cpu` to every hash call of its transcript, its key schedule and its
-  record and packet keys, and no object runs a hash on the instructions
-  yet, so the three bits pick nothing (decision 93). A raw or
+  record and packet keys. With `CH_CPU_CONSTANT_TIME_SHA256` those calls
+  run SHA-256, and HMAC, HKDF and the key schedule over it, on the
+  instructions, in `sha256_hw.c` and the copies `hkdf_hw.c` and
+  `keysched_hw.c`, which every host object holds beside the portable
+  files. Without the bit they run `sha256.c`. A certificate's hash, a
+  signature's and the DRBG's take no `cpu` and run the portable code in
+  every object. No object runs SHA-512 or SHA-3 on its instructions yet,
+  so the other two bits pick nothing and SHA-384 runs `sha512.c`
+  (decision 93). A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host

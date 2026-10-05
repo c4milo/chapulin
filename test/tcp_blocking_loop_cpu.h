@@ -20,7 +20,7 @@ static void test_cpu_values_at_init(void) {
         memset(&to_client, 0, sizeof to_client);
         ch_cfg cfg;
         client_config(&cfg, read_to_client);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         static ch_tls probe;
         int rc = ch_connect(&probe, &cfg);
         if (taken) {
@@ -29,7 +29,7 @@ static void test_cpu_values_at_init(void) {
             CHECK(rc == CH_EINVAL && probe.state == CH_ST_FAILED && to_server.len == 0);
         }
         server_config(&cfg, read_to_server);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         CHECK((ch_srv_check(&cfg) == CH_OK) == taken);
         rc = ch_srv_accept(&probe, &cfg);
         CHECK(taken ? rc != CH_EINVAL : rc == CH_EINVAL && probe.state == CH_ST_FAILED);

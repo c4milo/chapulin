@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shows that a host object's session runs an x86-64 instruction set only
-# where its caller's ch_cfg.cpu names it (docs/decisions.md 81, 89 and
-# 90). It builds five binaries for x86-64, as host objects, statically,
+# where its caller's ch_cfg.cpu names it (docs/decisions.md 81, 89, 90
+# and 93). It builds eight binaries for x86-64, as host objects, statically,
 # and runs them under qemu-x86_64 on CPU models with instructions turned
 # off, where each such instruction raises SIGILL.
 #
@@ -41,6 +41,37 @@
 #     SSE2, and 0x1f against 0x7, the VAES AES-GCM against the 128-bit
 #     loops. A qemu that lacks a kernel's instructions skips its rows.
 #
+# On a model without the SHA extensions:
+#
+#   - each loop with "cpu 0x5 0x5" and with "cpu 0x7 0x7", both ends
+#     leaving CH_CPU_CONSTANT_TIME_SHA256 clear, must pass: the first runs
+#     ChaCha20 and its key schedule on SHA-256, the second AES-256-GCM
+#     and its key schedule on SHA-384, and every SHA-256 call of both runs
+#     sha256.c.
+#   - each loop with "cpu 0x25 0x25" and with "cpu 0x27 0x27", the same
+#     values with the bit, must die of SIGILL: a session with the bit
+#     hashes its transcript on sha256_hw.c's instructions, which shows the
+#     model traps them, and so that the runs above executed none.
+#   - bin/aes_runtime_test "present" must pass: its rows state the AES bit
+#     and no hash bit, so HKDF derives their Initial keys on sha256.c.
+#
+# On the model with every instruction qemu has, with
+# CH_REQUIRE_HASH_INSTRUCTIONS=1 in the environment, so a qemu without
+# the SHA extensions fails these rows and does not skip them:
+#
+#   - bin/sha2_equiv_test must pass: sha256_hw.c against sha256.c over
+#     every length and split it tries, and no schedule or state word of a
+#     call in the stack the call leaves (test/sha2_equiv_test.c). With
+#     "sha2-equiv" as this script's argument it builds and runs that
+#     binary alone, which is what the violations of sha256_hw.c's
+#     constants and of its wipe name as their catch: the run gives one
+#     verdict on every machine, where the machine's own CPU may lack the
+#     instructions.
+#   - each loop with one end stating the SHA-256 bit and the other not, in
+#     both orders, must pass: 0x25 against 0x5 and 0x27 against 0x7, so
+#     the instructions and sha256.c compute the same transcript hashes
+#     and the same keys.
+#
 # On any model:
 #
 #   - bin/x86_kernels_test must pass. It counts the calls the library
@@ -50,11 +81,19 @@
 #     which is what the violations of chacha20.c's use_avx2 and
 #     gcm_vaes.h's gcm_use_vaes name as their catch.
 #
-# QEMU's arm64 models all implement the AES extension, and none of their
-# properties turns it off (QEMU 8.2 and 10.2), so the arm64 half of the
-# claim rests on the call counts bin/aes_runtime_test reads and on
-# test/aes-runtime-disasm.sh, which finds the instructions in aes_hw.c's,
-# ghash_hw.c's and gcm_hw.c's functions alone.
+# On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
+#
+#   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass.
+#     They count the calls into each hash's two paths under every
+#     ch_cfg.cpu value and run no instruction a bit names
+#     (test/hash_runtime_test.c).
+#
+# QEMU's arm64 models all implement the AES and SHA-256 extensions, and
+# none of their properties turns either off (QEMU 8.2 and 10.2), so the
+# arm64 half of the claim rests on the call counts bin/aes_runtime_test
+# and bin/hash_runtime_test read and on test/aes-runtime-disasm.sh, which
+# finds the instructions in aes_hw.c's, ghash_hw.c's, gcm_hw.c's and
+# sha256_hw.c's functions alone.
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC names an x86-64
 # compiler, cc by default, which must be one on an x86-64 host;
@@ -70,9 +109,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels) ;;
+"" | x86-kernels | sha2-equiv) ;;
 *)
-    echo "usage: $0 [x86-kernels]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv]" >&2
     exit 2
     ;;
 esac
@@ -98,8 +137,11 @@ read -r -a tcp_srcs <<< "$(sed -n 2p <<< "$lists")"
 read -r -a runtime_test_srcs <<< "$(sed -n 3p <<< "$lists")"
 read -r -a quic_test_hw_srcs <<< "$(sed -n 4p <<< "$lists")"
 read -r -a kernels_test_srcs <<< "$(sed -n 5p <<< "$lists")"
-[ "${#kernels_test_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than five lists" >&2; exit 1; }
+read -r -a sha2_equiv_srcs <<< "$(sed -n 6p <<< "$lists")"
+read -r -a hash_count_srcs <<< "$(sed -n 7p <<< "$lists")"
+read -r -a hash_count_quic_srcs <<< "$(sed -n 8p <<< "$lists")"
+[ "${#hash_count_quic_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than eight lists" >&2; exit 1; }
 
 # Runs one binary of $out on a CPU model and requires its exit status. A
 # run that must pass prints what it wrote when it does not.
@@ -114,12 +156,27 @@ expect() { # $1 = model, $2 = the status, $3 = what a wrong status means, $4... 
 }
 sigill=132
 
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/x86_kernels_test" \
-    test/x86_kernels_test.c test/x86_kernels_count.c "${kernels_test_srcs[@]}" || exit 1
-expect max 0 "a call ran a kernel its ch_cfg.cpu value does not name, or ran none where it does" \
-    x86_kernels_test
+if [ "$only" != sha2-equiv ]; then
+    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/x86_kernels_test" \
+        test/x86_kernels_test.c test/x86_kernels_count.c "${kernels_test_srcs[@]}" || exit 1
+    expect max 0 "a call ran a kernel its ch_cfg.cpu value does not name, or ran none where it does" \
+        x86_kernels_test
+fi
 if [ "$only" = x86-kernels ]; then
     echo "aes-runtime-qemu: bin/x86_kernels_test counted each kernel's calls under every ch_cfg.cpu value"
+    exit 0
+fi
+
+# sha256_hw.c against sha256.c, on the model with every instruction. The
+# binary fails where the model lacks the SHA extensions, so this row
+# cannot pass by skipping.
+"$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_EXPORTER -DHKDF_LABEL_MAX=32 \
+    -o "$out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
+CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
+    "sha256_hw.c and sha256.c disagree, a call left its schedule or its state on the stack, or this qemu's max model lacks the SHA extensions" \
+    sha2_equiv_test
+if [ "$only" = sha2-equiv ]; then
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c on the SHA extensions"
     exit 0
 fi
 
@@ -131,6 +188,10 @@ fi
     -o "$out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
     -o "$out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$out/hash_runtime_test" \
+    test/hash_runtime_test.c "${hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" "${runtime[@]}" -DCH_EXPORTER -DHKDF_LABEL_MAX=32 \
+    -o "$out/hash_runtime_exporter_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
 loops=(quic_loop_aes webpki_loop_aes)
 
 # No AES-NI, PCLMULQDQ or AVX2.
@@ -153,6 +214,41 @@ for b in "${loops[@]}"; do
         "$b" cpu 0x7 0x7
     expect "$no_avx2" "$sigill" "a session with CH_CPU_VAES beside the AES bit ran no kernel" \
         "$b" cpu 0x17 0x17
+done
+
+# No SHA extensions. A session hashes on them exactly where its
+# ch_cfg.cpu holds the SHA-256 bit.
+no_sha='max,-sha-ni'
+for b in "${loops[@]}"; do
+    for bits in 0x5 0x7; do
+        expect "$no_sha" 0 "a session without the SHA-256 bit ran a SHA instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+    for bits in 0x25 0x27; do
+        expect "$no_sha" "$sigill" "a session with the SHA-256 bit ran no SHA instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+done
+expect "$no_sha" 0 "a row without the SHA-256 bit derived its Initial keys on a SHA instruction" \
+    aes_runtime_test present
+
+# None of the instructions a ch_cfg.cpu bit names. The two binaries that
+# count each hash's calls run both paths on sha256.c's code and seal
+# their Initial packet on the table, so they must pass here.
+no_named="$bare,-sha-ni"
+for b in hash_runtime_test hash_runtime_exporter_test; do
+    expect "$no_named" 0 "a binary that counts hash calls ran an instruction a ch_cfg.cpu bit names" "$b"
+done
+
+# Every instruction this qemu has. One end on the SHA extensions and the
+# other on sha256.c must compute the same transcript hashes and keys: with
+# ChaCha20, whose key schedule runs SHA-256, and with AES-256-GCM, whose
+# transcript takes SHA-256 beside SHA-384.
+for b in "${loops[@]}"; do
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x25 0x5
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x5 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x27 0x7
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 "the SHA extensions and sha256.c disagree" "$b" cpu 0x7 0x27
 done
 
 # Every instruction this qemu has. One end on a kernel and the other on
@@ -189,4 +285,8 @@ if grep -qw avx2 <<< "$cpuid"; then
 fi
 echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU_AVX2 passed in the" \
     "vectors and both loops, and the rows with either died of SIGILL; on $no_avx2 the rows with" \
-    "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on max, $mixed"
+    "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on $no_sha the rows" \
+    "without the SHA-256 bit passed and the rows with it died of SIGILL; on $no_named the two" \
+    "binaries that count each hash's calls passed; on max, sha256_hw.c" \
+    "agreed with sha256.c, one end on the SHA extensions and the other on sha256.c agreed, and" \
+    "$mixed"

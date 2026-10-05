@@ -195,8 +195,8 @@ A platform is listed when CI runs the suites there on every push to main.
 
 | Platform | How the suites run | CI job |
 | --- | --- | --- |
-| Linux x86_64 | Natively, with every lint, proof and sanitizer, and the host object without its AES bit under QEMU user mode on a CPU model without AES-NI or PCLMULQDQ (`make aes-runtime-qemu`) | `check`, `slow`, `mutants`, `prove`, `san`, `mips` |
-| Linux arm64 | Natively, the deterministic suites (`make suite-check`), the host object's AES on the Arm AES and PMULL instructions among them, and the host objects disassembled (`make aes-runtime-disasm`) | `arm64` |
+| Linux x86_64 | Natively, with every lint, proof and sanitizer, and the host object under QEMU user mode without its AES bit on a CPU model without AES-NI or PCLMULQDQ and without its SHA-256 bit on one without the SHA extensions (`make aes-runtime-qemu`) | `check`, `slow`, `mutants`, `prove`, `san`, `mips` |
+| Linux arm64 | Natively, the deterministic suites (`make suite-check`), the host object's AES on the Arm AES and PMULL instructions and its SHA-256 on the SHA-256 instructions among them, and the host objects disassembled (`make aes-runtime-disasm`) | `arm64` |
 | mips32r2, big-endian | Cross-built, under QEMU user mode (`make cross-check`) | `mips` |
 | riscv32 | Cross-built with a pinned musl toolchain, under QEMU user mode | `riscv32` |
 | Cortex-M3, bare metal | The unmodified suites through semihosting on QEMU (`make m3-check`) | `m3` |

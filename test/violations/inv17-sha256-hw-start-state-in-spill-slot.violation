@@ -1,0 +1,20 @@
+invariant: INV-17
+file: sha256_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: kept reads the state a block began with through a plain pointer, so
+  the compiler may hold that state in a register across the block's
+  sixty-four rounds. x86-64 has 16 vector registers, and gcc 13 then puts
+  one half in a stack slot of its own, outside the block_state, where the
+  wipe does not clear it: after the first block of an HMAC that half
+  stands for the key. Every digest is still right. bin/sha2_equiv_test
+  copies the stack below each kind of call and looks for four state words
+  in a row, and the script builds it for x86-64 with the container's gcc,
+  the compiler and the target the slot appears under. arm64 has 32 vector
+  registers and no such slot, so the same binary on an arm64 host passes.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+    const volatile words *in_state = field;
+--- new
+    const words *in_state = field;

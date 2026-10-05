@@ -105,8 +105,13 @@ architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`
 on arm64. Each says the CPU has the instructions and states that they run in
 constant time in the session's thread's mode, because a hash reads HMAC keys and
 traffic secrets. A session hands its `ch_cfg.cpu` to every hash call of its
-transcript, its key schedule and its record and packet keys, and no object runs
-a hash on the instructions yet (decision 93).
+transcript, its key schedule and its record and packet keys. With the SHA-256
+bit those calls run SHA-256, and HMAC, HKDF and the key schedule over it, on
+the instructions, and without it on the portable code. The vendor statement
+behind the bit must cover the instructions `cpu_cfg.h` lists for it. A hash
+call that takes no `ch_cfg.cpu`, such as a certificate's, a signature's or the
+DRBG's, runs the portable code in every object. No object runs SHA-512 or SHA-3
+on its instructions yet, so the other two bits pick nothing (decision 93).
 
 ### Check it on your target, because the compiler can undo it
 

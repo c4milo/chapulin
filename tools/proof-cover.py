@@ -95,6 +95,23 @@ AUDITED = {
         "published vectors on it, under a ch_cfg.cpu value with the multiply "
         "bit. Delete this entry if a harness can ever compile the file."
     ),
+    "sha256_hw.c": (
+        "a host object's SHA-256 on the CPU's SHA-256 instructions, written in "
+        "the FEAT_SHA256 and SHA-extension intrinsics, which CBMC cannot read, "
+        "so no harness compiles the file. Every bitwise operator takes "
+        "unsigned operands: the rounds and the schedule run on uint32x4_t or "
+        "__m128i values through the intrinsics, sha256_final_hw shifts a "
+        "uint64_t bit count and the uint32_t words of the state, and each "
+        "result narrows to uint8_t. The x86-64 arm's byte-order constant is "
+        "two long long literals _mm_set_epi64x takes, each positive, and the "
+        "shuffle and blend immediates are int constants below 256; no "
+        "arithmetic runs on a signed value. The framing adds and subtracts "
+        "size_t byte counts that the context's fill, below 64, bounds. "
+        "bin/sha2_equiv_test holds the file to sha256.c's proven code, and "
+        "bin/unit_host and the Wycheproof host leg run the published vectors "
+        "on it, under a ch_cfg.cpu value with the SHA-256 bit. Delete this "
+        "entry if a harness can ever compile the file."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` in "
@@ -144,12 +161,13 @@ def shipped_sources():
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
-    # pin, wide X25519 field and vector ChaCha20 and Poly1305 sources join
-    # through build variables or the host test.
+    # pin, wide X25519 field, vector ChaCha20 and Poly1305 sources and
+    # SHA-256 on the CPU's instructions join through build variables or the
+    # host test.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
-            "poly1305_vector.c"}
+            "poly1305_vector.c", "sha256_hw.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

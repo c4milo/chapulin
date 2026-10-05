@@ -121,7 +121,7 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
     record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c chacha20_vector.c chacha20_avx2.c
     poly1305.c poly1305_native.c poly1305_vector_native.c ct.c ct_wipe.c
-    hkdf.c sha256.c sha512.c sha512_compress.c)
+    hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress.c)
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x3 -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x7 -o "$W/record_multiply" "${SRCS[@]}"
 # The x86-64 kernels' build. It compiles for every x86-64 target, and its

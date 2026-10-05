@@ -1,0 +1,16 @@
+invariant: INV-16
+file: sha256.h
+catches: hash_runtime_test
+reason: sha256.h's sha256_on_instructions reads CH_CPU_CONSTANT_TIME_SHA512,
+  the bit of another hash's instructions. A caller that states the SHA-512
+  instructions alone then runs SHA-256 on instructions it never stated,
+  and one that states the SHA-256 instructions alone runs sha256.c. The
+  bytes are the same either way. bin/hash_runtime_test runs every row
+  under each of the 128 values the seven bits beside CH_CPU_PROBED make,
+  which hold each bit with and without the other, and counts the calls
+  into each path.
+
+--- old
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA256) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0;

@@ -107,23 +107,87 @@ void hkdf_derive_secret(size_t hash_len, const uint8_t *secret, const char *labe
                         const uint8_t *hash, uint8_t *out);
 
 #if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
-// hkdf_extract and hkdf_expand_label for one session of a host object, each with the session's
-// ch_cfg.cpu first and under the same contract, as sha256.h's entries are (docs/decisions.md
-// 93). No object holds a hash on the CPU's instructions yet, so both run the portable call
-// whatever cpu says. keysched.c makes this header's other calls.
+// This header's calls in the copy on the CPU's hash instructions (hkdf_hw.c, docs/decisions.md
+// 93): hkdf.c compiled once more under the names hash_hw.h gives, with its SHA-256 on
+// sha256_hw.c. Each has the contract of the call it is named for, and requires the CPU the
+// hash it runs requires on the instructions (sha256.h). hkdf_hw.c reads these declarations
+// beside the definitions it compiles, so the compiler holds the two spellings of each name to
+// one type.
+void hmac_sha256_hw(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
+                    uint8_t out[SHA256_LEN]);
+void hmac_hw(size_t hash_len, const uint8_t *key, size_t key_len, const uint8_t *msg,
+             size_t msg_len, uint8_t *out);
+void hkdf_extract_hw(size_t hash_len, const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
+                     size_t ikm_len, uint8_t *prk);
+void hkdf_expand_hw(size_t hash_len, const uint8_t *prk, const uint8_t *info, size_t info_len,
+                    uint8_t *out, size_t out_len);
+void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *label,
+                          const uint8_t *ctx, size_t ctx_len, uint8_t *out, size_t out_len);
+
+// A copy on the instructions reads the declarations above and none of the entries below, as in
+// sha256.h.
+#ifndef CH_HASH_HW_H
+// Whether a call of this header or of keysched.h that runs the hash hash_len names runs the
+// copy on the instructions: for SHA-256 where sha256_on_instructions says so, and for no other
+// hash, because no object holds SHA-384 on instructions yet. hash_len is the suite's, which the
+// ServerHello names in the clear. Every call of hkdf.c and keysched.c runs the one hash its
+// hash_len names, so a copy that holds two hashes still runs each on its own bit alone.
+static inline int hash_on_instructions(uint32_t cpu, size_t hash_len) {
+    return hash_len == SHA256_LEN && sha256_on_instructions(cpu);
+}
+
+// This header's calls for one session of a host object, each with the session's ch_cfg.cpu
+// first and under the same contract, as sha256.h's entries are. A session calls hkdf_extract_cpu
+// and hkdf_expand_label_cpu, keysched.c makes hkdf_derive_secret's calls, and the other three
+// are here for the tests and the bench, which run the published vectors on both copies.
+static inline void hmac_sha256_cpu(uint32_t cpu, const uint8_t *key, size_t key_len,
+                                   const uint8_t *msg, size_t msg_len, uint8_t out[SHA256_LEN]) {
+    if (sha256_on_instructions(cpu)) {
+        hmac_sha256_hw(key, key_len, msg, msg_len, out);
+        return;
+    }
+    hmac_sha256(key, key_len, msg, msg_len, out);
+}
+
+static inline void hmac_cpu(uint32_t cpu, size_t hash_len, const uint8_t *key, size_t key_len,
+                            const uint8_t *msg, size_t msg_len, uint8_t *out) {
+    if (hash_on_instructions(cpu, hash_len)) {
+        hmac_hw(hash_len, key, key_len, msg, msg_len, out);
+        return;
+    }
+    hmac(hash_len, key, key_len, msg, msg_len, out);
+}
+
 static inline void hkdf_extract_cpu(uint32_t cpu, size_t hash_len, const uint8_t *salt,
                                     size_t salt_len, const uint8_t *ikm, size_t ikm_len,
                                     uint8_t *prk) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        hkdf_extract_hw(hash_len, salt, salt_len, ikm, ikm_len, prk);
+        return;
+    }
     hkdf_extract(hash_len, salt, salt_len, ikm, ikm_len, prk);
+}
+
+static inline void hkdf_expand_cpu(uint32_t cpu, size_t hash_len, const uint8_t *prk,
+                                   const uint8_t *info, size_t info_len, uint8_t *out,
+                                   size_t out_len) {
+    if (hash_on_instructions(cpu, hash_len)) {
+        hkdf_expand_hw(hash_len, prk, info, info_len, out, out_len);
+        return;
+    }
+    hkdf_expand(hash_len, prk, info, info_len, out, out_len);
 }
 
 static inline void hkdf_expand_label_cpu(uint32_t cpu, size_t hash_len, const uint8_t *secret,
                                          const char *label, const uint8_t *ctx, size_t ctx_len,
                                          uint8_t *out, size_t out_len) {
-    (void)cpu;
+    if (hash_on_instructions(cpu, hash_len)) {
+        hkdf_expand_label_hw(hash_len, secret, label, ctx, ctx_len, out, out_len);
+        return;
+    }
     hkdf_expand_label(hash_len, secret, label, ctx, ctx_len, out, out_len);
 }
+#endif
 #endif
 
 // The two calls as a source compiled into both objects makes them for a session, with its

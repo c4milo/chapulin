@@ -1,0 +1,18 @@
+invariant: INV-16
+file: handshake_flight.c
+catches: test/docker-aes-runtime-qemu.sh
+reason: the client hashes the ClientHello it built under a value with every
+  bit set, where it must hand on the session's ch_cfg.cpu. A client whose
+  caller never stated the SHA-256 instructions then runs them over its
+  transcript, and on a CPU without them it dies of SIGILL before its
+  first byte leaves (docs/decisions.md 93). The transcript hash is the
+  same, so every handshake on a CPU with the instructions still passes.
+  The script runs whole QUIC and TCP handshakes whose ends leave the bit
+  clear under qemu-x86_64 on a model without the SHA extensions, where
+  the first such instruction ends the process. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    TRANSCRIPT_UPDATE_CPU(t->cfg.cpu, &t->transcript, out, n);
+--- new
+    TRANSCRIPT_UPDATE_CPU(~0U, &t->transcript, out, n);

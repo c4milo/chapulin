@@ -86,10 +86,15 @@
 // x86-64 has no Keccak instruction. Arm's list of data-independent-time instructions under
 // PSTATE.DIT names all twelve arm64 instructions, and Intel's DOIT list names the six x86-64
 // ones. As with the AES bit, the statement is the caller's.
-// No object holds a hash on those instructions yet. A session passes its ch_cfg.cpu to every
-// hash call it makes for its transcript, its key schedule and its record and packet keys, through
-// the entries that end sha256.h, sha512.h, hkdf.h, keysched.h and transcript.h, and each of those
-// entries runs the portable code whatever the value says.
+// A session passes its ch_cfg.cpu to every hash call it makes for its transcript, its key
+// schedule and its record and packet keys, through the entries that end sha256.h, sha512.h,
+// hkdf.h, keysched.h and transcript.h. With CH_CPU_CONSTANT_TIME_SHA256 those entries run SHA-256,
+// and HMAC, HKDF and the key schedule over it, on the instructions (sha256_hw.c, hash_hw.h), and
+// without it on sha256.c. A session whose bit names instructions its CPU lacks faults on the
+// first one. A hash call that takes no value runs the portable code in every object: a
+// certificate's, a signature's and the DRBG's are such calls. No object holds SHA-512 or SHA-3 on
+// its instructions yet, so those two bits pick nothing, and SHA-384 runs sha512.c under every
+// value.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64,

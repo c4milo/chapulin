@@ -11,8 +11,10 @@
 // value of test/test_cpu.h's that every init call refuses, and take the
 // others; each pair of values runs a whole handshake at the suite both
 // ends hold; a server without the bit selects no AES-GCM suite, even from
-// a client that offers nothing else; and an end without it refuses a
-// suite list that names one.
+// a client that offers nothing else; an end without it refuses a suite
+// list that names one; and an end that states the hash instructions and
+// one that does not complete a handshake under either suite
+// (check_runtime_hash_bits).
 //
 // With "absent" as its argument the binary runs check_runtime_absent alone,
 // which test/aes-runtime-qemu.sh does on a CPU model without the AES
@@ -36,12 +38,12 @@ static void check_runtime_edges(void) {
         int taken = test_cpu_taken(i);
         ch_cfg cfg;
         client_config(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         int rc = ch_record_init(&probe, &cfg);
         CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
         ch_record_close(&probe);
         server_config(&cfg, ticket_key);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         rc = ch_srv_record_init(&probe, &cfg);
         CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_record_state(&probe) == CH_ST_FAILED);
         ch_record_close(&probe);
@@ -165,6 +167,27 @@ static int check_runtime_values(const char *client_text, const char *server_text
     return failures != 0;
 }
 
+// The hash bits (docs/decisions.md 93). One end hashes its transcript and
+// derives its keys on the CPU's hash instructions and the other on the
+// portable code, in both orders, and then both do: under ChaCha20, whose
+// key schedule runs SHA-256, and under AES-256-GCM, whose key schedule runs
+// SHA-384 beside a transcript that takes both hashes. A handshake completes
+// only where the two paths compute the same hashes. The rows state the bits
+// whose instructions this CPU has (test_cpu_hash_bits), and skip on a CPU
+// with none.
+static void check_runtime_hash_bits(void) {
+    uint32_t hash = test_cpu_hash_bits();
+    if (hash == 0) {
+        (void)printf("webpki_loop: SKIP the rows on the hash instructions: this CPU has none\n");
+        return;
+    }
+    check_runtime_bits(RUNTIME_ABSENT | hash, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);
+    check_runtime_bits(RUNTIME_ABSENT, RUNTIME_ABSENT | hash, SUITE_CHACHA20_POLY1305_SHA256);
+    check_runtime_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
+    check_runtime_bits(RUNTIME_PRESENT, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
+    check_runtime_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
+}
+
 static void check_runtime(void) {
     check_runtime_edges();
     check_runtime_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
@@ -173,6 +196,7 @@ static void check_runtime(void) {
     check_runtime_bits(RUNTIME_ABSENT, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);
     check_runtime_server_without_aes();
     check_runtime_lists();
+    check_runtime_hash_bits();
 }
 
 #endif // CH_CPU_RUNTIME && CH_SUITE_AES_GCM

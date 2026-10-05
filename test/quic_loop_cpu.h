@@ -19,12 +19,12 @@ static void test_quic_cpu_values(void) {
         int taken = test_cpu_taken(i);
         ch_cfg cfg;
         webpki_client(&cfg, webpki_corpus_anchors_root_p384, "s3.example.test");
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         int rc = ch_quic_init(&probe, &cfg);
         CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_quic_state(&probe) == CH_ST_FAILED);
         ch_quic_close(&probe);
         webpki_server(&cfg, ticket_key);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         CHECK((ch_srv_check(&cfg) == CH_OK) == taken);
         rc = ch_srv_quic_init(&probe, &cfg);
         CHECK(taken ? rc == CH_OK : rc == CH_EINVAL && ch_quic_state(&probe) == CH_ST_FAILED);

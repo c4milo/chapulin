@@ -149,14 +149,16 @@ struct Cpu {
     // The CPU has the SHA-256 instructions, and you state that they run
     // in constant time on it, in that mode: CH_CPU_CONSTANT_TIME_SHA256.
     // On arm64 that is FEAT_SHA256, and on x86-64 the SHA extensions with
-    // SSSE3 and SSE4.1. No object runs a hash on the instructions yet.
+    // SSSE3 and SSE4.1. The session then hashes its transcript and
+    // derives its keys over SHA-256 on them.
     bool constant_time_sha256 = false;
     // The same for the SHA-512 instructions, FEAT_SHA512:
     // CH_CPU_CONSTANT_TIME_SHA512. An arm64 bit, which an x86-64 object
-    // refuses.
+    // refuses. No object runs SHA-512 on the instructions yet.
     bool constant_time_sha512 = false;
     // The same for the SHA-3 instructions, FEAT_SHA3:
-    // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well.
+    // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well, and no object
+    // runs SHA-3 on the instructions yet.
     bool constant_time_sha3 = false;
 };
 #endif

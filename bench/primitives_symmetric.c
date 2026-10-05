@@ -2,8 +2,10 @@
 // and the DRBG over it, and Poly1305 with the AEAD it completes. Every
 // row reads the same fixed-seed input and times one call the tree makes.
 //
-// Three groups. hash holds the rows no bit of ch_cfg.cpu changes today:
-// every session runs the same SHA-2 and Keccak code. cipher holds
+// Three groups. hash holds SHA-256, HMAC and HKDF over it, which a host
+// session runs on the CPU's SHA-256 instructions where its value holds
+// CH_CPU_CONSTANT_TIME_SHA256 (docs/decisions.md 93), and SHA-384, SHA-512
+// and Keccak, whose code no bit changes today. cipher holds
 // ChaCha20, whose keystream a host session runs on the vector path its
 // value names, and the DRBG, which calls chacha20_block, the portable
 // function in every object. aead holds Poly1305, whose limb products run
@@ -65,7 +67,7 @@ static void prepare_inputs(size_t n) {
 
 static void run_sha256(size_t n) {
     uint8_t digest[SHA256_LEN];
-    sha256_of(input, n, digest);
+    sha256_of_cpu(bench_cpu, input, n, digest);
     bench_consume(digest, sizeof digest);
 }
 
@@ -107,7 +109,7 @@ static void run_shake256(size_t n) {
 
 static void run_hmac_sha256(size_t n) {
     uint8_t mac[SHA256_LEN];
-    hmac_sha256(key, sizeof key, input, n, mac);
+    hmac_sha256_cpu(bench_cpu, key, sizeof key, input, n, mac);
     bench_consume(mac, sizeof mac);
 }
 
@@ -115,7 +117,7 @@ static void run_hmac_sha256(size_t n) {
 // schedule passes (RFC 9846 §7.1).
 static void run_hkdf_expand_label(size_t n) {
     uint8_t secret[SHA256_LEN];
-    hkdf_expand_label(SHA256_LEN, key, "c hs traffic", input, SHA256_LEN, secret, n);
+    hkdf_expand_label_cpu(bench_cpu, SHA256_LEN, key, "c hs traffic", input, SHA256_LEN, secret, n);
     bench_consume(secret, sizeof secret);
 }
 

@@ -1484,7 +1484,7 @@ last `ROLE=server` stub, as the entry said it would.
   rest, and the three differential arms read `DIFF_SRCS`, which
   `bin/diff` reads. The
   scripts ask make: `bench/aead.sh` and `bench/record.sh` read
-  `AES_HW_SRCS`, `test/aes-runtime-qemu.sh` reads the lists its four
+  `AES_HW_SRCS`, `test/aes-runtime-qemu.sh` reads the lists its six
   binaries' rules link, `bench/insn-m3.sh`, `bench/insn-mips.sh` and
   `bench/insn-rv32.sh` read `INSN_SRCS` and `INSN_DEF`, and
   `test/spec_coverage.py` links `DIFF_SRCS`. What a script still lists
@@ -2669,6 +2669,45 @@ last `ROLE=server` stub, as the entry said it would.
   ChaCha20 no `ch_cfg.cpu`; only an x86-64 binary can tell, and
   `bin/x86_kernels_test` catches both (docs/verification.md, "The x86-64
   kernels").
+  A host object holds SHA-256 on the CPU's SHA-256 instructions,
+  `sha256_hw.c`, beside `sha256.c`: FEAT_SHA256 on arm64, and the SHA
+  extensions with SSSE3 and SSE4.1 on x86-64 (decision 93). A hash reads
+  HMAC keys and traffic secrets, so the instructions run only for a
+  session whose caller set `CH_CPU_CONSTANT_TIME_SHA256`, which states
+  that they take a time that does not depend on their operands in the
+  mode the session's thread runs in. `sha256.h`'s
+  `sha256_on_instructions` reads the bit, and `hkdf.h`'s
+  `hash_on_instructions` reads it for a call whose `hash_len` names
+  SHA-256. The entries that end `sha256.h`, `hkdf.h` and `keysched.h`
+  each take the session's `ch_cfg.cpu` first and branch once on one of
+  the two, and `hkdf_hw.c` and `keysched_hw.c` are those files compiled
+  once more with their SHA-256 calls on the instructions (`hash_hw.h`).
+  A call that takes no value runs `sha256.c` in every object, so a
+  caller with no session's value runs no hash instruction. `sha256_hw.c`
+  reads no table with a secret index and branches on lengths alone: the
+  two 64-bit specs hold its conditional branches at 8 on each, the HKDF
+  copy's at 16 and the key schedule copy's at 0, and each branch was
+  read against its source.
+  `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test` count the
+  calls into each path under 129 `ch_cfg.cpu` values, and
+  `test/hash-builds.sh` holds the instructions to `sha256_hw.c` and each
+  copy's calls to the `_hw` names, for x86-64 and arm64 under the pinned
+  clang (docs/verification.md, "The hash instructions"). Nine violations
+  break those rules. `inv16-sha256-instructions-without-bit` inverts the
+  predicate and `inv16-sha256-reads-sha512-bit` reads another hash's
+  bit; `inv16-hkdf-extract-entry-inverted` and
+  `inv16-ks-exporter-entry-inverted` each invert one entry, and
+  `inv16-record-keys-direction-under-every-bit` keys a record direction
+  under a value with every bit. The counting tests catch those five.
+  `inv16-hash-copy-final-on-portable` leaves one of a copy's three hash
+  calls on `sha256.c`, and `inv16-sha256-hw-without-target` drops the
+  file's target attribute; `test/hash-builds.sh` catches both.
+  `inv16-transcript-hashed-under-every-bit` hashes a client's first
+  message under a value with every bit, which no count sees, and the
+  qemu lane catches it on a CPU model without the SHA extensions.
+  `sha256-hw-round-constant-off-by-one` changes one constant, and
+  `bin/sha2_equiv_test` catches it under `qemu-x86_64`, whose `max`
+  model has the instructions on every host.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -3523,6 +3562,26 @@ last `ROLE=server` stub, as the entry said it would.
   packet after it in one datagram, and requires the failed open to leave
   the header unprotected, as it does before the AEAD runs, zeros in the
   payload, and the tag and the packet after it as they arrived.
+  `sha256_hw.c` keeps every value its compression function computes
+  from a block in one `block_state`, and wipes it when the call ends: the
+  message schedule, the working variables and the state the block began
+  with. Under HMAC the first block is the key, and the state after it
+  stands for the key (decision 93). It reads the state a block began
+  with through a volatile lvalue, because gcc 13 on x86-64, holding that
+  state in a register across the sixty-four rounds, put one half in a
+  stack slot of its own. `sha256_of_hw` also wipes the context it hashes
+  in. `bin/sha2_equiv_test` copies the stack below five kinds of call and
+  requires no four words in a row that the call computed from its input
+  (`test/sha2_equiv_residue.h`). Four violations each undo one of those:
+  `inv17-sha256-hw-block-state-kept` drops the wipe of the
+  `block_state`, `inv17-sha256-hw-whole-message-context-kept` the wipe of
+  the context, and `inv17-sha256-hw-start-state-in-spill-slot` the
+  volatile read, and `inv17-sha256-hw-round-input-outside-block-state`
+  moves a round's input out of the `block_state`. The binary catches
+  each under `qemu-x86_64`, the target where the last two show.
+  `sha256.c`'s `compress` wipes neither its schedule array nor its
+  working variables, and `sha256_of` does not wipe its context
+  (`sha256.h`); decision 93 leaves that file as it was.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

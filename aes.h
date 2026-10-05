@@ -270,11 +270,11 @@ void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BL
 // caller passes the new one and this call reads nothing it kept.
 //
 // A QUIC host object's declaration takes one more argument, cpu, the
-// session's ch_cfg.cpu. A value with CH_CPU_CONSTANT_TIME_AES expands
-// both keys on the AES instructions and every other value on the table,
-// and k records which (aes_schedule.h), so each block run under k takes
-// the cipher that expanded it. Both keys are public, so the table leaks
-// nothing (INV-26).
+// session's ch_cfg.cpu. HKDF derives both keys on the hash its SHA-256
+// bit picks (hkdf.h). A value with CH_CPU_CONSTANT_TIME_AES expands them
+// on the AES instructions and every other value on the table, and k
+// records which (aes_schedule.h), so each block run under k takes the
+// cipher that expanded it. Both are public, so the table leaks nothing.
 //
 // Returns CH_OK and writes k whole. Returns CH_EINVAL and writes
 // nothing when dcid_len is above CH_QUIC_DCID_MAX, or when endpoint is

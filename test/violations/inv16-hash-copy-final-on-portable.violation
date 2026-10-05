@@ -1,0 +1,14 @@
+invariant: INV-16
+file: hash_hw.h
+catches: test/hash-builds.sh
+reason: hash_hw.h no longer renames sha256_final, so the copies hkdf_hw.c and
+  keysched_hw.c hold start each hash on the instructions and end it on
+  sha256.c. Every digest is the same, because the two paths keep one
+  state, so no vector fails; a session that stated the instructions runs
+  a third of its hash calls on the portable code. The script reads the
+  symbols each copy calls, for x86-64 and for arm64 under the pinned
+  clang, and requires the three _hw names and none of sha256.c's.
+
+--- old
+#define sha256_final sha256_final_hw
+--- new

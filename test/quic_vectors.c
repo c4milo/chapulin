@@ -27,7 +27,9 @@
 // with test_initial_cpu stating the instructions, and with the probe's bit
 // alone, which puts the Initial keys on the table (test/initial_cpu.h). On
 // an x86-64 CPU with VAES and VPCLMULQDQ it runs them a third time, with
-// every bit, on the x86-64 kernels (run_vectors_on_kernels).
+// every bit, on the x86-64 kernels, and on a CPU with the SHA-256
+// instructions once more with every key derived on them
+// (test/quic_vectors_cpu.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,7 +44,6 @@
 
 #include "initial_cpu.h"
 #include "test_cpu.h"
-#include "x86_kernels_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -453,30 +454,7 @@ static void run_vectors(void) {
     test_rfc9369_appendix_a();
 }
 
-#if defined(CH_AES_TWO_CIPHERS) && defined(__x86_64__)
-// Every vector once more with every bit an x86-64 host object defines, on
-// a CPU that has VAES and VPCLMULQDQ, and so AVX2: gcm.c then runs the
-// whole blocks of the Initial keys and of SP 800-38D's keys on
-// gcm_vaes.c's kernels, and Appendix A.5's packet its ChaCha20 keystream
-// on chacha20_avx2.c's. A CPU without the instructions skips the pass, and
-// under CH_REQUIRE_X86_KERNELS=1 fails it (test/x86_kernels_cpu.h).
-static void run_vectors_on_kernels(void) {
-    if (!x86_cpu_has_vaes()) {
-        if (x86_kernels_required()) {
-            (void)fprintf(stderr, "quic vectors: this CPU lacks VAES or VPCLMULQDQ, and "
-                                  "CH_REQUIRE_X86_KERNELS is 1\n");
-            failures++;
-            return;
-        }
-        (void)printf("quic vectors: SKIP the pass on the x86-64 kernels: this CPU lacks VAES or "
-                     "VPCLMULQDQ\n");
-        return;
-    }
-    test_initial_cpu = TEST_CPU_ALL;
-    test_cpu = TEST_CPU_ALL;
-    run_vectors();
-}
-#endif
+#include "quic_vectors_cpu.h"
 
 int main(void) {
     run_vectors();
@@ -486,6 +464,7 @@ int main(void) {
 #ifdef __x86_64__
     run_vectors_on_kernels();
 #endif
+    run_vectors_on_hash_instructions();
     static const char ciphers[] =
         ", with the Initial keys on the AES instructions and on the table";
 #else

@@ -1,0 +1,20 @@
+invariant: INV-16
+file: sha256_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: sha256_hw.c's first round constant is one more than FIPS 180-4
+  §4.2.2's, so every digest a session computes on the instructions is
+  wrong, and it agrees with no peer and with none of this tree's own
+  portable digests. CBMC cannot read an intrinsic, so no proof covers this
+  file, and bin/sha2_equiv_test is what holds it to sha256.c. The table
+  sits outside the two architecture arms, so the x86-64 build the script
+  runs under qemu-x86_64 holds it for arm64 too. A machine's own CPU may
+  lack the instructions, where the binary skips, so the catch is the
+  script: qemu's max model has them on every host. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+--- new
+    0x428a2f99, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,

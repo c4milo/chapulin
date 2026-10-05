@@ -300,8 +300,10 @@ default; in any other object they are `void`, and `Cpu` is a
   CPU has: with `avx2` the session's ChaCha20 runs in 256-bit vectors, and
   with `vaes` beside `constant_time_aes` its AES-GCM runs on VAES and
   VPCLMULQDQ (docs/decisions.md 90). The three hash fields say the CPU
-  has the SHA-256, the SHA-512 or the SHA-3 instructions, and no object
-  runs a hash on them yet (docs/decisions.md 93).
+  has the SHA-256, the SHA-512 or the SHA-3 instructions. With
+  `constant_time_sha256` the session hashes its transcript and derives
+  its keys over SHA-256 on them, and no object runs SHA-512 or SHA-3 on
+  its instructions yet (docs/decisions.md 93).
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `Server.check` return
   `error.Invalid` with nothing sent. So does `avx2` or `vaes` in an arm64

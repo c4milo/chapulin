@@ -18,6 +18,9 @@
 //   - An end without the bit refuses a suite list that names an AES-GCM
 //     suite, and takes ChaCha20 alone; an end with it takes the same
 //     lists.
+//   - An end that states the hash instructions and one that does not
+//     complete a handshake and hold the same keys, under either suite
+//     (check_quic_hash_bits).
 //
 // test/quic_loop_cpu.h holds the values every init call refuses. With
 // "absent" as its argument the binary runs test_quic_runtime_absent
@@ -179,6 +182,27 @@ static int test_quic_runtime_values(const char *client_text, const char *server_
     return failures != 0;
 }
 
+// The hash bits (docs/decisions.md 93). One end hashes its transcript and
+// derives its keys on the CPU's hash instructions and the other on the
+// portable code, in both orders, and then both do: under ChaCha20, whose
+// key schedule runs SHA-256, and under AES-256-GCM, whose key schedule runs
+// SHA-384 beside a transcript that takes both hashes. A handshake completes
+// and its 1-RTT keys agree only where the two paths compute the same
+// hashes. The rows state the bits whose instructions this CPU has
+// (test_cpu_hash_bits), and skip on a CPU with none.
+static void check_quic_hash_bits(void) {
+    uint32_t hash = test_cpu_hash_bits();
+    if (hash == 0) {
+        (void)printf("quic_loop: SKIP the rows on the hash instructions: this CPU has none\n");
+        return;
+    }
+    check_quic_bits(RUNTIME_ABSENT | hash, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);
+    check_quic_bits(RUNTIME_ABSENT, RUNTIME_ABSENT | hash, SUITE_CHACHA20_POLY1305_SHA256);
+    check_quic_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
+    check_quic_bits(RUNTIME_PRESENT, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
+    check_quic_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
+}
+
 static void test_quic_runtime(void) {
     check_quic_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
     check_quic_bits(RUNTIME_ABSENT, RUNTIME_PRESENT, SUITE_CHACHA20_POLY1305_SHA256);
@@ -186,6 +210,7 @@ static void test_quic_runtime(void) {
     check_quic_bits(RUNTIME_ABSENT, RUNTIME_ABSENT, SUITE_CHACHA20_POLY1305_SHA256);
     check_quic_server_without_aes();
     check_quic_lists();
+    check_quic_hash_bits();
 }
 
 #endif // CH_CPU_RUNTIME && CH_SUITE_AES_GCM

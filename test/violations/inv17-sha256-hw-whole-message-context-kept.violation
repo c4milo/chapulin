@@ -1,0 +1,17 @@
+invariant: INV-17
+file: sha256_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: sha256_of_hw returns without wiping the context it hashed in, so its
+  dead frame keeps the end of the input and the digest's eight words.
+  HMAC hashes a key longer than a block through this call, and the bytes
+  left are the key's last ones and the value HMAC then uses as its key.
+  The digest is still right, so no vector sees it. bin/sha2_equiv_test
+  copies the stack below one sha256_of_hw call and looks for four
+  schedule, message or state words in a row. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    sha256_final_hw(&s, out);
+    ct_wipe(&s, sizeof s);
+--- new
+    sha256_final_hw(&s, out);

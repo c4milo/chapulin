@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "cfg.h"
+#include "hash_instructions_cpu.h"
 #include "x86_kernels_cpu.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -89,32 +90,92 @@ static const uint32_t test_cpu_values[] = {
 static inline int test_cpu_taken(size_t i) {
     return i + 2 >= TEST_CPU_VALUES;
 }
+
+// The hash bits of value whose instructions this CPU lacks (test/hash_instructions_cpu.h). A
+// session under such a bit dies of SIGILL at its first hash, as one whose caller described the
+// CPU wrongly does.
+static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
+    uint32_t absent = 0;
+    if ((value & CH_CPU_CONSTANT_TIME_SHA256) != 0 && !cpu_has_sha256_instructions()) {
+        absent |= CH_CPU_CONSTANT_TIME_SHA256;
+    }
+    return absent;
+}
+
+// test_cpu_values[i] as a row hands it to an init call. A value the call takes starts a session,
+// which hashes its first message, so the row leaves out a hash bit whose instructions this CPU
+// lacks: there the row holds that the call takes the other bits. A value the call refuses runs
+// nothing and stays whole.
+static inline uint32_t test_cpu_value(size_t i) {
+    uint32_t value = test_cpu_values[i];
+    if (!test_cpu_taken(i)) {
+        return value;
+    }
+    return value & ~test_cpu_absent_hash_bits(value);
+}
+
+// The hash bits a row gives an end that states its hash instructions: each one an object runs
+// a hash on, where this CPU has the instructions, so 0 on a CPU with none of them. Where the
+// environment requires the instructions (test/hash_instructions_cpu.h), a CPU that lacks any
+// ends the binary with status 1.
+#define TEST_CPU_HASH_BITS CH_CPU_CONSTANT_TIME_SHA256
+static inline uint32_t test_cpu_hash_bits(void) {
+    uint32_t absent = test_cpu_absent_hash_bits(TEST_CPU_HASH_BITS);
+    if (absent != 0 && hash_instructions_required()) {
+        (void)fprintf(stderr,
+                      "this CPU lacks the instructions of hash bits 0x%" PRIx32 ", and "
+                      "CH_REQUIRE_HASH_INSTRUCTIONS is 1\n",
+                      absent);
+        exit(1);
+    }
+    return TEST_CPU_HASH_BITS & ~absent;
+}
 #else
 #define TEST_CPU_CFG(cfg) ((void)(cfg))
 #define TEST_SESSION_CPU 0U
 #define TEST_CPU_DIR(d) ((void)sizeof(d))
 #endif
 
-// Ends a host binary whose test_cpu names an x86-64 kernel this CPU cannot run. A session whose
-// caller described the CPU wrongly dies of SIGILL at the kernel's first instruction, and so would
-// this binary, so it prints SKIP and exits with status 0, or fails with status 1 when
-// CH_REQUIRE_X86_KERNELS is 1, which CI's x86-64 kernels job sets (test/x86_kernels_cpu.h). The
-// library asks no CPU anything; a test may. On any other architecture no value names a kernel.
-static inline void test_skip_absent_kernels(const char *binary) {
-#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
-    const char *lacks = NULL;
+#ifdef CH_CPU_RUNTIME
+// The instructions test_cpu names and this CPU lacks, or NULL where it has them all: an x86-64
+// kernel's, or a hash's. *required is whether the environment makes their absence a failure:
+// CH_REQUIRE_X86_KERNELS for a kernel, which CI's x86-64 kernels job sets
+// (test/x86_kernels_cpu.h), and CH_REQUIRE_HASH_INSTRUCTIONS for a hash
+// (test/hash_instructions_cpu.h).
+static inline const char *test_cpu_lacks(int *required) {
+#ifdef __x86_64__
+    *required = x86_kernels_required();
     if ((test_cpu & CH_CPU_AVX2) != 0 && !x86_cpu_has_avx2()) {
-        lacks = "AVX2";
-    } else if ((test_cpu & CH_CPU_VAES) != 0 && !x86_cpu_has_vaes()) {
-        lacks = "VAES or VPCLMULQDQ";
+        return "AVX2";
     }
+    if ((test_cpu & CH_CPU_VAES) != 0 && !x86_cpu_has_vaes()) {
+        return "VAES or VPCLMULQDQ";
+    }
+#endif
+    *required = hash_instructions_required();
+    if ((test_cpu_absent_hash_bits(test_cpu) & CH_CPU_CONSTANT_TIME_SHA256) != 0) {
+        return "the SHA-256 instructions";
+    }
+    return NULL;
+}
+#endif
+
+// Ends a host binary whose test_cpu names instructions this CPU cannot run. A session whose
+// caller described the CPU wrongly dies of SIGILL at the first such instruction, and so would
+// this binary, so it prints SKIP and exits with status 0, or fails with status 1 where the
+// environment requires the instructions (test_cpu_lacks). The library asks no CPU anything; a
+// test may.
+static inline void test_skip_absent_instructions(const char *binary) {
+#ifdef CH_CPU_RUNTIME
+    int required = 0;
+    const char *lacks = test_cpu_lacks(&required);
     if (lacks == NULL) {
         return;
     }
-    if (x86_kernels_required()) {
+    if (required) {
         (void)fprintf(stderr,
-                      "%s: ch_cfg.cpu 0x%" PRIx32 " names %s, which this CPU lacks, and "
-                      "CH_REQUIRE_X86_KERNELS is 1\n",
+                      "%s: ch_cfg.cpu 0x%" PRIx32 " names %s, which this CPU lacks, and the "
+                      "environment requires them\n",
                       binary, test_cpu, lacks);
         exit(1);
     }
@@ -128,8 +189,8 @@ static inline void test_skip_absent_kernels(const char *binary) {
 
 // Takes a host binary's one argument, a number such as 0x5, into test_cpu and prints it, and
 // exits with status 2 for an argument that is not a 32-bit number. With no argument test_cpu
-// keeps TEST_CPU. A value that names an x86-64 kernel the CPU cannot run ends the binary there
-// (test_skip_absent_kernels). Every other binary takes no argument and prints nothing.
+// keeps TEST_CPU. A value that names instructions the CPU cannot run ends the binary there
+// (test_skip_absent_instructions). Every other binary takes no argument and prints nothing.
 static inline void test_take_cpu(int argc, char **argv) {
 #ifdef CH_CPU_RUNTIME
     if (argc > 1) {
@@ -141,7 +202,7 @@ static inline void test_take_cpu(int argc, char **argv) {
         }
         test_cpu = (uint32_t)bits;
     }
-    test_skip_absent_kernels(argv[0]);
+    test_skip_absent_instructions(argv[0]);
     (void)printf("%s under ch_cfg.cpu 0x%" PRIx32 "\n", argv[0], test_cpu);
 #else
     (void)argc;

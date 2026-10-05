@@ -11,7 +11,7 @@
 //
 // The value is any 32 bits, not only the ones init admits. Every init call
 // refuses a value without CH_CPU_PROBED or with a bit cpu_cfg.h does not
-// define, and this proves the constructor reads the AES bit alone.
+// define, and this proves the AES bit alone picks the constructor's cipher.
 //
 // CBMC can read neither cipher whole here: the instructions have no C
 // body, and proof/aes_harness.c proves the table itself. So all six entries

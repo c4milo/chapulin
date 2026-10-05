@@ -55,4 +55,23 @@ void hkdf_expand_label(size_t hash_len, const uint8_t *secret, const char *label
     fill_nondet(out, out_len);
 }
 
+#ifdef CH_CPU_RUNTIME
+// The same two calls in the copy on the CPU's hash instructions (hkdf.h,
+// docs/decisions.md 93). In a host object the entries aes.c calls run the
+// copy for a ch_cfg.cpu value that holds the hash's bit, and the harness
+// takes any value. The copy is hkdf.c's text under other names, so it has
+// the contract above, and each stub here is the stub above: the harness
+// proves the caller on either path. CBMC cannot read sha256_hw.c's
+// intrinsics, and bin/sha2_equiv_test holds that file to sha256.c.
+void hkdf_extract_hw(size_t hash_len, const uint8_t *salt, size_t salt_len, const uint8_t *ikm,
+                     size_t ikm_len, uint8_t *prk) {
+    hkdf_extract(hash_len, salt, salt_len, ikm, ikm_len, prk);
+}
+
+void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *label,
+                          const uint8_t *ctx, size_t ctx_len, uint8_t *out, size_t out_len) {
+    hkdf_expand_label(hash_len, secret, label, ctx, ctx_len, out, out_len);
+}
+#endif
+
 #endif

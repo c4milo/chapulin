@@ -1,0 +1,16 @@
+invariant: INV-16
+file: record.c
+catches: hash_runtime_test
+reason: rec_dir_init_suite derives a direction's key under a value with
+  every bit set, where it must hand on the direction's own cpu, which the
+  session wrote from its ch_cfg.cpu. Every record direction of a session
+  without CH_CPU_CONSTANT_TIME_SHA256 then derives its key from the
+  traffic secret on SHA-256 instructions the caller never stated
+  (docs/decisions.md 93). The key is the same. bin/hash_runtime_test keys
+  a direction under each ch_cfg.cpu value and counts the calls into each
+  path.
+
+--- old
+    HKDF_EXPAND_LABEL_CPU(d->cpu, hash_len, secret, "key", NULL, 0, d->key, suite_key_len(suite));
+--- new
+    HKDF_EXPAND_LABEL_CPU(~0U, hash_len, secret, "key", NULL, 0, d->key, suite_key_len(suite));

@@ -37,7 +37,7 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 	@set -e; for b in $(notdir $(X86_KERNEL_BINS) $(HOST_BINS)); do echo "== $$b (host object)"; ./bin/$$b; done
 	@set -e; for b in $(notdir $(HOST_VECTOR_BINS)); do for bits in $(HOST_VECTOR_CPU); do \
 	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
-	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(X86_UNIT_CPU)); do \
+	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(X86_UNIT_CPU) $(HASH_UNIT_CPU)); do \
 	  echo "== unit_host $$bits (host object)"; ./bin/unit_host $$bits; done
 	$(MAKE) wycheproof
 
@@ -56,34 +56,46 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # x86-64-kernels-cpu names the CPU. bin/x86_kernels_test, which counts
 # the calls into the kernels and runs none of their instructions, runs
 # here too.
+#
+# The same job holds sha256_hw.c's x86-64 arm on the SHA extensions
+# (docs/decisions.md 93), which a CPU with the kernels' instructions has:
+# bin/sha2_equiv_test, bin/unit_host under HASH_UNIT_CPU and the Wycheproof
+# host leg run under CH_REQUIRE_HASH_INSTRUCTIONS=1, so a CPU without the
+# extensions fails them too.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
-x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bin/unit_host
+x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bin/unit_host bin/sha2_equiv_test
 	@[ -n "$(X86_KERNEL_BINS)" ] || \
 	  { echo "x86-64-kernels-check: $(CC) does not build a host object for x86-64"; exit 1; }
 	@set -e; for b in $(X86_KERNEL_RUNS); do \
 	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
 	@set -e; for bits in $(X86_UNIT_CPU); do \
 	  echo "== unit_host $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/unit_host $$bits; done
-	CH_REQUIRE_X86_KERNELS=1 $(MAKE) --no-print-directory wycheproof
+	@echo "== sha2_equiv_test (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/sha2_equiv_test
+	@set -e; for bits in $(HASH_UNIT_CPU); do \
+	  echo "== unit_host $$bits (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/unit_host $$bits; done
+	CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 $(MAKE) --no-print-directory wycheproof
 
-# Whether this machine's CPU has what the x86-64 kernels run: AES-NI,
-# PCLMULQDQ, AVX2, VAES and VPCLMULQDQ, read from /proc/cpuinfo. It
-# names the CPU, and fails where one is missing.
+# Whether this machine's CPU has what the x86-64 kernels and sha256_hw.c
+# run: AES-NI, PCLMULQDQ, AVX2, VAES and VPCLMULQDQ, and the SHA
+# extensions with SSSE3 and SSE4.1, read from /proc/cpuinfo. It names the
+# CPU, and fails where one is missing.
 x86-64-kernels-cpu:
 	@[ -r /proc/cpuinfo ] || { echo "x86-64-kernels-cpu: no /proc/cpuinfo; this target runs on Linux x86-64"; exit 1; }
 	@cpu=$$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -1); \
-	for f in aes pclmulqdq avx2 vaes vpclmulqdq; do grep -qw "$$f" /proc/cpuinfo || \
+	for f in aes pclmulqdq avx2 vaes vpclmulqdq sha_ni ssse3 sse4_1; do grep -qw "$$f" /proc/cpuinfo || \
 	  { echo "x86-64-kernels-cpu: $$cpu lacks $$f"; exit 1; }; done; \
-	echo "x86-64-kernels-cpu: $$cpu has AES-NI, PCLMULQDQ, AVX2, VAES and VPCLMULQDQ"
+	echo "x86-64-kernels-cpu: $$cpu has AES-NI, PCLMULQDQ, AVX2, VAES, VPCLMULQDQ, the SHA extensions, SSSE3 and SSE4.1"
 
 # test/aes-runtime-qemu.sh: bin/aes_runtime_test and the two suite loop
 # binaries, host objects, built for x86-64 and run under qemu-x86_64 on a
 # CPU model with AES-NI and PCLMULQDQ turned off. Their rows without the
 # CH_CPU_CONSTANT_TIME_AES bit must pass there, and the rows with it and
-# bin/quic_test_hw's vectors must die of SIGILL. Linux only, with
+# bin/quic_test_hw's vectors must die of SIGILL. It does the same for
+# CH_CPU_CONSTANT_TIME_SHA256 on a model without the SHA extensions, and
+# runs bin/sha2_equiv_test on the model that has them. Linux only, with
 # qemu-user; X86_CC names a cross compiler on a host of another
-# architecture (docs/decisions.md 81 and 89). CI's
+# architecture (docs/decisions.md 81, 89 and 93). CI's
 # mips job runs it, and test/docker-aes-runtime-qemu.sh runs it in a
 # container on any host with docker.
 .PHONY: aes-runtime-qemu
@@ -93,10 +105,11 @@ aes-runtime-qemu:
 # test/aes-runtime-disasm.sh: three host objects, built with this host's
 # compiler and disassembled, hold the AES and carry-less multiply
 # instructions in aes_hw.c's, ghash_hw.c's, gcm_hw.c's and gcm_vaes.c's
-# functions and nowhere else. CI's arm64 job runs it, because no QEMU
-# arm64 model can turn the AES extension off (docs/decisions.md 81). The
-# recipe starts with + so the builds the script runs take this make's job
-# slots.
+# functions and nowhere else, and the SHA-256 instructions in
+# sha256_hw.c's. CI's arm64 job runs it, because no QEMU arm64 model can
+# turn the AES or the SHA-256 extension off (docs/decisions.md 81 and
+# 93). The recipe starts with + so the builds the script runs take this
+# make's job slots.
 .PHONY: aes-runtime-disasm
 aes-runtime-disasm:
 	+./test/aes-runtime-disasm.sh

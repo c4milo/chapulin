@@ -54,6 +54,18 @@ void hkdf_expand_label(size_t hash_len, const uint8_t *secret, const char *label
     fill_nondet(out, out_len);
 }
 
+#ifdef CH_CPU_RUNTIME
+// The same call in the copy on the CPU's hash instructions, which a host
+// object's entry runs for a direction whose cpu holds the hash's bit
+// (hkdf.h, docs/decisions.md 93). The copy is hkdf.c's text under another
+// name, so it has the contract above, and this stub is the stub above: the
+// keying is proved on either path.
+void hkdf_expand_label_hw(size_t hash_len, const uint8_t *secret, const char *label,
+                          const uint8_t *ctx, size_t ctx_len, uint8_t *out, size_t out_len) {
+    hkdf_expand_label(hash_len, secret, label, ctx, ctx_len, out, out_len);
+}
+#endif
+
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len) {
     __CPROVER_assert(key_len == expected_key_len, "aes: the suite's key length");
     __CPROVER_assert(__CPROVER_r_ok(key, key_len), "aes: key readable");

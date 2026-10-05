@@ -5399,9 +5399,8 @@ does nothing more.
 
     The rest of this entry is the design those rulings left open. It
     lands in four commits: the bits and the way a call learns them, with
-    no instruction code; SHA-256; SHA-512; and the measurements. This
-    text is the first commit's, and each later commit adds what it
-    measured.
+    no instruction code; SHA-256; SHA-512; and the measurements. Each
+    commit adds its own part of this text and what it measured.
 
     **The bits.** `CH_CPU_CONSTANT_TIME_SHA256` is 0x20,
     `CH_CPU_CONSTANT_TIME_SHA512` 0x40 and `CH_CPU_CONSTANT_TIME_SHA3`
@@ -5538,5 +5537,92 @@ does nothing more.
     - A test that keys a record direction of its own writes the
       direction's `cpu` first, where it wrote it afterwards.
 
-    Gain: none measured yet. No object holds a hash on the instructions,
-    so every entry runs the portable call whatever the value says.
+    Gain of the first commit alone: none. No object held a hash on the
+    instructions, so every entry ran the portable call whatever the
+    value said.
+
+    **The second commit: SHA-256 on the instructions.** A host object
+    gains three sources:
+
+    - `sha256_hw.c`, SHA-256 on FEAT_SHA256's four instructions on arm64
+      and on the SHA extensions on x86-64, through the compiler's
+      intrinsic headers. Its pragma puts the target attribute on its own
+      functions alone, as `aes_hw.c`'s does, so the object compiles with
+      no instruction flag and every other file runs on any CPU of its
+      architecture.
+    - `hkdf_hw.c` and `keysched_hw.c`, which are `hkdf.c` and
+      `keysched.c` compiled once more under the names `hash_hw.h` gives,
+      with their SHA-256 calls on `sha256_hw.c`, as a native copy is its
+      file on the native multiply (entry 87).
+
+    The entries that end `sha256.h`, `hkdf.h` and `keysched.h` now pick
+    a path. `sha256_on_instructions` reads
+    `CH_CPU_CONSTANT_TIME_SHA256`, and `hash_on_instructions` reads it
+    for a call whose `hash_len` names SHA-256. An entry branches once
+    and calls through no function pointer.
+
+    - **Why two files compile twice.** HMAC calls the hash six times,
+      and a key-schedule call runs several HMACs. A branch at each hash
+      call inside `hkdf.c` would need the value inside `hkdf.c`, which
+      is the parameter on the portable calls rejected above. With the
+      copies, `hkdf.c` and `keysched.c` keep their text, and one branch
+      at the entry picks the copy for the whole call.
+    - **One context type.** `sha256_init` starts a context for either
+      path, and the two paths keep the same state in it between calls.
+      No session hashes one context on both paths today: every call
+      that hashes one context takes the same value, or none. The
+      equivalence test still passes a context between the paths at
+      every call, so a later call site with no value at hand cannot
+      corrupt one.
+    - **Every working value in one struct.** Under HMAC the first block
+      is the key, so the schedule and the state of a block stand for the
+      key. `compress_blocks` keeps all of them in one `block_state` and
+      wipes it once. On x86-64, gcc 13 held the state a block began with
+      in a stack slot of its own for the sixty-four rounds, outside the
+      struct. `kept` reads those two fields through a volatile pointer
+      where the block ends, and the slot is gone. The equivalence test
+      finds the slot when the read is plain, as it finds the struct when
+      the wipe is dropped.
+    - **Which instruction runs first, on arm64.** SHA256H writes a, b, c
+      and d over its first operand and reads e, f, g and h; SHA256H2
+      does the reverse. Each reads the other's half as it was, so one
+      half is copied first. Apple clang 21 and gcc 13 both make the copy
+      the operand the first instruction writes over, so the copy sits on
+      that half's path from one group of four rounds to the next. With
+      SHA256H first in every group, a, b, c and d pass through a copy in
+      all sixteen groups. The file runs SHA256H first in one group and
+      SHA256H2 first in the next, so each half passes through one in
+      every other group. On the M1 Pro a loop over `sha256_of_hw` took
+      7.88 µs for 16 KiB with one order and 7.04 µs with the two in
+      turn, the fastest of 51 samples each, three runs apart agreeing to
+      the last digit shown.
+
+    What holds the new path is in docs/verification.md, "The hash
+    instructions": the equivalence test and its stack checks, the
+    counting tests, the published vectors under the bit, the cross
+    builds, the disassembly and the qemu rows.
+
+    **What the second commit changes for the proofs.** It changes 12 of
+    the 149 keys, the twelve host harnesses named above, and no device
+    harness. Each of the twelve verifies again. CBMC cannot read an
+    intrinsic, so no harness compiles `sha256_hw.c`. `aes_runtime`,
+    `record_suite` and `quic_keys_suite` call an entry whose other arm
+    is a copy, and each stubs that copy with the contract of the
+    portable call, which the copy's source text meets under either name.
+
+    Cost of the second commit:
+
+    - A host object's code grows by 6,445 bytes for a `TRUST=webpki`
+      client, 6,481 for a server and 7,785 for the `ROLE=both`
+      `SUITE=aesgcm` QUIC object: `size`'s text column of
+      `bin/chapulin.o` on arm64 under Apple clang 21, before and after.
+    - Three more sources in every host object's list, in the Makefile
+      and in `build.zig`.
+    - `hkdf.c` and `keysched.c` are read twice by whoever audits a host
+      object's symbols, once under each set of names.
+    - cppcheck's run over the host object's copies names x86-64 and the
+      size of `unsigned __int128` on its command line, because
+      `sha256.h` now includes `cpu_cfg.h` in a host object.
+
+    Gain of the second commit: the fourth commit's table in
+    docs/performance.md holds the measured rows.

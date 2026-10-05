@@ -21,7 +21,7 @@ static void test_cpu_values_at_init(void) {
         size_t n = 0;
         ch_cfg cfg;
         client_config(&cfg);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         int rc = ch_record_init(&probe, &cfg);
         if (taken) {
             CHECK(rc == CH_OK && ch_record_out(&probe, wire, sizeof wire, &n) == CH_OK && n > 0);
@@ -30,7 +30,7 @@ static void test_cpu_values_at_init(void) {
             CHECK(ch_record_out(&probe, wire, sizeof wire, &n) == CH_EINVAL);
         }
         server_config(&cfg);
-        cfg.cpu = test_cpu_values[i];
+        cfg.cpu = test_cpu_value(i);
         rc = ch_srv_record_init(&probe, &cfg);
         if (taken) {
             CHECK(rc == CH_OK && ch_record_state(&probe) != CH_ST_FAILED);
