@@ -16,6 +16,28 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 54b479ca
+
+Both CSVs now hold runs of 54b479ca, on 2026-10-06, the tree of
+docs/decisions.md 100: ML-KEM's matrix sampler squeezes eight groups a
+call. The M1 Pro ran under `0xe7`, as in the run of 914adee9 below. The
+x86-64 runner was an AMD EPYC 9V74, where earlier runs were mostly on an
+EPYC 7763, so its times compare with that run's only as ratios to
+OpenSSL's.
+
+| row | M1 Pro, 914adee9 | M1 Pro, 54b479ca |
+| --- | --- | --- |
+| mlkem768_keygen, µs | 20.4 | 13.9 |
+| mlkem768_encaps, µs | 22.3 | 15.8 |
+| mlkem768_decaps, µs | 24.5 | 18.0 |
+
+- **ML-KEM-768 runs in 0.68 to 0.73 of its time on the M1 Pro.** With
+  Keccak on the SHA-3 instructions, the three-byte squeezes had become
+  the largest cost the sampler left.
+- **On the x86-64 runner ML-KEM-768 takes 1.32 to 2.62 times OpenSSL's
+  time**, where the EPYC 7763 run of e656fd3a read 1.61 to 3.04. Keccak's
+  rounds and the NTTs take most of the rest under gcc 13 at `-O2`.
+
 ## The run of 914adee9
 
 The M1 Pro's CSV now holds the run of 914adee9, on 2026-10-06, the tree
