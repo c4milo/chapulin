@@ -2204,13 +2204,28 @@ launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-chec
 launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # p256_wide_verify: the host object's ECDSA P-256 verifier over contracts of
-# the nine wide entries it calls, with p256_scalar.c's marshalling,
-# reduction and range predicates on their real bodies
-# (docs/decisions.md 96). The bound is the 64 bytes of the key that
-# fill_nondet writes. The line runs without --unsigned-overflow-check, as
-# p256_scalar's does: p256_scalar.c builds its masks and its borrows from
-# sums that wrap on purpose, and p256_wide_verify.c adds nothing itself.
+# the wide entries it calls, with p256_scalar.c's marshalling, reduction
+# and range predicates on their real bodies (docs/decisions.md 96 and
+# 104). The bound is the 64 bytes of the key that fill_nondet writes. The
+# line runs without --unsigned-overflow-check, as p256_scalar's does:
+# p256_scalar.c builds its masks and its borrows from sums that wrap on
+# purpose, and p256_wide_verify.c adds nothing itself.
 launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# The verifier's variable-time points, p256_wide_verify_point.c
+# (docs/decisions.md 104), in two harnesses over proof/p256_wide_field_stubs.h,
+# as p384_wide_point and p384_wide_digits split P-384's: the formulas, the
+# table of the key's multiples, the key's conversion and the last
+# comparison in one, and the signed digits of any scalar on their real
+# body, whose loop walks 256 bits, with the two additions of a digit's
+# multiple in the other. Each links p256_wide_table.c, whose row 0 the
+# additions of G's multiples read. Measured (cbmc 6.11.0, kissat,
+# prove-capped.sh on the M1 Pro):
+#   p256_wide_verify_point   281 properties, 6 s, 108 MB
+#   p256_wide_verify_digits  281 properties, 7 s, 281 MB
+# and p256_wide_verify above, over the new entries' contracts, 547 properties,
+# 4 s, 83 MB.
+launch fast full p256_wide_verify_point 9 "" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # P-384 on six 64-bit limbs, which a host object verifies with
 # (docs/decisions.md 97): three layers, each over a contract of the one
 # below it. p384_wide_field runs every routine of p384_wide_field.c but

@@ -438,9 +438,10 @@ What the M1 Pro's column shows:
 - The two ECDSA verifiers run on 64-bit limbs in every session, where the 32-bit limbs took 23
   and 13 times OpenSSL's time. P-384 verifies in 0.89 of it: six 64-bit limbs, coordinates kept in
   the Montgomery domain and one pass over both scalars' signed digits (decision 97). P-256
-  verifies in 1.89 times, on the wide files, whose scalar multiplications are constant time and
-  whose doubling is the complete one (decision 96). A P-256 verifier written for public inputs is
-  the step nobody has tried.
+  verified in 1.89 times in this run, on the wide files, whose scalar multiplications are
+  constant time and whose doubling is the complete one (decision 96). Decision 104 has since
+  moved it to variable-time Jacobian points in one pass, as P-384's, which this table has not
+  recorded yet.
 - SHA3-256 takes OpenSSL's time over 16 KiB and 0.59 of it over 64 bytes. Under
   `CH_CPU_CONSTANT_TIME_SHA3` an arm64 object that clang compiled runs Keccak on the ARMv8 SHA-3
   instructions, as OpenSSL does (decision 99). On the portable code it took 1.58 and 0.89 times,

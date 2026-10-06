@@ -199,7 +199,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
-        p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h \
+        p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
@@ -210,11 +210,12 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 # multiplication reads, which a host object holds beside p256_field.c,
 # p256_scalar.c and p256_point.c (docs/decisions.md 94): the field and the
 # scalar arithmetic on four 64-bit limbs, the points and the two scalar
-# multiplications over them, and the wipe of the stack their calls used.
-# They are named once, here, for the object, for the test binaries that
-# link a host object's P-256 and for the lints.
+# multiplications over them, and the wipe of the stack their calls used;
+# and the verifier with its own variable-time points (docs/decisions.md 96
+# and 104). They are named once, here, for the object, for the test
+# binaries that link a host object's P-256 and for the lints.
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
-                  p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c
+                  p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c p256_wide_verify_point.c
 
 # P-384 on six 64-bit limbs: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
@@ -524,7 +525,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/poly1305_equiv_residue.h test/p256_equiv_field.h test/p256_equiv_residue.h \
-         test/p256_equiv_table.h \
+         test/p256_equiv_table.h test/p256_verify_equiv_joint.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_exact_fill.h \
@@ -3268,15 +3269,16 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # the wide X25519 field and the three wide P-256 files that hold a
 # dispatched entry, and the stubs that count each call
 # (test/widemul_runtime_count.h). WIDEMUL_COUNTED names what the units
-# replace on a link line. p256_field.c, p256_wide_field.c and the table of
-# multiples of G hold no dispatched entry, so a counting binary links them
-# as they are (WIDEMUL_COUNT_FIELDS).
+# replace on a link line. p256_field.c, p256_wide_field.c, the table of
+# multiples of G and the verifier's points hold no dispatched entry, so a
+# counting binary links them as they are (WIDEMUL_COUNT_FIELDS).
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_wide.c \
                        test/widemul_count_wide_p256.c test/widemul_count_sign64.c
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
-WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c
+WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c \
+                        p256_wide_verify_point.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
@@ -6485,10 +6487,24 @@ HASH_HW_BRANCH_CEILING := \
 #     digit is positive, which reads the window's number.
 #   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
 #     holds a branch.
-#   p256_wide_verify.c's 5: the range checks of r and of s, the decoder's
-#     verdict on the key, the affine conversion's on R and the last
-#     comparison's. Every one reads a signature, a key or a hash, which
-#     are public (docs/decisions.md 96).
+#   p256_wide_verify.c's 5: the range checks of r and of s, the second
+#     test inside the range check, the decoder's verdict on the key and the
+#     infinity test of the sum. Every one reads a signature, a key or a
+#     hash, which are public (docs/decisions.md 96).
+#   p256_wide_verify_point.c's 22, the verifier's points, which are
+#     variable time on purpose (docs/decisions.md 104): on arm64, 4 in
+#     signed_digits (its loop over the bit positions, the positions a digit
+#     passes over, the test of a bit against the carry and the narrower
+#     window at the top), 4 in point_add (either operand at infinity, and
+#     the two tests for equal points and for negatives), 4 in
+#     p256_wide_jacobian_x_is_r (the first comparison, the carry out of r +
+#     n, the test of r + n against p and the loop of that sum), and 10 in
+#     p256_wide_jacobian_double_mul, which holds the loop over the digits,
+#     the tests of each scalar's digit and of its sign, and the doubling
+#     and the mixed addition the compiler put inside it with their tests of
+#     infinity, of equal points and of negatives. Every one reads a digit
+#     of u1 or u2, a coordinate of a point computed from the key, or r, and
+#     all of them are public.
 P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_field.c:7 x86-64/p256_wide_field.c:7 \
   arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
@@ -6496,7 +6512,8 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_mul.c:12 x86-64/p256_wide_mul.c:12 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
-  arm64/p256_wide_verify.c:5 x86-64/p256_wide_verify.c:5
+  arm64/p256_wide_verify.c:5 x86-64/p256_wide_verify.c:5 \
+  arm64/p256_wide_verify_point.c:22 x86-64/p256_wide_verify_point.c:22
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18

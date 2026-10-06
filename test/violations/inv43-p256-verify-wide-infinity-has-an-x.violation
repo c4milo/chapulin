@@ -1,16 +1,15 @@
 invariant: INV-43
 file: p256_wide_verify.c
 catches: proof/prove-one.sh p256_wide_verify
-reason: the host verifier reads an X for R whatever the affine conversion
-  answers, so it compares r with what the conversion wrote for the point
-  at infinity. The conversion writes zero there and r is not zero, so
-  every test passes. The proof's stub of the conversion writes any
-  bytes, and the proof requires the verdict 0 when it reports
-  infinity.
+reason: the host verifier compares r with the x of a sum at infinity. The
+  sum's coordinates are then zero, and X == r * Z^2 holds, so the verifier
+  accepts a pair whose u1*G and u2*Q are negatives, which is no signature.
+  The proof requires the verdict 0 when the infinity test answers 1, and
+  its stub of the comparison requires a finite sum; the cases of
+  bin/p256_verify_equiv_test whose R is the point at infinity fail too.
 
 --- old
-    if (p256_wide_point_affine(x, NULL, &result) == 0) {
+    if (p256_wide_jacobian_is_infinity(&sum)) {
         return 0;
     }
 --- new
-    (void)p256_wide_point_affine(x, NULL, &result);

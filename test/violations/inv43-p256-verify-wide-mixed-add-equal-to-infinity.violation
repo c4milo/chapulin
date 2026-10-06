@@ -1,0 +1,20 @@
+invariant: INV-43
+file: p256_wide_verify_point.c
+catches: p256_verify_equiv_test
+reason: the host verifier's mixed addition, which adds an entry of the
+  table of multiples of G, gives the point at infinity when the running
+  sum is that entry, where the sum is its double. The case of
+  bin/p256_verify_equiv_test under the key G/2 with u1 = 1 and u2 = 2
+  brings the running sum to G just before G is added, and wants the
+  signature taken.
+
+--- old
+    p256_wide_fe_sub(&rr, &s2, &a->y);
+    if (fe_is_zero(&h)) {
+        if (fe_is_zero(&rr)) {
+            point_double(o, a);
+--- new
+    p256_wide_fe_sub(&rr, &s2, &a->y);
+    if (fe_is_zero(&h)) {
+        if (fe_is_zero(&rr)) {
+            memset(o, 0, sizeof *o);

@@ -7,6 +7,6 @@ reason: the host verifier multiplies G by u2 and the key by u1, so no
   ones the test computed.
 
 --- old
-    double_scalar_mul(&result, &u1, &u2, &q);
+    p256_wide_jacobian_double_mul(&sum, &u1, &u2, &key);
 --- new
-    double_scalar_mul(&result, &u2, &u1, &q);
+    p256_wide_jacobian_double_mul(&sum, &u2, &u1, &key);

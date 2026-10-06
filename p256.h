@@ -4,10 +4,10 @@
 // deliberately variable time and carries none of the constant-time
 // burden the rest of this codebase does. A device object computes it on
 // p256.c's own 32-bit limbs. A host object (-DCH_CPU_RUNTIME, cpu_cfg.h)
-// computes it on the wide P-256 files' 64-bit limbs, which are constant
-// time and which it already holds (p256_wide_verify.h): the verdict is
+// computes it on the wide P-256 field's 64-bit limbs, with points of its
+// own that are variable time too (p256_wide_verify.h): the verdict is
 // the same for every input, and no bit of ch_cfg.cpu picks between the
-// two (docs/decisions.md 96).
+// two (docs/decisions.md 96 and 104).
 #ifndef CH_P256_H
 #define CH_P256_H
 

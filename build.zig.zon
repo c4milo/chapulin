@@ -120,6 +120,8 @@
         "p256_wide_table.h",
         "p256_wide_verify.c",
         "p256_wide_verify.h",
+        "p256_wide_verify_point.c",
+        "p256_wide_verify_point.h",
         "p256_wide_wipe.c",
         "p256_wide_wipe.h",
         "p384.c",

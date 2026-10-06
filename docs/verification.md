@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-93 of the 119 C sources in the tree root are compiled into a
+94 of the 120 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -787,20 +787,22 @@ The entries are grouped by area:
 
 - **Harness:** `p256_wide_verify` (fast)
 - **Build:** a host object's ECDSA P-256 verifier, `p256_wide_verify.c`
-  (decision 96), under `-DCH_CPU_RUNTIME`.
+  (decisions 96 and 104), under `-DCH_CPU_RUNTIME`.
 - **Proves:** `p256_wide_verify_rs` over any key, hash, r and s, with
-  the nine entries of the wide files it calls stubbed to their
-  contracts, and `p256_scalar.c`'s marshalling, reduction and range
-  predicates on their real bodies:
+  the entries of the wide files it calls stubbed to their contracts, and
+  `p256_scalar.c`'s marshalling, reduction and range predicates on their
+  real bodies:
   - it answers 0 or 1;
   - it answers 0 for an r or an s outside 1..n-1, and calls no entry of
     the wide files for one;
-  - it answers 0 for a key the decoder refuses and for an R at
-    infinity, and 1 only after the decoder took the key and the affine
-    conversion gave an X;
+  - it answers 0 for a key the decoder refuses and for a sum at
+    infinity, converts no key the decoder refused, asks for no x of a
+    sum at infinity, and answers 1 only after the decoder took the key,
+    the sum was finite and its x was r modulo n;
   - the encoding it hands the decoder starts with 0x04;
-  - every scalar it hands `p256_wide_scalar_inverse` and
-    `p256_wide_scalar_mul` is below n.
+  - every scalar it hands `p256_wide_scalar_inverse`,
+    `p256_wide_scalar_mul` and `p256_wide_jacobian_double_mul` is below
+    n, and the r it compares is in 1..n-1.
 
   Asserting that the verdict is never 1 fails, so an accepting verdict
   is reached.
@@ -810,6 +812,33 @@ The entries are grouped by area:
   `bin/p256_verify_equiv_test` holds the verdict to `p256.c`'s 32-bit
   arm and the Wycheproof host leg to Wycheproof's; see
   [The wide P-256 files](#the-wide-p-256-files).
+
+#### p256_wide_verify_point, p256_wide_verify_digits
+
+- **Harnesses:** `p256_wide_verify_point` (fast), `p256_wide_verify_digits` (fast)
+- **Build:** the verifier's points, `p256_wide_verify_point.c`
+  (decision 104), under `-DCH_CPU_RUNTIME`, over the contracts of
+  `proof/p256_wide_field_stubs.h`, whose predicates answer an
+  unconstrained mask, so every branch on a coordinate is taken both
+  ways. Both link `p256_wide_table.c`.
+- **Proves:** memory safety and absence of UB, with the unsigned
+  overflow check on:
+  - `p256_wide_verify_point`: the doubling, the general and the mixed
+    addition on any points, into another point and in place; the table
+    of a point's eight odd multiples; the key's conversion; the
+    infinity test and the comparison of x with r on any point and any r;
+  - `p256_wide_verify_digits`: the signed digits of any 256-bit scalar
+    on their real body, each digit zero or odd in [-15, 15], the count
+    at most 257 and the digits past it zero; and the addition of any
+    digit's multiple of G and of the key, so both table reads are in
+    bounds.
+- **Bound:** any scalar, any coordinates, any r.
+- **Not proved:** the loop of `p256_wide_jacobian_double_mul`, whose
+  body is the doubling and the two additions proven above and whose
+  reads of the digit arrays stay below the count the digits proof
+  bounds; that a result is the sum of two points; and that the digits
+  spell the scalar. `bin/p256_verify_equiv_test` and the Wycheproof host
+  leg hold the verdicts.
 
 #### p256_sign
 
@@ -2532,7 +2561,7 @@ the wide files to the same answers:
   verifier, `p256_wide_verify.c`, to `p256.c`'s 32-bit arm, which
   `test/p256_verify_portable.c` compiles under a second name. It
   requires one verdict from the two, and the verdict each case names,
-  over 995 inputs:
+  over 1,113 verdicts:
   - signatures `p256_sign.c` wrote under both of its answers, each with
     one bit changed in the hash, in the key and in the signature;
   - signatures the test computes on `p256_scalar.c` and `p256_point.c`,
@@ -2541,6 +2570,11 @@ the wide files to the same answers:
     is zero; u2 of one, where R is the key; u1·G equal to u2·Q, where
     the last addition is a doubling; and their negatives, where R is
     the point at infinity;
+  - five cases over four keys whose multiples meet the sum inside the
+    host arm's pass over the digits (decision 104): the keys G and -G
+    with u1 equal to u2, the key -G with u1 = u2 + 2, and the keys G/2
+    and -G/2 with u1 = 1 and u2 = 2, so that an addition there has two
+    equal operands or two negatives;
   - r and s at 0, n - 1, n and 2^256 - 1; a key with a coordinate at p
     or above, a key off the curve and a key of zeros; and DER that is
     cut short, runs long, has another tag or pads an INTEGER.

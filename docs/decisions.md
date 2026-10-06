@@ -7395,3 +7395,77 @@ does nothing more.
       The signer's check raises a secret candidate with
       `rsa_mont64_public`, and a division of a secret takes a time that
       depends on it.
+104. **A host object verifies ECDSA P-256 on variable-time Jacobian points
+    over the wide field.** Entry 96 put the host verifier on the wide
+    files, whose scalar multiplications are constant time, and rejected a
+    variable-time verifier because nobody had measured what it saves. On
+    the M1 Pro under Apple clang 21 the verifier retired 1,172,779
+    instructions and took about 100 µs, 1.89 times OpenSSL's time, and
+    253 complete doublings of 13 products each were most of it.
+    `p256_wide_verify_point.c` is entry 97's P-384 verifier on P-256's
+    field:
+
+    - **Jacobian points.** A doubling is EFD's dbl-2001-b for a = -3, 8
+      products. A general addition is 16 products and a mixed addition
+      11. The formulas leave out a point at infinity, two equal points and
+      two negatives, and each addition tests for those three cases and
+      takes them by a branch. The inputs are public, so the branches read
+      nothing secret. P-256 has prime order, so no finite point has Y = 0,
+      and the doubling takes a point at infinity to a point at infinity.
+    - **One pass over both scalars.** Each scalar is written in the
+      window-5 non-adjacent form, digits zero or odd in [-15, 15] with at
+      least four zeros after each digit that is not zero, so a scalar adds
+      a point about once in six positions and the two share 256
+      doublings. A digit of u1 adds an entry of row 0 of
+      `p256_wide_table.c`, the affine odd multiples of G, read by index,
+      through the mixed addition. A digit of u2 adds one of eight odd
+      multiples of the key the pass computes first, through the general
+      addition.
+    - **No inversion.** x is X / Z^2, so the sum's x is r exactly when
+      X == r Z^2, and x mod n is r exactly when x is r, or is r + n and
+      r + n is below p. Two products replace the inversion of Z.
+    - **What stays.** `p256_wide_verify.c` keeps its range checks, the
+      wide decoder of the key, the reduction of the hash and s's inverse
+      and the two products on `p256_wide_scalar.c`, constant time though
+      none of them needs it. A device object keeps `p256.c`'s 32-bit
+      arithmetic, which stays the reference.
+    - **What holds it.** INV-43. `bin/p256_verify_equiv_test` gains five
+      cases over four keys whose multiples meet the sum the pass builds:
+      the keys G and -G with u1 equal to u2, which make the top digit's
+      two additions a doubling and a sum to infinity, the key -G with
+      u1 = u2 + 2, whose sum passes through the point at infinity and ends
+      at 2G, and the keys G/2 and -G/2 with u1 = 1 and u2 = 2, which make
+      the addition of G a doubling and a sum to infinity. It now holds
+      1,113 verdicts. Two
+      proofs over the field's contracts, `p256_wide_verify_point` (281
+      properties, 6 s, 108 MB) and `p256_wide_verify_digits` (281, 7 s,
+      281 MB), hold the formulas, the table reads and the digits to
+      memory safety and the digits to their range, and
+      `p256_wide_verify` (547, 4 s, 83 MB) holds the refusals over the new
+      entries' contracts. Five of the eleven `inv43-*` violations edit
+      the new code, and five more each break one case an addition takes
+      by a branch; `bin/p256_verify_equiv_test` catches the five new ones.
+    - **Branches.** `lint-wide-multiply` records 22 conditional branches
+      in `p256_wide_verify_point.c` under both 64-bit specs, each read
+      against the source: loops over digits and limbs, digits and their
+      signs, and the tests of infinity, of equal points and of negatives,
+      all on public values.
+
+    Gain, in instructions a verification retires, which the machine's
+    load does not move: 705,794 on the M1 Pro under Apple clang 21, where
+    the wide files took 1,172,779, and under qemu-x86_64 1,419,886 under
+    gcc 13 and 1,092,457 under clang 18, where they took 2,310,783 and
+    1,829,581. The field's products are 69% of the rest under gcc, and
+    s's constant-time inverse 9%.
+
+    Cost: 402 lines in two files, and a second set of point formulas
+    beside the constant-time ones, which an auditor reads too.
+
+    Rejected:
+
+    - **Unsigned windows over the 32 KiB table**, the shape
+      `p256_wide_base_mul` reads. With no doubling to share, u1*G would
+      take 64 additions where the joint pass takes about 43.
+    - **The key's multiples in affine coordinates.** Each addition of one
+      would save 5 products, about 43 times, and making them affine costs
+      an inversion of about 270 products.

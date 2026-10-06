@@ -7,11 +7,14 @@
 // linked as it is. The four define no static name twice, so one unit
 // holds them.
 //
-// p256_wide_verify.c is the fourth. The verifier calls the six entries in
-// every session, whatever a session states about its multiply, because
-// its inputs are public (docs/decisions.md 96). In this unit its calls
-// are to the second names, so they count for neither answer, and a count
-// still says which copy a session's secret operations ran.
+// p256_wide_verify.c is the fourth. The verifier calls three of the six
+// entries, the decoder and the two scalar routines, in every session,
+// whatever a session states about its multiply, because its inputs are
+// public (docs/decisions.md 96). In this unit its calls are to the second
+// names, so they count for neither answer, and a count still says which
+// copy a session's secret operations ran. Its points are
+// p256_wide_verify_point.c's, which hold no dispatched entry, and a
+// counting binary links that file as it is (docs/decisions.md 104).
 #define p256_wide_scalar_mul p256_wide_scalar_mul_counted
 #define p256_wide_scalar_inverse p256_wide_scalar_inverse_counted
 #define p256_wide_point_from_bytes p256_wide_point_from_bytes_counted

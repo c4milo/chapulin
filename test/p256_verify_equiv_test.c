@@ -21,6 +21,9 @@
 //     where R is the key itself; the case where u1*G equals u2*Q and the
 //     last addition is a doubling; and the case where they are negatives
 //     and R is the point at infinity;
+//   - five cases over four keys whose multiples meet the sum inside the
+//     host arm's pass over the digits, so that an addition there has two
+//     equal operands or two negatives (test/p256_verify_equiv_joint.h);
 //   - r and s at 0, n - 1, n and 2^256 - 1;
 //   - a key with a coordinate at p or above it, a key off the curve and
 //     a key of zeros;
@@ -357,6 +360,8 @@ static void sum_case(const fixture *f) {
     both_rs("R equal to the key", f->pub, hash, r_be, r_be, 1);
 }
 
+#include "p256_verify_equiv_joint.h"
+
 // r and s at the ends of their range and past them, a key no curve point
 // encodes, and a signature no DER reader takes, each beside one valid
 // signature under the same key.
@@ -434,6 +439,7 @@ int main(void) {
         small_s_case(&f);
         hash_case(&f);
         sum_case(&f);
+        joint_case();
         refusal_case(&f);
     }
     if (failures != 0) {

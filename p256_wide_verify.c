@@ -1,7 +1,9 @@
 // ECDSA P-256 verification over the wide files, which a host object holds
 // (p256_wide_verify.h): FIPS 186-4 6.4.2's check of one signature, with
-// the scalars on p256_wide_scalar.c, the two scalar multiplications on
-// p256_wide_mul.c and their sum on p256_wide_point.c's complete addition.
+// the scalars on p256_wide_scalar.c, the key's decoding on
+// p256_wide_point.c, and the sum u1*G + u2*Q and the comparison of its x
+// with r on p256_wide_verify_point.c, whose points are Jacobian and
+// variable time (docs/decisions.md 104).
 //
 // Every value here is public, so the branches below read them freely:
 // each one is a verdict the caller sees.
@@ -11,32 +13,15 @@
 
 #include <string.h>
 
-#include "ct.h"
 #include "p256_point.h"
 #include "p256_scalar.h"
-#include "p256_wide_mul.h"
 #include "p256_wide_point.h"
 #include "p256_wide_scalar.h"
+#include "p256_wide_verify_point.h"
 
 // 1 when a is in 1..n-1.
 static int scalar_in_range(const p256_scalar *a) {
     return p256_scalar_zero_mask(a) == 0 && p256_scalar_reduced_mask(a) != 0;
-}
-
-// o = u1*G + u2*q. The addition is the complete one, so u1*G equal to
-// u2*q, or to its negative, takes no case of its own.
-static void double_scalar_mul(p256_point *o, const p256_scalar *u1, const p256_scalar *u2,
-                              const p256_point *q) {
-    p256_point base_part;
-    p256_point key_part;
-    p256_wide_point sum;
-    p256_wide_point addend;
-    p256_wide_base_mul(&base_part, u1);
-    p256_wide_mul(&key_part, u2, q);
-    p256_wide_point_from_portable(&sum, &base_part);
-    p256_wide_point_from_portable(&addend, &key_part);
-    p256_wide_point_add(&sum, &sum, &addend);
-    p256_wide_point_to_portable(o, &sum);
 }
 
 int p256_wide_verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
@@ -73,21 +58,16 @@ int p256_wide_verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const
     p256_wide_scalar_mul(&u1, &e, &w);
     p256_wide_scalar_mul(&u2, &r, &w);
 
-    // R = u1*G + u2*Q, and v = R's affine X mod n. R at infinity has no
-    // X. X is below p, and p is below 2n, so p256_scalar_reduce's one
-    // subtraction reduces it.
-    p256_point result;
-    uint8_t x[P256_FE_LEN];
-    double_scalar_mul(&result, &u1, &u2, &q);
-    if (p256_wide_point_affine(x, NULL, &result) == 0) {
+    // R = u1*G + u2*Q, and the signature holds when R is a finite point
+    // whose x is r modulo n.
+    p256_wide_jacobian key;
+    p256_wide_jacobian sum;
+    p256_wide_jacobian_from_key(&key, &q);
+    p256_wide_jacobian_double_mul(&sum, &u1, &u2, &key);
+    if (p256_wide_jacobian_is_infinity(&sum)) {
         return 0;
     }
-    p256_scalar v;
-    uint8_t v_be[P256_SCALAR_LEN];
-    p256_scalar_from_bytes(&v, x);
-    p256_scalar_reduce(&v, &v);
-    p256_scalar_to_bytes(v_be, &v);
-    return ct_memeq(v_be, r_be, P256_SCALAR_LEN) != 0;
+    return p256_wide_jacobian_x_is_r(&sum, &r);
 }
 
 #endif // CH_CPU_RUNTIME

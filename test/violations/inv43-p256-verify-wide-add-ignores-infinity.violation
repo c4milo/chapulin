@@ -1,0 +1,16 @@
+invariant: INV-43
+file: p256_wide_verify_point.c
+catches: p256_verify_equiv_test
+reason: the host verifier's general Jacobian addition runs its formula on
+  a running sum at infinity. The sum's coordinates are then zero, U1 and
+  S1 are zero, the formula takes the case of two equal points and doubles
+  the zero point, so the first multiple of the key the pass adds is lost
+  whenever no multiple of G came before it. bin/p256_verify_equiv_test
+  requires the 32-bit verifier's verdict on every signature it tries.
+
+--- old
+    if (p256_wide_jacobian_is_infinity(a)) {
+        *o = *b;
+        return;
+    }
+--- new

@@ -1,0 +1,21 @@
+invariant: INV-43
+file: p256_wide_verify_point.c
+catches: p256_verify_equiv_test
+reason: the host verifier's general Jacobian addition gives the point at
+  infinity for two equal points, where the sum is their double. The
+  addition formula has no answer for that case, so the file tests for it
+  and doubles. A random signature meets it one time in 2^256; the case of
+  bin/p256_verify_equiv_test under the key G with u1 equal to u2 adds a
+  multiple of the key to the same multiple of G at the top digit, and
+  wants the signature taken.
+
+--- old
+    p256_wide_fe_sub(&rr, &s2, &s1);
+    if (fe_is_zero(&h)) {
+        if (fe_is_zero(&rr)) {
+            point_double(o, a);
+--- new
+    p256_wide_fe_sub(&rr, &s2, &s1);
+    if (fe_is_zero(&h)) {
+        if (fe_is_zero(&rr)) {
+            memset(o, 0, sizeof *o);
