@@ -9,16 +9,18 @@
 // RSA-3072, or RSA-4096 under CH_TRUST_WEBPKI.
 //
 // That is a device object's rsa_vp1, and the reference. A host object
-// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the few lines of the first arm
-// below in its place: the same exponentiation on rsa_mont64.c's 64-bit
-// limbs, in every session, because nothing here is secret and so no
-// caller has to state the multiply's timing (docs/decisions.md 95).
-// bin/rsa_equiv_test compiles both arms into one binary and requires the
-// same bytes from each.
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the first arm below in its
+// place: the same exponentiation on rsa_mont64.c's 64-bit limbs, in every
+// session, because nothing here is secret and so no caller has to state
+// the multiply's timing (docs/decisions.md 95). That arm computes R^2 by
+// a long division of its own, which branches on the modulus
+// (docs/decisions.md 103). bin/rsa_equiv_test compiles both arms into one
+// binary and requires the same bytes from each.
 #include "rsa.h"
 
 #ifdef CH_CPU_RUNTIME
 
+#include "ct.h"
 #include "rsa_mont64.h"
 
 // The bit length of the n_len-byte n: the position of its top set bit,
@@ -41,9 +43,90 @@ static size_t bit_length(const uint8_t *n, size_t n_len) {
     return bits;
 }
 
+// rem = rem * 2^64 mod m, for rem below m and an m of k >= 2 limbs whose
+// top bit is set. It is one step of a long division, Knuth's algorithm D
+// (The Art of Computer Programming, vol. 2, 4.3.1), whose dividend is rem
+// with a zero limb below it.
+//
+// The estimate of the quotient divides the dividend's top two limbs by
+// m's top limb. The quotient is below 2^64, because rem is below m. When
+// rem's top limb equals m's, that division passes 2^64, and the estimate
+// is 2^64 - 1. Knuth's Theorem B says the estimate is the quotient or at
+// most 2 above it, because m's top limb is at least 2^63. So the step
+// subtracts the estimate times m and then adds m back, at most twice.
+//
+// m is public, so every value here is public: the step branches on them,
+// and the division takes whatever time it takes.
+static void times_limb_mod(uint64_t *rem, const uint64_t *m, size_t k) {
+    uint64_t top = rem[k - 1];
+    uint64_t estimate = UINT64_MAX;
+    if (top < m[k - 1]) {
+        estimate = (uint64_t)((((ct_u128)top << 64) | rem[k - 2]) / m[k - 1]);
+    }
+    // The dividend less the estimate times m, from the bottom limb up.
+    // Limb j of the dividend is rem[j - 1], and limb 0 is zero. A
+    // subtraction adds the complement and one, as rsa_mont64.c's do, so
+    // the carry out is 1 where no borrow happened.
+    uint64_t dividend_limb = 0;
+    uint64_t product_carry = 0;
+    uint64_t carry = 1;
+    for (size_t j = 0; j < k; j++) {
+        ct_u128 product = ct_mul128(estimate, m[j]) + product_carry;
+        product_carry = (uint64_t)(product >> 64);
+        ct_u128 difference = (ct_u128)dividend_limb + ~(uint64_t)product + carry;
+        dividend_limb = rem[j];
+        rem[j] = (uint64_t)difference;
+        carry = (uint64_t)(difference >> 64);
+    }
+    // The difference's limb above the k, in two's complement: 0 when the
+    // difference is at or above zero, and 2^64 - 1 or 2^64 - 2 when the
+    // estimate was 1 or 2 too large. Each pass adds m, and the carry out
+    // of its top limb moves that limb toward 0, where it wraps on purpose.
+    uint64_t above = (uint64_t)((ct_u128)dividend_limb + ~product_carry + carry);
+    for (int pass = 0; pass < 2 && above != 0; pass++) {
+        uint64_t sum_carry = 0;
+        for (size_t j = 0; j < k; j++) {
+            ct_u128 sum = (ct_u128)rem[j] + m[j] + sum_carry;
+            rem[j] = (uint64_t)sum;
+            sum_carry = (uint64_t)(sum >> 64);
+        }
+        above += sum_carry;
+    }
+}
+
+// r2 = R^2 mod m, with R = 2^(64k), for an m of k >= 2 limbs whose top
+// bit is set. R mod m is R - m, because m is below R and at least R / 2,
+// and k steps of times_limb_mod multiply it by R modulo m.
+static void r2_by_division(uint64_t *r2, const uint64_t *m, size_t k) {
+    // R - m over k limbs: the complement of m, plus one.
+    uint64_t carry = 1;
+    for (size_t j = 0; j < k; j++) {
+        ct_u128 sum = (ct_u128)~m[j] + carry;
+        r2[j] = (uint64_t)sum;
+        carry = (uint64_t)(sum >> 64);
+    }
+    for (size_t i = 0; i < k; i++) {
+        times_limb_mod(r2, m, k);
+    }
+}
+
+// A modulus whose top limb has its top bit set, as every RSA key's does,
+// takes R^2 by the division above, about a sixth of the time
+// rsa_mont64_modulus_init takes for RSA-2048 (docs/decisions.md 103). That
+// setup doubles 2k + 1 times and squares five times, in a time that
+// depends on the modulus's length alone, which the signer needs for its
+// secret primes and the verifier does not. Any other modulus still takes
+// it.
 void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
     rsa_mont64_modulus mod;
-    rsa_mont64_modulus_init(&mod, n, n_len, bit_length(n, n_len));
+    size_t k = (n_len + 7) / 8;
+    size_t bits = bit_length(n, n_len);
+    if (k >= 2 && bits == 64 * k) {
+        rsa_mont64_modulus_load(&mod, n, n_len);
+        r2_by_division(mod.r2, mod.m, k);
+    } else {
+        rsa_mont64_modulus_init(&mod, n, n_len, bits);
+    }
     rsa_mont64_public(em, sig, n_len, &mod);
 }
 

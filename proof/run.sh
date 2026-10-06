@@ -2313,6 +2313,18 @@ launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -
 launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_mont_host runs rsa_mont.c's host arm, rsa_vp1 as a host object
+# compiles it, whole: the division that computes R^2 for a modulus with
+# its top bit set (docs/decisions.md 103), over the product contract,
+# with rsa_mont64_modulus_init and rsa_mont64_public as contracts that
+# the lines above discharge. The step that adds the modulus back wraps a
+# limb to zero on purpose, so neither line takes the wrap check.
+# Measured with proof/prove-one.sh under /usr/bin/time -l (cbmc 6.11.0,
+# kissat, an M1 Pro at a load average of 25 to 57), on 2026-10-06:
+#   rsa_mont_host          718 properties, 28 s, 2.6 GB, hence fast:3
+#   rsa_mont_host_webpki   718 properties, 59 s, 5.2 GB, hence slow
+launch fast:3 full rsa_mont_host 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_sign64.c, the RSA signer on those limbs, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and

@@ -17,7 +17,8 @@
 //   - moduli a limb scheme is most likely to get wrong: all ones, the top
 //     and bottom bits alone, a low limb of 1 and a low limb of all ones,
 //     which are the two ends of the inverse rsa_mont64.c computes from
-//     that limb, and a top limb of 2^63 with zeros under it;
+//     that limb, a top limb of 2^63 with zeros under it, and a modulus
+//     whose division of R^2 in rsa_mont.c meets the remainder n - 1;
 //   - moduli of every bit length around a limb boundary and down to two
 //     bits, in the same number of bytes, which the verifier admits
 //     because a peer's key comes from elsewhere. Those start
@@ -246,6 +247,23 @@ static void run_edge_moduli(size_t n_len) {
     rng_fill(n + n_len - 8, 8);
     n[n_len - 1] |= 1;
     run_modulus("zero middle limbs", n, n_len, 2);
+
+    // (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even limb count k:
+    // limb 0 is 1, every odd limb is all ones and every other limb is
+    // zero. B^(k + 1) is -1 modulo it, so the division by which
+    // rsa_mont.c computes R^2 meets the remainder n - 1, whose top limb is
+    // n's, and its next step takes the largest estimate, 2^64 - 1, where
+    // the division of the top limbs would pass 2^64. No random modulus
+    // meets that step: a remainder's top limb equals the modulus's about
+    // once in 2^64 steps.
+    if ((n_len / 8) % 2 == 0) {
+        memset(n, 0, n_len);
+        for (size_t limb = 1; limb < n_len / 8; limb += 2) {
+            memset(n + n_len - 8 * (limb + 1), 0xff, 8);
+        }
+        n[n_len - 1] = 1;
+        run_modulus("alternating limbs", n, n_len, 2);
+    }
 }
 
 // A random odd modulus of exactly bits bits in n_len bytes.

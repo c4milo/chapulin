@@ -62,6 +62,13 @@ void rsa_mont64_to_bytes(uint8_t *bytes, size_t len, const uint64_t *limbs);
 // multiplications, so it depends on m_len and bits alone.
 void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len, size_t bits);
 
+// Writes what rsa_mont64_modulus_init writes but r2: the modulus's limbs,
+// m0inv and limbs, for 1 <= m_len <= CH_RSA_MODULUS_MAX, which CH_ASSERT
+// holds. rsa_mont64_modulus_init calls it first. rsa_mont.c calls it for
+// a public modulus and writes r2 itself, by a division whose time depends
+// on the modulus (docs/decisions.md 103).
+void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len);
+
 // o = a * b / R mod m, the Montgomery product, over mod->limbs limbs. It
 // needs b below m, and takes any a; the result is below m. o may be a or
 // b, or both.

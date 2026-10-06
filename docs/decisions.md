@@ -7306,3 +7306,92 @@ does nothing more.
       On the instructions the whole nonce takes 2.5 µs on the M1 Pro, so
       that saves at most about a quarter of it, and it needs `sha256.h`'s
       lower calls in this file. Not measured.
+
+103. **A host object's verifier computes R^2 by long division for a
+    modulus whose top limb has its top bit set.** `rsa_vp1` computed
+    R^2 mod n with `rsa_mont64_modulus_init`: 2k + 1 doublings and five
+    squarings for a modulus of k limbs, 31 percent of an RSA-2048
+    verification's time on the M1 Pro. That setup takes a time that
+    depends on the modulus's length alone, because the signer runs it on
+    its secret primes. The verifier's modulus is public, so `rsa_mont.c`'s
+    host arm now starts from R mod n, which is R - n, and multiplies it by
+    2^64 modulo n k times, each time one step of Knuth's algorithm D. A
+    step divides the remainder's top two limbs by n's top limb, and
+    Knuth's Theorem B puts that estimate at most 2 above the quotient
+    when n's top limb has its top bit set, so a step adds n back at most
+    twice. Any other modulus still takes `rsa_mont64_modulus_init`.
+    `rsa_mont64_modulus_load` writes the record's other fields for it.
+
+    - **Variable time, in a file that says so.** The division branches on
+      the remainder and calls the compiler's 128-bit division, which on
+      both 64-bit targets is a runtime routine. `rsa_mont.c` sits in
+      `WIDEMUL_PUBLIC`, whose files take only public operands, so
+      `lint-wide-multiply` counts neither there. `rsa_mont64.c` keeps its
+      ceiling of zero divisions, and the signer's setup does not change.
+    - **Every path runs under random moduli.** Over 3,000 moduli of 256
+      to 512 bytes, most of them random, 35 percent of the steps added n
+      back once and 1.7 percent twice. One path needs a modulus of its own: when the
+      remainder's top limb equals n's, the division of the top limbs
+      passes 2^64, and the estimate is 2^64 - 1. That happens about once
+      in 2^64 steps. `bin/rsa_equiv_test` adds the modulus
+      (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even k, modulo which
+      B^(k + 1) is -1, so its division meets the remainder n - 1. Each of
+      nine mutants of the division, one at a time, failed that binary:
+      the estimate not capped, one pass or no pass adding n back, R mod n
+      off by one, the division for a modulus without its top bit, the
+      estimate from one limb, the sign limb dropped, one step short, and
+      the product's carry dropped. Without the new modulus the first
+      passed, and `test/violations/inv41-rsa-mont-r2-estimate-not-capped`
+      holds it.
+    - **Proved.** `rsa_mont_host` runs `rsa_vp1` as a host object
+      compiles it, whole, over any odd modulus bytes at 384 bytes, and
+      `rsa_mont_host_webpki` at 512, over the product contract and with
+      the setup and the public operation as contracts their own
+      harnesses discharge.
+
+    Measured on the M1 Pro, `bench/primitives.c` built from both trees
+    and run in turn five times under `ch_cfg.cpu 0xe7`, at a load average
+    of 26 to 58; each time is the median of the five, and the spread of
+    each row's runs was under 10 percent:
+
+    | one verification | before | after |
+    |---|---|---|
+    | RSA-2048 PKCS#1 v1.5, time | 39.5 µs | 30.3 µs |
+    | RSA-3072 PKCS#1 v1.5, time | 90.4 µs | 65.6 µs |
+    | RSA-4096 PKCS#1 v1.5, time | 157.0 µs | 114.5 µs |
+    | RSA-2048 PSS, time | 43.3 µs | 33.6 µs |
+    | RSA-2048 PKCS#1 v1.5, instructions | 581,171 | 438,808 |
+    | RSA-3072 PKCS#1 v1.5, instructions | 1,278,765 | 963,497 |
+    | RSA-4096 PKCS#1 v1.5, instructions | 2,247,296 | 1,671,833 |
+
+    Counted under qemu-x86_64 for a static build by gcc 13 at `-O2`, an
+    RSA-2048 PKCS#1 v1.5 verification runs 512,866 instructions where it
+    ran 700,567, an RSA-3072 one 1,120,945 where it ran 1,534,394, and an
+    RSA-2048 PSS one 561,158 where it ran 750,411.
+
+    What `openssl speed` times. Its verification runs under a key object
+    that holds the Montgomery context OpenSSL computed for the modulus
+    the first time, so no row of it computes R^2. A client verifies
+    under each certificate's key once. In a scratch loop on the M1 Pro,
+    OpenSSL 3.6.5 verifies an RSA-2048 PKCS#1 v1.5 signature in 14.2 µs
+    on one key object, and in 26.2 µs with the key built from its
+    modulus's bytes before each verification, 4.7 µs of which builds the
+    key and its context; for RSA-3072 the two take 30.2 and 47.3 µs.
+
+    Cost: 83 more lines in `rsa_mont.c`, 40 of them comments, the load
+    entry in `rsa_mont64.c`, two launch lines, one of them in the slow
+    tier, and one modulus in `bin/rsa_equiv_test`.
+
+    Rejected:
+
+    - **Knuth's test of the second limb.** It makes an estimate past the
+      quotient rare, so random moduli would no longer run the passes that
+      add n back.
+    - **The division in `rsa_mont64.c`.** The signer's check would gain
+      about 1 percent of a signature from it, and that file's claim is
+      that no branch and no memory index depends on a limb.
+    - **x * R mod n by the same division**, which would also save the
+      multiplication that moves the signature into the Montgomery domain.
+      The signer's check raises a secret candidate with
+      `rsa_mont64_public`, and a division of a secret takes a time that
+      depends on it.

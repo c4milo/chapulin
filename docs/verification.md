@@ -905,6 +905,31 @@ The entries are grouped by area:
   three alignment shapes the decode takes; a symbolic top bit was
   measured at 7 GB of CNF.
 
+#### rsa_mont_host
+
+- **Harnesses:** `rsa_mont_host` (fast), `rsa_mont_host_webpki` (slow)
+- **Build:** `rsa_mont.c`'s host arm, `rsa_vp1` as a host object
+  compiles it, under `-DCH_CPU_RUNTIME` (decision 103).
+- **Proves:** `rsa_vp1` whole, over any odd modulus bytes and any
+  signature bytes at the largest length, reads and writes inside its
+  arrays and divides by no zero. A modulus whose top bit is set takes
+  the division that computes R^2: `rsa_mont64_modulus_load`, the
+  complement of the modulus, and its k steps, each with its quotient
+  estimate, its subtraction and the passes that add the modulus back.
+  Any other modulus takes `rsa_mont64_modulus_init` under the bit length
+  its bytes give. The products are the contract
+  `rsa_mont64_mul128` proves, and `rsa_mont64_modulus_init` and
+  `rsa_mont64_public` are contracts that assert what their `CH_ASSERT`s
+  need, which the [rsa_mont64](#rsa_mont64) harnesses discharge. The
+  `_webpki` line is the same harness at the `CH_TRUST_WEBPKI` bound.
+- **Bound:** 384 bytes and 48 limbs, and 512 bytes and 64 limbs under
+  `CH_TRUST_WEBPKI`; any odd modulus bytes.
+- **Not proved:** that the limbs the division writes are R^2 mod n; see
+  [The host object's RSA arithmetic](#the-host-objects-rsa-arithmetic).
+  The lines run without `--unsigned-overflow-check`, because a step
+  wraps the limb above the modulus's limbs to zero on purpose when it
+  adds the modulus back.
+
 #### rsa_mont64
 
 - **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow)
@@ -3716,9 +3741,12 @@ A host object computes `rsa_vp1`, the public operation of both RSA
 verifiers, on `rsa_mont64.c`'s 64-bit limbs, and a device object on
 `rsa_mont.c`'s 32-bit limbs, which stay the reference (decision 95).
 `rsa_mont.c` compiles to one arm or the other, so no bit of `ch_cfg.cpu`
-picks between them and no count is needed to say which ran. The proofs
-of [rsa_mont64](#rsa_mont64) hold the 64-bit arm's memory accesses and
-its sums, over a contract of the multiply, and say nothing about a
+picks between them and no count is needed to say which ran. The host
+arm computes R^2 by a long division for a modulus whose top bit is set,
+and by `rsa_mont64_modulus_init` for any other (decision 103). The
+proofs of [rsa_mont64](#rsa_mont64) and
+[rsa_mont_host](#rsa_mont_host) hold the 64-bit arm's memory accesses
+and its sums, over a contract of the multiply, and say nothing about a
 value. Tests hold the values:
 
 - `bin/rsa_equiv_test`, in `make check`, compiles both arms into one
@@ -3727,14 +3755,19 @@ value. Tests hold the values:
   over four random odd moduli with the top bit set at each of the 33
   lengths from 256 to 512 bytes; over moduli of all ones, of the top and
   bottom bits alone, with a low limb of 1 and of all ones, and with zero
-  limbs between the top and the bottom; and over moduli of 24 bit
+  limbs between the top and the bottom; over the modulus
+  (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even limb count k,
+  whose division meets the remainder n - 1 and takes the largest
+  estimate, which no random modulus does; and over moduli of 24 bit
   lengths below the top bit, down to 3 bits, and the moduli 3 and 1, at
   256, 264 and 512 bytes.
   Under each it tries the signatures 0, 1, 2, n - 2, n - 1, the top bit
-  alone and random values, 2,028 comparisons in all. The powers of 0, 1
+  alone and random values, 2,044 comparisons in all. The powers of 0, 1
   and n - 1 are known, so those rows check both arms against the answer
   and not only against each other. Its random values come from a seed
-  the nightly can vary (`CH_RSA_EQUIV_SEED`).
+  the nightly can vary (`CH_RSA_EQUIV_SEED`). Under random moduli about
+  a third of the division's steps add the modulus back once, and about
+  one in sixty twice.
 - `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` are the mains of
   `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
   their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,

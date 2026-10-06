@@ -232,12 +232,18 @@ void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const
     }
 }
 
-void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len, size_t bits) {
-    CH_ASSERT(m_len >= 1 && m_len <= CH_RSA_MODULUS_MAX && bits >= 1 && bits <= 8 * m_len);
+void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len) {
+    CH_ASSERT(m_len >= 1 && m_len <= CH_RSA_MODULUS_MAX);
     size_t k = (m_len + 7) >> 3;
     mod->limbs = k;
     rsa_mont64_from_bytes(mod->m, k, m, m_len);
     mod->m0inv = neg_inverse(mod->m[0]);
+}
+
+void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len, size_t bits) {
+    CH_ASSERT(m_len >= 1 && m_len <= CH_RSA_MODULUS_MAX && bits >= 1 && bits <= 8 * m_len);
+    rsa_mont64_modulus_load(mod, m, m_len);
+    size_t k = mod->limbs;
 
     // r2 = R^2 mod m, with R = 2^(64k). 2^(bits - 1) is below m, because
     // m has that bit and is odd. One doubling for each power of two from

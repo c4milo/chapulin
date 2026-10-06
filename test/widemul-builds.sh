@@ -144,10 +144,10 @@ else
     fi
 fi
 
-# rsa_mont.c's two arms. The host arm is a call into rsa_mont64.c, and the
+# rsa_mont.c's two arms. The host arm calls into rsa_mont64.c, and the
 # device arm is the 32-bit arithmetic, which calls nothing outside its
 # file but memset and memcpy.
-for symbol in rsa_mont64_modulus_init rsa_mont64_public; do
+for symbol in rsa_mont64_modulus_init rsa_mont64_modulus_load rsa_mont64_public; do
     if ! calls rsa_mont.c "$symbol" -DCH_CPU_RUNTIME; then
         echo "widemul-builds: rsa_mont.c in a host object does not call $symbol" >&2
         exit 1

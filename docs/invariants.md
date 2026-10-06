@@ -1211,7 +1211,10 @@ last `ROLE=server` stub, as the entry said it would.
   1 or 2. A subtraction adds the complement of the subtrahend and one,
   so its limbs carry where a borrow would wrap. `rsa_mont.c` compiles to
   a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
-  arithmetic without it, so an object holds one of the two.
+  arithmetic without it, so an object holds one of the two. Its host arm
+  computes R^2 for a modulus whose top bit is set by a long division of
+  its own, whose estimate of each quotient limb is at most 2 above the
+  limb, and takes `rsa_mont64_modulus_init` for any other modulus.
   `rsa_sign64.c` multiplies only through that file. It reduces the
   encoded message modulo each prime with three multiplications and a
   sum, raises each to dp or dq, reading the exponent one hexadecimal
@@ -1229,11 +1232,13 @@ last `ROLE=server` stub, as the entry said it would.
   bound the others take as a contract (`proof/rsa_mont64_stubs.h`).
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
   memory accesses of the multiplication, the modulus setup and the
-  public operation at that bound. The values are held by
+  public operation at that bound, and `rsa_mont_host` those of the host
+  arm's `rsa_vp1` with its division. The values are held by
   `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c` into one
   binary and requires the same bytes from each over random moduli at
-  every length, moduli at the limb edges, moduli of every bit length
-  near a limb boundary, and the signatures 0, 1 and n - 1, whose powers
+  every length, moduli at the limb edges, a modulus whose division
+  takes the largest estimate, moduli of every bit length near a limb
+  boundary, and the signatures 0, 1 and n - 1, whose powers
   are known; by `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the Wycheproof
   host leg. `test/widemul-builds.sh` holds each arm to its object.
@@ -1260,10 +1265,12 @@ last `ROLE=server` stub, as the entry said it would.
   pass 2^128; makes the running sum one limb short; subtracts with a
   borrow that wraps; copies a product out without its last subtraction;
   drops the running sum's top limb; squares R^2's seed four times where
-  five are needed; or stops the low limb's inverse one step short. `make
-  test-invariants` runs the last four as `inv41-rsa-mont64-final-subtract-dropped`,
-  `inv41-rsa-mont64-top-limb-dropped`, `inv41-rsa-mont64-r2-four-squarings`
-  and `inv41-rsa-mont64-inverse-five-steps`, through `bin/rsa_equiv_test`,
+  five are needed; stops the low limb's inverse one step short; or lets
+  the division of R^2 divide past 2^64 where it caps the estimate. `make
+  test-invariants` runs the last five as `inv41-rsa-mont64-final-subtract-dropped`,
+  `inv41-rsa-mont64-top-limb-dropped`, `inv41-rsa-mont64-r2-four-squarings`,
+  `inv41-rsa-mont64-inverse-five-steps` and
+  `inv41-rsa-mont-r2-estimate-not-capped`, through `bin/rsa_equiv_test`,
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
   `inv41-rsa-mont64-sum-one-limb-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
@@ -1275,7 +1282,7 @@ last `ROLE=server` stub, as the entry said it would.
   limbs with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it.
-- See [decisions: Engineering](decisions.md#engineering), entry 95.
+- See [decisions: Engineering](decisions.md#engineering), entries 95 and 103.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 

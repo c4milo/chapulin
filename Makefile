@@ -6299,14 +6299,16 @@ WIDEMUL_SPECS := \
 # No gcc spec measures the field: no CI lane runs a 64-bit gcc through
 # lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
 #
-# rsa_mont64.c's 32 under both specs were read the same way, function by
-# function. Twenty-nine are loop control over a limb count, a byte count,
+# rsa_mont64.c's 34 under both specs were read the same way, function by
+# function. Thirty are loop control over a limb count, a byte count,
 # the doublings rsa_mont64_modulus_init counts from its bits argument, its
-# five squarings and the public exponent's sixteen, and the tests that
-# skip a loop of no iterations. The other three are the two CH_ASSERTs on
-# the public lengths the entries take. The comparison and the subtraction
-# that end a multiplication stay a carry and a mask: reduce_once's three
-# are its two loops and the test for no limbs. The sum, the difference
+# five squarings, the public exponent's sixteen and neg_inverse's six
+# steps, and the tests that skip a loop of no iterations. The other four
+# are the three CH_ASSERTs on the public lengths the entries take:
+# rsa_mont64_modulus_load, which rsa_mont.c calls for a public modulus,
+# checks its length itself (docs/decisions.md 103). The comparison and
+# the subtraction that end a multiplication stay a carry and a mask:
+# reduce_once's three are its two loops and the test for no limbs. The sum, the difference
 # and the plain product a CRT signature joins its halves with add nine,
 # all loops over limbs: the difference adds the modulus back under a mask.
 #
@@ -6717,7 +6719,7 @@ BRANCH_CEILING := \
   arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:23 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:23 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
-  arm64/rsa_mont64.c:32 x86-64/rsa_mont64.c:32 \
+  arm64/rsa_mont64.c:34 x86-64/rsa_mont64.c:34 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
