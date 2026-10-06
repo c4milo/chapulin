@@ -304,8 +304,9 @@ def run_steps(name, root, env, say):
 # reader, session and certificate tests, the three codegen gate scripts, which compile
 # with the pinned clang and with the Arm GNU gcc the m3 lane pins and
 # answer in seconds, the trust-separation lint script, which reads
-# the Makefile in three, the TRUST=webpki frame-budget script, which
-# compiles that object's sources in two, the stack walk script, which
+# the Makefile in three, the proof-cover lint script, which asks make for
+# its builds' source lists in under two, the TRUST=webpki frame-budget
+# script, which compiles that object's sources in two, the stack walk script, which
 # compiles a fixture twice in under one, the QUIC partition lint
 # script, which preprocesses the root sources in three, and the
 # tcp-nonblocking webpki link script, which links that object in two
@@ -334,6 +335,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "sha3_test", "sha3_equiv_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
+                "test/lint-proof-cover.sh",
                 "test/lint-p256-wide.sh",
                 "test/lint-exact-fill.sh", "test/lint-invariants.sh",
                 "test/lint-stack-webpki.sh",
@@ -569,8 +571,8 @@ def make_copy(dest, files, staged, env):
         the working tree;
       - a git repository whose index holds staged, the working tree's
         index entries, because lint-invariants, lint-trust-separation,
-        lint-quic-partition, test/zig-build-check.sh and tools/stamp.py
-        ask `git ls-files` which files exist;
+        lint-quic-partition, lint-proof-cover, test/zig-build-check.sh and
+        tools/stamp.py ask `git ls-files` which files exist;
       - LINKED_INPUTS, HARD_LINKED_INPUTS and COPIED_INPUTS, where the
         working tree has them.
 

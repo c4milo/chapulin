@@ -4,22 +4,33 @@
 .clang-tidy disables bugprone-signed-bitwise, and that disable rests on a claim:
 the signed arithmetic in this tree is deliberate, and CBMC proves absence of
 signed overflow and UB over unconstrained inputs on every module that holds it.
-Nothing enforced the claim, so it could rot three ways -- a new source arrives
-with no harness, a launch line drops from the `full` check set to a narrower
-one, or one of the hand-audited files gains a signed operand.
+Nothing enforced the claim, so it could rot four ways -- a new source arrives
+with no harness, the Makefile adds a source to an object on a line this script
+does not read, a launch line drops from the `full` check set to a narrower one,
+or one of the hand-audited files gains a signed operand.
 
 This fails when a shipped source is neither compiled by a harness running the
-`full` set, nor listed in AUDITED below, nor still a stub carrying the
-CH_QUIC_STUB or CH_SRV_STUB marker. Growing AUDITED is deliberate: it means someone read the
-file and wrote down what they found. The stub exemption is not a third way to
-grow: it holds only while a file has no implementation at all, and it ends on
-the commit that deletes that file's last marker.
+`full` set, nor listed in AUDITED below, nor a copy COPIES names of a source
+that passes, nor still a stub carrying the CH_QUIC_STUB or CH_SRV_STUB marker.
+Growing AUDITED is deliberate: it means someone read the file and wrote down
+what they found. The stub exemption is not another way to grow: it holds only
+while a file has no implementation at all, and it ends on the commit that
+deletes that file's last marker. A COPIES entry holds only while its file is
+nothing but the text of the source it copies.
+
+The shipped sources are the ones make packages, which the Makefile's
+print-lib-srcs prints for each build in BUILDS below, and the sources their
+text includes. A root .c file outside that set fails as well, because a list
+of builds can leave out the one that packages a new source.
 
 Run through `make lint-proof-cover`.
 """
 
+import os
 import re
+import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -145,6 +156,104 @@ AUDITED = {
         "vectors on it, under a ch_cfg.cpu value with the SHA-512 bit. Delete "
         "this entry if a harness can ever compile the file."
     ),
+    "sha3_hw.c": (
+        "an arm64 host object's Keccak-f[1600] on FEAT_SHA3's instructions, "
+        "which only clang compiles, so the file has no body on x86-64 or under "
+        "gcc. The sponge is sha3.c's text compiled once more under "
+        "keccak_hw.h's names, and the sha3, sha3_stream and sha3_round "
+        "harnesses prove that text. The rest, the permutation and "
+        "absorb_whole_blocks, runs on intrinsics CBMC cannot read and holds no "
+        "bitwise operator on a scalar: every round runs on uint64x2_t values "
+        "through veor3q_u64, vrax1q_u64, vxarq_u64 and vbcaxq_u64, whose "
+        "rotation counts are int constant expressions such as 64 - 44, each "
+        "from 2 to 63. The round counter is an int that stops at 24 and "
+        "indexes sha3.c's constant table, and absorb_whole_blocks counts whole "
+        "blocks by subtraction in size_t, so the product it subtracts is at "
+        "most the length it was given. bin/sha3_hw_equiv_test holds the file "
+        "to sha3.c's proven code and to FIPS 202 as proof/sha3_reference.h "
+        "writes it, under a ch_cfg.cpu value with the SHA-3 bit. Delete this "
+        "entry if a harness can ever compile the file."
+    ),
+    "aes_hw.c": (
+        "a host object's AES-128 and AES-256 on the AES instructions, written "
+        "in the Arm and x86-64 AES intrinsics, which CBMC cannot read, so no "
+        "harness compiles the file. The rounds run on uint8x16_t or __m128i "
+        "values through the intrinsics. The scalar bitwise operators are "
+        "xtime's and the key expansion's. xtime shifts b, a uint8_t that "
+        "widens to int and holds 0 to 255, right by the constant 7, subtracts "
+        "that bit from 0U to make a mask, and exclusive-ors (unsigned)b << 1 "
+        "with 0x1bU under the mask; the expansion exclusive-ors two uint8_t "
+        "bytes. The x86-64 arm's (int) cast hands a uint32_t word to "
+        "_mm_set1_epi32, a conversion gcc and clang define as keeping its 32 "
+        "bits, and no arithmetic runs on the int. The indices are size_t "
+        "counters that each entry's constant key size and round count bound. "
+        "bin/aes_equiv_test holds the file to quic_aes_soft.c, which the aes "
+        "and aes256 harnesses prove, and bin/quic_test_hw and the Wycheproof "
+        "host leg run the published vectors on it, under a ch_cfg.cpu value "
+        "with the AES bit. Delete this entry if a harness can ever compile the "
+        "file."
+    ),
+    "ghash_hw.c": (
+        "a host object's GHASH on the carry-less multiply, PMULL or PCLMULQDQ, "
+        "through ghash_vector.h's intrinsics, which CBMC cannot read, so no "
+        "harness compiles the file. Neither file holds a bitwise operator on a "
+        "scalar: every exclusive-or, shift and mask runs on uint64x2_t or "
+        "__m128i values through the intrinsics, with int constants below 256 "
+        "for the shift counts and lane selectors, and the shift that spreads "
+        "bit 127 into a mask is vshrq_n_s64 or _mm_srai_epi32, an arithmetic "
+        "shift the instruction defines for every lane value. ghash_vector_of's "
+        "two (long long) casts hand _mm_set_epi64x a uint64_t word, a "
+        "conversion gcc and clang define as keeping its 64 bits. The block "
+        "counts, the offsets and the wipe's length are size_t values that n, "
+        "GHASH_PASS_BLOCKS and sizeof the state bound. bin/ghash_equiv_test "
+        "holds the file to gcm.c's portable multiply, which the ghash harness "
+        "proves, under a ch_cfg.cpu value with the AES bit. Delete this entry "
+        "if a harness can ever compile the file."
+    ),
+    "gcm_hw.c": (
+        "a host object's AES-GCM over whole blocks: counter mode and the "
+        "seal's and the open's one-pass loops, on the AES and carry-less "
+        "multiply intrinsics, which CBMC cannot read, so no harness compiles "
+        "the file. The rounds and the hashing run on vector values through the "
+        "intrinsics and ghash_vector.h's functions, which hold no bitwise "
+        "operator on a scalar. The scalar ones move the count into and out of "
+        "the counter's last four bytes: big_endian_word, counter_count and "
+        "set_counter_count shift uint32_t values by the constants 8, 16 and "
+        "24, and the uint8_t counter_count ors in last widens to int and holds "
+        "0 to 255. The x86-64 arm's (int) cast hands a uint32_t word to "
+        "_mm_cvtsi32_si128, a conversion gcc and clang define as keeping its "
+        "32 bits. The counts add as uint32_t, which wraps modulo 2^32 as GCM's "
+        "inc32 does, and the offsets are size_t products of an index below the "
+        "caller's count. bin/aes_equiv_test holds the counter mode to "
+        "quic_aes_soft.c, and bin/ghash_equiv_test holds the seal and the open "
+        "to gcm.c's one-block counter loop and portable GHASH, which the "
+        "gcm_safety and ghash harnesses prove, under a ch_cfg.cpu value with "
+        "the AES bit. Delete this entry if a harness can ever compile the "
+        "file."
+    ),
+    "gcm_vaes.c": (
+        "an x86-64 host object's AES-GCM kernels, gcm_hw.c's three loops two "
+        "blocks to a 256-bit register on the VAES, VPCLMULQDQ and AVX2 "
+        "intrinsics, which CBMC cannot read, so no harness compiles the file, "
+        "and with no body on any other target. The rounds, the byte shuffles "
+        "and the hashing run on __m256i and __m128i values through the "
+        "intrinsics and ghash_vector.h's functions, with int constants below "
+        "256 for the shuffle orders and immediates. The scalar bitwise "
+        "operators are counter_count's and set_counter_count's, which shift "
+        "uint32_t values by the constants 8, 16 and 24, and the uint8_t "
+        "counter_count ors in last widens to int and holds 0 to 255. "
+        "fill_counters' (int) casts hand _mm256_setr_epi32 a uint32_t count, a "
+        "conversion gcc and clang define as keeping its 32 bits, and no "
+        "arithmetic runs on the int. The counts add as uint32_t, which wraps "
+        "modulo 2^32 as GCM's inc32 does, and the offsets are size_t products "
+        "of an index below the caller's count. On a CPU with VAES and "
+        "VPCLMULQDQ, bin/aes_equiv_test holds the counter mode to "
+        "quic_aes_soft.c, bin/ghash_equiv_test holds the seal and the open to "
+        "gcm.c's proven one-block loop and portable GHASH, and "
+        "bin/x86_kernels_test counts which calls run the kernels, under a "
+        "ch_cfg.cpu value with the AES and VAES bits. Delete this entry if a "
+        "harness can ever compile the file."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` in "
@@ -171,6 +280,128 @@ AUDITED = {
         "with the layered split it needs. Delete this entry when that split "
         "gives it a launch line."
     ),
+    "srv_quic.c": (
+        "the QUIC server driver: the step table, the input loop and the three "
+        "entry points. One bitwise operator in the file, the |= in announce. "
+        "Both its operands are uint8_t values, which widen to int and hold 0 "
+        "to 255: q->levels_ready, and CH_QUIC_LEVEL_BIT(level, direction), "
+        "which shifts 1U by level * 2 + direction. That count is an int, and "
+        "each call computes it from constants, CH_LEVEL_HANDSHAKE or "
+        "CH_LEVEL_APPLICATION and CH_KEY_READ or CH_KEY_WRITE, so it is 2 to "
+        "5. The rest compares and assigns step numbers, levels and return "
+        "codes, and adds size_t offsets that n bounds. No harness runs this "
+        "file: bin/srv_quic_test, bin/srv_quic_both_test and "
+        "bin/quic_loop_test run its steps, and docs/verification.md lists it "
+        "with no harness. Delete this entry when srv_quic.c gets a harness of "
+        "its own."
+    ),
+    "srv_tcp_nonblocking.c": (
+        "the ROLE=server tcp-nonblocking driver: the step table, the record "
+        "loop and the two entry points. Two bitwise operators in the file, "
+        "both in the expression with which ch_srv_record_in reads a record's "
+        "length, ((size_t)rec[3] << 8) | rec[4]: a size_t shifted left by the "
+        "constant 8, and a uint8_t, which widens to int and holds 0 to 255. "
+        "The rest is size_t arithmetic: the room for the record_size_limit, "
+        "buf_len less REC_HDR and AEAD_TAG under srv_config_ok's CH_MIN_RXBUF "
+        "floor, and the record loop's lengths under the 0x4000 + 256 cap and "
+        "n. proof/srv_tcp_nonblocking_harness.c covers this file and has no "
+        "launch line, because its formula has never been seen to converge, "
+        "which proof/run.sh records with the split it needs. "
+        "bin/srv_tcp_nonblocking_test and bin/tcp_nonblocking_loop_test run it "
+        "until then. Delete this entry when that split gives it a launch line."
+    ),
+    "tcp_nonblocking.c": (
+        "the client's tcp-nonblocking driver and the two calls either role "
+        "exports. Two bitwise operators in the file, both in the expression "
+        "with which ch_record_in reads a record's length, ((size_t)rec[3] << "
+        "8) | rec[4]: a size_t shifted left by the constant 8, and a uint8_t, "
+        "which widens to int and holds 0 to 255. The rest is size_t "
+        "arithmetic: the room for the record_size_limit under tlsi_config_ok's "
+        "CH_MIN_RXBUF floor, the record loop's lengths under the 0x4000 + 256 "
+        "cap and n, and ch_record_out's offsets under tx_len. No harness runs "
+        "this file: bin/tcp_nonblocking_loop_test runs every call in it, and "
+        "docs/verification.md lists it with no harness. Delete this entry when "
+        "tcp_nonblocking.c gets a harness of its own."
+    ),
+    "tcp_nonblocking_step.c": (
+        "the client's tcp-nonblocking step table. One bitwise operator in the "
+        "file: tcp_nonblocking_stage_plain writes a record length's high byte "
+        "as (uint8_t)(n >> 8), a size_t shifted right by the constant 8. The "
+        "rest assigns step numbers and return codes and adds REC_HDR to a "
+        "size_t length. No harness runs this file: "
+        "bin/tcp_nonblocking_loop_test runs every step, and "
+        "docs/verification.md lists it with no harness. Delete this entry when "
+        "tcp_nonblocking_step.c gets a harness of its own."
+    ),
+}
+
+
+# Sources that are another source's text compiled once more, each under a
+# header of renames, and nothing else: `<file>_native.c` on the native multiply
+# (widemul_native.h) and `<file>_hw.c` on a hash's instructions (hash_hw.h,
+# keccak_hw.h). No harness compiles a copy, and none needs to. The harnesses of
+# the source it copies prove the same text under other names, or its AUDITED
+# entry reads that text, and an equivalence test holds the copy's output to
+# the source's. So a copy passes when the source it copies does. Each entry
+# names that source and says where the copy's text differs from what those
+# harnesses compile. main() reads each copy's file on every run and fails the
+# entry once the file holds anything but comments, preprocessor conditionals
+# and includes, or includes a .c other than the one named here.
+COPIES = {
+    "poly1305_native.c": (
+        "poly1305.c",
+        "poly1305.c on the native multiply, under widemul_native.h's names. "
+        "The poly1305 harness compiles that text on the native multiply too, "
+        "because proof/run.sh passes it CH_NATIVE_WIDEMUL, except "
+        "whole_blocks' arm for the vector path, which only this copy compiles: "
+        "size_t arithmetic on a byte count, with no bitwise operator, which "
+        "bin/poly1305_equiv_test runs."
+    ),
+    "mlkem_poly_native.c": (
+        "mlkem_poly.c",
+        "mlkem_poly.c on the native multiply, under widemul_native.h's names: "
+        "the text the mlkem_poly harnesses compile, because proof/run.sh "
+        "passes them CH_NATIVE_WIDEMUL."
+    ),
+    "poly1305_vector_native.c": (
+        "poly1305_vector.c",
+        "poly1305_vector.c's intrinsics under widemul_native.h's names: the "
+        "text its AUDITED entry reads."
+    ),
+    "hkdf_hw.c": (
+        "hkdf.c",
+        "hkdf.c under hash_hw.h's names, which send its hash calls to "
+        "sha256_hw.c and, on arm64, to sha512_hw.c. The hkdf and hkdf384 "
+        "harnesses prove that text over the hashes' contracts, and "
+        "bin/sha2_equiv_test holds the copy's output to hkdf.c's."
+    ),
+    "keysched_hw.c": (
+        "keysched.c",
+        "keysched.c under hash_hw.h's names, over hkdf_hw.c. The keysched and "
+        "keysched384 harnesses prove that text but for the exporter's two "
+        "calls, which no launch line proves for keysched.c either "
+        "(docs/verification.md, keysched_exporter), and bin/sha2_equiv_test "
+        "holds the copy's output to keysched.c's."
+    ),
+    "mlkem_hw.c": (
+        "mlkem.c",
+        "mlkem.c under keccak_hw.h's names, which send its SHA-3 and SHAKE "
+        "calls to sha3_hw.c, with a body where sha3_hw.c has one. The mlkem "
+        "harness proves that text but for the host arms of mlk_ntt, mlk_invntt "
+        "and mlk_multiply_ntts, each one call into mlkem_vector.c, which its "
+        "AUDITED entry reads and test/mlkem-builds.sh requires, and "
+        "bin/mlkem_hw_equiv_test holds the copy's keys, ciphertexts and "
+        "secrets to mlkem.c's."
+    ),
+    "mlkem_poly_hw.c": (
+        "mlkem_poly.c",
+        "mlkem_poly.c under keccak_hw.h's names, on ct.h's decomposition, as "
+        "mlkem_poly.c compiles in every device object. The mlkem_poly "
+        "harnesses prove that text on the native multiply, as they prove "
+        "mlkem_poly.c, and proof/run.sh's launch() states what carries that "
+        "verdict to the decomposition. bin/mlkem_hw_equiv_test holds the "
+        "copy's output to mlkem_poly.c's."
+    ),
 }
 
 
@@ -185,28 +416,82 @@ AUDITED = {
 STUB_MARKER = re.compile(r"(?m)^[ \t]*// CH_(QUIC|SRV)_STUB: ")
 
 
+# The builds whose packaged sources make prints through print-lib-srcs. Each
+# names every variable that picks a source, and HOST_TARGET too, so each reads
+# the same on every compiler. Between them they take every value of ROLE,
+# TRUST, TRANSPORT, SUITE, KEX, AES, RAND and the host test that some build
+# accepts, and the union of their lists is every source an accepted build
+# packages. A host object takes no AES or KEX value, so the last three name
+# neither. EXPORTER, KEYLOG, TX_RECORD and WIDEMUL change defines and no
+# source, so each build takes their defaults. A source that a later build
+# packages under a combination this list lacks is a root .c file outside the
+# union, and main() fails it until a build here packages it.
+BUILDS = [
+    "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking SUITE=chacha KEX=x25519 AES=soft "
+    "RAND=drbg HOST_TARGET=",
+    "ROLE=client TRUST=raw-ecdsa TRANSPORT=tcp-nonblocking SUITE=chacha KEX=pq AES=soft "
+    "RAND=extern HOST_TARGET=",
+    "ROLE=client TRUST=ca-rsa TRANSPORT=quic-nonblocking SUITE=chacha KEX=x25519 AES=soft "
+    "RAND=session HOST_TARGET=",
+    "ROLE=client TRUST=ca-ecdsa TRANSPORT=quic-nonblocking SUITE=chacha KEX=pq AES=extern "
+    "RAND=drbg HOST_TARGET=",
+    "ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
+    "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
+    "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
+]
+
+# make passes the variables its own command line set to every make below it,
+# in MAKEFLAGS. Left there, `make check TX_RECORD=16384` would hand its value to
+# the QUIC builds above, which refuse it, and an AES value would stop the host
+# builds. So the builds run with those variables cleared, and each reads only
+# the values it names.
+MAKE_ENV = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
+
+# A quoted include of a .c file: one source compiling another's text.
+INCLUDED_SOURCE = re.compile(r'^[ \t]*#[ \t]*include[ \t]+"([^"/]+\.c)"', re.M)
+
+
+def packaged(build):
+    """What print-lib-srcs prints for one build: the build, make's exit
+    status, the sources and make's error output."""
+    r = subprocess.run(["make", "-s", "--no-print-directory", "-f", "Makefile", "print-lib-srcs",
+                        *build.split()], cwd=ROOT, env=MAKE_ENV, capture_output=True, text=True)
+    return build, r.returncode, {w for w in r.stdout.split() if w.endswith(".c")}, r.stderr.strip()
+
+
 def shipped_sources():
-    mk = (ROOT / "Makefile").read_text()
+    """Every source a build in BUILDS packages, and every source whose text
+    one of those includes. print-lib-srcs names the files make compiles, so
+    it names poly1305_vector_native.c and never poly1305_vector.c, whose
+    text that file includes. make cannot answer for an include, so this
+    reads the includes rather than keeping a list of them by hand."""
+    with ThreadPoolExecutor(len(BUILDS)) as pool:
+        results = list(pool.map(packaged, BUILDS))
     out = set()
-    for var in ("SRCS", "LIB_SRCS", "QUIC_SRCS", "SRV_SRCS"):
-        m = re.search(rf"^{var} :?=(.*?)(?=\n\S)", mk, re.S | re.M)
-        if m:
-            out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
-    # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
-    # signature-dispatch, webpki certificate, webpki chain-walk, webpki
-    # pin, wide X25519 field, wide P-256, 64-bit RSA arithmetic and signer,
-    # 64-bit P-384 field, points and verifier, vector
-    # ChaCha20 and Poly1305 sources, SHA-256 and SHA-512 on the CPU's
-    # instructions and the vector NTT join through build variables or the
-    # host test.
-    out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
-            "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
-            "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
-            "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c", "p256_wide_field.c",
-            "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
-            "p256_wide_wipe.c", "p256_wide_verify.c", "rsa_mont64.c", "rsa_sign64.c",
-            "p384_wide_field.c", "p384_wide_point.c", "p384_wide_verify.c", "mlkem_vector.c"}
-    return {s for s in out if (ROOT / s).exists()}
+    for build, status, sources, error in results:
+        if status != 0:
+            sys.exit(f"lint-proof-cover: make print-lib-srcs {build} failed, so the sources "
+                     f"that build packages are unknown:\n{error}")
+        out |= sources
+    out = {s for s in out if (ROOT / s).exists()}
+    pending = sorted(out)
+    while pending:
+        for name in INCLUDED_SOURCE.findall((ROOT / pending.pop()).read_text()):
+            if name not in out and (ROOT / name).exists():
+                out.add(name)
+                pending.append(name)
+    return out
+
+
+def root_sources():
+    """The .c files git tracks at the root, where every library source sits:
+    the tests, proofs, examples and tools sit in directories of their own."""
+    r = subprocess.run(["git", "ls-files", "-z", "--", "*.c"], cwd=ROOT, capture_output=True)
+    names = {os.fsdecode(p) for p in r.stdout.split(b"\0") if p and b"/" not in p}
+    if r.returncode != 0 or not names:
+        sys.exit("lint-proof-cover: git lists no .c file at the root, so the check that "
+                 "every root source is shipped would check nothing")
+    return names
 
 
 def stubbed_sources(sources):
@@ -241,42 +526,90 @@ def full_covered():
     return covered
 
 
+# What a copy's file may hold once its comments are gone: includes, and the
+# conditionals that guard them, one directive to a line. A #define is not
+# among them, because it could change which arms of the copied text compile.
+COPY_DIRECTIVE = re.compile(r"#[ \t]*(include|if|ifdef|ifndef|else|endif)\b")
+COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
+def copy_problem(copy, original):
+    """Why copy is no longer original's text compiled once more, or None."""
+    text = COMMENT.sub("", (ROOT / copy).read_text())
+    for line in text.splitlines():
+        if line.strip() and not COPY_DIRECTIVE.match(line.strip()):
+            return f"holds a line of its own, `{line.strip()}`"
+    included = INCLUDED_SOURCE.findall(text)
+    if included != [original]:
+        return f"includes {', '.join(included) or 'no .c file'} where COPIES names {original}"
+    return None
+
+
+def source_problem(src, covered, stubs):
+    """Why src breaks the claim .clang-tidy's entry rests on, or None."""
+    script = Path(__file__).name
+    if src in covered:
+        for table, names in (("AUDITED", AUDITED), ("COPIES", COPIES)):
+            if src in names:
+                return (f"{src} now has a full harness, so its {table} entry in {script} is "
+                        f"stale. Delete it.")
+        return None
+    if src in stubs:
+        return None
+    if src in COPIES:
+        original = COPIES[src][0]
+        why = copy_problem(src, original)
+        if why:
+            return (f"{src} is in COPIES as {original}'s text compiled once more, but it "
+                    f"{why}. Give it a harness, or read it and record what you found in "
+                    f"AUDITED in {script}.")
+        if original not in covered and original not in AUDITED:
+            return (f"{src} is {original}'s text, and {original} has neither a full harness "
+                    f"nor an AUDITED entry, so nothing covers the copy either.")
+        return None
+    if src not in AUDITED:
+        return (f"{src} is shipped, no harness runs it under the `full` check set, and it is "
+                f"not in AUDITED. Either give it a harness, or read it and record what you "
+                f"found in {script}. .clang-tidy's bugprone-signed-bitwise entry rests on one "
+                f"of those two being true for every shipped source.")
+    return None
+
+
 def main():
     sources = shipped_sources()
     covered = full_covered()
     stubs = stubbed_sources(sources)
     problems = []
 
-    for src in sorted(sources):
-        if src in covered:
-            if src in AUDITED:
-                problems.append(
-                    f"{src} now has a full harness, so its AUDITED entry in "
-                    f"{Path(__file__).name} is stale. Delete it."
-                )
-            continue
-        if src in stubs:
-            continue
-        if src not in AUDITED:
-            problems.append(
-                f"{src} is shipped, no harness runs it under the `full` check "
-                f"set, and it is not in AUDITED. Either give it a harness, or "
-                f"read it and record what you found in {Path(__file__).name}. "
-                f".clang-tidy's bugprone-signed-bitwise entry rests on one of "
-                f"those two being true for every shipped source."
-            )
+    unpackaged = root_sources() - sources
+    for name in sorted(unpackaged):
+        problems.append(
+            f"{name} is a root source, and no build in BUILDS packages it or a source that "
+            f"includes it. Name a build that packages it in {Path(__file__).name}'s BUILDS, "
+            f"or move a file no object packages out of the root."
+        )
 
-    for name in sorted(set(AUDITED) - sources):
-        problems.append(f"AUDITED lists {name}, which is not a shipped source. Delete it.")
+    for src in sorted(sources):
+        problem = source_problem(src, covered, stubs)
+        if problem:
+            problems.append(problem)
+
+    for name in sorted(set(AUDITED) & set(COPIES)):
+        problems.append(f"{name} is in both AUDITED and COPIES. Keep one entry.")
+    # A root source outside the shipped set is the build list's gap, which
+    # the first loop names, so its entry is not reported as stale as well.
+    for table, names in (("AUDITED", AUDITED), ("COPIES", COPIES)):
+        for name in sorted(set(names) - sources - unpackaged):
+            problems.append(f"{table} lists {name}, which is not a shipped source. Delete it.")
 
     if problems:
         for p in problems:
             print(f"lint-proof-cover: {p}")
         return 1
 
-    line = (f"lint-proof-cover: {len(sources - set(AUDITED) - stubs)} shipped "
-            f"sources proven with the signed-overflow class on, "
-            f"{len(AUDITED)} audited by hand")
+    line = (f"lint-proof-cover: {len(sources - set(AUDITED) - set(COPIES) - stubs)} shipped "
+            f"sources proven with the signed-overflow class on, {len(COPIES)} copies of a "
+            f"proven or audited source, {len(AUDITED)} audited by hand")
     if stubs:
         line += (f", {len(stubs)} still stubs that carry a stub marker "
                  f"and hold no code to prove")

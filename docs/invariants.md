@@ -1877,6 +1877,38 @@ last `ROLE=server` stub, as the entry said it would.
   requires it to fail.
 - See [decisions: Engineering](decisions.md#engineering), entry 88.
 
+### INV-47 — every shipped source is proven or audited
+
+- **Claim.** Every source a packaged object compiles is compiled by a
+  CBMC harness that `proof/run.sh` launches with the `full` check set,
+  which proves it free of out-of-bounds access, invalid pointers, bad
+  shifts, division by zero and signed overflow at the harness's bound.
+  A source no such harness compiles is a copy of one that passes, its
+  text compiled once more under a header of renames, or it carries an
+  `AUDITED` entry in `tools/proof-cover.py`: what holds its signed
+  arithmetic, written by someone who read the file, and which test
+  holds the file to the proven code. `.clang-tidy` turns
+  `bugprone-signed-bitwise` off on the strength of this claim.
+- **Mechanism.** `make lint-proof-cover` runs `tools/proof-cover.py`.
+  It asks the Makefile's `print-lib-srcs` for the sources of a list of
+  builds that between them take every value of every axis that picks a
+  source, and adds each source whose text one of those includes. It
+  fails when a root `.c` file is in none of them, so a source that a
+  `LIB_SRCS +=` line adds under a build the list lacks fails too. It
+  reads the `full` launch lines and the sources each harness includes,
+  and on every run it reads each file `COPIES` names and fails one that
+  holds a line of its own or includes a source other than the one named.
+- **Check.** `inv47-sha3-hw-audit-dropped` deletes `sha3_hw.c`'s
+  `AUDITED` entry, and `test/lint-proof-cover.sh` catches it. A host
+  object packages `sha3_hw.c` through `hash_hw_of` on a `LIB_SRCS +=`
+  line, the kind of line the lint did not read while it parsed the
+  Makefile's assignments itself.
+- **Violation.** A PR adds a source, or a build value that packages
+  one, with neither a harness nor an `AUDITED` entry, or it moves a
+  source's last `full` launch line to a narrower check set. An `AUDITED`
+  entry is checked for presence only, so review holds what it says: a
+  file that changes shape owes a fresh reading.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

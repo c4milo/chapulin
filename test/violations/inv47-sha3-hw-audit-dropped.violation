@@ -1,0 +1,31 @@
+invariant: INV-47
+file: tools/proof-cover.py
+catches: test/lint-proof-cover.sh
+reason: sha3_hw.c loses its AUDITED entry. A host object packages the
+  file through hash_hw_of, on a LIB_SRCS += line, and no harness compiles
+  it, because CBMC cannot read its SHA-3 intrinsics. The lint asks make
+  what each of its builds packages, so it sees the file, and with neither
+  a full harness nor an entry, nothing records what holds the file's
+  signed arithmetic, the claim .clang-tidy's bugprone-signed-bitwise
+  disable rests on.
+
+--- old
+    "sha3_hw.c": (
+        "an arm64 host object's Keccak-f[1600] on FEAT_SHA3's instructions, "
+        "which only clang compiles, so the file has no body on x86-64 or under "
+        "gcc. The sponge is sha3.c's text compiled once more under "
+        "keccak_hw.h's names, and the sha3, sha3_stream and sha3_round "
+        "harnesses prove that text. The rest, the permutation and "
+        "absorb_whole_blocks, runs on intrinsics CBMC cannot read and holds no "
+        "bitwise operator on a scalar: every round runs on uint64x2_t values "
+        "through veor3q_u64, vrax1q_u64, vxarq_u64 and vbcaxq_u64, whose "
+        "rotation counts are int constant expressions such as 64 - 44, each "
+        "from 2 to 63. The round counter is an int that stops at 24 and "
+        "indexes sha3.c's constant table, and absorb_whole_blocks counts whole "
+        "blocks by subtraction in size_t, so the product it subtracts is at "
+        "most the length it was given. bin/sha3_hw_equiv_test holds the file "
+        "to sha3.c's proven code and to FIPS 202 as proof/sha3_reference.h "
+        "writes it, under a ch_cfg.cpu value with the SHA-3 bit. Delete this "
+        "entry if a harness can ever compile the file."
+    ),
+--- new

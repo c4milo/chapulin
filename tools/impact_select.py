@@ -66,6 +66,7 @@ WRAPPER_GATES = {
     "make handshake-sequence-pq": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq"],
     "make lint-stack-walk": ["test/lint-stack-walk.sh"],
     "make lint-p256-wide": ["test/lint-p256-wide.sh"],
+    "make lint-proof-cover": ["test/lint-proof-cover.sh"],
 }
 
 # Targets whose recipe stops unless a variable names what to run, and
@@ -605,7 +606,7 @@ def select_lints(out, changed, csources, lib):
         if path in lib:
             out.add("lint", "make lint-proof-cover",
                     f"{path} is shipped, so it needs a full harness or an "
-                    f"audit entry")
+                    f"audit entry", ["test/lint-proof-cover.sh"])
     # lint-exact-fill reads the root .c files, so a root source selects it
     # whether or not the packaged object carries that source: the lint
     # judges the reader, not the object.
@@ -741,7 +742,8 @@ def select_lints(out, changed, csources, lib):
         out.add("lint", "make lint-matrix",
                 "the nightly matrix must name every slow launch line")
         out.add("lint", "make lint-proof-cover",
-                "a harness change moves what the signed-overflow claim rests on")
+                "a harness change moves what the signed-overflow claim rests on",
+                ["test/lint-proof-cover.sh"])
         out.add("lint", "make proof-coverage",
                 "a harness with no launch line proves nothing")
         out.add("lint", "make proof-reach-smoke",
