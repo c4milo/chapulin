@@ -368,6 +368,27 @@ static void rsa_mul_run(void) {
     sink ^= (uint32_t)out[0];
 }
 
+// rsa_mont64_mont_square: n - 1 vs fresh random operands below 2^(64k - 1).
+// The top bit of n - 1 is set and that of every fresh operand is clear, so
+// the classes differ in the bit the square adds under a mask at each row's
+// top, and n - 1 needs the subtraction that ends a square every time or
+// never: a branch on either shows here. Both classes copy an operand in,
+// for the reason the multiplication's row gives.
+static uint64_t rsa_square_fixed[RSA_MONT64_LIMBS_MAX];
+
+static void rsa_square_prep(int class_id) {
+    rsa_random_below(rsa_a_fresh, &rsa_mod);
+    memcpy(rsa_a, class_id == 0 ? rsa_square_fixed : rsa_a_fresh, sizeof rsa_a);
+}
+
+static void rsa_square_run(void) {
+    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    for (int r = 0; r < RSA_MUL_REPS; r++) {
+        rsa_mont64_mont_square(out, rsa_a, &rsa_mod);
+    }
+    sink ^= (uint32_t)out[0];
+}
+
 // rsa_sign64_power: an exponent of zero bytes vs fresh random exponents,
 // over one random base. Every digit of the first names the table's first
 // entry, so a read that stops at its entry, a branch on a digit or a step
@@ -438,6 +459,9 @@ int main(void) {
     rsa_random_below(rsa_a_fixed, &rsa_mod);
     rsa_random_below(rsa_b_fixed, &rsa_mod);
     report("rsa64_mul", measure(rsa_mul_prep, rsa_mul_run, FAST_N, WARMUP));
+    memcpy(rsa_square_fixed, rsa_mod.m, sizeof rsa_square_fixed);
+    rsa_square_fixed[0] -= 1;
+    report("rsa64_square", measure(rsa_square_prep, rsa_square_run, FAST_N, WARMUP));
     // The exponentiation's base: one random value below its modulus, moved
     // into the modulus's domain, the same for both classes.
     rsa_random_modulus(&rsa_small, RSA_SMALL_LEN);

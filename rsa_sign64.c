@@ -133,7 +133,7 @@ void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_
     memcpy(o, table.powers[0], k * sizeof(uint64_t));
     for (size_t i = 0; i < 2 * e_len; i++) {
         for (int square = 0; square < WINDOW_BITS; square++) {
-            rsa_mont64_mont_mul(o, o, o, mod);
+            rsa_mont64_mont_square(o, o, mod);
         }
         table_select(pick, &table, exponent_digit(e, i), k);
         rsa_mont64_mont_mul(o, o, pick, mod);
@@ -166,7 +166,7 @@ static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_limbs,
     for (size_t i = k; i < em_limbs; i++) {
         high[i - k] = em[i];
     }
-    rsa_mont64_mont_mul(r3, mod->r2, mod->r2, mod);
+    rsa_mont64_mont_square(r3, mod->r2, mod);
     rsa_mont64_mont_mul(high, high, r3, mod);
     rsa_mont64_mont_mul(low, low, mod->r2, mod);
     rsa_mont64_add(o, low, high, mod);

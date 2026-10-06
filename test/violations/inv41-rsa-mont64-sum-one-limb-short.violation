@@ -8,6 +8,8 @@ reason: rsa_mont64_mont_mul's array is one limb short, so at the largest
   function at that count, where each access is a property.
 
 --- old
+    // limb above them holds u, the round's multiple of m.
     uint64_t t[RSA_MONT64_LIMBS_MAX + 2];
 --- new
+    // limb above them holds u, the round's multiple of m.
     uint64_t t[RSA_MONT64_LIMBS_MAX + 1];

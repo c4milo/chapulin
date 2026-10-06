@@ -1208,7 +1208,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one limb and one carry in each
   of its two sums, and its top step adds two carries to a limb that is 0,
-  1 or 2. A subtraction adds the complement of the subtrahend and one,
+  1 or 2. `rsa_mont64_mont_square` keeps that pass and adds a_i V_i in
+  a round, with V_i = a_i B^i + 2 (a_{i+1} B^{i+1} + ... + a_{k-1}
+  B^{k-1}), each sum still a product, a limb and a carry, and a top limb
+  that reaches 2. A subtraction adds the complement of the subtrahend and one,
   so its limbs carry where a borrow would wrap. `rsa_mont.c` compiles to
   a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
   arithmetic without it, so an object holds one of the two. Its host arm
@@ -1231,15 +1234,17 @@ last `ROLE=server` stub, as the entry said it would.
   bound, and `rsa_mont64_mul128` proves the real `ct_mul128` meets the
   bound the others take as a contract (`proof/rsa_mont64_stubs.h`).
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
-  memory accesses of the multiplication, the modulus setup and the
-  public operation at that bound, and `rsa_mont_host` those of the host
-  arm's `rsa_vp1` with its division. The values are held by
-  `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c` into one
-  binary and requires the same bytes from each over random moduli at
-  every length, moduli at the limb edges, a modulus whose division
-  takes the largest estimate, moduli of every bit length near a limb
-  boundary, and the signatures 0, 1 and n - 1, whose powers
-  are known; by `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host`, the
+  memory accesses of the multiplication and the square, the modulus
+  setup and the public operation at that bound, and `rsa_mont_host`
+  those of the host arm's `rsa_vp1` with its division. The values are
+  held by `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c`
+  into one binary and requires the same bytes from each over random
+  moduli at every length, moduli at the limb edges, a modulus whose
+  division takes the largest estimate, moduli of every bit length near a
+  limb boundary, and the signatures 0, 1 and n - 1, whose powers are
+  known, and holds the square to the multiplication of a number by
+  itself at every limb count; by `bin/rsa_test_host` and
+  `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the Wycheproof
   host leg. `test/widemul-builds.sh` holds each arm to its object.
   For the signer, `rsa_sign64_window` proves, with the wrap check on,
@@ -1265,12 +1270,16 @@ last `ROLE=server` stub, as the entry said it would.
   pass 2^128; makes the running sum one limb short; subtracts with a
   borrow that wraps; copies a product out without its last subtraction;
   drops the running sum's top limb; squares R^2's seed four times where
-  five are needed; stops the low limb's inverse one step short; or lets
-  the division of R^2 divide past 2^64 where it caps the estimate. `make
-  test-invariants` runs the last five as `inv41-rsa-mont64-final-subtract-dropped`,
+  five are needed; stops the low limb's inverse one step short; lets
+  the division of R^2 divide past 2^64 where it caps the estimate; or
+  drops the top bit of 2a from a square's round, or reads it at the
+  limb above the square. `make test-invariants` runs the last seven as
+  `inv41-rsa-mont64-final-subtract-dropped`,
   `inv41-rsa-mont64-top-limb-dropped`, `inv41-rsa-mont64-r2-four-squarings`,
-  `inv41-rsa-mont64-inverse-five-steps` and
-  `inv41-rsa-mont-r2-estimate-not-capped`, through `bin/rsa_equiv_test`,
+  `inv41-rsa-mont64-inverse-five-steps`,
+  `inv41-rsa-mont-r2-estimate-not-capped`,
+  `inv41-rsa-mont64-square-top-bit-dropped` and
+  `inv41-rsa-mont64-square-next-limb-from-double`, through `bin/rsa_equiv_test`,
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
   `inv41-rsa-mont64-sum-one-limb-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
@@ -1282,7 +1291,7 @@ last `ROLE=server` stub, as the entry said it would.
   limbs with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it.
-- See [decisions: Engineering](decisions.md#engineering), entries 95 and 103.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103 and 106.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 
@@ -4103,8 +4112,9 @@ last `ROLE=server` stub, as the entry said it would.
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
   `rsa_mont64.c` and `rsa_sign64.c` wipe every array they hold a value
-  computed from an RSA key in, twenty-one wipes: the multiplication's
-  running sum, with the round's multiple above it; the public
+  computed from an RSA key in, twenty-three wipes: the multiplication's
+  running sum, with the round's multiple above it; the square's running
+  sum and its copy of twice the operand (decision 106); the public
   operation's base and power, which in the signer's check are a
   candidate and what it was raised to; the exponentiation's table and
   the entry its last step read; the reduction's two products and R^3;
@@ -4123,6 +4133,8 @@ last `ROLE=server` stub, as the entry said it would.
   later call's frame is written over theirs
   (`test/rsa_sign_equiv_pieces.c`). One violation file drops each wipe:
   `inv17-rsa-mont64-running-sum-wipe-dropped`,
+  `inv17-rsa-mont64-square-running-sum-wipe-dropped`,
+  `inv17-rsa-mont64-square-double-wipe-dropped`,
   `inv17-rsa-mont64-public-base-wipe-dropped`,
   `inv17-rsa-mont64-public-power-wipe-dropped`,
   `inv17-rsa-sign64-table-wipe-dropped`,
@@ -4133,7 +4145,11 @@ last `ROLE=server` stub, as the entry said it would.
   `prime-record`, `second-prime-record`, `message-limbs`, `first-half`,
   `second-half`, `refused-signature-limbs` and `refused-candidate`, each
   ending in `-wipe-dropped`. The test catches each under Apple clang 21
-  for arm64 and x86-64 and under gcc 13.3 for both. `table_select` ends
+  for arm64 and x86-64 and under gcc 13.3 for both, except the square's
+  two (decision 106): it catches both of those under Apple clang 21 for
+  arm64, and under gcc 13 for x86-64 it catches the dropped wipe of 2a
+  and not that of the running sum, whose bytes a later call's frame
+  writes over before the test looks. `table_select` ends
   by writing zero through the pointer its masks went through, so the
   limb behind it does not end on the last one; no test can look for a
   limb of all ones or of zeros, so the Semgrep rule of INV-16 holds that

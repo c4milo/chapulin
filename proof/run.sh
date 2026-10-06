@@ -2301,9 +2301,10 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # difference and reduction at the build's bound, with the check on.
 # rsa_mont64_mul, rsa_mont64_init and rsa_mont64_public run the
 # multiplication at the build's bound without the check, each for its
-# memory accesses: the multiplication alone in its four aliasing shapes
-# and the product and sum at a prime's limbs, the modulus setup with its
-# five, and the public operation with its eighteen. The setup
+# memory accesses: the multiplication alone in its four aliasing shapes,
+# the square in its two (docs/decisions.md 106) and the product and sum at
+# a prime's limbs, the modulus setup with its five squares, and the public
+# operation with its two multiplications and sixteen squares. The setup
 # also runs neg_inverse, whose arithmetic wraps on purpose. The _webpki
 # lines are the same harnesses at RSA-4096's 64 limbs and 512 bytes.
 # The multiplication whole at 48 limbs with the wrap check on returned no
@@ -2317,13 +2318,16 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 #   rsa_mont64_mul128            3 properties,   1 s, 22 MB
 #   rsa_mont64_ops             610 properties,  21 s, 1.2 GB
 #   rsa_mont64_ops_webpki      610 properties,  31 s, 1.5 GB
-#   rsa_mont64_sums            589 properties,   6 s, 298 MB
-#   rsa_mont64_mul             521 properties,  28 s, 538 MB
-#   rsa_mont64_mul_webpki      521 properties,  43 s, 953 MB
-#   rsa_mont64_init            509 properties,  59 s, 785 MB
-#   rsa_mont64_init_webpki     509 properties, 105 s, 1.3 GB
-#   rsa_mont64_public          533 properties, 138 s, 2.1 GB, hence fast:3
-#   rsa_mont64_public_webpki   533 properties, 216 s, 4.0 GB, hence slow
+# The lines below that run the square (docs/decisions.md 106) were
+# measured again the same way on 2026-10-06 through proof/prove-one.sh,
+# one at a time, at a load average of 40 to 160:
+#   rsa_mont64_sums            816 properties,  12 s, 357 MB
+#   rsa_mont64_mul             709 properties,  46 s, 775 MB
+#   rsa_mont64_mul_webpki      709 properties,  68 s, 1.4 GB
+#   rsa_mont64_init            697 properties,  56 s, 707 MB
+#   rsa_mont64_init_webpki     697 properties,  92 s, 1.2 GB
+#   rsa_mont64_public          721 properties, 127 s, 2.0 GB, hence fast:3
+#   rsa_mont64_public_webpki   721 properties, 191 s, 3.6 GB, hence slow
 # The cost of the last four is cbmc's own symbolic execution. A stub of
 # the multiply that assumes nothing moved rsa_mont64_mul by a second.
 # Each multiplication at 48 limbs adds about 6 s, and the public operation

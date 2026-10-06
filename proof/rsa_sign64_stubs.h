@@ -17,7 +17,7 @@
 //   - stub_mont_mul, stub_add and stub_sub need a modulus record whose
 //     limb count is 1 to RSA_MONT64_LIMBS_MAX and that many readable
 //     limbs behind each operand, and write that many limbs of the output.
-//     stub_reduce_once is the same with one operand.
+//     stub_mont_square and stub_reduce_once are the same with one operand.
 //   - stub_mul_add needs k readable limbs behind each of its three
 //     operands and writes 2k limbs of the output.
 //   - stub_modulus_init needs a length of 1 to CH_RSA_MODULUS_MAX bytes
@@ -32,8 +32,9 @@
 //     writes that many of the output.
 //
 // WHAT DISCHARGES THE CONTRACTS: rsa_mont64_mul_harness.c and
-// rsa_mont64_sums_harness.c prove the real multiplication in every
-// aliasing shape rsa_sign64.c calls it in and the real product-and-sum,
+// rsa_mont64_sums_harness.c prove the real multiplication and the real
+// square in every aliasing shape rsa_sign64.c calls them in and the real
+// product-and-sum,
 // rsa_mont64_ops_harness.c the real sum, difference, reduction and
 // marshalling, rsa_mont64_init_harness.c the real setup and
 // rsa_mont64_public_harness.c the real public operation, each for any
@@ -97,6 +98,11 @@ static void stub_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                           const rsa_mont64_modulus *mod) {
     need_limbs(a, mod);
     need_limbs(b, mod);
+    havoc_limbs(o, mod->limbs);
+}
+
+static void stub_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
+    need_limbs(a, mod);
     havoc_limbs(o, mod->limbs);
 }
 
@@ -189,6 +195,7 @@ static void stub_public(uint8_t *out, const uint8_t *base, size_t len,
 // From here on rsa_sign64.c's calls into rsa_mont64.c are the contracts
 // above.
 #define rsa_mont64_mont_mul stub_mont_mul
+#define rsa_mont64_mont_square stub_mont_square
 #define rsa_mont64_add stub_add
 #define rsa_mont64_sub stub_sub
 #define rsa_mont64_reduce_once stub_reduce_once

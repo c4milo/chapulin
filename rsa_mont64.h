@@ -75,6 +75,12 @@ void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m
 void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod);
 
+// o = a * a / R mod m, the Montgomery square: the limbs
+// rsa_mont64_mont_mul(o, a, a, mod) writes, from about three quarters of
+// its products. It needs a below m, and the result is below m. o may be
+// a.
+void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod);
+
 // o = a + b mod m, for a and b below m. o may be a or b.
 void rsa_mont64_add(uint64_t *o, const uint64_t *a, const uint64_t *b,
                     const rsa_mont64_modulus *mod);

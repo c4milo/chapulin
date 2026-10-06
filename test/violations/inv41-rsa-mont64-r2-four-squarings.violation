@@ -9,7 +9,7 @@ reason: rsa_mont64_modulus_init squares the Montgomery form of 2^(2k) four
 
 --- old
     for (int i = 0; i < 5; i++) {
-        rsa_mont64_mont_mul(mod->r2, mod->r2, mod->r2, mod);
+        rsa_mont64_mont_square(mod->r2, mod->r2, mod);
 --- new
     for (int i = 0; i < 4; i++) {
-        rsa_mont64_mont_mul(mod->r2, mod->r2, mod->r2, mod);
+        rsa_mont64_mont_square(mod->r2, mod->r2, mod);

@@ -9,5 +9,11 @@ reason: a round of rsa_mont64_mont_mul drops the running sum's top limb,
 
 --- old
         t[k] = (uint64_t)(top >> 64);
+    }
+    reduce_once(o, t, t[k], m, k);
+    // t held a * b / R before its last subtraction, which is as secret as
 --- new
         t[k] = 0;
+    }
+    reduce_once(o, t, t[k], m, k);
+    // t held a * b / R before its last subtraction, which is as secret as

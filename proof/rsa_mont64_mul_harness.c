@@ -1,9 +1,9 @@
-// Proves: rsa_mont64_mont_mul, whole, at the largest limb count the build
-// admits (48 for the device bound of RSA-3072; 64 for RSA-4096 in the
-// rsa_mont64_mul_webpki variant, which sets CH_TRUST_WEBPKI), over any
-// operands, any modulus and any m0inv, reads and writes inside its
-// arrays. The largest count is the binding case for every index: a
-// smaller one only shortens the same loops.
+// Proves: rsa_mont64_mont_mul and rsa_mont64_mont_square, each whole, at
+// the largest limb count the build admits (48 for the device bound of
+// RSA-3072; 64 for RSA-4096 in the rsa_mont64_mul_webpki variant, which
+// sets CH_TRUST_WEBPKI), over any operands, any modulus and any m0inv,
+// read and write inside their arrays. The largest count is the binding
+// case for every index: a smaller one only shortens the same loops.
 //
 // The products are the contract in proof/rsa_mont64_stubs.h, which
 // rsa_mont64_mul128_harness.c discharges on the real multiply.
@@ -14,6 +14,10 @@
 // operand, as its last product does; the output on the first operand, as
 // rsa_sign64_power multiplies its running power by a table entry; and all
 // three the same array, as a squaring is called.
+//
+// rsa_mont64_mont_square runs in its two shapes: the output apart from the
+// operand, as message_mod_prime squares R^2, and on it, as the public
+// operation, the setup and the signer's exponentiation square.
 //
 // rsa_mont64_mul_add, the plain product and sum, runs once at half the
 // largest limb count, a prime's, which is the largest its one caller
@@ -54,6 +58,14 @@ int main(void) {
     havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
     havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
     rsa_mont64_mont_mul(a, a, a, &mod);
+
+    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_mont_square(o, a, &mod);
+
+    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
+    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    rsa_mont64_mont_square(a, a, &mod);
 
     uint64_t product[RSA_MONT64_LIMBS_MAX];
     havoc_limbs(a, RSA_MONT64_LIMBS_MAX / 2);

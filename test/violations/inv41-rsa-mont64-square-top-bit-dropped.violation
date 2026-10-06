@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: rsa_equiv_test
+reason: rsa_mont64_mont_square adds nothing at a row's offset k, where a_i
+  times the top bit of a_{k-1} belongs, so every square of a number whose
+  top limb has its top bit set comes out short. bin/rsa_equiv_test holds
+  the square to the multiplication of the number by itself, and squares
+  n - 1 and the top bit alone under moduli with the top bit set.
+
+--- old
+            ct_u128 sum = (ct_u128)(*a_limb & mask_of_bit(*d_top)) + t[k] + ab_carry;
+--- new
+            ct_u128 sum = (ct_u128)(*a_limb & mask_of_bit(*d_top) & 0) + t[k] + ab_carry;

@@ -7367,7 +7367,12 @@ does nothing more.
     Counted under qemu-x86_64 for a static build by gcc 13 at `-O2`, an
     RSA-2048 PKCS#1 v1.5 verification runs 512,866 instructions where it
     ran 700,567, an RSA-3072 one 1,120,945 where it ran 1,534,394, and an
-    RSA-2048 PSS one 561,158 where it ran 750,411.
+    RSA-2048 PSS one 561,158 where it ran 750,411. On an AMD EPYC 7763
+    runner, `bench.yml` measured an RSA-2048 PKCS#1 v1.5 verification at
+    44.6 µs against OpenSSL 3.6.4's 18.9 µs in the same run, 2.36 times,
+    and an RSA-3072 one at 98.1 µs against 40.1, 2.45 times. The last
+    recorded run before this entry, on an EPYC 9V74, had 3.14 and 3.24;
+    the two CPUs differ, so only the ratios compare.
 
     What `openssl speed` times. Its verification runs under a key object
     that holds the Montgomery context OpenSSL computed for the modulus
@@ -7533,3 +7538,114 @@ does nothing more.
     Cost: 57 lines in `p256_wide_limb.h`, a routine of 13 lines in each
     of the two files, and one attribute that is not C11, in a file a
     device object does not compile.
+
+106. **A host object squares on 64-bit limbs with a square of its own.**
+    Sixteen of a verification's eighteen Montgomery multiplications are
+    squares, and four of every five of a signature's. Decision 95 found
+    a square written as loops slower than the multiplication: it computed
+    the cross products once, doubled them and reduced in a pass of its
+    own, so each of its loops carried one chain of carries, and on the M1
+    Pro those chains bound it. `rsa_mont64_mont_square` keeps the
+    multiplication's one pass, its two chains of carries and its masked
+    last subtraction, and changes what a round adds: round i adds a_i V_i,
+    where V_i = a_i B^i + 2 (a_{i+1} B^{i+1} + ... + a_{k-1} B^{k-1}), so
+    each cross product is computed once, doubled through a copy of 2a, and
+    each square once. Round i's part of the square starts at offset i of
+    the running sum, so below that offset a round adds the multiple of
+    the modulus alone.
+
+    - **Who squares with it.** The public operation's sixteen squares,
+      the setup's five, the exponentiation's four a digit, and the
+      reduction's R^3. The signer's check is the public operation, so a
+      secret candidate is squared by it too.
+    - **The same claims as the multiplication.** No branch and no memory
+      index depends on a limb: the top bit of 2a, which a round adds at
+      offset k, goes in under a mask. The values a round reads go
+      through volatile pointers, and the square wipes 2a and its running
+      sum. The running sum stays below 3m after a round, so its top limb
+      reaches 2 where a multiplication's reaches 1, and no sum passes a
+      product and two limbs.
+    - **A mask the compiler kept.** The mask of 2a's top bit is the same
+      in every round. The first form read that bit straight from the
+      array, and gcc 13 for x86-64 made the mask once, before the rounds,
+      and kept it in a stack slot of its own: after a square the slot
+      held all ones or all zeros, by the top bit of the number squared.
+      `test/docker-check.sh` found it: `bin/rsa_sign_equiv_test`'s
+      two stacks after two secrets differed in that slot's 8 bytes, in
+      five of its runs. Apple clang 21 kept the mask in a register, and
+      the test passed there. Each round now reads the bit through a
+      volatile pointer, and gcc makes the mask where the round uses it.
+    - **Held.** `bin/rsa_equiv_test` holds the square to the
+      multiplication of a number by itself at every limb count from 1 to
+      64, over 0, 1, n - 1, the top bit alone and random values, 1,024
+      squares, and every RSA test runs it. Each of nine mutants failed a
+      test: seven of the arithmetic, which `bin/rsa_equiv_test` and the
+      vectors catch, and the two wipes, which `bin/rsa_sign_equiv_test`'s
+      search of the stack catches under Apple clang 21 for arm64. Under
+      gcc 13 for x86-64 that search catches the dropped wipe of 2a and not
+      the dropped wipe of the running sum, whose bytes a later call's
+      frame writes over first. Four of the mutants are violation files.
+      `rsa_mont64_mul` proves the square's memory accesses at the bound
+      and `rsa_mont64_sums` that no sum in it wraps, at four limbs, which
+      run each kind of round. `make timing` has a row for it: n - 1, whose
+      top bit is set, against random operands whose top bit is clear.
+
+    Measured on the M1 Pro by scratch drivers built from both trees and
+    run in turn twice, at a load average of 33 to 37. A verification's
+    time is the median of fifteen samples on the thread's processor
+    clock, and the two runs agreed within 2 percent. A signature's times
+    moved by up to a fifth between runs under that load, so its rows are
+    the cycles and instructions the process counted for itself
+    (`proc_pid_rusage`), each run's figure:
+
+    | one operation | before | after |
+    |---|---|---|
+    | RSA-2048 PKCS#1 v1.5 verification, time | 29.5 µs | 25.6 µs |
+    | RSA-3072 PKCS#1 v1.5 verification, time | 64.7 µs | 58.0 µs |
+    | RSA-2048 PKCS#1 v1.5 verification, instructions | 438,413 | 389,726 |
+    | RSA-3072 PKCS#1 v1.5 verification, instructions | 963,260 | 840,712 |
+    | RSA-2048 PSS signature, cycles | 3,549,277 and 3,477,912 | 2,980,401 and 2,999,395 |
+    | RSA-3072 PSS signature, cycles | 11,094,155 and 10,946,878 | 9,313,209 and 9,433,139 |
+    | RSA-2048 PSS signature, instructions | 16,877,007 | 15,802,033 |
+    | RSA-3072 PSS signature, instructions | 53,014,307 | 48,195,114 |
+
+    Counted under qemu-x86_64 for a static build by gcc 13 at `-O2`:
+    an RSA-2048 PKCS#1 v1.5 verification runs 463,473 instructions where
+    it ran 512,880, an RSA-3072 one 997,728 where it ran 1,120,973, an
+    RSA-2048 PSS signature 19,518,623 where it ran 20,651,043, and an
+    RSA-3072 one 58,706,036 where it ran 63,627,103. On two `bench.yml`
+    runs that each landed on an Intel Xeon Platinum 8573C, one of the
+    tree before and one of this one, an RSA-2048 PKCS#1 v1.5 verification
+    took 31.1 µs where it took 34.4, an RSA-3072 one 68.2 µs where it took
+    75.1, an RSA-2048 PSS signature 1.26 ms where it took 1.37, and an
+    RSA-3072 one 3.80 ms where it took 4.24. In this tree's run OpenSSL
+    3.6.4 verified in 19.3 and 41.5 µs, so the two verifications took
+    1.61 and 1.64 times its time, and it signed with PKCS#1 v1.5 in 0.350
+    and 0.942 ms.
+
+    Cost: one function of about 100 lines in `rsa_mont64.c`, nine more
+    conditional branches there under both specs of `lint-wide-multiply`,
+    all on a limb count or a row's index, and two more calls in each of
+    two harnesses: `rsa_mont64_mul` proves 709 properties where it proved
+    521, in 46 s of processor time and 775 MB. The square's frame holds
+    2a beside its running sum, 520 bytes more than the multiplication's,
+    and a host server object's deepest chain is the signature's, which
+    ends in it: `bench/stack.py` puts `ch_srv_accept`'s peak at 11,840
+    bytes where it was 11,424, on this M1 Pro. Computing 2a's limbs where a round reads
+    them keeps no copy and no frame grows, but under gcc 13 for x86-64 an
+    RSA-2048 verification then runs 491,889 instructions against 463,487,
+    and on the M1 Pro the two take the same time.
+
+    Rejected:
+
+    - **Product scanning**, which keeps a column's sum in three limbs in
+      registers and stores no running sum. On the M1 Pro under Apple
+      clang its square took 3,555 cycles for 32 limbs against the
+      multiplication's 4,473, and a scratch form of this square, with no
+      volatile reads, took 3,515. Under gcc 13 for
+      x86-64 its 128-bit sums ran up to twice the multiplication's
+      instructions, and `_addcarry_u64` left both limbs of the sum in a
+      stack slot, which the next product loads again.
+    - **The cross products in a pass of their own**, decision 95's form,
+      written again: 4,423 cycles against the multiplication's 4,441 on
+      the M1 Pro, though gcc 13 ran 19 percent fewer instructions for it.

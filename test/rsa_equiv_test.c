@@ -27,6 +27,10 @@
 //   - under each of those, the signatures 0, 1, 2, n - 2 and n - 1, a
 //     single bit and random values.
 //
+// rsa_mont64.c's square is held to its multiplication of a number by
+// itself, at every limb count from 1 to the bound, which the signer's
+// primes need: 0, 1, n - 1, the top bit alone and random values below n.
+//
 // Three answers are known without either arm: 0 and 1 are their own
 // 65537th powers, and n - 1 is its own, because 65537 is odd. Each is
 // checked against both arms, so neither is held only to the other.
@@ -44,6 +48,7 @@
 
 #include "ch_assert.h"
 #include "rsa.h"
+#include "rsa_mont64.h"
 
 // The device arm of rsa_mont.c (test/rsa_equiv_portable.c).
 void rsa_vp1_portable(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
@@ -91,6 +96,7 @@ static void rng_fill(uint8_t *p, size_t n) {
 
 static int failures = 0;
 static unsigned long compared = 0;
+static unsigned long squared = 0;
 
 static void print_hex(const char *name, const uint8_t *p, size_t n) {
     (void)fprintf(stderr, "  %s ", name);
@@ -306,9 +312,70 @@ static void run_short_moduli(size_t n_len) {
     compare_known("n = 1", n, n_len, sig, sig);
 }
 
+// One square against the product of the same number with itself, which
+// the rows above hold to the 32-bit arm through the public operation:
+// apart from its operand and on it, as the signer and the public
+// operation call it.
+static void compare_square(const char *case_name, const uint64_t *a,
+                           const rsa_mont64_modulus *mod) {
+    uint64_t product[RSA_MONT64_LIMBS_MAX];
+    uint64_t square[RSA_MONT64_LIMBS_MAX];
+    uint64_t in_place[RSA_MONT64_LIMBS_MAX];
+    size_t k = mod->limbs;
+    rsa_mont64_mont_mul(product, a, a, mod);
+    rsa_mont64_mont_square(square, a, mod);
+    memcpy(in_place, a, k * sizeof(uint64_t));
+    rsa_mont64_mont_square(in_place, in_place, mod);
+    if (memcmp(product, square, k * sizeof(uint64_t)) != 0 ||
+        memcmp(product, in_place, k * sizeof(uint64_t)) != 0) {
+        failures++;
+        (void)fprintf(stderr, "FAIL %s: the square differs from the product at %zu limbs\n",
+                      case_name, k);
+        return;
+    }
+    squared++;
+}
+
+// The square of rsa_mont64.c, at every limb count from 1 to the bound: a
+// prime of the signer has half a modulus's limbs, so the counts below the
+// rows above matter too. Under each modulus it squares 0, 1, n - 1, the
+// top bit alone and random values below n, and each modulus has its top
+// bit set, so n - 1 and the top bit alone make the top limb's top bit,
+// which the square adds under a mask, 1.
+static void run_squares(void) {
+    for (size_t k = 1; k <= RSA_MONT64_LIMBS_MAX; k++) {
+        for (int i = 0; i < 2; i++) {
+            uint8_t n[CH_RSA_MODULUS_MAX];
+            uint8_t value[CH_RSA_MODULUS_MAX];
+            size_t len = 8 * k;
+            rng_fill(n, len);
+            n[0] |= 0x80;
+            n[len - 1] |= 1;
+            rsa_mont64_modulus mod;
+            rsa_mont64_modulus_init(&mod, n, len, 8 * len);
+            uint64_t a[RSA_MONT64_LIMBS_MAX] = {0};
+            compare_square("square of 0", a, &mod);
+            a[0] = 1;
+            compare_square("square of 1", a, &mod);
+            memcpy(a, mod.m, k * sizeof(uint64_t));
+            a[0] -= 1;
+            compare_square("square of n - 1", a, &mod);
+            memset(a, 0, sizeof a);
+            a[k - 1] = UINT64_C(1) << 63;
+            compare_square("square of the top bit", a, &mod);
+            for (int j = 0; j < 4; j++) {
+                random_below(value, n, len);
+                rsa_mont64_from_bytes(a, k, value, len);
+                compare_square("square of a random value", a, &mod);
+            }
+        }
+    }
+}
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_random();
+    run_squares();
     static const size_t edge_lengths[] = {256, 264, CH_RSA_MODULUS_MAX};
     for (size_t i = 0; i < sizeof edge_lengths / sizeof edge_lengths[0]; i++) {
         run_edge_moduli(edge_lengths[i]);
@@ -319,7 +386,8 @@ int main(void) {
                       (unsigned long long)seed);
         return 1;
     }
-    (void)printf("rsa_equiv_test: %lu comparisons of rsa_vp1, seed 0x%llx, all equal\n", compared,
-                 (unsigned long long)seed);
+    (void)printf("rsa_equiv_test: %lu comparisons of rsa_vp1 and %lu of a square, seed 0x%llx, all "
+                 "equal\n",
+                 compared, squared, (unsigned long long)seed);
     return 0;
 }

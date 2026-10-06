@@ -981,8 +981,10 @@ The entries are grouped by area:
     operands, any modulus and any `m0inv`, in the four aliasing shapes
     its callers use, wraps no unsigned value: no sum of a product, a
     limb and a carry, no top step and no limb of the last subtraction.
-    Nor does `rsa_mont64_mul_add`, the plain product and sum, at four
-    limbs.
+    Nor does `rsa_mont64_mont_square`, in its two shapes, whose running
+    sum's top limb stays at most 3 under any products the contract gives
+    (decision 106), nor `rsa_mont64_mul_add`, the plain product and sum,
+    at four limbs.
     Four limbs run every statement of the function in every position it
     takes, and each sum reads only values that are unconstrained there,
     so the limb count is no part of the argument.
@@ -996,16 +998,16 @@ The entries are grouped by area:
     both operands, on the first and on the second, and
     `rsa_mont64_reduce_once`.
   - `rsa_mont64_mul`: the multiplication reads and writes inside its
-    arrays at the largest limb count, in the four aliasing shapes, and
-    `rsa_mont64_mul_add` at half that count, a prime's, into twice as
-    many limbs.
+    arrays at the largest limb count, in the four aliasing shapes, the
+    square in its two, and `rsa_mont64_mul_add` at half that count, a
+    prime's, into twice as many limbs.
   - `rsa_mont64_init`: `rsa_mont64_modulus_init` whole, over any modulus
     bytes at the largest length with the top bit's bit length: the
     marshalling, `neg_inverse`, its 2k + 1 doublings and its five
-    multiplications.
+    squares.
   - `rsa_mont64_public`: `rsa_mont64_public` whole, over any base bytes
-    and any modulus limbs at the largest length, its eighteen
-    multiplications and two wipes among them. The base is unconstrained,
+    and any modulus limbs at the largest length, its two
+    multiplications, its sixteen squares and two wipes among them. The base is unconstrained,
     so a base at or above the modulus is covered.
 
   The `_webpki` lines are the same harnesses at the `CH_TRUST_WEBPKI`
@@ -3806,7 +3808,11 @@ value. Tests hold the values:
   lengths below the top bit, down to 3 bits, and the moduli 3 and 1, at
   256, 264 and 512 bytes.
   Under each it tries the signatures 0, 1, 2, n - 2, n - 1, the top bit
-  alone and random values, 2,044 comparisons in all. The powers of 0, 1
+  alone and random values, 2,044 comparisons in all. It also holds
+  `rsa_mont64_mont_square` to the multiplication of a number by itself,
+  apart from its operand and on it, at every limb count from 1 to 64, a
+  prime's among them: 0, 1, n - 1, the top bit alone and random values
+  below n, 1,024 squares (decision 106). The powers of 0, 1
   and n - 1 are known, so those rows check both arms against the answer
   and not only against each other. Its random values come from a seed
   the nightly can vary (`CH_RSA_EQUIV_SEED`). Under random moduli about
