@@ -16,6 +16,46 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 914adee9
+
+The M1 Pro's CSV now holds the run of 914adee9, on 2026-10-06, the tree
+of docs/decisions.md 99: under `CH_CPU_CONSTANT_TIME_SHA3` an arm64
+object that clang compiled runs Keccak on the ARMv8 SHA-3 instructions.
+The M1 Pro's widest value is now `0xe7`, `0x67` with that bit. The
+x86-64 runner has no such instructions, and its CSV still holds the run
+of e656fd3a. The first column below is the run of e656fd3a under
+`0x67`.
+
+| row | M1 Pro, `0x67` | M1 Pro, `0xe7` |
+| --- | --- | --- |
+| sha3_256, 16 KB, ns per byte | 1.80 | 1.14 |
+| sha3_256, 64 B, ns per byte | 4.72 | 3.12 |
+| shake128_squeeze, 16 KB, ns per byte | 1.46 | 0.95 |
+| shake256_squeeze, 16 KB, ns per byte | 1.79 | 1.17 |
+| mlkem768_keygen, µs | 24.2 | 20.4 |
+| mlkem768_encaps, µs | 26.3 | 22.3 |
+| mlkem768_decaps, µs | 28.6 | 24.5 |
+| ECDSA P-256 hybrid handshake, both ends, µs | 419 | 394 |
+| ECDSA P-256 hybrid handshake, client side, µs | 262 | 245 |
+| ECDSA P-256 hybrid handshake, server side, µs | 155 | 148 |
+
+What the rows say:
+
+- **SHA3-256 and SHAKE run in about 0.65 of their time over long
+  messages.** That is OpenSSL's time for SHA3-256 over 16 KB, on the
+  same four instructions.
+- **ML-KEM-768 runs in 0.85 of its time.** A key generation took 316,072
+  instructions, where it took 396,914, and each operation is now ahead
+  of OpenSSL's.
+- **A hybrid handshake runs in 0.94 of its time.** ML-KEM is a small
+  part of it: each end runs two key expansions and one decapsulation or
+  encapsulation, beside an ECDSA signature or verification.
+- **The M1 Pro ran other work.** Its one-minute load average was 5.98
+  at the start of the run and 4.69 at the end. Of the 80 rows this
+  change did not touch, 71 read within 1% of the last run's, and their
+  median is 0.996 of it. The four RSA-3072 verification rows read 5%
+  below, under both values; this change runs no code they run.
+
 ## The run of e656fd3a
 
 The tables below are from the run of e54b20c3. The CSVs now hold the
