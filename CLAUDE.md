@@ -107,7 +107,9 @@ Home: github.com/c4milo.
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
   compiler cannot remove) ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
-  sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` +
+  sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with `sha3_hw.c`
+  (Keccak-f[1600] on FEAT_SHA3, an arm64 host object that clang
+  compiles, a session whose caller sets CH_CPU_CONSTANT_TIME_SHA3) +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
   them test-only) with `sha512_hw.c` (both on FEAT_SHA512, an arm64 host
@@ -115,7 +117,9 @@ Home: github.com/c4milo.
   CH_CPU_CONSTANT_TIME_SHA512) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
-  builds keep them test-only) ← `hkdf.[ch]`
+  builds keep them test-only) with `keccak_hw.h`, `mlkem_hw.c` and
+  `mlkem_poly_hw.c` (the two files compiled once more over
+  `sha3_hw.c`) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) with `hash_hw.h`, `hkdf_hw.c` and `keysched_hw.c` (`hkdf.c`
   and `keysched.c` compiled once more over the hash instructions, a host
@@ -310,10 +314,13 @@ Home: github.com/c4milo.
   runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
   on `sha256_hw.c`. `CH_CPU_CONSTANT_TIME_SHA512`, an arm64 bit, runs its
   SHA-384 on `sha512_hw.c`. `CH_CPU_CONSTANT_TIME_SHA3`, an arm64 bit,
-  picks nothing yet. A hash call takes the session's `ch_cfg.cpu` first,
-  through the `_cpu` entries that end `sha256.h`, `sha512.h`, `hkdf.h`,
-  `keysched.h` and `transcript.h`, and a call that takes no value runs
-  the portable code (docs/decisions.md 93). CBMC cannot read an
+  runs its SHA-3, SHAKE and ML-KEM on `sha3_hw.c` and ML-KEM's copies
+  over it, in an object that clang compiled; in an object gcc compiled
+  it picks nothing (docs/decisions.md 99). A hash call takes the
+  session's `ch_cfg.cpu` first, through the `_cpu` entries that end
+  `sha256.h`, `sha512.h`, `sha3.h`, `hkdf.h`, `keysched.h`,
+  `transcript.h` and `mlkem.h`, and a call that takes no value runs the
+  portable code (docs/decisions.md 93). CBMC cannot read an
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
@@ -326,6 +333,9 @@ Home: github.com/c4milo.
   `sha256_hw.c` and `sha512_hw.c` to the portable hashes the same way and
   searches the stack below each call, and `bin/hash_runtime_test` counts
   which calls run a hash's instructions under each value.
+  `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches
+  the stack below each call, and `bin/mlkem_hw_equiv_test` holds
+  ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
   files and `rsa_sign64.c` to the files under their own names, and search
   the stack each call leaves. `bin/p256_verify_equiv_test` and
