@@ -283,6 +283,12 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
 // public seed rho, so this data-dependent control flow leaks nothing
 // secret; matrix A is public by construction.
 //
+// It squeezes MLK_SAMPLE_CHUNK_GROUPS groups at a time and reads them in
+// order, so it reads the same groups a squeeze of three bytes at a time
+// would. A squeeze of 24 bytes costs about what one of three bytes does,
+// and the sampler needs about 170 groups for each polynomial
+// (docs/decisions.md 100).
+//
 // The read is capped at MLK_SAMPLE_GROUPS three-byte groups (1536
 // bytes). FIPS 203 reads an unbounded stream; 704 bytes already puts
 // the probability of needing more below 2^-128 (C2SP/CCTV's bound), so
@@ -290,25 +296,31 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
 // need over 575 bytes, passes. The cap is what lets the CBMC harness
 // unwind this loop with unwinding assertions on. If the cap is ever
 // hit the remaining coefficients keep the value the caller's poly held.
+_Static_assert(MLK_SAMPLE_CHUNKS *MLK_SAMPLE_CHUNK_GROUPS == MLK_SAMPLE_GROUPS,
+               "the chunks read MLK_SAMPLE_GROUPS groups, the cap");
+
 void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1) {
     shake s;
     const uint8_t idx[2] = {x0, x1};
-    uint8_t buf[3];
+    uint8_t buf[3 * MLK_SAMPLE_CHUNK_GROUPS];
     shake128_init(&s);
     shake_absorb(&s, seed, 32);
     shake_absorb(&s, idx, 2);
     unsigned j = 0;
-    for (unsigned group = 0; group < MLK_SAMPLE_GROUPS && j < 256; group++) {
-        shake_squeeze(&s, buf, 3);
-        uint16_t d1 = (uint16_t)(buf[0] | ((uint16_t)(buf[1] & 0x0f) << 8));
-        uint16_t d2 = (uint16_t)((buf[1] >> 4) | ((uint16_t)buf[2] << 4));
-        if (d1 < MLKEM_Q) {
-            p->coeffs[j] = (int16_t)d1;
-            j++;
-        }
-        if (d2 < MLKEM_Q && j < 256) {
-            p->coeffs[j] = (int16_t)d2;
-            j++;
+    for (unsigned chunk = 0; chunk < MLK_SAMPLE_CHUNKS && j < 256; chunk++) {
+        shake_squeeze(&s, buf, sizeof buf);
+        for (size_t group = 0; group < MLK_SAMPLE_CHUNK_GROUPS && j < 256; group++) {
+            const uint8_t *b = buf + 3 * group;
+            uint16_t d1 = (uint16_t)(b[0] | ((uint16_t)(b[1] & 0x0f) << 8));
+            uint16_t d2 = (uint16_t)((b[1] >> 4) | ((uint16_t)b[2] << 4));
+            if (d1 < MLKEM_Q) {
+                p->coeffs[j] = (int16_t)d1;
+                j++;
+            }
+            if (d2 < MLKEM_Q && j < 256) {
+                p->coeffs[j] = (int16_t)d2;
+                j++;
+            }
         }
     }
 }

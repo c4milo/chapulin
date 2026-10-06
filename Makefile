@@ -6363,9 +6363,9 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # p256_scalar_inverse, whose exponent n-2 is a build constant, the same
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  arm64/poly1305_native.c:19 arm64/mlkem_poly_native.c:33 \
+  arm64/poly1305_native.c:19 arm64/mlkem_poly_native.c:35 \
   x86-64/poly1305_native.c:19 \
-  x86-64/mlkem_poly_native.c:34 \
+  x86-64/mlkem_poly_native.c:36 \
   arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md
 # 93), under the two 64-bit specs, which are the targets they run on. Each
@@ -6396,7 +6396,7 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 # the rate. permute_blocks has the other six: the loop over the blocks,
 # four tests of how many lanes of the message a block takes, and the loop
 # over the 24 rounds. None reads a lane or a message byte.
-# mlkem_hw.c's 15 and mlkem_poly_hw.c's 35 are the branches of mlkem.c and
+# mlkem_hw.c's 15 and mlkem_poly_hw.c's 37 are the branches of mlkem.c and
 # mlkem_poly.c, the same text under keccak_hw.h's names: by function, the
 # counts mlkem_poly_native.c has on this spec, and one more in each of
 # mlk_poly_compress and mlk_poly_tomsg, whose multiply is ct.h's
@@ -6405,7 +6405,7 @@ HASH_HW_BRANCH_CEILING := \
   arm64/sha256_hw.c:8 x86-64/sha256_hw.c:8 arm64/hkdf_hw.c:16 x86-64/hkdf_hw.c:16 \
   arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:12 x86-64/sha512_hw.c:0 \
   arm64/sha3_hw.c:31 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:15 x86-64/mlkem_hw.c:0 \
-  arm64/mlkem_poly_hw.c:35 x86-64/mlkem_poly_hw.c:0
+  arm64/mlkem_poly_hw.c:37 x86-64/mlkem_poly_hw.c:0
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. Their branches were read before they were
 # recorded, and the counts are the same on both specs. Every one closes a
@@ -6539,6 +6539,13 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # or a message byte. The entry fell to 33 when absorb's loop over whole
 # blocks moved into absorb_whole_blocks (docs/decisions.md 99).
 #
+# mlkem_poly.c's entry, and its native and _hw copies', rose by two on
+# every spec when mlk_sample_ntt took the stream eight three-byte groups a
+# squeeze: the loop over a chunk's groups adds its own test and a second
+# test of the coefficients written against 256. The mips gcc at -O2 adds
+# a third, the test before the loop's first pass. Each reads a counter,
+# and the stream the loop parses is the public matrix's.
+#
 # sha3.c's entries under the Arm GNU gcc and the two riscv32 gcc entries
 # rose by one, from 21 to 22 and from 22 to 23, when absorb's loop over
 # whole blocks moved into absorb_whole_blocks, which sha3_hw.c replaces
@@ -6600,42 +6607,42 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # none, because it compiles to nothing there.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:40 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
-  m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
+  m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
   m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:26 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
-  mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
+  mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:38 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
   mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:1 \
   rv32imac/sha256.c:17 rv32imac/sha3.c:34 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
-  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
+  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:38 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
   rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
   m3-gcc/sha3.c:22 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
-  m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 \
+  m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:39 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
   mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:18 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
-  mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
+  mips32r2-gcc/mlkem_poly.c:43 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
   mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:33 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
-  mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
+  mips32r2-gcc-O2/mlkem_poly.c:41 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
   rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:23 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
-  rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
+  rv32imac-gcc/mlkem_poly.c:41 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
   rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:23 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
-  rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
+  rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:41 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
   rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/aes_extern.c:0 rv32ic-gcc/gcm.c:23 \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \

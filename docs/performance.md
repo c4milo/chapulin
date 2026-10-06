@@ -79,9 +79,9 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3104 |
 | peak stack, `ch_connect` (PSK) | 2768 |
 | peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
-| peak stack, `ch_connect` (`TRUST=webpki`) | 16640 |
-| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16768 |
-| peak stack, `ch_connect` (`KEX=pq`) | 15952 |
+| peak stack, `ch_connect` (`TRUST=webpki`) | 16688 |
+| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
+| peak stack, `ch_connect` (`KEX=pq`) | 16000 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_write` / `ch_close` | 944 / 896 |
 | peak stack, `ch_srv_accept` (`ROLE=server`) | 11424 |
@@ -96,10 +96,10 @@ The image's C library and the caller's own functions set those frames.
 - The stack grows because ML-KEM's K-PKE encrypt holds three polynomial
   vectors and two polynomials: 5,744 bytes in that one frame, against a
   2,560-byte budget for every other build (INV-19 carries the per-build
-  numbers). The whole chain peaks at 15,952 bytes, through
-  `mlkem_decaps` into K-PKE encrypt and Keccak, so the hybrid build
-  needs about three times the stack of the classic one rather than the
-  single frame's 5,744.
+  numbers). The whole chain peaks at 16,000 bytes, through
+  `mlkem_decaps` into K-PKE encrypt, the matrix sampler and Keccak, so
+  the hybrid build needs about three times the stack of the classic one
+  rather than the single frame's 5,744.
 
 A device that cannot spare it builds the classic key exchange.
 
@@ -110,7 +110,7 @@ P-256 scalar and point a retry to secp256r1 draws
 larger TX staging array for the `server_name` and ALPN extensions and
 for both key shares, the 1,216-byte hybrid one and a 32-byte x25519 one
 ([`docs/decisions.md`](decisions.md) 51), and for the third group it
-lists, secp256r1 (63). Its `ch_connect` peaks at 16,640 bytes, through
+lists, secp256r1 (63). Its `ch_connect` peaks at 16,688 bytes, through
 ML-KEM's decapsulation. With ML-KEM pruned from the call graph
 (`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`) the deepest chain is the
 chain walk into an RSA-4096 verify, at 6,368 bytes: this host builds the
@@ -256,9 +256,9 @@ table.
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
 | P-256 verify (`TRUST=raw-ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
 | full pinned handshake crypto (default) | 90.2 M | 180 | 63.7 M | 117.0 M |
-| ML-KEM-768 keygen (`KEX=pq`) | 1.5 M | 3 | 1.2 M | 1.4 M |
-| ML-KEM-768 decapsulate (`KEX=pq`) | 1.8 M | 4 | 1.5 M | 1.8 M |
-| full hybrid handshake crypto (`KEX=pq`) | 95.1 M | 190 | 67.6 M | 121.8 M |
+| ML-KEM-768 keygen (`KEX=pq`) | 1.3 M | 3 | 1.1 M | 1.3 M |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 1.7 M | 3 | 1.4 M | 1.7 M |
+| full hybrid handshake crypto (`KEX=pq`) | 94.6 M | 189 | 67.3 M | 121.3 M |
 
 ### The multiply decomposition
 
@@ -291,7 +291,7 @@ mips32r2, so the 64-byte pin costs both flash and handshake time.
 ### The hybrid key exchange
 
 The hybrid key exchange costs less than its wire size suggests.
-`KEX=pq` adds two ML-KEM key expansions and one decapsulation for 4.9 M
+`KEX=pq` adds two ML-KEM key expansions and one decapsulation for 4.4 M
 instructions, 5% over the classic handshake. The key pair lives as a
 64-byte seed and is re-expanded rather than stored, which
 [`docs/decisions.md`](decisions.md) 24 explains.
@@ -457,6 +457,10 @@ What the M1 Pro's column shows:
 - ML-KEM-768 is ahead of OpenSSL in all three operations, its hashes on the SHA-3 instructions:
   0.58 of its time for key generation, 0.96 for encapsulation and 0.68 for decapsulation. X25519
   and the three AEADs are within a quarter of OpenSSL's time.
+- OpenSSL's ML-KEM-768 rows run on one key object, which holds the matrix OpenSSL expanded when it
+  made the key, and chapulin's start from the key's bytes, as a handshake's do. Decoding the
+  public key first takes OpenSSL's encapsulation on this M1 Pro from 23.9 µs to 36.0 µs (decision
+  100).
 
 What the x86-64 runner's column shows, where it differs:
 

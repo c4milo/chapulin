@@ -652,7 +652,7 @@ launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference
 # 2.2 GB / 167 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c proof/ct_wipe_stub.c
-launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
+launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:9,mlk_sample_ntt.1:65,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

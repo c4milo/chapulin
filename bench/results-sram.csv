@@ -18,9 +18,9 @@ stack_connect_ecdsa,3104
 stack_connect_psk,2768
 stack_connect_ca_rsa,5472
 stack_connect_ca_ecdsa,3264
-stack_connect_webpki,16640
+stack_connect_webpki,16688
 stack_read,1712
-stack_connect_pq,15952
+stack_connect_pq,16000
 stack_write,944
 stack_close,896
 session_struct_server_arm64,1984
@@ -34,7 +34,7 @@ stack_accept_server_aes,11600
 session_struct_webpki_aes_arm64,3376
 receive_buffer_webpki_aes,12338
 static_working_set_webpki_aes_arm64,15714
-stack_connect_webpki_aes,16768
+stack_connect_webpki_aes,16816
 session_struct_webpki_host_arm64,3072
 static_working_set_webpki_host_arm64,15410
 session_struct_server_host_arm64,1992

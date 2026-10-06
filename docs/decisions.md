@@ -7094,3 +7094,48 @@ does nothing more.
     - **One form for clang and one for gcc, chosen by `#ifdef` inside
       the function.** It is the form clang compiled a second copy of,
       and gcc's half still stored three registers a round.
+
+100. **ML-KEM's matrix sampler squeezes eight groups a call.**
+    `mlk_sample_ntt` read SHAKE128's stream three bytes a call, about 170
+    calls for each polynomial of the matrix, and each call went through
+    `shake_squeeze`, `squeeze` and `block_bytes`. It now squeezes 24
+    bytes, eight groups, a call, and reads them in the order the
+    three-byte squeezes did. 24 divides SHAKE128's 168-byte block, so no
+    group spans two blocks, every permutation is one the old loop ran,
+    and the read stays capped at 512 groups.
+
+    - **Gain.** Under qemu-x86_64, an ML-KEM-768 encapsulation runs
+      717,985 instructions under gcc 13 where it ran 844,851, and 537,266
+      under clang 18 where it ran 655,867. Key generation and
+      decapsulation drop by 119,000 to 127,000 instructions too. On the
+      device cores a key generation runs 1,055,351 instructions on the
+      Cortex-M3 where it ran 1,152,342, 1,306,525 on mips32r2 where it
+      ran 1,465,580, and 1,270,290 on rv32imac where it ran 1,415,958, and
+      a decapsulation drops by 97,000 to 159,000.
+    - **Cost.** The buffer grows by 21 bytes in `mlk_sample_ntt`'s
+      frame, which sits on the deepest chain of a hybrid handshake: the
+      measured stack of a `KEX=pq` `ch_connect` rises 48 bytes to
+      16,000, and the two `TRUST=webpki` rows rise the same. The stack
+      each ML-KEM operation reaches on mips32r2 and rv32imac rises 32
+      bytes. Camilo admitted the rise on 2026-10-06. Every spec counts two more
+      conditional branches in `mlkem_poly.c`, three under the mips gcc at
+      `-O2`: the loop over a chunk's groups, which reads counters, over a
+      stream of the public matrix.
+    - **What the table beside OpenSSL compares.** `openssl speed`
+      encapsulates on a key object, which holds the matrix OpenSSL
+      expanded when it made or decoded the key. chapulin's encapsulation
+      starts from the key's bytes, as a server's does for each client's
+      key share. On the M1 Pro, OpenSSL's encapsulation takes 23.9 µs on
+      one key object and 36.0 µs with the public key decoded from its
+      bytes first (scratch timing loop, OpenSSL 3.6.5). The
+      decapsulation row has the same difference on the private key's
+      side.
+
+    Rejected:
+
+    - **Two groups a call**, which leaves the stack as it was and saves
+      56,143 of the 126,866 instructions eight groups save under gcc.
+    - **Four groups a call**, 16 more bytes of stack for 102,572 of them.
+    - **Parsing the groups from the sponge's lanes in place**, with no
+      buffer. It would need a call into `sha3.c` that hands out the
+      state's bytes, and the sponge's proofs would grow a second reader.

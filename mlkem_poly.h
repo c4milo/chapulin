@@ -23,6 +23,11 @@
 // 704 already put the probability of needing more below 2^-128, and
 // the cap is what makes the sampling loop CBMC-unwindable.
 #define MLK_SAMPLE_GROUPS 512
+// The sampler squeezes eight groups, 24 bytes, a call: MLK_SAMPLE_CHUNKS
+// calls at most. 24 divides SHAKE128's 168-byte block, so a group never
+// spans two blocks.
+#define MLK_SAMPLE_CHUNK_GROUPS 8
+#define MLK_SAMPLE_CHUNKS 64
 #define MLK_POLYVEC_COMP_BYTES 960 // three polys at du=10 bits: 3*256*10/8
 #define MLK_CBD_BYTES 128          // PRF output feeding CBD: 64*eta
 
