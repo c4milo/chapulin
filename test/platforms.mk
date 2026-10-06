@@ -78,6 +78,25 @@ x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bi
 	  echo "== unit_host $$bits (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/unit_host $$bits; done
 	CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 $(MAKE) --no-print-directory wycheproof
 
+# Keccak on arm64's SHA-3 instructions, which sha3_hw.c holds under clang
+# alone (docs/decisions.md 99). A job whose compiler is gcc builds the file
+# with no body, so suite-check there runs none of it. This target builds
+# the two equivalence tests with KECCAK_CC, the pinned clang unless the
+# caller names another, and runs them under CH_REQUIRE_HASH_INSTRUCTIONS=1,
+# so a CPU without FEAT_SHA3 fails it, and so does a compiler under which
+# the object holds no such path. It removes the two binaries before and
+# after: make would take one that another compiler built for the one the
+# next goal wants.
+KECCAK_CC ?= $(CLANG_RV)
+KECCAK_INSTRUCTION_RUNS := sha3_hw_equiv_test mlkem_hw_equiv_test
+.PHONY: keccak-instructions-check
+keccak-instructions-check:
+	@rm -f $(addprefix bin/,$(KECCAK_INSTRUCTION_RUNS))
+	@$(MAKE) --no-print-directory CC=$(KECCAK_CC) $(addprefix bin/,$(KECCAK_INSTRUCTION_RUNS))
+	@set -e; for b in $(KECCAK_INSTRUCTION_RUNS); do \
+	  echo "== $$b ($(KECCAK_CC), FEAT_SHA3 required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/$$b; done
+	@rm -f $(addprefix bin/,$(KECCAK_INSTRUCTION_RUNS))
+
 # Whether this machine's CPU has what the x86-64 kernels and sha256_hw.c
 # run: AES-NI, PCLMULQDQ, AVX2, VAES and VPCLMULQDQ, and the SHA
 # extensions with SSSE3 and SSE4.1, read from /proc/cpuinfo. It names the

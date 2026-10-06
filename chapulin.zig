@@ -368,7 +368,8 @@ const CpuBits = struct {
     /// session then hashes its transcript and derives its keys over SHA-384 on them.
     constant_time_sha512: bool = false,
     /// CH_CPU_CONSTANT_TIME_SHA3: the SHA-3 instructions, FEAT_SHA3, under the same statement. An
-    /// arm64 bit as well, and no object runs SHA-3 on the instructions yet.
+    /// arm64 bit as well. The session then runs ML-KEM's hashes on them, in an object that clang
+    /// compiled, as `zig build` does.
     constant_time_sha3: bool = false,
 };
 

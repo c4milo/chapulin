@@ -128,8 +128,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The aarch64 cross gcc builds the arm64 half of the host object's
-      # qemu lane below, which qemu-user's qemu-aarch64 runs.
-      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+      # qemu lane below, which qemu-user's qemu-aarch64 runs, and clang
+      # builds that half's rows for the SHA-3 bit, because sha3_hw.c has a
+      # body under clang alone (docs/decisions.md 99).
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user gcc-aarch64-linux-gnu libc6-dev-arm64-cross clang
       - name: Count wide multiplies, divisions and conditional branches under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships gcc, whose lowering is its own measurement: it once put
@@ -172,6 +174,19 @@ jobs:
       # instructions (docs/decisions.md 89). The check and san jobs run the
       # SSE2 arms on x86-64 (test/platforms.mk, suite-check).
       - run: make suite-check
+      # sha3_hw.c holds Keccak on the SHA-3 instructions under clang alone
+      # (docs/decisions.md 99), so suite-check above, under gcc, ran none of
+      # it. The pinned clang builds the two equivalence tests, and the step
+      # runs them natively and fails on a CPU without FEAT_SHA3
+      # (test/platforms.mk, keccak-instructions-check). The macos job runs
+      # them under Apple clang inside suite-check.
+      - uses: ./.github/actions/load-pins
+      - name: Install clang (apt.llvm.org, pinned major)
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+      - run: make keccak-instructions-check
       # A host object, which holds the vector ChaCha20, both multiplies and
       # the vector Poly1305 as the native copy's: this job packages the
       # NEON arms, and the check job the SSE2 ones in check-lib-webpki.

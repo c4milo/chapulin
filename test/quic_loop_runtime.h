@@ -188,8 +188,11 @@ static int test_quic_runtime_values(const char *client_text, const char *server_
 // key schedule runs SHA-256, and under AES-256-GCM, whose key schedule runs
 // SHA-384 beside a transcript that takes both hashes. A handshake completes
 // and its 1-RTT keys agree only where the two paths compute the same
-// hashes. The rows state the bits whose instructions this CPU has
-// (test_cpu_hash_bits), and skip on a CPU with none.
+// hashes. ML-KEM's hashes run on the instructions too in an object that
+// holds Keccak on them (docs/decisions.md 99), so there the hybrid's
+// shared secret agrees only where the two Keccaks do. The rows state the
+// bits whose instructions this CPU has (test_cpu_hash_bits), and skip on a
+// CPU with none.
 static void check_quic_hash_bits(void) {
     uint32_t hash = test_cpu_hash_bits();
     if (hash == 0) {

@@ -1,0 +1,17 @@
+invariant: INV-17
+file: sha3_hw.c
+catches: test/docker-aes-runtime-qemu.sh keccak
+reason: permute_blocks writes lane 7 to a stack slot of its own each
+  round, as a compiler does that needs a 33rd register where arm64 has
+  32. No wipe clears that slot, and every digest is still right.
+  bin/sha3_hw_equiv_test copies the stack below each kind of call and
+  finds the lane there, and the script builds it with clang for arm64,
+  the one object that holds sha3_hw.c. The lane skips without docker,
+  and this then reports unguarded rather than caught.
+
+--- old
+        for (int round = 0; round < 24; round++) {
+--- new
+        for (int round = 0; round < 24; round++) {
+            volatile uint64_t kept_on_the_stack = vgetq_lane_u64(a7, 0);
+            (void)kept_on_the_stack;

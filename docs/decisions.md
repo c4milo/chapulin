@@ -7009,3 +7009,88 @@ does nothing more.
       still picks nothing. OpenSSL runs them on the M1 and takes 18 µs
       for the same 16 KiB. They are the next step, in a file of their
       own.
+
+99. **An arm64 host object that clang compiled runs Keccak on the SHA-3
+    instructions.** `sha3_hw.c` holds Keccak-f[1600] on EOR3, RAX1, XAR
+    and BCAX, and a session whose `ch_cfg.cpu` holds
+    `CH_CPU_CONSTANT_TIME_SHA3` runs SHA-3, SHAKE and ML-KEM on it. The
+    bit is the caller's statement that the CPU has the instructions and
+    that they take the same time whatever their operands are, as the
+    bits for SHA-256 and SHA-512 are (entry 93).
+
+    - **The sponge is `sha3.c`'s text.** `sha3_hw.c` compiles `sha3.c`
+      once more under the names `keccak_hw.h` gives, so absorbing,
+      padding and squeezing are the code CBMC proves. `sha3.c` leaves
+      two functions to a copy: `keccak_f1600`, and
+      `absorb_whole_blocks`, which the copy runs with the state in
+      registers from a message's first whole block to its last.
+      `absorb_whole_blocks` moves the caller's pointer and length
+      through their addresses. clang then compiles `absorb` for
+      mips32r2 and rv32imac to the instructions it compiled before, and
+      so does the Arm GNU gcc for the Cortex-M3 at the `-O2` its
+      instruction count uses. At `-Os` that gcc and the riscv32 gcc now
+      inline `absorb` into its two callers: `sha3.c` takes 12 bytes less
+      on each, the riscv32 count's ML-KEM-768 key generation runs 310
+      fewer instructions and its decapsulation 307, the stack stays the
+      same, and each of the two gccs writes one conditional branch more,
+      which the Makefile records. A form that returned the bytes it took
+      cost 5 to 9 instructions under clang. The `sha3` proof now takes
+      101 s and 4.0 GB for 1,639 properties, where it took 87 s and
+      3.0 GB.
+    - **ML-KEM is its two files compiled once more.** `mlkem_hw.c` and
+      `mlkem_poly_hw.c` are `mlkem.c` and `mlkem_poly.c` under the same
+      renames, so their SHA-3 and SHAKE calls run on the instructions.
+      `mlkem.h` ends with the three calls a session makes, each with
+      the session's `ch_cfg.cpu` first.
+    - **Only clang compiles the path.** A round keeps 32 values at
+      once, the 25 lanes and seven more, and arm64 has 32 vector
+      registers. A compiler that needs a 33rd writes a lane to a stack
+      slot it picks, and no wipe written in C clears one. Apple clang
+      21, clang 18 and clang 23 keep all 32 in registers. gcc 13 does
+      not: it stores 13 registers to the stack in the file as it is,
+      three in every round with four lanes held in a struct the
+      function wipes, and three with four lanes left in the caller's
+      state. `cpu_cfg.h` defines `CH_KECCAK_INSTRUCTIONS` for clang on
+      arm64. In any other object the three files hold nothing, the bit
+      describes the CPU and picks nothing, and every session runs
+      `sha3.c`.
+    - **One compiled copy of the permutation.** Every call of
+      `permute_blocks` goes through a volatile function pointer, as
+      `ct_wipe` calls `memset` (entry 91). A compiler that sees the
+      call may compile a second copy for the arguments one caller
+      passes, with registers picked anew. clang 21 and 23 did that to
+      an earlier form of the file, and the copy wrote five or six lanes
+      to the stack.
+    - **What holds it.** `bin/sha3_hw_equiv_test` compares the path
+      with `sha3.c` and with FIPS 202 as `proof/sha3_reference.h`
+      writes it, and searches the stack each kind of call leaves for
+      any lane the call computed. `bin/mlkem_hw_equiv_test` holds
+      ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`. CI runs both
+      under Apple clang in the macos job and under the pinned clang in
+      the arm64 job, whose own compiler is gcc. The qemu lane builds
+      them and the two loops with clang for arm64: on cortex-a72, which
+      has no FEAT_SHA3, a session without the bit completes and one with
+      it dies of SIGILL. Four violations break the rules, and each is
+      caught (docs/verification.md).
+
+    Gain, on the M1 in a timing loop outside the bench: SHA3-256 over
+    16 KiB in 18.6 µs, where OpenSSL takes 18.4 to 18.7, and each
+    ML-KEM-768 call in about 14% less time than on `sha3.c`.
+
+    Rejected:
+
+    - **The round in assembly.** A round written by hand in 67
+      instructions keeps every lane in a register under any compiler,
+      and ran in 18.8 µs, the time of the C. It would be the tree's
+      first assembly, which CBMC, the sanitizers and the C lints do not
+      read. Camilo kept the tree in C on 2026-10-06. It is the one form
+      found that would give gcc the path.
+    - **Four lanes kept in memory, for every compiler.** The round then
+      leaves a compiler four registers to spare. Under clang it takes
+      30% longer when the round writes those lanes last, because the
+      next round reads them first and waits for the store, and 2.5%
+      longer when their row is computed first. gcc 13 still stored
+      three registers a round.
+    - **One form for clang and one for gcc, chosen by `#ifdef` inside
+      the function.** It is the form clang compiled a second copy of,
+      and gcc's half still stored three registers a round.

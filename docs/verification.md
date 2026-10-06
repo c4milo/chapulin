@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-93 of the 115 C sources in the tree root are compiled into a
+93 of the 118 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -45,7 +45,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 22 sources are in no such harness:
+The other 25 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -61,6 +61,8 @@ The other 22 sources are in no such harness:
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
+| `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
+| `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
@@ -3522,6 +3524,64 @@ session without the SHA-256 bit runs no SHA-256 instruction rests on the
 counts, on `test/hash-builds.sh` and on the disassembly. The timing of
 either hash's instructions rests on the caller's bit alone: nothing here
 measures it.
+
+Keccak has the same arrangement in an arm64 object that clang compiled
+(decision 99). `sha3_hw.c` computes SHA-3 and SHAKE with Keccak-f[1600]
+on FEAT_SHA3's four instructions, and `mlkem_hw.c` and `mlkem_poly_hw.c`
+are `mlkem.c` and `mlkem_poly.c` compiled once more over it, under the
+names `keccak_hw.h` gives. A session whose `ch_cfg.cpu` holds
+`CH_CPU_CONSTANT_TIME_SHA3` runs them, through the entries that end
+`sha3.h` and `mlkem.h`. Under any other compiler the three files hold
+nothing and every session runs `sha3.c`.
+
+What holds them:
+
+- `bin/sha3_hw_equiv_test` compares `sha3_hw.c` with `sha3.c` over
+  SHA3-256 and SHA3-512 of every length from 0 to 700 bytes and of two
+  long messages, and over 400 SHAKE128 and SHAKE256 streams absorbed and
+  squeezed in random pieces, once with every call on the instructions
+  and once with each call on a path picked at random. At 17 lengths
+  around a block's end it compares the instructions with FIPS 202 as
+  `proof/sha3_reference.h` writes it.
+- The same binary copies the stack below six kinds of call, which
+  between them run every way the file runs its permutation, and requires
+  no 64-bit word there that the call computed: a lane of a state, a
+  column's parity, a value theta adds, or a lane after theta, rho or chi
+  of any round (`test/sha3_hw_equiv_residue.h`).
+- `bin/mlkem_hw_equiv_test` compares, over 200 random seeds, the keys,
+  ciphertexts and secrets the copies write with `mlkem.c`'s, under each
+  answer a compression runs under, and the three calls a session makes
+  under a `ch_cfg.cpu` value with and without the bit.
+- The two loops, built with clang for arm64 and run under
+  `qemu-aarch64`, complete each handshake, ML-KEM included, with one end
+  on the instructions and the other on `sha3.c`, in both orders, on the
+  `max` model. On cortex-a72, which has no FEAT_SHA3, a session without
+  the bit completes and one with it dies of SIGILL
+  (`test/aes-runtime-qemu.sh`).
+- The host loops in `make check` give one end the SHA-3 bit beside the
+  SHA-256 and SHA-512 bits where the object holds the path and the CPU
+  has FEAT_SHA3 (`test/test_cpu.h`).
+- `test/hash-builds.sh` requires FEAT_SHA3's instructions in
+  `sha3_hw.c` alone, and each copy's SHA-3 and SHAKE calls on the `_hw`
+  names, for arm64 under the pinned clang, and no body in any of the
+  three files for x86-64 or a device object.
+- CI builds the two binaries with Apple clang in the macos job and with
+  the pinned clang in the arm64 job, whose own compiler is gcc (`make
+  keccak-instructions-check`), and runs them natively.
+
+Four violations each break one of those rules, and each is caught:
+`inv17-sha3-digest-state-kept` and `inv17-sha3-hw-lane-in-stack-slot`
+by the stack check, `inv16-mlkem-copy-absorb-on-portable` by
+`test/hash-builds.sh`, and `inv16-sha3-instructions-without-bit` by the
+qemu lane on cortex-a72.
+
+None of this proves the two paths agree on an input no case runs. The
+stack check reads the stack one compiler left on one call, and cannot
+see a register. It ran under Apple clang 21, clang 18 and clang 23, and
+nothing holds the claim for a clang that is none of them. No binary
+counts which path each ML-KEM call takes, as `bin/hash_runtime_test`
+does for SHA-2, so a call site that hands the portable code a session
+with the bit runs slower and no check fails.
 
 ### The host object's two multiplies
 

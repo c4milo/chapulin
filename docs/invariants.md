@@ -3152,6 +3152,31 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/sha2_equiv_test` catches them under `qemu-x86_64` and
   `qemu-aarch64`, whose `max` models have the instructions on every
   host.
+  An arm64 host object that clang compiled holds Keccak-f[1600] on
+  FEAT_SHA3's four instructions, `sha3_hw.c`, beside `sha3.c`, and
+  `mlkem.c` and `mlkem_poly.c` a second time, as `mlkem_hw.c` and
+  `mlkem_poly_hw.c`, with their SHA-3 and SHAKE calls on it
+  (`keccak_hw.h`, decision 99). ML-KEM hashes its secret seeds, so those
+  instructions run only for a session whose caller set
+  `CH_CPU_CONSTANT_TIME_SHA3`. `sha3.h`'s `sha3_on_instructions` reads
+  that bit, and the entries that end `sha3.h` and `mlkem.h` take the
+  session's `ch_cfg.cpu` first and branch once on it. `sha3_hw.c` reads
+  no table with a secret index and branches on lengths, positions in a
+  block and the rate alone: the arm64 spec holds its conditional branches
+  at 31, and the two copies' at 15 and 35, the counts of the files they
+  copy, and each branch was read against its source. For x86-64, and in
+  an arm64 object another compiler built, the three files define nothing
+  and the bit picks nothing. `test/hash-builds.sh` holds FEAT_SHA3's
+  instructions to `sha3_hw.c` and each copy's calls to the `_hw` names,
+  for arm64 under the pinned clang. The qemu lane builds the two loops
+  with clang for arm64 and runs them on cortex-a72, which has no
+  FEAT_SHA3: the rows without the bit pass, and the rows with it die of
+  SIGILL. Two violations break those rules.
+  `inv16-mlkem-copy-absorb-on-portable` leaves the copies' absorb on the
+  portable code, and `test/hash-builds.sh` catches it.
+  `inv16-sha3-instructions-without-bit` inverts the predicate, and the
+  qemu lane catches it on cortex-a72. No binary counts which path each
+  ML-KEM call takes, as `bin/hash_runtime_test` does for SHA-2.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -4128,6 +4153,22 @@ last `ROLE=server` stub, as the entry said it would.
   working variables, `sha512_compress.c`'s the same, and `sha256_of`,
   `sha384_of` and `sha512_of` do not wipe their contexts (`sha256.h`,
   `sha512.h`); decision 93 leaves those files as they were.
+  `sha3_hw.c` keeps the 25 lanes of a state in registers from a
+  message's first whole block to its last and writes them to the
+  caller's state alone, and `sha3.c`'s `sha3_256` and `sha3_512`, which
+  the file compiles once more, wipe the state they hash in. Keccak-f[1600]
+  is a permutation, so one whole state gives back each state before it,
+  as far back as the input, which under ML-KEM is a secret seed.
+  `bin/sha3_hw_equiv_test` copies the stack below six kinds of call and
+  requires no 64-bit word there that the call computed: a lane of any
+  state, a column's parity, a value theta adds, or a lane after theta,
+  rho or chi of any round (`test/sha3_hw_equiv_residue.h`). gcc 13 keeps
+  lanes in stack slots of its own choosing in every form of the file
+  tried, so only clang compiles it (decision 99). Two violations undo the
+  rule. `inv17-sha3-digest-state-kept` drops `sha3.c`'s wipe, and
+  `inv17-sha3-hw-lane-in-stack-slot` writes one lane to a slot of its own
+  each round. The binary catches both, built with clang for arm64 and run
+  under `qemu-aarch64`.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

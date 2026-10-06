@@ -1,0 +1,17 @@
+invariant: INV-17
+file: sha3.c
+catches: test/docker-aes-runtime-qemu.sh keccak
+reason: sha3_256 and sha3_512 no longer wipe the state they hash in, so
+  the 25 lanes of the last permutation stay on the stack below the call
+  after it returns. Keccak-f[1600] is a permutation, so the whole state
+  gives back the state before it, as far back as the input, which under
+  ML-KEM is a secret seed. Every digest is still right.
+  bin/sha3_hw_equiv_test copies the stack below each kind of call and
+  looks for any lane the call computed, and the script builds it with
+  clang for arm64, the one object that holds sha3_hw.c, which compiles
+  sha3.c once more. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    ct_wipe(lane, sizeof lane);
+--- new

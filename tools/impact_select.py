@@ -156,7 +156,7 @@ LIB_LEGS = [
 ]
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the four arguments that run one part
+# itself, and the lane with one of the five arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -167,12 +167,15 @@ LIB_LEGS = [
 # arm64-hash-count, which runs the counting binaries built for arm64. A
 # violation of the x86-64 intrinsics in p256_wide_limb.h's carry steps
 # names p256-equiv, because only gcc for x86-64 reads that form and the
-# lane compiles with it.
+# lane compiles with it. A violation of what sha3_hw.c computes or leaves
+# on the stack names keccak, because the file has a body under clang
+# alone and the lane builds it with clang for arm64.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
-                          "test/docker-aes-runtime-qemu.sh p256-equiv"]
+                          "test/docker-aes-runtime-qemu.sh p256-equiv",
+                          "test/docker-aes-runtime-qemu.sh keccak"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the legs only the nightly runs. Each entry is (tier, command, reason).
@@ -391,20 +394,23 @@ def select_pairs(out, changed, legs):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these nine rules hold every file
+# test files itself, and the sources of these eleven rules hold every file
 # it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
                              "bin/x86_kernels_test", "bin/sha2_equiv_test",
                              "bin/hash_runtime_test", "bin/hash_runtime_exporter_test",
-                             "bin/p256_equiv_test")
+                             "bin/p256_equiv_test", "bin/sha3_hw_equiv_test",
+                             "bin/mlkem_hw_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
-# The sources test/hash-builds.sh compiles. hash_hw.h, which the copies
-# include, is a root header and selects every gate.
+# The sources test/hash-builds.sh compiles. hash_hw.h and keccak_hw.h,
+# which the copies include, are root headers and select every gate.
 HASH_BUILDS_SOURCES = {"sha256.c", "sha512.c", "sha512_compress.c", "hkdf.c", "keysched.c",
-                       "sha256_hw.c", "sha512_hw.c", "hkdf_hw.c", "keysched_hw.c"}
+                       "sha256_hw.c", "sha512_hw.c", "hkdf_hw.c", "keysched_hw.c",
+                       "sha3.c", "mlkem.c", "mlkem_poly.c", "mlkem_poly_native.c",
+                       "sha3_hw.c", "mlkem_hw.c", "mlkem_poly_hw.c"}
 
 
 def select_aes_runtime_qemu(out, changed):
@@ -663,15 +669,15 @@ def select_lints(out, changed, csources, lib):
                 "chacha20_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
                 ["test/chacha-builds.sh"])
-    # test/hash-builds.sh compiles the hash sources, the two copies,
-    # sha256_hw.c and sha512_hw.c, either side of -DCH_CPU_RUNTIME and for
-    # x86-64 and arm64 with no instruction flag, and reads which file
-    # holds each hash's instructions and which hash each copy calls
-    # (docs/decisions.md 93).
+    # test/hash-builds.sh compiles the hash sources, their copies,
+    # sha256_hw.c, sha512_hw.c and sha3_hw.c, either side of
+    # -DCH_CPU_RUNTIME and for x86-64 and arm64 with no instruction flag,
+    # and reads which file holds each hash's instructions and which hash
+    # each copy calls (docs/decisions.md 93 and 99).
     for path in sorted(HASH_BUILDS_SOURCES & set(csources)):
         out.add("tests", "test/hash-builds.sh",
-                f"{path} is compiled by this script, which holds the hash "
-                f"instructions to sha256_hw.c and each copy to the hash it calls",
+                f"{path} is compiled by this script, which holds each hash's "
+                f"instructions to its file and each copy to the hash it calls",
                 ["test/hash-builds.sh"])
     if "poly1305.c" in csources:
         out.add("tests", "test/chacha-builds.sh",

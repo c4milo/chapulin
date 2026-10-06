@@ -87,7 +87,7 @@ static void run_sha512(size_t n) {
 
 static void run_sha3_256(size_t n) {
     uint8_t digest[SHA3_256_LEN];
-    sha3_256(input, n, digest);
+    sha3_256_cpu(bench_cpu, input, n, digest);
     bench_consume(digest, sizeof digest);
 }
 
@@ -96,16 +96,16 @@ static void run_sha3_256(size_t n) {
 static void run_shake128(size_t n) {
     shake s;
     shake128_init(&s);
-    shake_absorb(&s, input, SEED_LEN);
-    shake_squeeze(&s, output, n);
+    shake_absorb_cpu(bench_cpu, &s, input, SEED_LEN);
+    shake_squeeze_cpu(bench_cpu, &s, output, n);
     bench_consume(&output[n - 1], 1);
 }
 
 static void run_shake256(size_t n) {
     shake s;
     shake256_init(&s);
-    shake_absorb(&s, input, SEED_LEN);
-    shake_squeeze(&s, output, n);
+    shake_absorb_cpu(bench_cpu, &s, input, SEED_LEN);
+    shake_squeeze_cpu(bench_cpu, &s, output, n);
     bench_consume(&output[n - 1], 1);
 }
 

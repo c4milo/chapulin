@@ -1,0 +1,17 @@
+invariant: INV-16
+file: sha3.h
+catches: test/docker-aes-runtime-qemu.sh
+reason: sha3_on_instructions answers yes where the session's ch_cfg.cpu
+  leaves CH_CPU_CONSTANT_TIME_SHA3 clear, so a session runs ML-KEM's
+  hashes on the SHA-3 instructions that its caller never said the CPU has
+  or runs in constant time, and dies of SIGILL on a CPU without them.
+  Every key and secret is still right on a CPU with them. The qemu lane
+  builds the two loops with clang for arm64 and runs them on cortex-a72,
+  which has no FEAT_SHA3, where the rows without the bit must pass. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA3) == 0;

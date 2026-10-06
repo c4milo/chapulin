@@ -103,6 +103,9 @@ static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
     if ((value & CH_CPU_CONSTANT_TIME_SHA512) != 0 && !cpu_has_sha512_instructions()) {
         absent |= CH_CPU_CONSTANT_TIME_SHA512;
     }
+    if ((value & CH_CPU_CONSTANT_TIME_SHA3) != 0 && !cpu_has_sha3_instructions()) {
+        absent |= CH_CPU_CONSTANT_TIME_SHA3;
+    }
 #endif
     return absent;
 }
@@ -120,11 +123,14 @@ static inline uint32_t test_cpu_value(size_t i) {
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs
-// a hash on, the SHA-256 bit and on arm64 the SHA-512 bit, where this CPU has the
-// instructions, so 0 on a CPU with none of them. Where the environment requires the
-// instructions (test/hash_instructions_cpu.h), a CPU that lacks any ends the binary with
-// status 1.
-#ifdef __aarch64__
+// a hash on, the SHA-256 bit, on arm64 the SHA-512 bit, and the SHA-3 bit where clang compiled
+// the arm64 object (CH_KECCAK_INSTRUCTIONS, cpu_cfg.h), where this CPU has the instructions, so
+// 0 on a CPU with none of them. Where the environment requires the instructions
+// (test/hash_instructions_cpu.h), a CPU that lacks any ends the binary with status 1.
+#ifdef CH_KECCAK_INSTRUCTIONS
+#define TEST_CPU_HASH_BITS                                                                         \
+    (CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
+#elif defined(__aarch64__)
 #define TEST_CPU_HASH_BITS (CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512)
 #else
 #define TEST_CPU_HASH_BITS CH_CPU_CONSTANT_TIME_SHA256

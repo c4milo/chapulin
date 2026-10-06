@@ -131,9 +131,13 @@ static void prepare_nothing(size_t n) {
     (void)n;
 }
 
+// mlkem_keygen_derand's work on the path a session's value picks: the
+// decapsulation key, and the encapsulation key it carries at dk + 1152
+// (mlkem.h).
 static void run_mlkem_keygen(size_t n) {
     (void)n;
-    mlkem_keygen_derand(mlkem_ek, mlkem_dk, MLKEM_D, MLKEM_Z);
+    mlkem_keygen_dk_cpu(bench_cpu, mlkem_dk, MLKEM_D, MLKEM_Z);
+    memcpy(mlkem_ek, mlkem_dk + 1152, MLKEM_EK_LEN);
     bench_consume(mlkem_dk, 1);
 }
 
@@ -141,10 +145,10 @@ static void prepare_mlkem(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
     uint8_t decapsulated[MLKEM_SS_LEN];
-    mlkem_keygen_derand(mlkem_ek, mlkem_dk, MLKEM_D, MLKEM_Z);
-    expect(mlkem_encaps_derand(BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+    run_mlkem_keygen(n);
+    expect(mlkem_encaps_derand_cpu(bench_cpu, BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
            "encaps refused its ek");
-    mlkem_decaps(BENCH_WIDEMUL, decapsulated, mlkem_ct, mlkem_dk);
+    mlkem_decaps_cpu(bench_cpu, BENCH_WIDEMUL, decapsulated, mlkem_ct, mlkem_dk);
     expect(memcmp(ss, decapsulated, sizeof ss) == 0, "decaps disagrees with encaps");
     expect(memcmp(ss, MLKEM_K_WANT, sizeof ss) == 0, "ML-KEM missed its FIPS 203 answer");
 }
@@ -152,7 +156,7 @@ static void prepare_mlkem(size_t n) {
 static void run_mlkem_encaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    expect(mlkem_encaps_derand(BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
+    expect(mlkem_encaps_derand_cpu(bench_cpu, BENCH_WIDEMUL, mlkem_ct, ss, mlkem_ek, MLKEM_M) == 0,
            "encaps refused its ek");
     bench_consume(ss, 1);
 }
@@ -160,7 +164,7 @@ static void run_mlkem_encaps(size_t n) {
 static void run_mlkem_decaps(size_t n) {
     (void)n;
     uint8_t ss[MLKEM_SS_LEN];
-    mlkem_decaps(BENCH_WIDEMUL, ss, mlkem_ct, mlkem_dk);
+    mlkem_decaps_cpu(bench_cpu, BENCH_WIDEMUL, ss, mlkem_ct, mlkem_dk);
     bench_consume(ss, 1);
 }
 

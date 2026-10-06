@@ -109,6 +109,25 @@
 #   - each loop with one end stating the SHA-512 bit and the other not, in
 #     both orders, must pass: 0x65 against 0x25 and 0x67 against 0x27.
 #
+# The arm64 half once more as clang compiles it, for the SHA-3 bit: an
+# arm64 object holds Keccak on the SHA-3 instructions where clang compiled
+# it and nowhere else (docs/decisions.md 99). cortex-a72 has no FEAT_SHA3
+# either, and every handshake of the two loops runs ML-KEM. On cortex-a72:
+#
+#   - each loop with "cpu 0x25 0x25" and with "cpu 0x27 0x27" must pass.
+#   - each loop with "cpu 0xa5 0xa5" and with "cpu 0xa7 0xa7", the same
+#     values with the SHA-3 bit, must die of SIGILL: a session with the bit
+#     runs ML-KEM's hashes on the instructions.
+#
+# On max, with CH_REQUIRE_HASH_INSTRUCTIONS=1:
+#
+#   - bin/sha3_hw_equiv_test must pass: sha3_hw.c against sha3.c, and the
+#     search of the stack each kind of call leaves.
+#   - bin/mlkem_hw_equiv_test must pass: ML-KEM's two copies against
+#     mlkem.c and mlkem_poly.c.
+#   - each loop with one end stating the SHA-3 bit and the other not, in
+#     both orders, must pass: 0xa5 against 0x25 and 0xa7 against 0x27.
+#
 # No QEMU arm64 model turns FEAT_AES or FEAT_SHA256 off (QEMU 8.2 and
 # 10.2), so for those two the arm64 half of the claim rests on the call
 # counts bin/aes_runtime_test and bin/hash_runtime_test read and on
@@ -131,10 +150,16 @@
 #   p256-equiv        bin/p256_equiv_test for x86-64 and for arm64, for the
 #                     violations of the intrinsics in p256_wide_limb.h's
 #                     carry steps
+#   keccak            bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
+#                     for arm64, built with clang, for the violations of
+#                     what sha3_hw.c computes and leaves on the stack
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
-# and x86_64-linux-gnu-gcc or aarch64-linux-gnu-gcc where it does not. The
+# and x86_64-linux-gnu-gcc or aarch64-linux-gnu-gcc where it does not.
+# KECCAK_ARM64_CC names the clang that builds the SHA-3 rows for arm64,
+# clang by default; it links with the libraries ARM64_CC's toolchain
+# carries. The
 # mips job in .github/workflows/check.yml runs this script on every push,
 # because the qemu-user package it installs carries both emulators, and
 # test/docker-aes-runtime-qemu.sh runs it in a container elsewhere.
@@ -146,9 +171,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak]" >&2
     exit 2
     ;;
 esac
@@ -171,13 +196,20 @@ x86_cc=""
 arm64_cc=""
 x86_qemu=${QEMU_X86_64:-qemu-x86_64}
 arm64_qemu=${QEMU_AARCH64:-qemu-aarch64}
-if [ "$only" != arm64-hash-count ]; then
+if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
+fi
+# clang for arm64, the one compiler under which sha3_hw.c has a body.
+keccak_cc=""
+if [ -z "$only" ] || [ "$only" = keccak ]; then
+    keccak_cc=${KECCAK_ARM64_CC:-clang}
+    "$keccak_cc" --target=aarch64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
+        { echo "aes-runtime-qemu: $keccak_cc is not a clang that compiles for aarch64; set KECCAK_ARM64_CC" >&2; exit 1; }
 fi
 x86_out=bin/qemu
 arm64_out=bin/qemu-arm64
@@ -202,8 +234,10 @@ read -r -a sha2_equiv_srcs <<< "$(sed -n 6p <<< "$lists")"
 read -r -a hash_count_srcs <<< "$(sed -n 7p <<< "$lists")"
 read -r -a hash_count_quic_srcs <<< "$(sed -n 8p <<< "$lists")"
 read -r -a p256_equiv_srcs <<< "$(sed -n 9p <<< "$lists")"
-[ "${#p256_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than nine lists" >&2; exit 1; }
+read -r -a sha3_hw_equiv_srcs <<< "$(sed -n 10p <<< "$lists")"
+read -r -a mlkem_hw_equiv_srcs <<< "$(sed -n 11p <<< "$lists")"
+[ "${#mlkem_hw_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than eleven lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -219,9 +253,10 @@ expect_on() { # $1 = qemu, $2 = its binaries' directory, $3 = model, $4 = the st
 expect() { expect_on "$x86_qemu" "$x86_out" "$@"; }
 expect_arm64() { expect_on "$arm64_qemu" "$arm64_out" "$@"; }
 sigill=132
-# QEMU's arm64 model without FEAT_SHA512, which has FEAT_AES, FEAT_PMULL
-# and FEAT_SHA256.
+# QEMU's arm64 model without FEAT_SHA512 and FEAT_SHA3, which has FEAT_AES,
+# FEAT_PMULL and FEAT_SHA256.
 no_sha512=cortex-a72
+no_sha3=cortex-a72
 
 if [ -z "$only" ] || [ "$only" = x86-kernels ]; then
     "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/x86_kernels_test" \
@@ -253,6 +288,29 @@ if [ -z "$only" ] || [ "$only" = p256-equiv ]; then
 fi
 if [ "$only" = p256-equiv ]; then
     echo "aes-runtime-qemu: bin/p256_equiv_test held the wide P-256 files to the files under their own names, on the intrinsics for x86-64 and on the 128-bit sums for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = keccak ]; then
+    # sha3_hw.c against sha3.c, with the search of the stack each kind of
+    # call leaves, and ML-KEM's two copies against mlkem.c and
+    # mlkem_poly.c, as clang compiles them for arm64, on the model with
+    # every instruction. The binaries fail where the model lacks FEAT_SHA3
+    # or the object holds no Keccak on the instructions, so these rows
+    # cannot pass by skipping.
+    "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME \
+        -o "$arm64_out/sha3_hw_equiv_test" test/sha3_hw_equiv_test.c "${sha3_hw_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
+        "sha3_hw.c and sha3.c disagree, a call left a lane it computed on the stack, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
+        sha3_hw_equiv_test
+    "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME \
+        -o "$arm64_out/mlkem_hw_equiv_test" test/mlkem_hw_equiv_test.c "${mlkem_hw_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 \
+        "ML-KEM's copies and mlkem.c disagree, the object holds no Keccak on the instructions, or this qemu's max model lacks FEAT_SHA3" \
+        mlkem_hw_equiv_test
+fi
+if [ "$only" = keccak ]; then
+    echo "aes-runtime-qemu: as clang compiles them for arm64, bin/sha3_hw_equiv_test held sha3_hw.c to sha3.c and found no lane on the stack, and bin/mlkem_hw_equiv_test held ML-KEM's copies to mlkem.c"
     exit 0
 fi
 
@@ -419,6 +477,29 @@ for b in "${loops[@]}"; do
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-512 instructions and sha512.c disagree" "$b" cpu 0x27 0x67
 done
 
+# The two loops once more as clang compiles them for arm64, the one object
+# that holds Keccak on the SHA-3 instructions. Every handshake runs ML-KEM,
+# whose hashes run on the instructions exactly where an end's ch_cfg.cpu
+# holds the SHA-3 bit.
+"$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" \
+    "${runtime[@]}" -o "$arm64_out/quic_loop_keccak" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+"$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" \
+    "${runtime[@]}" -o "$arm64_out/webpki_loop_keccak" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+for b in quic_loop_keccak webpki_loop_keccak; do
+    for bits in 0x25 0x27; do
+        expect_arm64 "$no_sha3" 0 "a session without the SHA-3 bit ran a SHA-3 instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+    for bits in 0xa5 0xa7; do
+        expect_arm64 "$no_sha3" "$sigill" "a session with the SHA-3 bit ran no SHA-3 instruction" \
+            "$b" cpu "$bits" "$bits"
+    done
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0xa5 0x25
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0x25 0xa5
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0xa7 0x27
+    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_arm64 max 0 "the SHA-3 instructions and sha3.c disagree" "$b" cpu 0x27 0xa7
+done
+
 echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU_AVX2 passed in the" \
     "vectors and both loops, and the rows with either died of SIGILL; on $no_avx2 the rows with" \
     "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on $no_sha the rows" \
@@ -427,4 +508,7 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "agreed with sha256.c, one end on the SHA extensions and the other on sha256.c agreed, and" \
     "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
     "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \
-    "instructions and the other on sha512.c agreed"
+    "instructions and the other on sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
+    "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max sha3_hw.c agreed" \
+    "with sha3.c and left no lane on the stack, ML-KEM's copies agreed with mlkem.c, and one end on" \
+    "the SHA-3 instructions and the other on sha3.c agreed"

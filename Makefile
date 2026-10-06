@@ -406,6 +406,9 @@ QUIC_UNPROBED := $(if $(HOST_TARGET),,aes_hw.c ghash_hw.c ghash_vector.h gcm_hw.
 # The hash sources of a host object hold their body under the same define
 # (docs/decisions.md 93), so the lint skips them on such a compiler too.
 QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c sha512_hw.c hash_hw.h hkdf_hw.c keysched_hw.c)
+# So do Keccak on the SHA-3 instructions and ML-KEM's two copies over it
+# (docs/decisions.md 99).
+QUIC_UNPROBED += $(if $(HOST_TARGET),,sha3_hw.c keccak_hw.h mlkem_hw.c mlkem_poly_hw.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -474,6 +477,8 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_nat
 # counting test with its counting entries. lint-tidy reads them in passes
 # of their own.
 HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
+                    sha3_hw.c mlkem_hw.c mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
+                    test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c
 # RSA's arithmetic on 64-bit limbs, the signer built on it and their
 # equivalence tests (docs/decisions.md 95), which compile only under
@@ -1213,7 +1218,9 @@ QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_R
 # -DCH_CPU_RUNTIME too, because hash_hw.h refuses one anywhere else
 # (docs/decisions.md 93), and sha256_hw.c holds its body under the define.
 QUIC_EXTRA_DEFINES += hash_hw.h:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME keysched_hw.c:-DCH_CPU_RUNTIME \
-                      sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME
+                      sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
+                      keccak_hw.h:-DCH_CPU_RUNTIME sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME \
+                      mlkem_poly_hw.c:-DCH_CPU_RUNTIME
 # What a host test binary compiles with, and what it links
 # (docs/decisions.md 89). HOST_CFLAGS is the test flags without the host's
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME, because a
@@ -1235,8 +1242,15 @@ widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 # hkdf_hw.c and keysched_hw.c. A session's CH_CPU_CONSTANT_TIME_SHA256 and
 # CH_CPU_CONSTANT_TIME_SHA512 bits pick them, and a device object holds
 # none. sha512_hw.c has no body on x86-64, which has no such instructions.
+# The same for Keccak (docs/decisions.md 99): sha3_hw.c, SHA-3 and SHAKE on
+# arm64's SHA-3 instructions, beside sha3.c, and mlkem.c and mlkem_poly.c
+# compiled once more over it, as mlkem_hw.c and mlkem_poly_hw.c, which a
+# session's CH_CPU_CONSTANT_TIME_SHA3 bit picks. The three have a body
+# where clang compiles an arm64 object and none anywhere else (cpu_cfg.h).
 hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),sha512_hw.c) \
-             $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c)
+             $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c) \
+             $(if $(filter sha3.c,$(1)),sha3_hw.c) $(if $(filter mlkem.c,$(1)),mlkem_hw.c) \
+             $(if $(filter mlkem_poly.c,$(1)),mlkem_poly_hw.c)
 host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25519_wide.c) \
             $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
             $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
@@ -1422,8 +1436,9 @@ print-host-srcs:
 # three test files, bin/quic_test_hw beside test/quic_vectors.c,
 # bin/x86_kernels_test beside its two, bin/sha2_equiv_test beside its one,
 # the two lists bin/hash_runtime_test links beside its one, of which
-# bin/hash_runtime_exporter_test links the first, and bin/p256_equiv_test
-# beside its one.
+# bin/hash_runtime_exporter_test links the first, bin/p256_equiv_test
+# beside its one, and bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
+# beside theirs.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1435,6 +1450,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(HASH_RUNTIME_TEST_SRCS)
 	@echo $(HASH_RUNTIME_QUIC_SRCS)
 	@echo $(P256_EQUIV_TEST_SRCS)
+	@echo $(SHA3_HW_EQUIV_TEST_SRCS)
+	@echo $(MLKEM_HW_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1569,7 +1586,10 @@ print-aes-runtime-qemu-srcs:
 # beside, so a device object carries the portable hash alone. They hold
 # sha512_hw.c to the host object with SUITE=aesgcm: a host object without
 # the suite packages sha512.c for its certificates and no sha512_hw.c
-# (docs/decisions.md 93).
+# (docs/decisions.md 93). The Keccak rows hold sha3_hw.c, mlkem_hw.c and
+# mlkem_poly_hw.c to the host object beside sha3.c, mlkem.c and
+# mlkem_poly.c, so a KEX=pq device object carries the portable Keccak alone
+# (docs/decisions.md 99).
 #
 # The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
 # asks for it, and every native copy to the host object: a host row
@@ -1706,6 +1726,11 @@ lint-trust-separation-run:
 	  "sha512.c sha512_hw.c $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "sha512_hw.c $$hash_hw" \
 	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
+	keccak_hw="sha3_hw.c mlkem_hw.c mlkem_poly_hw.c"; \
+	check "TRUST=raw-rsa KEX=pq" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
 	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c $$native_files" "" \
@@ -2399,6 +2424,25 @@ SHA2_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,sha256.c hkdf.c ke
 bin/sha2_equiv_test: test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS) hkdf.c keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o $@ test/sha2_equiv_test.c $(SHA2_EQUIV_TEST_SRCS)
+# A host object's Keccak on arm64's SHA-3 instructions against sha3.c, the
+# portable code CBMC proves (docs/decisions.md 99). test/stack_residue.c
+# copies the stack a call left, for the check that no lane the call
+# computed is still there (test/sha3_hw_equiv_residue.h). In an object
+# that holds no such path, and on a CPU without the instructions, the
+# binary says so and passes.
+SHA3_HW_EQUIV_TEST_SRCS := test/stack_residue.c $(call host_srcs,sha3.c) ct.c ct_wipe.c
+bin/sha3_hw_equiv_test: test/sha3_hw_equiv_test.c test/sha3_hw_equiv_residue.h \
+                        $(SHA3_HW_EQUIV_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/sha3_hw_equiv_test.c $(SHA3_HW_EQUIV_TEST_SRCS)
+# ML-KEM's two copies on the SHA-3 instructions against mlkem.c and
+# mlkem_poly.c, the code CBMC proves (docs/decisions.md 99): the same
+# keys, ciphertexts and secrets on the two paths, and the three calls a
+# session makes under each kind of ch_cfg.cpu.
+MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c ct_wipe.c
+bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
 # Which SHA-256 and which SHA-512 a host object's hash calls run under
 # each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
 # defines sha256.c's three calls that hash, sha512.c's five and the same
@@ -3268,7 +3312,9 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
-                                 bin/sha2_equiv_test bin/hash_runtime_test bin/hash_runtime_exporter_test \
+                                 bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
+                                 bin/hash_runtime_test \
+                                 bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
@@ -4499,7 +4545,8 @@ san-check:
 	# with --unsigned-overflow-check instead. The SHA-2 equivalence binary
 	# runs its cases on heap buffers that end where each case ends too, and
 	# skips its search of the stack, which AddressSanitizer's frames would
-	# not answer (test/stack_residue.c). The wide P-256 files'
+	# not answer (test/stack_residue.c), and so does the Keccak one, which
+	# has a path to test where clang builds for arm64. The wide P-256 files'
 	# equivalence binary runs without its stack checks
 	# (CH_P256_EQUIV_NO_STACK): a sanitizer's redzones make its frames
 	# several times the object's, so how deep a sanitized call writes and
@@ -4522,6 +4569,12 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
 	    $(SHA2_EQUIV_TEST_SRCS); \
 	  echo "== sha2_equiv_test (SAN -O$(O))"; ./bin/san/sha2_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/sha3_hw_equiv_test test/sha3_hw_equiv_test.c \
+	    $(SHA3_HW_EQUIV_TEST_SRCS); \
+	  echo "== sha3_hw_equiv_test (SAN -O$(O))"; ./bin/san/sha3_hw_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_hw_equiv_test test/mlkem_hw_equiv_test.c \
+	    $(MLKEM_HW_EQUIV_TEST_SRCS); \
+	  echo "== mlkem_hw_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_hw_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
@@ -4771,7 +4824,7 @@ lint-stack-run:
 	@mkdir -p bin/obj; objs=$$(mktemp -d bin/obj/stack.XXXXXX); \
 	rc=0; for f in $(LIB_SRCS) drbg.c; do \
 	  budget=$(STACK_BUDGET); \
-	  case " $(KEX_HYBRID_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
+	  case " $(KEX_HYBRID_SRCS) $(call hash_hw_of,$(KEX_HYBRID_SRCS)) " in *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
 	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	done; rm -rf $$objs; \
@@ -5118,15 +5171,24 @@ else
 	# that end sha256.h, hkdf.h and keysched.h too, and then the two test
 	# mains under their binaries' defines. test/hash_runtime_count.c stays
 	# out of every pass, for the reason test/aes_equiv_soft.c does below.
+	# sha3_hw.c and ML-KEM's two copies have a body for arm64 under clang
+	# alone (docs/decisions.md 99), which the arm64 pass's target gives
+	# them, and the two Keccak test mains follow under the host's own target.
 	@$(call TIDY_EACH,sha256_hw.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c, \
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
+	@$(call TIDY_EACH,sha3_hw.c mlkem_hw.c mlkem_poly_hw.c, \
+	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,hkdf.c keysched.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
@@ -5925,6 +5987,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305
                   poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 \
                   sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_sign64.c:0 \
+                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
@@ -5995,6 +6058,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
+                   sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
@@ -6324,9 +6388,24 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
 # where the padding ends; and the two loops that write the digest's words
 # and their bytes, once in each final. Every one reads a length or a
 # count. On x86-64 the file has no body and no branch.
+# sha3_hw.c's 31 on arm64 (docs/decisions.md 99): 25 are sha3.c's sponge
+# compiled once more, seven each in block_xor and block_bytes, five in
+# absorb with absorb_whole_blocks's count of the blocks, three in squeeze,
+# the loop that zeroes the state in each init, and shake_squeeze's test of
+# whether the padding ran. Each reads a length, a position in the block or
+# the rate. permute_blocks has the other six: the loop over the blocks,
+# four tests of how many lanes of the message a block takes, and the loop
+# over the 24 rounds. None reads a lane or a message byte.
+# mlkem_hw.c's 15 and mlkem_poly_hw.c's 35 are the branches of mlkem.c and
+# mlkem_poly.c, the same text under keccak_hw.h's names: by function, the
+# counts mlkem_poly_native.c has on this spec, and one more in each of
+# mlk_poly_compress and mlk_poly_tomsg, whose multiply is ct.h's
+# decomposition here. On x86-64 the three files have no body and no branch.
 HASH_HW_BRANCH_CEILING := \
   arm64/sha256_hw.c:8 x86-64/sha256_hw.c:8 arm64/hkdf_hw.c:16 x86-64/hkdf_hw.c:16 \
-  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:12 x86-64/sha512_hw.c:0
+  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:12 x86-64/sha512_hw.c:0 \
+  arm64/sha3_hw.c:31 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:15 x86-64/mlkem_hw.c:0 \
+  arm64/mlkem_poly_hw.c:35 x86-64/mlkem_poly_hw.c:0
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. Their branches were read before they were
 # recorded, and the counts are the same on both specs. Every one closes a
@@ -6422,7 +6501,8 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                poly1305_vector_native.c \
-               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_sign64.c $(P256_WIDE_SRCS)
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_sign64.c $(P256_WIDE_SRCS) \
+               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -6456,7 +6536,18 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # absorb, squeeze and the entries that inline them, on the block's fill,
 # the bytes left, the rate, the squeezing flag and the round counter.
 # keccak_round holds none: it is straight-line. No branch reads a lane
-# or a message byte.
+# or a message byte. The entry fell to 33 when absorb's loop over whole
+# blocks moved into absorb_whole_blocks (docs/decisions.md 99).
+#
+# sha3.c's entries under the Arm GNU gcc and the two riscv32 gcc entries
+# rose by one, from 21 to 22 and from 22 to 23, when absorb's loop over
+# whole blocks moved into absorb_whole_blocks, which sha3_hw.c replaces
+# (docs/decisions.md 99). At -Os both gccs then inline absorb into its two
+# callers, where they kept one copy out of line before: shake_absorb holds
+# absorb's four branches, on the block's fill, the bytes it takes, a full
+# block and the bytes left against the rate, and keccak holds the last of
+# them again, because its block starts empty. The branches were read.
+# None reads a lane or a message byte.
 #
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
 # moved into clamp_and_ladder(), which the wide field shares. Both branches
@@ -6521,7 +6612,7 @@ BRANCH_CEILING := \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
   rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
-  m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
+  m3-gcc/sha3.c:22 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
@@ -6531,18 +6622,18 @@ BRANCH_CEILING := \
   mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:36 \
+  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:33 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
+  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:23 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
   rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
-  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
+  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:23 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \

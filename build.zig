@@ -755,13 +755,17 @@ fn nativeCopies(b: *std.Build, list: Names) Names {
 /// The Makefile's hash_hw_of as it packages an object: what a host object
 /// holds beside the hash files of list, in the Makefile's order. It holds
 /// sha512_hw.c only where suite says the object runs SHA-384 under a
-/// session's value.
+/// session's value. Keccak on the SHA-3 instructions and ML-KEM's two copies
+/// over it stand beside sha3.c, mlkem.c and mlkem_poly.c the same way.
 fn hashHwSources(b: *std.Build, list: Names, suite: bool) Names {
     const pairs = [_][2][]const u8{
         .{ "sha256.c", "sha256_hw.c" },
         .{ "sha512.c", "sha512_hw.c" },
         .{ "hkdf.c", "hkdf_hw.c" },
         .{ "keysched.c", "keysched_hw.c" },
+        .{ "sha3.c", "sha3_hw.c" },
+        .{ "mlkem.c", "mlkem_hw.c" },
+        .{ "mlkem_poly.c", "mlkem_poly_hw.c" },
     };
     var out = std.ArrayList([]const u8).initCapacity(b.allocator, pairs.len) catch @panic("OOM");
     for (pairs) |pair| {

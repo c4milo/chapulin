@@ -34,6 +34,25 @@
 #     holds for the three SHA-384 calls the two files make. On x86-64 the
 #     copies name sha512.c's three, because that object holds no other.
 #
+# The same for Keccak (docs/decisions.md 99), which has a body on the
+# instructions where clang compiles an arm64 host object:
+#
+#   - a device object's sha3.c, mlkem.c and mlkem_poly.c name no symbol
+#     that ends in _hw, sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c compiled
+#     that way define nothing, and keccak_hw.h refuses such a build;
+#   - for arm64, sha3_hw.c must define its six entries and hold FEAT_SHA3's
+#     instructions and no SHA-256 or SHA-512 one, and for x86-64 it and
+#     ML-KEM's two copies must define nothing;
+#   - for both targets, sha3.c, mlkem.c, mlkem_poly.c, mlkem_poly_native.c
+#     and ML-KEM's two copies hold none of FEAT_SHA3's instructions, so
+#     sha3_hw.c holds every one an object runs;
+#   - for arm64, ML-KEM's copies call Keccak on the instructions and the
+#     files under their own names the portable one: mlkem_hw.c and
+#     mlkem_poly_hw.c name the _hw entries of every SHA-3 and SHAKE call
+#     they make and none of sha3.c's, mlkem.c and mlkem_poly.c the
+#     reverse, and every mlk_ call mlkem_hw.c makes goes to the copy's
+#     own or to a native copy (widemul.h).
+#
 # test/aes-runtime-disasm.sh reads the same about the instructions from a
 # whole packaged object on the host's own compiler. This script asks the
 # pinned clang for both architectures, so it gives one verdict on every
@@ -78,15 +97,30 @@ for src in hkdf_hw.c keysched_hw.c; do
         fail "$src compiled without -DCH_CPU_RUNTIME; hash_hw.h must refuse a copy outside a host object"
     fi
 done
+for src in sha3.c mlkem.c mlkem_poly.c sha3_hw.c mlkem_hw.c mlkem_poly_hw.c; do
+    symbols=$(device_symbols "$src") || fail "$src does not compile without -DCH_CPU_RUNTIME"
+    if grep -qE '_hw$' <<< "$symbols"; then
+        fail "$src without -DCH_CPU_RUNTIME names an entry on the instructions; a device object holds the portable Keccak alone"
+    fi
+done
+for src in sha3_hw.c mlkem_hw.c mlkem_poly_hw.c; do
+    if device_symbols "$src" | grep -qE '[[:space:]][A-TV-Z][[:space:]]'; then
+        fail "$src without -DCH_CPU_RUNTIME defines a symbol; it has a body in a host object alone"
+    fi
+done
+if printf '#include "keccak_hw.h"\n' | "$cc" -std=c11 -I. -x c -fsyntax-only - 2> /dev/null; then
+    fail "keccak_hw.h compiled without -DCH_CPU_RUNTIME; it must refuse a copy outside a host object"
+fi
 
 # A host object's source, asked of the pinned clang for x86-64 and arm64
 # targets whatever the host. It writes $work/cross.o and $work/cross.s.
+# ML-KEM's files read cfg.h, which asks for an entropy pattern.
 cross_object() { # $1 = target, $2 = source
     "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
-        -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -c "$2" -o "$work/cross.o" ||
+        -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_RAND_EXTERN -c "$2" -o "$work/cross.o" ||
         fail "$2 does not compile for a host object on $1 with no instruction flag"
     "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
-        -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -S "$2" -o "$work/cross.s" || exit 1
+        -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -DCH_RAND_EXTERN -S "$2" -o "$work/cross.s" || exit 1
 }
 
 # Whether $work/cross.s holds a SHA-256 instruction: sha256h, sha256h2,
@@ -187,4 +221,44 @@ for target in "$x86" "$arm64"; do
     defines ks_handshake_hw || fail "keysched_hw.c for $target does not define ks_handshake_hw"
 done
 
-echo "hash-builds: a device object holds the portable hashes alone, hash_hw.h refuses a copy outside a host object, sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and has no body on x86-64, no other hash source holds one, and each copy calls the hashes on the instructions its target has"
+# Keccak. sha3_hw.c's six entries, and the calls each of ML-KEM's files
+# makes into sha3.h.
+sha3_entries=(sha3_256_hw sha3_512_hw shake128_init_hw shake256_init_hw shake_absorb_hw shake_squeeze_hw)
+mlkem_keccak_calls=(sha3_256 sha3_512 shake256_init shake_absorb shake_squeeze)
+mlkem_poly_keccak_calls=(shake128_init shake256_init shake_absorb shake_squeeze)
+for target in "$x86" "$arm64"; do
+    for src in sha3.c mlkem.c mlkem_poly.c mlkem_poly_native.c mlkem_hw.c mlkem_poly_hw.c; do
+        cross_object "$target" "$src"
+        holds_sha3 && fail "$src for $target holds one of FEAT_SHA3's instructions; only sha3_hw.c may"
+    done
+    cross_object "$target" mlkem.c
+    calls "mlkem.c for $target" "" "${mlkem_keccak_calls[@]}"
+    cross_object "$target" mlkem_poly.c
+    calls "mlkem_poly.c for $target" "" "${mlkem_poly_keccak_calls[@]}"
+    if [ "$target" = "$x86" ]; then
+        for src in sha3_hw.c mlkem_hw.c mlkem_poly_hw.c; do
+            cross_object "$target" "$src"
+            nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
+                fail "$src for $target defines a symbol; x86-64 has no SHA-3 instructions to run it on"
+        done
+        continue
+    fi
+    cross_object "$target" sha3_hw.c
+    for symbol in "${sha3_entries[@]}"; do
+        defines "$symbol" || fail "sha3_hw.c for $target does not define $symbol"
+    done
+    holds_sha3 || fail "sha3_hw.c for $target holds none of FEAT_SHA3's instructions"
+    if holds_sha256 || holds_sha512; then
+        fail "sha3_hw.c for $target holds a SHA-256 or SHA-512 instruction, which CH_CPU_CONSTANT_TIME_SHA3 does not name"
+    fi
+    cross_object "$target" mlkem_hw.c
+    calls "mlkem_hw.c for $target" _hw "${mlkem_keccak_calls[@]}"
+    defines mlkem_decaps_hw || fail "mlkem_hw.c for $target does not define mlkem_decaps_hw"
+    defines mlkem_decaps && fail "mlkem_hw.c for $target defines mlkem_decaps, which mlkem.c defines"
+    stray=$(nm "$work/cross.o" | awk '$1 == "U" { print $2 }' | grep -E '^_?mlk_' | grep -vE '_(hw|native)$' || true)
+    [ -z "$stray" ] || fail "mlkem_hw.c for $target calls $stray, which the copy of mlkem_poly.c does not define"
+    cross_object "$target" mlkem_poly_hw.c
+    calls "mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"
+done
+
+echo "hash-builds: a device object holds the portable hashes alone, hash_hw.h refuses a copy outside a host object, sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and has no body on x86-64, no other hash source holds one, and each copy calls the hashes on the instructions its target has; and the same holds for Keccak on FEAT_SHA3 in sha3_hw.c, on arm64 alone, and ML-KEM's two copies over it"

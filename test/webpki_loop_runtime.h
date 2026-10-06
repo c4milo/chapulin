@@ -172,9 +172,11 @@ static int check_runtime_values(const char *client_text, const char *server_text
 // portable code, in both orders, and then both do: under ChaCha20, whose
 // key schedule runs SHA-256, and under AES-256-GCM, whose key schedule runs
 // SHA-384 beside a transcript that takes both hashes. A handshake completes
-// only where the two paths compute the same hashes. The rows state the bits
-// whose instructions this CPU has (test_cpu_hash_bits), and skip on a CPU
-// with none.
+// only where the two paths compute the same hashes. ML-KEM's hashes run on
+// the instructions too in an object that holds Keccak on them
+// (docs/decisions.md 99), so there the hybrid's shared secret agrees only
+// where the two Keccaks do. The rows state the bits whose instructions this
+// CPU has (test_cpu_hash_bits), and skip on a CPU with none.
 static void check_runtime_hash_bits(void) {
     uint32_t hash = test_cpu_hash_bits();
     if (hash == 0) {

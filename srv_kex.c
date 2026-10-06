@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "rand_draw.h"
 #include "widemul.h"
@@ -62,8 +63,8 @@ static int encapsulate(handshake_state *h, const client_hello *ch,
     // encapsulation key before it writes anything, and answers nonzero
     // when a coefficient is at or above the modulus. The key is public,
     // so the branch on that verdict leaks nothing.
-    int refused =
-        mlkem_encaps_derand(widemul_answer(&h->t->cfg), share, h->mlkem_ss, ch->hybrid_share, m);
+    int refused = mlkem_encaps_derand_cpu(CH_CFG_CPU(h->t->cfg), widemul_answer(&h->t->cfg), share,
+                                          h->mlkem_ss, ch->hybrid_share, m);
     ct_wipe(m, sizeof m);
     if (refused != 0) {
         ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);

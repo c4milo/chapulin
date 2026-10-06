@@ -93,10 +93,12 @@
 // without it on sha256.c. With CH_CPU_CONSTANT_TIME_SHA512 an arm64 session runs SHA-384, the
 // hash of TLS_AES_256_GCM_SHA384, and HMAC, HKDF and the key schedule over it on the SHA-512
 // instructions (sha512_hw.c), and without it on sha512.c. Each hash follows its own bit alone. A
-// session whose bit names instructions its CPU lacks faults on the first one. A hash call that
+// session whose bit names instructions its CPU lacks faults on the first one. With
+// CH_CPU_CONSTANT_TIME_SHA3 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
+// instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang
+// compiled it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. A hash call that
 // takes no value runs the portable code in every object: a certificate's, a signature's and the
-// DRBG's are such calls. No object holds SHA-3 on its instructions yet, so that bit picks
-// nothing.
+// DRBG's are such calls.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64,
@@ -122,6 +124,17 @@
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
+#endif
+
+// Whether the object holds Keccak on the SHA-3 instructions, which CH_CPU_CONSTANT_TIME_SHA3
+// then picks: an arm64 host object that clang compiled. A round of Keccak-f[1600] keeps 32
+// values in arm64's 32 vector registers, and a compiler that needs a 33rd writes a lane of the
+// state to a stack slot of its choosing, which no wipe written in C clears. Apple clang 21,
+// clang 18 and clang 23 keep all 32 in registers, and gcc 13 does not (sha3_hw.c,
+// docs/decisions.md 99). In an object another compiler built, the bit describes the CPU and
+// picks nothing.
+#if defined(__aarch64__) && defined(__clang__)
+#define CH_KECCAK_INSTRUCTIONS
 #endif
 #endif // CH_CPU_RUNTIME
 

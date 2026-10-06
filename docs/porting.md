@@ -122,8 +122,10 @@ arm64 session does the same for SHA-384, the hash of TLS_AES_256_GCM_SHA384,
 and each hash follows its own bit alone. The vendor statement behind a bit must
 cover the instructions `cpu_cfg.h` lists for it. A hash call that takes no
 `ch_cfg.cpu`, such as a certificate's, a signature's or the DRBG's, runs the
-portable code in every object. No object runs SHA-3 on its instructions yet, so
-that bit picks nothing (decision 93).
+portable code in every object. With the SHA-3 bit an arm64 session runs SHA-3,
+SHAKE and ML-KEM's hashes on the SHA-3 instructions, in an object that clang
+compiled. In an object that gcc compiled the bit picks nothing, because gcc
+writes lanes of the Keccak state to stack slots no wipe clears (decision 99).
 
 ### Check it on your target, because the compiler can undo it
 

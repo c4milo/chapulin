@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "handshake_groups.h" // empty outside CH_KEX_TWO_GROUPS
 #include "handshake_message.h"
@@ -122,26 +123,25 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
     }
 #endif
     uint8_t dk[MLKEM_DK_LEN];
-    mlkem_keygen_dk(dk, h->dz, h->dz + 32);
+    mlkem_keygen_dk_cpu(CH_CFG_CPU(h->t->cfg), dk, h->dz, h->dz + 32);
     size_t n = build_client_hello_ek(h, out, cap, dk + 1152);
     ct_wipe(dk, sizeof dk);
     return n;
 }
 
-// Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] — ML-KEM
-// first, RFC 10024's order despite the group's name. The ct pointer reads
-// out of the live ServerHello bytes; no read of a further message sits
-// between the parse and this. The seed h->dz is wiped as soon as the dk is
-// expanded from it, its last use. Decapsulation cannot fail (a tampered
-// ciphertext yields the implicit-reject secret); the x25519 all-zero
-// refusal stays, and on it the half-built secret is wiped.
+// Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] — ML-KEM first, RFC 10024's
+// order despite the group's name. The ct pointer reads out of the live ServerHello bytes; no
+// read of a further message sits between the parse and this. The seed h->dz is wiped as soon
+// as the dk is expanded from it, its last use. Decapsulation cannot fail (a tampered
+// ciphertext yields the implicit-reject secret); the x25519 all-zero refusal stays, and on it
+// the half-built secret is wiped.
 static int hybrid_secret(handshake_state *h, const server_hello_info *info,
                          uint8_t ikm[MLKEM_SS_LEN + X25519_LEN]) {
     uint8_t widemul = widemul_answer(&h->t->cfg);
     uint8_t dk[MLKEM_DK_LEN];
-    mlkem_keygen_dk(dk, h->dz, h->dz + 32);
+    mlkem_keygen_dk_cpu(CH_CFG_CPU(h->t->cfg), dk, h->dz, h->dz + 32);
     ct_wipe(h->dz, sizeof h->dz);
-    mlkem_decaps(widemul, ikm, info->server_ct, dk);
+    mlkem_decaps_cpu(CH_CFG_CPU(h->t->cfg), widemul, ikm, info->server_ct, dk);
     ct_wipe(dk, sizeof dk);
     if (!widemul_x25519(widemul, ikm + MLKEM_SS_LEN, h->priv, info->server_pub)) {
         ct_wipe(ikm, MLKEM_SS_LEN + X25519_LEN);

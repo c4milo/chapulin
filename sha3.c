@@ -16,6 +16,14 @@ static const uint64_t RC[24] = {
     0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
     0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008};
 
+// sha3_hw.c compiles this file once more for an arm64 host object that
+// clang compiles, under second names and with Keccak-f[1600] on the SHA-3
+// instructions (docs/decisions.md 99). That copy defines CH_SHA3_HW_COPY
+// and supplies the two functions the sponge calls for the permutation,
+// keccak_f1600 and absorb_whole_blocks, so the text between each #ifndef
+// below and its #endif is this file's alone.
+#ifndef CH_SHA3_HW_COPY
+
 // r is 1 to 63 at every call below.
 static uint64_t rotate_left(uint64_t x, unsigned r) {
     return (x << r) | (x >> (64 - r));
@@ -157,6 +165,8 @@ static void keccak_f1600(uint64_t a[25]) {
     }
 }
 
+#endif // CH_SHA3_HW_COPY
+
 // Bytes map to lanes little-endian (FIPS 202 §3.1.2): byte i of a block
 // is byte i % 8 of lane i / 8, counted from the lane's low end. Every
 // function below names a lane's bytes one by one, so the host's
@@ -217,6 +227,22 @@ static void block_bytes(uint8_t *out, const uint64_t lane[25], size_t pos, size_
     }
 }
 
+#ifndef CH_SHA3_HW_COPY
+
+// XORs each whole block of the *n bytes at *in into the lanes and runs the
+// permutation after it, and moves *in and *n past the blocks it took,
+// which leaves fewer than one block.
+static void absorb_whole_blocks(uint64_t lane[25], size_t rate, const uint8_t **in, size_t *n) {
+    while (*n >= rate) {
+        block_xor(lane, 0, *in, rate);
+        keccak_f1600(lane);
+        *in += rate;
+        *n -= rate;
+    }
+}
+
+#endif // CH_SHA3_HW_COPY
+
 // Both sponge directions finish the partly used block first and then
 // work from a block's first byte, the shape sha256_update has, so the
 // permutation runs once per whole block and never once per byte. The
@@ -238,12 +264,7 @@ static void absorb(uint64_t lane[25], size_t rate, size_t *pos, const uint8_t *i
             fill = 0;
         }
     }
-    while (n >= rate) {
-        block_xor(lane, 0, in, rate);
-        keccak_f1600(lane);
-        in += rate;
-        n -= rate;
-    }
+    absorb_whole_blocks(lane, rate, &in, &n);
     // Bytes are left only when the block is empty: a block the first
     // step did not fill took every byte there was.
     block_xor(lane, 0, in, n);

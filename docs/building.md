@@ -176,8 +176,11 @@ Other targets:
   `sha512_hw.c`, which a `SUITE=aesgcm` host object holds beside
   `sha512.c`, and without it on `sha512.c`. Each hash follows its own
   bit alone. A certificate's hash, a signature's and the DRBG's take no
-  `cpu` and run the portable code in every object. No object runs SHA-3
-  on its instructions yet, so that bit picks nothing (decision 93). A raw or
+  `cpu` and run the portable code in every object. Under
+  `CH_CPU_CONSTANT_TIME_SHA3` an arm64 session runs SHA-3, SHAKE and
+  ML-KEM on the SHA-3 instructions, in `sha3_hw.c` and ML-KEM's two
+  copies over it, where clang compiled the object. In an object another
+  compiler built, that bit picks nothing (decision 99). A raw or
   ca client builds the portable object on every target, and so does every
   product for any other target, so the default `make lib` has no `cpu`
   field. To package a server's portable object on a host, set the host

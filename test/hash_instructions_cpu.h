@@ -74,6 +74,15 @@ static inline int cpu_has_sha512_instructions(void) {
     return (getauxval(AT_HWCAP) & HWCAP_SHA512) != 0;
 #endif
 }
+
+// What CH_CPU_CONSTANT_TIME_SHA3 names: FEAT_SHA3, an arm64 feature.
+static inline int cpu_has_sha3_instructions(void) {
+#ifdef __APPLE__
+    return apple_cpu_reports("hw.optional.arm.FEAT_SHA3");
+#else
+    return (getauxval(AT_HWCAP) & HWCAP_SHA3) != 0;
+#endif
+}
 #endif
 
 // Whether a binary whose CPU lacks a hash's instructions must fail rather

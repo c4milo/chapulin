@@ -1,0 +1,14 @@
+invariant: INV-16
+file: keccak_hw.h
+catches: test/hash-builds.sh
+reason: keccak_hw.h stops renaming shake_absorb, so ML-KEM's two copies
+  absorb their seeds on sha3.c's portable code while every other call of
+  theirs runs on the instructions, and sha3_hw.c defines shake_absorb a
+  second time. Every key and secret is still right, because both paths
+  compute the same bytes. test/hash-builds.sh compiles the copies for
+  arm64 under the pinned clang and requires each to call the _hw entry of
+  every SHA-3 and SHAKE call it makes and none of sha3.c's.
+
+--- old
+#define shake_absorb shake_absorb_hw
+--- new

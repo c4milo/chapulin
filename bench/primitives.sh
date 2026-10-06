@@ -19,12 +19,13 @@
 #            runs the 128-bit vector path, as every host session's does; a
 #            device object runs chacha20.c's portable loop, which
 #            bench/aead.sh times
-#   0x67 ... every bit this CPU has that an object reads, the value a
+#   0xe7 ... every bit this CPU has that an object reads, the value a
 #            caller on it would state (cpu_value below): the native
 #            copies, the wide X25519 field, the vector Poly1305, SHA-256
 #            on the CPU's SHA-256 instructions, on arm64 SHA-384 and
-#            SHA-512 on its SHA-512 instructions, and on x86-64 the AVX2
-#            ChaCha20
+#            SHA-512 on its SHA-512 instructions and, in a program clang
+#            built, SHA-3, SHAKE and ML-KEM on its SHA-3 instructions, and
+#            on x86-64 the AVX2 ChaCha20
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256
@@ -200,6 +201,7 @@ CPU_AVX2=0x8
 CPU_VAES=0x10
 CPU_CONSTANT_TIME_SHA256=0x20
 CPU_CONSTANT_TIME_SHA512=0x40
+CPU_CONSTANT_TIME_SHA3=0x80
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -217,11 +219,13 @@ reports() { # $1 = the list, space separated; the rest = the words
 # multiply bit, the AES bit where the CPU reports the AES instructions and
 # the carry-less multiply, the SHA-256 bit where it reports the SHA-256
 # instructions, on arm64 the SHA-512 bit where it reports the SHA-512
-# instructions, and on x86-64 the AVX2 and VAES bits where it reports
-# those. It leaves out CH_CPU_CONSTANT_TIME_SHA3, which no object reads
-# yet. BENCH_CPU from the environment wins, for a system this function
-# has no probe for. The four timing bits also state that the
-# instructions run in constant time in the thread's mode. The bench sets
+# instructions and the SHA-3 bit where it reports the SHA-3 ones, and on
+# x86-64 the AVX2 and VAES bits where it reports those. A program gcc
+# built holds no Keccak on the SHA-3 instructions, and there the SHA-3
+# bit picks nothing (docs/decisions.md 99). BENCH_CPU from the
+# environment wins, for a system this function has no probe for. The
+# five timing bits also state that the instructions run in constant time
+# in the thread's mode. The bench sets
 # no such mode, neither PSTATE.DIT nor DOITM: it times the paths the bits
 # pick and states nothing a deployment could rely on.
 cpu_value() {
@@ -243,6 +247,9 @@ cpu_value() {
         fi
         if [ "$(sysctl -n hw.optional.arm.FEAT_SHA512 2>/dev/null)" = 1 ]; then
             features="$features sha512"
+        fi
+        if [ "$(sysctl -n hw.optional.arm.FEAT_SHA3 2>/dev/null)" = 1 ]; then
+            features="$features sha3"
         fi
         ;;
     "Linux arm64") features=$(sed -n 's/^Features[[:space:]]*: //p' /proc/cpuinfo | head -1) ;;
@@ -266,6 +273,10 @@ cpu_value() {
     # bit.
     if [ "$ARCH" = arm64 ] && reports "$features" sha512; then
         value=$((value | CPU_CONSTANT_TIME_SHA512))
+    fi
+    # arm64 Linux names FEAT_SHA3 sha3. An x86-64 object refuses the bit.
+    if [ "$ARCH" = arm64 ] && reports "$features" sha3; then
+        value=$((value | CPU_CONSTANT_TIME_SHA3))
     fi
     if [ "$ARCH" = x86_64 ] && reports "$features" avx2; then
         value=$((value | CPU_AVX2))
