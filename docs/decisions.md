@@ -7469,3 +7469,67 @@ does nothing more.
     - **The key's multiples in affine coordinates.** Each addition of one
       would save 5 products, about 43 times, and making them affine costs
       an inversion of about 270 products.
+105. **The wide P-256 field and scalar square on ten products.**
+    `p256_wide_fe_sqr` was `p256_wide_fe_mul(o, a, a)`, and the scalar
+    inverse's squarings were `mont_mul(o, o, o)`: sixteen products where
+    a square needs ten, because the product a_i a_j for i != j appears
+    twice. The field's inversion is 255 squarings and 12 products, the
+    scalar inverse's 252 squarings and 53 products, and a verification's
+    256 doublings each square five times.
+
+    - **The step.** `p256_wide_limb.h` gains `p256_wide_sqr_product`:
+      the six products a_i a_j with i < j in three rows, their sum
+      doubled by a shift across the limbs, and the four squares a_i^2
+      added, eight limbs out. `p256_wide_fe_sqr` reduces them with the
+      multiply's reduction, and `mont_sqr` in `p256_wide_scalar.c` with
+      `mont_mul`'s four rounds. Both stay constant time: shifts, adds
+      with carry and products, and no branch.
+    - **The reduction stays inline.** With two callers gcc 13 compiled
+      `p256_wide_field.c`'s `reduce` once, out of line, even declared
+      inline, and every product and square then passed it nine
+      arguments, three on x86-64's stack. Under gcc for x86-64 a key
+      exchange then retired 1,835,031 instructions where it had retired
+      1,823,092. `reduce` carries `__attribute__((always_inline))`, which
+      both compilers of a host object read, and with it the exchange
+      retires 1,759,594.
+    - **What holds it.** `proof/p256_wide_sqr_harness.c` proves on the
+      real multiply that the square wraps no unsigned value for any four
+      limbs (69 properties, 5 s, 404 MB): the top limb's sum fits only
+      because the square is below 2^512. `proof/p256_wide_stubs.h`
+      replaces the square with any eight limbs in the field's and the
+      scalar's harnesses, as it replaces a row. `bin/p256_equiv_test`
+      holds every square to `p256_field.c`'s and both inverses to the
+      32-bit files', and the vectors and the Wycheproof host leg run on
+      it. Two violations, `p256-wide-sqr-top-carry-dropped` and
+      `p256-wide-sqr-doubling-drops-a-bit`, fail `bin/p256_equiv_test`.
+
+    Gain, in instructions an operation retires, which the machine's
+    load does not move, against the tree of entry 104:
+
+    | instructions | M1 Pro, Apple clang 21 | x86-64, gcc 13 | x86-64, clang 18 |
+    | --- | --- | --- | --- |
+    | key generation | 232,631 to 224,926 | 446,170 to 430,615 | 354,808 to 342,184 |
+    | shared secret | 917,708 to 886,341 | 1,823,092 to 1,759,594 | 1,443,956 to 1,393,282 |
+    | signature, `p256_sign_cpu` | 319,961 to 305,271 | 616,599 to 589,219 | 485,639 to 461,106 |
+    | verification | 705,798 to 648,553 | 1,419,879 to 1,306,183 | 1,092,464 to 999,705 |
+
+    The M1 Pro's column is `proc_pid_rusage` over a scratch loop of each
+    call, and the x86-64 columns are qemu-x86_64 with `-cpu max`, one
+    instruction per translation block. A field square retires 131
+    instructions on the M1 Pro where a product retires 162, and the
+    field's inversion 31,657 where it retired 39,412.
+
+    In time, on a GitHub runner's AMD EPYC 7763 under gcc 13, run
+    37545618987 of `bench.yml` on the tree with this entry and entry 104
+    took 32.9 µs for a key generation, 142 µs for a key exchange, 48.0 µs
+    for a signature and 111 µs for a verification, where OpenSSL 3.6.4
+    took 12.3, 51.7, 22.2 and 67.6 µs in the same run: 2.67, 2.75, 2.16 and
+    1.64 times. `docs/performance.md`'s table was recorded on an EPYC 9V74
+    before entries 102, 104 and this one, at 2.87, 2.71, 2.95 and 2.64
+    times. The two CPUs differ, so the two runs set no ratio against each
+    other. The M1 Pro ran other work at a load average of 40 to 180 while
+    this entry was measured, so its column above is instructions alone.
+
+    Cost: 57 lines in `p256_wide_limb.h`, a routine of 13 lines in each
+    of the two files, and one attribute that is not C11, in a file a
+    device object does not compile.

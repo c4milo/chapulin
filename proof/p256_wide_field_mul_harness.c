@@ -6,7 +6,8 @@
 // first, over the second, and with both inputs one object.
 //
 // The four rows of each product are the contract in proof/p256_wide_stubs.h,
-// which p256_wide_row_harness.c discharges on the real multiply. What runs
+// which p256_wide_row_harness.c discharges on the real multiply, and so is a
+// square's ten products, which p256_wide_sqr_harness.c discharges. What runs
 // here on the shipped code is everything between the rows and the output:
 // which limbs each row is handed, the four rounds of the reduction, the one
 // sum in a round that has to fit, the carry of the round before beside the

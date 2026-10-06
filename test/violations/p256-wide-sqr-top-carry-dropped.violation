@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: p256_equiv_test
+reason: the square of four limbs leaves out the carry into its top limb,
+  so a square whose chain of the four a_i^2 carried there is short by
+  2^448. Nothing faults: uint64_t arithmetic defines every wrap, and the
+  field's square and the scalar inverse's squarings go on computing with a
+  wrong value. bin/p256_equiv_test holds every square to p256_field.c's
+  and every inverse to p256_field.c's and p256_scalar.c's.
+
+--- old
+    *t7 = d7 + (uint64_t)(q3 >> 64) + carry;
+--- new
+    (void)carry;
+    *t7 = d7 + (uint64_t)(q3 >> 64);

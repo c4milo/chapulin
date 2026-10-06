@@ -1,0 +1,13 @@
+invariant: INV-16
+file: p256_wide_limb.h
+catches: p256_equiv_test
+reason: the square of four limbs doubles the sum of the products a_i a_j
+  without the bit that crosses from limb 4 into limb 5, so a square whose
+  limb 4 has its top bit set is short by 2^320. bin/p256_equiv_test holds
+  every square to p256_field.c's and every inverse to p256_field.c's and
+  p256_scalar.c's.
+
+--- old
+    uint64_t d5 = (s5 << 1) | (s4 >> 63);
+--- new
+    uint64_t d5 = s5 << 1;

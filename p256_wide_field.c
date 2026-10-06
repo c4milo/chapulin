@@ -1,9 +1,10 @@
 // The wide P-256 field (see p256_wide_field.h for the contracts). Elements are four
 // little-endian uint64 limbs. Multiplication is the 512-bit product, four rows of
 // p256_wide_limb.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, which for
-// this prime are shifts and adds with no product. Every carry chain is written out limb by
-// limb, with no loop over limbs and no array of them, so that gcc keeps the limbs in registers
-// as clang does (docs/performance.md, the pitfalls table).
+// this prime are shifts and adds with no product. A square is p256_wide_sqr_product's ten
+// products in place of the rows' sixteen, and the same reduction. Every carry chain is written out
+// limb by limb, with no loop over limbs and no array of them, so that gcc keeps the limbs in
+// registers as clang does (docs/performance.md, the pitfalls table).
 #include "p256_wide_field.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -76,8 +77,17 @@ static inline uint64_t reduce_round(uint64_t u, uint64_t *t1, uint64_t *t2, uint
 // o = (t7 : ... : t0) / 2^256 mod p, for any eight limbs. Four rounds leave a value below
 // 2^256 + p in (high : t7 : t6 : t5 : t4), so one conditional subtraction lands it below
 // 2^256, and below p when the eight limbs are a product of two elements below p.
-static void reduce(uint64_t o[P256_WIDE_FE_LIMBS], uint64_t t0, uint64_t t1, uint64_t t2,
-                   uint64_t t3, uint64_t t4, uint64_t t5, uint64_t t6, uint64_t t7) {
+//
+// The multiply and the square both end here, and the attribute keeps the reduction inside
+// each. With two callers and no attribute, gcc 13 compiled it once, out of line, even when it
+// was declared inline, and each call handed it nine arguments, three of them on x86-64's
+// stack: under gcc for x86-64 a key exchange retired 1,835,031 instructions with that call,
+// 1,759,594 without it and 1,823,092 before the square had a routine of its own
+// (docs/decisions.md 105). Both compilers a host object builds with read the attribute.
+static inline __attribute__((always_inline)) void reduce(uint64_t o[P256_WIDE_FE_LIMBS],
+                                                         uint64_t t0, uint64_t t1, uint64_t t2,
+                                                         uint64_t t3, uint64_t t4, uint64_t t5,
+                                                         uint64_t t6, uint64_t t7) {
     uint64_t high = reduce_round(t0, &t1, &t2, &t3, &t4, 0);
     high = reduce_round(t1, &t2, &t3, &t4, &t5, high);
     high = reduce_round(t2, &t3, &t4, &t5, &t6, high);
@@ -217,7 +227,18 @@ void p256_wide_fe_mul(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe
 }
 
 void p256_wide_fe_sqr(p256_wide_fe *o, const p256_wide_fe *a) {
-    p256_wide_fe_mul(o, a, a);
+    uint64_t t0;
+    uint64_t t1;
+    uint64_t t2;
+    uint64_t t3;
+    uint64_t t4;
+    uint64_t t5;
+    uint64_t t6;
+    uint64_t t7;
+    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->limb[0], a->limb[1],
+                          a->limb[2], a->limb[3]);
+    // o may alias a: every limb of a was read above.
+    reduce(o->limb, t0, t1, t2, t3, t4, t5, t6, t7);
 }
 
 void p256_wide_fe_to_mont(p256_wide_fe *o, const p256_wide_fe *a) {

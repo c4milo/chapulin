@@ -1,7 +1,9 @@
 // The wide P-256 scalar arithmetic (see p256_wide_scalar.h for the contracts). A scalar is four
 // little-endian uint64 limbs inside a call. Multiplication is the 512-bit product, four rows
 // of p256_wide_limb.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, each
-// one more row. The inverse is a Fermat power over a table of the first fifteen powers.
+// one more row. A square is p256_wide_sqr_product's ten products and the same rounds. The
+// inverse is a Fermat power over a table of the first fifteen powers, and its squarings are
+// those squares.
 //
 // The layout follows p256_wide_field.c's, as p256_scalar.c follows p256_field.c's. The two
 // differ in the modulus, its Montgomery constants and the reduction round: the field prime's
@@ -143,10 +145,29 @@ void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scala
 }
 
 // o = a^(2^n): n squarings in a row. n is a constant at every call.
+// o = a*a/R mod n: mont_mul's rounds on the square's eight limbs.
+static void mont_sqr(wide_scalar *o, const wide_scalar *a) {
+    uint64_t t0;
+    uint64_t t1;
+    uint64_t t2;
+    uint64_t t3;
+    uint64_t t4;
+    uint64_t t5;
+    uint64_t t6;
+    uint64_t t7;
+    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->limb[0], a->limb[1],
+                          a->limb[2], a->limb[3]);
+    uint64_t high = reduce_round(&t0, &t1, &t2, &t3, &t4, 0);
+    high = reduce_round(&t1, &t2, &t3, &t4, &t5, high);
+    high = reduce_round(&t2, &t3, &t4, &t5, &t6, high);
+    high = reduce_round(&t3, &t4, &t5, &t6, &t7, high);
+    reduce_once(o->limb, t4, t5, t6, t7, high);
+}
+
 static void sqr_times(wide_scalar *o, const wide_scalar *a, int n) {
-    mont_mul(o, a, a);
+    mont_sqr(o, a);
     for (int i = 1; i < n; i++) {
-        mont_mul(o, o, o);
+        mont_sqr(o, o);
     }
 }
 

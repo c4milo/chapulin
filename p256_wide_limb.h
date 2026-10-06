@@ -1,7 +1,8 @@
 // The steps on 64-bit limbs that the wide P-256 arithmetic is built from: an add with carry, a
-// subtract with borrow, one row of a product, and a mask from a bit. p256_wide_field.c and
-// p256_wide_scalar.c include this header and no other file does, so the two moduli share these
-// four and nothing else, as p256_field.c and p256_scalar.c share none of their constants.
+// subtract with borrow, one row of a product, the square of four limbs, and a mask from a bit.
+// p256_wide_field.c and p256_wide_scalar.c include this header and no other file does, so the
+// two moduli share these five and nothing else, as p256_field.c and p256_scalar.c share none of
+// their constants.
 //
 // Every step runs the same instructions whatever its operands hold. No branch and no index
 // reads a limb. The one instruction whose timing the C cannot state is the 64x64->128 multiply,
@@ -140,6 +141,63 @@ static inline uint64_t p256_wide_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t
     *t2 = p256_wide_add_carry(&high_carry, *t2, (uint64_t)(p1 >> 64));
     *t3 = p256_wide_add_carry(&high_carry, *t3, (uint64_t)(p2 >> 64));
     return (uint64_t)(p3 >> 64) + low_carry + high_carry;
+}
+
+// The square of (a3 : a2 : a1 : a0) as the eight limbs (*t7 : ... : *t0): the six products
+// a_i a_j with i < j summed once and doubled, and then the four squares a_i^2 added. That is
+// ten products, where a row of four for each limb is sixteen.
+//
+// No sum wraps. The six products sum to below 2^511, because twice their sum plus the four
+// squares is the square, which is below 2^512, so the double fits the limbs from 1 to 7, and
+// the square fits all eight. proof/p256_wide_sqr_harness.c proves that on the real multiply.
+static inline void p256_wide_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
+                                         uint64_t *t4, uint64_t *t5, uint64_t *t6, uint64_t *t7,
+                                         uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
+    ct_u128 p01 = ct_mul128(a0, a1);
+    ct_u128 p02 = ct_mul128(a0, a2);
+    ct_u128 p03 = ct_mul128(a0, a3);
+    ct_u128 p12 = ct_mul128(a1, a2);
+    ct_u128 p13 = ct_mul128(a1, a3);
+    ct_u128 p23 = ct_mul128(a2, a3);
+    // a0 (a1 + a2 2^64 + a3 2^128), at limbs 1 to 4.
+    uint64_t carry = 0;
+    uint64_t r2 = p256_wide_add_carry(&carry, (uint64_t)(p01 >> 64), (uint64_t)p02);
+    uint64_t r3 = p256_wide_add_carry(&carry, (uint64_t)(p02 >> 64), (uint64_t)p03);
+    uint64_t r4 = (uint64_t)(p03 >> 64) + carry;
+    // a1 (a2 + a3 2^64), at limbs 3 to 5.
+    carry = 0;
+    uint64_t q4 = p256_wide_add_carry(&carry, (uint64_t)(p12 >> 64), (uint64_t)p13);
+    uint64_t q5 = (uint64_t)(p13 >> 64) + carry;
+    // The two rows and a2 a3, at limbs 1 to 6.
+    carry = 0;
+    uint64_t s1 = (uint64_t)p01;
+    uint64_t s2 = r2;
+    uint64_t s3 = p256_wide_add_carry(&carry, r3, (uint64_t)p12);
+    uint64_t s4 = p256_wide_add_carry(&carry, r4, q4);
+    uint64_t s5 = p256_wide_add_carry(&carry, q5, (uint64_t)p23);
+    uint64_t s6 = (uint64_t)(p23 >> 64) + carry;
+    // Twice that sum, at limbs 1 to 7.
+    uint64_t d7 = s6 >> 63;
+    uint64_t d6 = (s6 << 1) | (s5 >> 63);
+    uint64_t d5 = (s5 << 1) | (s4 >> 63);
+    uint64_t d4 = (s4 << 1) | (s3 >> 63);
+    uint64_t d3 = (s3 << 1) | (s2 >> 63);
+    uint64_t d2 = (s2 << 1) | (s1 >> 63);
+    uint64_t d1 = s1 << 1;
+    // The four squares, a_i^2 at limbs 2i and 2i + 1.
+    ct_u128 q0 = ct_mul128(a0, a0);
+    ct_u128 q1 = ct_mul128(a1, a1);
+    ct_u128 q2 = ct_mul128(a2, a2);
+    ct_u128 q3 = ct_mul128(a3, a3);
+    carry = 0;
+    *t0 = (uint64_t)q0;
+    *t1 = p256_wide_add_carry(&carry, d1, (uint64_t)(q0 >> 64));
+    *t2 = p256_wide_add_carry(&carry, d2, (uint64_t)q1);
+    *t3 = p256_wide_add_carry(&carry, d3, (uint64_t)(q1 >> 64));
+    *t4 = p256_wide_add_carry(&carry, d4, (uint64_t)q2);
+    *t5 = p256_wide_add_carry(&carry, d5, (uint64_t)(q2 >> 64));
+    *t6 = p256_wide_add_carry(&carry, d6, (uint64_t)q3);
+    *t7 = d7 + (uint64_t)(q3 >> 64) + carry;
 }
 
 #endif // CH_CPU_RUNTIME

@@ -683,7 +683,7 @@ The entries are grouped by area:
 
 #### p256_wide
 
-- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_sqr` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
 - **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
   `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c`,
   `p256_wide_table.c` and `p256_wide_wipe.c`, decision 94), under
@@ -704,6 +704,11 @@ The entries are grouped by area:
     reference holds both forms, so the two return the same limb and the
     same carry for every operand, and a verdict over one form is a
     verdict over the other.
+  - `p256_wide_sqr`: on the real 64x64->128 multiply, the square of
+    four limbs, ten products whose cross terms are summed once, doubled
+    and added to the four squares, wraps nothing for any limbs, so its
+    eight limbs hold the whole square (decision 105). It reads the
+    builtins, which `p256_wide_row` holds to the sums' reference.
   - `p256_wide_field`: every routine with no product, on its real body.
     The conditional subtraction of p, `p256_wide_fe_add`,
     `p256_wide_fe_sub`, `p256_wide_fe_cmov` and the three predicates
@@ -721,11 +726,12 @@ The entries are grouped by area:
     two domain conversions and `sqr_times` are safe and wrap nothing in
     every aliasing shape a point formula and the inversion use. Each row
     of a product is a contract there, any four limbs and any limb above
-    them, which `p256_wide_row` proves of the real row.
+    them, which `p256_wide_row` proves of the real row, and so is the
+    square of four limbs, any eight limbs, which `p256_wide_sqr` proves.
   - `p256_wide_scalar`: the same for the arithmetic modulo the group
     order, whose reduction rounds are products. The conditional
     subtraction of n matches a reference that branches, a round's carry
-    out is 0 or 1, and `mont_mul`, `sqr_times` and
+    out is 0 or 1, and `mont_mul`, `mont_sqr`, `sqr_times` and
     `p256_wide_scalar_mul` are safe in every aliasing shape
     `p256_sign.c` and the inverse use. The one read in the inverse that
     moves with a loop counter, `exponent_low_nibble`, is in bounds and

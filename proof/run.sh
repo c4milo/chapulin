@@ -2158,7 +2158,11 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # sums, which gcc compiles outside x86-64. One reference holds both, so a
 # verdict over one form is a verdict over the other. gcc's form for x86-64
 # is two intrinsics, which cbmc cannot read: bin/p256_equiv_test and the
-# vectors hold it, under gcc.
+# vectors hold it, under gcc. p256_wide_sqr runs the header's square of
+# four limbs on the real multiply, ten products whose top limb fits only
+# because the square is below 2^512, on the builtins (docs/decisions.md
+# 105); the field's and the scalar's harnesses replace it with any eight
+# limbs, as they replace a row.
 # p256_wide_field runs every routine with no product on
 # its real body, and the Montgomery reduction, which for this prime is shifts
 # and adds, to its bound. p256_wide_field_mul and p256_wide_scalar run the
@@ -2180,13 +2184,18 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # clock, which was up to ten times that:
 #   p256_wide_row        128 properties,  3 s, 243 MB
 #   p256_wide_row_sum    116 properties,  4 s, 154 MB
-#   p256_wide_field      856 properties,  9 s,  99 MB
-#   p256_wide_field_mul  648 properties, 10 s, 102 MB
-#   p256_wide_scalar     374 properties, 17 s, 467 MB
+#   p256_wide_sqr         69 properties,  4 s, 444 MB
+#   p256_wide_field      919 properties, 12 s, 182 MB
+#   p256_wide_field_mul  739 properties, 14 s, 213 MB
+#   p256_wide_scalar     465 properties, 22 s, 715 MB
 #   p256_wide_point      234 properties,  2 s,  56 MB
 #   p256_wide_digit      265 properties, 23 s, 318 MB
 #   p256_wide_mul        304 properties, 95 s, 375 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
+# The p256_wide_sqr, p256_wide_field, p256_wide_field_mul and p256_wide_scalar lines
+# were measured again on 2026-10-06, after the square of four limbs joined
+# p256_wide_limb.h (docs/decisions.md 105), one at a time through proof/prove-one.sh at a
+# load average of 36 to 180, and their times are run.sh's wall clock.
 # The two lines with --object-bits 10 track more than 256 objects: each
 # product's locals have their addresses taken, and the lines run 14 and 20
 # products. p256_wide_mul's ct_wipe bound is the 768 bytes of the eight
@@ -2196,6 +2205,7 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # row's claim four more times and nothing else.
 launch fast full p256_wide_row 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_row_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_sqr 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check

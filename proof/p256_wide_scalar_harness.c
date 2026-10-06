@@ -9,11 +9,11 @@
 //   what the round before returned, so the limb above the four it gives
 //   reduce_once is 0 or 1, which is what the claim above assumes;
 //
-//   mont_mul, sqr_times and p256_wide_scalar_mul are memory-safe and UB-free
-//   over fully nondet limbs and wrap no unsigned value
-//   (--unsigned-overflow-check on the launch line), in every aliasing shape
-//   p256_sign.c and the inverse use: the output distinct from both inputs,
-//   over the first, over the second, and both inputs one object.
+//   mont_mul, mont_sqr through sqr_times, and p256_wide_scalar_mul are
+//   memory-safe and UB-free over fully nondet limbs and wrap no unsigned
+//   value (--unsigned-overflow-check on the launch line), in every aliasing
+//   shape p256_sign.c and the inverse use: the output distinct from both
+//   inputs, over the first, over the second, and both inputs one object.
 //   p256_wide_scalar_mul wipes the two copies it makes through ct_wipe,
 //   whose stub proves each wipe inside its object;
 //
@@ -28,16 +28,18 @@
 //   two at a time, and the round trip gives back what went in.
 //
 // The rows of every product are the contract in proof/p256_wide_stubs.h,
-// which p256_wide_row_harness.c discharges on the real multiply. The one
-// product outside a row, the multiplier each reduction round makes from its
-// low limb and N0_INV, runs on the real multiply here.
+// which p256_wide_row_harness.c discharges on the real multiply, and so is
+// the square of four limbs mont_sqr starts from, which
+// p256_wide_sqr_harness.c discharges. The one product outside a row and the
+// square, the multiplier each reduction round makes from its low limb and
+// N0_INV, runs on the real multiply here.
 //
 // p256_wide_scalar_inverse is not run whole, for the reason
 // proof/p256_wide_field_mul_harness.c gives for the field's: its 305
 // products in one formula cost symbolic execution more than this tier
-// admits. Its chain is mont_mul and sqr_times in the shapes proven here, on
-// its own locals and its table, at counts that are literals and at the
-// index proven here.
+// admits. Its chain is mont_mul and sqr_times, whose squares are mont_sqr's,
+// in the shapes proven here, on its own locals and its table, at counts that
+// are literals and at the index proven here.
 //
 // Not proven here: the product's value, and so the bound that mont_mul
 // leaves a scalar below n. The reduction's rounds are products, not shifts
@@ -111,7 +113,7 @@ static void prove_mont_mul(void) {
     wide_nondet(&b);
     mont_mul(&b, &a, &b); // o == b
     wide_nondet(&a);
-    mont_mul(&a, &a, &a); // all three one object, the shape sqr_times squares in
+    mont_mul(&a, &a, &a); // all three one object
 }
 
 static void prove_sqr_times(void) {

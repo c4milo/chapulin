@@ -38,8 +38,9 @@
 // this header proves holds on both.
 #define P256_WIDE_CARRY P256_WIDE_CARRY_BUILTIN
 #include "p256_wide_limb.h"
-// From here on the row the wide files call is the contract below.
+// From here on the row and the square the wide files call are the contracts below.
 #define p256_wide_mul_row stub_mul_row
+#define p256_wide_sqr_product stub_sqr_product
 
 uint64_t nondet_u64(void);
 
@@ -58,6 +59,31 @@ static uint64_t stub_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t 
     *t2 = nondet_u64();
     *t3 = nondet_u64();
     return nondet_u64();
+}
+
+// p256_wide_sqr_product writes any eight limbs. proof/p256_wide_sqr_harness.c proves the real
+// square wraps no unsigned value for any four limbs, the one property a harness over this
+// stub cannot state, and nothing in the harnesses reads the square's value.
+static void stub_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3, uint64_t *t4,
+                             uint64_t *t5, uint64_t *t6, uint64_t *t7, uint64_t a0, uint64_t a1,
+                             uint64_t a2, uint64_t a3) {
+    (void)a0;
+    (void)a1;
+    (void)a2;
+    (void)a3;
+    __CPROVER_assert(__CPROVER_w_ok(t0, sizeof *t0) && __CPROVER_w_ok(t1, sizeof *t1) &&
+                         __CPROVER_w_ok(t2, sizeof *t2) && __CPROVER_w_ok(t3, sizeof *t3) &&
+                         __CPROVER_w_ok(t4, sizeof *t4) && __CPROVER_w_ok(t5, sizeof *t5) &&
+                         __CPROVER_w_ok(t6, sizeof *t6) && __CPROVER_w_ok(t7, sizeof *t7),
+                     "p256_wide_sqr_product: the eight limbs are writable");
+    *t0 = nondet_u64();
+    *t1 = nondet_u64();
+    *t2 = nondet_u64();
+    *t3 = nondet_u64();
+    *t4 = nondet_u64();
+    *t5 = nondet_u64();
+    *t6 = nondet_u64();
+    *t7 = nondet_u64();
 }
 
 #endif
