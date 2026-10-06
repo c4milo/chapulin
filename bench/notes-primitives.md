@@ -16,6 +16,58 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of e656fd3a
+
+The tables below are from the run of e54b20c3. The CSVs now hold the
+run of e656fd3a, on 2026-10-06, the tree of docs/decisions.md 98:
+`sha3.c` writes its round out lane by lane and moves eight bytes at a
+time. This section states what that run moved, and the tables and
+rankings below have not been brought up to it. Each row is under its
+machine's widest value, `0x67` on the M1 Pro and `0x3f` on the x86-64
+runner, an AMD EPYC 7763 in both runs.
+
+| row | M1 Pro, before | M1 Pro, now | x86-64, before | x86-64, now |
+| --- | --- | --- | --- | --- |
+| sha3_256, 16 KB, ns per byte | 3.68 | 1.80 | 18.0 | 3.12 |
+| sha3_256, 64 B, ns per byte | 6.14 | 4.72 | 38.6 | 8.30 |
+| shake128_squeeze, 16 KB, ns per byte | 1.89 | 1.46 | 14.3 | 3.16 |
+| shake256_squeeze, 16 KB, ns per byte | 2.21 | 1.79 | 17.5 | 3.74 |
+| mlkem768_keygen, µs | 24.6 | 24.2 | 138 | 58.2 |
+| mlkem768_encaps, µs | 26.4 | 26.3 | 148 | 66.1 |
+| mlkem768_decaps, µs | 28.6 | 28.6 | 162 | 80.3 |
+| ECDSA P-256 hybrid handshake, both ends, µs | 414 | 419 | 1,135 | 814 |
+| ECDSA P-256 hybrid handshake, client side, µs | 260 | 262 | 772 | 533 |
+| ECDSA P-256 hybrid handshake, server side, µs | 153 | 155 | 357 | 274 |
+
+What the rows say:
+
+- **gcc gains from the round, clang from the bytes.** Under gcc 13 the
+  x86-64 runner runs SHA3-256 in a sixth of the time and ML-KEM-768 in
+  0.42 to 0.50 of it, because gcc never unrolled the standard's loops.
+  Under Apple clang the M1 Pro runs SHA3-256 over 16 KB in half the
+  time, because clang had unrolled the loops and the absorb's byte
+  loop was what was left.
+- **ML-KEM-768 did not move on the M1 Pro.** Its permutation was
+  already unrolled there, and it squeezes three bytes a call, which
+  eight bytes at a time cannot serve. Its instruction counts rose by
+  0.3 to 0.8%: 393,746 to 396,914 for a key generation.
+- **The M1 Pro ran other work.** Its one-minute load average was 3.5
+  at the start of the run, and the rows this change did not touch read
+  a median of 3% above the last run's, from 1% below to 8% above. Their
+  instruction counts did not move, and both sides of a ratio beside
+  OpenSSL are of one run.
+- **The classic RSA handshakes on the x86-64 runner read 9 to 12%
+  above the last run's, and the change is not why.** A pinned RSA-2048
+  handshake's server side takes 2.07 ms where it took 1.88, in two
+  runs, and it calls nothing in `sha3.c`. The signature's own row, in
+  the other program, stayed at 1.74 ms. A build of this tree with
+  `-falign-functions=64` put that row at 1.93 ms and left the
+  handshake's at 2.07: on that CPU, under gcc 13, RSA on 64-bit limbs
+  runs at one of two speeds by where the linker places it, and the
+  handshake program now holds the slower placement. On the M1 Pro the
+  same handshake's instruction count did not move. docs/performance.md
+  lists it among the pitfalls.
+
 ## Machine and method
 
 - Apple M1 Pro (8 performance and 2 efficiency cores), macOS 26.6.2
