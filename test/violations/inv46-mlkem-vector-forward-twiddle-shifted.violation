@@ -1,0 +1,12 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the forward layer of span 8 reads the twiddle factor one entry
+  past the one mlk_poly_ntt reads for its block. The code is common to
+  both instruction sets, so the equivalence test on either finds the
+  coefficients that differ from the loops'.
+
+--- old
+    butterfly(&a, &b, twiddle_at(16 + block));
+--- new
+    butterfly(&a, &b, twiddle_at(17 + block));

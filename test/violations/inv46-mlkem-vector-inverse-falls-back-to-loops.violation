@@ -1,0 +1,15 @@
+invariant: INV-46
+file: mlkem.c
+catches: test/mlkem-builds.sh
+reason: mlkem.c guards its call to the vector inverse NTT on a macro no
+  build defines, so a host object's sessions run mlkem_poly.c's inverse
+  loops. Every vector passes, because the loops compute the same
+  coefficients, so the script compiles mlkem.c as a host object does and
+  requires it to call mlk_vector_invntt and not mlk_poly_invntt.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_invntt(p);
+--- new
+#ifdef CH_CPU_RUNTIME_PATH
+    mlk_vector_invntt(p);

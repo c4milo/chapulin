@@ -1,0 +1,20 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the NEON product of two coefficient vectors runs on SQDMULH, the
+  twiddle factors' form, which saturates where both operands are
+  -32768: that product leaves at 16383 where mlk_fqmul gives 16384. Only
+  the test's two polynomials of INT16_MIN multiply that pair, so this
+  shows the test reaches the one input the form gets wrong. Only an
+  arm64 compiler reads the line, so the script builds
+  bin/mlkem_vector_equiv_test for arm64 and runs it under qemu-aarch64.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+static inline lanes lanes_fqmul_wide(lanes x, lanes y, lanes y_qinv) {
+    lanes t = vmulq_s16(x, y_qinv);
+--- new
+static inline lanes lanes_fqmul_wide(lanes x, lanes y, lanes y_qinv) {
+    return lanes_fqmul(x, y, y_qinv);
+    lanes t = vmulq_s16(x, y_qinv);

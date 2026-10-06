@@ -1,0 +1,11 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the inverse transform ends with a multiply by 1440 where
+  mlk_poly_invntt multiplies by 1441, 2^32 / 128 mod q, so every
+  coefficient leaves off by a factor. The equivalence test finds them.
+
+--- old
+    twiddle factor = twiddle_of(lanes_broadcast(1441));
+--- new
+    twiddle factor = twiddle_of(lanes_broadcast(1440));

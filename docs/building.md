@@ -149,7 +149,10 @@ Other targets:
   operating system. Every host session runs ChaCha20 on
   `chacha20_vector.c`'s NEON or SSE2 passes, which every core of the two
   architectures has, so no bit picks them and the path states nothing
-  about timing (decision 82). With the multiply bit the session's
+  about timing (decision 82). It runs ML-KEM's NTT and base
+  multiplication on `mlkem_vector.c`'s eight 16-bit lanes the same way
+  (decision 101).
+  With the multiply bit the session's
   Poly1305 runs `poly1305_vector.c`'s four blocks at a time on the vector
   widening multiply, which the bit states beside the scalar one (decision
   83). On x86-64, `CH_CPU_AVX2` says the CPU has AVX2 and its operating

@@ -1,0 +1,15 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the NEON Barrett reduction shifts without adding 2^10 first, so
+  its quotient rounds down where mlk_barrett_reduce rounds to the
+  nearest, and a coefficient can leave one q away from the scalar
+  result. Only an arm64 compiler reads the line, so the script builds
+  bin/mlkem_vector_equiv_test for arm64 and runs it under qemu-aarch64.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+    lanes t = vshrq_n_s16(vaddq_s16(x, vdupq_n_s16(1024)), 11);
+--- new
+    lanes t = vshrq_n_s16(vaddq_s16(x, vdupq_n_s16(0)), 11);

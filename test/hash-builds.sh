@@ -51,7 +51,8 @@
 #     mlkem_poly_hw.c name the _hw entries of every SHA-3 and SHAKE call
 #     they make and none of sha3.c's, mlkem.c and mlkem_poly.c the
 #     reverse, and every mlk_ call mlkem_hw.c makes goes to the copy's
-#     own or to a native copy (widemul.h).
+#     own, to a native copy (widemul.h) or to the vector NTT, which hashes
+#     nothing (mlkem_vector.h).
 #
 # test/aes-runtime-disasm.sh reads the same about the instructions from a
 # whole packaged object on the host's own compiler. This script asks the
@@ -255,7 +256,10 @@ for target in "$x86" "$arm64"; do
     calls "mlkem_hw.c for $target" _hw "${mlkem_keccak_calls[@]}"
     defines mlkem_decaps_hw || fail "mlkem_hw.c for $target does not define mlkem_decaps_hw"
     defines mlkem_decaps && fail "mlkem_hw.c for $target defines mlkem_decaps, which mlkem.c defines"
-    stray=$(nm "$work/cross.o" | awk '$1 == "U" { print $2 }' | grep -E '^_?mlk_' | grep -vE '_(hw|native)$' || true)
+    # mlkem_vector.c's two transforms hash nothing, and both copies of
+    # mlkem.c call them (docs/decisions.md 101).
+    stray=$(nm "$work/cross.o" | awk '$1 == "U" { print $2 }' | grep -E '^_?mlk_' | grep -vE '_(hw|native)$' |
+        grep -vxE '_?mlk_vector_(ntt|invntt|basemul)' || true)
     [ -z "$stray" ] || fail "mlkem_hw.c for $target calls $stray, which the copy of mlkem_poly.c does not define"
     cross_object "$target" mlkem_poly_hw.c
     calls "mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"

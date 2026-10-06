@@ -1,0 +1,12 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the forward transform stores its first eight coefficients of
+  each block without the Barrett reduction mlk_poly_ntt ends with, so
+  they leave unreduced, where the encoder that follows expects them
+  centered. The equivalence test finds the coefficients that differ.
+
+--- old
+    lanes_store(p, lanes_barrett_reduce(a));
+--- new
+    lanes_store(p, a);

@@ -1,0 +1,12 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the base multiplication reads its twiddle factors four entries
+  below the ones mlk_poly_basemul reads for each block of 16
+  coefficients, so every pair's product is taken modulo another
+  polynomial. The equivalence test finds the coefficients that differ.
+
+--- old
+        twiddle w = twiddle_of(lanes_mul_low(lanes_pairs(&MLK_ZETAS[64 + 4 * block]), signs));
+--- new
+        twiddle w = twiddle_of(lanes_mul_low(lanes_pairs(&MLK_ZETAS[60 + 4 * block]), signs));

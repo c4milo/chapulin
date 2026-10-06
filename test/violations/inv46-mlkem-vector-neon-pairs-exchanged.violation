@@ -1,0 +1,14 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the NEON split for the layers of span 2 takes the odd pairs
+  into lo as well as into hi, so half the coefficients drop out of the
+  butterflies and the other half run twice. Only an arm64 compiler reads
+  the line, so the script builds bin/mlkem_vector_equiv_test for arm64
+  and runs it under qemu-aarch64. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    *lo = vreinterpretq_s16_s32(vuzp1q_s32(a32, b32));
+--- new
+    *lo = vreinterpretq_s16_s32(vuzp2q_s32(a32, b32));

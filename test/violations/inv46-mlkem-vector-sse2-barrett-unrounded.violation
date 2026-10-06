@@ -1,0 +1,14 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the SSE2 Barrett reduction shifts without adding 2^9 first, so
+  its quotient rounds down where mlk_barrett_reduce rounds to the
+  nearest. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_vector_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    lanes t = _mm_srai_epi16(_mm_add_epi16(x, _mm_set1_epi16(512)), 10);
+--- new
+    lanes t = _mm_srai_epi16(_mm_add_epi16(x, _mm_set1_epi16(0)), 10);

@@ -1,0 +1,15 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the inverse layer of span 16 gives each block of 32 coefficients
+  the twiddle factor of the block beside it, where mlk_poly_invntt reads
+  15 - 2*block for the first and 14 - 2*block for the second. The code
+  is common to both instruction sets, so the equivalence test on either
+  finds the coefficients that differ.
+
+--- old
+        twiddle low = twiddle_at(15 - 2 * block);
+        twiddle high = twiddle_at(14 - 2 * block);
+--- new
+        twiddle low = twiddle_at(14 - 2 * block);
+        twiddle high = twiddle_at(15 - 2 * block);

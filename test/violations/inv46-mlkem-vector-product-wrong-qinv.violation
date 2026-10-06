@@ -1,0 +1,13 @@
+invariant: INV-46
+file: mlkem_vector.c
+catches: mlkem_vector_equiv_test
+reason: the product of the two odd coefficients takes the even ones'
+  b times q^-1 for its Montgomery step, so t is not the low half of
+  a1*b1*q^-1 and a1*b1 - t*q is not a multiple of 2^16: the lane leaves
+  a value the loop never writes. The code is common to both instruction
+  sets, so the equivalence test on either finds it.
+
+--- old
+        lanes odd_product = lanes_fqmul_wide(a_odd, b_odd, b_odd_qinv);
+--- new
+        lanes odd_product = lanes_fqmul_wide(a_odd, b_odd, b_even_qinv);

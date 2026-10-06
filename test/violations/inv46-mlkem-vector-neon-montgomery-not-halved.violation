@@ -1,0 +1,16 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the NEON Montgomery multiply subtracts the two doubled high
+  halves and does not halve the difference, so every product leaves at
+  twice its value. Only an arm64 compiler reads the line, so on an
+  x86-64 machine no test binary compiles it. The script builds
+  bin/mlkem_vector_equiv_test for arm64 and runs it under qemu-aarch64,
+  where it holds every coefficient to mlkem_poly.c's loops. The lane
+  skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    return vhsubq_s16(high, low);
+--- new
+    return vsubq_s16(high, low);

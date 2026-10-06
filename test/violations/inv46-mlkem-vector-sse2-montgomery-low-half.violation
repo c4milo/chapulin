@@ -1,0 +1,15 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the SSE2 Montgomery multiply subtracts the low 16 bits of t*q
+  where it needs the high 16, so no product leaves reduced. Only an
+  x86-64 compiler reads the line, so on an arm64 machine no test binary
+  compiles it. The script builds bin/mlkem_vector_equiv_test for x86-64
+  and runs it under qemu-x86_64, where it holds every coefficient to
+  mlkem_poly.c's loops. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    lanes low = _mm_mulhi_epi16(t, _mm_set1_epi16(MLKEM_Q));
+--- new
+    lanes low = _mm_mullo_epi16(t, _mm_set1_epi16(MLKEM_Q));

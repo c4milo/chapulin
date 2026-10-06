@@ -197,7 +197,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
         p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
@@ -507,6 +507,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
+          mlkem_vector.c test/mlkem_vector_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
           $(wildcard examples/*.c)
@@ -1050,6 +1051,13 @@ RSA_SIGN64_SRCS := rsa_sign64.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
+# ML-KEM's NTT. A device object runs mlkem_poly.c's loops. A host object
+# also holds mlkem_vector.c, the same transforms on eight 16-bit lanes,
+# NEON on arm64 and SSE2 on x86-64, which mlkem.c runs in every session
+# (docs/decisions.md 101).
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter mlkem.c,$(LIB_SRCS)),mlkem_vector.c)
+endif
 # The ChaCha20 keystream, which every build runs
 # (https://github.com/c4milo/chapulin/issues/181). A device object runs
 # chacha20.c's loop, one 64-byte block at a time in 32-bit words. A host
@@ -1258,7 +1266,8 @@ host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
             $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
-            $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) $(call hash_hw_of,$(1))
+            $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
+            $(if $(filter mlkem.c,$(1)),mlkem_vector.c) $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
 ifneq ($(CPU_RUNTIME_DEF),)
 ifneq ($(origin WIDEMUL),file)
@@ -1437,8 +1446,8 @@ print-host-srcs:
 # bin/x86_kernels_test beside its two, bin/sha2_equiv_test beside its one,
 # the two lists bin/hash_runtime_test links beside its one, of which
 # bin/hash_runtime_exporter_test links the first, bin/p256_equiv_test
-# beside its one, and bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
-# beside theirs.
+# beside its one, bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
+# beside theirs, and bin/mlkem_vector_equiv_test beside its one.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1452,6 +1461,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(P256_EQUIV_TEST_SRCS)
 	@echo $(SHA3_HW_EQUIV_TEST_SRCS)
 	@echo $(MLKEM_HW_EQUIV_TEST_SRCS)
+	@echo $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1589,7 +1599,9 @@ print-aes-runtime-qemu-srcs:
 # (docs/decisions.md 93). The Keccak rows hold sha3_hw.c, mlkem_hw.c and
 # mlkem_poly_hw.c to the host object beside sha3.c, mlkem.c and
 # mlkem_poly.c, so a KEX=pq device object carries the portable Keccak alone
-# (docs/decisions.md 99).
+# (docs/decisions.md 99). The same rows hold mlkem_vector.c, the vector
+# NTT, to the host object, so a device object carries mlkem_poly.c's loops
+# alone (docs/decisions.md 101).
 #
 # The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
 # asks for it, and every native copy to the host object: a host row
@@ -1727,10 +1739,13 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "sha512_hw.c $$hash_hw" \
 	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
 	keccak_hw="sha3_hw.c mlkem_hw.c mlkem_poly_hw.c"; \
-	check "TRUST=raw-rsa KEX=pq" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "TRUST=raw-rsa KEX=pq" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw mlkem_vector.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw mlkem_vector.c" "" \
+	  "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha3.c mlkem.c mlkem_poly.c $$keccak_hw mlkem_vector.c" "" \
+	  "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "sha3.c mlkem.c mlkem_poly.c" "$$keccak_hw mlkem_vector.c" "" \
+	  "-DCH_CPU_RUNTIME"; \
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
 	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c $$native_files" "" \
@@ -2446,6 +2461,14 @@ MLKEM_HW_EQUIV_TEST_SRCS := $(call host_srcs,sha3.c mlkem.c mlkem_poly.c) ct.c c
 bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS)
+# The vector NTT against mlkem_poly.c's loops, the code CBMC proves
+# (docs/decisions.md 101). mlkem_poly.c compiles to the same code in a host
+# object as in a device object, so the binary links it under its own names.
+MLKEM_VECTOR_EQUIV_TEST_SRCS := mlkem_poly.c mlkem_vector.c $(call host_srcs,sha3.c) ct.c ct_wipe.c
+bin/mlkem_vector_equiv_test: test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/mlkem_vector_equiv_test.c \
+	  $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 # Which SHA-256 and which SHA-512 a host object's hash calls run under
 # each ch_cfg.cpu value (docs/decisions.md 93). test/hash_runtime_count.c
 # defines sha256.c's three calls that hash, sha512.c's five and the same
@@ -3255,7 +3278,7 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
-                      ct.c ct_wipe.c buf.c record.c mlkem.c \
+                      ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
@@ -3267,8 +3290,8 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # The host object's loop and session binaries (docs/decisions.md 89), each
 # built as a host object builds its sources, on the same counting copies:
 # the sources a loop links, with the files built on the multiply replaced by the count
-# units and their stubs, and the two vector ChaCha20 sources and the hash
-# sources a host object holds beside its own added
+# units and their stubs, and the two vector ChaCha20 sources, the vector
+# NTT and the hash sources a host object holds beside its own added
 # (widemul_counted), which each says with
 # -DTEST_WIDEMUL_COUNTED, so a whole handshake reads which copy each end
 # ran. Every case of each runs with both ends
@@ -3283,7 +3306,7 @@ widemul_counted = $(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1)) 
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(CHACHA_VECTOR_SRCS) \
                   $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
                   $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
-                  $(call hash_hw_of,$(1))
+                  $(if $(filter mlkem.c,$(1)),mlkem_vector.c) $(call hash_hw_of,$(1))
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3318,7 +3341,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
-                                 bin/hash_runtime_test \
+                                 bin/mlkem_vector_equiv_test bin/hash_runtime_test \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
@@ -3476,11 +3499,12 @@ CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-e
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
 .PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) \
-        check-chacha-builds check-widemul-builds check-host-builds check-hash-builds check-script-builds check-wycheproof check-skips
+        check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
+        check-script-builds check-wycheproof check-skips
 check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
        $(CHECK_RUN_HOST_VECTOR) \
-       check-chacha-builds check-widemul-builds check-host-builds check-hash-builds check-script-builds \
-       check-wycheproof check-skips proof-coverage proof-reach-smoke
+       check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
+       check-script-builds check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
 
 # A recipe line that runs a script which calls make itself starts with +,
@@ -3548,6 +3572,11 @@ endif
 # and the x86-64 kernels' instructions in their own files.
 check-chacha-builds:
 	+@mkdir -p bin/check; ./test/chacha-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+# A host object's calls to the vector NTT in place of mlkem_poly.c's loops,
+# and a device object's calls to the loops (docs/decisions.md 101).
+check-mlkem-builds:
+	+@mkdir -p bin/check; ./test/mlkem-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # ct.h's rules for a host object's two multiplies, each file under its
 # own names compiled to its decomposed build's code there, the vector
@@ -4581,6 +4610,9 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_hw_equiv_test test/mlkem_hw_equiv_test.c \
 	    $(MLKEM_HW_EQUIV_TEST_SRCS); \
 	  echo "== mlkem_hw_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_hw_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/mlkem_vector_equiv_test \
+	    test/mlkem_vector_equiv_test.c $(MLKEM_VECTOR_EQUIV_TEST_SRCS); \
+	  echo "== mlkem_vector_equiv_test (SAN -O$(O))"; ./bin/san/mlkem_vector_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
@@ -5098,6 +5130,7 @@ else
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
+	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
@@ -5166,6 +5199,17 @@ else
 	@$(call TIDY_EACH,gcm_vaes.c gcm.c test/x86_kernels_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	# A host object's ML-KEM NTT (docs/decisions.md 101). mlkem_vector.c
+	# holds one arm for each architecture, so two passes read it for a named
+	# target whatever the host, as the passes above read the kernels, with
+	# mlkem.c, whose host arm calls it. Its equivalence test follows with
+	# the Keccak test mains below.
+	@$(call TIDY_EACH,mlkem_vector.c mlkem.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
+	@$(call TIDY_EACH,mlkem_vector.c mlkem.c, \
+	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	# A host object's SHA-256 and SHA-512 on the CPU's instructions
 	# (docs/decisions.md 93). sha256_hw.c holds one arm for each
 	# architecture, so two passes read it for a named target whatever the
@@ -5193,7 +5237,7 @@ else
 	  $(call TIDY_EACH,hkdf.c keysched.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c, \
+	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c, \
@@ -5950,16 +5994,18 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # session's multiply bit states, so that spec's tokens are
 # the divisions and the 128-bit runtime calls, and the ceiling is zero.
 # The others are a host object's vector paths, chacha20_vector.c,
-# chacha20_avx2.c and poly1305_vector.c: they need NEON, SSE2 or AVX2,
-# which no 32-bit spec targets, and the arm64 and x86-64 specs have.
-# chacha20_avx2.c compiles to nothing on arm64 and, under its own target
-# attribute, to the AVX2 kernel on x86-64 (docs/decisions.md 90).
-# chacha20_vector.c and chacha20_avx2.c multiply nothing.
+# chacha20_avx2.c, poly1305_vector.c and mlkem_vector.c: they need NEON,
+# SSE2 or AVX2, which no 32-bit spec targets, and the arm64 and x86-64
+# specs have. chacha20_avx2.c compiles to nothing on arm64 and, under its
+# own target attribute, to the AVX2 kernel on x86-64 (docs/decisions.md
+# 90). chacha20_vector.c and chacha20_avx2.c multiply nothing.
+# mlkem_vector.c multiplies 16-bit lanes alone, which these specs do not
+# count, and divides nothing (docs/decisions.md 101).
 # poly1305_vector.c compiles to nothing under its own name: a host object
 # holds it as poly1305_vector_native.c alone, and the entry here holds
 # that, because the file would compile to its four branches if
 # poly1305_vector.h turned the path on outside the native copy. So the
-# three ceilings are zero too.
+# four ceilings are zero too.
 #
 # A host object's native copies join this list (docs/decisions.md 87 and
 # 89). A host object targets arm64 or x86-64, so no 32-bit spec compiles a
@@ -5993,7 +6039,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305
                   poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 \
                   sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_sign64.c:0 \
-                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 \
+                  sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
@@ -6065,6 +6111,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
                    sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
+                   mlkem_vector.c:-DCH_CPU_RUNTIME \
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
@@ -6508,7 +6555,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                poly1305_vector_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_sign64.c $(P256_WIDE_SRCS) \
-               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c
+               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -6611,6 +6658,14 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # loop's entry and back edge, n against 64. The powers of r and both
 # carries are straight line. poly1305_vector.c under its own name holds
 # none, because it compiles to nothing there.
+#
+# The vector NTT's two entries were read the same way (docs/decisions.md
+# 101). Each transform holds four loops, and each of eight of the nine
+# branches on each target closes one: the 8 steps over the layers of span
+# 128 and 64, the 4 blocks and their 2 steps over the layers of span 32
+# and 16, and the 16 blocks of the last three layers, in each direction.
+# The ninth closes the base multiplication's loop over its 16 blocks.
+# Every count is a constant, and no branch reads a lane value.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:40 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
@@ -6664,6 +6719,7 @@ BRANCH_CEILING := \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
   arm64/rsa_mont64.c:32 x86-64/rsa_mont64.c:32 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
+  arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang

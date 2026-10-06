@@ -79,6 +79,11 @@
 #     128-bit sums for arm64 (docs/decisions.md 94). clang reads a third
 #     form, so a machine whose compiler is clang compiles no line of the
 #     intrinsics.
+#   - bin/mlkem_vector_equiv_test must pass for x86-64 and for arm64: the
+#     vector NTT on SSE2 and on NEON against mlkem_poly.c's loops
+#     (test/mlkem_vector_equiv_test.c, docs/decisions.md 101). A machine's
+#     own compiler reads one of the file's two arms, so this is the run
+#     that holds the other.
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -153,6 +158,9 @@
 #   keccak            bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
 #                     for arm64, built with clang, for the violations of
 #                     what sha3_hw.c computes and leaves on the stack
+#   mlkem-vector      bin/mlkem_vector_equiv_test for x86-64 and for arm64,
+#                     for the violations of mlkem_vector.c's SSE2 and NEON
+#                     arms
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -171,9 +179,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector]" >&2
     exit 2
     ;;
 esac
@@ -236,8 +244,9 @@ read -r -a hash_count_quic_srcs <<< "$(sed -n 8p <<< "$lists")"
 read -r -a p256_equiv_srcs <<< "$(sed -n 9p <<< "$lists")"
 read -r -a sha3_hw_equiv_srcs <<< "$(sed -n 10p <<< "$lists")"
 read -r -a mlkem_hw_equiv_srcs <<< "$(sed -n 11p <<< "$lists")"
-[ "${#mlkem_hw_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than eleven lists" >&2; exit 1; }
+read -r -a mlkem_vector_equiv_srcs <<< "$(sed -n 12p <<< "$lists")"
+[ "${#mlkem_vector_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twelve lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -288,6 +297,21 @@ if [ -z "$only" ] || [ "$only" = p256-equiv ]; then
 fi
 if [ "$only" = p256-equiv ]; then
     echo "aes-runtime-qemu: bin/p256_equiv_test held the wide P-256 files to the files under their own names, on the intrinsics for x86-64 and on the 128-bit sums for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = mlkem-vector ]; then
+    # The vector NTT against mlkem_poly.c's loops, on SSE2 for x86-64 and
+    # on NEON for arm64.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/mlkem_vector_equiv_test" \
+        test/mlkem_vector_equiv_test.c "${mlkem_vector_equiv_srcs[@]}" || exit 1
+    expect max 0 "the vector NTT on SSE2 and mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$arm64_out/mlkem_vector_equiv_test" \
+        test/mlkem_vector_equiv_test.c "${mlkem_vector_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 "the vector NTT on NEON and mlkem_poly.c's loops disagree" mlkem_vector_equiv_test
+fi
+if [ "$only" = mlkem-vector ]; then
+    echo "aes-runtime-qemu: bin/mlkem_vector_equiv_test held the vector NTT to mlkem_poly.c's loops, on SSE2 for x86-64 and on NEON for arm64"
     exit 0
 fi
 
@@ -511,4 +535,5 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "instructions and the other on sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
     "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max sha3_hw.c agreed" \
     "with sha3.c and left no lane on the stack, ML-KEM's copies agreed with mlkem.c, and one end on" \
-    "the SHA-3 instructions and the other on sha3.c agreed"
+    "the SHA-3 instructions and the other on sha3.c agreed; and the vector NTT agreed with" \
+    "mlkem_poly.c's loops on SSE2 and on NEON"

@@ -95,6 +95,23 @@ AUDITED = {
         "published vectors on it, under a ch_cfg.cpu value with the multiply "
         "bit. Delete this entry if a harness can ever compile the file."
     ),
+    "mlkem_vector.c": (
+        "a host object's ML-KEM NTT and base multiplication, written in NEON "
+        "or SSE2 intrinsics through mlkem_lanes.h, which CBMC cannot read, so "
+        "no harness compiles the file. Neither file holds a bitwise operator: "
+        "the lane arithmetic runs on int16x8_t, int32x4_t or __m128i values "
+        "through the intrinsics, and the shift counts and the shuffle "
+        "immediates are int constants below 256. Their only C arithmetic is "
+        "on size_t loop counters and table indices, each bounded by a "
+        "constant: the largest index is 127, the largest offset into a "
+        "polynomial is 248, and the subtractions 124 - 4*block, "
+        "62 - 2*block, 31 - block, 15 - 2*block, 14 - 2*block and 7 - block "
+        "leave at least 1 at the largest block each loop reaches. "
+        "bin/mlkem_vector_equiv_test holds the file to mlkem_poly.c's proven "
+        "loops over inputs drawn from all of int16, and bin/mlkem_test_host and "
+        "the Wycheproof host leg run the published ML-KEM vectors on it. "
+        "Delete this entry if a harness can ever compile the file."
+    ),
     "sha256_hw.c": (
         "a host object's SHA-256 on the CPU's SHA-256 instructions, written in "
         "the FEAT_SHA256 and SHA-extension intrinsics, which CBMC cannot read, "
@@ -179,15 +196,16 @@ def shipped_sources():
     # signature-dispatch, webpki certificate, webpki chain-walk, webpki
     # pin, wide X25519 field, wide P-256, 64-bit RSA arithmetic and signer,
     # 64-bit P-384 field, points and verifier, vector
-    # ChaCha20 and Poly1305 sources and SHA-256 and SHA-512 on the CPU's
-    # instructions join through build variables or the host test.
+    # ChaCha20 and Poly1305 sources, SHA-256 and SHA-512 on the CPU's
+    # instructions and the vector NTT join through build variables or the
+    # host test.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
             "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
             "mlkem.c", "mlkem_poly.c", "x25519_wide.c", "chacha20_vector.c", "chacha20_avx2.c",
             "poly1305_vector.c", "sha256_hw.c", "sha512_hw.c", "p256_wide_field.c",
             "p256_wide_scalar.c", "p256_wide_point.c", "p256_wide_mul.c", "p256_wide_table.c",
             "p256_wide_wipe.c", "p256_wide_verify.c", "rsa_mont64.c", "rsa_sign64.c",
-            "p384_wide_field.c", "p384_wide_point.c", "p384_wide_verify.c"}
+            "p384_wide_field.c", "p384_wide_point.c", "p384_wide_verify.c", "mlkem_vector.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

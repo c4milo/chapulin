@@ -175,7 +175,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
-                          "test/docker-aes-runtime-qemu.sh keccak"]
+                          "test/docker-aes-runtime-qemu.sh keccak",
+                          "test/docker-aes-runtime-qemu.sh mlkem-vector"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the legs only the nightly runs. Each entry is (tier, command, reason).
@@ -401,7 +402,7 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/x86_kernels_test", "bin/sha2_equiv_test",
                              "bin/hash_runtime_test", "bin/hash_runtime_exporter_test",
                              "bin/p256_equiv_test", "bin/sha3_hw_equiv_test",
-                             "bin/mlkem_hw_equiv_test")
+                             "bin/mlkem_hw_equiv_test", "bin/mlkem_vector_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -669,6 +670,14 @@ def select_lints(out, changed, csources, lib):
                 "chacha20_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
                 ["test/chacha-builds.sh"])
+    # mlkem.c calls the vector NTT in a host object alone, and
+    # test/mlkem-builds.sh compiles it either side of that define and
+    # reads which transforms it calls (docs/decisions.md 101).
+    if "mlkem.c" in csources or "mlkem_hw.c" in csources:
+        out.add("tests", "test/mlkem-builds.sh",
+                "mlkem.c calls the vector NTT in a host object alone, and this "
+                "script compiles it either side of that define",
+                ["test/mlkem-builds.sh"])
     # test/hash-builds.sh compiles the hash sources, their copies,
     # sha256_hw.c, sha512_hw.c and sha3_hw.c, either side of
     # -DCH_CPU_RUNTIME and for x86-64 and arm64 with no instruction flag,

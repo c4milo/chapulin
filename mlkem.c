@@ -10,18 +10,49 @@
 
 #include "ct.h"
 #include "mlkem_poly.h"
+#include "mlkem_vector.h"
 #include "sha3.h"
 #include "widemul.h"
 
 #define MLK_DKPKE_BYTES 1152 // K-PKE secret key: ByteEncode12 of s-hat
 #define MLK_U_BYTES 960      // compressed u vector inside a ciphertext
 
+// The forward and inverse NTT and the base multiplication this object runs.
+// A host object runs them on eight lanes at a time (mlkem_vector.h) in
+// every session. A device object runs mlkem_poly.c's loops, which CBMC
+// proves and which bin/mlkem_vector_equiv_test holds the vector path to.
+// mlkem_poly.c compiles to the same code in both objects
+// (test/widemul-builds.sh), so the choice is made here.
+static void mlk_ntt(mlk_poly *p) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_ntt(p);
+#else
+    mlk_poly_ntt(p);
+#endif
+}
+
+static void mlk_invntt(mlk_poly *p) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_invntt(p);
+#else
+    mlk_poly_invntt(p);
+#endif
+}
+
+static void mlk_multiply_ntts(mlk_poly *r, const mlk_poly *a, const mlk_poly *b) {
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_basemul(r, a, b);
+#else
+    mlk_poly_basemul(r, a, b);
+#endif
+}
+
 // out = sum_j a[j] o b[j], the NTT-domain dot product. The result keeps
 // the Montgomery R^-1 factor that basemul introduces.
 static void mlk_polyvec_dot(mlk_poly *out, const mlk_polyvec *a, const mlk_polyvec *b) {
     mlk_poly prod;
     for (unsigned j = 0; j < 3; j++) {
-        mlk_poly_basemul(&prod, &a->vec[j], &b->vec[j]);
+        mlk_multiply_ntts(&prod, &a->vec[j], &b->vec[j]);
         if (j == 0) {
             *out = prod;
         } else {
@@ -45,7 +76,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
         uint8_t x0 = transposed ? (uint8_t)i : (uint8_t)j;
         uint8_t x1 = transposed ? (uint8_t)j : (uint8_t)i;
         mlk_sample_ntt(&a, seed, x0, x1);
-        mlk_poly_basemul(&prod, &a, &s->vec[j]);
+        mlk_multiply_ntts(&prod, &a, &s->vec[j]);
         if (j == 0) {
             *out = prod;
         } else {
@@ -72,8 +103,8 @@ static void mlk_pke_keygen(uint8_t ek[MLKEM_EK_LEN], uint8_t dkpke[MLK_DKPKE_BYT
     for (unsigned i = 0; i < 3; i++) {
         mlk_sample_cbd(&s.vec[i], sigma, (uint8_t)i);
         mlk_sample_cbd(&e.vec[i], sigma, (uint8_t)(3 + i));
-        mlk_poly_ntt(&s.vec[i]);
-        mlk_poly_ntt(&e.vec[i]);
+        mlk_ntt(&s.vec[i]);
+        mlk_ntt(&e.vec[i]);
     }
     for (unsigned i = 0; i < 3; i++) {
         mlk_matvec_row(&t.vec[i], rho, i, 0, &s); // t = A o s (with R^-1)
@@ -105,17 +136,17 @@ static void mlk_pke_encrypt(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN],
     for (unsigned i = 0; i < 3; i++) {
         mlk_poly_frombytes(&t.vec[i], ek + (size_t)384 * i);
         mlk_sample_cbd(&r.vec[i], coins, (uint8_t)i);
-        mlk_poly_ntt(&r.vec[i]);
+        mlk_ntt(&r.vec[i]);
     }
     for (unsigned i = 0; i < 3; i++) {
         mlk_matvec_row(&u.vec[i], rho, i, 1, &r); // A^T o r (with R^-1)
-        mlk_poly_invntt(&u.vec[i]);               // inverse NTT absorbs R^-1
+        mlk_invntt(&u.vec[i]);                    // inverse NTT absorbs R^-1
         mlk_sample_cbd(&noise, coins, (uint8_t)(3 + i));
         mlk_poly_add(&u.vec[i], &u.vec[i], &noise); // + e1
         mlk_poly_reduce(&u.vec[i]);
     }
     mlk_polyvec_dot(&v, &t, &r); // t o r (with R^-1)
-    mlk_poly_invntt(&v);
+    mlk_invntt(&v);
     mlk_sample_cbd(&noise, coins, 6); // e2
     mlk_poly_add(&v, &v, &noise);
     mlk_poly_frommsg(&noise, m); // Decompress1(m)
@@ -143,11 +174,11 @@ static void mlk_pke_decrypt(uint8_t widemul, uint8_t m[32], const uint8_t dkpke[
     mlk_polyvec_decompress(&u, ct);
     mlk_poly_decompress(&v, ct + MLK_U_BYTES);
     for (unsigned i = 0; i < 3; i++) {
-        mlk_poly_ntt(&u.vec[i]);
+        mlk_ntt(&u.vec[i]);
         mlk_poly_frombytes(&s.vec[i], dkpke + (size_t)384 * i);
     }
     mlk_polyvec_dot(&w, &s, &u); // s o NTT(u) (with R^-1)
-    mlk_poly_invntt(&w);         // inverse NTT absorbs R^-1
+    mlk_invntt(&w);              // inverse NTT absorbs R^-1
     mlk_poly_sub(&w, &v, &w);    // v - s o u
     mlk_poly_reduce(&w);
     widemul_mlk_poly_tomsg(widemul, m, &w);

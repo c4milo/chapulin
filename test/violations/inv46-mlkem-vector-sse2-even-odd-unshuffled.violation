@@ -1,0 +1,15 @@
+invariant: INV-46
+file: mlkem_lanes.h
+catches: test/docker-aes-runtime-qemu.sh mlkem-vector
+reason: the SSE2 split for the base multiplication leaves the high four
+  coefficients of a in their order, so two of a's odd coefficients land
+  among the even ones and two even ones among the odd. Only an x86-64
+  compiler reads the line, so the script builds
+  bin/mlkem_vector_equiv_test for x86-64 and runs it under qemu-x86_64.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+        _mm_shuffle_epi32(_mm_shufflehi_epi16(_mm_shufflelo_epi16(a, 0xd8), 0xd8), 0xd8);
+--- new
+        _mm_shuffle_epi32(_mm_shufflelo_epi16(a, 0xd8), 0xd8);

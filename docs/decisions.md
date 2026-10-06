@@ -7139,6 +7139,102 @@ does nothing more.
     - **Parsing the groups from the sponge's lanes in place**, with no
       buffer. It would need a call into `sha3.c` that hands out the
       state's bytes, and the sponge's proofs would grow a second reader.
+
+101. **A host object runs ML-KEM's NTT and base multiplication on eight
+    16-bit lanes, NEON on arm64 and SSE2 on x86-64, in every session.**
+    After entry 100, an encapsulation under gcc 13 at `-O2` ran 717,943
+    instructions under qemu-x86_64. 146,720 of them were `mlkem_poly.c`'s
+    forward and inverse transforms and 86,172 its base multiplication:
+    gcc's cost model at `-O2` vectorizes none of the three loops. clang 18
+    vectorizes parts of the transforms, and the three still took 142,220
+    of its 537,266.
+
+    - **What runs.** `mlkem_vector.c` computes each transform in three
+      passes over the polynomial. The forward transform runs the layers
+      of span 128 and 64 on four vectors 64 coefficients apart, the
+      layers of span 32 and 16 on four vectors 16 apart, and the last
+      three layers on each 16 coefficients, with the Barrett reduction
+      `mlk_poly_ntt` ends with. In the last two layers a butterfly's two
+      coefficients sit in one vector, so the pass first moves the pairs
+      into two vectors and moves them back after. The inverse runs the
+      same passes in the other order, with the multiply by 1441 in its
+      last pass. The base multiplication takes 16 coefficients of each
+      operand at a time and moves the even ones into one vector and the
+      odd ones into another, so lane i of the two holds one pair and its
+      product follows the scalar formula lane for lane. Each step reads
+      the twiddle factors `mlkem_poly.c`'s loop reads for it, from one
+      table in `mlkem_zetas.h` that both files include. The lane
+      operations sit in `mlkem_lanes.h`, one set for each instruction
+      set.
+    - **Each lane computes the scalar value.** `mlkem_poly.c`'s
+      Montgomery multiply computes (a·z − t·q) / 2^16, where t is the low
+      16 bits of a·z·q^-1, so a·z and t·q agree in their low 16 bits. On
+      SSE2 the difference of the two products' high halves (PMULHW) is
+      exactly that value. On NEON, SQDMULH gives the high halves of the
+      doubled products, their difference is exactly twice that value,
+      and SHSUB halves it. SQDMULH saturates where both operands are
+      -32768, which a twiddle factor never is. The base multiplication
+      also multiplies two coefficients, so its products form each 32-bit
+      product with SMULL instead, which is exact for every pair. The
+      Barrett quotient of a lane is
+      floor((floor(20159·a / 2^16) + 2^9) / 2^10) on SSE2 and
+      floor((floor(20159·a / 2^15) + 2^10) / 2^11) on NEON, and both
+      equal `mlk_barrett_reduce`'s floor((20159·a + 2^25) / 2^26). So
+      every output coefficient equals the loops' for every int16 input,
+      and the equivalence test compares coefficients exactly.
+    - **`mlkem.c` chooses.** `mlkem_poly.c` compiles to the same object
+      with and without `-DCH_CPU_RUNTIME` (`test/widemul-builds.sh`), so
+      its proofs and ceilings hold for the copy a host object carries. Its
+      transforms stay as they are, and two static functions in `mlkem.c`
+      call the vector entries in a host object and the loops in a device
+      object. A device object compiles to the same instructions as
+      before on the Cortex-M3, mips32r2 and rv32imac.
+    - **Timing.** The path runs adds, subtracts, 16x16 multiplies, shifts
+      and lane moves on every lane. No branch and no address depends on a
+      coefficient: the loop counters and the table indices are constants.
+      The multiplies are 16 bits by 16 bits, the size of `ct.h`'s pieces,
+      and the portable loops run the same products on the scalar
+      multiplier in every session. Arm's list of data-independent-time
+      instructions names every instruction the NEON arm runs, among them
+      SQDMULH, SMULL, MUL, MLS and SHSUB. It names SRSHR in its scalar form
+      alone, so the Barrett reduction adds 2^10 and shifts with SSHR
+      where SRSHR would do both. Intel's DOIT list names every
+      instruction the SSE2 arm runs, among them PMULHW and PMULLW. So no
+      bit of `ch_cfg.cpu` picks the path, as no bit picks the vector
+      ChaCha20 (entry 82). The multiply bit picks the vector Poly1305
+      (entry 83), whose lanes multiply 32 bits by 32 into 64.
+    - **Gain.** Under qemu-x86_64 an encapsulation runs 515,432
+      instructions under gcc 13 where it ran 717,943, and 425,081 under
+      clang 18 where it ran 537,266. The two transforms run 17,613 and
+      16,499 of them, and the base multiplication 12,768 and 13,536. With
+      the transforms alone on the lanes, the M1 Pro took a key generation
+      from 18.0 to 16.4 µs, an encapsulation from 15.9 to 14.4 and a
+      decapsulation from 18.0 to 15.7 under the bench's `ch_cfg.cpu`
+      value 0xe7 (scratch timing loop, median of 41 batches; clang had
+      vectorized part of the loops already).
+    - **What holds it.** CBMC cannot read an intrinsic, so no harness
+      compiles the file. `bin/mlkem_vector_equiv_test` compares both
+      transforms and the base multiplication with the loops over 19,107
+      cases on the host's instruction set, and `test/aes-runtime-qemu.sh mlkem-vector` runs
+      it for the other one under qemu. `bin/mlkem_test_host` and the
+      Wycheproof host leg run the published ML-KEM vectors on the path,
+      and `test/mlkem-builds.sh` holds which transforms each object
+      calls. INV-46 and its eighteen violations state the rest.
+
+    Rejected:
+
+    - **A table of twiddle vectors in each lane order**, which would save
+      the few instructions each pass spends building them. It would be a
+      second table an auditor has to check against the first.
+    - **`-O3` for gcc's own vectorizer**, which Camilo has not ruled on.
+      It takes the same encapsulation to about 600,000 instructions, and
+      it changes every file of the object.
+    - **SQDMULH for the base multiplication's products**, four
+      instructions where SMULL's form takes eight. It gives 16,383 where
+      `mlk_fqmul` gives 16,384 for the product of -32768 and -32768. No
+      coefficient ML-KEM computes reaches -32768, but the lanes would then
+      match the loops only on a domain narrower than the one CBMC proves.
+
 102. **A host object's server derives its ECDSA P-256 nonce on the
     session's SHA-256 path.** `p256_sign.c` derives each nonce by RFC
     6979: sixteen HMAC-SHA-256 calls, through `hmac_sha256` on

@@ -1491,6 +1491,53 @@ last `ROLE=server` stub, as the entry said it would.
   fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
   `sha3_round` proof and one the `sha3_stream` proof.
 
+### INV-46 — a host object's ML-KEM NTT arithmetic gives the portable code's coefficients
+
+- **Claim.** `mlkem_vector.c`, which a host object runs for ML-KEM's
+  forward and inverse transforms and its base multiplication in every
+  session, writes for every input of int16 coefficients the coefficients
+  `mlkem_poly.c`'s loops write, which stay the reference and a device
+  object's path.
+- **Mechanism.** `mlkem.c` calls the three through static functions,
+  which call `mlk_vector_ntt`, `mlk_vector_invntt` and
+  `mlk_vector_basemul` under `-DCH_CPU_RUNTIME` and `mlkem_poly.c`'s
+  three without it, so an object runs one of the two. Each lane computes
+  the scalar Montgomery and Barrett values exactly, by the identities
+  decision 101 states, and each step reads the twiddle factors the loops
+  read from the one table in `mlkem_zetas.h`. The path runs no branch and
+  computes no address from a coefficient (INV-16).
+- **Check.** `bin/mlkem_vector_equiv_test` runs both transforms both
+  ways on 7,029 polynomials each and compares every coefficient: every
+  coefficient at one of five values, one coefficient at one of four edge
+  values at each of the 256 positions, and 2,000 random polynomials
+  from each of all of int16, [0, q) and [-2, 2]. It runs the base
+  multiplication both ways on 5,049 pairs: every pair of the five
+  values, among them -32768 times -32768, one coefficient at an edge
+  value at each position against another edge value, and 2,000 random
+  pairs from all of int16 and 2,000 from the ranges an NTT's output and
+  a matrix entry hold. `make check` runs it on
+  the host's instruction set, `make san-check` under the sanitizers, and
+  `test/aes-runtime-qemu.sh mlkem-vector` on SSE2 and NEON under qemu.
+  `bin/mlkem_test_host` and the Wycheproof host leg run the published
+  ML-KEM-768 vectors on the path. `test/mlkem-builds.sh` compiles
+  `mlkem.c` both ways, and `make lint-trust-separation` holds
+  `mlkem_vector.c` to the host object.
+- **Violation.** A PR has `mlkem.c` call a loop in a host object, for
+  either transform or the base multiplication; reads the twiddle factor
+  one entry off in the layer of span 8, or four entries off in the base
+  multiplication; gives the two blocks of the layer of span 16 each
+  other's factor; drops the forward transform's last reduction; ends the
+  inverse with another factor than 1441; reduces a product of two odd
+  coefficients with the even ones' constant; or, in one instruction set,
+  drops the halving or the rounding of a reduction, splits coefficients
+  into the wrong lanes, subtracts the wrong half of a product, keeps the
+  low halves of the wide products, or multiplies two coefficients on
+  SQDMULH, which saturates. The eighteen `inv46-*` violations are these.
+  Three fail `test/mlkem-builds.sh`, six `bin/mlkem_vector_equiv_test` on
+  either instruction set, and nine `test/docker-aes-runtime-qemu.sh
+  mlkem-vector`, which runs the arm a machine's own compiler does not
+  read.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a

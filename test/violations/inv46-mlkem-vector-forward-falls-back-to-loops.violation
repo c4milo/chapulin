@@ -1,0 +1,18 @@
+invariant: INV-46
+file: mlkem.c
+catches: test/mlkem-builds.sh
+reason: mlkem.c guards its call to the vector NTT on a macro no build
+  defines, so a host object's sessions run mlkem_poly.c's forward
+  loops. Nothing else objects: mlkem_vector.c still compiles and links,
+  bin/mlkem_vector_equiv_test calls it directly, and every vector
+  passes, because the loops compute the same coefficients; only the time
+  is wrong. Every session of a host object runs the vector NTT, so the
+  script compiles mlkem.c as a host object does and requires it to call
+  mlk_vector_ntt and not mlk_poly_ntt.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    mlk_vector_ntt(p);
+--- new
+#ifdef CH_CPU_RUNTIME_PATH
+    mlk_vector_ntt(p);
