@@ -119,4 +119,21 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]);
 int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
               uint8_t *sig, size_t cap, size_t *sig_len);
 
+#ifdef CH_CPU_RUNTIME
+// p256_sign for one session of a host object, with the session's
+// ch_cfg.cpu first (cpu_cfg.h). It runs the scalar and point multiplies
+// under widemul_of_cpu(cpu) (widemul.h), and each HMAC-SHA-256 of the
+// nonce generator through hkdf.h's hmac_sha256_cpu: on the CPU's SHA-256
+// instructions when cpu holds CH_CPU_CONSTANT_TIME_SHA256, the caller's
+// statement that they run in constant time on this CPU, and on the
+// portable code when it does not. Both paths compute the same HMAC, so
+// the signature is the one p256_sign writes under the same answer. A
+// server's CertificateVerify and ch_srv_check sign through this call
+// (srv_auth.c); p256_sign stays for a caller with no session's value,
+// and its nonce runs on the portable code (docs/decisions.md 93 and
+// 102).
+int p256_sign_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+                  uint8_t *sig, size_t cap, size_t *sig_len);
+#endif
+
 #endif

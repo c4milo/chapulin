@@ -212,7 +212,13 @@ static int sign_digest(const ch_cfg *cfg, const ch_identity *id, uint16_t sigalg
                        const uint8_t digest[SHA256_LEN], uint8_t *sig, size_t cap,
                        size_t *sig_len) {
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
+#ifdef CH_CPU_RUNTIME
+        // The session's ch_cfg.cpu picks the multiply and the path of the
+        // nonce's HMAC-SHA-256 (p256_sign.h).
+        return p256_sign_cpu(cfg->cpu, id->priv, digest, sig, cap, sig_len);
+#else
         return p256_sign(widemul_answer(cfg), id->priv, digest, sig, cap, sig_len);
+#endif
     }
     return sign_rsa_pss(cfg, id, digest, sig, cap, sig_len);
 }

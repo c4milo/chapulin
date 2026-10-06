@@ -2456,10 +2456,11 @@ vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 67,073 comparisons, and requires the
-  same limbs, bytes and verdicts. Both fields keep an element in the
-  Montgomery domain with R = 2^256, so each comparison is of limbs taken
-  two at a time, not of a value read back through another routine:
+  32-bit files on the same inputs, 67,083 comparisons on a CPU with the
+  SHA-256 instructions, and requires the same limbs, bytes and verdicts.
+  Both fields keep an element in the Montgomery domain with R = 2^256, so
+  each comparison is of limbs taken two at a time, not of a value read
+  back through another routine:
   - every field routine on 20,000 random pairs, a quarter of whose limbs
     are all ones and a quarter zero, on the elements at the edges and on
     values at and above p, and the wide field on
@@ -2542,7 +2543,16 @@ the wide files to the same answers:
   A.2.5 and the Python vectors once with the bit and once without it,
   and the Wycheproof host binary runs the 355 `ecdh_secp256r1` cases and
   signs and verifies every P-256 message in the corpus in each of its
-  runs with the bit.
+  runs with the bit. In each of its runs `bin/p256_sign_test_host` also
+  signs the vectors through `p256_sign_cpu` with the SHA-256 bit, so the
+  nonce's HMACs run on the instructions where the CPU has them, and
+  without it, and requires the vectors' bytes from both.
+- `bin/p256_equiv_test` searches the stack below one more signature,
+  made through `p256_sign_cpu` with the SHA-256 bit, for the same limbs
+  it searches for below a signature through `p256_sign`: the nonce's
+  HMACs then run in `hkdf_hw.c` and `sha256_hw.c`, whose frames lie
+  below the signer's. A CPU without the instructions skips that search,
+  or fails it under `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 - `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
   signature and a key exchange against the Lean spec under each answer
   ([What `make diff` runs](#what-make-diff-runs)).
@@ -3389,10 +3399,13 @@ caller's bits, and one branch per call picks a path:
   `keysched.h` ask it.
 
 A call that takes no value runs the portable code. The DRBG, the
-certificate verifiers, the signers, the cookie and token MACs, the
-CertificateVerify content hash, an SPKI pin's hash, the server's hash of
-a ClientHello's frozen bytes and the webpki ticket binding make such
-calls, and each starts and ends its context on that path.
+certificate verifiers, the RSA signer, `p256_sign`, the cookie and token
+MACs, the CertificateVerify content hash, an SPKI pin's hash, the
+server's hash of a ClientHello's frozen bytes and the webpki ticket
+binding make such calls, and each starts and ends its context on that
+path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
+takes the session's value and hands it to `hmac_sha256_cpu` for each
+HMAC of the RFC 6979 nonce (decision 102).
 
 CBMC cannot unwind an intrinsic, so no harness compiles `sha256_hw.c` or
 `sha512_hw.c`, and the [sha256](#sha256), [sha512](#sha512),
@@ -3464,13 +3477,15 @@ skips what the CPU has no instructions for, or fails under
   one verdict on every CPU of their architecture. A row is one call
   that takes a session's value: `sha256.h`'s three entries and
   `sha512.h`'s five, `hkdf.h`'s five and `keysched.h`'s eight at each
-  hash length, the transcript, a record direction's keying and KeyUpdate
-  under each suite, and a QUIC level's keys, their update and an Initial
-  packet. Under each value a row must make every SHA-256 call it makes
-  under `CH_CPU_PROBED` alone on the instructions where the value holds
-  the SHA-256 bit and on `sha256.c` where it does not, the same for its
-  SHA-512 calls and the SHA-512 bit, and write the same bytes. An x86-64
-  binary requires every SHA-512 call on `sha512.c` under every value.
+  hash length, `p256_sign_cpu`, whose RFC 6979 nonce runs sixteen
+  HMAC-SHA-256 calls, the transcript, a record direction's keying and
+  KeyUpdate under each suite, and a QUIC level's keys, their update and
+  an Initial packet. Under each value a row must make every SHA-256 call
+  it makes under `CH_CPU_PROBED` alone on the instructions where the
+  value holds the SHA-256 bit and on `sha256.c` where it does not, the
+  same for its SHA-512 calls and the SHA-512 bit, and write the same
+  bytes. An x86-64 binary requires every SHA-512 call on `sha512.c` under
+  every value.
 - `test/hash-builds.sh`, in `make check`, compiles the hash sources for
   x86-64 and arm64 with no instruction flag under the pinned clang. It
   requires SHA-256 instructions in `sha256_hw.c`, SHA-512 instructions

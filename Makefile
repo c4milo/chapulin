@@ -2313,12 +2313,15 @@ bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS
 # a shared secret run under both answers, and p256.c so that the
 # independent verifier reads each signature. test/stack_residue.c copies
 # the stack a call left, for the check that a scalar's limbs are gone
-# (test/p256_equiv_residue.h). The binary is a host object's, so HOST_BINS
-# names it. bin/p256_sign_test_host and bin/p256_ecdh_test_host run RFC
-# 6979's vectors and Python's on the wide files, with the multiply bit, and
-# on the files under their own names, without it.
+# (test/p256_equiv_residue.h), and the copies on the SHA-256 instructions
+# link so that one signature's nonce runs on them, as a server's does under
+# the SHA-256 bit (p256_sign_cpu). The binary is a host object's, so
+# HOST_BINS names it. bin/p256_sign_test_host and bin/p256_ecdh_test_host
+# run RFC 6979's vectors and Python's on the wide files, with the multiply
+# bit, and on the files under their own names, without it.
 P256_EQUIV_TEST_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
-                        test/p256_verify_portable.c sha256.c hkdf.c buf.c ct.c ct_wipe.c test/stack_residue.c
+                        test/p256_verify_portable.c sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) \
+                        buf.c ct.c ct_wipe.c test/stack_residue.c
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
@@ -2339,7 +2342,7 @@ bin/p256_equiv_test_sum: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) 
 # 32-bit point and scalar files link so that the test computes its own
 # signatures on an arithmetic that is neither verifier's.
 P256_VERIFY_EQUIV_TEST_SRCS := p256.c p256_sign.c p256_point.c p256_scalar.c p256_field.c $(P256_WIDE_SRCS) \
-                               sha256.c hkdf.c buf.c ct.c ct_wipe.c
+                               sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) buf.c ct.c ct_wipe.c
 P256_VERIFY_EQUIV_TEST_UNITS := test/p256_verify_equiv_test.c test/p256_verify_portable.c
 bin/p256_verify_equiv_test: $(P256_VERIFY_EQUIV_TEST_UNITS) $(P256_VERIFY_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2453,12 +2456,14 @@ bin/mlkem_hw_equiv_test: test/mlkem_hw_equiv_test.c $(MLKEM_HW_EQUIV_TEST_SRCS) 
 # QUIC object with the suites, whose rows hold a record direction and a
 # QUIC level's keys. The second is a TCP object with the suites and the
 # exporter, which a QUIC object does not hold, so the two exporter entries
-# have a row.
+# have a row. Both link the P-256 signer, whose nonce's HMACs follow the
+# SHA-256 bit (p256_sign_cpu).
 HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c sha512_hw.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c \
                           $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,record.c aes.c $(AES_HW_SRCS) \
                           gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
-                          sha512_compress.c buf.c ct.c ct_wipe.c))
+                          sha512_compress.c p256_sign.c p256_scalar.c p256_point.c p256_field.c \
+                          buf.c ct.c ct_wipe.c))
 HASH_RUNTIME_QUIC_SRCS := quic_packet.c quic_keys.c quic_initial.c quic_aes_soft.c
 bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) sha256.c \
                        sha512.c hkdf.c keysched.c $(HDRS) $(TESTH)
@@ -4027,7 +4032,8 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wip
 # bin/diff compares the verifier in p256.c and no row of it reads these
 # files.
 DIFF_P256_WIDE_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \
-                       $(P256_WIDE_SRCS) sha256.c hkdf.c buf.c ct.c ct_wipe.c
+                       $(P256_WIDE_SRCS) sha256.c hkdf.c $(call hash_hw_of,sha256.c hkdf.c) buf.c ct.c \
+                       ct_wipe.c
 bin/diff_p256_wide: test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS)

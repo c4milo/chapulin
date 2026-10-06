@@ -432,9 +432,9 @@ What a row compares:
 What the M1 Pro's column shows:
 
 - SHA-256 and SHA-384 run at OpenSSL's time, and a 64-byte SHA-256 in 0.70 of it. Under their bits
-  a session's hashes run on the ARMv8 SHA-256 and SHA-512 instructions (decision 93). A hash call
-  that takes no `ch_cfg.cpu` value still runs portable C: a certificate's, a signer's and the
-  DRBG's.
+  a session's hashes run on the ARMv8 SHA-256 and SHA-512 instructions (decision 93), and so do
+  the HMACs of a server's ECDSA nonce (decision 102). A hash call that takes no `ch_cfg.cpu` value
+  still runs portable C: a certificate's, the RSA signer's and the DRBG's.
 - The two ECDSA verifiers run on 64-bit limbs in every session, where the 32-bit limbs took 23
   and 13 times OpenSSL's time. P-384 verifies in 0.89 of it: six 64-bit limbs, coordinates kept in
   the Montgomery domain and one pass over both scalars' signed digits (decision 97). P-256

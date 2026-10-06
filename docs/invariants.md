@@ -3121,13 +3121,18 @@ last `ROLE=server` stub, as the entry said it would.
   `test/hash-builds.sh` holds each hash's instructions to its file and
   each copy's calls to the `_hw` names, for x86-64 and arm64 under the
   pinned clang (docs/verification.md, "The hash instructions").
-  Eighteen violations break those rules.
+  `p256_sign_cpu`, which a host object's server signs through, hands
+  the session's value to each HMAC of its RFC 6979 nonce
+  (decision 102).
+  Nineteen violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
   `inv16-hkdf-extract-entry-inverted` and
-  `inv16-ks-exporter-entry-inverted` each invert one entry, and
+  `inv16-ks-exporter-entry-inverted` each invert one entry,
   `inv16-record-keys-direction-under-every-bit` keys a record direction
-  under a value with every bit. The counting tests catch those five.
+  under a value with every bit, and `inv16-p256-sign-nonce-on-portable`
+  hands the nonce's HMACs 0 in place of the session's value. The
+  counting tests catch those six.
   `inv16-sha512-instructions-without-bit`,
   `inv16-sha512-reads-sha256-bit` and
   `inv16-sha512-update-entry-inverted` do the same to `sha512.h`, and

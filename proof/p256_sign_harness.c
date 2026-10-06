@@ -69,7 +69,9 @@ static void prove_nonce_cost_is_fixed(void) {
     fill_nondet(priv, sizeof priv);
     fill_nondet(z_octets, sizeof z_octets);
     hmac_calls = 0;
-    (void)derive_nonce(&k, priv, z_octets);
+    // A device object reads no cpu (GENERATOR_HMAC), so any value runs the
+    // same calls.
+    (void)derive_nonce(nondet_u32(), &k, priv, z_octets);
     __CPROVER_assert(
         hmac_calls == 4 + 3 * NONCE_CANDIDATES,
         "derive_nonce: the HMAC count does not depend on which candidates were usable");

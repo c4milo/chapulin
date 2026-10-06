@@ -255,6 +255,40 @@ static void test_der_shape(void) {
     }
 }
 
+#ifdef CH_CPU_RUNTIME
+// p256_sign_cpu, the entry a host object's server signs through, writes
+// every vector's bytes under the value this binary runs under, once with
+// the SHA-256 bit, so the nonce's HMACs run on the instructions, and once
+// without it. A CPU without the instructions runs the first only where the
+// environment does not require them (test_cpu_hash_bits); the row then
+// says so. A key out of range is refused on either path.
+static void test_signatures_cpu(void) {
+    uint32_t with_sha256 = test_cpu | (test_cpu_hash_bits() & CH_CPU_CONSTANT_TIME_SHA256);
+    uint32_t without_sha256 = test_cpu & ~(uint32_t)CH_CPU_CONSTANT_TIME_SHA256;
+    const uint32_t values[] = {with_sha256, without_sha256};
+    if ((with_sha256 & CH_CPU_CONSTANT_TIME_SHA256) == 0) {
+        (void)printf("p256_sign: SKIP p256_sign_cpu on the SHA-256 instructions: this CPU "
+                     "lacks them\n");
+    }
+    for (size_t c = 0; c < sizeof values / sizeof values[0]; c++) {
+        for (size_t i = 0; i < sizeof p256_sign_vectors / sizeof p256_sign_vectors[0]; i++) {
+            const p256_sign_vector *v = &p256_sign_vectors[i];
+            uint8_t sig[P256_SIG_MAX];
+            size_t sig_len = 0;
+            CHECK(p256_sign_cpu(values[c], v->priv, v->msg_hash, sig, sizeof sig, &sig_len) == 1);
+            CHECK(sig_len == v->sig_len);
+            CHECK(same_bytes(sig, v->sig, sig_len));
+        }
+        uint8_t priv[32];
+        uint8_t sig[P256_SIG_MAX];
+        size_t sig_len = 0;
+        memset(priv, 0, sizeof priv);
+        CHECK(p256_sign_cpu(values[c], priv, p256_sign_vectors[0].msg_hash, sig, sizeof sig,
+                            &sig_len) == 0);
+    }
+}
+#endif
+
 // A host binary takes the ch_cfg.cpu value it runs under as its one
 // argument (test/test_cpu.h); every other binary takes none.
 int main(int argc, char **argv) {
@@ -262,6 +296,9 @@ int main(int argc, char **argv) {
     test_scalar_arithmetic();
     test_scalar_predicates();
     test_signatures();
+#ifdef CH_CPU_RUNTIME
+    test_signatures_cpu();
+#endif
     test_message_binding();
     test_key_boundary();
     test_buffer_boundary();

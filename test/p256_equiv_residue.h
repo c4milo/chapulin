@@ -23,14 +23,16 @@
 //   run_residue_sign and run_residue_ecdh make one signature and one key
 //   exchange under the constant-time answer and look for any 64-bit limb,
 //   in the host's byte order at any byte offset, of the values the call
-//   must not leave behind. After a signature: the private scalar d, the
-//   nonce k, its inverse and z + r d, which gives d to whoever holds the
-//   signature, and the nonce and its inverse in the Montgomery domain
-//   modulo n, which is how p256_wide_scalar_inverse holds them between
-//   products. After a key exchange: the private scalar and the shared X
-//   coordinate, as it is and in the Montgomery domain modulo p. And each
-//   of d, the nonce, z + r d and the key exchange's scalar less n modulo
-//   2^256, which is what p256_scalar_reduced_mask and the conditional
+//   must not leave behind, and run_residue_sign_on_instructions makes one
+//   more signature through p256_sign_cpu, whose nonce's HMACs run on the
+//   SHA-256 instructions, and looks for the same. After a signature: the
+//   private scalar d, the nonce k, its inverse and z + r d, which gives d
+//   to whoever holds the signature, and the nonce and its inverse in the
+//   Montgomery domain modulo n, which is how p256_wide_scalar_inverse holds
+//   them between products. After a key exchange: the private scalar and
+//   the shared X coordinate, as it is and in the Montgomery domain modulo
+//   p. And each of d, the nonce, z + r d and the key exchange's scalar less
+//   n modulo 2^256, which is what p256_scalar_reduced_mask and the conditional
 //   subtraction in p256_scalar_add compute into a temporary: the session
 //   runs those two on p256_scalar.c under either answer, and they wipe
 //   that temporary themselves (p256_scalar.h).
@@ -59,6 +61,7 @@
 #ifndef CH_P256_EQUIV_RESIDUE_H
 #define CH_P256_EQUIV_RESIDUE_H
 
+#include "hash_instructions_cpu.h"
 #include "p256_wide_wipe.h"
 
 #define RESIDUE_BYTES 3072
@@ -193,9 +196,15 @@ static void run_wiped(void) {
     }
 }
 
-static __attribute__((noinline)) int residue_sign(void) {
-    return p256_sign(WIDEMUL_CONSTANT_TIME, residue_priv, residue_hash, residue_sig,
-                     sizeof residue_sig, &residue_sig_len);
+// cpu 0 signs through p256_sign under the constant-time answer, and any
+// other value through p256_sign_cpu, the entry a server signs through.
+static __attribute__((noinline)) int residue_sign(uint32_t cpu) {
+    if (cpu == 0) {
+        return p256_sign(WIDEMUL_CONSTANT_TIME, residue_priv, residue_hash, residue_sig,
+                         sizeof residue_sig, &residue_sig_len);
+    }
+    return p256_sign_cpu(cpu, residue_priv, residue_hash, residue_sig, sizeof residue_sig,
+                         &residue_sig_len);
 }
 
 static __attribute__((noinline)) int residue_ecdh(void) {
@@ -259,14 +268,16 @@ static void residue_read_signature(p256_scalar *r, p256_scalar *s) {
     p256_scalar_from_bytes(s, value[1]);
 }
 
-static void run_residue_sign(void) {
+// One signature through residue_sign(cpu), and the search of the stack it
+// left. group names the signer in each report.
+static void run_residue_sign(uint32_t cpu, const char *group) {
     do {
         rng_fill(residue_priv, sizeof residue_priv);
     } while (!p256_sign_key_ok(residue_priv));
     rng_fill(residue_hash, sizeof residue_hash);
-    int signed_ok = residue_sign();
+    int signed_ok = residue_sign(cpu);
     residue_snapshot();
-    report("residue", "the signature under the constant-time answer", signed_ok == 1);
+    report(group, "the signature under the constant-time answer", signed_ok == 1);
 
     p256_scalar d;
     p256_scalar z;
@@ -282,25 +293,42 @@ static void run_residue_sign(void) {
     // k = s^-1 (z + r d), and its inverse is s (z + r d)^-1.
     p256_scalar_mul(&k, &r, &d);
     p256_scalar_add(&k, &z, &k);
-    report("residue", "no limb of z + r d below a signature", !residue_holds(k.limb));
-    report("residue", "no limb of z + r d less n below a signature", !residue_holds_less_n(&k));
-    report("residue", "no limb of the private scalar less n below a signature",
+    report(group, "no limb of z + r d below a signature", !residue_holds(k.limb));
+    report(group, "no limb of z + r d less n below a signature", !residue_holds_less_n(&k));
+    report(group, "no limb of the private scalar less n below a signature",
            !residue_holds_less_n(&d));
     p256_scalar_inverse(&k_inverse, &k);
     p256_scalar_mul(&k_inverse, &s, &k_inverse);
     p256_scalar_inverse(&other, &s);
     p256_scalar_mul(&k, &other, &k);
 
-    report("residue", "no limb of the private scalar below a signature", !residue_holds(d.limb));
-    report("residue", "no limb of the nonce below a signature", !residue_holds(k.limb));
-    report("residue", "no limb of the nonce less n below a signature", !residue_holds_less_n(&k));
-    report("residue", "no limb of the nonce's inverse below a signature",
+    report(group, "no limb of the private scalar below a signature", !residue_holds(d.limb));
+    report(group, "no limb of the nonce below a signature", !residue_holds(k.limb));
+    report(group, "no limb of the nonce less n below a signature", !residue_holds_less_n(&k));
+    report(group, "no limb of the nonce's inverse below a signature",
            !residue_holds(k_inverse.limb));
     scalar_to_mont(&other, &k);
-    report("residue", "no limb of the nonce times R below a signature", !residue_holds(other.limb));
+    report(group, "no limb of the nonce times R below a signature", !residue_holds(other.limb));
     scalar_to_mont(&other, &k_inverse);
-    report("residue", "no limb of the nonce's inverse times R below a signature",
+    report(group, "no limb of the nonce's inverse times R below a signature",
            !residue_holds(other.limb));
+}
+
+// The search above on a signature through p256_sign_cpu with the SHA-256
+// bit, so the nonce's HMACs ran on sha256_hw.c and hkdf_hw.c: their frames
+// lie below the signer's too. A CPU without the instructions skips it, or
+// fails where the environment requires them (test/hash_instructions_cpu.h).
+static void run_residue_sign_on_instructions(void) {
+    if (!cpu_has_sha256_instructions()) {
+        report("residue, the nonce on the SHA-256 instructions",
+               "the CPU has the SHA-256 instructions the environment requires",
+               !hash_instructions_required());
+        (void)printf("p256_equiv: SKIP the signature with the nonce on the SHA-256 "
+                     "instructions: this CPU lacks them\n");
+        return;
+    }
+    run_residue_sign(CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_CONSTANT_TIME_SHA256,
+                     "residue, the nonce on the SHA-256 instructions");
 }
 
 static void run_residue_ecdh(void) {
@@ -343,7 +371,8 @@ static void run_stack(void) {
     }
     run_depth();
     run_wiped();
-    run_residue_sign();
+    run_residue_sign(0, "residue");
+    run_residue_sign_on_instructions();
     run_residue_ecdh();
 }
 

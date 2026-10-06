@@ -33,7 +33,8 @@
 // every SHA-512 call must run it under every value.
 //
 // The rows: sha256.h's three entries and sha512.h's five; hkdf.h's five
-// and keysched.h's, at each hash length; transcript.h's two; a record
+// and keysched.h's, at each hash length; p256_sign_cpu, whose RFC 6979
+// nonce runs HMAC-SHA-256; transcript.h's two; a record
 // direction's keying and its KeyUpdate, which read the direction's cpu,
 // under each suite; and in a QUIC build a level's keys, their update and
 // an Initial packet. The Makefile builds the file twice: as a QUIC object
@@ -58,6 +59,7 @@
 #include "hash_runtime_count.h"
 #include "hkdf.h"
 #include "keysched.h"
+#include "p256_sign.h"
 #include "record.h"
 #include "sha256.h"
 #include "sha512.h"
@@ -269,6 +271,20 @@ static void row_hmac_sha256(uint32_t cpu) {
     hmac_sha256_cpu(cpu, key, KEY, input, INPUT, output);
 }
 
+// p256_sign_cpu, whose nonce generator runs sixteen HMAC-SHA-256 calls
+// through hmac_sha256_cpu. The row adds the multiply bit, so the signature
+// runs on the wide files under every value: the 32-bit files take thirty
+// times as long, and the hash calls are the same on either.
+static void row_p256_sign(uint32_t cpu) {
+    static const uint8_t priv[P256_PRIV_LEN] = {0xc9, 0xaf, 0xa9, 0xd8, 0x45, 0xba, 0x75, 0x16,
+                                                0x6b, 0x5c, 0x21, 0x57, 0x67, 0xb1, 0xd6, 0x93,
+                                                0x4e, 0x50, 0xc3, 0xdb, 0x36, 0xe8, 0x9b, 0x12,
+                                                0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
+    size_t sig_len = 0;
+    CHECK(p256_sign_cpu(cpu | CH_CPU_CONSTANT_TIME_MULTIPLY, priv, transcript_hash, output,
+                        P256_SIG_MAX, &sig_len) == 1);
+}
+
 static void row_hmac(uint32_t cpu) {
     hmac_cpu(cpu, row_hash_len, key, KEY, input, INPUT, output);
 }
@@ -402,6 +418,7 @@ static const row fixed_rows[] = {
     {"sha512_of_cpu",                          row_sha512_of          },
     {"sha384_of_cpu",                          row_sha384_of          },
     {"hmac_sha256_cpu",                        row_hmac_sha256        },
+    {"p256_sign_cpu",                          row_p256_sign          },
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     {"quic_initial_seal",                      row_quic_initial       },
 #endif

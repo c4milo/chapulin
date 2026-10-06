@@ -2,12 +2,14 @@ invariant: INV-16
 file: srv_auth.c
 catches: quic_loop_host
 reason: the server signs its CertificateVerify with its P-256 key under
-  WIDEMUL_NOT_STATED whatever its ch_cfg.cpu states. The signature still
-  verifies. test/quic_loop_widemul.h runs the r2 identity, a P-256 key,
-  and requires a server whose ch_cfg.cpu holds
+  WIDEMUL_NOT_STATED whatever its ch_cfg.cpu states: it hands
+  p256_sign_cpu the value without CH_CPU_CONSTANT_TIME_MULTIPLY. The
+  signature still verifies. test/quic_loop_widemul.h runs the r2
+  identity, a P-256 key, and requires a server whose ch_cfg.cpu holds
   CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
 
 --- old
-        return p256_sign(widemul_answer(cfg), id->priv, digest, sig, cap, sig_len);
+        return p256_sign_cpu(cfg->cpu, id->priv, digest, sig, cap, sig_len);
 --- new
-        return p256_sign(WIDEMUL_NOT_STATED, id->priv, digest, sig, cap, sig_len);
+        return p256_sign_cpu(cfg->cpu & ~(uint32_t)CH_CPU_CONSTANT_TIME_MULTIPLY, id->priv, digest,
+                             sig, cap, sig_len);

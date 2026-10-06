@@ -7139,3 +7139,74 @@ does nothing more.
     - **Parsing the groups from the sponge's lanes in place**, with no
       buffer. It would need a call into `sha3.c` that hands out the
       state's bytes, and the sponge's proofs would grow a second reader.
+102. **A host object's server derives its ECDSA P-256 nonce on the
+    session's SHA-256 path.** `p256_sign.c` derives each nonce by RFC
+    6979: sixteen HMAC-SHA-256 calls, through `hmac_sha256` on
+    `sha256.c` in every object, because entry 93 left the signers among
+    the calls that take no session's value. On the M1 Pro under Apple
+    clang 21 the nonce took 22.9 µs of a 48.9 µs signature, and 239,457
+    of its 533,835 instructions. The signature was the widest P-256 row
+    of `docs/performance.md`'s table beside OpenSSL: 2.78 times
+    OpenSSL's time on the M1 Pro and 2.95 times on the x86-64 runner.
+
+    - **The entry.** A host object gains `p256_sign_cpu`, which takes
+      the session's `ch_cfg.cpu` first, as entry 93's hash entries do.
+      It runs the scalar and point multiplies under
+      `widemul_of_cpu(cpu)`, and each HMAC of the nonce generator
+      through `hkdf.h`'s `hmac_sha256_cpu`: on the SHA-256 instructions
+      under `CH_CPU_CONSTANT_TIME_SHA256`, and on `sha256.c` without it.
+      Both paths compute the same HMAC, so the signature is the same
+      bytes either way. In a host object `srv_auth.c` signs through it:
+      a CertificateVerify, and the test signature of `ch_srv_check`.
+    - **`p256_sign` keeps its contract.** It takes a `WIDEMUL_` answer
+      and runs its nonce on the portable code, in every object. A device
+      object has no `ch_cfg.cpu` and holds one SHA-256, and the tests
+      and the Wycheproof host leg sign through `p256_sign`.
+    - **Constant time.** HMAC's key here is the generator's K, which
+      the private key derives. The bit is the caller's statement that
+      the SHA-256 instructions run in constant time on its CPU, the
+      statement the transcript and the key schedule already rest on.
+      The entry branches once per HMAC, on the bit, which the caller
+      chose and which is not secret.
+    - **A device object's code.** `p256_sign.c` passes the value through
+      its static generator functions, and in a device object
+      `GENERATOR_HMAC` discards it. The Cortex-M3 object under
+      arm-none-eabi-gcc 16.2, and the mips32r2 and rv32imac objects
+      under the pinned clang, all at `-Os`, hold the instructions they
+      held, in 887, 2,279 and 1,427 bytes of text. Two things differ:
+      the line number a `CH_ASSERT` passes, and gcc names
+      `generator_update` `generator_update.constprop.0`. The three
+      objects of `srv_auth.c` are the same.
+    - **What holds it.** `bin/p256_sign_test_host` signs the vectors
+      through `p256_sign_cpu` with the SHA-256 bit and without it.
+      `bin/p256_equiv_test` searches the stack below a signature whose
+      nonce ran on the instructions. `bin/hash_runtime_test` counts the
+      calls `p256_sign_cpu` makes into each SHA-256 under 129 values,
+      and `inv16-p256-sign-nonce-on-portable` fails that count. The
+      `p256_sign` proof, 792 properties in 15 s, and the `srv_auth`
+      proof, 474 in 9 s, pass with their counts as recorded.
+
+    Gain, through `bench/primitives.c`'s signature row on the M1 Pro
+    under Apple clang 21 and `0xe7`, five runs of the tree before and
+    after in turn, at a load average of 8.6 to 11.8: 28.7 µs and 319,975
+    instructions, where the tree before took 49.9 µs and 533,828. The
+    key generation and key exchange rows moved by less than their
+    spread, 2 to 3%. That is 1.62 times the OpenSSL time the table
+    holds, 17.7 µs, where it was 2.78. Counted under qemu-x86_64 with
+    `-cpu max`, a signature through `p256_sign_cpu` with the SHA-256 bit
+    retires 616,592 instructions under gcc 13 and 485,660 under clang
+    18, where `p256_sign` retires 899,963 and 781,581. Under gcc the
+    scalar inverse's Montgomery products are now 123,291 of them, 20%.
+
+    Rejected:
+
+    - **A `cpu` argument for `p256_sign` in every object.** A host test
+      that passes `WIDEMUL_CONSTANT_TIME` would still compile, and would
+      mean `CH_CPU_PROBED` alone: a test would run another path than the
+      one it names, with no error.
+    - **K's two padded blocks hashed once for each K.** The generator
+      keys three or four HMACs with one K, and each HMAC hashes K's
+      inner and outer blocks again: 66 compressions where 48 would do.
+      On the instructions the whole nonce takes 2.5 µs on the M1 Pro, so
+      that saves at most about a quarter of it, and it needs `sha256.h`'s
+      lower calls in this file. Not measured.

@@ -32,6 +32,21 @@ typedef struct {
     uint8_t v[SHA256_LEN];
 } nonce_generator;
 
+// One HMAC-SHA-256 of the generator, keyed with K. cpu is the ch_cfg.cpu
+// value p256_sign_cpu takes, and 0 from p256_sign. In a host object the
+// HMAC runs through hkdf.h's hmac_sha256_cpu, on the SHA-256 instructions
+// when cpu holds CH_CPU_CONSTANT_TIME_SHA256 and on the portable code when
+// it does not, as 0 does not. A device object holds one SHA-256, so there
+// the macro discards cpu and makes the call this file made before
+// p256_sign_cpu existed.
+#ifdef CH_CPU_RUNTIME
+#define GENERATOR_HMAC(cpu, g, msg, msg_len, out)                                                  \
+    hmac_sha256_cpu((cpu), (g)->k, SHA256_LEN, (msg), (msg_len), (out))
+#else
+#define GENERATOR_HMAC(cpu, g, msg, msg_len, out)                                                  \
+    ((void)(cpu), hmac_sha256((g)->k, SHA256_LEN, (msg), (msg_len), (out)))
+#endif
+
 // The longest message the generator hashes: V, one separator byte, the
 // private scalar and the reduced message hash (RFC 6979 §3.2 steps d
 // and f).
@@ -40,9 +55,10 @@ typedef struct {
 // K = HMAC_K(V || separator || priv || z), then V = HMAC_K(V). This is
 // RFC 6979 §3.2 step d with separator 0x00 and step f with 0x01; step h
 // step 3's update is the same shape with no priv and no z, which the
-// caller asks for by passing tail_len 0.
-static void generator_update(nonce_generator *g, uint8_t separator, const uint8_t *tail,
-                             size_t tail_len) {
+// caller asks for by passing tail_len 0. Each HMAC runs on the path cpu
+// picks (GENERATOR_HMAC).
+static void generator_update(uint32_t cpu, nonce_generator *g, uint8_t separator,
+                             const uint8_t *tail, size_t tail_len) {
     uint8_t input[GENERATOR_INPUT_MAX];
     uint8_t next[SHA256_LEN];
     wbuf w;
@@ -59,9 +75,9 @@ static void generator_update(nonce_generator *g, uint8_t separator, const uint8_
     // afterwards. hmac_sha256 happens to tolerate an output that aliases
     // its key or its message, but nothing in hkdf.h promises that, and a
     // generator that depended on it would break silently.
-    hmac_sha256(g->k, SHA256_LEN, input, w.len, next);
+    GENERATOR_HMAC(cpu, g, input, w.len, next);
     memcpy(g->k, next, SHA256_LEN);
-    hmac_sha256(g->k, SHA256_LEN, g->v, SHA256_LEN, next);
+    GENERATOR_HMAC(cpu, g, g->v, SHA256_LEN, next);
     memcpy(g->v, next, SHA256_LEN);
     ct_wipe(input, sizeof input);
     ct_wipe(next, sizeof next);
@@ -70,24 +86,24 @@ static void generator_update(nonce_generator *g, uint8_t separator, const uint8_
 // RFC 6979 §3.2 steps a through g. z_octets is bits2octets(h1), which
 // for this curve is the 32 bytes of the message hash reduced mod n,
 // because qlen, hlen and the octet length are all the same here.
-static void generator_init(nonce_generator *g, const uint8_t priv[P256_PRIV_LEN],
+static void generator_init(uint32_t cpu, nonce_generator *g, const uint8_t priv[P256_PRIV_LEN],
                            const uint8_t z_octets[P256_SCALAR_LEN]) {
     uint8_t tail[P256_PRIV_LEN + P256_SCALAR_LEN];
     memcpy(tail, priv, P256_PRIV_LEN);
     memcpy(tail + P256_PRIV_LEN, z_octets, P256_SCALAR_LEN);
     memset(g->v, 0x01, SHA256_LEN);
     memset(g->k, 0x00, SHA256_LEN);
-    generator_update(g, 0x00, tail, sizeof tail);
-    generator_update(g, 0x01, tail, sizeof tail);
+    generator_update(cpu, g, 0x00, tail, sizeof tail);
+    generator_update(cpu, g, 0x01, tail, sizeof tail);
     ct_wipe(tail, sizeof tail);
 }
 
 // One candidate, RFC 6979 §3.2 step h steps 1 and 2. qlen and the hash
 // length are both 256 bits here, so T is exactly one HMAC output and the
 // loop the RFC writes runs once.
-static void generator_next(nonce_generator *g, p256_scalar *candidate) {
+static void generator_next(uint32_t cpu, nonce_generator *g, p256_scalar *candidate) {
     uint8_t next[SHA256_LEN];
-    hmac_sha256(g->k, SHA256_LEN, g->v, SHA256_LEN, next);
+    GENERATOR_HMAC(cpu, g, g->v, SHA256_LEN, next);
     memcpy(g->v, next, SHA256_LEN);
     p256_scalar_from_bytes(candidate, g->v);
     ct_wipe(next, sizeof next);
@@ -97,17 +113,18 @@ static void generator_next(nonce_generator *g, p256_scalar *candidate) {
 // candidate is generated and every generator update runs, whatever the
 // earlier candidates were, so the sequence of candidates is exactly the
 // RFC's and the cost is the same for every key and message. Returns all
-// ones when some candidate was usable and zero when none was.
-static uint32_t derive_nonce(p256_scalar *k, const uint8_t priv[P256_PRIV_LEN],
+// ones when some candidate was usable and zero when none was. Every HMAC
+// runs on the path cpu picks (GENERATOR_HMAC).
+static uint32_t derive_nonce(uint32_t cpu, p256_scalar *k, const uint8_t priv[P256_PRIV_LEN],
                              const uint8_t z_octets[P256_SCALAR_LEN]) {
     nonce_generator g;
     p256_scalar candidate;
     uint32_t found = 0;
 
-    generator_init(&g, priv, z_octets);
+    generator_init(cpu, &g, priv, z_octets);
     *k = p256_scalar_zero;
     for (int i = 0; i < NONCE_CANDIDATES; i++) {
-        generator_next(&g, &candidate);
+        generator_next(cpu, &g, &candidate);
         uint32_t usable = p256_scalar_reduced_mask(&candidate) & ~p256_scalar_zero_mask(&candidate);
         p256_scalar_cmov(k, &candidate, usable & ~found);
         found |= usable;
@@ -115,7 +132,7 @@ static uint32_t derive_nonce(p256_scalar *k, const uint8_t priv[P256_PRIV_LEN],
         // candidate was taken. The candidates a conditional update would
         // produce are the same ones, because the update depends on the
         // generator state and never on the verdict.
-        generator_update(&g, 0x00, NULL, 0);
+        generator_update(cpu, &g, 0x00, NULL, 0);
     }
     ct_wipe(&candidate, sizeof candidate);
     ct_wipe(&g, sizeof g);
@@ -225,8 +242,10 @@ int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
     return usable != 0;
 }
 
-int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
-              uint8_t *sig, size_t cap, size_t *sig_len) {
+// p256_sign's contract, with the multiplies under widemul and the nonce
+// generator's HMACs on the path cpu picks (GENERATOR_HMAC).
+static int sign_digest(uint8_t widemul, uint32_t cpu, const uint8_t priv[P256_PRIV_LEN],
+                       const uint8_t msg_hash[32], uint8_t *sig, size_t cap, size_t *sig_len) {
     p256_scalar d;
     p256_scalar z;
     p256_scalar k;
@@ -250,7 +269,7 @@ int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t 
     p256_scalar_reduce(&z, &z);
     p256_scalar_to_bytes(z_octets, &z);
 
-    if (derive_nonce(&k, priv, z_octets) &&
+    if (derive_nonce(cpu, &k, priv, z_octets) &&
         compute_signature(widemul, &k, &d, &z, r_bytes, s_bytes)) {
         rc = write_signature(sig, cap, sig_len, r_bytes, s_bytes);
     }
@@ -262,3 +281,15 @@ int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t 
     ct_wipe(s_bytes, sizeof s_bytes);
     return rc;
 }
+
+int p256_sign(uint8_t widemul, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+              uint8_t *sig, size_t cap, size_t *sig_len) {
+    return sign_digest(widemul, 0, priv, msg_hash, sig, cap, sig_len);
+}
+
+#ifdef CH_CPU_RUNTIME
+int p256_sign_cpu(uint32_t cpu, const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32],
+                  uint8_t *sig, size_t cap, size_t *sig_len) {
+    return sign_digest(widemul_of_cpu(cpu), cpu, priv, msg_hash, sig, cap, sig_len);
+}
+#endif
