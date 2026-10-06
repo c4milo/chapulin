@@ -16,7 +16,7 @@ mapping in tools/impact.py, never in this file: the fix is to teach the
 mapping where that gate reads its sources, never to drop the violation
 from the comparison.
 
-Seven more assertions come free from the same data:
+Eight more assertions come free from the same data:
 
   every command the plan emits parses as `make <target>` naming a target
   the Makefile has, or as a script the tree holds — a plan that names a
@@ -38,6 +38,9 @@ Seven more assertions come free from the same data:
   a path the mapping refuses to narrow selects every gate, so the
   fail-closed rule is tested rather than asserted — including a source
   the tree's own lists do not name, which is what a new file is
+
+  the plan for every root .c file git tracks runs lint-proof-cover and
+  lint-codegen-partition, the two lints that read git's list of them
 
   a working tree that differs from the base gives the plan its changed
   set, and an unchanged one prints no command: the two shapes `make
@@ -185,6 +188,47 @@ def check_fail_closed(mapping):
         new.unlink(missing_ok=True)
     print(f"impact-test: every wide path selects all {len(every)} gates, a "
           f"source no list names included")
+    return bad
+
+
+def root_sources():
+    """The .c files git tracks at the root of the tree."""
+    listed = subprocess.run(["git", "ls-files", "-z", "--", "*.c"], cwd=ROOT,
+                            check=True, capture_output=True).stdout
+    return sorted({os.fsdecode(p) for p in listed.split(b"\0")
+                   if p and b"/" not in p})
+
+
+# The lints that read git's list of root .c files. lint-proof-cover fails
+# a root source no build packages and holds each packaged one to a full
+# harness or an audit; lint-codegen-partition requires each one in exactly
+# one codegen list.
+ROOT_SOURCE_LINTS = ["make lint-proof-cover", "make lint-codegen-partition"]
+
+
+def check_root_sources(mapping):
+    """The plan for every root .c file runs the lints that judge it.
+
+    select_lints and select_codegen select those two lints for a source in
+    lib_sources(). That set was the union of the legs check builds, which
+    left out srv_quic.c and nine other sources, so their plans did not run
+    lint-proof-cover. git's list is the oracle here because no list of
+    builds can fall behind it."""
+    bad, short = 0, set()
+    sources = root_sources()
+    for path in sources:
+        entries = impact_select.plan([path], mapping)
+        if entries[0].group == "everything":
+            continue  # make check, the plan's first command, runs both lints
+        commands = {entry.command for entry in entries}
+        for lint in ROOT_SOURCE_LINTS:
+            if lint not in commands:
+                print(f"impact-test: {path} is a root source, which {lint} "
+                      f"reads, and the plan for {path} does not run it")
+                short.add(path)
+                bad += 1
+    print(f"impact-test: {len(sources)} root sources, {len(sources) - len(short)} "
+          f"whose plan runs {' and '.join(ROOT_SOURCE_LINTS)}")
     return bad
 
 
@@ -448,7 +492,7 @@ def main():
     bad = (check_violations(mapping) + check_commands(mapping)
            + check_run_targets(mapping) + check_rand_named(mapping)
            + check_script_commands(mapping) + check_full_covers(mapping)
-           + check_fail_closed(mapping)
+           + check_fail_closed(mapping) + check_root_sources(mapping)
            + check_dirty_tree() + check_empty_plan())
     if bad:
         print(f"impact-test: {bad} problem(s); fix the mapping in "

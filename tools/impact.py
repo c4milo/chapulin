@@ -46,6 +46,10 @@ The tool is four modules, one concern each:
   tools/impact_select.py  chooses the commands one changed path gates
   tools/impact.py         this file: the command line that runs them
 
+tools/impact_map.py also imports tools/shipped_sources.py, which
+tools/proof-cover.py imports too, for the sources some packaged object
+compiles.
+
 Nothing lists a source. The mapping decays if the Makefile, the launch
 lines or the violations stop naming theirs — a Makefile that hid a
 source list behind a variable the recipe never names would leave a gate

@@ -345,7 +345,7 @@ def select_spec(out, changed):
         out.add("differential", command, reason, gates)
 
 
-def select_modes(out, sources, legs):
+def select_modes(out, sources, legs, lib):
     """The packaged-object legs, one per axis value `make check` builds.
 
     Each leg compiles its own source set under its own defines and its
@@ -355,7 +355,6 @@ def select_modes(out, sources, legs):
     handshake_parser.c and handshake_parser_ee.c each hold a
     CH_TRUST_WEBPKI block the default object compiles out, so every leg
     that packages the file is selected, not the default leg alone."""
-    packaged = set().union(*legs.values())
     for path in sources:
         for axis, commands in LIB_LEGS:
             if path not in legs.get(axis, ()):
@@ -365,7 +364,7 @@ def select_modes(out, sources, legs):
         # The mode partition reads every axis value's packaged source
         # list, and the webpki rows read git's list of root webpki*.c
         # files, which no make variable holds.
-        if path in packaged:
+        if path in lib:
             out.add("modes", "make lint-trust-separation",
                     f"{path} is packaged by some object, and this gate holds "
                     f"each axis value to its own source list")
@@ -377,13 +376,12 @@ LIB_PAIR_FILES = {"test/lib-pair-check.sh", "test/lib_pair_half.c",
                   "test/lib_pair_main.c", "test/lib_pair.h"}
 
 
-def select_pairs(out, changed, legs):
+def select_pairs(out, changed, lib):
     """test/lib-pair-check.sh, which links two packaged objects of
     different transports into one image: a source some object packages
     can break it, and so can the files the script compiles."""
-    packaged = set().union(*legs.values())
     for path in changed:
-        if path in packaged or path in LIB_PAIR_FILES:
+        if path in lib or path in LIB_PAIR_FILES:
             out.add("modes", "test/lib-pair-check.sh",
                     f"{path} is packaged by some object or compiled by the "
                     f"script, and the script links objects of two "
@@ -467,14 +465,13 @@ ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
                    "test/webpki_corpus.h"} | LIB_PAIR_FILES | ZIG_API_FILES
 
 
-def select_zig(out, changed, legs):
+def select_zig(out, changed, lib):
     """make lint-zig-build, which builds packaged objects with build.zig and
     holds each to make's: a source some object packages can break it, and
     so can the Zig build, the localizer and the files the two scripts
     compile."""
-    packaged = set().union(*legs.values())
     for path in changed:
-        if (path in packaged or path in ZIG_BUILD_FILES
+        if (path in lib or path in ZIG_BUILD_FILES
                 or path.startswith(("tools/localize_", "test/localize/", "test/zig-consumer/"))):
             out.add("modes", "make lint-zig-build",
                     f"{path} is packaged by some object or read by the Zig "
@@ -794,11 +791,11 @@ def plan(changed, mapping):
     select_recipe_gates(out, sources)
     select_proofs(out, csources)
     select_spec(out, changed)
-    select_modes(out, sources, mapping.lib_legs())
-    select_pairs(out, changed, mapping.lib_legs())
+    select_modes(out, sources, mapping.lib_legs(), lib)
+    select_pairs(out, changed, lib)
     select_aes_runtime_qemu(out, changed)
     select_script_builds(out, changed)
-    select_zig(out, changed, mapping.lib_legs())
+    select_zig(out, changed, lib)
     select_codegen(out, csources, lib)
     select_runners(out, changed)
     select_violations(out, changed)

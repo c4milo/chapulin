@@ -15,6 +15,7 @@ import re
 from impact_read import (ROOT, RUNS_BINARY, SUFFIXES, binaries_run,
                          binary_sources, expand, harness_sources, harnesses,
                          make_db, named_in, run, target_sources, violations)
+from shipped_sources import shipped_sources
 
 
 # Paths whose change the mapping refuses to narrow. Each one either feeds
@@ -30,13 +31,15 @@ from impact_read import (ROOT, RUNS_BINARY, SUFFIXES, binaries_run,
 #   proof/prove-one.sh           the wrapper every single-harness run
 #                                execs, so it carries those same flags
 #   tools/impact*.py             this mapping and its selectors
+#   tools/shipped_sources.py     the builds lib_sources() asks make
+#                                about, so it is part of this mapping too
 WIDE_PATHS = {
     "Makefile", "test/platforms.mk", "tools/toolchain.env", ".clang-tidy",
     "proof/run.sh", "proof/harness.h", "proof/coverage.py",
     "proof/prove-one.sh", "tools/exact-fill.py",
     "tools/impact.py", "tools/impact_read.py",
     "tools/impact_map.py", "tools/impact_select.py", "test/impact_test.py",
-    ".clang-format",
+    "tools/shipped_sources.py", ".clang-format",
 }
 WIDE_PREFIXES = (".github/", ".semgrep/")
 
@@ -81,12 +84,13 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
               "san-check"]
 
 # The axis values print-lib-srcs is asked about, each a packaged-object
-# leg `make check` builds. The sixth carries the sources only an ecdsa
-# mode and KEX=pq package, so the six together are every source some
-# client object carries. TRUST=webpki TRANSPORT=tcp-nonblocking
-# packages tcp_nonblocking.c, tcp_nonblocking_frame.c and
-# tcp_nonblocking_step.c, which no other client object carries, and a
-# violation names its leg.
+# leg `make check` builds, so a changed source selects the commands
+# impact_select.LIB_LEGS names for each leg that packages it. Their union
+# is not every source some object packages, which lib_sources() reads
+# from tools/shipped_sources.py instead.
+# TRUST=webpki TRANSPORT=tcp-nonblocking packages tcp_nonblocking.c,
+# tcp_nonblocking_frame.c and tcp_nonblocking_step.c, which no other
+# client object carries, and a violation names its leg.
 LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki",
             "TRUST=webpki TRANSPORT=tcp-nonblocking", "TRANSPORT=quic-nonblocking",
             "TRUST=raw-ecdsa KEX=pq", "RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both",
@@ -215,12 +219,11 @@ class Mapping:
         once: it costs one make invocation per axis value, and
         test/impact_test.py builds a plan for every violation's file.
 
-        Every axis value is a packaged-object leg `make check` builds.
-        The sixth carries the sources only an ecdsa mode and KEX=pq
-        package, so lib_sources() below is every source some client
-        object carries. bench/device-ram.sh and lint-trust-separation ask
-        the same way, and a list kept here is what fell four modules
-        behind the handshake split."""
+        Every axis value is a packaged-object leg `make check` builds, so
+        a source selects the commands of each leg that packages it.
+        bench/device-ram.sh and lint-trust-separation ask the same way,
+        and a list kept here is what fell four modules behind the
+        handshake split."""
         if self._lib_legs is None:
             legs = {}
             for axis in LIB_AXES:
@@ -231,11 +234,14 @@ class Mapping:
         return self._lib_legs
 
     def lib_sources(self):
-        """Every source some packaged object carries. Computed once, as
-        lib_legs is: a plan asks for it, and test/impact_test.py builds a
-        plan for every violation's file."""
+        """Every source some packaged object compiles, and every source
+        whose text one of those includes, from tools/shipped_sources.py:
+        the set lint-proof-cover reads. The union of lib_legs() is
+        smaller, since no axis value in LIB_AXES packages srv_quic.c, for
+        one. Computed once, as lib_legs is: a plan asks for it, and
+        test/impact_test.py builds a plan for every violation's file."""
         if self._lib_sources is None:
-            self._lib_sources = set().union(*self.lib_legs().values())
+            self._lib_sources = shipped_sources("impact")
         return self._lib_sources
 
     def scope(self, target):

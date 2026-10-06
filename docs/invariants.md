@@ -1890,9 +1890,11 @@ last `ROLE=server` stub, as the entry said it would.
   holds the file to the proven code. `.clang-tidy` turns
   `bugprone-signed-bitwise` off on the strength of this claim.
 - **Mechanism.** `make lint-proof-cover` runs `tools/proof-cover.py`.
-  It asks the Makefile's `print-lib-srcs` for the sources of a list of
-  builds that between them take every value of every axis that picks a
-  source, and adds each source whose text one of those includes. It
+  It asks the Makefile's `print-lib-srcs` for the sources of each build
+  in `BUILDS` (`tools/shipped_sources.py`), a list of builds that between
+  them take every value of every axis that picks a source, and adds each
+  source whose text one of those includes. `make impact` reads the same
+  set, so the plan for a change to one of those sources runs this lint. It
   fails when a root `.c` file is in none of them, so a source that a
   `LIB_SRCS +=` line adds under a build the list lacks fails too. It
   reads the `full` launch lines and the sources each harness includes,

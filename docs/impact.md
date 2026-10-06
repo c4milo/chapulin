@@ -144,7 +144,8 @@ No module of the tool lists a source. `tools/impact_read.py` reads them:
 | Source | What it supplies |
 | --- | --- |
 | `make -qp` | every variable expanded, and every rule with its prerequisites and recipe |
-| `make print-lib-srcs AXIS=...` | the sources each packaged object carries, one call per axis value |
+| `make print-lib-srcs` for each axis value in `LIB_AXES` | the sources of each packaged-object leg `make check` builds, so a source selects the legs that package it |
+| `make print-lib-srcs` for each build in `BUILDS` | every source some packaged object compiles, and the sources their text includes: the set `lint-proof-cover` reads |
 | `proof/run.sh` | each harness's tier and the sources its launch line links |
 | `proof/*_harness.c` | the module each harness includes, through its stubs header |
 | `test/violations/*.violation` | the file each one edits and the target that must object |
@@ -158,6 +159,10 @@ and why the check below exists.
 The rest of the tool is three more modules: `tools/impact_map.py` holds
 what those readers found, `tools/impact_select.py` chooses the commands
 for one changed path, and `tools/impact.py` is the command line.
+`tools/impact_map.py` also imports `tools/shipped_sources.py`, which
+holds `BUILDS` and asks make for each build's sources.
+`tools/proof-cover.py` imports the same module, so the plan for every
+source `lint-proof-cover` judges runs that lint.
 
 ## The check
 
@@ -183,7 +188,10 @@ The same check asserts that:
 - the everything plan runs every gate a narrow plan can select, so a
   Makefile edit is never checked less thoroughly than a one-source edit;
 - each path the mapping refuses to narrow really does select every gate,
-  a source no list in the tree names included.
+  a source no list in the tree names included;
+- the plan for every root `.c` file git tracks runs `lint-proof-cover`
+  and `lint-codegen-partition`, the two lints that read git's list of
+  those files.
 
 It writes nothing in the working tree. The two checks that need a
 changed set build one through a temporary git index and a scratch file
