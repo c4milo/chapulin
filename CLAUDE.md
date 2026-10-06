@@ -117,7 +117,10 @@ Home: github.com/c4milo.
   CH_CPU_CONSTANT_TIME_SHA512) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
-  builds keep them test-only) with `keccak_hw.h`, `mlkem_hw.c` and
+  builds keep them test-only) with `mlkem_zetas.h` (the NTT's twiddle
+  factors), with `mlkem_vector.[ch]` and `mlkem_lanes.h` (the NTT and
+  base multiplication on eight 16-bit lanes, NEON or SSE2, every session
+  of a host object), and with `keccak_hw.h`, `mlkem_hw.c` and
   `mlkem_poly_hw.c` (the two files compiled once more over
   `sha3_hw.c`) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
@@ -305,7 +308,12 @@ Home: github.com/c4milo.
   four on SSE2 in every session: every arm64 and x86-64 CPU has those, so
   no bit picks them, and a host build whose compiler defines neither
   `__ARM_NEON` nor `__SSE2__` stops at an `#error` (docs/decisions.md 82
-  and 86). On x86-64 two more bits each pick a kernel beside a path every
+  and 86). ML-KEM's NTT and base multiplication run on `mlkem_vector.c`'s
+  eight 16-bit lanes in every session of a host object the same way:
+  their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
+  picks them, and `mlkem_poly.c`'s loops stay the reference and a device
+  object's path (docs/decisions.md 101).
+  On x86-64 two more bits each pick a kernel beside a path every
   CPU runs, and neither states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c`, and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
@@ -336,6 +344,8 @@ Home: github.com/c4milo.
   `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches
   the stack below each call, and `bin/mlkem_hw_equiv_test` holds
   ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
+  `bin/mlkem_vector_equiv_test` holds `mlkem_vector.c` to
+  `mlkem_poly.c`'s loops, coefficient for coefficient.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
   files and `rsa_sign64.c` to the files under their own names, and search
   the stack each call leaves. `bin/p256_verify_equiv_test` and
