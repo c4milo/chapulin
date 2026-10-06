@@ -22,29 +22,33 @@
 #   encoding. Fires on Linux builds of clang-tidy 22 and not on macOS
 #   builds of the same version, so this is the check's judgment, not a
 #   version gap.
-# - bugprone-signed-bitwise: 351 findings across the tree, none a defect. The
-#   crypto cores hold 245 of them and mean them: x25519 carries `int64_t
-#   fe[16]` limbs, and ct.h's signed multiply and x25519's cswap build their
-#   masks by an arithmetic shift of a sign bit, which is what keeps a limb's
-#   sign and the swap bit off the control path. Most of the rest are integer
-#   promotion -- a uint8_t
-#   or uint16_t widens to signed int, and the value cannot be negative.
-#   The check's one genuinely undefined case, left-shifting a negative value,
-#   was already found and fixed by hand at x25519.c:23-26, with the reasoning
-#   written beside it.
-#   What replaces the check is stronger than the check. Every module carrying
-#   a finding runs a CBMC harness under run.sh's `full` set, which proves
-#   absence of signed overflow and UB over unconstrained inputs at the
-#   module's real bound: aead, buf, chacha20, ct, handshake_parser,
-#   handshake_post, hkdf, io, mlkem, mlkem_poly, p256, poly1305, record, rsa,
-#   sha256, sha3, x509, and x25519's ops and mul lemma. rsa_mont.c and
-#   handshake_message.c are covered too, through the rsa_mul and hello_build
-#   harnesses that compile them. One shipped source has no harness, tls.c, so
-#   its two sites were read by hand: both are `server_pubkey[len - 1] & 1` on
-#   a uint8_t array element, checking an RSA modulus is odd.
-#   `make lint-proof-cover` holds that claim: it fails when a shipped source is
-#   neither compiled by a `full` harness nor recorded in tools/proof-cover.py's
-#   audited list.
+# - bugprone-signed-bitwise: clang-tidy 23 flags a bitwise operator when an
+#   operand has a signed type before any implicit conversion, and an int
+#   constant counts as one. Most of its findings in this tree are such a
+#   constant used as a shift count or a mask: the 8 in `(uint8_t)(n >> 8)`
+#   is one. In the files written in intrinsics, which no harness compiles,
+#   every finding is of that kind: a positive shift count. Most of the rest
+#   are int values that cannot be negative, such as a loop counter or the
+#   int result of an operation on uint8_t or uint16_t values. The others are
+#   signed on purpose, in the crypto cores: x25519.c's `fe` limbs are
+#   int64_t, ML-KEM's polynomial coefficients are int16_t, and several
+#   functions, ct.h's `ct_widemul_s` and x25519.c's `cswap` among them, build
+#   a mask by an arithmetic right shift of a sign bit, so no branch depends
+#   on that bit. C11 leaves a right shift of a negative value to the
+#   implementation, and gcc and clang define it as an arithmetic shift. A
+#   left shift of a negative value is undefined, which is why x25519.c's
+#   `carry` converts `c` to uint64_t before it shifts `c` left, as the
+#   comment there says.
+#   CBMC looks for the undefined cases instead: proof/run.sh's `full` check
+#   set turns on its undefined-shift and signed-overflow checks. This disable
+#   depends on the claim INV-47 in docs/invariants.md states. Every shipped
+#   source is compiled by a harness launched with that set, or someone read
+#   it and recorded what holds its signed arithmetic, or it is a copy: the
+#   text of a source of either kind, compiled once more under a header of
+#   renames. tools/proof-cover.py lists the hand audits in `AUDITED` and the
+#   copies in `COPIES`, and `make lint-proof-cover` runs it. A harness proves
+#   only the calls it drives, at its bound, and docs/verification.md states
+#   which those are.
 # - readability-trailing-comma: 138 findings, every one cosmetic, and its
 #   automatic fix is unsafe on this tree. Most of them sit in test vector
 #   headers, which do not parse standalone -- they read identifiers the
