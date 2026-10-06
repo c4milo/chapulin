@@ -1,0 +1,14 @@
+invariant: INV-45
+file: sha3.c
+catches: proof/prove-one.sh sha3_stream
+reason: block_xor takes eight bytes for a lane while fewer than eight
+  remain, so it reads up to seven bytes past the caller's buffer. The
+  streaming harness hands it pieces that end at the buffer's last
+  byte.
+
+--- old
+    for (; n - i >= 8; i += 8) {
+        lane[(pos + i) / 8] ^= lane_from_bytes(in + i);
+--- new
+    for (; i < n; i += 8) {
+        lane[(pos + i) / 8] ^= lane_from_bytes(in + i);

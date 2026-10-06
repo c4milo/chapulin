@@ -1,0 +1,11 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: theta XORs column 2's value into a lane of column 1. The
+  equivalence test requires the reference's state after the
+  permutation.
+
+--- old
+    a[16] ^= d1;
+--- new
+    a[16] ^= d2;

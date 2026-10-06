@@ -214,6 +214,37 @@ never on a whole tier. Its cost there was small: `x25519_wide_mul`'s 25
 products of 64-bit operands widened to 128 bits, with their top bits
 clear, prove with every check on in under 4 s.
 
+**Name a computed value before a call takes it.** `--slice-formula`
+drops every assignment no property reads, which is why a memory-safety
+formula does not carry the arithmetic between its bounds. Measured, it
+did not drop a value computed in a call's argument. `sha3.c`'s round
+rotated `a[6] ^ d1` inside the call, and its squeeze passed
+`lane[(pos + i) / 8]` to the call that writes a lane out, and the `sha3`
+harness then carried every bit of 16 permutations: 21.0 million clauses
+and a solver at 5.6 GB. With theta applied first, so that the call
+reads `a[6]`, and the lane named before its call, the same harness is
+11.3 million clauses and 3.0 GB. One permutation alone shows it: 335
+thousand clauses with the XOR inside the call, 1.9 thousand with a
+plain lane there. To read a formula's size without solving it, add
+`--dimacs --outfile /dev/stdout` to the launch line's flags and read
+the `p cnf` line. It takes seconds, so do it before a harness's first
+run and after any change to the code it compiles.
+
+**Give every loop a bound in the unwindset.** A loop whose exit reads a
+symbolic value is unwound to the bound it is given, and a loop that
+holds a call is that many copies of the callee. A draft of the sha3
+lines bounded two loops and left the rest at the launch line's default
+of 26, among them the two that hold the permutation: cbmc reached
+41 GB before the operating system stopped it. `cbmc --show-loops` with
+the launch line's sources prints every loop's name.
+
+**Cap a local run's memory yourself on macOS.** `run.sh` caps each
+solver with `ulimit -v`, which macOS does not have, and
+`proof/prove-one.sh` limits wall time alone. A formula that does not
+converge then grows until the machine has no memory left. Watch the
+resident size of cbmc and of the solver during a harness's first run,
+and stop the run at the cap its weight would give it on Linux.
+
 **Structure beats solver.** kissat returns verdicts where the built-in
 solver has none after hours, so keep it installed. But no solver
 rescues a monolithic formula: incremental z3 timed out on the same

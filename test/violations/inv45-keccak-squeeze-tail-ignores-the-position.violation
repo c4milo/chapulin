@@ -1,0 +1,13 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: block_bytes' last step reads from the block's first bytes where
+  the output continues a block already read in part. The split
+  squeezes of the SHAKE streams differ.
+
+--- old
+    for (; i < n; i++) {
+        out[i] = byte_at(lane, pos + i);
+--- new
+    for (; i < n; i++) {
+        out[i] = byte_at(lane, i);

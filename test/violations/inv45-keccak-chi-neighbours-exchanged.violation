@@ -1,0 +1,12 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: one lane of chi takes its two neighbours in the other order. The
+  equivalence test runs the permutation on each of the 1,600 states
+  with one bit set and on random states, and requires the reference's
+  state.
+
+--- old
+    a[7] = b7 ^ (~b8 & b9);
+--- new
+    a[7] = b7 ^ (~b9 & b8);

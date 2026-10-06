@@ -1,0 +1,14 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: squeeze hands out a second block without the permutation, so
+  output past one block repeats the first. Both digests fit in one
+  block and stay right; the SHAKE streams differ.
+
+--- old
+    while (n > 0) {
+        keccak_f1600(lane);
+        size_t take = rate;
+--- new
+    while (n > 0) {
+        size_t take = rate;

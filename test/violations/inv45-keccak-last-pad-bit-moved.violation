@@ -1,0 +1,10 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_test
+reason: pad_finish sets the bit below the top bit of the block's last
+  byte. Every FIPS 202 vector differs.
+
+--- old
+    xor_byte(lane, rate - 1, 0x80);
+--- new
+    xor_byte(lane, rate - 1, 0x40);

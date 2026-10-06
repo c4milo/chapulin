@@ -6909,3 +6909,103 @@ does nothing more.
       OpenSSL's time on this machine without them.
     - **The multiply bit.** It states a timing, and nothing here has one
       to hide.
+
+98. **`sha3.c` writes its round out lane by lane and moves eight bytes
+    at a time, in every object.** FIPS 202 states a round as loops over
+    a lane's column and row, and `sha3.c` followed it: a table of rho
+    offsets, a rotation by a count read from the table, and five `% 5`.
+    It also moved one byte at a time between a message and the lanes.
+    Each cost more than Keccak needs, under one compiler family each.
+
+    - **The loops, under gcc.** gcc does not unroll them at `-O2` or at
+      `-Os`. Every rotation is then a shift by a register, and on a
+      32-bit core every `% 5` is a division or a call. The round is now
+      straight-line code: the five column parities, theta XORed into
+      each lane in place, each lane rotated by its constant and read
+      into the `b` that pi names, chi back into the array, and the round
+      constant.
+    - **The bytes, under clang.** clang unrolls the loops itself, and
+      what it cannot remove is the absorb: one byte XORed into a lane in
+      memory, a load and a store for each byte. `block_xor` and
+      `block_bytes` move bytes in three steps: one at a time up to a
+      lane's first byte, eight at a time, and the bytes that do not fill
+      a lane. They name each byte of a lane by its place, so the host's
+      byte order never enters.
+    - **One form, not one for each kind of object.** A first draft kept
+      the loops in a device object and gave a host object the two forms
+      above. Every object now compiles one Keccak, with one set of
+      proofs, and `sha3.c` holds no `-DCH_CPU_RUNTIME`.
+    - **Shaped for the proofs' slicer.** theta is 25 lines of its own,
+      and the squeeze names a lane before the call that writes it out.
+      CBMC kept a value computed in a call's argument in every formula:
+      the `sha3` harness was 21.0 million clauses with the XOR inside
+      the rotation's call and is 11.3 million without
+      (`docs/proofs.md`).
+    - **What holds it.** INV-45. `proof/sha3_reference.h` is FIPS 202 as
+      the standard writes it: each step's algorithm as loops, the rho
+      offsets and the round constants computed by the standard's rules,
+      and a sponge that moves one byte at a time. `sha3_round` proves
+      the round equal to the reference's for every state and every
+      constant, and holds the table and the 24 rounds to it (1,902
+      properties, 34 s, 0.8 GB). `bin/sha3_equiv_test` holds every entry
+      of `sha3.h` to the reference's sponge over 6,043 outputs, and runs
+      under the sanitizers and on the big-endian mips lane. `sha3`
+      (1,615 properties, 87 s, 3.0 GB) and `sha3_stream` (1,653, 96 s,
+      2.8 GB) prove memory safety, where the loops took 174 s and
+      139 s. Eleven `inv45-*` violations each fail one of them.
+
+    Measured on the device cores, in instructions for one ML-KEM-768
+    operation, before and after:
+
+    | core and compiler | keygen | decapsulate | hybrid handshake crypto |
+    | --- | --- | --- | --- |
+    | Cortex-M3, Arm GNU gcc 15.3, `-O2` | 2,649,830 to 1,152,342 | 3,005,212 to 1,472,402 | 72,147,685 to 67,619,900 |
+    | mips32r2, clang 22, `-Os` | 3,216,837 to 1,465,580 | 3,630,548 to 1,837,139 | 100,368,713 to 95,072,709 |
+    | rv32imac, Bootlin gcc 14.3, `-Os` | 3,578,304 to 1,416,268 | 4,060,436 to 1,846,896 | 128,310,220 to 121,772,662 |
+
+    The round is what moved these. With the loops kept and the bytes
+    moved eight at a time, the Cortex-M3 counts stay within 0.05% of the
+    old ones. On the M1 Pro under Apple clang 21 it is the reverse: in a
+    scratch timing loop SHA3-256 of 16 KiB takes 29.6 µs where it took
+    63.3, and 29.4 µs with the loops kept. `docs/performance.md`'s table
+    beside OpenSSL takes its rows from its next run.
+
+    **The cost, and an exception to a rule.** `docs/performance.md` keeps
+    a change that raises none of SRAM, flash and instructions on the
+    device builds. This one raises two of them, in an object that holds
+    ML-KEM and in no other:
+
+    - **Flash.** `sha3.c`'s code and read-only data grow from 1,680 to
+      3,504 bytes on a Cortex-M3 under gcc at `-Os` (1,964 to 3,492 at
+      `-O2`), from 2,844 to 6,076 on mips32r2 under clang at `-Os`, and
+      from 2,086 to 4,092 on rv32imac under clang at `-Os`.
+    - **Stack.** The ML-KEM operations use 92 bytes more on mips32r2,
+      where the round's own frame grew, and the host-native peak of a
+      `KEX=pq` `ch_connect` rises 80 bytes to 15,952, where clang puts
+      `block_xor` inside `absorb` three times. On rv32imac under gcc
+      the ML-KEM operations use 108 bytes less.
+
+    Camilo admitted both on 2026-10-05: ML-KEM runs in half the
+    instructions on a device, `sha3.c` loses its division and its
+    `__udivsi3` on rv32ic, and the tree holds one Keccak.
+
+    Gain: an object that holds ML-KEM runs it in half the instructions
+    on a 32-bit core, and a host hashes SHA3-256 in half the time.
+
+    Rejected:
+
+    - **A second form for host objects alone.** It kept the division
+      and the byte loop in every device object, and it put two sponges
+      and two rounds in the tree, each with its own proofs.
+    - **The rounds on a local copy of the state.** The compiler then
+      stores no lane until the last round, and 16 KiB took 28.0 µs
+      against 29.7 on the M1. It costs 200 bytes of stack on a 32-bit
+      core, which is the resource a device has least of.
+    - **Handing the table of constants to the rounds as a pointer.**
+      28.3 µs against 29.7 under the same compiler, with no reason a
+      reader could check: the instructions are the same, and the
+      difference is which values the compiler keeps in registers.
+    - **The ARMv8 SHA-3 instructions.** `CH_CPU_CONSTANT_TIME_SHA3`
+      still picks nothing. OpenSSL runs them on the M1 and takes 18 µs
+      for the same 16 KiB. They are the next step, in a file of their
+      own.

@@ -195,11 +195,13 @@ and flags you actually ship, since this is a property of codegen and not of
 the source; the lint passes `-Os` before the flags, so a level in the flags
 field wins, which is how the mips gcc spec below runs a second time at `-O2`.
 A new spec starts from the default multiply ceilings and no branch ceilings,
-so the first things it reports are how your compiler lowers sha3's public
-`% 5` and the conditional-branch count of each of the twelve arithmetic
-files. Record the first for your label with
-`WIDEMUL_CEILING_SPEC="mycore/sha3.c:5"`, read every other file it reports
-above zero as the finding it is, and record the branch counts with
+so the first thing it reports is the conditional-branch count of each of the
+twelve arithmetic files. Read every file it reports above its multiply
+ceiling as the finding it is. The one public division, `ch_writable_len`'s
+in tls_write.c, is the exception: a compiler that copies it into two paths,
+as the mips gcc does at `-O2`, reports two, which you record for your label
+with `WIDEMUL_CEILING_SPEC="mycore/tls_write.c:2"`. Record the branch counts
+with
 `BRANCH_CEILING="mycore/ct.c:2 mycore/sha256.c:12 ..."` once you have read
 the branches and found each to be loop control.
 
@@ -208,23 +210,25 @@ the branches and found each to be loop control.
 Counts per file at `-Os`, and for the mips gcc at `-O2` as well, read from
 the lint. Every source not listed is at zero under every compiler.
 
-| compiler | poly1305.c | x25519.c | mlkem_poly.c | sha3.c (public `% 5`) |
-| --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 1 multiply-high |
-| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 5 `udiv` |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 5 `div` |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 | 5 `div` |
-| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 5 `rem` |
-| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 5 `__modsi3` |
+| compiler | poly1305.c | x25519.c | mlkem_poly.c |
+| --- | --- | --- | --- |
+| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 |
+| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 |
+| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 |
+| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 |
 
 rv32ic has no multiply or divide instruction to count, so that spec counts
 the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
-a chapulin build resolves to `softmul.c`'s constant-time routine, and the
-`% 5` is a call to `__modsi3`. `softmul.c` itself is at zero calls to
-`__muldi3` there, which is what that spec exists to hold.
+a chapulin build resolves to `softmul.c`'s constant-time routine.
+`softmul.c` itself is at zero calls to `__muldi3` there, which is what that
+spec exists to hold.
 
-The sha3 column is Keccak's `% 5` over public loop counters, which divides no
-secret. The three gcc rows were not always zero. gcc rewrites
+sha3.c held a division until its round was written out lane by lane: `% 5`
+over Keccak's lane counters, which clang lowered to one multiply-high and
+each gcc to five divisions (`docs/decisions.md` 98). The three gcc rows were
+not always zero. gcc rewrites
 `(uint64_t)lh + hl`, a 64-bit sum of two products it can prove narrow, into
 one widening multiply-accumulate, and `x & (0 - bit)` into `x * bit`, a
 widening multiply by a secret bit: two `umlal` in poly1305 and in mlkem_poly
@@ -273,9 +277,6 @@ compare-carry form into `ct_widemul` and requires `test/docker-mips.sh`, the
 local run of the mips lane, to fail: the `-O2` spec reads four against its
 ceiling of two, and the `-Os` spec reads zero.
 
-The Arm gcc lowers sha3's `% 5` to four `umull` at `-O2` where `-Os` gave
-five `udiv`; both divide public loop counters.
-
 ### What each compiler branches on today
 
 The same pass counts the conditional branches per file — `b<cond>`, `cbz`,
@@ -288,14 +289,14 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 
 | compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3 | 4 | 17 | 50 | 13 | 9 | 19 | 4 | 34 | 14 | 43 | 9 | 0 |
-| clang 23, mips32r2 | 4 | 16 | 29 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
-| clang 23, rv32imac | 4 | 17 | 38 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
-| Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 24 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 21 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 31 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
-| Bootlin gcc 14.3, rv32imac | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 0 |
-| Bootlin gcc 14.3, rv32ic | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
+| clang 23, Cortex-M3 | 4 | 17 | 40 | 13 | 9 | 19 | 4 | 34 | 14 | 43 | 9 | 0 |
+| clang 23, mips32r2 | 4 | 16 | 26 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
+| clang 23, rv32imac | 4 | 17 | 34 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
+| Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 21 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 18 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 36 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
+| Bootlin gcc 14.3, rv32imac | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 0 |
+| Bootlin gcc 14.3, rv32ic | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
 
 None of these is zero, and the lint does not claim they branch on public
 data: it cannot tell a loop counter from a limb. They are what each compiler
@@ -303,7 +304,7 @@ emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
 255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
 `softmul`'s fixed 32 and 64 iterations (the two `bne` on rv32ic, the one
 core where it compiles to anything), read and recorded. The Cortex-M3 clang
-counts include IT blocks — 22 of sha3's 50 and 12 of mlkem_poly's 43. A
+counts include IT blocks — 16 of sha3's 40 and 12 of mlkem_poly's 43. A
 predicated instruction takes the same cycles on that core whether or not its
 condition holds, so an IT block is no timing leak there; the count holds them
 because an IT block is the form clang gives an `if` on a limb, and a count of

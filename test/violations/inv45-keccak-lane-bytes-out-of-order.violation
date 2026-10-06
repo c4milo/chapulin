@@ -1,0 +1,12 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: lane_from_bytes puts a message's second and third bytes in each
+  other's place, which is what a careless move to eight bytes at a
+  time does. A digest of any message of eight bytes or more differs
+  from the reference's.
+
+--- old
+    return (uint64_t)b[0] | ((uint64_t)b[1] << 8) | ((uint64_t)b[2] << 16) |
+--- new
+    return (uint64_t)b[0] | ((uint64_t)b[1] << 16) | ((uint64_t)b[2] << 8) |

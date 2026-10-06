@@ -624,12 +624,22 @@ launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1
 # 0.5 s / 24 MB, 259 properties; sha512 536 s / 2.0 GB, 417 properties.
 launch fast full sha512_compress 3 "main.0:9,fill_nondet.0:129,sha512_compress.0:17,sha512_compress.1:65,sha512_compress.2:81,load_be64.0:9"
 launch slow:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update.1:3,sha512_update.2:130,sha512_final.0:9,sha384_final.0:7,sha512_compress.0:9,store_be64.0:9,finalize.0:130,finalize.1:130"
-# sha3's loops number by back-edge order, so the block loops' inner
-# copy loop precedes its while: absorb is head, block-copy, block-while,
-# tail; squeeze is head, block-copy, block-while. Measured peaks: sha3
-# 2.7 GB / 174 s, sha3_stream 1.8 GB / 139 s (cbmc 6.11.0, 4 cores).
-launch fast:4 full sha3 26 "absorb.0:2,absorb.1:169,absorb.2:4,absorb.3:169,squeeze.0:170,squeeze.1:169,squeeze.2:5,ct_wipe.0:201,fill_nondet.0:202" ct.c proof/ct_wipe_stub.c
-launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,squeeze.0:34,squeeze.1:34,squeeze.2:2,ct_wipe.0:201,fill_nondet.0:202" ct.c proof/ct_wipe_stub.c
+# sha3.c moves bytes between a message and the lanes in block_xor and
+# block_bytes, three loops each: bytes up to a lane's first byte (at most
+# 7), whole lanes (a block's 21 at most, 4 in sha3_stream's 32-byte
+# pieces), and the bytes that do not fill a lane (at most 7). absorb.0
+# and squeeze.0 are the loops that hold a permutation, so their bounds
+# are the number of copies of it a formula carries. Every loop here has
+# a bound, because a loop left at the default unwinding of 26 is 26
+# copies of its body (docs/proofs.md). sha3_round holds the round and
+# the 24 of them to proof/sha3_reference.h, whose shift register runs
+# 167 steps at most. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
+#   sha3          1,615 properties,  87 s, 3.0 GB
+#   sha3_stream   1,653 properties,  96 s, 2.8 GB
+#   sha3_round    1,902 properties,  34 s, 0.8 GB
+launch fast:4 full sha3 26 "keccak_f1600.0:25,lane_to_bytes.0:9,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" ct.c proof/ct_wipe_stub.c
+launch fast:3 full sha3_stream 26 "keccak_f1600.0:25,lane_to_bytes.0:9,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" ct.c proof/ct_wipe_stub.c
+launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,main.0:26,main.1:26,main.2:25,main.3:26" ct.c proof/ct_wipe_stub.c
 # ML-KEM splits six ways: the KEM layer over contract stubs of the
 # polynomial layer; the polynomial layer minus its chained-product
 # functions; and one slow formula each for the NTT, the two halves of

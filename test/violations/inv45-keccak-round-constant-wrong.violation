@@ -1,0 +1,11 @@
+invariant: INV-45
+file: sha3.c
+catches: proof/prove-one.sh sha3_round
+reason: the table's constant for round 7 has its lowest bit cleared. The
+  round harness computes each constant from the standard's shift
+  register and compares the table with it.
+
+--- old
+    0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+--- new
+    0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008008,

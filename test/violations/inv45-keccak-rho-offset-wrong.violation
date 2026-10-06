@@ -1,0 +1,12 @@
+invariant: INV-45
+file: sha3.c
+catches: proof/prove-one.sh sha3_round
+reason: one lane of the written-out round rotates by 24 places where rho's
+  rule gives 25. The round harness compares the round with FIPS 202's
+  algorithms, whose offsets come from the standard's formula, for
+  every state.
+
+--- old
+    uint64_t b12 = rotate_left(a[13], 25);
+--- new
+    uint64_t b12 = rotate_left(a[13], 24);

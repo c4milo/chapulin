@@ -1449,6 +1449,48 @@ last `ROLE=server` stub, as the entry said it would.
   passes, because zero and n give the verdict a refusal gives, and the
   Montgomery product reduces a hash that was not.
 
+### INV-45 — sha3.c computes FIPS 202
+
+- **Claim.** In every object, `sha3.c`'s permutation is Keccak-f[1600]
+  and its sponge moves the bytes FIPS 202 moves. The round, written out
+  lane by lane, is the standard's round for every state and every round
+  constant. The table holds the standard's 24 constants in their order.
+  Absorbing and squeezing eight bytes at a time leave the lanes and the
+  output that one byte at a time leaves.
+- **Mechanism.** One round is straight-line code: the five column
+  parities, theta XORed into each lane in place, each lane rotated by
+  its offset and read into the `b` that pi names, chi back into the
+  array, and the round constant. `block_xor` and `block_bytes` move
+  bytes between a message and the lanes in three steps: one byte at a
+  time up to a lane's first byte, eight bytes at a time, and the bytes
+  that do not fill a lane. Both name each byte of a lane by its place,
+  so no object reads a lane in its host's byte order. No build chooses
+  between two forms: every object compiles this one (decision 98).
+- **Check.** CBMC's `sha3_round` proves the round equal to
+  `proof/sha3_reference.h`'s for every state and every constant. That
+  reference is the standard's five step algorithms as loops, with the
+  rho offsets and the round constants computed by the standard's rules
+  and read from no table. The same harness compares the table with the
+  reference's constants and evaluates 24 rounds from the state of zeros
+  against the reference's. `bin/sha3_equiv_test` holds the permutation,
+  both digests and both XOFs to the reference's sponge, which moves one
+  byte at a time, over 6,043 outputs: 3,602 states, a message of every
+  length from 0 to 420 bytes and 200 random longer ones, and 600 SHAKE
+  streams absorbed and squeezed in pieces of random lengths. The
+  sanitizer build runs it, and the mips lane runs it on a big-endian
+  core. `bin/sha3_test` runs the FIPS 202 vectors, and the spec
+  differential runs every mode against the Lean model. `sha3` and
+  `sha3_stream` prove every path memory-safe.
+- **Violation.** A PR changes one rho offset; clears a bit of one round
+  constant; stops a round short; XORs another column's theta value into
+  a lane; exchanges chi's two neighbours; puts two bytes of a lane in
+  each other's place; counts lanes from the block's first byte in a
+  partly filled block, absorbing or squeezing; squeezes a second block
+  without the permutation; moves the last pad bit; or takes eight bytes
+  where fewer remain. The eleven `inv45-*` violations are these. Six
+  fail `bin/sha3_equiv_test`, one `bin/sha3_test`, three the
+  `sha3_round` proof and one the `sha3_stream` proof.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a
@@ -2731,9 +2773,9 @@ last `ROLE=server` stub, as the entry said it would.
   in poly1305, mlkem_poly or x25519 now, under clang and under the Arm
   GNU gcc alike: gcc fused eight of them back until the rework in ct.h
   and x25519.c removed the two forms it rewrote
-  ([#106](https://github.com/c4milo/chapulin/issues/106)). One remains
-  in sha3 under every compiler, `% 5` over Keccak's public loop
-  counters, which divides no secret.
+  ([#106](https://github.com/c4milo/chapulin/issues/106)). sha3 holds
+  none either: its round is written out lane by lane, which left no
+  `% 5` over Keccak's lane counters in it (decision 98).
   The decomposition is also what makes every other proof describe the
   target: those formulas verify the single-multiply form, and
   `proof/ctwidemul_harness.c` proves the two forms compute the same
@@ -2864,8 +2906,9 @@ last `ROLE=server` stub, as the entry said it would.
   each CI lane ships, and counts per file the widening multiplies, the
   divisions and the 64-bit division runtime calls, each opcode matched
   as a prefix so `umullne` counts as `umull`; every file holds a
-  recorded ceiling, zero except sha3's public `% 5` and, under the
-  mips gcc at `-O2`, the two `madd` poly1305's block gets on 16-bit
+  recorded ceiling, zero except tls_write.c's one public division
+  (decision 72) and, under the mips gcc at `-O2`, the two `madd`
+  poly1305's block gets on 16-bit
   operands ([#122](https://github.com/c4milo/chapulin/issues/122)).
   The same pass counts the conditional branches — `b<cond>`, `cbz`,
   `cbnz`, the table branches and the IT instruction on arm; `beq`,

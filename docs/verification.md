@@ -221,15 +221,28 @@ The entries are grouped by area:
 
 #### sha3
 
-- **Harnesses:** `sha3` (fast), `sha3_stream` (fast)
+- **Harnesses:** `sha3` (fast), `sha3_stream` (fast), `sha3_round` (fast)
 - **Proves:**
   - `sha3`: every mode is safe for a one-call message and XOF output
     from a fresh context.
   - `sha3_stream`: the SHAKE streaming calls are safe from any context
     state (arbitrary lanes, either rate, every position), for split
     absorbs and squeezes.
+  - `sha3_round`: `sha3.c`'s round, written out lane by lane, leaves the
+    state that FIPS 202's round leaves, for every state and every round
+    constant. The reference is `proof/sha3_reference.h`: the standard's
+    five step algorithms as loops, with the rho offsets and the round
+    constants computed by the standard's rules. The table of round
+    constants holds the 24 values the standard's shift register gives,
+    and `keccak_f1600` leaves the state that 24 rounds of the reference
+    leave from the state of zeros (decision 98, INV-45).
 - **Bound:** one-call: messages ≤ 200 B, output ≤ 400 B. Streaming:
-  chunks ≤ 32 B.
+  chunks ≤ 32 B. The round: the full domain. The 24 rounds: one state.
+- **Tested instead:** that absorb, the padding and squeeze move the
+  standard's bytes. `bin/sha3_equiv_test` holds every entry of `sha3.h`
+  to the reference's sponge, which moves one byte at a time, over 6,043
+  outputs; `bin/sha3_test` runs the FIPS 202 vectors; and the spec
+  differential runs every mode against the Lean model.
 
 #### hkdf
 
@@ -2805,8 +2818,10 @@ replace the library's at link time.
 rv32ic under the pinned clang and holds, file by file, the runtime calls
 each may make:
 
-- `__mulsi3` in poly1305, x25519 and mlkem_poly;
-- `__udivsi3` in sha3, for `% 5` over public loop counters;
+- `__mulsi3` in poly1305, x25519, mlkem_poly, rsa_sign, p256_field,
+  p256_scalar and tls_write;
+- `__udivsi3` in tls_write, for `ch_writable_len`'s division of the
+  caller's buffer length by a record's length, both public;
 - none anywhere else.
 
 It also checks that `softmul.c` still defines the two names it admits.
@@ -2835,9 +2850,8 @@ Cortex-M3, mips32r2 and rv32imac. It counts, per file, the widening
 multiplies, the divisions and the calls into the compiler's 64-bit
 division runtime, matching each opcode as a prefix so a condition-code
 suffix cannot hide one. Under the pinned clang every file is at zero
-except two, both over public values: sha3, whose `% 5` is one
-multiply-high, and tls_write.c, whose `ch_writable_len` divides the
-caller's buffer length by one record's length. A `SUITE=aesgcm` build's
+except tls_write.c, whose `ch_writable_len` divides the caller's buffer
+length by one record's length, both public. A `SUITE=aesgcm` build's
 `ch_writable_len` divides by that length a second time when the write
 it sizes crosses an AES-GCM key's ceiling; the lint compiles tls_write.c
 without the suite define, so it counts the first division alone.
@@ -2849,9 +2863,8 @@ lane ships:
 - Ubuntu's gcc for mips32r2;
 - the Bootlin gcc for rv32imac and rv32ic.
 
-At `-Os` every file is at zero there too, except sha3's `% 5`, which
-each gcc lowers to five hardware divisions, or on rv32ic to five calls
-to `__modsi3`, and tls_write.c's one division. At `-O2` the mips gcc
+At `-Os` every file is at zero there too, except tls_write.c's one
+division. At `-O2` the mips gcc
 copies that division into both paths of `ch_writable_len`, so
 tls_write.c counts two there, one per path.
 

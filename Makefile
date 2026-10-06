@@ -481,7 +481,7 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
 RSA_HOST_LINT_C := rsa_mont64.c rsa_sign64.c test/rsa_equiv_test.c test/rsa_equiv_portable.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
@@ -2136,6 +2136,13 @@ SHA3_TEST_SRCS := sha3.c ct.c ct_wipe.c
 bin/sha3_test: test/sha3_test.c $(SHA3_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c $(SHA3_TEST_SRCS)
+# sha3.c against FIPS 202 as the standard writes it, proof/sha3_reference.h:
+# the permutation, both digests, and both XOFs through split calls
+# (docs/decisions.md 98). The test includes sha3.c itself, to call the
+# permutation that file keeps static, so the line links no second copy.
+bin/sha3_equiv_test: test/sha3_equiv_test.c $(SHA3_TEST_SRCS) proof/sha3_reference.h $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
 
 # ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
 # own binary, out of the packaged object like sha3
@@ -3394,7 +3401,8 @@ CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient
                 bin/tlsserver
 # The binaries check runs. The host object's are named only where the
 # host test passed; check-skips says which were left out.
-CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha512_test \
+CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha3_equiv_test \
+                  sha512_test \
                   hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
                   webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
@@ -4437,6 +4445,7 @@ san-check:
 	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -I. -o bin/san/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_equiv_test test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -4463,7 +4472,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_ECDSA_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(HANDSHAKE_SEQUENCE_SRCS)
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
@@ -4574,6 +4583,7 @@ cross-check:
 	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c $(DRBG_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c $(RSA_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c $(SHA3_TEST_SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_equiv_test test/sha3_equiv_test.c $(filter-out sha3.c,$(SHA3_TEST_SRCS))
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c $(SHA512_TEST_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p384_test test/p384_test.c $(P384_TEST_SRCS)
@@ -4601,7 +4611,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha3_equiv_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -5844,13 +5854,12 @@ lint-impact:
 #
 # Ceilings are file:count and hold on every spec below unless
 # WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
-# under only prints, because the only non-zero entries are two public
-# divisions whose lowering is a compiler choice and a recorded leak that is
+# under only prints, because the only non-zero entries are one public
+# division whose lowering is a compiler choice and a recorded leak that is
 # meant to fall, and zero cannot be undershot, so every other module is
-# held exactly. The divisions are sha3.c's `% 5` over Keccak's lane
-# counters and tls_write.c's one division in ch_writable_len, the caller's
-# buffer length by the length of a record (docs/decisions.md 72).
-WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
+# held exactly. The division is tls_write.c's in ch_writable_len, the
+# caller's buffer length by the length of a record (docs/decisions.md 72).
+WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
@@ -6033,12 +6042,7 @@ lint-codegen-partition:
 #
 # ct_widemul and ct_mulsmall in ct.h build a wide product out of 16x16
 # pieces, so every secret-touching module is at zero where the compiler
-# keeps the pieces apart. sha3's `% 5` over Keccak's public loop counters
-# is the one entry that is non-zero by design: clang lowers it to a
-# multiply-high, gcc to a hardware division, and no secret is divided, so
-# it is recorded rather than fought (writing it as conditional subtraction
-# does not help; the optimiser recognises the loop and puts the modulo
-# back).
+# keeps the pieces apart.
 #
 # Each spec is name:compiler:machine:flags:tokens:branches.
 #   compiler  clang or gcc. clang specs compile under $(CLANG_RV) with
@@ -6221,9 +6225,8 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
 # at its flags, at -Os unless the flags carry another level. The entries
-# are sha3.c under each gcc, the public `% 5`, five hardware divisions
-# where clang's one multiply-high stood, and poly1305.c and
-# p256_scalar.c under the mips gcc at -O2, two madd each.
+# are poly1305.c and p256_scalar.c under the mips gcc at -O2, two madd
+# each.
 #
 # That two is a record, not an allowance. At -O2 the mips gcc inlines
 # ct_widemul into poly1305's block, and for two of the 75 `product + x`
@@ -6363,9 +6366,8 @@ P256_WIDE_BRANCH_CEILING := \
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
-WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
-                        mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        mips32r2-gcc-O2/tls_write.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
+WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
+                        mips32r2-gcc-O2/tls_write.c:2
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a limb or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -6443,6 +6445,19 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # rather than its bad one -- a predicated move is the select staying off
 # the control path.
 #
+# sha3.c's entry under the mips gcc at -O2 rose from 31 to 36, and its
+# other seven fell, when block_xor and block_bytes took the byte loops
+# out of absorb and squeeze and the round lost its loops
+# (docs/decisions.md 98). Each of the two has three loops, and at -O2
+# this gcc tests a loop's condition before its first pass as well as
+# after each one. The branches were read. More than half are in
+# block_xor and block_bytes, each a compare of the byte count with the
+# length or of a byte's place in its lane with zero. The rest are in
+# absorb, squeeze and the entries that inline them, on the block's fill,
+# the bytes left, the rate, the squeezing flag and the round counter.
+# keccak_round holds none: it is straight-line. No branch reads a lane
+# or a message byte.
+#
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
 # moved into clamp_and_ladder(), which the wide field shares. Both branches
 # that function adds were read: a bne that closes the 32-byte copy loop,
@@ -6493,41 +6508,41 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # carries are straight line. poly1305_vector.c under its own name holds
 # none, because it compiles to nothing there.
 BRANCH_CEILING := \
-  m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
+  m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:40 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
-  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:29 \
+  m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:26 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
   mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/aes.c:2 mips32r2/quic_aes_soft.c:12 \
   mips32r2/aes_extern.c:0 mips32r2/gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:2 rv32imac/ct_wipe.c:1 \
-  rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
+  rv32imac/sha256.c:17 rv32imac/sha3.c:34 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
   rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
-  m3-gcc/sha3.c:24 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
+  m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
-  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:18 \
+  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:18 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
   mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
+  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:36 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:23 \
+  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
   rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
-  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
+  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
@@ -6689,10 +6704,9 @@ lint-wide-multiply-gcc:
 # `*` in aead.c resolved to softmul's __mulsi3 and nothing said so, and a
 # new `/` anywhere hid behind sha3's __udivsi3
 # (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
-# the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
-# loop counters, a performance matter rather than a leak. tls_write.c's is
-# ch_writable_len's one division, the caller's buffer length by the length
-# of a record, both public (docs/decisions.md 72); its __mulsi3 is the
+# the file that pulls it. tls_write.c's __udivsi3 is ch_writable_len's
+# one division, the caller's buffer length by the length of a record,
+# both public (docs/decisions.md 72); its __mulsi3 is the
 # same call's count of whole records times their plaintext, which
 # softmul.c supplies in constant time like every other.
 #
@@ -6708,7 +6722,7 @@ lint-wide-multiply-gcc:
 #
 # A host object's native copies are not here: CODEGEN32_SRCS holds none,
 # because no rv32ic object holds one (docs/decisions.md 89).
-RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3 \
+RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 \
               rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 \
               tls_write.c:__mulsi3,__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are

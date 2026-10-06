@@ -1,0 +1,12 @@
+invariant: INV-45
+file: sha3.c
+catches: sha3_equiv_test
+reason: block_xor's eight-byte step counts lanes from the block's first
+  byte when the block is partly filled, so the bytes go into the wrong
+  lanes. A one-call digest starts every block at byte zero and stays
+  right; the split absorbs of the SHAKE streams differ.
+
+--- old
+        lane[(pos + i) / 8] ^= lane_from_bytes(in + i);
+--- new
+        lane[i / 8] ^= lane_from_bytes(in + i);

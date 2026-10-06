@@ -151,6 +151,11 @@ rsa_mul_webpki 32.3
 rsa_pkcs1 90.3
 rsa_pkcs1_webpki 90.3
 rsa_webpki 91.7
+# sha3_round reaches the round, the 24 of them and the reference it holds
+# them to. What it leaves out is the rest of the files it compiles: the
+# sponge of sha3.c and of proof/sha3_reference.h, which the sha3 and
+# sha3_stream harnesses and bin/sha3_equiv_test run.
+sha3_round 64.1
 sha512 90.9
 sha512_compress 97.1
 softmul 91.3

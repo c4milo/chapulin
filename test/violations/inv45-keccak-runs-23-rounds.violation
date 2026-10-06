@@ -1,0 +1,13 @@
+invariant: INV-45
+file: sha3.c
+catches: proof/prove-one.sh sha3_round
+reason: keccak_f1600 stops a round short. Every round is the standard's,
+  so the round comparison still holds; the harness's 24 rounds from
+  the state of zeros are what differ.
+
+--- old
+    for (int round = 0; round < 24; round++) {
+        keccak_round(a, RC[round]);
+--- new
+    for (int round = 0; round < 23; round++) {
+        keccak_round(a, RC[round]);
