@@ -82,7 +82,7 @@ the point arithmetic over them, beside the eight 32-bit limbs of `p256_field.c`
 and `p256_scalar.c` that every object with the curve holds. A session with the
 bit signs and exchanges keys on the 64-bit limbs, and one without it on the
 32-bit limbs over the decomposition (decision 94). The host object also holds a
-32 KiB table of multiples of the curve's generator, constants that a session with
+86 KiB table of multiples of the curve's generator, constants that a session with
 the bit reads for a signature's and a key generation's multiplication, every entry
 of a row at each step. A device object holds no table.
 

@@ -23,8 +23,8 @@
 // windows of k, most significant first, doubles four times and adds one of them.
 void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
 
-// o = k*G, as p256_point_base_mul computes it, for secp256r1's generator G: 64 additions of
-// entries of the table of multiples of G (p256_wide_table.h), one for each four-bit window of
+// o = k*G, as p256_point_base_mul computes it, for secp256r1's generator G: 43 additions of
+// entries of the table of multiples of G (p256_wide_table.h), one for each six-bit window of
 // k, and no doubling.
 void p256_wide_base_mul(p256_point *o, const p256_scalar *k);
 

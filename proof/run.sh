@@ -2189,13 +2189,21 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_field_mul  739 properties, 14 s, 213 MB
 #   p256_wide_scalar     465 properties, 22 s, 715 MB
 #   p256_wide_point      234 properties,  1 s,  57 MB
-#   p256_wide_digit      265 properties, 23 s, 318 MB
-#   p256_wide_mul        304 properties, 95 s, 375 MB
+#   p256_wide_digit      370 properties, 28 s, 523 MB
+#   p256_wide_mul        365 properties, 36 s, 407 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The p256_wide_sqr, p256_wide_field, p256_wide_field_mul and p256_wide_scalar lines
 # were measured again on 2026-10-06, after the square of four limbs joined
 # p256_wide_limb.h (docs/decisions.md 105), one at a time through proof/prove-one.sh at a
-# load average of 36 to 180, and their times are run.sh's wall clock.
+# load average of 36 to 180, and their times are run.sh's wall clock. The
+# p256_wide_digit and p256_wide_mul lines were measured again on 2026-10-07,
+# after the table grew to 43 rows of 32 entries (docs/decisions.md 109), the
+# same way at a load average of about 3. p256_wide_mul runs with
+# --no-array-field-sensitivity. By default cbmc tracks an array of up to 64
+# elements element by element, and over the 1,376 entries the base
+# multiplication reads, the line took 492 s that way; without that tracking it
+# proves in 36 s. The flag changes how cbmc encodes an array and nothing the
+# line proves.
 # The two lines with --object-bits 10 track more than 256 objects: each
 # product's locals have their addresses taken, and the lines run 14 and 20
 # products. p256_wide_mul's ct_wipe bound is the 768 bytes of the eight
@@ -2211,7 +2219,7 @@ launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --un
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check --no-array-field-sensitivity
 launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # p256_wide_verify: the host object's ECDSA P-256 verifier over contracts of
 # the wide entries it calls, with p256_scalar.c's marshalling, reduction
@@ -2229,9 +2237,10 @@ launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c 
 # body, whose loop walks 256 bits, with the two additions of a digit's
 # multiple in the other. Each links p256_wide_table.c, whose row 0 the
 # additions of G's multiples read. Measured (cbmc 6.11.0, kissat,
-# prove-capped.sh on the M1 Pro):
-#   p256_wide_verify_point   281 properties, 6 s, 108 MB
-#   p256_wide_verify_digits  281 properties, 7 s, 281 MB
+# prove-capped.sh on the M1 Pro), again on 2026-10-07 with the table of 43
+# rows of 32 entries (docs/decisions.md 109):
+#   p256_wide_verify_point   281 properties, 4 s, 155 MB
+#   p256_wide_verify_digits  281 properties, 6 s, 330 MB
 # and p256_wide_verify above, over the new entries' contracts, 547 properties,
 # 4 s, 83 MB.
 launch fast full p256_wide_verify_point 9 "" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check

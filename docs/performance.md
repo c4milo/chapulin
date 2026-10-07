@@ -930,7 +930,9 @@ The order of the work, by the instructions each item removes from a handshake:
 2. k·G from a precomputed table of multiples of G, read by a full scan with mask selection, in
    place of the ladder: done, for a host session that states its multiply (decision 94). Eight
    odd multiples for each of 64 four-bit windows take 32 KiB of affine points, and k·G is 64
-   mixed additions. On the M1 Pro under Apple clang 21 a signature went from 1.88 M instructions
+   mixed additions. Decision 109 widened the windows to six bits: 32 odd multiples for each of 43
+   windows take 86 KiB, k·G is 43 mixed additions, and a key generation on the M1 Pro took
+   14.8 µs where it took 18.7. On the M1 Pro under Apple clang 21 a signature went from 1.88 M instructions
    to 0.53 M and a key generation from 1.58 M to 0.23 M, where OpenSSL 3.6.5 takes 0.18 M and
    0.17 M. A session without the bit keeps the ladder: the table's additions are the wide
    field's. The key exchange multiplies the peer's point, which no table holds, by four-bit

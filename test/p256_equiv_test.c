@@ -164,7 +164,11 @@ static void random_wide_scalar(p256_scalar *k, uint32_t low_bit) {
 // The scalars a multiplication is most likely to get wrong, as 32
 // big-endian bytes: 0, 1, 2, 15, 16, 17, n - 1, n, n + 1, 2^256 - 1, 2^255,
 // a scalar of one digit per window, and one with every window at its top
-// digit.
+// digit, for the four-bit windows of p256_wide_mul; then for the six-bit
+// windows of p256_wide_base_mul, one bit at the bottom of every window, which
+// makes every digit 1, one at the top of every window, which makes every
+// digit but the top one negative, and that scalar's complement, which makes
+// every digit positive.
 static const char *const SCALAR_EDGE_HEX[] = {
     "0000000000000000000000000000000000000000000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000001",
@@ -182,6 +186,9 @@ static const char *const SCALAR_EDGE_HEX[] = {
     "7777777777777777777777777777777777777777777777777777777777777777",
     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe",
     "0000000000000000000000000000000100000000000000000000000000000000",
+    "1041041041041041041041041041041041041041041041041041041041041041",
+    "0820820820820820820820820820820820820820820820820820820820820820",
+    "f7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df",
 };
 
 static uint8_t nibble(char c) {

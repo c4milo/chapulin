@@ -1,10 +1,11 @@
 // The two P-256 scalar multiplications over the wide field (see p256_wide_mul.h for the
 // contracts).
 //
-// Both write the scalar as 64 signed odd digits, one for each four-bit window, and add one
-// multiple of the point for each digit. p256_wide_base_mul reads the multiple from the table
-// of multiples of G (p256_wide_table.h) and never doubles. p256_wide_mul reads it from eight
-// multiples of its point, which it computes first, and doubles four times between windows.
+// Both write the scalar as signed odd digits, one for each window of w bits, and add one
+// multiple of the point for each digit. p256_wide_base_mul reads its 43 six-bit windows and
+// takes the multiple from the table of multiples of G (p256_wide_table.h), and never doubles.
+// p256_wide_mul reads 64 four-bit windows and takes the multiple from eight multiples of its
+// point, which it computes first, and doubles four times between windows.
 //
 // The digits. Both compute K times the point for K = k | 1, which is odd, and take the point
 // away again when k was even. Write b_j for bit j of K, so b_0 is 1. Then
@@ -12,18 +13,21 @@
 //     K = 2^255 + sum over j from 0 to 254 of s_j 2^j,  with s_j = 2 b_(j+1) - 1,
 //
 // because the sum is (K - 1) - (2^255 - 1). Each s_j is +1 or -1: +1 when the bit above
-// position j is set. Four of them make the digit of window i,
+// position j is set. w of them make the digit of window i,
 //
-//     d_i = s_(4i) + 2 s_(4i+1) + 4 s_(4i+2) + 8 s_(4i+3),
+//     d_i = s_(wi) + 2 s_(wi+1) + ... + 2^(w-1) s_(wi+w-1),
 //
-// with the 2^255 term standing in for s_255, so K is the sum of d_i 16^i. A digit is odd and
-// lies between -15 and 15, and none is zero, so every window adds exactly one multiple and
-// the sequence of operations is the same for every scalar. A digit's sign is the sign of its
-// top term, s_(4i+3): positive when bit 4i + 4 of k is set, and always positive for the top
-// window. With v the three bits 4i + 1 to 4i + 3 of k, a positive digit is 2v + 1 and a
-// negative one is -(2 (7 - v) + 1). Bit 0 of k is read once, for the correction at the end:
-// K's bit 0 is 1 whatever k's is.
-// proof/p256_wide_digit_harness.c proves that the digits add up to k | 1 for every k.
+// with the 2^255 term standing in for s_255 and no term above it, so K is the sum of
+// d_i 2^(wi). A digit is odd and lies between -(2^w - 1) and 2^w - 1, and none is zero, so every
+// window adds exactly one multiple and the sequence of operations is the same for every
+// scalar. A digit's sign is the sign of its top term, s_(wi+w-1): positive when bit wi + w of k
+// is set, and always positive for the top window, whose top term is the 2^255 term. With v the
+// w - 1 bits wi + 1 to wi + w - 1 of k, a bit above 255 read as zero, a positive digit is
+// 2v + 1 and a negative one is -(2 (2^(w-1) - 1 - v) + 1). Six-bit windows end in a window of
+// four terms, s_252 to the 2^255 term, whose digit lies between 1 and 15. Bit 0 of k is read
+// once, for the correction at the end: K's bit 0 is 1 whatever k's is.
+// proof/p256_wide_digit_harness.c proves that the digits add up to k | 1 for every k, at both
+// widths.
 #include "p256_wide_mul.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -36,9 +40,11 @@
 #include "p256_wide_point.h"
 #include "p256_wide_table.h"
 
+// p256_wide_mul's windows: 64 of four bits, over the eight odd multiples of its point up to 15.
+// p256_wide_base_mul's are p256_wide_table.h's.
 #define WINDOW_BITS 4
-#define WINDOWS P256_WIDE_TABLE_WINDOWS
-#define ENTRIES P256_WIDE_TABLE_ENTRIES
+#define WINDOWS 64
+#define ENTRIES 8
 
 static const p256_wide_fe FE_ZERO = {
     {0, 0, 0, 0}
@@ -47,6 +53,15 @@ static const p256_wide_fe FE_ZERO = {
 // Bit i of k, for i below 256.
 static inline uint64_t scalar_bit(const p256_scalar *k, size_t i) {
     return (k->limb[i >> 5] >> (i & 31)) & 1U;
+}
+
+// Bit i of k, and zero for i above 255, where a top window reads past the scalar. The test
+// reads i, a count of windows and bits, and never the scalar.
+static inline uint64_t scalar_bit_or_zero(const p256_scalar *k, size_t i) {
+    if (i > 255) {
+        return 0;
+    }
+    return scalar_bit(k, i);
 }
 
 // All ones when a and b are the same value and zero otherwise. a ^ b is zero exactly when the
@@ -63,20 +78,24 @@ typedef struct {
     uint64_t negative; // all ones for a negative digit, zero for a positive one
 } digit;
 
-// The digit of one window of k | 1, for window below WINDOWS. Its index is below ENTRIES.
-static digit window_digit(const p256_scalar *k, size_t window) {
-    size_t low = WINDOW_BITS * window;
-    uint64_t size =
-        scalar_bit(k, low + 1) | (scalar_bit(k, low + 2) << 1) | (scalar_bit(k, low + 3) << 2);
+// The digit of one window of k | 1, for windows of bits bits, windows of them, and window below
+// windows. Its index is below 2^(bits - 1).
+static digit window_digit(const p256_scalar *k, size_t window, size_t bits, size_t windows) {
+    size_t low = bits * window;
+    uint64_t size = 0;
+    for (size_t t = 1; t < bits; t++) {
+        size |= scalar_bit_or_zero(k, low + t) << (t - 1);
+    }
     // The top window's sign is the 2^255 term's. The test reads the window, a loop counter,
     // and never the scalar.
     uint64_t positive = 1;
-    if (window + 1 < WINDOWS) {
-        positive = scalar_bit(k, low + WINDOW_BITS);
+    if (window + 1 < windows) {
+        positive = scalar_bit(k, low + bits);
     }
+    uint64_t largest_index = ((uint64_t)1 << (bits - 1)) - 1;
     digit d;
     d.negative = p256_wide_mask(positive ^ 1U);
-    d.index = size ^ (d.negative & (ENTRIES - 1));
+    d.index = size ^ (d.negative & largest_index);
     return d;
 }
 
@@ -87,17 +106,41 @@ static inline void fe_keep(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask
     }
 }
 
-// o = row[index], for index below ENTRIES. It reads every entry of the row, in the same order
-// whatever index holds, and keeps one by mask: no address read and no branch depends on
-// index.
-static void table_select(p256_wide_affine *o, const p256_wide_affine row[ENTRIES], uint64_t index) {
-    o->x = FE_ZERO;
-    o->y = FE_ZERO;
-    for (uint64_t j = 0; j < ENTRIES; j++) {
+// Two limbs of a coordinate side by side, a GNU C vector type that gcc and clang compile to
+// SSE2 or NEON registers and CBMC reads as two uint64_t. & and | act on both limbs at once.
+typedef uint64_t limb_pair __attribute__((vector_size(16)));
+
+// o = row[index], for index below P256_WIDE_TABLE_ENTRIES. It reads every entry of the row, in
+// the same order whatever index holds, and keeps one by mask: no address read and no branch
+// depends on index. A row holds 32 entries, so the scan keeps its four sums in limb_pair
+// values, which the compiler keeps in vector registers, and reads an entry four vectors at a
+// time (docs/decisions.md 109).
+static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WIDE_TABLE_ENTRIES],
+                         uint64_t index) {
+    limb_pair x_low = {0, 0};
+    limb_pair x_high = {0, 0};
+    limb_pair y_low = {0, 0};
+    limb_pair y_high = {0, 0};
+    for (uint64_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
         uint64_t mask = equal_mask(j, index);
-        fe_keep(&o->x, &row[j].x, mask);
-        fe_keep(&o->y, &row[j].y, mask);
+        limb_pair masks = {mask, mask};
+        limb_pair entry_x_low = {row[j].x.limb[0], row[j].x.limb[1]};
+        limb_pair entry_x_high = {row[j].x.limb[2], row[j].x.limb[3]};
+        limb_pair entry_y_low = {row[j].y.limb[0], row[j].y.limb[1]};
+        limb_pair entry_y_high = {row[j].y.limb[2], row[j].y.limb[3]};
+        x_low |= entry_x_low & masks;
+        x_high |= entry_x_high & masks;
+        y_low |= entry_y_low & masks;
+        y_high |= entry_y_high & masks;
     }
+    o->x.limb[0] = x_low[0];
+    o->x.limb[1] = x_low[1];
+    o->x.limb[2] = x_high[0];
+    o->x.limb[3] = x_high[1];
+    o->y.limb[0] = y_low[0];
+    o->y.limb[1] = y_low[1];
+    o->y.limb[2] = y_high[0];
+    o->y.limb[3] = y_high[1];
 }
 
 // The same scan over eight projective points.
@@ -126,7 +169,7 @@ static void point_cmov(p256_wide_point *o, const p256_wide_point *a, uint64_t ma
 // caller's, so that one wipe at the end of the multiplication covers it.
 static void digit_entry(p256_wide_affine *o, p256_wide_fe *negated, const p256_scalar *k,
                         size_t window) {
-    digit d = window_digit(k, window);
+    digit d = window_digit(k, window, P256_WIDE_TABLE_WINDOW_BITS, P256_WIDE_TABLE_WINDOWS);
     table_select(o, p256_wide_table[window], d.index);
     p256_wide_fe_neg(negated, &o->y);
     p256_wide_fe_cmov(&o->y, negated, d.negative);
@@ -136,7 +179,7 @@ static void digit_entry(p256_wide_affine *o, p256_wide_fe *negated, const p256_s
 static void digit_multiple(p256_wide_point *o, p256_wide_fe *negated,
                            const p256_wide_point multiple[ENTRIES], const p256_scalar *k,
                            size_t window) {
-    digit d = window_digit(k, window);
+    digit d = window_digit(k, window, WINDOW_BITS, WINDOWS);
     multiple_select(o, multiple, d.index);
     p256_wide_fe_neg(negated, &o->y);
     p256_wide_fe_cmov(&o->y, negated, d.negative);
@@ -153,7 +196,7 @@ void p256_wide_base_mul(p256_point *o, const p256_scalar *k) {
     sum.x = entry.x;
     sum.y = entry.y;
     sum.z = p256_wide_fe_one_mont;
-    for (size_t window = 1; window < WINDOWS; window++) {
+    for (size_t window = 1; window < P256_WIDE_TABLE_WINDOWS; window++) {
         digit_entry(&entry, &negated, k, window);
         p256_wide_point_add_affine(&sum, &sum, &entry);
     }

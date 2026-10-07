@@ -744,8 +744,9 @@ The entries are grouped by area:
     `p256_wide_point_affine` with and without a y output, over the field
     stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
   - `p256_wide_digit`: the digits and the scan of the table, on their
-    real bodies. For every 256-bit k, the 64 signed odd digits
-    `window_digit` returns add up to k | 1, each digit's index is inside
+    real bodies. For every 256-bit k, at both widths, the 64 four-bit
+    signed odd digits and the 43 six-bit ones `window_digit` returns
+    add up to k | 1, each digit's index is inside
     a row, its sign is a mask, and the top window's digit is positive.
     `table_select` and `multiple_select` return the row's entry at the
     index, limb for limb, for any row contents and every index, and
@@ -2547,9 +2548,9 @@ the wide files to the same answers:
   - the complete addition on 3,000 pairs of random coordinates, which
     are on no curve, and on a point with itself, with its negative and
     with the point at infinity on either side;
-  - every one of the 512 entries of the table of multiples of G,
+  - every one of the 1,376 entries of the table of multiples of G,
     recomputed from `p256_point_generator` with `p256_point_add` and
-    `p256_point_affine`: row i starts four doublings above the row
+    `p256_point_affine`: row i starts six doublings above the row
     before, and each entry must be the affine bytes of the odd multiple
     it stands for. The entry's limbs leave the Montgomery domain through
     `p256_field.c`, so no wide routine runs on either side;

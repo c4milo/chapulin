@@ -2,25 +2,18 @@ invariant: INV-16
 file: p256_wide_mul.c
 catches: test/lint-wide-multiply.sh
 reason: table_select tests the mask and moves on when the entry is not
-  the digit's, so the scan reads and writes one entry of eight, and which
-  one is four bits of the signing nonce on the control path and in the
-  cache. The values stay right, so the vectors, the equivalence binary
+  the digit's, so the scan keeps one entry of 32, and which one is five
+  bits of the signing nonce on the control path. The values stay right, so the vectors, the equivalence binary
   and the proofs all pass; only the count of what the compiler emits sees
   it. The pinned clang emits one more conditional branch for
   p256_wide_mul.c on both 64-bit specs, above the file's ceiling.
 
 --- old
         uint64_t mask = equal_mask(j, index);
-        fe_keep(&o->x, &row[j].x, mask);
-        fe_keep(&o->y, &row[j].y, mask);
-    }
-}
+        limb_pair masks = {mask, mask};
 --- new
         uint64_t mask = equal_mask(j, index);
         if (mask == 0) {
             continue;
         }
-        fe_keep(&o->x, &row[j].x, mask);
-        fe_keep(&o->y, &row[j].y, mask);
-    }
-}
+        limb_pair masks = {mask, mask};

@@ -3126,8 +3126,9 @@ last `ROLE=server` stub, as the entry said it would.
   divisions and 128-bit runtime calls at zero and their conditional
   branches at 7, 3, 3, 12, 0 and 0 on each: loop control over a public
   count, the two public tests of a peer's point, whether a caller asked
-  for Y, and the test for a scalar's top window, which reads the window's
-  number. `inv16-p256-wide-table-scan-skips-unselected` and
+  for Y, the test for a scalar's top window, which reads the window's
+  number, and the test of a bit's position against 255, which reads the
+  window's number and a loop counter. `inv16-p256-wide-table-scan-skips-unselected` and
   `inv16-p256-wide-multiple-scan-skips-unselected` each make one of the
   two scans pass over the entries a digit does not name, and the count
   of `p256_wide_mul.c` rises to 13.

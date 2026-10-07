@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: table_select never adds the high half of an entry's Y into its
+  sum, so every entry it returns has Y's two high limbs zero and the base
+  multiplication adds a point off the curve in every window.
+  bin/p256_equiv_test holds the base multiplication to p256_point_base_mul,
+  and proof/p256_wide_digit_harness.c proves the scan returns the entry at
+  every index, limb for limb.
+
+--- old
+        y_high |= entry_y_high & masks;
+--- new
+        (void)entry_y_high;

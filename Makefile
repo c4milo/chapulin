@@ -6545,12 +6545,15 @@ HASH_HW_BRANCH_CEILING := \
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
-#   p256_wide_mul.c's 12: the 63 windows each multiplication adds after
-#     its first, the eight entries a scan reads and the four limbs of each
-#     coordinate, two for a table entry and three for a multiple of the
-#     point, the seven multiples p256_wide_mul computes, the four
-#     doublings between windows, and the test for the top window, whose
-#     digit is positive, which reads the window's number.
+#   p256_wide_mul.c's 12: the windows each multiplication adds after its
+#     first, 42 of the table's and 63 of a point's, the 32 entries a table
+#     scan reads, whose limbs sit in vectors with no loop of their own, the
+#     eight multiples a point's scan reads and the four limbs of each of a
+#     multiple's three coordinates, the seven multiples p256_wide_mul
+#     computes, the four doublings between windows, and in window_digit the
+#     loop over a digit's bits, the test of a bit's position against 255
+#     and the test for the top window, whose digit is positive, which read
+#     a window's number and a loop counter.
 #   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
 #     holds a branch.
 #   p256_wide_verify.c's 5: the range checks of r and of s, the second

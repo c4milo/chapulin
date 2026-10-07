@@ -28,9 +28,10 @@
 // whatever the bit is. That file holds no precomputed multiple of the
 // generator, so there a public key costs the same as a shared secret, and
 // a device object spends no memory on a table. A host session whose
-// caller stated its multiply runs the wide files (docs/decisions.md 94):
-// a public key is 64 additions of entries of a 32 KiB table of multiples
-// of the generator, each read by a masked scan over its row, and a shared
+// caller stated its multiply runs the wide files (docs/decisions.md 94 and
+// 109): a public key is 43 additions of entries of an 86 KiB table of
+// multiples of the generator, each read by a masked scan over its row of
+// 32, and a shared
 // secret is 253 doublings and 71 additions over eight multiples of the
 // peer's point, each read by the same scan.
 #ifndef CH_P256_ECDH_H

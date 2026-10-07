@@ -2,13 +2,13 @@ invariant: INV-16
 file: p256_wide_table.c
 catches: p256_equiv_test
 reason: one limb of one entry of the table of multiples of G is off by
-  one: the X coordinate of 3 * 16^17 * G. The base multiplication reads
-  it for one digit of one window, so a random scalar is wrong one time in
-  sixteen and no fixed vector need notice. bin/p256_equiv_test recomputes
-  every entry from G with p256_point_add and p256_point_affine and
-  compares each coordinate byte for byte.
+  one: the X coordinate of 3 * 2^102 * G, entry [17][1]. The base
+  multiplication reads it for one digit of one window, so a random scalar
+  is wrong one time in 32 and no fixed vector need notice.
+  bin/p256_equiv_test recomputes every entry from G with p256_point_add
+  and p256_point_affine and compares each coordinate byte for byte.
 
 --- old
-        {{{UINT64_C(0x3a63c39731815e69), UINT64_C(0x6df9cbd6dcdd2802),
+        {{{UINT64_C(0x6095355699f241d7), UINT64_C(0xee4adbd7001a349d),
 --- new
-        {{{UINT64_C(0x3a63c39731815e6a), UINT64_C(0x6df9cbd6dcdd2802),
+        {{{UINT64_C(0x6095355699f241d8), UINT64_C(0xee4adbd7001a349d),

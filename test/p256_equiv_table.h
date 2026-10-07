@@ -3,8 +3,8 @@
 // p256_field.c.
 //
 // run_table recomputes every entry of p256_wide_table from
-// p256_point_generator. Row i starts at 16^i * G, four doublings above the
-// row before, and steps through its odd multiples by adding twice that
+// p256_point_generator. Row i starts at 2^(6i) * G, six doublings above
+// the row before, and steps through its odd multiples by adding twice that
 // point: each entry must be the affine form of what p256_point_add and
 // p256_point_affine give, byte for byte. No wide routine runs on either
 // side of the comparison: the entry's limbs go through p256_field.c's own
@@ -59,10 +59,10 @@ static int table_entry_is(size_t window, size_t entry, const p256_point *multipl
 }
 
 static void run_table(void) {
-    p256_point base = p256_point_generator; // 16^window * G
+    p256_point base = p256_point_generator; // 2^(6 window) * G
     for (size_t window = 0; window < P256_WIDE_TABLE_WINDOWS; window++) {
         p256_point twice;
-        p256_point multiple = base; // (2 * entry + 1) * 16^window * G
+        p256_point multiple = base; // (2 * entry + 1) * 2^(6 window) * G
         p256_point_add(&twice, &base, &base);
         for (size_t entry = 0; entry < P256_WIDE_TABLE_ENTRIES; entry++) {
             char name[64];
@@ -70,7 +70,7 @@ static void run_table(void) {
             report("table", name, table_entry_is(window, entry, &multiple));
             p256_point_add(&multiple, &multiple, &twice);
         }
-        for (int doubling = 0; doubling < 4; doubling++) {
+        for (int doubling = 0; doubling < P256_WIDE_TABLE_WINDOW_BITS; doubling++) {
             p256_point_add(&base, &base, &base);
         }
     }

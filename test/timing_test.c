@@ -42,6 +42,7 @@
 #ifdef TEST_P256_WIDE
 #include "p256_ecdh.h"
 #include "p256_sign.h"
+#include "p256_wide_table.h"
 #include "widemul.h"
 #define P256_KEYGEN_N 20000
 #define P256_ECDH_N 10000
@@ -257,8 +258,10 @@ static void x_run(void) {
 // window's digit shows here: a scan that passes over the entries the digit
 // does not name took the key generation's rows past the threshold when it
 // was tried (docs/decisions.md 94). main sets p256_fixed to a random
-// scalar and then to the one whose four-bit windows are all 8, so that
-// every window of it names the same entry of its row.
+// scalar, then for the key generation to the one whose six-bit windows are
+// all 0x20 and for the key exchange to the one whose four-bit windows are
+// all 8, so that every window but the top one names the same entry of its
+// row.
 static uint8_t p256_fixed[P256_SCALAR_LEN];
 static uint8_t p256_now[P256_SCALAR_LEN];
 static uint8_t p256_peer[P256_POINT_LEN];
@@ -434,9 +437,14 @@ int main(void) {
     report("keygen", measure(p256_prep, p256_keygen_run, P256_KEYGEN_N, 64));
     report("ecdh", measure(p256_prep, p256_ecdh_run, P256_ECDH_N, 64));
     report("sign", measure(p256_prep, p256_sign_run, P256_SIGN_N, 64));
+    memset(p256_fixed, 0, sizeof p256_fixed);
+    for (size_t bit = P256_WIDE_TABLE_WINDOW_BITS - 1; bit < 256;
+         bit += P256_WIDE_TABLE_WINDOW_BITS) {
+        p256_fixed[P256_SCALAR_LEN - 1 - bit / 8] |= (uint8_t)(1U << (bit % 8));
+    }
+    report("keygen same", measure(p256_prep, p256_keygen_run, P256_KEYGEN_N, 64));
     memset(p256_fixed, 0x88, sizeof p256_fixed);
     p256_fixed[0] = 0x08;
-    report("keygen same", measure(p256_prep, p256_keygen_run, P256_KEYGEN_N, 64));
     report("ecdh same", measure(p256_prep, p256_ecdh_run, P256_ECDH_N, 64));
     return failures ? 1 : 0;
 }

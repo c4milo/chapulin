@@ -133,9 +133,9 @@ Other targets:
   second copy the same way: with the bit a session signs and exchanges
   keys on the four 64-bit limbs of `p256_wide_field.c` and
   `p256_wide_scalar.c`, and computes k·G from `p256_wide_table.c`'s
-  32 KiB of multiples of the generator, and without it on
+  86 KiB of multiples of the generator, and without it on
   `p256_field.c`'s and `p256_scalar.c`'s eight 32-bit limbs on the
-  decomposition, with no table (decision 94).
+  decomposition, with no table (decisions 94 and 109).
   RSA signing takes its second copy from another file too: with the bit
   a session signs with `rsa_sign64.c`, by the Chinese remainder theorem
   on 64-bit limbs from the five CRT integers a host object's

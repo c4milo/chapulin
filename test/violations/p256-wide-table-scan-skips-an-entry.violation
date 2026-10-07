@@ -4,15 +4,13 @@ catches: p256_equiv_test
 reason: table_select starts its scan at the row's second entry, so a
   digit of size 1 selects nothing and the multiplication adds the
   all-zero coordinates the scan started from in place of the entry. Every
-  other digit is right, so one window in eight is wrong for a random
+  other digit is right, so one window in 32 is wrong for a random
   scalar. bin/p256_equiv_test holds the base multiplication to
   p256_point_base_mul on scalars whose windows hold every digit, and
   proof/p256_wide_digit_harness.c proves the scan returns the entry at
   every index.
 
 --- old
-    o->y = FE_ZERO;
-    for (uint64_t j = 0; j < ENTRIES; j++) {
+    for (uint64_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
 --- new
-    o->y = FE_ZERO;
-    for (uint64_t j = 1; j < ENTRIES; j++) {
+    for (uint64_t j = 1; j < P256_WIDE_TABLE_ENTRIES; j++) {

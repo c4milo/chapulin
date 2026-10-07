@@ -1,18 +1,19 @@
 // The table of multiples of secp256r1's generator G that p256_wide_base_mul reads
-// (docs/decisions.md 94). A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds it, 32 KiB of
-// constants, and a device object holds no table: p256_point_base_mul computes k*G with its
-// ladder from G alone.
+// (docs/decisions.md 94 and 109). A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds it, 86
+// KiB of constants, and a device object holds no table: p256_point_base_mul computes k*G with
+// its ladder from G alone.
 //
-// The shape. A 256-bit scalar is 64 windows of four bits, and p256_wide_mul.c writes it as 64
-// odd digits between -15 and 15, one for each window, none of them zero. Row i of the table
-// holds what a digit of window i can add: the odd multiples 1, 3, ..., 15 of 16^i * G. So
-// entry [i][j] is (2j + 1) * 16^i * G, and k*G is 64 additions of one entry each, with no
-// doubling. A negative digit adds the entry with Y negated, so the table holds the positive
-// multiples alone.
+// The shape. A 256-bit scalar is 43 windows of six bits, the top one four bits wide, and
+// p256_wide_mul.c writes it as 43 odd digits, one for each window, none of them zero: between
+// -63 and 63, and between 1 and 15 in the top window. Row i of the table holds what a digit of
+// window i can add: the odd multiples 1, 3, ..., 63 of 2^(6i) * G. So entry [i][j] is
+// (2j + 1) * 2^(6i) * G, and k*G is 43 additions of one entry each, with no doubling. A negative
+// digit adds the entry with Y negated, so the table holds the positive multiples alone. The
+// top row holds 32 entries like every other, and a digit reads its first eight.
 //
 // Each entry is an affine point, X then Y, each coordinate in the Montgomery domain as
-// p256_wide_field.h keeps it. No entry is the point at infinity: (2j + 1) * 16^i is odd times
-// a power of two and below the group order, which is prime.
+// p256_wide_field.h keeps it. No entry is the point at infinity: (2j + 1) * 2^(6i) is an odd
+// number below 64 times a power of two, and the group order is a prime above 64.
 //
 // The table is public: it holds multiples of G and nothing of any key. The index a secret
 // scalar gives is what must not show, so p256_wide_mul.c reads every entry of a row and keeps
@@ -28,8 +29,9 @@
 
 #ifdef CH_CPU_RUNTIME
 
-#define P256_WIDE_TABLE_WINDOWS 64 // four-bit windows in a 256-bit scalar
-#define P256_WIDE_TABLE_ENTRIES 8  // odd multiples in one window: 1, 3, ..., 15
+#define P256_WIDE_TABLE_WINDOW_BITS 6 // the bits of the scalar one digit reads
+#define P256_WIDE_TABLE_WINDOWS 43    // six-bit windows of a scalar, the top one four bits wide
+#define P256_WIDE_TABLE_ENTRIES 32    // odd multiples in one window: 1, 3, ..., 63
 
 extern const p256_wide_affine p256_wide_table[P256_WIDE_TABLE_WINDOWS][P256_WIDE_TABLE_ENTRIES];
 

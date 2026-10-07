@@ -6156,7 +6156,8 @@ does nothing more.
       the scalar, or a row would need an entry for zero and a masked
       skip. Signed odd digits need neither and halve the table.
     - **A wider window.** Five bits make 52 rows of 16 entries, 53,248
-      bytes, for 12 additions fewer. It was not measured.
+      bytes, for 12 additions fewer. It was not measured. Entry 109
+      measured four to eight bits and takes six.
     - **A doubling with an exceptional point.** The Explicit-Formulas
       Database's dbl-2007-bl-2 for a = -3 runs 10 products and 11
       additions and subtractions, and takes the point at infinity to
@@ -7807,3 +7808,101 @@ does nothing more.
     - **b as (X1 + r)^2 - X1^2 - r^2.** The database's other form of the
       same doubling trades the product X1 r for two squares, eleven
       products where this one runs ten.
+
+109. **A host object computes k·G on six-bit windows, from an 86 KiB
+    table it scans two limbs to a vector.** Entry 94 read k·G from 64 rows
+    of eight odd multiples of G, 32 KiB, one row for each four-bit window,
+    and left a wider window unmeasured. Camilo asked for a bigger table.
+
+    - **What runs.** `p256_wide_base_mul` writes k | 1 as 43 signed odd
+      digits, one for each six-bit window, the top window four terms wide,
+      and adds one entry of `p256_wide_table` for each: row i holds the odd
+      multiples 1, 3, ..., 63 of 2^(6i) G. That is 1,376 affine points,
+      88,064 bytes, where 512 took 32,768. `window_digit` takes the width
+      and the count of windows, and reads a bit above 255 as zero, by a
+      test of the bit's position, which the top window needs. The key
+      exchange keeps its four-bit windows over eight multiples of the
+      peer's point.
+    - **The scan.** Each window still reads every entry of its row and
+      keeps one by mask. With more entries a row the scan's cost decides
+      the width. Written as before, clang stores the eight limbs back to
+      the output for every entry. `table_select` now keeps its four sums
+      in `limb_pair`, a GNU C vector of two `uint64_t`, so an entry is
+      four vector loads, four ANDs and four ORs. gcc and clang compile it
+      to SSE2 or NEON with no intrinsic, and CBMC reads it. A form that
+      copied each entry into an array of vectors with `memcpy` made gcc 13
+      keep the vectors in memory, and it lost to the old scan.
+    - **The widths, measured.** Cycles of one key generation on the M1
+      Pro under Apple clang 21, and instructions of one under qemu-x86_64
+      from gcc 13.3, with the old scan:
+
+      | window | 4 | 5 | 6 | 7 | 8 |
+      | --- | --- | --- | --- | --- | --- |
+      | table | 32 KiB | 52 KiB | 86 KiB | 148 KiB | 256 KiB |
+      | M1 cycles | 58,600 | 52,000 | 48,700 | 50,000 | 55,000 |
+      | gcc instructions | 432,926 | 379,424 | 349,036 | 348,933 | 377,630 |
+
+      With the vector scan six bits took 46,100 cycles and seven 45,000,
+      and gcc retired 341,557 and 336,530 instructions. Eight bits scans
+      128 entries to save five additions, and loses with either scan.
+    - **Why not seven.** `bin/timing_p256_wide` times a key generation for
+      one fixed scalar against fresh random ones. At seven bits it read
+      |t| of 2 to 7 in most runs on the M1 Pro and 13 in one, where the
+      code before it read under 3. In a harness whose preparation made the
+      same calls for both classes and picked the scalar to copy without a
+      branch, it read up to 27, and the same code at four, five and six
+      bits read under 2.5. No branch and no address in the multiplication reads
+      the scalar at any width: the compiled scan is the same loop of
+      loads, ANDs and ORs for every index, and `lint-wide-multiply` counts
+      the same 12 branches. The line falls where the table outgrows the
+      M1 Pro's 128 KiB L1 data cache: 86 KiB fits and 148 KiB does not.
+      What in the core makes the time follow the data then is not known
+      here; the M1's data-dependent prefetcher is one candidate, and
+      turning on PSTATE.DIT made the signal larger, not smaller. The
+      x86-64 cores this code runs on have 32 to 48 KiB of L1 data cache,
+      so even six bits outgrows theirs, and no x86-64 machine here can
+      time it.
+    - **Gain.** On the M1 Pro under `ch_cfg.cpu 0xe7`, `bench/primitives.c`
+      over five runs of each in turn at a load average of 3, beside
+      OpenSSL 3.6.5's `openssl speed` in the same sitting:
+
+      | | before | after | OpenSSL |
+      | --- | --- | --- | --- |
+      | key generation | 18.7 µs, 224,866 instructions | 14.8 µs, 172,860 | 9.43 µs |
+      | signature | 27.8 µs, 304,962 instructions | 23.9 µs, 252,977 | 17.8 µs |
+
+      That takes key generation from 1.99 to 1.56 times OpenSSL's time,
+      and a signature from 1.56 to 1.34. Under qemu-x86_64 a key
+      generation retires 430,750 instructions before and 342,916 after
+      under gcc 13.3, and 342,315 and 265,160 under clang 18.1.3; a
+      signature 872,648 and 784,814, and 757,130 and 679,975. The key
+      exchange does not move.
+    - **What holds it.** `bin/p256_equiv_test` recomputes all 1,376
+      entries from G and holds the base multiplication to
+      `p256_point_base_mul` on three more scalars, which put one bit at the
+      bottom of every six-bit window, one at the top of every window, and
+      every bit but those. The `p256_wide_digit` proof holds the digits to
+      k | 1 at both widths and the scan to the entry at every index of its
+      32. The `p256_wide_mul` proof runs both multiplications over the
+      shipped table with `--no-array-field-sensitivity`: cbmc tracks an
+      array of up to 64 elements element by element by default, which took
+      the line 492 s over the 1,376 entries, and without it the line
+      proves in 36 s. `bin/timing_p256_wide` holds the key generation's
+      time against a scalar whose six-bit windows all name the same entry.
+      Five violations moved to the new text and three are new, among them
+      a top window that reads past the scalar, which the digit proof
+      catches.
+    - **Cost.** 55,296 more bytes of constants in a host object, and
+      `p256_wide_table.c` is 5,608 generated lines. A device object holds
+      no table.
+
+    Rejected:
+
+    - **Seven bits.** 151,552 bytes, two percent faster than six, and a
+      time that followed the scalar on the M1 Pro, above.
+    - **SSE2 and NEON intrinsics for the scan.** CBMC cannot read an
+      intrinsic, so the scan would lose its proof for an equivalence
+      test, and the vector type compiles to the same instructions.
+    - **Wider windows for the key exchange.** A peer's point has no
+      table: its multiples are computed in each call, and sixteen take
+      eight more additions than eight.

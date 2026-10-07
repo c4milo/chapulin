@@ -2,18 +2,20 @@
 // on their real bodies, over a fully nondet scalar and fully nondet table
 // rows:
 //
-//   the digits add up to the scalar. For every k, the 64 digits window_digit
-//   returns, each (2 index + 1) with its sign, times 16 to the window, sum
-//   to k | 1 modulo 2^256. Both scalar multiplications rest on that sum, and
-//   a digit read from the wrong bits, a sign taken from the wrong bit or a
-//   top window that reads a bit past the scalar fails it. The sum runs in
-//   the reference arithmetic of proof/p256_wide_reference.h, 128-bit sums
-//   that cannot wrap;
+//   the digits add up to the scalar, at both widths. For every k, the 64
+//   four-bit digits window_digit returns for p256_wide_mul, and the 43
+//   six-bit digits it returns for p256_wide_base_mul, each (2 index + 1)
+//   with its sign, times 2 to its window's lowest bit, sum to k | 1 modulo
+//   2^256. Both scalar multiplications rest on that sum, and a digit read
+//   from the wrong bits, a sign taken from the wrong bit or a top window
+//   that reads a bit past the scalar fails it. The sum runs in the
+//   reference arithmetic of proof/p256_wide_reference.h, 128-bit sums that
+//   cannot wrap;
 //
-//   every digit's index is below P256_WIDE_TABLE_ENTRIES, its sign mask is
-//   0 or all ones, the top window's digit is positive, and every bit the
-//   digit reads is inside the scalar: the shifts and the limb index are
-//   proven in bounds for every window;
+//   every digit's index is below the length of its row, its sign mask is 0
+//   or all ones, the top window's digit is positive, and every bit the digit
+//   reads is inside the scalar: the shifts and the limb index are proven in
+//   bounds for every window;
 //
 //   table_select and multiple_select return the row's entry at the index,
 //   limb for limb, for every index below the row's length and any row
@@ -40,22 +42,37 @@ static void scalar_nondet(p256_scalar *k) {
     }
 }
 
-static void prove_digits(void) {
+// term = value * 2^shift in four 64-bit limbs, for value below 2^8 and shift below 256: the
+// limb the shift names, and the bits that cross into the limb above.
+static void shifted(uint64_t term[REF_LIMBS], uint64_t value, size_t shift) {
+    size_t limb = shift >> 6;
+    size_t bit = shift & 63;
+    for (size_t i = 0; i < REF_LIMBS; i++) {
+        term[i] = 0;
+    }
+    term[limb] = value << bit;
+    if (bit != 0 && limb + 1 < REF_LIMBS) {
+        term[limb + 1] = value >> (64 - bit);
+    }
+}
+
+// The digits of k at one width, bits wide, windows of them, each index below entries.
+static void prove_digits_of(size_t bits, size_t windows, uint64_t entries) {
     p256_scalar k;
     uint64_t sum[REF_LIMBS] = {0, 0, 0, 0};
     uint64_t want[REF_LIMBS];
     scalar_nondet(&k);
-    for (size_t window = 0; window < WINDOWS; window++) {
-        digit d = window_digit(&k, window);
-        __CPROVER_assert(d.index < ENTRIES, "window_digit: the index is inside a row");
+    for (size_t window = 0; window < windows; window++) {
+        digit d = window_digit(&k, window, bits, windows);
+        __CPROVER_assert(d.index < entries, "window_digit: the index is inside a row");
         __CPROVER_assert(d.negative == 0 || d.negative == UINT64_MAX,
                          "window_digit: the sign is a mask, 0 or all ones");
-        __CPROVER_assert(window + 1 < WINDOWS || d.negative == 0,
+        __CPROVER_assert(window + 1 < windows || d.negative == 0,
                          "window_digit: the top window's digit is positive");
-        // (2 index + 1) * 16^window, which fits its limb: the size is below
-        // 16 and the shift at most 60.
-        uint64_t term[REF_LIMBS] = {0, 0, 0, 0};
-        term[window >> 4] = (2 * d.index + 1) << (WINDOW_BITS * (window & 15));
+        // (2 index + 1) * 2^(bits window), below 2^256: the top window's index is below 8, so
+        // its term is below 2^256 at both widths.
+        uint64_t term[REF_LIMBS];
+        shifted(term, 2 * d.index + 1, bits * window);
         if (d.negative != 0) {
             (void)ref_sub(sum, sum, term);
         } else {
@@ -66,7 +83,12 @@ static void prove_digits(void) {
         want[i] = (uint64_t)k.limb[2 * i] | ((uint64_t)k.limb[2 * i + 1] << 32);
     }
     want[0] |= 1;
-    __CPROVER_assert(limbs_same(sum, want), "the 64 digits add up to k | 1");
+    __CPROVER_assert(limbs_same(sum, want), "the digits add up to k | 1");
+}
+
+static void prove_digits(void) {
+    prove_digits_of(WINDOW_BITS, WINDOWS, ENTRIES);
+    prove_digits_of(P256_WIDE_TABLE_WINDOW_BITS, P256_WIDE_TABLE_WINDOWS, P256_WIDE_TABLE_ENTRIES);
 }
 
 static void fe_nondet(p256_wide_fe *f) {
@@ -82,29 +104,33 @@ static void fe_nondet(p256_wide_fe *f) {
 // row[index].y.limb[0]`. The code under test takes no such pointer: every
 // row index in table_select and multiple_select is a loop counter.
 static void prove_selects(void) {
-    p256_wide_affine affine_row[ENTRIES];
+    p256_wide_affine affine_row[P256_WIDE_TABLE_ENTRIES];
     p256_wide_point point_row[ENTRIES];
-    for (size_t j = 0; j < ENTRIES; j++) {
+    for (size_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
         fe_nondet(&affine_row[j].x);
         fe_nondet(&affine_row[j].y);
+    }
+    for (size_t j = 0; j < ENTRIES; j++) {
         fe_nondet(&point_row[j].x);
         fe_nondet(&point_row[j].y);
         fe_nondet(&point_row[j].z);
     }
-    uint64_t index = nondet_u64();
-    __CPROVER_assume(index < ENTRIES);
+    uint64_t entry_index = nondet_u64();
+    uint64_t multiple_index = nondet_u64();
+    __CPROVER_assume(entry_index < P256_WIDE_TABLE_ENTRIES);
+    __CPROVER_assume(multiple_index < ENTRIES);
 
     p256_wide_affine affine;
     p256_wide_point point;
-    table_select(&affine, affine_row, index);
-    multiple_select(&point, point_row, index);
+    table_select(&affine, affine_row, entry_index);
+    multiple_select(&point, point_row, multiple_index);
     for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        __CPROVER_assert(affine.x.limb[i] == affine_row[index].x.limb[i] &&
-                             affine.y.limb[i] == affine_row[index].y.limb[i],
+        __CPROVER_assert(affine.x.limb[i] == affine_row[entry_index].x.limb[i] &&
+                             affine.y.limb[i] == affine_row[entry_index].y.limb[i],
                          "table_select: the entry at the index, and no other");
-        __CPROVER_assert(point.x.limb[i] == point_row[index].x.limb[i] &&
-                             point.y.limb[i] == point_row[index].y.limb[i] &&
-                             point.z.limb[i] == point_row[index].z.limb[i],
+        __CPROVER_assert(point.x.limb[i] == point_row[multiple_index].x.limb[i] &&
+                             point.y.limb[i] == point_row[multiple_index].y.limb[i] &&
+                             point.z.limb[i] == point_row[multiple_index].z.limb[i],
                          "multiple_select: the multiple at the index, and no other");
     }
 }

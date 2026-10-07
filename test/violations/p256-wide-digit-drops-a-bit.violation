@@ -1,0 +1,13 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: a digit reads one bit fewer than its window holds, so its size
+  loses its top bit and every digit whose window has that bit set names
+  an entry half its size: about half the windows of a random scalar are
+  wrong, at both widths. bin/p256_equiv_test holds both multiplications to
+  the 32-bit files on edge and random scalars.
+
+--- old
+    for (size_t t = 1; t < bits; t++) {
+--- new
+    for (size_t t = 1; t < bits - 1; t++) {
