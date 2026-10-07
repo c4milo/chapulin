@@ -107,9 +107,11 @@ Home: github.com/c4milo.
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
   compiler cannot remove) ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
-  sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with `sha3_hw.c`
-  (Keccak-f[1600] on FEAT_SHA3, an arm64 host object that clang
-  compiles, a session whose caller sets CH_CPU_CONSTANT_TIME_SHA3) +
+  sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
+  `keccak_round_constants.h` (the round constants every Keccak here
+  reads) and with `sha3_hw.c` (Keccak-f[1600] on FEAT_SHA3, an arm64
+  host object that clang compiles, a session whose caller sets
+  CH_CPU_CONSTANT_TIME_SHA3) +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
   them test-only) with `sha512_hw.c` (both on FEAT_SHA512, an arm64 host
@@ -120,7 +122,10 @@ Home: github.com/c4milo.
   builds keep them test-only) with `mlkem_zetas.h` (the NTT's twiddle
   factors), with `mlkem_vector.[ch]` and `mlkem_lanes.h` (the NTT and
   base multiplication on eight 16-bit lanes, NEON or SSE2, every session
-  of a host object), and with `keccak_hw.h`, `mlkem_hw.c` and
+  of a host object), with `keccak_avx2.[ch]` and `mlkem_avx2.[ch]`
+  (Keccak on four states at once in AVX2, and `mlkem.c` compiled once
+  more to sample the matrix on it, an x86-64 session whose caller sets
+  CH_CPU_AVX2), and with `keccak_hw.h`, `mlkem_hw.c` and
   `mlkem_poly_hw.c` (the two files compiled once more over
   `sha3_hw.c`) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
@@ -162,12 +167,15 @@ Home: github.com/c4milo.
   server role and TRUST=webpki) with the `p256_wide_*` files (the same
   arithmetic on four 64-bit limbs, and k·G from a table of multiples of
   G that is read whole and kept by mask, a host session whose caller
-  sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` runs
-  `p256.[ch]`'s verification on them in every session of a host
-  object) +
-  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) with `rsa_mont64.[ch]`
-  (the same public operation on 64-bit limbs, every session of a host
-  object) + `p384.[ch]`/
+  sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` and
+  `p256_wide_verify_point.c` run `p256.[ch]`'s verification on the wide
+  field, with variable-time Jacobian points of their own, in every
+  session of a host object) +
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; a host object's arm
+  computes R^2 by a long division that branches on the public modulus)
+  with `rsa_mont64.[ch]` (the same public operation on 64-bit limbs,
+  every session of a host object, and the square both it and the signer
+  run) + `p384.[ch]`/
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
   on six 64-bit limbs, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
@@ -315,7 +323,8 @@ Home: github.com/c4milo.
   object's path (docs/decisions.md 101).
   On x86-64 two more bits each pick a kernel beside a path every
   CPU runs, and neither states a timing: `CH_CPU_AVX2` runs the keystream
-  on `chacha20_avx2.c`, and `CH_CPU_VAES` beside
+  on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
+  input is public (docs/decisions.md 107), and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
   (docs/decisions.md 90). Three bits each state a hash's instructions
   and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
@@ -328,7 +337,9 @@ Home: github.com/c4milo.
   session's `ch_cfg.cpu` first, through the `_cpu` entries that end
   `sha256.h`, `sha512.h`, `sha3.h`, `hkdf.h`, `keysched.h`,
   `transcript.h` and `mlkem.h`, and a call that takes no value runs the
-  portable code (docs/decisions.md 93). CBMC cannot read an
+  portable code (docs/decisions.md 93). `p256_sign_cpu`, the entry a
+  host object's server signs through, hands the session's value to each
+  HMAC of its RFC 6979 nonce (docs/decisions.md 102). CBMC cannot read an
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
@@ -346,12 +357,14 @@ Home: github.com/c4milo.
   ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
   `bin/mlkem_vector_equiv_test` holds `mlkem_vector.c` to
   `mlkem_poly.c`'s loops, coefficient for coefficient.
+  `bin/mlkem_avx2_equiv_test` holds `keccak_avx2.c` to `sha3.c` and
+  `mlkem_avx2.c` to `mlkem.c`.
   `bin/p256_equiv_test` and `bin/rsa_sign_equiv_test` hold the wide P-256
   files and `rsa_sign64.c` to the files under their own names, and search
   the stack each call leaves. `bin/p256_verify_equiv_test` and
   `bin/p384_equiv_test` hold a host object's two ECDSA verifiers to the
   32-bit arms of `p256.c` and `p384.c`, which stay the references
-  (docs/decisions.md 96 and 97). AES is admitted for two purposes. The first is the keys RFC
+  (docs/decisions.md 96, 97 and 104). AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
