@@ -270,7 +270,7 @@ def run_steps(name, root, env, say):
         # again. A script target is why it matters: it builds what it
         # runs, and the deletion below cannot name the objects it left. A
         # tcp-nonblocking tls.o survived a violation this way and failed its
-        # own leg afterwards, on restored source.
+        # own lib-check build afterwards, on restored source.
         date_after_every_build(target)
         # The binaries go as well, so no run takes one the violation
         # built. A poisoned bin/rsa_test once failed a full check an

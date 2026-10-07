@@ -4,8 +4,8 @@
 tools/proof-cover.py holds each of these sources to a full harness or an
 audit (INV-47), and tools/impact_map.py selects that lint for a change to
 any of them. Both import the set from here, so both read the same builds.
-The impact tool once read the legs check builds instead, and the plan for
-srv_quic.c ran no lint-proof-cover.
+The impact tool once read the library builds check runs instead, and the
+plan for srv_quic.c ran no lint-proof-cover.
 """
 
 import os

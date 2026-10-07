@@ -602,7 +602,7 @@ last `ROLE=server` stub, as the entry said it would.
   CH_TRANSPORT_TCP_NONBLOCKING` around the webpki `ch_connect` and requires
   `test/lib-check-webpki-tcp-nonblocking.sh` to fail, because the compiled call
   imports the `ch_handshake` this variant does not compile
-  ([171](https://github.com/c4milo/chapulin/issues/171)). That leg is
+  ([171](https://github.com/c4milo/chapulin/issues/171)). That build is
   the only client object with `ch_record_init` and no `ch_connect`, so
   no other build reports it.
 - **Violation.** A PR adds a `recv` call to a tcp-nonblocking step so the
@@ -1639,7 +1639,7 @@ last `ROLE=server` stub, as the entry said it would.
   name there, the link stamp holds that list so an edit to it relinks
   the object, and every `lint-trust-separation` row requires `build.c`.
 - **Check.** `lib-check` links `test/build_test.c` against every object
-  it checks, and every leg of `make check` builds it three times:
+  it checks, and every library build in `make check` builds it three times:
   compiled under the object's own defines, where it must read a record
   equal to its headers; compiled with `CH_PIN_ECDSA` moved, where it must
   read a difference; and compiled with the transport moved, where it
@@ -1661,7 +1661,7 @@ last `ROLE=server` stub, as the entry said it would.
   the way it gives the record, and `inv35-ticket-age-not-transport-named`,
   which drops it from the list, is caught by
   `test/lib-check-webpki-tcp-nonblocking.sh`.
-  `test/hpp_test.cpp` calls the C++ forwarder on the `cxx-check` legs.
+  `test/hpp_test.cpp` calls the C++ forwarder in each `cxx-check` build.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
   define that moves a public layout without a bit in `CH_BUILD_AXES`,
   adds a public struct or bound that the record does not hold, or gives
@@ -1757,7 +1757,7 @@ last `ROLE=server` stub, as the entry said it would.
   the public headers' comments name in the regions the object compiles,
   and fails when the consumer cannot see one; `matches.zig` then
   declares and evaluates each. check-slow runs the script over every
-  `lib-check` leg's configuration too.
+  `lib-check` build's configuration too.
   The same target runs `test/localize-check.sh`, which compares the
   localizer with `llvm-objcopy -G` on nine ELF targets and with
   `llvm-objcopy -G` and `nmedit -s` on two Mach-O ones, and links every
@@ -1847,7 +1847,7 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-37 — a stamp skips a check only on inputs the check passed on
 
 - **Claim.** `make check` skips a lint, a Wycheproof leg or a
-  packaged-object leg only when every input it reads is byte for byte
+  library build only when every input it reads is byte for byte
   what it was when that check last passed. A skip never stands in for a
   run over an input the check did not see.
 - **Mechanism.** `tools/stamp.py` keys a check on a SHA-256 over the
@@ -4439,11 +4439,11 @@ last `ROLE=server` stub, as the entry said it would.
   no frame for, and compiles the sources and the defines make packages
   for the build it walks. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
-  `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
+  `make lint-stack TRUST=webpki` as a target of its own, so plain `make
   check`, the target CI's `check` job runs, holds the 4,096-byte budget
   too. `make lint-stack ROLE=server TRUST=none` is
-  another leg, the one that compiles the server's sources. The
-  `TX_RECORD` leg runs it on the `TRUST=webpki ROLE=both` object at
+  another target, the one that compiles the server's sources.
+  `check-lib-tx-record` runs it on the `TRUST=webpki ROLE=both` object at
   `TX_RECORD=16384`, the one axis that exists to make a buffer larger.
   `srv_frag`, the one stack buffer `CH_TX_PT` used to size, keeps
   `SRV_FRAG_MAX`, 512 bytes, whatever `CH_TX_PT` is (decisions.md 71).
@@ -4454,7 +4454,7 @@ last `ROLE=server` stub, as the entry said it would.
   adds a frame that silently outgrows the smallest supported SRAM.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:
   a 5,000-byte buffer in `p256_ecdsa_verify`, which an rsa mode filters
-  out of every other object, so only the `TRUST=webpki` leg compiles the
+  out of every other object, so only the `TRUST=webpki` build compiles the
   file and objects. A published peak can also read low when the walk
   misses an edge. `inv19-stack-walk-first-instruction-jump` makes
   bench/stack.py read the placeholder target objdump prints on a branch

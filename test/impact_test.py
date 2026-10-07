@@ -44,8 +44,8 @@ Nine more assertions come free from the same data:
   lint-codegen-partition, the two lints that read git's list of them
 
   every library build make check runs, each target in the Makefile's
-  CHECK_LEGS whose recipe runs make, is run by the plan for a source it
-  compiles
+  CHECK_LIBRARY_BUILDS whose recipe runs make, is run by the plan for a
+  source it compiles
 
   a working tree that differs from the base gives the plan its changed
   set, and an unchanged one prints no command: the two shapes `make
@@ -215,10 +215,10 @@ def check_root_sources(mapping):
     """The plan for every root .c file runs the lints that judge it.
 
     select_lints and select_codegen select those two lints for a source in
-    lib_sources(). That set was the union of the legs check builds, which
-    left out srv_quic.c and nine other sources, so their plans did not run
-    lint-proof-cover. git's list is the oracle here because no list of
-    builds can fall behind it."""
+    lib_sources(). That set was the union of the library builds check
+    runs, which left out srv_quic.c and nine other sources, so their plans
+    did not run lint-proof-cover. git's list is the oracle here because no
+    list of builds can fall behind it."""
     bad, short = 0, set()
     sources = root_sources()
     for path in sources:
@@ -238,7 +238,7 @@ def check_root_sources(mapping):
 
 
 def check_library_builds(mapping):
-    """Every target in the Makefile's CHECK_LEGS that runs make is a
+    """Every target in the Makefile's CHECK_LIBRARY_BUILDS that runs make is a
     command the plan for a source its build compiles runs.
 
     tools/impact_select.py kept its own list of these builds, and it named
@@ -248,7 +248,7 @@ def check_library_builds(mapping):
     the mapping reads a recipe."""
     bad = 0
     builds = mapping.library_builds()
-    targets = impact_read.expand("$(CHECK_LEGS)", mapping.variables).split()
+    targets = impact_read.expand("$(CHECK_LIBRARY_BUILDS)", mapping.variables).split()
     running = [target for target in targets
                if "$(MAKE)" in " ".join(mapping.rules.get(target, ([], []))[1])]
     for target in running:

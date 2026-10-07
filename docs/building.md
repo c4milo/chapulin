@@ -242,9 +242,9 @@ Other targets:
   configurations both ways and requires the same sources, defines,
   exports and build record, and builds and runs Zig programs against
   each module (decisions 69, 70 and 73, INV-36).
-- `make check` skips a lint, a Wycheproof leg or a packaged-object leg
-  that passed before on the same inputs, and `make -j check` runs its
-  lints, legs and test runs side by side. `tools/stamp.py` states what a
+- `make check` skips a lint, a Wycheproof leg or a library build that
+  passed before on the same inputs, and `make -j check` runs its lints,
+  builds and test runs side by side. `tools/stamp.py` states what a
   skip keys on: the bytes of the files the check reads, the tools'
   versions, and the make and environment variables it runs under, never
   a time (INV-37). `CHECK_NO_STAMPS=1` runs every check. CI starts each
@@ -260,7 +260,7 @@ Other targets:
 - `make check-slow` runs `make check` and then three targets, which CI
   runs as three jobs beside its `check` job on every push to main and
   each night. `make ci-slow` runs the vectors over the decomposed
-  multiply, the Zig build over every `lib-check` leg, the crypto on an
+  multiply, the Zig build over every `lib-check` build, the crypto on an
   emulated Cortex-M3, `test/e2e.sh` against real servers, the spec
   differential and the sequence enumeration, and builds the binaries
   those steps run. `make ci-mutants` runs the fast tier of

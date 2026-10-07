@@ -349,7 +349,7 @@ jobs:
         run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/rv32tc/bin/riscv32-linux-gcc"
       - run: make cross-check CROSS="$HOME/rv32tc/bin/riscv32-linux-" RUNNER=qemu-riscv32
 
-  # `make check` and nothing after it: every lint, each packaged-object leg
+  # `make check` and nothing after it: every lint, each library build
   # and each test binary's run. Of the four jobs from here down it is the
   # one a pull request gets, and its id is a required status check
   # (.github/required-status-checks.txt).
@@ -600,9 +600,9 @@ jobs:
 
       # One target, so the workflow holds no list of what check runs.
       #
-      # check runs each lint, leg and test run as a prerequisite of its
-      # own, so -j runs them side by side on the runner's cores. Serial,
-      # check took 522 s of this job on run 36228452875.
+      # check runs each lint, library build and test run as a prerequisite
+      # of its own, so -j runs them side by side on the runner's cores.
+      # Serial, check took 522 s of this job on run 36228452875.
       - run: make -j"$(nproc)" check
       - name: Render what CBMC proves on the run page
         # check's proof-coverage writes bin/proof-coverage.md, so the table
@@ -611,7 +611,7 @@ jobs:
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
   # `make ci-slow`: the unit, ML-KEM, P-256 and Wycheproof vectors over the
-  # decomposed multiply, build.zig over every lib-check leg's
+  # decomposed multiply, build.zig over every lib-check build's
   # configuration, the crypto on an emulated Cortex-M3, e2e against real
   # servers, the spec differential and the sequence enumeration. Those
   # steps took 8 minutes of run 37167172750's check job, where check had
@@ -656,7 +656,7 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
 
       - name: Install Zig (pinned)
-        # test/zig-build-check.sh --roster builds each lib-check leg's
+        # test/zig-build-check.sh --roster builds each lib-check build's
         # object with build.zig and holds it to make's.
         uses: ./.github/actions/install-zig
         with:

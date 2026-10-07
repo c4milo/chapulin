@@ -2,7 +2,7 @@
 # The range and the refusals of the TX_RECORD axis (docs/decisions.md 71),
 # checked the way test/widemul-builds.sh checks ct.h's refusals: the value
 # at each edge builds, and the value one past it does not. `make
-# tx-record-check` runs it, from the TX_RECORD leg of `make check`, and it
+# tx-record-check` runs it, from `make check`'s check-lib-tx-record, and it
 # is the catch target of the violations that widen a refusal:
 # test/violations.py runs a script by path and reads its exit status, and
 # a make target is not a path.
@@ -22,7 +22,7 @@
 # needs 618.
 cd "$(dirname "$0")/.." || exit 1
 # Each case below names its own variables. make exports the variables its
-# command line set, so a run from the TX_RECORD leg of `make check` holds
+# command line set, so a run from `make check`'s check-lib-tx-record holds
 # TX_RECORD=16384 and its trust mode, transport and role in the
 # environment, and a make that read them would build something else.
 unset MAKEFLAGS MFLAGS MAKELEVEL

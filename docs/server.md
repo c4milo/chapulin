@@ -39,7 +39,7 @@ build-axis one, and the section "Considered and rejected" names what it took
 from the other two and what it refused.
 
 One piece of the plan has not landed. `chapulin.hpp` declares no `Server`
-type, so the `ROLE=server` leg of `lib-check` runs without `cxx-check`.
+type, so the `ROLE=server` `lib-check` build runs without `cxx-check`.
 `test/e2e.sh` does drive another stack against a chapulin server now:
 OpenSSL's `s_client` and this tree's own client each make a full handshake
 with `bin/tlsserver` and then resume the ticket it issued ("Resumption"
@@ -2066,7 +2066,7 @@ and the `require_pq` refusal, which it did not have in this mode
 
 Nothing caught it because `check` linked no `TRANSPORT=tcp-nonblocking` library variant
 at all — only `bin/tlsclient_tcp_nonblocking`, which pins. Two `lib-check`
-legs now link one per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
+builds now link one per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
 transport.
 
 ### What `ch_cfg` gains and drops

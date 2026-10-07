@@ -5,7 +5,7 @@
 # colibri links, stompy's, a SUITE=aesgcm record-mode object and colibri's
 # QUIC object holding both widening multiplies. check-slow
 # runs it with --roster, which adds the configuration of every lib-check
-# leg in check.
+# build in check.
 #
 # The Zig build runs in bin/zig/consumer/package, a copy of exactly the
 # files build.zig.zon's .paths names, because that is what a dependent
@@ -123,7 +123,7 @@ configs=(
     "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "record-aes|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm|"
 )
-# The configuration of every other lib-check leg in check, in its order,
+# The configuration of every other lib-check build in check, in its order,
 # so every value of every axis meets build.zig at least once. The server
 # on AES=extern is a device object, which a host compiler builds when
 # HOST_TARGET, the host test's result, is set empty, in make and in
@@ -230,7 +230,7 @@ statement_defs() {
 
 # Whether this compiler can build a configuration: SUITE=aesgcm needs a
 # host object or AES=extern, which the Makefile probes for and check's
-# legs skip without.
+# library builds skip without.
 buildable() {
     case " $1 " in
     *" AES=extern "*) true ;;

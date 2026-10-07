@@ -94,7 +94,7 @@ constexpr size_t kPinLen = 384;
 // The vectors follow the build's pinned algorithm, the way
 // x509_strict_test.c picks its own. An RSA certificate handed to a
 // P-256 verifier is refused, so naming one here made this test pass
-// only under an rsa mode, and no cxx-check leg built a ca-ecdsa object
+// only under an rsa mode, and no cxx-check run built a ca-ecdsa object
 // to notice.
 extern "C" {
 #include "pem.h"

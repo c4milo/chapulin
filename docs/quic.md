@@ -2716,8 +2716,8 @@ the two new callbacks and `ch_cfg.transport_params` surface there. Skipping the
 gate under one axis would leave the largest API surface in the tree with no C++
 leg, which is the one thing that sentence exists to prevent. It has landed:
 `chapulin.hpp` holds `Quic` under the `#else` of that `#ifndef`, and `check`
-runs `cxx-check` against a QUIC object in two legs, `check-lib-quic` and
-`check-lib-quic-raw-aes-runtime`.
+runs `cxx-check` against a QUIC object in two library builds,
+`check-lib-quic` and `check-lib-quic-raw-aes-runtime`.
 
 ## What is still open
 

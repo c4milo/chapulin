@@ -54,7 +54,7 @@ For each changed path the plan carries:
   arm alone.
 - **Library builds.** `make check` builds the library object once per
   configuration and checks each one: the targets the Makefile lists in
-  `CHECK_LEGS`, such as `check-lib-server` for `ROLE=server`. The plan
+  `CHECK_LIBRARY_BUILDS`, such as `check-lib-server` for `ROLE=server`. The plan
   runs `make <target>` for every one whose object compiles the changed
   source, so a file the default object filters out still selects the
   build that compiles it, and so does an `#ifdef` body only one
@@ -147,7 +147,7 @@ No module of the tool lists a source. `tools/impact_read.py` reads them:
 | Source | What it supplies |
 | --- | --- |
 | `make -qp` | every variable expanded, and every rule with its prerequisites and recipe |
-| `make print-lib-srcs` for each target in `CHECK_LEGS` that runs make | the sources each of `make check`'s library builds compiles, under the variables its recipe passes make |
+| `make print-lib-srcs` for each target in `CHECK_LIBRARY_BUILDS` that runs make | the sources each of `make check`'s library builds compiles, under the variables its recipe passes make |
 | `make print-lib-srcs` for each build in `BUILDS` | every source some packaged object compiles, and the sources their text includes: the set `lint-proof-cover` reads |
 | `proof/run.sh` | each harness's tier and the sources its launch line links |
 | `proof/*_harness.c` | the module each harness includes, through its stubs header |
@@ -196,7 +196,7 @@ The same check asserts that:
 - the plan for every root `.c` file git tracks runs `lint-proof-cover`
   and `lint-codegen-partition`, the two lints that read git's list of
   those files;
-- every library build in `CHECK_LEGS` whose recipe runs make is run by
+- every library build in `CHECK_LIBRARY_BUILDS` whose recipe runs make is run by
   the plan for a source it compiles.
 
 It writes nothing in the working tree. The two checks that need a

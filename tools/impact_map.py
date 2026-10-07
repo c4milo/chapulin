@@ -237,14 +237,15 @@ class Mapping:
 
     def library_builds(self):
         """Target -> (the make commands its recipe runs, the sources those
-        commands compile), for every target in the Makefile's CHECK_LEGS
-        whose recipe runs make. Each such target builds the library object
-        for one configuration and checks it, as check-lib-server does for
-        ROLE=server, so a source that object compiles selects the target.
-        The commands come from make's database and the sources from
-        print-lib-srcs, so a target the Makefile adds is one here too. The
-        list this tool kept by hand named 9 of the 19 targets that run
-        lib-check, so a change to srv_quic.c ran no lib-check at all.
+        commands compile), for every target in the Makefile's
+        CHECK_LIBRARY_BUILDS whose recipe runs make. Each such target builds
+        the library object for one configuration and checks it, as
+        check-lib-server does for ROLE=server, so a source that object
+        compiles selects the target. The commands come from make's
+        database and the sources from print-lib-srcs, so a target the
+        Makefile adds is one here too. The list this tool kept by hand
+        named 9 of the 19 targets that run lib-check, so a change to
+        srv_quic.c ran no lib-check at all.
 
         A target whose recipe runs no make is left out. check-lib-pair
         runs test/lib-pair-check.sh, which select_pairs selects. Where the
@@ -257,7 +258,7 @@ class Mapping:
         sources is one no plan would run."""
         if self._library_builds is None:
             calls = {}
-            for target in expand("$(CHECK_LEGS)", self.variables).split():
+            for target in expand("$(CHECK_LIBRARY_BUILDS)", self.variables).split():
                 commands = make_calls(self.rules.get(target, ([], []))[1])
                 if commands:
                     calls[target] = commands

@@ -291,7 +291,7 @@ def select_spec(out, changed):
 
 def select_modes(out, sources, builds, lib):
     """The library builds `make check` runs, one per target in the
-    Makefile's CHECK_LEGS that runs make (Mapping.library_builds).
+    Makefile's CHECK_LIBRARY_BUILDS that runs make (Mapping.library_builds).
 
     Each target builds the packaged object for one configuration under
     its own defines, and a check-stack target holds that object's frames

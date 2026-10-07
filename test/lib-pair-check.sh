@@ -14,7 +14,7 @@
 # With no arguments this runs every pair; each argument names one pair to
 # run instead.
 #
-# Each object is built by the build variables of a lib-check leg in make
+# Each object is built with the variables of a lib-check build in make
 # check where one exists, so check builds two objects for this script
 # alone: the QUIC object of the ca pair and of the drbg pair.
 cd "$(dirname "$0")/.." || exit 1
