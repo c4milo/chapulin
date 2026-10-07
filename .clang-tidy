@@ -60,11 +60,12 @@
 #   on the trailing comma either way.
 # - clang-analyzer-optin.taint.GenericTaint: new in clang-tidy 23, and it can
 #   only ever fire outside the library. chapulin makes no system call at all --
-#   the caller supplies every I/O callback -- so no shipped source reaches
-#   execl, system or popen. Its one finding is test/diff_driver.h:124, where
-#   the differential driver execs the Lean spec binary named by argv[1]
-#   (test/diff_test.c:36, defaulting to spec/lean/.lake/build/bin/diffspec). That is
-#   the developer naming a path on their own command line.
+#   the caller supplies every I/O callback -- so no shipped source calls
+#   execl, system or popen. Its one finding is the execl in
+#   test/diff_driver.h's `spawn_spec`, which runs the Lean spec binary that
+#   test/diff_test.c's `main` takes from argv[1], or
+#   spec/lean/.lake/build/bin/diffspec when there is none. That is the
+#   developer naming a path on their own command line.
 # - readability-math-missing-parentheses: byte-packing indices like
 #   p[4 * i + 1] saturate this codebase; the precedence is grade-school and
 #   the parens would be pure noise.
