@@ -1947,17 +1947,21 @@ last `ROLE=server` stub, as the entry said it would.
   requires it to fail.
 - See [decisions: Engineering](decisions.md#engineering), entry 88.
 
-### INV-47 — every shipped source is proven or audited
+### INV-47 — a full harness or an audit covers every shipped source
 
 - **Claim.** Every source a packaged object compiles is compiled by a
-  CBMC harness that `proof/run.sh` launches with the `full` check set,
-  which proves it free of out-of-bounds access, invalid pointers, bad
-  shifts, division by zero and signed overflow at the harness's bound.
-  A source no such harness compiles is a copy of one that passes, its
-  text compiled once more under a header of renames, or it carries an
-  `AUDITED` entry in `tools/proof-cover.py`: what holds its signed
-  arithmetic, written by someone who read the file, and which test
-  holds the file to the proven code. `.clang-tidy` turns
+  CBMC harness that `proof/run.sh` launches with the `full` check set.
+  That set checks for out-of-bounds access, invalid pointers, bad
+  shifts, division by zero and signed overflow. The harness proves them
+  absent only in the calls it drives, in the build it compiles, at its
+  bound, so part of a source can stay unproved: a call no harness
+  drives, or an arm that only another build compiles. Each harness's
+  entry (docs/verification.md, "Harnesses") states what it proves and
+  at what bound. A source no such harness compiles is a copy of one
+  that passes, its text compiled once more under a header of renames,
+  or it carries an `AUDITED` entry in `tools/proof-cover.py`: what
+  holds its signed arithmetic, written by someone who read the file,
+  and which test holds the file to the proven code. `.clang-tidy` turns
   `bugprone-signed-bitwise` off on the strength of this claim.
 - **Mechanism.** `make lint-proof-cover` runs `tools/proof-cover.py`.
   It asks the Makefile's `print-lib-srcs` for the sources of each build

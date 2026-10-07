@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Check that every shipped source is proven with the signed-overflow class on.
+"""Check that a full harness or an audit covers every shipped source's text.
 
-.clang-tidy disables bugprone-signed-bitwise, and that disable rests on a claim:
-the signed arithmetic in this tree is deliberate, and CBMC proves absence of
-signed overflow and UB over unconstrained inputs on every module that holds it.
-Nothing enforced the claim, so it could rot four ways -- a new source arrives
-with no harness, the Makefile adds a source to an object on a line this script
-does not read, a launch line drops from the `full` check set to a narrower one,
-or one of the hand-audited files gains a signed operand.
+.clang-tidy disables bugprone-signed-bitwise, and that disable rests on the
+claim INV-47 in docs/invariants.md states. Every shipped source is compiled by
+a CBMC harness launched with the `full` check set, which proves the calls it
+drives free of signed overflow and bad shifts at its bound, or it is a copy of
+such a source or of an audited one, or someone read it and recorded what holds
+its signed arithmetic. Nothing enforced the claim, so it could rot four ways --
+a new source arrives with no harness, the Makefile adds a source to an object
+on a line this script does not read, a launch line drops from the `full` check
+set to a narrower one, or one of the hand-audited files gains a signed operand.
 
 This fails when a shipped source is neither compiled by a harness running the
 `full` set, nor listed in AUDITED below, nor a copy COPIES names of a source
@@ -590,8 +592,9 @@ def main():
         return 1
 
     line = (f"lint-proof-cover: {len(sources - set(AUDITED) - set(COPIES) - stubs)} shipped "
-            f"sources proven with the signed-overflow class on, {len(COPIES)} copies of a "
-            f"proven or audited source, {len(AUDITED)} audited by hand")
+            f"sources compiled by a harness with the signed-overflow class on, "
+            f"{len(COPIES)} copies of such a source or an audited one, "
+            f"{len(AUDITED)} audited by hand")
     if stubs:
         line += (f", {len(stubs)} still stubs that carry a stub marker "
                  f"and hold no code to prove")
