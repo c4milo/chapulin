@@ -12,8 +12,13 @@
 //   multiplication uses: separate output, and output over the projective
 //   input;
 //
-//   the same in p256_wide_point_double, separate output and output over
-//   the input, which is how a multiplication doubles between windows;
+//   the same in p256_wide_point_double_jacobian, separate output and
+//   output over the input, which is how a multiplication doubles between
+//   windows, and in p256_wide_point_add_jacobian_incomplete, separate
+//   output and output over either input;
+//
+//   memory safety in the two conversions between a p256_wide_point and a
+//   p256_wide_jacobian;
 //
 //   memory safety in p256_wide_point_from_bytes over any 65 bytes, and that
 //   its answer is 0 or UINT32_MAX, the mask p256_point.h promises, whichever
@@ -31,17 +36,17 @@
 // stubbed, so nothing here depends on a field value, and the real field
 // bodies are proven in the three p256_wide_field harnesses.
 //
-// Not proven here: that the four formulas compute the group law.
+// Not proven here: that the formulas compute the group law.
 // bin/p256_equiv_test holds the two complete additions to p256_point_add's
 // coordinates, word for word, on random and structured operands, and the
-// doubling and the incomplete addition to the points p256_point_add gives.
-// That routine's steps are checked against an affine reference in
-// test/gen_p256_sign_vectors.py. The doubling's and the incomplete
-// addition's steps are proven in Lean instead:
-// spec/lean/Spec/P256WidePoint.lean proves that the first doubles every
-// point of the curve and that the second adds two points whose x differ,
-// and bin/diff_p256_wide holds this file's two to them, coordinate for
-// coordinate.
+// incomplete additions, the Jacobian doubling and the two conversions to
+// the points p256_point_add gives. That routine's steps are checked against
+// an affine reference in test/gen_p256_sign_vectors.py. The other routines'
+// steps are proven in Lean instead: spec/lean/Spec/P256WidePoint.lean
+// proves that the doubling doubles every point of the curve, that each
+// incomplete addition adds two points whose x differ, and that each
+// conversion keeps the point, and bin/diff_p256_wide holds this file's
+// routines to them, coordinate for coordinate.
 #include "p256_wide_field_stubs.h"
 
 #include "p256_wide_point.c"
@@ -114,14 +119,39 @@ static void prove_add_affine_incomplete(void) {
     p256_wide_point_add_affine_incomplete(&a, &a, &b);
 }
 
-static void prove_double(void) {
-    p256_wide_point a;
-    p256_wide_point o;
+static void jacobian_nondet(p256_wide_jacobian *p) {
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        p->x.word[i] = nondet_u64();
+        p->y.word[i] = nondet_u64();
+        p->z.word[i] = nondet_u64();
+    }
+}
 
-    wide_point_nondet(&a);
-    p256_wide_point_double(&o, &a);
-    wide_point_nondet(&a);
-    p256_wide_point_double(&a, &a); // o == a, the shape a multiplication doubles in
+static void prove_jacobian(void) {
+    p256_wide_jacobian a;
+    p256_wide_jacobian b;
+    p256_wide_jacobian o;
+    p256_wide_point point;
+
+    jacobian_nondet(&a);
+    p256_wide_point_double_jacobian(&o, &a);
+    jacobian_nondet(&a);
+    p256_wide_point_double_jacobian(&a, &a); // o == a, the shape a multiplication doubles in
+
+    jacobian_nondet(&a);
+    jacobian_nondet(&b);
+    p256_wide_point_add_jacobian_incomplete(&o, &a, &b);
+    jacobian_nondet(&a);
+    jacobian_nondet(&b);
+    p256_wide_point_add_jacobian_incomplete(&a, &a, &b); // o == a, the shape the windows add in
+    jacobian_nondet(&a);
+    jacobian_nondet(&b);
+    p256_wide_point_add_jacobian_incomplete(&b, &a, &b); // o == b
+
+    wide_point_nondet(&point);
+    p256_wide_point_to_jacobian(&o, &point);
+    jacobian_nondet(&a);
+    p256_wide_point_from_jacobian(&point, &a);
 }
 
 static void prove_from_bytes(void) {
@@ -160,7 +190,7 @@ int main(void) {
     prove_add_aliasing();
     prove_add_affine();
     prove_add_affine_incomplete();
-    prove_double();
+    prove_jacobian();
     prove_from_bytes();
     prove_affine();
     prove_copies();

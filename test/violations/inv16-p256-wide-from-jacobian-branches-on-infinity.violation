@@ -1,0 +1,16 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: test/lint-wide-multiply.sh
+reason: the conversion back from Jacobian coordinates sets Y = 1 under an
+  if on Z's zero mask in place of the masked move. Z is a coordinate of a
+  multiple of a secret scalar, so the branch reads a secret, and
+  lint-wide-multiply counts the branch the compiler emits for it:
+  p256_wide_point.c's count goes past its ceiling of 3 under both 64-bit
+  specs.
+
+--- old
+    p256_wide_fe_cmov(&o->y, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
+--- new
+    if (p256_wide_fe_zero_mask(&a->z) != 0) {
+        o->y = p256_wide_fe_one_mont;
+    }

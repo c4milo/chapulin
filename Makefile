@@ -4117,9 +4117,10 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wip
 # The constant-time P-256 arm: a key generation, a signature and a key
 # exchange against spec/lean/Spec/P256.lean, under both answers, so the
 # wide files and the 32-bit files each answer the spec
-# (docs/decisions.md 94), and the wide doubling and incomplete addition
-# against spec/lean/Spec/P256WidePoint.lean, coordinate for coordinate
-# (docs/decisions.md 108 and 111). Its own main, for bin/diff_x25519_wide's reason:
+# (docs/decisions.md 94), and the wide incomplete additions, the Jacobian
+# doubling and the two conversions against spec/lean/Spec/P256WidePoint.lean,
+# coordinate for coordinate (docs/decisions.md 111 and 112). Its own main,
+# for bin/diff_x25519_wide's reason:
 # bin/diff compares the verifier in p256.c and no row of it reads these
 # files.
 DIFF_P256_WIDE_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \
@@ -6581,15 +6582,17 @@ HASH_HW_BRANCH_CEILING := \
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
-#   p256_wide_mul.c's 12: the windows each multiplication adds after its
+#   p256_wide_mul.c's 13: the windows each multiplication adds after its
 #     first, 42 of the table's and 63 of a point's, the 32 entries a table
 #     scan reads, whose words sit in vectors with no loop of their own, the
 #     eight multiples a point's scan reads and the four words of each of a
 #     multiple's three coordinates, the seven multiples p256_wide_mul
-#     computes, the four doublings between windows, and in window_digit the
-#     loop over a digit's bits, the test of a bit's position against 255
-#     and the test for the top window, whose digit is positive, which read
-#     a window's number and a loop counter.
+#     computes, the four doublings between windows, twice: once in the loop
+#     over windows 62 to 1 and once before window 0, which adds outside it
+#     (docs/decisions.md 112), and in window_digit the loop over a digit's
+#     bits, the test of a bit's position against 255 and the test for the
+#     top window, whose digit is positive, which read a window's number and
+#     a loop counter.
 #   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
 #     holds a branch.
 #   p256_wide_verify.c's 5: the range checks of r and of s, the second
@@ -6614,7 +6617,7 @@ P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_field.c:7 x86-64/p256_wide_field.c:7 \
   arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
-  arm64/p256_wide_mul.c:12 x86-64/p256_wide_mul.c:12 \
+  arm64/p256_wide_mul.c:13 x86-64/p256_wide_mul.c:13 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
   arm64/p256_wide_verify.c:5 x86-64/p256_wide_verify.c:5 \

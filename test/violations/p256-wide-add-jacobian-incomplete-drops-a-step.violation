@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: p256_equiv_test
+reason: the incomplete Jacobian addition leaves out the step that
+  multiplies s1 by z2z2, so s1 is Y1 Z2 where the formula takes
+  Y1 Z2^3, and every sum whose second point has Z not 1 comes out for
+  another point. bin/p256_equiv_test holds the addition to the complete
+  one on multiples of G with the Z the additions before left.
+
+--- old
+    p256_wide_fe_mul(&s1, &a->y, &b->z);
+    p256_wide_fe_mul(&s1, &s1, &z2z2);
+--- new
+    p256_wide_fe_mul(&s1, &a->y, &b->z);

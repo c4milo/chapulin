@@ -1,0 +1,12 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: p256_equiv_test
+reason: the conversion to Jacobian coordinates multiplies Y by Z where
+  the formula multiplies it by Z^2, so every point whose Z is not 1 comes
+  out as another point. bin/p256_equiv_test converts multiples of G with
+  the Z the additions before left, there and back.
+
+--- old
+    p256_wide_fe_mul(&o->y, &a->y, &zz);
+--- new
+    p256_wide_fe_mul(&o->y, &a->y, &a->z);

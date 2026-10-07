@@ -65,9 +65,36 @@ void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_p
     havoc_wide_point(o);
 }
 
-void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
-    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double: point readable");
+static void havoc_wide_jacobian(p256_wide_jacobian *o) {
+    __CPROVER_assert(__CPROVER_w_ok(o, sizeof *o), "jacobian output writable");
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->x.word[i] = nondet_u64();
+        o->y.word[i] = nondet_u64();
+        o->z.word[i] = nondet_u64();
+    }
+}
+
+void p256_wide_point_to_jacobian(p256_wide_jacobian *o, const p256_wide_point *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "to_jacobian: point readable");
+    havoc_wide_jacobian(o);
+}
+
+void p256_wide_point_from_jacobian(p256_wide_point *o, const p256_wide_jacobian *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "from_jacobian: point readable");
     havoc_wide_point(o);
+}
+
+void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double_jacobian: point readable");
+    havoc_wide_jacobian(o);
+}
+
+void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_wide_jacobian *a,
+                                             const p256_wide_jacobian *b) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "add_jacobian_incomplete: first point readable");
+    __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b),
+                     "add_jacobian_incomplete: second point readable");
+    havoc_wide_jacobian(o);
 }
 
 #endif

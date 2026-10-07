@@ -8123,3 +8123,145 @@ does nothing more.
     - **The key exchange.** Its windows add a multiple of the peer's
       point to a sum the doublings moved, so it needs an argument of its
       own. It keeps Algorithm 4 until that change.
+
+112. **A host object's key exchange doubles and adds in Jacobian coordinates,
+    and Lean proves that its windows 62 to 1 meet the incomplete addition's
+    condition.** Entry 108 moved the key exchange's doubling to
+    dbl-2007-bl-2 in homogeneous coordinates, ten products, and its
+    additions stayed on Renes, Costello and Batina's Algorithm 4, entry
+    111's last rejected item. Camilo ruled for Jacobian coordinates over
+    keeping homogeneous ones with an incomplete addition, which a scratch
+    program timed at less than half this change's gain (below).
+
+    - **What runs.** `p256_wide_mul` moves its point to Jacobian
+      coordinates, (X Z : Y Z^2 : Z), and computes its odd multiples and
+      adds windows 62 to 1 there. `p256_wide_point_double_jacobian` runs
+      the Explicit-Formulas Database's dbl-1986-cc-2 for a = -3:
+      s = 4 X1 Y1^2 and m = 3 (X1 - Z1^2) (X1 + Z1^2) give
+      X3 = m^2 - 2 s, Y3 = m (s - X3) - 8 Y1^4 and Z3 = 2 Y1 Z1. That is
+      four products and four squares where dbl-2007-bl-2 runs seven and
+      three, and a key exchange doubles 253 times.
+      `p256_wide_point_add_jacobian_incomplete` runs add-1998-cmo-2,
+      twelve products and four squares, where Algorithm 4 runs fourteen
+      products, and seven additions and subtractions where Algorithm 4
+      runs 29. Window 0 and the correction for an even k move the sum
+      back, (X Z : Y : Z^3), and add by Algorithm 4. Entry 108's
+      homogeneous doubling has no caller left and is gone, with its
+      model and its rows, and its four violations moved to the new
+      routines.
+    - **Why dbl-1986-cc-2.** The database's dbl-2001-b runs three
+      products and five squares. It computes Z3 as
+      (Y1 + Z1)^2 - Y1^2 - Z1^2, a square and three additions, where
+      dbl-1986-cc-2 computes 2 Y1 Z1, a product and one. In a scratch
+      program on the M1 Pro the multiplication took 57.9 µs on
+      dbl-2001-b and 54.3 µs on dbl-1986-cc-2.
+    - **Statement order.** The doubling computes Z3 = 2 Y1 Z1 first, and
+      the addition computes Z3 = Z1 Z2 h as soon as it has h, where the
+      database computes both last. The next doubling squares Z first, so
+      with Z3 last each doubling waited for the product and the sum that
+      end the one before. In a scratch program on the M1 Pro the
+      multiplication took 58.2 µs in the database's order and 54.0 µs in
+      this one, on the same products and sums.
+    - **The condition.** h = X2 Z1^2 - X1 Z2^2 is zero where the two x
+      are equal, and Z3 = Z1 Z2 h is zero where h is and where either
+      point is the point at infinity. A point and its negative, and two
+      points at infinity, then give the point at infinity, which is
+      their sum. A point and itself, and the point at infinity with a
+      finite point, give it too, which is not. So both points must be
+      finite and their x must differ.
+    - **Why the multiples and windows 62 to 1 meet it.** n is prime and
+      the curve has n points, so every finite point p has order n. The
+      multiples add 2p to (2j - 1) p for j from 1 to 7: 2j - 1, 2j - 3
+      and 2j + 1 are odd and at most 15 in size, so none is a multiple
+      of n. Where window i adds its entry, the sum is T·p for T, the sum
+      of d_j 16^(j - i) over the windows j above i, and the entry is d_i·p.
+      Every digit is odd and at most 15 in size, so T is 16 times an odd
+      number, T + d_i and T - d_i are odd, and all three are below
+      16^(64 - i) in size: 2^252 at window 1, which is below n. None of
+      the three is a multiple of n. Where p is the point at infinity,
+      Z stays zero through the doubling and the addition, and the point
+      at infinity is each one's sum.
+    - **Why window 0 does not.** There T can be above n. For k = n - 2
+      the window's digit is -1 and the sum before it is (n - 1)·p = -p,
+      which is the entry. That K = k | 1 serves n - 2 and n - 3. The
+      correction keeps the complete addition too, because for k = n - 1
+      the sum it adds -p to is the point at infinity.
+    - **The proof.** `spec/lean/Spec/P256WidePoint.lean` holds the four
+      routines, one `let` for each C statement.
+      `doubleJacobian_represents` proves that the doubling gives P + P
+      for every point of every curve y^2 = x^3 - 3x + b over every field
+      in which 2 is not zero. `addJacobianIncomplete_represents` proves
+      that the addition gives P + Q for two finite points whose x
+      differ, over every field, and `toJacobian_represents` and
+      `fromJacobian_represents` that the conversions keep every point.
+      `multiples` and `ladderSum` are the two loops, and
+      `multiples_represents` and `ladderSum_represents` prove the
+      argument above for digits odd and at most 15 in size, wherever the
+      point's order is at least 16^63. The `_p256` forms state them at
+      P-256 for every finite point, with p and n prime and n • P = 0 as
+      hypotheses, and `multiples_z_eq_zero` and `ladderSum_z_eq_zero`
+      prove the point at infinity's case. `bin/diff_p256_wide` compares
+      the C's coordinates with the model's in 375 rows on random
+      coordinates and where a value a routine computes is zero.
+    - **What holds it.** `bin/p256_equiv_test` holds the doubling, the
+      addition and the conversions to the complete addition as points,
+      requires the shapes outside the addition's condition to give what
+      `p256_wide_point.h` states, and multiplies a point by n - 2 and
+      n - 3. Eight violations: window 0 on the incomplete addition, which
+      those two scalars catch; a step left out of the doubling, of the
+      addition and of the conversion to Jacobian coordinates, which the
+      same test catches;
+      the conversion back without its masked move, which the same test
+      catches, and with its mask read from X, and a sign of the
+      addition's Y3 flipped, which `bin/diff_p256_wide` catches; and the
+      masked move as a branch, which `lint-wide-multiply` catches. The
+      `p256_wide_point` proof covers the four routines in every aliasing
+      shape `p256_wide_mul` uses, 319 properties in 3 s, and the
+      `p256_wide_mul` proof runs the new loops over their stubs, 423
+      properties in 37 s. `lint-wide-multiply` counts 13 conditional
+      branches in `p256_wide_mul.c` where it counted 12: the loop of four
+      doublings runs in the loop over windows 62 to 1 and once more
+      before window 0.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      `bench/primitives.c` over five runs of each in turn at a load average
+      of about 5, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting:
+
+      | | homogeneous, Algorithm 4 | Jacobian | OpenSSL |
+      | --- | --- | --- | --- |
+      | key exchange | 67.5 µs, 712,504 instructions | 58.1 µs, 613,292 | 40.1 µs |
+
+      That takes a key exchange from 1.68 to 1.45 times OpenSSL's time.
+      Under qemu-x86_64 a key exchange retires 1,397,855 instructions
+      before and 1,205,967 after under gcc 13.3, and 1,108,572 and
+      955,202 under clang 18.1.3. Key generation and signatures do not
+      move.
+    - **Timing.** `bin/timing_p256_wide` read the key exchange's two
+      rows, a random fixed scalar and one whose windows all name the same
+      multiple, at 3.01 and below in six runs on the M1 Pro, where the
+      code before read 1.94 and below in six runs in the same sitting.
+      Every other row read 2.3 and below. The change adds no branch and
+      no address that reads the scalar.
+    - **Cost.** 612 more bytes of text in `p256_wide_point.c` and 136 in
+      `p256_wide_mul.c` under Apple clang 21, and 1,080 and 79 under
+      gcc 13 for x86-64. `p256_wide_mul` writes 2,088 bytes of stack
+      below its caller where it wrote 1,672. A device object holds
+      neither file.
+
+    Rejected:
+
+    - **Homogeneous coordinates with an incomplete addition.** The
+      database's add-1998-cmo-2 for homogeneous coordinates runs twelve
+      products, two squares and seven additions and subtractions. Beside
+      entry 108's doubling, the scratch program's multiplication took
+      59.3 µs on it, where it took 63.2 µs on Algorithm 4 and 53.9 µs in
+      Jacobian coordinates.
+    - **A masked complete addition in Jacobian coordinates for window 0
+      and the correction.** It would run the addition and the doubling
+      and keep one by mask, 24 products each, where moving back and
+      adding by Algorithm 4 runs 20 for window 0 and 14 for the
+      correction, and it would need a theorem of its own.
+    - **Affine multiples.** One inversion and 21 products would make the
+      eight multiples affine and each window's addition a mixed one,
+      eleven products, but the inversion costs about as much as the 62
+      additions would save.

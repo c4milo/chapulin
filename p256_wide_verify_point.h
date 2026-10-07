@@ -15,17 +15,9 @@
 #include "p256_point.h"
 #include "p256_scalar.h"
 #include "p256_wide_field.h"
+#include "p256_wide_point.h"
 
 #ifdef CH_CPU_RUNTIME
-
-// A point in Jacobian coordinates: the affine point (X/Z^2, Y/Z^3), each
-// coordinate in the Montgomery domain and below p, and Z = 0 the point at
-// infinity.
-typedef struct {
-    p256_wide_fe x;
-    p256_wide_fe y;
-    p256_wide_fe z;
-} p256_wide_jacobian;
 
 // The key p256_wide_point_from_bytes took, as a Jacobian point. The decoder
 // writes the affine coordinates with Z = 1, and with Z = 1 the projective

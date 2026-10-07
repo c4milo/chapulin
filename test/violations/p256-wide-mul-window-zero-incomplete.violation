@@ -1,0 +1,17 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: window 0 adds its entry by the incomplete Jacobian addition in
+  place of the complete one. For k = n - 2 and n - 3 the sum before
+  window 0 is -p, and so is the entry, so the addition gives Z3 = 0: k * p
+  comes out as the point at infinity for n - 2, and as -p for n - 3, whose
+  correction then takes p away. Every other scalar is still right.
+  bin/p256_equiv_test multiplies a point by both.
+
+--- old
+    p256_wide_point_from_jacobian(&total, &sum);
+    p256_wide_point_from_jacobian(&last, &entry);
+    p256_wide_point_add(&total, &total, &last);
+--- new
+    p256_wide_point_add_jacobian_incomplete(&sum, &sum, &entry);
+    p256_wide_point_from_jacobian(&total, &sum);

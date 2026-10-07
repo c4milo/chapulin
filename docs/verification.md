@@ -742,8 +742,11 @@ The entries are grouped by area:
     returns a value below 16 at every position the loop passes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
     shapes, `p256_wide_point_add_affine`,
-    `p256_wide_point_add_affine_incomplete` and `p256_wide_point_double`
-    in both of theirs, `p256_wide_point_from_bytes` over any 65 bytes and
+    `p256_wide_point_add_affine_incomplete` and
+    `p256_wide_point_double_jacobian` in both of theirs,
+    `p256_wide_point_add_jacobian_incomplete` in its three, the two
+    conversions between homogeneous and Jacobian points,
+    `p256_wide_point_from_bytes` over any 65 bytes and
     `p256_wide_point_affine` with and without a y output, over the field
     stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
   - `p256_wide_digit`: the digits and the scan of the table, on their
@@ -2515,19 +2518,26 @@ itself or to the point at infinity, which is what lets the ladder run
 without a branch. That is Renes, Costello and Batina's theorem, tested
 here and not machine checked.
 
-The doubling a host object's key exchange runs, `p256_wide_point_double`
-(docs/decisions.md 108), is machine checked.
+The routines a host object's key exchange runs in Jacobian coordinates
+(docs/decisions.md 112) are machine checked.
 [`spec/lean/Spec/P256WidePoint.lean`](../spec/lean/Spec/P256WidePoint.lean)
-holds its steps and proves that they double every point of every curve
-y^2 = x^3 - 3x + b with b neither 2 nor -2, over every field in which 2
-and 3 are not zero, the point at infinity and a point with y = 0 among
-them, and states it at P-256 with p prime as its one hypothesis.
-`bin/diff_p256_wide` holds the C's steps to the model's, coordinate for
-coordinate, on random coordinates and where a value the formula computes
-is zero. What none of this shows: that the C is the model on every input,
-which the differential samples, and anything about the complete additions,
-the top window of k·G or the windows of the key exchange, which stay
-tested.
+holds the steps of `p256_wide_point_double_jacobian`,
+`p256_wide_point_add_jacobian_incomplete` and the two conversions. It
+proves that the doubling doubles every point of every curve
+y^2 = x^3 - 3x + b over every field in which 2 is not zero, the point at
+infinity and a point with y = 0 among them; that the addition adds two
+finite points whose x differ, over every field; and that the conversions
+keep every point. It also proves that the key exchange's odd multiples and
+its windows 62 to 1 meet the addition's condition at every addition, so
+they compute the multiples and the sum of the windows' multiples of the
+point: for digits that are odd and at most 15 in size, wherever the
+point's order is at least 2^252, and at P-256 for every finite point with
+p and n prime and n • P = 0 as hypotheses. `bin/diff_p256_wide` holds the
+C's steps to the model's, coordinate for coordinate, on random coordinates
+and where a value a routine computes is zero. What none of this shows:
+that the C is the model on every input, which the differential samples,
+and anything about the complete additions, the top window of k·G, window 0
+of the key exchange or the corrections, which stay tested.
 
 The incomplete addition a host object's k·G runs in windows 1 to 41,
 `p256_wide_point_add_affine_incomplete` (docs/decisions.md 111), is
@@ -2553,7 +2563,7 @@ vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 67,984 comparisons on a CPU with the
+  32-bit files on the same inputs, 68,051 comparisons on a CPU with the
   SHA-256 instructions, and requires the same words, bytes and verdicts.
   Both fields keep an element in the Montgomery domain with R = 2^256, so
   each comparison is of words taken two at a time, not of a value read
@@ -2576,13 +2586,22 @@ the wide files to the same answers:
     point with the generator, the generator with itself, with its
     negative and with the point at infinity, word for word against the
     complete addition with Z = 1;
-  - the doubling on the point at infinity, on the generator and on 24
-    random multiples of it, four doublings in a row from each, against
-    the complete addition of the point with itself. The two formulas
-    give the same point in other coordinates, so the comparison is of
-    the affine bytes, and a doubling's point at infinity must also be
-    (0 : Y : 0) with Y not zero, which the affine bytes cannot tell from
-    (0 : 0 : 0);
+  - the Jacobian doubling on the point at infinity, on the generator and
+    on 24 random multiples of it, four doublings in a row from each,
+    against the complete addition of the point with itself. The two
+    formulas give the same point in other coordinates, so the comparison
+    is of the affine bytes after the conversion back, whose point at
+    infinity must also be (0 : Y : 0) with Y not zero, which the affine
+    bytes cannot tell from (0 : 0 : 0);
+  - the incomplete Jacobian addition on 24 pairs of random multiples of
+    the generator and on the seven additions that make the odd multiples
+    of a point, against the complete addition as points, and on the
+    inputs outside its condition: a point with its negative and the point
+    at infinity with itself, where it must give the point at infinity,
+    and a point with itself and with the point at infinity on either
+    side, where its Z must be zero; and both conversions, there and back,
+    on the same points and on the Jacobian point with every coordinate
+    zero;
   - the incomplete addition on 24 random multiples of the generator and
     entries of the table, against the complete addition as points, and
     on the three inputs outside its condition: the generator with
@@ -2591,10 +2610,11 @@ the wide files to the same answers:
     it must give (0 : Y : 0) with Y not zero;
   - the point decode on a point and on each way a point is refused, and
     the affine conversion on a finite point and on the point at infinity;
-  - both scalar multiplications on 21 scalars at the edges, 0, 1, n - 1,
-    n, n + 1 and 2^256 - 1 among them, and the two whose sum before the
-    top window of k·G is that window's entry, and on 40 random ones, half
-    of them even;
+  - both scalar multiplications on 23 scalars at the edges, 0, 1, n - 1,
+    n, n + 1 and 2^256 - 1 among them, the two whose sum before the top
+    window of k·G is that window's entry, and n - 2 and n - 3, whose sum
+    before window 0 of k·p is that window's entry, and on 40 random ones,
+    half of them even;
   - a key pair, a signature and a shared secret under both answers.
 - `bin/p256_equiv_test_sum`, in `make check`, is that binary with the
   two carry steps of `p256_wide_word.h` on the 128-bit sums, the form
@@ -2666,8 +2686,9 @@ the wide files to the same answers:
   or fails it under `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 - `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
   signature and a key exchange against the Lean spec under each answer,
-  and the doubling and the incomplete addition against
-  `spec/lean/Spec/P256WidePoint.lean`'s, coordinate for coordinate ([What `make diff` runs](#what-make-diff-runs)).
+  and the incomplete additions, the Jacobian doubling and the two
+  conversions against `spec/lean/Spec/P256WidePoint.lean`'s, coordinate for
+  coordinate ([What `make diff` runs](#what-make-diff-runs)).
 - `bin/widemul_runtime_test` counts the calls: the wide entries alone
   under the constant-time answer and the 32-bit files alone under every
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
@@ -4276,9 +4297,10 @@ only works when a shared misreading cannot make both sides agree. There
 are two exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
 `tls_write.c` line by line: its theorems bound that code's own
 intermediate values, which no RFC states. `Spec/P256WidePoint.lean`
-models `p256_wide_point_double` and `p256_wide_point_add_affine_incomplete`
-the same way: its theorems say what that code's steps compute, and no
-standard states those steps.
+models `p256_wide_point_add_affine_incomplete`, the Jacobian doubling,
+the incomplete Jacobian addition and the two conversions the same way:
+its theorems say what that code's steps compute, and no standard states
+those steps.
 [`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
 safe.
 
@@ -4304,21 +4326,25 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 401 comparisons, where the compiler
+4. The constant-time P-256 rows, 651 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
    answer the spec. The key generation must write the spec's public
    key. The spec's verifier must accept the signature and refuse it for
    a hash with one byte changed. The key exchange with the spec's point
-   b G must give the X coordinate of the spec's (a b) G. Then 125
-   doublings through `p256_wide_point_double` against
-   `Spec/P256WidePoint.lean`'s `double`, coordinate for coordinate: 25
-   on random coordinates, and 25 each where Z, Y, X - Z and X + Z is
-   zero. Then 75 incomplete additions through
-   `p256_wide_point_add_affine_incomplete` against `addAffineIncomplete`:
-   25 on random coordinates, 25 at Z = 0, and 25 at Z = 1 with the two x
-   equal.
+   b G must give the X coordinate of the spec's (a b) G. Then 75
+   incomplete mixed additions through
+   `p256_wide_point_add_affine_incomplete` against
+   `Spec/P256WidePoint.lean`'s `addAffineIncomplete`, coordinate for
+   coordinate: 25 on random coordinates, 25 at Z = 0, and 25 at Z = 1
+   with the two x equal. Then the key exchange's routines against the
+   model's: 50 conversions to Jacobian coordinates, 25 on random
+   coordinates and 25 at Z = 0; 75 conversions back, the same and 25 at
+   Z = 0 with Y = 0; 125 doublings, 25 on random coordinates and 25 each
+   where Z, Y, X - Z^2 and X + Z^2 is zero; and 125 incomplete
+   additions, 25 on random coordinates, 25 each at Z1 = 0 and at Z2 = 0,
+   25 with the same x and Z, and 25 on one point twice.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

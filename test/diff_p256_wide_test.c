@@ -201,11 +201,10 @@ static void diff_ecdh(uint8_t widemul) {
     }
 }
 
-// The doubling row's coordinates, X, Y and Z, each a plain field element below p as 32
-// big-endian bytes, and the incomplete addition's, X, Y and Z of the projective point and then
-// x and y of the affine one.
+// A row's coordinates are plain field elements below p, each 32 big-endian bytes: X, Y and Z of
+// each point it reads, and then x and y for an affine one. A point routine writes three.
 #define COORDINATES 3
-#define ADD_COORDINATES 5
+#define MOST_COORDINATES 6
 
 // One element below p: the top bit clear keeps it below 2^255, which is below p.
 static void draw_element(uint8_t element[P256_FE_LEN]) {
@@ -230,99 +229,159 @@ static void element_command(char *cmd, size_t cmd_size, const char *op,
     }
 }
 
-// What the spec answers for a point: X, Y and Z moved out of the Montgomery domain, in hex.
-static void point_reply(char want[COORDINATES * HEX_LEN(P256_FE_LEN)],
-                        const p256_wide_point *point) {
-    const p256_wide_fe *const slot[COORDINATES] = {&point->x, &point->y, &point->z};
+// One point routine of p256_wide_point.h, on the row's coordinates in the Montgomery domain: it
+// writes the three coordinates of its answer.
+typedef void (*point_routine)(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]);
+
+// The routine on count coordinates against the spec's op on the same ones, coordinate for
+// coordinate. Both sides take plain elements: this side moves each into the Montgomery domain,
+// runs the routine and moves each coordinate of its answer back out.
+static void diff_point_row(const char *op, uint8_t coordinate[][P256_FE_LEN], size_t count,
+                           point_routine routine) {
+    p256_wide_fe in[MOST_COORDINATES];
+    p256_wide_fe out[COORDINATES];
+    char cmd[32 + MOST_COORDINATES * HEX_LEN(P256_FE_LEN)];
+    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
+    element_command(cmd, sizeof cmd, op, coordinate, count);
+    for (size_t i = 0; i < count; i++) {
+        element_to_mont(&in[i], coordinate[i]);
+    }
+    routine(out, in);
     size_t want_len = 0;
     for (size_t i = 0; i < COORDINATES; i++) {
         p256_wide_fe plain;
         uint8_t bytes[P256_FE_LEN];
-        p256_wide_fe_from_mont(&plain, slot[i]);
+        p256_wide_fe_from_mont(&plain, &out[i]);
         p256_wide_fe_to_bytes(bytes, &plain);
         if (i > 0) {
             want[want_len++] = ' ';
         }
         want_len += hex_encode(want + want_len, bytes, sizeof bytes);
     }
-}
-
-// p256_wide_point_double on three coordinates against the spec's p256_double of the same
-// three, coordinate for coordinate. Both sides take plain elements: this side moves each into
-// the Montgomery domain, doubles in place, the shape a multiplication doubles in, and moves
-// each back out.
-static void diff_double_row(uint8_t coordinate[COORDINATES][P256_FE_LEN]) {
-    p256_wide_point point;
-    char cmd[16 + COORDINATES * HEX_LEN(P256_FE_LEN)];
-    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
-    element_command(cmd, sizeof cmd, "p256_double", coordinate, COORDINATES);
-    element_to_mont(&point.x, coordinate[0]);
-    element_to_mont(&point.y, coordinate[1]);
-    element_to_mont(&point.z, coordinate[2]);
-    p256_wide_point_double(&point, &point);
-    point_reply(want, &point);
     expect(cmd, want);
 }
 
-// The doubling row on random coordinates, on the curve or not, and then on the inputs where a
-// value the formula computes is zero: Z = 0, which is where the masked move runs, Y = 0, where
-// s is zero and the move does not run, and X = Z and X = -Z, where w is zero.
-static void diff_double(void) {
+// The routines, each in the shape p256_wide_mul.c or p256_wide_base_mul calls it in: the two
+// additions and the doubling write over their first point.
+static void run_add_affine_incomplete(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]) {
+    p256_wide_point a = {in[0], in[1], in[2]};
+    p256_wide_affine b = {in[3], in[4]};
+    p256_wide_point_add_affine_incomplete(&a, &a, &b);
+    out[0] = a.x;
+    out[1] = a.y;
+    out[2] = a.z;
+}
+
+static void run_to_jacobian(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]) {
+    p256_wide_point a = {in[0], in[1], in[2]};
+    p256_wide_jacobian o;
+    p256_wide_point_to_jacobian(&o, &a);
+    out[0] = o.x;
+    out[1] = o.y;
+    out[2] = o.z;
+}
+
+static void run_from_jacobian(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]) {
+    p256_wide_jacobian a = {in[0], in[1], in[2]};
+    p256_wide_point o;
+    p256_wide_point_from_jacobian(&o, &a);
+    out[0] = o.x;
+    out[1] = o.y;
+    out[2] = o.z;
+}
+
+static void run_double_jacobian(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]) {
+    p256_wide_jacobian a = {in[0], in[1], in[2]};
+    p256_wide_point_double_jacobian(&a, &a);
+    out[0] = a.x;
+    out[1] = a.y;
+    out[2] = a.z;
+}
+
+static void run_add_jacobian_incomplete(p256_wide_fe out[COORDINATES], const p256_wide_fe in[]) {
+    p256_wide_jacobian a = {in[0], in[1], in[2]};
+    p256_wide_jacobian b = {in[3], in[4], in[5]};
+    p256_wide_point_add_jacobian_incomplete(&a, &a, &b);
+    out[0] = a.x;
+    out[1] = a.y;
+    out[2] = a.z;
+}
+
+// Z^2 for the plain element Z: through the Montgomery domain, where the square is.
+static void plain_square(uint8_t out[P256_FE_LEN], const uint8_t element[P256_FE_LEN]) {
+    p256_wide_fe value;
+    element_to_mont(&value, element);
+    p256_wide_fe_sqr(&value, &value);
+    p256_wide_fe_from_mont(&value, &value);
+    p256_wide_fe_to_bytes(out, &value);
+}
+
+// The incomplete mixed addition on random coordinates, on the curve or not, and then on two
+// inputs outside its condition: Z = 0, and Z = 1 with x = X, two points with the same x. On
+// both the result's Z is zero, and the two sides must still agree on every coordinate.
+static void diff_add_affine_incomplete(void) {
+    uint8_t coordinate[5][P256_FE_LEN];
+    for (size_t i = 0; i < 5; i++) {
+        draw_element(coordinate[i]);
+    }
+    diff_point_row("p256_add_affine_incomplete", coordinate, 5, run_add_affine_incomplete);
+    memset(coordinate[2], 0, P256_FE_LEN);
+    diff_point_row("p256_add_affine_incomplete", coordinate, 5, run_add_affine_incomplete);
+    coordinate[2][P256_FE_LEN - 1] = 1;
+    memcpy(coordinate[3], coordinate[0], P256_FE_LEN);
+    diff_point_row("p256_add_affine_incomplete", coordinate, 5, run_add_affine_incomplete);
+}
+
+// Both conversions and the doubling on random coordinates, on the curve or not, and then on the
+// inputs where a value they compute is zero: Z = 0, where the conversion back moves 1 into Y,
+// and with Y = 0 too, where nothing else would; and for the doubling Y = 0, where Z3 is zero,
+// and X = Z^2 and X = -Z^2, where m is.
+static void diff_jacobian_one_point(void) {
     uint8_t coordinate[COORDINATES][P256_FE_LEN];
     for (size_t i = 0; i < COORDINATES; i++) {
         draw_element(coordinate[i]);
     }
-    diff_double_row(coordinate);
+    diff_point_row("p256_to_jacobian", coordinate, COORDINATES, run_to_jacobian);
+    diff_point_row("p256_from_jacobian", coordinate, COORDINATES, run_from_jacobian);
+    diff_point_row("p256_double_jacobian", coordinate, COORDINATES, run_double_jacobian);
     memset(coordinate[2], 0, P256_FE_LEN);
-    diff_double_row(coordinate);
+    diff_point_row("p256_to_jacobian", coordinate, COORDINATES, run_to_jacobian);
+    diff_point_row("p256_from_jacobian", coordinate, COORDINATES, run_from_jacobian);
+    diff_point_row("p256_double_jacobian", coordinate, COORDINATES, run_double_jacobian);
+    memset(coordinate[1], 0, P256_FE_LEN);
+    diff_point_row("p256_from_jacobian", coordinate, COORDINATES, run_from_jacobian);
     draw_element(coordinate[2]);
     coordinate[2][P256_FE_LEN - 1] |= 1;
-    memset(coordinate[1], 0, P256_FE_LEN);
-    diff_double_row(coordinate);
+    diff_point_row("p256_double_jacobian", coordinate, COORDINATES, run_double_jacobian);
     draw_element(coordinate[1]);
-    memcpy(coordinate[0], coordinate[2], P256_FE_LEN);
-    diff_double_row(coordinate);
-    p256_wide_fe z;
-    p256_wide_fe_from_bytes(&z, coordinate[2]);
-    p256_wide_fe_neg(&z, &z);
-    p256_wide_fe_to_bytes(coordinate[0], &z);
-    diff_double_row(coordinate);
+    plain_square(coordinate[0], coordinate[2]);
+    diff_point_row("p256_double_jacobian", coordinate, COORDINATES, run_double_jacobian);
+    p256_wide_fe x;
+    p256_wide_fe_from_bytes(&x, coordinate[0]);
+    p256_wide_fe_neg(&x, &x);
+    p256_wide_fe_to_bytes(coordinate[0], &x);
+    diff_point_row("p256_double_jacobian", coordinate, COORDINATES, run_double_jacobian);
 }
 
-// p256_wide_point_add_affine_incomplete on a projective point and an affine one against the
-// spec's p256_add_affine_incomplete of the same five coordinates, coordinate for coordinate.
-// As in the doubling's row, both sides take plain elements, and this side adds in place, the
-// shape p256_wide_base_mul adds in.
-static void diff_add_affine_incomplete_row(uint8_t coordinate[ADD_COORDINATES][P256_FE_LEN]) {
-    p256_wide_point point;
-    p256_wide_affine affine;
-    char cmd[32 + ADD_COORDINATES * HEX_LEN(P256_FE_LEN)];
-    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
-    element_command(cmd, sizeof cmd, "p256_add_affine_incomplete", coordinate, ADD_COORDINATES);
-    element_to_mont(&point.x, coordinate[0]);
-    element_to_mont(&point.y, coordinate[1]);
-    element_to_mont(&point.z, coordinate[2]);
-    element_to_mont(&affine.x, coordinate[3]);
-    element_to_mont(&affine.y, coordinate[4]);
-    p256_wide_point_add_affine_incomplete(&point, &point, &affine);
-    point_reply(want, &point);
-    expect(cmd, want);
-}
-
-// The incomplete addition's row on random coordinates, on the curve or not, and then on two
-// inputs outside its condition: Z = 0, and Z = 1 with x = X, two points with the same x. On
-// both the result's Z is zero, and the two sides must still agree on every coordinate.
-static void diff_add_affine_incomplete(void) {
-    uint8_t coordinate[ADD_COORDINATES][P256_FE_LEN];
-    for (size_t i = 0; i < ADD_COORDINATES; i++) {
+// The incomplete Jacobian addition on random coordinates, on the curve or not, and then on
+// inputs outside its condition, where Z3 is zero: Z1 = 0, Z2 = 0, two points with the same x and
+// Z, and one point twice.
+static void diff_add_jacobian_incomplete(void) {
+    uint8_t coordinate[MOST_COORDINATES][P256_FE_LEN];
+    for (size_t i = 0; i < MOST_COORDINATES; i++) {
         draw_element(coordinate[i]);
     }
-    diff_add_affine_incomplete_row(coordinate);
+    diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
     memset(coordinate[2], 0, P256_FE_LEN);
-    diff_add_affine_incomplete_row(coordinate);
-    coordinate[2][P256_FE_LEN - 1] = 1;
+    diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
+    draw_element(coordinate[2]);
+    memset(coordinate[5], 0, P256_FE_LEN);
+    diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
     memcpy(coordinate[3], coordinate[0], P256_FE_LEN);
-    diff_add_affine_incomplete_row(coordinate);
+    memcpy(coordinate[5], coordinate[2], P256_FE_LEN);
+    diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
+    memcpy(coordinate[4], coordinate[1], P256_FE_LEN);
+    diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
 }
 
 #define ROUNDS 25
@@ -341,8 +400,9 @@ int main(int argc, char **argv) {
         }
     }
     for (int round = 0; round < ROUNDS; round++) {
-        diff_double();
         diff_add_affine_incomplete();
+        diff_jacobian_one_point();
+        diff_add_jacobian_incomplete();
     }
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

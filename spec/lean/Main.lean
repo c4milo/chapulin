@@ -21,6 +21,13 @@ def hexArg? (s : String) : Option ByteArray :=
 def emit (b : ByteArray) : String :=
   if b.size == 0 then "-" else bytesToHex b
 
+/-- P-256 field elements from hex arguments, each 32 big-endian bytes below `p`, and nothing for
+any other argument. -/
+def p256Coordinates? (args : List String) : Option (List (ZMod Spec.P256.p)) := do
+  let coordinates ← args.mapM hexArg?
+  guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
+  return coordinates.map fun c => (bytesToNatBE c : ZMod _)
+
 /-- The QUIC version a `quic_` row names by its Version field in decimal,
 and nothing for a field `Spec.Quic.Version.ofField?` does not read. -/
 def quicVersion? (field : String) : Option Spec.Quic.Version := do
@@ -489,21 +496,33 @@ def dispatch : List String → Option String
     let sb ← hexArg? s
     guard (pb.size == 64 && h.size == 32 && rb.size == 32 && sb.size == 32)
     return if Spec.P256.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
-  | ["p256_double", x, y, z] => do
-    -- p256_wide_point_double's three coordinates, each 32 big-endian bytes below p, out of the
-    -- Montgomery domain on both sides (Spec/P256WidePoint.lean).
-    let coordinates ← [x, y, z].mapM hexArg?
-    guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
-    let field : List (ZMod Spec.P256.p) := coordinates.map fun c => (bytesToNatBE c : ZMod _)
-    let o := Spec.P256WidePoint.double ⟨field[0]!, field[1]!, field[2]!⟩
+  | ["p256_to_jacobian", x, y, z] => do
+    -- p256_wide_point_to_jacobian's homogeneous X, Y and Z, each 32 big-endian bytes below p,
+    -- out of the Montgomery domain on both sides (Spec/P256WidePoint.lean).
+    let field ← p256Coordinates? [x, y, z]
+    let o := Spec.P256WidePoint.toJacobian ⟨field[0]!, field[1]!, field[2]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_from_jacobian", x, y, z] => do
+    -- p256_wide_point_from_jacobian's Jacobian X, Y and Z, the same way.
+    let field ← p256Coordinates? [x, y, z]
+    let o := Spec.P256WidePoint.fromJacobian ⟨field[0]!, field[1]!, field[2]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_double_jacobian", x, y, z] => do
+    -- p256_wide_point_double_jacobian's Jacobian X, Y and Z, the same way.
+    let field ← p256Coordinates? [x, y, z]
+    let o := Spec.P256WidePoint.doubleJacobian ⟨field[0]!, field[1]!, field[2]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_add_jacobian_incomplete", x, y, z, x2, y2, z2] => do
+    -- p256_wide_point_add_jacobian_incomplete's two Jacobian points, the same way.
+    let field ← p256Coordinates? [x, y, z, x2, y2, z2]
+    let o := Spec.P256WidePoint.addJacobianIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
+      ⟨field[3]!, field[4]!, field[5]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
   | ["p256_add_affine_incomplete", x, y, z, x2, y2] => do
     -- p256_wide_point_add_affine_incomplete's projective X, Y and Z and affine x and y, each
     -- 32 big-endian bytes below p, out of the Montgomery domain on both sides
     -- (Spec/P256WidePoint.lean).
-    let coordinates ← [x, y, z, x2, y2].mapM hexArg?
-    guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
-    let field : List (ZMod Spec.P256.p) := coordinates.map fun c => (bytesToNatBE c : ZMod _)
+    let field ← p256Coordinates? [x, y, z, x2, y2]
     let o := Spec.P256WidePoint.addAffineIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
       ⟨field[3]!, field[4]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))

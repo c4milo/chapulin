@@ -5,7 +5,9 @@
 // multiple of the point for each digit. p256_wide_base_mul reads its 43 six-bit windows and
 // takes the multiple from the table of multiples of G (p256_wide_table.h), and never doubles.
 // p256_wide_mul reads 64 four-bit windows and takes the multiple from eight multiples of its
-// point, which it computes first, and doubles four times between windows.
+// point, which it computes first, and doubles four times between windows. It runs in Jacobian
+// coordinates, whose doubling takes 8 products where the homogeneous one took 10, and moves to
+// homogeneous coordinates for its last window (docs/decisions.md 112).
 //
 // The digits. Both compute K times the point for K = k | 1, which is odd, and take the point
 // away again when k was even. Write b_j for bit j of K, so b_0 is 1. Then
@@ -143,8 +145,8 @@ static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WI
     o->y.word[3] = y_high[1];
 }
 
-// The same scan over eight projective points.
-static void multiple_select(p256_wide_point *o, const p256_wide_point row[ENTRIES],
+// The same scan over eight points in Jacobian coordinates.
+static void multiple_select(p256_wide_jacobian *o, const p256_wide_jacobian row[ENTRIES],
                             uint64_t index) {
     o->x = FE_ZERO;
     o->y = FE_ZERO;
@@ -175,9 +177,10 @@ static void digit_entry(p256_wide_affine *o, p256_wide_fe *negated, const p256_s
     p256_wide_fe_cmov(&o->y, negated, d.negative);
 }
 
-// The same from the eight multiples of a point, multiple[j] = (2j + 1) times it.
-static void digit_multiple(p256_wide_point *o, p256_wide_fe *negated,
-                           const p256_wide_point multiple[ENTRIES], const p256_scalar *k,
+// The same from the eight multiples of a point, multiple[j] = (2j + 1) times it. Y negated is
+// the negative in Jacobian coordinates too.
+static void digit_multiple(p256_wide_jacobian *o, p256_wide_fe *negated,
+                           const p256_wide_jacobian multiple[ENTRIES], const p256_scalar *k,
                            size_t window) {
     digit d = window_digit(k, window, WINDOW_BITS, WINDOWS);
     multiple_select(o, multiple, d.index);
@@ -228,40 +231,76 @@ void p256_wide_base_mul(p256_point *o, const p256_scalar *k) {
     ct_wipe(&negated, sizeof negated);
 }
 
+// Four doublings: the sum moves up one four-bit window.
+static void double_window(p256_wide_jacobian *sum) {
+    for (int i = 0; i < WINDOW_BITS; i++) {
+        p256_wide_point_double_jacobian(sum, sum);
+    }
+}
+
 void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
-    p256_wide_point multiple[ENTRIES]; // multiple[j] = (2j + 1) * p
-    p256_wide_point twice;
-    p256_wide_point sum;
-    p256_wide_point entry;
+    p256_wide_jacobian multiple[ENTRIES]; // multiple[j] = (2j + 1) * p
+    p256_wide_jacobian twice;
+    p256_wide_jacobian sum;
+    p256_wide_jacobian entry;
+    p256_wide_point point;
+    p256_wide_point total;
+    p256_wide_point last;
     p256_wide_point corrected;
     p256_wide_fe negated;
 
-    p256_wide_point_from_portable(&multiple[0], p);
-    p256_wide_point_double(&twice, &multiple[0]);
+    // n, the order of G, is prime and the curve has n points, so every finite point has order
+    // n. Where p is the point at infinity, every multiple and every sum below is too: the
+    // doubling's Z3 = 2 Y1 Z1 and the incomplete addition's Z3 = Z1 Z2 h are zero where Z1 is,
+    // and the point at infinity is each one's right answer.
+    p256_wide_point_from_portable(&point, p);
+    p256_wide_point_to_jacobian(&multiple[0], &point);
+    p256_wide_point_double_jacobian(&twice, &multiple[0]);
+    // (2j + 1) p = (2j - 1) p + 2p, by the incomplete addition. Its condition holds: 2j - 1,
+    // 2j - 3 and 2j + 1 are odd and at most 15 in size, so none is a multiple of n, and
+    // (2j - 1) p is finite and is neither 2p nor -2p.
     for (size_t j = 1; j < ENTRIES; j++) {
-        p256_wide_point_add(&multiple[j], &multiple[j - 1], &twice);
+        p256_wide_point_add_jacobian_incomplete(&multiple[j], &multiple[j - 1], &twice);
     }
     // Most significant window first: four doublings move the sum up one window, and the
-    // window's digit adds its multiple.
+    // window's digit adds its multiple. Windows 62 to 1 add by the incomplete addition, which
+    // needs a finite sum whose x is not the entry's. Where window i adds its entry, the sum is
+    // T times p, for T the sum of d_j 16^(j - i) over the windows j above i, and the entry is
+    // d_i times p.
+    // Every digit is odd and at most 15 in size, so T is 16 times an odd number, T + d_i and
+    // T - d_i are odd, none of the three is zero, and all three are below 16^(64 - i) in size.
+    // For window 1 that is 2^252, which is below n. So none of the three is a multiple of n:
+    // the sum is finite and is neither the entry nor its negative.
+    // spec/lean/Spec/P256WidePoint.lean proves it (ladderSum_represents_p256).
     digit_multiple(&sum, &negated, multiple, k, WINDOWS - 1);
-    for (size_t window = WINDOWS - 1; window > 0; window--) {
-        for (int i = 0; i < WINDOW_BITS; i++) {
-            p256_wide_point_double(&sum, &sum);
-        }
+    for (size_t window = WINDOWS - 1; window > 1; window--) {
+        double_window(&sum);
         digit_multiple(&entry, &negated, multiple, k, window - 1);
-        p256_wide_point_add(&sum, &sum, &entry);
+        p256_wide_point_add_jacobian_incomplete(&sum, &sum, &entry);
     }
-    // The digits are those of k | 1, so an even k takes p away again, by mask.
-    entry = multiple[0];
-    p256_wide_fe_neg(&entry.y, &entry.y);
-    p256_wide_point_add(&corrected, &sum, &entry);
-    point_cmov(&sum, &corrected, p256_wide_mask(scalar_bit(k, 0) ^ 1U));
-    p256_wide_point_to_portable(o, &sum);
+    // Window 0 keeps the complete addition, in homogeneous coordinates, because there T can
+    // exceed n: for k = n - 2 the sum before it is n - 1 times p, which is -p, and the entry is
+    // -p too.
+    double_window(&sum);
+    digit_multiple(&entry, &negated, multiple, k, 0);
+    p256_wide_point_from_jacobian(&total, &sum);
+    p256_wide_point_from_jacobian(&last, &entry);
+    p256_wide_point_add(&total, &total, &last);
+    // The digits are those of k | 1, so an even k takes p away again: the total plus -p is
+    // computed for every k and kept by mask. This addition is complete too, because for
+    // k = n - 1 the total is the point at infinity.
+    p256_wide_fe_neg(&point.y, &point.y);
+    p256_wide_point_add(&corrected, &total, &point);
+    point_cmov(&total, &corrected, p256_wide_mask(scalar_bit(k, 0) ^ 1U));
+    p256_wide_point_to_portable(o, &total);
 
     ct_wipe(multiple, sizeof multiple);
     ct_wipe(&twice, sizeof twice);
     ct_wipe(&sum, sizeof sum);
     ct_wipe(&entry, sizeof entry);
+    ct_wipe(&point, sizeof point);
+    ct_wipe(&total, sizeof total);
+    ct_wipe(&last, sizeof last);
     ct_wipe(&corrected, sizeof corrected);
     ct_wipe(&negated, sizeof negated);
 }

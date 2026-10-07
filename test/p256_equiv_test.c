@@ -168,9 +168,11 @@ static void random_wide_scalar(p256_scalar *k, uint32_t low_bit) {
 // windows of p256_wide_base_mul, one bit at the bottom of every window, which
 // makes every digit 1, one at the top of every window, which makes every
 // digit but the top one negative, and that scalar's complement, which makes
-// every digit positive; and last the two scalars whose sum before the top
-// window is that window's entry, the case the top window's complete addition
-// is for (p256_wide_mul.c).
+// every digit positive; then the two scalars whose sum before the top window
+// of k * G is that window's entry, the case the top window's complete
+// addition is for; and last n - 2 and n - 3, whose sum before window 0 of
+// k * p is that window's entry, the case window 0's complete addition is for
+// (p256_wide_mul.c).
 static const char *const SCALAR_EDGE_HEX[] = {
     "0000000000000000000000000000000000000000000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000001",
@@ -193,6 +195,8 @@ static const char *const SCALAR_EDGE_HEX[] = {
     "f7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df",
     "e0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf",
     "e0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaae",
+    "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc63254f",
+    "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc63254e",
 };
 
 static uint8_t nibble(char c) {

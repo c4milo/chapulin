@@ -20,7 +20,9 @@
 // o = k*p, over all 256 bits of k, as p256_point_mul computes it: k is read as a 256-bit
 // value, reduced or not, and p may be any point, the point at infinity among them. It
 // computes the eight odd multiples of p up to 15 p, and then for each of the 64 four-bit
-// windows of k, most significant first, doubles four times and adds one of them.
+// windows of k, most significant first, doubles four times and adds one of them, in Jacobian
+// coordinates. Windows 62 to 1 add by the incomplete addition, whose condition their sums meet
+// for every k, and window 0 by the complete one (p256_wide_mul.c, docs/decisions.md 112).
 void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
 
 // o = k*G, as p256_point_base_mul computes it, for secp256r1's generator G: 43 additions of

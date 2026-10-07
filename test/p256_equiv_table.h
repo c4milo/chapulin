@@ -13,7 +13,7 @@
 // second computation, in C, by the code the proofs and the vectors hold.
 //
 // run_formulas holds p256_wide_point_add_affine,
-// p256_wide_point_add_affine_incomplete and p256_wide_point_double to
+// p256_wide_point_add_affine_incomplete and the four Jacobian routines to
 // p256_point_add:
 //
 //   the mixed addition computes the coordinates the complete addition
@@ -28,12 +28,16 @@
 //   states: (0 : 0 : 0) for a point and itself and for the point at
 //   infinity, and the point at infinity for a point and its negative;
 //
-//   the doubling computes the same point as the complete addition of a
-//   point with itself, in other coordinates, so the two must agree as
-//   points: both at infinity, or the same affine bytes, and the doubling's
-//   point at infinity must be (0 : Y : 0) with Y not zero. Its inputs are
-//   multiples of G, with Z 1 and with a Z the additions before left, and
-//   the point at infinity.
+//   the Jacobian doubling and the incomplete Jacobian addition compute the
+//   same points as the complete addition, in other coordinates, so each
+//   answer, moved back to homogeneous coordinates by
+//   p256_wide_point_from_jacobian, must agree with it as a point: both at
+//   infinity, or the same affine bytes, and a point at infinity must come
+//   back as (0 : Y : 0) with Y not zero. Their inputs are multiples of G,
+//   with Z 1 and with a Z the additions before left, moved to Jacobian
+//   coordinates by p256_wide_point_to_jacobian, and the point at infinity.
+//   Outside the incomplete addition's condition its Z must be zero, as
+//   p256_wide_point.h states.
 //
 // Included by test/p256_equiv_test.c only, which declares the generator,
 // report and the helpers this file uses.
@@ -200,22 +204,111 @@ static int names_a_point(const p256_wide_point *p) {
     return !wide_fe_is_zero(&p->z) || (wide_fe_is_zero(&p->x) && !wide_fe_is_zero(&p->y));
 }
 
+// a in Jacobian coordinates, through p256_wide_point_to_jacobian.
+static void jacobian_of(p256_wide_jacobian *o, const p256_point *a) {
+    p256_wide_point wide;
+    p256_wide_point_from_portable(&wide, a);
+    p256_wide_point_to_jacobian(o, &wide);
+}
+
+// Whether the Jacobian point got is want: moved back by p256_wide_point_from_jacobian, it names
+// a point, and it is want as a point.
+static int jacobian_is(const p256_wide_jacobian *got, const p256_point *want) {
+    p256_wide_point wide;
+    p256_point back;
+    p256_wide_point_from_jacobian(&wide, got);
+    p256_wide_point_to_portable(&back, &wide);
+    return names_a_point(&wide) && same_affine(&back, want);
+}
+
+// a through both conversions comes back as a, as a point.
+static void jacobian_round_trip_case(const char *name, const p256_point *a) {
+    p256_wide_jacobian jacobian;
+    jacobian_of(&jacobian, a);
+    report("jacobian round trip", name, jacobian_is(&jacobian, a));
+}
+
 // 2a in both files, as points, in both shapes a caller uses.
 static void double_case(const char *name, const p256_point *a) {
     p256_point want;
-    p256_point back;
-    p256_wide_point wide_a;
-    p256_wide_point got;
+    p256_wide_jacobian wide_a;
+    p256_wide_jacobian got;
     p256_point_add(&want, a, a);
-    p256_wide_point_from_portable(&wide_a, a);
-    p256_wide_point_double(&got, &wide_a);
-    p256_wide_point_to_portable(&back, &got);
-    int ok = same_affine(&back, &want) && names_a_point(&got);
+    jacobian_of(&wide_a, a);
+    p256_wide_point_double_jacobian(&got, &wide_a);
+    int ok = jacobian_is(&got, &want);
     got = wide_a;
-    p256_wide_point_double(&got, &got);
-    p256_wide_point_to_portable(&back, &got);
-    ok &= same_affine(&back, &want) && names_a_point(&got);
+    p256_wide_point_double_jacobian(&got, &got);
+    ok &= jacobian_is(&got, &want);
     report("double", name, ok);
+}
+
+// a + b by the incomplete Jacobian addition, in the three shapes a caller uses: the sum the
+// complete addition computes where sum is set, and Z = 0 where it is not.
+static void add_jacobian_incomplete_case(const char *name, const p256_point *a, const p256_point *b,
+                                         int sum) {
+    p256_point want;
+    p256_wide_jacobian wide_a;
+    p256_wide_jacobian wide_b;
+    p256_wide_jacobian got;
+    p256_point_add(&want, a, b);
+    jacobian_of(&wide_a, a);
+    jacobian_of(&wide_b, b);
+    int ok = 1;
+    for (int shape = 0; shape < 3; shape++) {
+        if (shape == 0) {
+            p256_wide_point_add_jacobian_incomplete(&got, &wide_a, &wide_b);
+        } else if (shape == 1) {
+            got = wide_a;
+            p256_wide_point_add_jacobian_incomplete(&got, &got, &wide_b);
+        } else {
+            got = wide_b;
+            p256_wide_point_add_jacobian_incomplete(&got, &wide_a, &got);
+        }
+        ok &= sum ? jacobian_is(&got, &want) : wide_fe_is_zero(&got.z);
+    }
+    report("jacobian incomplete add", name, ok);
+}
+
+// The incomplete Jacobian addition on multiples of G whose x differ, on the odd multiples of a
+// point that p256_wide_mul computes first, and on the shapes outside its condition.
+static void run_jacobian(void) {
+    p256_point a;
+    p256_point b;
+    p256_point twice;
+    p256_point negated;
+    p256_scalar k;
+    for (int i = 0; i < 24; i++) {
+        random_wide_scalar(&k, (uint32_t)i & 1U);
+        p256_point_base_mul(&a, &k);
+        random_wide_scalar(&k, (uint32_t)(i + 1) & 1U);
+        p256_point_base_mul(&b, &k);
+        add_jacobian_incomplete_case("two multiples of G", &a, &b, 1);
+        jacobian_round_trip_case("a multiple of G", &a);
+    }
+    // (2j + 1) a = (2j - 1) a + 2a, for j from 1 to 7.
+    random_wide_scalar(&k, 1);
+    p256_point_base_mul(&a, &k);
+    p256_point_add(&twice, &a, &a);
+    b = a;
+    for (int j = 1; j < 8; j++) {
+        add_jacobian_incomplete_case("an odd multiple and twice the point", &b, &twice, 1);
+        p256_point_add(&b, &b, &twice);
+    }
+    negated = a;
+    p256_fe_neg(&negated.y, &negated.y);
+    add_jacobian_incomplete_case("a point and its negative", &a, &negated, 1);
+    add_jacobian_incomplete_case("infinity and infinity", &p256_point_infinity,
+                                 &p256_point_infinity, 1);
+    add_jacobian_incomplete_case("a point and itself", &a, &a, 0);
+    add_jacobian_incomplete_case("infinity and a point", &p256_point_infinity, &a, 0);
+    add_jacobian_incomplete_case("a point and infinity", &a, &p256_point_infinity, 0);
+    jacobian_round_trip_case("the generator", &p256_point_generator);
+    jacobian_round_trip_case("infinity", &p256_point_infinity);
+    // A Jacobian point at infinity may have Y = 0: the conversion back must still name a point.
+    p256_wide_jacobian zeros = {0};
+    report("jacobian round trip", "every coordinate zero",
+           jacobian_is(&zeros, &p256_point_infinity));
 }
 
 static void run_formulas(void) {
@@ -241,6 +334,7 @@ static void run_formulas(void) {
     add_affine_case("infinity and the generator", &p256_point_infinity, &b.x, &b.y);
 
     run_incomplete();
+    run_jacobian();
 
     double_case("infinity", &p256_point_infinity);
     double_case("the generator", &p256_point_generator);

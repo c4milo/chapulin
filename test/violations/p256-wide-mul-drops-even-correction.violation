@@ -7,8 +7,8 @@ reason: p256_wide_mul never keeps the sum it corrected, so an even scalar
   even scalars, 0, 2 and 16 among them and half of its random ones.
 
 --- old
-    p256_wide_point_add(&corrected, &sum, &entry);
-    point_cmov(&sum, &corrected, p256_wide_mask(scalar_bit(k, 0) ^ 1U));
+    p256_wide_point_add(&corrected, &total, &point);
+    point_cmov(&total, &corrected, p256_wide_mask(scalar_bit(k, 0) ^ 1U));
 --- new
-    p256_wide_point_add(&corrected, &sum, &entry);
-    point_cmov(&sum, &corrected, 0);
+    p256_wide_point_add(&corrected, &total, &point);
+    point_cmov(&total, &corrected, 0);

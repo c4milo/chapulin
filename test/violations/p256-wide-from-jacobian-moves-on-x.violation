@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: diff_p256_wide
+reason: the conversion back from Jacobian coordinates builds the move's
+  mask from X where it reads Z. At (0 : 0 : 0) X is zero too, so the
+  point at infinity p256_wide_mul holds still comes out right, and every
+  point at infinity bin/p256_equiv_test converts has X zero or a Y that
+  is not: that test passes. bin/diff_p256_wide converts (X : 0 : 0) for a
+  random X against spec/lean/Spec/P256WidePoint.lean's fromJacobian,
+  which moves 1 into Y there, where this file leaves 0.
+
+--- old
+    p256_wide_fe_cmov(&o->y, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
+--- new
+    p256_wide_fe_cmov(&o->y, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->x));

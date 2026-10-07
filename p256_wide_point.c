@@ -1,7 +1,8 @@
 // P-256 points over the wide field (see p256_wide_point.h for the contracts). Every
 // coordinate is a Montgomery-domain p256_wide_fe. The two complete additions are
 // p256_point.c's with that file's register names, so the two read against each other line by
-// line. The incomplete addition and the doubling have no counterpart there.
+// line. The incomplete additions, the Jacobian doubling and the two conversions have no
+// counterpart there.
 #include "p256_wide_point.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -204,57 +205,139 @@ void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_p
     o->z = z3;
 }
 
-// The Explicit-Formulas Database's dbl-2007-bl-2 for a = -3, step for step with the
-// database's names in lower case (b is its B, not the curve's coefficient, which is B_MONT
-// here), and then one masked move. spec/lean/Spec/P256WidePoint.lean holds the same steps,
-// one definition per local, and proves what they compute.
-void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
-    p256_wide_fe w;
+void p256_wide_point_to_jacobian(p256_wide_jacobian *o, const p256_wide_point *a) {
+    p256_wide_fe zz;
+
+    // (X Z : Y Z^2 : Z): x = X Z / Z^2 and y = Y Z^2 / Z^3 are the affine coordinates X / Z
+    // and Y / Z, and Z = 0 stays Z = 0.
+    p256_wide_fe_mul(&o->x, &a->x, &a->z);
+    p256_wide_fe_sqr(&zz, &a->z);
+    p256_wide_fe_mul(&o->y, &a->y, &zz);
+    o->z = a->z;
+}
+
+void p256_wide_point_from_jacobian(p256_wide_point *o, const p256_wide_jacobian *a) {
+    p256_wide_fe zz;
+
+    // (X Z : Y : Z^3): X Z / Z^3 = X / Z^2 and Y / Z^3 are the affine coordinates. At Z = 0, X Z
+    // and Z^3 are zero, and Y may be zero too, so Y = 1 makes the point at infinity (0 : 1 : 0).
+    p256_wide_fe_mul(&o->x, &a->x, &a->z);
+    p256_wide_fe_sqr(&zz, &a->z);
+    p256_wide_fe_mul(&o->z, &zz, &a->z);
+    o->y = a->y;
+    p256_wide_fe_cmov(&o->y, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
+}
+
+// The Explicit-Formulas Database's dbl-1986-cc-2 for a = -3, with the database's names in lower
+// case. The database writes Z1^2, Y1^2 and Y1^4 inline, and zz, yy and yyyy hold them here. Its
+// T is X3. Z3 comes first, where the database computes it last: the next doubling squares it
+// first, and with Z3 last each of a key exchange's 253 doublings waited for its product and its
+// sum, 4 of 58 µs on the M1 Pro (docs/decisions.md 112). spec/lean/Spec/P256WidePoint.lean
+// holds the same steps, one definition per local, and proves what they compute.
+void p256_wide_point_double_jacobian(p256_wide_jacobian *o, const p256_wide_jacobian *a) {
+    p256_wide_fe zz;
+    p256_wide_fe yy;
+    p256_wide_fe yyyy;
     p256_wide_fe s;
-    p256_wide_fe ss;
-    p256_wide_fe sss;
-    p256_wide_fe r;
-    p256_wide_fe rr;
-    p256_wide_fe b;
-    p256_wide_fe h;
+    p256_wide_fe m;
     p256_wide_fe t;
     p256_wide_fe x3;
     p256_wide_fe y3;
+    p256_wide_fe z3;
 
-    // w = 3 * (X1 - Z1) * (X1 + Z1), the tangent's slope times 2 * Y1 * Z1.
-    p256_wide_fe_sub(&t, &a->x, &a->z);
-    p256_wide_fe_add(&w, &a->x, &a->z);
-    p256_wide_fe_mul(&w, &t, &w);
-    p256_wide_fe_add(&t, &w, &w);
-    p256_wide_fe_add(&w, &t, &w);
-    // s = 2 * Y1 * Z1, ss = s^2, sss = s * ss.
-    p256_wide_fe_mul(&s, &a->y, &a->z);
+    // Z3 = 2 * Y1 * Z1.
+    p256_wide_fe_mul(&z3, &a->y, &a->z);
+    p256_wide_fe_add(&z3, &z3, &z3);
+    // zz = Z1^2, and m = 3 * (X1 - zz) * (X1 + zz), the tangent's slope times Z3.
+    p256_wide_fe_sqr(&zz, &a->z);
+    p256_wide_fe_sub(&t, &a->x, &zz);
+    p256_wide_fe_add(&m, &a->x, &zz);
+    p256_wide_fe_mul(&m, &t, &m);
+    p256_wide_fe_add(&t, &m, &m);
+    p256_wide_fe_add(&m, &t, &m);
+    // yy = Y1^2, and s = 4 * X1 * yy.
+    p256_wide_fe_sqr(&yy, &a->y);
+    p256_wide_fe_mul(&s, &a->x, &yy);
     p256_wide_fe_add(&s, &s, &s);
-    p256_wide_fe_sqr(&ss, &s);
-    p256_wide_fe_mul(&sss, &s, &ss);
-    // r = Y1 * s, rr = r^2, b = 2 * X1 * r.
-    p256_wide_fe_mul(&r, &a->y, &s);
-    p256_wide_fe_sqr(&rr, &r);
-    p256_wide_fe_mul(&b, &a->x, &r);
-    p256_wide_fe_add(&b, &b, &b);
-    // h = w^2 - 2 * b, X3 = h * s.
-    p256_wide_fe_sqr(&h, &w);
-    p256_wide_fe_add(&t, &b, &b);
-    p256_wide_fe_sub(&h, &h, &t);
-    p256_wide_fe_mul(&x3, &h, &s);
-    // Y3 = w * (b - h) - 2 * rr.
-    p256_wide_fe_sub(&t, &b, &h);
-    p256_wide_fe_mul(&y3, &w, &t);
-    p256_wide_fe_add(&t, &rr, &rr);
-    p256_wide_fe_sub(&y3, &y3, &t);
-    // At the point at infinity, Z1 = 0 and so X1 = 0, and every value above is zero: (0 : 0 : 0)
-    // names no point. Y3 = 1 makes it (0 : 1 : 0).
-    p256_wide_fe_cmov(&y3, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
+    p256_wide_fe_add(&s, &s, &s);
+    // X3 = m^2 - 2 * s.
+    p256_wide_fe_sqr(&x3, &m);
+    p256_wide_fe_add(&t, &s, &s);
+    p256_wide_fe_sub(&x3, &x3, &t);
+    // Y3 = m * (s - X3) - 8 * yy^2.
+    p256_wide_fe_sub(&t, &s, &x3);
+    p256_wide_fe_mul(&y3, &m, &t);
+    p256_wide_fe_sqr(&yyyy, &yy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_add(&yyyy, &yyyy, &yyyy);
+    p256_wide_fe_sub(&y3, &y3, &yyyy);
 
-    // o may alias a, so the three coordinates move only now. Z3 is sss.
+    // o may alias a, so the three coordinates move only now.
     o->x = x3;
     o->y = y3;
-    o->z = sss;
+    o->z = z3;
+}
+
+// The Explicit-Formulas Database's add-1998-cmo-2, with the database's names in lower case:
+// h = u2 - u1 is zero where the two x are equal, and Z3 = Z1 Z2 h. Z3 comes as soon as h does,
+// where the database computes it last, for the doubling's reason: the doubling that follows
+// squares it first. spec/lean/Spec/P256WidePoint.lean holds the same steps and proves that
+// they add two finite points whose x differ, and p256_wide_mul.c says why p256_wide_mul meets
+// that condition.
+void p256_wide_point_add_jacobian_incomplete(p256_wide_jacobian *o, const p256_wide_jacobian *a,
+                                             const p256_wide_jacobian *b) {
+    p256_wide_fe z1z1;
+    p256_wide_fe z2z2;
+    p256_wide_fe u1;
+    p256_wide_fe u2;
+    p256_wide_fe s1;
+    p256_wide_fe s2;
+    p256_wide_fe h;
+    p256_wide_fe hh;
+    p256_wide_fe hhh;
+    p256_wide_fe r;
+    p256_wide_fe v;
+    p256_wide_fe t;
+    p256_wide_fe x3;
+    p256_wide_fe y3;
+    p256_wide_fe z3;
+
+    // z1z1 = Z1^2, z2z2 = Z2^2, u1 = X1 * z2z2 and u2 = X2 * z1z1: the two x, each times
+    // Z1^2 Z2^2.
+    p256_wide_fe_sqr(&z1z1, &a->z);
+    p256_wide_fe_sqr(&z2z2, &b->z);
+    p256_wide_fe_mul(&u1, &a->x, &z2z2);
+    p256_wide_fe_mul(&u2, &b->x, &z1z1);
+    // s1 = Y1 * Z2 * z2z2 and s2 = Y2 * Z1 * z1z1: the two y, each times Z1^3 Z2^3.
+    p256_wide_fe_mul(&s1, &a->y, &b->z);
+    p256_wide_fe_mul(&s1, &s1, &z2z2);
+    p256_wide_fe_mul(&s2, &b->y, &a->z);
+    p256_wide_fe_mul(&s2, &s2, &z1z1);
+    // h = u2 - u1, and Z3 = Z1 * Z2 * h.
+    p256_wide_fe_sub(&h, &u2, &u1);
+    p256_wide_fe_mul(&z3, &a->z, &b->z);
+    p256_wide_fe_mul(&z3, &z3, &h);
+    // hh = h^2, hhh = h * hh, r = s2 - s1 and v = u1 * hh: r is the slope times Z3.
+    p256_wide_fe_sqr(&hh, &h);
+    p256_wide_fe_mul(&hhh, &h, &hh);
+    p256_wide_fe_sub(&r, &s2, &s1);
+    p256_wide_fe_mul(&v, &u1, &hh);
+    // X3 = r^2 - hhh - 2 * v.
+    p256_wide_fe_sqr(&x3, &r);
+    p256_wide_fe_sub(&x3, &x3, &hhh);
+    p256_wide_fe_add(&t, &v, &v);
+    p256_wide_fe_sub(&x3, &x3, &t);
+    // Y3 = r * (v - X3) - s1 * hhh.
+    p256_wide_fe_sub(&t, &v, &x3);
+    p256_wide_fe_mul(&y3, &r, &t);
+    p256_wide_fe_mul(&t, &s1, &hhh);
+    p256_wide_fe_sub(&y3, &y3, &t);
+
+    // o may alias a or b, so the three coordinates move only now.
+    o->x = x3;
+    o->y = y3;
+    o->z = z3;
 }
 
 uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {

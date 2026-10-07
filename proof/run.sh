@@ -2188,9 +2188,9 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_field      919 properties, 12 s, 182 MB
 #   p256_wide_field_mul  739 properties, 14 s, 213 MB
 #   p256_wide_scalar     465 properties, 22 s, 715 MB
-#   p256_wide_point      255 properties,  2 s,  56 MB
+#   p256_wide_point      319 properties,  3 s,  70 MB
 #   p256_wide_digit      370 properties, 28 s, 523 MB
-#   p256_wide_mul        376 properties, 37 s, 407 MB
+#   p256_wide_mul        423 properties, 37 s, 593 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The p256_wide_sqr, p256_wide_field, p256_wide_field_mul and p256_wide_scalar lines
 # were measured again on 2026-10-06, after the square of four words joined
@@ -2199,9 +2199,9 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # p256_wide_digit and p256_wide_mul lines were measured again on 2026-10-07,
 # after the table grew to 43 rows of 32 entries (docs/decisions.md 109), the
 # same way at a load average of about 3. The p256_wide_point and
-# p256_wide_mul lines were measured again on 2026-10-07, after the incomplete
-# addition joined (docs/decisions.md 111), the same way at a load average of
-# about 5. p256_wide_mul runs with
+# p256_wide_mul lines were measured again on 2026-10-07, after the key
+# exchange moved to Jacobian coordinates (docs/decisions.md 112), the same way
+# at a load average of about 5. p256_wide_mul runs with
 # --no-array-field-sensitivity. By default cbmc tracks an array of up to 64
 # elements element by element, and over the 1,376 entries the base
 # multiplication reads, the line took 492 s that way; without that tracking it

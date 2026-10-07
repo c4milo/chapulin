@@ -7,8 +7,8 @@ reason: p256_wide_mul doubles three times between windows where a
   on edge and random scalars.
 
 --- old
-        for (int i = 0; i < WINDOW_BITS; i++) {
-            p256_wide_point_double(&sum, &sum);
+    for (int i = 0; i < WINDOW_BITS; i++) {
+        p256_wide_point_double_jacobian(sum, sum);
 --- new
-        for (int i = 1; i < WINDOW_BITS; i++) {
-            p256_wide_point_double(&sum, &sum);
+    for (int i = 1; i < WINDOW_BITS; i++) {
+        p256_wide_point_double_jacobian(sum, sum);
