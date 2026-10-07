@@ -741,7 +741,8 @@ The entries are grouped by area:
     moves with a loop counter, `exponent_low_nibble`, is in bounds and
     returns a value below 16 at every position the loop passes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
-    shapes, `p256_wide_point_add_affine` and `p256_wide_point_double`
+    shapes, `p256_wide_point_add_affine`,
+    `p256_wide_point_add_affine_incomplete` and `p256_wide_point_double`
     in both of theirs, `p256_wide_point_from_bytes` over any 65 bytes and
     `p256_wide_point_affine` with and without a y output, over the field
     stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
@@ -767,7 +768,7 @@ The entries are grouped by area:
 - **Not proved:**
   - a product's value, and so that the scalar's `mont_mul` leaves a
     value below n, that either inverse computes an inverse and that the
-    three point formulas compute the group law.
+    four point formulas compute the group law.
   - `p256_wide_fe_inv` and `p256_wide_scalar_inverse` whole. Each is a
     fixed chain of the calls proven above, in the shapes proven above,
     at counts that are literals. Each product takes the address of 13 to
@@ -2524,8 +2525,23 @@ them, and states it at P-256 with p prime as its one hypothesis.
 `bin/diff_p256_wide` holds the C's steps to the model's, coordinate for
 coordinate, on random coordinates and where a value the formula computes
 is zero. What none of this shows: that the C is the model on every input,
-which the differential samples, and anything about the additions or the
-windows of a multiplication, which stay tested.
+which the differential samples, and anything about the complete additions,
+the top window of k·G or the windows of the key exchange, which stay
+tested.
+
+The incomplete addition a host object's k·G runs in windows 1 to 41,
+`p256_wide_point_add_affine_incomplete` (docs/decisions.md 111), is
+machine checked the same way. The same module holds its steps and proves
+that they add a finite point and an affine one whose x differ, over every
+field. It also proves that the loop of those windows meets that condition
+at every addition, so the loop computes the sum of the windows' multiples
+of G: for digits that are odd and at most 63 in size, wherever G's order
+is at least 2^252, and at P-256 with p and n prime and n • G = 0 as
+hypotheses. `bin/diff_p256_wide` holds the C's steps to the model's on
+random coordinates, at Z = 0 and where the two x are equal. The proof takes
+the digits and the table as given: `window_digit` builds each digit from
+five bits and a sign, the `p256_wide_digit` proof holds the digits to
+k | 1, and `bin/p256_equiv_test` recomputes every entry of the table.
 
 ### The wide P-256 files
 
@@ -2537,7 +2553,7 @@ vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
 - `bin/p256_equiv_test`, in `make check`, runs the wide files and the
-  32-bit files on the same inputs, 67,083 comparisons on a CPU with the
+  32-bit files on the same inputs, 67,984 comparisons on a CPU with the
   SHA-256 instructions, and requires the same words, bytes and verdicts.
   Both fields keep an element in the Montgomery domain with R = 2^256, so
   each comparison is of words taken two at a time, not of a value read
@@ -2567,11 +2583,18 @@ the wide files to the same answers:
     the affine bytes, and a doubling's point at infinity must also be
     (0 : Y : 0) with Y not zero, which the affine bytes cannot tell from
     (0 : 0 : 0);
+  - the incomplete addition on 24 random multiples of the generator and
+    entries of the table, against the complete addition as points, and
+    on the three inputs outside its condition: the generator with
+    itself and the point at infinity with the generator, where every
+    coordinate must be zero, and the generator with its negative, where
+    it must give (0 : Y : 0) with Y not zero;
   - the point decode on a point and on each way a point is refused, and
     the affine conversion on a finite point and on the point at infinity;
-  - both scalar multiplications on 16 scalars at the edges, 0, 1, n - 1,
-    n, n + 1 and 2^256 - 1 among them, and on 40 random ones, half of
-    them even;
+  - both scalar multiplications on 21 scalars at the edges, 0, 1, n - 1,
+    n, n + 1 and 2^256 - 1 among them, and the two whose sum before the
+    top window of k·G is that window's entry, and on 40 random ones, half
+    of them even;
   - a key pair, a signature and a shared secret under both answers.
 - `bin/p256_equiv_test_sum`, in `make check`, is that binary with the
   two carry steps of `p256_wide_word.h` on the 128-bit sums, the form
@@ -2643,8 +2666,8 @@ the wide files to the same answers:
   or fails it under `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 - `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
   signature and a key exchange against the Lean spec under each answer,
-  and the doubling against `spec/lean/Spec/P256WidePoint.lean`'s,
-  coordinate for coordinate ([What `make diff` runs](#what-make-diff-runs)).
+  and the doubling and the incomplete addition against
+  `spec/lean/Spec/P256WidePoint.lean`'s, coordinate for coordinate ([What `make diff` runs](#what-make-diff-runs)).
 - `bin/widemul_runtime_test` counts the calls: the wide entries alone
   under the constant-time answer and the 32-bit files alone under every
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
@@ -4230,8 +4253,8 @@ computes:
   build in QUIC version 1 and version 2 (RFC 9001, RFC 9369): the
   Initial keys, the keys a traffic secret derives, the key update, and
   the Retry integrity tag;
-- P-256 and RSA-PSS, and the doubling a host object's P-256 key
-  exchange runs;
+- P-256 and RSA-PSS, and the doubling and the incomplete addition a host
+  object's P-256 runs;
 - the grammar of the four handshake messages a server sends;
 - the content a server's CertificateVerify signs (RFC 9846 §4.5.2),
   which the driver hashes under the signature scheme and compares with
@@ -4253,8 +4276,9 @@ only works when a shared misreading cannot make both sides agree. There
 are two exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
 `tls_write.c` line by line: its theorems bound that code's own
 intermediate values, which no RFC states. `Spec/P256WidePoint.lean`
-models `p256_wide_point_double` the same way: its theorem says what that
-code's steps compute, and no standard states those steps.
+models `p256_wide_point_double` and `p256_wide_point_add_affine_incomplete`
+the same way: its theorems say what that code's steps compute, and no
+standard states those steps.
 [`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
 safe.
 
@@ -4280,7 +4304,7 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 326 comparisons, where the compiler
+4. The constant-time P-256 rows, 401 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
@@ -4291,7 +4315,10 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    doublings through `p256_wide_point_double` against
    `Spec/P256WidePoint.lean`'s `double`, coordinate for coordinate: 25
    on random coordinates, and 25 each where Z, Y, X - Z and X + Z is
-   zero.
+   zero. Then 75 incomplete additions through
+   `p256_wide_point_add_affine_incomplete` against `addAffineIncomplete`:
+   25 on random coordinates, 25 at Z = 0, and 25 at Z = 1 with the two x
+   equal.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

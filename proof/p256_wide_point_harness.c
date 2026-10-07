@@ -7,7 +7,8 @@
 //   and both inputs and the output one object, and the shape a formula that wrote a coordinate
 //   before its last read would get wrong;
 //
-//   the same in p256_wide_point_add_affine, in both shapes the base
+//   the same in p256_wide_point_add_affine and in
+//   p256_wide_point_add_affine_incomplete, in both shapes the base
 //   multiplication uses: separate output, and output over the projective
 //   input;
 //
@@ -30,15 +31,17 @@
 // stubbed, so nothing here depends on a field value, and the real field
 // bodies are proven in the three p256_wide_field harnesses.
 //
-// Not proven here: that the three formulas compute the group law.
-// bin/p256_equiv_test holds the two additions to p256_point_add's
+// Not proven here: that the four formulas compute the group law.
+// bin/p256_equiv_test holds the two complete additions to p256_point_add's
 // coordinates, word for word, on random and structured operands, and the
-// doubling to the point p256_point_add gives for a point with itself. That
-// routine's steps are checked against an affine reference in
-// test/gen_p256_sign_vectors.py. The doubling's steps are proven in Lean
-// instead: spec/lean/Spec/P256WidePoint.lean proves that they double
-// every point of the curve, and bin/diff_p256_wide holds this file's
-// doubling to them, coordinate for coordinate.
+// doubling and the incomplete addition to the points p256_point_add gives.
+// That routine's steps are checked against an affine reference in
+// test/gen_p256_sign_vectors.py. The doubling's and the incomplete
+// addition's steps are proven in Lean instead:
+// spec/lean/Spec/P256WidePoint.lean proves that the first doubles every
+// point of the curve and that the second adds two points whose x differ,
+// and bin/diff_p256_wide holds this file's two to them, coordinate for
+// coordinate.
 #include "p256_wide_field_stubs.h"
 
 #include "p256_wide_point.c"
@@ -95,6 +98,22 @@ static void prove_add_affine(void) {
     p256_wide_point_add_affine(&a, &a, &b); // o == a, the shape the base multiplication adds in
 }
 
+static void prove_add_affine_incomplete(void) {
+    p256_wide_point a;
+    p256_wide_point o;
+    p256_wide_affine b;
+
+    wide_point_nondet(&a);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        b.x.word[i] = nondet_u64();
+        b.y.word[i] = nondet_u64();
+    }
+    p256_wide_point_add_affine_incomplete(&o, &a, &b);
+    // o == a, the shape the base multiplication adds in.
+    wide_point_nondet(&a);
+    p256_wide_point_add_affine_incomplete(&a, &a, &b);
+}
+
 static void prove_double(void) {
     p256_wide_point a;
     p256_wide_point o;
@@ -140,6 +159,7 @@ static void prove_copies(void) {
 int main(void) {
     prove_add_aliasing();
     prove_add_affine();
+    prove_add_affine_incomplete();
     prove_double();
     prove_from_bytes();
     prove_affine();

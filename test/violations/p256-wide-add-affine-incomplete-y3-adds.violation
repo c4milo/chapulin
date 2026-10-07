@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: diff_p256_wide
+reason: the incomplete addition adds vvv * Y1 to Y3 where the formula
+  takes it away, so Y3 comes out for another point. bin/diff_p256_wide
+  holds the steps to spec/lean/Spec/P256WidePoint.lean's
+  addAffineIncomplete, coordinate for coordinate, which is what makes the
+  Lean proof that the steps add two points a proof about this file.
+
+--- old
+    p256_wide_fe_mul(&t, &vvv, &a->y);
+    p256_wide_fe_sub(&y3, &y3, &t);
+--- new
+    p256_wide_fe_mul(&t, &vvv, &a->y);
+    p256_wide_fe_add(&y3, &y3, &t);

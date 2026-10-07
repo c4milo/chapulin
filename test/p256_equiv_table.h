@@ -1,4 +1,4 @@
-// The table of multiples of G, and the two formulas the wide scalar
+// The table of multiples of G, and the three formulas the wide scalar
 // multiplications add to the complete addition, against p256_point.c and
 // p256_field.c.
 //
@@ -12,12 +12,21 @@
 // table with Python's integers, so this holds the checked-in file to a
 // second computation, in C, by the code the proofs and the vectors hold.
 //
-// run_formulas holds p256_wide_point_add_affine and p256_wide_point_double
-// to p256_point_add:
+// run_formulas holds p256_wide_point_add_affine,
+// p256_wide_point_add_affine_incomplete and p256_wide_point_double to
+// p256_point_add:
 //
 //   the mixed addition computes the coordinates the complete addition
 //   computes when the second point's Z is 1, so the two must agree word for
 //   word on any coordinates at all, on a curve or not;
+//
+//   the incomplete addition computes the same point as the complete one in
+//   other coordinates, where the first point is finite and its x is not the
+//   second's, so the two must agree as points there. Its inputs are
+//   multiples of G with a Z the additions before left, and entries of the
+//   table. Outside that condition it must give what p256_wide_point.h
+//   states: (0 : 0 : 0) for a point and itself and for the point at
+//   infinity, and the point at infinity for a point and its negative;
 //
 //   the doubling computes the same point as the complete addition of a
 //   point with itself, in other coordinates, so the two must agree as
@@ -107,6 +116,82 @@ static int wide_fe_is_zero(const p256_wide_fe *a) {
     return bits == 0;
 }
 
+// What the incomplete addition gives for a + b, in both shapes a caller uses: zero in every
+// coordinate where zeros is set, and otherwise want as a point, with Z not zero where
+// finite is set and as (0 : Y : 0) with Y not zero where it is not.
+typedef struct {
+    int zeros;
+    int finite;
+} incomplete_answer;
+
+static int incomplete_answer_is(const p256_wide_point *got, const p256_point *want,
+                                incomplete_answer answer) {
+    if (answer.zeros) {
+        return wide_fe_is_zero(&got->x) && wide_fe_is_zero(&got->y) && wide_fe_is_zero(&got->z);
+    }
+    p256_point back;
+    p256_wide_point_to_portable(&back, got);
+    int named = answer.finite ? !wide_fe_is_zero(&got->z)
+                              : wide_fe_is_zero(&got->x) && !wide_fe_is_zero(&got->y) &&
+                                    wide_fe_is_zero(&got->z);
+    return named && same_affine(&back, want);
+}
+
+static void add_affine_incomplete_case(const char *name, const p256_point *a,
+                                       const p256_wide_affine *b, incomplete_answer answer) {
+    p256_point portable_b;
+    p256_point want;
+    p256_wide_point wide_a;
+    p256_wide_point got;
+    p256_wide_fe_to_portable(&portable_b.x, &b->x);
+    p256_wide_fe_to_portable(&portable_b.y, &b->y);
+    portable_b.z = p256_fe_one_mont;
+    p256_point_add(&want, a, &portable_b);
+    p256_wide_point_from_portable(&wide_a, a);
+    p256_wide_point_add_affine_incomplete(&got, &wide_a, b);
+    int ok = incomplete_answer_is(&got, &want, answer);
+    got = wide_a;
+    p256_wide_point_add_affine_incomplete(&got, &got, b);
+    ok &= incomplete_answer_is(&got, &want, answer);
+    report("incomplete add", name, ok);
+}
+
+// The incomplete addition on multiples of G whose x differ, and on the three shapes outside
+// its condition.
+static void run_incomplete(void) {
+    static const incomplete_answer SUM = {0, 1};
+    static const incomplete_answer ZEROS = {1, 0};
+    static const incomplete_answer INFINITY_POINT = {0, 0};
+    p256_point a;
+    p256_point generator_scaled;
+    p256_wide_affine b;
+    p256_wide_affine generator;
+    p256_scalar k;
+    p256_fe scale;
+    for (int i = 0; i < 24; i++) {
+        size_t window = (size_t)(i * 7) % P256_WIDE_TABLE_WINDOWS;
+        size_t entry = (size_t)(i * 5) % P256_WIDE_TABLE_ENTRIES;
+        random_wide_scalar(&k, (uint32_t)i & 1U);
+        p256_point_base_mul(&a, &k);
+        add_affine_incomplete_case("a multiple of G and a table entry", &a,
+                                   &p256_wide_table[window][entry], SUM);
+    }
+    generator = p256_wide_table[0][0];
+    // G with a Z that is not 1: each coordinate times the same element.
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        scale.word[i] = 0x9e3779b9U * (uint32_t)(i + 1);
+    }
+    generator_scaled = p256_point_generator;
+    p256_fe_mul(&generator_scaled.x, &generator_scaled.x, &scale);
+    p256_fe_mul(&generator_scaled.y, &generator_scaled.y, &scale);
+    p256_fe_mul(&generator_scaled.z, &generator_scaled.z, &scale);
+    add_affine_incomplete_case("G and itself", &generator_scaled, &generator, ZEROS);
+    add_affine_incomplete_case("infinity and G", &p256_point_infinity, &generator, ZEROS);
+    b = generator;
+    p256_wide_fe_neg(&b.y, &b.y);
+    add_affine_incomplete_case("G and its negative", &generator_scaled, &b, INFINITY_POINT);
+}
+
 // Whether p names a point: Z is not zero, or p is (0 : Y : 0) with Y not zero, the shape
 // p256_wide_point.h gives the point at infinity. (0 : 0 : 0) names none, and an addition that
 // reads it gives (0 : 0 : 0) back whatever it adds, while same_affine reads it as the point at
@@ -154,6 +239,8 @@ static void run_formulas(void) {
     add_affine_case("the generator and itself", &b, &b.x, &b.y);
     add_affine_case("the generator and its negative", &b, &negated.x, &negated.y);
     add_affine_case("infinity and the generator", &p256_point_infinity, &b.x, &b.y);
+
+    run_incomplete();
 
     double_case("infinity", &p256_point_infinity);
     double_case("the generator", &p256_point_generator);

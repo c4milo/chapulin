@@ -22,9 +22,9 @@
 //   - a signature, a key pair and a shared secret under both answers.
 //
 // test/p256_equiv_table.h recomputes the table of multiples of G that the
-// base multiplication reads, and holds the mixed addition to the complete
-// one. test/p256_equiv_residue.h then looks at what the wide calls leave
-// on the stack.
+// base multiplication reads, and holds the two mixed additions and the
+// doubling to the complete addition. test/p256_equiv_residue.h then looks
+// at what the wide calls leave on the stack.
 //
 // The Makefile builds this file three times. bin/p256_equiv_test runs the
 // form of p256_wide_word.h's two carry steps that its compiler picks.
@@ -168,7 +168,9 @@ static void random_wide_scalar(p256_scalar *k, uint32_t low_bit) {
 // windows of p256_wide_base_mul, one bit at the bottom of every window, which
 // makes every digit 1, one at the top of every window, which makes every
 // digit but the top one negative, and that scalar's complement, which makes
-// every digit positive.
+// every digit positive; and last the two scalars whose sum before the top
+// window is that window's entry, the case the top window's complete addition
+// is for (p256_wide_mul.c).
 static const char *const SCALAR_EDGE_HEX[] = {
     "0000000000000000000000000000000000000000000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000001",
@@ -189,6 +191,8 @@ static const char *const SCALAR_EDGE_HEX[] = {
     "1041041041041041041041041041041041041041041041041041041041041041",
     "0820820820820820820820820820820820820820820820820820820820820820",
     "f7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df7df",
+    "e0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf",
+    "e0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaae",
 };
 
 static uint8_t nibble(char c) {

@@ -13,7 +13,7 @@
 // modulo p and n, so it states no word representation and serves both
 // copies unchanged.
 //
-// Four rows, each on fresh random inputs. The first three run under both answers:
+// Five rows, each on fresh random inputs. The first three run under both answers:
 //
 //   key generation: the point p256_ecdh_keygen writes for a scalar d is the
 //   spec's p256_pub of d;
@@ -34,7 +34,13 @@
 //   spec's p256_double of the same three, coordinate for coordinate.
 //   spec/lean/Spec/P256WidePoint.lean holds that function and proves that it
 //   doubles every point of the curve, so this row is what makes the proof
-//   about the C. The row reads the wide file alone, so it runs once.
+//   about the C. The row reads the wide file alone, so it runs once;
+//
+//   incomplete addition: the three coordinates
+//   p256_wide_point_add_affine_incomplete writes for a projective point and
+//   an affine one are the spec's p256_add_affine_incomplete of the same five,
+//   coordinate for coordinate. The same module proves that function adds two
+//   points whose x differ, and this row, like the doubling's, runs once.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,8 +202,10 @@ static void diff_ecdh(uint8_t widemul) {
 }
 
 // The doubling row's coordinates, X, Y and Z, each a plain field element below p as 32
-// big-endian bytes.
+// big-endian bytes, and the incomplete addition's, X, Y and Z of the projective point and then
+// x and y of the affine one.
 #define COORDINATES 3
+#define ADD_COORDINATES 5
 
 // One element below p: the top bit clear keeps it below 2^255, which is below p.
 static void draw_element(uint8_t element[P256_FE_LEN]) {
@@ -205,26 +213,27 @@ static void draw_element(uint8_t element[P256_FE_LEN]) {
     element[0] &= 0x7f;
 }
 
-// p256_wide_point_double on three coordinates against the spec's p256_double of the same
-// three, coordinate for coordinate. Both sides take plain elements: this side moves each into
-// the Montgomery domain, doubles in place, the shape a multiplication doubles in, and moves
-// each back out.
-static void diff_double_row(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN],
-                            const uint8_t z[P256_FE_LEN]) {
-    const uint8_t *const coordinate[COORDINATES] = {x, y, z};
-    p256_wide_point point;
-    p256_wide_fe *const slot[COORDINATES] = {&point.x, &point.y, &point.z};
-    char cmd[16 + COORDINATES * HEX_LEN(P256_FE_LEN)];
-    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
-    size_t cmd_len = (size_t)snprintf(cmd, sizeof cmd, "p256_double");
-    for (size_t i = 0; i < COORDINATES; i++) {
-        p256_wide_fe plain;
-        p256_wide_fe_from_bytes(&plain, coordinate[i]);
-        p256_wide_fe_to_mont(slot[i], &plain);
+// A plain element below p, as 32 big-endian bytes, moved into the Montgomery domain.
+static void element_to_mont(p256_wide_fe *o, const uint8_t element[P256_FE_LEN]) {
+    p256_wide_fe plain;
+    p256_wide_fe_from_bytes(&plain, element);
+    p256_wide_fe_to_mont(o, &plain);
+}
+
+// The spec's command for op on count plain elements: op, then each element in hex.
+static void element_command(char *cmd, size_t cmd_size, const char *op,
+                            uint8_t element[][P256_FE_LEN], size_t count) {
+    size_t cmd_len = (size_t)snprintf(cmd, cmd_size, "%s", op);
+    for (size_t i = 0; i < count; i++) {
         cmd[cmd_len++] = ' ';
-        cmd_len += hex_encode(cmd + cmd_len, coordinate[i], P256_FE_LEN);
+        cmd_len += hex_encode(cmd + cmd_len, element[i], P256_FE_LEN);
     }
-    p256_wide_point_double(&point, &point);
+}
+
+// What the spec answers for a point: X, Y and Z moved out of the Montgomery domain, in hex.
+static void point_reply(char want[COORDINATES * HEX_LEN(P256_FE_LEN)],
+                        const p256_wide_point *point) {
+    const p256_wide_fe *const slot[COORDINATES] = {&point->x, &point->y, &point->z};
     size_t want_len = 0;
     for (size_t i = 0; i < COORDINATES; i++) {
         p256_wide_fe plain;
@@ -236,6 +245,22 @@ static void diff_double_row(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_F
         }
         want_len += hex_encode(want + want_len, bytes, sizeof bytes);
     }
+}
+
+// p256_wide_point_double on three coordinates against the spec's p256_double of the same
+// three, coordinate for coordinate. Both sides take plain elements: this side moves each into
+// the Montgomery domain, doubles in place, the shape a multiplication doubles in, and moves
+// each back out.
+static void diff_double_row(uint8_t coordinate[COORDINATES][P256_FE_LEN]) {
+    p256_wide_point point;
+    char cmd[16 + COORDINATES * HEX_LEN(P256_FE_LEN)];
+    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
+    element_command(cmd, sizeof cmd, "p256_double", coordinate, COORDINATES);
+    element_to_mont(&point.x, coordinate[0]);
+    element_to_mont(&point.y, coordinate[1]);
+    element_to_mont(&point.z, coordinate[2]);
+    p256_wide_point_double(&point, &point);
+    point_reply(want, &point);
     expect(cmd, want);
 }
 
@@ -247,21 +272,57 @@ static void diff_double(void) {
     for (size_t i = 0; i < COORDINATES; i++) {
         draw_element(coordinate[i]);
     }
-    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    diff_double_row(coordinate);
     memset(coordinate[2], 0, P256_FE_LEN);
-    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    diff_double_row(coordinate);
     draw_element(coordinate[2]);
     coordinate[2][P256_FE_LEN - 1] |= 1;
     memset(coordinate[1], 0, P256_FE_LEN);
-    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    diff_double_row(coordinate);
     draw_element(coordinate[1]);
     memcpy(coordinate[0], coordinate[2], P256_FE_LEN);
-    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    diff_double_row(coordinate);
     p256_wide_fe z;
     p256_wide_fe_from_bytes(&z, coordinate[2]);
     p256_wide_fe_neg(&z, &z);
     p256_wide_fe_to_bytes(coordinate[0], &z);
-    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    diff_double_row(coordinate);
+}
+
+// p256_wide_point_add_affine_incomplete on a projective point and an affine one against the
+// spec's p256_add_affine_incomplete of the same five coordinates, coordinate for coordinate.
+// As in the doubling's row, both sides take plain elements, and this side adds in place, the
+// shape p256_wide_base_mul adds in.
+static void diff_add_affine_incomplete_row(uint8_t coordinate[ADD_COORDINATES][P256_FE_LEN]) {
+    p256_wide_point point;
+    p256_wide_affine affine;
+    char cmd[32 + ADD_COORDINATES * HEX_LEN(P256_FE_LEN)];
+    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
+    element_command(cmd, sizeof cmd, "p256_add_affine_incomplete", coordinate, ADD_COORDINATES);
+    element_to_mont(&point.x, coordinate[0]);
+    element_to_mont(&point.y, coordinate[1]);
+    element_to_mont(&point.z, coordinate[2]);
+    element_to_mont(&affine.x, coordinate[3]);
+    element_to_mont(&affine.y, coordinate[4]);
+    p256_wide_point_add_affine_incomplete(&point, &point, &affine);
+    point_reply(want, &point);
+    expect(cmd, want);
+}
+
+// The incomplete addition's row on random coordinates, on the curve or not, and then on two
+// inputs outside its condition: Z = 0, and Z = 1 with x = X, two points with the same x. On
+// both the result's Z is zero, and the two sides must still agree on every coordinate.
+static void diff_add_affine_incomplete(void) {
+    uint8_t coordinate[ADD_COORDINATES][P256_FE_LEN];
+    for (size_t i = 0; i < ADD_COORDINATES; i++) {
+        draw_element(coordinate[i]);
+    }
+    diff_add_affine_incomplete_row(coordinate);
+    memset(coordinate[2], 0, P256_FE_LEN);
+    diff_add_affine_incomplete_row(coordinate);
+    coordinate[2][P256_FE_LEN - 1] = 1;
+    memcpy(coordinate[3], coordinate[0], P256_FE_LEN);
+    diff_add_affine_incomplete_row(coordinate);
 }
 
 #define ROUNDS 25
@@ -281,6 +342,7 @@ int main(int argc, char **argv) {
     }
     for (int round = 0; round < ROUNDS; round++) {
         diff_double();
+        diff_add_affine_incomplete();
     }
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

@@ -25,7 +25,8 @@ void p256_wide_mul(p256_point *o, const p256_scalar *k, const p256_point *p);
 
 // o = k*G, as p256_point_base_mul computes it, for secp256r1's generator G: 43 additions of
 // entries of the table of multiples of G (p256_wide_table.h), one for each six-bit window of
-// k, and no doubling.
+// k, and no doubling. Windows 1 to 41 add by the incomplete addition, whose condition their
+// sums meet for every k (p256_wide_mul.c, docs/decisions.md 111).
 void p256_wide_base_mul(p256_point *o, const p256_scalar *k);
 
 #endif // CH_CPU_RUNTIME

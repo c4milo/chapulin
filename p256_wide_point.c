@@ -1,7 +1,7 @@
 // P-256 points over the wide field (see p256_wide_point.h for the contracts). Every
-// coordinate is a Montgomery-domain p256_wide_fe. The two additions are p256_point.c's with
-// that file's register names, so the two read against each other line by line. The doubling
-// has no counterpart there.
+// coordinate is a Montgomery-domain p256_wide_fe. The two complete additions are
+// p256_point.c's with that file's register names, so the two read against each other line by
+// line. The incomplete addition and the doubling have no counterpart there.
 #include "p256_wide_point.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -145,6 +145,58 @@ void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
     p256_wide_fe_mul(&z3, &t4, &z3);
     p256_wide_fe_mul(&t1, &t3, &t0);
     p256_wide_fe_add(&z3, &z3, &t1);
+
+    // o may alias a, so the three coordinates move only now.
+    o->x = x3;
+    o->y = y3;
+    o->z = z3;
+}
+
+// The Explicit-Formulas Database's madd-1998-cmo, step for step with the database's names in
+// lower case: the mixed addition of Cohen, Miyaji and Ono in homogeneous projective
+// coordinates, 9 products and 2 squares where Algorithm 5 above runs 11 products and 2 products
+// by b. The database's A is x3_numerator: a sum's x is A / (v^2 Z1). It is not complete: v is
+// zero when a's x equals b's and when a is the point at infinity, and then so are X3 and Z3. So
+// a must be finite and its x must not be b's. spec/lean/Spec/P256WidePoint.lean holds the same
+// steps and proves that they add under that condition, and p256_wide_mul.c says why
+// p256_wide_base_mul meets it.
+void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_point *a,
+                                           const p256_wide_affine *b) {
+    p256_wide_fe u;
+    p256_wide_fe uu;
+    p256_wide_fe v;
+    p256_wide_fe vv;
+    p256_wide_fe vvv;
+    p256_wide_fe r;
+    p256_wide_fe x3_numerator;
+    p256_wide_fe t;
+    p256_wide_fe x3;
+    p256_wide_fe y3;
+    p256_wide_fe z3;
+
+    // u = Y2 * Z1 - Y1 and v = X2 * Z1 - X1: the slope is u / v.
+    p256_wide_fe_mul(&u, &b->y, &a->z);
+    p256_wide_fe_sub(&u, &u, &a->y);
+    p256_wide_fe_mul(&v, &b->x, &a->z);
+    p256_wide_fe_sub(&v, &v, &a->x);
+    // uu = u^2, vv = v^2, vvv = v * vv, r = vv * X1.
+    p256_wide_fe_sqr(&uu, &u);
+    p256_wide_fe_sqr(&vv, &v);
+    p256_wide_fe_mul(&vvv, &v, &vv);
+    p256_wide_fe_mul(&r, &vv, &a->x);
+    // A = uu * Z1 - vvv - 2 * r, X3 = v * A.
+    p256_wide_fe_mul(&x3_numerator, &uu, &a->z);
+    p256_wide_fe_sub(&x3_numerator, &x3_numerator, &vvv);
+    p256_wide_fe_add(&t, &r, &r);
+    p256_wide_fe_sub(&x3_numerator, &x3_numerator, &t);
+    p256_wide_fe_mul(&x3, &v, &x3_numerator);
+    // Y3 = u * (r - A) - vvv * Y1.
+    p256_wide_fe_sub(&t, &r, &x3_numerator);
+    p256_wide_fe_mul(&y3, &u, &t);
+    p256_wide_fe_mul(&t, &vvv, &a->y);
+    p256_wide_fe_sub(&y3, &y3, &t);
+    // Z3 = vvv * Z1.
+    p256_wide_fe_mul(&z3, &vvv, &a->z);
 
     // o may alias a, so the three coordinates move only now.
     o->x = x3;

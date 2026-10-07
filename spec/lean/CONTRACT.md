@@ -153,6 +153,12 @@ Spec.P256WidePoint.double : Projective R → Projective R                -- p256
                         -- decidable equality. Line op: `p256_double <x> <y> <z>` →
                         -- `<X3> <Y3> <Z3>`, each 32 bytes of hex below P-256's p, out
                         -- of the Montgomery domain on both sides.
+Spec.P256WidePoint.addAffineIncomplete : Projective R → Affine R → Projective R
+                        -- p256_wide_point_add_affine_incomplete, written from the C, over
+                        -- any commutative ring. Line op:
+                        -- `p256_add_affine_incomplete <x> <y> <z> <x2> <y2>` →
+                        -- `<X3> <Y3> <Z3>`, each 32 bytes of hex below P-256's p, out of
+                        -- the Montgomery domain on both sides.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -676,6 +682,20 @@ builds the move's mask from X where the C reads Z, which the points of the
 curve `bin/p256_equiv_test` doubles leave unnoticed, and requires that
 binary to fail.
 
+`addAffineIncomplete` is `p256_wide_point_add_affine_incomplete` the same
+way: the database's madd-1998-cmo, which the C's k·G runs in windows 1 to
+41 (docs/decisions.md 111). `addAffineIncomplete_represents` proves that it
+gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every
+field. `windowSum` is the loop that adds those windows, and
+`windowSum_represents` proves that every one of its additions meets that
+condition when the digits are odd and at most 63 in size and `G`'s order
+is at least `64 ^ 42`, so the loop computes the sum of the windows'
+multiples of `G`. The same test file runs the C's addition on random
+coordinates and where Z is zero or the two x are equal, against
+`addAffineIncomplete`, and the violation
+`p256-wide-add-affine-incomplete-y3-adds` requires `bin/diff_p256_wide` to
+fail on a sign flipped in Y3.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -830,8 +850,9 @@ Spec.P256 and Spec.P384 restate seven of these (all but inv_cast) at their
   discharges `2 < p`, the discriminant, `G` on the curve and
   `p < 2^(8·coordLen)`; `Fact p.Prime`, `Fact n.Prime` and `n • basePoint = 0`
   stay hypotheses, because no tactic certifies a 256- or 384-bit prime
-Spec.P256WidePoint, the doubling of p256_wide_point.c (above, "P256WidePoint
-  models the C"), over any field with 2 ≠ 0 and 3 ≠ 0; `Represents b a P`
+Spec.P256WidePoint, the doubling and the incomplete addition of p256_wide_point.c
+  (above, "P256WidePoint models the C"), and the loop of p256_wide_mul.c that adds
+  by the second; the doubling over any field with 2 ≠ 0 and 3 ≠ 0; `Represents b a P`
   says the coordinates `a` hold the point P of y² = x³ - 3x + b, the point
   at infinity as (0 : Y : 0) with Y ≠ 0:
   double_represents            b ≠ 2 → b ≠ -2 → Represents b a P →
@@ -840,6 +861,17 @@ Spec.P256WidePoint, the doubling of p256_wide_point.c (above, "P256WidePoint
                                -- among them. No theorem here reads the curve's order
   double_represents_p256       the same at P-256's b over ZMod p, under Fact p.Prime;
                                -- `decide` discharges 2 ≠ 0, 3 ≠ 0 and b ≠ ±2 mod p
+  addAffineIncomplete_represents
+                               Represents b a (some x₁ y₁) → x₁ ≠ x₂ →
+                               -- Represents b (addAffineIncomplete a ⟨x₂, y₂⟩)
+                               -- (some x₁ y₁ + some x₂ y₂), over every field, every b
+  windowSum_represents         every digit odd and at most 63 in size → entry j is
+                               -- (d j * 64 ^ j) • G → 1 ≤ i → 64 ^ i ≤ addOrderOf G →
+                               -- Represents b (windowSum entry i)
+                               -- ((∑ j < i, d j * 64 ^ j) • G)
+  windowSum_represents_p256    the same at P-256 for i from 1 to 42, under Fact p.Prime,
+                               -- Fact n.Prime and n • G = 0, which make n G's order;
+                               -- `decide` discharges 64 ^ 42 ≤ n
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1071,7 +1103,7 @@ means the module's selftest plus the differential oracle carry it;
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
-| P256WidePoint | 2 | the doubling `p256_wide_point.c` runs, modeled from the C: it gives `P + P` for every point of every curve y² = x³ - 3x + b with b neither 2 nor -2, over every field in which 2 and 3 are not zero, the point at infinity and a point with y = 0 among them, and at P-256 with `p` prime the one hypothesis. The two additions and the scalar multiplications stay with the C's tests and the differential |
+| P256WidePoint | 5 | the doubling and the incomplete addition `p256_wide_point.c` runs, modeled from the C: the doubling gives `P + P` for every point of every curve y² = x³ - 3x + b with b neither 2 nor -2, over every field in which 2 and 3 are not zero, the point at infinity and a point with y = 0 among them, and at P-256 with `p` prime the one hypothesis; the incomplete addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field; and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses. The two complete additions, the top window, the correction and the key exchange stay with the C's tests and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |

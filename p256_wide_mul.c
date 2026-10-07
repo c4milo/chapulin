@@ -196,12 +196,26 @@ void p256_wide_base_mul(p256_point *o, const p256_scalar *k) {
     sum.x = entry.x;
     sum.y = entry.y;
     sum.z = p256_wide_fe_one_mont;
-    for (size_t window = 1; window < P256_WIDE_TABLE_WINDOWS; window++) {
+    // Windows 1 to 41 add by the incomplete addition, which needs a finite sum whose x is not
+    // the entry's. Before window i the sum is S times G, for S the sum of d_j 64^j over the
+    // windows j below i, and the entry is E times G, for E = d_i 64^i. Every digit is odd and at
+    // most 63 in size, so S, S + E and S - E are odd, and so not zero, and are below 64^(i+1)
+    // in size. For window 41 that is 2^252, which is below n, the order of G. So none of the
+    // three is a multiple of n: the sum is finite and is neither the entry nor its negative.
+    // spec/lean/Spec/P256WidePoint.lean proves it (windowSum_represents_p256).
+    for (size_t window = 1; window + 1 < P256_WIDE_TABLE_WINDOWS; window++) {
         digit_entry(&entry, &negated, k, window);
-        p256_wide_point_add_affine(&sum, &sum, &entry);
+        p256_wide_point_add_affine_incomplete(&sum, &sum, &entry);
     }
+    // The top window keeps the complete addition, because there E = d_42 2^252 can exceed n.
+    // For K = 0xe0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf the sum before
+    // it is S = 2^256 - n - 2^252 times G and the entry is E = 15 * 2^252 times G, so S - E = -n
+    // and the sum is the entry.
+    digit_entry(&entry, &negated, k, P256_WIDE_TABLE_WINDOWS - 1);
+    p256_wide_point_add_affine(&sum, &sum, &entry);
     // The digits are those of k | 1, so an even k takes G away again: the sum plus -G is
-    // computed for every k and kept by mask.
+    // computed for every k and kept by mask. This addition is complete too, because for
+    // k = n - 1 the sum is the point at infinity.
     entry = p256_wide_table[0][0];
     p256_wide_fe_neg(&entry.y, &entry.y);
     p256_wide_point_add_affine(&corrected, &sum, &entry);

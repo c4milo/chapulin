@@ -1,0 +1,16 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: the top window adds its entry by the incomplete addition. For
+  k = 0xe0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf
+  and k - 1 the sum before the top window is that window's entry, so the
+  addition gives (0 : 0 : 0) and k * G comes out as the point at
+  infinity. Every other scalar is still right. bin/p256_equiv_test
+  multiplies G by both.
+
+--- old
+    digit_entry(&entry, &negated, k, P256_WIDE_TABLE_WINDOWS - 1);
+    p256_wide_point_add_affine(&sum, &sum, &entry);
+--- new
+    digit_entry(&entry, &negated, k, P256_WIDE_TABLE_WINDOWS - 1);
+    p256_wide_point_add_affine_incomplete(&sum, &sum, &entry);

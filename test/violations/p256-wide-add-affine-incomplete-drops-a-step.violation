@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: p256_equiv_test
+reason: the incomplete addition leaves out the step that takes 2r from
+  x3_numerator, so X3 and Y3 come out for another point. No fault
+  follows: every coordinate is still a field element. bin/p256_equiv_test
+  holds the addition to the complete one on multiples of G and table
+  entries, and every base multiplication runs it 41 times.
+
+--- old
+    p256_wide_fe_add(&t, &r, &r);
+    p256_wide_fe_sub(&x3_numerator, &x3_numerator, &t);
+--- new
+    p256_wide_fe_add(&t, &r, &r);

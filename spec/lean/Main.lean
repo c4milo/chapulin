@@ -497,6 +497,16 @@ def dispatch : List String → Option String
     let field : List (ZMod Spec.P256.p) := coordinates.map fun c => (bytesToNatBE c : ZMod _)
     let o := Spec.P256WidePoint.double ⟨field[0]!, field[1]!, field[2]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_add_affine_incomplete", x, y, z, x2, y2] => do
+    -- p256_wide_point_add_affine_incomplete's projective X, Y and Z and affine x and y, each
+    -- 32 big-endian bytes below p, out of the Montgomery domain on both sides
+    -- (Spec/P256WidePoint.lean).
+    let coordinates ← [x, y, z, x2, y2].mapM hexArg?
+    guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
+    let field : List (ZMod Spec.P256.p) := coordinates.map fun c => (bytesToNatBE c : ZMod _)
+    let o := Spec.P256WidePoint.addAffineIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
+      ⟨field[3]!, field[4]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

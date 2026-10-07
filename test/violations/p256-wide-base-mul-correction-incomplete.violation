@@ -1,0 +1,13 @@
+invariant: INV-16
+file: p256_wide_mul.c
+catches: p256_equiv_test
+reason: the correction for an even scalar adds -G by the incomplete
+  addition. For k = n - 1 the sum before it is the point at infinity,
+  which the incomplete addition cannot read, so k * G comes out as the
+  point at infinity where -G is right. bin/p256_equiv_test multiplies G
+  by n - 1.
+
+--- old
+    p256_wide_point_add_affine(&corrected, &sum, &entry);
+--- new
+    p256_wide_point_add_affine_incomplete(&corrected, &sum, &entry);

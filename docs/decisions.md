@@ -8013,3 +8013,113 @@ does nothing more.
     - **r^5 to r^8 in one vector multiply.** It would take the call's
       seven scalar multiplies to three, for a second way to compute the
       powers beside `multiply_scalar`.
+
+111. **A host object adds windows 1 to 41 of k·G on nine products and two
+    squares, and Lean proves that every one of those additions meets the
+    formula's condition.** Entry 109's k·G added every window's entry by
+    Renes, Costello and Batina's Algorithm 5, thirteen products, which is
+    correct for every pair of points. Camilo ruled for moving the additions
+    to formulas with fewer products, as entry 108 did for the doubling, each
+    with a Lean theorem over a model of the C and a row in the differential.
+
+    - **What runs.** `p256_wide_point_add_affine_incomplete` runs the
+      Explicit-Formulas Database's madd-1998-cmo in homogeneous projective
+      coordinates: u = Y2 Z1 - Y1, v = X2 Z1 - X1, r = v^2 X1 and
+      A = u^2 Z1 - v^3 - 2 r give X3 = v A, Y3 = u (r - A) - v^3 Y1 and
+      Z3 = v^3 Z1. That is nine products, two squares and seven additions
+      and subtractions, where Algorithm 5 runs thirteen products and 23.
+      The C names A `x3_numerator`, because `a` is the first point.
+      `p256_wide_base_mul` adds windows 1 to 41 by it. The top window and
+      the correction for an even k keep Algorithm 5, and the key exchange
+      keeps Algorithm 4.
+    - **The condition.** The formula is the line through the two points
+      with its denominator cleared. v is zero where the two x are equal and
+      where the first point is the point at infinity, and then so are X3
+      and Z3: a point and itself, and the point at infinity with any point,
+      give (0 : 0 : 0), which names no point. A point and its negative give
+      (0 : Y : 0), the point at infinity. So the first point must be finite
+      and its x must not be the second's.
+    - **Why windows 1 to 41 meet it.** Before window i the sum is S·G for
+      S, the sum of d_j 64^j over the windows j below i, and the entry is
+      E·G for E = d_i 64^i. Every digit is odd and at most 63 in size. So
+      S, S + E and S - E are odd, which makes them not zero, and are below
+      64^(i+1) in size: 2^252 at window 41, which is below n. None
+      of the three is a multiple of n, so the sum is finite and is neither
+      the entry nor its negative, and two finite points of the curve that
+      are neither equal nor each other's negative have different x. The
+      argument reads n only through 2^252 < n.
+    - **Why the top window does not.** There E = d_42 2^252 can be
+      15 · 2^252, which is above n. For K =
+      0xe0000000ffffffff00000000000000004319055258e8617b0c46353d039cdaaf,
+      S = 2^256 - n - 2^252 and E = 15 · 2^252, so S - E = -n: the sum
+      before the window is the window's entry. That K is k | 1 for two
+      scalars below n. The correction keeps the complete addition too,
+      because for k = n - 1 the sum it adds -G to is the point at
+      infinity.
+    - **The proof.** `spec/lean/Spec/P256WidePoint.lean` holds the C's steps
+      as `addAffineIncomplete`, one `let` for each C statement.
+      `addAffineIncomplete_represents` proves that where the coordinates
+      hold a finite point whose x is not x2, the result holds its sum with
+      (x2, y2), Mathlib's group law, on every curve y^2 = x^3 - 3x + b over
+      every field: the formula for two points with different x reads no
+      coefficient of the curve but two that are zero here. `windowSum` is
+      the loop of windows 0 to 41, and `windowSum_represents` proves that
+      it computes the sum of d_j 64^j times G, for digits odd and at most
+      63 in size, wherever G's order is at least 64^i: every addition
+      meets the first theorem's condition by the argument above.
+      `windowSum_represents_p256` states it at P-256 with p and n prime
+      and n • G = 0 as hypotheses, the ones `ecdsaVerify_ecdsaSign`
+      takes. `bin/diff_p256_wide` compares the C's coordinates with the
+      model's on random coordinates, at Z = 0, and where the two x are
+      equal.
+    - **What holds it.** `bin/p256_equiv_test` holds the incomplete
+      addition to the complete one as points, on 24 multiples of G and
+      entries of the table, and requires the three inputs outside its
+      condition to give what `p256_wide_point.h` states. It multiplies G
+      by the two scalars above. Four violations: the top window on the
+      incomplete addition, which those two scalars catch; the correction
+      on it, which n - 1 catches; a step left out, which the same test
+      catches; and the sign of a term of Y3 flipped, which
+      `bin/diff_p256_wide` catches. The `p256_wide_point` proof covers
+      the new steps in both aliasing shapes, 255 properties in 2 s, and
+      the `p256_wide_mul` proof runs the new loop over a stub of the
+      addition, 376 properties in 37 s.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      `bench/primitives.c` over five runs of each in turn at a load average
+      of 4 to 5, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting:
+
+      | | Algorithm 5 | madd-1998-cmo | OpenSSL |
+      | --- | --- | --- | --- |
+      | key generation | 14.7 µs, 172,934 instructions | 12.6 µs, 139,673 | 9.36 µs |
+      | signature | 23.9 µs, 253,061 instructions | 21.6 µs, 219,841 | 17.6 µs |
+
+      That takes key generation from 1.57 to 1.34 times OpenSSL's time,
+      and a signature from 1.35 to 1.22. Under qemu-x86_64 a key
+      generation retires 342,901 instructions before and 273,073 after
+      under gcc 13.3, and 265,147 and 207,556 under clang 18.1.3; a
+      signature 784,806 and 714,978, and 679,960 and 622,369. The key
+      exchange does not move.
+    - **Timing.** `bin/timing_p256_wide` reads the key generation's rows
+      below 2 in every run on the M1 Pro. Its signature row read up to 4.6
+      in 17 runs and 7.6 in one, where the code before read up to 2.8 in
+      12. Four times the samples would double the |t| of a real
+      difference; with them the row read 1.6 to 4.5, and the code before
+      1.6 to 3.9 in the same sitting. The change adds no branch and no
+      address that reads the scalar.
+    - **Cost.** 356 more bytes of text in `p256_wide_point.c` and 252 in
+      `p256_wide_mul.c` under Apple clang 21, and 608 and 32 under gcc 13
+      for x86-64. A device object holds neither file.
+
+    Rejected:
+
+    - **Jacobian coordinates for k·G.** The database's madd-2007-bl runs
+      seven products and four squares, as many as this one, and the top
+      window and the correction would need the sum converted back for the
+      complete addition.
+    - **The incomplete addition in the top window too.** It would save
+      one addition of 43 for a masked case of its own, the two scalars
+      above.
+    - **The key exchange.** Its windows add a multiple of the peer's
+      point to a sum the doublings moved, so it needs an argument of its
+      own. It keeps Algorithm 4 until that change.

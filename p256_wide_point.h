@@ -1,4 +1,4 @@
-// P-256 points over the wide field (p256_wide_field.h): the three formulas the scalar
+// P-256 points over the wide field (p256_wide_field.h): the four formulas the scalar
 // multiplications are built from, and the two entries of p256_point.h that read and write
 // bytes. A host object (-DCH_CPU_RUNTIME,
 // cpu_cfg.h) holds this file beside p256_point.c, and widemul.h runs it for a session whose
@@ -51,6 +51,15 @@ void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p25
 // infinity among them. o may alias a.
 void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
                                 const p256_wide_affine *b);
+
+// o = a + b for an affine b, where a is finite and a's x is not b's: the Explicit-Formulas
+// Database's madd-1998-cmo, 9 products and 2 squares where the complete mixed addition above
+// runs 13 products (docs/decisions.md 111). spec/lean/Spec/P256WidePoint.lean proves that the
+// steps compute a + b under that condition, on every curve y^2 = x^3 - 3x + b over every field.
+// Outside it, a = b and a at infinity give (0 : 0 : 0), which names no point, and a = -b gives
+// (0 : Y : 0) with Y not zero, the point at infinity. o may alias a.
+void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_point *a,
+                                           const p256_wide_affine *b);
 
 // o = 2a: the Explicit-Formulas Database's dbl-2007-bl-2 for curves with a = -3, 10 products
 // where the same paper's Algorithm 6 runs 13, and one masked move for the point at infinity

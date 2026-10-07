@@ -58,6 +58,13 @@ void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
     havoc_wide_point(o);
 }
 
+void p256_wide_point_add_affine_incomplete(p256_wide_point *o, const p256_wide_point *a,
+                                           const p256_wide_affine *b) {
+    __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "add_affine_incomplete: first point readable");
+    __CPROVER_assert(__CPROVER_r_ok(b, sizeof *b), "add_affine_incomplete: affine point readable");
+    havoc_wide_point(o);
+}
+
 void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "double: point readable");
     havoc_wide_point(o);
