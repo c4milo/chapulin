@@ -10,8 +10,9 @@
 # client's and the server's, so a draw site that calls ch_rand_bytes
 # makes the object import a hook no RAND=session image defines, and the
 # counterpart of the RAND=extern import check fails (docs/decisions.md
-# 77). tools/impact.py emits the same command for a source this object
-# packages; the two have to stay the same command, and
-# test/impact_test.py compares them.
+# 77). This runs the command make check's check-lib-session target runs,
+# and tools/impact.py runs that target for a source the object packages;
+# the two have to stay the same command, and test/impact_test.py compares
+# them.
 cd "$(dirname "$0")/.." || exit 1
 exec make -s lib-check RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both

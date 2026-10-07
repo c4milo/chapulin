@@ -22,6 +22,7 @@ a Makefile edit selects every gate.
 
 import pathlib
 import re
+import shlex
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -158,6 +159,21 @@ def binaries_run(recipe, variables):
     for line in recipe:
         names |= set(RUNS_BINARY.findall(expand(line, variables)))
     return names
+
+
+# `$(MAKE)` and the words after it, up to the first shell operator: a
+# redirect, a pipe, a `;` or an `&`. A word may hold a quoted part, as
+# CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' does.
+MAKE_CALL = re.compile(r"""\$\(MAKE\)((?:\s+(?:'[^']*'|"[^"]*"|[^\s'";|&<>])+)+)""")
+
+
+def make_calls(recipe):
+    """The make commands a recipe runs through $(MAKE), each as the list
+    of words the shell passes make: ["lib-check", "RAND=extern",
+    "TRUST=ca-rsa"]. make's database prints a line a backslash continues
+    as two lines, so the lines are joined first."""
+    text = " ".join(line.rstrip("\\") for line in recipe)
+    return [shlex.split(m.group(1)) for m in MAKE_CALL.finditer(text)]
 
 
 # ---------------------------------------------------------------------------

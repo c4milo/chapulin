@@ -6,10 +6,10 @@
 # are the edited sources while a violation is applied; a nonzero exit is
 # the lint objecting.
 #
-# The TRANSPORT=quic-nonblocking object packages the eight QUIC_SRCS, which every
-# other packaged object filters out, so this leg is the only one that
-# compiles them at all. tools/impact.py emits the same command for a
-# source that object packages; the two have to stay the same command,
-# and test/impact_test.py compares them.
+# The TRANSPORT=quic-nonblocking object packages the QUIC_SRCS, which no
+# other frame-budget check compiles. This runs the command make check's
+# check-stack-quic target runs, EXPORTER=off included, and tools/impact.py
+# runs that target for a source the object packages; the two have to stay
+# the same command, and test/impact_test.py compares them.
 cd "$(dirname "$0")/.." || exit 1
-exec make -s lint-stack TRANSPORT=quic-nonblocking
+exec make -s lint-stack TRANSPORT=quic-nonblocking EXPORTER=off

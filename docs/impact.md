@@ -52,11 +52,14 @@ For each changed path the plan carries:
   change `bin/diff` compiles: each arm compiles the same driver with one
   more define, and the Makefile names the rows that meet real C in one
   arm alone.
-- **Packaged-object legs.** One leg per axis value `make check` builds —
-  the default object, `TRUST=ca-rsa`, `TRUST=webpki` and `TRANSPORT=quic-nonblocking`. A
-  source selects every leg that packages it, so a file the default object
-  filters out still selects the leg that compiles it, and so does an
-  `#ifdef` body only one leg's defines keep.
+- **Library builds.** `make check` builds the library object once per
+  configuration and checks each one: the targets the Makefile lists in
+  `CHECK_LEGS`, such as `check-lib-server` for `ROLE=server`. The plan
+  runs `make <target>` for every one whose object compiles the changed
+  source, so a file the default object filters out still selects the
+  build that compiles it, and so does an `#ifdef` body only one
+  configuration's defines keep. The tool reads the targets from make's
+  database, so a target the Makefile adds is one the plan can run.
 - **Codegen gates.** A source in `CODEGEN_SRCS` selects the wide-multiply
   and runtime-symbol gates, which read what the compiler emits per file.
 - **Violations.** Every `test/violations/*.violation` that edits the file.
@@ -144,7 +147,7 @@ No module of the tool lists a source. `tools/impact_read.py` reads them:
 | Source | What it supplies |
 | --- | --- |
 | `make -qp` | every variable expanded, and every rule with its prerequisites and recipe |
-| `make print-lib-srcs` for each axis value in `LIB_AXES` | the sources of each packaged-object leg `make check` builds, so a source selects the legs that package it |
+| `make print-lib-srcs` for each target in `CHECK_LEGS` that runs make | the sources each of `make check`'s library builds compiles, under the variables its recipe passes make |
 | `make print-lib-srcs` for each build in `BUILDS` | every source some packaged object compiles, and the sources their text includes: the set `lint-proof-cover` reads |
 | `proof/run.sh` | each harness's tier and the sources its launch line links |
 | `proof/*_harness.c` | the module each harness includes, through its stubs header |
@@ -184,14 +187,17 @@ The same check asserts that:
 - every command that links the packaged object names `RAND`, which has
   no default;
 - a plan entry whose gate is a gate wrapper script runs the command that
-  script execs, variables included;
+  script execs, variables included, itself or through the library build
+  whose recipe runs it;
 - the everything plan runs every gate a narrow plan can select, so a
   Makefile edit is never checked less thoroughly than a one-source edit;
 - each path the mapping refuses to narrow really does select every gate,
   a source no list in the tree names included;
 - the plan for every root `.c` file git tracks runs `lint-proof-cover`
   and `lint-codegen-partition`, the two lints that read git's list of
-  those files.
+  those files;
+- every library build in `CHECK_LEGS` whose recipe runs make is run by
+  the plan for a source it compiles.
 
 It writes nothing in the working tree. The two checks that need a
 changed set build one through a temporary git index and a scratch file

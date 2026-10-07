@@ -7,7 +7,7 @@
 # exit is lib-check objecting.
 #
 # This is the one client object that compiles ch_record_init and no
-# ch_connect, so it is the only leg that reports a ch_connect the webpki
+# ch_connect, so it is the only build that reports a ch_connect the webpki
 # arm left unguarded: the compiled call imports the ch_handshake this
 # variant leaves out (https://github.com/c4milo/chapulin/issues/171).
 # The export list does not move, because the link localizes every symbol
@@ -21,8 +21,9 @@
 # carries both a trust bit and a transport bit, and whose ch_tls differs
 # from the default object's. A fifth drops ch_ticket_obfuscated_age from
 # TRANSPORT_NAMED, and the export list no longer matches PUBLIC.
-# tools/impact.py emits the same command for a source this object
-# packages; the two have to stay the same command, and
+# This runs the command make check's check-lib-webpki-tcp-nonblocking
+# target runs, and tools/impact.py runs that target for a source the
+# object packages; the two have to stay the same command, and
 # test/impact_test.py compares them.
 cd "$(dirname "$0")/.." || exit 1
 exec make -s lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking

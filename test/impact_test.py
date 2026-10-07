@@ -16,7 +16,7 @@ mapping in tools/impact.py, never in this file: the fix is to teach the
 mapping where that gate reads its sources, never to drop the violation
 from the comparison.
 
-Eight more assertions come free from the same data:
+Nine more assertions come free from the same data:
 
   every command the plan emits parses as `make <target>` naming a target
   the Makefile has, or as a script the tree holds — a plan that names a
@@ -30,7 +30,8 @@ Eight more assertions come free from the same data:
   fails on a tree with nothing wrong
 
   every plan entry whose gate is a gate wrapper script runs the command
-  that script execs, variables included
+  that script execs, variables included, itself or through the library
+  build in make check whose recipe runs it
 
   the everything plan runs every gate a narrow plan can select, so the
   plan for a Makefile edit is never thinner than the plan for one source
@@ -41,6 +42,10 @@ Eight more assertions come free from the same data:
 
   the plan for every root .c file git tracks runs lint-proof-cover and
   lint-codegen-partition, the two lints that read git's list of them
+
+  every library build make check runs, each target in the Makefile's
+  CHECK_LEGS whose recipe runs make, is run by the plan for a source it
+  compiles
 
   a working tree that differs from the base gives the plan its changed
   set, and an unchanged one prints no command: the two shapes `make
@@ -232,6 +237,39 @@ def check_root_sources(mapping):
     return bad
 
 
+def check_library_builds(mapping):
+    """Every target in the Makefile's CHECK_LEGS that runs make is a
+    command the plan for a source its build compiles runs.
+
+    tools/impact_select.py kept its own list of these builds, and it named
+    9 of the 19 that run lib-check, so a change to srv_quic.c ran none.
+    The mapping now reads them from make's database. This holds it to
+    every target whose recipe names $(MAKE), which does not depend on how
+    the mapping reads a recipe."""
+    bad = 0
+    builds = mapping.library_builds()
+    targets = impact_read.expand("$(CHECK_LEGS)", mapping.variables).split()
+    running = [target for target in targets
+               if "$(MAKE)" in " ".join(mapping.rules.get(target, ([], []))[1])]
+    for target in running:
+        if not builds.get(target, ((), set()))[1]:
+            print(f"impact-test: make check's {target} runs make, and the "
+                  f"mapping reads no sources for its build")
+            bad += 1
+            continue
+        path = min(builds[target][1])
+        entries = impact_select.plan([path], mapping)
+        if entries[0].group == "everything":
+            continue  # make check, the plan's first command, runs every target
+        if f"make {target}" not in {entry.command for entry in entries}:
+            print(f"impact-test: {target}'s build compiles {path}, and the "
+                  f"plan for {path} does not run make {target}")
+            bad += 1
+    print(f"impact-test: {len(running)} library builds in make check, "
+          f"{len(running) - bad} run by the plan for a source each compiles")
+    return bad
+
+
 def everything_runs(mapping):
     """What the everything plan runs: every target its commands name,
     every target those targets run, the scripts in their recipes, the
@@ -324,16 +362,31 @@ def check_full_covers(mapping):
     return bad
 
 
+def commands_run(mapping, command):
+    """The make commands a plan command runs: the command itself, and when
+    it is `make <target>` for one of make check's library builds, the make
+    commands that target's recipe runs."""
+    words = command.split()
+    builds = mapping.library_builds()
+    runs = {command}
+    if words[0] == "make" and len(words) == 2 and words[1] in builds:
+        runs |= {"make " + " ".join(call) for call in builds[words[1]][0]}
+    return runs
+
+
 def check_script_commands(mapping):
     """A plan entry whose gate is a gate wrapper script runs the command
-    that script execs.
+    that script execs, itself or through the library build whose recipe
+    runs it.
 
     The wrapper exists so test/violations.py has a path to run, and the
     plan runs make directly, so the two spellings sit in different files
     and nothing else compares them. test/lint-stack-webpki.sh execs
     `make -s lint-stack TRUST=webpki`; a plan that emitted the same
     target without the variable would run the default budget and call
-    the webpki object checked."""
+    the webpki object checked. The plan runs make check's
+    check-stack-webpki for that object, whose recipe runs the same
+    command."""
     bad, seen = 0, set()
     for path in sample_paths():
         for entry in impact_select.plan([path], mapping):
@@ -346,7 +399,7 @@ def check_script_commands(mapping):
                 if wants is None or (gate, entry.command) in seen:
                     continue
                 seen.add((gate, entry.command))
-                if entry.command != f"make {wants}":
+                if f"make {wants}" not in commands_run(mapping, entry.command):
                     print(f"impact-test: {entry.command!r} carries the gate "
                           f"{gate}, which execs 'make -s {wants}'; the plan "
                           f"must run the same command")
@@ -493,6 +546,7 @@ def main():
            + check_run_targets(mapping) + check_rand_named(mapping)
            + check_script_commands(mapping) + check_full_covers(mapping)
            + check_fail_closed(mapping) + check_root_sources(mapping)
+           + check_library_builds(mapping)
            + check_dirty_tree() + check_empty_plan())
     if bad:
         print(f"impact-test: {bad} problem(s); fix the mapping in "

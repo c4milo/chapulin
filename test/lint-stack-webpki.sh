@@ -8,8 +8,9 @@
 #
 # The TRUST=webpki object packages sources the default object filters
 # out -- p256.c under an rsa mode, and the five chain verifiers -- so this
-# leg is the only one that compiles them at all. tools/impact.py emits
-# the same command for a source that object packages; the two have to
-# stay the same command, and test/impact_test.py compares them.
+# is the one frame-budget check that compiles them. This runs the command
+# make check's check-stack-webpki target runs, and tools/impact.py runs
+# that target for a source the object packages; the two have to stay the
+# same command, and test/impact_test.py compares them.
 cd "$(dirname "$0")/.." || exit 1
 exec make -s lint-stack TRUST=webpki

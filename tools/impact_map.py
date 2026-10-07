@@ -11,10 +11,14 @@ that already runs them.
 """
 
 import re
+import shlex
+import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from impact_read import (ROOT, RUNS_BINARY, SUFFIXES, binaries_run,
                          binary_sources, expand, harness_sources, harnesses,
-                         make_db, named_in, run, target_sources, violations)
+                         make_calls, make_db, named_in, run, script_target,
+                         target_sources, violations)
 from shipped_sources import shipped_sources
 
 
@@ -83,18 +87,27 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
               "test-invariants", "prove-slow", "m3-check", "cross-check",
               "san-check"]
 
-# The axis values print-lib-srcs is asked about, each a packaged-object
-# leg `make check` builds, so a changed source selects the commands
-# impact_select.LIB_LEGS names for each leg that packages it. Their union
-# is not every source some object packages, which lib_sources() reads
-# from tools/shipped_sources.py instead.
-# TRUST=webpki TRANSPORT=tcp-nonblocking packages tcp_nonblocking.c,
-# tcp_nonblocking_frame.c and tcp_nonblocking_step.c, which no other
-# client object carries, and a violation names its leg.
-LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki",
-            "TRUST=webpki TRANSPORT=tcp-nonblocking", "TRANSPORT=quic-nonblocking",
-            "TRUST=raw-ecdsa KEX=pq", "RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both",
-            "RAND=session"]
+# A variable a make command line sets, NAME=value, as against a target
+# or an option.
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def build_variables(words):
+    """The variables a make command sets that print-lib-srcs can take, as
+    a tuple: every NAME=value word but one whose value names a make
+    variable. CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' is the one
+    such word: it changes defines and no source, and make would read it
+    on a command line as a variable that names itself."""
+    return tuple(w for w in words if ASSIGNMENT.match(w) and "$" not in w)
+
+
+def lib_srcs(variables):
+    """What print-lib-srcs prints under these variables: make's exit
+    status, the sources and make's error output. RAND=drbg comes first, so
+    a command that names RAND overrides it, and one that does not gets
+    drbg.c, which lint-stack compiles beside every object's sources."""
+    r = run("make", "-s", "print-lib-srcs", "RAND=drbg", *variables)
+    return r.returncode, {w for w in r.stdout.split() if w.endswith(".c")}, r.stderr.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +118,7 @@ class Mapping:
     """What the tree says each gate reads."""
 
     def __init__(self):
-        self._lib_legs = None
+        self._library_builds = None
         self._lib_sources = None
         self._scopes = {}
         self._named = None
@@ -127,6 +140,15 @@ class Mapping:
         # The gate wrapper scripts a violation names are gates too.
         self.scripts |= {f"test/{p.name}" for p in ROOT.glob("test/lint-*.sh")}
         self.scripts |= {f"test/{p.name}" for p in ROOT.glob("test/docker-*.sh")}
+        # The wrapper scripts that exec make, by the command each runs:
+        # "lint-stack TRUST=webpki" -> test/lint-stack-webpki.sh. A plan
+        # entry that runs that command carries the script as a gate, so a
+        # violation that names the script counts as covered by it.
+        self.wrapped = {}
+        for path in sorted(ROOT.glob("test/*.sh")):
+            command = script_target(f"test/{path.name}")
+            if command:
+                self.wrapped.setdefault(command, []).append(f"test/{path.name}")
         # Both directions: which scripts run a binary, and which binaries
         # a script runs. A script runs no make, so a plan that selects
         # one has to build what it runs — the same reason a violation
@@ -213,33 +235,59 @@ class Mapping:
                     queue += [w for w in names.split() if "=" not in w]
         return found
 
-    def lib_legs(self):
-        """Axis value -> the sources that object packages, asked of the
-        Makefile's own print-lib-srcs rather than listed here. Computed
-        once: it costs one make invocation per axis value, and
-        test/impact_test.py builds a plan for every violation's file.
+    def library_builds(self):
+        """Target -> (the make commands its recipe runs, the sources those
+        commands compile), for every target in the Makefile's CHECK_LEGS
+        whose recipe runs make. Each such target builds the library object
+        for one configuration and checks it, as check-lib-server does for
+        ROLE=server, so a source that object compiles selects the target.
+        The commands come from make's database and the sources from
+        print-lib-srcs, so a target the Makefile adds is one here too. The
+        list this tool kept by hand named 9 of the 19 targets that run
+        lib-check, so a change to srv_quic.c ran no lib-check at all.
 
-        Every axis value is a packaged-object leg `make check` builds, so
-        a source selects the commands of each leg that packages it.
-        bench/device-ram.sh and lint-trust-separation ask the same way,
-        and a list kept here is what fell four modules behind the
-        handshake split."""
-        if self._lib_legs is None:
-            legs = {}
-            for axis in LIB_AXES:
-                r = run("make", "-s", "print-lib-srcs", "RAND=drbg",
-                        *axis.split())
-                legs[axis] = {w for w in r.stdout.split() if w.endswith(".c")}
-            self._lib_legs = legs
-        return self._lib_legs
+        A target whose recipe runs no make is left out. check-lib-pair
+        runs test/lib-pair-check.sh, which select_pairs selects. Where the
+        compiler fails the host test, a host object's target prints a SKIP
+        line instead, as it does when make check runs it.
+
+        Computed once: it costs one make invocation per configuration, and
+        test/impact_test.py builds a plan for every violation's file. A
+        failed print-lib-srcs stops the program, because a target with no
+        sources is one no plan would run."""
+        if self._library_builds is None:
+            calls = {}
+            for target in expand("$(CHECK_LEGS)", self.variables).split():
+                commands = make_calls(self.rules.get(target, ([], []))[1])
+                if commands:
+                    calls[target] = commands
+            configurations = sorted({build_variables(words)
+                                     for commands in calls.values() for words in commands})
+            with ThreadPoolExecutor(8) as pool:
+                answers = dict(zip(configurations, pool.map(lib_srcs, configurations)))
+            builds = {}
+            for target, commands in calls.items():
+                sources = set()
+                for words in commands:
+                    status, found, error = answers[build_variables(words)]
+                    if status != 0:
+                        sys.exit(f"impact: make print-lib-srcs for {target}'s "
+                                 f"{shlex.join(words)} failed, so the sources it "
+                                 f"builds are unknown:\n{error}")
+                    sources |= found
+                builds[target] = (commands, sources)
+            self._library_builds = builds
+        return self._library_builds
 
     def lib_sources(self):
         """Every source some packaged object compiles, and every source
         whose text one of those includes, from tools/shipped_sources.py:
-        the set lint-proof-cover reads. The union of lib_legs() is
-        smaller, since no axis value in LIB_AXES packages srv_quic.c, for
-        one. Computed once, as lib_legs is: a plan asks for it, and
-        test/impact_test.py builds a plan for every violation's file."""
+        the set lint-proof-cover reads. library_builds() answers a
+        narrower question, which of make check's builds compile a source
+        on this compiler, and print-lib-srcs names no source that another
+        includes, such as poly1305_vector.c. Computed once, as
+        library_builds is: a plan asks for it, and test/impact_test.py
+        builds a plan for every violation's file."""
         if self._lib_sources is None:
             self._lib_sources = shipped_sources("impact")
         return self._lib_sources

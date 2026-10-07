@@ -3,8 +3,8 @@
 
 One selector per kind of gate, and plan() runs them in order: the test
 binaries and the lanes that write their own compile lines, the CBMC
-harnesses, the differential, the packaged-object legs, the codegen
-ceilings, the make targets that run a changed helper script, the
+harnesses, the differential, the library builds make check runs, the
+codegen ceilings, the make targets that run a changed helper script, the
 violations, and the lints. Each one adds a command, the reason it is in
 the plan, and the gates it covers.
 
@@ -14,6 +14,7 @@ sends it to full_plan(), which runs everything.
 """
 
 import pathlib
+import shlex
 
 from impact_map import Entry, Plan, is_wide, known
 from impact_read import ROOT, SUFFIXES, expand, script_target
@@ -93,68 +94,6 @@ NEEDS_VARIABLE = {
 AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
               "clean", "check"}
 
-# The packaged-object legs `make check` builds, keyed by the axis
-# value impact_map.LIB_AXES asks print-lib-srcs about: what check runs
-# for each leg, the reason each command is in a plan, and the gates it
-# covers. A leg's object is built from its own source set under its own
-# defines, so a source it packages is checked here and a source it
-# filters out is not.
-LIB_LEGS = [
-    ("", [
-        ("make lib-check RAND=drbg",
-         "the RAND=drbg object packages {path}, and lib-check reads that "
-         "object's export list", []),
-        ("make lib-check cxx-check examples-check RAND=extern",
-         "the RAND=extern object packages {path}, and the two examples and "
-         "the C++ wrapper link that object", []),
-        ("make lint-stack",
-         "the default object compiles {path}, whose frame stays under the "
-         "device budget", []),
-    ]),
-    ("TRUST=ca-rsa", [
-        ("make lib-check cxx-check RAND=extern TRUST=ca-rsa",
-         "the CA-mode object packages {path}, and it exports the "
-         "provisioning call the other objects do not", []),
-    ]),
-    ("TRUST=webpki", [
-        ("make lib-check cxx-check RAND=extern TRUST=webpki",
-         "the TRUST=webpki object packages {path}", []),
-        ("make lint-stack TRUST=webpki",
-         "the TRUST=webpki object compiles {path} under -DCH_TRUST_WEBPKI, "
-         "against that build's own frame budget",
-         ["test/lint-stack-webpki.sh"]),
-    ]),
-    ("TRUST=webpki TRANSPORT=tcp-nonblocking", [
-        ("make lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking",
-         "the tcp-nonblocking webpki object packages {path}, and it is the "
-         "one client object that compiles ch_record_init and no ch_connect",
-         ["test/lib-check-webpki-tcp-nonblocking.sh"]),
-    ]),
-    ("TRANSPORT=quic-nonblocking", [
-        ("make lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking",
-         "the TRANSPORT=quic-nonblocking object packages {path} and exports the fifteen "
-         "ch_quic_ calls in place of the four tcp-blocking ones", []),
-        ("make lint-stack TRANSPORT=quic-nonblocking",
-         "the TRANSPORT=quic-nonblocking object compiles {path} under "
-         "-DCH_TRANSPORT_QUIC_NONBLOCKING, against that build's own frame budget",
-         ["test/lint-stack-quic.sh"]),
-    ]),
-    ("TRUST=raw-ecdsa KEX=pq", [
-        ("make lib-check RAND=extern TRUST=raw-ecdsa KEX=pq",
-         "the raw-ecdsa KEX=pq object packages {path}, and it is the one "
-         "leg that links ML-KEM into a raw-mode object", []),
-    ]),
-    ("RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both", [
-        ("make lib-check RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both",
-         "the RAND=session object packages {path}, and lib-check holds it to "
-         "name no ch_rand_bytes", ["test/lib-check-rand-session.sh"]),
-    ]),
-    ("RAND=session", [
-        ("make lib-check cxx-check RAND=session",
-         "the default RAND=session object packages {path}, and the C++ "
-         "wrapper names each session's source through Config::rand_bytes", []),
-    ]),
-]
 
 # The catches lines that name the host object's qemu lane: the lane
 # itself, and the lane with one of the seven arguments that run one part
@@ -350,22 +289,30 @@ def select_spec(out, changed):
         out.add("differential", command, reason, gates)
 
 
-def select_modes(out, sources, legs, lib):
-    """The packaged-object legs, one per axis value `make check` builds.
+def select_modes(out, sources, builds, lib):
+    """The library builds `make check` runs, one per target in the
+    Makefile's CHECK_LEGS that runs make (Mapping.library_builds).
 
-    Each leg compiles its own source set under its own defines and its
-    own frame budget, so a source another leg filters out is compiled
-    here and nowhere else — and so is an #ifdef body only this leg's
-    defines keep. tls.c, handshake_auth.c, handshake_message.c,
-    handshake_parser.c and handshake_parser_ee.c each hold a
-    CH_TRUST_WEBPKI block the default object compiles out, so every leg
-    that packages the file is selected, not the default leg alone."""
+    Each target builds the packaged object for one configuration under
+    its own defines, and a check-stack target holds that object's frames
+    to its own budget, so a source another configuration filters out is
+    compiled there and nowhere else — and so is an #ifdef body only that
+    configuration's defines keep. tls.c, handshake_auth.c,
+    handshake_message.c, handshake_parser.c and handshake_parser_ee.c each
+    hold a CH_TRUST_WEBPKI block the default object compiles out, so every
+    target that packages the file is selected, not the default one alone.
+    The plan runs the target itself, so it runs what check runs, with its
+    variables and its stamp."""
     for path in sources:
-        for axis, commands in LIB_LEGS:
-            if path not in legs.get(axis, ()):
+        for target in sorted(builds):
+            commands, compiled = builds[target]
+            if path not in compiled:
                 continue
-            for command, reason, gates in commands:
-                out.add("modes", command, reason.format(path=path), gates)
+            gates = [script for words in commands
+                     for script in out.mapping.wrapped.get(" ".join(words), [])]
+            out.add("modes", f"make {target}",
+                    f"make check runs {target}, and its `make {shlex.join(commands[0])}` "
+                    f"compiles {path}", gates)
         # The mode partition reads every axis value's packaged source
         # list, and the webpki rows read git's list of root webpki*.c
         # files, which no make variable holds.
@@ -603,8 +550,9 @@ def select_lints(out, changed, csources, lib):
                 "the Zig API's files stay under 500 lines, as the C does")
     # lint-proof-cover asks which shipped source a harness proves, so a
     # library source selects it and a test main does not. The frame budget
-    # is per packaged object, so select_modes above runs one leg per
-    # object instead of one lint-stack for every source.
+    # is per packaged object, so select_modes above runs the frame-budget
+    # check of each object that compiles a source instead of one
+    # lint-stack for every source.
     for path in csources:
         if path in lib:
             out.add("lint", "make lint-proof-cover",
@@ -805,7 +753,7 @@ def plan(changed, mapping):
     select_recipe_gates(out, sources)
     select_proofs(out, csources)
     select_spec(out, changed)
-    select_modes(out, sources, mapping.lib_legs(), lib)
+    select_modes(out, sources, mapping.library_builds(), lib)
     select_pairs(out, changed, lib)
     select_aes_runtime_qemu(out, changed)
     select_script_builds(out, changed)
