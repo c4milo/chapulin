@@ -425,7 +425,7 @@ launch slow:5 noovf x25519_sqr 65 ""
 # execution, so that loop unrolls to its bound on every message and needs a
 # bound of its own (the harness says why).
 #
-# The psk leg sat at the nightly runner's memory limit
+# The psk harness sat at the nightly runner's memory limit
 # (https://github.com/c4milo/chapulin/issues/140) because the ClientHello stub
 # filled a symbolic n <= 617 bytes, 618 guarded array updates per call that the
 # formula kept, and the reader's fills shared that 618 bound. Measured under
@@ -434,11 +434,11 @@ launch slow:5 noovf x25519_sqr 65 ""
 # after: psk 1671 properties, 1462 s, cbmc 5.9 GB, kissat 5.9 GB, then 1683,
 # 231 s, cbmc 1.6 GB, kissat 7.8 GB; pin 1673, 415 s, cbmc 5.9 GB, kissat
 # 4.2 GB, then 1685, 55 s, cbmc 1.1 GB, kissat 2.2 GB. In the pinned
-# ubuntu-24.04 container (cbmc 6.11.0, kissat 4.0.4, VmHWM from /proc) the psk
-# leg now takes 191 s at cbmc 1.9 GB and kissat 3.7 GB, 5.6 GB together, where
-# the runner measured 10 GB of cbmc alone. kissat's peak on this one formula
-# has been 3.7, 5.7 and 7.8 GB across three solves, so the tier's 12 GB default
-# weight stays.
+# ubuntu-24.04 container (cbmc 6.11.0, kissat 4.0.4, VmHWM from /proc) the
+# psk harness now takes 191 s at cbmc 1.9 GB and kissat 3.7 GB, 5.6 GB
+# together, where the runner measured 10 GB of cbmc alone. kissat's peak
+# on this one formula has been 3.7, 5.7 and 7.8 GB across three solves,
+# so the tier's 12 GB default weight stays.
 # handshake_flight.c joins both lines because the flight handlers moved
 # there out of handshake.c, which these harnesses still include whole.
 # Re-measured under this script's flags with the handlers external
@@ -836,11 +836,11 @@ launch fast full webpki_sigalg 50 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c pro
 # 6.11.0, kissat, /usr/bin/time -l): 975 properties, 46 s, 410 MB.
 launch fast full p384 113 "" buf.c
 launch fast full hkdf 120 "" ct.c proof/ct_wipe_stub.c
-# hkdf384: the hmac and extract leg under CH_HASH_SHA384, with keys up
+# hkdf384: the hmac and extract proof under CH_HASH_SHA384, with keys up
 # to 160 bytes, one past SHA-512's 128-byte block plus 32, and extract's
 # hash_len free over the two values the dispatcher takes. Measured the
 # way the expand lines above were: 347 properties, 6 s, 0.10 GB peak.
-# The SHA-256 leg on the line above measured 282 properties, 2 s,
+# The SHA-256 proof on the line above measured 282 properties, 2 s,
 # 0.04 GB after hash_len joined the signatures.
 launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" ct.c proof/ct_wipe_stub.c
 # io: 458 s under this script's own flags. The transport shim over the
@@ -921,7 +921,7 @@ launch fast full transcript384 70 "fill_nondet.0:209"
 # verdict in 10 minutes at 1.4 GB with the label length free over 1..32,
 # and none in 7 minutes 50 seconds at 1.16 GB with it fixed at 13 and
 # 32 and only the label's bytes, the context length and the output
-# length free. The base leg above converges in 13 s, so what costs is
+# length free. The base proof above converges in 13 s, so what costs is
 # specific to the two exporter calls and not yet located: strlen over
 # free bytes and the wider info copy are the suspects, and neither has
 # been measured alone. A line here would hang the fast tier, which is
@@ -1883,7 +1883,7 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # table against that same statement, so a reader checks the pair rather
 # than one side. quic_driver compiles the QUIC arm of
 # handshake_record.c and all of quic_config.c real, which is what makes
-# it the leg proof-cover credits for those two. Each harness says what
+# it the harness proof-cover credits for those two. Each harness says what
 # it does not carry.
 #
 # Measured under this script's flags (kissat, PROVE_NO_CACHE=1
@@ -1906,7 +1906,7 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # cfg.psk instead, quic_step fails that assertion. With quic_fail writing
 # ch_tls.alert_sent beside q->alert (docs/decisions.md 75): quic_driver
 # 1663 properties, 86 s, 0.98 GB. With the QUIC version rules and the
-# switch (docs/decisions.md 79), the packet calls' leg in
+# switch (docs/decisions.md 79), the packet calls' proof in
 # proof/quic_driver_packets.h: quic_driver 1772 properties, 109 s wall,
 # 1.43 GB peak; quic_step 583 properties, 6.3 s, 43 MB; quic_step_ca 590
 # properties, 8.2 s, 46 MB. An assert of 0 after the switch's
@@ -1919,7 +1919,7 @@ launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
-# resident size stays under a gigabyte. The CA leg exists because
+# resident size stays under a gigabyte. The CA harness exists because
 # hsa_epoch_commit sits behind CH_TRUST_CA and its wipe bound is the
 # larger handshake_state that mode carries.
 launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c proof/ct_wipe_stub.c

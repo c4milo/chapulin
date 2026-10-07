@@ -161,7 +161,7 @@ static int spec_request(const char *cmd, uint8_t next_key[32], uint8_t *out, siz
     return hex_decode(next_key, reply, 32) && hex_decode(out, space + 1, n);
 }
 
-// Differential leg against the Lean spec, when its binary exists: for
+// Differential test against the Lean spec, when its binary exists: for
 // random seeds of CH_DRBG_SEED_MIN to SEED_TEST_MAX bytes and random
 // request sizes, the C generator's output and the spec's must agree,
 // across two consecutive requests.

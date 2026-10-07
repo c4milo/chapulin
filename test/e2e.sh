@@ -12,11 +12,11 @@ set -eEuo pipefail
 trap 'rc=$?; [ $rc -eq 0 ] || echo "FAIL e2e: aborted at line $LINENO (exit $rc)" >&2' ERR
 cd "$(dirname "$0")/.."
 
-# A leg whose tool or binary is missing is left out on a development
+# A test whose tool or binary is missing is left out on a development
 # machine, and this prints which. On CI, where GitHub sets CI, the script
 # fails instead: a job that lost an install step would otherwise pass
-# with the leg left out.
-skip() { # $1 = the legs left out, and why
+# with the test left out.
+skip() { # $1 = the tests left out, and why
     if [ -n "${CI:-}" ]; then
         echo "FAIL e2e: CI must not skip $1" >&2
         exit 1
@@ -64,7 +64,7 @@ ID=sapo-01
 # bash TCP probe so no netcat is required.
 # Starts an s_server on a kernel-assigned port. Sets SRV_PID and
 # SRV_PORT. Every argument is passed through, so a caller adds only what
-# its leg needs. -quiet is deliberately absent: it suppresses the ACCEPT
+# its test needs. -quiet is deliberately absent: it suppresses the ACCEPT
 # line this reads the port from, and the server's chatter goes to a log
 # rather than the console anyway.
 start_server() {
@@ -78,7 +78,7 @@ start_server() {
 }
 
 # The same for this tree's own server, bin/tlsserver, which prints the
-# port in s_server's ACCEPT shape. Sets SRV_LOG as well, because the legs
+# port in s_server's ACCEPT shape. Sets SRV_LOG as well, because the tests
 # read what the server logs about each connection.
 start_chserver() {
     SRV_N=$((SRV_N + 1))
@@ -92,7 +92,7 @@ start_chserver() {
 }
 
 # The same for the Go echo server, which prints Go's own Addr(). Sets
-# SRV_LOG too, for the leg that reads what the server logs.
+# SRV_LOG too, for the test that reads what the server logs.
 start_goecho() {
     SRV_N=$((SRV_N + 1))
     local log="$DIR/server$SRV_N.log"
@@ -166,7 +166,7 @@ expect_fail() {
 }
 
 # Fails unless an s_server started with -msg has read exactly one
-# ClientHello. A leg calls it after one handshake to show the server sent
+# ClientHello. A test calls it after one handshake to show the server sent
 # no HelloRetryRequest, which would have brought a second ClientHello.
 # Args: label, the server's log.
 one_client_hello() {
@@ -179,7 +179,7 @@ one_client_hello() {
     }
 }
 
-# Pin-string extractors for the CA legs. RSA builds pin the modulus as
+# Pin-string extractors for the CA tests. RSA builds pin the modulus as
 # lowercase hex; ECDSA builds pin the raw X||Y point from the key.
 rsa_modulus() {
     "$OPENSSL" rsa -in "$1" -noout -modulus 2>/dev/null \
@@ -197,7 +197,7 @@ p256_pub() {
 }
 
 # --- TRANSPORT=tcp-nonblocking: the same PSK handshake, driven by a caller that
-# owns the socket. The point of the leg is the comparison:
+# owns the socket. The point of the test is the comparison:
 # bin/tlsclient_tcp_nonblocking and bin/tlsclient reach the same connected
 # session against the same server, one with chapulin touching the descriptor and
 # one without.
@@ -233,12 +233,12 @@ grep -q "^resuming" "$DIR/err2" || {
 # --- The examples, run rather than merely compiled. Building them
 # catches a changed signature; only running them catches a changed
 # meaning, which is the failure a compiled-only example hides. Each
-# reuses a server an earlier leg already started.
+# reuses a server an earlier test already started.
 #
 # psk_client runs two sessions of its own: the first on the provisioned
 # key, the second on the ticket the first stored, so one run covers both.
 # The server is started with the identity psk_client.c's own header
-# tells a reader to use, so this leg checks the documented recipe and
+# tells a reader to use, so this test checks the documented recipe and
 # not a variant of it.
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity device-42 -nocert -rev
 PORT16=$SRV_PORT
@@ -367,7 +367,7 @@ chsrv_group chsrv-openssl-secp256r1-x25519 0x001d New -groups P-256:X25519 -msg
     exit 1
 }
 if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
-    CHSRV_PQ_LEG=" + chapulin server pq x4"
+    CHSRV_PQ_TESTS=" + chapulin server pq x4"
     # The hybrid first with its share: selected in one round trip, and a
     # ticket from that connection resumes over the hybrid again.
     chsrv_group chsrv-openssl-pq 0x11ec New -groups X25519MLKEM768:X25519 \
@@ -387,8 +387,8 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
         exit 1
     }
 else
-    CHSRV_PQ_LEG=" (chapulin server pq legs skipped)"
-    skip "chapulin server pq legs: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+    CHSRV_PQ_TESTS=" (chapulin server pq tests skipped)"
+    skip "chapulin server pq tests: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
 # --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
@@ -554,8 +554,8 @@ expect ca-rsa-flat "atcerid ajoh" "$DIR/err8" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT8" "ca:$CAMOD" -
 
 # The CA example against the same chain server, reading the root's
-# modulus from a file. Its epoch callbacks stay off here: the epoch legs
-# below cover that path, and this leg is about the chain check.
+# modulus from a file. Its epoch callbacks stay off here: the epoch tests
+# below cover that path, and this test is about the chain check.
 hex_to_file "$CAMOD" "$DIR/ca_key.bin"
 expect example-ca "odatse" "$DIR/err_ex_ca" \
     ./bin/example_ca 127.0.0.1 "$PORT7" "$DIR/ca_key.bin"
@@ -673,14 +673,14 @@ expect_fail ca-noncanonical -2 "$DIR/err13" \
 # Epoch dates need an absolute notBefore, which `x509 -req` gained in
 # OpenSSL 3.4. `ca -startdate` would reach further back but needs
 # -sigopt for PSS, and issuing v1.5 instead would be a silently wrong
-# certificate rather than a failure. So the legs skip on an older
+# certificate rather than a failure. So the tests skip on an older
 # OpenSSL rather than test a recipe docs/ca.md does not give. CI pins
 # the development version, so they always run there.
 if "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
-    EPOCH_LEGS=yes
+    RUN_EPOCH_TESTS=yes
 else
-    EPOCH_LEGS=no
-    skip "ca epoch legs: $("$OPENSSL" version) predates x509 -not_before (needs 3.4)"
+    RUN_EPOCH_TESTS=no
+    skip "ca epoch tests: $("$OPENSSL" version) predates x509 -not_before (needs 3.4)"
 fi
 
 epoch_leaf() {
@@ -693,9 +693,9 @@ epoch_leaf() {
     [ -s "$out" ] || { echo "FAIL e2e ca-epoch: could not issue at $date"; exit 1; }
 }
 
-EPOCH_LEG=""
-if [ "$EPOCH_LEGS" = yes ]; then
-    EPOCH_LEG=" + ca epoch x6"
+EPOCH_TESTS=""
+if [ "$RUN_EPOCH_TESTS" = yes ]; then
+    EPOCH_TESTS=" + ca epoch x6"
 epoch_leaf 000103000000Z "$DIR/epoch2.pem"
 epoch_leaf 000104000000Z "$DIR/epoch3.pem"
 
@@ -810,7 +810,7 @@ webpki_anchor() {
 "$OPENSSL" req -new -key "$DIR/wpleaf.key" -subj "/CN=$WEBPKI_HOSTNAME" 2>/dev/null |
 "$OPENSSL" x509 -req -CA "$DIR/wpint.pem" -CAkey "$DIR/wpint.key" -days 14 \
     -sha256 -extfile "$DIR/wpleaf.cnf" -out "$DIR/wpleaf.pem" 2>/dev/null
-# A second root, so the unknown-anchor leg configures a real anchor that
+# A second root, so the unknown-anchor test configures a real anchor that
 # signed nothing in this chain.
 "$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
     -out "$DIR/wpother.key" 2>/dev/null
@@ -1053,7 +1053,7 @@ kill $SRV_PID 2>/dev/null
 # only a P-256 leaf makes the client run ecdsa_secp256r1_sha256, and only
 # a P-384 leaf makes it hash the signed content with SHA-384. The RSA
 # leaf above runs neither arm. test/webpki_auth_vectors.h signs both
-# offline; these two legs are the same arms against a real server.
+# offline; these two tests are the same arms against a real server.
 webpki_ec_leaf() {
     "$OPENSSL" genpkey -algorithm EC -pkeyopt "ec_paramgen_curve:$1" \
         -out "$2.key" 2>/dev/null
@@ -1063,7 +1063,7 @@ webpki_ec_leaf() {
     start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$2.pem" -key "$2.key" -cert_chain "$DIR/wpint.pem" -rev
 }
 
-# Each leg reads the clock after minting its leaf: openssl writes
+# Each test reads the clock after minting its leaf: openssl writes
 # notBefore as the minting instant, and NOW above was read before it.
 webpki_ec_leaf P-256 "$DIR/wpleaf256"
 MSG='clave p256'
@@ -1171,18 +1171,18 @@ if command -v go >/dev/null 2>&1; then
     MSG='no debe pasar'
     expect_fail go-pq-refuses-classic -2 "$DIR/err_pq" \
         ./bin/tlsclient 127.0.0.1 "$PORT17" "pin:$MOD" -
-    GO_LEG=" + go x2 + go-resume x2 + go-half-close + go-pq x2 + go-pq-refuses-classic"
+    GO_TESTS=" + go x2 + go-resume x2 + go-half-close + go-pq x2 + go-pq-refuses-classic"
 else
-    GO_LEG=" (go legs skipped)"
-    skip "go legs: go is not on PATH"
+    GO_TESTS=" (go tests skipped)"
+    skip "go tests: go is not on PATH"
 fi
 
 # --- The same hybrid exchange against OpenSSL's s_server. `openssl
 # list -tls-groups` arrived in 3.5 alongside the group itself, so
 # grepping its output for X25519MLKEM768 is the support probe; an older
-# OpenSSL skips the leg, and CI's pinned version runs it.
+# OpenSSL skips the test, and CI's pinned version runs it.
 if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
-    OPENSSL_PQ_LEG=" + openssl-pq"
+    OPENSSL_PQ_TESTS=" + openssl-pq"
     start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768 -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -rev
     PORT18=$SRV_PORT
     MSG='hibrido openssl'
@@ -1232,10 +1232,10 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
         expect_fail webpki-pq-require-pq -2 "$DIR/err_wp_require" \
         env REQUIRE_PQ=1 ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
-    OPENSSL_PQ_LEG="$OPENSSL_PQ_LEG + webpki-pq + webpki-x25519 + webpki-require-pq"
+    OPENSSL_PQ_TESTS="$OPENSSL_PQ_TESTS + webpki-pq + webpki-x25519 + webpki-require-pq"
 else
-    OPENSSL_PQ_LEG=""
-    skip "openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+    OPENSSL_PQ_TESTS=""
+    skip "openssl pq test: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
 # --- The web PKI client against a server that holds secp256r1 alone, as
@@ -1275,15 +1275,15 @@ WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
 # order, OpenSSL's default for TLS 1.3, so it selects the suite the
 # client lists first: its build's first, and TLS_AES_128_GCM_SHA256 for a
 # client whose WEBPKI_SUITES list, ch_cfg.cipher_suites, puts that suite
-# first. The legs run once per client binary: bin/tlsclient_webpki_aes
+# first. The tests run once per client binary: bin/tlsclient_webpki_aes
 # runs AES on the instructions in a host object and exists only where the
 # compiler passes the host test, and bin/tlsclient_webpki_aes_extern runs
 # it through ch_aes_block,
 # which test/aes_extern_hook.c answers, on every host (docs/decisions.md
-# 68). $1 is the client, $2 the label each leg carries and $3 the code
+# 68). $1 is the client, $2 the label each test carries and $3 the code
 # point the client's build lists first: TLS_AES_256_GCM_SHA384 in the
 # host object and TLS_CHACHA20_POLY1305_SHA256 on AES=extern.
-webpki_aes_legs() {
+webpki_aes_tests() {
     local client=$1 tag=$2 first=$3
     start_server -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_AES=$SRV_PORT
@@ -1353,41 +1353,41 @@ webpki_aes_legs() {
     }
 }
 if [ -x ./bin/tlsclient_webpki_aes ]; then
-    webpki_aes_legs ./bin/tlsclient_webpki_aes webpki-aes 0x1302
-    AES_SUITE_LEG=" + webpki-aes x6"
+    webpki_aes_tests ./bin/tlsclient_webpki_aes webpki-aes 0x1302
+    AES_SUITE_TESTS=" + webpki-aes x6"
 else
-    AES_SUITE_LEG=""
-    skip "webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
+    AES_SUITE_TESTS=""
+    skip "webpki-aes tests: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 [ -x ./bin/tlsclient_webpki_aes_extern ] || {
     echo "FAIL e2e webpki-aes-extern: bin/tlsclient_webpki_aes_extern is absent; make ci-slow builds it"
     exit 1
 }
-webpki_aes_legs ./bin/tlsclient_webpki_aes_extern webpki-aes-extern 0x1303
-AES_SUITE_LEG="$AES_SUITE_LEG + webpki-aes-extern x6"
+webpki_aes_tests ./bin/tlsclient_webpki_aes_extern webpki-aes-extern 0x1303
+AES_SUITE_TESTS="$AES_SUITE_TESTS + webpki-aes-extern x6"
 
 # --- This tree's SUITE=aesgcm server against s_client restricted to one
 # suite at a time, a full handshake and then the ticket it issued resumed
 # (docs/decisions.md 58). Each of those offers names one suite, so the
 # server has one to select. Then s_client offers all three,
 # TLS_AES_128_GCM_SHA256 first, and the server ignores that order and
-# selects the first of its default one (docs/decisions.md 80). The legs
+# selects the first of its default one (docs/decisions.md 80). The tests
 # run once per server binary, bin/tlsserver_aes on the AES instructions
 # in a host object where the compiler passes the host test and
 # bin/tlsserver_aes_extern through the hook on every host. $1 is the
-# server, $2 the label each leg carries and $3 the suite the server's
+# server, $2 the label each test carries and $3 the suite the server's
 # default order puts first: TLS_AES_256_GCM_SHA384 in the host object and
 # TLS_CHACHA20_POLY1305_SHA256 on AES=extern. ---
-chsrv_aes_legs() {
+chsrv_aes_tests() {
     local server=$1 tag=$2 first=$3
     CHSRV_BIN=$server start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
     PORT_CHSRV_AES=$SRV_PORT
     CHSRV_AES_LOG=$SRV_LOG
     for suite in TLS_CHACHA20_POLY1305_SHA256 TLS_AES_128_GCM_SHA256 TLS_AES_256_GCM_SHA384; do
-        for leg in New Reused; do
+        for state in New Reused; do
             session="-sess_out"
-            [ "$leg" = Reused ] && session="-sess_in"
-            label="$tag-$suite-$leg"
+            [ "$state" = Reused ] && session="-sess_in"
+            label="$tag-$suite-$state"
             printf '%s\n' 'una suite' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_CHSRV_AES" \
                 -tls1_3 -ciphersuites "$suite" -ign_eof "$session" "$DIR/sess_$tag-$suite.pem" \
                 > "$DIR/$label.log" 2>&1 || {
@@ -1395,9 +1395,9 @@ chsrv_aes_legs() {
                 cat "$DIR/$label.log" "$CHSRV_AES_LOG"
                 exit 1
             }
-            if ! grep -q "^$leg, TLSv1.3, Cipher is $suite" "$DIR/$label.log" ||
+            if ! grep -q "^$state, TLSv1.3, Cipher is $suite" "$DIR/$label.log" ||
                 ! grep -q "^etius anu$" "$DIR/$label.log"; then
-                echo "FAIL $label: want a $leg session under $suite"
+                echo "FAIL $label: want a $state session under $suite"
                 cat "$DIR/$label.log" "$CHSRV_AES_LOG"
                 exit 1
             fi
@@ -1419,17 +1419,17 @@ chsrv_aes_legs() {
     fi
 }
 if [ -x ./bin/tlsserver_aes ]; then
-    chsrv_aes_legs ./bin/tlsserver_aes chsrv-aes TLS_AES_256_GCM_SHA384
-    CHSRV_AES_LEG=" + chapulin server aesgcm x7"
+    chsrv_aes_tests ./bin/tlsserver_aes chsrv-aes TLS_AES_256_GCM_SHA384
+    CHSRV_AES_TESTS=" + chapulin server aesgcm x7"
 else
-    CHSRV_AES_LEG=""
-    skip "chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
+    CHSRV_AES_TESTS=""
+    skip "chapulin server aesgcm tests: bin/tlsserver_aes is absent (no AES instructions)"
 fi
 [ -x ./bin/tlsserver_aes_extern ] || {
     echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make ci-slow builds it"
     exit 1
 }
-chsrv_aes_legs ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256
-CHSRV_AES_LEG="$CHSRV_AES_LEG + chapulin server aesgcm AES=extern x7"
+chsrv_aes_tests ./bin/tlsserver_aes_extern chsrv-aes-extern TLS_CHACHA20_POLY1305_SHA256
+CHSRV_AES_TESTS="$CHSRV_AES_TESTS + chapulin server aesgcm AES=extern x7"
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_TESTS} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_TESTS} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_TESTS}${OPENSSL_PQ_TESTS}${AES_SUITE_TESTS}${CHSRV_AES_TESTS} + examples x4 OK"

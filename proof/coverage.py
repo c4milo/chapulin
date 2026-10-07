@@ -263,8 +263,8 @@ def main():
               "A fast row's verdict comes from `make check-slow`, which runs",
               "the fast tier through `make prove`; CI runs that on every push",
               "to main and not on a pull request, which gets `make check` and",
-              "no proof leg. A slow row carries the verdict of the last",
-              "nightly leg that finished, not of this commit. A harness",
+              "no proof job. A slow row carries the verdict of the last",
+              "nightly job that finished, not of this commit. A harness",
               "that starts and returns no verdict proves nothing, and this",
               "table cannot tell that apart from one that passed — for the",
               "slow rows, read the nightly.", ""]

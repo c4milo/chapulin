@@ -16,7 +16,7 @@
 //
 // The pairing with quic_driver. That harness stubs hsq_advance to the
 // same contract this one proves, so the two read as a pair: what the
-// driver assumes of a step is what this leg discharges.
+// driver assumes of a step is what this harness discharges.
 //
 // Bounds. CH_PROOF_RXBUF is 12, the value handshake_record's own
 // harness uses. step runs over the whole byte range rather than one

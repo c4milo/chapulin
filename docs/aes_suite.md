@@ -78,7 +78,7 @@ offers, and the device builds offer ChaCha20-Poly1305 on purpose.
   implementations the `AES` axis picks between: `quic_aes_soft.c`,
   `aes_hw.c` and `aes_extern.c`.
 - `AEAD_AES_128_GCM` and GHASH in `gcm.c`, checked against SP 800-38D
-  and the Wycheproof AES-GCM suite on four legs. Under `AES=hw`, the build
+  and the Wycheproof AES-GCM suite in four builds. Under `AES=hw`, the build
   this suite takes, GHASH's multiply runs on the carry-less multiply in
   `ghash_hw.c`, and `CH_NATIVE_AES` covers that instruction too
   (`docs/decisions.md` entry 50).
@@ -169,14 +169,14 @@ stops at the same `#error` on those lanes.
 
 - RFC 8448 carries `TLS_AES_128_GCM_SHA256` traces. The record layer gets
   those vectors beside the ChaCha20 ones it holds.
-- The Wycheproof AES-GCM suite already covers the AEAD on four legs. It
+- The Wycheproof AES-GCM suite already covers the AEAD in four builds. It
   needs no change; say so rather than adding a second arm.
 - A CBMC harness over the record layer's suite selection, measured under
   `proof/run.sh`'s flags before its launch line lands.
 - `.violation` mutants, one per rule this change adds: a build that selects
   the suite without the hardware, a seal and an open that disagree about the
   suite, and a derive that writes 32 bytes of a 16-byte key.
-- An e2e leg against a real peer that negotiates the suite. `test/e2e.sh`
+- An e2e test against a real peer that negotiates the suite. `test/e2e.sh`
   has the pattern for openssl and Go peers.
 - `bench/sram.sh` re-measured. The round keys and the GHASH table cost SRAM
   a ChaCha20 build does not pay, and CLAUDE.md forbids estimating that

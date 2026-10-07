@@ -745,7 +745,7 @@ each through the module alone (INV-36):
   image, and computes a ticket's age through each object's call, directly
   and through `Client.toCfg`.
 
-check-slow runs the script over every lib-check leg's configuration as
+check-slow runs the script over every lib-check build's configuration as
 well, among them `RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking
 ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
 seeded `std.Random` per side, and whose program defines no

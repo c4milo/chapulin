@@ -6,7 +6,7 @@
 // with CloseWrite, which sends a close_notify and keeps reading (RFC 9846
 // §6.1). It logs every line it reads after that and how the client
 // ended: "peer close_notify" when a close_notify arrived, which Go's Read
-// reports as io.EOF, and the error otherwise. e2e.sh's go-half-close leg
+// reports as io.EOF, and the error otherwise. e2e.sh's go-half-close test
 // reads those lines.
 package main
 

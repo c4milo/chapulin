@@ -30,7 +30,7 @@ the walk before it checks CertificateVerify against the leaf key the walk
 copied out.
 `test/e2e.sh` runs that handshake against a local `openssl s_server` over
 a root, intermediate and leaf it mints for the run: the client verifies
-the chain, and the four negative legs each fail closed with `CH_EAUTH`.
+the chain, and the four negative tests each fail closed with `CH_EAUTH`.
 `test/e2e.sh` checks that return code and does not observe the alert;
 `test/webpki_cert_test.c` and `test/webpki_chain_test.c` pin the alerts
 `webpki.h`'s table names. No test here opens a network connection, and

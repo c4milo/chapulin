@@ -605,7 +605,7 @@ implementation.
   peer, which two chapulin endpoints testing each other are not, since two
   implementations sharing a bug agree with each other. It is colibri's
   test: `test/quic_driver_test.c:1` still says no QUIC server speaks to the
-  client test, and `test/e2e.sh` still has no QUIC leg.
+  client test, and `test/e2e.sh` still has no QUIC test.
 
 ## What this does not scope
 

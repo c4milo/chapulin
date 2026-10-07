@@ -150,7 +150,7 @@ static void test_pubkey_from_pem() {
 // would-be io result below into invalid.
 static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
 
-// The two TCP legs below take a chapulin::Io, which a TRANSPORT=quic-nonblocking
+// The two TCP parts below take a chapulin::Io, which a TRANSPORT=quic-nonblocking
 // build does not declare: that object opens no socket. test_quic covers
 // the QUIC wrapper instead.
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -474,7 +474,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
 static void level_ready(void *, uint8_t, uint8_t) {
 }
 
-// The QUIC leg: every one of the eighteen forwarders compiles, links against
+// The QUIC part: every one of the eighteen forwarders compiles, links against
 // the packaged object and answers. The subject is the wrapper, not the
 // answers, so this configuration is one the object refuses: it names no ALPN
 // protocol, which RFC 9001 §8.1 makes mandatory, and no pin or PSK. Each call

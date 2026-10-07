@@ -92,11 +92,11 @@ The proofs run in two tiers:
 
 - **Fast tier.** `make check-slow` runs it through `make prove`. CI
   runs it in the check workflow's `prove` job on every push to main, but
-  not on a pull request, which gets `make check` and no proof leg.
+  not on a pull request, which gets `make check` and no proof job.
 - **Slow tier.** `make prove-slow` runs its harnesses. CI runs them
   nightly, one job each.
 
-A slow-tier entry below carries the verdict of the last nightly leg that
+A slow-tier entry below carries the verdict of the last nightly job that
 finished, not of the current commit. A harness that starts and returns
 no verdict proves nothing, and this page cannot tell that apart from one
 that passed. For the slow entries, read the nightly.
@@ -468,8 +468,8 @@ The entries are grouped by area:
   instead: SP 800-38D's four AES-128 cases, RFC 9001 Appendix A.2's
   client Initial packet and A.4's Retry tag, RFC 9369 Appendix A.2's
   and A.3's Initial packets and A.4's Retry tag in QUIC version 2, 67
-  AES-128-GCM and 66 AES-256-GCM Wycheproof cases on all four build
-  legs, and the Lean differential.
+  AES-128-GCM and 66 AES-256-GCM Wycheproof cases on all four
+  builds, and the Lean differential.
 - **The host object's GHASH and counter mode:** every harness compiles
   the portable GHASH and the one-block counter loop. A host object runs
   `ghash_hw.c`'s GHASH on the carry-less multiply instead, for a schedule
@@ -486,7 +486,7 @@ The entries are grouped by area:
   ciphertext included,
   `bin/aes_equiv_test` holds the multi-block counter mode to the soft
   cipher at every block count through three passes and across the 2^32
-  counter wrap, and the vectors, the Wycheproof host leg and
+  counter wrap, and the vectors, the host Wycheproof test and
   `bin/diff_quic_hw` run over both.
 
 ### Key exchange
@@ -601,7 +601,7 @@ The entries are grouped by area:
   harnesses prove.
 - **Bound:** the full domain.
 - **Not proved:** the rest of the hybrid driver. The differential, the
-  sequence enumeration and the e2e legs test it.
+  sequence enumeration and the e2e tests cover it.
 
 ### Signatures
 
@@ -819,7 +819,7 @@ The entries are grouped by area:
 - **Not proved:** that the equation holds for a signature and for no
   other pair: the stubs write unconstrained limbs.
   `bin/p256_verify_equiv_test` holds the verdict to `p256.c`'s 32-bit
-  arm and the Wycheproof host leg to Wycheproof's; see
+  arm and the host Wycheproof test to Wycheproof's; see
   [The wide P-256 files](#the-wide-p-256-files).
 
 #### p256_wide_verify_point, p256_wide_verify_digits
@@ -846,8 +846,8 @@ The entries are grouped by area:
   body is the doubling and the two additions proven above and whose
   reads of the digit arrays stay below the count the digits proof
   bounds; that a result is the sum of two points; and that the digits
-  spell the scalar. `bin/p256_verify_equiv_test` and the Wycheproof host
-  leg hold the verdicts.
+  spell the scalar. `bin/p256_verify_equiv_test` and the host Wycheproof
+  test hold the verdicts.
 
 #### p256_sign
 
@@ -928,7 +928,7 @@ The entries are grouped by area:
   for a signature and for no other pair: the stubs write unconstrained
   limbs. `bin/p384_equiv_test` holds each routine of the field to
   `p384_field.c`'s result and the verdict to `p384.c`'s 32-bit arm, and
-  the Wycheproof host leg holds the verdict to Wycheproof's; see
+  the host Wycheproof test holds the verdict to Wycheproof's; see
   [The host object's P-384](#the-host-objects-p-384).
 
 #### rsa
@@ -2487,7 +2487,7 @@ does not run a scalar multiplication or a 3072-bit exponentiation
 whole.
 
 The wide X25519 field rests on the same vectors, which `bin/unit_host`
-and the Wycheproof host leg run on it under the multiply bit, on its own
+and the host Wycheproof test run on it under the multiply bit, on its own
 Lean differential binary, and on `bin/x25519_equiv_test`. In
 `make check`, that binary compares the wide field with the 16-limb field,
 each as a host object compiles it, over 12,175 inputs:
@@ -2606,7 +2606,7 @@ the wide files to the same answers:
     cut short, runs long, has another tag or pads an INTEGER.
 
   `bin/p256_equiv_test` reads the signatures it makes with that 32-bit
-  arm, which the wide files do not compute. The Wycheproof host leg
+  arm, which the wide files do not compute. The host Wycheproof test
   runs Wycheproof's ECDSA P-256 vectors on the host verifier, among
   them the signatures whose k·G has an X of n or more.
 - `test/aes-runtime-qemu.sh`, which the mips job of `check.yml` runs on
@@ -2767,8 +2767,8 @@ the right number, and the right verdict, rests on these:
   built as a host object builds its sources: the RFC 6979 A.2.6
   vectors, the three openssl signatures, the mutations and the
   strict-DER boundary, on the host arm.
-- The Wycheproof host leg runs Wycheproof's ECDSA P-384 vectors on the
-  host arm, and the other legs run them on the 32-bit arm.
+- The host Wycheproof test runs Wycheproof's ECDSA P-384 vectors on the
+  host arm, and the other Wycheproof tests run them on the 32-bit arm.
 - `test/widemul-builds.sh`, in `make check`, compiles `p384.c` either
   side of `-DCH_CPU_RUNTIME` and requires the host arm to call
   `p384_wide_verify_rs` and nothing of `p384_field.c`, and the device
@@ -2827,7 +2827,7 @@ Closing is part of it. A close_notify closes its sender's direction
 alone (RFC 9846 §6.1), so the `ch_read` that reads the peer's returns 0,
 wipes the read key and sends nothing, and this side writes until its
 own `ch_close`. `bin/unit`, `bin/tcp_nonblocking_loop_test` and e2e's
-go-half-close leg test that (INV-22, INV-17), and no proof covers it.
+go-half-close test check that (INV-22, INV-17), and no proof covers it.
 The peer's fatal alert is the same kind of claim: the call that reads
 it sends nothing and records it for `ch_alert_received` (§6.2), and a
 record of the alert type that is not one 2-byte alert gets decode_error.
@@ -3316,7 +3316,7 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   under qemu, so the arm a machine's own compiler does not read runs
   too.
 - `bin/mlkem_test_host` runs the ML-KEM-768 known answers and the CCTV
-  decapsulation anchors on the path, and the Wycheproof host leg runs
+  decapsulation anchors on the path, and the host Wycheproof test runs
   Wycheproof's ML-KEM-768 suites on it.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
   the pinned clang and holds its conditional branches at 9 on each:
@@ -4106,9 +4106,9 @@ Three more suites run on every push and add evidence rather than proof.
 `make wycheproof` generates (`tools/wycheproof-total.py`).
 
 The x25519 suite's 518 cases run a second time over the wide X25519
-field, in the host leg's runs with the multiply bit. The
+field, in the host Wycheproof test's runs with the multiply bit. The
 ChaCha20-Poly1305 suite's 316 cases run over the vector ChaCha20 in
-every run of that leg, and over the vector Poly1305 in its runs with the
+every run of that test, and over the vector Poly1305 in its runs with the
 multiply bit.
 
 The HMAC-SHA256 suite calls `hmac_sha256` directly. So the MAC that

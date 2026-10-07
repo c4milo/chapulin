@@ -587,7 +587,7 @@ Home: github.com/c4milo.
   clang: chapulin's consumers are firmware trees whose vendor SDKs ship
   gcc cross-compilers, so gcc-only diagnostics belong in CI, not in a
   consumer's build. Between local clang and CI gcc, both major compiler
-  families stay covered without a second CI leg. Do not switch CI to
+  families stay covered without a second CI job. Do not switch CI to
   clang for convenience.
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`

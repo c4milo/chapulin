@@ -405,7 +405,7 @@ On OpenSSL before 3.4, `openssl ca -startdate` sets an absolute
 notBefore and does take `-sigopt` for PSS, but it needs a CA section in
 `openssl.cnf` with an index and a serial file. That is a different
 workflow rather than a drop-in for `x509 -req`, and `docs/ca.md` does
-not give the recipe, so `test/e2e.sh` skips its epoch legs on an
+not give the recipe, so `test/e2e.sh` skips its epoch tests on an
 OpenSSL that lacks `x509 -req -not_before` and prints why.
 
 Turning the epoch on is fleet-wide and one-way. Once a device carries

@@ -3,7 +3,7 @@
 // bounds x25519_harness.c states, one caller shape per formula: a
 // single 64-bit limb multiply fills a formula near the solver cap, so
 // each aliasing shape the ladder and invert use gets its own slow-tier
-// leg. x25519_harness.c holds the distinct-operand shape and the
+// proof. x25519_harness.c holds the distinct-operand shape and the
 // reason these run without the signed-overflow class.
 #include "harness.h"
 

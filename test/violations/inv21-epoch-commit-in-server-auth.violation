@@ -5,7 +5,7 @@ builds: bin/tlsclient_tcp_nonblocking bin/tlsclient bin/tlsclient_ecdsa bin/tlsc
 reason: committing the epoch on the chain verdict alone lets a certificate
   that never proves possession of its key raise the device's stored
   epoch, which outlives the session. hsa_epoch_commit asserts on
-  server_finished_ok, so the moved call faults on the first CA leg —
+  server_finished_ok, so the moved call faults on the first CA test —
   before it can write, and whether or not epoch callbacks are
   configured
 

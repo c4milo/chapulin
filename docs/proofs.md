@@ -104,9 +104,9 @@ ClientHello stub filled `n <= 617` bytes that way, twice: 12.4 M of a
 `--dimacs`'s header. The builder's contract bounds its writes only by
 the caller's cap, so the stub now havocs all `cap` bytes -- a superset
 of the real outputs, at a length that is a `sizeof` expression, which
-symbolic execution unrolls to unguarded stores. The psk leg went from
+symbolic execution unrolls to unguarded stores. The psk harness went from
 1462 s at 5.9 GB of cbmc and 5.9 GB of kissat to 231 s at 1.6 GB and
-7.8 GB, the pin leg from 415 s at 5.9 GB and 4.2 GB to 55 s at 1.1 GB
+7.8 GB, the pin harness from 415 s at 5.9 GB and 4.2 GB to 55 s at 1.1 GB
 and 2.2 GB, with the same properties
 (https://github.com/c4milo/chapulin/issues/140).
 

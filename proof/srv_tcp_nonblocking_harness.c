@@ -25,7 +25,7 @@
 //
 // The pairing with srv_flight. proof/srv_flight_harness.c turns this
 // layering around -- there the handlers are real and the driver is the
-// stub -- so the two read as a pair: what this leg assumes of a handler
+// stub -- so the two read as a pair: what this harness assumes of a handler
 // is what that one discharges. It is the pairing quic_driver and
 // quic_step already have.
 //

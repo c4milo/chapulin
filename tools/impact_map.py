@@ -79,7 +79,7 @@ TIERS = ["check", "slow", "nightly"]
 # Where the gate graph starts. Every target these name through a
 # `$(MAKE) <target>` line is a gate, and the binaries and scripts those
 # recipes run are the roster. check-slow lists check as a prerequisite;
-# the rest are the legs only the nightly runs. A binary no gate runs —
+# the rest are the targets only the nightly runs. A binary no gate runs —
 # bin/timing, which only the load-sensitive `timing` target runs — stays
 # out of the roster, so a change never selects it.
 GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",

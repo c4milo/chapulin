@@ -226,8 +226,8 @@ static void run_hmac(void) {
 #ifdef CH_HASH_SHA384
 // The same two suites over SHA-384, the hash of TLS_AES_256_GCM_SHA384:
 // hkdf_extract and hkdf_expand at SHA384_LEN, and hmac_sha384 as a MAC.
-// Every leg that builds this file passes -DCH_HASH_SHA384, so every leg
-// runs them.
+// Every build that compiles this file passes -DCH_HASH_SHA384, so every
+// build runs them.
 static void run_hkdf384(void) {
     static uint8_t out[255 * SHA384_LEN];
     for (size_t i = 0; i < COUNT(wp_hkdf384); i++) {

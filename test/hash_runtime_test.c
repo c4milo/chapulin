@@ -49,7 +49,7 @@
 //
 // What the instructions compute is held elsewhere: bin/sha2_equiv_test
 // calls them against the portable code, and the host vector binaries and
-// the Wycheproof host leg run the published vectors on them where the CPU
+// the host Wycheproof test run the published vectors on them where the CPU
 // has them.
 #include <stdio.h>
 #include <stdlib.h>

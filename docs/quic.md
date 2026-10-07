@@ -576,7 +576,7 @@ what each one rests on, and nothing more:
 | --- | --- | --- |
 | `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, RFC 9369 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
 | host | `proof/aes_runtime_harness.c`: `aes.c` in the QUIC host suite object, over contract stubs of both ciphers' six entries, is memory-safe and UB-free, puts an Initial key on the instructions only under a `ch_cfg.cpu` that holds `CH_CPU_CONSTANT_TIME_AES`, out of every 32-bit value, the Retry key on the table, and a traffic key of either length never on the table. `proof/aes_traffic_harness.c`: the traffic-key constructor in the TCP host object, over stubs of the instructions. `proof/srv_select_runtime_harness.c` and `proof/quic_config_webpki_suite_harness.c`: the default order and the `ch_cfg.cpu` rule. The instructions themselves: nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs, and 2,258 cases of the multi-block counter mode against `soft` one block at a time: every block count through three passes and a block, counters that wrap past 2^32 at every place in a pass, and the three layouts `gcm.c` passes. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 617 runs of the data loop over every length from 0 to 415 bytes, which is three passes of eight blocks and more, and 200 random lengths up to 16,384, a check that no power of H, no power's two halves added and none of the last pass's sums stays on the stack below a call to the data loop, the one-pass seal or the one-pass open, nor the last keystream of either, and 3,213 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, which must leave zeros, the in-place seal, and opens in place and five bytes below the ciphertext), every payload length through three passes of the counter mode among them. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs, once with the Initial keys on the instructions and once on the table. `bin/wycheproof_test_host`: the AES-GCM suite, run once with the AES bit and once without. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the host test passes. `bin/aes_runtime_test`: RFC 9001 and RFC 9369 Appendix A with the bit and without it, the SP 800-38D and FIPS 197 vectors under traffic keys, and a count of every call into the table, the instructions and the carry-less multiply. `test/aes-runtime-qemu.sh`, in CI's mips job: that binary and both suite loop binaries built for x86-64 under `qemu-x86_64 -cpu max,-aes,-pclmulqdq`, where the rows without the bit pass and the rows with it die of SIGILL. `test/aes-runtime-disasm.sh`, in CI's arm64 and macOS jobs: three host objects, disassembled, hold the AES and carry-less multiply instructions in `aes_hw.c`'s, `ghash_hw.c`'s, `gcm_hw.c`'s and `gcm_vaes.c`'s functions alone. `bin/aes_suite_test`, `bin/quic_suite_test`, the QUIC, record-mode and blocking loop tests, `bin/webpki_session_aes` and `bin/srv_flight_test_aes` |
-| `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server legs against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
+| `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server tests against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
 
 `bin/ghash_equiv_test` is a QUIC host object, whose `gcm.c` holds both
 GHASH bodies and runs the one a schedule names, and it compiles `gcm.c` a
@@ -643,7 +643,7 @@ integrator owns the real `ch_aes_block` the way it owns `ch_rand_bytes`. And a
 host object's AES is checked on the architecture the runner has: a run on an
 ARMv8 host exercises the `vaeseq_u8` arm and leaves the AES-NI arm compiled
 but unrun, and the reverse on x86-64. Both arms are exercised only across both
-CI legs. The same holds for `ghash_hw.c`: an ARMv8 runner runs PMULL and
+CI jobs. The same holds for `ghash_hw.c`: an ARMv8 runner runs PMULL and
 leaves the PCLMULQDQ arm compiled but unrun. A host session without the AES
 bit is shown to run no instruction on x86-64 alone: QEMU's arm64 models all
 implement the AES extension and none turns it off, so on arm64 that claim
@@ -890,7 +890,7 @@ joins exactly one of the two `lint-codegen-partition` lists.
 | `quic_packet.[ch]` | §5.3 packet protection and §5.4.4 header protection under ChaCha20-Poly1305, the §6.5 receive key-set selection — the Key Phase bit picks the phase and the recovered packet number tells the previous phase from the next — the §5.4.2 length check and the §6.6 counters | `WIDEMUL_CEILING`, held at 0: it holds 1-RTT keys. It joins `BRANCH_SRCS` too, with both halves counted: §9.5 puts a MUST on the open path and another on the seal path | `quic_packet_harness.c`, and one more for open if the seal-and-open formula does not converge | beside `quic_keys.[ch]` |
 | `quic_initial.[ch]` | the Initial packet path: AES-128-GCM seal and open and the §5.4.3 AES-ECB mask, each taking the Destination Connection ID and deriving its own key on its own stack (INV-26). Each also takes which endpoint the caller is, `CH_QUIC_ENDPOINT_CLIENT` or `CH_QUIC_ENDPOINT_SERVER`: §5.2 gives each endpoint its own Initial secret, the seal derives the caller's and the open derives the other's, and `quic.c` names the client at both calls | `WIDEMUL_PUBLIC`: the Initial keys are public (RFC 9001 §5) | `quic_initial_harness.c` | beside `quic_packet.[ch]`, over `aes.[ch]` and `gcm.[ch]` |
 | `quic_retry.[ch]` | the §5.8 Retry integrity tag under the printed key and nonce. `quic_retry_tag` writes one and `quic_retry_ok` checks one, and the check calls the mint, so the two cannot disagree. Neither decides whether to send a Retry or what its token holds: RFC 9000 §8.1.2 leaves address validation to the server, and colibri owns it | `WIDEMUL_PUBLIC`: the key is printed in the RFC | `quic_retry_harness.c` | beside `quic_initial.[ch]` |
-| `handshake_flight.[ch]` | the flight handlers both drivers call, moved out of `handshake.c` with their bodies unchanged but for the two edits "Entry points and their contracts" names: 233 of its 395 lines. Every build compiles it | `WIDEMUL_CEILING`, held at 0: it holds every handshake secret | none of its own; `handshake_psk`, `handshake_pin` and the step legs compile it, which is what `tools/proof-cover.py` requires | between `handshake_auth.[ch]` and `handshake.[ch]` |
+| `handshake_flight.[ch]` | the flight handlers both drivers call, moved out of `handshake.c` with their bodies unchanged but for the two edits "Entry points and their contracts" names: 233 of its 395 lines. Every build compiles it | `WIDEMUL_CEILING`, held at 0: it holds every handshake secret | none of its own; `handshake_psk`, `handshake_pin` and the step harnesses compile it, which is what `tools/proof-cover.py` requires | between `handshake_auth.[ch]` and `handshake.[ch]` |
 | `quic_step.[ch]` | `HSQ_STEP_*`, `hsq_advance` and the six step functions: one whole handshake message each | `WIDEMUL_CEILING`, held at 0: the steps derive and install traffic secrets | `quic_step_harness.c`, one launch line per step and mode | beside `handshake.[ch]`, over `handshake_flight.[ch]` |
 | `quic.[ch]` | `ch_quic`, which `quic_session.h` declares, the `ch_quic_` entries, the input loop and the staged output. The wipe that replaces `tlsi_wipe` (`session.c:25-37`), because what it wipes is key sets rather than `rec_dir`, is `quic_wipe` in `quic_fail.c`, beside the failure path `quic_fail` | `WIDEMUL_CEILING`, held at 0, where `tls.c` sits today | `quic_driver_harness.c` | in place of `tls.[ch]`, above every file in this table |
 
@@ -1966,9 +1966,9 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    and the stubs move into a shared header the step harness includes too, so
    the stub contracts stay one text. `ct_wipe.0:449` stays, because the TLS
    `handshake_state` is still 448 bytes. `proof/run.sh:410-416` records what
-   these two cost today: the psk leg 1683 properties, 231 s, 1.6 GB of cbmc
+   these two cost today: the psk harness 1683 properties, 231 s, 1.6 GB of cbmc
    and 7.8 GB of kissat on the development machine, and 191 s at 1.9 GB and
-   3.7 GB in the pinned container; the pin leg 1685 properties and 55 s.
+   3.7 GB in the pinned container; the pin harness 1685 properties and 55 s.
    The same stubs over the same driver give no reason to expect growth, and
    no reason is not a measurement.
 2. **`handshake_crypto`, new.** The QUIC arm of `handshake_record.c` at
@@ -1993,7 +1993,7 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    requires: every array through a typed nondet fill and never a byte-count
    fill of a typed object, the transcript through the harness's own
    transcript fill, `cookie_len` and `leaf.key_len` constrained to their
-   caps, `cfg.buf` at `CH_PROOF_RXBUF` bytes — 96 for these legs, the size
+   caps, `cfg.buf` at `CH_PROOF_RXBUF` bytes — 96 for these harnesses, the size
    `proof/handshake_harness.c:422` already gives the handshake harnesses —
    with `pt_off <= pt_len <= CH_PROOF_RXBUF`, `tx_len <= CH_TX_STAGE`, and
    `step` assumed equal to the selector's value — except the complete step,
@@ -2011,8 +2011,8 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    above, so the stub's list and the step assertions are one contract a
    reviewer reads as a pair. That 12 is the value
    `proof/handshake_record_harness.c:54-55` and `proof/run.sh:1734` already
-   use, and it is inside leg 3's 96, so every state this leg reaches is inside
-   the window leg 3 discharges. It proves that any error leaves
+   use, and it is inside item 3's 96, so every state this harness reaches
+   is inside the window item 3 discharges. It proves that any error leaves
    `CH_ST_FAILED`, `tx_len == 0`, `pt_off == pt_len == 0` and the wiped
    secrets zero; that `CH_EINVAL` leaves every field equal to the entry
    copy; that a non-empty `t.tx`, and `level` above `rx_level` with
@@ -2035,9 +2035,9 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    `handshake_record.c` and `handshake_post.c` in both transports, and it
    leaves `io.c` to the TCP builds alone.
 6. **Coverage.** `tools/proof-cover.py` fails a shipped source that no `full`
-   harness compiles and no `AUDITED` entry lists. Leg 1 and leg 3 compile
-   `handshake_flight.c`, leg 3 compiles `quic_step.c`, leg 4 compiles
-   `quic.c`, and leg 2 compiles the QUIC arm of `handshake_record.c`. No
+   harness compiles and no `AUDITED` entry lists. Items 1 and 3 compile
+   `handshake_flight.c`, item 3 compiles `quic_step.c`, item 4 compiles
+   `quic.c`, and item 2 compiles the QUIC arm of `handshake_record.c`. No
    `AUDITED` entry is added.
 7. **Mutants, planted before the code lands.** Each is planted, watched to
    make the named target fail, and landed as a `test/violations/*.violation`
@@ -2568,7 +2568,7 @@ Read this as part of the profile, not as a list of future work.
   (`docs/decisions.md` entry 64).
 - **Nothing in the repository proves anything about a live QUIC endpoint.**
   `test/e2e.sh` runs against `openssl s_server`, which does not speak QUIC, so
-  a QUIC end-to-end leg needs a server this tree does not have. Every existing
+  a QUIC end-to-end test needs a server this tree does not have. Every existing
   suite stays hermetic.
 - **Nothing about QUIC is proved yet.** The 83 launch lines in `proof/run.sh`,
   the 30 modules in `spec/lean/Spec/` and the 89 files in `test/violations/` cover
@@ -2592,7 +2592,7 @@ Against 83 launch lines and 86 harness files at `3432a5d`:
   own: `handshake_psk`, `handshake_pin` and `hybrid_secret` compile it, which
   is what `tools/proof-cover.py` asks for. The QUIC arm of
   `handshake_record.c` and `quic_config.c` in a raw build are compiled into
-  `quic_driver` rather than a leg of their own; `quic_config_webpki` proves
+  `quic_driver` rather than a harness of their own; `quic_config_webpki` proves
   the `TRUST=webpki` arm, with `webpki_cfg.c` real. The transport parameters add
   no source: `handshake_message.c` writes them and `handshake_parser_ee.c` reads
   them. `gcm` split the way `aead` did — five harness files, three
@@ -2675,22 +2675,22 @@ each new gated source, `make cxx-check` with `chapulin.hpp` and `test/hpp_test.c
 `"quic_driver_test"` and `"test/lint-invariants.sh"` and `test-invariants-fast`
 (`Makefile`) with `bin/quic_driver_test`, `bench/sram.sh`, and `make
 coverage` (`Makefile`), whose object sets are written by hand per
-mode: the mode adds a `TRANSPORT=quic-nonblocking` leg beside the `TRUST=webpki` one in
+mode: the mode adds a `TRANSPORT=quic-nonblocking` pass beside the `TRUST=webpki` one in
 the `coverage` recipe, over `bin/quic_test` and `bin/quic_driver_test`, and
 `COVERAGE_FLOOR` (`Makefile`) moves in the same diff by the ratchet rule
-stated there. That leg is the one check here that still waits: the mode is
+stated there. That pass is the one check here that still waits: the mode is
 implemented and `bin/quic_driver_test` runs in `check`, so "What is still
 open" carries it and the comment above `COVERAGE_FLOOR` names what the
 commit that adds it does. `test/spec_coverage.py`'s `SRCS` list holds the
 quic sources, which read as rows saying "not built" because its C coverage
 build runs `test/diff_test.c` alone, and "What is still open" carries the
-leg that builds `test/diff_quic_test.c` there. Its op count needs no edit:
+run that builds `test/diff_quic_test.c` there. Its op count needs no edit:
 it reads every test main that includes `test/diff_driver.h`, and each header
 that main includes, so `test/diff_quic.h`'s ops count as driven. Every
-one of those needs a row or a leg for the new axis, which is work that is done
+one of those needs a row or a run for the new axis, which is work that is done
 with the first line of code and not after it, and a gate that waits says so in
 "What is still open" rather than staying silent. `test/e2e.sh` is the exception:
-it stays a TCP leg, for the reason "What the mode does not check or provide"
+it stays a TCP suite, for the reason "What the mode does not check or provide"
 gives, and "What is still open" holds the choice. The `FAST_TARGETS` pair is
 the one whose absence is silent: a `catches` value outside that set runs in the
 slow tier (`test/violations.py:468-471`), and `check-slow` runs
@@ -2708,13 +2708,13 @@ decision is to give the wrapper a QUIC arm rather than to skip the gate:
 `chapulin.hpp` puts today's `Session` class under `#ifndef CH_TRANSPORT_QUIC_NONBLOCKING`
 and adds a `Quic` class under `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` that forwards the
 eighteen entries and adds only the RAII cleanup, byte views and typed results
-`CLAUDE.md:497-502` allows it; `test/hpp_test.cpp` gains a QUIC leg; and
+`CLAUDE.md:497-502` allows it; `test/hpp_test.cpp` gains a QUIC part; and
 `check` gains a fourth `cxx-check` invocation with `TRANSPORT=quic-nonblocking`. `Config`
 (`chapulin.hpp:202-455`) forks with `Session`, because it builds `ch_cfg` and
 carries the `Io` callbacks (`chapulin.hpp:116`) a QUIC build has no use for, and
 the two new callbacks and `ch_cfg.transport_params` surface there. Skipping the
 gate under one axis would leave the largest API surface in the tree with no C++
-leg, which is the one thing that sentence exists to prevent. It has landed:
+check, which is the one thing that sentence exists to prevent. It has landed:
 `chapulin.hpp` holds `Quic` under the `#else` of that `#ifndef`, and `check`
 runs `cxx-check` against a QUIC object in two library builds,
 `check-lib-quic` and `check-lib-quic-raw-aes-runtime`.
@@ -2754,28 +2754,28 @@ The mode, its owner split and the AES exception are decided. These are not:
   colibri's packet number reconstruction needs is open;
 - the `handshake_psk` and `handshake_pin` cost after the driver becomes
   resumable, which only a run can answer;
-- the `make coverage` leg. The recipe builds its object sets by hand, one per
+- the `make coverage` target. The recipe builds its object sets by hand, one per
   PIN over `$(SRCS)` and one over the webpki sources, and neither names a QUIC
-  source, so the QUIC sources contribute nothing to `COVERAGE_FLOOR`. The leg
-  lands in the shape of the webpki leg, with `bin/quic_test` and
+  source, so the QUIC sources contribute nothing to `COVERAGE_FLOOR`. The
+  QUIC pass lands in the shape of the webpki pass, with `bin/quic_test` and
   `bin/quic_driver_test` in its run list, and that commit moves the floor to
   CI's re-measured reading. The comment above `COVERAGE_FLOOR` carries the
   same debt;
-- the `spec-coverage` leg. `test/spec_coverage.py` measures C coverage over
+- the `spec-coverage` target. `test/spec_coverage.py` measures C coverage over
   a build of `test/diff_test.c` alone, so the quic sources, `aes.c` and
   `gcm.c` read "not built" although `bin/diff_quic` compares four of them
-  against the spec. The leg builds and runs `test/diff_quic_test.c` there
+  against the spec. The fix builds and runs `test/diff_quic_test.c` there
   too, and the comment above the script's `SRCS` list carries the same
   debt;
-- the end-to-end leg. `test/e2e.sh` runs against `openssl s_server`, which
-  speaks no QUIC, so this suite has no QUIC leg. The mode's first interop
+- the end-to-end tests. `test/e2e.sh` runs against `openssl s_server`, which
+  speaks no QUIC, so this suite has no QUIC test. The mode's first interop
   evidence came from outside the tree: on 2026-09-23 colibri's
   `tools/quic_aioquic.sh` ran colibri's endpoint over a `ROLE=both` object
   at 9c903d8 against aioquic 1.3.0, as client and as server, and moved
-  three files each way. A leg here would repeat that on every
+  three files each way. A test here would repeat that on every
   `make check-slow`. The three candidates are an OpenSSL 3.5 QUIC
   server, a Go `quic-go` echo server beside the Go echo server the suite
-  already starts, and no leg at all, which leaves `make check-slow` green on
+  already starts, and no test at all, which leaves `make check-slow` green on
   a transport nothing has ever spoken to. The commit that landed `quic.[ch]`
   named none: `bin/quic_driver_test` drives the driver to the Handshake level
   with a ServerHello the test builds itself, and every message after that
@@ -2803,7 +2803,7 @@ proposed and not landed.
 | `CLAUDE.md:148-150`, "Record size discipline: the client always sends `record_size_limit` (RFC 8449) sized to the caller's buffer. A peer record over the limit is a protocol error, not a resize." | "a TCP client always sends" in place of "the client always sends", then: "A QUIC build sends none (RFC 9001 §4.1.3): `cfg.buf_len` bounds one handshake message, and a longer one fails the session." | the `handshake_record.[ch]` QUIC arm | landed on 2026-09-30 in this wording. Before it, `CLAUDE.md:379-384` at `c754665` says a QUIC build refuses `TX_RECORD`, and still says the client always sends `record_size_limit` |
 | `CLAUDE.md:151-152`, "RFC MUSTs we keep even though this is minimal: HelloRetryRequest handling, KeyUpdate receipt, ..." | the same bullet, then: "Over QUIC both roles refuse a TLS KeyUpdate as a connection error and update packet keys instead (RFC 9001 §6), and a server sends no change_cipher_spec (§8.4)." | `quic.[ch]` | landed on 2026-09-30 in this wording. Before it, `CLAUDE.md:385-395` at `c754665` lists KeyUpdate receipt for both roles and the server's change_cipher_spec |
 | `CLAUDE.md:53-86`, the file-pair chain, which names every library file and none of the nine new pairs, and ends "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`" (`CLAUDE.md:79-80`) | one sentence after "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`": "A QUIC object compiles `quic.[ch]` and the other `quic_*` sources in place of `io`, `record`, `session`, `handshake`, `tls` and `tls_write`, and its firmware supplies `ch_rand_bytes` and no I/O callbacks." It takes the place of the appendix's chain, which no longer matches the tree | each pair's own commit adds its entry, and the last one lands the whole chain | landed on 2026-09-30 in this wording. Before it, the chain at `CLAUDE.md:100-163` at `c754665` carries `aes.[ch]` and `gcm.[ch]` but no QUIC transport pair, and ends at `tls.[ch]` |
-| `CLAUDE.md:215-221`, "Every change passes `make check` ... and `make check-slow` (proofs, e2e against a real TLS 1.3 server, ...)" | the same sentence, then: "The `TRANSPORT` axis does not multiply those runs. `make check` and `make check-slow` build the `TRANSPORT=tcp-blocking` binaries and add one `cxx-check TRANSPORT=quic-nonblocking` leg, one `bin/quic_test` run and one `bin/quic_driver_test` run. The QUIC object has no e2e leg until a QUIC server joins the suite, because `test/e2e.sh` runs `openssl s_server`, which speaks no QUIC; \"What is still open\" names that choice." | `quic.[ch]` | no longer needed: `CLAUDE.md:459-469` at `c754665` names no transport and stays true. `check` runs `bin/quic_test`, `bin/quic_driver_test` and the QUIC loop tests (`CHECK_RUN_BINS`), and "What is still open" names the QUIC e2e leg the suite lacks |
+| `CLAUDE.md:215-221`, "Every change passes `make check` ... and `make check-slow` (proofs, e2e against a real TLS 1.3 server, ...)" | the same sentence, then: "The `TRANSPORT` axis does not multiply those runs. `make check` and `make check-slow` build the `TRANSPORT=tcp-blocking` binaries and add one `cxx-check TRANSPORT=quic-nonblocking` build, one `bin/quic_test` run and one `bin/quic_driver_test` run. The QUIC object has no e2e test until a QUIC server joins the suite, because `test/e2e.sh` runs `openssl s_server`, which speaks no QUIC; \"What is still open\" names that choice." | `quic.[ch]` | no longer needed: `CLAUDE.md:459-469` at `c754665` names no transport and stays true. `check` runs `bin/quic_test`, `bin/quic_driver_test` and the QUIC loop tests (`CHECK_RUN_BINS`), and "What is still open" names the QUIC e2e test the suite lacks |
 | `CLAUDE.md:46-52`, "TRUST=webpki keeps that rule ... and breaks it twice ... offers the list of ALPN protocols the caller configured" | a sentence after "the server takes it or the handshake fails closed": "A QUIC client breaks that rule in every trust mode: RFC 9001 §8.1 requires ALPN, so it offers the caller's list and closes with no_application_protocol when the server selects none." | the commit that moves `write_alpn` and `parse_alpn` out of `CH_TRUST_WEBPKI` | landed on 2026-09-30 in this wording. Before it, `write_alpn` and `parse_alpn` sit under a guard that names `CH_TRUST_WEBPKI` or `CH_TRANSPORT_QUIC_NONBLOCKING`, but `CLAUDE.md:60-61` at `c754665` still says a client offers exactly one of everything within a mode |
 
 ## What changes in `docs/invariants.md`

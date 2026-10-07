@@ -38,9 +38,9 @@ RUN_VIA = {
 # object, and RAND has no default, so a bare `make cxx-check` stops at
 # cfg.h's #error the way the examples do.
 #
-# The -run targets and the Wycheproof legs are the work behind a stamped
+# The -run targets and the Wycheproof tests are the work behind a stamped
 # gate (tools/stamp.py): each is the command its gate runs when its
-# inputs changed, and a Wycheproof leg reads the vectors the wycheproof
+# inputs changed, and a Wycheproof test reads the vectors the wycheproof
 # target writes. So each runs through the gate.
 GATE_COMMAND = {
     "wycheproof-ct-widemul": "make ct-widemul-check",
@@ -52,9 +52,9 @@ GATE_COMMAND = {
     "lint-stack-run": "make lint-stack",
     "lint-trust-separation-run": "make lint-trust-separation",
     "lint-zig-build-run": "make lint-zig-build",
-    **{f"wycheproof-{kind}-{leg}": "make wycheproof"
-       for kind in ("leg", "run")
-       for leg in ("default", "host", "aes-extern")},
+    **{target: "make wycheproof"
+       for build in ("default", "host", "aes-extern")
+       for target in (f"wycheproof-{build}", f"wycheproof-run-{build}")},
 }
 
 # The catches lines a test/violations entry can name for a gate that a
@@ -124,7 +124,7 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh mlkem-avx2"]
 
 # What "everything" means, in the order to run it: the two tiers, then
-# the legs only the nightly runs. Each entry is (tier, command, reason).
+# the targets only the nightly runs. Each entry is (tier, command, reason).
 # full_plan() attaches every gate in the tree to the first command, so a
 # caller reading the plan's gate list sees the whole set.
 FULL_COMMANDS = [

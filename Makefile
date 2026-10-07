@@ -2696,7 +2696,7 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -o $@ test/quic_suite_test.c \
 	  $(QUIC_SUITE_TEST_SRCS)
 
-# The AES=extern leg. An AES=extern object runs every AES block on the
+# The AES=extern binaries. An AES=extern object runs every AES block on the
 # image's ch_aes_block, so these binaries link test/aes_extern_hook.c as
 # that hook: quic_aes_soft.c's FIPS 197 cipher under second names, for
 # 16-byte and 32-byte keys, which aborts on any other key length. The
@@ -2743,7 +2743,7 @@ bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_IMPL_SRCS)
 # AES=extern suite object: the rows bin/quic_loop_aes runs, each suite
 # full and resumed. Both ends run the same hook, so a loop alone cannot
 # tell a wrong cipher from a right one; the vectors above and the
-# Wycheproof and e2e legs are what can. The tcp-nonblocking loop on this
+# Wycheproof and e2e tests are what can. The tcp-nonblocking loop on this
 # object, bin/webpki_loop_aes_extern, sits below WEBPKI_LOOP_SRCS.
 QUIC_LOOP_AES_EXTERN_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_EXTERN_SRCS)
 bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES_EXTERN_SRCS) \
@@ -2909,7 +2909,7 @@ bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webp
 	  $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_AES_SRCS)
 # The same loop on the AES=extern suite object, the rows bin/webpki_loop_aes
 # runs. Both ends run the same hook, so a loop alone cannot tell a wrong
-# cipher from a right one; the vectors and the Wycheproof and e2e legs are
+# cipher from a right one; the vectors and the Wycheproof and e2e tests are
 # what can. The rule sits below WEBPKI_LOOP_SRCS, because make expands a
 # rule's prerequisites where it reads the rule: above it the list was
 # empty, and an edit to a library source left this binary as it was.
@@ -3270,7 +3270,7 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 # builds (test/test_widemul.h), and HOST_VECTOR_CPU runs it with
 # CH_CPU_CONSTANT_TIME_MULTIPLY and without it, so the same vectors run
 # through widemul.h's dispatchers on the native copies and then on the
-# decomposition. The Wycheproof host leg below does the same.
+# decomposition. The host Wycheproof test below does the same.
 # bin/widemul_runtime_test counts which copy each operation ran. On
 # x86-64 the unit suite runs once more, under X86_UNIT_CPU, which names
 # AVX2: RFC 8439's vectors and every record the suite seals and opens
@@ -3451,13 +3451,13 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 # The web PKI client that offers both cipher suites (docs/decisions.md
 # entry 45). It is a host object whose sessions state the AES
 # instructions (test/tls_client.c), so check builds it only where
-# HOST_TARGET found a host compiler, and e2e skips its legs, saying so,
+# HOST_TARGET found a host compiler, and e2e skips its tests, saying so,
 # where it is absent.
 bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_AES_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -o $@ test/tls_client.c \
 	  $(WEBPKI_TEST_AES_SRCS)
-# The same client on AES=extern, for e2e's legs against OpenSSL, built
+# The same client on AES=extern, for e2e's tests against OpenSSL, built
 # on every host because the hook needs no AES instruction.
 bin/tlsclient_webpki_aes_extern: test/tls_client.c $(WEBPKI_TEST_SRCS) aes.c $(AES_EXTERN_DEPS) gcm.c \
                                  $(HDRS) $(TESTH)
@@ -3657,7 +3657,7 @@ check-script-builds:
 	  $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm' -- \
 	  env CC='$(CC)' ./test/script-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
-# The Wycheproof legs, then the total docs/verification.md states against
+# The Wycheproof tests, then the total docs/verification.md states against
 # the vectors they ran. The second is not stamped: an edit to the page
 # alone must meet it.
 check-wycheproof:
@@ -3955,7 +3955,7 @@ check-slow: check
 # check-examples uses. bin/handshake_sequence_pq is built and not run: it
 # walks the same message ordering as its classic sibling; what pq changes
 # is share sizes and secret derivation, which handshake_strict_pq, the
-# differential and the e2e pq legs cover, and the nightly runs it.
+# differential and the e2e pq tests cover, and the nightly runs it.
 #
 # check-skips is a prerequisite because diff, test/e2e.sh and the Zig
 # roster each leave out the host object's rows under a compiler that
@@ -4204,11 +4204,11 @@ endif
 # The recipe below builds two object sets by hand, one per PIN over
 # $(SRCS) and one over the webpki sources. Neither names a QUIC source,
 # so the QUIC_SRCS contribute nothing to this number. That is a
-# deferral, not an oversight: the leg lands in the shape of the webpki
-# leg below, with bin/quic_test and bin/quic_driver_test in its run
+# deferral, not an oversight: the QUIC pass lands in the shape of the
+# webpki pass below, with bin/quic_test and bin/quic_driver_test in its run
 # list, and that commit moves this floor to CI's re-measured reading,
 # the way 3432a5d moved
-# it for the webpki leg. docs/quic.md, "What is still open", carries
+# it for the webpki pass. docs/quic.md, "What is still open", carries
 # the same debt.
 COVERAGE_FLOOR := 93
 GCOVR ?= $(shell command -v gcovr)
@@ -4219,7 +4219,7 @@ COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def 
 # CH_RAND_DRBG in place of the host's pattern.
 COV_DRBG_CC = $(filter-out $(HOST_RAND_DEF),$(COV_CC)) -DCH_RAND_DRBG
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
-# Each leg compiles every source its links read, and each link reads the
+# Each pass compiles every source its links read, and each link reads the
 # variable the binary's own rule reads, so a source a test's rule gains
 # is compiled and linked here as well. drbg.c compiles on its own line,
 # under COV_DRBG_CC.
@@ -4306,7 +4306,7 @@ else
 	    fi; \
 	  done; \
 	done
-	# The TRUST=webpki leg: one object set under -DCH_TRUST_WEBPKI, which
+	# The TRUST=webpki pass: one object set under -DCH_TRUST_WEBPKI, which
 	# widens the modulus gate the way RSA_WIDE_DEF does, then every
 	# binary check runs for the mode, each over the sources its own rule
 	# names. The strictness binary here runs the parsers' webpki arms.
@@ -4389,43 +4389,43 @@ if [ "$$(git -C $(WYCHEPROOF_DIR) rev-parse HEAD 2>/dev/null)" != "$(WYCHEPROOF_
 	  || { echo "$(1): the wycheproof checkout is not WYCHEPROOF_COMMIT"; exit 1; }
 endef
 
-.PHONY: wycheproof wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern \
+.PHONY: wycheproof wycheproof-default wycheproof-host wycheproof-aes-extern \
         wycheproof-run-default wycheproof-run-host wycheproof-run-aes-extern
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(MAKE) --no-print-directory -j4 wycheproof-leg-default wycheproof-leg-host wycheproof-leg-aes-extern
-# The three legs build and run at once, each about 3 seconds to
+	$(MAKE) --no-print-directory -j4 wycheproof-default wycheproof-host wycheproof-aes-extern
+# The three tests build and run at once, each about 3 seconds to
 # compile and 6 to run. Each writes its report to a file and prints it
 # whole when it ends, so the reports never interleave. None is a target
 # to run on its
 # own: each reads the bin/wycheproof_vectors.h the target above writes.
 #
-# A leg is skipped when it passed before on the same inputs
+# A test is skipped when it passed before on the same inputs
 # (tools/stamp.py). Its key covers the Makefile, which holds its recipe,
 # the compiler's version, the system's release, which names the linker
-# and the C library, and the leg's compile line run with -E: the flags,
+# and the C library, and the test's compile line run with -E: the flags,
 # and every byte of every source and header the compile reads,
 # bin/wycheproof_vectors.h among them, so a new vector or a changed
-# expectation runs the leg again. The binary reads no file, and the host
-# leg's arguments are in its recipe here. On x86-64 the host leg's binary
+# expectation runs the test again. The binary reads no file, and the host
+# test's arguments are in its recipe here. On x86-64 the host test's binary
 # also reads its CPU and CH_REQUIRE_X86_KERNELS, to skip or fail a value
 # that names instructions the CPU lacks (test/test_cpu.h): every key
 # covers that variable, and a stamp never leaves the machine that wrote
 # it, so what the binary prints follows from the key.
 #
-# What every leg that builds test/wycheproof_test.c turns on beside its own
+# What every test that builds test/wycheproof_test.c turns on beside its own
 # flags: AES-256 for the AES-GCM suite at 256 bits, and SHA-384 in hkdf.c
 # for the HKDF-SHA-384 and HMAC-SHA-384 suites. A library object has both
 # only under SUITE=aesgcm, which needs a host object or AES=extern, so
-# these two are how the other legs run TLS_AES_256_GCM_SHA384's primitives.
+# these two are how the other tests run TLS_AES_256_GCM_SHA384's primitives.
 WYCHEPROOF_TEST_DEFS := $(AES_256_TEST_DEF) -DCH_HASH_SHA384
 WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
   mlkem.c mlkem_poly.c sha3.c buf.c ct.c ct_wipe.c sha512.c sha512_compress.c p384.c p384_field.c \
   rsa_pkcs1.c rsa_sign.c aes.c gcm.c p256_sign.c p256_ecdh.c p256_point.c \
   p256_scalar.c p256_field.c
 WYCHEPROOF_STAMP_INPUTS = $(STAMP_MAKEFILES) --output '$(CC) --version' --output 'uname -srm'
-# Each leg's compile line without its output, so the stamp's -E run and
+# Each test's compile line without its output, so the stamp's -E run and
 # the compile read the same flags and the same sources.
 WYCHEPROOF_DEFAULT = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL)
@@ -4434,14 +4434,14 @@ WYCHEPROOF_HOST = $(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRA
   $(AES_HW_SRCS) quic_aes_soft.c
 WYCHEPROOF_AES_EXTERN = $(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN \
   $(WYCHEPROOF_TEST_DEFS) -I. -Ibin test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_EXTERN_SRCS)
-wycheproof-leg-default:
+wycheproof-default:
 	@python3 tools/stamp.py wycheproof-default $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_DEFAULT) -E' -- $(MAKE) --no-print-directory wycheproof-run-default
 wycheproof-run-default:
 	@$(WYCHEPROOF_DEFAULT) -o bin/wycheproof_test && \
 	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
-# The host leg (docs/decisions.md 89). New crypto gets its Wycheproof
-# suite on every leg that builds test/wycheproof_test.c. The AES
+# The host Wycheproof test (docs/decisions.md 89). New crypto gets its
+# Wycheproof suite in every test that builds test/wycheproof_test.c. The AES
 # instructions are a second AES-128 in this tree, so the AES-GCM suite
 # answers for them too, and a host object holds each file built on the
 # widening multiply twice, so each suite of those files answers for both
@@ -4463,14 +4463,14 @@ wycheproof-run-default:
 # architectures it runs once more under HASH_WYCHEPROOF_CPU, where the
 # HMAC-SHA-256 and HKDF-SHA-256 suites hash on the CPU's SHA-256
 # instructions (docs/decisions.md 93). Running the
-# whole file each time is what the rule asks for and what keeps this leg
+# whole file each time is what the rule asks for and what keeps this test
 # from rotting when a suite is added. A compiler that fails the host test
 # skips, the way the fetch above skips offline.
 HOST_WYCHEPROOF_CPU := 0x1 0x3 0x5 0x7 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU)
-wycheproof-leg-host:
+wycheproof-host:
 ifeq ($(HOST_TARGET),)
 	$(call REQUIRE_ON_CI,wycheproof-host)
-	@echo "SKIP wycheproof host leg: $(CC) fails the host test"
+	@echo "SKIP the host Wycheproof test: $(CC) fails the host test"
 else
 	@python3 tools/stamp.py wycheproof-host $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_HOST) -E' -- $(MAKE) --no-print-directory wycheproof-run-host
@@ -4482,11 +4482,11 @@ wycheproof-run-host:
 	    || { echo "== bin/wycheproof_test_host $$bits failed:"; cat bin/wycheproof_test_host.log; exit 1; }; \
 	  echo "== bin/wycheproof_test_host $$bits (host object):"; cat bin/wycheproof_test_host.log; \
 	done
-# The AES=extern leg, for the host leg's reason: an AES=extern object
-# runs AES-GCM over the image's ch_aes_block, so the AES-GCM suite answers
-# for aes_extern.c at both key sizes, with test/aes_extern_hook.c as the
-# hook. It needs no AES instruction, so it never skips.
-wycheproof-leg-aes-extern:
+# The AES=extern Wycheproof test, for the host one's reason: an AES=extern
+# object runs AES-GCM over the image's ch_aes_block, so the AES-GCM suite
+# answers for aes_extern.c at both key sizes, with test/aes_extern_hook.c
+# as the hook. It needs no AES instruction, so it never skips.
+wycheproof-aes-extern:
 	@python3 tools/stamp.py wycheproof-aes-extern $(WYCHEPROOF_STAMP_INPUTS) \
 	  --output '$(WYCHEPROOF_AES_EXTERN) -E' -- $(MAKE) --no-print-directory wycheproof-run-aes-extern
 wycheproof-run-aes-extern:
@@ -5966,31 +5966,31 @@ lint-impact:
 #     16-byte Retry key the RFC prints (§5.8), and in a SUITE=aesgcm
 #     object the traffic keys, which a session runs on it only under its
 #     caller's CH_CPU_CONSTANT_TIME_AES (docs/decisions.md 89).
-#     test/aes_equiv_test.c and the Wycheproof AES-GCM suite on the host
-#     leg check it instead, and neither measures timing (docs/quic.md,
-#     "What the AES axis proves").
+#     test/aes_equiv_test.c and the Wycheproof AES-GCM suite in the host
+#     Wycheproof test check it instead, and neither measures timing
+#     (docs/quic.md, "What the AES axis proves").
 #   ghash_hw.c: GHASH's multiply on the carry-less multiply
 #     instruction, in a host object, in place of gcm.c's portable one for
 #     a schedule on the AES instructions. It sits here for aes_hw.c's
 #     reason: every spec below targets a core that fails the host test.
 #     Its multiply is branchless and reads no table, and the hash subkey
 #     it takes is the forward cipher of a zero block under a key aes_hw.c
-#     takes. test/ghash_equiv_test.c and the Wycheproof AES-GCM suite on
-#     the host leg check it instead, and neither measures timing.
+#     takes. test/ghash_equiv_test.c and the Wycheproof AES-GCM suite in
+#     the host Wycheproof test check it instead, and neither measures timing.
 #   gcm_hw.c: counter mode over whole blocks and the seal's counter mode
 #     and GHASH in one loop, on the AES instructions and the carry-less
 #     multiply, in a host object. It sits here for aes_hw.c's reason, and
 #     takes the keys aes_hw.c and ghash_hw.c take. Its branches read the
 #     round count and the block count alone. test/aes_equiv_test.c,
-#     test/ghash_equiv_test.c and the Wycheproof AES-GCM suite on the
-#     host leg check it instead, and none of them measures timing.
+#     test/ghash_equiv_test.c and the Wycheproof AES-GCM suite in the
+#     host Wycheproof test check it instead, and none of them measures timing.
 #   gcm_vaes.c: gcm_hw.c's three loops on x86-64's 256-bit VAES and
 #     VPCLMULQDQ, in every host object on x86-64. It sits here for
 #     gcm_hw.c's reason and takes the keys gcm_hw.c takes: the 32-bit
 #     specs compile it to nothing, and the x86-64 spec measures no file
 #     in this list. Its branches read the round count and the block count
 #     alone. bin/aes_equiv_test, bin/ghash_equiv_test, bin/quic_test_hw
-#     and the Wycheproof host leg check it on a CPU that has the
+#     and the host Wycheproof test check it on a CPU that has the
 #     instructions, and none of them measures timing.
 #   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
 #     srv_ticket.c, srv_auth.c, srv_resume.c, srv_kex.c, srv_flight.c,
@@ -6140,7 +6140,7 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # -DCH_HASH_SHA384 as hkdf.c and keysched.c do, so the count reads both
 # hashes' arms.
 WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME
-# webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen legs compile every
+# webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen lints compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
 # client offers both groups in every build (docs/decisions.md 53). The server
 # entries need no such flag. -DCH_KEX_PQ chooses a client's group, and a
@@ -6612,8 +6612,8 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 # keep them off a branch, exactly as poly1305_final's are. aes_hw.c
 # is not here and cannot be: it is an #error under every spec below,
 # because no spec's target has the AES instructions.
-# test/aes_equiv_test.c and the Wycheproof AES-GCM suite on that leg
-# check it instead (docs/quic.md, "What the AES axis proves").
+# test/aes_equiv_test.c and the Wycheproof AES-GCM suite on the host
+# object check it instead (docs/quic.md, "What the AES axis proves").
 #
 # aes.c's counts did not move when QUIC version 2's salt, Retry key and
 # labels joined version 1's (docs/decisions.md 79). Each is read from a

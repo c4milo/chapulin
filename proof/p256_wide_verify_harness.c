@@ -35,7 +35,7 @@
 //
 // Not proven here: that the equation holds for a signature and for no
 // other pair. bin/p256_verify_equiv_test holds the verdict to p256.c's
-// 32-bit arm, and the Wycheproof host leg to Wycheproof's.
+// 32-bit arm, and the host Wycheproof test to Wycheproof's.
 #include "harness.h"
 
 #include <string.h>

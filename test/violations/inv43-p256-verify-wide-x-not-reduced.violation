@@ -5,7 +5,7 @@ reason: the host verifier compares R's affine x with r and never with
   r + n, so it refuses a signature whose R has an x of n or more. x is
   below p and r is below n, so the two differ only for an x of n or more,
   which is one point in 2^128: no random signature shows it. Wycheproof's
-  ECDSA vectors hold signatures whose k*G has such an x, and its host leg
+  ECDSA vectors hold signatures whose k*G has such an x, and its host test
   runs them on this file.
 
 --- old

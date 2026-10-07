@@ -245,7 +245,7 @@ static void prove_marshalling(void) {
 
 // Every routine again over unconstrained limbs, in the aliasing shapes
 // p256_sign.c uses. No assertion on the values: this is the memory
-// safety and UB leg, and it must hold for limbs no contract allows.
+// safety and UB proof, and it must hold for limbs no contract allows.
 static void prove_safety(void) {
     p256_scalar a;
     p256_scalar b;

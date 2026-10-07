@@ -6,7 +6,7 @@
 #ifndef CH_WYCHEPROOF_AES_GCM_H
 #define CH_WYCHEPROOF_AES_GCM_H
 
-// The host leg's binary runs under test_cpu, its one argument
+// The host build's binary runs under test_cpu, its one argument
 // (test/test_cpu.h): the Makefile runs it once for each set of bits that
 // changes a path. The AES-GCM suites below read the AES bit, and each
 // key's schedule records test_cpu, as a session's does, so on x86-64 a
@@ -15,7 +15,7 @@
 
 // The AES-GCM suite, for gcm.c. Guarded because only a
 // -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles that file, and the generator emits
-// the rows under the same guard, so the legs that build this file
+// the rows under the same guard, so the builds that compile this file
 // without the define read a header that declares nothing here.
 //
 // The key comes from the vector, so this builds an aes_public_key
@@ -72,7 +72,7 @@ static void run_aes_gcm(void) {
         k.key.rounds = AES_128_ROUNDS;
 #endif
 #ifdef CH_AES_TWO_CIPHERS
-        // A QUIC host object runs this key on the cipher the leg's AES bit
+        // A QUIC host object runs this key on the cipher the run's AES bit
         // names, as it runs a session's Initial keys (aes_schedule.h).
         k.key.instructions =
             (test_cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? AES_ON_INSTRUCTIONS : AES_ON_TABLE;
@@ -89,13 +89,13 @@ static void run_aes_gcm(void) {
 }
 
 #ifdef CH_AES_256
-// AEAD_AES_256_GCM, TLS_AES_256_GCM_SHA384's AEAD. Every leg that builds
-// this file passes -DCH_AES_256_TEST, so the AES=soft legs run the
-// software reference, the host leg the instructions a suite build runs
-// and the AES=extern leg the hook with a 32-byte key, and every leg
+// AEAD_AES_256_GCM, TLS_AES_256_GCM_SHA384's AEAD. Every build that
+// compiles this file passes -DCH_AES_256_TEST, so the AES=soft builds run
+// the software reference, the host build the instructions a suite build
+// runs and the AES=extern build the hook with a 32-byte key, and every build
 // answers the same suite. A host object holds AES-256 on the instructions
 // alone, and a session without the AES bit runs no AES-256, so the host
-// leg runs this suite under the bit alone.
+// build runs this suite under the bit alone.
 static void run_aes256_gcm(void) {
 #ifdef CH_AES_TWO_CIPHERS
     if ((test_cpu & CH_CPU_CONSTANT_TIME_AES) == 0) {

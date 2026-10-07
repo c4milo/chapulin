@@ -42,7 +42,7 @@
 // residue checks run once more on gcm_vaes.c's kernels (run_on_vaes).
 //
 // SP 800-38D and Wycheproof are not repeated here. bin/quic_test_hw and
-// the Wycheproof host leg run the published vectors over the same host
+// the host Wycheproof test run the published vectors over the same host
 // object, so the instruction path answers the standard directly rather
 // than only through the portable one.
 #include <stdio.h>

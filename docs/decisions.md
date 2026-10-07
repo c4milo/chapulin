@@ -327,7 +327,7 @@ does nothing more.
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
     two, both major compiler families stay covered without a second CI
-    leg. Entry 92 runs CI's half on a development machine before a
+    job. Entry 92 runs CI's half on a development machine before a
     push.
 30. **Tool versions pin to the development machine's.** When the local
     toolchain upgrades, the CI pins bump in the same commit. Code never
@@ -1031,7 +1031,7 @@ does nothing more.
     Cost: two fields to keep correct instead of one. The wide field has
     seven harnesses of its own (INV-34), an equivalence binary that
     compares it with the 16-limb field on every `make check`, a
-    Wycheproof leg, a unit leg, a timing leg and a differential leg.
+    Wycheproof test, a unit test, a timing test and a differential test.
     Its constant-time claim rests on a vendor statement this tree cannot
     check, and on the code the pinned clang emits for arm64 and x86-64,
     which `lint-wide-multiply` holds; no gcc spec measures it, because no
@@ -1344,9 +1344,10 @@ does nothing more.
     count of exported symbols grows by one, while the counts of calls
     stay as they were. 48 bytes of read-only data per object. A consumer
     that never compares gets nothing from it. `lib-check` builds a
-    consumer twice for every object it checks, about 0.2 s a leg, and
-    `make check` gained one leg, `TRUST=raw-ecdsa KEX=pq`, 2.6 s cold and
-    1.0 s warm, so the record is read in a `KEX=pq` object.
+    consumer twice for every object it checks, about 0.2 s a library
+    build, and `make check` gained one library build, `TRUST=raw-ecdsa
+    KEX=pq`, 2.6 s cold and 1.0 s warm, so the record is read in a
+    `KEX=pq` object.
 
     Gain: a disagreement between an object and a consumer's defines is
     one comparison at startup instead of a struct written past its end.
@@ -1738,7 +1739,7 @@ does nothing more.
     launch line before this entry, because harness.h's SHA-256 stub made
     the formula too large, and it now keeps a stub of its own.
     OpenSSL's `s_client` offers no option that reorders a retried hello,
-    so `test/e2e.sh` keeps its TCP retry leg, which sends the same order
+    so `test/e2e.sh` keeps its TCP retry test, which sends the same order
     twice and still passes.
 
     The bound has tests of its own. `bin/srv_test` fills the golden hello
@@ -1932,7 +1933,7 @@ does nothing more.
       `ch_pubkey_from_pem` where its object has one, and starts a
       session. The drbg pair and the tcp-blocking and tcp-nonblocking pair must fail to
       link, and the linker must name each shared name. It reuses the
-      objects the `lib-check` legs build and builds two more: 5.2 s with
+      objects the `lib-check` builds made and builds two more: 5.2 s with
       every object built, 8 s with the two to build.
     - `lib-check`'s consumer compiled with the transport moved now must
       fail to link, naming the other transport's record. It used to read
@@ -1958,7 +1959,7 @@ does nothing more.
     `x509_ca.c` beside `build.h` and `build.c`, because a QUIC build
     compiles the provisioning call under its own name.
     `bench/stack.py` reports `ch_pubkey_from_pem_tcp_blocking`. `make check`
-    gains the pair test and one more consumer build per `lib-check` leg.
+    gains the pair test and one more consumer build per `lib-check` build.
 
     Gain: one image links the objects of two transports, and each unit
     of it reads the record of its own object.
@@ -2406,8 +2407,8 @@ does nothing more.
       emitted from this tree's sources. Now a suite build can hand them
       to a function the image supplies, whose code nobody here reads.
     - `make check` builds and runs five more binaries, a third Wycheproof
-      leg and one more `lib-check` object; `make diff` runs one more
-      binary, and `test/e2e.sh` ten more legs.
+      test and one more `lib-check` object; `make diff` runs one more
+      binary, and `test/e2e.sh` ten more tests.
 
     Gain: a part with an AES peripheral offers the suite RFC 9846 §9.1
     makes mandatory, and the SHOULD one beside it, over every transport,
@@ -2501,7 +2502,7 @@ does nothing more.
       `test/build_test.c` against each Zig object under make's defines, and
       links the tcp-nonblocking `ROLE=both` and QUIC objects into one image
       and runs it. check-slow repeats the comparison over every `lib-check`
-      leg's configuration. `test/localize-check.sh` compares the localizer
+      build's configuration. `test/localize-check.sh` compares the localizer
       with `llvm-objcopy -G` on nine ELF targets, big-endian mips32r2 among
       them, and with `nmedit -s` as well on two Mach-O targets, and links
       every result. Five mutants break `build.zig` or the localizer.
@@ -3369,7 +3370,7 @@ does nothing more.
     `ch_quic` each grow by two pointers, 16 bytes on arm64 and 8 on
     rv32ic, measured. No other build's layout moves, and bench/sram.sh
     reads the same numbers as before. `rsa_pss_sign` takes one more
-    argument. `make check` gains one packaged-object leg and three loop
+    argument. `make check` gains one library build and three loop
     binaries, and check-slow's Zig roster one configuration.
 
     Gain: a replay needs only each session's seed, whichever calls draw
@@ -3978,11 +3979,11 @@ does nothing more.
     lines. On arm64 under clang at `-O2` it adds 1,192 bytes of text to a
     host object, and takes the stack below `chacha20_xor` from 320 to 768
     bytes, which `lint-stack` holds to the device budget in the
-    `CHACHA=vector` leg. Nothing proves the path, because CBMC cannot
+    `CHACHA=vector` build. Nothing proves the path, because CBMC cannot
     read an intrinsic. `make check` holds it with
     `bin/chacha20_equiv_test`, 30,771 cases against the portable loop;
     `bin/unit_chacha_vector`, which runs RFC 8439's vectors and every
-    record the unit suite seals; a Wycheproof leg; a packaged-object leg;
+    record the unit suite seals; a Wycheproof test; a library build;
     and the codegen gate's two 64-bit specs, which hold its branches at
     12. Seven violations break the path, and each is caught
     (docs/verification.md, "The vector ChaCha20").
@@ -4091,12 +4092,12 @@ does nothing more.
     stays where the vector ChaCha20 put it, 848 bytes: `aead_seal`'s 80
     over `chacha20_vector_xor`'s 768, as `bench/stack.py` reports.
     `lint-stack` holds the path's frames to the device budget in the
-    `check-lib-chacha-vector-widemul` leg. Nothing
+    `check-lib-chacha-vector-widemul` build. Nothing
     proves the path, because CBMC cannot read an intrinsic. `make check`
     holds it with `bin/poly1305_equiv_test`, 43,282 cases against the
     portable loop and the check of the stack a call leaves;
     `bin/unit_chacha_vector`, which runs RFC 8439's A.3 and A.5 vectors on
-    it; a Wycheproof leg; a packaged-object leg on each CI architecture;
+    it; a Wycheproof test; a library build on each CI architecture;
     and the codegen gate's two 64-bit specs, which hold its branches at 4.
     Nine violations break the path, and each is caught
     (docs/verification.md, "The CHACHA=vector Poly1305").
@@ -4260,7 +4261,7 @@ does nothing more.
 
     Guards. `test/gcm_tests.h` forges one tag bit in every SP 800-38D
     case and requires zeros after the call and the byte after them
-    untouched, in `bin/quic_test` and the legs that run those vectors.
+    untouched, in `bin/quic_test` and the tests that run those vectors.
     `bin/ghash_equiv_test`, the Wycheproof AES-GCM suite and
     `bin/diff_quic_test` require zeros from every refused open, and
     `bin/ghash_equiv_test` opens in place and five bytes below the
@@ -4447,7 +4448,7 @@ does nothing more.
       own names alone and as many times under the other, the decomposition
       under 0, 3, 0x80 and 0xff, the same bytes under all of them, and the
       vector Poly1305 under the constant-time answer alone. The unit,
-      ML-KEM, P-256 and RSA signing vectors and both Wycheproof legs run
+      ML-KEM, P-256 and RSA signing vectors and both Wycheproof tests run
       once per answer. `bin/tcp_blocking_loop_widemul`,
       `bin/tcp_nonblocking_loop_widemul`, `bin/quic_loop_widemul` and
       `bin/webpki_session_widemul` hold the field to 0, 1, 2 and 3 at every
@@ -4501,7 +4502,7 @@ does nothing more.
       the DOIT list, runs the native multiply where it is not constant
       time. The answer is the caller's, and chapulin cannot check it.
     - `make check` builds and runs fifteen more binaries, two more
-      Wycheproof legs, three more `lib-check` objects and one more script,
+      Wycheproof tests, three more `lib-check` objects and one more script,
       and `lint-zig-build` one more configuration.
 
     Gain: one object serves threads and CPUs whose multiply runs in
@@ -4660,7 +4661,7 @@ does nothing more.
     always takes the host object. A check that packages the device object
     of a server on a host target sets the result of the host test empty on
     its own command line: `HOST_TARGET=` for make and `-DHOST_TARGET=` for
-    `zig build`. The `AES=extern` server's `lib-check` leg does, and so do
+    `zig build`. The `AES=extern` server's `lib-check` build does, and so do
     its configuration in `lint-zig-build`'s roster and the device rows of
     `lint-trust-separation`. `HOST_TARGET=yes` names the host object the
     same way, so the rows that read a host object's sources and defines
@@ -4794,7 +4795,7 @@ does nothing more.
     |---|---|---|
     | Speed variables, and their values | 4, and 11 | 2, and 4, for device objects |
     | Compiler probes for them | 4 | 1, the host test |
-    | `lib-check` legs in `make check` | 29, 12 for a speed value | 20 |
+    | `lib-check` builds in `make check` | 29, 12 for a speed value | 20 |
     | `lint-zig-build` configurations | 32, 15 for a speed value | 22 |
     | Wycheproof binaries | 7 | 3 |
     | Test binaries the four variables add | 37 | about 20 |
@@ -4815,11 +4816,11 @@ does nothing more.
     `lint-trust-separation` rows name a speed variable, 19 of them a build
     the Makefile must refuse.
 
-    - Nine `lib-check` legs go: the five that name a fast path on a raw
+    - Nine `lib-check` builds go: the five that name a fast path on a raw
       client, and the four that repeat a webpki, server or QUIC object the
       host test now builds. Three stay: a server and colibri's QUIC object,
       both on `SUITE=aesgcm`, and the device server on `AES=extern`. The
-      eight legs of webpki and server products build the host object with no
+      eight builds of webpki and server products build the host object with no
       change to their command lines. Ten Zig configurations go the same way.
     - The three Wycheproof binaries are the default one, the `AES=extern`
       one and the host one, which runs once per set of bits that changes a
@@ -4928,12 +4929,12 @@ does nothing more.
     - A host object's timing statements move from build lines, which a
       reviewer reads once, into each caller's code.
     - A 32-bit target loses two choices: `CHACHA=vector` on 32-bit NEON or
-      SSE2, which no CI leg builds, and `WIDEMUL=runtime`, which entry 87
+      SSE2, which no CI job builds, and `WIDEMUL=runtime`, which entry 87
       measured on mips32r2 and no consumer links.
     - A 64-bit target that is neither arm64 nor x86-64, such as riscv64,
       loses `X25519=wide`, which it could build: the wide field is in a
       host object alone, and the host test names two architectures. No CI
-      leg built it there.
+      job built it there.
 
     Gain: one object per product and architecture runs on every CPU of
     that architecture, at the speed its caller describes. Four variables
@@ -5039,7 +5040,7 @@ does nothing more.
     - **What tests may ask.** Test code asks its CPU through
       `__builtin_cpu_supports` and CPUID (`test/x86_kernels_cpu.h`); the
       library asks nothing. The equivalence tests call the kernels
-      directly, and three binaries and a Wycheproof leg send the library's
+      directly, and three binaries and a Wycheproof test send the library's
       calls to them through a force-included header that renames the
       128-bit entry, while the library's own predicates still answer 0.
       Each skips a CPU without the instructions, and CI's `x86-64-kernels`
@@ -5062,7 +5063,7 @@ does nothing more.
       entries that `gcm.c` calls, so `gcm_hw.c` is the 128-bit path alone
       and calls no kernel, and each key's schedule records the low byte of
       its session's `ch_cfg.cpu` for the predicate to read. The three
-      binaries and the Wycheproof leg that renamed the 128-bit entries are
+      binaries and the Wycheproof test that renamed the 128-bit entries are
       gone: `bin/unit_host`, `bin/ghash_equiv_test`, `bin/quic_test_hw`
       and the Wycheproof host binary run those cases on the kernels under
       the `ch_cfg.cpu` values that name them, and `bin/x86_kernels_test`
@@ -5081,7 +5082,7 @@ does nothing more.
       and 616 under clang; the GCM seal 1,024 and 1,016, the open 1,024
       and 984, and counter mode 384 and 376, where `gcm_hw.c`'s seal takes
       576 and 600.
-    - Three binaries and one Wycheproof leg in `make check` on an x86-64
+    - Three binaries and one Wycheproof test in `make check` on an x86-64
       host, and CI's `x86-64-kernels` job.
 
     Gain, 16 KiB records in µs: the medians bench/record.sh writes, from
@@ -6794,7 +6795,7 @@ does nothing more.
       one verdict from the two arms, and the verdict each case names,
       over 995 inputs; `bin/p256_equiv_test` now reads its signatures
       with the 32-bit arm, so its verifier stays independent of the wide
-      files; the Wycheproof host leg runs the ECDSA P-256 vectors on the
+      files; the host Wycheproof test runs the ECDSA P-256 vectors on the
       wide verifier; and the `p256_wide_verify` proof (601 properties,
       1 s, 37 MB) holds the four refusals no test can see. Eleven
       `inv43-*` violations each fail one of them.
@@ -6876,7 +6877,7 @@ does nothing more.
       routine of the field to `p384_field.c`'s result and the verifier
       to `p384.c`'s verdict, over 23,406 field results and 186
       verdicts; `bin/p384_test_host` runs the RFC 6979 vectors on the
-      host arm, and the Wycheproof host leg the ECDSA P-384 vectors.
+      host arm, and the host Wycheproof test the ECDSA P-384 vectors.
       Four proofs: `p384_wide_field` (513 properties, 59 s, 1.7 GB),
       `p384_wide_point` (608, 94 s, 2.6 GB), `p384_wide_digits` (611,
       19 s, 377 MB) and `p384_wide_verify` (511, 1 s, 29 MB), which
@@ -7220,7 +7221,7 @@ does nothing more.
       transforms and the base multiplication with the loops over 19,107
       cases on the host's instruction set, and `test/aes-runtime-qemu.sh mlkem-vector` runs
       it for the other one under qemu. `bin/mlkem_test_host` and the
-      Wycheproof host leg run the published ML-KEM vectors on the path,
+      host Wycheproof test run the published ML-KEM vectors on the path,
       and `test/mlkem-builds.sh` holds which transforms each object
       calls. INV-46 and its eighteen violations state the rest.
 
@@ -7260,7 +7261,7 @@ does nothing more.
     - **`p256_sign` keeps its contract.** It takes a `WIDEMUL_` answer
       and runs its nonce on the portable code, in every object. A device
       object has no `ch_cfg.cpu` and holds one SHA-256, and the tests
-      and the Wycheproof host leg sign through `p256_sign`.
+      and the host Wycheproof test sign through `p256_sign`.
     - **Constant time.** HMAC's key here is the generator's K, which
       the private key derives. The bit is the caller's statement that
       the SHA-256 instructions run in constant time on its CPU, the
@@ -7507,7 +7508,7 @@ does nothing more.
       replaces the square with any eight limbs in the field's and the
       scalar's harnesses, as it replaces a row. `bin/p256_equiv_test`
       holds every square to `p256_field.c`'s and both inverses to the
-      32-bit files', and the vectors and the Wycheproof host leg run on
+      32-bit files', and the vectors and the host Wycheproof test run on
       it. Two violations, `p256-wide-sqr-top-carry-dropped` and
       `p256-wide-sqr-doubling-drops-a-bit`, fail `bin/p256_equiv_test`.
 

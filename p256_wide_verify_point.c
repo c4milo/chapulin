@@ -25,7 +25,7 @@
 //     and r + n is below p. That saves the inversion of Z.
 //
 // bin/p256_verify_equiv_test holds the verdict these lead to against
-// p256.c's 32-bit arithmetic, and the Wycheproof host leg against
+// p256.c's 32-bit arithmetic, and the host Wycheproof test against
 // Wycheproof's.
 #include "p256_wide_verify_point.h"
 

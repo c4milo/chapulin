@@ -77,7 +77,7 @@ AUDITED = {
         "casts hand a uint32_t word to _mm_set1_epi32, a conversion gcc and "
         "clang define as keeping its 32 bits, and no arithmetic runs on the "
         "int. bin/chacha20_equiv_test holds the file to chacha20.c's proven "
-        "loop, and bin/unit_host and the Wycheproof host leg run the "
+        "loop, and bin/unit_host and the host Wycheproof test run the "
         "published vectors on it. Delete this entry if a harness can ever "
         "compile the file."
     ),
@@ -91,7 +91,7 @@ AUDITED = {
         "_mm256_set1_epi32, a conversion gcc and clang define as keeping its "
         "32 bits, and no arithmetic runs on the int. bin/chacha20_equiv_test "
         "holds the kernel to chacha20.c's proven loop on a CPU with AVX2, and "
-        "bin/unit_host and the Wycheproof host leg run the published vectors "
+        "bin/unit_host and the host Wycheproof test run the published vectors "
         "on it there, under a ch_cfg.cpu value with CH_CPU_AVX2. Delete this "
         "entry if a harness can ever compile the file."
     ),
@@ -106,7 +106,7 @@ AUDITED = {
         "SSE2 arm's (int) casts hand _mm_set_epi32 a limb, 5 times a limb, "
         "LIMB_MASK or HIGH_BIT, each below 2^31, and no arithmetic runs on "
         "the int. bin/poly1305_equiv_test holds the file to poly1305.c's "
-        "proven loop, and bin/unit_host and the Wycheproof host leg run the "
+        "proven loop, and bin/unit_host and the host Wycheproof test run the "
         "published vectors on it, under a ch_cfg.cpu value with the multiply "
         "bit. Delete this entry if a harness can ever compile the file."
     ),
@@ -136,7 +136,7 @@ AUDITED = {
         "holds the file to mlkem_poly.c's proven loops over inputs drawn from "
         "all of int16, test/aes-runtime-qemu.sh mlkem-vector runs that test on "
         "the arm the machine's own compiler does not read, and "
-        "bin/mlkem_test_host and the Wycheproof host leg run the published "
+        "bin/mlkem_test_host and the host Wycheproof test run the published "
         "ML-KEM vectors on it. Delete this entry if a harness can ever compile "
         "the file."
     ),
@@ -187,7 +187,7 @@ AUDITED = {
         "arithmetic runs on a signed value. The framing adds and subtracts "
         "size_t byte counts that the context's fill, below 64, bounds. "
         "bin/sha2_equiv_test holds the file to sha256.c's proven code, and "
-        "bin/unit_host and the Wycheproof host leg run the published vectors "
+        "bin/unit_host and the host Wycheproof test run the published vectors "
         "on it, under a ch_cfg.cpu value with the SHA-256 bit. Delete this "
         "entry if a harness can ever compile the file."
     ),
@@ -203,7 +203,7 @@ AUDITED = {
         "the round loop's size_t counters stop at 40. "
         "bin/sha2_equiv_test holds the file to sha512.c's and "
         "sha512_compress.c's proven code on arm64, and bin/sha512_test_host, "
-        "bin/hkdf384_test_host and the Wycheproof host leg run the published "
+        "bin/hkdf384_test_host and the host Wycheproof test run the published "
         "vectors on it, under a ch_cfg.cpu value with the SHA-512 bit. Delete "
         "this entry if a harness can ever compile the file."
     ),
@@ -239,8 +239,8 @@ AUDITED = {
         "bits, and no arithmetic runs on the int. The indices are size_t "
         "counters that each entry's constant key size and round count bound. "
         "bin/aes_equiv_test holds the file to quic_aes_soft.c, which the aes "
-        "and aes256 harnesses prove, and bin/quic_test_hw and the Wycheproof "
-        "host leg run the published vectors on it, under a ch_cfg.cpu value "
+        "and aes256 harnesses prove, and bin/quic_test_hw and the host "
+        "Wycheproof test run the published vectors on it, under a ch_cfg.cpu value "
         "with the AES bit. Delete this entry if a harness can ever compile the "
         "file."
     ),

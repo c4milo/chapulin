@@ -69,13 +69,13 @@ int main(void) {
 #ifdef CH_EXPORTER
     // The exporter of RFC 9846 §7.5, which the EXPORTER axis compiles.
     // Its label is the caller's and this axis widens hkdf's cap from 12
-    // to 32, so what is new is the arithmetic at lengths the base leg
+    // to 32, so what is new is the arithmetic at lengths the base proof
     // never reaches. Two fixed lengths cover it: 13, the first the old
     // cap refused, and HKDF_LABEL_MAX, the new cap itself. The label's
     // bytes stay free. A length left free as well ran with no verdict
     // for ten minutes at 1.4 GB: strlen over free bytes, the copy into
     // the info buffer and hkdf_expand's loop each fork on it, and the
-    // base leg converges in 13 s with every length it takes fixed.
+    // base proof converges in 13 s with every length it takes fixed.
     uint8_t exp_master[PROOF_HASH_LEN];
     ks_exp_master(PROOF_HASH_LEN, master, transcript, exp_master);
 

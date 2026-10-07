@@ -48,9 +48,9 @@ p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c pem.c x509.c x509_der.c x509_ca
 handshake_parser.c handshake_parser_ee.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c
 quic.c quic_config.c quic_initial.c quic_keys.c quic_packet.c quic_retry.c quic_step.c aes.c gcm.c""".split()
 
-# Sources this leg names but cannot compile. webpki.c reads
+# Sources this run names but cannot compile. webpki.c reads
 # ch_cfg.now_seconds, which cfg.h declares under -DCH_TRUST_WEBPKI and
-# refuses beside -DCH_TRUST_CA, so the leg that measures it is
+# refuses beside -DCH_TRUST_CA, so the run that measures it is
 # `make diff-webpki` and bin/diff does not compile it either. Naming it
 # here keeps its row in the table, reading "not built", rather than
 # dropping the file from the report.
@@ -224,7 +224,7 @@ def main():
         (unmodelled if pct == 0 else modelled).append(src)
     lines += ["", summary, ""]
     if TRUST_WEBPKI_ONLY:
-        lines.append("Built by `make diff-webpki` rather than this leg, which "
+        lines.append("Built by `make diff-webpki` rather than this run, which "
                      "compiles under -DCH_TRUST_CA: "
                      + ", ".join(f"`{s}`" for s in TRUST_WEBPKI_ONLY) + ".")
         lines.append("")

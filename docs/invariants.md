@@ -447,7 +447,7 @@ last `ROLE=server` stub, as the entry said it would.
   whether or not the epoch callbacks are configured. It is a runtime
   abort, not a compile error: the misplaced call still builds.
   `test_epoch_cfg` covers the config gates and asserts nothing
-  persists at connect time; the e2e `ca-epoch-*` legs move a real
+  persists at connect time; the e2e `ca-epoch-*` tests move a real
   device forward, then replay the pre-bump leaf and the pre-bump
   ticket against it and require both to fail — they cover the replay
   direction, not the commit point; the x509der harness proves the
@@ -457,7 +457,7 @@ last `ROLE=server` stub, as the entry said it would.
   the `server_finished_ok = 1` alongside it defeats the assert, and
   nothing checks the monotonicity comparison itself — inverting
   `h->leaf.epoch <= t->epoch` leaves the assert silent, and only the
-  e2e `ca-epoch-equal` leg objects.
+  e2e `ca-epoch-equal` test objects.
 - **Violation.** A PR moves the update back into `hsa_server_auth` for
   symmetry with the rejects, letting a replayed certificate advance
   a device's persistent state (`make test-invariants` runs this one,
@@ -1245,8 +1245,8 @@ last `ROLE=server` stub, as the entry said it would.
   known, and holds the square to the multiplication of a number by
   itself at every limb count; by `bin/rsa_test_host` and
   `bin/rsa_pkcs1_test_host`, the
-  two verifiers' openssl vectors on the 64-bit arm; and by the Wycheproof
-  host leg. `test/widemul-builds.sh` holds each arm to its object.
+  two verifiers' openssl vectors on the 64-bit arm; and by the host
+  Wycheproof test. `test/widemul-builds.sh` holds each arm to its object.
   For the signer, `rsa_sign64_window` proves, with the wrap check on,
   that a digit is the half of the byte its index names and that the read
   of the table writes the entry at its index, `rsa_sign64_power` proves
@@ -1263,7 +1263,7 @@ last `ROLE=server` stub, as the entry said it would.
   to the ladder under random moduli of 256 bytes over exponents whose
   digits sit at an edge, and at smaller sizes to a square-and-multiply
   that keeps no table. `bin/rsa_sign_test_host` requires OpenSSL's
-  signatures from both signers, the Wycheproof host leg runs the private
+  signatures from both signers, the host Wycheproof test runs the private
   operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
   in `make diff`, requires the Lean spec's signatures from each.
 - **Violation.** A PR adds both carries into one sum, which can then
@@ -1324,8 +1324,8 @@ last `ROLE=server` stub, as the entry said it would.
   every byte of the output buffer as it was and the length as it was,
   and from the key test a refusal of a changed prime. Under the answer
   that runs the ladder the same calls must sign, because the ladder
-  reads none of the five. `bin/rsa_sign_equiv_test` and the Wycheproof
-  host leg require the check to pass on every signature a good key
+  reads none of the five. `bin/rsa_sign_equiv_test` and the host
+  Wycheproof test require the check to pass on every signature a good key
   makes. No test can show that a comparison leaves out a byte or a
   limb: a faulted candidate's power differs from the message in nearly
   every byte, and a changed bit of a prime moves the low limbs of the
@@ -1383,7 +1383,7 @@ last `ROLE=server` stub, as the entry said it would.
   four keys whose multiples meet the sum inside the pass, so that an
   addition there has two equal operands or two negatives, r and s at the
   ends of their range, keys no point encodes and DER no reader takes.
-  The Wycheproof host leg runs Wycheproof's ECDSA P-256 vectors on the
+  The host Wycheproof test runs Wycheproof's ECDSA P-256 vectors on the
   host arm, among them the signatures whose k·G has an X of n or more.
   CBMC's `p256_wide_verify` proves, over contracts of the wide entries,
   the refusals no test can hold: 0 for an r or an s outside 1..n-1 with
@@ -1404,7 +1404,7 @@ last `ROLE=server` stub, as the entry said it would.
   pass, gives the point at infinity for two equal points, doubles two
   negatives, or runs the formula on a sum at infinity. The sixteen
   `inv43-*` violations are these. Ten fail `bin/p256_verify_equiv_test`,
-  one the Wycheproof host leg, one `test/widemul-builds.sh`, and four
+  one the host Wycheproof test, one `test/widemul-builds.sh`, and four
   the `p256_wide_verify` proof, which holds what a random signature does
   not show: a hash of n or more is one hash in 2^32, and with a check of
   r, s or the key gone the arithmetic after it gives an x that matches r
@@ -1447,7 +1447,7 @@ last `ROLE=server` stub, as the entry said it would.
   r and s at the ends of their range, keys no point encodes, a key off
   the curve under the signature its multiple makes, and DER no reader
   takes. `bin/p384_test_host` runs the RFC 6979 vectors on the host
-  arm, and the Wycheproof host leg runs Wycheproof's ECDSA P-384
+  arm, and the host Wycheproof test runs Wycheproof's ECDSA P-384
   vectors on it. CBMC's `p384_wide_field` proves that no sum in the
   field wraps; `p384_wide_point` and `p384_wide_digits` that the points
   hand the field operands below p and read their table and their
@@ -1545,7 +1545,7 @@ last `ROLE=server` stub, as the entry said it would.
   a matrix entry hold. `make check` runs it on
   the host's instruction set, `make san-check` under the sanitizers, and
   `test/aes-runtime-qemu.sh mlkem-vector` on SSE2 and NEON under qemu.
-  `bin/mlkem_test_host` and the Wycheproof host leg run the published
+  `bin/mlkem_test_host` and the host Wycheproof test run the published
   ML-KEM-768 vectors on the path. `test/mlkem-builds.sh` compiles
   `mlkem.c` both ways, and `make lint-trust-separation` holds
   `mlkem_vector.c` to the host object.
@@ -1846,7 +1846,7 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-37 — a stamp skips a check only on inputs the check passed on
 
-- **Claim.** `make check` skips a lint, a Wycheproof leg or a
+- **Claim.** `make check` skips a lint, a Wycheproof test or a
   library build only when every input it reads is byte for byte
   what it was when that check last passed. A skip never stands in for a
   run over an input the check did not see.
@@ -1904,7 +1904,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** The lanes that rebuild a test check builds take that
   test's sources from the variable the test's own rule reads:
   `san-check`, `cross-check`, `m3-check`, `coverage`, the
-  `CH_CT_WIDEMUL` builds, the host object's binaries and the Wycheproof legs
+  `CH_CT_WIDEMUL` builds, the host object's binaries and the Wycheproof tests
   read `DRBG_TEST_SRCS`, `RSA_TEST_SRCS`, `WYCHEPROOF_SRCS` and the
   rest, and the three differential arms read `DIFF_SRCS`, which
   `bin/diff` reads. The
@@ -3655,8 +3655,8 @@ last `ROLE=server` stub, as the entry said it would.
   core without the AES or carry-less multiply instructions, where each
   file is its own `#error`. `test/aes_equiv_test.c`,
   `test/ghash_equiv_test.c`, the published vectors in `bin/quic_test_hw`,
-  the Wycheproof AES-GCM suite on that leg and `bin/diff_quic_hw` are what
-  hold them, and none of them is a timing measurement. `aes_extern.c`
+  the Wycheproof AES-GCM suite on the host object and `bin/diff_quic_hw`
+  are what hold them, and none of them is a timing measurement. `aes_extern.c`
   joined the codegen gates under the suite build's defines, so the count
   reads its AES-256 pair too; it holds no select and no branch, only two
   copies and a call. What it calls is the part no gate here reads.
@@ -3811,7 +3811,7 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/aes_suite_test_extern`; the QUIC suite computation in
   `bin/quic_suite_test_extern`; both loop tests; the Wycheproof AES-GCM
   suite; the AES rows of the Lean differential in `bin/diff_quic_extern`;
-  and e2e's client and server legs against OpenSSL under each suite.
+  and e2e's client and server tests against OpenSSL under each suite.
   `aes-extern-256-cipher-passes-128-key.violation` tells the hook an
   AES-256 key is 16 bytes, `aes-extern-256-expansion-stores-16.violation`
   stores half of an AES-256 key; each requires `bin/quic_test_extern` to
@@ -4012,7 +4012,7 @@ last `ROLE=server` stub, as the entry said it would.
   it. The TRUST=webpki fork is tested per driver: the declined-ticket
   rows of bin/webpki_resume_test, bin/webpki_resume_tcp_nonblocking,
   bin/webpki_loop_tcp_nonblocking and bin/quic_loop_webpki, and test/e2e.sh's
-  webpki-resume-declined leg against a second s_server.
+  webpki-resume-declined test against a second s_server.
   `inv22-webpki-decline-fails-closed`, `inv22-webpki-fallback-reports-psk`
   and one `inv22-*-driver-forks-on-cfg-psk` violation per driver require
   them to fail, and the quic_step harness proves the QUIC table takes
@@ -4043,7 +4043,7 @@ last `ROLE=server` stub, as the entry said it would.
   closes one direction at a time between the two tcp-nonblocking drivers
   and counts each end's send calls, so the `ch_read` that reads a
   close_notify is measured to send nothing, on the client and on the
-  server. `test/e2e.sh`'s go-half-close leg runs it against Go's
+  server. `test/e2e.sh`'s go-half-close test runs it against Go's
   `CloseWrite`, which sends a close_notify and keeps reading: the server
   logs the lines the client sent after that close_notify, then the
   client's own. Three violations each break one term:

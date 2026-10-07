@@ -398,7 +398,7 @@ def lint_builds():
     that puts binaries on disk. A name missing there fails quietly: the
     baseline runs a binary nobody built and that invariant loses its
     verdict. INV-21 lost bin/tlsclient_pq this way when KEX=pq added the
-    go-pq legs."""
+    go-pq tests."""
     bad = 0
     for path in sorted(VIOLATIONS.glob("*.violation")):
         head, _, _ = parse(path)

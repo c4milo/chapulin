@@ -4,7 +4,7 @@
 // one line, answers it reversed the way s_server -rev does, and closes.
 // It serves one connection after another until it is killed, and prints
 // two lines per connection, whether the handshake resumed a ticket and
-// the NamedGroup ch_tls.group reports, which are what the e2e legs read. Firmware replaces this
+// the NamedGroup ch_tls.group reports, which are what the e2e tests read. Firmware replaces this
 // file and nothing below it.
 //
 // Usage: tlsserver <cert.der> <priv-hex> <pub-hex>

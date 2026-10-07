@@ -166,8 +166,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # suite-check includes the host object's binaries and the Wycheproof
-      # host leg, so this job runs them under gcc: the vector ChaCha20's
+      # suite-check includes the host object's binaries and the host
+      # Wycheproof test, so this job runs them under gcc: the vector ChaCha20's
       # NEON arm in every run, with and without the multiply bit, whose
       # native copies take the NEON Poly1305 (docs/decisions.md 83 and
       # 87), and with and without the AES bit, whose AES runs on the Arm
@@ -246,8 +246,8 @@ jobs:
           grep -qx "Xcode $XCODE_VERSION" <<< "$version" \
             || { echo "Xcode is not the pinned $XCODE_VERSION: $version"; exit 1; }
           cc --version
-      # suite-check includes the host object's binaries and the Wycheproof
-      # host leg, so this job runs them under Apple clang, as the arm64
+      # suite-check includes the host object's binaries and the host
+      # Wycheproof test, so this job runs them under Apple clang, as the arm64
       # job runs them under gcc: the vector ChaCha20's and Poly1305's NEON
       # arms, with and without the multiply bit and the AES bit, whose AES
       # runs on the Arm instructions.
@@ -633,7 +633,7 @@ jobs:
 
       - name: Install Go (pinned)
         # test/e2e.sh builds test/goecho with it, the crypto/tls server of
-        # its go legs.
+        # its go tests.
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}

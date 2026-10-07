@@ -5,7 +5,7 @@ reason: p256_ecdsa_verify takes a 5,000-byte scratch buffer, over the
   4,096-byte budget the TRUST=webpki object holds. An rsa mode filters
   p256.c out of every other packaged object, so the plain `make
   lint-stack` compiles this file nowhere and passes; only the
-  TRUST=webpki leg objects.
+  TRUST=webpki frame-budget check objects.
 
 --- old
     uint8_t r_be[32];

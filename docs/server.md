@@ -2779,7 +2779,7 @@ pass that shrinks a green proof's script with the statement frozen.
   SHA-384 length opens and a truncated one does not; a `legacy_session_id` at
   32 bytes echoes and 33 is `decode_error`.
 - End to end: `test/e2e.sh:2` describes today's run as "against openssl
-  s_server and a Go" server. A server build needs the opposite leg — `openssl
+  s_server and a Go" server. A server build needs the opposite test — `openssl
   s_client`, a Go `crypto/tls` client, and a strict-conformance driver that
   sends the ClientHellos a real client never sends: an AES-256-GCM-only cipher
   list, an AES-128-GCM-only list, an RSA-PSS-only `signature_algorithms`, an
@@ -3187,7 +3187,7 @@ that applies it; nothing changes before that commit.
 | `CLAUDE.md:79-80`, "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`" | the same sentence, then: "A `ROLE=server` firmware supplies the same two and adds the certificate chains, the private keys and the cookie key, all caller-owned and all read through pointers." | `srv.[ch]` |
 | `CLAUDE.md:148-150`, "the client always sends `record_size_limit` sized to the caller's buffer" | "Record size discipline runs in both directions. A client sends `record_size_limit` (RFC 8449) sized to the caller's buffer; a server sends its own in EncryptedExtensions and holds its sends to the client's. A peer record over the limit is a protocol error, not a resize, in both roles." | `srv_message.[ch]` |
 | `CLAUDE.md:151-153`, the MUSTs list | "RFC MUSTs we keep even though this is minimal, per role. A client: HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket parse-and-expose, RFC 9257 binder discipline. A server: HelloRetryRequest generation with an integrity-protected cookie (RFC 9846 §9.2 makes the extension mandatory to implement), KeyUpdate receipt and response, the dummy `change_cipher_spec` record a client's non-empty session id obliges, and the early-data discard §4.3.10 requires of a server that answers 1-RTT. Issuing NewSessionTicket is a MAY (`rfc9846.txt:3194-3196`) and is not on this list; a server that issues them, as this one does, also verifies a binder before it accepts a ticket, which `rfc9846.txt:2541-2544` makes a MUST." | `srv_flight.[ch]` |
-| `CLAUDE.md:215-221`, `make check` and `make check-slow` | the same sentence, then: "The `ROLE` axis adds one leg to each: one `cxx-check ROLE=server`, one `bin/srv_test` run, and in `check-slow` one e2e leg driving a real TLS 1.3 client against a chapulin server." | `srv.[ch]` |
+| `CLAUDE.md:215-221`, `make check` and `make check-slow` | the same sentence, then: "The `ROLE` axis adds one build to each: one `cxx-check ROLE=server`, one `bin/srv_test` run, and in `check-slow` one e2e test driving a real TLS 1.3 client against a chapulin server." | `srv.[ch]` |
 | `CLAUDE.md:249-254`, the C++ wrapper | the same sentence, then: "A `ROLE=server` object exports `ch_srv_accept` and `ch_srv_check` beside `ch_read`, `ch_write` and `ch_close`, so the wrapper adds a `Server` type under `#ifdef CH_ROLE_SERVER` forwarding those, and adds no logic there either. `cxx-check` runs on both roles." | `srv.[ch]` |
 
 ## What changes in `docs/invariants.md`

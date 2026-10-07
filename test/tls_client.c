@@ -309,7 +309,7 @@ static int dial_host(const char *host, const char *port) {
 // Owns the echo loop: sends each stdin line, prints the reply. Once
 // ch_read returns 0 for the server's close_notify, the loop still sends
 // the lines left and reads no more, because that alert closes the
-// server's direction alone (RFC 9846 §6.1); e2e's go-half-close leg
+// server's direction alone (RFC 9846 §6.1); e2e's go-half-close test
 // checks the server read them. Returns the process exit code, or -1 once
 // stdin ends and the caller should close.
 static int echo_lines(ch_tls *tls) {

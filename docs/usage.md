@@ -315,7 +315,7 @@ built over a `ROLE=both` object at 9c903d8, fetched three files from aioquic
 1.3.0 and served the same three to it, over UDP on one host. That run
 negotiated ChaCha20-Poly1305, the one suite that build offered, and
 `make check-slow` does not repeat it: this tree's e2e suite still has no
-QUIC leg.
+QUIC test.
 
 The `ROLE=server` build is implemented and completes a handshake;
 [`docs/server.md`](server.md) records its design. Given a ticket key

@@ -135,7 +135,7 @@ def gen_aead(d, out):
 
 # The AES-GCM suite, for gcm.c. Only a -DCH_TRANSPORT_QUIC_NONBLOCKING build
 # compiles that file, so the rows below are emitted inside the same guard
-# and the other legs of wycheproof_test.c read a header that declares
+# and the other builds of wycheproof_test.c read a header that declares
 # nothing for them. INV-26 admits this key in a test: the rule bounds
 # which keys a library source may pass to the AEAD, and `test` is
 # excluded from the Semgrep rule that holds it.
@@ -202,7 +202,7 @@ def gen_aes_gcm_size(d, out, key_bits, name, macro):
 # The HKDF suites, SHA-256 and SHA-384. hash_len is the hash's output
 # length, which fixes both halves of the library's asserted domain below.
 # The SHA-384 rows sit inside CH_HASH_SHA384, the define hkdf.h turns
-# SHA-384 on with, so a leg that builds without it reads a header that
+# SHA-384 on with, so a build without it reads a header that
 # declares nothing for them.
 def gen_hkdf(d, out, hash_len=32, name="wp_hkdf", macro="WP_HKDF"):
     blob = Blob()

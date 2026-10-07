@@ -7,7 +7,7 @@ reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING gua
   this variant does not compile. INV-28 rests on that driver staying out
   of the object. The object still links and its export list does not
   move, because PUBLIC does not name ch_connect here and the link
-  localizes it, so only a leg that links this variant objects
+  localizes it, so only a build that links this variant objects
   (https://github.com/c4milo/chapulin/issues/171).
 
 --- old

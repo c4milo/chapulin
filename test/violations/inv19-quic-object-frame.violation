@@ -4,7 +4,7 @@ catches: test/lint-stack-quic.sh
 reason: ch_quic_init takes a 4,096-byte scratch buffer, over the 2,560-byte
   budget a device build holds. TRANSPORT=tcp-blocking filters quic.c out of every
   other packaged object, so the plain `make lint-stack` compiles this file
-  nowhere and passes; only the TRANSPORT=quic-nonblocking leg objects.
+  nowhere and passes; only the TRANSPORT=quic-nonblocking frame-budget check objects.
 
 --- old
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {

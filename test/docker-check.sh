@@ -31,7 +31,7 @@
 # and gcc reads sources there that no part of check compiles.
 #
 # Arguments replace both goals: `test/docker-check.sh check-widemul-builds`
-# runs one leg. Needs docker (OrbStack works); skips without it.
+# runs that one target. Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then

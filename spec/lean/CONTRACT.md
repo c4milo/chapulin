@@ -611,7 +611,7 @@ inverting the comparison in `hsa_epoch_commit`, dropping the bound term
 from `epoch_check`, or moving the commit to where a rejected
 certificate reaches it — leaves `lake build` green. INV-21 lists what
 does guard those on the C side: the `CH_ASSERT` on
-`server_finished_ok`, `test_epoch_cfg`, and the e2e `ca-epoch-*` legs.
+`server_finished_ok`, `test_epoch_cfg`, and the e2e `ca-epoch-*` tests.
 Reading these definitions against those two C functions is a manual
 step, and the module is written for it: both functions are short, and
 `check` and `commit` sit next to the C names they model.

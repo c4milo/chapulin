@@ -36,7 +36,7 @@
 // was given, and refuses every call after its one success.
 //
 // Bounds. CH_PROOF_RXBUF is 12, the value handshake_record's own
-// harness uses, so every state this leg drives is inside the window
+// harness uses, so every state this harness drives is inside the window
 // that proof discharges. CH_TX_STAGE keeps the build's own 1141,
 // because quic.c's static assertion holds it against CH_HELLO_MAX, and
 // CH_PROOF_TX bounds the staged length at 32 instead: the drain is a
@@ -65,7 +65,7 @@
 #define CH_PROOF_RXBUF 12
 #endif
 
-// The staged message length this leg considers, above.
+// The staged message length this harness considers, above.
 #ifndef CH_PROOF_TX
 #define CH_PROOF_TX 32
 #endif

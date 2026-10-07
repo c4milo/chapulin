@@ -33,8 +33,8 @@
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test and
 // bin/aes_equiv_test call them against the portable code, and
-// bin/unit_host, bin/quic_test_hw, bin/ghash_equiv_test and the Wycheproof
-// host leg run the published vectors on them where the CPU has their
+// bin/unit_host, bin/quic_test_hw, bin/ghash_equiv_test and the host
+// Wycheproof test run the published vectors on them where the CPU has their
 // instructions.
 #include <stdio.h>
 #include <stdlib.h>

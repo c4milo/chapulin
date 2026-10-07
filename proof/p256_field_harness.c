@@ -223,7 +223,7 @@ static void prove_field_contract(void) {
 
 // Every routine again over unconstrained limbs, in the aliasing shapes a
 // point routine uses. No assertion on the values: this is the memory
-// safety and UB leg, and it must hold for limbs no contract allows.
+// safety and UB proof, and it must hold for limbs no contract allows.
 static void prove_safety(void) {
     p256_fe a;
     p256_fe b;

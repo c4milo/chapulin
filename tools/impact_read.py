@@ -91,7 +91,7 @@ def expand(text, variables, depth=0):
     object holds beside the ones it is handed, and a recipe that
     compiles $(call host_srcs,$(WYCHEPROOF_SRCS)) compiles them too.
     Reading the arguments alone left every such file out of the
-    Wycheproof host leg's sources."""
+    host Wycheproof test's sources."""
     if depth > 8:
         return text
     out = re.sub(r"\$[({]call ([A-Za-z_][A-Za-z0-9_]*),",

@@ -242,7 +242,7 @@ Other targets:
   configurations both ways and requires the same sources, defines,
   exports and build record, and builds and runs Zig programs against
   each module (decisions 69, 70 and 73, INV-36).
-- `make check` skips a lint, a Wycheproof leg or a library build that
+- `make check` skips a lint, a Wycheproof test or a library build that
   passed before on the same inputs, and `make -j check` runs its lints,
   builds and test runs side by side. `tools/stamp.py` states what a
   skip keys on: the bytes of the files the check reads, the tools'

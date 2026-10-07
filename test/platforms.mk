@@ -51,8 +51,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # with no instruction flag, and a session runs one where its ch_cfg.cpu
 # names it. The equivalence binaries call the kernels directly,
 # bin/quic_test_hw and bin/ghash_equiv_test run a pass of their vectors
-# and cases on the VAES kernels, and bin/unit_host and the Wycheproof host
-# leg run under the values that name a kernel (X86_UNIT_CPU,
+# and cases on the VAES kernels, and bin/unit_host and the host Wycheproof
+# test run under the values that name a kernel (X86_UNIT_CPU,
 # X86_WYCHEPROOF_CPU). Each skips a kernel on a CPU without its
 # instructions, in check and everywhere else; this target runs them under
 # CH_REQUIRE_X86_KERNELS=1, so on such a CPU it fails instead, after
@@ -62,8 +62,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 #
 # The same job holds sha256_hw.c's x86-64 arm on the SHA extensions
 # (docs/decisions.md 93), which a CPU with the kernels' instructions has:
-# bin/sha2_equiv_test, bin/unit_host under HASH_UNIT_CPU and the Wycheproof
-# host leg run under CH_REQUIRE_HASH_INSTRUCTIONS=1, so a CPU without the
+# bin/sha2_equiv_test, bin/unit_host under HASH_UNIT_CPU and the host Wycheproof
+# test run under CH_REQUIRE_HASH_INSTRUCTIONS=1, so a CPU without the
 # extensions fails them too.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
                    mlkem_avx2_equiv_test

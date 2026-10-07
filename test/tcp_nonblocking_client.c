@@ -4,7 +4,7 @@
 // chapulin never touches it.
 //
 // test/e2e.sh runs it against the same server bin/tlsclient uses, so a
-// green leg here says the non-blocking driver reaches the same connected
+// green test here says the non-blocking driver reaches the same connected
 // session the blocking one does, over the same wire.
 //
 // The loop below is what a caller with an event loop writes, minus the
@@ -29,7 +29,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
-// The e2e legs need no unpredictability, and a fixed stream replays a
+// The e2e tests need no unpredictability, and a fixed stream replays a
 // failure exactly. Never a source outside tests.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     static uint8_t counter = 1;
