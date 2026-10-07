@@ -96,7 +96,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the seven arguments that run one part
+# itself, and the lane with one of the eight arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -111,9 +111,10 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # on the stack names keccak, because the file has a body under clang
 # alone and the lane builds it with clang for arm64. A violation of
 # mlkem_vector.c's SSE2 or NEON arm names mlkem-vector, because a machine's
-# own compiler reads one arm, and a violation of keccak_avx2.c or
+# own compiler reads one arm, a violation of keccak_avx2.c or
 # mlkem_avx2.c names mlkem-avx2, because the two have a body on x86-64
-# alone.
+# alone, and a violation of poly1305_avx2.c names poly1305-avx2, for the
+# same reason.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
@@ -121,7 +122,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
                           "test/docker-aes-runtime-qemu.sh keccak",
                           "test/docker-aes-runtime-qemu.sh mlkem-vector",
-                          "test/docker-aes-runtime-qemu.sh mlkem-avx2"]
+                          "test/docker-aes-runtime-qemu.sh mlkem-avx2",
+                          "test/docker-aes-runtime-qemu.sh poly1305-avx2"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).
@@ -346,7 +348,7 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these thirteen rules hold every file
+# test files itself, and the sources of these fourteen rules hold every file
 # it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
@@ -354,7 +356,7 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/hash_runtime_test", "bin/hash_runtime_exporter_test",
                              "bin/p256_equiv_test", "bin/sha3_hw_equiv_test",
                              "bin/mlkem_hw_equiv_test", "bin/mlkem_vector_equiv_test",
-                             "bin/mlkem_avx2_equiv_test")
+                             "bin/mlkem_avx2_equiv_test", "bin/poly1305_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -621,6 +623,14 @@ def select_lints(out, changed, csources, lib):
         out.add("tests", "test/chacha-builds.sh",
                 "chacha20_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
+                ["test/chacha-builds.sh"])
+    # poly1305_avx2.c does the same for the AVX2 Poly1305, and the script
+    # requires the kernel in its native copy for x86-64 and nowhere else
+    # (docs/decisions.md 110).
+    if set(csources) & {"poly1305_avx2.c", "poly1305_avx2_native.c"}:
+        out.add("tests", "test/chacha-builds.sh",
+                "poly1305_avx2.c turns AVX2 on for its own functions, and this "
+                "script compiles its native copy for x86-64 with no instruction flag",
                 ["test/chacha-builds.sh"])
     # mlkem.c calls the vector NTT in a host object alone, and
     # test/mlkem-builds.sh compiles it either side of that define and

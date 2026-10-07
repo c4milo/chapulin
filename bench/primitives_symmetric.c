@@ -134,11 +134,13 @@ static void run_drbg(size_t n) {
     bench_consume(&output[n - 1], 1);
 }
 
+// Poly1305 as a record's ciphertext runs it, on the path the session's
+// ch_cfg.cpu names (widemul_poly1305_update_cpu).
 static void run_poly1305(size_t n) {
     poly1305 state;
     uint8_t tag[POLY1305_TAG];
     poly1305_init(&state, key);
-    widemul_poly1305_update(BENCH_WIDEMUL, &state, input, n);
+    widemul_poly1305_update_cpu(bench_cpu, BENCH_WIDEMUL, &state, input, n);
     widemul_poly1305_final(BENCH_WIDEMUL, &state, tag);
     bench_consume(tag, sizeof tag);
 }

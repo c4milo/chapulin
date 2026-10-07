@@ -31,7 +31,16 @@
 #     chacha20_avx2_xor and hold 256-bit instructions, which its target
 #     attribute turns on, while chacha20.c and chacha20_vector.c hold
 #     none, so the rest of the object runs on any x86-64 CPU; and for
-#     arm64, chacha20_avx2.c must define nothing (docs/decisions.md 90).
+#     arm64, chacha20_avx2.c must define nothing (docs/decisions.md 90);
+#   - the same for the AVX2 Poly1305, the AEAD's other half
+#     (docs/decisions.md 110): for x86-64, poly1305_avx2_native.c must
+#     define poly1305_avx2_blocks_native on 256-bit registers, and
+#     poly1305_native.c must call it and hold no 256-bit instruction
+#     itself, as poly1305_vector_native.c must hold none; for arm64,
+#     poly1305_avx2_native.c must define nothing and poly1305_native.c call
+#     nothing of it; and poly1305.c under its own names, and its native copy
+#     under -DCH_CT_WIDEMUL, which turns the vector paths off, must call
+#     no AVX2 entry on either target.
 #
 # The cross targets use the pinned clang, which make resolves, with no
 # toolchain beside it, the way lint-wide-multiply compiles for them.
@@ -167,4 +176,45 @@ if nm "$work/cross.o" | grep -q chacha20_avx2_xor; then
     exit 1
 fi
 
-echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 the AVX2 kernel, and the kernel's 256-bit instructions stay in chacha20_avx2.c"
+# The AVX2 Poly1305's instructions, and the one copy that calls it.
+cross_object "$x86" poly1305_avx2_native.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?poly1305_avx2_blocks_native$' ||
+    ! grep -q '%ymm' "$work/cross.s"; then
+    echo "chacha-builds: poly1305_avx2_native.c for x86-64 must define poly1305_avx2_blocks_native on 256-bit registers" >&2
+    exit 1
+fi
+cross_object "$x86" poly1305_native.c
+if ! nm -u "$work/cross.o" | grep -qE '(^|[[:space:]_])poly1305_avx2_blocks_native$'; then
+    echo "chacha-builds: poly1305_native.c for x86-64 does not call poly1305_avx2_blocks_native; a session with CH_CPU_AVX2 and the multiply bit runs it" >&2
+    exit 1
+fi
+for src in poly1305_native.c poly1305_vector_native.c; do
+    cross_object "$x86" "$src"
+    if grep -q '%ymm' "$work/cross.s"; then
+        echo "chacha-builds: $src for x86-64 holds a 256-bit instruction; only poly1305_avx2_native.c may" >&2
+        exit 1
+    fi
+done
+cross_object "$arm64" poly1305_avx2_native.c
+if nm "$work/cross.o" | grep -q poly1305_avx2; then
+    echo "chacha-builds: poly1305_avx2_native.c for arm64 defines the AVX2 Poly1305; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+for target in "$x86" "$arm64"; do
+    for build in "poly1305.c" "poly1305_native.c -DCH_CT_WIDEMUL"; do
+        # shellcheck disable=SC2086
+        "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 \
+            -I. -DCH_CPU_RUNTIME -c $build -o "$work/cross.o" || exit 1
+        if nm "$work/cross.o" | grep -q poly1305_avx2; then
+            echo "chacha-builds: $build for $target defines or calls an AVX2 Poly1305 entry; only the native copy on x86-64 may" >&2
+            exit 1
+        fi
+    done
+done
+cross_object "$arm64" poly1305_native.c
+if nm "$work/cross.o" | grep -q poly1305_avx2; then
+    echo "chacha-builds: poly1305_native.c for arm64 defines or calls an AVX2 Poly1305 entry; the kernel has a body on x86-64 alone" >&2
+    exit 1
+fi
+
+echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 the AVX2 kernel, the kernel's 256-bit instructions stay in chacha20_avx2.c, and the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls"

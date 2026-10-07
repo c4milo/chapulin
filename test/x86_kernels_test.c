@@ -2,9 +2,11 @@
 // kernels under each ch_cfg.cpu value (docs/decisions.md 89 and 90).
 // chacha20.c's use_avx2 picks chacha20_avx2.c's ChaCha20 where the value
 // holds CH_CPU_AVX2, mlkem.h's entries pick mlkem_avx2.c's copy of ML-KEM
-// where it holds the same bit (docs/decisions.md 107), and gcm_vaes.h's
-// gcm_use_vaes picks gcm_vaes.c's three entries where it holds CH_CPU_VAES
-// and CH_CPU_CONSTANT_TIME_AES both. The kernels compute the bytes the
+// where it holds the same bit (docs/decisions.md 107), widemul.h's
+// widemul_poly1305_avx2 picks poly1305_avx2.c's Poly1305 where it holds
+// that bit and CH_CPU_CONSTANT_TIME_MULTIPLY both (docs/decisions.md 110),
+// and gcm_vaes.h's gcm_use_vaes picks gcm_vaes.c's three entries where it
+// holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both. The kernels compute the bytes the
 // paths beside them compute, so no vector can tell which ran:
 // test/x86_kernels_count.c counts the calls instead, and runs each on the
 // entry it stands beside, so this binary runs on every x86-64 CPU.
@@ -17,11 +19,12 @@
 // and must give the same bytes back:
 //
 //   - chacha20_xor_cpu, and aead_seal_cpu and aead_open_cpu, which pass
-//     the value on. chacha20_xor, aead_seal and aead_open take no value
-//     and run no kernel.
+//     the value on to the keystream and to Poly1305's update of the
+//     ciphertext. chacha20_xor, aead_seal and aead_open take no value and
+//     run no kernel.
 //   - a record under each of the three suites, sealed and opened: the
-//     direction's cpu picks the AVX2 keystream under ChaCha20 and the VAES
-//     kernels under AES-GCM.
+//     direction's cpu picks the AVX2 keystream and the AVX2 Poly1305 under
+//     ChaCha20 and the VAES kernels under AES-GCM.
 //   - a QUIC 1-RTT packet under each suite, and a Handshake packet, sealed
 //     and opened, with the value the packet calls take first.
 //   - a QUIC Initial packet, whose key the table runs without the AES bit,
@@ -31,8 +34,9 @@
 //   - ML-KEM's three session calls, mlkem_keygen_dk_cpu,
 //     mlkem_encaps_derand_cpu and mlkem_decaps_cpu.
 //
-// What the kernels compute is held elsewhere: bin/chacha20_equiv_test and
-// bin/aes_equiv_test call them against the portable code, and
+// What the kernels compute is held elsewhere: bin/chacha20_equiv_test,
+// bin/poly1305_equiv_test and bin/aes_equiv_test call them against the
+// portable code, and
 // bin/unit_host, bin/quic_test_hw, bin/ghash_equiv_test and the host
 // Wycheproof test run the published vectors on them where the CPU has their
 // instructions.
@@ -76,10 +80,13 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// The payload every row seals: two passes of the AEADs' eight blocks, one
+// The payload every row seals: four passes of AES-GCM's eight blocks, one
 // whole block more and 7 bytes, so each kernel has whole passes, a whole
-// block and a partial block to take or leave.
-#define PAYLOAD ((size_t)(2 * 128 + 16 + 7))
+// block and a partial block to take or leave. The four passes are one
+// pass of ChaCha20's eight blocks, and the 528 bytes of whole blocks are
+// past the 512 a Poly1305 update needs before it hands its four whole
+// groups of eight blocks to the AVX2 kernel (POLY1305_AVX2_MIN).
+#define PAYLOAD ((size_t)(4 * 128 + 16 + 7))
 
 static uint8_t payload[PAYLOAD];
 
@@ -91,10 +98,15 @@ static void fill(uint8_t *p, size_t n, uint8_t seed) {
 
 // What a value names, written here apart from the library's predicates so
 // that a wrong predicate fails a row: the AVX2 kernel under CH_CPU_AVX2,
-// and the VAES kernels under CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES
-// both.
+// the AVX2 Poly1305 under CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY
+// both, and the VAES kernels under CH_CPU_VAES and
+// CH_CPU_CONSTANT_TIME_AES both.
 static unsigned long names_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0 ? 1 : 0;
+}
+
+static unsigned long names_poly1305_avx2(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX2) != 0 && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? 1 : 0;
 }
 
 static unsigned long names_vaes(uint32_t cpu) {
@@ -103,22 +115,25 @@ static unsigned long names_vaes(uint32_t cpu) {
 
 static void reset_calls(void) {
     x86_avx2_calls = 0;
+    x86_poly1305_avx2_calls = 0;
     x86_vaes_seal_calls = 0;
     x86_vaes_open_calls = 0;
     x86_vaes_counter_calls = 0;
 }
 
 // Whether the calls since the last reset are these, and resets them.
-static int calls_are(unsigned long avx2, unsigned long seal, unsigned long open,
-                     unsigned long counter) {
-    int same = x86_avx2_calls == avx2 && x86_vaes_seal_calls == seal &&
-               x86_vaes_open_calls == open && x86_vaes_counter_calls == counter;
+static int calls_are(unsigned long avx2, unsigned long poly1305, unsigned long seal,
+                     unsigned long open, unsigned long counter) {
+    int same = x86_avx2_calls == avx2 && x86_poly1305_avx2_calls == poly1305 &&
+               x86_vaes_seal_calls == seal && x86_vaes_open_calls == open &&
+               x86_vaes_counter_calls == counter;
     if (!same) {
         (void)fprintf(stderr,
-                      "calls: AVX2 %lu, VAES seal %lu, open %lu, counter %lu; want %lu, %lu, "
-                      "%lu, %lu\n",
-                      x86_avx2_calls, x86_vaes_seal_calls, x86_vaes_open_calls,
-                      x86_vaes_counter_calls, avx2, seal, open, counter);
+                      "calls: AVX2 %lu, AVX2 Poly1305 %lu, VAES seal %lu, open %lu, counter %lu; "
+                      "want %lu, %lu, %lu, %lu, %lu\n",
+                      x86_avx2_calls, x86_poly1305_avx2_calls, x86_vaes_seal_calls,
+                      x86_vaes_open_calls, x86_vaes_counter_calls, avx2, poly1305, seal, open,
+                      counter);
     }
     reset_calls();
     return same;
@@ -127,19 +142,20 @@ static int calls_are(unsigned long avx2, unsigned long seal, unsigned long open,
 // One AES-GCM seal hands its whole passes to the one-pass seal and the
 // whole blocks after them to counter mode, once each, and an open the
 // same with the one-pass open (gcm.c). A ChaCha20-Poly1305 seal or open
-// runs the keystream once.
+// runs the keystream once and hands the ciphertext's whole groups to the
+// Poly1305 kernel once.
 static int sealed_on(uint16_t suite, uint32_t cpu) {
     if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, names_vaes(cpu), 0, names_vaes(cpu));
+        return calls_are(0, 0, names_vaes(cpu), 0, names_vaes(cpu));
     }
-    return calls_are(names_avx2(cpu), 0, 0, 0);
+    return calls_are(names_avx2(cpu), names_poly1305_avx2(cpu), 0, 0, 0);
 }
 
 static int opened_on(uint16_t suite, uint32_t cpu) {
     if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, 0, names_vaes(cpu), names_vaes(cpu));
+        return calls_are(0, 0, 0, names_vaes(cpu), names_vaes(cpu));
     }
-    return calls_are(names_avx2(cpu), 0, 0, 0);
+    return calls_are(names_avx2(cpu), names_poly1305_avx2(cpu), 0, 0, 0);
 }
 
 // The keystream and the AEAD. The entries that take no description run
@@ -157,30 +173,31 @@ static void check_chacha20(uint32_t cpu) {
     fill(aad, sizeof aad, 0x33);
 
     chacha20_xor(key, nonce, 1, payload, want, PAYLOAD);
-    CHECK(calls_are(0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0));
     chacha20_xor_cpu(cpu, key, nonce, 1, payload, got, PAYLOAD);
-    CHECK(calls_are(names_avx2(cpu), 0, 0, 0));
+    CHECK(calls_are(names_avx2(cpu), 0, 0, 0, 0));
     CHECK(memcmp(got, want, PAYLOAD) == 0);
 
     aead_seal(widemul_of_cpu(cpu), key, nonce, aad, sizeof aad, payload, PAYLOAD, want, want_tag);
-    CHECK(calls_are(0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0));
     aead_seal_cpu(cpu, key, nonce, aad, sizeof aad, payload, PAYLOAD, got, got_tag);
-    CHECK(calls_are(names_avx2(cpu), 0, 0, 0));
+    CHECK(calls_are(names_avx2(cpu), names_poly1305_avx2(cpu), 0, 0, 0));
     CHECK(memcmp(got, want, PAYLOAD) == 0 && memcmp(got_tag, want_tag, AEAD_TAG) == 0);
 
     uint8_t back[PAYLOAD];
     CHECK(aead_open(widemul_of_cpu(cpu), key, nonce, aad, sizeof aad, want, PAYLOAD, want_tag,
                     back) == 1);
-    CHECK(calls_are(0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0));
     CHECK(memcmp(back, payload, PAYLOAD) == 0);
     memset(back, 0, sizeof back);
     CHECK(aead_open_cpu(cpu, key, nonce, aad, sizeof aad, got, PAYLOAD, got_tag, back) == 1);
-    CHECK(calls_are(names_avx2(cpu), 0, 0, 0));
+    CHECK(calls_are(names_avx2(cpu), names_poly1305_avx2(cpu), 0, 0, 0));
     CHECK(memcmp(back, payload, PAYLOAD) == 0);
-    // A wrong tag runs no keystream: the open compares before it decrypts.
+    // A wrong tag runs no keystream: the open computes the tag and
+    // compares it before it decrypts.
     got_tag[0] ^= 1;
     CHECK(aead_open_cpu(cpu, key, nonce, aad, sizeof aad, got, PAYLOAD, got_tag, back) == 0);
-    CHECK(calls_are(0, 0, 0, 0));
+    CHECK(calls_are(0, names_poly1305_avx2(cpu), 0, 0, 0));
 }
 
 // One record under suite, sealed by a direction whose cpu is the value
@@ -408,9 +425,10 @@ int main(void) {
     if (failures == 0) {
         (void)printf(
             "x86 kernels: under each of 17 ch_cfg.cpu values, the ChaCha20 keystream and "
-            "ML-KEM's matrix ran on the AVX2 kernels where CH_CPU_AVX2 was set, AES-GCM on "
-            "the VAES kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, and "
-            "none of them anywhere else\n");
+            "ML-KEM's matrix ran on the AVX2 kernels where CH_CPU_AVX2 was set, Poly1305 "
+            "where CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY were, AES-GCM on the VAES "
+            "kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, and none of them "
+            "anywhere else\n");
     }
     return failures != 0;
 }

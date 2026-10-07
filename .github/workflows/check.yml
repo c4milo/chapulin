@@ -202,9 +202,9 @@ jobs:
 
   x86-64-kernels:
     # The x86-64 kernels every x86-64 host object carries beside its
-    # 128-bit paths, the AVX2 ChaCha20 and AES-GCM's VAES and VPCLMULQDQ
-    # kernels, which a session runs where its ch_cfg.cpu names them
-    # (docs/decisions.md 89 and 90). The test binaries call them directly
+    # 128-bit paths, the AVX2 ChaCha20 and Poly1305 and AES-GCM's VAES and
+    # VPCLMULQDQ kernels, which a session runs where its ch_cfg.cpu names
+    # them (docs/decisions.md 89, 90 and 110). The test binaries call them directly
     # or run under a value that names them, and skip a CPU without them in
     # the check job; this job requires the runner's CPU to have AVX2,
     # VAES and VPCLMULQDQ, fails where it lacks one, and runs them under

@@ -1,0 +1,16 @@
+invariant: INV-16
+file: poly1305_avx2.c
+catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
+reason: the last group multiplies lane 1 by r^6 and lane 2 by r^7, the
+  powers the other lane's blocks are owed, so every block those two
+  lanes held is off by one power of r and the tag is wrong for every
+  update the kernel takes. CBMC cannot read an intrinsic, and only an
+  x86-64 compiler reads the line, so the script builds
+  bin/poly1305_equiv_test for x86-64 and runs it under qemu-x86_64. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    const uint32_t *const last_first[4] = {of_r.r8, of_r.r7, of_r.r6, of_r.r5};
+--- new
+    const uint32_t *const last_first[4] = {of_r.r8, of_r.r6, of_r.r7, of_r.r5};

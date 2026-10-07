@@ -94,6 +94,10 @@
 #     mlkem.c (test/mlkem_avx2_equiv_test.c, docs/decisions.md 107). Both
 #     files have a body on x86-64 alone, so on an arm64 machine this is
 #     the run that holds them.
+#   - bin/poly1305_equiv_test must pass for x86-64: the AVX2 Poly1305 and
+#     the SSE2 path against poly1305.c's loop, and the search of the stack
+#     each leaves for the powers of r (test/poly1305_equiv_test.c,
+#     docs/decisions.md 110). The kernel has a body on x86-64 alone.
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -171,6 +175,8 @@
 #   mlkem-vector      bin/mlkem_vector_equiv_test for x86-64 and for arm64,
 #                     for the violations of mlkem_vector.c's SSE2 and NEON
 #                     arms
+#   poly1305-avx2     bin/poly1305_equiv_test for x86-64, for the
+#                     violations of poly1305_avx2.c
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
 #                     violations of keccak_avx2.c and mlkem_avx2.c
 #
@@ -191,9 +197,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2]" >&2
     exit 2
     ;;
 esac
@@ -220,7 +226,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
-if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ]; then
+if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -258,8 +264,9 @@ read -r -a sha3_hw_equiv_srcs <<< "$(sed -n 10p <<< "$lists")"
 read -r -a mlkem_hw_equiv_srcs <<< "$(sed -n 11p <<< "$lists")"
 read -r -a mlkem_vector_equiv_srcs <<< "$(sed -n 12p <<< "$lists")"
 read -r -a mlkem_avx2_equiv_srcs <<< "$(sed -n 13p <<< "$lists")"
-[ "${#mlkem_avx2_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than thirteen lists" >&2; exit 1; }
+read -r -a poly1305_equiv_srcs <<< "$(sed -n 14p <<< "$lists")"
+[ "${#poly1305_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than fourteen lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -339,6 +346,20 @@ if [ -z "$only" ] || [ "$only" = mlkem-avx2 ]; then
 fi
 if [ "$only" = mlkem-avx2 ]; then
     echo "aes-runtime-qemu: bin/mlkem_avx2_equiv_test held the four-way Keccak to sha3.c and ML-KEM's copy over it to mlkem.c, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
+    # The AVX2 Poly1305 and the SSE2 path against poly1305.c's loop. The
+    # kernel has a body on x86-64 alone.
+    "$x86_cc" "${flags[@]}" -o "$x86_out/poly1305_equiv_test" test/poly1305_equiv_test.c \
+        "${poly1305_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "the AVX2 Poly1305 or the SSE2 path and poly1305.c's loop disagree, or a call left a power of r on the stack" \
+        poly1305_equiv_test
+fi
+if [ "$only" = poly1305-avx2 ]; then
+    echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to poly1305.c's loop, on AVX2 for x86-64"
     exit 0
 fi
 

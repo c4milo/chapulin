@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-94 of the 122 C sources in the tree root are compiled into a
+94 of the 124 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -45,7 +45,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 28 sources are in no such harness:
+The other 30 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -59,6 +59,7 @@ The other 28 sources are in no such harness:
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
+| `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
@@ -68,8 +69,9 @@ The other 28 sources are in no such harness:
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arm of `poly1305.c`'s `whole_blocks` that hands whole groups of blocks to the vector path, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
+| `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
+| `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
@@ -3192,7 +3194,9 @@ path rests on these, each in `make check` on a host target:
   not as five limbs side by side, as the call's struct holds each power,
   nor one limb every 8 or 16 bytes, as a NEON or SSE2 multiplier holds a
   lane's (test/poly1305_equiv_residue.h). Five words match when they hold
-  the power's value modulo 2^130 - 5, whatever their carry form.
+  the power's value modulo 2^130 - 5, whatever their carry form. The
+  search also looks for r^5 to r^8, and for one word every 32 bytes, the
+  AVX2 kernel's powers and layout, which this path never writes.
 - `bin/unit_host` runs the unit suite on the path under a `ch_cfg.cpu`
   with the multiply bit: RFC 8439's A.3 vectors 2 and 3, 375 bytes each,
   and A.5's 265 bytes run on it, as does every record the suite seals and
@@ -3244,6 +3248,73 @@ caller's `CH_CPU_CONSTANT_TIME_MULTIPLY` bit for its multiplies, as the
 native copy of the portable loop does, and on construction for the rest:
 adds, masks, fixed shifts and lane moves, with no table. No gcc measures
 its branches.
+
+### The AVX2 Poly1305
+
+`poly1305_avx2.c` runs Poly1305's block loop eight blocks at a time in
+four AVX2 lanes (decision 110). It exists in an x86-64 host object's
+native copy alone, `poly1305_avx2_native.c`, which `poly1305_native.c`'s
+`poly1305_update_avx2_native` calls for an update with 512 bytes or more
+of whole blocks. `widemul.h` calls that update for a session whose caller
+set both `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_AVX2`
+(`widemul_poly1305_avx2`), and only for a record's or a packet's
+ciphertext. CBMC cannot unwind an intrinsic, so no harness compiles the
+file. The kernel rests on these:
+
+- `bin/poly1305_equiv_test`, in `make check` on an x86-64 host with AVX2,
+  runs the 128-bit path's kinds of case on the kernel, from the same
+  seed, 140,562 in all: every length from 0 to 1,056 bytes, which crosses
+  the 512-byte threshold and four more groups of 128 bytes, cut at every
+  odd offset below 256; the extreme keys and messages; the kernel's entry
+  called alone on one to twelve groups, with the bounds its header states
+  checked on return, and on a group a search found whose lane totals
+  carry h1 past 2^26 in the first pass; 20,000 random cases; and the two
+  large inputs. It searches the stack below a call over four groups for
+  r^2 to r^8 in the layouts the 128-bit path's search reads and in one
+  word every 32 bytes, as an AVX2 multiplier holds a lane's power. On a
+  CPU without AVX2 it skips the kernel and says so.
+- `test/aes-runtime-qemu.sh poly1305-avx2` builds the same binary for
+  x86-64 and runs it under qemu-x86_64 with AVX2, in CI's mips job on
+  every push, so an arm64 machine runs it too.
+- The Wycheproof host binary's runs under 0xf and 0x1f put the four
+  messages of the ChaCha20-Poly1305 suite that hold 512 bytes of whole
+  blocks through the kernel. RFC 8439's vectors are shorter than that, so
+  `bin/unit_host` under 0xd runs none of them on it.
+- `bin/x86_kernels_test` counts the kernel's calls under 17 `ch_cfg.cpu`
+  values. Every seal and open of a ChaCha20-Poly1305 record or packet,
+  with 528 bytes of whole blocks, and an open that refuses a wrong tag
+  must call it once where the value holds both bits and never where it
+  lacks one, and `aead_seal` and `aead_open` must never call it.
+- `test/chacha-builds.sh` compiles for x86-64 and arm64 under the pinned
+  clang and requires the kernel's 256-bit instructions in
+  `poly1305_avx2_native.c` alone, its call from `poly1305_native.c` on
+  x86-64 alone, and no AVX2 entry in `poly1305.c` under its own names or
+  in the native copy under `CH_CT_WIDEMUL`.
+- `make lint-wide-multiply` holds the kernel's conditional branches at 4
+  on x86-64, all on the byte count, and `poly1305_native.c`'s at 20 there,
+  one more than on arm64: the AVX2 update's test of n against 512. `make
+  lint-trust-separation` holds the copy to the host object.
+
+CI's `x86-64-kernels` job runs `bin/poly1305_equiv_test` with
+`CH_REQUIRE_X86_KERNELS=1`, so a runner without AVX2 fails it rather than
+skips it.
+
+Nine violations break the kernel and its choice, and each is caught.
+`test/aes-runtime-qemu.sh poly1305-avx2` catches
+`poly1305-avx2-last-group-lanes-exchanged`,
+`poly1305-avx2-carry-drops-fold`, `poly1305-avx2-odd-blocks-exchanged`,
+`poly1305-avx2-hands-partial-group` and `poly1305-avx2-keeps-powers`,
+which drops the wipe. `test/aes-runtime-qemu.sh x86-kernels` catches
+`poly1305-avx2-without-multiply-bit`, `poly1305-avx2-ignores-cpu-bit` and
+`poly1305-avx2-mac-without-cpu`, and `test/lint-trust-separation.sh`
+catches `inv16-poly1305-avx2-copy-dropped`.
+
+None of this proves the kernel and the loop agree on an input no case
+runs, and the bounds that keep a lane's sums below 2^58 are argued in the
+file's comments, not proved. The stack search reads what one compiler
+left on one call: gcc 13 and clang 18 under qemu, and gcc 13 on CI's
+runner. The kernel's timing rests on the caller's multiply bit for
+VPMULUDQ and on construction for the rest, as the 128-bit path's does.
 
 ### A host session without the AES bit
 
@@ -3434,7 +3505,8 @@ skips a kernel's cases on a CPU without its instructions:
   Its rows are `chacha20_xor_cpu` and the two AEAD entries that take a
   value, a record under each of the three suites, a QUIC 1-RTT packet
   under each suite and a Handshake packet, an Initial packet, and a
-  traffic key's schedule. Under each value a call must run a kernel
+  traffic key's schedule. The same rows count the AVX2 Poly1305's calls
+  ([The AVX2 Poly1305](#the-avx2-poly1305)). Under each value a call must run a kernel
   exactly when the value names it, and must return the same bytes. The
   counting entries (`test/x86_kernels_count.c`) forward to the 128-bit
   paths, so the binary runs no kernel instruction and passes on every

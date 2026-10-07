@@ -1,0 +1,16 @@
+invariant: INV-17
+file: poly1305_avx2.c
+catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
+reason: the AVX2 Poly1305 returns without wiping r^2 to r^8 and its two
+  multipliers, so its dead frame keeps them. r and a tag seen on the
+  wire give the pad, and r and the pad forge any message under that key.
+  Every tag is still right, so no vector sees it. bin/poly1305_equiv_test
+  copies the stack below a call and looks for each power as the call
+  lays it out; the script builds it for x86-64 and runs it under
+  qemu-x86_64, because the kernel has a body there alone.
+
+--- old
+    carry_scalar(p->h, total);
+    ct_wipe(&of_r, sizeof of_r);
+--- new
+    carry_scalar(p->h, total);

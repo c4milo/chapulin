@@ -2972,7 +2972,13 @@ last `ROLE=server` stub, as the entry said it would.
   it. `test/widemul-builds.sh` checks that `poly1305_native.c` calls the
   path and that `poly1305.c` under its own names does not, and
   `test/chacha-builds.sh` that a device object's `poly1305.c` calls none
-  (decisions 83 and 89).
+  (decisions 83 and 89). On x86-64 a session whose caller set
+  `CH_CPU_AVX2` beside the multiply bit absorbs a record's or a packet's
+  ciphertext of 512 bytes or more on `poly1305_avx2.c`'s kernel, the same
+  operations on VPMULUDQ in four lanes, which the multiply bit's statement
+  covers. `widemul.h`'s `widemul_poly1305_avx2` asks for both bits, the
+  kernel sits in the native copy alone, and `test/chacha-builds.sh`
+  checks that only that copy calls it, on x86-64 alone (decision 110).
   A host object holds both multiplies, and the caller's
   `CH_CPU_CONSTANT_TIME_MULTIPLY` bit in `ch_cfg.cpu` picks one for each
   operation of a session (decisions 87 and 89). `poly1305.c`,
@@ -4169,6 +4175,10 @@ last `ROLE=server` stub, as the entry said it would.
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
+  The AVX2 Poly1305 computes r^2 to r^8 and wipes them the same way
+  (decision 110). The same binary searches the stack below its calls, and
+  `poly1305-avx2-keeps-powers` drops that wipe and the binary's x86-64
+  build under qemu catches it.
   `rsa_mont64.c` and `rsa_sign64.c` wipe every array they hold a value
   computed from an RSA key in, twenty-three wipes: the multiplication's
   running sum, with the round's multiple above it; the square's running

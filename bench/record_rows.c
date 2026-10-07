@@ -331,10 +331,11 @@ static void run_mac(bench_state *b) {
     consume(b->tag[0]);
 }
 
-// Poly1305 over the ciphertext alone, from a fresh state, as mac runs it.
+// Poly1305 over the ciphertext alone, from a fresh state, as mac runs it:
+// on the AVX2 kernel where BENCH_CPU names it beside the multiply bit.
 static void run_poly1305_data(bench_state *b) {
     poly1305_init(&b->poly, b->poly_key);
-    widemul_poly1305_update(BENCH_WIDEMUL, &b->poly, b->rec + REC_HDR, b->len);
+    widemul_poly1305_update_cpu(BENCH_CPU, BENCH_WIDEMUL, &b->poly, b->rec + REC_HDR, b->len);
     consume((uint8_t)b->poly.h[0]);
 }
 

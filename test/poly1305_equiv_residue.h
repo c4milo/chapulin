@@ -1,17 +1,20 @@
-// What poly1305_vector_blocks_native leaves on the stack. The call computes r^2,
-// r^3 and r^4, keeps them and the two multipliers built from them in one
-// struct on its frame, and wipes that struct once when it returns. The
-// frame is dead after the return, but its bytes stay in memory below this
-// binary's own frames until another call writes over them.
+// What the current path's blocks entry leaves on the stack:
+// poly1305_vector_blocks_native, or poly1305_avx2_blocks_native. The call
+// computes r^2, r^3 and r^4, and the AVX2 kernel r^5 to r^8 as well, keeps
+// them and the two multipliers built from them in one struct on its frame,
+// and wipes that struct once when it returns. The frame is dead after the
+// return, but its bytes stay in memory below this binary's own frames
+// until another call writes over them.
 //
 // residue_call makes one call over RESIDUE_GROUPS groups, residue_snapshot
 // copies the stack below its caller as deep as RESIDUE_BYTES, where the
-// dead frame lay, and run_residue looks in the copy for r^2, r^3 and r^4
-// in each layout the call holds a power in:
+// dead frame lay, and run_residue looks in the copy for r^2 to r^8 in
+// each layout the call holds a power in:
 //
 //   five uint32_t limbs side by side, as the struct holds each power;
 //   one limb in every 8 bytes, as a NEON multiplier holds a lane's power;
-//   one limb in every 16 bytes, as an SSE2 multiplier holds it.
+//   one limb in every 16 bytes, as an SSE2 multiplier holds it;
+//   one limb in every 32 bytes, as an AVX2 multiplier holds it.
 //
 // Five words match a power when each is below 2^27 and together they hold
 // its value modulo 2^130 - 5, so a power in another carry form matches
@@ -19,21 +22,27 @@
 // frames cannot hold them first.
 //
 // Included by test/poly1305_equiv_test.c only, which declares the
-// generator, reduced, report and the failure count this file uses.
+// generator, reduced, report, the failure count and the current path this
+// file uses.
 #ifndef CH_POLY1305_EQUIV_RESIDUE_H
 #define CH_POLY1305_EQUIV_RESIDUE_H
 
 #define RESIDUE_GROUPS 4
 #define RESIDUE_BYTES 4096
+// The most bytes RESIDUE_GROUPS groups of any path hold: the AVX2
+// kernel's groups are the longest, eight blocks.
+#define RESIDUE_DATA_MAX (RESIDUE_GROUPS * 128)
+// r^2 to r^8.
+#define RESIDUE_POWERS 7
 
 static uint8_t residue_copy[RESIDUE_BYTES];
 static uint8_t residue_key[POLY1305_KEY];
-static uint8_t residue_data[RESIDUE_GROUPS * POLY1305_VECTOR_GROUP];
+static uint8_t residue_data[RESIDUE_DATA_MAX];
 
 static __attribute__((noinline)) void residue_call(void) {
     poly1305 p;
     poly1305_init(&p, residue_key);
-    poly1305_vector_blocks_native(&p, residue_data, sizeof residue_data);
+    current->blocks(&p, residue_data, RESIDUE_GROUPS * current->group);
 }
 
 // test/stack_residue.c, compiled as a source of its own.
@@ -94,26 +103,32 @@ static int residue_holds(const uint32_t power[5], size_t stride) {
 }
 
 static void run_residue(void) {
+    if (RESIDUE_GROUPS * current->group > sizeof residue_data) {
+        (void)fprintf(stderr, "poly1305 equivalence: a residue call the test cannot hold\n");
+        exit(1);
+    }
     rng_fill(residue_key, sizeof residue_key);
     rng_fill(residue_data, sizeof residue_data);
     residue_call();
     residue_snapshot();
     poly1305 p;
     poly1305_init(&p, residue_key);
-    uint32_t power[3][5];
+    // power[k] is r^(k + 2).
+    uint32_t power[RESIDUE_POWERS][5];
     residue_multiply(p.r, p.r, power[0]);
-    residue_multiply(power[0], p.r, power[1]);
-    residue_multiply(power[0], power[0], power[2]);
-    static const size_t strides[3] = {4, 8, 16};
-    for (size_t k = 0; k < 3; k++) {
-        for (size_t s = 0; s < 3; s++) {
+    for (size_t k = 1; k < RESIDUE_POWERS; k++) {
+        residue_multiply(power[k - 1], p.r, power[k]);
+    }
+    static const size_t strides[4] = {4, 8, 16, 32};
+    for (size_t k = 0; k < RESIDUE_POWERS; k++) {
+        for (size_t s = 0; s < 4; s++) {
             if (residue_holds(power[k], strides[s])) {
                 char what[96];
                 (void)snprintf(
                     what, sizeof what,
                     "the stack below the call still holds r^%zu, one limb every %zu bytes", k + 2,
                     strides[s]);
-                report("residue", what, sizeof residue_data, 0, 0);
+                report("residue", what, RESIDUE_GROUPS * current->group, 0, 0);
                 return;
             }
         }

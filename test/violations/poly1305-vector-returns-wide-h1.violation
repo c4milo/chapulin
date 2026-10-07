@@ -1,9 +1,9 @@
 invariant: INV-16
-file: poly1305_vector.c
+file: poly1305_scalar.h
 catches: poly1305_equiv_test
-reason: the path hands back its accumulator after one pass of carries,
-  so h1 can reach 2^26 + 2^10, past the at most 2^26 poly1305_vector.h
-  states. The value modulo 2^130 - 5 is still right, so every tag
+reason: carry_scalar hands back the vector path's accumulator after
+  one pass of carries, so h1 can reach 2^26 + 2^10, past the at most
+  2^26 poly1305_vector.h states. The value modulo 2^130 - 5 is still right, so every tag
   matches, and poly1305.c's loop and final carry would absorb the excess
   today; the contract is what keeps the next reader of the accumulator
   inside the bounds poly1305.c's proof explored. bin/poly1305_equiv_test

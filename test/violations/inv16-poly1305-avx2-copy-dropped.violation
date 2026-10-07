@@ -1,0 +1,11 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: a host object stops carrying poly1305_avx2_native.c, so on x86-64
+  poly1305_native.c's AVX2 update calls a kernel with no definition.
+  lint-trust-separation's host rows require the file.
+
+--- old
+LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c
+--- new
+LIB_SRCS += poly1305_vector_native.c

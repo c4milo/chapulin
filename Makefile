@@ -201,7 +201,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
@@ -476,10 +476,11 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # counting test and the units that compile the files built on the multiply
 # again under counted names. lint-tidy reads them in passes of their own.
 WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_native.c \
+                          poly1305_avx2_native.c \
                           test/widemul_runtime_test.c test/widemul_runtime_count.c \
                           test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                           test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
-                          test/widemul_count_native_vector.c
+                          test/widemul_count_native_vector.c test/widemul_count_native_avx2.c
 # The host object's hash sources and tests (docs/decisions.md 93), which
 # compile only under -DCH_CPU_RUNTIME: SHA-256 and SHA-512 on the CPU's
 # instructions, the two copies over them, the equivalence test, and the
@@ -516,6 +517,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/p384_portable.c \
           $(RSA_HOST_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
+          poly1305_avx2.c test/poly1305_equiv_avx2.c \
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
           keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
@@ -1218,9 +1220,9 @@ endif
 # for every operation built on the multiply (widemul.h, docs/decisions.md
 # 87 and 89). Each file built on it that the object carries compiles as a
 # WIDEMUL=decomposed device object compiles it. Two of them compile once
-# more as their _native.c copies, WIDEMUL_COPIED below; poly1305_vector.c,
-# whose path runs on the native multiply alone, joins as its native copy
-# only; and x25519.c, p256_field.c, p256_scalar.c and rsa_sign.c have no
+# more as their _native.c copies, WIDEMUL_COPIED below; poly1305_vector.c
+# and poly1305_avx2.c, whose paths run on the native multiply alone, join
+# as their native copies only; and x25519.c, p256_field.c, p256_scalar.c and rsa_sign.c have no
 # native copy, because their second copies are the wide files and the
 # 64-bit signer above. The builder states nothing about the part, so a
 # host object takes no CH_NATIVE_WIDEMUL, and ct.h refuses one beside
@@ -1240,7 +1242,7 @@ WIDEMUL_COPIED := poly1305.c mlkem_poly.c
 # A native copy preprocesses only under -DCH_CPU_RUNTIME, because ct.h
 # refuses one anywhere else, so lint-quic-partition judges each with it.
 QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_RUNTIME) \
-                      poly1305_vector_native.c:-DCH_CPU_RUNTIME
+                      poly1305_vector_native.c:-DCH_CPU_RUNTIME poly1305_avx2_native.c:-DCH_CPU_RUNTIME
 # The copies on the hash instructions preprocess only under
 # -DCH_CPU_RUNTIME too, because hash_hw.h refuses one anywhere else
 # (docs/decisions.md 93), and sha256_hw.c holds its body under the define.
@@ -1260,8 +1262,8 @@ QUIC_EXTRA_DEFINES += keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.h:-DCH_CPU_RUNTI
 # $(1) and what a host object holds beside each of its files: the native
 # copy of each that has one, the wide field beside x25519.c and the wide
 # P-256 files beside p256_point.c, which widemul.h's dispatchers call, the
-# two vector sources beside chacha20.c, the vector Poly1305, as its
-# native copy, beside poly1305.c, the 64-bit Montgomery arithmetic beside
+# two vector sources beside chacha20.c, the vector Poly1305 and the AVX2
+# Poly1305, as their native copies, beside poly1305.c, the 64-bit Montgomery arithmetic beside
 # rsa_mont.c, which calls it, the 64-bit signer beside rsa_sign.c, the
 # vector NTT and the four-way Keccak's two files beside mlkem.c, and the
 # hash sources below beside the files they stand beside.
@@ -1288,7 +1290,7 @@ host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25
             $(if $(filter p256.c,$(1)),$(filter-out $(1),p256_scalar.c ct_wipe.c)) \
             $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
-            $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c) \
+            $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c poly1305_avx2_native.c) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
             $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
             $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
@@ -1307,12 +1309,15 @@ endif
 # A host object holds Poly1305's block loop four blocks at a time on the
 # vector widening multiply, as poly1305_vector_native.c, which
 # poly1305_native.c's loop calls, so a session with the multiply bit runs
-# it and no other does. A device object holds poly1305.c's loop alone, on
-# the multiply WIDEMUL names: poly1305_vector.h turns the path on in a
-# host object's native copy and nowhere else. docs/decisions.md entries 83
-# and 89 say why.
+# it and no other does. An x86-64 host object holds the AVX2 kernel beside
+# it, eight blocks at a time, as poly1305_avx2_native.c, which a session
+# with the multiply bit and CH_CPU_AVX2 runs; the file has no body on
+# arm64. A device object holds poly1305.c's loop alone, on the multiply
+# WIDEMUL names: poly1305_vector.h turns the path on in a host object's
+# native copy and nowhere else. docs/decisions.md entries 83, 89 and 110
+# say why.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += poly1305_vector_native.c
+LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c
 endif
 # A host object holds SHA-256 on the CPU's instructions and the two copies
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
@@ -1472,8 +1477,9 @@ print-host-srcs:
 # the two lists bin/hash_runtime_test links beside its one, of which
 # bin/hash_runtime_exporter_test links the first, bin/p256_equiv_test
 # beside its one, bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
-# beside theirs, and bin/mlkem_vector_equiv_test and
-# bin/mlkem_avx2_equiv_test beside their one each.
+# beside theirs, bin/mlkem_vector_equiv_test and
+# bin/mlkem_avx2_equiv_test beside their one each, and
+# bin/poly1305_equiv_test beside its one.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1489,6 +1495,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(MLKEM_HW_EQUIV_TEST_SRCS)
 	@echo $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 	@echo $(MLKEM_AVX2_EQUIV_TEST_SRCS)
+	@echo $(POLY1305_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1635,9 +1642,10 @@ print-aes-runtime-qemu-srcs:
 # The WIDEMUL rows hold -DCH_NATIVE_WIDEMUL to the device object that
 # asks for it, and every native copy to the host object: a host row
 # requires each copied file beside its _native.c copy, and the vector
-# Poly1305 as its native copy alone, and every device row bans the
-# copies. rsa_sign.c has no native copy, and the RSA rows hold its second
-# copy. No row packages poly1305_vector.c under its own name. A host
+# Poly1305 and the AVX2 Poly1305 as their native copies alone, and every
+# device row bans the copies. rsa_sign.c has no native copy, and the RSA
+# rows hold its second copy. No row packages poly1305_vector.c or
+# poly1305_avx2.c under its own name. A host
 # object takes no WIDEMUL value, and WIDEMUL=runtime is gone
 # (docs/decisions.md 87 and 89).
 #
@@ -1741,12 +1749,14 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c rsa_sign.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "rsa_mont64.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "rsa_mont64.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c" "" "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" "poly1305_vector.c" \
-	  "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" "poly1305_vector.c" \
-	  "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c" "" \
+	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
+	  "-DCH_CHACHA_VECTOR"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
+	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
+	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "chacha20.c" \
+	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	for value in portable vector; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
@@ -1777,21 +1787,22 @@ lint-trust-separation-run:
 	  "-DCH_CPU_RUNTIME"; \
 	native_files=$$(git ls-files '*_native.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$native_files" ] || { echo "lint-trust-separation: git tracks no *_native.c file at the root, so the WIDEMUL rows would check nothing"; rc=1; }; \
-	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c $$native_files" "" \
+	check "TRUST=raw-rsa WIDEMUL=decomposed" "poly1305.c" "poly1305_vector.c poly1305_avx2.c $$native_files" "" \
 	  "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
+	check "TRUST=raw-rsa WIDEMUL=native" "poly1305.c" \
+	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c $$native_files" "-DCH_NATIVE_WIDEMUL" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
-	  mlkem_poly.c mlkem_poly_native.c" \
-	  "poly1305_vector.c rsa_sign.c rsa_sign64.c" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
+	  poly1305_avx2_native.c mlkem_poly.c mlkem_poly_native.c" \
+	  "poly1305_vector.c poly1305_avx2.c rsa_sign.c rsa_sign64.c" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
-	  mlkem_poly.c mlkem_poly_native.c \
-	  rsa_sign.c" "poly1305_vector.c" "-DCH_CPU_RUNTIME" \
+	  poly1305_avx2_native.c mlkem_poly.c mlkem_poly_native.c \
+	  rsa_sign.c" "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" \
 	  "-DCH_NATIVE_WIDEMUL"; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "poly1305.c mlkem_poly.c rsa_sign.c" \
-	  "poly1305_vector.c $$native_files" "" "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "poly1305.c rsa_sign.c" "poly1305_vector.c $$native_files" \
-	  "-DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
+	  "poly1305_vector.c poly1305_avx2.c $$native_files" "" "-DCH_NATIVE_WIDEMUL -DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none WIDEMUL=native HOST_TARGET=" "poly1305.c rsa_sign.c" \
+	  "poly1305_vector.c poly1305_avx2.c $$native_files" "-DCH_NATIVE_WIDEMUL" "-DCH_CPU_RUNTIME"; \
 	for value in decomposed native; do \
 	  n=$$((n + 1)); refused_build "ROLE=server TRUST=none HOST_TARGET=yes WIDEMUL=$$value" "a host object holds both multiplies and takes no WIDEMUL value" > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
 	done; \
@@ -2449,11 +2460,16 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) 
 # 16x16 decomposition, as a device object runs it, and
 # test/poly1305_equiv_vector.c compiles a host object's native copy
 # beside it, poly1305_native.c with poly1305_vector_native.c, under the
-# define. test/stack_residue.c copies the stack a call left, for the check
-# that the powers of r are gone (test/poly1305_equiv_residue.h).
-POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/stack_residue.c poly1305.c ct.c ct_wipe.c
+# define. test/poly1305_equiv_avx2.c compiles poly1305_avx2_native.c, the
+# AVX2 kernel the copy holds on x86-64, which the binary runs on a CPU
+# with AVX2 (docs/decisions.md 110). test/stack_residue.c copies the
+# stack a call left, for the check that the powers of r are gone
+# (test/poly1305_equiv_residue.h).
+POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/poly1305_equiv_avx2.c \
+                            test/stack_residue.c poly1305.c ct.c ct_wipe.c
 bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) poly1305_native.c \
-                         poly1305_vector_native.c poly1305_vector.c $(HDRS) $(TESTH)
+                         poly1305_vector_native.c poly1305_vector.c poly1305_avx2_native.c \
+                         poly1305_avx2.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -I. -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
 # A host object's SHA-256 on the CPU's instructions against sha256.c, and
@@ -2536,18 +2552,21 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 	$(CC) $(HOST_CFLAGS) $(HOST_SUITE_DEF) $(EXPORTER_DEF) -I. -Itest -o $@ test/hash_runtime_test.c \
 	  $(HASH_RUNTIME_TEST_SRCS)
 # Which calls an x86-64 host object sends to its kernels under each
-# ch_cfg.cpu value (docs/decisions.md 89, 90 and 107): chacha20_avx2.c's
-# AVX2 ChaCha20 and mlkem_avx2.c's copy of ML-KEM, which CH_CPU_AVX2 picks,
-# and gcm_vaes.c's three VAES entries, which CH_CPU_VAES picks beside
-# CH_CPU_CONSTANT_TIME_AES. test/x86_kernels_count.c defines the seven
-# entries, each as a count and a call to the entry it stands beside, and
-# the binary links it in place of the kernel sources. So no instruction of a kernel runs, the
-# binary runs on every x86-64 CPU, and its counts say which path the
-# library chose. It holds a TCP object's record layer and a QUIC object's
+# ch_cfg.cpu value (docs/decisions.md 89, 90, 107 and 110):
+# chacha20_avx2.c's AVX2 ChaCha20 and mlkem_avx2.c's copy of ML-KEM, which
+# CH_CPU_AVX2 picks, poly1305_avx2.c's AVX2 Poly1305, which it picks beside
+# CH_CPU_CONSTANT_TIME_MULTIPLY, and gcm_vaes.c's three VAES entries, which
+# CH_CPU_VAES picks beside CH_CPU_CONSTANT_TIME_AES.
+# test/x86_kernels_count.c defines the eight entries, each as a count and
+# a call to the entry it stands beside, and the binary links it in place
+# of the kernel sources. So no instruction of a kernel runs, the binary
+# runs on every x86-64 CPU, and its counts say which path the library
+# chose. It holds a TCP object's record layer and a QUIC object's
 # packet calls, so it compiles both under the QUIC and suite defines. What
 # the kernels compute is held by the equivalence binaries and by the
 # vectors the host binaries run under the kernels' bits.
-X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c gcm_vaes.c keccak_avx2.c mlkem_avx2.c,$(call host_srcs,record.c \
+X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c gcm_vaes.c keccak_avx2.c mlkem_avx2.c poly1305_avx2_native.c, \
+                           $(call host_srcs,record.c \
                            quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
                            mlkem.c mlkem_poly.c sha3.c))
@@ -3311,7 +3330,8 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # counting binary links them as they are (WIDEMUL_COUNT_FIELDS).
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
-                       test/widemul_count_native_vector.c test/widemul_count_wide.c \
+                       test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
+                       test/widemul_count_wide.c \
                        test/widemul_count_wide_p256.c test/widemul_count_sign64.c
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c \
@@ -3321,7 +3341,7 @@ WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
-                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c \
+                          $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c poly1305_avx2.c \
                           $(P256_WIDE_SRCS) $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
@@ -5176,6 +5196,7 @@ else
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
 	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
+	  poly1305_avx2.c test/poly1305_equiv_avx2.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c \
@@ -5227,9 +5248,9 @@ else
 	# take a session's ch_cfg.cpu under it, so this pass reads the three in
 	# the instruction set of the host that runs the lint: NEON on an arm64
 	# machine, SSE2 on CI's x86-64 runner. The pass of the native copies
-	# below reads the vector Poly1305. test/chacha20_equiv_vector.c and
-	# test/poly1305_equiv_vector.c stay out of every pass, for the reason
-	# test/aes_equiv_soft.c does below.
+	# below reads the vector Poly1305. test/chacha20_equiv_vector.c,
+	# test/poly1305_equiv_vector.c and test/poly1305_equiv_avx2.c stay out
+	# of every pass, for the reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,chacha20.c chacha20_vector.c aead.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
@@ -5246,6 +5267,13 @@ else
 	@$(call TIDY_EACH,gcm_vaes.c gcm.c test/x86_kernels_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	# The AVX2 Poly1305 (docs/decisions.md 110) as its native copy, which
+	# has a body on x86-64 alone, with poly1305.c's native copy, whose x86-64
+	# arm holds the update that calls it, and aead.c, whose MAC calls it
+	# through widemul.h's x86-64 arm.
+	@$(call TIDY_EACH,poly1305_avx2_native.c poly1305_native.c aead.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	# A host object's ML-KEM NTT (docs/decisions.md 101). mlkem_vector.c
 	# holds one arm for each architecture, so two passes read it for a named
 	# target whatever the host, as the passes above read the kernels, with
@@ -5638,8 +5666,9 @@ CPPCHECK_FLAGS := --std=c11 --enable=warning,style,performance,portability \
 WIDEMUL_NATIVE_COPY_DEFS := -DCH_CPU_RUNTIME -D__x86_64__ -D__SIZEOF_INT128__=16 -D__SSE2__ \
                             -D__BYTE_ORDER__=__ORDER_LITTLE_ENDIAN__
 WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c \
-                         poly1305_vector_native.c \
+                         poly1305_vector_native.c poly1305_avx2_native.c \
                          test/widemul_count_native.c test/widemul_count_native_vector.c \
+                         test/widemul_count_native_avx2.c \
                          hkdf_hw.c keysched_hw.c
 CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C),$(LINT_C))
 .PHONY: lint-cppcheck-run
@@ -6065,16 +6094,18 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # holds it as poly1305_vector_native.c alone, and the entry here holds
 # that, because the file would compile to its four branches if
 # poly1305_vector.h turned the path on outside the native copy. So the
-# four ceilings are zero too.
+# four ceilings are zero too. poly1305_avx2.c, the AVX2 Poly1305, is
+# the same under its own name on both specs, and its native copy has a
+# body on x86-64 alone (docs/decisions.md 110).
 #
 # A host object's native copies join this list (docs/decisions.md 87 and
 # 89). A host object targets arm64 or x86-64, so no 32-bit spec compiles a
 # copy, and the 64-bit specs are the targets the copies run on. What they
 # hold for a copy is its branch count, as for the vector paths.
-# poly1305_vector_native.c multiplies on the 32x32->64 widening multiply,
-# scalar and vector, that the session's multiply bit states, which these
-# specs count no more than x25519_wide.c's; it divides nothing and calls
-# no runtime routine.
+# poly1305_vector_native.c and poly1305_avx2_native.c multiply on the
+# 32x32->64 widening multiply, scalar and vector, that the session's
+# multiply bit states, which these specs count no more than
+# x25519_wide.c's; they divide nothing and call no runtime routine.
 #
 # A host object's hash sources join it too (docs/decisions.md 93):
 # sha256_hw.c, whose SHA-256 instructions no 32-bit spec targets and which
@@ -6096,8 +6127,8 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # rsa_sign64.c, the signer on those limbs, multiplies only through
 # rsa_mont64.c and joins on the same terms.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
-                  poly1305_native.c:0 mlkem_poly_native.c:0 \
-                  poly1305_vector_native.c:0 \
+                  poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
+                  poly1305_vector_native.c:0 poly1305_avx2_native.c:0 \
                   sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_sign64.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 \
@@ -6164,12 +6195,13 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384 \
                    handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    chacha20_vector.c:-DCH_CPU_RUNTIME chacha20_avx2.c:-DCH_CPU_RUNTIME \
-                   poly1305_vector.c:-DCH_CPU_RUNTIME \
+                   poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
                    x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
+                   poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
                    sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
                    keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.c:-DCH_CPU_RUNTIME \
@@ -6473,8 +6505,11 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # 64-bit specs, whose targets a host object is for. poly1305_native.c's 19
 # are the 18 it held before every host object carried the vector path, and
 # the byte count n against POLY1305_VECTOR_MIN, which hands an update's
-# whole groups to that path; n is public. poly1305_vector_native.c's
-# 4 are the vector path's, read below. No 32-bit spec compiles a copy: a host object
+# whole groups to that path; n is public. On x86-64 it holds a 20th, in
+# poly1305_update_avx2's copy of the update: n against POLY1305_AVX2_MIN,
+# which hands the whole groups to the AVX2 kernel (docs/decisions.md 110).
+# poly1305_vector_native.c's 4 are the vector path's, and
+# poly1305_avx2_native.c's 4 the AVX2 kernel's, read below. No 32-bit spec compiles a copy: a host object
 # targets arm64 or x86-64, so the 96 entries the eight 32-bit specs held
 # for WIDEMUL=runtime's copies went with that value.
 #
@@ -6487,9 +6522,10 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
   arm64/poly1305_native.c:19 arm64/mlkem_poly_native.c:35 \
-  x86-64/poly1305_native.c:19 \
+  x86-64/poly1305_native.c:20 \
   x86-64/mlkem_poly_native.c:36 \
-  arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4
+  arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
+  arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md
 # 93), under the two 64-bit specs, which are the targets they run on. Each
 # branch was read under both. sha256_hw.c's eight are the same on arm64 and
@@ -6641,7 +6677,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c poly1305_vector.c \
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
-               poly1305_vector_native.c \
+               poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_sign64.c $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
@@ -6745,7 +6781,11 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # CH_ASSERT at the entry, n against zero and n modulo 64, and the group
 # loop's entry and back edge, n against 64. The powers of r and both
 # carries are straight line. poly1305_vector.c under its own name holds
-# none, because it compiles to nothing there.
+# none, because it compiles to nothing there. The AVX2 Poly1305's x86-64
+# entry was read the same way, in poly1305_avx2_native.c, and it has no
+# body on arm64 or under its own name: its four test n at the entry's
+# CH_ASSERT, n against zero and n modulo 128, and the group loop's entry
+# and back edge, n against 128 (docs/decisions.md 110).
 #
 # The vector NTT's two entries were read the same way (docs/decisions.md
 # 101). Each transform holds four loops, and each of eight of the nine
@@ -6818,6 +6858,7 @@ BRANCH_CEILING := \
   arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:23 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:23 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
+  arm64/poly1305_avx2.c:0 x86-64/poly1305_avx2.c:0 \
   arm64/rsa_mont64.c:43 x86-64/rsa_mont64.c:43 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \

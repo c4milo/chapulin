@@ -9,6 +9,6 @@ reason: aead_seal_cpu computes its tag under WIDEMUL_NOT_STATED whatever the
   CH_CPU_CONSTANT_TIME_MULTIPLY.
 
 --- old
-    mac(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
+    mac(cpu, widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
 --- new
-    mac(WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag);
+    mac(cpu, WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag);

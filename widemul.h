@@ -97,6 +97,35 @@ static inline void widemul_poly1305_final(uint8_t widemul, poly1305 *p, uint8_t 
     poly1305_final(p, tag);
 }
 
+#ifdef __x86_64__
+// Whether a Poly1305 update under the answer widemul, in a session whose ch_cfg.cpu is cpu, runs
+// poly1305_avx2.c's kernel: under WIDEMUL_CONSTANT_TIME, whose statement covers the kernel's
+// widening multiply, where cpu holds CH_CPU_AVX2, which says the CPU has AVX2. The bit states no
+// timing (docs/decisions.md 110).
+static inline int widemul_poly1305_avx2(uint32_t cpu, uint8_t widemul) {
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX2) != 0;
+}
+#endif
+
+// widemul_poly1305_update with the session's ch_cfg.cpu first, for an update that may be long: a
+// record's or a packet's ciphertext. On x86-64, where widemul_poly1305_avx2 says so, it runs
+// poly1305_update_avx2_native, whose long updates take the AVX2 kernel; every other call runs
+// widemul_poly1305_update. A caller that holds no description of the CPU passes 0, which names
+// no kernel.
+static inline void widemul_poly1305_update_cpu(uint32_t cpu, uint8_t widemul, poly1305 *p,
+                                               const uint8_t *in, size_t n) {
+#ifdef __x86_64__
+    if (widemul_poly1305_avx2(cpu, widemul)) {
+        poly1305_update_avx2_native(p, in, n);
+        return;
+    }
+#else
+    // arm64 has one vector Poly1305, so no bit picks here.
+    (void)cpu;
+#endif
+    widemul_poly1305_update(widemul, p, in, n);
+}
+
 static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],
                                  const uint8_t scalar[X25519_LEN],
                                  const uint8_t point[X25519_LEN]) {
@@ -266,6 +295,14 @@ static inline void widemul_poly1305_update(uint8_t widemul, poly1305 *p, const u
 static inline void widemul_poly1305_final(uint8_t widemul, poly1305 *p, uint8_t tag[POLY1305_TAG]) {
     (void)widemul;
     poly1305_final(p, tag);
+}
+
+// A device object holds one Poly1305 loop and no kernel, so it never reads cpu.
+static inline void widemul_poly1305_update_cpu(uint32_t cpu, uint8_t widemul, poly1305 *p,
+                                               const uint8_t *in, size_t n) {
+    (void)cpu;
+    (void)widemul;
+    poly1305_update(p, in, n);
 }
 
 static inline int widemul_x25519(uint8_t widemul, uint8_t out[X25519_LEN],

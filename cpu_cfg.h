@@ -65,7 +65,11 @@
 // runs. Neither states a timing. A session whose bit names instructions its CPU lacks faults on
 // the first one.
 // A session with CH_CPU_AVX2 computes a record's or a packet's ChaCha20 keystream eight blocks a
-// pass in 256-bit vectors, and one without it on SSE2 (chacha20.c's use_avx2). A session with
+// pass in 256-bit vectors, and one without it on SSE2 (chacha20.c's use_avx2). With the bit beside
+// CH_CPU_CONSTANT_TIME_MULTIPLY, whose statement covers the kernel's VPMULUDQ, a record's or a
+// packet's Poly1305 runs a ciphertext of 512 bytes or more of whole blocks eight blocks at a time
+// in four lanes, on poly1305_avx2.c's kernel, and without one of the two bits it takes the path
+// that bit leaves (widemul.h's widemul_poly1305_avx2, docs/decisions.md 110). A session with
 // CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES runs AES-GCM's whole blocks two to a 256-bit register,
 // and one with the AES bit alone on the 128-bit instructions (gcm_vaes.h's gcm_use_vaes): the AES
 // bit's statement covers the 256-bit forms, and CH_CPU_VAES without it runs nothing. No bit turns

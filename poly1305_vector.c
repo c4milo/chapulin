@@ -10,9 +10,8 @@
 #endif
 
 #include "ch_assert.h"
+#include "poly1305_scalar.h"
 
-// A limb holds 26 bits.
-#define LIMB_MASK 0x3ffffffU
 // The 2^128 bit of a whole block, in its fifth limb.
 #define HIGH_BIT ((uint32_t)1 << 24)
 
@@ -287,54 +286,6 @@ static inline void carry(limbs h[5], const sums d[5]) {
     h[2] = sums_narrow(twice[2]);
     h[3] = sums_narrow(twice[3]);
     h[4] = sums_narrow(twice[4]);
-}
-
-// Five sums below 2^60 carried into h, twice around: after the first
-// pass h1 can exceed 2^26, and the second leaves h0, h2, h3 and h4 below
-// 2^26 and h1 at most 2^26, inside the bounds poly1305.c's loop keeps.
-static void carry_scalar(uint32_t h[5], uint64_t d[5]) {
-    d[1] += d[0] >> 26;
-    d[2] += d[1] >> 26;
-    d[3] += d[2] >> 26;
-    d[4] += d[3] >> 26;
-    uint64_t h0 = (d[0] & LIMB_MASK) + (d[4] >> 26) * 5;
-    uint64_t h1 = (d[1] & LIMB_MASK) + (h0 >> 26);
-    uint32_t h2 = (uint32_t)d[2] & LIMB_MASK;
-    uint32_t h3 = (uint32_t)d[3] & LIMB_MASK;
-    uint32_t h4 = (uint32_t)d[4] & LIMB_MASK;
-    h[0] = (uint32_t)h0 & LIMB_MASK;
-    h[1] = (uint32_t)h1 & LIMB_MASK;
-    h2 += (uint32_t)(h1 >> 26);
-    h[2] = h2 & LIMB_MASK;
-    h3 += h2 >> 26;
-    h[3] = h3 & LIMB_MASK;
-    h4 += h3 >> 26;
-    h[4] = h4 & LIMB_MASK;
-    h[0] += (h4 >> 26) * 5;
-    h[1] += h[0] >> 26;
-    h[0] &= LIMB_MASK;
-}
-
-// out = left * right modulo 2^130 - 5, for the powers of r, with limbs of
-// at most 2^26 in and out.
-static void multiply_scalar(uint32_t out[5], const uint32_t left[5], const uint32_t right[5]) {
-    uint32_t s1 = right[1] * 5;
-    uint32_t s2 = right[2] * 5;
-    uint32_t s3 = right[3] * 5;
-    uint32_t s4 = right[4] * 5;
-    uint64_t d[5];
-    d[0] = ct_widemul(left[0], right[0]) + ct_widemul(left[1], s4) + ct_widemul(left[2], s3) +
-           ct_widemul(left[3], s2) + ct_widemul(left[4], s1);
-    d[1] = ct_widemul(left[0], right[1]) + ct_widemul(left[1], right[0]) + ct_widemul(left[2], s4) +
-           ct_widemul(left[3], s3) + ct_widemul(left[4], s2);
-    d[2] = ct_widemul(left[0], right[2]) + ct_widemul(left[1], right[1]) +
-           ct_widemul(left[2], right[0]) + ct_widemul(left[3], s4) + ct_widemul(left[4], s3);
-    d[3] = ct_widemul(left[0], right[3]) + ct_widemul(left[1], right[2]) +
-           ct_widemul(left[2], right[1]) + ct_widemul(left[3], right[0]) + ct_widemul(left[4], s4);
-    d[4] = ct_widemul(left[0], right[4]) + ct_widemul(left[1], right[3]) +
-           ct_widemul(left[2], right[2]) + ct_widemul(left[3], right[1]) +
-           ct_widemul(left[4], right[0]);
-    carry_scalar(out, d);
 }
 
 // What one call derives from r: r^2, r^3 and r^4, and the two

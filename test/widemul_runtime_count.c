@@ -7,6 +7,7 @@
 // widemul_native_calls.
 #include "widemul_runtime_count.h"
 
+#include "poly1305_avx2.h"
 #include "poly1305_vector.h"
 #include "widemul.h"
 
@@ -234,3 +235,23 @@ void poly1305_vector_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
     widemul_vector_calls++;
     poly1305_vector_blocks_native_counted(p, m, n);
 }
+
+#ifdef __x86_64__
+// The native copy's AVX2 update, which widemul.h's
+// widemul_poly1305_update_cpu calls, and the AVX2 kernel's entry, which
+// that update's block loop calls under the name poly1305_avx2.h declares
+// for an x86-64 host object (docs/decisions.md 110). The kernel is a
+// vector path, so its calls count with the 128-bit path's.
+void poly1305_update_avx2_native_counted(poly1305 *p, const uint8_t *in, size_t n);
+void poly1305_avx2_blocks_native_counted(poly1305 *p, const uint8_t *m, size_t n);
+
+void poly1305_update_avx2_native(poly1305 *p, const uint8_t *in, size_t n) {
+    widemul_native_calls++;
+    poly1305_update_avx2_native_counted(p, in, n);
+}
+
+void poly1305_avx2_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
+    widemul_vector_calls++;
+    poly1305_avx2_blocks_native_counted(p, m, n);
+}
+#endif

@@ -9,6 +9,6 @@ reason: aead_open_cpu checks its tag under WIDEMUL_NOT_STATED whatever the
   CH_CPU_CONSTANT_TIME_MULTIPLY.
 
 --- old
-    if (!tag_matches(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag)) {
+    if (!tag_matches(cpu, widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag)) {
 --- new
-    if (!tag_matches(WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag)) {
+    if (!tag_matches(cpu, WIDEMUL_NOT_STATED, key, nonce, aad, aad_len, ct, n, tag)) {

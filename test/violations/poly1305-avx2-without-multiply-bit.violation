@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: widemul_poly1305_avx2 reads CH_CPU_AVX2 alone, so a session that
+  states AVX2 and not the multiply bit runs the kernel, whose VPMULUDQ
+  no statement covers, and the native copy's update under the
+  decomposition's answer. The bytes are the same. bin/x86_kernels_test
+  counts the kernel's calls under every ch_cfg.cpu value, and the script
+  builds it for x86-64, where widemul.h compiles the function.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX2) != 0;
+--- new
+    (void)widemul;
+    return (cpu & CH_CPU_AVX2) != 0;

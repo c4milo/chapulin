@@ -1,0 +1,14 @@
+invariant: INV-16
+file: poly1305.c
+catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
+reason: the AVX2 update hands the kernel whole groups of four blocks, the
+  128-bit path's group, where the kernel takes groups of eight, so an
+  update whose whole blocks end inside a group of eight breaks the
+  kernel's contract and its CH_ASSERT. Only an x86-64 object compiles the
+  line, so the script builds bin/poly1305_equiv_test for x86-64 and runs
+  it under qemu-x86_64.
+
+--- old
+        size_t grouped = n - n % POLY1305_AVX2_GROUP;
+--- new
+        size_t grouped = n - n % POLY1305_VECTOR_GROUP;

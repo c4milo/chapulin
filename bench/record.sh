@@ -26,8 +26,8 @@
 #
 #   0x1f, those and the two kernel bits, on an x86-64 CPU with AVX2, VAES and VPCLMULQDQ:
 #   every row again, with the ChaCha20 keystream on chacha20_avx2.c's
-#   kernel and AES-GCM's whole blocks on gcm_vaes.c's
-#   (docs/decisions.md 90). --build compiles this one for every x86-64
+#   kernel, Poly1305's long updates on poly1305_avx2.c's and AES-GCM's
+#   whole blocks on gcm_vaes.c's (docs/decisions.md 90 and 110). --build compiles this one for every x86-64
 #   target, and a run takes its rows only where /proc/cpuinfo names the
 #   instructions
 #
@@ -120,7 +120,7 @@ FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibe
 SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
     record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c chacha20_vector.c chacha20_avx2.c
-    poly1305.c poly1305_native.c poly1305_vector_native.c ct.c ct_wipe.c
+    poly1305.c poly1305_native.c poly1305_vector_native.c poly1305_avx2_native.c ct.c ct_wipe.c
     hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress.c sha512_hw.c)
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x3 -o "$W/record" "${SRCS[@]}"
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x7 -o "$W/record_multiply" "${SRCS[@]}"
@@ -133,7 +133,7 @@ if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -qw __x86_64__; then
     if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo && grep -qw vaes /proc/cpuinfo &&
         grep -qw vpclmulqdq /proc/cpuinfo; then
         KERNELS=yes
-        KERNELS_NOTE="ch_cfg.cpu 0x1f adds CH_CPU_AVX2 and CH_CPU_VAES, the AVX2 ChaCha20 and the VAES AES-GCM"
+        KERNELS_NOTE="ch_cfg.cpu 0x1f adds CH_CPU_AVX2 and CH_CPU_VAES, the AVX2 ChaCha20 and Poly1305 and the VAES AES-GCM"
     fi
 fi
 if [ -n "$BUILD_ONLY" ]; then

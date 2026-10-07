@@ -11,7 +11,7 @@ reason: aead_seal_cpu runs its keystream through chacha20_xor, which takes no
 
 --- old
     chacha20_xor_cpu(cpu, key, nonce, 1, pt, ct, n);
-    mac(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
+    mac(cpu, widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
 --- new
     chacha20_xor(key, nonce, 1, pt, ct, n);
-    mac(widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);
+    mac(cpu, widemul_of_cpu(cpu), key, nonce, aad, aad_len, ct, n, tag);

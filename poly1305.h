@@ -31,4 +31,14 @@ void poly1305_update_native(poly1305 *p, const uint8_t *in, size_t n);
 void poly1305_final_native(poly1305 *p, uint8_t tag[POLY1305_TAG]);
 #endif
 
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// poly1305_update_native, with the whole groups of eight blocks of an update that holds
+// POLY1305_AVX2_MIN bytes or more of whole blocks on poly1305_avx2.c's kernel (poly1305_native.c,
+// poly1305_avx2.h). widemul.h's widemul_poly1305_update_cpu calls it for a session whose
+// ch_cfg.cpu holds CH_CPU_AVX2 under the answer WIDEMUL_CONSTANT_TIME.
+//
+// Requires: a CPU with AVX2.
+void poly1305_update_avx2_native(poly1305 *p, const uint8_t *in, size_t n);
+#endif
+
 #endif

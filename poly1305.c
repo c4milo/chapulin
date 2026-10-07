@@ -2,6 +2,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
+#include "poly1305_avx2.h"
 #include "poly1305_vector.h"
 
 static uint32_t load32(const uint8_t *p) {
@@ -89,13 +90,25 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
 }
 
 // Absorbs the n bytes at m, whole blocks. This is the one place that
-// chooses between the loop above and the vector path. Under
-// CH_POLY1305_VECTOR (poly1305_vector.h), n of POLY1305_VECTOR_MIN or
-// more hands its whole groups of four blocks to poly1305_vector_blocks,
-// and the loop above takes the zero to three blocks after the last group.
-// The loop is the reference that bin/poly1305_equiv_test holds the path
-// to.
-static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n) {
+// chooses between the loop above and the vector paths. Under
+// CH_POLY1305_AVX2 (poly1305_avx2.h), for an update poly1305_update_avx2
+// started, which sets avx2, n of POLY1305_AVX2_MIN or more hands its whole
+// groups of eight blocks to poly1305_avx2_blocks. Under CH_POLY1305_VECTOR
+// (poly1305_vector.h), n of POLY1305_VECTOR_MIN or more that remains
+// hands its whole groups of four blocks to poly1305_vector_blocks. The
+// loop above takes the blocks after the last group. It is the reference
+// that bin/poly1305_equiv_test holds both paths to.
+static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n, int avx2) {
+#ifdef CH_POLY1305_AVX2
+    if (avx2 && n >= POLY1305_AVX2_MIN) {
+        size_t grouped = n - n % POLY1305_AVX2_GROUP;
+        poly1305_avx2_blocks(p, m, grouped);
+        m += grouped;
+        n -= grouped;
+    }
+#else
+    (void)avx2;
+#endif
 #ifdef CH_POLY1305_VECTOR
     if (n >= POLY1305_VECTOR_MIN) {
         size_t grouped = n - n % POLY1305_VECTOR_GROUP;
@@ -107,7 +120,8 @@ static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     blocks(p, m, n, (uint32_t)1 << 24);
 }
 
-void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
+// poly1305_update's work, with avx2 passed to whole_blocks.
+static void update(poly1305 *p, const uint8_t *in, size_t n, int avx2) {
     if (p->fill > 0) {
         while (n > 0 && p->fill < 16) {
             p->block[p->fill++] = *in++;
@@ -120,7 +134,7 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
     }
     size_t whole = n & ~(size_t)15;
     if (whole > 0) {
-        whole_blocks(p, in, whole);
+        whole_blocks(p, in, whole, avx2);
         in += whole;
         n -= whole;
     }
@@ -132,6 +146,16 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
         n--;
     }
 }
+
+void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
+    update(p, in, n, 0);
+}
+
+#ifdef CH_POLY1305_AVX2
+void poly1305_update_avx2(poly1305 *p, const uint8_t *in, size_t n) {
+    update(p, in, n, 1);
+}
+#endif
 
 void poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]) {
     CH_ASSERT(p->fill < 16);

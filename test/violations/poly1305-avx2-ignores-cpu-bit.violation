@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: widemul_poly1305_avx2 reads the multiply bit alone, so every
+  session with it runs the AVX2 kernel and dies of SIGILL on a CPU
+  without AVX2. Every vector passes on a CPU with it, because the kernel
+  computes the same accumulator. bin/x86_kernels_test counts the
+  kernel's calls under every ch_cfg.cpu value, and the script builds it
+  for x86-64, where widemul.h compiles the function.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX2) != 0;
+--- new
+    (void)cpu;
+    return widemul_native(widemul);

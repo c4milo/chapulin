@@ -100,15 +100,36 @@ AUDITED = {
         "which CBMC cannot read, so no harness compiles the file. Every "
         "bitwise operator takes unsigned operands: the lane operations run on "
         "uint32x2_t, uint64x2_t or __m128i values through the intrinsics, "
-        "LIMB_MASK is 0x3ffffffU and HIGH_BIT a uint32_t, and carry_scalar, "
-        "multiply_scalar and multiplier_set shift, mask and multiply uint32_t "
-        "and uint64_t values, where the constant 5 converts to unsigned. The "
+        "LIMB_MASK is 0x3ffffffU and HIGH_BIT a uint32_t, and carry_scalar "
+        "and multiply_scalar, which poly1305_scalar.h holds, and "
+        "multiplier_set shift, mask and multiply uint32_t and uint64_t "
+        "values, where the constant 5 converts to unsigned. The "
         "SSE2 arm's (int) casts hand _mm_set_epi32 a limb, 5 times a limb, "
         "LIMB_MASK or HIGH_BIT, each below 2^31, and no arithmetic runs on "
         "the int. bin/poly1305_equiv_test holds the file to poly1305.c's "
         "proven loop, and bin/unit_host and the host Wycheproof test run the "
         "published vectors on it, under a ch_cfg.cpu value with the multiply "
         "bit. Delete this entry if a harness can ever compile the file."
+    ),
+    "poly1305_avx2.c": (
+        "the AVX2 Poly1305 of an x86-64 host object's native copy, written in "
+        "AVX2 intrinsics, which CBMC cannot read, so no harness compiles the "
+        "file. Every bitwise operator takes unsigned operands: the lane "
+        "operations run on __m256i values through the intrinsics, LIMB_MASK "
+        "is 0x3ffffffU and HIGH_BIT a uint32_t, and poly1305_scalar.h's "
+        "carry_scalar and multiply_scalar and the file's limb_lanes shift, "
+        "mask and multiply uint32_t and uint64_t values, where the constants "
+        "1 and 5 convert to unsigned. The (int) casts hand _mm256_set_epi32 "
+        "a limb or 5 times a limb, each below 2^31, and _mm256_set1_epi64x "
+        "takes LIMB_MASK and HIGH_BIT, which a long long holds; no arithmetic "
+        "runs on the int. The rest is size_t: the byte count n, a positive "
+        "multiple of 128 by the CH_ASSERT at the entry, which the group loop "
+        "lowers by 128 while it is above 128, and limb indices below 5. "
+        "bin/poly1305_equiv_test holds the file to poly1305.c's proven loop "
+        "on a CPU with AVX2, and the host Wycheproof test runs the published "
+        "vectors whose messages hold 512 bytes of whole blocks on it there, "
+        "under a ch_cfg.cpu value with the multiply bit and CH_CPU_AVX2. "
+        "Delete this entry if a harness can ever compile the file."
     ),
     "mlkem_vector.c": (
         "a host object's ML-KEM NTT, inverse NTT and base multiplication on "
@@ -404,9 +425,10 @@ COPIES = {
         "poly1305.c on the native multiply, under widemul_native.h's names. "
         "The poly1305 harness compiles that text on the native multiply too, "
         "because proof/run.sh passes it CH_NATIVE_WIDEMUL, except "
-        "whole_blocks' arm for the vector path, which only this copy compiles: "
-        "size_t arithmetic on a byte count, with no bitwise operator, which "
-        "bin/poly1305_equiv_test runs."
+        "whole_blocks' arms for the vector paths and, on x86-64, "
+        "poly1305_update_avx2, which only this copy compiles: size_t "
+        "arithmetic on a byte count and a call of update with a constant, "
+        "with no bitwise operator, which bin/poly1305_equiv_test runs."
     ),
     "mlkem_poly_native.c": (
         "mlkem_poly.c",
@@ -417,6 +439,11 @@ COPIES = {
     "poly1305_vector_native.c": (
         "poly1305_vector.c",
         "poly1305_vector.c's intrinsics under widemul_native.h's names: the "
+        "text its AUDITED entry reads."
+    ),
+    "poly1305_avx2_native.c": (
+        "poly1305_avx2.c",
+        "poly1305_avx2.c's intrinsics under widemul_native.h's names: the "
         "text its AUDITED entry reads."
     ),
     "hkdf_hw.c": (

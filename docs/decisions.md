@@ -7907,3 +7907,109 @@ does nothing more.
     - **Wider windows for the key exchange.** A peer's point has no
       table: its multiples are computed in each call, and sixteen take
       eight more additions than eight.
+
+110. **An x86-64 host object runs Poly1305's block loop eight blocks at a
+    time in four AVX2 lanes, for a session whose `ch_cfg.cpu` holds
+    `CH_CPU_AVX2` beside `CH_CPU_CONSTANT_TIME_MULTIPLY`.** Entry 90 left
+    an AVX2 Poly1305 for after
+    [#186](https://github.com/c4milo/chapulin/issues/186)'s rework of the
+    multiply files, which entries 87 and 89 finished. On the bench
+    runner's AMD EPYC 7763 under gcc 13 and `ch_cfg.cpu 0x1f`, the 128-bit
+    path took 6.6 µs of the 13.3 µs a 16 KiB record's ChaCha20-Poly1305
+    took, as long as the AVX2 keystream beside it.
+
+    - **What runs.** `poly1305_avx2.c` is `poly1305_vector.c` with four
+      lanes in place of two: five sums of 32x32->64 products in each
+      64-bit lane of a 256-bit vector, on VPMULUDQ. Lane j takes block j
+      and block j + 4 of each group of eight blocks and computes (h + its
+      first block) * r^8 + (its second block) * r^4, two steps of Horner's
+      rule over every fourth block. The last group multiplies lane j by
+      r^(8 - j) and r^(4 - j) instead, and the four lanes' sums add up to
+      the accumulator. Each call computes r^2 to r^8 from `p->r` with
+      seven scalar multiplies. A lane's sums stay below 2^58, and the
+      four totals below 2^60, which `carry_scalar` takes.
+    - **One choice, in `poly1305.c`.** `whole_blocks` stays the one place
+      that picks a loop. `poly1305_update_avx2`, which only the native
+      copy on x86-64 defines, runs `poly1305_update`'s text with one more
+      choice: an update with 512 bytes or more of whole blocks hands its
+      whole groups of eight to the kernel. `widemul.h`'s
+      `widemul_poly1305_update_cpu` calls it where `widemul_poly1305_avx2`
+      finds the answer `WIDEMUL_CONSTANT_TIME` and `CH_CPU_AVX2` in the
+      session's `ch_cfg.cpu`. `aead.c`'s MAC runs the ciphertext through
+      that call, and `aead_seal` and `aead_open`, which take no
+      description of the CPU, pass 0, which names no kernel. The
+      associated data and the lengths keep `widemul_poly1305_update`: no
+      record or packet holds 512 bytes of them.
+    - **The statements.** The multiply bit's statement covers VPMULUDQ as
+      it covers SSE2's PMULUDQ (entries 83 and 89), and `CH_CPU_AVX2`
+      states no timing (entry 90). A session without the multiply bit runs
+      no copy built on the native multiply, and one without `CH_CPU_AVX2`
+      runs the 128-bit path.
+    - **The threshold, measured.** Before its first group a call does
+      more work than one of the 128-bit path: seven powers of r where that
+      path computes three, and four multipliers of 256 bits. A scratch
+      timing of one update from a fresh state, against the 128-bit path,
+      under gcc 13 on four kinds of runner:
+
+      | CPU | 512 bytes | 1 KiB | 16 KiB |
+      | --- | --- | --- | --- |
+      | AMD EPYC 7763 | 259 ns, 293 | 335 ns, 492 | 2.64 µs, 6.50 |
+      | AMD EPYC 9V74 | 225 ns, 254 | 291 ns, 424 | 2.27 µs, 5.51 |
+      | AMD EPYC 9V45 | 157 ns, 190 | 212 ns, 335 | 1.93 µs, 4.57 |
+      | Intel Xeon Platinum 8370C | 235 ns, 260 | 303 ns, 444 | 2.41 µs, 5.97 |
+
+      The kernel is faster from 512 bytes on each, so `POLY1305_AVX2_MIN`
+      is 512. Four messages of the Wycheproof ChaCha20-Poly1305 suite hold
+      512 bytes of whole blocks, so the host test's runs under 0xf and
+      0x1f put published vectors through the kernel.
+    - **Cleared upper halves before the carry.** `carry_scalar` compiles
+      without AVX, and gcc calls it with the upper 128 bits of the vector
+      registers still written. On the EPYC 7763 the lane totals and the
+      wipe after them took about 260 more TSC cycles a call that way, and
+      the kernel was slower than the 128-bit path up to 1 KiB; a Xeon
+      Platinum 8573C showed the same. The kernel calls `_mm256_zeroupper`
+      before the carry. On the EPYC 9V74 it changes nothing.
+    - **The group loop, inlined.** gcc 13 compiled `multiply_add` out of
+      line, and then `group_sums`, and passed the sums through the stack on
+      each call: a 16 KiB update took 3.25 µs that way and 2.44 with both
+      inlined, on the Xeon 8370C. Both carry `always_inline` in the
+      kernel. The same attribute in the 128-bit path made gcc keep the last
+      group's powers of r in stack slots across the loop, which
+      `bin/poly1305_equiv_test`'s stack search found under qemu-x86_64, so
+      that path keeps its calls.
+    - **The powers, wiped.** r^2 to r^8 and the two multipliers sit in one
+      struct of 736 bytes, which the call wipes through `ct_wipe` when it
+      ends. `multiply_add` reads each multiplier through a volatile pointer
+      for entry 83's reason: AVX2 has 16 vector registers and a group's two
+      multipliers are 18 vectors. `bin/poly1305_equiv_test` searches the
+      stack below a call of each path for every power it computes, in every
+      layout one of them holds a power in, one word in every 32 bytes
+      among them, as an AVX2 multiplier holds a lane's.
+    - **Shared scalar steps.** `carry_scalar` and `multiply_scalar` moved
+      from `poly1305_vector.c` to `poly1305_scalar.h`, which both vector
+      files include, so the tree holds one copy of each. `poly1305_vector.c`
+      compiles to the same instructions under gcc 13 and Apple clang 21,
+      but for the line number one `CH_ASSERT` passes.
+    - **What holds it.** `bin/poly1305_equiv_test` holds the kernel to
+      `poly1305.c`'s proven loop over 140,562 cases on a CPU with AVX2,
+      and `test/aes-runtime-qemu.sh poly1305-avx2` runs it under
+      qemu-x86_64 where the machine has none. `bin/x86_kernels_test`
+      counts the kernel's calls from every seal and open under 17 values
+      of `ch_cfg.cpu`. `test/chacha-builds.sh` requires the kernel's
+      256-bit instructions in `poly1305_avx2_native.c` alone and its call
+      in the native copy on x86-64 alone. `make lint-wide-multiply` holds
+      its branches at 4, all on the byte count. docs/verification.md says
+      what runs each check.
+    - **Cost.** Under gcc 13 the kernel is 6,038 bytes of text with a
+      frame of 1,888 bytes, and under clang 18 4,598 bytes with 856. A
+      device object holds none of it, and an arm64 host object compiles
+      the file to nothing.
+
+    Rejected:
+
+    - **Groups of four blocks.** One multiply by r^4 a group, as OpenSSL's
+      AVX2 code runs it, needs r^2 to r^4 alone but carries every four
+      blocks where this carries every eight.
+    - **r^5 to r^8 in one vector multiply.** It would take the call's
+      seven scalar multiplies to three, for a second way to compute the
+      powers beside `multiply_scalar`.

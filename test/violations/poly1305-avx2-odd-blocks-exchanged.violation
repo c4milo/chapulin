@@ -1,0 +1,13 @@
+invariant: INV-16
+file: poly1305_avx2.c
+catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
+reason: load_blocks reads the group's fourth block into lane 1 and its
+  second into lane 3, so two blocks of every four take each other's
+  powers of r and the tag is wrong for every update the kernel takes.
+  Only an x86-64 compiler reads the line, so the script builds
+  bin/poly1305_equiv_test for x86-64 and runs it under qemu-x86_64.
+
+--- old
+        _mm256_inserti128_si256(_mm256_castsi128_si256(load_16(m + 16)), load_16(m + 48), 1);
+--- new
+        _mm256_inserti128_si256(_mm256_castsi128_si256(load_16(m + 48)), load_16(m + 16), 1);

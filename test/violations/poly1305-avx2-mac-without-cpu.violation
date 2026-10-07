@@ -1,0 +1,15 @@
+invariant: INV-16
+file: aead.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: the MAC hands its ciphertext to the update that reads no
+  description of the CPU, so no record or packet runs the AVX2 Poly1305
+  and CH_CPU_AVX2 picks nothing for it. Every tag passes, because the
+  128-bit path computes the same accumulator; only the time is wrong.
+  bin/x86_kernels_test counts the kernel's calls for each seal and open
+  under every ch_cfg.cpu value, and the script builds it for x86-64.
+
+--- old
+    widemul_poly1305_update_cpu(cpu, widemul, &p, ct, n);
+--- new
+    (void)cpu;
+    widemul_poly1305_update(widemul, &p, ct, n);
