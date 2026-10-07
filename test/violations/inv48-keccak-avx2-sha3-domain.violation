@@ -1,0 +1,14 @@
+invariant: INV-48
+file: keccak_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the start writes SHA-3's domain bits, 0x06, after the 34 bytes,
+  where SHAKE128 writes 0x1f, so each stream is another function's
+  output. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+        s->lane[4][k] = (uint64_t)x0[k] | ((uint64_t)x1[k] << 8) | ((uint64_t)0x1f << 16);
+--- new
+        s->lane[4][k] = (uint64_t)x0[k] | ((uint64_t)x1[k] << 8) | ((uint64_t)0x06 << 16);

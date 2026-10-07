@@ -62,6 +62,12 @@ static void mlk_polyvec_dot(mlk_poly *out, const mlk_polyvec *a, const mlk_polyv
     ct_wipe(&prod, sizeof prod);
 }
 
+// mlkem_avx2.c compiles this file once more for an x86-64 host object,
+// whose sessions with CH_CPU_AVX2 sample each row's three entries side by
+// side (docs/decisions.md 107). That copy defines CH_MLKEM_AVX2_COPY and
+// supplies mlk_matvec_row, so the text between the #ifndef below and its
+// #endif is this file's alone.
+#ifndef CH_MLKEM_AVX2_COPY
 // out = row i of A o s, expanding A one entry at a time from the public
 // seed. FIPS 203 samples A[i][j] from rho || j || i, so keygen
 // (transposed = 0) reads row i of A and encrypt (transposed = 1) reads
@@ -85,6 +91,7 @@ static void mlk_matvec_row(mlk_poly *out, const uint8_t seed[32], unsigned i, in
     }
     ct_wipe(&prod, sizeof prod);
 }
+#endif // CH_MLKEM_AVX2_COPY
 
 // K-PKE.KeyGen (Algorithm 13). Writes ek (t-hat || rho) and the K-PKE
 // secret key dkpke (s-hat). sigma and the secret vectors are wiped.

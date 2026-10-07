@@ -1,5 +1,5 @@
 invariant: INV-45
-file: sha3.c
+file: keccak_round_constants.h
 catches: proof/prove-one.sh sha3_round
 reason: the table's constant for round 7 has its lowest bit cleared. The
   round harness computes each constant from the standard's shift

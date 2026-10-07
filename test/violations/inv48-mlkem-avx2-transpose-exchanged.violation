@@ -1,0 +1,16 @@
+invariant: INV-48
+file: mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the row sampler takes A's indices where the caller asks for A^T's
+  and the other way round, so key generation and encryption each
+  multiply by the other's matrix. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+        x0[j] = transposed ? (uint8_t)i : (uint8_t)j;
+        x1[j] = transposed ? (uint8_t)j : (uint8_t)i;
+--- new
+        x0[j] = transposed ? (uint8_t)j : (uint8_t)i;
+        x1[j] = transposed ? (uint8_t)i : (uint8_t)j;

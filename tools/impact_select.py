@@ -157,7 +157,7 @@ LIB_LEGS = [
 ]
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the five arguments that run one part
+# itself, and the lane with one of the seven arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -170,14 +170,19 @@ LIB_LEGS = [
 # names p256-equiv, because only gcc for x86-64 reads that form and the
 # lane compiles with it. A violation of what sha3_hw.c computes or leaves
 # on the stack names keccak, because the file has a body under clang
-# alone and the lane builds it with clang for arm64.
+# alone and the lane builds it with clang for arm64. A violation of
+# mlkem_vector.c's SSE2 or NEON arm names mlkem-vector, because a machine's
+# own compiler reads one arm, and a violation of keccak_avx2.c or
+# mlkem_avx2.c names mlkem-avx2, because the two have a body on x86-64
+# alone.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
                           "test/docker-aes-runtime-qemu.sh keccak",
-                          "test/docker-aes-runtime-qemu.sh mlkem-vector"]
+                          "test/docker-aes-runtime-qemu.sh mlkem-vector",
+                          "test/docker-aes-runtime-qemu.sh mlkem-avx2"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the legs only the nightly runs. Each entry is (tier, command, reason).
@@ -394,14 +399,15 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these eleven rules hold every file
+# test files itself, and the sources of these thirteen rules hold every file
 # it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
                              "bin/x86_kernels_test", "bin/sha2_equiv_test",
                              "bin/hash_runtime_test", "bin/hash_runtime_exporter_test",
                              "bin/p256_equiv_test", "bin/sha3_hw_equiv_test",
-                             "bin/mlkem_hw_equiv_test", "bin/mlkem_vector_equiv_test")
+                             "bin/mlkem_hw_equiv_test", "bin/mlkem_vector_equiv_test",
+                             "bin/mlkem_avx2_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -670,11 +676,19 @@ def select_lints(out, changed, csources, lib):
                 ["test/chacha-builds.sh"])
     # mlkem.c calls the vector NTT in a host object alone, and
     # test/mlkem-builds.sh compiles it either side of that define and
-    # reads which transforms it calls (docs/decisions.md 101).
-    if "mlkem.c" in csources or "mlkem_hw.c" in csources:
+    # reads which transforms it calls (docs/decisions.md 101), and which
+    # entries the copy for the four-way Keccak calls (107). The script also
+    # reads every root source for an include of keccak_avx2.h or a call
+    # into it, so a change to any root source selects it.
+    if set(csources) & {"mlkem.c", "mlkem_hw.c", "mlkem_avx2.c", "keccak_avx2.c"}:
         out.add("tests", "test/mlkem-builds.sh",
                 "mlkem.c calls the vector NTT in a host object alone, and this "
                 "script compiles it either side of that define",
+                ["test/mlkem-builds.sh"])
+    elif any("/" not in p for p in csources):
+        out.add("tests", "test/mlkem-builds.sh",
+                "a root source changed, and this script requires that none but "
+                "keccak_avx2.c and mlkem_avx2.c reach the four-way Keccak",
                 ["test/mlkem-builds.sh"])
     # test/hash-builds.sh compiles the hash sources, their copies,
     # sha256_hw.c, sha512_hw.c and sha3_hw.c, either side of

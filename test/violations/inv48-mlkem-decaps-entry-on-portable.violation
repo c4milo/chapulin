@@ -1,0 +1,15 @@
+invariant: INV-48
+file: mlkem.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: mlkem_decaps_cpu runs mlkem.c's decapsulation whatever the value
+  says, so a session with CH_CPU_AVX2 re-encrypts on sha3.c alone.
+  The bytes are the same. bin/x86_kernels_test counts the copy's
+  calls under every ch_cfg.cpu value, and test/aes-runtime-qemu.sh
+  builds it for x86-64 and runs it under qemu-x86_64. The lane skips
+  without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+        mlkem_decaps_avx2(widemul, ss, ct, dk);
+--- new
+        mlkem_decaps(widemul, ss, ct, dk);

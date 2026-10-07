@@ -1,20 +1,12 @@
 #include "sha3.h"
 
 #include "ct.h"
+#include "keccak_round_constants.h"
 
 // Keccak is constant time by construction: fixed rotations, XORs, and
 // AND-NOT, with no secret-dependent branches or memory indices. Keep it
 // that way. Lengths and positions are public; only the lane contents
 // carry secrets.
-
-// FIPS 202 §3.2.5: the round constants RC[0..23] for iota.
-static const uint64_t RC[24] = {
-    0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
-    0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-    0x000000000000008a, 0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-    0x000000008000808b, 0x800000000000008b, 0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
-    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008};
 
 // sha3_hw.c compiles this file once more for an arm64 host object that
 // clang compiles, under second names and with Keccak-f[1600] on the SHA-3

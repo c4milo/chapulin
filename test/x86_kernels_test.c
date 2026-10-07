@@ -1,11 +1,13 @@
 // bin/x86_kernels_test: which calls an x86-64 host object sends to its
 // kernels under each ch_cfg.cpu value (docs/decisions.md 89 and 90).
 // chacha20.c's use_avx2 picks chacha20_avx2.c's ChaCha20 where the value
-// holds CH_CPU_AVX2, and gcm_vaes.h's gcm_use_vaes picks gcm_vaes.c's three
-// entries where it holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both. The
-// kernels compute the bytes the 128-bit paths compute, so no vector can
-// tell which ran: test/x86_kernels_count.c counts the calls instead, and
-// runs each on the 128-bit entry, so this binary runs on every x86-64 CPU.
+// holds CH_CPU_AVX2, mlkem.h's entries pick mlkem_avx2.c's copy of ML-KEM
+// where it holds the same bit (docs/decisions.md 107), and gcm_vaes.h's
+// gcm_use_vaes picks gcm_vaes.c's three entries where it holds CH_CPU_VAES
+// and CH_CPU_CONSTANT_TIME_AES both. The kernels compute the bytes the
+// paths beside them compute, so no vector can tell which ran:
+// test/x86_kernels_count.c counts the calls instead, and runs each on the
+// entry it stands beside, so this binary runs on every x86-64 CPU.
 //
 // Every row runs under each of the 16 values the four bits from 0x02 to
 // 0x10 make beside CH_CPU_PROBED, and under 0, which a wiped record
@@ -26,6 +28,8 @@
 //     so it runs the VAES kernels under both bits alone.
 //   - an AES traffic key: aes_traffic_key_init names no kernel, and
 //     aes_traffic_key_cpu names what its value does.
+//   - ML-KEM's three session calls, mlkem_keygen_dk_cpu,
+//     mlkem_encaps_derand_cpu and mlkem_decaps_cpu.
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test and
 // bin/aes_equiv_test call them against the portable code, and
@@ -41,6 +45,7 @@
 #include "ch_assert.h"
 #include "chacha20.h"
 #include "gcm.h"
+#include "mlkem.h"
 #include "quic_initial.h"
 #include "quic_keys.h"
 #include "quic_packet.h"
@@ -320,6 +325,59 @@ static void check_traffic_key(size_t key_len, uint32_t cpu) {
     CHECK(memcmp(back, payload, PAYLOAD) == 0);
 }
 
+// Whether the calls into ML-KEM's copy since the last look are these, and
+// resets them.
+static int mlkem_calls_are(unsigned long keygen, unsigned long encaps, unsigned long decaps) {
+    int same = x86_mlkem_keygen_calls == keygen && x86_mlkem_encaps_calls == encaps &&
+               x86_mlkem_decaps_calls == decaps;
+    if (!same) {
+        (void)fprintf(stderr,
+                      "calls: ML-KEM's copy, key generation %lu, encapsulation %lu, decapsulation "
+                      "%lu; want %lu, %lu, %lu\n",
+                      x86_mlkem_keygen_calls, x86_mlkem_encaps_calls, x86_mlkem_decaps_calls,
+                      keygen, encaps, decaps);
+    }
+    x86_mlkem_keygen_calls = 0;
+    x86_mlkem_encaps_calls = 0;
+    x86_mlkem_decaps_calls = 0;
+    return same;
+}
+
+// ML-KEM's three session calls: each runs mlkem_avx2.c's copy where the
+// value holds CH_CPU_AVX2 and the call it is named for everywhere else, and
+// gives that call's bytes. The encapsulation key sits at dk + 1152, as
+// mlkem.h says.
+static void check_mlkem(uint32_t cpu) {
+    uint8_t d[32];
+    uint8_t z[32];
+    uint8_t m[32];
+    fill(d, sizeof d, 0x55);
+    fill(z, sizeof z, 0x66);
+    fill(m, sizeof m, 0x77);
+    static uint8_t dk[MLKEM_DK_LEN];
+    static uint8_t dk_cpu[MLKEM_DK_LEN];
+    mlkem_keygen_dk(dk, d, z);
+    mlkem_keygen_dk_cpu(cpu, dk_cpu, d, z);
+    CHECK(mlkem_calls_are(names_avx2(cpu), 0, 0));
+    CHECK(memcmp(dk_cpu, dk, sizeof dk) == 0);
+
+    const uint8_t *ek = dk + 1152;
+    uint8_t widemul = widemul_of_cpu(cpu);
+    uint8_t ct[MLKEM_CT_LEN];
+    uint8_t ct_cpu[MLKEM_CT_LEN];
+    uint8_t ss[MLKEM_SS_LEN];
+    uint8_t ss_cpu[MLKEM_SS_LEN];
+    CHECK(mlkem_encaps_derand(widemul, ct, ss, ek, m) == 0);
+    CHECK(mlkem_encaps_derand_cpu(cpu, widemul, ct_cpu, ss_cpu, ek, m) == 0);
+    CHECK(mlkem_calls_are(0, names_avx2(cpu), 0));
+    CHECK(memcmp(ct_cpu, ct, sizeof ct) == 0 && memcmp(ss_cpu, ss, sizeof ss) == 0);
+
+    uint8_t back[MLKEM_SS_LEN];
+    mlkem_decaps_cpu(cpu, widemul, back, ct, dk);
+    CHECK(mlkem_calls_are(0, 0, names_avx2(cpu)));
+    CHECK(memcmp(back, ss, sizeof back) == 0);
+}
+
 static void check_value(uint32_t cpu) {
     static const uint16_t suites[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
                                       SUITE_AES_256_GCM_SHA384};
@@ -332,6 +390,7 @@ static void check_value(uint32_t cpu) {
     check_initial(cpu);
     check_traffic_key(AES_128_KEY, cpu);
     check_traffic_key(AES_256_KEY, cpu);
+    check_mlkem(cpu);
     if (failures != failures_before) {
         (void)fprintf(stderr, "x86 kernels: the checks above ran under ch_cfg.cpu 0x%x\n",
                       (unsigned)cpu);
@@ -347,10 +406,11 @@ int main(void) {
     }
     check_value(0);
     if (failures == 0) {
-        (void)printf("x86 kernels: under each of 17 ch_cfg.cpu values, the ChaCha20 keystream ran "
-                     "on the AVX2 kernel where CH_CPU_AVX2 was set, AES-GCM on the VAES kernels "
-                     "where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, and neither anywhere "
-                     "else\n");
+        (void)printf(
+            "x86 kernels: under each of 17 ch_cfg.cpu values, the ChaCha20 keystream and "
+            "ML-KEM's matrix ran on the AVX2 kernels where CH_CPU_AVX2 was set, AES-GCM on "
+            "the VAES kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, and "
+            "none of them anywhere else\n");
     }
     return failures != 0;
 }

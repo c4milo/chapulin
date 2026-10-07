@@ -1,0 +1,15 @@
+invariant: INV-48
+file: mlkem.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: mlkem.h's entries pick the copy for the four-way Keccak on
+  CH_CPU_VAES, so a session that states AVX2 alone runs mlkem.c and
+  one that states VAES runs the copy. The bytes are the same.
+  bin/x86_kernels_test counts the copy's calls under every
+  ch_cfg.cpu value, and test/aes-runtime-qemu.sh builds it for
+  x86-64 and runs it under qemu-x86_64. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    return (cpu & CH_CPU_AVX2) != 0;
+--- new
+    return (cpu & CH_CPU_VAES) != 0;

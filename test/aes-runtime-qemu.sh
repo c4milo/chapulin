@@ -85,6 +85,16 @@
 #     own compiler reads one of the file's two arms, so this is the run
 #     that holds the other.
 #
+# On the model with every instruction qemu has, with
+# CH_REQUIRE_X86_KERNELS=1 in the environment, so a qemu without AVX2
+# fails the row and does not skip it:
+#
+#   - bin/mlkem_avx2_equiv_test must pass for x86-64: the four-way Keccak
+#     in AVX2 against sha3.c's SHAKE128, and ML-KEM's copy over it against
+#     mlkem.c (test/mlkem_avx2_equiv_test.c, docs/decisions.md 107). Both
+#     files have a body on x86-64 alone, so on an arm64 machine this is
+#     the run that holds them.
+#
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
 #   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass.
@@ -161,6 +171,8 @@
 #   mlkem-vector      bin/mlkem_vector_equiv_test for x86-64 and for arm64,
 #                     for the violations of mlkem_vector.c's SSE2 and NEON
 #                     arms
+#   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
+#                     violations of keccak_avx2.c and mlkem_avx2.c
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -179,9 +191,9 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2]" >&2
     exit 2
     ;;
 esac
@@ -208,7 +220,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
-if [ "$only" != x86-kernels ]; then
+if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -245,8 +257,9 @@ read -r -a p256_equiv_srcs <<< "$(sed -n 9p <<< "$lists")"
 read -r -a sha3_hw_equiv_srcs <<< "$(sed -n 10p <<< "$lists")"
 read -r -a mlkem_hw_equiv_srcs <<< "$(sed -n 11p <<< "$lists")"
 read -r -a mlkem_vector_equiv_srcs <<< "$(sed -n 12p <<< "$lists")"
-[ "${#mlkem_vector_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twelve lists" >&2; exit 1; }
+read -r -a mlkem_avx2_equiv_srcs <<< "$(sed -n 13p <<< "$lists")"
+[ "${#mlkem_avx2_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than thirteen lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -312,6 +325,20 @@ if [ -z "$only" ] || [ "$only" = mlkem-vector ]; then
 fi
 if [ "$only" = mlkem-vector ]; then
     echo "aes-runtime-qemu: bin/mlkem_vector_equiv_test held the vector NTT to mlkem_poly.c's loops, on SSE2 for x86-64 and on NEON for arm64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = mlkem-avx2 ]; then
+    # The four-way Keccak against sha3.c and ML-KEM's copy over it against
+    # mlkem.c, which have a body on x86-64 alone.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/mlkem_avx2_equiv_test" \
+        test/mlkem_avx2_equiv_test.c "${mlkem_avx2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "the four-way Keccak and sha3.c disagree, or ML-KEM's copy over it and mlkem.c do" \
+        mlkem_avx2_equiv_test
+fi
+if [ "$only" = mlkem-avx2 ]; then
+    echo "aes-runtime-qemu: bin/mlkem_avx2_equiv_test held the four-way Keccak to sha3.c and ML-KEM's copy over it to mlkem.c, on AVX2 for x86-64"
     exit 0
 fi
 

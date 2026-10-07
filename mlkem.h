@@ -70,14 +70,37 @@ void mlkem_decaps_hw(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct
                      const uint8_t dk[MLKEM_DK_LEN]);
 #endif
 
-// A copy on the instructions (keccak_hw.h) reads the declarations above
-// and none of the entries below, as sha3.h's copy does.
-#ifndef CH_KECCAK_HW_H
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+#include "cpu_cfg.h"
+
+// The four calls above with each row of the matrix sampled on four Keccak
+// states side by side in AVX2: mlkem.c compiled once more under
+// mlkem_avx2.h's names, with mlkem_avx2.c's row sampler (keccak_avx2.h,
+// docs/decisions.md 107). An x86-64 host object holds them beside the four
+// above. Each has the contract of the call it is named for.
+//
+// Requires: what that call requires, and a CPU with AVX2, which the
+// session's caller states in CH_CPU_AVX2. On a CPU without it the first
+// permutation faults.
+void mlkem_keygen_dk_avx2(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]);
+void mlkem_keygen_derand_avx2(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN],
+                              const uint8_t d[32], const uint8_t z[32]);
+int mlkem_encaps_derand_avx2(uint8_t widemul, uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],
+                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t m[32]);
+void mlkem_decaps_avx2(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t ct[MLKEM_CT_LEN],
+                       const uint8_t dk[MLKEM_DK_LEN]);
+#endif
+
+// A copy on the instructions (keccak_hw.h) or for the AVX2 Keccak
+// (mlkem_avx2.h) reads the declarations above and none of the entries
+// below, as sha3.h's copy does.
+#if !defined(CH_KECCAK_HW_H) && !defined(CH_MLKEM_AVX2_H)
 // The three calls a session makes, each with the session's ch_cfg.cpu
 // first (CH_CFG_CPU, cpu.h). Where the object holds Keccak on the
 // instructions and cpu holds CH_CPU_CONSTANT_TIME_SHA3, the call runs the
-// copy on them. For any other session, and in any other object, it runs
-// the call above that it is named for.
+// copy on them. In an x86-64 host object, where cpu holds CH_CPU_AVX2, it
+// runs the copy for the AVX2 Keccak. For any other session, and in any
+// other object, it runs the call above that it is named for.
 #ifdef CH_KECCAK_INSTRUCTIONS
 static inline void mlkem_keygen_dk_cpu(uint32_t cpu, uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                                        const uint8_t z[32]) {
@@ -106,6 +129,41 @@ static inline void mlkem_decaps_cpu(uint32_t cpu, uint8_t widemul, uint8_t ss[ML
     }
     mlkem_decaps(widemul, ss, ct, dk);
 }
+#elif defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+// Whether a session samples the matrix on the four-way Keccak: where cpu,
+// the session's ch_cfg.cpu, holds CH_CPU_AVX2. The bit states no timing,
+// and the path reads public input alone (keccak_avx2.h).
+static inline int mlkem_matrix_on_avx2(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX2) != 0;
+}
+
+static inline void mlkem_keygen_dk_cpu(uint32_t cpu, uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
+                                       const uint8_t z[32]) {
+    if (mlkem_matrix_on_avx2(cpu)) {
+        mlkem_keygen_dk_avx2(dk, d, z);
+        return;
+    }
+    mlkem_keygen_dk(dk, d, z);
+}
+
+static inline int mlkem_encaps_derand_cpu(uint32_t cpu, uint8_t widemul, uint8_t ct[MLKEM_CT_LEN],
+                                          uint8_t ss[MLKEM_SS_LEN], const uint8_t ek[MLKEM_EK_LEN],
+                                          const uint8_t m[32]) {
+    if (mlkem_matrix_on_avx2(cpu)) {
+        return mlkem_encaps_derand_avx2(widemul, ct, ss, ek, m);
+    }
+    return mlkem_encaps_derand(widemul, ct, ss, ek, m);
+}
+
+static inline void mlkem_decaps_cpu(uint32_t cpu, uint8_t widemul, uint8_t ss[MLKEM_SS_LEN],
+                                    const uint8_t ct[MLKEM_CT_LEN],
+                                    const uint8_t dk[MLKEM_DK_LEN]) {
+    if (mlkem_matrix_on_avx2(cpu)) {
+        mlkem_decaps_avx2(widemul, ss, ct, dk);
+        return;
+    }
+    mlkem_decaps(widemul, ss, ct, dk);
+}
 #else
 static inline void mlkem_keygen_dk_cpu(uint32_t cpu, uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                                        const uint8_t z[32]) {
@@ -127,6 +185,6 @@ static inline void mlkem_decaps_cpu(uint32_t cpu, uint8_t widemul, uint8_t ss[ML
     mlkem_decaps(widemul, ss, ct, dk);
 }
 #endif
-#endif // CH_KECCAK_HW_H
+#endif // !CH_KECCAK_HW_H && !CH_MLKEM_AVX2_H
 
 #endif

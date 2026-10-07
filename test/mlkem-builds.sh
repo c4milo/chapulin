@@ -11,7 +11,14 @@
 #     mlk_vector_ntt, mlk_vector_invntt and mlk_vector_basemul and none of
 #     mlkem_poly.c's three, so every session runs the vector path; and so
 #     must mlkem_hw.c, its copy over the SHA-3 instructions, for arm64, the
-#     one target where that copy has a body.
+#     one target where that copy has a body, and mlkem_avx2.c, its copy for
+#     the four-way Keccak, for x86-64, the one target where that one has a
+#     body;
+#   - mlkem_avx2.c for x86-64 must call keccak_avx2.c's three entries and
+#     not mlk_sample_ntt, so its rows run on the four-way Keccak, and
+#     keccak_avx2.c must define the three; for arm64 both files must
+#     define no symbol; and no other source at the root may include
+#     keccak_avx2.h or call its entries (docs/decisions.md 107).
 #
 # The cross targets use the pinned clang, which make resolves, with no
 # toolchain beside it, the way lint-wide-multiply compiles for them.
@@ -78,4 +85,32 @@ done
 cross_object aarch64-none-elf mlkem_hw.c
 calls_vector_alone "mlkem_hw.c for arm64" mlk_poly_ntt_hw mlk_poly_invntt_hw mlk_poly_basemul_hw
 
-echo "mlkem-builds: a device object's mlkem.c calls mlkem_poly.c's loops alone, and a host object's mlkem.c and its copy over the SHA-3 instructions call the three vector entries and none of the loops"
+# The copy for the four-way Keccak, and the Keccak it samples the matrix on.
+keccak_avx2_entries=(keccak_avx2_shake128_start keccak_avx2_permute keccak_avx2_block)
+cross_object x86_64-unknown-linux-gnu mlkem_avx2.c
+calls_vector_alone "mlkem_avx2.c for x86-64" mlk_poly_ntt mlk_poly_invntt mlk_poly_basemul
+for symbol in "${keccak_avx2_entries[@]}"; do
+    grep -qx "$symbol" <<< "$calls" ||
+        fail "mlkem_avx2.c for x86-64 does not call $symbol; its rows run on the four-way Keccak"
+done
+grep -qx mlk_sample_ntt <<< "$calls" &&
+    fail "mlkem_avx2.c for x86-64 calls mlk_sample_ntt; its rows run on the four-way Keccak"
+cross_object x86_64-unknown-linux-gnu keccak_avx2.c
+defined=$(nm "$work/cross.o" | awk '$2 == "T" { print $3 }' | sed 's/^_//')
+for symbol in "${keccak_avx2_entries[@]}"; do
+    grep -qx "$symbol" <<< "$defined" || fail "keccak_avx2.c for x86-64 does not define $symbol"
+done
+for src in mlkem_avx2.c keccak_avx2.c; do
+    cross_object aarch64-none-elf "$src"
+    nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
+        fail "$src for arm64 defines a symbol; an arm64 object holds no four-way Keccak"
+done
+# The copy alone reaches the four-way Keccak: no other source at the root
+# includes its header or calls its entries. Its lanes reach stack slots no
+# wipe clears, so it takes public input alone (keccak_avx2.h).
+others=$(git ls-files -- '*.c' '*.h' | grep -v / | grep -vxE 'keccak_avx2\.[ch]|mlkem_avx2\.c' |
+    xargs grep -lE '#[[:space:]]*include[[:space:]]*"keccak_avx2\.h"|keccak_avx2_[a-z0-9_]+[[:space:]]*\(' || true)
+[ -z "$others" ] ||
+    fail "$(tr '\n' ' ' <<< "$others")reach the four-way Keccak, which mlkem_avx2.c's row sampler alone may call: it takes public input alone"
+
+echo "mlkem-builds: a device object's mlkem.c calls mlkem_poly.c's loops alone, a host object's mlkem.c and its two copies call the three vector entries and none of the loops, and the x86-64 copy samples its rows on the four-way Keccak, which an arm64 object does not hold"

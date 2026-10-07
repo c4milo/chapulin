@@ -1,0 +1,13 @@
+invariant: INV-48
+file: keccak_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the four-way round rotates lane 19 by 56 with the other byte
+  shuffle, where rho rotates it by 8. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    lanes b13 = lanes_rotate_left_8(a[19]);
+--- new
+    lanes b13 = lanes_rotate_left_56(a[19]);

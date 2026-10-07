@@ -46,7 +46,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 
 # The x86-64 kernels, for CI's x86-64-kernels job: chacha20_avx2.c's AVX2
 # ChaCha20 and gcm_vaes.c's VAES and VPCLMULQDQ kernels
-# (docs/decisions.md 90). Every x86-64 host object carries them, built
+# (docs/decisions.md 90), and keccak_avx2.c's four-way Keccak, on which
+# mlkem_avx2.c samples ML-KEM's matrix (107). Every x86-64 host object carries them, built
 # with no instruction flag, and a session runs one where its ch_cfg.cpu
 # names it. The equivalence binaries call the kernels directly,
 # bin/quic_test_hw and bin/ghash_equiv_test run a pass of their vectors
@@ -64,7 +65,8 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # bin/sha2_equiv_test, bin/unit_host under HASH_UNIT_CPU and the Wycheproof
 # host leg run under CH_REQUIRE_HASH_INSTRUCTIONS=1, so a CPU without the
 # extensions fails them too.
-X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test
+X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
+                   mlkem_avx2_equiv_test
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
 x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bin/unit_host bin/sha2_equiv_test
 	@[ -n "$(X86_KERNEL_BINS)" ] || \

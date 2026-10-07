@@ -1,0 +1,23 @@
+invariant: INV-48
+file: mlkem_avx2.c
+catches: test/mlkem-builds.sh
+reason: the copy's row sampler runs mlk_sample_ntt for each entry and
+  returns before the four-way Keccak, so a session with CH_CPU_AVX2
+  samples its matrix on sha3.c. Every comparison passes, because
+  the bytes are the same, so the script compiles the copy for x86-64
+  and requires it to call keccak_avx2.c's entries and not
+  mlk_sample_ntt.
+
+--- old
+static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed) {
+    keccak_x4 state;
+--- new
+static void mlk_sample_row(mlk_polyvec *a, const uint8_t seed[32], unsigned i, int transposed) {
+    for (unsigned e = 0; e < 3; e++) {
+        mlk_sample_ntt(&a->vec[e], seed, transposed ? (uint8_t)i : (uint8_t)e,
+                       transposed ? (uint8_t)e : (uint8_t)i);
+    }
+    if (i < 3) {
+        return;
+    }
+    keccak_x4 state;

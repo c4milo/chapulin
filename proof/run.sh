@@ -637,7 +637,7 @@ launch slow:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
 #   sha3          1,719 properties, 115 s, 3.7 GB
 #   sha3_stream   1,757 properties,  96 s, 2.3 GB
-#   sha3_round    1,902 properties,  34 s, 0.8 GB
+#   sha3_round    2,006 properties,  34 s, 0.8 GB
 launch fast:4 full sha3 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:22,block_xor.2:8,block_bytes.0:8,block_bytes.1:22,block_bytes.2:8,absorb_whole_blocks.0:3,squeeze.0:3,shake_init.0:26,ct_wipe.0:201,fill_nondet.0:202" ct.c proof/ct_wipe_stub.c
 launch fast:3 full sha3_stream 26 "keccak_f1600.0:25,block_xor.0:8,block_xor.1:5,block_xor.2:8,block_bytes.0:8,block_bytes.1:5,block_bytes.2:8,absorb_whole_blocks.0:1,squeeze.0:2,fill_context.0:26,fill_nondet.0:33" ct.c proof/ct_wipe_stub.c
 launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference_theta.0:6,reference_theta.1:6,reference_theta.2:6,reference_rho.0:25,reference_pi.0:6,reference_pi.1:6,reference_chi.0:6,reference_chi.1:6,reference_rc.0:9,reference_rc.1:256,reference_round_constant.0:8,main.0:26,main.1:26,main.2:25,main.3:26" ct.c proof/ct_wipe_stub.c
@@ -649,10 +649,10 @@ launch fast full sha3_round 26 "keccak_f1600.0:25,reference_f1600.0:25,reference
 # grows with the multiply count in one formula, so the split follows
 # the multiplies — and every formula keeps the checks on, no noovf
 # mode. Measured peaks (kissat): mlkem 1.4 GB / 45 s, mlkem_poly
-# 2.2 GB / 167 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
+# 4.3 GB / 86 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c proof/ct_wipe_stub.c
-launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:9,mlk_sample_ntt.1:65,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
+launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:65,mlk_sample_groups.0:9,fill_nondet.0:1537,ct_wipe.0:225" ct.c proof/ct_wipe_stub.c
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
 # and in-place-open shapes joined the formula. With rec_dir's suite and
 # its key and IV derived at the suite's hash (docs/decisions.md entry

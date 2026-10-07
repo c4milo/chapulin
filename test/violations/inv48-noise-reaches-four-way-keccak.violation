@@ -1,0 +1,14 @@
+invariant: INV-48
+file: mlkem_poly.c
+catches: test/mlkem-builds.sh
+reason: mlkem_poly.c, whose noise sampler reads ML-KEM's secret seed,
+  includes keccak_avx2.h, the step before a secret stream runs on
+  the four-way Keccak, whose lanes reach stack slots no wipe clears.
+  The script requires that no source at the root but keccak_avx2.c
+  and mlkem_avx2.c include the header or call its entries.
+
+--- old
+#include "mlkem_zetas.h"
+--- new
+#include "mlkem_zetas.h"
+#include "keccak_avx2.h"

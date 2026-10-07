@@ -1,0 +1,13 @@
+invariant: INV-48
+file: mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the row sampler parses 55 of a block's 56 groups, so each entry
+  skips the candidates of every block's last group. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+            groups = MLK_BLOCK_GROUPS;
+--- new
+            groups = MLK_BLOCK_GROUPS - 1;

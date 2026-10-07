@@ -1,0 +1,13 @@
+invariant: INV-48
+file: keccak_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: chi ANDs b1 with b2 where FIPS 202 ANDs its complement, VPAND
+  where VPANDN belongs. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    return lanes_xor(b0, _mm256_andnot_si256(b1, b2));
+--- new
+    return lanes_xor(b0, _mm256_and_si256(b1, b2));

@@ -9,6 +9,7 @@
 #ifndef CH_MLKEM_POLY_H
 #define CH_MLKEM_POLY_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "mlkem.h"
@@ -75,6 +76,32 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p);
 // SampleNTT: rejection-sample one NTT-domain poly from SHAKE128(seed ||
 // x0 || x1). seed is the 32-byte public rho.
 void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1);
+
+// SampleNTT's rejection step (FIPS 203 Algorithm 7) over groups three-byte
+// groups at buf: each group gives two 12-bit candidates, and each one
+// below q becomes coefficient j of p, then j + 1, until p holds 256.
+// Returns how many p then holds, for a j from 0 to 256 on entry.
+// mlk_sample_ntt runs it on each chunk it squeezes, and a host object's
+// mlkem_avx2.c on each block of the streams it squeezes side by side, so
+// both read a stream by the one rule CBMC proves. The candidates come from
+// the public seed, so the branches read nothing secret.
+static inline unsigned mlk_sample_groups(mlk_poly *p, unsigned j, const uint8_t *buf,
+                                         size_t groups) {
+    for (size_t group = 0; group < groups && j < 256; group++) {
+        const uint8_t *b = buf + 3 * group;
+        uint16_t d1 = (uint16_t)(b[0] | ((uint16_t)(b[1] & 0x0f) << 8));
+        uint16_t d2 = (uint16_t)((b[1] >> 4) | ((uint16_t)b[2] << 4));
+        if (d1 < MLKEM_Q) {
+            p->coeffs[j] = (int16_t)d1;
+            j++;
+        }
+        if (d2 < MLKEM_Q && j < 256) {
+            p->coeffs[j] = (int16_t)d2;
+            j++;
+        }
+    }
+    return j;
+}
 
 // SamplePolyCBD_eta: centered binomial noise from PRF(seed, nonce) =
 // SHAKE256(seed || nonce).

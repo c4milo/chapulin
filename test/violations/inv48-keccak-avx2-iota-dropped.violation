@@ -1,0 +1,13 @@
+invariant: INV-48
+file: keccak_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the round XORs the round constant into lane 0 twice, so iota
+  adds nothing and the four states run a permutation without it. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    a[0] = lanes_xor(a[0], round_constant);
+--- new
+    a[0] = lanes_xor(a[0], lanes_xor(round_constant, round_constant));

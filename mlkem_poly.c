@@ -295,19 +295,7 @@ void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1)
     unsigned j = 0;
     for (unsigned chunk = 0; chunk < MLK_SAMPLE_CHUNKS && j < 256; chunk++) {
         shake_squeeze(&s, buf, sizeof buf);
-        for (size_t group = 0; group < MLK_SAMPLE_CHUNK_GROUPS && j < 256; group++) {
-            const uint8_t *b = buf + 3 * group;
-            uint16_t d1 = (uint16_t)(b[0] | ((uint16_t)(b[1] & 0x0f) << 8));
-            uint16_t d2 = (uint16_t)((b[1] >> 4) | ((uint16_t)b[2] << 4));
-            if (d1 < MLKEM_Q) {
-                p->coeffs[j] = (int16_t)d1;
-                j++;
-            }
-            if (d2 < MLKEM_Q && j < 256) {
-                p->coeffs[j] = (int16_t)d2;
-                j++;
-            }
-        }
+        j = mlk_sample_groups(p, j, buf, MLK_SAMPLE_CHUNK_GROUPS);
     }
 }
 

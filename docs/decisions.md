@@ -7651,3 +7651,73 @@ does nothing more.
     - **The cross products in a pass of their own**, decision 95's form,
       written again: 4,423 cycles against the multiplication's 4,441 on
       the M1 Pro, though gcc 13 ran 19 percent fewer instructions for it.
+
+107. **An x86-64 host object samples ML-KEM's matrix on four Keccak states
+    side by side in AVX2, for a session whose `ch_cfg.cpu` holds
+    `CH_CPU_AVX2`.** After entry 101, an encapsulation under gcc 13 ran
+    475,025 instructions under qemu-x86_64, and Keccak's rounds took
+    292,512 of them: 44 permutations, 28 of them for the nine SHAKE128
+    streams of the matrix, which are independent of each other.
+
+    - **What runs.** `keccak_avx2.c` holds Keccak-f[1600] on four states,
+      lane i of every state in one 256-bit vector, with `sha3.c`'s round
+      written out line for line, and the start of the four SHAKE128
+      streams a matrix row reads. `mlkem_avx2.c` is `mlkem.c` compiled
+      once more under `mlkem_avx2.h`'s names, as `mlkem_hw.c` is (entry
+      99), and supplies the one function `mlkem.c` leaves to it,
+      `mlk_matvec_row`: the row's three entries on three of the four
+      states, each block of each stream run through `mlk_sample_groups`
+      until every entry holds 256 coefficients. `mlkem.h`'s three session
+      calls run the copy where the value holds `CH_CPU_AVX2`. Each row
+      holds its three entries at once, 1,536 bytes of stack beside the
+      800-byte state, where `mlkem.c` holds one.
+    - **Public input alone.** The matrix comes from rho, which the
+      encapsulation key carries in the clear, and two indices. A round
+      needs the 25 lanes and the values theta computes, and AVX2 has 16
+      vector registers, so both compilers keep lanes in stack slots of
+      their own: gcc 13 stores or loads about 150 vectors a round. Entry
+      99 refused a Keccak whose compiler spills lanes of a secret state,
+      because no wipe written in C clears such a slot. So ML-KEM's noise,
+      its hashes and its implicit-reject secret, which read secrets, stay
+      on `sha3.c` in the copy, and the four-way Keccak never sees one.
+      `test/mlkem-builds.sh` requires that no other source include
+      `keccak_avx2.h` or call its entries.
+    - **The bit.** `CH_CPU_AVX2` already picks `chacha20_avx2.c` (entry
+      90). It states no timing, and this path needs none, because its
+      input is public.
+    - **One rejection step.** `mlk_sample_groups` in `mlkem_poly.h` is the
+      loop over three-byte groups that `mlk_sample_ntt` ran inline, so
+      both paths read a stream by the text the `mlkem_poly` proof covers.
+      The Cortex-M3 objects compile to the same instructions, and the
+      mips32r2 and rv32imac objects to the same count, with one register
+      renamed and one load moved.
+    - **Gain.** Instructions under qemu-x86_64, `mlkem.c` against the
+      copy:
+
+      | operation | gcc 13 | clang 18 |
+      | --- | --- | --- |
+      | key generation | 447,873 → 305,831 | 393,882 → 262,276 |
+      | encapsulation | 474,943 → 333,449 | 424,960 → 293,585 |
+      | decapsulation | 513,003 → 371,508 | 450,160 → 318,786 |
+
+      A permutation of the four states takes about 6,400 instructions
+      under gcc, where one state on `sha3.c` takes 6,650. On the bench
+      runner's AMD EPYC 7763 under gcc 13 and `ch_cfg.cpu 0x3f`, key
+      generation takes 19.6 µs, an encapsulation 22.2 µs and a
+      decapsulation 25.3 µs, where OpenSSL 3.6.4 takes 36.3, 21.9 and
+      33.4 µs on a key object that holds its expanded matrix
+      (docs/performance.md, "chapulin beside OpenSSL").
+    - **What holds it.** `bin/mlkem_avx2_equiv_test` holds the four
+      streams to `sha3.c` and the copy to `mlkem.c`, `bin/x86_kernels_test`
+      counts the copy's calls under every value, and `test/mlkem-builds.sh`
+      reads which entries the copy calls. INV-48 states the claim, and
+      docs/verification.md says what runs each check.
+
+    Rejected:
+
+    - **The noise streams on the four-way Keccak.** Seven more streams an
+      encapsulation, but their seed is secret and the lanes spill, as
+      above.
+    - **Four entries a pass across rows.** The nine entries take three
+      passes of four states either way, and the rows would need the whole
+      matrix at once: six more polynomials of stack.

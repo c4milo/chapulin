@@ -1,0 +1,15 @@
+invariant: INV-48
+file: mlkem_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: the row sampler stops after three blocks, so an entry whose stream
+  needs a fourth keeps coefficients it never wrote, about one entry
+  in a hundred, which bin/mlkem_avx2_equiv_test's cases are sure to
+  hold. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+    for (size_t read = 0; read < MLK_SAMPLE_GROUPS && !mlk_row_sampled(count);
+--- new
+    for (size_t read = 0; read < 3 * MLK_BLOCK_GROUPS && !mlk_row_sampled(count);

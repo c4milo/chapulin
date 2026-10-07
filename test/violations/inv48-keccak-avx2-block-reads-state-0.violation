@@ -1,0 +1,13 @@
+invariant: INV-48
+file: keccak_avx2.c
+catches: test/docker-aes-runtime-qemu.sh mlkem-avx2
+reason: keccak_avx2_block reads every lane from state 0, so the bytes of
+  states 1 to 3 are state 0's. Only an x86-64 compiler reads the line, so the script builds
+  bin/mlkem_avx2_equiv_test for x86-64 and runs it under
+  qemu-x86_64. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+        uint64_t lane = s->lane[i][k];
+--- new
+        uint64_t lane = s->lane[i][0];
