@@ -13,7 +13,7 @@
 // modulo p and n, so it states no limb representation and serves both
 // copies unchanged.
 //
-// Three rows, each on fresh random inputs:
+// Four rows, each on fresh random inputs. The first three run under both answers:
 //
 //   key generation: the point p256_ecdh_keygen writes for a scalar d is the
 //   spec's p256_pub of d;
@@ -28,7 +28,13 @@
 //   spec has no entry that multiplies a point other than G, so the row
 //   reduces the exchange to one. The product a b mod n comes from
 //   p256_scalar_mul, which test/p256_sign_test.c holds to Python's
-//   integers.
+//   integers;
+//
+//   doubling: the three coordinates p256_wide_point_double writes are the
+//   spec's p256_double of the same three, coordinate for coordinate.
+//   spec/lean/Spec/P256WidePoint.lean holds that function and proves that it
+//   doubles every point of the curve, so this row is what makes the proof
+//   about the C. The row reads the wide file alone, so it runs once.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +56,7 @@
 #include "p256_ecdh.h"
 #include "p256_scalar.h"
 #include "p256_sign.h"
+#include "p256_wide_point.h"
 #include "widemul.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -188,6 +195,75 @@ static void diff_ecdh(uint8_t widemul) {
     }
 }
 
+// The doubling row's coordinates, X, Y and Z, each a plain field element below p as 32
+// big-endian bytes.
+#define COORDINATES 3
+
+// One element below p: the top bit clear keeps it below 2^255, which is below p.
+static void draw_element(uint8_t element[P256_FE_LEN]) {
+    rng_fill(element, P256_FE_LEN);
+    element[0] &= 0x7f;
+}
+
+// p256_wide_point_double on three coordinates against the spec's p256_double of the same
+// three, coordinate for coordinate. Both sides take plain elements: this side moves each into
+// the Montgomery domain, doubles in place, the shape a multiplication doubles in, and moves
+// each back out.
+static void diff_double_row(const uint8_t x[P256_FE_LEN], const uint8_t y[P256_FE_LEN],
+                            const uint8_t z[P256_FE_LEN]) {
+    const uint8_t *const coordinate[COORDINATES] = {x, y, z};
+    p256_wide_point point;
+    p256_wide_fe *const slot[COORDINATES] = {&point.x, &point.y, &point.z};
+    char cmd[16 + COORDINATES * HEX_LEN(P256_FE_LEN)];
+    char want[COORDINATES * HEX_LEN(P256_FE_LEN)];
+    size_t cmd_len = (size_t)snprintf(cmd, sizeof cmd, "p256_double");
+    for (size_t i = 0; i < COORDINATES; i++) {
+        p256_wide_fe plain;
+        p256_wide_fe_from_bytes(&plain, coordinate[i]);
+        p256_wide_fe_to_mont(slot[i], &plain);
+        cmd[cmd_len++] = ' ';
+        cmd_len += hex_encode(cmd + cmd_len, coordinate[i], P256_FE_LEN);
+    }
+    p256_wide_point_double(&point, &point);
+    size_t want_len = 0;
+    for (size_t i = 0; i < COORDINATES; i++) {
+        p256_wide_fe plain;
+        uint8_t bytes[P256_FE_LEN];
+        p256_wide_fe_from_mont(&plain, slot[i]);
+        p256_wide_fe_to_bytes(bytes, &plain);
+        if (i > 0) {
+            want[want_len++] = ' ';
+        }
+        want_len += hex_encode(want + want_len, bytes, sizeof bytes);
+    }
+    expect(cmd, want);
+}
+
+// The doubling row on random coordinates, on the curve or not, and then on the inputs where a
+// value the formula computes is zero: Z = 0, which is where the masked move runs, Y = 0, where
+// s is zero and the move does not run, and X = Z and X = -Z, where w is zero.
+static void diff_double(void) {
+    uint8_t coordinate[COORDINATES][P256_FE_LEN];
+    for (size_t i = 0; i < COORDINATES; i++) {
+        draw_element(coordinate[i]);
+    }
+    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    memset(coordinate[2], 0, P256_FE_LEN);
+    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    draw_element(coordinate[2]);
+    coordinate[2][P256_FE_LEN - 1] |= 1;
+    memset(coordinate[1], 0, P256_FE_LEN);
+    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    draw_element(coordinate[1]);
+    memcpy(coordinate[0], coordinate[2], P256_FE_LEN);
+    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+    p256_wide_fe z;
+    p256_wide_fe_from_bytes(&z, coordinate[2]);
+    p256_wide_fe_neg(&z, &z);
+    p256_wide_fe_to_bytes(coordinate[0], &z);
+    diff_double_row(coordinate[0], coordinate[1], coordinate[2]);
+}
+
 #define ROUNDS 25
 
 int main(int argc, char **argv) {
@@ -202,6 +278,9 @@ int main(int argc, char **argv) {
             diff_sign(ANSWERS[i]);
             diff_ecdh(ANSWERS[i]);
         }
+    }
+    for (int round = 0; round < ROUNDS; round++) {
+        diff_double();
     }
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");

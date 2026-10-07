@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_point.c
+catches: diff_p256_wide
+reason: the doubling builds the move's mask from X1 where it reads Z1.
+  At (0 : 1 : 0) X1 is zero too, so twice the point at infinity still
+  comes out right, and every point of the curve that bin/p256_equiv_test
+  doubles has X1 and Z1 not zero: that test passes. bin/diff_p256_wide
+  doubles (X : Y : 0) for a random X against
+  spec/lean/Spec/P256WidePoint.lean's double, which moves 1 into Y3
+  there, where this file leaves -w^3.
+
+--- old
+    p256_wide_fe_cmov(&y3, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
+--- new
+    p256_wide_fe_cmov(&y3, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->x));

@@ -4097,7 +4097,9 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c ct_wip
 # The constant-time P-256 arm: a key generation, a signature and a key
 # exchange against spec/lean/Spec/P256.lean, under both answers, so the
 # wide files and the 32-bit files each answer the spec
-# (docs/decisions.md 94). Its own main, for bin/diff_x25519_wide's reason:
+# (docs/decisions.md 94), and the wide doubling against
+# spec/lean/Spec/P256WidePoint.lean, coordinate for coordinate
+# (docs/decisions.md 108). Its own main, for bin/diff_x25519_wide's reason:
 # bin/diff compares the verifier in p256.c and no row of it reads these
 # files.
 DIFF_P256_WIDE_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c \

@@ -2188,7 +2188,7 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_field      919 properties, 12 s, 182 MB
 #   p256_wide_field_mul  739 properties, 14 s, 213 MB
 #   p256_wide_scalar     465 properties, 22 s, 715 MB
-#   p256_wide_point      234 properties,  2 s,  56 MB
+#   p256_wide_point      234 properties,  1 s,  57 MB
 #   p256_wide_digit      265 properties, 23 s, 318 MB
 #   p256_wide_mul        304 properties, 95 s, 375 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB

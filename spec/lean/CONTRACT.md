@@ -148,6 +148,11 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- signs so the oracle can mint valid signatures; the C
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
+Spec.P256WidePoint.double : Projective R → Projective R                -- p256_wide_point_double,
+                        -- written from the C (below), over any commutative ring with
+                        -- decidable equality. Line op: `p256_double <x> <y> <z>` →
+                        -- `<X3> <Y3> <Z3>`, each 32 bytes of hex below P-256's p, out
+                        -- of the Montgomery domain on both sides.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -646,6 +651,31 @@ most plaintext `ch_write` sends in `cap` bytes. The CBMC harnesses
 against the real `ch_write`, and `bin/unit` and
 `test/key_limit_cases.h` test it.
 
+## P256WidePoint models the C
+
+`Spec/P256WidePoint.lean` breaks rule 1 on purpose, as `Spec/TlsWrite.lean`
+does. `double` is `p256_wide_point.c`'s `p256_wide_point_double`, written
+from the C with one `let` for each C statement. The claim is about that
+code: the Explicit-Formulas Database's dbl-2007-bl-2 and the masked move
+after it give `P + P` for every point of the curve. No standard states
+those steps, so there is no RFC text to write them from, and the C's steps
+are the ones that must be right.
+
+`double_represents` proves that of the model over every field in which 2
+and 3 are not zero, for every curve y² = x³ - 3x + b with b neither 2 nor
+-2, and `double_represents_p256` states it at P-256. The C keeps each
+coordinate v as v·2^256 mod p, the Montgomery domain. There a sum is a sum
+and the Montgomery product of two coordinates is their product's, so the C
+computes the model's coordinates in that domain.
+`test/diff_p256_wide_test.c` takes random coordinates and the ones where a
+value the formula computes is zero, moves them into the domain, doubles
+them in the C, moves them back out and compares them with `double` over
+`ZMod p`, coordinate for coordinate, in `bin/diff_p256_wide`. So an error
+in the transcription fails a row. The violation `p256-wide-double-moves-on-x`
+builds the move's mask from X where the C reads Z, which the points of the
+curve `bin/p256_equiv_test` doubles leave unnoticed, and requires that
+binary to fail.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -800,6 +830,16 @@ Spec.P256 and Spec.P384 restate seven of these (all but inv_cast) at their
   discharges `2 < p`, the discriminant, `G` on the curve and
   `p < 2^(8·coordLen)`; `Fact p.Prime`, `Fact n.Prime` and `n • basePoint = 0`
   stay hypotheses, because no tactic certifies a 256- or 384-bit prime
+Spec.P256WidePoint, the doubling of p256_wide_point.c (above, "P256WidePoint
+  models the C"), over any field with 2 ≠ 0 and 3 ≠ 0; `Represents b a P`
+  says the coordinates `a` hold the point P of y² = x³ - 3x + b, the point
+  at infinity as (0 : Y : 0) with Y ≠ 0:
+  double_represents            b ≠ 2 → b ≠ -2 → Represents b a P →
+                               -- Represents b (double a) (P + P): every point of the
+                               -- curve, the point at infinity and a point with y = 0
+                               -- among them. No theorem here reads the curve's order
+  double_represents_p256       the same at P-256's b over ZMod p, under Fact p.Prime;
+                               -- `decide` discharges 2 ≠ 0, 3 ≠ 0 and b ≠ ±2 mod p
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1031,6 +1071,7 @@ means the module's selftest plus the differential oracle carry it;
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
+| P256WidePoint | 2 | the doubling `p256_wide_point.c` runs, modeled from the C: it gives `P + P` for every point of every curve y² = x³ - 3x + b with b neither 2 nor -2, over every field in which 2 and 3 are not zero, the point at infinity and a point with y = 0 among them, and at P-256 with `p` prime the one hypothesis. The two additions and the scalar multiplications stay with the C's tests and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |

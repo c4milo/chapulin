@@ -21,7 +21,8 @@
 //
 //   the doubling computes the same point as the complete addition of a
 //   point with itself, in other coordinates, so the two must agree as
-//   points: both at infinity, or the same affine bytes. Its inputs are
+//   points: both at infinity, or the same affine bytes, and the doubling's
+//   point at infinity must be (0 : Y : 0) with Y not zero. Its inputs are
 //   multiples of G, with Z 1 and with a Z the additions before left, and
 //   the point at infinity.
 //
@@ -98,6 +99,22 @@ static void add_affine_case(const char *name, const p256_point *a, const p256_fe
     report("mixed add", name, ok);
 }
 
+static int wide_fe_is_zero(const p256_wide_fe *a) {
+    uint64_t bits = 0;
+    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
+        bits |= a->limb[i];
+    }
+    return bits == 0;
+}
+
+// Whether p names a point: Z is not zero, or p is (0 : Y : 0) with Y not zero, the shape
+// p256_wide_point.h gives the point at infinity. (0 : 0 : 0) names none, and an addition that
+// reads it gives (0 : 0 : 0) back whatever it adds, while same_affine reads it as the point at
+// infinity, since its Z is zero.
+static int names_a_point(const p256_wide_point *p) {
+    return !wide_fe_is_zero(&p->z) || (wide_fe_is_zero(&p->x) && !wide_fe_is_zero(&p->y));
+}
+
 // 2a in both files, as points, in both shapes a caller uses.
 static void double_case(const char *name, const p256_point *a) {
     p256_point want;
@@ -108,11 +125,11 @@ static void double_case(const char *name, const p256_point *a) {
     p256_wide_point_from_portable(&wide_a, a);
     p256_wide_point_double(&got, &wide_a);
     p256_wide_point_to_portable(&back, &got);
-    int ok = same_affine(&back, &want);
+    int ok = same_affine(&back, &want) && names_a_point(&got);
     got = wide_a;
     p256_wide_point_double(&got, &got);
     p256_wide_point_to_portable(&back, &got);
-    ok &= same_affine(&back, &want);
+    ok &= same_affine(&back, &want) && names_a_point(&got);
     report("double", name, ok);
 }
 

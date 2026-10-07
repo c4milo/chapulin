@@ -1,6 +1,7 @@
 // P-256 points over the wide field (see p256_wide_point.h for the contracts). Every
-// coordinate is a Montgomery-domain p256_wide_fe, and the formula is p256_point.c's with that
-// file's register names, so the two read against each other line by line.
+// coordinate is a Montgomery-domain p256_wide_fe. The two additions are p256_point.c's with
+// that file's register names, so the two read against each other line by line. The doubling
+// has no counterpart there.
 #include "p256_wide_point.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -151,56 +152,57 @@ void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
     o->z = z3;
 }
 
-// Renes-Costello-Batina Algorithm 6, the exception-free doubling for a = -3, step for step in
-// the paper's order and with the paper's register names.
+// The Explicit-Formulas Database's dbl-2007-bl-2 for a = -3, step for step with the
+// database's names in lower case (b is its B, not the curve's coefficient, which is B_MONT
+// here), and then one masked move. spec/lean/Spec/P256WidePoint.lean holds the same steps,
+// one definition per local, and proves what they compute.
 void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a) {
-    p256_wide_fe t0;
-    p256_wide_fe t1;
-    p256_wide_fe t2;
-    p256_wide_fe t3;
+    p256_wide_fe w;
+    p256_wide_fe s;
+    p256_wide_fe ss;
+    p256_wide_fe sss;
+    p256_wide_fe r;
+    p256_wide_fe rr;
+    p256_wide_fe b;
+    p256_wide_fe h;
+    p256_wide_fe t;
     p256_wide_fe x3;
     p256_wide_fe y3;
-    p256_wide_fe z3;
 
-    p256_wide_fe_sqr(&t0, &a->x);
-    p256_wide_fe_sqr(&t1, &a->y);
-    p256_wide_fe_sqr(&t2, &a->z);
-    p256_wide_fe_mul(&t3, &a->x, &a->y);
-    p256_wide_fe_add(&t3, &t3, &t3);
-    p256_wide_fe_mul(&z3, &a->x, &a->z);
-    p256_wide_fe_add(&z3, &z3, &z3);
-    p256_wide_fe_mul(&y3, &B_MONT, &t2);
-    p256_wide_fe_sub(&y3, &y3, &z3);
-    p256_wide_fe_add(&x3, &y3, &y3);
-    p256_wide_fe_add(&y3, &x3, &y3);
-    p256_wide_fe_sub(&x3, &t1, &y3);
-    p256_wide_fe_add(&y3, &t1, &y3);
-    p256_wide_fe_mul(&y3, &x3, &y3);
-    p256_wide_fe_mul(&x3, &x3, &t3);
-    p256_wide_fe_add(&t3, &t2, &t2);
-    p256_wide_fe_add(&t2, &t2, &t3);
-    p256_wide_fe_mul(&z3, &B_MONT, &z3);
-    p256_wide_fe_sub(&z3, &z3, &t2);
-    p256_wide_fe_sub(&z3, &z3, &t0);
-    p256_wide_fe_add(&t3, &z3, &z3);
-    p256_wide_fe_add(&z3, &z3, &t3);
-    p256_wide_fe_add(&t3, &t0, &t0);
-    p256_wide_fe_add(&t0, &t3, &t0);
-    p256_wide_fe_sub(&t0, &t0, &t2);
-    p256_wide_fe_mul(&t0, &t0, &z3);
-    p256_wide_fe_add(&y3, &y3, &t0);
-    p256_wide_fe_mul(&t0, &a->y, &a->z);
-    p256_wide_fe_add(&t0, &t0, &t0);
-    p256_wide_fe_mul(&z3, &t0, &z3);
-    p256_wide_fe_sub(&x3, &x3, &z3);
-    p256_wide_fe_mul(&z3, &t0, &t1);
-    p256_wide_fe_add(&z3, &z3, &z3);
-    p256_wide_fe_add(&z3, &z3, &z3);
+    // w = 3 * (X1 - Z1) * (X1 + Z1), the tangent's slope times 2 * Y1 * Z1.
+    p256_wide_fe_sub(&t, &a->x, &a->z);
+    p256_wide_fe_add(&w, &a->x, &a->z);
+    p256_wide_fe_mul(&w, &t, &w);
+    p256_wide_fe_add(&t, &w, &w);
+    p256_wide_fe_add(&w, &t, &w);
+    // s = 2 * Y1 * Z1, ss = s^2, sss = s * ss.
+    p256_wide_fe_mul(&s, &a->y, &a->z);
+    p256_wide_fe_add(&s, &s, &s);
+    p256_wide_fe_sqr(&ss, &s);
+    p256_wide_fe_mul(&sss, &s, &ss);
+    // r = Y1 * s, rr = r^2, b = 2 * X1 * r.
+    p256_wide_fe_mul(&r, &a->y, &s);
+    p256_wide_fe_sqr(&rr, &r);
+    p256_wide_fe_mul(&b, &a->x, &r);
+    p256_wide_fe_add(&b, &b, &b);
+    // h = w^2 - 2 * b, X3 = h * s.
+    p256_wide_fe_sqr(&h, &w);
+    p256_wide_fe_add(&t, &b, &b);
+    p256_wide_fe_sub(&h, &h, &t);
+    p256_wide_fe_mul(&x3, &h, &s);
+    // Y3 = w * (b - h) - 2 * rr.
+    p256_wide_fe_sub(&t, &b, &h);
+    p256_wide_fe_mul(&y3, &w, &t);
+    p256_wide_fe_add(&t, &rr, &rr);
+    p256_wide_fe_sub(&y3, &y3, &t);
+    // At the point at infinity, Z1 = 0 and so X1 = 0, and every value above is zero: (0 : 0 : 0)
+    // names no point. Y3 = 1 makes it (0 : 1 : 0).
+    p256_wide_fe_cmov(&y3, &p256_wide_fe_one_mont, p256_wide_fe_zero_mask(&a->z));
 
-    // o may alias a, so the three coordinates move only now.
+    // o may alias a, so the three coordinates move only now. Z3 is sss.
     o->x = x3;
     o->y = y3;
-    o->z = z3;
+    o->z = sss;
 }
 
 uint32_t p256_wide_point_from_bytes(p256_point *o, const uint8_t in[P256_POINT_LEN]) {

@@ -6165,7 +6165,9 @@ does nothing more.
       with it, where Algorithm 6 took 917,561 and 262,678, and
       `bin/p256_equiv_test` passed. It needs its own argument that no
       finite point of the curve is exceptional, where Algorithm 6 needs
-      none, so it stays out until Camilo rules on that trade.
+      none, so it stays out until Camilo rules on that trade. Camilo
+      ruled for it, and entry 108 runs it, with its argument proved in
+      Lean.
 
     Cost: under Apple clang 21 at `-O2` the six wide objects take 43,000
     bytes of code and constants on arm64, 32,768 of them the table,
@@ -7721,3 +7723,87 @@ does nothing more.
     - **Four entries a pass across rows.** The nine entries take three
       passes of four states either way, and the rows would need the whole
       matrix at once: six more polynomials of stack.
+
+108. **A host object doubles a P-256 point on ten products and one masked
+    move, and Lean proves the steps double every point of the curve.**
+    Entry 94 doubled with Renes, Costello and Batina's Algorithm 6, 13
+    products, which is correct for every point and needs no argument about
+    any. It measured the Explicit-Formulas Database's dbl-2007-bl-2, 10
+    products, and kept it out until Camilo ruled on the argument it needs.
+    Camilo ruled for it and asked for the argument in Lean.
+
+    - **What runs.** `p256_wide_point_double` computes w = 3 (X1 - Z1)
+      (X1 + Z1), s = 2 Y1 Z1, r = Y1 s, b = 2 X1 r and h = w^2 - 2 b, and
+      gives X3 = h s, Y3 = w (b - h) - 2 r^2 and Z3 = s^3: seven products,
+      three squares and eleven additions and subtractions, where Algorithm
+      6 ran thirteen products and 21. Then one masked move: where Z1 is
+      zero, Y3 = 1. The 32-bit files have no doubling of their own:
+      `p256_point.c` adds a point to itself. The two wide additions stay
+      Algorithms 4 and 5.
+    - **Why the move.** The formula is the tangent rule with its
+      denominator 2 Y1 Z1 cleared, so it gives 2P wherever Y1 and Z1 are
+      not zero. At the point at infinity, (0 : Y : 0), every value it
+      computes is zero, and (0 : 0 : 0) names no point: a complete
+      addition that reads it gives (0 : 0 : 0) back whatever it adds. The
+      move makes it (0 : 1 : 0). It is `p256_wide_fe_cmov` under
+      `p256_wide_fe_zero_mask` of Z1, mask arithmetic like every select
+      in the wide files, and `lint-wide-multiply` holds the file's branch
+      count at its ceiling of 3.
+    - **A point with y = 0.** Such a point is its own negative, so its
+      double is the point at infinity. The formula gives (0 : -w^3 : 0)
+      for it, the point at infinity whenever w is not zero. w is zero
+      there only at x = 1 or x = -1, and those two put a point with y = 0
+      on the curve only when b is 2 or -2. P-256's b is neither, and
+      P-256 has no such point anyway, because its order n is odd. The
+      proof uses the first fact alone, so it reads nothing about the
+      curve's order, which no tactic here could certify.
+    - **The proof.** `spec/lean/Spec/P256WidePoint.lean` holds the C's
+      steps as `double`, one `let` for each C statement.
+      `double_represents` proves that where three coordinates hold a
+      point P of y^2 = x^3 - 3x + b, `double` of them holds P + P,
+      Mathlib's group law: for every P, the point at infinity and a
+      point with y = 0 among them, over every field in which 2 and 3 are
+      not zero, for every b but 2 and -2. `double_represents_p256`
+      states it over ZMod p at P-256's b, with p prime as its one
+      hypothesis, the one every theorem here about the curve takes, and
+      `decide` settles the rest. `bin/diff_p256_wide` compares the C's
+      coordinates with `double`'s, on random coordinates and where a
+      value the formula computes is zero, which makes the theorem one
+      about the C (spec/lean/CONTRACT.md, "P256WidePoint models the C").
+    - **What holds it.** `bin/p256_equiv_test` holds the doubling to the
+      complete addition of a point with itself, and now requires twice
+      the point at infinity to be (0 : Y : 0) with Y not zero. Four
+      violations: a step left out and the move left out, which that test
+      catches; the move under an `if`, which `lint-wide-multiply`
+      catches; and the move's mask built from X1, which only
+      `bin/diff_p256_wide` catches, because every point of the curve that
+      test doubles hides it. The `p256_wide_point` proof covers the new
+      steps in both aliasing shapes: 234 properties in 1 s and 57 MB.
+
+    Gain. A key exchange is 253 doublings; key generation and a
+    signature run none, since k·G adds entries of a table. On the M1 Pro
+    under Apple clang 21 and `ch_cfg.cpu 0xe7`, `bench/primitives.c`'s
+    `p256_ecdh` row over five runs of each in turn, at a load average of
+    4, beside `openssl speed ecdhp256` on OpenSSL 3.6.5 in the same runs:
+
+    | | Algorithm 6 | dbl-2007-bl-2 | OpenSSL |
+    | --- | --- | --- | --- |
+    | key exchange | 77.6 µs, 886,250 instructions | 67.6 µs, 712,190 instructions | 40.7 µs |
+
+    That takes the key exchange from 1.91 to 1.66 times OpenSSL's time on
+    that machine. Under qemu-x86_64 with one instruction a block, a key
+    exchange on the wide files retires 1,759,685 instructions before and
+    1,396,124 after under gcc 13.3, and 1,393,377 and 1,107,487 under
+    clang 18.1.3.
+
+    Rejected:
+
+    - **Jacobian coordinates throughout.** An 8-product doubling, but
+      the additions stop being complete: P = Q, P = -Q and either
+      operand at infinity each need a masked case and an argument of
+      their own, in every addition a multiplication makes.
+      `p256_wide_verify_point.c` runs Jacobian points for inputs that
+      are all public, where branches can test the cases (entry 104).
+    - **b as (X1 + r)^2 - X1^2 - r^2.** The database's other form of the
+      same doubling trades the product X1 r for two squares, eleven
+      products where this one runs ten.

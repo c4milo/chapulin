@@ -12,6 +12,7 @@ import Spec.TlsWrite
 import Spec.X25519
 import Spec.Weierstrass
 import Spec.P256
+import Spec.P256WidePoint
 import Spec.Rsa
 import Spec.P384
 import Spec.RsaPkcs1

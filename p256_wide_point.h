@@ -52,8 +52,14 @@ void p256_wide_point_add(p256_wide_point *o, const p256_wide_point *a, const p25
 void p256_wide_point_add_affine(p256_wide_point *o, const p256_wide_point *a,
                                 const p256_wide_affine *b);
 
-// o = 2a: the exception-free doubling for curves with a = -3 (the same paper, Algorithm 6),
-// step for step. It is correct for every a, the point at infinity among them. o may alias a.
+// o = 2a: the Explicit-Formulas Database's dbl-2007-bl-2 for curves with a = -3, 10 products
+// where the same paper's Algorithm 6 runs 13, and one masked move for the point at infinity
+// (docs/decisions.md 108). It is correct for every point of the curve, the point at infinity
+// among them: a point at infinity comes out as (0 : Y : 0) with Y not zero, the shape the two
+// additions read, and as (0 : 1 : 0) when a is the point at infinity.
+// spec/lean/Spec/P256WidePoint.lean proves this of the steps on every curve
+// y^2 = x^3 - 3x + b with b neither 2 nor -2, over every field in which 2 and 3 are not zero.
+// o may alias a.
 void p256_wide_point_double(p256_wide_point *o, const p256_wide_point *a);
 
 // p256_point_from_bytes on the wide field: reads an uncompressed point and returns all ones

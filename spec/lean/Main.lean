@@ -77,6 +77,7 @@ def selftestAll (_ : Unit) : String :=
     ("tls_write", Spec.TlsWrite.selftest),
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
+    ("p256_wide_point", Spec.P256WidePoint.selftest),
     ("rsa", Spec.Rsa.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
@@ -488,6 +489,14 @@ def dispatch : List String → Option String
     let sb ← hexArg? s
     guard (pb.size == 64 && h.size == 32 && rb.size == 32 && sb.size == 32)
     return if Spec.P256.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
+  | ["p256_double", x, y, z] => do
+    -- p256_wide_point_double's three coordinates, each 32 big-endian bytes below p, out of the
+    -- Montgomery domain on both sides (Spec/P256WidePoint.lean).
+    let coordinates ← [x, y, z].mapM hexArg?
+    guard (coordinates.all fun c => c.size == 32 && bytesToNatBE c < Spec.P256.p)
+    let field : List (ZMod Spec.P256.p) := coordinates.map fun c => (bytesToNatBE c : ZMod _)
+    let o := Spec.P256WidePoint.double ⟨field[0]!, field[1]!, field[2]!⟩
+    return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

@@ -35,7 +35,10 @@
 // coordinates, limb for limb, on random and structured operands, and the
 // doubling to the point p256_point_add gives for a point with itself. That
 // routine's steps are checked against an affine reference in
-// test/gen_p256_sign_vectors.py.
+// test/gen_p256_sign_vectors.py. The doubling's steps are proven in Lean
+// instead: spec/lean/Spec/P256WidePoint.lean proves that they double
+// every point of the curve, and bin/diff_p256_wide holds this file's
+// doubling to them, coordinate for coordinate.
 #include "p256_wide_field_stubs.h"
 
 #include "p256_wide_point.c"

@@ -2511,6 +2511,19 @@ itself or to the point at infinity, which is what lets the ladder run
 without a branch. That is Renes, Costello and Batina's theorem, tested
 here and not machine checked.
 
+The doubling a host object's key exchange runs, `p256_wide_point_double`
+(docs/decisions.md 108), is machine checked.
+[`spec/lean/Spec/P256WidePoint.lean`](../spec/lean/Spec/P256WidePoint.lean)
+holds its steps and proves that they double every point of every curve
+y^2 = x^3 - 3x + b with b neither 2 nor -2, over every field in which 2
+and 3 are not zero, the point at infinity and a point with y = 0 among
+them, and states it at P-256 with p prime as its one hypothesis.
+`bin/diff_p256_wide` holds the C's steps to the model's, coordinate for
+coordinate, on random coordinates and where a value the formula computes
+is zero. What none of this shows: that the C is the model on every input,
+which the differential samples, and anything about the additions or the
+windows of a multiplication, which stay tested.
+
 ### The wide P-256 files
 
 A host session with the multiply bit signs and exchanges keys on
@@ -2548,7 +2561,9 @@ the wide files to the same answers:
     random multiples of it, four doublings in a row from each, against
     the complete addition of the point with itself. The two formulas
     give the same point in other coordinates, so the comparison is of
-    the affine bytes;
+    the affine bytes, and a doubling's point at infinity must also be
+    (0 : Y : 0) with Y not zero, which the affine bytes cannot tell from
+    (0 : 0 : 0);
   - the point decode on a point and on each way a point is refused, and
     the affine conversion on a finite point and on the point at infinity;
   - both scalar multiplications on 16 scalars at the edges, 0, 1, n - 1,
@@ -2624,8 +2639,9 @@ the wide files to the same answers:
   below the signer's. A CPU without the instructions skips that search,
   or fails it under `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 - `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
-  signature and a key exchange against the Lean spec under each answer
-  ([What `make diff` runs](#what-make-diff-runs)).
+  signature and a key exchange against the Lean spec under each answer,
+  and the doubling against `spec/lean/Spec/P256WidePoint.lean`'s,
+  coordinate for coordinate ([What `make diff` runs](#what-make-diff-runs)).
 - `bin/widemul_runtime_test` counts the calls: the wide entries alone
   under the constant-time answer and the 32-bit files alone under every
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
@@ -4141,7 +4157,8 @@ computes:
   build in QUIC version 1 and version 2 (RFC 9001, RFC 9369): the
   Initial keys, the keys a traffic secret derives, the key update, and
   the Retry integrity tag;
-- P-256 and RSA-PSS;
+- P-256 and RSA-PSS, and the doubling a host object's P-256 key
+  exchange runs;
 - the grammar of the four handshake messages a server sends;
 - the content a server's CertificateVerify signs (RFC 9846 §4.5.2),
   which the driver hashes under the signature scheme and compares with
@@ -4159,10 +4176,12 @@ computes:
   bytes of records.
 
 It follows the RFC text and never the C, because a differential oracle
-only works when a shared misreading cannot make both sides agree. The
-one exception is `Spec/TlsWrite.lean`, which models `ch_writable_len`
-from `tls_write.c` line by line: its theorems bound that code's own
-intermediate values, which no RFC states.
+only works when a shared misreading cannot make both sides agree. There
+are two exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
+`tls_write.c` line by line: its theorems bound that code's own
+intermediate values, which no RFC states. `Spec/P256WidePoint.lean`
+models `p256_wide_point_double` the same way: its theorem says what that
+code's steps compute, and no standard states those steps.
 [`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
 safe.
 
@@ -4188,14 +4207,18 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 201 comparisons, where the compiler
+4. The constant-time P-256 rows, 326 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
    answer the spec. The key generation must write the spec's public
    key. The spec's verifier must accept the signature and refuse it for
    a hash with one byte changed. The key exchange with the spec's point
-   b G must give the X coordinate of the spec's (a b) G.
+   b G must give the X coordinate of the spec's (a b) G. Then 125
+   doublings through `p256_wide_point_double` against
+   `Spec/P256WidePoint.lean`'s `double`, coordinate for coordinate: 25
+   on random coordinates, and 25 each where Z, Y, X - Z and X + Z is
+   zero.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

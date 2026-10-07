@@ -3130,7 +3130,10 @@ last `ROLE=server` stub, as the entry said it would.
   number. `inv16-p256-wide-table-scan-skips-unselected` and
   `inv16-p256-wide-multiple-scan-skips-unselected` each make one of the
   two scans pass over the entries a digit does not name, and the count
-  of `p256_wide_mul.c` rises to 13. CBMC reads these files, so they have
+  of `p256_wide_mul.c` rises to 13.
+  `inv16-p256-wide-double-branches-on-infinity` writes the doubling's
+  masked move for the point at infinity as an `if` on Z1's zero mask,
+  and the count of `p256_wide_point.c` rises past its 3. CBMC reads these files, so they have
   harnesses of their own
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
