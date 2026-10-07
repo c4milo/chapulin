@@ -23,10 +23,11 @@
 #ifdef CH_CPU_RUNTIME
 
 // The bytes of stack p256_wide_wipe_below wipes. The deepest wide call, p256_wide_mul, holds
-// eight multiples of its point and writes at most 1,872 bytes below its caller on the
-// compilers bin/p256_equiv_test runs under, and lint-stack holds a frame of a server object
-// under 2,560.
-#define P256_WIDE_BELOW_LEN 2400
+// eight multiples of its point, and bin/p256_equiv_test measured it writing 2,104 bytes below
+// its caller under Apple clang 21 for arm64, 2,400 under gcc 13.3 for x86-64, and 2,560 under
+// that gcc on the 128-bit sums (docs/decisions.md 112 and 114). lint-stack holds this file's
+// frame under STACK_BUDGET_P256_WIDE_WIPE.
+#define P256_WIDE_BELOW_LEN 3072
 
 // Writes zero over the P256_WIDE_BELOW_LEN bytes of stack under the caller's frame.
 void p256_wide_wipe_below(void);

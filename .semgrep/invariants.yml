@@ -84,7 +84,7 @@ rules:
       a mask from a 128-bit sum, as zero_mask_word does, and a negative
       as p256_wide_fe_neg does.
     paths:
-      include: ['p256_wide_*.c', 'p256_wide_word.h']
+      include: ['p256_wide_*.c', 'p256_wide_word.h', 'p256_wide_field.h']
     pattern: p256_wide_sub_borrow($BORROW, 0, $VALUE)
   - id: inv-16-rsa-table-read
     languages: [c]

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_field.c
+file: p256_wide_field.h
 catches: p256_equiv_test
 reason: inverting the mask inverts the conditional subtraction of the
   wide field: a value is reduced exactly when it is already below p and

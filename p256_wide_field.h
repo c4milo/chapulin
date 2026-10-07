@@ -28,6 +28,8 @@
 
 #ifdef CH_CPU_RUNTIME
 
+#include "p256_wide_word.h"
+
 #define P256_WIDE_FE_WORDS 4 // the 64-bit words of a field element
 
 // One field element: four little-endian 64-bit words.
@@ -61,9 +63,7 @@ uint64_t p256_wide_fe_equal_mask(const p256_wide_fe *a, const p256_wide_fe *b);
 // o = a when mask is all ones, o unchanged when mask is zero.
 void p256_wide_fe_cmov(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask);
 
-// o = a + b mod p, o = a - b mod p, o = -a mod p (and 0 for a = 0).
-void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b);
-void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b);
+// o = -a mod p, and 0 for a = 0. The addition and the subtraction are at the end of this file.
 void p256_wide_fe_neg(p256_wide_fe *o, const p256_wide_fe *a);
 
 // o = a*b/R mod p, the Montgomery product, and o = a*a/R mod p.
@@ -77,6 +77,64 @@ void p256_wide_fe_from_mont(p256_wide_fe *o, const p256_wide_fe *a);
 // o = a^-1, both in the Montgomery domain. a = 0 gives 0. The exponent is p-2 (Fermat), and
 // the chain of 255 squarings and 12 multiplies that computes it is the same for every a.
 void p256_wide_fe_inv(p256_wide_fe *o, const p256_wide_fe *a);
+
+// The addition and the subtraction, inline. A point formula runs about two of them for every
+// product, and as calls each one took its call and moved its element through memory: 7% of a
+// key exchange on the M1 Pro (docs/decisions.md 114). Their final subtraction of p is the
+// Montgomery reduction's too.
+
+// SEC 2 secp256r1's field prime, least significant word first. The same prime is
+// p256_field.c's P, in words half as wide. tools/p256_wide.py recomputes it and every constant
+// p256_wide_field.c derives from it and stops if a word differs.
+#define P256_WIDE_P0 UINT64_C(0xffffffffffffffff)
+#define P256_WIDE_P1 UINT64_C(0x00000000ffffffff)
+#define P256_WIDE_P2 UINT64_C(0x0000000000000000)
+#define P256_WIDE_P3 UINT64_C(0xffffffff00000001)
+
+// o = (high : t3 : t2 : t1 : t0) - p when that 257-bit value is at or above p, o = t otherwise.
+// high is 0 or 1: a sum of two elements below p carries at most one bit past the four words,
+// and so does each round of p256_wide_field.c's reduce() (proof/p256_wide_field_harness.c).
+static inline void p256_wide_fe_reduce_once(uint64_t o[P256_WIDE_FE_WORDS], uint64_t t0,
+                                            uint64_t t1, uint64_t t2, uint64_t t3, uint64_t high) {
+    uint64_t borrow = 0;
+    uint64_t r0 = p256_wide_sub_borrow(&borrow, t0, P256_WIDE_P0);
+    uint64_t r1 = p256_wide_sub_borrow(&borrow, t1, P256_WIDE_P1);
+    uint64_t r2 = p256_wide_sub_borrow(&borrow, t2, P256_WIDE_P2);
+    uint64_t r3 = p256_wide_sub_borrow(&borrow, t3, P256_WIDE_P3);
+    // high : t is below p exactly when high is 0 and the subtraction borrowed out.
+    uint64_t keep = p256_wide_mask(borrow & (high ^ 1U));
+    o[0] = (t0 & keep) | (r0 & ~keep);
+    o[1] = (t1 & keep) | (r1 & ~keep);
+    o[2] = (t2 & keep) | (r2 & ~keep);
+    o[3] = (t3 & keep) | (r3 & ~keep);
+}
+
+// o = a + b mod p.
+static inline void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
+    uint64_t carry = 0;
+    uint64_t s0 = p256_wide_add_carry(&carry, a->word[0], b->word[0]);
+    uint64_t s1 = p256_wide_add_carry(&carry, a->word[1], b->word[1]);
+    uint64_t s2 = p256_wide_add_carry(&carry, a->word[2], b->word[2]);
+    uint64_t s3 = p256_wide_add_carry(&carry, a->word[3], b->word[3]);
+    p256_wide_fe_reduce_once(o->word, s0, s1, s2, s3, carry);
+}
+
+// o = a - b mod p.
+static inline void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
+    uint64_t borrow = 0;
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, a->word[0], b->word[0]);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, a->word[1], b->word[1]);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, a->word[2], b->word[2]);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, a->word[3], b->word[3]);
+    // a < b wrapped the difference by 2^256, and adding p once brings it back into [0, p),
+    // because both inputs are below p. The carry out of that sum is the 2^256 the wrap took.
+    uint64_t wrapped = p256_wide_mask(borrow);
+    uint64_t carry = 0;
+    o->word[0] = p256_wide_add_carry(&carry, d0, P256_WIDE_P0 & wrapped);
+    o->word[1] = p256_wide_add_carry(&carry, d1, P256_WIDE_P1 & wrapped);
+    o->word[2] = p256_wide_add_carry(&carry, d2, P256_WIDE_P2 & wrapped);
+    o->word[3] = p256_wide_add_carry(&carry, d3, P256_WIDE_P3 & wrapped);
+}
 
 #endif // CH_CPU_RUNTIME
 

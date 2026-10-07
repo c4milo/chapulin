@@ -8309,3 +8309,71 @@ does nothing more.
       from 5,208 bytes to 22,056 under gcc. The two Intel runners took 5
       to 6% less time again, the EPYC 7763 the same, and the EPYC 9V45 4%
       more.
+
+114. **A host object's wide P-256 field adds and subtracts inline.** The
+    point formulas of entries 108, 111 and 112, and the verifier's of
+    entry 104, call `p256_wide_fe_add` and `p256_wide_fe_sub` about twice
+    for every product, and each call was a call: its arguments and its
+    answer went through memory. A scratch program that compiled the field,
+    the formulas and the key exchange as one file, so that the compiler
+    could inline across them, took the key exchange's multiplication from
+    53.7 µs to 49.9 µs on the M1 Pro, and with every field routine but the
+    addition and the subtraction kept out of line it took 50.1 µs.
+
+    - **What changes.** `p256_wide_field.h` defines `p256_wide_fe_add`,
+      `p256_wide_fe_sub` and the conditional subtraction of p they share
+      with the Montgomery reduction, `p256_wide_fe_reduce_once`, as
+      `static inline`, with p's words as `P256_WIDE_P0` to `P256_WIDE_P3`.
+      The multiply, the square, the negation, the masks and the inversion
+      stay in `p256_wide_field.c`. No step changes.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      `bench/primitives.c` over five runs of each in turn at a load average
+      of about 5, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting:
+
+      | | calls | inline | OpenSSL |
+      | --- | --- | --- | --- |
+      | key generation | 12.6 µs, 139,650 instructions | 12.2 µs, 137,123 | — |
+      | key exchange | 58.0 µs, 613,201 instructions | 54.4 µs, 572,613 | 40.5 µs |
+      | signature | 21.7 µs, 219,749 instructions | 21.3 µs, 217,221 | 17.6 µs |
+      | verification | 68.8 µs, 648,733 instructions | 58.7 µs, 603,800 | 53.6 µs |
+
+      That takes a verification from 1.28 to 1.09 times OpenSSL's time
+      and a key exchange from 1.43 to 1.34. Under qemu-x86_64, gcc 13.3's
+      key generation, signature, key exchange and verification retire
+      273,075, 714,983, 1,205,970 and 1,301,768 instructions before and
+      266,596, 708,504, 1,108,750 and 1,188,887 after, and clang
+      18.1.3's 207,560, 622,373, 955,209 and 996,577 before and 204,245,
+      619,058, 897,905 and 933,766 after.
+    - **What holds it.** No step changes. The `p256_wide_field` proof
+      runs the inline routines on their real bodies, 919 properties, and
+      `proof/p256_wide_field_stubs.h` renames them to their stubs for the
+      harnesses above the field, as `proof/p256_wide_stubs.h` renames the
+      product row; the thirteen `p256_wide` proofs pass.
+      `bin/p256_equiv_test` holds every routine to `p256_field.c`'s, and
+      its stack search finds nothing below the multiplications, which now
+      write 2,104 and 792 bytes below their caller where they wrote 2,088
+      and 760. `bin/timing_p256_wide` read every row at 3.27 and below in
+      six runs, and the code before at 2.90 and below in six runs in the
+      same sitting. `tools/p256_wide.py` reads p's words from the header.
+    - **The wipe below.** gcc's frames grew with the inline routines.
+      Under gcc 13.3 for x86-64 on the 128-bit sums `p256_wide_mul` writes
+      2,560 bytes below its caller, past the 2,400 bytes
+      `p256_wide_wipe_below` cleared, and `bin/p256_equiv_test_sum`
+      failed on it; the key exchange of entry 112 had already taken that
+      build to 2,400. The wipe clears 3,072 bytes, and `lint-stack` holds
+      `p256_wide_wipe.c`, whose frame is the array it clears, under a
+      ceiling of its own, 3,584 bytes, as it holds the RSA signer's. No
+      build's peak stack moves (`bench/sram.sh`).
+    - **Cost.** 6,232 more bytes of text over `p256_wide_field.c`,
+      `p256_wide_point.c`, `p256_wide_mul.c` and
+      `p256_wide_verify_point.c` under Apple clang 21, and 12,256 under
+      gcc 13 for x86-64: each formula holds its own copies. A device
+      object holds none of these files.
+
+    Rejected:
+
+    - **Every field routine inline.** Letting the compiler inline the
+      multiply and the square as well took the multiplication to 49.9 µs,
+      where the addition and the subtraction alone took 50.1: the same
+      time, for more code.

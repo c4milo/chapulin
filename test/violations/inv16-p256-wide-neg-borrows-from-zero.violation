@@ -14,10 +14,10 @@ reason: p256_wide_fe_neg computes 0 - a word by word and adds p when it
 --- old
     uint64_t keep = ~p256_wide_fe_zero_mask(a);
     uint64_t borrow = 0;
-    uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->word[0], ~P0);
-    uint64_t d1 = p256_wide_sub_borrow(&borrow, ~a->word[1], ~P1);
-    uint64_t d2 = p256_wide_sub_borrow(&borrow, ~a->word[2], ~P2);
-    uint64_t d3 = p256_wide_sub_borrow(&borrow, ~a->word[3], ~P3);
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->word[0], ~P256_WIDE_P0);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, ~a->word[1], ~P256_WIDE_P1);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, ~a->word[2], ~P256_WIDE_P2);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, ~a->word[3], ~P256_WIDE_P3);
     o->word[0] = d0 & keep;
     o->word[1] = d1 & keep;
     o->word[2] = d2 & keep;
@@ -30,7 +30,7 @@ reason: p256_wide_fe_neg computes 0 - a word by word and adds p when it
     uint64_t d3 = p256_wide_sub_borrow(&borrow, 0, a->word[3]);
     uint64_t wrapped = p256_wide_mask(borrow);
     uint64_t carry = 0;
-    o->word[0] = p256_wide_add_carry(&carry, d0, P0 & wrapped);
-    o->word[1] = p256_wide_add_carry(&carry, d1, P1 & wrapped);
-    o->word[2] = p256_wide_add_carry(&carry, d2, P2 & wrapped);
-    o->word[3] = p256_wide_add_carry(&carry, d3, P3 & wrapped);
+    o->word[0] = p256_wide_add_carry(&carry, d0, P256_WIDE_P0 & wrapped);
+    o->word[1] = p256_wide_add_carry(&carry, d1, P256_WIDE_P1 & wrapped);
+    o->word[2] = p256_wide_add_carry(&carry, d2, P256_WIDE_P2 & wrapped);
+    o->word[3] = p256_wide_add_carry(&carry, d3, P256_WIDE_P3 & wrapped);

@@ -17,6 +17,13 @@
 
 #include "p256_wide_field.h"
 
+// p256_wide_field.h defines the addition and the subtraction inline. These defines rename every
+// later use to the stubs below, as proof/p256_wide_stubs.h renames the product row, and the
+// header's include guard keeps the files a harness reads after this one from defining them
+// again.
+#define p256_wide_fe_add stub_wide_fe_add
+#define p256_wide_fe_sub stub_wide_fe_sub
+
 uint64_t nondet_u64(void);
 
 // R mod p, the Montgomery form of 1, repeated from p256_wide_field.c.

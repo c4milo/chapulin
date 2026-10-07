@@ -2185,12 +2185,12 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_row        128 properties,  3 s, 243 MB
 #   p256_wide_row_sum    116 properties,  4 s, 154 MB
 #   p256_wide_sqr         69 properties,  4 s, 444 MB
-#   p256_wide_field      919 properties, 12 s, 182 MB
-#   p256_wide_field_mul  739 properties, 14 s, 213 MB
+#   p256_wide_field      919 properties,  8 s, 174 MB
+#   p256_wide_field_mul  599 properties,  9 s, 103 MB
 #   p256_wide_scalar     465 properties, 22 s, 715 MB
 #   p256_wide_point      319 properties,  3 s,  70 MB
-#   p256_wide_digit      370 properties, 28 s, 523 MB
-#   p256_wide_mul        423 properties, 37 s, 593 MB
+#   p256_wide_digit      371 properties, 29 s, 519 MB
+#   p256_wide_mul        423 properties, 38 s, 412 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The p256_wide_sqr, p256_wide_field, p256_wide_field_mul and p256_wide_scalar lines
 # were measured again on 2026-10-06, after the square of four words joined
@@ -2201,7 +2201,10 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # same way at a load average of about 3. The p256_wide_point and
 # p256_wide_mul lines were measured again on 2026-10-07, after the key
 # exchange moved to Jacobian coordinates (docs/decisions.md 112), the same way
-# at a load average of about 5. p256_wide_mul runs with
+# at a load average of about 5, and the p256_wide_field, p256_wide_field_mul,
+# p256_wide_digit and p256_wide_mul lines again after the addition and the
+# subtraction moved into p256_wide_field.h, inline (docs/decisions.md 114).
+# p256_wide_mul runs with
 # --no-array-field-sensitivity. By default cbmc tracks an array of up to 64
 # elements element by element, and over the 1,376 entries the base
 # multiplication reads, the line took 492 s that way; without that tracking it
@@ -2223,7 +2226,7 @@ launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check --no-array-field-sensitivity
-launch fast full p256_wide_wipe 2 "ct_wipe.0:2401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # p256_wide_verify: the host object's ECDSA P-256 verifier over contracts of
 # the wide entries it calls, with p256_scalar.c's marshalling, reduction
 # and range predicates on their real bodies (docs/decisions.md 96 and

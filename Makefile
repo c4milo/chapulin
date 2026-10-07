@@ -53,6 +53,13 @@ STACK_KEX_HYBRID_COPIES = $(if $(filter mlkem.c,$(KEX_HYBRID_SRCS)),mlkem_avx2.c
 # host object holds the file, and docs/decisions.md 95 says why the
 # window is sixteen entries. The ceiling applies to that file alone.
 STACK_BUDGET_RSA_SIGN64 := 6656
+# p256_wide_wipe.c, which only a host object holds, gets its own ceiling
+# too: its frame is the array it wipes after each wide P-256 call, and the
+# array must reach as deep as the deepest of them. p256_wide_mul writes
+# 2,560 bytes below its caller under gcc 13.3 for x86-64 on the 128-bit
+# sums, so the array is 3,072 bytes (p256_wide_wipe.h, docs/decisions.md
+# 114).
+STACK_BUDGET_P256_WIDE_WIPE := 3584
 
 # cfg.h makes the entropy pattern a declared build choice with no
 # default, so every translation unit that sees cfg.h must say which
@@ -4931,9 +4938,10 @@ lint-stack-run:
 	  case " $(KEX_HYBRID_SRCS) $(call hash_hw_of,$(KEX_HYBRID_SRCS)) $(STACK_KEX_HYBRID_COPIES) " in \
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
+	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
 	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -7104,7 +7112,8 @@ lint-bench-numbers:
 # it, and the text it reads is the header's own, so it asks for no pinned
 # version.
 lint-p256-wide:
-	@python3 tools/p256_wide.py check p256_wide_field.c p256_wide_scalar.c p256_wide_point.c
+	@python3 tools/p256_wide.py check p256_wide_field.h p256_wide_field.c p256_wide_scalar.c \
+	  p256_wide_point.c
 	@python3 tools/p256_wide.py table | cmp -s - p256_wide_table.c \
 	  || { echo "lint-p256-wide: p256_wide_table.c is not what tools/p256_wide.py table prints;" \
 	       "regenerate it with: python3 tools/p256_wide.py table > p256_wide_table.c"; exit 1; }

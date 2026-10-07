@@ -713,8 +713,9 @@ The entries are grouped by area:
     and added to the four squares, wraps nothing for any words, so its
     eight words hold the whole square (decision 105). It reads the
     builtins, which `p256_wide_row` holds to the sums' reference.
-  - `p256_wide_field`: every routine with no product, on its real body.
-    The conditional subtraction of p, `p256_wide_fe_add`,
+  - `p256_wide_field`: every routine with no product, on its real body,
+    the addition and the subtraction `p256_wide_field.h` defines inline
+    among them (decision 114). The conditional subtraction of p, `p256_wide_fe_add`,
     `p256_wide_fe_sub`, `p256_wide_fe_cmov` and the three predicates
     each match a reference that writes the same choice as a branch, so
     an inverted mask fails here. Add, subtract
@@ -748,7 +749,9 @@ The entries are grouped by area:
     conversions between homogeneous and Jacobian points,
     `p256_wide_point_from_bytes` over any 65 bytes and
     `p256_wide_point_affine` with and without a y output, over the field
-    stubbed to its contract. Both answers are 0 or `UINT32_MAX`.
+    stubbed to its contract: the stub header renames the header's inline
+    addition and subtraction to their stubs, as `proof/p256_wide_stubs.h`
+    renames the product row. Both answers are 0 or `UINT32_MAX`.
   - `p256_wide_digit`: the digits and the scan of the table, on their
     real bodies. For every 256-bit k, at both widths, the 64 four-bit
     signed odd digits and the 43 six-bit ones `window_digit` returns

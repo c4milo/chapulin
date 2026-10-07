@@ -1,5 +1,6 @@
-// Proves, for p256_wide_field.c, CONCRETE (real bodies, no stub), every
-// routine but the multiply and the three built on it:
+// Proves, for p256_wide_field.c and the routines p256_wide_field.h defines
+// inline, CONCRETE (real bodies, no stub), every routine but the multiply and
+// the three built on it:
 //
 //   memory safety and absence of UB over fully nondet words, a superset of
 //   the "below p" contract, in the distinct and aliased shapes a point
@@ -8,7 +9,7 @@
 //   here goes through p256_wide_word.h's two steps, which wrap nothing;
 //
 //   functional equivalence of every masked choice to a reference that writes
-//   the same choice as a branch: reduce_once against `if (value >= p)
+//   the same choice as a branch: p256_wide_fe_reduce_once against `if (value >= p)
 //   subtract`, p256_wide_fe_add and p256_wide_fe_sub against a reference
 //   that carries and borrows in 128-bit sums, p256_wide_fe_cmov against
 //   `if (mask)`, and the three predicates against `==` and `<`. An inverted
@@ -19,7 +20,7 @@
 //   below p, and zero negates to zero;
 //
 //   a reduction round's carry out is 0 or 1 when the carry it is handed
-//   is, which is the word above the four that reduce_once takes;
+//   is, which is the word above the four that p256_wide_fe_reduce_once takes;
 //
 //   the bound of the Montgomery reduction: reduce() takes any eight words
 //   whose high four are below p, which is every product of two elements,
@@ -46,7 +47,7 @@
 
 #define WORDS P256_WIDE_FE_WORDS
 
-static const uint64_t PRIME[WORDS] = {P0, P1, P2, P3};
+static const uint64_t PRIME[WORDS] = {P256_WIDE_P0, P256_WIDE_P1, P256_WIDE_P2, P256_WIDE_P3};
 
 static void fe_nondet(p256_wide_fe *f) {
     for (size_t i = 0; i < WORDS; i++) {
@@ -69,16 +70,17 @@ static void prove_reduce_once(void) {
     __CPROVER_assume(high <= 1); // the carry out of an add, or of reduce()'s last round
 
     uint64_t borrow = ref_sub(want, t, PRIME);
-    reduce_once(got, t[0], t[1], t[2], t[3], high);
+    p256_wide_fe_reduce_once(got, t[0], t[1], t[2], t[3], high);
     int at_or_above = high == 1 || borrow == 0;
-    __CPROVER_assert(words_same(got, at_or_above ? want : t),
-                     "reduce_once: subtracts p exactly when the value is at or above it");
+    __CPROVER_assert(
+        words_same(got, at_or_above ? want : t),
+        "p256_wide_fe_reduce_once: subtracts p exactly when the value is at or above it");
 }
 
 // One round of the reduction returns a carry that is 0 or 1 when the carry
 // it is handed is. reduce() hands the first round 0 and each later round
 // what the round before returned, so the word above the four it gives
-// reduce_once is 0 or 1, which is what prove_reduce_once assumes.
+// p256_wide_fe_reduce_once is 0 or 1, which is what prove_reduce_once assumes.
 static void prove_reduce_round(void) {
     uint64_t t1 = nondet_u64();
     uint64_t t2 = nondet_u64();

@@ -4,7 +4,8 @@ and writes the table of multiples of the generator.
 
 Run from the repository root:
 
-    python3 tools/p256_wide.py check p256_wide_field.c p256_wide_scalar.c p256_wide_point.c
+    python3 tools/p256_wide.py check p256_wide_field.h p256_wide_field.c \
+        p256_wide_scalar.c p256_wide_point.c
     python3 tools/p256_wide.py table > p256_wide_table.c
 
 check's arguments are the sources the script reads. It takes them so that the
@@ -15,9 +16,11 @@ SEC 2's definition of secp256r1, never from the C under test. check reads
 each constant out of the C source that carries it, recomputes it, and stops
 with a message that names the file and the constant when a word differs:
 
-- p256_wide_field.c: the prime p, 2^512 mod p and 2^256 mod p, and the facts
-  its reduction and its inversion rest on: -p^-1 mod 2^64 is 1, (p + 1) / 2^64
-  is 2^192 - 2^160 + 2^128 + 2^32, and p - 2 is the run of bits the inversion
+- p256_wide_field.h: the prime p, whose words the header's inline addition and
+  subtraction read.
+- p256_wide_field.c: 2^512 mod p and 2^256 mod p, and the facts its reduction
+  and its inversion rest on: -p^-1 mod 2^64 is 1, (p + 1) / 2^64 is
+  2^192 - 2^160 + 2^128 + 2^32, and p - 2 is the run of bits the inversion
   chain writes.
 - p256_wide_scalar.c: the group order n, -n^-1 mod 2^64, 2^512 mod n,
   2^256 mod n, and n - 2 as the two words the inverse reads four bits at a time
@@ -97,9 +100,11 @@ def on_curve(point):
 
 
 def check_field():
+    header = "p256_wide_field.h"
+    expect(header, "the prime P256_WIDE_P0..P3",
+           [defined(source(header), f"P256_WIDE_P{i}") for i in range(4)], words(P))
     name = "p256_wide_field.c"
     text = source(name)
-    expect(name, "the prime P0..P3", [defined(text, f"P{i}") for i in range(4)], words(P))
     expect(name, "RR, 2^512 mod p", initialized(text, "RR"), words(R * R % P))
     expect(name, "p256_wide_fe_one_mont, 2^256 mod p",
            initialized(text, "p256_wide_fe_one_mont"), words(R % P))
@@ -137,7 +142,7 @@ def check_point():
     assert on_curve((GX, GY)), "G is not on the curve"
 
 
-CHECKED = ["p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c"]
+CHECKED = ["p256_wide_field.h", "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c"]
 
 
 def check(names):
