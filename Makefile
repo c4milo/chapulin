@@ -7237,9 +7237,12 @@ endif
 # whether the C has a data-dependent branch, not whether the target's own
 # multiply is uniform. That second question belongs to the silicon and to
 # ct.h's comment, not to this binary.
+#
+# Every timing binary links -lm: the t-test calls sqrt, which glibc keeps in
+# libm and macOS's libc holds itself.
 bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS) -lm
 # The same t-test over the wide X25519 field, built as a host object builds
 # its sources, with -DTEST_X25519_WIDE so that the x25519 row calls the
 # field's entry. What this binary measures is whether the caller's multiply
@@ -7249,7 +7252,7 @@ bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_X25519_WIDE -I. -o $@ test/timing_test.c \
-	  $(call host_srcs,$(SRCS))
+	  $(call host_srcs,$(SRCS)) -lm
 # The same t-test over the wide P-256 files and the table of multiples of
 # G (docs/decisions.md 94), with -DTEST_P256_WIDE: a key generation, a key
 # exchange and a signature under the constant-time answer, each a fixed
@@ -7258,7 +7261,7 @@ bin/timing_x25519_wide: test/timing_test.c $(call host_srcs,$(SRCS)) $(HDRS) $(T
 P256_TIMING_SRCS := $(filter-out test/stack_residue.c,$(P256_EQUIV_TEST_SRCS))
 bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_P256_WIDE -I. -o $@ test/timing_test.c $(P256_TIMING_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_P256_WIDE -I. -o $@ test/timing_test.c $(P256_TIMING_SRCS) -lm
 
 # The same t-test over the host object's RSA arithmetic, with
 # -DTEST_RSA_SIGN64 so that the binary runs that file's two rows: the
@@ -7269,7 +7272,7 @@ bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
 bin/timing_rsa_sign64: test/timing_test.c $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_RSA_SIGN64 -I. -o $@ test/timing_test.c \
-	  $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS)
+	  $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) -lm
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.
