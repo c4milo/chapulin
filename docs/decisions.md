@@ -7584,7 +7584,9 @@ does nothing more.
       search of the stack catches under Apple clang 21 for arm64. Under
       gcc 13 for x86-64 that search catches the dropped wipe of 2a and not
       the dropped wipe of the running sum, whose bytes a later call's
-      frame writes over first. Four of the mutants are violation files.
+      frame writes over first. Three of the mutants are violation files:
+      CI's mutants job runs gcc 13 for x86-64, where the fourth, the
+      dropped wipe of the running sum, passed, so it is not one.
       `rsa_mont64_mul` proves the square's memory accesses at the bound
       and `rsa_mont64_sums` that no sum in it wraps, at four limbs, which
       run each kind of round. `make timing` has a row for it: n - 1, whose

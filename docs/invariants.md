@@ -4131,9 +4131,9 @@ last `ROLE=server` stub, as the entry said it would.
   changed, which it refuses; and the reduction, the exponentiation and
   the recombination each called on its own, because inside a signature a
   later call's frame is written over theirs
-  (`test/rsa_sign_equiv_pieces.c`). One violation file drops each wipe:
+  (`test/rsa_sign_equiv_pieces.c`). One violation file drops each wipe
+  but the square's running sum:
   `inv17-rsa-mont64-running-sum-wipe-dropped`,
-  `inv17-rsa-mont64-square-running-sum-wipe-dropped`,
   `inv17-rsa-mont64-square-double-wipe-dropped`,
   `inv17-rsa-mont64-public-base-wipe-dropped`,
   `inv17-rsa-mont64-public-power-wipe-dropped`,
@@ -4149,7 +4149,8 @@ last `ROLE=server` stub, as the entry said it would.
   two (decision 106): it catches both of those under Apple clang 21 for
   arm64, and under gcc 13 for x86-64 it catches the dropped wipe of 2a
   and not that of the running sum, whose bytes a later call's frame
-  writes over before the test looks. `table_select` ends
+  writes over before the test looks. CI's mutants job runs gcc 13 for
+  x86-64, so the running sum's wipe has no violation file. `table_select` ends
   by writing zero through the pointer its masks went through, so the
   limb behind it does not end on the last one; no test can look for a
   limb of all ones or of zeros, so the Semgrep rule of INV-16 holds that
