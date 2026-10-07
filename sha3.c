@@ -180,7 +180,9 @@ static uint8_t byte_at(const uint64_t lane[25], size_t at) {
 }
 
 // Eight bytes as one lane, and one lane as eight bytes. A compiler makes
-// one load or one store of the eight where the target allows it.
+// one load or one store of the eight where the target allows it. Both
+// name each byte: written as a loop over the eight, the store stayed a
+// loop under gcc 13 at -O2, one byte stored per iteration.
 static uint64_t lane_from_bytes(const uint8_t b[8]) {
     return (uint64_t)b[0] | ((uint64_t)b[1] << 8) | ((uint64_t)b[2] << 16) |
            ((uint64_t)b[3] << 24) | ((uint64_t)b[4] << 32) | ((uint64_t)b[5] << 40) |
@@ -188,9 +190,14 @@ static uint64_t lane_from_bytes(const uint8_t b[8]) {
 }
 
 static void lane_to_bytes(uint8_t b[8], uint64_t lane) {
-    for (int i = 0; i < 8; i++) {
-        b[i] = (uint8_t)(lane >> (8 * i));
-    }
+    b[0] = (uint8_t)lane;
+    b[1] = (uint8_t)(lane >> 8);
+    b[2] = (uint8_t)(lane >> 16);
+    b[3] = (uint8_t)(lane >> 24);
+    b[4] = (uint8_t)(lane >> 32);
+    b[5] = (uint8_t)(lane >> 40);
+    b[6] = (uint8_t)(lane >> 48);
+    b[7] = (uint8_t)(lane >> 56);
 }
 
 // XORs the n bytes at in into the block from byte position pos on, for

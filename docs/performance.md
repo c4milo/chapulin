@@ -256,9 +256,9 @@ table.
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
 | P-256 verify (`TRUST=raw-ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
 | full pinned handshake crypto (default) | 90.2 M | 180 | 63.7 M | 117.0 M |
-| ML-KEM-768 keygen (`KEX=pq`) | 1.3 M | 3 | 1.1 M | 1.3 M |
-| ML-KEM-768 decapsulate (`KEX=pq`) | 1.7 M | 3 | 1.4 M | 1.7 M |
-| full hybrid handshake crypto (`KEX=pq`) | 94.6 M | 189 | 67.3 M | 121.3 M |
+| ML-KEM-768 keygen (`KEX=pq`) | 1.3 M | 3 | 1.0 M | 1.2 M |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 1.6 M | 3 | 1.3 M | 1.6 M |
+| full hybrid handshake crypto (`KEX=pq`) | 94.4 M | 189 | 67.2 M | 121.1 M |
 
 ### The multiply decomposition
 
@@ -1003,3 +1003,4 @@ property, never a cost to trade (`ct.[ch]`).
 | gcc 13 for arm64 wrote 13 vector registers to the stack in `sha3_hw.c`'s permutation, and three a round with four lanes held in a struct the function wiped, where clang 18, 21 and 23 wrote none. | A round of Keccak-f[1600] keeps 32 values at once, the 25 lanes and seven more, and arm64 has 32 vector registers. A compiler that needs a 33rd writes a lane to a slot it picks, and no wipe written in C clears one. | Before a path that keeps every register live holds secrets, count its stores of vector registers to the stack under each compiler that builds it. Decision 99 builds this one under clang alone. |
 | Apple clang 21 and clang 23 compiled a second copy of an earlier form of `sha3_hw.c`'s permutation for the arguments one caller passed, and the second copy wrote five or six lanes to the stack where the first wrote none. | A compiler picks the registers of each copy of a function anew. | Call a function whose register use a check depends on through a volatile function pointer, so the one copy compiled is the copy checked (decision 99). |
 | With four lanes of the Keccak state kept in memory to free four registers, clang took 30% longer over 16 KiB, and 2.5% longer once the round computed their row first. | The next round's column parities read those lanes first, so each read waited for the store the round before had just made. | A value a loop keeps in memory to free a register is written early in an iteration and read late. |
+| Under gcc 13 on x86-64, an ML-KEM-768 encapsulation spent 49,591 of its 515,432 instructions in `sha3.c`'s `block_bytes`, which writes out squeezed bytes. | gcc at `-O2` kept `lane_to_bytes`, a loop over a lane's eight bytes, as a loop: a shift and a one-byte store each iteration. With each byte named, it compiles the eight stores to one 8-byte store. | Name each byte of a lane's store, as `lane_from_bytes` names each byte of its load, and count a byte loop's stores in gcc's disassembly. |
