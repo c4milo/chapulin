@@ -137,7 +137,10 @@ Home: github.com/c4milo.
   in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks at a time in
   two NEON or SSE2 lanes, a host session whose caller sets
-  CH_CPU_CONSTANT_TIME_MULTIPLY) +
+  CH_CPU_CONSTANT_TIME_MULTIPLY), `poly1305_avx2.[ch]` (eight blocks at a
+  time in four AVX2 lanes, an x86-64 session whose caller sets that bit
+  and CH_CPU_AVX2) and `poly1305_scalar.h` (the scalar steps both
+  share) +
   `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
   write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
@@ -165,7 +168,7 @@ Home: github.com/c4milo.
   CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) with the `p256_wide_*` files (the same
-  arithmetic on four 64-bit limbs, and k·G from a table of multiples of
+  arithmetic on four 64-bit words, and k·G from a table of multiples of
   G that is read whole and kept by mask, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` and
   `p256_wide_verify_point.c` run `p256.[ch]`'s verification on the wide
@@ -173,11 +176,11 @@ Home: github.com/c4milo.
   session of a host object) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; a host object's arm
   computes R^2 by a long division that branches on the public modulus)
-  with `rsa_mont64.[ch]` (the same public operation on 64-bit limbs,
+  with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
   every session of a host object, and the square both it and the signer
   run) + `p384.[ch]`/
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
-  on six 64-bit limbs, every session of a host object) +
+  on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
@@ -292,7 +295,8 @@ Home: github.com/c4milo.
   A host object holds both multiplies. `poly1305.c` and `mlkem_poly.c`
   compile once under their own names on the decomposition and again as
   `<file>_native.c` under `widemul_native.h`'s renames, and
-  `poly1305_vector.c` compiles as its native copy alone. Three more take
+  `poly1305_vector.c` and `poly1305_avx2.c` compile as their native copies
+  alone. Three more take
   their second copy from other files on the 64x64->128 multiply:
   X25519's is `x25519_wide.c`, P-256's is the `p256_wide_*` files, and
   RSA signing's is `rsa_sign64.c`, which signs by the Chinese remainder
@@ -303,14 +307,15 @@ Home: github.com/c4milo.
   function pointer. The bit is the caller's statement about every
   widening multiply the session runs, 32x32 and 64x64, scalar and vector:
   under it Poly1305 runs `poly1305_vector.c`, whose lanes multiply with
-  NEON's UMULL and UMLAL or SSE2's PMULUDQ, X25519 runs the wide
-  field's five 51-bit limbs, P-256 runs the wide files' four 64-bit
-  limbs, and RSA signs with `rsa_sign64.c`. `ct.h` refuses
+  NEON's UMULL and UMLAL or SSE2's PMULUDQ, or on x86-64 with CH_CPU_AVX2
+  `poly1305_avx2.c` on VPMULUDQ, X25519 runs the wide field's five 51-bit
+  words, P-256 runs the wide files' four 64-bit words, and RSA signs with
+  `rsa_sign64.c`. `ct.h` refuses
   `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one
   (docs/decisions.md 52, 83, 87, 94 and 95, INV-34).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way. No variable picks the X25519 field or the ChaCha20 keystream.
-  Every object holds the 16-limb field and `chacha20.c`'s loop, which stay
+  Every object holds the 16-word field and `chacha20.c`'s loop, which stay
   the references and are all a device object runs. A host object runs
   ChaCha20 on `chacha20_vector.c`'s passes of eight blocks on NEON and
   four on SSE2 in every session: every arm64 and x86-64 CPU has those, so
@@ -326,7 +331,9 @@ Home: github.com/c4milo.
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
   input is public (docs/decisions.md 107), and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
-  (docs/decisions.md 90). Three bits each state a hash's instructions
+  (docs/decisions.md 90). Beside the multiply bit, `CH_CPU_AVX2` also
+  runs a Poly1305 update of 512 bytes or more on `poly1305_avx2.c`
+  (docs/decisions.md 110). Three bits each state a hash's instructions
   and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
   runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
   on `sha256_hw.c`. `CH_CPU_CONSTANT_TIME_SHA512`, an arm64 bit, runs its
@@ -343,11 +350,12 @@ Home: github.com/c4milo.
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
-  `poly1305_vector.c` to `poly1305.c`'s loop the same way, and searches
-  the stack below a call for the powers of r: on x86-64 the path reads
-  its multipliers through volatile pointers, so the powers stay in the
-  one struct the call wipes and in no spill slot the compiler picks
-  (docs/decisions.md 83). `bin/x86_kernels_test` counts which calls run a
+  `poly1305_vector.c`, and on a CPU with AVX2 `poly1305_avx2.c`, to
+  `poly1305.c`'s loop the same way, and searches the stack below a call
+  for the powers of r: on x86-64 both paths read their multipliers
+  through volatile pointers, so the powers stay in the one struct the
+  call wipes and in no spill slot the compiler picks (docs/decisions.md
+  83 and 110). `bin/x86_kernels_test` counts which calls run a
   kernel under each `ch_cfg.cpu` value. `bin/sha2_equiv_test` holds
   `sha256_hw.c` and `sha512_hw.c` to the portable hashes the same way and
   searches the stack below each call, and `bin/hash_runtime_test` counts
