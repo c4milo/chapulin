@@ -6,7 +6,7 @@
 // the stack it uses.
 //
 // The runs of rsa_sign_equiv_residue.h look for values they can compute,
-// two limbs side by side. A value shorter than a limb they cannot look
+// two words side by side. A value shorter than a word they cannot look
 // for, and a compiler can leave one: under clang for arm64 the first form
 // of rsa_sign64.c's table read left the four bits of the exponent that the
 // last step read, in a register the next multiplication saved in its
@@ -89,8 +89,8 @@ static const test_rsa_sign_key *differential_from;
 static ch_rsa_priv differential_exchanged;
 static uint8_t differential_messages[2][CH_RSA_MODULUS_MAX];
 static rsa_mont64_modulus differential_records[2];
-static uint64_t differential_bases[2][PRIME_LIMBS];
-static uint64_t differential_halves[2][PRIME_LIMBS];
+static uint64_t differential_bases[2][PRIME_WORDS];
+static uint64_t differential_halves[2][PRIME_WORDS];
 
 // Whether the turn is the one that takes a run's second input.
 static int differential_second(void) {
@@ -224,7 +224,7 @@ static void differential_set_wrong_primes(void) {
     key.q[differential_from->n_len / 2 - 1] ^= differential_second() ? 0x04 : 0x02;
 }
 
-// The reduction's statics: the first message's limbs, and the record of p
+// The reduction's statics: the first message's words, and the record of p
 // or of q where the reduction reads p's.
 static void differential_set_reduction(void) {
     differential_load(0);
@@ -252,11 +252,11 @@ static void differential_set_recombination(void) {
 // the bytes above the last one when that byte is 1.
 static void differential_exchange(void) {
     size_t half_len = key.n_len / 2;
-    size_t limbs = (half_len + 7) / 8;
+    size_t words = (half_len + 7) / 8;
     const rsa_mont64_modulus *mod_q = &differential_records[1];
     uint8_t exponent[CH_RSA_MODULUS_MAX / 2];
-    uint64_t p[PRIME_LIMBS];
-    uint64_t one[PRIME_LIMBS] = {1};
+    uint64_t p[PRIME_WORDS];
+    uint64_t one[PRIME_WORDS] = {1};
     memcpy(exponent, key.q, half_len);
     unsigned take = 2;
     for (size_t i = half_len; i-- > 0;) {
@@ -264,7 +264,7 @@ static void differential_exchange(void) {
         exponent[i] = (uint8_t)(byte - take);
         take = byte < take;
     }
-    rsa_mont64_from_bytes(p, limbs, key.p, half_len);
+    rsa_mont64_from_bytes(p, words, key.p, half_len);
     rsa_mont64_reduce_once(p, p, mod_q);
     rsa_mont64_mont_mul(p, p, mod_q->r2, mod_q);
     rsa_sign64_power(p, p, exponent, half_len, mod_q);
@@ -283,23 +283,23 @@ static void differential_exchange(void) {
 // would make that key no input for a run.
 static int differential_prepare(const test_rsa_sign_key *from) {
     size_t half_len = from->n_len / 2;
-    size_t em_limbs = from->n_len / 8;
+    size_t em_words = from->n_len / 8;
     uint8_t sig[CH_RSA_MODULUS_MAX];
     differential_from = from;
     test_rsa_sign_key_load(&key, from);
     rsa_mont64_modulus_init(&differential_records[0], key.p, half_len, 8 * half_len);
     rsa_mont64_modulus_init(&differential_records[1], key.q, half_len, 8 * half_len);
     // Each message modulo p. The second pass leaves the first message's
-    // limbs in piece_em, which the half modulo q below reads.
+    // words in piece_em, which the half modulo q below reads.
     for (size_t i = 2; i-- > 0;) {
         random_message(differential_messages[i]);
-        rsa_mont64_from_bytes(piece_em, em_limbs, differential_messages[i], from->n_len);
-        rsa_sign_equiv_reduction(differential_bases[i], piece_em, em_limbs,
+        rsa_mont64_from_bytes(piece_em, em_words, differential_messages[i], from->n_len);
+        rsa_sign_equiv_reduction(differential_bases[i], piece_em, em_words,
                                  &differential_records[0]);
     }
     rsa_sign64_power(differential_halves[0], differential_bases[0], key.dp, half_len,
                      &differential_records[0]);
-    rsa_sign_equiv_reduction(differential_halves[1], piece_em, em_limbs, &differential_records[1]);
+    rsa_sign_equiv_reduction(differential_halves[1], piece_em, em_words, &differential_records[1]);
     rsa_sign64_power(differential_halves[1], differential_halves[1], key.dq, half_len,
                      &differential_records[1]);
 

@@ -13,7 +13,7 @@
 // The curve coefficient b and the generator G, each already multiplied by
 // R = 2^256 so that they sit in the Montgomery domain the routines below
 // work in. test/gen_p256_sign_vectors.py recomputes all three from the
-// SEC 2 values and stops if any limb here differs.
+// SEC 2 values and stops if any word here differs.
 //
 // b = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
 static const p256_fe B_MONT = {
@@ -134,7 +134,7 @@ void p256_point_cswap(p256_point *a, p256_point *b, uint32_t mask) {
 // https://github.com/c4milo/chapulin/issues/106).
 static void ladder_round(p256_point *r0, p256_point *r1, p256_point *sum, const p256_scalar *k,
                          int i) {
-    uint32_t bit = (k->limb[i >> 5] >> (i & 31)) & 1U;
+    uint32_t bit = (k->word[i >> 5] >> (i & 31)) & 1U;
     uint32_t mask = ~(bit - 1U); // clear bit -> zero, set bit -> all ones
     p256_point_cswap(r0, r1, mask);
     p256_point_add(sum, r0, r1);
@@ -150,7 +150,7 @@ void p256_point_mul(p256_point *o, const p256_scalar *k, const p256_point *p) {
 
     // Most significant bit first: 256 rounds, each the same work whatever
     // the bit holds.
-    for (int i = P256_SCALAR_LIMBS * 32 - 1; i >= 0; i--) {
+    for (int i = P256_SCALAR_WORDS * 32 - 1; i >= 0; i--) {
         ladder_round(&r0, &r1, &sum, k, i);
     }
     *o = r0;

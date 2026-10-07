@@ -25,8 +25,8 @@ const p256_scalar p256_scalar_zero = {
 
 static void havoc_scalar(p256_scalar *o) {
     __CPROVER_assert(__CPROVER_w_ok(o, sizeof *o), "scalar output writable");
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        o->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        o->word[i] = nondet_u32();
     }
 }
 

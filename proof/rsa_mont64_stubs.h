@@ -9,7 +9,7 @@
 // own #include from reading the real definition again.
 //
 // WHAT THE STUB MODELS: ct_mul128 takes any two operands and returns any
-// value at or below (2^64 - 1)^2, the largest product two limbs have.
+// value at or below (2^64 - 1)^2, the largest product two words have.
 // That is 2^128 - 2^65 + 1: a high word of 2^64 - 2 and a low word of 1.
 //
 // WHAT DISCHARGES THE CONTRACT: rsa_mont64_mul128_harness.c proves the
@@ -47,20 +47,20 @@ static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
 
 #include "rsa_mont64.c"
 
-static void havoc_limbs(uint64_t *a, size_t k) {
+static void havoc_words(uint64_t *a, size_t k) {
     for (size_t i = 0; i < k; i++) {
         a[i] = nondet_u64();
     }
 }
 
-// A modulus record of k limbs, every limb unconstrained: the
+// A modulus record of k words, every word unconstrained: the
 // multiplication's memory accesses and its sums hold for any modulus,
 // odd or not, and for any m0inv.
 static void havoc_modulus(rsa_mont64_modulus *mod, size_t k) {
-    havoc_limbs(mod->m, k);
-    havoc_limbs(mod->r2, k);
+    havoc_words(mod->m, k);
+    havoc_words(mod->r2, k);
     mod->m0inv = nondet_u64();
-    mod->limbs = k;
+    mod->words = k;
 }
 
 #endif

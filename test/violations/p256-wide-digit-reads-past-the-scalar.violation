@@ -3,9 +3,9 @@ file: p256_wide_mul.c
 catches: proof/prove-one.sh p256_wide_digit
 reason: the bit read drops its test of the position against 255, so the
   top six-bit window reads bits 256 and 257, which index the scalar's
-  limb 8 of 8: a read past the object. The bits it reads land above the
+  word 8 of 8: a read past the object. The bits it reads land above the
   top digit's terms, so the digits can still come out right and a vector
-  need not notice. proof/p256_wide_digit_harness.c proves every limb
+  need not notice. proof/p256_wide_digit_harness.c proves every word
   index in bounds for every window at both widths. Each run is a proof,
   so this belongs to the nightly's test-invariants-proof-backed job.
 

@@ -13,7 +13,7 @@
 #define SLEN 32 // salt length, fixed
 
 // The check in rsa_pss_verify keeps n_len a multiple of 8, and rsa_mont.c
-// counts limbs as CH_RSA_MODULUS_MAX / 4, so the bound itself must be
+// counts words as CH_RSA_MODULUS_MAX / 4, so the bound itself must be
 // one. rsa.h defines it; a build that overrides it must keep the shape.
 _Static_assert(CH_RSA_MODULUS_MAX % 8 == 0 && CH_RSA_MODULUS_MAX >= 256,
                "CH_RSA_MODULUS_MAX must be a multiple of 8 and at least 256");

@@ -1,5 +1,5 @@
 // X25519 Diffie-Hellman (RFC 7748). Montgomery ladder over 2^255-19 with
-// 16-bit limbs in int64 words: uniform schoolbook products, small enough
+// sixteen int64 words of 16 bits each: uniform schoolbook products, small enough
 // bounds for machine checking, and constant time by construction — the
 // ladder branches on nothing and indexes memory by nothing secret.
 #ifndef CH_X25519_H

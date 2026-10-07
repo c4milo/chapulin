@@ -14,11 +14,11 @@
 //
 //   every digit's index is below the length of its row, its sign mask is 0
 //   or all ones, the top window's digit is positive, and every bit the digit
-//   reads is inside the scalar: the shifts and the limb index are proven in
+//   reads is inside the scalar: the shifts and the word index are proven in
 //   bounds for every window;
 //
 //   table_select and multiple_select return the row's entry at the index,
-//   limb for limb, for every index below the row's length and any row
+//   word for word, for every index below the row's length and any row
 //   contents. A scan that skips an entry, stops early or keeps two entries
 //   fails here;
 //
@@ -37,30 +37,30 @@
 #include "p256_wide_mul.c"
 
 static void scalar_nondet(p256_scalar *k) {
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        k->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        k->word[i] = nondet_u32();
     }
 }
 
-// term = value * 2^shift in four 64-bit limbs, for value below 2^8 and shift below 256: the
-// limb the shift names, and the bits that cross into the limb above.
-static void shifted(uint64_t term[REF_LIMBS], uint64_t value, size_t shift) {
-    size_t limb = shift >> 6;
+// term = value * 2^shift in four 64-bit words, for value below 2^8 and shift below 256: the
+// word the shift names, and the bits that cross into the word above.
+static void shifted(uint64_t term[REF_WORDS], uint64_t value, size_t shift) {
+    size_t word = shift >> 6;
     size_t bit = shift & 63;
-    for (size_t i = 0; i < REF_LIMBS; i++) {
+    for (size_t i = 0; i < REF_WORDS; i++) {
         term[i] = 0;
     }
-    term[limb] = value << bit;
-    if (bit != 0 && limb + 1 < REF_LIMBS) {
-        term[limb + 1] = value >> (64 - bit);
+    term[word] = value << bit;
+    if (bit != 0 && word + 1 < REF_WORDS) {
+        term[word + 1] = value >> (64 - bit);
     }
 }
 
 // The digits of k at one width, bits wide, windows of them, each index below entries.
 static void prove_digits_of(size_t bits, size_t windows, uint64_t entries) {
     p256_scalar k;
-    uint64_t sum[REF_LIMBS] = {0, 0, 0, 0};
-    uint64_t want[REF_LIMBS];
+    uint64_t sum[REF_WORDS] = {0, 0, 0, 0};
+    uint64_t want[REF_WORDS];
     scalar_nondet(&k);
     for (size_t window = 0; window < windows; window++) {
         digit d = window_digit(&k, window, bits, windows);
@@ -71,7 +71,7 @@ static void prove_digits_of(size_t bits, size_t windows, uint64_t entries) {
                          "window_digit: the top window's digit is positive");
         // (2 index + 1) * 2^(bits window), below 2^256: the top window's index is below 8, so
         // its term is below 2^256 at both widths.
-        uint64_t term[REF_LIMBS];
+        uint64_t term[REF_WORDS];
         shifted(term, 2 * d.index + 1, bits * window);
         if (d.negative != 0) {
             (void)ref_sub(sum, sum, term);
@@ -79,11 +79,11 @@ static void prove_digits_of(size_t bits, size_t windows, uint64_t entries) {
             (void)ref_add(sum, sum, term);
         }
     }
-    for (size_t i = 0; i < REF_LIMBS; i++) {
-        want[i] = (uint64_t)k.limb[2 * i] | ((uint64_t)k.limb[2 * i + 1] << 32);
+    for (size_t i = 0; i < REF_WORDS; i++) {
+        want[i] = (uint64_t)k.word[2 * i] | ((uint64_t)k.word[2 * i + 1] << 32);
     }
     want[0] |= 1;
-    __CPROVER_assert(limbs_same(sum, want), "the digits add up to k | 1");
+    __CPROVER_assert(words_same(sum, want), "the digits add up to k | 1");
 }
 
 static void prove_digits(void) {
@@ -92,16 +92,16 @@ static void prove_digits(void) {
 }
 
 static void fe_nondet(p256_wide_fe *f) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        f->limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        f->word[i] = nondet_u64();
     }
 }
 
-// Each comparison below names its limb through the row's own members,
-// row[index].y.limb[i]. cbmc 6.11.0 reads the wrong member through a pointer
+// Each comparison below names its word through the row's own members,
+// row[index].y.word[i]. cbmc 6.11.0 reads the wrong member through a pointer
 // to a second member of an array element at a symbolic index: with
-// `const uint64_t *p = row[index].y.limb`, it fails `p[0] ==
-// row[index].y.limb[0]`. The code under test takes no such pointer: every
+// `const uint64_t *p = row[index].y.word`, it fails `p[0] ==
+// row[index].y.word[0]`. The code under test takes no such pointer: every
 // row index in table_select and multiple_select is a loop counter.
 static void prove_selects(void) {
     p256_wide_affine affine_row[P256_WIDE_TABLE_ENTRIES];
@@ -124,13 +124,13 @@ static void prove_selects(void) {
     p256_wide_point point;
     table_select(&affine, affine_row, entry_index);
     multiple_select(&point, point_row, multiple_index);
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        __CPROVER_assert(affine.x.limb[i] == affine_row[entry_index].x.limb[i] &&
-                             affine.y.limb[i] == affine_row[entry_index].y.limb[i],
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        __CPROVER_assert(affine.x.word[i] == affine_row[entry_index].x.word[i] &&
+                             affine.y.word[i] == affine_row[entry_index].y.word[i],
                          "table_select: the entry at the index, and no other");
-        __CPROVER_assert(point.x.limb[i] == point_row[multiple_index].x.limb[i] &&
-                             point.y.limb[i] == point_row[multiple_index].y.limb[i] &&
-                             point.z.limb[i] == point_row[multiple_index].z.limb[i],
+        __CPROVER_assert(point.x.word[i] == point_row[multiple_index].x.word[i] &&
+                             point.y.word[i] == point_row[multiple_index].y.word[i] &&
+                             point.z.word[i] == point_row[multiple_index].z.word[i],
                          "multiple_select: the multiple at the index, and no other");
     }
 }

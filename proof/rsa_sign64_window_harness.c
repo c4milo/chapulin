@@ -11,13 +11,13 @@
 // digit is below 16.
 //
 // The read of the table. For any table, any index below 16, the largest
-// prime's limb count and any limbs in the output before the call,
+// prime's word count and any words in the output before the call,
 // table_select writes exactly the entry at that index: the proof picks
-// any one limb and requires it to be the table's. The read keeps the
-// output's own limbs under a zero mask, so what the output held is an
+// any one word and requires it to be the table's. The read keeps the
+// output's own words under a zero mask, so what the output held is an
 // input of the claim. It does not show that the function reads every entry
 // whatever the index is: a read that stops at the entry it wants writes
-// the same limbs. A Semgrep rule, inv-16-rsa-table-read, holds that
+// the same words. A Semgrep rule, inv-16-rsa-table-read, holds that
 // (docs/invariants.md INV-16).
 //
 // The mask. mask_of_bit returns all ones or all zeros and follows its
@@ -54,21 +54,21 @@ static void prove_exponent_digit(void) {
 
 static void prove_table_select(void) {
     power_table table;
-    uint64_t o[PRIME_LIMBS_MAX];
+    uint64_t o[PRIME_WORDS_MAX];
     for (size_t entry = 0; entry < TABLE_ENTRIES; entry++) {
-        for (size_t i = 0; i < PRIME_LIMBS_MAX; i++) {
+        for (size_t i = 0; i < PRIME_WORDS_MAX; i++) {
             table.powers[entry][i] = nondet_u64();
         }
     }
-    for (size_t i = 0; i < PRIME_LIMBS_MAX; i++) {
+    for (size_t i = 0; i < PRIME_WORDS_MAX; i++) {
         o[i] = nondet_u64();
     }
     uint64_t index = nondet_u64();
     __CPROVER_assume(index < TABLE_ENTRIES);
-    table_select(o, &table, index, PRIME_LIMBS_MAX);
-    size_t limb = nondet_size_t();
-    __CPROVER_assume(limb < PRIME_LIMBS_MAX);
-    __CPROVER_assert(o[limb] == table.powers[index][limb],
+    table_select(o, &table, index, PRIME_WORDS_MAX);
+    size_t word = nondet_size_t();
+    __CPROVER_assume(word < PRIME_WORDS_MAX);
+    __CPROVER_assert(o[word] == table.powers[index][word],
                      "table_select writes the entry at its index");
 }
 

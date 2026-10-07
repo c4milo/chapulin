@@ -23,32 +23,32 @@
 #pragma GCC target("avx2")
 #endif
 
-// The 2^128 bit of a whole block, in its fifth limb.
+// The 2^128 bit of a whole block, in its fifth word.
 #define HIGH_BIT ((uint32_t)1 << 24)
 
 // The vector operations the group loop below is written in: those of
 // poly1305_vector.c's SSE2 arm, on four lanes in place of two. VPMULUDQ
-// reads the low 32 bits of each 64-bit lane, so a limbs vector holds one
-// limb there in each of four lanes, with 0 in each lane's high 32 bits,
+// reads the low 32 bits of each 64-bit lane, so a words vector holds one
+// word there in each of four lanes, with 0 in each lane's high 32 bits,
 // and a sums vector holds one 64-bit sum of products in each of the same
 // four lanes. Every operation acts on all four lanes at once and has no
 // branch and no memory access that depends on a lane's value. The AVX2
 // calls take a lane's word as an int; the casts below keep its 32 bits,
 // which is how gcc and clang define the conversion of a value above
 // INT_MAX.
-typedef __m256i limbs;
+typedef __m256i words;
 typedef __m256i sums;
 
-static inline limbs limbs_of(uint32_t lane0, uint32_t lane1, uint32_t lane2, uint32_t lane3) {
+static inline words words_of(uint32_t lane0, uint32_t lane1, uint32_t lane2, uint32_t lane3) {
     return _mm256_set_epi32(0, (int)lane3, 0, (int)lane2, 0, (int)lane1, 0, (int)lane0);
 }
 
-// limb in every lane: one broadcast.
-static inline limbs limbs_broadcast(uint32_t limb) {
-    return _mm256_set1_epi64x((long long)limb);
+// word in every lane: one broadcast.
+static inline words words_broadcast(uint32_t word) {
+    return _mm256_set1_epi64x((long long)word);
 }
 
-static inline limbs limbs_add(limbs a, limbs b) {
+static inline words words_add(words a, words b) {
     return _mm256_add_epi64(a, b);
 }
 
@@ -57,7 +57,7 @@ static inline sums sums_zero(void) {
 }
 
 // sum + a * b in each lane, the product widened to 64 bits: VPMULUDQ.
-static inline sums sums_multiply_add(sums sum, limbs a, limbs b) {
+static inline sums sums_multiply_add(sums sum, words a, words b) {
     return _mm256_add_epi64(sum, _mm256_mul_epu32(a, b));
 }
 
@@ -72,12 +72,12 @@ static inline sums sums_add_carry_times_5(sums sum, sums from) {
     return _mm256_add_epi64(_mm256_add_epi64(sum, carry), _mm256_slli_epi64(carry, 2));
 }
 
-static inline sums sums_low_limb(sums a) {
-    return _mm256_and_si256(a, _mm256_set1_epi64x(LIMB_MASK));
+static inline sums sums_low_word(sums a) {
+    return _mm256_and_si256(a, _mm256_set1_epi64x(WORD_MASK));
 }
 
-// A sum below 2^32 is already a limbs vector: its high 32 bits are 0.
-static inline limbs sums_narrow(sums a) {
+// A sum below 2^32 is already a words vector: its high 32 bits are 0.
+static inline words sums_narrow(sums a) {
     return a;
 }
 
@@ -96,19 +96,19 @@ static inline __m128i load_16(const uint8_t *m) {
     return _mm_loadu_si128((const __m128i *)(const void *)m);
 }
 
-// The five limbs of the four blocks at m, block j in lane j, each with
+// The five words of the four blocks at m, block j in lane j, each with
 // its 2^128 bit. One vector takes blocks 0 and 2 and another blocks 1 and
 // 3, so unpacking their low 64-bit halves, and then their high ones, puts
 // each block's eight bytes in its own lane: the unpack works within each
 // 128-bit half. A 64-bit lane holds eight bytes of a block, little-endian
 // as poly1305_vector.h requires.
-static inline void load_blocks(limbs out[5], const uint8_t *m) {
+static inline void load_blocks(words out[5], const uint8_t *m) {
     __m256i even = _mm256_inserti128_si256(_mm256_castsi128_si256(load_16(m)), load_16(m + 32), 1);
     __m256i odd =
         _mm256_inserti128_si256(_mm256_castsi128_si256(load_16(m + 16)), load_16(m + 48), 1);
     __m256i low = _mm256_unpacklo_epi64(even, odd);
     __m256i high = _mm256_unpackhi_epi64(even, odd);
-    __m256i mask = _mm256_set1_epi64x(LIMB_MASK);
+    __m256i mask = _mm256_set1_epi64x(WORD_MASK);
     out[0] = _mm256_and_si256(low, mask);
     out[1] = _mm256_and_si256(_mm256_srli_epi64(low, 26), mask);
     out[2] = _mm256_and_si256(
@@ -117,54 +117,54 @@ static inline void load_blocks(limbs out[5], const uint8_t *m) {
     out[4] = _mm256_or_si256(_mm256_srli_epi64(high, 40), _mm256_set1_epi64x(HIGH_BIT));
 }
 
-// A power of r in each lane, as poly1305.c's loop holds r: the five limbs,
+// A power of r in each lane, as poly1305.c's loop holds r: the five words,
 // and 5 times each of the four whose products pass 2^130.
 typedef struct {
-    limbs r0, r1, r2, r3, r4;
-    limbs s1, s2, s3, s4;
+    words r0, r1, r2, r3, r4;
+    words s1, s2, s3, s4;
 } multiplier;
 
-// multiply_add reads each limb of a multiplier through a volatile
+// multiply_add reads each word of a multiplier through a volatile
 // pointer, as poly1305_vector.c's SSE2 arm does, and for its reason: AVX2
 // has 16 vector registers and a group's two multipliers are 18 vectors,
 // so a compiler that loads them before the loop keeps some in stack slots
 // it picks, which ct_wipe cannot name. Read this way, a product loads its
-// limb from the struct where it uses it, and the powers stay in the one
+// word from the struct where it uses it, and the powers stay in the one
 // struct the call wipes.
 typedef const volatile multiplier multiplier_read;
 
-// Limb i of each of the four powers, power j in lane j, times factor: 1
-// for the limb itself and 5 for the limb a product past 2^130 takes. Each
-// limb is at most 2^26, so 5 times it fits in 32 bits.
-static limbs limb_lanes(const uint32_t *const power[4], size_t limb, uint32_t factor) {
-    return limbs_of(power[0][limb] * factor, power[1][limb] * factor, power[2][limb] * factor,
-                    power[3][limb] * factor);
+// Word i of each of the four powers, power j in lane j, times factor: 1
+// for the word itself and 5 for the word a product past 2^130 takes. Each
+// word is at most 2^26, so 5 times it fits in 32 bits.
+static words word_lanes(const uint32_t *const power[4], size_t word, uint32_t factor) {
+    return words_of(power[0][word] * factor, power[1][word] * factor, power[2][word] * factor,
+                    power[3][word] * factor);
 }
 
 // power in every lane, for every group but the last.
 static void multiplier_broadcast(multiplier *by, const uint32_t power[5]) {
-    by->r0 = limbs_broadcast(power[0]);
-    by->r1 = limbs_broadcast(power[1]);
-    by->r2 = limbs_broadcast(power[2]);
-    by->r3 = limbs_broadcast(power[3]);
-    by->r4 = limbs_broadcast(power[4]);
-    by->s1 = limbs_broadcast(power[1] * 5);
-    by->s2 = limbs_broadcast(power[2] * 5);
-    by->s3 = limbs_broadcast(power[3] * 5);
-    by->s4 = limbs_broadcast(power[4] * 5);
+    by->r0 = words_broadcast(power[0]);
+    by->r1 = words_broadcast(power[1]);
+    by->r2 = words_broadcast(power[2]);
+    by->r3 = words_broadcast(power[3]);
+    by->r4 = words_broadcast(power[4]);
+    by->s1 = words_broadcast(power[1] * 5);
+    by->s2 = words_broadcast(power[2] * 5);
+    by->s3 = words_broadcast(power[3] * 5);
+    by->s4 = words_broadcast(power[4] * 5);
 }
 
 // power[j] in lane j, for the last group.
 static void multiplier_set(multiplier *by, const uint32_t *const power[4]) {
-    by->r0 = limb_lanes(power, 0, 1);
-    by->r1 = limb_lanes(power, 1, 1);
-    by->r2 = limb_lanes(power, 2, 1);
-    by->r3 = limb_lanes(power, 3, 1);
-    by->r4 = limb_lanes(power, 4, 1);
-    by->s1 = limb_lanes(power, 1, 5);
-    by->s2 = limb_lanes(power, 2, 5);
-    by->s3 = limb_lanes(power, 3, 5);
-    by->s4 = limb_lanes(power, 4, 5);
+    by->r0 = word_lanes(power, 0, 1);
+    by->r1 = word_lanes(power, 1, 1);
+    by->r2 = word_lanes(power, 2, 1);
+    by->r3 = word_lanes(power, 3, 1);
+    by->r4 = word_lanes(power, 4, 1);
+    by->s1 = word_lanes(power, 1, 5);
+    by->s2 = word_lanes(power, 2, 5);
+    by->s3 = word_lanes(power, 3, 5);
+    by->s4 = word_lanes(power, 4, 5);
 }
 
 // d += a * by in each lane: poly1305.c's five sums of five products, in
@@ -172,7 +172,7 @@ static void multiplier_set(multiplier *by, const uint32_t *const power[4]) {
 // reason: a2, a3 and a4 before a0 and a1, which carry below finishes
 // last. It and group_sums carry the attribute for the reason
 // poly1305_vector.c's multiply_add gives.
-static inline __attribute__((always_inline)) void multiply_add(sums d[5], const limbs a[5],
+static inline __attribute__((always_inline)) void multiply_add(sums d[5], const words a[5],
                                                                multiplier_read *by) {
     d[0] = sums_multiply_add(d[0], a[2], by->s3);
     d[0] = sums_multiply_add(d[0], a[3], by->s2);
@@ -209,19 +209,19 @@ static inline __attribute__((always_inline)) void multiply_add(sums d[5], const 
 //
 // Every array here is indexed by constants alone, as in
 // poly1305_vector.c's group_sums.
-static inline __attribute__((always_inline)) void group_sums(sums d[5], const limbs h[5],
+static inline __attribute__((always_inline)) void group_sums(sums d[5], const words h[5],
                                                              const uint8_t *m,
                                                              multiplier_read *first,
                                                              multiplier_read *second) {
-    limbs first_blocks[5];
-    limbs second_blocks[5];
+    words first_blocks[5];
+    words second_blocks[5];
     load_blocks(first_blocks, m);
     load_blocks(second_blocks, m + 64);
-    first_blocks[0] = limbs_add(first_blocks[0], h[0]);
-    first_blocks[1] = limbs_add(first_blocks[1], h[1]);
-    first_blocks[2] = limbs_add(first_blocks[2], h[2]);
-    first_blocks[3] = limbs_add(first_blocks[3], h[3]);
-    first_blocks[4] = limbs_add(first_blocks[4], h[4]);
+    first_blocks[0] = words_add(first_blocks[0], h[0]);
+    first_blocks[1] = words_add(first_blocks[1], h[1]);
+    first_blocks[2] = words_add(first_blocks[2], h[2]);
+    first_blocks[3] = words_add(first_blocks[3], h[3]);
+    first_blocks[4] = words_add(first_blocks[4], h[4]);
     d[0] = sums_zero();
     d[1] = sums_zero();
     d[2] = sums_zero();
@@ -236,18 +236,18 @@ static inline __attribute__((always_inline)) void group_sums(sums d[5], const li
 // low 26 bits plus the carry out of the value below it, and for value 0 5
 // times the carry out of value 4.
 static inline void carry_round(sums out[5], const sums in[5]) {
-    out[0] = sums_add_carry_times_5(sums_low_limb(in[0]), in[4]);
-    out[1] = sums_add_carry(sums_low_limb(in[1]), in[0]);
-    out[2] = sums_add_carry(sums_low_limb(in[2]), in[1]);
-    out[3] = sums_add_carry(sums_low_limb(in[3]), in[2]);
-    out[4] = sums_add_carry(sums_low_limb(in[4]), in[3]);
+    out[0] = sums_add_carry_times_5(sums_low_word(in[0]), in[4]);
+    out[1] = sums_add_carry(sums_low_word(in[1]), in[0]);
+    out[2] = sums_add_carry(sums_low_word(in[2]), in[1]);
+    out[3] = sums_add_carry(sums_low_word(in[3]), in[2]);
+    out[4] = sums_add_carry(sums_low_word(in[4]), in[3]);
 }
 
-// The five sums of each lane carried into limbs, in two rounds. A lane's
+// The five sums of each lane carried into words, in two rounds. A lane's
 // sums are below 2^58, and d4 below 2^56, since none of its products is
-// by 5 times a limb. The first round leaves values below 2^33, and the
-// second limbs below 2^26 + 2^10.
-static inline void carry(limbs h[5], const sums d[5]) {
+// by 5 times a word. The first round leaves values below 2^33, and the
+// second words below 2^26 + 2^10.
+static inline void carry(words h[5], const sums d[5]) {
     sums once[5];
     sums twice[5];
     carry_round(once, d);
@@ -293,12 +293,12 @@ void poly1305_avx2_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     multiplier_broadcast(&of_r.second, of_r.r4);
 
     // Lane 0 starts from the accumulator and lanes 1 to 3 from 0.
-    limbs h[5];
-    h[0] = limbs_of(p->h[0], 0, 0, 0);
-    h[1] = limbs_of(p->h[1], 0, 0, 0);
-    h[2] = limbs_of(p->h[2], 0, 0, 0);
-    h[3] = limbs_of(p->h[3], 0, 0, 0);
-    h[4] = limbs_of(p->h[4], 0, 0, 0);
+    words h[5];
+    h[0] = words_of(p->h[0], 0, 0, 0);
+    h[1] = words_of(p->h[1], 0, 0, 0);
+    h[2] = words_of(p->h[2], 0, 0, 0);
+    h[3] = words_of(p->h[3], 0, 0, 0);
+    h[4] = words_of(p->h[4], 0, 0, 0);
     sums d[5];
     for (; n > POLY1305_AVX2_GROUP; n -= POLY1305_AVX2_GROUP) {
         group_sums(d, h, m, &of_r.first, &of_r.second);

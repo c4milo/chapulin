@@ -3,14 +3,14 @@
 // p256_sign.h's entries, against the same Lean spec process
 // test/diff_test.c drives. The Makefile builds it as a host object's
 // sources, with -DCH_CPU_RUNTIME, and every row runs under both answers:
-// WIDEMUL_CONSTANT_TIME, which runs the wide files, four limbs of 64 bits
+// WIDEMUL_CONSTANT_TIME, which runs the wide files, four words of 64 bits
 // (docs/decisions.md 94), and WIDEMUL_NOT_STATED, which runs p256_field.c,
 // p256_scalar.c and p256_point.c on the decomposition.
 //
 // Its own main, as test/diff_x25519_test.c is: test/diff_test.c diffs the
 // verifier in p256.c, which shares no arithmetic with these files, and no
 // other row it runs reads them. spec/lean/Spec/P256.lean computes over Nat
-// modulo p and n, so it states no limb representation and serves both
+// modulo p and n, so it states no word representation and serves both
 // copies unchanged.
 //
 // Four rows, each on fresh random inputs. The first three run under both answers:

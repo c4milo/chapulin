@@ -5,14 +5,14 @@
 // must write the same bytes: a PSS signature is a function of the key,
 // the digest and the salt. The Makefile builds this as a host object's
 // sources, with -DCH_CPU_RUNTIME, so rsa_sign64_pss is the signer on
-// 64-bit limbs, which signs by the Chinese remainder theorem from the
+// 64-bit words, which signs by the Chinese remainder theorem from the
 // key's primes, and rsa_pss_sign is the ladder on the decomposition, the
 // code a device object runs.
 //
 // Its own main rather than rows of test/diff_test.c, because bin/diff is
 // built as a device object's sources and holds no 64-bit signer.
 // spec/lean/Spec/Rsa.lean computes RSASP1 over Nat as m^d mod n, so it
-// states no limb width and no route to that power, and serves both
+// states no word width and no route to that power, and serves both
 // signers unchanged: the spec takes n and d alone, and the 64-bit signer
 // must give its bytes from p, q, dp, dq and qinv.
 //

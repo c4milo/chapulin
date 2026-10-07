@@ -1,7 +1,7 @@
 // The contract x25519_wide_step and x25519_wide_tail replace the 64x64->128
-// multiply with, and the limb bounds both harnesses share. They prove the
-// wide X25519 field's ladder keeps every limb inside INV-34's bounds, the way
-// proof/x25519_stubs.h serves the 16-limb ladder.
+// multiply with, and the word bounds both harnesses share. They prove the
+// wide X25519 field's ladder keeps every word inside INV-34's bounds, the way
+// proof/x25519_stubs.h serves the 16-word ladder.
 //
 // Why this exists: one ladder step runs 190 products, each a 64x64
 // multiplier widened to 128 bits, and the step formula over the real
@@ -13,9 +13,9 @@
 //
 // WHAT THE STUB MODELS: ct_mul128 asserts its first operand is under 2^55
 // and its second under 2^60, and returns any value under 2^115. That domain
-// is what mul, sqr and mul_a24 hand the multiply when their operands' limbs
-// are under 2^54: a limb or a doubled limb first, and a limb, a doubled
-// limb, 19 times a limb, 38 times a limb or a24 second. The bound is bit
+// is what mul, sqr and mul_a24 hand the multiply when their operands' words
+// are under 2^54: a word or a doubled word first, and a word, a doubled
+// word, 19 times a word, 38 times a word or a24 second. The bound is bit
 // structure, a shift of an unconstrained value, rather than a comparison,
 // for the reason docs/proofs.md gives.
 //
@@ -27,7 +27,7 @@
 // real products.
 //
 // What the contract gives up: its bound is looser than the real products,
-// which are under 38 * 2^108 for the same operands. So the limb-1 bound these
+// which are under 38 * 2^108 for the same operands. So the word-1 bound these
 // two harnesses carry, 2^51 + 2^20, is looser than the 2^51 + 2^13 that
 // x25519_wide_mul_harness.c and x25519_wide_sqr_harness.c prove on the real
 // multiply. Both are INV-34's; the looser one is what the induction uses.
@@ -54,27 +54,27 @@ static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
 
 #include "x25519_wide.c"
 
-// The ladder's state between steps, INV-34: limbs 0, 2, 3 and 4 under 2^51
-// and limb 1 under 2^51 + 2^20, the form carry_columns leaves under the
+// The ladder's state between steps, INV-34: words 0, 2, 3 and 4 under 2^51
+// and word 1 under 2^51 + 2^20, the form carry_columns leaves under the
 // contract above.
-#define LIMB ((uint64_t)1 << 51)
-#define LIMB1 (((uint64_t)1 << 51) + ((uint64_t)1 << 20))
+#define WORD ((uint64_t)1 << 51)
+#define WORD1 (((uint64_t)1 << 51) + ((uint64_t)1 << 20))
 
-// A state limb: 51 unconstrained bits for limbs 0, 2, 3 and 4, and for limb 1
-// one more bit, cut back under LIMB1.
+// A state word: 51 unconstrained bits for words 0, 2, 3 and 4, and for word 1
+// one more bit, cut back under WORD1.
 static void assume_state(fe f) {
     for (size_t i = 0; i < 5; i++) {
         f[i] = nondet_u64() >> 13;
     }
-    uint64_t limb1 = nondet_u64() >> 12;
-    __CPROVER_assume(limb1 < LIMB1);
-    f[1] = limb1;
+    uint64_t word1 = nondet_u64() >> 12;
+    __CPROVER_assume(word1 < WORD1);
+    f[1] = word1;
 }
 
 #define ASSERT_STATE(f, what)                                                                      \
     do {                                                                                           \
-        __CPROVER_assert((f)[0] < LIMB && (f)[2] < LIMB && (f)[3] < LIMB && (f)[4] < LIMB, what);  \
-        __CPROVER_assert((f)[1] < LIMB1, what);                                                    \
+        __CPROVER_assert((f)[0] < WORD && (f)[2] < WORD && (f)[3] < WORD && (f)[4] < WORD, what);  \
+        __CPROVER_assert((f)[1] < WORD1, what);                                                    \
     } while (0)
 
 #endif

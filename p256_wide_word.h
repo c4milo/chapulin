@@ -1,14 +1,14 @@
-// The steps on 64-bit limbs that the wide P-256 arithmetic is built from: an add with carry, a
-// subtract with borrow, one row of a product, the square of four limbs, and a mask from a bit.
+// The steps on 64-bit words that the wide P-256 arithmetic is built from: an add with carry, a
+// subtract with borrow, one row of a product, the square of four words, and a mask from a bit.
 // p256_wide_field.c and p256_wide_scalar.c include this header and no other file does, so the
 // two moduli share these five and nothing else, as p256_field.c and p256_scalar.c share none of
 // their constants.
 //
 // Every step runs the same instructions whatever its operands hold. No branch and no index
-// reads a limb. The one instruction whose timing the C cannot state is the 64x64->128 multiply,
+// reads a word. The one instruction whose timing the C cannot state is the 64x64->128 multiply,
 // ct_mul128, which the session's CH_CPU_CONSTANT_TIME_MULTIPLY bit states (cpu_cfg.h).
-#ifndef CH_P256_WIDE_LIMB_H
-#define CH_P256_WIDE_LIMB_H
+#ifndef CH_P256_WIDE_WORD_H
+#define CH_P256_WIDE_WORD_H
 
 #include <stdint.h>
 
@@ -29,7 +29,7 @@
 //
 // gcc compiles neither builtin here. It expands one to an add and a jump on the add's carry,
 // and leaves the jump for its if-conversion passes to remove. Below -O1 those passes do not
-// run, and the carry is a limb's: under gcc 13.3 for x86-64 the builtins left 73 such jumps in
+// run, and the carry is a word's: under gcc 13.3 for x86-64 the builtins left 73 such jumps in
 // the wide files at -Og, and 214 at -O2 with the two passes turned off. On the other two forms
 // gcc 13.3 and 15.2 left none, at any level and with the passes off.
 //
@@ -118,10 +118,10 @@ static inline uint64_t p256_wide_sub_borrow(uint64_t *borrow, uint64_t a, uint64
 }
 
 // One row of a product: adds x * (b3 : b2 : b1 : b0) to (*t3 : *t2 : *t1 : *t0) and returns
-// the limb above them. The low halves of the four products go down one carry chain and the
+// the word above them. The low halves of the four products go down one carry chain and the
 // high halves down another.
 //
-// The sum is at most (2^64 - 1) * (2^256 - 1) + 2^256 - 1, which is below 2^320, so the limb
+// The sum is at most (2^64 - 1) * (2^256 - 1) + 2^256 - 1, which is below 2^320, so the word
 // returned holds everything above the four: the last line cannot wrap.
 // proof/p256_wide_row_harness.c proves that on the real multiply.
 static inline uint64_t p256_wide_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
@@ -143,12 +143,12 @@ static inline uint64_t p256_wide_mul_row(uint64_t *t0, uint64_t *t1, uint64_t *t
     return (uint64_t)(p3 >> 64) + low_carry + high_carry;
 }
 
-// The square of (a3 : a2 : a1 : a0) as the eight limbs (*t7 : ... : *t0): the six products
+// The square of (a3 : a2 : a1 : a0) as the eight words (*t7 : ... : *t0): the six products
 // a_i a_j with i < j summed once and doubled, and then the four squares a_i^2 added. That is
-// ten products, where a row of four for each limb is sixteen.
+// ten products, where a row of four for each word is sixteen.
 //
 // No sum wraps. The six products sum to below 2^511, because twice their sum plus the four
-// squares is the square, which is below 2^512, so the double fits the limbs from 1 to 7, and
+// squares is the square, which is below 2^512, so the double fits the words from 1 to 7, and
 // the square fits all eight. proof/p256_wide_sqr_harness.c proves that on the real multiply.
 static inline void p256_wide_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
                                          uint64_t *t4, uint64_t *t5, uint64_t *t6, uint64_t *t7,
@@ -159,16 +159,16 @@ static inline void p256_wide_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t
     ct_u128 p12 = ct_mul128(a1, a2);
     ct_u128 p13 = ct_mul128(a1, a3);
     ct_u128 p23 = ct_mul128(a2, a3);
-    // a0 (a1 + a2 2^64 + a3 2^128), at limbs 1 to 4.
+    // a0 (a1 + a2 2^64 + a3 2^128), at words 1 to 4.
     uint64_t carry = 0;
     uint64_t r2 = p256_wide_add_carry(&carry, (uint64_t)(p01 >> 64), (uint64_t)p02);
     uint64_t r3 = p256_wide_add_carry(&carry, (uint64_t)(p02 >> 64), (uint64_t)p03);
     uint64_t r4 = (uint64_t)(p03 >> 64) + carry;
-    // a1 (a2 + a3 2^64), at limbs 3 to 5.
+    // a1 (a2 + a3 2^64), at words 3 to 5.
     carry = 0;
     uint64_t q4 = p256_wide_add_carry(&carry, (uint64_t)(p12 >> 64), (uint64_t)p13);
     uint64_t q5 = (uint64_t)(p13 >> 64) + carry;
-    // The two rows and a2 a3, at limbs 1 to 6.
+    // The two rows and a2 a3, at words 1 to 6.
     carry = 0;
     uint64_t s1 = (uint64_t)p01;
     uint64_t s2 = r2;
@@ -176,7 +176,7 @@ static inline void p256_wide_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t
     uint64_t s4 = p256_wide_add_carry(&carry, r4, q4);
     uint64_t s5 = p256_wide_add_carry(&carry, q5, (uint64_t)p23);
     uint64_t s6 = (uint64_t)(p23 >> 64) + carry;
-    // Twice that sum, at limbs 1 to 7.
+    // Twice that sum, at words 1 to 7.
     uint64_t d7 = s6 >> 63;
     uint64_t d6 = (s6 << 1) | (s5 >> 63);
     uint64_t d5 = (s5 << 1) | (s4 >> 63);
@@ -184,7 +184,7 @@ static inline void p256_wide_sqr_product(uint64_t *t0, uint64_t *t1, uint64_t *t
     uint64_t d3 = (s3 << 1) | (s2 >> 63);
     uint64_t d2 = (s2 << 1) | (s1 >> 63);
     uint64_t d1 = s1 << 1;
-    // The four squares, a_i^2 at limbs 2i and 2i + 1.
+    // The four squares, a_i^2 at words 2i and 2i + 1.
     ct_u128 q0 = ct_mul128(a0, a0);
     ct_u128 q1 = ct_mul128(a1, a1);
     ct_u128 q2 = ct_mul128(a2, a2);

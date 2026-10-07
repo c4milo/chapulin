@@ -5,7 +5,7 @@ reason: rsa_mont64_mont_square returns without wiping d, twice its operand,
   so after every square a signature makes the dead frame holds the
   power it squared, shifted up one bit. No output changes, so no vector
   notices. bin/rsa_sign_equiv_test copies the stack below a signature
-  and finds two limbs of a value the signature held.
+  and finds two words of a value the signature held.
 
 --- old
     ct_wipe(d, (k + 1) * sizeof(uint64_t));

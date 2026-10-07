@@ -3,7 +3,7 @@ file: p256_wide_field.c
 catches: p256_equiv_test
 reason: the second round of the Montgomery reduction is handed 0 where
   the first round's carry belongs, so a product whose first round carried
-  out of its top limb is short by 2^320 before the division.
+  out of its top word is short by 2^320 before the division.
   bin/p256_equiv_test holds every product to p256_field.c's on random and
   edge elements.
 

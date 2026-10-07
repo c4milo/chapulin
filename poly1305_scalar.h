@@ -1,7 +1,7 @@
 // The scalar steps poly1305_vector.c and poly1305_avx2.c share: the
 // product of two numbers modulo 2^130 - 5, from which each path computes
 // the powers of r it multiplies by, and the carry that turns five sums of
-// products into five limbs. Both files include this header in a host
+// products into five words. Both files include this header in a host
 // object's native copy alone, where ct_widemul is the native multiply
 // (widemul_native.h). poly1305_avx2.c includes it before it turns AVX2 on,
 // so neither file's copy of these steps carries an instruction set the
@@ -13,8 +13,8 @@
 
 #include "ct.h"
 
-// A limb holds 26 bits.
-#define LIMB_MASK 0x3ffffffU
+// A word holds 26 bits.
+#define WORD_MASK 0x3ffffffU
 
 // Five sums below 2^60 carried into h, twice around: after the first
 // pass h1 can exceed 2^26, and the second leaves h0, h2, h3 and h4 below
@@ -24,25 +24,25 @@ static void carry_scalar(uint32_t h[5], uint64_t d[5]) {
     d[2] += d[1] >> 26;
     d[3] += d[2] >> 26;
     d[4] += d[3] >> 26;
-    uint64_t h0 = (d[0] & LIMB_MASK) + (d[4] >> 26) * 5;
-    uint64_t h1 = (d[1] & LIMB_MASK) + (h0 >> 26);
-    uint32_t h2 = (uint32_t)d[2] & LIMB_MASK;
-    uint32_t h3 = (uint32_t)d[3] & LIMB_MASK;
-    uint32_t h4 = (uint32_t)d[4] & LIMB_MASK;
-    h[0] = (uint32_t)h0 & LIMB_MASK;
-    h[1] = (uint32_t)h1 & LIMB_MASK;
+    uint64_t h0 = (d[0] & WORD_MASK) + (d[4] >> 26) * 5;
+    uint64_t h1 = (d[1] & WORD_MASK) + (h0 >> 26);
+    uint32_t h2 = (uint32_t)d[2] & WORD_MASK;
+    uint32_t h3 = (uint32_t)d[3] & WORD_MASK;
+    uint32_t h4 = (uint32_t)d[4] & WORD_MASK;
+    h[0] = (uint32_t)h0 & WORD_MASK;
+    h[1] = (uint32_t)h1 & WORD_MASK;
     h2 += (uint32_t)(h1 >> 26);
-    h[2] = h2 & LIMB_MASK;
+    h[2] = h2 & WORD_MASK;
     h3 += h2 >> 26;
-    h[3] = h3 & LIMB_MASK;
+    h[3] = h3 & WORD_MASK;
     h4 += h3 >> 26;
-    h[4] = h4 & LIMB_MASK;
+    h[4] = h4 & WORD_MASK;
     h[0] += (h4 >> 26) * 5;
     h[1] += h[0] >> 26;
-    h[0] &= LIMB_MASK;
+    h[0] &= WORD_MASK;
 }
 
-// out = left * right modulo 2^130 - 5, for the powers of r, with limbs of
+// out = left * right modulo 2^130 - 5, for the powers of r, with words of
 // at most 2^26 in and out.
 static void multiply_scalar(uint32_t out[5], const uint32_t left[5], const uint32_t right[5]) {
     uint32_t s1 = right[1] * 5;

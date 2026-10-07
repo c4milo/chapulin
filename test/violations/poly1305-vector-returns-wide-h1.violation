@@ -7,10 +7,10 @@ reason: carry_scalar hands back the vector path's accumulator after
   matches, and poly1305.c's loop and final carry would absorb the excess
   today; the contract is what keeps the next reader of the accumulator
   inside the bounds poly1305.c's proof explored. bin/poly1305_equiv_test
-  checks each limb after every direct call.
+  checks each word after every direct call.
 
 --- old
-    h[1] = (uint32_t)h1 & LIMB_MASK;
+    h[1] = (uint32_t)h1 & WORD_MASK;
     h2 += (uint32_t)(h1 >> 26);
 --- new
     h[1] = (uint32_t)h1;

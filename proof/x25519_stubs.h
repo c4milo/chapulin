@@ -1,6 +1,6 @@
 // The contract x25519_step and x25519_tail replace mul's multiply with,
-// and the limb bounds both harnesses share. They prove the ladder keeps
-// every limb inside the range the x25519 field-op proofs assume
+// and the word bounds both harnesses share. They prove the ladder keeps
+// every word inside the range the x25519 field-op proofs assume
 // (https://github.com/c4milo/chapulin/issues/50).
 //
 // Why this exists: mul runs 256 multiplies per call and one ladder step
@@ -28,12 +28,12 @@
 // composition asks. Nothing in x25519_step or x25519_tail reads the
 // product's value: every property is a bound.
 //
-// One thing the stub cannot see: mul narrows each limb to int32 before
-// the multiply, so the stub checks the narrowed operand. Every limb that
-// reaches mul is an entry limb (assumed under 2^17), a mul output (under
+// One thing the stub cannot see: mul narrows each word to int32 before
+// the multiply, so the stub checks the narrowed operand. Every word that
+// reaches mul is an entry word (assumed under 2^17), a mul output (under
 // 2^16 + 38, x25519_tail's first block) or one add or sub of two of those
 // (overflow-checked, under 2^18), and a value under 2^31 narrows exactly.
-// So the operand the stub checks is the limb itself.
+// So the operand the stub checks is the word itself.
 //
 // Checked, not only argued: cbmc's --conversion-check, run by hand on
 // 2026-09-03 under run.sh's other flags (cbmc 6.11.0, kissat 4.0.4),
@@ -54,8 +54,8 @@
 // From here on the multiply mul() calls is the contract below.
 #define ct_widemul_s stub_widemul_s
 
-#define LIMB ((int64_t)1 << 17)   // the invariant: every limb in (-LIMB, LIMB)
-#define MUL_IN ((int64_t)1 << 18) // one add or sub of two LIMB values
+#define WORD ((int64_t)1 << 17)   // the invariant: every word in (-WORD, WORD)
+#define MUL_IN ((int64_t)1 << 18) // one add or sub of two WORD values
 
 uint64_t nondet_u64(void);
 
@@ -74,9 +74,9 @@ static void assume_range(fe f, int64_t bound) {
     }
 }
 
-#define ASSERT_LIMB(f, what)                                                                       \
+#define ASSERT_WORD(f, what)                                                                       \
     for (size_t i = 0; i < 16; i++) {                                                              \
-        __CPROVER_assert((f)[i] > -LIMB && (f)[i] < LIMB, what);                                   \
+        __CPROVER_assert((f)[i] > -WORD && (f)[i] < WORD, what);                                   \
     }
 
 #endif

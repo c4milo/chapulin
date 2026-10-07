@@ -36,8 +36,8 @@ int main(void) {
     p256_wide_jacobian table[TABLE_LEN];
     p256_scalar k;
     int8_t digits[DIGITS_LEN];
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        k.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        k.word[i] = nondet_u32();
     }
     int len = signed_digits(digits, &k);
     __CPROVER_assert(len >= 0 && len <= DIGITS_LEN, "signed_digits: the count fits the array");

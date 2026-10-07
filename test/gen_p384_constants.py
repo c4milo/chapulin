@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Prints the P-384 constants the C files embed, in the exact C layout.
-# For p384_field.c and p384.c that is 12 little-endian uint32 limbs per
+# For p384_field.c and p384.c that is 12 little-endian uint32 words per
 # number, and for p384_wide_field.c and p384_wide_verify.c, which a host
-# object holds, 6 little-endian uint64 limbs. Both layouts carry the
+# object holds, 6 little-endian uint64 words. Both layouts carry the
 # Montgomery entry constant r2 = 2^768 mod m, which is one number at
 # either width, and the word inverse m0inv = -m^-1 modulo 2^32 or 2^64
 # for both moduli. It also prints the two points test/p384_equiv_test.c
@@ -67,18 +67,18 @@ def check_against_openssl():
     assert (GY * GY - (GX ** 3 + A * GX + B)) % P == 0, "G is not on the curve"
 
 
-def limbs(value, limb_bits):
-    """value as little-endian words of limb_bits bits each."""
+def words(value, word_bits):
+    """value as little-endian words of word_bits bits each."""
     assert 0 <= value < R
-    mask = (1 << limb_bits) - 1
-    return [(value >> (limb_bits * i)) & mask
-            for i in range(BITS // limb_bits)]
+    mask = (1 << word_bits) - 1
+    return [(value >> (word_bits * i)) & mask
+            for i in range(BITS // word_bits)]
 
 
-def c_array(words, indent, limb_bits):
-    """The limbs as a C initializer, 192 bits per line."""
-    per_line = 192 // limb_bits
-    digits = limb_bits // 4
+def c_array(words, indent, word_bits):
+    """The words as a C initializer, 192 bits per line."""
+    per_line = 192 // word_bits
+    digits = word_bits // 4
     lines = []
     for i in range(0, len(words), per_line):
         lines.append(indent + ", ".join(f"0x{w:0{digits}x}"
@@ -86,24 +86,24 @@ def c_array(words, indent, limb_bits):
     return ",\n".join(lines)
 
 
-def print_modulus(struct, name, m, limb_bits):
+def print_modulus(struct, name, m, word_bits):
     r2 = (R * R) % m
-    word = 1 << limb_bits
+    word = 1 << word_bits
     m0inv = (-pow(m, -1, word)) % word
     assert (m * m0inv) % word == word - 1
     print(f"const {struct} {name} = {{")
-    print("    {" + c_array(limbs(m, limb_bits), "     ", limb_bits).lstrip()
+    print("    {" + c_array(words(m, word_bits), "     ", word_bits).lstrip()
           + "},")
-    print("    {" + c_array(limbs(r2, limb_bits), "     ", limb_bits).lstrip()
+    print("    {" + c_array(words(r2, word_bits), "     ", word_bits).lstrip()
           + "},")
-    print(f"    0x{m0inv:0{limb_bits // 4}x},")
+    print(f"    0x{m0inv:0{word_bits // 4}x},")
     print("};")
     print()
 
 
-def print_array(limb, count, name, value, limb_bits):
-    print(f"static const {limb} {name}[{count}] = {{")
-    print(c_array(limbs(value, limb_bits), "    ", limb_bits))
+def print_array(word, count, name, value, word_bits):
+    print(f"static const {word} {name}[{count}] = {{")
+    print(c_array(words(value, word_bits), "    ", word_bits))
     print("};")
     print()
 
@@ -128,13 +128,13 @@ def main():
     print_modulus("p384_modulus", "p384_modn", N, 32)
     print("// p384.c")
     for name, value in (("B", B), ("GX", GX), ("GY", GY)):
-        print_array("uint32_t", "P384_LIMBS", name, value, 32)
+        print_array("uint32_t", "P384_WORDS", name, value, 32)
     print("// p384_wide_field.c")
     print_modulus("p384_wide_modulus", "p384_wide_modp", P, 64)
     print_modulus("p384_wide_modulus", "p384_wide_modn", N, 64)
     print("// p384_wide_verify.c")
     for name, value in (("B", B), ("GX", GX), ("GY", GY)):
-        print_array("uint64_t", "P384_WIDE_LIMBS", name, value, 64)
+        print_array("uint64_t", "P384_WIDE_WORDS", name, value, 64)
     # Two points for test/p384_equiv_test.c. One has an x above n, so that
     # x mod n is x - n: an x of n itself is r = 0, which no signature
     # carries, so the search starts one above it. The other has the

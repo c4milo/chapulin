@@ -190,7 +190,7 @@ static void eq_run(void) {
 }
 
 // poly1305: fixed message, fixed key vs fresh random keys. Catches
-// key-dependent behavior in clamping, the limb products, or the final
+// key-dependent behavior in clamping, the word products, or the final
 // reduction.
 static uint8_t poly_key_fixed[POLY1305_KEY];
 static uint8_t poly_key[POLY1305_KEY];
@@ -235,7 +235,7 @@ static void chacha_run(void) {
 }
 
 // x25519: fixed scalar vs fresh random scalars on the base point. A
-// ladder that branches on scalar bits or skips work per limb shows here.
+// ladder that branches on scalar bits or skips work per word shows here.
 static uint8_t x_scalar_fixed[X25519_LEN];
 static uint8_t x_scalar[X25519_LEN];
 
@@ -311,16 +311,16 @@ static void p256_sign_run(void) {
 #ifdef TEST_RSA_SIGN64
 // Both rows run under a modulus drawn once: random bytes with the top bit
 // and the low bit set, which is all Montgomery arithmetic needs of one.
-// The multiplication's is 128 bytes, 16 limbs, the size one half of an
-// RSA-2048 signature runs at. The exponentiation's is 16 bytes, two limbs,
+// The multiplication's is 128 bytes, 16 words, the size one half of an
+// RSA-2048 signature runs at. The exponentiation's is 16 bytes, two words,
 // so that the read of the table is a large share of a step and a
 // difference in it is not lost among the multiplications.
 #define RSA_MODULUS_LEN 128
 #define RSA_SMALL_LEN 16
 static rsa_mont64_modulus rsa_mod;
 static rsa_mont64_modulus rsa_small;
-static uint64_t rsa_a[RSA_MONT64_LIMBS_MAX];
-static uint64_t rsa_b[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_a[RSA_MONT64_WORDS_MAX];
+static uint64_t rsa_b[RSA_MONT64_WORDS_MAX];
 static uint8_t rsa_exponent[RSA_MODULUS_LEN];
 
 // mod = the record of a fresh random odd modulus of len bytes with its top
@@ -333,14 +333,14 @@ static void rsa_random_modulus(rsa_mont64_modulus *mod, size_t len) {
     rsa_mont64_modulus_init(mod, bytes, len, 8 * len);
 }
 
-// o = fresh random limbs below mod's modulus: random bytes with the top
+// o = fresh random words below mod's modulus: random bytes with the top
 // bit clear, under a modulus whose top bit is set.
 static void rsa_random_below(uint64_t *o, const rsa_mont64_modulus *mod) {
     uint8_t bytes[RSA_MODULUS_LEN];
-    size_t len = 8 * mod->limbs;
+    size_t len = 8 * mod->words;
     ch_rand_bytes(bytes, len);
     bytes[0] &= 0x7f;
-    rsa_mont64_from_bytes(o, mod->limbs, bytes, len);
+    rsa_mont64_from_bytes(o, mod->words, bytes, len);
 }
 
 // rsa_mont64_mont_mul: one fixed pair of operands vs fresh random pairs.
@@ -351,10 +351,10 @@ static void rsa_random_below(uint64_t *o, const rsa_mont64_modulus *mod) {
 // classes differ in the operands' values and not in how they were
 // written: a row that wrote one class with rsa_mont64_from_bytes and the
 // other with memcpy measured the writes, at |t| of 10 to 16.
-static uint64_t rsa_a_fixed[RSA_MONT64_LIMBS_MAX];
-static uint64_t rsa_b_fixed[RSA_MONT64_LIMBS_MAX];
-static uint64_t rsa_a_fresh[RSA_MONT64_LIMBS_MAX];
-static uint64_t rsa_b_fresh[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_a_fixed[RSA_MONT64_WORDS_MAX];
+static uint64_t rsa_b_fixed[RSA_MONT64_WORDS_MAX];
+static uint64_t rsa_a_fresh[RSA_MONT64_WORDS_MAX];
+static uint64_t rsa_b_fresh[RSA_MONT64_WORDS_MAX];
 
 static void rsa_mul_prep(int class_id) {
     rsa_random_below(rsa_a_fresh, &rsa_mod);
@@ -364,7 +364,7 @@ static void rsa_mul_prep(int class_id) {
 }
 
 static void rsa_mul_run(void) {
-    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    uint64_t out[RSA_MONT64_WORDS_MAX];
     for (int r = 0; r < RSA_MUL_REPS; r++) {
         rsa_mont64_mont_mul(out, rsa_a, rsa_b, &rsa_mod);
     }
@@ -377,7 +377,7 @@ static void rsa_mul_run(void) {
 // top, and n - 1 needs the subtraction that ends a square every time or
 // never: a branch on either shows here. Both classes copy an operand in,
 // for the reason the multiplication's row gives.
-static uint64_t rsa_square_fixed[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_square_fixed[RSA_MONT64_WORDS_MAX];
 
 static void rsa_square_prep(int class_id) {
     rsa_random_below(rsa_a_fresh, &rsa_mod);
@@ -385,7 +385,7 @@ static void rsa_square_prep(int class_id) {
 }
 
 static void rsa_square_run(void) {
-    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    uint64_t out[RSA_MONT64_WORDS_MAX];
     for (int r = 0; r < RSA_MUL_REPS; r++) {
         rsa_mont64_mont_square(out, rsa_a, &rsa_mod);
     }
@@ -396,7 +396,7 @@ static void rsa_square_run(void) {
 // over one random base. Every digit of the first names the table's first
 // entry, so a read that stops at its entry, a branch on a digit or a step
 // that skips a zero digit shows here.
-static uint64_t rsa_small_base[RSA_MONT64_LIMBS_MAX];
+static uint64_t rsa_small_base[RSA_MONT64_WORDS_MAX];
 
 static void rsa_power_prep(int class_id) {
     ch_rand_bytes(rsa_exponent, sizeof rsa_exponent);
@@ -406,7 +406,7 @@ static void rsa_power_prep(int class_id) {
 }
 
 static void rsa_power_run(void) {
-    uint64_t out[RSA_MONT64_LIMBS_MAX];
+    uint64_t out[RSA_MONT64_WORDS_MAX];
     rsa_sign64_power(out, rsa_small_base, rsa_exponent, sizeof rsa_exponent, &rsa_small);
     sink ^= (uint32_t)out[0];
 }

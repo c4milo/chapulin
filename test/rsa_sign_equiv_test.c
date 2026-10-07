@@ -1,19 +1,19 @@
-// A host object's RSA signer on 64-bit limbs against the portable code,
+// A host object's RSA signer on 64-bit words against the portable code,
 // which stays the reference (docs/decisions.md 95): the same inputs into
 // both, the same bytes out.
 //
 // The private operation. A host object holds it twice: rsa_sp1 is
-// rsa_sign.c's ladder on 32-bit limbs over n and d, the code a device
+// rsa_sign.c's ladder on 32-bit words over n and d, the code a device
 // object runs, and rsa_sign64_sp1 is rsa_sign64.c's, two fixed windows on
-// 64-bit limbs over the primes, joined by the Chinese remainder theorem
+// 64-bit words over the primes, joined by the Chinese remainder theorem
 // and checked with the public exponent. The ladder carries the CBMC
 // lemmas, the Lean differential and the Wycheproof suite; this binary is
 // what carries the other signer to the same answers on every input it
 // tries:
 //
 //   - the four keys of test/rsa_sign_vectors.h, which openssl minted:
-//     RSA-2048, RSA-2112, whose primes are half a limb past a whole number
-//     of 64-bit limbs, RSA-3072 and RSA-4096;
+//     RSA-2048, RSA-2112, whose primes are half a word past a whole number
+//     of 64-bit words, RSA-3072 and RSA-4096;
 //   - under each, the messages 0, 1 and n - 1, whose signatures are
 //     themselves, and random ones.
 //
@@ -23,7 +23,7 @@
 // window takes, so there the two are compared directly: the exponents 0,
 // 1, 2, 15, 16 and 17, which are each side of one digit, all ones, the top
 // bit alone, every digit value in turn and zero high or low digits, and
-// random moduli, exponents and messages. Under a modulus of a few limbs
+// random moduli, exponents and messages. Under a modulus of a few words
 // and an exponent of any length the ladder does not run, so the window is
 // held to a square-and-multiply over rsa_mont64_mont_mul that reads one
 // bit a step and keeps no table, and zero bytes ahead of an exponent must
@@ -37,7 +37,7 @@
 // The wipes. test/rsa_sign_equiv_residue.h copies the stack that
 // rsa_sign64_sp1 and rsa_sign64_key_ok left, after a signature, after a
 // signature the check refused, and after the key test on a key it admits
-// and on one it refuses, and requires no two limbs side by side of
+// and on one it refuses, and requires no two words side by side of
 // anything the call computed from the private key in the copy. It does
 // the same after the reduction, the exponentiation and the recombination,
 // each called on its own. test/rsa_sign_equiv_differential.h makes each
@@ -137,11 +137,11 @@ static void random_message(uint8_t *em) {
 // into the Montgomery domain, rsa_sign64_power, and out again.
 static void window_power(const uint8_t *em, uint8_t *sig) {
     rsa_mont64_modulus mod;
-    uint64_t base[RSA_MONT64_LIMBS_MAX] = {0};
-    uint64_t power[RSA_MONT64_LIMBS_MAX] = {0};
-    uint64_t one[RSA_MONT64_LIMBS_MAX] = {1};
+    uint64_t base[RSA_MONT64_WORDS_MAX] = {0};
+    uint64_t power[RSA_MONT64_WORDS_MAX] = {0};
+    uint64_t one[RSA_MONT64_WORDS_MAX] = {1};
     rsa_mont64_modulus_init(&mod, key.n, key.n_len, 8 * key.n_len);
-    rsa_mont64_from_bytes(base, mod.limbs, em, key.n_len);
+    rsa_mont64_from_bytes(base, mod.words, em, key.n_len);
     rsa_mont64_mont_mul(base, base, mod.r2, &mod);
     rsa_sign64_power(power, base, key.d, key.n_len, &mod);
     rsa_mont64_mont_mul(power, one, power, &mod);
@@ -311,7 +311,7 @@ static void run_key(const test_rsa_sign_key *from, int random_count) {
 // take. It is not constant time and nothing here is secret.
 static void power_by_bits(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
                           const rsa_mont64_modulus *mod) {
-    uint64_t one[RSA_MONT64_LIMBS_MAX] = {1};
+    uint64_t one[RSA_MONT64_WORDS_MAX] = {1};
     rsa_mont64_mont_mul(o, one, mod->r2, mod);
     for (size_t bit = 8 * e_len; bit-- > 0;) {
         rsa_mont64_mont_mul(o, o, o, mod);
@@ -329,23 +329,23 @@ static void run_window(size_t m_len, size_t e_len) {
     uint8_t m[CH_RSA_MODULUS_MAX] = {0};
     uint8_t e[CH_RSA_MODULUS_MAX + 3] = {0};
     rsa_mont64_modulus mod;
-    uint64_t base[RSA_MONT64_LIMBS_MAX];
-    uint64_t want[RSA_MONT64_LIMBS_MAX];
-    uint64_t got[RSA_MONT64_LIMBS_MAX];
-    uint64_t padded[RSA_MONT64_LIMBS_MAX];
+    uint64_t base[RSA_MONT64_WORDS_MAX];
+    uint64_t want[RSA_MONT64_WORDS_MAX];
+    uint64_t got[RSA_MONT64_WORDS_MAX];
+    uint64_t padded[RSA_MONT64_WORDS_MAX];
 
     rng_fill(m, m_len);
     m[0] |= 0x80;
     m[m_len - 1] |= 1;
     rsa_mont64_modulus_init(&mod, m, m_len, 8 * m_len);
-    size_t limb_bytes = mod.limbs * sizeof(uint64_t);
+    size_t word_bytes = mod.words * sizeof(uint64_t);
 
     // A random base in the domain: random bytes with the top bit clear are
     // below m, and one multiplication by r2 moves them in.
     uint8_t bytes[CH_RSA_MODULUS_MAX];
     rng_fill(bytes, m_len);
     bytes[0] &= 0x7f;
-    rsa_mont64_from_bytes(base, mod.limbs, bytes, m_len);
+    rsa_mont64_from_bytes(base, mod.words, bytes, m_len);
     rsa_mont64_mont_mul(base, base, mod.r2, &mod);
 
     for (int pattern = 0; pattern < 4; pattern++) {
@@ -357,7 +357,7 @@ static void run_window(size_t m_len, size_t e_len) {
         power_by_bits(want, base, e + 3, e_len, &mod);
         rsa_sign64_power(got, base, e + 3, e_len, &mod);
         rsa_sign64_power(padded, base, e, e_len + 3, &mod);
-        if (memcmp(want, got, limb_bytes) != 0 || memcmp(want, padded, limb_bytes) != 0) {
+        if (memcmp(want, got, word_bytes) != 0 || memcmp(want, padded, word_bytes) != 0) {
             failures++;
             (void)fprintf(stderr,
                           "FAIL window: a %zu-byte modulus and a %zu-byte exponent, pattern %d\n",
@@ -415,9 +415,9 @@ int main(void) {
     run_key(&key_4096, 1);
     run_edge_exponents();
 
-    // Moduli of one limb, of a limb and a half, of the two halves of an
+    // Moduli of one word, of a word and a half, of the two halves of an
     // RSA-2048 and an RSA-2112 modulus, and exponents of one byte, of a
-    // length that is no multiple of the limb's, and of the modulus's.
+    // length that is no multiple of the word's, and of the modulus's.
     static const size_t modulus_lengths[] = {8, 12, 128, 132};
     for (size_t i = 0; i < sizeof modulus_lengths / sizeof modulus_lengths[0]; i++) {
         run_window(modulus_lengths[i], 1);

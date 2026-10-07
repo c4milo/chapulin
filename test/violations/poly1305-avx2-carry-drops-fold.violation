@@ -1,14 +1,14 @@
 invariant: INV-16
 file: poly1305_avx2.c
 catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
-reason: each round of carries keeps limb 0's low 26 bits and drops 5
-  times the carry out of limb 4, so every group loses the part of its sums
+reason: each round of carries keeps word 0's low 26 bits and drops 5
+  times the carry out of word 4, so every group loses the part of its sums
   above 2^130 that is 5 modulo 2^130 - 5. The tag is wrong for every
   update the kernel takes past one group. Only an x86-64 compiler reads
   the line, so the script builds bin/poly1305_equiv_test for x86-64 and
   runs it under qemu-x86_64.
 
 --- old
-    out[0] = sums_add_carry_times_5(sums_low_limb(in[0]), in[4]);
+    out[0] = sums_add_carry_times_5(sums_low_word(in[0]), in[4]);
 --- new
-    out[0] = sums_low_limb(in[0]);
+    out[0] = sums_low_word(in[0]);

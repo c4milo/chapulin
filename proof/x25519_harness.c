@@ -1,10 +1,10 @@
-// Proves: mul's memory-safe index walk over the 31-limb product, at
-// generous limb bounds (2^24 — far above the ~2^17 the ladder
+// Proves: mul's memory-safe index walk over the 31-word product, at
+// generous word bounds (2^24 — far above the ~2^17 the ladder
 // produces), with distinct operands. The aliasing shapes the callers
 // use are one formula each — x25519_mul_alias_a (mul(c, c, a)),
 // x25519_mul_alias_b (mul(a, c, a)), x25519_mul_inputs_alias
 // (sqr(d, e)), and x25519_sqr (invert's sqr(c, c)) — because one
-// 64-bit limb multiply fills a formula near the solver cap: two in one
+// 64-bit word multiply fills a formula near the solver cap: two in one
 // was killed at 7 GB, four at 14 GB.
 //
 // This harness runs without the signed-overflow class: mul's 256
@@ -15,11 +15,11 @@
 // x25519 harnesses together cover every field op, each with the
 // strongest check set that converges.
 //
-// That the ladder keeps its limbs inside these bounds is
-// x25519_step_harness.c and x25519_tail_harness.c: every limb between
+// That the ladder keeps its words inside these bounds is
+// x25519_step_harness.c and x25519_tail_harness.c: every word between
 // operations under 2^17, every mul operand under 2^18. Functional
 // correctness rests on the RFC 7748 vectors including the
-// 1,000-iteration chain, and this exact limb scheme (TweetNaCl's)
+// 1,000-iteration chain, and this exact word scheme (TweetNaCl's)
 // carries a prior Coq/VST functional proof by Schwabe et al.
 #include "harness.h"
 

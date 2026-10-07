@@ -491,7 +491,7 @@ def gen_rsa_pkcs1(files, out):
 
 # How many rows each signing key size contributes. The private
 # exponentiation is the most expensive call this binary makes -- one
-# RSA-4096 signature is 8,192 Montgomery multiplications of 128 limbs --
+# RSA-4096 signature is 8,192 Montgomery multiplications of 128 words --
 # and the same binary runs under qemu on the Cortex-M3 lane, so the suite
 # takes a few rows per size rather than every row in the file. The rows
 # cover the three sizes rsa_sign.c admits; the cases that vary the

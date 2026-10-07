@@ -1,7 +1,7 @@
 // Proves: mul's memory-safe index walk with both inputs one object and a
-// distinct output — sqr(d, e), the ladder's commonest call, at the 2^24 limb
+// distinct output — sqr(d, e), the ladder's commonest call, at the 2^24 word
 // bounds x25519_harness.c states, one caller shape per formula: a
-// single 64-bit limb multiply fills a formula near the solver cap, so
+// single 64-bit word multiply fills a formula near the solver cap, so
 // each aliasing shape the ladder and invert use gets its own slow-tier
 // proof. x25519_harness.c holds the distinct-operand shape and the
 // reason these run without the signed-overflow class.

@@ -32,7 +32,7 @@ GX = 0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296
 GY = 0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5
 R = 2**256
 
-# The limbs p256_scalar.c carries, repeated here so this script checks them.
+# The words p256_scalar.c carries, repeated here so this script checks them.
 C_N = [0xFC632551, 0xF3B9CAC2, 0xA7179E84, 0xBCE6FAAD,
        0xFFFFFFFF, 0xFFFFFFFF, 0x00000000, 0xFFFFFFFF]
 C_RR = [0xBE79EEA2, 0x83244C95, 0x49BD6FA6, 0x4699799C,
@@ -43,7 +43,7 @@ C_N_MINUS_2 = [0xFC63254F, 0xF3B9CAC2, 0xA7179E84, 0xBCE6FAAD,
 C_ONE_MONT = [0x039CDAAF, 0x0C46353D, 0x58E8617B, 0x43190552,
               0x00000000, 0x00000000, 0xFFFFFFFF, 0x00000000]
 
-# The limbs p256_point.c carries, all three in the Montgomery domain.
+# The words p256_point.c carries, all three in the Montgomery domain.
 C_B_MONT = [0x29C4BDDF, 0xD89CDF62, 0x78843090, 0xACF005CD,
             0xF7212ED6, 0xE5A220AB, 0x04874834, 0xDC30061D]
 C_GX_MONT = [0x18A9143C, 0x79E730D4, 0x5FEDB601, 0x75BA95FC,
@@ -57,20 +57,20 @@ C_FE_ONE_MONT = [0x00000001, 0x00000000, 0x00000000, 0xFFFFFFFF,
                  0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFE, 0x00000000]
 
 
-def limbs(x):
+def words(x):
     return [(x >> (32 * i)) & 0xFFFFFFFF for i in range(8)]
 
 
 def check_constants():
-    assert limbs(N) == C_N, "p256_scalar.c's N is not the P-256 group order"
-    assert limbs(R * R % N) == C_RR, "p256_scalar.c's RR is not 2^512 mod n"
+    assert words(N) == C_N, "p256_scalar.c's N is not the P-256 group order"
+    assert words(R * R % N) == C_RR, "p256_scalar.c's RR is not 2^512 mod n"
     assert (-pow(N, -1, 2**32)) % 2**32 == C_N0_INV, "p256_scalar.c's N0_INV is wrong"
-    assert limbs(N - 2) == C_N_MINUS_2, "p256_scalar.c's exponent is not n-2"
-    assert limbs(R % N) == C_ONE_MONT, "p256_scalar.c's ONE_MONT is not R mod n"
-    assert limbs(B * R % P) == C_B_MONT, "p256_point.c's B_MONT is not b*R mod p"
-    assert limbs(GX * R % P) == C_GX_MONT, "p256_point.c's GX_MONT is not G.x*R mod p"
-    assert limbs(GY * R % P) == C_GY_MONT, "p256_point.c's GY_MONT is not G.y*R mod p"
-    assert limbs(R % P) == C_FE_ONE_MONT, "p256_point.c's infinity Y is not R mod p"
+    assert words(N - 2) == C_N_MINUS_2, "p256_scalar.c's exponent is not n-2"
+    assert words(R % N) == C_ONE_MONT, "p256_scalar.c's ONE_MONT is not R mod n"
+    assert words(B * R % P) == C_B_MONT, "p256_point.c's B_MONT is not b*R mod p"
+    assert words(GX * R % P) == C_GX_MONT, "p256_point.c's GX_MONT is not G.x*R mod p"
+    assert words(GY * R % P) == C_GY_MONT, "p256_point.c's GY_MONT is not G.y*R mod p"
+    assert words(R % P) == C_FE_ONE_MONT, "p256_point.c's infinity Y is not R mod p"
     assert (GY * GY - (GX**3 + A * GX + B)) % P == 0, "G is not on the curve"
     # n is above 2^255, which is why one conditional subtraction reduces any
     # 256-bit value mod n (p256_scalar_reduce).

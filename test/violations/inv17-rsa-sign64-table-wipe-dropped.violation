@@ -5,7 +5,7 @@ reason: rsa_sign64_power returns without wiping its table, so the sixteen
   powers of the message stay in the dead frame after every signature,
   and a later caller's uninitialized stack reads them. No output changes,
   so no vector notices. bin/rsa_sign_equiv_test copies the stack below one
-  call and requires no limb of any power in the copy.
+  call and requires no word of any power in the copy.
 
 --- old
     ct_wipe(&table, sizeof table);

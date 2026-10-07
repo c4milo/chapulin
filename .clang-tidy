@@ -30,7 +30,7 @@
 #   every finding is of that kind: a positive shift count. Most of the rest
 #   are int values that cannot be negative, such as a loop counter or the
 #   int result of an operation on uint8_t or uint16_t values. The others are
-#   signed on purpose, in the crypto cores: x25519.c's `fe` limbs are
+#   signed on purpose, in the crypto cores: x25519.c's `fe` words are
 #   int64_t, ML-KEM's polynomial coefficients are int16_t, and several
 #   functions, ct.h's `ct_widemul_s` and x25519.c's `cswap` among them, build
 #   a mask by an arithmetic right shift of a sign bit, so no branch depends

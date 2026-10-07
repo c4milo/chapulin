@@ -10,7 +10,7 @@
 // code no bit changes today. cipher holds
 // ChaCha20, whose keystream a host session runs on the vector path its
 // value names, and the DRBG, which calls chacha20_block, the portable
-// function in every object. aead holds Poly1305, whose limb products run
+// function in every object. aead holds Poly1305, whose word products run
 // on the multiply the value's CH_CPU_CONSTANT_TIME_MULTIPLY bit picks, and
 // the AEAD over both. A device object runs chacha20.c's portable loop in
 // place of the vector path, and bench/aead.sh times that loop.

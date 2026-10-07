@@ -7,7 +7,7 @@
 // so scalar arithmetic mod n belongs in its own file pair rather than in a
 // second modulus argument here." The routines below are the same shape as
 // that file's, over a different modulus, and they carry the same contract:
-// no branch and no memory index reads a limb, every choice is a mask, and
+// no branch and no memory index reads a word, every choice is a mask, and
 // every product goes through ct_widemul (ct.h), which builds a 64-bit
 // product out of 16x16 pieces because a widening multiply is variable time
 // on some cores (https://github.com/c4milo/chapulin/issues/53).
@@ -28,11 +28,11 @@
 // secrets under either answer (widemul.h). The Montgomery product,
 // p256_scalar_mul and p256_scalar_inverse wipe none of the temporaries
 // they name, as p256_field.c wipes none of its own, so a session that
-// runs them leaves limbs on its stack (docs/decisions.md 94). p256_sign.c
+// runs them leaves words on its stack (docs/decisions.md 94). p256_sign.c
 // wipes its own frame once, the way x25519.c's ladder does.
 //
 // A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds p256_scalar_mul and
-// p256_scalar_inverse a second time, on four 64-bit limbs
+// p256_scalar_inverse a second time, on four 64-bit words
 // (p256_wide_scalar.h), which a session runs when its caller states the
 // multiply's timing (docs/decisions.md 94).
 #ifndef CH_P256_SCALAR_H
@@ -40,14 +40,14 @@
 
 #include <stdint.h>
 
-#define P256_SCALAR_LIMBS 8 // limb: one 32-bit word of a scalar
+#define P256_SCALAR_WORDS 8 // the 32-bit words of a scalar
 #define P256_SCALAR_LEN 32  // bytes in one scalar, big-endian on the wire
 
-// One scalar: eight little-endian 32-bit limbs. Every routine takes
+// One scalar: eight little-endian 32-bit words. Every routine takes
 // scalars below n and leaves a scalar below n, unless its own comment
 // says otherwise, and the output may be one of the inputs.
 typedef struct {
-    uint32_t limb[P256_SCALAR_LIMBS];
+    uint32_t word[P256_SCALAR_WORDS];
 } p256_scalar;
 
 // Masks follow p256_field.h's convention: a predicate returns 0 for false

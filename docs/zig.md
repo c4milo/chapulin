@@ -178,7 +178,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
 | `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
-| `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses. `constant_time_multiply` is the caller's statement about the widening multiply on its CPU and in its thread's mode, and runs the native multiply, and X25519 on the 51-bit-limb field |
+| `cpu`, null by default, a host object alone | `cpu`: `CH_CPU_PROBED`, and the bit of each field of the `Cpu` value that is true, or 0 for null, which `init` refuses. `constant_time_multiply` is the caller's statement about the widening multiply on its CPU and in its thread's mode, and runs the native multiply, and X25519 on the 51-bit-word field |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
 callbacks and `io` to it, and under `RAND=session` its source. With a

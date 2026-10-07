@@ -1,11 +1,11 @@
 // The wide X25519 field: the RFC 7748 Montgomery ladder over 2^255-19 in
-// radix 2^51, five limbs in uint64_t, every product on the 64x64->128
+// radix 2^51, five words in uint64_t, every product on the 64x64->128
 // multiply ct.h names ct_mul128. A host object (-DCH_CPU_RUNTIME,
-// cpu_cfg.h) holds it beside x25519.c's 16-limb field, and widemul.h runs
+// cpu_cfg.h) holds it beside x25519.c's 16-word field, and widemul.h runs
 // it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY,
 // the caller's statement about the multiply at both widths
 // (docs/decisions.md 52 and 89). A session without the bit runs the
-// 16-limb field on ct.h's 16x16 decomposition, and a device object holds
+// 16-word field on ct.h's 16x16 decomposition, and a device object holds
 // that field alone.
 #ifndef CH_X25519_WIDE_H
 #define CH_X25519_WIDE_H

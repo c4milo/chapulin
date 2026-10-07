@@ -5,7 +5,7 @@
 //
 // WHAT THE STUBS MODEL: p384_wide_mont_mul, p384_wide_mod_add and
 // p384_wide_mod_sub each assert that both operands are below p, the
-// contract p384_wide_field.h states for them, and write any limbs below
+// contract p384_wide_field.h states for them, and write any words below
 // p. So a harness over them proves that p384_wide_point.c hands the field
 // nothing but reduced operands, and proves its own memory accesses for
 // every value a result can take.
@@ -40,41 +40,41 @@
 uint64_t nondet_u64(void);
 int nondet_int(void);
 
-static int below(const uint64_t a[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+static int below(const uint64_t a[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     return p384_wide_compare(a, mod->m) < 0;
 }
 
-// Any limbs below the modulus.
-static void havoc_below(uint64_t o[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
-    for (size_t i = 0; i < P384_WIDE_LIMBS; i++) {
+// Any words below the modulus.
+static void havoc_below(uint64_t o[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
+    for (size_t i = 0; i < P384_WIDE_WORDS; i++) {
         o[i] = nondet_u64();
     }
     __CPROVER_assume(below(o, mod));
 }
 
 // p384_wide_field.h: inputs below mod->m, results below mod->m, and o may
-// alias a or b. The two comparisons read all six limbs of each operand
+// alias a or b. The two comparisons read all six words of each operand
 // and havoc_below writes all six of the result, so cbmc's own pointer
 // checks on those accesses hold the three arrays to their length.
-static void contract(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
-                     const uint64_t b[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+static void contract(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
+                     const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     __CPROVER_assert(mod == &p384_wide_modp, "field stub: the points compute modulo p alone");
     __CPROVER_assert(below(a, mod) && below(b, mod), "field stub: both operands are below p");
     havoc_below(o, mod);
 }
 
-void p384_wide_mont_mul(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
-                        const uint64_t b[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+void p384_wide_mont_mul(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
+                        const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     contract(o, a, b, mod);
 }
 
-void p384_wide_mod_add(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
-                       const uint64_t b[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+void p384_wide_mod_add(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
+                       const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     contract(o, a, b, mod);
 }
 
-void p384_wide_mod_sub(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
-                       const uint64_t b[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+void p384_wide_mod_sub(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
+                       const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     contract(o, a, b, mod);
 }
 

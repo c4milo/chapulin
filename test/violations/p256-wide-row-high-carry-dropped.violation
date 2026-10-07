@@ -1,7 +1,7 @@
 invariant: INV-16
-file: p256_wide_limb.h
+file: p256_wide_word.h
 catches: p256_equiv_test
-reason: the row of a product returns the limb above its four without the
+reason: the row of a product returns the word above its four without the
   carry out of the high halves' chain, so a product whose chain carried
   is short by 2^256 at that row. Nothing faults: uint64_t arithmetic
   defines every wrap, and the field and the scalar both go on computing

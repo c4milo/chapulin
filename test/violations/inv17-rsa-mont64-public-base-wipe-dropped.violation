@@ -1,13 +1,13 @@
 invariant: INV-17
 file: rsa_mont64.c
 catches: rsa_sign_equiv_test
-reason: rsa_mont64_public returns without wiping the limbs of its base. A
+reason: rsa_mont64_public returns without wiping the words of its base. A
   verifier's base is a signature it was sent, and the signer's is the
   candidate its check raises. A candidate that failed its check differs
   from the signature modulo one prime alone, and it and the message
   factor the modulus. bin/rsa_sign_equiv_test signs under a key with one
   bit of dp changed, copies the stack below the refused call and finds
-  the candidate's limbs there.
+  the candidate's words there.
 
 --- old
     rsa_mont64_to_bytes(out, len, acc);

@@ -1,6 +1,6 @@
 // NIST P-256 ECDSA verification. Variable time on purpose — every input
 // is public (see p256.h). Field elements and scalars are 8 little-endian
-// uint32 limbs; products and carries live in uint64. Multiplication
+// uint32 words; products and carries live in uint64. Multiplication
 // reduces word-by-word Montgomery-style (CIOS), with one constant set
 // per modulus so the field prime p and the group order n share every
 // routine; inverses are Fermat powers. Points are Jacobian (Z == 0 is
@@ -10,7 +10,7 @@
 // (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles none of it: its entry reads the
 // signature with the same DER reader and hands r and s to
 // p256_wide_verify.c, which checks the same equation on the wide P-256
-// files' four 64-bit limbs, in every session, because nothing here is
+// files' four 64-bit words, in every session, because nothing here is
 // secret and so no caller has to state the multiply's timing
 // (docs/decisions.md 96). bin/p256_verify_equiv_test compiles both arms
 // into one binary and requires one verdict from them.
@@ -34,11 +34,11 @@ static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const ui
 
 #else // !CH_CPU_RUNTIME
 
-#define LIMBS 8 // limb: one 32-bit word of a big number; P-256 = 8 limbs
+#define WORDS 8 // a big number's 32-bit words; P-256 holds 8
 
 typedef struct {
-    uint32_t m[LIMBS];  // the modulus
-    uint32_t r2[LIMBS]; // 2^512 mod m, entry ticket to the Montgomery domain
+    uint32_t m[WORDS];  // the modulus
+    uint32_t r2[WORDS]; // 2^512 mod m, entry ticket to the Montgomery domain
     uint32_t m0inv;     // -m^-1 mod 2^32
 } modulus;
 
@@ -60,25 +60,25 @@ static const modulus MODN = {
     0xee00bc4f,
 };
 
-static const uint32_t B[LIMBS] = {0x27d2604b, 0x3bce3c3e, 0xcc53b0f6, 0x651d06b0,
+static const uint32_t B[WORDS] = {0x27d2604b, 0x3bce3c3e, 0xcc53b0f6, 0x651d06b0,
                                   0x769886bc, 0xb3ebbd55, 0xaa3a93e7, 0x5ac635d8};
 
-static const uint32_t GX[LIMBS] = {0xd898c296, 0xf4a13945, 0x2deb33a0, 0x77037d81,
+static const uint32_t GX[WORDS] = {0xd898c296, 0xf4a13945, 0x2deb33a0, 0x77037d81,
                                    0x63a440f2, 0xf8bce6e5, 0xe12c4247, 0x6b17d1f2};
 
-static const uint32_t GY[LIMBS] = {0x37bf51f5, 0xcbb64068, 0x6b315ece, 0x2bce3357,
+static const uint32_t GY[WORDS] = {0x37bf51f5, 0xcbb64068, 0x6b315ece, 0x2bce3357,
                                    0x7c0f9e16, 0x8ee7eb4a, 0xfe1a7f9b, 0x4fe342e2};
 
-static int fe_is_zero(const uint32_t a[LIMBS]) {
+static int fe_is_zero(const uint32_t a[WORDS]) {
     uint32_t v = 0;
-    for (int i = 0; i < LIMBS; i++) {
+    for (int i = 0; i < WORDS; i++) {
         v |= a[i];
     }
     return v == 0;
 }
 
-static int fe_cmp(const uint32_t a[LIMBS], const uint32_t b[LIMBS]) {
-    for (int i = LIMBS - 1; i >= 0; i--) {
+static int fe_cmp(const uint32_t a[WORDS], const uint32_t b[WORDS]) {
+    for (int i = WORDS - 1; i >= 0; i--) {
         if (a[i] != b[i]) {
             return a[i] < b[i] ? -1 : 1;
         }
@@ -86,17 +86,17 @@ static int fe_cmp(const uint32_t a[LIMBS], const uint32_t b[LIMBS]) {
     return 0;
 }
 
-// 32 big-endian bytes -> 8 little-endian limbs, byte by byte.
-static void fe_from_bytes(uint32_t o[LIMBS], const uint8_t b[32]) {
-    for (int i = 0; i < LIMBS; i++) {
+// 32 big-endian bytes -> 8 little-endian words, byte by byte.
+static void fe_from_bytes(uint32_t o[WORDS], const uint8_t b[32]) {
+    for (int i = 0; i < WORDS; i++) {
         o[i] = (uint32_t)b[31 - 4 * i] | ((uint32_t)b[30 - 4 * i] << 8) |
                ((uint32_t)b[29 - 4 * i] << 16) | ((uint32_t)b[28 - 4 * i] << 24);
     }
 }
 
-static uint32_t fe_add_raw(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS]) {
+static uint32_t fe_add_raw(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS]) {
     uint64_t c = 0;
-    for (int i = 0; i < LIMBS; i++) {
+    for (int i = 0; i < WORDS; i++) {
         c += (uint64_t)a[i] + b[i];
         o[i] = (uint32_t)c;
         c >>= 32;
@@ -104,9 +104,9 @@ static uint32_t fe_add_raw(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uin
     return (uint32_t)c;
 }
 
-static uint32_t fe_sub_raw(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS]) {
+static uint32_t fe_sub_raw(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS]) {
     uint64_t borrow = 0;
-    for (int i = 0; i < LIMBS; i++) {
+    for (int i = 0; i < WORDS; i++) {
         uint64_t v = (uint64_t)a[i] - b[i] - borrow;
         o[i] = (uint32_t)v;
         borrow = (v >> 32) & 1;
@@ -115,7 +115,7 @@ static uint32_t fe_sub_raw(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uin
 }
 
 // Inputs below m; one conditional subtract covers the sum (< 2m).
-static void mod_add(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS],
+static void mod_add(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS],
                     const modulus *mod) {
     uint32_t c = fe_add_raw(o, a, b);
     if (c || fe_cmp(o, mod->m) >= 0) {
@@ -123,7 +123,7 @@ static void mod_add(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b
     }
 }
 
-static void mod_sub(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS],
+static void mod_sub(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS],
                     const modulus *mod) {
     if (fe_sub_raw(o, a, b)) {
         (void)fe_add_raw(o, o, mod->m);
@@ -131,49 +131,49 @@ static void mod_sub(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b
 }
 
 // Montgomery product o = a*b / 2^256 mod m (CIOS, Koç et al.). Inputs
-// below m, result below m; o may alias a or b. Each round adds one limb
-// of a into t, then folds a multiple of m in to zero t's low limb and
-// shifts down one limb.
-static void mont_mul(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS],
+// below m, result below m; o may alias a or b. Each round adds one word
+// of a into t, then folds a multiple of m in to zero t's low word and
+// shifts down one word.
+static void mont_mul(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS],
                      const modulus *mod) {
-    uint32_t t[LIMBS + 2] = {0};
-    for (int i = 0; i < LIMBS; i++) {
+    uint32_t t[WORDS + 2] = {0};
+    for (int i = 0; i < WORDS; i++) {
         uint64_t c = 0;
-        for (int j = 0; j < LIMBS; j++) {
+        for (int j = 0; j < WORDS; j++) {
             uint64_t v = (uint64_t)a[i] * b[j] + t[j] + c;
             t[j] = (uint32_t)v;
             c = v >> 32;
         }
-        uint64_t v = (uint64_t)t[LIMBS] + c;
-        t[LIMBS] = (uint32_t)v;
-        t[LIMBS + 1] = (uint32_t)(v >> 32);
+        uint64_t v = (uint64_t)t[WORDS] + c;
+        t[WORDS] = (uint32_t)v;
+        t[WORDS + 1] = (uint32_t)(v >> 32);
 
         uint32_t u = t[0] * mod->m0inv;
         c = ((uint64_t)u * mod->m[0] + t[0]) >> 32;
-        for (int j = 1; j < LIMBS; j++) {
+        for (int j = 1; j < WORDS; j++) {
             v = (uint64_t)u * mod->m[j] + t[j] + c;
             t[j - 1] = (uint32_t)v;
             c = v >> 32;
         }
-        v = (uint64_t)t[LIMBS] + c;
-        t[LIMBS - 1] = (uint32_t)v;
-        t[LIMBS] = t[LIMBS + 1] + (uint32_t)(v >> 32);
-        t[LIMBS + 1] = 0;
+        v = (uint64_t)t[WORDS] + c;
+        t[WORDS - 1] = (uint32_t)v;
+        t[WORDS] = t[WORDS + 1] + (uint32_t)(v >> 32);
+        t[WORDS + 1] = 0;
     }
-    // t < 2m with at most one bit in t[LIMBS]; the subtraction's borrow
-    // cancels that bit exactly, so the low limbs are the answer.
-    if (t[LIMBS] || fe_cmp(t, mod->m) >= 0) {
+    // t < 2m with at most one bit in t[WORDS]; the subtraction's borrow
+    // cancels that bit exactly, so the low words are the answer.
+    if (t[WORDS] || fe_cmp(t, mod->m) >= 0) {
         (void)fe_sub_raw(o, t, mod->m);
     } else {
-        memcpy(o, t, LIMBS * sizeof(uint32_t));
+        memcpy(o, t, WORDS * sizeof(uint32_t));
     }
 }
 
 // Plain product mod m: into the Montgomery domain and back in one extra
 // multiply (a*b/R, then *R^2/R).
-static void mod_mul(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b[LIMBS],
+static void mod_mul(uint32_t o[WORDS], const uint32_t a[WORDS], const uint32_t b[WORDS],
                     const modulus *mod) {
-    uint32_t t[LIMBS];
+    uint32_t t[WORDS];
     mont_mul(t, a, b, mod);
     mont_mul(o, t, mod->r2, mod);
 }
@@ -181,11 +181,11 @@ static void mod_mul(uint32_t o[LIMBS], const uint32_t a[LIMBS], const uint32_t b
 // o = a^(m-2) mod m: Fermat inverse, square-and-multiply in the
 // Montgomery domain. The exponent is a public constant, so the
 // bit-dependent multiply leaks nothing.
-static void mod_inv(uint32_t o[LIMBS], const uint32_t a[LIMBS], const modulus *mod) {
-    static const uint32_t one[LIMBS] = {1};
-    uint32_t e[LIMBS];
-    uint32_t a_mont[LIMBS];
-    uint32_t acc[LIMBS];
+static void mod_inv(uint32_t o[WORDS], const uint32_t a[WORDS], const modulus *mod) {
+    static const uint32_t one[WORDS] = {1};
+    uint32_t e[WORDS];
+    uint32_t a_mont[WORDS];
+    uint32_t acc[WORDS];
     memcpy(e, mod->m, sizeof e);
     e[0] -= 2;                         // both moduli end well above 2: no borrow
     mont_mul(a_mont, a, mod->r2, mod); // a*R
@@ -200,20 +200,20 @@ static void mod_inv(uint32_t o[LIMBS], const uint32_t a[LIMBS], const modulus *m
 }
 
 typedef struct {
-    uint32_t x[LIMBS];
-    uint32_t y[LIMBS];
-    uint32_t z[LIMBS]; // Jacobian: affine (x/z^2, y/z^3); z == 0 is infinity
+    uint32_t x[WORDS];
+    uint32_t y[WORDS];
+    uint32_t z[WORDS]; // Jacobian: affine (x/z^2, y/z^3); z == 0 is infinity
 } point;
 
 // Doubling, a = -3 (EFD dbl-2001-b). Maps infinity to infinity: z == 0
 // forces z3 == 0.
 static void point_double(point *o, const point *a) {
-    uint32_t delta[LIMBS];
-    uint32_t gamma[LIMBS];
-    uint32_t beta[LIMBS];
-    uint32_t alpha[LIMBS];
-    uint32_t t[LIMBS];
-    uint32_t t2[LIMBS];
+    uint32_t delta[WORDS];
+    uint32_t gamma[WORDS];
+    uint32_t beta[WORDS];
+    uint32_t alpha[WORDS];
+    uint32_t t[WORDS];
+    uint32_t t2[WORDS];
     point r;
     mod_mul(delta, a->z, a->z, &MODP); // delta = Z^2
     mod_mul(gamma, a->y, a->y, &MODP); // gamma = Y^2
@@ -254,14 +254,14 @@ static void point_add(point *o, const point *a, const point *b) {
         *o = *a;
         return;
     }
-    uint32_t z1z1[LIMBS];
-    uint32_t z2z2[LIMBS];
-    uint32_t u1[LIMBS];
-    uint32_t u2[LIMBS];
-    uint32_t s1[LIMBS];
-    uint32_t s2[LIMBS];
-    uint32_t h[LIMBS];
-    uint32_t rr[LIMBS];
+    uint32_t z1z1[WORDS];
+    uint32_t z2z2[WORDS];
+    uint32_t u1[WORDS];
+    uint32_t u2[WORDS];
+    uint32_t s1[WORDS];
+    uint32_t s2[WORDS];
+    uint32_t h[WORDS];
+    uint32_t rr[WORDS];
     mod_mul(z1z1, a->z, a->z, &MODP);
     mod_mul(z2z2, b->z, b->z, &MODP);
     mod_mul(u1, a->x, z2z2, &MODP);
@@ -280,10 +280,10 @@ static void point_add(point *o, const point *a, const point *b) {
         }
         return;
     }
-    uint32_t hh[LIMBS];
-    uint32_t hhh[LIMBS];
-    uint32_t v[LIMBS];
-    uint32_t t[LIMBS];
+    uint32_t hh[WORDS];
+    uint32_t hhh[WORDS];
+    uint32_t v[WORDS];
+    uint32_t t[WORDS];
     point r;
     mod_mul(hh, h, h, &MODP);
     mod_mul(hhh, hh, h, &MODP);
@@ -302,7 +302,7 @@ static void point_add(point *o, const point *a, const point *b) {
 }
 
 // o = k*p, plain left-to-right double-and-add; k and p are public.
-static void point_mul(point *o, const uint32_t k[LIMBS], const point *p) {
+static void point_mul(point *o, const uint32_t k[WORDS], const point *p) {
     point acc;
     memset(&acc, 0, sizeof acc); // infinity
     for (int i = 255; i >= 0; i--) {
@@ -315,10 +315,10 @@ static void point_mul(point *o, const uint32_t k[LIMBS], const point *p) {
 }
 
 // y^2 == x^3 - 3x + b mod p; inputs already below p.
-static int on_curve(const uint32_t x[LIMBS], const uint32_t y[LIMBS]) {
-    uint32_t lhs[LIMBS];
-    uint32_t rhs[LIMBS];
-    uint32_t t[LIMBS];
+static int on_curve(const uint32_t x[WORDS], const uint32_t y[WORDS]) {
+    uint32_t lhs[WORDS];
+    uint32_t rhs[WORDS];
+    uint32_t t[WORDS];
     mod_mul(lhs, y, y, &MODP);
     mod_mul(t, x, x, &MODP);
     mod_mul(rhs, t, x, &MODP);
@@ -330,11 +330,11 @@ static int on_curve(const uint32_t x[LIMBS], const uint32_t y[LIMBS]) {
 }
 
 // Whether (r, s) is a signature of msg_hash under pub, for r and s as 32
-// big-endian bytes each: FIPS 186-4's verification on the limbs above.
+// big-endian bytes each: FIPS 186-4's verification on the words above.
 static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t r_be[32],
                      const uint8_t s_be[32]) {
-    uint32_t r[LIMBS];
-    uint32_t s[LIMBS];
+    uint32_t r[WORDS];
+    uint32_t s[WORDS];
     fe_from_bytes(r, r_be);
     fe_from_bytes(s, s_be);
     if (fe_is_zero(r) || fe_is_zero(s) || fe_cmp(r, MODN.m) >= 0 || fe_cmp(s, MODN.m) >= 0) {
@@ -352,15 +352,15 @@ static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const ui
 
     // e = the hash as a big-endian integer mod n; one subtract is enough
     // because 2n > 2^256.
-    uint32_t e[LIMBS];
+    uint32_t e[WORDS];
     fe_from_bytes(e, msg_hash);
     if (fe_cmp(e, MODN.m) >= 0) {
         (void)fe_sub_raw(e, e, MODN.m);
     }
 
-    uint32_t w[LIMBS];
-    uint32_t u1[LIMBS];
-    uint32_t u2[LIMBS];
+    uint32_t w[WORDS];
+    uint32_t u1[WORDS];
+    uint32_t u2[WORDS];
     mod_inv(w, s, &MODN); // w = s^-1
     mod_mul(u1, e, w, &MODN);
     mod_mul(u2, r, w, &MODN);
@@ -381,8 +381,8 @@ static int verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const ui
     }
 
     // v = (R.X / R.Z^2 mod p) mod n; p < 2n so one subtract reduces.
-    uint32_t z_inv[LIMBS];
-    uint32_t x1[LIMBS];
+    uint32_t z_inv[WORDS];
+    uint32_t x1[WORDS];
     mod_inv(z_inv, p1.z, &MODP);
     mod_mul(z_inv, z_inv, z_inv, &MODP);
     mod_mul(x1, p1.x, z_inv, &MODP);

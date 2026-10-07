@@ -1,5 +1,5 @@
 // Proves, for p384_wide_point.c: every routine that computes on a key or
-// on a point is memory-safe and UB-free, and every limb array it hands
+// on a point is memory-safe and UB-free, and every word array it hands
 // the field is below p, which is what the field's contract takes.
 //
 //   point_double, point_add       : any points, into a third point and in
@@ -61,7 +61,7 @@ int main(void) {
     }
 
     // The last comparison: any point, and any r in 1..n-1.
-    uint64_t k[LIMBS];
+    uint64_t k[WORDS];
     havoc_point(&a);
     havoc_below(k, &p384_wide_modn);
     __CPROVER_assume(!p384_wide_is_zero(k));

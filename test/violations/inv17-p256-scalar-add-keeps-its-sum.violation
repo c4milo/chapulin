@@ -4,14 +4,14 @@ catches: proof/prove-one.sh p256_scalar
 reason: p256_scalar_add returns without wiping its sum. The signer's one
   call adds z to r*d, and that sum gives the private key to whoever holds
   the signature. The array's lifetime ends with the call, so no vector
-  reads it, and whether a limb of it stays on the stack depends on the
+  reads it, and whether a word of it stays on the stack depends on the
   compiler: under gcc 13.3 at -O1 for x86-64 one did, and at -O2 none.
   proof/p256_scalar_harness.c counts the bytes ct_wipe is handed and
   requires two arrays' worth after the call. Each run is a proof, so this
   belongs to the nightly's test-invariants-proof-backed job.
 
 --- old
-    reduce_once(o->limb, sum, carry);
+    reduce_once(o->word, sum, carry);
     ct_wipe(sum, sizeof sum);
 --- new
-    reduce_once(o->limb, sum, carry);
+    reduce_once(o->word, sum, carry);

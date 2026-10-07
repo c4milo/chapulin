@@ -17,7 +17,7 @@
 #
 # check_scoreboard also holds one sentence under "Where the time goes" to
 # the first machine's CSV: what the wide X25519 field takes beside the
-# 16-limb one, and a client's side of a handshake under the widest value,
+# 16-word one, and a client's side of a handshake under the widest value,
 # which the machine's line states, and under CH_CPU_PROBED alone.
 import csv
 import os
@@ -285,7 +285,7 @@ def table_rows(text):
 # a run after docs/decisions.md 93 states the hash instructions beside the
 # multiply, and the handshake's hashes then run on them.
 FIELD = re.compile(r"a scalar multiplication takes (\S+ \S+) on that field against (\S+ \S+) on "
-                   r"the 16-limb one over the decomposition, and the client side of a pinned "
+                   r"the 16-word one over the decomposition, and the client side of a pinned "
                    r"RSA-3072 handshake takes (\S+ \S+) under the value that machine's line "
                    r"states below against (\S+ \S+) under `CH_CPU_PROBED` alone")
 

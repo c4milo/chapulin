@@ -5,7 +5,7 @@ reason: rsa_sign64_sp1 returns without wiping the modulus record of p, so
   the prime and R^2 modulo it stay in the dead frame after every
   signature, and a later caller's uninitialized stack reads the key. No
   output changes, so no vector notices. bin/rsa_sign_equiv_test copies
-  the stack below one call and requires no two limbs side by side of the
+  the stack below one call and requires no two words side by side of the
   prime in the copy.
 
 --- old

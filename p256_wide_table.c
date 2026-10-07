@@ -2,7 +2,7 @@
 //
 // The multiples of secp256r1's generator G that p256_wide_base_mul adds
 // (p256_wide_table.h): entry [i][j] is (2j + 1) * 2^(6i) * G as an affine
-// point, each coordinate times 2^256 mod p, least significant limb first.
+// point, each coordinate times 2^256 mod p, least significant word first.
 // The script is also the formatter: the off marker below keeps regeneration
 // byte-identical under any clang-format version, or none. make
 // lint-p256-wide fails when this file is not what the script prints.

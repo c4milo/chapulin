@@ -77,14 +77,14 @@ rules:
     message: >-
       INV-16: the wide P-256 files take no borrow of a subtraction from
       a constant zero. On the overflow builtins gcc compiles that borrow
-      to a jump on the value subtracted, which is a limb of a
+      to a jump on the value subtracted, which is a word of a
       coordinate: gcc 13.3 and 15.2 for x86-64 did at -O2
       (docs/decisions.md 94). gcc reads another form of the step by
       default, and a build that names the builtins reads this one. Take
       a mask from a 128-bit sum, as zero_mask_word does, and a negative
       as p256_wide_fe_neg does.
     paths:
-      include: ['p256_wide_*.c', 'p256_wide_limb.h']
+      include: ['p256_wide_*.c', 'p256_wide_word.h']
     pattern: p256_wide_sub_borrow($BORROW, 0, $VALUE)
   - id: inv-16-rsa-table-read
     languages: [c]
@@ -101,8 +101,8 @@ rules:
       through its volatile pointer before it uses it: a compiler that
       knows how a mask was computed may branch on what it was computed
       from, and clang for x86-64 did. It ends by writing zero through
-      that pointer, so the limb the masks went through does not end on
-      the last one: no test can look for a limb of all ones or of zeros,
+      that pointer, so the word the masks went through does not end on
+      the last one: no test can look for a word of all ones or of zeros,
       so this rule holds that write. And table_select writes its output
       in one statement, the select of an entry under its mask, and calls
       nothing but mask_of_bit: a loop that fills the output with zeros

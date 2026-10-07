@@ -7,6 +7,6 @@ reason: a round of the Montgomery product drops the carry out of its
   modulus and on random operands to be p384_field.c's.
 
 --- old
-    t[P384_WIDE_LIMBS] = t[P384_WIDE_LIMBS + 1] + (uint64_t)(top >> 64);
+    t[P384_WIDE_WORDS] = t[P384_WIDE_WORDS + 1] + (uint64_t)(top >> 64);
 --- new
-    t[P384_WIDE_LIMBS] = t[P384_WIDE_LIMBS + 1];
+    t[P384_WIDE_WORDS] = t[P384_WIDE_WORDS + 1];

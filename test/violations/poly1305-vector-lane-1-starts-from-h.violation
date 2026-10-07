@@ -10,6 +10,6 @@ reason: lane 1 starts from the accumulator as lane 0 does, so the value
   and calls poly1305_vector_blocks after one to four earlier blocks.
 
 --- old
-    h[0] = limbs_of(p->h[0], 0);
+    h[0] = words_of(p->h[0], 0);
 --- new
-    h[0] = limbs_of(p->h[0], p->h[0]);
+    h[0] = words_of(p->h[0], p->h[0]);

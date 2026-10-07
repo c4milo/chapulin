@@ -33,7 +33,7 @@
 # it with "x86-kernels", the violations of sha256_hw.c's and sha512_hw.c's
 # constants and wipes with "sha2-equiv", the violations of the
 # SHA-512 entries with "arm64-hash-count", the two violations of the
-# intrinsics in p256_wide_limb.h's carry steps with "p256-equiv", and the
+# intrinsics in p256_wide_word.h's carry steps with "p256-equiv", and the
 # violations of what sha3_hw.c leaves on the stack with "keccak".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail

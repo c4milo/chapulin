@@ -35,10 +35,10 @@ const p256_point p256_point_generator = {
 
 static void havoc_point(p256_point *o) {
     __CPROVER_assert(__CPROVER_w_ok(o, sizeof *o), "point output writable");
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        o->x.limb[i] = nondet_u32();
-        o->y.limb[i] = nondet_u32();
-        o->z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        o->x.word[i] = nondet_u32();
+        o->y.word[i] = nondet_u32();
+        o->z.word[i] = nondet_u32();
     }
 }
 

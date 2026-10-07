@@ -2,10 +2,10 @@ invariant: INV-17
 file: rsa_sign64.c
 catches: test/lint-invariants.sh
 reason: table_select returns without writing zero through the pointer
-  its masks went through, so the limb behind it ends on the last entry's
+  its masks went through, so the word behind it ends on the last entry's
   mask: all ones when the digit was the last index and zero when it was
   not, one bit of the private exponent a step, in the dead frame.
-  bin/rsa_sign_equiv_test cannot look for it, because memory holds a limb
+  bin/rsa_sign_equiv_test cannot look for it, because memory holds a word
   of all ones or of zeros for other reasons. inv-16-rsa-table-read
   refuses a table_select that does not end with that write.
 

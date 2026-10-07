@@ -3,16 +3,16 @@
 // and wrap no unsigned value (--unsigned-overflow-check on the launch
 // line), at INV-34's bounds, with the real multiply in mul_a24:
 //
-//   add      two operands with limbs under 2^52, which covers every result
-//            of mul; each result limb is under 2^53.
-//   sub      a minuend with limbs under 2^52 and a subtrahend whose limbs
+//   add      two operands with words under 2^52, which covers every result
+//            of mul; each result word is under 2^53.
+//   sub      a minuend with words under 2^52 and a subtrahend whose words
 //            are at most 2p's, the precondition x25519_wide.c states;
-//            nothing wraps and each result limb is under 2^53.
-//   mul_a24  an operand with limbs under 2^54; INV-34's form for mul.
-//   cswap    either bit, any limbs: the two elements are swapped exactly
+//            nothing wraps and each result word is under 2^53.
+//   mul_a24  an operand with words under 2^54; INV-34's form for mul.
+//   cswap    either bit, any words: the two elements are swapped exactly
 //            when the bit is 1.
-//   unpack   any 32 bytes; every limb is under 2^51.
-//   pack     any limbs under 2^63, far above the 2^52 the ladder hands it;
+//   unpack   any 32 bytes; every word is under 2^51.
+//   pack     any words under 2^63, far above the 2^52 the ladder hands it;
 //            the 32 bytes it writes are below p, the canonical value.
 //
 // add and sub also run with the output aliasing the first operand, the
@@ -28,14 +28,14 @@ uint64_t nondet_u64(void);
 #define BELOW_2_52 12
 #define BELOW_2_54 10
 
-// Limbs with the top `shift` bits clear: under 2^(64 - shift).
+// Words with the top `shift` bits clear: under 2^(64 - shift).
 static void assume_below(fe f, int shift) {
     for (size_t i = 0; i < 5; i++) {
         f[i] = nondet_u64() >> shift;
     }
 }
 
-// Limbs at most 2p's, the subtrahend sub admits.
+// Words at most 2p's, the subtrahend sub admits.
 static void assume_at_most_two_p(fe f) {
     f[0] = nondet_u64();
     __CPROVER_assume(f[0] <= TWO_P_0);
@@ -72,28 +72,28 @@ int main(void) {
     assume_below(a, BELOW_2_52);
     assume_below(b, BELOW_2_52);
     add(o, a, b);
-    ASSERT_BELOW_2_53(o, "add leaves limbs under 2^53")
+    ASSERT_BELOW_2_53(o, "add leaves words under 2^53")
     assume_below(a, BELOW_2_52);
     assume_below(b, BELOW_2_52);
     add(a, a, b);
-    ASSERT_BELOW_2_53(a, "add(a, a, b) leaves limbs under 2^53")
+    ASSERT_BELOW_2_53(a, "add(a, a, b) leaves words under 2^53")
 
     assume_below(a, BELOW_2_52);
     assume_at_most_two_p(b);
     sub(o, a, b);
-    ASSERT_BELOW_2_53(o, "sub leaves limbs under 2^53")
+    ASSERT_BELOW_2_53(o, "sub leaves words under 2^53")
     assume_below(a, BELOW_2_52);
     assume_at_most_two_p(b);
     sub(a, a, b);
-    ASSERT_BELOW_2_53(a, "sub(a, a, b) leaves limbs under 2^53")
+    ASSERT_BELOW_2_53(a, "sub(a, a, b) leaves words under 2^53")
 
     assume_below(a, BELOW_2_54);
     mul_a24(o, a);
     __CPROVER_assert(o[0] < (uint64_t)1 << 51 && o[2] < (uint64_t)1 << 51 &&
                          o[3] < (uint64_t)1 << 51 && o[4] < (uint64_t)1 << 51,
-                     "mul_a24 leaves limbs 0, 2, 3 and 4 under 2^51");
+                     "mul_a24 leaves words 0, 2, 3 and 4 under 2^51");
     __CPROVER_assert(o[1] < ((uint64_t)1 << 51) + ((uint64_t)1 << 13),
-                     "mul_a24 leaves limb 1 under 2^51 + 2^13");
+                     "mul_a24 leaves word 1 under 2^51 + 2^13");
 
     fe p0;
     fe q0;
@@ -115,7 +115,7 @@ int main(void) {
     fill_nondet(bytes, sizeof bytes);
     unpack(o, bytes);
     for (size_t i = 0; i < 5; i++) {
-        __CPROVER_assert(o[i] < (uint64_t)1 << 51, "unpack leaves limbs under 2^51");
+        __CPROVER_assert(o[i] < (uint64_t)1 << 51, "unpack leaves words under 2^51");
     }
 
     assume_below(a, 1);

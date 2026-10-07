@@ -6,7 +6,7 @@ reason: rsa_sign64_key_ok returns without wiping the product of the two
   with one bit of a prime changed it is not, and it and the modulus have
   the other prime as their common divisor. bin/rsa_sign_equiv_test runs
   the key test on a key with one bit of q changed, copies the stack below
-  it and finds two limbs of the product that are not the modulus's.
+  it and finds two words of the product that are not the modulus's.
 
 --- old
     ct_wipe(q, sizeof q);

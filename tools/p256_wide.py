@@ -13,14 +13,14 @@ recipe of make lint-p256-wide names them, and it refuses any other list.
 Every number here comes from Python's arbitrary-precision integers and from
 SEC 2's definition of secp256r1, never from the C under test. check reads
 each constant out of the C source that carries it, recomputes it, and stops
-with a message that names the file and the constant when a limb differs:
+with a message that names the file and the constant when a word differs:
 
 - p256_wide_field.c: the prime p, 2^512 mod p and 2^256 mod p, and the facts
   its reduction and its inversion rest on: -p^-1 mod 2^64 is 1, (p + 1) / 2^64
   is 2^192 - 2^160 + 2^128 + 2^32, and p - 2 is the run of bits the inversion
   chain writes.
 - p256_wide_scalar.c: the group order n, -n^-1 mod 2^64, 2^512 mod n,
-  2^256 mod n, and n - 2 as the two limbs the inverse reads four bits at a time
+  2^256 mod n, and n - 2 as the two words the inverse reads four bits at a time
   under the two it writes as runs of ones.
 - p256_wide_point.c: the curve coefficient b in the Montgomery domain.
 
@@ -46,7 +46,7 @@ B = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
 GX = 0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296
 GY = 0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5
 R = 2**256
-LIMB = 2**64
+WORD = 2**64
 
 # The table's shape, which p256_wide_table.h states for the C: one row for
 # each six-bit window of a 256-bit scalar, the top one four bits wide, and in
@@ -58,9 +58,9 @@ ENTRIES = 2 ** (WINDOW_BITS - 1)
 failures = []
 
 
-def limbs(value, count=4):
-    """value as count little-endian 64-bit limbs."""
-    return [(value >> (64 * i)) & (LIMB - 1) for i in range(count)]
+def words(value, count=4):
+    """value as count little-endian 64-bit words."""
+    return [(value >> (64 * i)) & (WORD - 1) for i in range(count)]
 
 
 def source(name):
@@ -74,7 +74,7 @@ def defined(text, name):
 
 
 def initialized(text, name):
-    """The limbs in the initializer of the object called name: every
+    """The words in the initializer of the object called name: every
     integer literal between its `=` and the `;` that ends it, or None."""
     found = re.search(rf"\b{name}(?:\[\d+\])? = (.*?);", text, re.S)
     if not found:
@@ -99,15 +99,15 @@ def on_curve(point):
 def check_field():
     name = "p256_wide_field.c"
     text = source(name)
-    expect(name, "the prime P0..P3", [defined(text, f"P{i}") for i in range(4)], limbs(P))
-    expect(name, "RR, 2^512 mod p", initialized(text, "RR"), limbs(R * R % P))
+    expect(name, "the prime P0..P3", [defined(text, f"P{i}") for i in range(4)], words(P))
+    expect(name, "RR, 2^512 mod p", initialized(text, "RR"), words(R * R % P))
     expect(name, "p256_wide_fe_one_mont, 2^256 mod p",
-           initialized(text, "p256_wide_fe_one_mont"), limbs(R % P))
+           initialized(text, "p256_wide_fe_one_mont"), words(R % P))
     # What reduce_round rests on.
-    assert (-pow(P, -1, LIMB)) % LIMB == 1, "-p^-1 mod 2^64 is not 1"
-    assert (P + 1) % LIMB == 0, "p + 1 is not a multiple of 2^64"
-    assert (P + 1) // LIMB == 2**192 - 2**160 + 2**128 + 2**32, "(p + 1) / 2^64 has another form"
-    assert limbs(P)[3] == 2**64 - 2**32 + 1, "p's top limb is not 2^64 - 2^32 + 1"
+    assert (-pow(P, -1, WORD)) % WORD == 1, "-p^-1 mod 2^64 is not 1"
+    assert (P + 1) % WORD == 0, "p + 1 is not a multiple of 2^64"
+    assert (P + 1) // WORD == 2**192 - 2**160 + 2**128 + 2**32, "(p + 1) / 2^64 has another form"
+    assert words(P)[3] == 2**64 - 2**32 + 1, "p's top word is not 2^64 - 2^32 + 1"
     # What p256_wide_fe_inv's chain writes: 32 ones, 31 zeros, a one, 96
     # zeros, 94 ones, a zero and a one.
     bits = "1" * 32 + "0" * 31 + "1" + "0" * 96 + "1" * 94 + "01"
@@ -117,23 +117,23 @@ def check_field():
 def check_scalar():
     name = "p256_wide_scalar.c"
     text = source(name)
-    expect(name, "the order N0..N3", [defined(text, f"N{i}") for i in range(4)], limbs(N))
-    expect(name, "N0_INV, -n^-1 mod 2^64", defined(text, "N0_INV"), (-pow(N, -1, LIMB)) % LIMB)
-    expect(name, "RR, 2^512 mod n", initialized(text, "RR"), limbs(R * R % N))
-    expect(name, "ONE_MONT, 2^256 mod n", initialized(text, "ONE_MONT"), limbs(R % N))
-    expect(name, "EXPONENT_LOW, the low two limbs of n - 2",
-           initialized(text, "EXPONENT_LOW"), limbs(N - 2)[:2])
+    expect(name, "the order N0..N3", [defined(text, f"N{i}") for i in range(4)], words(N))
+    expect(name, "N0_INV, -n^-1 mod 2^64", defined(text, "N0_INV"), (-pow(N, -1, WORD)) % WORD)
+    expect(name, "RR, 2^512 mod n", initialized(text, "RR"), words(R * R % N))
+    expect(name, "ONE_MONT, 2^256 mod n", initialized(text, "ONE_MONT"), words(R % N))
+    expect(name, "EXPONENT_LOW, the low two words of n - 2",
+           initialized(text, "EXPONENT_LOW"), words(N - 2)[:2])
     # What p256_wide_scalar_inverse writes as runs of ones: 32 ones, 32
     # zeros and 64 ones.
     top = int("1" * 32 + "0" * 32 + "1" * 64, 2)
-    assert (N - 2) >> 128 == top, "n - 2's top two limbs are not the runs the inverse writes"
+    assert (N - 2) >> 128 == top, "n - 2's top two words are not the runs the inverse writes"
     assert 2**255 < N < 2**256, "one conditional subtraction reduces a product only for n > 2^255"
 
 
 def check_point():
     name = "p256_wide_point.c"
     text = source(name)
-    expect(name, "B_MONT, b * 2^256 mod p", initialized(text, "B_MONT"), limbs(B * R % P))
+    expect(name, "B_MONT, b * 2^256 mod p", initialized(text, "B_MONT"), words(B * R % P))
     assert on_curve((GX, GY)), "G is not on the curve"
 
 
@@ -188,9 +188,10 @@ def multiples():
 
 def coordinate(value, indent):
     """One coordinate in the Montgomery domain as an initializer of four
-    limbs, two to a line."""
-    words = [f"UINT64_C(0x{limb:016x})" for limb in limbs(value * R % P)]
-    return ("{{" + ", ".join(words[:2]) + ",\n" + " " * (indent + 2) + ", ".join(words[2:]) + "}}")
+    words, two to a line."""
+    literals = [f"UINT64_C(0x{word:016x})" for word in words(value * R % P)]
+    return ("{{" + ", ".join(literals[:2]) + ",\n" + " " * (indent + 2) + ", ".join(literals[2:])
+            + "}}")
 
 
 def table():
@@ -198,7 +199,7 @@ def table():
            "//\n",
            "// The multiples of secp256r1's generator G that p256_wide_base_mul adds\n",
            "// (p256_wide_table.h): entry [i][j] is (2j + 1) * 2^(6i) * G as an affine\n",
-           "// point, each coordinate times 2^256 mod p, least significant limb first.\n",
+           "// point, each coordinate times 2^256 mod p, least significant word first.\n",
            "// The script is also the formatter: the off marker below keeps regeneration\n",
            "// byte-identical under any clang-format version, or none. make\n",
            "// lint-p256-wide fails when this file is not what the script prints.\n",

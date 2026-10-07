@@ -4,7 +4,7 @@
 // a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 89 and
 // 94).
 //
-// Both take and leave p256_point.h's scalar and point, and keep the wide limbs inside the
+// Both take and leave p256_point.h's scalar and point, and keep the wide words inside the
 // call. Both are constant time in the scalar and in the point. Every trip count is a literal.
 // Every read of a table scans its whole row and keeps one entry by mask, so no address read
 // depends on the scalar. No branch reads a scalar bit or a coordinate. Both wipe every

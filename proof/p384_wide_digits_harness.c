@@ -23,9 +23,9 @@
 int main(void) {
     p384_wide_point a;
     p384_wide_point table[TABLE_LEN];
-    uint64_t k[LIMBS];
+    uint64_t k[WORDS];
     int8_t digits[DIGITS_LEN];
-    for (size_t i = 0; i < LIMBS; i++) {
+    for (size_t i = 0; i < WORDS; i++) {
         k[i] = nondet_u64();
     }
     int len = signed_digits(digits, k);

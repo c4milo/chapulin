@@ -349,7 +349,7 @@ const CpuBits = struct {
     constant_time_aes: bool = false,
     /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time,
     /// and the session runs the native multiply in place of ct.h's 16x16 decomposition, and X25519
-    /// on the 51-bit-limb field.
+    /// on the 51-bit-word field.
     constant_time_multiply: bool = false,
     /// CH_CPU_AVX2: the CPU has AVX2 and its operating system saves the 256-bit registers, and the
     /// session's ChaCha20 keystream runs in 256-bit vectors. An x86-64 bit, which an arm64 object

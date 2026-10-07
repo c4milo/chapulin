@@ -1,4 +1,4 @@
-// Proves the arithmetic lemma behind mul: with every limb bounded by
+// Proves the arithmetic lemma behind mul: with every word bounded by
 // 2^24 in magnitude, the worst-case product accumulation — 16 products
 // into one int64 — cannot overflow, nor can the 38x fold of one such sum
 // into another, and the fold result stays under 2^58, the bound the

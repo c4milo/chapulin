@@ -48,13 +48,13 @@ does nothing more.
    `SUITE=aesgcm` build that takes AES instructions or an AES peripheral
    whose timing the build vouches for; the default build is still
    ChaCha20 alone.
-7. **x25519 in 16-bit limbs (the TweetNaCl scheme).** Cost: a scalar
+7. **x25519 in 16-bit words (the TweetNaCl scheme).** Cost: a scalar
    multiplication takes about 78 ms on the mips32r2 reference target, or
    57 ms in a build that asserts `CH_NATIVE_WIDEMUL`
-   (`bench/results-insn.csv`), and wider limbs would be faster. Gain: a
+   (`bench/results-insn.csv`), and wider words would be faster. Gain: a
    machine-checked overflow lemma and citable prior formal work on the
    same scheme. Provability over speed; revisit if the workload becomes
-   many short connections. Entry 52 adds wider limbs for 64-bit hosts as
+   many short connections. Entry 52 adds wider words for 64-bit hosts as
    `X25519=wide`, and the 16-bit field stays the default.
 8. **One pinned signature algorithm per build**: RSA-PSS by default,
    P-256 behind `make TRUST=raw-ecdsa`, never both. Cost: switching means
@@ -986,14 +986,14 @@ does nothing more.
 
 52. **The X25519 field is a build axis, `X25519=portable` or
     `X25519=wide`, and the wide field asserts its own multiply.**
-    `X25519=portable`, the default, is `x25519.c`'s 16 limbs of 16 bits:
+    `X25519=portable`, the default, is `x25519.c`'s 16 words of 16 bits:
     256 products of 32 by 32 bits per field multiply, which `ct.h` can
     build from 16x16 pieces on any core. `X25519=wide` adds
-    `x25519_wide.c`, five limbs of 51 bits: 25 products of 64 by 64 bits
+    `x25519_wide.c`, five words of 51 bits: 25 products of 64 by 64 bits
     into 128, which a 64-bit core computes as MUL and UMULH on arm64 and
     as one MUL or MULX on x86-64. On an
     Apple M1 Pro the wide field takes about 34 µs per scalar
-    multiplication, against 428 µs for the 16-limb field on the native
+    multiplication, against 428 µs for the 16-word field on the native
     multiply and 953 µs on the 16x16 decomposition the packaged object
     ships. The x25519 pair was 74% of an RSA-3072 client handshake there,
     and the wide field takes that client side from 2.57 ms to 0.77 ms
@@ -1003,7 +1003,7 @@ does nothing more.
     the wide field. A 32-bit core has no 64x64->128 multiply, so its
     compiler would build each product from a runtime routine that
     branches on its operands; `ct.h` refuses the build instead, when the
-    compiler has no `unsigned __int128`. The 16-limb field stays the
+    compiler has no `unsigned __int128`. The 16-word field stays the
     default and the device path, unchanged, with its ten proofs, INV-24
     and the 32-bit codegen specs. The axis follows the AES one: the
     Makefile variable picks, one field per object, and the compiler's
@@ -1022,7 +1022,7 @@ does nothing more.
     macros name different instructions: `CH_NATIVE_WIDEMUL` is about the
     32x32->64 multiply, and a part can promise one and not the other.
     And the Makefile sets `CH_NATIVE_WIDEMUL` for every host test binary,
-    so a field keyed on it would move every host test off the 16-limb
+    so a field keyed on it would move every host test off the 16-word
     field, which would lose its native-multiply unit, Wycheproof and
     differential runs. `ct.h` writes the terms: Arm's FEAT_DIT list and
     Intel's DOIT list both name the instructions, and each holds only in
@@ -1030,7 +1030,7 @@ does nothing more.
 
     Cost: two fields to keep correct instead of one. The wide field has
     seven harnesses of its own (INV-34), an equivalence binary that
-    compares it with the 16-limb field on every `make check`, a
+    compares it with the 16-word field on every `make check`, a
     Wycheproof test, a unit test, a timing test and a differential test.
     Its constant-time claim rests on a vendor statement this tree cannot
     check, and on the code the pinned clang emits for arm64 and x86-64,
@@ -1039,7 +1039,7 @@ does nothing more.
     open many connections, stop paying for a representation chosen for a
     core with no wide multiply. The Lean model needs no second copy:
     `spec/lean/Spec/X25519.lean` computes over natural numbers with a
-    reduction mod p after every operation, so it states no limb layout,
+    reduction mod p after every operation, so it states no word layout,
     and `bin/diff_x25519_wide` runs the x25519 rows against it with the
     wide field.
 
@@ -4010,12 +4010,12 @@ does nothing more.
     builds only under `CHACHA=vector` with `WIDEMUL=native`.
 
     - **Two lanes, four blocks a group.** `poly1305_vector.c` holds two
-      accumulators of five 26-bit limbs, one per lane, as `poly1305.c`
+      accumulators of five 26-bit words, one per lane, as `poly1305.c`
       holds one. Lane 0 takes the first and third block of each group of
       four, and lane 1 the second and fourth. For each group both lanes
       compute (h + the lane's first block) * r^4 + (the lane's second
       block) * r^2, two steps of Horner's rule over every other block, as
-      five sums of 32x32->64 products, and carry the sums back into limbs.
+      five sums of 32x32->64 products, and carry the sums back into words.
       The last group multiplies lane 1 by r^3 and r instead, the powers
       its blocks are owed, and the two lanes' sums add up to the
       accumulator. Each call computes r^2, r^3 and r^4 from `p->r` with
@@ -4028,7 +4028,7 @@ does nothing more.
       at least 128 bytes of whole blocks, and its own loop takes the
       blocks after the last group. The buffered partial block and the
       final reduction stay in `poly1305.c` in every build. The path hands
-      back the accumulator's value modulo 2^130 - 5 with every limb at
+      back the accumulator's value modulo 2^130 - 5 with every word at
       most 2^26, inside the bounds `poly1305.c`'s loop keeps, so the loop
       and `poly1305_final` read it as they read their own.
     - **A threshold of two groups.** Below it, the powers of r cost more
@@ -4042,8 +4042,8 @@ does nothing more.
       chain of multiply-adds, which the adds allow, and so each sum waited
       on the one below it. A round adds a shifted value to a masked one,
       which leaves no chain to move a carry into, and two rounds leave
-      limbs below 2^26 + 2^10. gcc kept every array that a loop indexes in
-      memory, so the file indexes limbs by constants alone.
+      words below 2^26 + 2^10. gcc kept every array that a loop indexes in
+      memory, so the file indexes words by constants alone.
     - **One statement for both multiplies.** A builder who defines
       `CH_NATIVE_WIDEMUL` for an object that is also `CHACHA=vector`
       states the timing of the part's vector widening multiplies, not only
@@ -4067,7 +4067,7 @@ does nothing more.
       CI job builds x86-64 with. A group's two multipliers are 18 vectors
       and x86-64 has 16 vector registers, so that compiler loaded them
       before the loop and kept key powers in spill slots: 70 spills in a
-      1,104-byte frame. Since 2026-10-04 `multiply_add` reads each limb of
+      1,104-byte frame. Since 2026-10-04 `multiply_add` reads each word of
       a multiplier through a volatile pointer on x86-64, which loads it
       from the struct where a product uses it. The frame is 536 bytes with
       one spill, and the check passes under Apple clang 21, gcc 13 and
@@ -4731,8 +4731,8 @@ does nothing more.
     `CH_NATIVE_WIDEMUL` no longer picks a field. And the lists a caller can
     cite, DIT's and DOIT's, name both widths. Under the bit, X25519 runs
     `x25519_wide.c`, which took 34 µs a scalar multiplication on an M1 Pro
-    against 428 µs for the 16-limb field on the native multiply (entry 52).
-    So `x25519_native.c` goes, and a host object runs the 16-limb field on
+    against 428 µs for the 16-word field on the native multiply (entry 52).
+    So `x25519_native.c` goes, and a host object runs the 16-word field on
     the decomposition alone. Cost: a caller who can state the 32-bit
     multiply and not the 64-bit one cannot say so. No part known here
     separates the two.
@@ -4755,7 +4755,7 @@ does nothing more.
     there. `AES=soft`, `AES=extern`, `WIDEMUL=decomposed` and
     `WIDEMUL=native` stay for device objects. Every build refuses `X25519`
     and `CHACHA`, which choose nothing in either object: a device object
-    holds the 16-limb field and `chacha20.c`'s loop alone. A host session
+    holds the 16-word field and `chacha20.c`'s loop alone. A host session
     never runs that loop: every
     arm64 core has NEON and every x86-64 core SSE2 (entry 82), so no bit
     turns the vector path off, and `chacha20_block`, which derives the
@@ -5760,23 +5760,23 @@ does nothing more.
     signer's RFC 6979 nonce in `p256_sign.c`: 0.24 M of a signature's
     0.53 M instructions (entry 94).
 
-94. **A host object computes P-256 on four 64-bit limbs for a session
+94. **A host object computes P-256 on four 64-bit words for a session
     that states its multiply: k·G from a table of multiples of G, and
     k·P from eight multiples of P.** `docs/performance.md`, "Where a
     server handshake's instructions go", left the ECDSA signature as the
     largest part of a server handshake: 5.51 M instructions on the native
     multiply where OpenSSL took 0.21 M. `p256_field.c` and
-    `p256_scalar.c` multiply eight 32-bit limbs through `ct_widemul`, and
+    `p256_scalar.c` multiply eight 32-bit words through `ct_widemul`, and
     a host object compiled each a second time as a native copy (entry
     87). Camilo ruled three things for P-256 in a host object: a field
-    and a scalar on 64-bit limbs and `unsigned __int128`, run for a
+    and a scalar on 64-bit words and `unsigned __int128`, run for a
     session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, as
     `x25519_wide.c` is for X25519 (entry 52); k·G from a precomputed
     table of multiples of G; and a device object that keeps today's code
     and gains no table. This entry records the first two, and the
     multiplication a key exchange runs, which no table of G serves.
 
-    - **The files.** `p256_wide_limb.h` holds the four steps every
+    - **The files.** `p256_wide_word.h` holds the four steps every
       routine is built from: an add with carry, a subtract with borrow,
       one row of a product, and a mask from a bit.
       `p256_wide_field.[ch]` is the field modulo p,
@@ -5790,12 +5790,12 @@ does nothing more.
       `lint-trust-separation` holds both halves of that.
     - **The same numbers in both fields.** Both keep an element in the
       Montgomery domain with R = 2^256, so a wide element is the 32-bit
-      element with its limbs taken two at a time, and a `p256_point` or a
+      element with its words taken two at a time, and a `p256_point` or a
       `p256_scalar` one file wrote is one the other reads. The wide
-      entries take and leave those two types and keep the 64-bit limbs
+      entries take and leave those two types and keep the 64-bit words
       inside a call, so `p256_sign.c`, `p256_ecdh.c` and everything above
       them hold one representation, and a test can compare the two files
-      limb for limb.
+      word for word.
     - **The dispatch moved up one layer.** `widemul.h` had five
       dispatchers at the field's products and two at the scalar's. It
       now has five at `p256_point.h`'s entries, the two multiplications,
@@ -5807,15 +5807,15 @@ does nothing more.
       decomposition, as it did. `p256_field_native.c` and
       `p256_scalar_native.c` are gone: with them a host object would hold
       three P-256 fields, and no session would run the second.
-    - **Two reductions.** p's low limb is 2^64 - 1, so -p^-1 mod 2^64 is
-      1: the multiplier of a Montgomery round is the low limb u itself,
+    - **Two reductions.** p's low word is 2^64 - 1, so -p^-1 mod 2^64 is
+      1: the multiplier of a Montgomery round is the low word u itself,
       and u (p + 1) / 2^64 is u (2^192 - 2^160 + 2^128 + 2^32), four
       shifted copies of u. The field's reduction has no product. The
       group order has no such form, so each of its rounds multiplies the
-      low limb by `N0_INV` and adds one row of u n.
+      low word by `N0_INV` and adds one row of u n.
     - **The two carry steps have three forms.** Every sum and every
-      difference of limbs goes through `p256_wide_add_carry` and
-      `p256_wide_sub_borrow`, and `P256_WIDE_CARRY` in `p256_wide_limb.h`
+      difference of words goes through `p256_wide_add_carry` and
+      `p256_wide_sub_borrow`, and `P256_WIDE_CARRY` in `p256_wide_word.h`
       names the form a build compiles. The compiler picks it. clang
       compiles `__builtin_add_overflow` and `__builtin_sub_overflow`,
       which are not C11; a host object already needs gcc or clang for
@@ -5837,14 +5837,14 @@ does nothing more.
       add-with-carry instruction of a builtin, so the builtins are its
       shortest form on both machines. Each count is of a build with
       `-fno-stack-protector`. Ubuntu's gcc and Alpine's turn the stack
-      protector on, and an intrinsic hands its limb back through a
+      protector on, and an intrinsic hands its word back through a
       pointer, so each field routine on the intrinsics then carries the
       protector's check as well: 293 instructions a multiply under gcc
       13.3, and 61 an add where the count without it is 50.
     - **gcc compiles no overflow builtin.** gcc expands
       `__builtin_add_overflow` to an add and a jump on the add's carry,
       and leaves the jump for its two if-conversion passes to remove.
-      The carry is a limb's, so the jump is on a secret. At `-O0` the
+      The carry is a word's, so the jump is on a secret. At `-O0` the
       passes do not run and at `-Og` gcc turns them off: under gcc 13.3
       and 15.2 for x86-64 the builtins left 73 such jumps in the wide
       files at `-Og`, and under gcc 15.2 for arm64 74. At `-O2` with
@@ -5854,10 +5854,10 @@ does nothing more.
       of those jumps, and the first reading found two routines where it
       had not: under
       gcc 13.3 at `-O2` for x86-64, `p256_wide_fe_neg`, written as
-      0 - a, jumped on each limb of a coordinate, and under gcc 13.3 and
+      0 - a, jumped on each word of a coordinate, and under gcc 13.3 and
       15.2 the zero and equality masks, written as the borrow of 0 - v,
       jumped on v. A peer chooses its point and can choose one with a
-      zero limb, and the key exchange negates the multiple a digit
+      zero word, and the key exchange negates the multiple a digit
       names. gcc expands an intrinsic to its instruction, and a 128-bit
       sum to an add and an add with carry. With either, the same search
       finds no jump on a carry at `-O0`, `-Og`, `-O1`, `-O2`, `-O3` or
@@ -5895,8 +5895,8 @@ does nothing more.
       chain of 255 squarings and 12 multiplies, where `p256_fe_inv` runs
       384 products. `p256_wide_scalar_inverse` raises to n - 2 in 305
       products, where `p256_scalar_inverse` runs 427: a table of the
-      first fifteen powers, the exponent's top two limbs as runs of ones,
-      and its low two limbs four bits at a time. Those four bits index
+      first fifteen powers, the exponent's top two words as runs of ones,
+      and its low two words four bits at a time. Those four bits index
       the table, and they are bits of a build constant, so the index
       reads the constant and never the scalar.
     - **The table.** `p256_wide_table.c` holds 64 rows of 8 affine
@@ -5955,10 +5955,10 @@ does nothing more.
     - **The stack below a wide call is wiped.** Every wide routine wipes
       the objects it names through `ct_wipe`. A compiler also keeps
       values in stack slots of its own. On arm64 the field multiply keeps
-      every limb in registers, and on x86-64, which has half as many,
-      Apple clang 21 keeps ten limbs of each multiply in such slots:
-      `bin/p256_equiv_test` found a limb of the nonce's inverse there
-      after a signature and a limb of the shared X coordinate after a key
+      every word in registers, and on x86-64, which has half as many,
+      Apple clang 21 keeps ten words of each multiply in such slots:
+      `bin/p256_equiv_test` found a word of the nonce's inverse there
+      after a signature and a word of the shared X coordinate after a key
       exchange. So `widemul.h` calls `p256_wide_wipe_below` after each
       wide call whose operands are secret. That function's frame is one
       array of `P256_WIDE_BELOW_LEN` bytes, 2,400, which lies where the
@@ -5975,17 +5975,17 @@ does nothing more.
       128-bit sums where gcc 13.3 for x86-64 picks the intrinsics, wrote
       1,904 there. At `-O0` the call wrote 2,288 bytes under clang 22
       for arm64, the most under any of the eight at `-O0`, `-O1`, `-O3`
-      or `-Os`. With the wipe the search finds no limb under any of them
+      or `-Os`. With the wipe the search finds no word under any of them
       at any of the five levels. A register is out of every wipe's reach,
       as it is everywhere else in the tree.
     - **Three routines of `p256_scalar.c` wipe a temporary.** A session
       with the bit still runs `p256_scalar_add` and
-      `p256_scalar_reduced_mask` on the 32-bit limbs: they multiply
+      `p256_scalar_reduced_mask` on the 32-bit words: they multiply
       nothing. Each names a temporary that gives its operand to whoever
       reads it: the sum z + r d before its reduction, that sum less n,
       and the private scalar or the nonce less n. `p256_scalar.h` said no
       routine there wipes its temporaries. Under gcc 13.3 at `-O1` for
-      x86-64 the search found a limb of z + r d and one of z + r d less n
+      x86-64 the search found a word of z + r d and one of z + r d less n
       below a signature, in the frame `p256_scalar_add` had used. At
       `-O2` it found none under any compiler, and only because the wipe
       after the next wide call covered that frame. So `p256_scalar_add`,
@@ -5998,7 +5998,7 @@ does nothing more.
       wipes and 16,319,236 without them, and with the bit the difference
       is below what the count resolves.
     - **What the 32-bit files leave.** The same search, run on a session
-      without the bit, finds limbs of the nonce's inverse below a
+      without the bit, finds words of the nonce's inverse below a
       signature and of the shared X coordinate below a key exchange: the
       Montgomery product modulo n, `p256_scalar_inverse` and
       `p256_field.c` wipe none of the temporaries they name
@@ -6033,7 +6033,7 @@ does nothing more.
       file's harness, counts the bytes `ct_wipe` is handed and so holds
       that file's three wipes.
     - **Tests.** `bin/p256_equiv_test` runs the wide files and the 32-bit
-      files on the same inputs, 67,073 comparisons of limbs, bytes and
+      files on the same inputs, 67,073 comparisons of words, bytes and
       verdicts, and then measures the stack. It runs the form of the
       carry steps its compiler picks, and `bin/p256_equiv_test_sum` is
       the same binary on the 128-bit sums, which no machine that runs
@@ -6079,10 +6079,10 @@ does nothing more.
       subtraction inverted, a row's carry dropped and a reduction
       round's carry dropped. `bin/p256_equiv_test` catches those nine.
       A proof catches three: the scalar's conditional subtraction that
-      ignores the limb above the four, a reduction round whose sum can
+      ignores the word above the four, a reduction round whose sum can
       wrap, and an exponent index that reads past its array. Seven hold
       the table. The equivalence binary catches a scan that skips an
-      entry, a table limb off by one and a multiplication that drops the
+      entry, a table word off by one and a multiplication that drops the
       correction for an even scalar. The digit proof catches a digit
       whose sign reads the wrong bit. A scan that passes over the entries
       a digit does not name raises the branch count of `p256_wide_mul.c`
@@ -6120,7 +6120,7 @@ does nothing more.
       so no session would run a native copy of the 32-bit files.
     - **Dispatch at the field, as before.** The wide field has its own
       element type, so a dispatcher at each field routine would convert
-      limbs at every call, and one point addition would take 43 branches
+      words at every call, and one point addition would take 43 branches
       on the answer where it now takes none.
     - **One form of the carry steps for every compiler.** The 128-bit
       sums are C with one extension, have no jump under either compiler
@@ -6176,7 +6176,7 @@ does nothing more.
     where the two native copies took 5,024, and 45,817 on x86-64, where
     they took 7,071. One wipe of 2,400 bytes after each wide call that
     takes a secret is 239 instructions on the M1 Pro; a signature makes
-    five and a key exchange two. `p256_wide_limb.h` names two builtins
+    five and a key exchange two. `p256_wide_word.h` names two builtins
     that are not C11 under clang, and two intrinsics of `<immintrin.h>`
     under gcc for x86-64.
 
@@ -6186,7 +6186,7 @@ does nothing more.
     3.6.5 through `EVP_PKEY_sign`, `EVP_PKEY_derive` and
     `EVP_PKEY_keygen`, all in one sitting:
 
-    | | 0.2.0, with the bit | on 64-bit limbs | and the table | and the windows | without the bit | OpenSSL |
+    | | 0.2.0, with the bit | on 64-bit words | and the table | and the windows | without the bit | OpenSSL |
     | --- | --- | --- | --- | --- | --- | --- |
     | `p256_sign` | 5,525,477 | 1,881,166 | 533,570 | 534,046 | 16,326,512 | 178,739 |
     | `p256_ecdh` | 5,046,848 | 1,581,503 | 1,580,917 | 918,577 | 15,116,399 | 480,816 |
@@ -6252,10 +6252,10 @@ does nothing more.
     - **The field in C.** A field multiply is 141 instructions under
       Apple clang 21: four rows of four products, and a reduction of
       shifts. OpenSSL's arm64 build runs the `ecp_nistz256` assembly.
-95. **A host object computes RSA on 64-bit limbs: the public operation
+95. **A host object computes RSA on 64-bit words: the public operation
     in every session, and the private one in a session that states its
     multiply, by the Chinese remainder theorem with a check of every
-    signature. A device object keeps its 32-bit limbs, its ladder and
+    signature. A device object keeps its 32-bit words, its ladder and
     its key of two integers.** Camilo
     set the goal on 2026-10-03: pass OpenSSL on every primitive TLS runs,
     in C an auditor can read, with no assembly. RSA was the widest gap:
@@ -6263,10 +6263,10 @@ does nothing more.
     3.6.5 takes 15 µs. The verifier comes first here, then the signer's
     window, then the CRT.
 
-    - **The limb width.** `rsa_mont64.[ch]` holds Montgomery
-      multiplication on limbs of 64 bits, every product through
+    - **The word width.** `rsa_mont64.[ch]` holds Montgomery
+      multiplication on words of 64 bits, every product through
       `ct_mul128`, the 64x64->128 multiply `ct.h` defines for a host
-      object alone (entries 52 and 89). An RSA-2048 modulus is 32 limbs
+      object alone (entries 52 and 89). An RSA-2048 modulus is 32 words
       where `rsa_mont.c` has 64, so one multiplication runs a quarter of
       the products.
     - **No bit picks it.** `rsa_mont.c` compiles to a call into that file
@@ -6278,18 +6278,18 @@ does nothing more.
       object compiles what it compiled before, and that arm stays the
       reference.
     - **One pass a round.** A round of the multiplication adds `a[i] * b`
-      and `u * m` to the running sum in one pass over the limbs, each
+      and `u * m` to the running sum in one pass over the words, each
       product with a carry of its own. `rsa_mont.c` makes two passes. In
       a scratch build under Apple clang 21 on the M1 Pro, one
-      multiplication of 16 limbs took 1,114 cycles in one pass and 1,501
+      multiplication of 16 words took 1,114 cycles in one pass and 1,501
       in two.
     - **R^2 from doublings and five squarings.** INV-18 leaves a verifier
       no state between calls, so each call computes R^2 mod n, the
       constant that moves a number into the Montgomery domain.
-      `rsa_mont.c` doubles 1 modulo n 64 times a limb, with a comparison
+      `rsa_mont.c` doubles 1 modulo n 64 times a word, with a comparison
       each time. `rsa_mont64_modulus_init` starts at the modulus's top
       bit, which is below the modulus, doubles it up to 2^(2k) * R for k
-      limbs, and squares that five times, because (2^(2k))^32 is R. For
+      words, and squares that five times, because (2^(2k))^32 is R. For
       a modulus with its top bit set that is 2k + 1 doublings, 65 for
       RSA-2048 where the 32-bit arm runs 4,096.
     - **The last product leaves the domain.** The power is the base
@@ -6298,12 +6298,12 @@ does nothing more.
       by R at once: eighteen multiplications where `rsa_mont.c` runs
       nineteen.
     - **Constant time all the same.** No branch and no memory index in
-      `rsa_mont64.c` depends on a limb: a mask chooses the subtraction
+      `rsa_mont64.c` depends on a word: a mask chooses the subtraction
       that ends a multiplication. The verifier needs none of that. It
       costs nothing the measurements below show, and it leaves one
       64-bit arithmetic to audit when the signer takes it.
     - **No sum wraps.** A product is at most (2^64 - 1)^2, and with a
-      limb and a carry added it is at most 2^128 - 1. A subtraction adds
+      word and a carry added it is at most 2^128 - 1. A subtraction adds
       a complement, so a borrow carries where it would wrap. The file is
       written this way so that CBMC's `--unsigned-overflow-check` can
       hold it (INV-41).
@@ -6312,7 +6312,7 @@ does nothing more.
     `rsa_pss_verify` over the keys of `test/rsa_sign_vectors.h`, by a
     scratch driver under `/usr/bin/time -l`:
 
-    | | 32-bit limbs | 64-bit limbs | OpenSSL 3.6.5 |
+    | | 32-bit words | 64-bit words | OpenSSL 3.6.5 |
     |---|---|---|---|
     | RSA-2048, instructions | 2,473,743 | 574,061 | |
     | RSA-3072, instructions | 5,389,936 | 1,227,963 | |
@@ -6340,7 +6340,7 @@ does nothing more.
       multiplies and 20 such adds took 11.7 cycles, 3.1 operations a
       cycle. The one-pass loop compiles to 4 multiplies and 9 flag
       operations for two products, 4.2 cycles, where OpenSSL's assembly
-      keeps the carry in the flag across four limbs and spends about 5
+      keeps the carry in the flag across four words and spends about 5
       flag operations on two products.
     - **No squaring of its own.** OpenSSL squares with about three
       quarters of a multiplication's products, and sixteen of a
@@ -6367,10 +6367,10 @@ does nothing more.
 
     Rejected:
 
-    - **A multiplication in tiles of four limbs by four**, which holds
+    - **A multiplication in tiles of four words by four**, which holds
       the running sum's window in locals and lets a compiler chain each
       add through the carry flag, as OpenSSL's assembly does. In a
-      scratch build one 16-limb multiplication took 845 cycles under
+      scratch build one 16-word multiplication took 845 cycles under
       Apple clang 21, against 1,114. Under gcc 13.3 and gcc 14.2 in a
       Linux container on the same machine it took 548 to 949 ns in three
       spellings of the add, against 322 ns for the one-pass loop. Its
@@ -6388,7 +6388,7 @@ does nothing more.
       under each key it meets, and each of the verifier's calls would
       gain an argument.
 
-    **The signer.** `rsa_sign64.[ch]` signs on the same limbs, for a
+    **The signer.** `rsa_sign64.[ch]` signs on the same words, for a
     session whose `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_MULTIPLY`, as
     `x25519_wide.c` is the X25519 such a session runs (entry 89). A
     session without the bit runs `rsa_sign.c`'s ladder on the 16x16
@@ -6436,7 +6436,7 @@ does nothing more.
       zero. `inv-16-rsa-table-read` refuses a mask taken straight from
       `mask_of_bit` and a `table_select` that does not end with that
       write. `make timing` has a row for the read, an exponent of zero
-      bytes against random ones under a modulus of two limbs: built
+      bytes against random ones under a modulus of two words: built
       for x86-64 and run under Rosetta it reports |t| of 187 to 1,676
       for the first form and under 3 for this one.
     - **No zeros written first.** The first form of `table_select` also
@@ -6450,9 +6450,9 @@ does nothing more.
       21, clang 18 and the pinned clang 23 at `-O2`. gcc 13.3, clang
       for x86-64 and the pinned clang at `-Os` kept the digit in a
       register no callee saves. The read now writes its output in one
-      statement: the entry under an all-ones mask, and the limbs the
+      statement: the entry under an all-ones mask, and the words the
       output already holds under a zero one. So the function calls
-      nothing, and its loop over the limbs is neither a fill nor a
+      nothing, and its loop over the words is neither a fill nor a
       copy, the two loops a compiler replaces with a call.
       `inv-16-rsa-table-read` refuses any other write to the output and
       any call there but `mask_of_bit`. A mask the compiler can read
@@ -6465,26 +6465,26 @@ does nothing more.
       differently.
     - **Five values read where a product uses them.** A round of the
       multiplication reads `b[0]`, `m[0]` and `m0inv` once, and the
-      round's limb `a[i]` and its multiple `u` at every product, and
+      round's word `a[i]` and its multiple `u` at every product, and
       all five are the same for a whole round. A compiler loads such a
       value before the loop that uses it, and when it runs out of
       registers it keeps the copy in a stack slot of its own, which
       `ct_wipe` cannot name. Apple clang 21 for x86-64 kept `b[0]`
-      there: after a signature that slot held a limb of the table entry
+      there: after a signature that slot held a word of the table entry
       the exponent's last digit names. gcc 13.3 for x86-64 kept `a[i]`
-      and `u` there: after a multiplication its slots held the top limb
+      and `u` there: after a multiplication its slots held the top word
       of one operand and the last round's multiple. The residue check
-      in `bin/rsa_sign_equiv_test`, run for one limb, found `b[0]` and
+      in `bin/rsa_sign_equiv_test`, run for one word, found `b[0]` and
       `a[i]`, each in a build for x86-64 made by hand, and gcc's
       assembly showed `u` beside `a[i]`: no CI job builds either pair,
       as entry 83 says of the same finding in the vector Poly1305.
       `rsa_mont64_mont_mul` now reads the first four through volatile
-      pointers where a product uses them. It keeps `u` in a limb above
+      pointers where a product uses them. It keeps `u` in a word above
       its running sum, which its wipe covers, and reads it there the
       same way. That is two more loads a product: on the M1 Pro a
       verification and a signature retire 8 to 10 percent more
       instructions for them and take 2 to 4 percent more cycles.
-      Run for one limb, the check then finds nothing under Apple clang
+      Run for one word, the check then finds nothing under Apple clang
       21 for arm64 and x86-64 and under gcc 13.3 for both.
 
     Measured as the verifier was, one `rsa_pss_sign` over the same keys,
@@ -6492,7 +6492,7 @@ does nothing more.
     as this signer ran before the CRT below, and before a product read
     `a[i]` and `u` from memory:
 
-    | | ladder, decomposed | ladder, native | window, 64-bit limbs | OpenSSL 3.6.5 |
+    | | ladder, decomposed | ladder, native | window, 64-bit words | OpenSSL 3.6.5 |
     |---|---|---|---|---|
     | RSA-2048, instructions | 757,135,863 | 353,703,161 | 54,517,116 | |
     | RSA-3072, instructions | 2,530,150,856 | 1,169,794,038 | 177,747,470 | |
@@ -6514,7 +6514,7 @@ does nothing more.
 
     That did not pass OpenSSL either: a signature took 6.7 to 8.1 times
     OpenSSL's time. OpenSSL signs with the Chinese remainder theorem,
-    two exponentiations over half the limbs with half the exponent,
+    two exponentiations over half the words with half the exponent,
     which is about a quarter of the work, and this signer ran one over
     the whole modulus. The rest is the multiplication's cost above.
 
@@ -6562,7 +6562,7 @@ does nothing more.
       64x64->128 multiply that makes the CRT worth its code, and a key
       store that holds seven integers as easily as two.
     - **The message modulo a prime, with no division.** The encoded
-      message is twice a prime's length. With k the prime's limbs and
+      message is twice a prime's length. With k the prime's words and
       R = 2^(64k) it is high * R + low, so three Montgomery
       multiplications and one sum give it in the prime's domain: R^3
       from R^2, high times R^3, low times R^2, and their sum modulo the
@@ -6571,7 +6571,7 @@ does nothing more.
       h = qinv * (m1 - m2) mod p. m2 is below q, and q is below twice p
       because the two primes have one length, so one subtraction of p
       under a mask reduces it. The difference adds p back under a mask
-      when it borrowed. No step compares, and none branches on a limb.
+      when it borrowed. No step compares, and none branches on a word.
     - **The check.** `rsa_sign64_sp1` raises the signature it computed
       to 65537 modulo n and compares the result with the encoded message
       before it writes a byte to its caller. A CRT signature with one
@@ -6593,7 +6593,7 @@ does nothing more.
       operation may write, the check passes exactly when every byte is
       the message's, and the caller's buffer keeps every byte it held
       unless the check passed. It states the key test the same way,
-      over every limb of the product.
+      over every word of the product.
     - **The key test.** `rsa_sign64_key_ok` admits a key
       `rsa_pss_sign_key_ok` admits whose p times q is n, computed and
       compared in constant time. The modulus is odd and has its top bit,
@@ -6608,7 +6608,7 @@ does nothing more.
     - **Proved in pieces.** `rsa_sign64_crt` proves the reduction, the
       recombination, the key test, the check and the write, each whole,
       at the largest modulus and at 8 bytes below it, where a prime is
-      half a limb past a whole number. `rsa_sign64_sp1` itself is two
+      half a word past a whole number. `rsa_sign64_sp1` itself is two
       calls of the exponentiation between them and is not run whole.
     - **Every wipe has a run that looks for what it wipes.** A
       signature's own frame is the last one written when it returns,
@@ -6630,7 +6630,7 @@ does nothing more.
       under gcc 13.3 for both, and one violation file holds each
       (INV-17).
     - **One stack after two secrets.** A run that looks for a value
-      finds what it can compute and tell from noise, which is two limbs
+      finds what it can compute and tell from noise, which is two words
       side by side. The digit the first form of the read left is four
       bits, and every run above passed with it in a frame. So the
       binary also makes one call under two inputs that differ in a
@@ -6667,7 +6667,7 @@ does nothing more.
       compiler that was not asked to optimize keeps every local in its
       frame. Built at `-O0` under Apple clang, the nine runs differ in 8
       to 249 bytes each, and the runs that look for values find two
-      limbs of a signature's half. So the binary makes no run over the
+      words of a signature's half. So the binary makes no run over the
       stack in such a build, nor under AddressSanitizer, whose frames
       are its own: it asks `test/stack_residue.c`, as entry 93's search
       does, and the sanitizer lane runs the binary's other cases at both
@@ -6754,7 +6754,7 @@ does nothing more.
       admitted does not need.
 
 96. **A host object verifies ECDSA P-256 on the wide files, in every
-    session, and a device object keeps its 32-bit limbs.** After entries
+    session, and a device object keeps its 32-bit words.** After entries
     93 to 95 the two ECDSA verifiers were the widest gaps in
     `docs/performance.md`'s table beside OpenSSL: `p256_ecdsa_verify`
     took 1.21 ms on an M1 Pro where OpenSSL 3.6.5 takes 53 µs. A
@@ -6763,9 +6763,9 @@ does nothing more.
     start with the verifiers on 2026-10-05.
 
     - **The arithmetic.** `p256.c` computed a verification on eight
-      32-bit limbs of its own, with a ladder of 256 doublings for each of
+      32-bit words of its own, with a ladder of 256 doublings for each of
       the two scalar multiplications. A host object already holds P-256
-      on four 64-bit limbs, the wide files of entry 94, with their
+      on four 64-bit words, the wide files of entry 94, with their
       proofs, their equivalence test and their table of multiples of G.
       `p256_wide_verify.c` is FIPS 186-4 6.4.2's check on them:
       `p256_wide_scalar.c` for s's inverse and the two products,
@@ -6803,7 +6803,7 @@ does nothing more.
     Measured on the M1 Pro under Apple clang 21, with
     `bench/primitives.c`'s verify rows under `0x67`, three runs:
     `p256_ecdsa_verify` takes 97.8 µs and retires 1,172,366
-    instructions, where the 32-bit limbs took 1.21 ms and 9,578,994.
+    instructions, where the 32-bit words took 1.21 ms and 9,578,994.
     That is 1.8 times OpenSSL's 53 µs, where it was 23 times.
     `docs/performance.md`'s table takes the row from its next run.
     Gain: a host object verifies an ECDSA P-256 signature in a twelfth
@@ -6821,17 +6821,17 @@ does nothing more.
     - **The multiply bit.** It states a timing, and nothing here has one
       to hide.
     - **P-384 in the same change.** No object holds P-384 on 64-bit
-      limbs, so that verifier needs a field of its own first.
-97. **A host object verifies ECDSA P-384 on six 64-bit limbs, in every
-    session, and a device object keeps its 32-bit limbs.** After entry
+      words, so that verifier needs a field of its own first.
+97. **A host object verifies ECDSA P-384 on six 64-bit words, in every
+    session, and a device object keeps its 32-bit words.** After entry
     96, P-384 was the widest gap in `docs/performance.md`'s table beside
     OpenSSL: `p384_ecdsa_verify` took 3.94 ms on an M1 Pro where OpenSSL
     3.6.5 takes 302 µs. A TRUST=webpki client pays it once for each
     P-384 link of a chain. Entry 96 left it out because no object held
-    P-384 on 64-bit limbs.
+    P-384 on 64-bit words.
 
     - **Three files.** `p384_wide_field.c` is `p384_field.c` routine for
-      routine on six limbs of 64 bits: every product is one `ct_mul128`,
+      routine on six words of 64 bits: every product is one `ct_mul128`,
       and every sum is written so that it cannot wrap.
       `p384_wide_point.c` holds the points and the sum u1·G + u2·Q, and
       `p384_wide_verify.c` is FIPS 186-4 6.4.2's check over the two. In
@@ -6839,8 +6839,8 @@ does nothing more.
       the verifier, and `p384_field.c` compiles to nothing. A device
       object compiles `p384.c` and `p384_field.c` as before, and they
       stay the reference.
-    - **What the limbs save.** A Montgomery product of twelve 32-bit
-      limbs is 288 multiplies, and one of six 64-bit limbs is 72.
+    - **What the words save.** A Montgomery product of twelve 32-bit
+      words is 288 multiplies, and one of six 64-bit words is 72.
     - **What the points save.** Three changes, each the form a
       verifier takes when nothing it reads is secret. A coordinate stays
       in the Montgomery domain from the key's decoding to the last
@@ -6869,7 +6869,7 @@ does nothing more.
       64-bit verifier.
     - **Variable time, unlike entry 96's.** That verifier calls the
       constant-time wide P-256 files because the object already held
-      them. Nothing held P-384 on 64-bit limbs, the tree has no P-384
+      them. Nothing held P-384 on 64-bit words, the tree has no P-384
       signer and no P-384 key exchange, and the reference these files
       are held to is variable time too, so they are written for a
       verifier alone and say so.
@@ -6888,7 +6888,7 @@ does nothing more.
     Measured on the M1 Pro under Apple clang 21, with
     `bench/primitives.c`'s verify rows under `0x67`, three runs:
     `p384_ecdsa_verify` takes 261 µs and retires 3,381,565
-    instructions, where the 32-bit limbs took 3.94 ms and 34,399,679.
+    instructions, where the 32-bit words took 3.94 ms and 34,399,679.
     That is 0.87 of OpenSSL's 302 µs, where it was 13 times.
     `docs/performance.md`'s table takes the row from its next run.
     Gain: a host object verifies an ECDSA P-384 signature in a
@@ -6896,15 +6896,15 @@ does nothing more.
 
     Rejected:
 
-    - **`p384_field.c` and `p384.c` compiled at two limb widths from
+    - **`p384_field.c` and `p384.c` compiled at two word widths from
       one text.** The reference and the fast path would then be one
       text, and an equivalence test would compare an algorithm with
       itself. Two texts cost an auditor a second field to read, and
       each holds the other.
     - **`rsa_mont64.c`'s arithmetic.** It multiplies modulo any odd
       number and a TRUST=webpki host object holds it. It reads its
-      operands through volatile pointers and wipes its working limbs
-      on every product, for RSA's secret exponent, and its limb count
+      operands through volatile pointers and wipes its working words
+      on every product, for RSA's secret exponent, and its word count
       is a variable. A verifier needs none of the three. Nobody
       measured P-384 on it.
     - **A table of multiples of G in the source, a product specialised
@@ -7312,17 +7312,17 @@ does nothing more.
       lower calls in this file. Not measured.
 
 103. **A host object's verifier computes R^2 by long division for a
-    modulus whose top limb has its top bit set.** `rsa_vp1` computed
+    modulus whose top word has its top bit set.** `rsa_vp1` computed
     R^2 mod n with `rsa_mont64_modulus_init`: 2k + 1 doublings and five
-    squarings for a modulus of k limbs, 31 percent of an RSA-2048
+    squarings for a modulus of k words, 31 percent of an RSA-2048
     verification's time on the M1 Pro. That setup takes a time that
     depends on the modulus's length alone, because the signer runs it on
     its secret primes. The verifier's modulus is public, so `rsa_mont.c`'s
     host arm now starts from R mod n, which is R - n, and multiplies it by
     2^64 modulo n k times, each time one step of Knuth's algorithm D. A
-    step divides the remainder's top two limbs by n's top limb, and
+    step divides the remainder's top two words by n's top word, and
     Knuth's Theorem B puts that estimate at most 2 above the quotient
-    when n's top limb has its top bit set, so a step adds n back at most
+    when n's top word has its top bit set, so a step adds n back at most
     twice. Any other modulus still takes `rsa_mont64_modulus_init`.
     `rsa_mont64_modulus_load` writes the record's other fields for it.
 
@@ -7335,7 +7335,7 @@ does nothing more.
     - **Every path runs under random moduli.** Over 3,000 moduli of 256
       to 512 bytes, most of them random, 35 percent of the steps added n
       back once and 1.7 percent twice. One path needs a modulus of its own: when the
-      remainder's top limb equals n's, the division of the top limbs
+      remainder's top word equals n's, the division of the top words
       passes 2^64, and the estimate is 2^64 - 1. That happens about once
       in 2^64 steps. `bin/rsa_equiv_test` adds the modulus
       (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even k, modulo which
@@ -7343,7 +7343,7 @@ does nothing more.
       nine mutants of the division, one at a time, failed that binary:
       the estimate not capped, one pass or no pass adding n back, R mod n
       off by one, the division for a modulus without its top bit, the
-      estimate from one limb, the sign limb dropped, one step short, and
+      estimate from one word, the sign word dropped, one step short, and
       the product's carry dropped. Without the new modulus the first
       passed, and `test/violations/inv41-rsa-mont-r2-estimate-not-capped`
       holds it.
@@ -7393,12 +7393,12 @@ does nothing more.
 
     Rejected:
 
-    - **Knuth's test of the second limb.** It makes an estimate past the
+    - **Knuth's test of the second word.** It makes an estimate past the
       quotient rare, so random moduli would no longer run the passes that
       add n back.
     - **The division in `rsa_mont64.c`.** The signer's check would gain
       about 1 percent of a signature from it, and that file's claim is
-      that no branch and no memory index depends on a limb.
+      that no branch and no memory index depends on a word.
     - **x * R mod n by the same division**, which would also save the
       multiplication that moves the signature into the Montgomery domain.
       The signer's check raises a secret candidate with
@@ -7456,7 +7456,7 @@ does nothing more.
       by a branch; `bin/p256_verify_equiv_test` catches the five new ones.
     - **Branches.** `lint-wide-multiply` records 22 conditional branches
       in `p256_wide_verify_point.c` under both 64-bit specs, each read
-      against the source: loops over digits and limbs, digits and their
+      against the source: loops over digits and words, digits and their
       signs, and the tests of infinity, of equal points and of negatives,
       all on public values.
 
@@ -7486,10 +7486,10 @@ does nothing more.
     scalar inverse's 252 squarings and 53 products, and a verification's
     256 doublings each square five times.
 
-    - **The step.** `p256_wide_limb.h` gains `p256_wide_sqr_product`:
+    - **The step.** `p256_wide_word.h` gains `p256_wide_sqr_product`:
       the six products a_i a_j with i < j in three rows, their sum
-      doubled by a shift across the limbs, and the four squares a_i^2
-      added, eight limbs out. `p256_wide_fe_sqr` reduces them with the
+      doubled by a shift across the words, and the four squares a_i^2
+      added, eight words out. `p256_wide_fe_sqr` reduces them with the
       multiply's reduction, and `mont_sqr` in `p256_wide_scalar.c` with
       `mont_mul`'s four rounds. Both stay constant time: shifts, adds
       with carry and products, and no branch.
@@ -7503,9 +7503,9 @@ does nothing more.
       retires 1,759,594.
     - **What holds it.** `proof/p256_wide_sqr_harness.c` proves on the
       real multiply that the square wraps no unsigned value for any four
-      limbs (69 properties, 5 s, 404 MB): the top limb's sum fits only
+      words (69 properties, 5 s, 404 MB): the top word's sum fits only
       because the square is below 2^512. `proof/p256_wide_stubs.h`
-      replaces the square with any eight limbs in the field's and the
+      replaces the square with any eight words in the field's and the
       scalar's harnesses, as it replaces a row. `bin/p256_equiv_test`
       holds every square to `p256_field.c`'s and both inverses to the
       32-bit files', and the vectors and the host Wycheproof test run on
@@ -7539,11 +7539,11 @@ does nothing more.
     other. The M1 Pro ran other work at a load average of 40 to 180 while
     this entry was measured, so its column above is instructions alone.
 
-    Cost: 57 lines in `p256_wide_limb.h`, a routine of 13 lines in each
+    Cost: 57 lines in `p256_wide_word.h`, a routine of 13 lines in each
     of the two files, and one attribute that is not C11, in a file a
     device object does not compile.
 
-106. **A host object squares on 64-bit limbs with a square of its own.**
+106. **A host object squares on 64-bit words with a square of its own.**
     Sixteen of a verification's eighteen Montgomery multiplications are
     squares, and four of every five of a signature's. Decision 95 found
     a square written as loops slower than the multiplication: it computed
@@ -7563,12 +7563,12 @@ does nothing more.
       reduction's R^3. The signer's check is the public operation, so a
       secret candidate is squared by it too.
     - **The same claims as the multiplication.** No branch and no memory
-      index depends on a limb: the top bit of 2a, which a round adds at
+      index depends on a word: the top bit of 2a, which a round adds at
       offset k, goes in under a mask. The values a round reads go
       through volatile pointers, and the square wipes 2a and its running
-      sum. The running sum stays below 3m after a round, so its top limb
+      sum. The running sum stays below 3m after a round, so its top word
       reaches 2 where a multiplication's reaches 1, and no sum passes a
-      product and two limbs.
+      product and two words.
     - **A mask the compiler kept.** The mask of 2a's top bit is the same
       in every round. The first form read that bit straight from the
       array, and gcc 13 for x86-64 made the mask once, before the rounds,
@@ -7580,7 +7580,7 @@ does nothing more.
       the test passed there. Each round now reads the bit through a
       volatile pointer, and gcc makes the mask where the round uses it.
     - **Held.** `bin/rsa_equiv_test` holds the square to the
-      multiplication of a number by itself at every limb count from 1 to
+      multiplication of a number by itself at every word count from 1 to
       64, over 0, 1, n - 1, the top bit alone and random values, 1,024
       squares, and every RSA test runs it. Each of nine mutants failed a
       test: seven of the arithmetic, which `bin/rsa_equiv_test` and the
@@ -7592,7 +7592,7 @@ does nothing more.
       CI's mutants job runs gcc 13 for x86-64, where the fourth, the
       dropped wipe of the running sum, passed, so it is not one.
       `rsa_mont64_mul` proves the square's memory accesses at the bound
-      and `rsa_mont64_sums` that no sum in it wraps, at four limbs, which
+      and `rsa_mont64_sums` that no sum in it wraps, at four words, which
       run each kind of round. `make timing` has a row for it: n - 1, whose
       top bit is set, against random operands whose top bit is clear.
 
@@ -7631,26 +7631,26 @@ does nothing more.
 
     Cost: one function of about 100 lines in `rsa_mont64.c`, nine more
     conditional branches there under both specs of `lint-wide-multiply`,
-    all on a limb count or a row's index, and two more calls in each of
+    all on a word count or a row's index, and two more calls in each of
     two harnesses: `rsa_mont64_mul` proves 709 properties where it proved
     521, in 46 s of processor time and 775 MB. The square's frame holds
     2a beside its running sum, 520 bytes more than the multiplication's,
     and a host server object's deepest chain is the signature's, which
     ends in it: `bench/stack.py` puts `ch_srv_accept`'s peak at 11,840
-    bytes where it was 11,424, on this M1 Pro. Computing 2a's limbs where a round reads
+    bytes where it was 11,424, on this M1 Pro. Computing 2a's words where a round reads
     them keeps no copy and no frame grows, but under gcc 13 for x86-64 an
     RSA-2048 verification then runs 491,889 instructions against 463,487,
     and on the M1 Pro the two take the same time.
 
     Rejected:
 
-    - **Product scanning**, which keeps a column's sum in three limbs in
+    - **Product scanning**, which keeps a column's sum in three words in
       registers and stores no running sum. On the M1 Pro under Apple
-      clang its square took 3,555 cycles for 32 limbs against the
+      clang its square took 3,555 cycles for 32 words against the
       multiplication's 4,473, and a scratch form of this square, with no
       volatile reads, took 3,515. Under gcc 13 for
       x86-64 its 128-bit sums ran up to twice the multiplication's
-      instructions, and `_addcarry_u64` left both limbs of the sum in a
+      instructions, and `_addcarry_u64` left both words of the sum in a
       stack slot, which the next product loads again.
     - **The cross products in a pass of their own**, decision 95's form,
       written again: 4,423 cycles against the multiplication's 4,441 on
@@ -7811,7 +7811,7 @@ does nothing more.
       products where this one runs ten.
 
 109. **A host object computes k·G on six-bit windows, from an 86 KiB
-    table it scans two limbs to a vector.** Entry 94 read k·G from 64 rows
+    table it scans two words to a vector.** Entry 94 read k·G from 64 rows
     of eight odd multiples of G, 32 KiB, one row for each four-bit window,
     and left a wider window unmeasured. Camilo asked for a bigger table.
 
@@ -7826,9 +7826,9 @@ does nothing more.
       peer's point.
     - **The scan.** Each window still reads every entry of its row and
       keeps one by mask. With more entries a row the scan's cost decides
-      the width. Written as before, clang stores the eight limbs back to
+      the width. Written as before, clang stores the eight words back to
       the output for every entry. `table_select` now keeps its four sums
-      in `limb_pair`, a GNU C vector of two `uint64_t`, so an entry is
+      in `word_pair`, a GNU C vector of two `uint64_t`, so an entry is
       four vector loads, four ANDs and four ORs. gcc and clang compile it
       to SSE2 or NEON with no intrinsic, and CBMC reads it. A form that
       copied each entry into an array of vectors with `memcpy` made gcc 13

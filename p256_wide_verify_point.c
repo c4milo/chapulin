@@ -43,9 +43,9 @@
 #define TABLE_LEN 8                  // a point's odd multiples, 1 to 15: 2^(WINDOW - 2) of them
 #define DIGITS_LEN (SCALAR_BITS + 1) // a carry out of the top window is one more digit
 
-// SEC 2 secp256r1's group order, least significant limb first: the
+// SEC 2 secp256r1's group order, least significant word first: the
 // constant p256_wide_scalar.c names N0 to N3. tools/p256_wide.py
-// recomputes it and stops if a limb differs.
+// recomputes it and stops if a word differs.
 static const p256_wide_fe ORDER = {
     {UINT64_C(0xf3b9cac2fc632551), UINT64_C(0xbce6faada7179e84), UINT64_C(0xffffffffffffffff),
      UINT64_C(0xffffffff00000000)}
@@ -213,7 +213,7 @@ static uint32_t scalar_bits(const p256_scalar *k, int pos, int count) {
     uint32_t value = 0;
     for (int i = 0; i < count; i++) {
         int bit = pos + i;
-        value |= ((k->limb[bit >> 5] >> (bit & 31)) & 1U) << i;
+        value |= ((k->word[bit >> 5] >> (bit & 31)) & 1U) << i;
     }
     return value;
 }
@@ -313,8 +313,8 @@ void p256_wide_jacobian_double_mul(p256_wide_jacobian *o, const p256_scalar *u1,
 // The scalar's value as a field element, not in the Montgomery domain. A
 // scalar below n is below p.
 static void fe_from_scalar(p256_wide_fe *o, const p256_scalar *a) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->limb[i] = (uint64_t)a->limb[2 * i] | ((uint64_t)a->limb[2 * i + 1] << 32);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->word[i] = (uint64_t)a->word[2 * i] | ((uint64_t)a->word[2 * i + 1] << 32);
     }
 }
 
@@ -337,14 +337,14 @@ int p256_wide_jacobian_x_is_r(const p256_wide_jacobian *sum, const p256_scalar *
     if (x_is(sum, &zz, &c)) {
         return 1;
     }
-    // c = r + n, 128 bits wide at each limb so that the carry out of the
-    // top limb is kept.
-    ct_u128 sum_limb = 0;
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        sum_limb = (ct_u128)c.limb[i] + ORDER.limb[i] + (uint64_t)(sum_limb >> 64);
-        c.limb[i] = (uint64_t)sum_limb;
+    // c = r + n, 128 bits wide at each word so that the carry out of the
+    // top word is kept.
+    ct_u128 sum_word = 0;
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        sum_word = (ct_u128)c.word[i] + ORDER.word[i] + (uint64_t)(sum_word >> 64);
+        c.word[i] = (uint64_t)sum_word;
     }
-    if ((uint64_t)(sum_limb >> 64) != 0 || p256_wide_fe_reduced_mask(&c) == 0) {
+    if ((uint64_t)(sum_word >> 64) != 0 || p256_wide_fe_reduced_mask(&c) == 0) {
         return 0;
     }
     return x_is(sum, &zz, &c);

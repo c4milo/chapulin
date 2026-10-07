@@ -7,8 +7,8 @@ CFLAGS ?= -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE
 # legitimately keep whole vector tables in their frames.
 CFLAGS += -Wvla
 STACK_BUDGET := 2560
-# A TRUST=webpki object verifies RSA-4096, so rsa_vp1's limb arrays are
-# 128 limbs wide instead of 96: measured 3,168 bytes (clang 23 -O2,
+# A TRUST=webpki object verifies RSA-4096, so rsa_vp1's word arrays are
+# 128 words wide instead of 96: measured 3,168 bytes (clang 23 -O2,
 # arm64) and 3,128 (Arm GNU gcc 16.2 -O2, Cortex-M3), against 2,400 and
 # 2,360 at the device bound. The mode is host-side (docs/webpki.md), so
 # its ceiling is 4 kB rather than a device's 2.5 kB; it still catches a
@@ -42,7 +42,7 @@ STACK_BUDGET_KEX_HYBRID := 6656
 # sampler holds the row's three entries, so mlk_matvec_row's frame is
 # 2,656 bytes where mlkem.c's is 1,120 (docs/decisions.md 107).
 STACK_KEX_HYBRID_COPIES = $(if $(filter mlkem.c,$(KEX_HYBRID_SRCS)),mlkem_avx2.c)
-# rsa_sign64.c, the RSA signer a host object runs on 64-bit limbs, gets
+# rsa_sign64.c, the RSA signer a host object runs on 64-bit words, gets
 # its own ceiling too, set by what a CRT signature holds at once.
 # rsa_sign64_sp1 holds a modulus record for each prime, the message, the
 # two halves, the recombined signature and the candidate it checks:
@@ -204,7 +204,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
-        p256_wide_limb.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
+        p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
         p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
@@ -215,7 +215,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 # The wide P-256 files and the table of multiples of G the base
 # multiplication reads, which a host object holds beside p256_field.c,
 # p256_scalar.c and p256_point.c (docs/decisions.md 94): the field and the
-# scalar arithmetic on four 64-bit limbs, the points and the two scalar
+# scalar arithmetic on four 64-bit words, the points and the two scalar
 # multiplications over them, and the wipe of the stack their calls used;
 # and the verifier with its own variable-time points (docs/decisions.md 96
 # and 104). They are named once, here, for the object, for the test
@@ -223,7 +223,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
                   p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c p256_wide_verify_point.c
 
-# P-384 on six 64-bit limbs: the field, the points and the verifier over
+# P-384 on six 64-bit words: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
 # 32-bit arm (docs/decisions.md 97). They are named once, here, for the
 # object, for the test binaries that link a host object's P-384 and for
@@ -490,7 +490,7 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
                     sha3_hw.c mlkem_hw.c mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
                     test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c
-# RSA's arithmetic on 64-bit limbs, the signer built on it and their
+# RSA's arithmetic on 64-bit words, the signer built on it and their
 # equivalence tests (docs/decisions.md 95), which compile only under
 # -DCH_CPU_RUNTIME. lint-tidy reads them in a pass of their own.
 RSA_HOST_LINT_C := rsa_mont64.c rsa_sign64.c test/rsa_equiv_test.c test/rsa_equiv_portable.c \
@@ -999,9 +999,9 @@ ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST))$(filter server both,$(ROLE)),)
 LIB_SRCS += $(KEX_HYBRID_SRCS)
 endif
 # The X25519 field, which both KEX values run. Every object holds
-# x25519.c's 16 limbs of 16 bits, whose products are 32x32 multiplies that
+# x25519.c's 16 words of 16 bits, whose products are 32x32 multiplies that
 # ct.h can build from 16x16 pieces on any core. A host object also holds
-# x25519_wide.c, five limbs of 51 bits whose products are 64x64->128
+# x25519_wide.c, five words of 51 bits whose products are 64x64->128
 # multiplies, and widemul.h runs it for a session whose ch_cfg.cpu holds
 # CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 52 and 89). The host
 # test requires unsigned __int128, the type of those products, which no
@@ -1009,19 +1009,19 @@ endif
 #
 # No variable chooses the field. X25519=wide chose it for a whole object
 # until the field moved under the bit, and a build that still passes the
-# variable would get the 16-limb field with no word said, so any value of
+# variable would get the 16-word field with nothing said, so any value of
 # it stops the build here.
 ifneq ($(origin X25519),undefined)
-$(error X25519=$(X25519) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the wide X25519 field and run it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and every other object runs the 16-limb field (docs/decisions.md 89))
+$(error X25519=$(X25519) is gone: on arm64 and x86-64 a TRUST=webpki client, ROLE=server and ROLE=both hold the wide X25519 field and run it for a session whose ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY, and every other object runs the 16-word field (docs/decisions.md 89))
 endif
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += x25519_wide.c
 endif
 # P-256, which a TRUST=webpki client and every server role run. Every
 # object that carries it holds p256_field.c, p256_scalar.c and
-# p256_point.c, eight limbs of 32 bits whose products ct.h can build from
+# p256_point.c, eight words of 32 bits whose products ct.h can build from
 # 16x16 pieces on any core. A host object also holds the wide files
-# (P256_WIDE_SRCS), four limbs of 64 bits whose products are 64x64->128
+# (P256_WIDE_SRCS), four words of 64 bits whose products are 64x64->128
 # multiplies, and widemul.h runs them for a session whose ch_cfg.cpu holds
 # CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 89 and 94). They are
 # P-256's second copy there, as x25519_wide.c is X25519's, so neither
@@ -1030,9 +1030,9 @@ ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter p256_point.c,$(LIB_SRCS)),$(P256_WIDE_SRCS))
 endif
 # RSA's public operation, rsa_vp1, which the two RSA verifiers call. A
-# device object runs it on rsa_mont.c's 32-bit limbs. In a host object
+# device object runs it on rsa_mont.c's 32-bit words. In a host object
 # rsa_mont.c compiles to a call into rsa_mont64.c, the same exponentiation
-# on 64-bit limbs whose products are 64x64->128 multiplies, and every
+# on 64-bit words whose products are 64x64->128 multiplies, and every
 # session runs it: a modulus and a signature are public, so no bit states
 # the multiply's timing for them (docs/decisions.md 95). The file joins
 # every host object that holds rsa_mont.c.
@@ -1043,7 +1043,7 @@ endif
 # ECDSA P-384, which a TRUST=webpki client checks a chain's signatures
 # with. A device object runs p384.c's 32-bit arm over p384_field.c. In a
 # host object p384.c compiles to a call into p384_wide_verify.c, the same
-# equation on six 64-bit limbs over p384_wide_point.c and
+# equation on six 64-bit words over p384_wide_point.c and
 # p384_wide_field.c, and p384_field.c compiles to nothing. Every session
 # runs it: a key, a hash and a signature are public, so no bit states the
 # multiply's timing for them (docs/decisions.md 97). The three files join
@@ -1052,9 +1052,9 @@ ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter p384.c,$(LIB_SRCS)),$(P384_WIDE_SRCS))
 endif
 # RSA-PSS signing, which a server role runs. A device object signs with
-# rsa_sign.c's ladder on 32-bit limbs. A host object holds that ladder for
+# rsa_sign.c's ladder on 32-bit words. A host object holds that ladder for
 # a session that does not state its multiply, and beside it rsa_sign64.c,
-# the Chinese remainder theorem on rsa_mont64.c's limbs with each
+# the Chinese remainder theorem on rsa_mont64.c's words with each
 # signature checked before it returns, which widemul.h runs for a session
 # that does (docs/decisions.md 95). The file joins every host object that
 # holds rsa_sign.c, and every such object holds rsa_mont.c for
@@ -1660,7 +1660,7 @@ print-aes-runtime-qemu-srcs:
 # (docs/decisions.md 94).
 # The RSA rows hold rsa_mont64.c, the 64-bit arithmetic rsa_mont.c calls
 # in a host object, to the host object beside rsa_mont.c, and out of every
-# device object, and rsa_sign64.c, the signer on those limbs, to the host
+# device object, and rsa_sign64.c, the signer on those words, to the host
 # object that holds rsa_sign.c (docs/decisions.md 95).
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
@@ -2349,13 +2349,13 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # why hkdf.c and sha256.c link. test/stack_residue.c copies the stack a
 # call left, for the check that the powers of H and a pass's sums are gone
 # (test/ghash_equiv_residue.h).
-# The wide X25519 field against the 16-limb one, both in one binary under
+# The wide X25519 field against the 16-word one, both in one binary under
 # the names the library gives them, as a host object holds them: x25519.c
 # on ct.h's 16x16 decomposition and x25519_wide.c, which compiles x25519.c
 # once more for its clamp and all-zero check. The binary is a host
 # object's, so HOST_BINS names it. bin/unit_host runs RFC 7748's vectors
 # and the unit suite's handshakes on the wide field, with the multiply bit,
-# and on the 16-limb one, without it.
+# and on the 16-word one, without it.
 X25519_EQUIV_TEST_SRCS := x25519.c x25519_wide.c ct.c ct_wipe.c
 bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2367,7 +2367,7 @@ bin/x25519_equiv_test: test/x25519_equiv_test.c $(X25519_EQUIV_TEST_SRCS) $(HDRS
 # The signer and the key exchange link so that a signature, a key pair and
 # a shared secret run under both answers, and p256.c so that the
 # independent verifier reads each signature. test/stack_residue.c copies
-# the stack a call left, for the check that a scalar's limbs are gone
+# the stack a call left, for the check that a scalar's words are gone
 # (test/p256_equiv_residue.h), and the copies on the SHA-256 instructions
 # link so that one signature's nonce runs on them, as a server's does under
 # the SHA-256 bit (p256_sign_cpu). The binary is a host object's, so
@@ -2380,7 +2380,7 @@ P256_EQUIV_TEST_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_
 bin/p256_equiv_test: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS)
-# The same binary on the 128-bit sums, the form of p256_wide_limb.h's two
+# The same binary on the 128-bit sums, the form of p256_wide_word.h's two
 # carry steps that gcc compiles for a machine other than x86-64. The
 # binary above runs the form its compiler picks: the builtins under clang
 # and the intrinsics under gcc for x86-64. check runs on no machine whose
@@ -2414,7 +2414,7 @@ bin/p256_equiv_test_builtin: test/p256_equiv_test.c $(P256_EQUIV_TEST_SRCS) $(HD
 # A host object's RSA arithmetic against the portable code
 # (docs/decisions.md 95). The binary compiles as a host object compiles
 # its sources, so rsa_mont.c is the arm that calls rsa_mont64.c's 64-bit
-# limbs, and test/rsa_equiv_portable.c compiles the same file's 32-bit
+# words, and test/rsa_equiv_portable.c compiles the same file's 32-bit
 # arm, a device object's, under a second name beside it. It builds at the
 # 512-byte bound, so RSA-4096 runs on both.
 RSA_EQUIV_TEST_SRCS := rsa_mont.c $(RSA_MONT64_SRCS) ct.c ct_wipe.c
@@ -2424,7 +2424,7 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
-# runs, and rsa_sign64.c is the CRT signer on 64-bit limbs beside it. The
+# runs, and rsa_sign64.c is the CRT signer on 64-bit words beside it. The
 # two link under their own names, as a host object holds them.
 # test/stack_residue.c copies the stack a call left, for the check that
 # its wipes cover what it held, and test/rsa_sign_equiv_pieces.c compiles
@@ -3614,7 +3614,7 @@ $(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST
 # suite computation and both loops, on aes_extern.c over
 # test/aes_extern_hook.c; they need no instruction, so they never skip.
 # The wide X25519 field's runs are bin/unit_host's, with the multiply bit,
-# and bin/x25519_equiv_test's, the field against the 16-limb one over the
+# and bin/x25519_equiv_test's, the field against the 16-word one over the
 # same inputs. The host object's ChaCha20 runs are the unit suite and
 # Wycheproof under each ch_cfg.cpu value, and each vector path against
 # the portable loop over the same inputs. A compiler that fails the host
@@ -4626,7 +4626,7 @@ san-check:
 	# four equivalence binaries: the wide X25519 field, the vector
 	# ChaCha20 and Poly1305, which run their cases on heap buffers that end
 	# where each case ends, so ASan sees a read or a write one byte past
-	# them, and RSA's 64-bit arithmetic, whose limb arrays sit on the
+	# them, and RSA's 64-bit arithmetic, whose word arrays sit on the
 	# stack; the signer's binary makes no run over the stack here, as the
 	# SHA-2 one below makes none. Then the RSA signer's vectors and its
 	# faulted keys under each value of HOST_VECTOR_CPU, which run the CRT
@@ -4869,7 +4869,7 @@ lint-zig-build-run:
 	+@ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh
 
 # INV-19: bounded stack. The budget is the measured worst library
-# frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
+# frame (rsa_vp1's RSA-3072 word temporaries, 2,400 bytes) rounded up;
 # a frame past it is a build error, not a bench surprise. Each source
 # compiles alone so a breach names its file.
 # Hand-written C, and the Zig API that forwards to it, stays under 500
@@ -5204,7 +5204,7 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
 	# -DCH_CPU_RUNTIME and compiles x25519.c's clamp and all-zero check
-	# inside it, so the pass above reads the 16-limb field and this one
+	# inside it, so the pass above reads the 16-word field and this one
 	# reads the other, with the equivalence test, which calls both, and the
 	# differential main, which refuses any other build.
 	@$(call TIDY_EACH,x25519_wide.c test/x25519_equiv_test.c test/diff_x25519_test.c, \
@@ -5228,7 +5228,7 @@ else
 	@$(call TIDY_EACH,$(P384_WIDE_SRCS) p384.c test/p384_equiv_test.c test/p384_equiv_field.c \
 	  test/p384_equiv_sign.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
-	# RSA's arithmetic on 64-bit limbs and the signer built on it
+	# RSA's arithmetic on 64-bit words and the signer built on it
 	# (docs/decisions.md 95). rsa_mont64.c and rsa_sign64.c guard their
 	# bodies on -DCH_CPU_RUNTIME and rsa_mont.c compiles its other arm
 	# under it, so the pass above reads the 32-bit arm and this one reads
@@ -6119,12 +6119,12 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # (docs/decisions.md 94): their products are unsigned __int128, and they
 # compile only in a host object. They divide nothing and call no runtime
 # routine, so their ceilings are zero.
-# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit limbs, joins it for
+# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit words, joins it for
 # x25519_wide.c's reasons (docs/decisions.md 95): its products are
 # unsigned __int128 and its body sits behind -DCH_CPU_RUNTIME. Its
 # multiply is the same 64x64->128 instruction, so its tokens are the
 # divisions and the 128-bit runtime calls too, and its ceiling is zero.
-# rsa_sign64.c, the signer on those limbs, multiplies only through
+# rsa_sign64.c, the signer on those words, multiplies only through
 # rsa_mont64.c and joins on the same terms.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
@@ -6310,14 +6310,14 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # lowers them to a predicated instruction, sltu or an arithmetic shift
 # today -- by its choice, and no check held it to that choice. This count
 # is the check. It cannot tell a branch on a public loop counter from one
-# on a limb, so every file in BRANCH_SRCS carries a measured count per
+# on a word, so every file in BRANCH_SRCS carries a measured count per
 # spec in BRANCH_CEILING, all of them loop control on public counts (a
 # block loop, x25519's ladder, poly1305's `n >= 16`, Keccak's round and
 # lane counters, softmul's fixed 32 and 64 iterations), and what the gate
 # holds is that the count does not grow: a branch a compiler puts on a
-# limb lands on top of the recorded ones.
+# word lands on top of the recorded ones.
 #
-# rsa_sign.c's count is loop control over limb counts, plus three sites
+# rsa_sign.c's count is loop control over word counts, plus three sites
 # that are not loop control and are all on public values: MGF1 takes the
 # smaller of the remaining mask length and 32; mont_r2's conditional
 # subtract runs on the modulus, which is public, and is the only caller
@@ -6327,7 +6327,7 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # nothing else under each of the three clang specs, read at -Os from the
 # assembly the gate itself compiles.
 # test/violations/inv16-poly1305-final-sign-branch.violation writes
-# poly1305_final's select as an if on the last limb's sign, and the
+# poly1305_final's select as an if on the last word's sign, and the
 # count rises by one under every compiler in the table.
 # test/violations/inv16-widemul-s-sign-branch.violation writes
 # ct_widemul_s's two sign corrections as ifs: clang lowers both back to
@@ -6341,7 +6341,7 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # branches tbb and tbh, and the IT instruction, one per block. A
 # predicated instruction takes the same cycles on the Cortex-M3 whether
 # or not its condition holds, so an IT block is not a timing leak there;
-# it is counted because it is the form clang gives an if on a limb (it
+# it is counted because it is the form clang gives an if on a word (it
 # mi, addmi), and a count that saw only b<cond> would pass that form
 # through. Unconditional b, bl, blx and bx do not count. mips counts beq,
 # bne and the four compare-with-zero branches, and the prefixes take the
@@ -6380,37 +6380,37 @@ WIDEMUL_SPECS := \
 # 64x64->128 multiply is the instruction the wide field is built on, and
 # the session's multiply bit is the statement about its timing, so counting it
 # would hold nothing. What these specs hold is the branch count, which is the
-# field's claim that no instruction branches on a limb or a scalar bit: every
+# field's claim that no instruction branches on a word or a scalar bit: every
 # branch x25519_wide.c emits under both is loop control over a public count
-# -- the 255 ladder steps, the five limbs, the 40 bytes ct_wipe clears, the
+# -- the 255 ladder steps, the five words, the 40 bytes ct_wipe clears, the
 # eight bytes load_le64 reads, and sqr_times' count -- and cswap and pack's
 # conditional subtraction stay masks. x25519.c's clamp and all-zero check,
 # which the file compiles inside it, add no branch under either spec.
 # arm64 counts b.<cond>, spelled out so
 # the dot cannot match bl, and cbz, cbnz, tbz and tbnz. x86-64 counts every
 # j<cond>, by prefixes that cannot match jmp. A compiler run that emits
-# either family's multiply by a limb as a call to __multi3 fails the zero.
+# either family's multiply by a word as a call to __multi3 fails the zero.
 # No gcc spec measures the field: no CI lane runs a 64-bit gcc through
 # lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
 #
 # rsa_mont64.c's 43 under both specs were read the same way, function by
-# function. Thirty are loop control over a limb count, a byte count,
+# function. Thirty are loop control over a word count, a byte count,
 # the doublings rsa_mont64_modulus_init counts from its bits argument, its
 # five squarings, the public exponent's sixteen and neg_inverse's six
 # steps, and the tests that skip a loop of no iterations. Four are the
 # three CH_ASSERTs on the public lengths the entries take:
 # rsa_mont64_modulus_load, which rsa_mont.c calls for a public modulus,
 # checks its length itself (docs/decisions.md 103). rsa_mont64_mont_square
-# has the other nine, each on a limb count or a row's index: the test for
-# no limbs, the loop that writes twice the operand, the tests for row 0
+# has the other nine, each on a word count or a row's index: the test for
+# no words, the loop that writes twice the operand, the tests for row 0
 # and for row 1, whose part below its square is empty, that part's loop,
-# the tests for a row with limbs past its square and past the limb above
+# the tests for a row with words past its square and past the word above
 # it, their loop, and the loop over rows (docs/decisions.md 106). The
 # comparison and the subtraction that end a multiplication stay a carry
 # and a mask: reduce_once's three are its two loops and the test for no
-# limbs. The sum, the difference
+# words. The sum, the difference
 # and the plain product a CRT signature joins its halves with add nine,
-# all loops over limbs: the difference adds the modulus back under a mask.
+# all loops over words: the difference adds the modulus back under a mask.
 #
 # rsa_sign64.c's 26 under the arm64 spec and 27 under the x86-64 one were
 # read the same way. The x86-64 spec's one more is rsa_sign64_sp1's
@@ -6419,8 +6419,8 @@ WIDEMUL_SPECS := \
 # rsa_sign64_power's seven are loop control: the table's
 # entries, the exponent's digits, whose count comes from its length in
 # bytes, the four squarings, the sixteen entries a read of the table
-# visits and their limbs, and its CH_ASSERT on the limb count.
-# message_mod_prime's are its loops over the message's limbs. rsa_sign64_key_ok's four
+# visits and their words, and its CH_ASSERT on the word count.
+# message_mod_prime's are its loops over the message's words. rsa_sign64_key_ok's four
 # are rsa_pss_sign_key_ok's three on the modulus's length and two of its
 # bits and the loop that compares the product with the modulus; the
 # verdict it returns is a flag and no branch. rsa_sign64_sp1's are its
@@ -6476,7 +6476,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # poly1305's its operands are readable straight from the assembly. Both
 # come from one call, mont_mul's `ct_widemul(t[0], N0_INV)`, and both are
 # the ladder's middle products: `madd $3,$13` multiplies `srl
-# $3,$19,16`, a limb's high half, by `li $13,0xbc4f`, N0_INV's low
+# $3,$19,16`, a word's high half, by `li $13,0xbc4f`, N0_INV's low
 # half, and `madd $31,$24` multiplies `andi $31,$19,0xffff` by `li
 # $24,0xee00`, N0_INV's high half. gcc holds both halves of the constant,
 # so it puts `hl + (ll >> 16)` and `(t & 0xFFFF) + lh` in the
@@ -6517,7 +6517,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # branch count held both copies of every file built on the multiply, and
 # it stays beside p256_field.c now that the wide files are the second copy
 # of both (docs/decisions.md 94). Its branches were read under each spec:
-# loop back edges over the eight limbs and the 256 rounds of
+# loop back edges over the eight words and the 256 rounds of
 # p256_scalar_inverse, whose exponent n-2 is a build constant, the same
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
@@ -6568,10 +6568,10 @@ HASH_HW_BRANCH_CEILING := \
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. Their branches were read before they were
 # recorded, and the counts are the same on both specs. Every one closes a
-# loop over a public count or tests a public value, and none reads a limb
+# loop over a public count or tests a public value, and none reads a word
 # or a scalar bit.
-#   p256_wide_field.c's 7: the four limbs in each of the two copies to and
-#     from p256_field.h's element, the four limbs and the eight bytes of
+#   p256_wide_field.c's 7: the four words in each of the two copies to and
+#     from p256_field.h's element, the four words and the eight bytes of
 #     each in the two marshalling routines, and sqr_times' count, a
 #     constant at every call. The add, the subtract, the multiply and the
 #     three predicates are straight line.
@@ -6583,8 +6583,8 @@ HASH_HW_BRANCH_CEILING := \
 #     caller of p256_wide_point_affine asked for Y.
 #   p256_wide_mul.c's 12: the windows each multiplication adds after its
 #     first, 42 of the table's and 63 of a point's, the 32 entries a table
-#     scan reads, whose limbs sit in vectors with no loop of their own, the
-#     eight multiples a point's scan reads and the four limbs of each of a
+#     scan reads, whose words sit in vectors with no loop of their own, the
+#     eight multiples a point's scan reads and the four words of each of a
 #     multiple's three coordinates, the seven multiples p256_wide_mul
 #     computes, the four doublings between windows, and in window_digit the
 #     loop over a digit's bits, the test of a bit's position against 255
@@ -6625,7 +6625,7 @@ P256_SCALAR_BRANCH_CEILING := \
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
                         mips32r2-gcc-O2/tls_write.c:2
 # The files the branch count covers: the arithmetic under the record
-# layer, whose every input is a key, a limb or a block. Almost every
+# layer, whose every input is a key, a word or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
 # are aead_open's and gcm_open's `if (!ok)` on the tag comparison, where
 # ct_memeq has already run in constant time and whether the packet
@@ -6693,7 +6693,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 #
 # p256_field.c's entries were read before they were recorded, which is
 # what the gate's message asks for. Every branch it emits is a loop back
-# edge over a literal count -- eight limbs, thirty-two bytes, 256 rounds
+# edge over a literal count -- eight words, thirty-two bytes, 256 rounds
 # -- except one: p256_fe_inv tests a bit of p-2, a build constant, so the
 # test is the same on every call and no operand reaches it. The two arm
 # numbers also count IT and ITE, which BRANCH_OPS_ARM lists: both
@@ -7086,16 +7086,16 @@ lint-bench-numbers:
 
 # The constants of the wide P-256 files and the table of multiples of G
 # (docs/decisions.md 94). tools/p256_wide.py recomputes each constant from
-# SEC 2's definition of the curve and compares it with the limbs the
-# source carries, so a wrong limb fails here and names its file. The same
+# SEC 2's definition of the curve and compares it with the words the
+# source carries, so a wrong word fails here and names its file. The same
 # script writes p256_wide_table.c, and the second line fails when the
 # checked-in file is not what the script prints: a hand edit of the table,
 # or an edit of the script without its output. The recipe names the files
 # the script reads, which is how make impact selects it for them.
-# tools/p256-wide-carry.py then reads which form of p256_wide_limb.h's two
+# tools/p256-wide-carry.py then reads which form of p256_wide_word.h's two
 # carry steps each compiler reads: the builtins as clang reads the header,
 # and as gcc reads it the intrinsics for x86-64 and the 128-bit sums for
-# arm64. gcc expands a builtin to a jump on a limb's carry, and no lane runs
+# arm64. gcc expands a builtin to a jump on a word's carry, and no lane runs
 # a 64-bit gcc through lint-wide-multiply, so this is the check that fails
 # when gcc reads one. The script runs clang's preprocessor and no more of
 # it, and the text it reads is the header's own, so it asks for no pinned
@@ -7109,7 +7109,7 @@ lint-p256-wide:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_limb.h
+	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_word.h
 endif
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
@@ -7325,7 +7325,7 @@ ifneq ($(HOST_TARGET),)
 	./bin/timing_p256_wide
 	./bin/timing_rsa_sign64
 else
-	@echo "SKIP timing of the wide X25519 field, the wide P-256 files and RSA on 64-bit limbs: $(CC) fails the host test"
+	@echo "SKIP timing of the wide X25519 field, the wide P-256 files and RSA on 64-bit words: $(CC) fails the host test"
 endif
 
 # libFuzzer harnesses for the attacker-facing parsers in fuzz/. Each target

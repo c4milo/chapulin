@@ -5,7 +5,7 @@ Every number here comes from Python's arbitrary-precision integers, not from
 the C under test, so the vectors are an independent answer rather than a
 recording of what p256_field.c does. The prime, the two Montgomery constants
 and the Fermat exponent are recomputed from p's definition and compared with
-the limbs p256_field.c carries, so a typo in either place fails here.
+the words p256_field.c carries, so a typo in either place fails here.
 
 Usage: python3 test/gen_p256_field_vectors.py > test/p256_field_vectors.h
 """
@@ -16,7 +16,7 @@ P = 2**256 - 2**224 + 2**192 + 2**96 - 1
 R = 2**256
 R_INV = pow(R, -1, P)
 
-# The limbs p256_field.c carries, repeated here so this script checks them.
+# The words p256_field.c carries, repeated here so this script checks them.
 C_P = [0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000,
        0x00000000, 0x00000000, 0x00000001, 0xFFFFFFFF]
 C_RR = [0x00000003, 0x00000000, 0xFFFFFFFF, 0xFFFFFFFB,
@@ -27,15 +27,15 @@ C_P_MINUS_2 = [0xFFFFFFFD, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000,
                0x00000000, 0x00000000, 0x00000001, 0xFFFFFFFF]
 
 
-def limbs(x):
+def words(x):
     return [(x >> (32 * i)) & 0xFFFFFFFF for i in range(8)]
 
 
 def check_constants():
-    assert limbs(P) == C_P, "p256_field.c's P is not the P-256 prime"
-    assert limbs(R * R % P) == C_RR, "p256_field.c's RR is not 2^512 mod p"
-    assert limbs(R % P) == C_ONE_MONT, "p256_field.c's one_mont is not R mod p"
-    assert limbs(P - 2) == C_P_MINUS_2, "p256_field.c's exponent is not p-2"
+    assert words(P) == C_P, "p256_field.c's P is not the P-256 prime"
+    assert words(R * R % P) == C_RR, "p256_field.c's RR is not 2^512 mod p"
+    assert words(R % P) == C_ONE_MONT, "p256_field.c's one_mont is not R mod p"
+    assert words(P - 2) == C_P_MINUS_2, "p256_field.c's exponent is not p-2"
 
 
 def be(x, indent):

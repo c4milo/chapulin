@@ -3,12 +3,12 @@
 // drives, over x25519_wide.c. The Makefile builds it as a host object's
 // source, with -DCH_CPU_RUNTIME, and the two renames below send the rows'
 // calls to the radix-2^51 field's entries here, where bin/diff runs them on
-// the 16-limb field.
+// the 16-word field.
 //
 // Its own main rather than a second build of test/diff_test.c, because the
 // field changes nothing else that binary compares: every other row would
 // run the same code twice. spec/lean/Spec/X25519.lean computes over Nat
-// with a reduction mod p after every operation, so it states no limb
+// with a reduction mod p after every operation, so it states no word
 // representation and serves both fields unchanged.
 //
 // The rows draw fresh random inputs on every call, so each is run ten times:
@@ -26,7 +26,7 @@
 #include "diff_driver.h"
 
 // A build without the define declares no wide field, so it could only diff
-// the 16-limb field a second time and report success for the wrong one.
+// the 16-word field a second time and report success for the wrong one.
 #ifndef CH_CPU_RUNTIME
 #error "test/diff_x25519_test.c diffs the wide X25519 field: build it with -DCH_CPU_RUNTIME"
 #endif

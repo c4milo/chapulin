@@ -1,16 +1,16 @@
 // Proves, for p256_wide_scalar.c:
 //
-//   reduce_once against a reference that branches: for any four limbs and a
-//   limb above them that is 0 or 1, it subtracts n exactly when the 257-bit
+//   reduce_once against a reference that branches: for any four words and a
+//   word above them that is 0 or 1, it subtracts n exactly when the 257-bit
 //   value is at or above n. An inverted mask fails this;
 //
-//   reduce_round returns 0 or 1 for any five limbs when the carry it is
+//   reduce_round returns 0 or 1 for any five words when the carry it is
 //   handed is 0 or 1. mont_mul hands the first round 0 and every later round
-//   what the round before returned, so the limb above the four it gives
+//   what the round before returned, so the word above the four it gives
 //   reduce_once is 0 or 1, which is what the claim above assumes;
 //
 //   mont_mul, mont_sqr through sqr_times, and p256_wide_scalar_mul are
-//   memory-safe and UB-free over fully nondet limbs and wrap no unsigned
+//   memory-safe and UB-free over fully nondet words and wrap no unsigned
 //   value (--unsigned-overflow-check on the launch line), in every aliasing
 //   shape p256_sign.c and the inverse use: the output distinct from both
 //   inputs, over the first, over the second, and both inputs one object.
@@ -19,19 +19,19 @@
 //
 //   exponent_low_nibble, the one read in p256_wide_scalar_inverse that moves
 //   with a loop counter: for every position the loop passes, 0 to 31, the
-//   read of EXPONENT_LOW is in bounds, its shift is below the limb's width,
+//   read of EXPONENT_LOW is in bounds, its shift is below the word's width,
 //   and the result is below 16, the length of the table of powers it
 //   indexes. Every operand of the index is the build constant or the
 //   counter, never the scalar;
 //
-//   the two copies to and from p256_scalar.h's scalar: each takes the limbs
+//   the two copies to and from p256_scalar.h's scalar: each takes the words
 //   two at a time, and the round trip gives back what went in.
 //
 // The rows of every product are the contract in proof/p256_wide_stubs.h,
 // which p256_wide_row_harness.c discharges on the real multiply, and so is
-// the square of four limbs mont_sqr starts from, which
+// the square of four words mont_sqr starts from, which
 // p256_wide_sqr_harness.c discharges. The one product outside a row and the
-// square, the multiplier each reduction round makes from its low limb and
+// square, the multiplier each reduction round makes from its low word and
 // N0_INV, runs on the real multiply here.
 //
 // p256_wide_scalar_inverse is not run whole, for the reason
@@ -55,25 +55,25 @@
 
 #include "p256_wide_scalar.c"
 
-static const uint64_t ORDER[LIMBS] = {N0, N1, N2, N3};
+static const uint64_t ORDER[WORDS] = {N0, N1, N2, N3};
 
 static void wide_nondet(wide_scalar *s) {
-    for (size_t i = 0; i < LIMBS; i++) {
-        s->limb[i] = nondet_u64();
+    for (size_t i = 0; i < WORDS; i++) {
+        s->word[i] = nondet_u64();
     }
 }
 
 static void scalar_nondet(p256_scalar *s) {
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        s->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        s->word[i] = nondet_u32();
     }
 }
 
 static void prove_reduce_once(void) {
-    uint64_t t[LIMBS];
-    uint64_t got[LIMBS];
-    uint64_t want[LIMBS];
-    for (size_t i = 0; i < LIMBS; i++) {
+    uint64_t t[WORDS];
+    uint64_t got[WORDS];
+    uint64_t want[WORDS];
+    for (size_t i = 0; i < WORDS; i++) {
         t[i] = nondet_u64();
     }
     uint64_t high = nondet_u64();
@@ -82,7 +82,7 @@ static void prove_reduce_once(void) {
     uint64_t borrow = ref_sub(want, t, ORDER);
     reduce_once(got, t[0], t[1], t[2], t[3], high);
     int at_or_above = high == 1 || borrow == 0;
-    __CPROVER_assert(limbs_same(got, at_or_above ? want : t),
+    __CPROVER_assert(words_same(got, at_or_above ? want : t),
                      "reduce_once: subtracts n exactly when the value is at or above it");
 }
 
@@ -156,14 +156,14 @@ static void prove_portable(void) {
     wide_scalar wide;
     scalar_nondet(&portable);
     from_portable(&wide, &portable);
-    for (size_t i = 0; i < LIMBS; i++) {
-        __CPROVER_assert((uint32_t)wide.limb[i] == portable.limb[2 * i] &&
-                             (uint32_t)(wide.limb[i] >> 32) == portable.limb[2 * i + 1],
-                         "from_portable: limb i is limbs 2i and 2i + 1");
+    for (size_t i = 0; i < WORDS; i++) {
+        __CPROVER_assert((uint32_t)wide.word[i] == portable.word[2 * i] &&
+                             (uint32_t)(wide.word[i] >> 32) == portable.word[2 * i + 1],
+                         "from_portable: word i is words 2i and 2i + 1");
     }
     to_portable(&back, &wide);
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        __CPROVER_assert(back.limb[i] == portable.limb[i], "the two copies round trip");
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        __CPROVER_assert(back.word[i] == portable.word[i], "the two copies round trip");
     }
 }
 

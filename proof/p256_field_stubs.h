@@ -29,8 +29,8 @@ const p256_fe p256_fe_one_mont = {
 
 static void havoc_fe(p256_fe *o) {
     STUB_W_OK(o, sizeof *o);
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        o->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        o->word[i] = nondet_u32();
     }
 }
 

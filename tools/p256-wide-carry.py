@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Check which form of the two carry steps each compiler reads in p256_wide_limb.h.
+"""Check which form of the two carry steps each compiler reads in p256_wide_word.h.
 
 Run from the repository root, with the pinned clang:
 
-    python3 tools/p256-wide-carry.py "$(make -s print-clang-rv)" p256_wide_limb.h
+    python3 tools/p256-wide-carry.py "$(make -s print-clang-rv)" p256_wide_word.h
 
 The second argument is the header the script reads. It takes it so that the
 recipe of make lint-p256-wide names it, and it refuses any other.
@@ -12,7 +12,7 @@ p256_wide_add_carry and p256_wide_sub_borrow have three forms, and the header
 picks one by the compiler (docs/decisions.md 94): the overflow builtins under
 clang, the two x86-64 intrinsics under gcc for x86-64, and a 128-bit sum under
 gcc for any other machine. gcc must compile neither builtin: it expands one to
-an add and a jump on the add's carry, a limb's, and removes the jump only at an
+an add and a jump on the add's carry, a word's, and removes the jump only at an
 optimization level whose if-conversion passes run.
 
 No test here can see that jump. This machine's compiler is clang, the object's
@@ -43,7 +43,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-HEADER = "p256_wide_limb.h"
+HEADER = "p256_wide_word.h"
 
 # The machines lint-wide-multiply compiles the wide files for, with its flags
 # (the Makefile's WIDE64_SPECS).

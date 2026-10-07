@@ -10,7 +10,7 @@
 #include "rsa_mont64.h"
 
 // rsa_sign64.c's message_mod_prime.
-void rsa_sign_equiv_reduction(uint64_t *o, const uint64_t *em, size_t em_limbs,
+void rsa_sign_equiv_reduction(uint64_t *o, const uint64_t *em, size_t em_words,
                               const rsa_mont64_modulus *mod);
 
 // rsa_sign64.c's crt_combine.

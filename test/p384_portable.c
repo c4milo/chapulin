@@ -22,15 +22,15 @@
 
 #include "p384_portable.h"
 
-void p384_portable_to_bytes(uint8_t b[P384_LEN], const uint32_t a[P384_LIMBS]) {
-    for (int i = 0; i < P384_LIMBS; i++) {
+void p384_portable_to_bytes(uint8_t b[P384_LEN], const uint32_t a[P384_WORDS]) {
+    for (int i = 0; i < P384_WORDS; i++) {
         for (int j = 0; j < 4; j++) {
             b[P384_LEN - 1 - 4 * i - j] = (uint8_t)(a[i] >> (8 * j));
         }
     }
 }
 
-static void affine_point(point *o, const uint32_t x[P384_LIMBS], const uint32_t y[P384_LIMBS]) {
+static void affine_point(point *o, const uint32_t x[P384_WORDS], const uint32_t y[P384_WORDS]) {
     memcpy(o->x, x, sizeof o->x);
     memcpy(o->y, y, sizeof o->y);
     memset(o->z, 0, sizeof o->z);
@@ -39,9 +39,9 @@ static void affine_point(point *o, const uint32_t x[P384_LIMBS], const uint32_t 
 
 int p384_portable_double_mul(uint8_t out[P384_PUB_LEN], const uint8_t k1[P384_LEN],
                              const uint8_t k2[P384_LEN], const uint8_t q[P384_PUB_LEN]) {
-    uint32_t scalar[P384_LIMBS];
-    uint32_t x[P384_LIMBS];
-    uint32_t y[P384_LIMBS];
+    uint32_t scalar[P384_WORDS];
+    uint32_t x[P384_WORDS];
+    uint32_t y[P384_WORDS];
     point term;
     point sum;
     affine_point(&term, GX, GY);
@@ -59,8 +59,8 @@ int p384_portable_double_mul(uint8_t out[P384_PUB_LEN], const uint8_t k1[P384_LE
         return 0;
     }
     // The affine point: x = X / Z^2 and y = Y / Z^3.
-    uint32_t z_inverse[P384_LIMBS];
-    uint32_t power[P384_LIMBS];
+    uint32_t z_inverse[P384_WORDS];
+    uint32_t power[P384_WORDS];
     p384_mod_inverse(z_inverse, sum.z, &p384_modp);
     p384_mod_mul(power, z_inverse, z_inverse, &p384_modp);
     p384_mod_mul(x, sum.x, power, &p384_modp);

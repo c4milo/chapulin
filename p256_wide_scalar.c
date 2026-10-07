@@ -1,6 +1,6 @@
 // The wide P-256 scalar arithmetic (see p256_wide_scalar.h for the contracts). A scalar is four
-// little-endian uint64 limbs inside a call. Multiplication is the 512-bit product, four rows
-// of p256_wide_limb.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, each
+// little-endian uint64 words inside a call. Multiplication is the 512-bit product, four rows
+// of p256_wide_word.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, each
 // one more row. A square is p256_wide_sqr_product's ten products and the same rounds. The
 // inverse is a Fermat power over a table of the first fifteen powers, and its squarings are
 // those squares.
@@ -15,17 +15,17 @@
 #include <stddef.h>
 
 #include "ct.h"
-#include "p256_wide_limb.h"
+#include "p256_wide_word.h"
 
-#define LIMBS 4
+#define WORDS 4
 
 typedef struct {
-    uint64_t limb[LIMBS];
+    uint64_t word[WORDS];
 } wide_scalar;
 
-// SEC 2 secp256r1's group order, least significant limb first, and the constants derived
-// from it, R = 2^256. The same order is p256_scalar.c's N, in limbs half as wide.
-// tools/p256_wide.py recomputes each one and stops if a limb differs.
+// SEC 2 secp256r1's group order, least significant word first, and the constants derived
+// from it, R = 2^256. The same order is p256_scalar.c's N, in words half as wide.
+// tools/p256_wide.py recomputes each one and stops if a word differs.
 #define N0 UINT64_C(0xf3b9cac2fc632551)
 #define N1 UINT64_C(0xbce6faada7179e84)
 #define N2 UINT64_C(0xffffffffffffffff)
@@ -49,8 +49,8 @@ static const wide_scalar ONE = {
 
 // n - 2, the Fermat exponent, is
 //   ffffffff 00000000 ffffffff ffffffff bce6faad a7179e84 f3b9cac2 fc63254f.
-// Its top two limbs are 32 ones, 32 zeros and 64 ones, which p256_wide_scalar_inverse writes
-// as runs of ones. These are its low two limbs, least significant first, which that routine
+// Its top two words are 32 ones, 32 zeros and 64 ones, which p256_wide_scalar_inverse writes
+// as runs of ones. These are its low two words, least significant first, which that routine
 // reads four bits at a time.
 static const uint64_t EXPONENT_LOW[2] = {UINT64_C(0xf3b9cac2fc63254f),
                                          UINT64_C(0xbce6faada7179e84)};
@@ -65,7 +65,7 @@ static inline uint64_t exponent_low_nibble(size_t at) {
 
 // o = (high : t3 : t2 : t1 : t0) - n when that 257-bit value is at or above n, o = t otherwise.
 // high is 0 or 1: it is the carry out of mont_mul's last round.
-static inline void reduce_once(uint64_t o[LIMBS], uint64_t t0, uint64_t t1, uint64_t t2,
+static inline void reduce_once(uint64_t o[WORDS], uint64_t t0, uint64_t t1, uint64_t t2,
                                uint64_t t3, uint64_t high) {
     uint64_t borrow = 0;
     uint64_t r0 = p256_wide_sub_borrow(&borrow, t0, N0);
@@ -80,8 +80,8 @@ static inline void reduce_once(uint64_t o[LIMBS], uint64_t t0, uint64_t t1, uint
     o[3] = (t3 & keep) | (r3 & ~keep);
 }
 
-// One round of Montgomery reduction on the five limbs (*t4 : *t3 : *t2 : *t1 : *t0). It adds
-// u * n for the u that makes the low limb zero, and returns the carry out of *t4, 0 or 1. The
+// One round of Montgomery reduction on the five words (*t4 : *t3 : *t2 : *t1 : *t0). It adds
+// u * n for the u that makes the low word zero, and returns the carry out of *t4, 0 or 1. The
 // caller drops *t0. top is the carry the round before returned, which belongs in *t4.
 static inline uint64_t reduce_round(uint64_t *t0, uint64_t *t1, uint64_t *t2, uint64_t *t3,
                                     uint64_t *t4, uint64_t top) {
@@ -95,38 +95,38 @@ static inline uint64_t reduce_round(uint64_t *t0, uint64_t *t1, uint64_t *t2, ui
 
 // o = a*b/R mod n. The four rounds leave a value below 2^256 + n in (high : t7 : t6 : t5 :
 // t4), so one conditional subtraction lands it below 2^256, and below n when a and b are.
-// Every limb of a and b is read before o is written, so o may be a or b.
+// Every word of a and b is read before o is written, so o may be a or b.
 static void mont_mul(wide_scalar *o, const wide_scalar *a, const wide_scalar *b) {
-    uint64_t b0 = b->limb[0];
-    uint64_t b1 = b->limb[1];
-    uint64_t b2 = b->limb[2];
-    uint64_t b3 = b->limb[3];
+    uint64_t b0 = b->word[0];
+    uint64_t b1 = b->word[1];
+    uint64_t b2 = b->word[2];
+    uint64_t b3 = b->word[3];
     uint64_t t0 = 0;
     uint64_t t1 = 0;
     uint64_t t2 = 0;
     uint64_t t3 = 0;
-    uint64_t t4 = p256_wide_mul_row(&t0, &t1, &t2, &t3, a->limb[0], b0, b1, b2, b3);
-    uint64_t t5 = p256_wide_mul_row(&t1, &t2, &t3, &t4, a->limb[1], b0, b1, b2, b3);
-    uint64_t t6 = p256_wide_mul_row(&t2, &t3, &t4, &t5, a->limb[2], b0, b1, b2, b3);
-    uint64_t t7 = p256_wide_mul_row(&t3, &t4, &t5, &t6, a->limb[3], b0, b1, b2, b3);
+    uint64_t t4 = p256_wide_mul_row(&t0, &t1, &t2, &t3, a->word[0], b0, b1, b2, b3);
+    uint64_t t5 = p256_wide_mul_row(&t1, &t2, &t3, &t4, a->word[1], b0, b1, b2, b3);
+    uint64_t t6 = p256_wide_mul_row(&t2, &t3, &t4, &t5, a->word[2], b0, b1, b2, b3);
+    uint64_t t7 = p256_wide_mul_row(&t3, &t4, &t5, &t6, a->word[3], b0, b1, b2, b3);
     uint64_t high = reduce_round(&t0, &t1, &t2, &t3, &t4, 0);
     high = reduce_round(&t1, &t2, &t3, &t4, &t5, high);
     high = reduce_round(&t2, &t3, &t4, &t5, &t6, high);
     high = reduce_round(&t3, &t4, &t5, &t6, &t7, high);
-    reduce_once(o->limb, t4, t5, t6, t7, high);
+    reduce_once(o->word, t4, t5, t6, t7, high);
 }
 
-// The same scalar in 64-bit limbs: limb i here is limbs 2i and 2i + 1 there.
+// The same scalar in 64-bit words: word i here is words 2i and 2i + 1 there.
 static void from_portable(wide_scalar *o, const p256_scalar *a) {
-    for (size_t i = 0; i < LIMBS; i++) {
-        o->limb[i] = (uint64_t)a->limb[2 * i] | ((uint64_t)a->limb[2 * i + 1] << 32);
+    for (size_t i = 0; i < WORDS; i++) {
+        o->word[i] = (uint64_t)a->word[2 * i] | ((uint64_t)a->word[2 * i + 1] << 32);
     }
 }
 
 static void to_portable(p256_scalar *o, const wide_scalar *a) {
-    for (size_t i = 0; i < LIMBS; i++) {
-        o->limb[2 * i] = (uint32_t)a->limb[i];
-        o->limb[2 * i + 1] = (uint32_t)(a->limb[i] >> 32);
+    for (size_t i = 0; i < WORDS; i++) {
+        o->word[2 * i] = (uint32_t)a->word[i];
+        o->word[2 * i + 1] = (uint32_t)(a->word[i] >> 32);
     }
 }
 
@@ -145,7 +145,7 @@ void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scala
 }
 
 // o = a^(2^n): n squarings in a row. n is a constant at every call.
-// o = a*a/R mod n: mont_mul's rounds on the square's eight limbs.
+// o = a*a/R mod n: mont_mul's rounds on the square's eight words.
 static void mont_sqr(wide_scalar *o, const wide_scalar *a) {
     uint64_t t0;
     uint64_t t1;
@@ -155,13 +155,13 @@ static void mont_sqr(wide_scalar *o, const wide_scalar *a) {
     uint64_t t5;
     uint64_t t6;
     uint64_t t7;
-    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->limb[0], a->limb[1],
-                          a->limb[2], a->limb[3]);
+    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->word[0], a->word[1],
+                          a->word[2], a->word[3]);
     uint64_t high = reduce_round(&t0, &t1, &t2, &t3, &t4, 0);
     high = reduce_round(&t1, &t2, &t3, &t4, &t5, high);
     high = reduce_round(&t2, &t3, &t4, &t5, &t6, high);
     high = reduce_round(&t3, &t4, &t5, &t6, &t7, high);
-    reduce_once(o->limb, t4, t5, t6, t7, high);
+    reduce_once(o->word, t4, t5, t6, t7, high);
 }
 
 static void sqr_times(wide_scalar *o, const wide_scalar *a, int n) {
@@ -191,12 +191,12 @@ void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
     mont_mul(&ones_16, &t, &ones_8);
     sqr_times(&t, &ones_16, 16);
     mont_mul(&ones_32, &t, &ones_16);
-    // The exponent's top two limbs: 32 ones, 32 zeros and 32 ones, then 32 more ones.
+    // The exponent's top two words: 32 ones, 32 zeros and 32 ones, then 32 more ones.
     sqr_times(&t, &ones_32, 64);
     mont_mul(&t, &t, &ones_32);
     sqr_times(&t, &t, 32);
     mont_mul(&t, &t, &ones_32);
-    // Its low two limbs, four bits at a time, most significant first. The four bits index the
+    // Its low two words, four bits at a time, most significant first. The four bits index the
     // table of powers, and they are bits of a build constant, so the index reads the constant
     // and never a.
     for (size_t i = EXPONENT_LOW_NIBBLES; i > 0; i--) {

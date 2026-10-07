@@ -5,7 +5,7 @@ reason: the conditional subtraction of n returns without wiping its
   difference, which is its operand less n modulo 2^256 and so gives the
   operand to whoever reads it. p256_scalar_add hands it z + r*d. The
   array's lifetime ends with the call, so no vector reads it, and whether
-  a limb of it stays on the stack depends on the compiler: under gcc 13.3
+  a word of it stays on the stack depends on the compiler: under gcc 13.3
   at -O1 for x86-64 one did, and at -O2 none.
   proof/p256_scalar_harness.c counts the bytes ct_wipe is handed and
   requires one array's worth after p256_scalar_reduce and two after
@@ -13,7 +13,7 @@ reason: the conditional subtraction of n returns without wiping its
   test-invariants-proof-backed job.
 
 --- old
-    select_limbs(o, reduced, t, ~(uint32_t)(below >> 32));
+    select_words(o, reduced, t, ~(uint32_t)(below >> 32));
     ct_wipe(reduced, sizeof reduced);
 --- new
-    select_limbs(o, reduced, t, ~(uint32_t)(below >> 32));
+    select_words(o, reduced, t, ~(uint32_t)(below >> 32));

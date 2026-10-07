@@ -69,19 +69,19 @@ one object serves CPUs and thread modes that differ. Nothing in this tree sets
 either mode or reads it.
 
 The same bit picks the X25519 field. A host object holds a second field of five
-51-bit limbs, `x25519_wide.c`, whose products are 64x64->128 multiplies, beside
-the 16-limb field every object holds. A session with the bit runs the wide
-field, and one without it the 16-limb field on the decomposition, so the bit
+51-bit words, `x25519_wide.c`, whose products are 64x64->128 multiplies, beside
+the 16-word field every object holds. A session with the bit runs the wide
+field, and one without it the 16-word field on the decomposition, so the bit
 states the multiply at both widths: Arm's and Intel's lists name both. No build
 variable chooses the field, and a device object, a 64-bit one among them, holds
-the 16-limb field alone (decisions 52 and 89).
+the 16-word field alone (decisions 52 and 89).
 
 The bit picks P-256's arithmetic the same way. A host object holds a field and a
-scalar of four 64-bit limbs, `p256_wide_field.c` and `p256_wide_scalar.c`, with
-the point arithmetic over them, beside the eight 32-bit limbs of `p256_field.c`
+scalar of four 64-bit words, `p256_wide_field.c` and `p256_wide_scalar.c`, with
+the point arithmetic over them, beside the eight 32-bit words of `p256_field.c`
 and `p256_scalar.c` that every object with the curve holds. A session with the
-bit signs and exchanges keys on the 64-bit limbs, and one without it on the
-32-bit limbs over the decomposition (decision 94). The host object also holds a
+bit signs and exchanges keys on the 64-bit words, and one without it on the
+32-bit words over the decomposition (decision 94). The host object also holds a
 86 KiB table of multiples of the curve's generator, constants that a session with
 the bit reads for a signature's and a key generation's multiplication, every entry
 of a row at each step. A device object holds no table.
@@ -249,7 +249,7 @@ count of two is a record, not an allowance, and this is what it records
 ([#122](https://github.com/c4milo/chapulin/issues/122)).
 
 At `-O2` the mips gcc inlines `ct_widemul` into poly1305's block, whose 25
-limb products hand it 75 sums of the shape `product + x`. On mips32r2 that
+word products hand it 75 sums of the shape `product + x`. On mips32r2 that
 shape is one machine pattern, `madd`, a multiply-accumulate through the
 64-bit HI/LO pair, and the register allocator takes it for two of the 75
 (`mtlo`, `madd`, `mflo`) where the other 73 get `mul` and `addu`; `-O1`
@@ -301,7 +301,7 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 | Bootlin gcc 14.3, rv32ic | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
 
 None of these is zero, and the lint does not claim they branch on public
-data: it cannot tell a loop counter from a limb. They are what each compiler
+data: it cannot tell a loop counter from a word. They are what each compiler
 emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
 255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
 `softmul`'s fixed 32 and 64 iterations (the two `bne` on rv32ic, the one
@@ -309,7 +309,7 @@ core where it compiles to anything), read and recorded. The Cortex-M3 clang
 counts include IT blocks — 16 of sha3's 40 and 12 of mlkem_poly's 43. A
 predicated instruction takes the same cycles on that core whether or not its
 condition holds, so an IT block is no timing leak there; the count holds them
-because an IT block is the form clang gives an `if` on a limb, and a count of
+because an IT block is the form clang gives an `if` on a word, and a count of
 `b<cond>` alone would pass that form through.
 
 What the lint holds is that no count grows. What the ceilings record is a
@@ -318,10 +318,10 @@ choice each compiler made: the compare-carries `ct_widemul_opaque` takes,
 `cswap` and `poly1305_final` are branch-free in C, and every compiler in the
 table lowers them to a predicated instruction (`it lo`, `movlo`), to `sltu`
 or to an arithmetic shift. Until this count that was the compiler's choice,
-with nothing holding it. Two violations show what an `if` on a limb does to
+with nothing holding it. Two violations show what an `if` on a word does to
 the count. `test/violations/inv16-poly1305-final-sign-branch.violation`
 writes `poly1305_final`'s select of `h` or `h - p` as an `if` on the sign of
-the last limb, and poly1305's count rises by one under all eight specs.
+the last word, and poly1305's count rises by one under all eight specs.
 `test/violations/inv16-widemul-s-sign-branch.violation` writes
 `ct_widemul_s`'s two sign corrections as `if`s: clang lowers both back to
 the mask and its count does not move, and every gcc emits two branches on

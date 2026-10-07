@@ -1,10 +1,10 @@
 // Proves: everything attacker bytes reach in p384_ecdsa_verify is
 // memory-safe and UB-free, CONCRETE (real bodies, real rbuf via buf.c),
-// the way p256_harness.c proves p256_ecdsa_verify at eight limbs:
+// the way p256_harness.c proves p256_ecdsa_verify at eight words:
 //
 //   der_parse/der_scalar      : any input up to 112 bytes (a valid sig is
 //                               <= 104: two 49-byte INTEGERs and framing)
-//   p384_from_bytes           : the byte->limb marshalling of r/s/pub/hash
+//   p384_from_bytes           : the byte->word marshalling of r/s/pub/hash
 //   p384_compare/p384_is_zero/p384_add_raw/p384_sub_raw,
 //   p384_mod_add/p384_mod_sub : including the aliased shapes
 //   p384_mont_mul/p384_mod_mul: both moduli, o aliasing a as mod_inverse does
@@ -29,11 +29,11 @@
 uint32_t nondet_u32(void);
 int nondet_int(void);
 
-// Fully nondet limbs — a superset of the "below m" contract; no index in
-// p384.c or p384_field.c depends on limb values, so safety must hold
+// Fully nondet words — a superset of the "below m" contract; no index in
+// p384.c or p384_field.c depends on word values, so safety must hold
 // regardless.
-static void fe_nondet(uint32_t f[P384_LIMBS]) {
-    for (size_t i = 0; i < P384_LIMBS; i++) {
+static void fe_nondet(uint32_t f[P384_WORDS]) {
+    for (size_t i = 0; i < P384_WORDS; i++) {
         f[i] = nondet_u32();
     }
 }
@@ -59,9 +59,9 @@ int main(void) {
     uint8_t hash[P384_LEN];
     fill_nondet(pub, sizeof pub);
     fill_nondet(hash, sizeof hash);
-    uint32_t a[P384_LIMBS];
-    uint32_t b[P384_LIMBS];
-    uint32_t o[P384_LIMBS];
+    uint32_t a[P384_WORDS];
+    uint32_t b[P384_WORDS];
+    uint32_t o[P384_WORDS];
     p384_from_bytes(a, pub);
     p384_from_bytes(b, pub + P384_LEN);
     p384_from_bytes(o, hash);

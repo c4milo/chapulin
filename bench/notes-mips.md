@@ -11,7 +11,7 @@ change.
 blocks() keeps its single 16-byte block loop. The loop body is
 744 instructions with 100 mul per block and nothing
 in the hi/lo multiplier: multu 0, maddu 0, mult 0.
-ct_widemul builds each of the 25 limb products from four 16x16 pieces,
+ct_widemul builds each of the 25 word products from four 16x16 pieces,
 so the 25 products cost 100 mul. mips32r2 documents no timing for mul
 either, but the operands are 16 bits wide by construction, which is what
 the decomposition buys here.
@@ -23,7 +23,7 @@ mont_mul multiplies through the hi/lo accumulator: 3 maddu,
 hi/lo with mtlo/mthi (the t[j] + c partial) and issues one maddu; the
 one mul computes u = t[0]*m0inv, where only the low word matters. Both
 eight-iteration CIOS inner loops carry one maddu each
-(1 and 1), the outer limb loop spans them, and
+(1 and 1), the outer word loop spans them, and
 the trailing compare and subtract loops close the function; nothing
 unrolls at -Os. The 2 jal calls are memset (the t[] zeroing) and
 memcpy (the no-subtract exit).

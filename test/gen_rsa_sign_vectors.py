@@ -22,7 +22,7 @@ a matching bug in C.
 
 Four key sizes: RSA-2048, the floor rsa.h admits; RSA-2112, whose primes
 are 132 bytes, a length that is no multiple of the 8 bytes of a 64-bit
-limb; RSA-3072, the top of the device range; and RSA-4096, the top of
+word; RSA-3072, the top of the device range; and RSA-4096, the top of
 the TRUST=webpki range, which test/rsa_sign_test.c signs because it
 builds with -DCH_RSA_MODULUS_MAX=512 as bin/rsa_test does.
 

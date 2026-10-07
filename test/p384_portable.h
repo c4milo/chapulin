@@ -20,8 +20,8 @@ int p384_ecdsa_verify_portable(const uint8_t pub[P384_PUB_LEN], const uint8_t ms
 int p384_portable_double_mul(uint8_t out[P384_PUB_LEN], const uint8_t k1[P384_LEN],
                              const uint8_t k2[P384_LEN], const uint8_t q[P384_PUB_LEN]);
 
-// The 12 limbs as 48 big-endian bytes: the inverse of p384_from_bytes,
+// The 12 words as 48 big-endian bytes: the inverse of p384_from_bytes,
 // which the library has no use for.
-void p384_portable_to_bytes(uint8_t b[P384_LEN], const uint32_t a[P384_LIMBS]);
+void p384_portable_to_bytes(uint8_t b[P384_LEN], const uint32_t a[P384_WORDS]);
 
 #endif

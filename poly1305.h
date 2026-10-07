@@ -1,4 +1,4 @@
-// Poly1305 one-time authenticator (RFC 8439 §2.5). 26-bit limbs with
+// Poly1305 one-time authenticator (RFC 8439 §2.5). 26-bit words with
 // 64-bit products — portable C11, constant time: no branches or memory
 // indices depend on the key or the message.
 #ifndef CH_POLY1305_H

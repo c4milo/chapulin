@@ -1,10 +1,10 @@
-// RSA's Montgomery arithmetic on 64-bit limbs, which a host object holds
+// RSA's Montgomery arithmetic on 64-bit words, which a host object holds
 // (rsa_mont64.h): the multiplication, the square, the constant R^2 mod m
 // that moves a number into the Montgomery domain, and the public
 // operation, base^65537 mod m.
 //
 // Every sum here is written so that it cannot wrap. A product is one
-// ct_mul128, at most (2^64 - 1)^2, and two more limbs fit above it in 128
+// ct_mul128, at most (2^64 - 1)^2, and two more words fit above it in 128
 // bits: (2^64 - 1)^2 + 2 * (2^64 - 1) = 2^128 - 1. A subtraction adds the
 // complement of the subtrahend and one, and reads the carry where a
 // borrow would be. proof/rsa_mont64_sums_harness.c and
@@ -14,8 +14,8 @@
 // wraps on purpose, modulo 2^64, and proof/rsa_mont64_init_harness.c
 // runs it with that check off.
 //
-// Constant time: no branch and no memory index depends on a limb. The
-// branches the file compiles to are loops over limb and byte counts, the
+// Constant time: no branch and no memory index depends on a word. The
+// branches the file compiles to are loops over word and byte counts, the
 // doublings rsa_mont64_modulus_init counts from its bits argument, the
 // sixteen squarings of the public exponent, the square's tests of a row's
 // index, and the CH_ASSERTs on public lengths.
@@ -36,26 +36,26 @@ static uint64_t mask_of_bit(uint64_t bit) {
     return (uint64_t)((int64_t)(bit << 63) >> 63);
 }
 
-void rsa_mont64_from_bytes(uint64_t *limbs, size_t count, const uint8_t *bytes, size_t len) {
-    memset(limbs, 0, count * sizeof(uint64_t));
-    // Byte i from the end has weight 2^(8i): limb i / 8, shifted up
+void rsa_mont64_from_bytes(uint64_t *words, size_t count, const uint8_t *bytes, size_t len) {
+    memset(words, 0, count * sizeof(uint64_t));
+    // Byte i from the end has weight 2^(8i): word i / 8, shifted up
     // 8 * (i % 8) bits.
     for (size_t i = 0; i < len; i++) {
-        limbs[i >> 3] |= (uint64_t)bytes[len - 1 - i] << (8 * (i & 7));
+        words[i >> 3] |= (uint64_t)bytes[len - 1 - i] << (8 * (i & 7));
     }
 }
 
-void rsa_mont64_to_bytes(uint8_t *bytes, size_t len, const uint64_t *limbs) {
+void rsa_mont64_to_bytes(uint8_t *bytes, size_t len, const uint64_t *words) {
     for (size_t i = 0; i < len; i++) {
-        bytes[len - 1 - i] = (uint8_t)(limbs[i >> 3] >> (8 * (i & 7)));
+        bytes[len - 1 - i] = (uint8_t)(words[i >> 3] >> (8 * (i & 7)));
     }
 }
 
-// 1 when the k + 1 limb value top:a is at or above m, and 0 when it is
-// below. It adds the complement of m and one, limb by limb, which is
-// a - m with no step that wraps, and the carry out of the top limb is the
-// answer: a subtraction that does not borrow carries here. m has no limb
-// above k, so the top limb adds the complement of zero.
+// 1 when the k + 1 word value top:a is at or above m, and 0 when it is
+// below. It adds the complement of m and one, word by word, which is
+// a - m with no step that wraps, and the carry out of the top word is the
+// answer: a subtraction that does not borrow carries here. m has no word
+// above k, so the top word adds the complement of zero.
 static uint64_t at_or_above(const uint64_t *a, uint64_t top, const uint64_t *m, size_t k) {
     uint64_t carry = 1;
     for (size_t i = 0; i < k; i++) {
@@ -65,9 +65,9 @@ static uint64_t at_or_above(const uint64_t *a, uint64_t top, const uint64_t *m, 
     return (uint64_t)(((ct_u128)top + UINT64_MAX + carry) >> 64);
 }
 
-// o = a - (m & mask) over k limbs, by the same sum. mask is all ones or
+// o = a - (m & mask) over k words, by the same sum. mask is all ones or
 // all zeros, so this is the whole subtraction or a subtraction of zero,
-// and both take the same time and write the same limbs. o may be a.
+// and both take the same time and write the same words. o may be a.
 static void sub_masked(uint64_t *o, const uint64_t *a, const uint64_t *m, size_t k, uint64_t mask) {
     uint64_t carry = 1;
     for (size_t i = 0; i < k; i++) {
@@ -85,7 +85,7 @@ static void reduce_once(uint64_t *o, const uint64_t *a, uint64_t top, const uint
 }
 
 // x = 2x mod m, for x below m: a shift up by one bit, the bit that leaves
-// the top limb kept as the limb above, and one subtraction.
+// the top word kept as the word above, and one subtraction.
 static void double_mod(uint64_t *x, const uint64_t *m, size_t k) {
     uint64_t moved = 0;
     for (size_t i = 0; i < k; i++) {
@@ -96,7 +96,7 @@ static void double_mod(uint64_t *x, const uint64_t *m, size_t k) {
     reduce_once(x, x, moved, m, k);
 }
 
-// x = 2^bit over k limbs, for a bit below 64 * k.
+// x = 2^bit over k words, for a bit below 64 * k.
 static void power_of_two(uint64_t *x, size_t k, size_t bit) {
     memset(x, 0, k * sizeof(uint64_t));
     x[bit >> 6] = (uint64_t)1 << (bit & 63);
@@ -115,15 +115,15 @@ static uint64_t neg_inverse(uint64_t m0) {
 
 void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
+    size_t k = mod->words;
     const uint64_t *m = mod->m;
-    // t is k + 2 limbs. The first k + 1 are the running sum, below 2m
-    // after every round when b is below m, so its top limb is 0 or 1. The
-    // limb above them holds u, the round's multiple of m.
-    uint64_t t[RSA_MONT64_LIMBS_MAX + 2];
+    // t is k + 2 words. The first k + 1 are the running sum, below 2m
+    // after every round when b is below m, so its top word is 0 or 1. The
+    // word above them holds u, the round's multiple of m.
+    uint64_t t[RSA_MONT64_WORDS_MAX + 2];
     memset(t, 0, (k + 2) * sizeof(uint64_t));
     // Five values are read once a round or once a product and are the
-    // same for a whole round: b[0], m[0], m0inv, the round's limb a[i]
+    // same for a whole round: b[0], m[0], m0inv, the round's word a[i]
     // and u. A compiler loads such a value before the loop that uses it,
     // and when it runs out of registers it keeps the copy in a stack slot
     // of its own, which ct_wipe cannot name. Apple clang 21 for x86-64
@@ -131,28 +131,28 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
     // residue check in bin/rsa_sign_equiv_test found b[0] and a[i]. So
     // each is read through a volatile pointer where a product uses it,
     // and no copy outlives the product. u is computed here and has no
-    // other home, so it is kept in t's last limb, which the wipe below
+    // other home, so it is kept in t's last word, which the wipe below
     // covers.
     const volatile uint64_t *b_first = b;
     const volatile uint64_t *m_first = m;
     const volatile uint64_t *m0inv = &mod->m0inv;
     volatile uint64_t *u = &t[k + 1];
-    // Round i adds a[i] * b and u * m to t and moves t down one limb. u is
-    // the multiple of m that makes the low limb of that sum zero, which is
-    // what lets the limb go. One pass over the limbs carries both
+    // Round i adds a[i] * b and u * m to t and moves t down one word. u is
+    // the multiple of m that makes the low word of that sum zero, which is
+    // what lets the word go. One pass over the words carries both
     // products, each with its own carry: the sum of the a[i] * b terms
-    // feeds the sum of the u * m terms, limb by limb.
+    // feeds the sum of the u * m terms, word by word.
     for (size_t i = 0; i < k; i++) {
-        const volatile uint64_t *a_limb = &a[i];
-        ct_u128 ab = ct_mul128(*a_limb, *b_first) + t[0];
-        // u is the low limb of that sum times m0inv, modulo 2^64: the
+        const volatile uint64_t *a_word = &a[i];
+        ct_u128 ab = ct_mul128(*a_word, *b_first) + t[0];
+        // u is the low word of that sum times m0inv, modulo 2^64: the
         // low half of one more product.
         *u = (uint64_t)ct_mul128((uint64_t)ab, *m0inv);
         ct_u128 um = ct_mul128(*u, *m_first) + (uint64_t)ab;
         uint64_t ab_carry = (uint64_t)(ab >> 64);
         uint64_t um_carry = (uint64_t)(um >> 64);
         for (size_t j = 1; j < k; j++) {
-            ab = ct_mul128(*a_limb, b[j]) + t[j] + ab_carry;
+            ab = ct_mul128(*a_word, b[j]) + t[j] + ab_carry;
             ab_carry = (uint64_t)(ab >> 64);
             um = ct_mul128(*u, m[j]) + (uint64_t)ab + um_carry;
             um_carry = (uint64_t)(um >> 64);
@@ -171,36 +171,36 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
 // The square of a is the sum over i of a_i B^i V_i, where B = 2^64 and
 // V_i = a_i B^i + 2 (a_{i+1} B^{i+1} + ... + a_{k-1} B^{k-1}): each
 // product a_i a_j with i < j once, doubled, in row i, and each square
-// once. V_i's limbs are a_i at limb i, a_{i+1} shifted up one bit at limb
-// i + 1, and above them the limbs of 2a, which d holds: d_j is a_j shifted
+// once. V_i's words are a_i at word i, a_{i+1} shifted up one bit at word
+// i + 1, and above them the words of 2a, which d holds: d_j is a_j shifted
 // up one bit with the top bit of a_{j-1} below it, and d_k is the top bit
 // of a_{k-1}, 0 or 1.
 //
 // Row i is a round of rsa_mont64_mont_mul's one pass with a_i V_i in place
-// of a[i] * b. a_i V_i starts at limb 2i, which is offset i of the running
+// of a[i] * b. a_i V_i starts at word 2i, which is offset i of the running
 // sum, so below offset i the row adds u * m alone, and u comes from the
-// sum's low limb before the row adds anything to it. Row 0 is the one
+// sum's low word before the row adds anything to it. Row 0 is the one
 // exception: its square lands at offset 0, so its u comes after.
 //
-// The running sum is below 3m after each row, so its top limb is 0, 1 or
+// The running sum is below 3m after each row, so its top word is 0, 1 or
 // 2: the rows up to i add up to less than (a_0 + ... + a_i B^i) 2a, which
 // is below B^(i+1) 2m. After the last row the sum is (a^2 + u m) / R, below
 // 2m, and one subtraction chosen by a mask ends it. Each sum is at most a
-// product and two limbs, as in rsa_mont64_mont_mul, and the step at offset
+// product and two words, as in rsa_mont64_mont_mul, and the step at offset
 // k adds a_i under the mask of d_k and multiplies nothing.
 //
 // a_i and u, which a row reads at every product, and m[0], m0inv and d_k,
 // which it reads once, are read through volatile pointers, and u is kept
-// in t's last limb, for the reason rsa_mont64_mont_mul gives: no copy a
+// in t's last word, for the reason rsa_mont64_mont_mul gives: no copy a
 // compiler makes of them outlives the product that uses it. d_k is the top
 // bit of a, and the mask a row makes of it is the same for every row: gcc
 // 13 for x86-64 made it once, before the rows, and kept it in a stack slot
 // of its own, which bin/rsa_sign_equiv_test's two stacks found.
 void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
+    size_t k = mod->words;
     const uint64_t *m = mod->m;
-    uint64_t d[RSA_MONT64_LIMBS_MAX + 1];
-    uint64_t t[RSA_MONT64_LIMBS_MAX + 2];
+    uint64_t d[RSA_MONT64_WORDS_MAX + 1];
+    uint64_t t[RSA_MONT64_WORDS_MAX + 2];
     uint64_t moved = 0;
     for (size_t j = 0; j < k; j++) {
         d[j] = (a[j] << 1) | moved;
@@ -215,11 +215,11 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
     const volatile uint64_t *d_top = &d[k];
     volatile uint64_t *u = &t[k + 1];
     for (size_t i = 0; i < k; i++) {
-        const volatile uint64_t *a_limb = &a[i];
+        const volatile uint64_t *a_word = &a[i];
         uint64_t ab_carry;
         uint64_t um_carry;
         if (i == 0) {
-            ct_u128 ab = ct_mul128(*a_limb, *a_limb) + t[0];
+            ct_u128 ab = ct_mul128(*a_word, *a_word) + t[0];
             *u = (uint64_t)ct_mul128((uint64_t)ab, *m0inv);
             ct_u128 um = ct_mul128(*u, *m_first) + (uint64_t)ab;
             ab_carry = (uint64_t)(ab >> 64);
@@ -234,7 +234,7 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
                 t[j - 1] = (uint64_t)um;
             }
             // Offset i: the square.
-            ct_u128 ab = ct_mul128(*a_limb, *a_limb) + t[i];
+            ct_u128 ab = ct_mul128(*a_word, *a_word) + t[i];
             ab_carry = (uint64_t)(ab >> 64);
             um = ct_mul128(*u, m[i]) + (uint64_t)ab + um_carry;
             um_carry = (uint64_t)(um >> 64);
@@ -242,21 +242,21 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
         }
         if (i + 1 < k) {
             // Offset i + 1: a_i times a_{i+1} shifted up one bit.
-            ct_u128 ab = ct_mul128(*a_limb, a[i + 1] << 1) + t[i + 1] + ab_carry;
+            ct_u128 ab = ct_mul128(*a_word, a[i + 1] << 1) + t[i + 1] + ab_carry;
             ab_carry = (uint64_t)(ab >> 64);
             ct_u128 um = ct_mul128(*u, m[i + 1]) + (uint64_t)ab + um_carry;
             um_carry = (uint64_t)(um >> 64);
             t[i] = (uint64_t)um;
-            // Offsets i + 2 to k - 1: a_i times the limbs of 2a.
+            // Offsets i + 2 to k - 1: a_i times the words of 2a.
             for (size_t j = i + 2; j < k; j++) {
-                ab = ct_mul128(*a_limb, d[j]) + t[j] + ab_carry;
+                ab = ct_mul128(*a_word, d[j]) + t[j] + ab_carry;
                 ab_carry = (uint64_t)(ab >> 64);
                 um = ct_mul128(*u, m[j]) + (uint64_t)ab + um_carry;
                 um_carry = (uint64_t)(um >> 64);
                 t[j - 1] = (uint64_t)um;
             }
             // Offset k: a_i times d_k, which is 0 or 1, so a_i under a mask.
-            ct_u128 sum = (ct_u128)(*a_limb & mask_of_bit(*d_top)) + t[k] + ab_carry;
+            ct_u128 sum = (ct_u128)(*a_word & mask_of_bit(*d_top)) + t[k] + ab_carry;
             ct_u128 top = (ct_u128)(uint64_t)sum + um_carry;
             t[k - 1] = (uint64_t)top;
             t[k] = (uint64_t)(sum >> 64) + (uint64_t)(top >> 64);
@@ -275,20 +275,20 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
 
 void rsa_mont64_add(uint64_t *o, const uint64_t *a, const uint64_t *b,
                     const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
+    size_t k = mod->words;
     uint64_t carry = 0;
     for (size_t i = 0; i < k; i++) {
         ct_u128 v = (ct_u128)a[i] + b[i] + carry;
         o[i] = (uint64_t)v;
         carry = (uint64_t)(v >> 64);
     }
-    // The sum is below 2m, and carry is its limb above the k.
+    // The sum is below 2m, and carry is its word above the k.
     reduce_once(o, o, carry, mod->m, k);
 }
 
 void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
                     const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
+    size_t k = mod->words;
     const uint64_t *m = mod->m;
     // a - b by the complement, as sub_masked subtracts: the carry out is
     // 1 when a is at or above b and 0 when the subtraction borrowed.
@@ -298,9 +298,9 @@ void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
         o[i] = (uint64_t)v;
         carry = (uint64_t)(v >> 64);
     }
-    // After a borrow the limbs hold a - b + 2^(64k). Adding m under the
+    // After a borrow the words hold a - b + 2^(64k). Adding m under the
     // mask of the borrow brings them to a - b + m, and the carry out of
-    // the top limb, which is that 2^(64k), is dropped.
+    // the top word, which is that 2^(64k), is dropped.
     uint64_t mask = mask_of_bit(carry ^ 1);
     carry = 0;
     for (size_t i = 0; i < k; i++) {
@@ -311,7 +311,7 @@ void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
 }
 
 void rsa_mont64_reduce_once(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
-    reduce_once(o, a, 0, mod->m, mod->limbs);
+    reduce_once(o, a, 0, mod->m, mod->words);
 }
 
 void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const uint64_t *c,
@@ -320,16 +320,16 @@ void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const
         o[i] = c[i];
         o[k + i] = 0;
     }
-    // Row i adds a[i] * b at limb i. A product, a limb of o and a carry
-    // are at most 2^128 - 1 together, as in rsa_mont64_mont_mul. The limb
+    // Row i adds a[i] * b at word i. A product, a word of o and a carry
+    // are at most 2^128 - 1 together, as in rsa_mont64_mont_mul. The word
     // of a is read through a volatile pointer at each product, for the
     // reason that function reads b[0] that way: a copy a compiler keeps
     // for the row may be in a stack slot no wipe names.
     for (size_t i = 0; i < k; i++) {
-        const volatile uint64_t *a_limb = &a[i];
+        const volatile uint64_t *a_word = &a[i];
         uint64_t carry = 0;
         for (size_t j = 0; j < k; j++) {
-            ct_u128 v = ct_mul128(*a_limb, b[j]) + o[i + j] + carry;
+            ct_u128 v = ct_mul128(*a_word, b[j]) + o[i + j] + carry;
             o[i + j] = (uint64_t)v;
             carry = (uint64_t)(v >> 64);
         }
@@ -340,7 +340,7 @@ void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const
 void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len) {
     CH_ASSERT(m_len >= 1 && m_len <= CH_RSA_MODULUS_MAX);
     size_t k = (m_len + 7) >> 3;
-    mod->limbs = k;
+    mod->words = k;
     rsa_mont64_from_bytes(mod->m, k, m, m_len);
     mod->m0inv = neg_inverse(mod->m[0]);
 }
@@ -348,7 +348,7 @@ void rsa_mont64_modulus_load(rsa_mont64_modulus *mod, const uint8_t *m, size_t m
 void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m_len, size_t bits) {
     CH_ASSERT(m_len >= 1 && m_len <= CH_RSA_MODULUS_MAX && bits >= 1 && bits <= 8 * m_len);
     rsa_mont64_modulus_load(mod, m, m_len);
-    size_t k = mod->limbs;
+    size_t k = mod->words;
 
     // r2 = R^2 mod m, with R = 2^(64k). 2^(bits - 1) is below m, because
     // m has that bit and is odd. One doubling for each power of two from
@@ -368,13 +368,13 @@ void rsa_mont64_modulus_init(rsa_mont64_modulus *mod, const uint8_t *m, size_t m
 
 void rsa_mont64_public(uint8_t *out, const uint8_t *base, size_t len,
                        const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
+    size_t k = mod->words;
     CH_ASSERT(len <= 8 * k);
-    // Zeroed at declaration, as rsa_mont.c's are: the limbs past k are
+    // Zeroed at declaration, as rsa_mont.c's are: the words past k are
     // never read, and starting them at zero lets a reader see that
     // without following the length.
-    uint64_t x[RSA_MONT64_LIMBS_MAX] = {0};
-    uint64_t acc[RSA_MONT64_LIMBS_MAX] = {0};
+    uint64_t x[RSA_MONT64_WORDS_MAX] = {0};
+    uint64_t acc[RSA_MONT64_WORDS_MAX] = {0};
     rsa_mont64_from_bytes(x, k, base, len);
 
     // acc holds the running power in the Montgomery domain: base * R,
@@ -382,7 +382,7 @@ void rsa_mont64_public(uint8_t *out, const uint8_t *base, size_t len,
     // base itself, outside the domain, so it multiplies by base and
     // divides by R at once: base^65537. In each product the second
     // operand is below m, which is all rsa_mont64_mont_mul needs, so base
-    // may be any number of k limbs, and each square is of a power below m.
+    // may be any number of k words, and each square is of a power below m.
     rsa_mont64_mont_mul(acc, x, mod->r2, mod);
     for (int i = 0; i < 16; i++) {
         rsa_mont64_mont_square(acc, acc, mod);

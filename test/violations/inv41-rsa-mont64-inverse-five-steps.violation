@@ -2,9 +2,9 @@ invariant: INV-41
 file: rsa_mont64.c
 catches: rsa_equiv_test
 reason: neg_inverse stops Newton's iteration after five steps, the count
-  rsa_mont.c's 32-bit limb takes, so the inverse of a 64-bit limb is
+  rsa_mont.c's 32-bit word takes, so the inverse of a 64-bit word is
   right in its low 32 bits alone. A round of the multiplication then
-  leaves a low limb that is not zero and drops it. bin/rsa_equiv_test
+  leaves a low word that is not zero and drops it. bin/rsa_equiv_test
   compares the bytes with the 32-bit arm's.
 
 --- old

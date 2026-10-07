@@ -1,33 +1,33 @@
 // The wide X25519 field, which a host object holds beside x25519.c's
 // (x25519_wide.h): the field arithmetic mod p = 2^255-19 and the Montgomery
-// ladder of RFC 7748 section 5, in radix 2^51. An element is five limbs
+// ladder of RFC 7748 section 5, in radix 2^51. An element is five words
 // of 51 bits in uint64_t, and every product is one ct_mul128, the
 // 64x64->128 multiply ct.h defines only for a host object. It runs the same
-// ladder step as x25519.c's 16-limb field, in the same order, on a tenth of
+// ladder step as x25519.c's 16-word field, in the same order, on a tenth of
 // the multiplies: 25 products per field multiply instead of 256.
 //
-// The limb bounds are INV-34 in docs/invariants.md, and every one of them
+// The word bounds are INV-34 in docs/invariants.md, and every one of them
 // is a claim a proof checks:
 //
-//   unpack        every limb in [0, 2^51).
-//   mul, sqr      operands' limbs under 2^54. Each product is under
+//   unpack        every word in [0, 2^51).
+//   mul, sqr      operands' words under 2^54. Each product is under
 //                 38 * 2^108, which is under 2^114; each column sums to
 //                 under 77 * 2^108, which is under 2^115; and every carry
-//                 between columns is under 2^64. The result's limbs are in
-//                 [0, 2^51), except limb 1 in [0, 2^51 + 2^13).
-//   mul_a24       operand limbs under 2^54; the result as for mul.
-//   add           two results of mul, so each limb under 2^53.
-//   sub           a + 2p - b for two results of mul: b's limbs never pass
-//                 2p's, so nothing wraps, and each limb is under 2^53.
+//                 between columns is under 2^64. The result's words are in
+//                 [0, 2^51), except word 1 in [0, 2^51 + 2^13).
+//   mul_a24       operand words under 2^54; the result as for mul.
+//   add           two results of mul, so each word under 2^53.
+//   sub           a + 2p - b for two results of mul: b's words never pass
+//                 2p's, so nothing wraps, and each word is under 2^53.
 //
 // So every operand the ladder hands mul or sqr is under 2^53, half the 2^54
 // their proofs take. proof/x25519_wide_*_harness.c prove each line with
 // --unsigned-overflow-check on, because unsigned arithmetic wraps silently
 // in C and the default checks would see no wrap at all. Under the multiply
-// contract the ladder proofs use, limb 1 of a result is under 2^51 + 2^20
+// contract the ladder proofs use, word 1 of a result is under 2^51 + 2^20
 // rather than 2^51 + 2^13; proof/x25519_wide_stubs.h says why.
 //
-// Constant time: no branch and no memory index depends on a limb or on a
+// Constant time: no branch and no memory index depends on a word or on a
 // scalar bit. cswap selects with a mask, the loops count public numbers,
 // and the one instruction whose timing the C cannot state is the multiply,
 // which is what the session's CH_CPU_CONSTANT_TIME_MULTIPLY bit states
@@ -42,41 +42,41 @@
 #include "ct.h"
 
 // A field element: value = f[0] + f[1] 2^51 + f[2] 2^102 + f[3] 2^153 +
-// f[4] 2^204, taken mod p. A limb may exceed 51 bits between operations;
+// f[4] 2^204, taken mod p. A word may exceed 51 bits between operations;
 // the table above says by how much.
 typedef uint64_t fe[5];
 
-#define LIMB_BITS 51
-#define LIMB_MASK ((UINT64_C(1) << LIMB_BITS) - 1)
+#define WORD_BITS 51
+#define WORD_MASK ((UINT64_C(1) << WORD_BITS) - 1)
 
 // a24 = (486662 - 2) / 4, the constant RFC 7748's ladder multiplies by.
 #define A24 UINT64_C(121665)
 
-// 2p, limb by limb: 2^52 - 38 at the bottom, 2^52 - 2 above it.
+// 2p, word by word: 2^52 - 38 at the bottom, 2^52 - 2 above it.
 #define TWO_P_0 UINT64_C(0xFFFFFFFFFFFDA)
 #define TWO_P_1_4 UINT64_C(0xFFFFFFFFFFFFE)
 
-// Five column sums to five limbs. Each column keeps its low 51 bits and
+// Five column sums to five words. Each column keeps its low 51 bits and
 // passes the rest to the next; what passes out of the top column is worth 19
-// at the bottom, because 2^255 = 19 mod p, and the last carry from limb 0
-// goes to limb 1 and stops there. The carries stay 128 bits wide, so no bit
+// at the bottom, because 2^255 = 19 mod p, and the last carry from word 0
+// goes to word 1 and stops there. The carries stay 128 bits wide, so no bit
 // of a sum is dropped: the only narrowings are of values masked to 51 bits
 // and of r0's carry, which is under 2^31 whatever the sums are.
 static void carry_columns(fe o, ct_u128 t0, ct_u128 t1, ct_u128 t2, ct_u128 t3, ct_u128 t4) {
-    t1 += t0 >> LIMB_BITS;
-    t2 += t1 >> LIMB_BITS;
-    t3 += t2 >> LIMB_BITS;
-    t4 += t3 >> LIMB_BITS;
-    ct_u128 r0 = (t0 & LIMB_MASK) + (t4 >> LIMB_BITS) * 19;
-    o[0] = (uint64_t)(r0 & LIMB_MASK);
-    o[1] = (uint64_t)(t1 & LIMB_MASK) + (uint64_t)(r0 >> LIMB_BITS);
-    o[2] = (uint64_t)(t2 & LIMB_MASK);
-    o[3] = (uint64_t)(t3 & LIMB_MASK);
-    o[4] = (uint64_t)(t4 & LIMB_MASK);
+    t1 += t0 >> WORD_BITS;
+    t2 += t1 >> WORD_BITS;
+    t3 += t2 >> WORD_BITS;
+    t4 += t3 >> WORD_BITS;
+    ct_u128 r0 = (t0 & WORD_MASK) + (t4 >> WORD_BITS) * 19;
+    o[0] = (uint64_t)(r0 & WORD_MASK);
+    o[1] = (uint64_t)(t1 & WORD_MASK) + (uint64_t)(r0 >> WORD_BITS);
+    o[2] = (uint64_t)(t2 & WORD_MASK);
+    o[3] = (uint64_t)(t3 & WORD_MASK);
+    o[4] = (uint64_t)(t4 & WORD_MASK);
 }
 
-// o = a * b. Column k collects the products whose limb indices sum to k, and
-// the ones that sum to k + 5 come in times 19. Every limb of a and b is read
+// o = a * b. Column k collects the products whose word indices sum to k, and
+// the ones that sum to k + 5 come in times 19. Every word of a and b is read
 // before o is written, so o may be a or b.
 static void mul(fe o, const fe a, const fe b) {
     uint64_t b1_19 = b[1] * 19;
@@ -96,7 +96,7 @@ static void mul(fe o, const fe a, const fe b) {
     carry_columns(o, t0, t1, t2, t3, t4);
 }
 
-// o = a * a: mul's columns with each pair of distinct limbs taken once and
+// o = a * a: mul's columns with each pair of distinct words taken once and
 // doubled, so 15 products instead of 25. The operands are ordered so the
 // first is always under 2^55 and the second under 38 * 2^54, the domain
 // proof/x25519_wide_stubs.h states for ct_mul128.
@@ -127,8 +127,8 @@ static void add(fe o, const fe a, const fe b) {
     }
 }
 
-// o = a + 2p - b, which is a - b mod p with every limb kept non-negative.
-// It needs each limb of b at or under 2p's, which every result of mul is.
+// o = a + 2p - b, which is a - b mod p with every word kept non-negative.
+// It needs each word of b at or under 2p's, which every result of mul is.
 static void sub(fe o, const fe a, const fe b) {
     o[0] = a[0] + TWO_P_0 - b[0];
     for (size_t i = 1; i < 5; i++) {
@@ -218,7 +218,7 @@ static void store_le64(uint8_t b[8], uint64_t v) {
     }
 }
 
-// The u-coordinate's 255 low bits into five limbs. RFC 7748 masks the top
+// The u-coordinate's 255 low bits into five words. RFC 7748 masks the top
 // bit off. A value at or above p is kept as it is: mul reduces it like any
 // other.
 static void unpack(fe o, const uint8_t n[X25519_LEN]) {
@@ -226,27 +226,27 @@ static void unpack(fe o, const uint8_t n[X25519_LEN]) {
     uint64_t w1 = load_le64(n + 8);
     uint64_t w2 = load_le64(n + 16);
     uint64_t w3 = load_le64(n + 24) & ~(UINT64_C(1) << 63);
-    o[0] = w0 & LIMB_MASK;
-    o[1] = ((w0 >> 51) | (w1 << 13)) & LIMB_MASK;
-    o[2] = ((w1 >> 38) | (w2 << 26)) & LIMB_MASK;
-    o[3] = ((w2 >> 25) | (w3 << 39)) & LIMB_MASK;
+    o[0] = w0 & WORD_MASK;
+    o[1] = ((w0 >> 51) | (w1 << 13)) & WORD_MASK;
+    o[2] = ((w1 >> 38) | (w2 << 26)) & WORD_MASK;
+    o[3] = ((w2 >> 25) | (w3 << 39)) & WORD_MASK;
     o[4] = w3 >> 12;
 }
 
-// One pass of carries from each limb into the next, the top one coming in
-// at the bottom times 19. Two passes leave every limb under 2^51 for any
-// limbs under 2^63, which covers every value the ladder hands pack.
-static void carry_limbs(uint64_t t[5]) {
-    t[1] += t[0] >> LIMB_BITS;
-    t[0] &= LIMB_MASK;
-    t[2] += t[1] >> LIMB_BITS;
-    t[1] &= LIMB_MASK;
-    t[3] += t[2] >> LIMB_BITS;
-    t[2] &= LIMB_MASK;
-    t[4] += t[3] >> LIMB_BITS;
-    t[3] &= LIMB_MASK;
-    t[0] += (t[4] >> LIMB_BITS) * 19;
-    t[4] &= LIMB_MASK;
+// One pass of carries from each word into the next, the top one coming in
+// at the bottom times 19. Two passes leave every word under 2^51 for any
+// words under 2^63, which covers every value the ladder hands pack.
+static void carry_words(uint64_t t[5]) {
+    t[1] += t[0] >> WORD_BITS;
+    t[0] &= WORD_MASK;
+    t[2] += t[1] >> WORD_BITS;
+    t[1] &= WORD_MASK;
+    t[3] += t[2] >> WORD_BITS;
+    t[2] &= WORD_MASK;
+    t[4] += t[3] >> WORD_BITS;
+    t[3] &= WORD_MASK;
+    t[0] += (t[4] >> WORD_BITS) * 19;
+    t[4] &= WORD_MASK;
 }
 
 // The canonical representative, below p, as 32 little-endian bytes. After
@@ -259,23 +259,23 @@ static void pack(uint8_t o[X25519_LEN], const fe n) {
     for (size_t i = 0; i < 5; i++) {
         t[i] = n[i];
     }
-    carry_limbs(t);
-    carry_limbs(t);
-    uint64_t q = (t[0] + 19) >> LIMB_BITS;
-    q = (t[1] + q) >> LIMB_BITS;
-    q = (t[2] + q) >> LIMB_BITS;
-    q = (t[3] + q) >> LIMB_BITS;
-    q = (t[4] + q) >> LIMB_BITS;
+    carry_words(t);
+    carry_words(t);
+    uint64_t q = (t[0] + 19) >> WORD_BITS;
+    q = (t[1] + q) >> WORD_BITS;
+    q = (t[2] + q) >> WORD_BITS;
+    q = (t[3] + q) >> WORD_BITS;
+    q = (t[4] + q) >> WORD_BITS;
     t[0] += 19 * q;
-    t[1] += t[0] >> LIMB_BITS;
-    t[0] &= LIMB_MASK;
-    t[2] += t[1] >> LIMB_BITS;
-    t[1] &= LIMB_MASK;
-    t[3] += t[2] >> LIMB_BITS;
-    t[2] &= LIMB_MASK;
-    t[4] += t[3] >> LIMB_BITS;
-    t[3] &= LIMB_MASK;
-    t[4] &= LIMB_MASK;
+    t[1] += t[0] >> WORD_BITS;
+    t[0] &= WORD_MASK;
+    t[2] += t[1] >> WORD_BITS;
+    t[1] &= WORD_MASK;
+    t[3] += t[2] >> WORD_BITS;
+    t[2] &= WORD_MASK;
+    t[4] += t[3] >> WORD_BITS;
+    t[3] &= WORD_MASK;
+    t[4] &= WORD_MASK;
     store_le64(o, t[0] | (t[1] << 51));
     store_le64(o + 8, (t[1] >> 13) | (t[2] << 38));
     store_le64(o + 16, (t[2] >> 26) | (t[3] << 25));
@@ -286,7 +286,7 @@ static void pack(uint8_t o[X25519_LEN], const fe n) {
 // One ladder step, x25519.c's step() over this field: the same operations in
 // the same order, with mul_a24 where that file multiplies by the constant
 // element. A function of its own so proof/x25519_wide_step_harness.c can run
-// one step and prove it keeps every limb inside INV-34's bounds; the loop in
+// one step and prove it keeps every word inside INV-34's bounds; the loop in
 // x25519_wide_ladder() is the induction over it.
 static void step(fe a, fe b, fe c, fe d, fe e, fe f, const fe x, uint64_t r) {
     cswap(a, b, r);

@@ -10,7 +10,7 @@
 //
 //   that it answers 0 for a key the decoder refuses, and for a sum at
 //   infinity, and asks for no x of a sum at infinity. No test can hold the
-//   first: with the check gone, the arithmetic after it runs on limbs that
+//   first: with the check gone, the arithmetic after it runs on words that
 //   are no point, and its x matches r one time in 2^256;
 //
 //   that it answers 1 only after the decoder took the key, the sum was
@@ -60,24 +60,24 @@ uint64_t nondet_u64(void);
 int nondet_int(void);
 
 static void scalar_havoc(p256_scalar *o) {
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        o->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        o->word[i] = nondet_u32();
     }
 }
 
 static void point_havoc(p256_point *o) {
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        o->x.limb[i] = nondet_u32();
-        o->y.limb[i] = nondet_u32();
-        o->z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        o->x.word[i] = nondet_u32();
+        o->y.word[i] = nondet_u32();
+        o->z.word[i] = nondet_u32();
     }
 }
 
 static void jacobian_havoc(p256_wide_jacobian *o) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->x.limb[i] = nondet_u64();
-        o->y.limb[i] = nondet_u64();
-        o->z.limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->x.word[i] = nondet_u64();
+        o->y.word[i] = nondet_u64();
+        o->z.word[i] = nondet_u64();
     }
 }
 

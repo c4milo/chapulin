@@ -264,7 +264,7 @@ x25519_tail 52.2
 # is wrong by 800 s, which is how a prediction that pem would still time
 # out survived until this run measured it.
 #
-# p384 is p256's harness at twelve limbs and times out the same way:
+# p384 is p256's harness at twelve words and times out the same way:
 # under the cover command on a development machine on 2026-09-15
 # (cbmc 6.11.0, -DCH_NATIVE_WIDEMUL) it was still in propositional
 # reduction at 4.6 GB when the 1800 s cap stopped it. p384_mul, the

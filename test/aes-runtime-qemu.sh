@@ -74,7 +74,7 @@
 #     kernel's instructions (test/x86_kernels_test.c).
 #   - bin/p256_equiv_test must pass for x86-64 and for arm64: the wide
 #     P-256 files against the files under their own names
-#     (test/p256_equiv_test.c), on the two forms of p256_wide_limb.h's
+#     (test/p256_equiv_test.c), on the two forms of p256_wide_word.h's
 #     carry steps that gcc reads, the intrinsics for x86-64 and the
 #     128-bit sums for arm64 (docs/decisions.md 94). clang reads a third
 #     form, so a machine whose compiler is clang compiles no line of the
@@ -167,7 +167,7 @@
 #                     violations of the entries an arm64 object alone
 #                     compiles
 #   p256-equiv        bin/p256_equiv_test for x86-64 and for arm64, for the
-#                     violations of the intrinsics in p256_wide_limb.h's
+#                     violations of the intrinsics in p256_wide_word.h's
 #                     carry steps
 #   keccak            bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
 #                     for arm64, built with clang, for the violations of
@@ -307,12 +307,12 @@ if [ -z "$only" ] || [ "$only" = p256-equiv ]; then
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_INTRINSIC \
         -o "$x86_out/p256_equiv_test" test/p256_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
     expect max 0 \
-        "the wide P-256 files on the x86-64 intrinsics and the files under their own names disagree, or a wide call left a limb on the stack" \
+        "the wide P-256 files on the x86-64 intrinsics and the files under their own names disagree, or a wide call left a word on the stack" \
         p256_equiv_test
     "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DP256_WIDE_CARRY=P256_WIDE_CARRY_SUM \
         -o "$arm64_out/p256_equiv_test" test/p256_equiv_test.c "${p256_equiv_srcs[@]}" || exit 1
     expect_arm64 max 0 \
-        "the wide P-256 files on the 128-bit sums and the files under their own names disagree, or a wide call left a limb on the stack" \
+        "the wide P-256 files on the 128-bit sums and the files under their own names disagree, or a wide call left a word on the stack" \
         p256_equiv_test
 fi
 if [ "$only" = p256-equiv ]; then

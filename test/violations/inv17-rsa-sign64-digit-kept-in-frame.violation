@@ -5,7 +5,7 @@ reason: rsa_sign64_power keeps the digit a step reads in a local of its
   own frame, which nothing wipes, so the four low bits of the exponent
   are in that frame when the call returns. Every signature still comes
   out right. The runs that look for a value cannot find this one: they
-  look for two limbs side by side, and four bits are in every byte of
+  look for two words side by side, and four bits are in every byte of
   memory. bin/rsa_sign_equiv_test also runs the exponentiation under dp
   and under dq and requires the two stacks it leaves to be the same
   (test/rsa_sign_equiv_differential.h), and the two keys' last digits

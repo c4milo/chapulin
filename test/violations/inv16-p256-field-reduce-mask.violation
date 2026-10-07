@@ -9,6 +9,6 @@ reason: dropping the complement inverts the conditional subtraction: the
   fail on it.
 
 --- old
-    select_limbs(o, reduced, t, ~(uint32_t)(below >> 32));
+    select_words(o, reduced, t, ~(uint32_t)(below >> 32));
 --- new
-    select_limbs(o, reduced, t, (uint32_t)(below >> 32));
+    select_words(o, reduced, t, (uint32_t)(below >> 32));

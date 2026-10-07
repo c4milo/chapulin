@@ -68,19 +68,19 @@ static int nondet_bit(void) {
     return nondet_int() != 0;
 }
 
-static int below_n(const uint64_t a[P384_WIDE_LIMBS]) {
+static int below_n(const uint64_t a[P384_WIDE_WORDS]) {
     return p384_wide_compare(a, p384_wide_modn.m) < 0;
 }
 
-static void havoc_below_n(uint64_t o[P384_WIDE_LIMBS]) {
-    for (size_t i = 0; i < P384_WIDE_LIMBS; i++) {
+static void havoc_below_n(uint64_t o[P384_WIDE_WORDS]) {
+    for (size_t i = 0; i < P384_WIDE_WORDS; i++) {
         o[i] = nondet_u64();
     }
     __CPROVER_assume(below_n(o));
 }
 
 static void havoc_point(p384_wide_point *o) {
-    for (size_t i = 0; i < P384_WIDE_LIMBS; i++) {
+    for (size_t i = 0; i < P384_WIDE_WORDS; i++) {
         o->x[i] = nondet_u64();
         o->y[i] = nondet_u64();
         o->z[i] = nondet_u64();
@@ -88,10 +88,10 @@ static void havoc_point(p384_wide_point *o) {
 }
 
 // p384_wide_field.h: inputs below mod->m, results below mod->m.
-void p384_wide_mod_mul(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
-                       const uint64_t b[P384_WIDE_LIMBS], const p384_wide_modulus *mod) {
+void p384_wide_mod_mul(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
+                       const uint64_t b[P384_WIDE_WORDS], const p384_wide_modulus *mod) {
     __CPROVER_assert(mod == &p384_wide_modn, "product stub: the verifier multiplies modulo n");
-    __CPROVER_assert(__CPROVER_w_ok(o, sizeof(uint64_t) * P384_WIDE_LIMBS),
+    __CPROVER_assert(__CPROVER_w_ok(o, sizeof(uint64_t) * P384_WIDE_WORDS),
                      "product stub: output writable");
     __CPROVER_assert(below_n(a) && below_n(b), "product stub: both operands are below n");
     stub_calls++;
@@ -99,10 +99,10 @@ void p384_wide_mod_mul(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_L
 }
 
 // p384_wide_field.h: a must be non-zero.
-void p384_wide_mod_inverse(uint64_t o[P384_WIDE_LIMBS], const uint64_t a[P384_WIDE_LIMBS],
+void p384_wide_mod_inverse(uint64_t o[P384_WIDE_WORDS], const uint64_t a[P384_WIDE_WORDS],
                            const p384_wide_modulus *mod) {
     __CPROVER_assert(mod == &p384_wide_modn, "inverse stub: the verifier inverts modulo n");
-    __CPROVER_assert(__CPROVER_w_ok(o, sizeof(uint64_t) * P384_WIDE_LIMBS),
+    __CPROVER_assert(__CPROVER_w_ok(o, sizeof(uint64_t) * P384_WIDE_WORDS),
                      "inverse stub: output writable");
     __CPROVER_assert(below_n(a) && !p384_wide_is_zero(a), "inverse stub: the operand is in 1..n-1");
     stub_calls++;
@@ -121,8 +121,8 @@ int p384_wide_point_decode(p384_wide_point *q, const uint8_t pub[P384_PUB_LEN]) 
 }
 
 // p384_wide_point.h: a q the decoder wrote, and scalars below n.
-void p384_wide_double_mul(p384_wide_point *o, const uint64_t u1[P384_WIDE_LIMBS],
-                          const uint64_t u2[P384_WIDE_LIMBS], const p384_wide_point *q) {
+void p384_wide_double_mul(p384_wide_point *o, const uint64_t u1[P384_WIDE_WORDS],
+                          const uint64_t u2[P384_WIDE_WORDS], const p384_wide_point *q) {
     __CPROVER_assert(__CPROVER_r_ok(q, sizeof *q), "sum stub: the key is readable");
     __CPROVER_assert(__CPROVER_w_ok(o, sizeof *o), "sum stub: output writable");
     __CPROVER_assert(decoder_ran && decoder_answer == 1, "sum stub: the decoder took the key");
@@ -142,7 +142,7 @@ int p384_wide_point_is_infinity(const p384_wide_point *p) {
 }
 
 // p384_wide_point.h: a sum that is not infinity, and r in 1..n-1.
-int p384_wide_point_x_is_r(const p384_wide_point *sum, const uint64_t r[P384_WIDE_LIMBS]) {
+int p384_wide_point_x_is_r(const p384_wide_point *sum, const uint64_t r[P384_WIDE_WORDS]) {
     __CPROVER_assert(__CPROVER_r_ok(sum, sizeof *sum), "comparison stub: point readable");
     __CPROVER_assert(infinity_ran && infinity_answer == 0,
                      "comparison stub: the sum is known not to be infinity");
@@ -157,7 +157,7 @@ int p384_wide_point_x_is_r(const p384_wide_point *sum, const uint64_t r[P384_WID
 
 // 1 when the 48 big-endian bytes at bytes are a number in 1..n-1.
 static int bytes_in_range(const uint8_t bytes[P384_LEN]) {
-    uint64_t value[P384_WIDE_LIMBS];
+    uint64_t value[P384_WIDE_WORDS];
     p384_wide_from_bytes(value, bytes);
     return !p384_wide_is_zero(value) && below_n(value);
 }

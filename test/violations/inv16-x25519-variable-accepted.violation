@@ -2,7 +2,7 @@ invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
 reason: the Makefile stops refusing the X25519 variable, so a build that
-  still passes X25519=wide gets the 16-limb field with no word said, where
+  still passes X25519=wide gets the 16-word field with no word said, where
   its builder expects the wide one. lint-trust-separation's refused rows
   require make print-lib-def to fail for X25519=wide and X25519=portable,
   on a device object and on a host object.

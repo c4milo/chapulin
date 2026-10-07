@@ -1,24 +1,24 @@
 // Proves: the four pieces of a CRT signature that rsa_sign64_sp1 joins
-// read and write inside their arrays, over any key bytes, any limbs and
+// read and write inside their arrays, over any key bytes, any words and
 // any encoded message, at the largest length the build admits (384 bytes;
 // 512 in the rsa_sign64_crt_webpki variant, which sets CH_TRUST_WEBPKI)
 // and, where a length decides an index, at 8 bytes below it. There each
-// prime is half a limb past a whole number of 64-bit limbs, so twice a
-// prime's limbs is one limb more than the modulus has. Those are the two
-// shapes the limb counts take, and the largest of each is the binding
+// prime is half a word past a whole number of 64-bit words, so twice a
+// prime's words is one word more than the modulus has. Those are the two
+// shapes the word counts take, and the largest of each is the binding
 // case for every index.
 //
-// The reduction. message_mod_prime splits the message into its low limbs
-// and the limbs above them, k of them or k - 1, for a prime of the
-// largest limb count, at both shapes.
+// The reduction. message_mod_prime splits the message into its low words
+// and the words above them, k of them or k - 1, for a prime of the
+// largest word count, at both shapes.
 //
 // The recombination. crt_combine runs Garner's formula over any two
-// halves and any qinv bytes, into twice a prime's limbs.
+// halves and any qinv bytes, into twice a prime's words.
 //
 // The key test. rsa_sign64_key_ok multiplies any two primes into twice
-// their limbs and compares the product with the modulus, zero-extended to
-// that many limbs, at both shapes. It admits a key exactly when every
-// limb of the product is the limb of the modulus: no limb is left out of
+// their words and compares the product with the modulus, zero-extended to
+// that many words, at both shapes. It admits a key exactly when every
+// word of the product is the word of the modulus: no word is left out of
 // the comparison.
 //
 // The check. signature_verifies raises the candidate, every byte of it,
@@ -32,7 +32,7 @@
 //
 // The power and the product are what the contracts wrote, which
 // proof/rsa_sign64_stubs.h keeps. So the three statements above are about
-// which bytes and limbs are compared and copied, for any power and any
+// which bytes and words are compared and copied, for any power and any
 // product, and not about what the power or the product is.
 //
 // The calls into rsa_mont64.c are the contracts in
@@ -43,7 +43,7 @@
 // What it does not drive: rsa_sign64_sp1 itself. Its own statements are
 // two modulus setups, the message's marshalling, these pieces, two calls
 // of rsa_sign64_power, which rsa_sign64_power_harness.c proves at each of
-// its bounds, and seven wipes, over arrays of the largest limb count. Run
+// its bounds, and seven wipes, over arrays of the largest word count. Run
 // whole it is that exponentiation at both bounds at once, twice.
 //
 // What it does not prove: any value. That the signature is em^d mod n
@@ -53,33 +53,33 @@
 #include "rsa_sign64_stubs.h"
 
 static void havoc_modulus(rsa_mont64_modulus *mod, size_t k) {
-    havoc_limbs(mod->m, k);
-    havoc_limbs(mod->r2, k);
+    havoc_words(mod->m, k);
+    havoc_words(mod->r2, k);
     mod->m0inv = nondet_u64();
-    mod->limbs = k;
+    mod->words = k;
 }
 
-// em_limbs is twice the prime's limbs, or one less.
-static void prove_reduction(size_t em_limbs) {
+// em_words is twice the prime's words, or one less.
+static void prove_reduction(size_t em_words) {
     rsa_mont64_modulus mod;
-    uint64_t em[RSA_MONT64_LIMBS_MAX];
-    uint64_t o[PRIME_LIMBS_MAX];
-    havoc_modulus(&mod, PRIME_LIMBS_MAX);
-    havoc_limbs(em, em_limbs);
-    message_mod_prime(o, em, em_limbs, &mod);
+    uint64_t em[RSA_MONT64_WORDS_MAX];
+    uint64_t o[PRIME_WORDS_MAX];
+    havoc_modulus(&mod, PRIME_WORDS_MAX);
+    havoc_words(em, em_words);
+    message_mod_prime(o, em, em_words, &mod);
 }
 
 static void prove_recombination(void) {
     rsa_mont64_modulus mod_p;
     rsa_mont64_modulus mod_q;
-    uint64_t m1[PRIME_LIMBS_MAX];
-    uint64_t m2[PRIME_LIMBS_MAX];
-    uint64_t s[2 * PRIME_LIMBS_MAX];
+    uint64_t m1[PRIME_WORDS_MAX];
+    uint64_t m2[PRIME_WORDS_MAX];
+    uint64_t s[2 * PRIME_WORDS_MAX];
     uint8_t qinv[CH_RSA_MODULUS_MAX / 2];
-    havoc_modulus(&mod_p, PRIME_LIMBS_MAX);
-    havoc_modulus(&mod_q, PRIME_LIMBS_MAX);
-    havoc_limbs(m1, PRIME_LIMBS_MAX);
-    havoc_limbs(m2, PRIME_LIMBS_MAX);
+    havoc_modulus(&mod_p, PRIME_WORDS_MAX);
+    havoc_modulus(&mod_q, PRIME_WORDS_MAX);
+    havoc_words(m1, PRIME_WORDS_MAX);
+    havoc_words(m2, PRIME_WORDS_MAX);
     fill_nondet(qinv, sizeof qinv);
     crt_combine(s, m1, m2, qinv, sizeof qinv, &mod_p, &mod_q);
 }
@@ -106,21 +106,21 @@ static void prove_key_test(size_t n_len) {
     havoc_key(n_len);
     int admitted = rsa_sign64_key_ok(&key);
 
-    // The product is the one stub_mul_add wrote, and the modulus's limbs
+    // The product is the one stub_mul_add wrote, and the modulus's words
     // the ones stub_from_bytes wrote in its last call, which read key.n.
-    size_t limbs = (n_len / 2 + 7) >> 3;
-    __CPROVER_assert(stub_mul_add_limbs == limbs, "the product is of two primes' limbs");
+    size_t words = (n_len / 2 + 7) >> 3;
+    __CPROVER_assert(stub_mul_add_words == words, "the product is of two primes' words");
     __CPROVER_assert(stub_from_bytes_bytes == key.n && stub_from_bytes_len == n_len &&
-                         stub_from_bytes_count == 2 * limbs,
-                     "the modulus is read whole, into the product's limbs");
+                         stub_from_bytes_count == 2 * words,
+                     "the modulus is read whole, into the product's words");
     int equal = 1;
-    for (size_t i = 0; i < 2 * limbs; i++) {
+    for (size_t i = 0; i < 2 * words; i++) {
         if (stub_mul_add_out[i] != stub_from_bytes_out[i]) {
             equal = 0;
         }
     }
     __CPROVER_assert(admitted == equal,
-                     "the key test admits exactly when every limb of p * q is the modulus's");
+                     "the key test admits exactly when every word of p * q is the modulus's");
 }
 
 // Whether the bytes stub_public last wrote are the n_len bytes of em.
@@ -180,8 +180,8 @@ static void prove_write(size_t n_len) {
 }
 
 int main(void) {
-    prove_reduction(2 * PRIME_LIMBS_MAX);
-    prove_reduction(2 * PRIME_LIMBS_MAX - 1);
+    prove_reduction(2 * PRIME_WORDS_MAX);
+    prove_reduction(2 * PRIME_WORDS_MAX - 1);
     prove_recombination();
     prove_key_test(CH_RSA_MODULUS_MAX);
     prove_key_test(CH_RSA_MODULUS_MAX - 8);

@@ -1112,16 +1112,16 @@ last `ROLE=server` stub, as the entry said it would.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime),
   entries 22, 71, 72 and 78.
 
-### INV-24 — the x25519 ladder stays inside its proven limb range
+### INV-24 — the x25519 ladder stays inside its proven word range
 
-- **Claim.** Between the ladder's operations every limb of `a`, `b`,
+- **Claim.** Between the ladder's operations every word of `a`, `b`,
   `c`, `d` and `x` lies in (-2^17, 2^17), and mul receives no operand
   outside (-2^18, 2^18). Every x25519 field-op proof holds only inside
-  a stated limb range (its entry in docs/verification.md), so a
-  limb that leaves it turns those verdicts into statements about
+  a stated word range (its entry in docs/verification.md), so a
+  word that leaves it turns those verdicts into statements about
   inputs the code no longer produces.
-- **Mechanism.** mul ends in two carry passes, which leave limbs 1..15
-  in [0, 2^16) and limb 0 in [-38, 2^16 + 38); one add or sub of two
+- **Mechanism.** mul ends in two carry passes, which leave words 1..15
+  in [0, 2^16) and word 0 in [-38, 2^16 + 38); one add or sub of two
   such values stays under 2^18; and `step()` applies at most one add
   or sub to a value before the next mul takes it.
 - **Check.** CBMC: `x25519_step` proves one loop step from any state
@@ -1129,39 +1129,39 @@ last `ROLE=server` stub, as the entry said it would.
   mul's output form, one `invert` round and the final multiply and
   pack do the same
   ([#50](https://github.com/c4milo/chapulin/issues/50)). The unit
-  vectors notice a limb only once it passes 2^31 and mul's narrowing
+  vectors notice a word only once it passes 2^31 and mul's narrowing
   to int32 truncates it; the fourteen bits between the proven bound
   and that point are watched by the proofs alone.
 - **Violation.** A PR drops one of mul's two carry passes to save
   cycles, or replaces the step's last square with an add, and the
-  ladder hands the field ops limbs their proofs never covered. `make
+  ladder hands the field ops words their proofs never covered. `make
   test-invariants-proof-backed` runs both, as `inv24-x25519-mul-one-carry`
   and `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
   runs one harness and fails unless it verifies; the nightly gives that
   class its own job.
-- This entry is the 16-limb field's, which every object holds. INV-34 is
+- This entry is the 16-word field's, which every object holds. INV-34 is
   the same claim for the wide field a host object holds beside it.
 
-### INV-34 — the wide X25519 ladder stays inside its proven limb range
+### INV-34 — the wide X25519 ladder stays inside its proven word range
 
 - **Claim.** In a host object's wide X25519 field (`x25519_wide.c`),
   between the ladder's operations
-  limbs 0, 2, 3 and 4 of `a`, `b`, `c` and `d` lie in [0, 2^51), limb 1
-  lies in [0, 2^51 + 2^20), and every limb of `x` lies in [0, 2^51).
+  words 0, 2, 3 and 4 of `a`, `b`, `c` and `d` lie in [0, 2^51), word 1
+  lies in [0, 2^51 + 2^20), and every word of `x` lies in [0, 2^51).
   Every product the field computes takes a first operand under 2^55 and
   a second under 2^60, so every product is under 2^115, and no unsigned
   value wraps. On the real multiply the bounds are tighter: `mul` and
-  `sqr` on operands whose limbs are under 2^54 make every product under
+  `sqr` on operands whose words are under 2^54 make every product under
   38 * 2^108, every column sum under 77 * 2^108 (under 2^115) and every
-  carry between columns under 2^64, and leave limb 1 under
+  carry between columns under 2^64, and leave word 1 under
   2^51 + 2^13. The field computes in `uint64_t` and `unsigned __int128`,
-  where C defines every wrap, so a limb that leaves these ranges does
+  where C defines every wrap, so a word that leaves these ranges does
   not fault: it computes a wrong value.
 - **Mechanism.** `carry_columns` keeps each column's low 51 bits and
   carries the rest to the next column 128 bits wide, so no bit of a sum
   is dropped; the top carry comes in at the bottom times 19 and the last
-  carry stops at limb 1. `add` of two such results stays under 2^53.
-  `sub` computes a + 2p - b, and a result of `mul` never has a limb above
+  carry stops at word 1. `add` of two such results stays under 2^53.
+  `sub` computes a + 2p - b, and a result of `mul` never has a word above
   2p's. `step()` applies at most one `add` or `sub` to a value before the
   next product takes it, so every operand the ladder hands a product is
   under 2^53.
@@ -1179,11 +1179,11 @@ last `ROLE=server` stub, as the entry said it would.
   ops, `unpack`, and that `pack` writes a value below p. The base case,
   `a = d = 1`, `c = 0` and `b = x`, is read from
   `x25519_wide_ladder()`'s prologue. The values are held by
-  `bin/x25519_equiv_test` against the 16-limb field, and by the RFC
+  `bin/x25519_equiv_test` against the 16-word field, and by the RFC
   7748, Wycheproof and Lean differential runs over this field.
-- **Violation.** A PR drops `carry_columns`' last carry, so limb 0 keeps
-  all of r0 and the value stays right while the limb passes 2^51; or it
-  folds the top carry in times 38, the 16-limb field's constant for
+- **Violation.** A PR drops `carry_columns`' last carry, so word 0 keeps
+  all of r0 and the value stays right while the word passes 2^51; or it
+  folds the top carry in times 38, the 16-word field's constant for
   2^256. `make test-invariants` runs both: `inv34-x25519-wide-carry-dropped`
   through `proof/prove-one.sh x25519_wide_step`, in the nightly's
   proof-backed job, and `inv34-x25519-wide-fold-not-19` through
@@ -1192,32 +1192,32 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-41 — a host object's RSA arithmetic wraps no sum and gives the portable code's answers
 
-- **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit limbs
+- **Claim.** `rsa_mont64.c`, the Montgomery arithmetic on 64-bit words
   that a host object runs for `rsa_vp1`, computes for every odd modulus
   the bytes `rsa_mont.c`'s 32-bit arithmetic computes, which stays the
-  reference. `rsa_sign64.c`, the signer on those limbs that a host
+  reference. `rsa_sign64.c`, the signer on those words that a host
   session runs when it states its multiply, computes a signature from
   the key's primes by the Chinese remainder theorem, and writes for
   every key and every encoded message the bytes `rsa_sign.c`'s ladder
   writes from n and d, which stays the reference too. No sum in
-  `rsa_mont64.c` wraps: a product of two limbs is at most
-  (2^64 - 1)^2, and with a limb of the running sum and a carry added it
+  `rsa_mont64.c` wraps: a product of two words is at most
+  (2^64 - 1)^2, and with a word of the running sum and a carry added it
   is at most 2^128 - 1. The file computes in `uint64_t` and `unsigned
   __int128`, where C defines every wrap, so a sum that left that range
   would not fault: it would compute a wrong value.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
-  `rsa_mont64_mont_mul` adds one product, one limb and one carry in each
-  of its two sums, and its top step adds two carries to a limb that is 0,
+  `rsa_mont64_mont_mul` adds one product, one word and one carry in each
+  of its two sums, and its top step adds two carries to a word that is 0,
   1 or 2. `rsa_mont64_mont_square` keeps that pass and adds a_i V_i in
   a round, with V_i = a_i B^i + 2 (a_{i+1} B^{i+1} + ... + a_{k-1}
-  B^{k-1}), each sum still a product, a limb and a carry, and a top limb
+  B^{k-1}), each sum still a product, a word and a carry, and a top word
   that reaches 2. A subtraction adds the complement of the subtrahend and one,
-  so its limbs carry where a borrow would wrap. `rsa_mont.c` compiles to
+  so its words carry where a borrow would wrap. `rsa_mont.c` compiles to
   a call into this file under `-DCH_CPU_RUNTIME` and to the 32-bit
   arithmetic without it, so an object holds one of the two. Its host arm
   computes R^2 for a modulus whose top bit is set by a long division of
-  its own, whose estimate of each quotient limb is at most 2 above the
-  limb, and takes `rsa_mont64_modulus_init` for any other modulus.
+  its own, whose estimate of each quotient word is at most 2 above the
+  word, and takes `rsa_mont64_modulus_init` for any other modulus.
   `rsa_sign64.c` multiplies only through that file. It reduces the
   encoded message modulo each prime with three multiplications and a
   sum, raises each to dp or dq, reading the exponent one hexadecimal
@@ -1229,7 +1229,7 @@ last `ROLE=server` stub, as the entry said it would.
   one for a session from its multiply bit (INV-16).
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
-  four limbs over any operands, `rsa_mont64_ops` the comparison, the
+  four words over any operands, `rsa_mont64_ops` the comparison, the
   subtraction, the doubling and the byte marshalling at the build's
   bound, and `rsa_mont64_mul128` proves the real `ct_mul128` meets the
   bound the others take as a contract (`proof/rsa_mont64_stubs.h`).
@@ -1239,11 +1239,11 @@ last `ROLE=server` stub, as the entry said it would.
   those of the host arm's `rsa_vp1` with its division. The values are
   held by `bin/rsa_equiv_test`, which compiles both arms of `rsa_mont.c`
   into one binary and requires the same bytes from each over random
-  moduli at every length, moduli at the limb edges, a modulus whose
+  moduli at every length, moduli at the word edges, a modulus whose
   division takes the largest estimate, moduli of every bit length near a
-  limb boundary, and the signatures 0, 1 and n - 1, whose powers are
+  word boundary, and the signatures 0, 1 and n - 1, whose powers are
   known, and holds the square to the multiplication of a number by
-  itself at every limb count; by `bin/rsa_test_host` and
+  itself at every word count; by `bin/rsa_test_host` and
   `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the host
   Wycheproof test. `test/widemul-builds.sh` holds each arm to its object.
@@ -1251,14 +1251,14 @@ last `ROLE=server` stub, as the entry said it would.
   that a digit is the half of the byte its index names and that the read
   of the table writes the entry at its index, `rsa_sign64_power` proves
   the exponentiation's memory accesses at the longest exponent and at
-  the largest limb count, and `rsa_sign64_crt` those of the reduction,
+  the largest word count, and `rsa_sign64_crt` those of the reduction,
   the recombination, the key test and the signature's check, each over
   contracts of `rsa_mont64.c`'s entries (`proof/rsa_sign64_stubs.h`).
   `rsa_mont64_ops`, `rsa_mont64_sums` and `rsa_mont64_mul` hold the sum,
   the difference and the plain product as they hold the multiplication.
   `bin/rsa_sign_equiv_test` requires the ladder's bytes from the 64-bit
   signer under four keys openssl minted, RSA-2048, RSA-2112, whose
-  primes are half a limb past a whole number, RSA-3072 and RSA-4096,
+  primes are half a word past a whole number, RSA-3072 and RSA-4096,
   over the messages 0, 1 and n - 1 and random ones. It holds the window
   to the ladder under random moduli of 256 bytes over exponents whose
   digits sit at an edge, and at smaller sizes to a square-and-multiply
@@ -1267,28 +1267,28 @@ last `ROLE=server` stub, as the entry said it would.
   operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
   in `make diff`, requires the Lean spec's signatures from each.
 - **Violation.** A PR adds both carries into one sum, which can then
-  pass 2^128; makes the running sum one limb short; subtracts with a
+  pass 2^128; makes the running sum one word short; subtracts with a
   borrow that wraps; copies a product out without its last subtraction;
-  drops the running sum's top limb; squares R^2's seed four times where
-  five are needed; stops the low limb's inverse one step short; lets
+  drops the running sum's top word; squares R^2's seed four times where
+  five are needed; stops the low word's inverse one step short; lets
   the division of R^2 divide past 2^64 where it caps the estimate; or
   drops the top bit of 2a from a square's round, or reads it at the
-  limb above the square. `make test-invariants` runs the last seven as
+  word above the square. `make test-invariants` runs the last seven as
   `inv41-rsa-mont64-final-subtract-dropped`,
-  `inv41-rsa-mont64-top-limb-dropped`, `inv41-rsa-mont64-r2-four-squarings`,
+  `inv41-rsa-mont64-top-word-dropped`, `inv41-rsa-mont64-r2-four-squarings`,
   `inv41-rsa-mont64-inverse-five-steps`,
   `inv41-rsa-mont-r2-estimate-not-capped`,
   `inv41-rsa-mont64-square-top-bit-dropped` and
-  `inv41-rsa-mont64-square-next-limb-from-double`, through `bin/rsa_equiv_test`,
+  `inv41-rsa-mont64-square-next-word-from-double`, through `bin/rsa_equiv_test`,
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
-  `inv41-rsa-mont64-sum-one-limb-short` and
+  `inv41-rsa-mont64-sum-one-word-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
   nightly's proof-backed job. Or a PR starts the read of the table at
   its second entry, or reads the low half of each exponent byte first:
   `inv41-rsa-sign64-table-read-skips-entry-zero` and
   `inv41-rsa-sign64-digits-low-half-first`, which
   `bin/rsa_sign_equiv_test` catches. Or it reduces the message's high
-  limbs with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
+  words with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103 and 106.
@@ -1327,16 +1327,16 @@ last `ROLE=server` stub, as the entry said it would.
   reads none of the five. `bin/rsa_sign_equiv_test` and the host
   Wycheproof test require the check to pass on every signature a good key
   makes. No test can show that a comparison leaves out a byte or a
-  limb: a faulted candidate's power differs from the message in nearly
-  every byte, and a changed bit of a prime moves the low limbs of the
+  word: a faulted candidate's power differs from the message in nearly
+  every byte, and a changed bit of a prime moves the low words of the
   product. So CBMC's `rsa_sign64_crt` states three things over what the
-  contracts of `rsa_mont64.c` may write, at both shapes of the limb
+  contracts of `rsa_mont64.c` may write, at both shapes of the word
   counts: the check raises the whole candidate modulo the key's modulus
   and passes exactly when every byte of the power is the message's;
   `write_if_verified`, the one function that writes a signature, leaves
   every byte of the caller's buffer as it was unless the check passed,
   and then the buffer holds the candidate; and the key test admits a key
-  exactly when every limb of the product is the modulus's. The check
+  exactly when every word of the product is the modulus's. The check
   answers a fault that changes the signature. It does not answer one
   that skips the check, and no test here injects a fault into a running
   signature: a changed key integer stands in for one.
@@ -1347,9 +1347,9 @@ last `ROLE=server` stub, as the entry said it would.
   `inv42-rsa-crt-signature-written-before-check` and
   `inv42-rsa-crt-key-test-skips-product`, each of which
   `bin/rsa_sign_test_host` catches. Or it compares all but the last
-  byte of the power, or all but the top limb of the product, which every
+  byte of the power, or all but the top word of the product, which every
   test passes: `inv42-rsa-crt-check-skips-last-byte` and
-  `inv42-rsa-crt-key-test-skips-top-limb`, each of which the
+  `inv42-rsa-crt-key-test-skips-top-word`, each of which the
   `rsa_sign64_crt` proof refutes.
 - See [decisions: Engineering](decisions.md#engineering), entry 95.
 
@@ -1425,7 +1425,7 @@ last `ROLE=server` stub, as the entry said it would.
   `p384_wide_verify.c` under `-DCH_CPU_RUNTIME`, and its own 32-bit
   arithmetic without it. `p384_field.c` has a body in a device object
   alone and the three 64-bit files in a host object alone, so an object
-  holds one arithmetic. The host arm computes on six 64-bit limbs:
+  holds one arithmetic. The host arm computes on six 64-bit words:
   `p384_wide_field.c` for both moduli, and `p384_wide_point.c` for the
   key, for u1·G + u2·Q in one pass over both scalars' signed digits,
   and for the comparison of the sum's x with r, which tests X against
@@ -1457,9 +1457,9 @@ last `ROLE=server` stub, as the entry said it would.
   field. `test/widemul-builds.sh` compiles `p384.c` and each field
   either side of the define and holds each to its object.
 - **Violation.** In the field, a PR changes the high half of the
-  constant that clears a round's low limb; drops a round's last carry;
+  constant that clears a round's low word; drops a round's last carry;
   returns the plain subtraction's carry for its borrow; or leaves the
-  carry out of the sum's, or the top limb out of the product's, last
+  carry out of the sum's, or the top word out of the product's, last
   subtraction. In the points, it adds a negative digit's multiple;
   drops the digit a carry out of bit 383 makes; answers infinity for
   two equal points, or a double for a point and its negative; takes
@@ -2998,14 +2998,14 @@ last `ROLE=server` stub, as the entry said it would.
   `x25519.c` has no native copy: X25519's second copy in a host object is
   `x25519_wide.c`'s field, which the same answer picks, so a session with
   the bit runs X25519 on the 64x64->128 multiply and one without it on
-  the 16-limb field over the decomposition. P-256 has no native copy
+  the 16-word field over the decomposition. P-256 has no native copy
   either: `p256_field.c`, `p256_scalar.c` and `p256_point.c` compile
   under their own names alone, and the second copy is the wide files,
   `p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_point.c` and
-  `p256_wide_mul.c`, four limbs of 64 bits on the same 64x64->128
+  `p256_wide_mul.c`, four words of 64 bits on the same 64x64->128
   multiply (decision 94). The same answer picks them, at the point's five
   entries and the scalar's two that multiply. A device object holds one
-  multiply, the one its `WIDEMUL` value names, the 16-limb field and
+  multiply, the one its `WIDEMUL` value names, the 16-word field and
   `chacha20.c`'s loop; no host object takes that variable, and no object
   takes `X25519` or `CHACHA`.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
@@ -3035,7 +3035,7 @@ last `ROLE=server` stub, as the entry said it would.
   carry steps that each compiler reads (`tools/p256-wide-carry.py`): the
   overflow builtins under clang, and under gcc two intrinsics for x86-64
   and a 128-bit sum for any other machine. gcc expands a builtin to an
-  add and a jump on the add's carry, a limb's, and removes the jump only
+  add and a jump on the add's carry, a word's, and removes the jump only
   where its if-conversion passes run, so at `-Og` the wide files held 73
   such jumps on the builtins, and no check here counts those files'
   branches under a 64-bit gcc (decision 94). Every value is the same on
@@ -3053,7 +3053,7 @@ last `ROLE=server` stub, as the entry said it would.
   `inv-16-p256-wide-no-borrow-from-zero` refuses the borrow of a
   subtraction from a constant zero in the wide P-256 files: on the
   builtins, gcc 13.3 and 15.2 for x86-64 compiled that borrow to a jump
-  on the value subtracted, a limb of a coordinate, at `-O2`, where the
+  on the value subtracted, a word of a coordinate, at `-O2`, where the
   passes run. gcc reads the builtins no more, and the rule stays for a
   build that names them (decision 94).
   `inv16-p256-wide-zero-mask-borrows-from-zero` and
@@ -3088,7 +3088,7 @@ last `ROLE=server` stub, as the entry said it would.
   x25519's ladder, Keccak's round and lane counters and softmul's fixed
   32 and 64 iterations all branch on public counts, and the count cannot
   tell those from a
-  branch on a limb. What it holds is that no count grows. What the
+  branch on a word. What it holds is that no count grows. What the
   ceilings record is a choice each compiler made: the compare-carries
   in `ct_widemul_opaque` and the sign masks in `ct_widemul_s`, `cswap`
   and `poly1305_final` are branch-free in C, and every compiler in the
@@ -3096,7 +3096,7 @@ last `ROLE=server` stub, as the entry said it would.
   until this count, nothing held it to that
   ([#141](https://github.com/c4milo/chapulin/issues/141)).
   `inv16-poly1305-final-sign-branch` writes the final select as an
-  `if` on the last limb's sign and the count rises by one under all
+  `if` on the last word's sign and the count rises by one under all
   eight specs; `inv16-widemul-s-sign-branch` writes `ct_widemul_s`'s
   corrections as `if`s on the operands' signs, which clang lowers back
   to the mask and every gcc lowers to two branches in x25519, so only
@@ -3126,7 +3126,7 @@ last `ROLE=server` stub, as the entry said it would.
   own names the file has no body, and the count holds that at 0.
   `bin/poly1305_equiv_test` holds its
   accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
-  break its powers, its carries, its lanes, its contract and its limb
+  break its powers, its carries, its lanes, its contract and its word
   bounds, and the test catches each.
   The same two specs compile the six wide P-256 files, and hold their
   divisions and 128-bit runtime calls at zero and their conditional
@@ -3145,18 +3145,18 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
   They compile `rsa_mont64.c` as well, RSA's Montgomery arithmetic on
-  64-bit limbs, and hold its conditional branches at 32 on each: loop
-  control over limb counts, byte counts, the doublings
+  64-bit words, and hold its conditional branches at 32 on each: loop
+  control over word counts, byte counts, the doublings
   `rsa_mont64_modulus_init` counts from its bits argument and the
   squarings, and the two `CH_ASSERT`s on public lengths.
   `inv16-rsa-mont64-subtract-branch` writes the subtraction that ends a
   multiplication as an `if`, and `inv16-rsa-crt-difference-branch` the
   step that adds the modulus back to a difference; both counts rise by
   one under each.
-  They compile `rsa_sign64.c` too, the signer on those limbs, and hold
+  They compile `rsa_sign64.c` too, the signer on those words, and hold
   its conditional branches at 26 on arm64 and 27 on x86-64: loop control
   over the table's entries, the exponents' digits, the four squarings
-  and the limbs, the `CH_ASSERT`s on public lengths, one of which is two
+  and the words, the `CH_ASSERT`s on public lengths, one of which is two
   tests on x86-64, the key test's three on the modulus's length and two
   of its bits, the seven of `rsa_sign.c`'s encoder, which it compiles,
   and one on whether the signature passed its check, which the caller
@@ -4188,11 +4188,11 @@ last `ROLE=server` stub, as the entry said it would.
   the entry its last step read; the reduction's two products and R^3;
   the recombination's qinv and factor; the key test's two primes and
   their product; the check's power; and in `rsa_sign64_sp1` the two
-  primes' modulus records, the message's limbs, the two halves, and the
-  candidate as limbs and as bytes. Any one of those with the message
+  primes' modulus records, the message's words, the two halves, and the
+  candidate as words and as bytes. Any one of those with the message
   factors the modulus, the candidate when its check failed.
   `bin/rsa_sign_equiv_test` copies the stack below a call and requires
-  no two limbs side by side of a value the call held, in seven runs
+  no two words side by side of a value the call held, in seven runs
   under each of an RSA-2048, an RSA-2112 and an RSA-4096 key: a
   signature; a signature under a key with one bit of dp changed, which
   the check refuses; the key test; the key test with one bit of q
@@ -4210,8 +4210,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv17-rsa-crt-` the names `reduction-low`, `reduction-high`,
   `reduction-r3`, `recombination-qinv`, `recombination-factor`,
   `key-test-p`, `key-test-q`, `key-test-product`, `check-power`,
-  `prime-record`, `second-prime-record`, `message-limbs`, `first-half`,
-  `second-half`, `refused-signature-limbs` and `refused-candidate`, each
+  `prime-record`, `second-prime-record`, `message-words`, `first-half`,
+  `second-half`, `refused-signature-words` and `refused-candidate`, each
   ending in `-wipe-dropped`. The test catches each under Apple clang 21
   for arm64 and x86-64 and under gcc 13.3 for both, except the square's
   two (decision 106): it catches both of those under Apple clang 21 for
@@ -4220,15 +4220,15 @@ last `ROLE=server` stub, as the entry said it would.
   writes over before the test looks. CI's mutants job runs gcc 13 for
   x86-64, so the running sum's wipe has no violation file. `table_select` ends
   by writing zero through the pointer its masks went through, so the
-  limb behind it does not end on the last one; no test can look for a
-  limb of all ones or of zeros, so the Semgrep rule of INV-16 holds that
-  write, and `inv17-rsa-sign64-table-mask-left-in-limb` drops it. One
-  limb alone is no finding in those runs, because no wipe written in C
+  word behind it does not end on the last one; no test can look for a
+  word of all ones or of zeros, so the Semgrep rule of INV-16 holds that
+  write, and `inv17-rsa-sign64-table-mask-left-in-word` drops it. One
+  word alone is no finding in those runs, because no wipe written in C
   names a register a callee saved or a slot the compiler picked; run
-  with `CH_RSA_RESIDUE_LIMBS=1` they look for one, which is how the
+  with `CH_RSA_RESIDUE_WORDS=1` they look for one, which is how the
   slots that `rsa_mont64_mont_mul`'s volatile reads removed were found
   (decision 95).
-  A value shorter than a limb is one those runs cannot look for, and
+  A value shorter than a word is one those runs cannot look for, and
   the first form of `table_select` left one: clang for arm64 kept the
   digit a step read in a register a callee saves, across a call it made
   from the loop that wrote zeros to the output, and the next
@@ -4264,24 +4264,24 @@ last `ROLE=server` stub, as the entry said it would.
   store nothing reads, and the test catches it under Apple clang 21 and
   gcc 13 (decision 91).
   The wide P-256 files wipe every object they name that held a secret,
-  and a compiler also keeps limbs in stack slots no `ct_wipe` can name.
+  and a compiler also keeps words in stack slots no `ct_wipe` can name.
   So `widemul.h` calls `p256_wide_wipe_below` after each wide call whose
   operands are secret, which wipes the `P256_WIDE_BELOW_LEN` bytes of
   stack under the dispatcher's caller, where the frames of that call lay
   (decision 94). `bin/p256_equiv_test` requires each wide entry to write
   inside that length, requires zero below each of the six dispatchers,
-  and looks below a signature and a key exchange for any 64-bit limb of
+  and looks below a signature and a key exchange for any 64-bit word of
   the private scalar, the nonce, its inverse, z + r d and the shared X
   coordinate. Six `inv17-p256-wide-*-leaves-its-stack` violations each
   drop one dispatcher's wipe, and the binary catches each.
   A session with the multiply bit still runs `p256_scalar_add` and
-  `p256_scalar_reduced_mask` on the 32-bit limbs, which multiply nothing.
+  `p256_scalar_reduced_mask` on the 32-bit words, which multiply nothing.
   Each names a temporary that gives its operand to whoever reads it: the
   sum z + r d, that sum less n, and the private scalar or the nonce less
   n. So those two routines and the conditional subtraction they share
   with `p256_scalar_reduce` wipe the three arrays (`p256_scalar.h`,
-  decision 94). The same binary looks for a limb of each difference too.
-  A temporary's lifetime ends with its call, and whether a limb of it
+  decision 94). The same binary looks for a word of each difference too.
+  A temporary's lifetime ends with its call, and whether a word of it
   stays depends on the compiler, so `proof/p256_scalar_harness.c` counts
   the bytes `ct_wipe` is handed after each routine. Three
   `inv17-p256-scalar-*` violations each drop one wipe, and the proof
@@ -4403,7 +4403,7 @@ last `ROLE=server` stub, as the entry said it would.
   `rsa_vp1` at 2,400); 3,072 under `KEX=pq`, where
   `hsf_build_client_hello` holds ML-KEM's 2,400-byte decapsulation key
   (measured 2,640 with clang 23 on arm64); and 4,096 under
-  `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 limbs
+  `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 words
   (measured 3,168 with clang 23 on arm64 and 3,128 with Arm GNU gcc 16.2
   on the Cortex-M3). Those two frames are the 32-bit arithmetic's, which a
   device object compiles. A host object's `rsa_vp1` calls `rsa_mont64.c`,

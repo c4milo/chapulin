@@ -1,6 +1,6 @@
 // The native copy of a host object's Poly1305: its block loop (RFC 8439
 // §2.5) four
-// blocks at a time, in two lanes of five 26-bit limbs, NEON on
+// blocks at a time, in two lanes of five 26-bit words, NEON on
 // arm64 and SSE2 on x86-64. poly1305.c chooses between this path and its
 // own loop in one place, and stays the reference: it absorbs every block
 // this path does not, and it keeps the final reduction and the tag.

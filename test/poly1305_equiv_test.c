@@ -24,12 +24,12 @@
 //
 //   - every length from 0 to the path's fewest bytes and four more groups,
 //     each cut at every odd offset below 2 groups;
-//   - the keys and messages whose limbs are largest: r clamped from a key
+//   - the keys and messages whose words are largest: r clamped from a key
 //     of all 0xff bytes, and blocks of all 0xff, which carry into every
-//     limb, beside r of 0 and blocks of 0;
+//     word, beside r of 0 and blocks of 0;
 //   - the path's blocks entry called alone, from an accumulator that
 //     earlier blocks left, for one group to GROUPS_MAX groups, below the
-//     threshold too, with the limb bounds poly1305_vector.h states checked
+//     threshold too, with the word bounds poly1305_vector.h states checked
 //     on return, and once on a group a search found, whose h1 the first
 //     pass of carry_scalar leaves past 2^26;
 //   - RANDOM_CASES cases with a random key, length up to RANDOM_LENGTH_MAX,
@@ -187,34 +187,34 @@ static const vector_path *current = &vector_128;
 #define LARGE_LENGTH ((size_t)65536)
 // How far past a 16-byte boundary the native copy's message can start.
 #define ALIGN_MAX ((size_t)16)
-#define LIMB_MASK 0x3ffffffU
+#define WORD_MASK 0x3ffffffU
 
 static uint8_t message[LARGE_LENGTH];
 static int failures = 0;
 static unsigned long compared = 0;
 
-// The number five 26-bit limbs of at most 32 bits hold, reduced modulo
-// 2^130 - 5, as five limbs below 2^26. The test may branch: nothing here
+// The number five 26-bit words of at most 32 bits hold, reduced modulo
+// 2^130 - 5, as five words below 2^26. The test may branch: nothing here
 // is a secret.
 static void reduced(const uint32_t in[5], uint32_t out[5]) {
     uint64_t h[5];
     for (size_t i = 0; i < 5; i++) {
         h[i] = in[i];
     }
-    // Three rounds of carries leave every limb below 2^26 and the number
+    // Three rounds of carries leave every word below 2^26 and the number
     // below 2^130: 2^130 is 5 modulo 2^130 - 5.
     for (int round = 0; round < 3; round++) {
         for (size_t i = 0; i < 4; i++) {
             h[i + 1] += h[i] >> 26;
-            h[i] &= LIMB_MASK;
+            h[i] &= WORD_MASK;
         }
         h[0] += (h[4] >> 26) * 5;
-        h[4] &= LIMB_MASK;
+        h[4] &= WORD_MASK;
     }
     // A number from 2^130 - 5 to 2^130 - 1 is at least the modulus once.
-    if (h[4] == LIMB_MASK && h[3] == LIMB_MASK && h[2] == LIMB_MASK && h[1] == LIMB_MASK &&
-        h[0] >= LIMB_MASK - 4) {
-        h[0] -= LIMB_MASK - 4;
+    if (h[4] == WORD_MASK && h[3] == WORD_MASK && h[2] == WORD_MASK && h[1] == WORD_MASK &&
+        h[0] >= WORD_MASK - 4) {
+        h[0] -= WORD_MASK - 4;
         h[1] = h[2] = h[3] = h[4] = 0;
     }
     for (size_t i = 0; i < 5; i++) {
@@ -296,9 +296,9 @@ static void run_every_length(void) {
     }
 }
 
-// The largest limbs and the smallest: a key of all 0xff clamps to the
-// largest r, and blocks of all 0xff give the largest limbs, which carry
-// into every limb of every sum; r of 0 and blocks of 0 meet the other
+// The largest words and the smallest: a key of all 0xff clamps to the
+// largest r, and blocks of all 0xff give the largest words, which carry
+// into every word of every sum; r of 0 and blocks of 0 meet the other
 // end.
 static void run_extremes(void) {
     static const uint8_t fills[] = {0x00, 0xff};
@@ -332,9 +332,9 @@ static void compare_direct(const char *case_name, const uint8_t key[POLY1305_KEY
     if (!same_value(&portable, &vector)) {
         report(case_name, "the accumulators differ modulo 2^130 - 5", n, prefix, prefix);
     }
-    if (vector.h[0] > LIMB_MASK || vector.h[1] > LIMB_MASK + 1 || vector.h[2] > LIMB_MASK ||
-        vector.h[3] > LIMB_MASK || vector.h[4] > LIMB_MASK) {
-        report(case_name, "a limb is past the bounds poly1305_vector.h states", n, prefix, prefix);
+    if (vector.h[0] > WORD_MASK || vector.h[1] > WORD_MASK + 1 || vector.h[2] > WORD_MASK ||
+        vector.h[3] > WORD_MASK || vector.h[4] > WORD_MASK) {
+        report(case_name, "a word is past the bounds poly1305_vector.h states", n, prefix, prefix);
     }
 }
 

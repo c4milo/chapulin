@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_limb.h
+file: p256_wide_word.h
 catches: p256_equiv_test_sum
 reason: the 128-bit form of the subtract with borrow computes
   2^64 + a - b - borrow, whose bit 64 is set when the subtraction did

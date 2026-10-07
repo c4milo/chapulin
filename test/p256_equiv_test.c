@@ -1,9 +1,9 @@
 // The wide P-256 files against the files under their own names, as a host
 // object holds them (docs/decisions.md 89 and 94): the same inputs into
-// both, the same limbs, bytes and verdicts out. p256_field.c,
+// both, the same words, bytes and verdicts out. p256_field.c,
 // p256_scalar.c and p256_point.c carry the CBMC harnesses, Python's
 // vectors, RFC 6979's and the Wycheproof suites; this binary is what
-// carries the four limbs of 64 bits to the same answers on every input it
+// carries the four words of 64 bits to the same answers on every input it
 // tries.
 //
 // test/p256_equiv_field.h holds the field and the scalar arithmetic,
@@ -11,7 +11,7 @@
 // widemul.h dispatches:
 //
 //   - the complete addition on coordinates that are on no curve, where
-//     both files must still compute the same limbs, and on the cases the
+//     both files must still compute the same words, and on the cases the
 //     formula claims: a point with itself, with its negative, and with the
 //     point at infinity on either side;
 //   - the point decode on a point, on each way a point is refused, and the
@@ -27,7 +27,7 @@
 // on the stack.
 //
 // The Makefile builds this file three times. bin/p256_equiv_test runs the
-// form of p256_wide_limb.h's two carry steps that its compiler picks.
+// form of p256_wide_word.h's two carry steps that its compiler picks.
 // bin/p256_equiv_test_sum names the 128-bit sums, which gcc picks outside
 // x86-64 and no machine that runs check does. bin/p256_equiv_test_builtin
 // names the overflow builtins, which clang picks and CI's gcc does not.
@@ -115,7 +115,7 @@ static void report(const char *group, const char *what, int ok) {
 #include "p256_equiv_field.h"
 
 // Three coordinates of random elements: a point on no curve, which the
-// addition formula still takes to the same limbs in both files.
+// addition formula still takes to the same words in both files.
 static void random_coordinates(p256_point *o) {
     random_fe(&o->x);
     random_fe(&o->y);
@@ -153,12 +153,12 @@ static void add_case(const char *name, const p256_point *a, const p256_point *b)
     report("point add", name, ok);
 }
 
-// A scalar's limbs: random, with one byte in four all ones and one in four
+// A scalar's words: random, with one byte in four all ones and one in four
 // zero, so a window of the scalar holds every digit, and the low bit as
 // low_bit says.
 static void random_wide_scalar(p256_scalar *k, uint32_t low_bit) {
-    random_limbs(k->limb);
-    k->limb[0] = (k->limb[0] & ~UINT32_C(1)) | low_bit;
+    random_words(k->word);
+    k->word[0] = (k->word[0] & ~UINT32_C(1)) | low_bit;
 }
 
 // The scalars a multiplication is most likely to get wrong, as 32

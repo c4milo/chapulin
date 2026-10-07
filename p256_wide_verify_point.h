@@ -1,5 +1,5 @@
 // P-256 points for a host object's ECDSA verifier, on p256_wide_field.c's
-// four 64-bit limbs: the sum u1*G + u2*Q a verification computes, and the
+// four 64-bit words: the sum u1*G + u2*Q a verification computes, and the
 // comparison of that sum's x with r. A host object (-DCH_CPU_RUNTIME,
 // cpu_cfg.h) holds this file beside the constant-time wide files, and its
 // one caller is p256_wide_verify.c (docs/decisions.md 104).

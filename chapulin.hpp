@@ -134,7 +134,7 @@ struct Cpu {
     // You state that the widening multiply runs in constant time on this
     // CPU, in that mode: CH_CPU_CONSTANT_TIME_MULTIPLY, which runs the
     // native multiply in place of ct.h's 16x16 decomposition, and X25519
-    // on the 51-bit-limb field. The mode is yours to set, DIT on arm64 and
+    // on the 51-bit-word field. The mode is yours to set, DIT on arm64 and
     // DOITM's policy on x86-64.
     bool constant_time_multiply = false;
     // The CPU has AVX2 and its operating system saves the 256-bit

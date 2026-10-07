@@ -1,10 +1,10 @@
 invariant: INV-17
 file: rsa_sign64.c
 catches: rsa_sign_equiv_test
-reason: rsa_sign64_sp1 returns without wiping the limbs it read the
+reason: rsa_sign64_sp1 returns without wiping the words it read the
   encoded message into, which rsa_pss_sign wipes as bytes when the
   private operation returns. bin/rsa_sign_equiv_test copies the stack
-  below one call and finds two limbs of the encoded message there.
+  below one call and finds two words of the encoded message there.
 
 --- old
     ct_wipe(&mod_q, sizeof mod_q);

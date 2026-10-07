@@ -5,7 +5,7 @@
 //   memory safety and absence of UB, and no unsigned wrap
 //   (--unsigned-overflow-check on the launch line). The accesses that move
 //   with a loop counter are proven in bounds at every trip, on the shipped
-//   loops: the scalar's limb and shift for each bit a digit reads, the
+//   loops: the scalar's word and shift for each bit a digit reads, the
 //   table's row for each window, the entry of a row for each step of a
 //   scan, and the eight multiples of the point;
 //
@@ -33,8 +33,8 @@
 #include "p256_wide_mul.c"
 
 static void scalar_nondet(p256_scalar *k) {
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        k->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        k->word[i] = nondet_u32();
     }
 }
 
@@ -47,10 +47,10 @@ int main(void) {
     p256_wide_base_mul(&o, &k);
 
     scalar_nondet(&k);
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        p.x.limb[i] = nondet_u32();
-        p.y.limb[i] = nondet_u32();
-        p.z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        p.x.word[i] = nondet_u32();
+        p.y.word[i] = nondet_u32();
+        p.z.word[i] = nondet_u32();
     }
     p256_wide_mul(&o, &k, &p);
     return 0;

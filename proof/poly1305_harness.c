@@ -1,7 +1,7 @@
 // Proves: poly1305 init/update/final are memory-safe and UB-free for any
 // key and any message delivered in any three-chunk split totaling up to
 // 80 bytes — five blocks' worth, crossing the buffered-block path in every
-// alignment. The 64-bit limb products cannot overflow: h and r limbs are
+// alignment. The 64-bit word products cannot overflow: h and r words are
 // bounded by construction and CBMC checks every multiply and add.
 #include "harness.h"
 

@@ -49,7 +49,7 @@
 # formula, x25519_mul proves the overflow lemma for that arithmetic
 # with full checks, and x25519_ops proves the linear ops whole with
 # full checks. x25519_step and x25519_tail prove the ladder keeps its
-# limbs inside the range those proofs assume, with mul's multiply
+# words inside the range those proofs assume, with mul's multiply
 # replaced by the magnitude contract (proof/x25519_stubs.h) that
 # x25519_mul discharges on the native multiply and x25519_mul_ct on
 # the shipped decomposition. p256 and rsa split by check set the same way, and
@@ -687,10 +687,10 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # aead_seal_cpu, aead_open_cpu and aes_traffic_key_cpu, the entries that
 # take it, stubbed beside the others: 605 properties, 19 s, 0.58 GB.
 launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
-# The x25519 ladder keeps its limbs inside the range the field-op proofs
+# The x25519 ladder keeps its words inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
 # proves one loop step on the shipped step(): from any state with
-# every limb in (-2^17, 2^17), the step hands mul only operands under
+# every word in (-2^17, 2^17), the step hands mul only operands under
 # 2^18 and lands back inside the bound, so the 255 steps follow by
 # induction. x25519_tail proves mul's output form, one invert round and
 # the final multiply and pack from the same bound. Both replace mul's
@@ -725,7 +725,7 @@ launch fast full p256 85 "" buf.c
 # because the arithmetic is written as masks: every masked choice against
 # a reference that branches, the field contract on add, subtract and
 # negate, the three predicates, the byte round trip, and memory safety
-# over full-range limbs in every aliasing shape a point routine uses. The
+# over full-range words in every aliasing shape a point routine uses. The
 # Montgomery product is memory-safe here and nothing asserts its value --
 # equality of multipliers is the hard SAT instance (docs/proofs.md) -- so
 # its value rests on test/p256_field_test.c and its carry chain on the
@@ -830,7 +830,7 @@ launch fast full webpki_spki 22 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof
 # under CH_WEBPKI_CERT_MAX fails (1 of 1401), so the reader succeeds at
 # the bound.
 launch fast full webpki_sigalg 50 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c proof/ct_wipe_stub.c
-# p384 is p256's harness at twelve limbs: the same concrete pieces, the
+# p384 is p256's harness at twelve words: the same concrete pieces, the
 # same two loop drivers left to their proven bodies, sig up to 112 bytes
 # (a valid one is at most 104), the bit walk over [0,383]. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 975 properties, 46 s, 410 MB.
@@ -2109,12 +2109,12 @@ launch fast full x25519_ops 260 ""
 # unsigned __int128, where C defines every wrap, so the checks this script
 # passes by default see none of them; with the flag, each column sum, each
 # carry between columns, each carry folded in times 19, each doubled or
-# scaled limb and each a + 2p - b is a property of its own.
+# scaled word and each a + 2p - b is a property of its own.
 # x25519_wide_mul, x25519_wide_sqr and x25519_wide_ops run the real
 # 64x64->128 multiply. x25519_wide_step and x25519_wide_tail run the
 # contract in proof/x25519_wide_stubs.h, and x25519_wide_mul128 discharges it
 # on the real multiply; x25519_wide_invert runs the whole of invert() over
-# it. None of these needs the split the 16-limb field's mul does: a
+# it. None of these needs the split the 16-word field's mul does: a
 # 64x64->128 product of operands with their top bits clear converges in
 # seconds with every check on. Measured one line at a time with
 # PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast
@@ -2139,16 +2139,16 @@ launch fast full x25519_wide_step 6 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIM
 launch fast full x25519_wide_tail 41 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 # The wide P-256 arithmetic of a host object (docs/decisions.md 94): four
-# 64-bit limbs under p256_wide_field.c and p256_wide_scalar.c, the point
+# 64-bit words under p256_wide_field.c and p256_wide_scalar.c, the point
 # formulas in p256_wide_point.c, the two scalar multiplications in
 # p256_wide_mul.c, the table of multiples of G in p256_wide_table.c and the
 # stack wipe in p256_wide_wipe.c. Every line compiles
 # its file as a host object does, under -DCH_CPU_RUNTIME, and every line adds
 # --unsigned-overflow-check, for the reason the wide X25519 lines above give:
-# the limbs are uint64_t and the products unsigned __int128, where C defines
+# the words are uint64_t and the products unsigned __int128, where C defines
 # every wrap.
 # The layers are p256_field's, one field over. p256_wide_row runs the one
-# routine every product goes through, p256_wide_limb.h's row, on the real
+# routine every product goes through, p256_wide_word.h's row, on the real
 # 64x64->128 multiply, and holds the header's two carry steps to a 128-bit
 # reference. Those steps have three forms, and the compiler picks one
 # (P256_WIDE_CARRY in the header). cbmc takes its preprocessor from the
@@ -2159,10 +2159,10 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # verdict over one form is a verdict over the other. gcc's form for x86-64
 # is two intrinsics, which cbmc cannot read: bin/p256_equiv_test and the
 # vectors hold it, under gcc. p256_wide_sqr runs the header's square of
-# four limbs on the real multiply, ten products whose top limb fits only
+# four words on the real multiply, ten products whose top word fits only
 # because the square is below 2^512, on the builtins (docs/decisions.md
 # 105); the field's and the scalar's harnesses replace it with any eight
-# limbs, as they replace a row.
+# words, as they replace a row.
 # p256_wide_field runs every routine with no product on
 # its real body, and the Montgomery reduction, which for this prime is shifts
 # and adds, to its bound. p256_wide_field_mul and p256_wide_scalar run the
@@ -2193,8 +2193,8 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_mul        365 properties, 36 s, 407 MB
 #   p256_wide_wipe        40 properties,  1 s,  25 MB
 # The p256_wide_sqr, p256_wide_field, p256_wide_field_mul and p256_wide_scalar lines
-# were measured again on 2026-10-06, after the square of four limbs joined
-# p256_wide_limb.h (docs/decisions.md 105), one at a time through proof/prove-one.sh at a
+# were measured again on 2026-10-06, after the square of four words joined
+# p256_wide_word.h (docs/decisions.md 105), one at a time through proof/prove-one.sh at a
 # load average of 36 to 180, and their times are run.sh's wall clock. The
 # p256_wide_digit and p256_wide_mul lines were measured again on 2026-10-07,
 # after the table grew to 43 rows of 32 entries (docs/decisions.md 109), the
@@ -2245,7 +2245,7 @@ launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c 
 # 4 s, 83 MB.
 launch fast full p256_wide_verify_point 9 "" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_verify_digits 9 "signed_digits.0:257" --object-bits 10 p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-# P-384 on six 64-bit limbs, which a host object verifies with
+# P-384 on six 64-bit words, which a host object verifies with
 # (docs/decisions.md 97): three layers, each over a contract of the one
 # below it. p384_wide_field runs every routine of p384_wide_field.c but
 # the Fermat loop over a contract of the multiply, the one
@@ -2273,16 +2273,16 @@ launch fast full p384_wide_verify 97 "" -DCH_CPU_RUNTIME
 # 6.11.0, kissat, /usr/bin/time -l): 131 properties, 23 s, 671 MB.
 launch fast full drbg 100 "ch_rand_bytes.3:4,fill_nondet.0:113,ct_wipe.0:113" ct.c proof/ct_wipe_stub.c
 launch fast full p256_mul 20 ""
-# p384_mul is p256_mul's carry lemma at twelve limbs. Measured (cbmc
+# p384_mul is p256_mul's carry lemma at twelve words. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 7 properties, 2.1 s, 106 MB.
 launch fast full p384_mul 20 ""
 launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_bytes.0:97"
-# rsa_mul_webpki: the marshalling at 128 limbs, the LIMBS_MAX of a
+# rsa_mul_webpki: the marshalling at 128 words, the WORDS_MAX of a
 # CH_TRUST_WEBPKI build (RSA-4096); the carry lemma is bound-free.
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 331 properties,
 # 2.1 s, 73 MB.
 launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:129,to_bytes.0:129"
-# The signer: the marshalling and every limb helper at 96 limbs, the mask,
+# The signer: the marshalling and every word helper at 96 words, the mask,
 # the key test, the exponent index and the PSS encoder whole over a
 # stubbed SHA-256, plus the CIOS carry lemma. One global unwind of 385
 # covers all of it -- the longest loop is fill_nondet over the 384-byte
@@ -2294,7 +2294,7 @@ launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:12
 # harness holds no ch_rand_bytes stub (docs/decisions.md 77), PROVE_ONLY=rsa_sign
 # PROVE_NO_CACHE=1 /usr/bin/time -l: 755 properties, 8 s, 206 MB.
 launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
-# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit limbs, which a host
+# rsa_mont64.c, RSA's Montgomery arithmetic on 64-bit words, which a host
 # object runs for rsa_vp1 (docs/decisions.md 95). Every line compiles the
 # file as a host object does, under -DCH_CPU_RUNTIME, which its body and
 # ct.h's ct_mul128 sit behind.
@@ -2304,7 +2304,7 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # rsa_mont64_mul128 add --unsigned-overflow-check, for the reason the
 # wide X25519 field's lines do: the file computes in uint64_t and
 # unsigned __int128, and its header says no sum in it wraps.
-# rsa_mont64_sums runs the multiplication at four limbs with that check
+# rsa_mont64_sums runs the multiplication at four words with that check
 # on, and beside it the product and sum the CRT's recombination calls.
 # rsa_mont64_ops runs the marshalling and that recombination's sum,
 # difference and reduction at the build's bound, with the check on.
@@ -2312,13 +2312,13 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # multiplication at the build's bound without the check, each for its
 # memory accesses: the multiplication alone in its four aliasing shapes,
 # the square in its two (docs/decisions.md 106) and the product and sum at
-# a prime's limbs, the modulus setup with its five squares, and the public
+# a prime's words, the modulus setup with its five squares, and the public
 # operation with its two multiplications and sixteen squares. The setup
 # also runs neg_inverse, whose arithmetic wraps on purpose. The _webpki
-# lines are the same harnesses at RSA-4096's 64 limbs and 512 bytes.
-# The multiplication whole at 48 limbs with the wrap check on returned no
+# lines are the same harnesses at RSA-4096's 64 words and 512 bytes.
+# The multiplication whole at 48 words with the wrap check on returned no
 # verdict in five minutes at 8.5 GB, which is why the check runs at four
-# limbs and the bound's line runs without it.
+# words and the bound's line runs without it.
 # Measured one line at a time with PROVE_ONLY=<name> PROVE_NO_CACHE=1
 # /usr/bin/time -l ./proof/run.sh all (cbmc 6.11.0, kissat 4.0.4, an M1
 # Pro), on 2026-10-04. The machine's load average was 11 to 142 for all
@@ -2339,7 +2339,7 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 #   rsa_mont64_public_webpki   721 properties, 191 s, 3.6 GB, hence slow
 # The cost of the last four is cbmc's own symbolic execution. A stub of
 # the multiply that assumes nothing moved rsa_mont64_mul by a second.
-# Each multiplication at 48 limbs adds about 6 s, and the public operation
+# Each multiplication at 48 words adds about 6 s, and the public operation
 # makes eighteen.
 launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
@@ -2356,14 +2356,14 @@ launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe
 # its top bit set (docs/decisions.md 103), over the product contract,
 # with rsa_mont64_modulus_init and rsa_mont64_public as contracts that
 # the lines above discharge. The step that adds the modulus back wraps a
-# limb to zero on purpose, so neither line takes the wrap check.
+# word to zero on purpose, so neither line takes the wrap check.
 # Measured with proof/prove-one.sh under /usr/bin/time -l (cbmc 6.11.0,
 # kissat, an M1 Pro at a load average of 25 to 57), on 2026-10-06:
 #   rsa_mont_host          718 properties, 28 s, 2.6 GB, hence fast:3
 #   rsa_mont_host_webpki   718 properties, 59 s, 5.2 GB, hence slow
 launch fast:3 full rsa_mont_host 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
-# rsa_sign64.c, the RSA signer on those limbs, which a host object runs
+# rsa_sign64.c, the RSA signer on those words, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and
 # rsa_sign64_crt's lines run the contracts in proof/rsa_sign64_stubs.h in
@@ -2372,18 +2372,18 @@ launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # rsa_sign64_window proves the two pieces that read an exponent, the digit
 # and the read of the table, with --unsigned-overflow-check on.
 # rsa_sign64_power runs the exponentiation whole for its memory accesses,
-# once at the longest exponent a key has over one limb and once at a
-# prime's largest limb count under a two-byte exponent. Its unwind is one
+# once at the longest exponent a key has over one word and once at a
+# prime's largest word count under a two-byte exponent. Its unwind is one
 # past the step count, and the wipe's is one past the table's bytes.
 # The two bounds at once returned no verdict in fifteen minutes when the
-# table held whole moduli, 768 steps of 48 limbs, with cbmc still
+# table held whole moduli, 768 steps of 48 words, with cbmc still
 # unwinding.
 # rsa_sign64_crt runs the five pieces a CRT signature joins, each whole:
 # the reduction of the message modulo a prime, Garner's recombination,
 # the key test, the check of a signature and the copy to the caller, at
 # the largest modulus and, where a length decides an index, at 8 bytes
 # below it. It states what the last three compare and copy over the
-# bytes and limbs the contracts wrote, which proof/rsa_sign64_stubs.h
+# bytes and words the contracts wrote, which proof/rsa_sign64_stubs.h
 # keeps. rsa_sign64_sp1 itself is not run: whole, it is rsa_sign64_power
 # at both bounds at once, twice. Its unwind is one past the modulus's
 # bytes.
@@ -2398,7 +2398,7 @@ launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # rsa_sign64_power took 40 s and 63 s before table_select read each mask
 # back through a volatile pointer, and 116 s and 219 s at a load average
 # of 12 to 41 while it still wrote zeros to its output first. The window
-# lines took 190 MB and 232 MB then: the output's own limbs are an input
+# lines took 190 MB and 232 MB then: the output's own words are an input
 # of the read now.
 launch fast full rsa_sign64_window 385 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_sign64_window_webpki 513 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check

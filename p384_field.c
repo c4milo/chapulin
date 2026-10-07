@@ -7,7 +7,7 @@
 //
 // A device object holds this file. A host object (-DCH_CPU_RUNTIME)
 // compiles none of it and holds p384_wide_field.c, the same routines on
-// six 64-bit limbs, in its place (docs/decisions.md 97).
+// six 64-bit words, in its place (docs/decisions.md 97).
 #include "p384_field.h"
 
 #ifndef CH_CPU_RUNTIME
@@ -15,7 +15,7 @@
 #include <string.h>
 
 // SEC 2 curve constants; r2/m0inv derived from them (2^768 mod m and
-// -m^-1 mod 2^32). test/gen_p384_constants.py prints these limbs after
+// -m^-1 mod 2^32). test/gen_p384_constants.py prints these words after
 // checking every parameter against `openssl ecparam -name secp384r1
 // -param_enc explicit -text -noout`.
 const p384_modulus p384_modp = {
@@ -34,16 +34,16 @@ const p384_modulus p384_modn = {
     0xe88fdc45,
 };
 
-int p384_is_zero(const uint32_t a[P384_LIMBS]) {
+int p384_is_zero(const uint32_t a[P384_WORDS]) {
     uint32_t v = 0;
-    for (int i = 0; i < P384_LIMBS; i++) {
+    for (int i = 0; i < P384_WORDS; i++) {
         v |= a[i];
     }
     return v == 0;
 }
 
-int p384_compare(const uint32_t a[P384_LIMBS], const uint32_t b[P384_LIMBS]) {
-    for (int i = P384_LIMBS - 1; i >= 0; i--) {
+int p384_compare(const uint32_t a[P384_WORDS], const uint32_t b[P384_WORDS]) {
+    for (int i = P384_WORDS - 1; i >= 0; i--) {
         if (a[i] != b[i]) {
             return a[i] < b[i] ? -1 : 1;
         }
@@ -51,19 +51,19 @@ int p384_compare(const uint32_t a[P384_LIMBS], const uint32_t b[P384_LIMBS]) {
     return 0;
 }
 
-// 48 big-endian bytes -> 12 little-endian limbs, byte by byte.
-void p384_from_bytes(uint32_t o[P384_LIMBS], const uint8_t b[P384_LEN]) {
-    for (int i = 0; i < P384_LIMBS; i++) {
+// 48 big-endian bytes -> 12 little-endian words, byte by byte.
+void p384_from_bytes(uint32_t o[P384_WORDS], const uint8_t b[P384_LEN]) {
+    for (int i = 0; i < P384_WORDS; i++) {
         o[i] = (uint32_t)b[P384_LEN - 1 - 4 * i] | ((uint32_t)b[P384_LEN - 2 - 4 * i] << 8) |
                ((uint32_t)b[P384_LEN - 3 - 4 * i] << 16) |
                ((uint32_t)b[P384_LEN - 4 - 4 * i] << 24);
     }
 }
 
-uint32_t p384_add_raw(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                      const uint32_t b[P384_LIMBS]) {
+uint32_t p384_add_raw(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                      const uint32_t b[P384_WORDS]) {
     uint64_t c = 0;
-    for (int i = 0; i < P384_LIMBS; i++) {
+    for (int i = 0; i < P384_WORDS; i++) {
         c += (uint64_t)a[i] + b[i];
         o[i] = (uint32_t)c;
         c >>= 32;
@@ -71,10 +71,10 @@ uint32_t p384_add_raw(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
     return (uint32_t)c;
 }
 
-uint32_t p384_sub_raw(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                      const uint32_t b[P384_LIMBS]) {
+uint32_t p384_sub_raw(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                      const uint32_t b[P384_WORDS]) {
     uint64_t borrow = 0;
-    for (int i = 0; i < P384_LIMBS; i++) {
+    for (int i = 0; i < P384_WORDS; i++) {
         uint64_t v = (uint64_t)a[i] - b[i] - borrow;
         o[i] = (uint32_t)v;
         borrow = (v >> 32) & 1;
@@ -83,65 +83,65 @@ uint32_t p384_sub_raw(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
 }
 
 // Inputs below m; one conditional subtract covers the sum (< 2m).
-void p384_mod_add(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                  const uint32_t b[P384_LIMBS], const p384_modulus *mod) {
+void p384_mod_add(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                  const uint32_t b[P384_WORDS], const p384_modulus *mod) {
     uint32_t c = p384_add_raw(o, a, b);
     if (c || p384_compare(o, mod->m) >= 0) {
         (void)p384_sub_raw(o, o, mod->m);
     }
 }
 
-void p384_mod_sub(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                  const uint32_t b[P384_LIMBS], const p384_modulus *mod) {
+void p384_mod_sub(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                  const uint32_t b[P384_WORDS], const p384_modulus *mod) {
     if (p384_sub_raw(o, a, b)) {
         (void)p384_add_raw(o, o, mod->m);
     }
 }
 
 // Montgomery product o = a*b / 2^384 mod m (CIOS, Koç et al.). Inputs
-// below m, result below m; o may alias a or b. Each round adds one limb
-// of a into t, then adds a multiple of m to zero t's low limb and
-// shifts down one limb.
-void p384_mont_mul(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                   const uint32_t b[P384_LIMBS], const p384_modulus *mod) {
-    uint32_t t[P384_LIMBS + 2] = {0};
-    for (int i = 0; i < P384_LIMBS; i++) {
+// below m, result below m; o may alias a or b. Each round adds one word
+// of a into t, then adds a multiple of m to zero t's low word and
+// shifts down one word.
+void p384_mont_mul(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                   const uint32_t b[P384_WORDS], const p384_modulus *mod) {
+    uint32_t t[P384_WORDS + 2] = {0};
+    for (int i = 0; i < P384_WORDS; i++) {
         uint64_t c = 0;
-        for (int j = 0; j < P384_LIMBS; j++) {
+        for (int j = 0; j < P384_WORDS; j++) {
             uint64_t v = (uint64_t)a[i] * b[j] + t[j] + c;
             t[j] = (uint32_t)v;
             c = v >> 32;
         }
-        uint64_t v = (uint64_t)t[P384_LIMBS] + c;
-        t[P384_LIMBS] = (uint32_t)v;
-        t[P384_LIMBS + 1] = (uint32_t)(v >> 32);
+        uint64_t v = (uint64_t)t[P384_WORDS] + c;
+        t[P384_WORDS] = (uint32_t)v;
+        t[P384_WORDS + 1] = (uint32_t)(v >> 32);
 
         uint32_t u = t[0] * mod->m0inv;
         c = ((uint64_t)u * mod->m[0] + t[0]) >> 32;
-        for (int j = 1; j < P384_LIMBS; j++) {
+        for (int j = 1; j < P384_WORDS; j++) {
             v = (uint64_t)u * mod->m[j] + t[j] + c;
             t[j - 1] = (uint32_t)v;
             c = v >> 32;
         }
-        v = (uint64_t)t[P384_LIMBS] + c;
-        t[P384_LIMBS - 1] = (uint32_t)v;
-        t[P384_LIMBS] = t[P384_LIMBS + 1] + (uint32_t)(v >> 32);
-        t[P384_LIMBS + 1] = 0;
+        v = (uint64_t)t[P384_WORDS] + c;
+        t[P384_WORDS - 1] = (uint32_t)v;
+        t[P384_WORDS] = t[P384_WORDS + 1] + (uint32_t)(v >> 32);
+        t[P384_WORDS + 1] = 0;
     }
-    // t < 2m with at most one bit in t[P384_LIMBS]; the subtraction's
-    // borrow cancels that bit exactly, so the low limbs are the answer.
-    if (t[P384_LIMBS] || p384_compare(t, mod->m) >= 0) {
+    // t < 2m with at most one bit in t[P384_WORDS]; the subtraction's
+    // borrow cancels that bit exactly, so the low words are the answer.
+    if (t[P384_WORDS] || p384_compare(t, mod->m) >= 0) {
         (void)p384_sub_raw(o, t, mod->m);
     } else {
-        memcpy(o, t, P384_LIMBS * sizeof(uint32_t));
+        memcpy(o, t, P384_WORDS * sizeof(uint32_t));
     }
 }
 
 // Plain product mod m: into the Montgomery domain and back in one extra
 // multiply (a*b/R, then *R^2/R).
-void p384_mod_mul(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
-                  const uint32_t b[P384_LIMBS], const p384_modulus *mod) {
-    uint32_t t[P384_LIMBS];
+void p384_mod_mul(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
+                  const uint32_t b[P384_WORDS], const p384_modulus *mod) {
+    uint32_t t[P384_WORDS];
     p384_mont_mul(t, a, b, mod);
     p384_mont_mul(o, t, mod->r2, mod);
 }
@@ -149,12 +149,12 @@ void p384_mod_mul(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
 // o = a^(m-2) mod m: Fermat inverse, square-and-multiply in the
 // Montgomery domain. The exponent is a public constant, so the
 // bit-dependent multiply leaks nothing.
-void p384_mod_inverse(uint32_t o[P384_LIMBS], const uint32_t a[P384_LIMBS],
+void p384_mod_inverse(uint32_t o[P384_WORDS], const uint32_t a[P384_WORDS],
                       const p384_modulus *mod) {
-    static const uint32_t one[P384_LIMBS] = {1};
-    uint32_t e[P384_LIMBS];
-    uint32_t a_mont[P384_LIMBS];
-    uint32_t acc[P384_LIMBS];
+    static const uint32_t one[P384_WORDS] = {1};
+    uint32_t e[P384_WORDS];
+    uint32_t a_mont[P384_WORDS];
+    uint32_t acc[P384_WORDS];
     memcpy(e, mod->m, sizeof e);
     e[0] -= 2;                              // both moduli end well above 2: no borrow
     p384_mont_mul(a_mont, a, mod->r2, mod); // a*R

@@ -7,7 +7,7 @@
 // the row before, and steps through its odd multiples by adding twice that
 // point: each entry must be the affine form of what p256_point_add and
 // p256_point_affine give, byte for byte. No wide routine runs on either
-// side of the comparison: the entry's limbs go through p256_field.c's own
+// side of the comparison: the entry's words go through p256_field.c's own
 // conversion out of the Montgomery domain. tools/p256_wide.py computed the
 // table with Python's integers, so this holds the checked-in file to a
 // second computation, in C, by the code the proofs and the vectors hold.
@@ -16,8 +16,8 @@
 // to p256_point_add:
 //
 //   the mixed addition computes the coordinates the complete addition
-//   computes when the second point's Z is 1, so the two must agree limb for
-//   limb on any coordinates at all, on a curve or not;
+//   computes when the second point's Z is 1, so the two must agree word for
+//   word on any coordinates at all, on a curve or not;
 //
 //   the doubling computes the same point as the complete addition of a
 //   point with itself, in other coordinates, so the two must agree as
@@ -34,12 +34,12 @@
 #include "p256_wide_table.h"
 
 // One coordinate of a table entry as 32 big-endian bytes, by p256_field.c:
-// the 64-bit limbs split in two, then out of the Montgomery domain.
+// the 64-bit words split in two, then out of the Montgomery domain.
 static void table_coordinate_bytes(uint8_t out[P256_FE_LEN], const p256_wide_fe *coordinate) {
     p256_fe portable;
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        portable.limb[2 * i] = (uint32_t)coordinate->limb[i];
-        portable.limb[2 * i + 1] = (uint32_t)(coordinate->limb[i] >> 32);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        portable.word[2 * i] = (uint32_t)coordinate->word[i];
+        portable.word[2 * i + 1] = (uint32_t)(coordinate->word[i] >> 32);
     }
     p256_fe_from_mont(&portable, &portable);
     p256_fe_to_bytes(out, &portable);
@@ -101,8 +101,8 @@ static void add_affine_case(const char *name, const p256_point *a, const p256_fe
 
 static int wide_fe_is_zero(const p256_wide_fe *a) {
     uint64_t bits = 0;
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        bits |= a->limb[i];
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        bits |= a->word[i];
     }
     return bits == 0;
 }

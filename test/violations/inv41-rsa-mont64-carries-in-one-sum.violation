@@ -2,12 +2,12 @@ invariant: INV-41
 file: rsa_mont64.c
 catches: proof/prove-one.sh rsa_mont64_sums
 reason: a round of rsa_mont64_mont_mul adds both carries into the first of
-  its two sums. A product, a limb and two carries can pass 2^128, so the
+  its two sums. A product, a word and two carries can pass 2^128, so the
   sum wraps for some operands and the product is wrong for them, and no
   test case need find one. rsa_mont64_sums runs the function with
   --unsigned-overflow-check on, where that sum is a property.
 
 --- old
-            ab = ct_mul128(*a_limb, b[j]) + t[j] + ab_carry;
+            ab = ct_mul128(*a_word, b[j]) + t[j] + ab_carry;
 --- new
-            ab = ct_mul128(*a_limb, b[j]) + t[j] + ab_carry + um_carry;
+            ab = ct_mul128(*a_word, b[j]) + t[j] + ab_carry + um_carry;

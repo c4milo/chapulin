@@ -1,9 +1,9 @@
 invariant: INV-16
 file: p256_wide_scalar.c
 catches: proof/prove-one.sh p256_wide_scalar
-reason: exponent_low_nibble shifts its position by 3 where the limb index
+reason: exponent_low_nibble shifts its position by 3 where the word index
   is the position over 16, so positions 16 to 31 read EXPONENT_LOW[2] and
-  [3], past the two limbs the array holds.
+  [3], past the two words the array holds.
   proof/p256_wide_scalar_harness.c proves that read in bounds for every
   position the inverse's loop passes. Each run is a proof, so this
   belongs to the nightly's test-invariants-proof-backed job.

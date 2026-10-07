@@ -17,7 +17,7 @@
 
 // The modulus size check, byte for byte the one rsa_pss_verify applies:
 // RSA-2048 up to CH_RSA_MODULUS_MAX (rsa.h) in 8-byte steps. The bound
-// is rsa.h's, so the two verifiers and rsa_mont.c's limb arrays move
+// is rsa.h's, so the two verifiers and rsa_mont.c's word arrays move
 // together.
 #define MODULUS_MIN 256
 #define MODULUS_STEP 8
@@ -97,7 +97,7 @@ int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size
         return 0;
     }
     // An even modulus is not an RSA modulus, and rsa_vp1's Montgomery
-    // inverse of the low limb exists only for an odd one.
+    // inverse of the low word exists only for an odd one.
     if ((n[n_len - 1] & 1) == 0) {
         return 0;
     }

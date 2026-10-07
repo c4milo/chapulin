@@ -2,9 +2,9 @@
 // stays the reference (docs/decisions.md 96): the same key, hash and
 // signature into both, the same verdict out.
 //
-// A host object checks a signature on the wide files' four 64-bit limbs
+// A host object checks a signature on the wide files' four 64-bit words
 // (p256_wide_verify.c) and a device object on p256.c's eight 32-bit
-// limbs. This binary holds both: p256_ecdsa_verify is the host arm, and
+// words. This binary holds both: p256_ecdsa_verify is the host arm, and
 // p256_ecdsa_verify_portable is the device arm, which
 // test/p256_verify_portable.c compiles under that name. The 32-bit arm
 // carries the CBMC harness, the Lean differential and the vectors of

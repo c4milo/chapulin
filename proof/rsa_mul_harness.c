@@ -1,24 +1,24 @@
 // Proves the two pieces of rsa_mont.c that rsa_harness's rsa_vp1 stub
 // leaves uncovered, with full checks:
 //
-// Marshalling. from_bytes and to_bytes — the byte<->limb conversions
+// Marshalling. from_bytes and to_bytes — the byte<->word conversions
 // RSAVP1 runs over the attacker's n and sig, both directions — driven
-// concretely at k = LIMBS_MAX (96 for RSA-3072; 128 for RSA-4096 in the
+// concretely at k = WORDS_MAX (96 for RSA-3072; 128 for RSA-4096 in the
 // rsa_mul_webpki variant, which sets CH_TRUST_WEBPKI), the bound
 // rsa_pss_verify's n_len check enforces before rsa_vp1 runs, over nondet
-// bytes and limbs. The maximal k is the binding case for every index;
+// bytes and words. The maximal k is the binding case for every index;
 // smaller k only shrinks the loop counts.
 //
 // Carry lemma. Behind mont_mul (CIOS): in both passes the uint64
 // accumulation v = x*y + t + c cannot wrap and its carry-out fits back
-// in one 32-bit limb — for ANY uint32 operands, re-establishing
+// in one 32-bit word — for ANY uint32 operands, re-establishing
 // c <= 2^32-1 step by step — and each pass's tail fold spills at most
 // one bit, so the carry word t[k] the next round reads only ever holds
 // 0..2. The bound is inductive, so a fixed step count stands in for the
-// real k-limb passes; the count never enters the argument. mont_mul
+// real k-word passes; the count never enters the argument. mont_mul
 // itself is undriven in both harnesses (its symbolic modexp never
-// leaves symex): every index walks a fixed LIMBS_MAX-sized array under
-// the k <= LIMBS_MAX bound. The final conditional subtract (t < 2m at loop
+// leaves symex): every index walks a fixed WORDS_MAX-sized array under
+// the k <= WORDS_MAX bound. The final conditional subtract (t < 2m at loop
 // exit) is a functional CIOS invariant resting on the vectors in
 // test/rsa_test.c, not on a proof.
 #include "harness.h"
@@ -39,22 +39,22 @@ static uint64_t mac_pass(uint64_t c) {
         uint64_t p = x * y; // <= (2^32-1)^2, no uint64 wrap possible
         __CPROVER_assert(p <= UINT64_MAX - t - c, "accumulate cannot wrap");
         c = (p + t + c) >> 32;
-        __CPROVER_assert(c <= UINT32_MAX, "carry fits one limb");
+        __CPROVER_assert(c <= UINT32_MAX, "carry fits one word");
     }
     return c;
 }
 
 int main(void) {
-    // Marshalling at the k = LIMBS_MAX bound: 4 * LIMBS_MAX nondet bytes
-    // into limbs, LIMBS_MAX nondet limbs back out to bytes.
-    uint8_t b[4 * LIMBS_MAX];
-    uint32_t limbs[LIMBS_MAX];
+    // Marshalling at the k = WORDS_MAX bound: 4 * WORDS_MAX nondet bytes
+    // into words, WORDS_MAX nondet words back out to bytes.
+    uint8_t b[4 * WORDS_MAX];
+    uint32_t words[WORDS_MAX];
     fill_nondet(b, sizeof b);
-    from_bytes(limbs, b, LIMBS_MAX);
-    for (size_t i = 0; i < LIMBS_MAX; i++) {
-        limbs[i] = nondet_u32();
+    from_bytes(words, b, WORDS_MAX);
+    for (size_t i = 0; i < WORDS_MAX; i++) {
+        words[i] = nondet_u32();
     }
-    to_bytes(b, limbs, LIMBS_MAX);
+    to_bytes(b, words, WORDS_MAX);
 
     // Multiply pass, then its tail: v = t[k] + c spills at most one bit
     // into t[k+1].
@@ -75,8 +75,8 @@ int main(void) {
     __CPROVER_assert(spill <= 1, "reduction tail spills one bit at most");
 
     // The reduction tail folds t[k] = t[k+1] + spill; both are 0 or 1, so
-    // the carry word the next round reads stays inside one limb.
+    // the carry word the next round reads stays inside one word.
     uint64_t t_k = (uint64_t)t_k1 + spill;
-    __CPROVER_assert(t_k <= UINT32_MAX, "carry word fold stays in one limb");
+    __CPROVER_assert(t_k <= UINT32_MAX, "carry word fold stays in one word");
     return 0;
 }

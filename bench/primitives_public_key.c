@@ -12,7 +12,7 @@
 // CH_CPU_CONSTANT_TIME_MULTIPLY its rows run those files on the 16x16
 // decomposition. With the bit they run the native copy of mlkem_poly.c,
 // for X25519 the wide field, x25519_wide.c, for P-256 the wide files and
-// their table of multiples of G, and for RSA signing rsa_sign64.c's limbs
+// their table of multiples of G, and for RSA signing rsa_sign64.c's words
 // (widemul.h, docs/decisions.md 94 and 95).
 //
 // The key generation and encapsulation rows take their random bytes as
@@ -20,7 +20,7 @@
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
 // TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont64.c's loops
-// run over the modulus's limbs, not that bound, so the 2048 and 3072
+// run over the modulus's words, not that bound, so the 2048 and 3072
 // rows time the work a host object does at the device bound.
 #include <string.h>
 

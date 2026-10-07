@@ -1,10 +1,10 @@
 invariant: INV-44
 file: p384_wide_field.c
 catches: p384_equiv_test
-reason: the constant that clears a round's low limb modulo n is right
+reason: the constant that clears a round's low word modulo n is right
   in its low 32 bits, which p384_field.c's constant shows, and wrong
   above them. bin/p384_equiv_test requires m0inv times the modulus's
-  low limb to be -1 modulo 2^64, and every product modulo n to be
+  low word to be -1 modulo 2^64, and every product modulo n to be
   p384_field.c's.
 
 --- old

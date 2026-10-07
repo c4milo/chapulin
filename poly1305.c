@@ -11,7 +11,7 @@ static uint32_t load32(const uint8_t *p) {
 
 void poly1305_init(poly1305 *p, const uint8_t key[POLY1305_KEY]) {
     // r is clamped per RFC 8439 §2.5.1; the masks below fold the clamp into
-    // the 26-bit limb split.
+    // the 26-bit word split.
     p->r[0] = load32(key + 0) & 0x3ffffff;
     p->r[1] = (load32(key + 3) >> 2) & 0x3ffff03;
     p->r[2] = (load32(key + 6) >> 4) & 0x3ffc0ff;
@@ -210,7 +210,7 @@ void poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]) {
     h3 = (h3 & ~mask) | (g3 & mask);
     h4 = (h4 & ~mask) | (g4 & mask);
 
-    // Repack 26-bit limbs into 128 bits and add the pad with carries.
+    // Repack 26-bit words into 128 bits and add the pad with carries.
     h0 = (h0 | (h1 << 26)) & 0xffffffff;
     h1 = ((h1 >> 6) | (h2 << 20)) & 0xffffffff;
     h2 = ((h2 >> 12) | (h3 << 14)) & 0xffffffff;

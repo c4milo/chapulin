@@ -1,5 +1,5 @@
 // P-384 points for a host object's verifier (p384_wide_point.h), on
-// p384_wide_field.c's six 64-bit limbs. Variable time on purpose — every
+// p384_wide_field.c's six 64-bit words. Variable time on purpose — every
 // input is public (see p384.h).
 //
 // The points and the group law are p384.c's, formula for formula. Three
@@ -23,7 +23,7 @@
 
 #include <string.h>
 
-#define LIMBS P384_WIDE_LIMBS
+#define WORDS P384_WIDE_WORDS
 #define SCALAR_BITS 384
 #define WINDOW 5                     // the bits one digit is read from
 #define TABLE_LEN 8                  // a point's odd multiples, 1 to 15: 2^(WINDOW - 2) of them
@@ -32,31 +32,31 @@
 // SEC 2 curve constants, printed by test/gen_p384_constants.py after it
 // checks them against openssl. a = p - 3, so the a = -3 doubling
 // formula applies unchanged.
-static const uint64_t B[LIMBS] = {0x2a85c8edd3ec2aef, 0xc656398d8a2ed19d, 0x0314088f5013875a,
+static const uint64_t B[WORDS] = {0x2a85c8edd3ec2aef, 0xc656398d8a2ed19d, 0x0314088f5013875a,
                                   0x181d9c6efe814112, 0x988e056be3f82d19, 0xb3312fa7e23ee7e4};
 
-static const uint64_t GX[LIMBS] = {0x3a545e3872760ab7, 0x5502f25dbf55296c, 0x59f741e082542a38,
+static const uint64_t GX[WORDS] = {0x3a545e3872760ab7, 0x5502f25dbf55296c, 0x59f741e082542a38,
                                    0x6e1d3b628ba79b98, 0x8eb1c71ef320ad74, 0xaa87ca22be8b0537};
 
-static const uint64_t GY[LIMBS] = {0x7a431d7c90ea0e5f, 0x0a60b1ce1d7e819d, 0xe9da3113b5f0b8c0,
+static const uint64_t GY[WORDS] = {0x7a431d7c90ea0e5f, 0x0a60b1ce1d7e819d, 0xe9da3113b5f0b8c0,
                                    0xf8f41dbd289a147c, 0x5d9e98bf9292dc29, 0x3617de4a96262c6f};
 
-static const uint64_t ONE[LIMBS] = {1};
+static const uint64_t ONE[WORDS] = {1};
 
 // o = a * 2^384 mod p, for a below p.
-static void to_montgomery(uint64_t o[LIMBS], const uint64_t a[LIMBS]) {
+static void to_montgomery(uint64_t o[WORDS], const uint64_t a[WORDS]) {
     p384_wide_mont_mul(o, a, p384_wide_modp.r2, &p384_wide_modp);
 }
 
 // Doubling, a = -3 (EFD dbl-2001-b). Maps infinity to infinity: z == 0
 // forces z3 == 0.
 static void point_double(p384_wide_point *o, const p384_wide_point *a) {
-    uint64_t delta[LIMBS];
-    uint64_t gamma[LIMBS];
-    uint64_t beta[LIMBS];
-    uint64_t alpha[LIMBS];
-    uint64_t t[LIMBS];
-    uint64_t t2[LIMBS];
+    uint64_t delta[WORDS];
+    uint64_t gamma[WORDS];
+    uint64_t beta[WORDS];
+    uint64_t alpha[WORDS];
+    uint64_t t[WORDS];
+    uint64_t t2[WORDS];
     p384_wide_point r;
     p384_wide_mont_mul(delta, a->z, a->z, &p384_wide_modp); // delta = Z^2
     p384_wide_mont_mul(gamma, a->y, a->y, &p384_wide_modp); // gamma = Y^2
@@ -97,14 +97,14 @@ static void point_add(p384_wide_point *o, const p384_wide_point *a, const p384_w
         *o = *a;
         return;
     }
-    uint64_t z1z1[LIMBS];
-    uint64_t z2z2[LIMBS];
-    uint64_t u1[LIMBS];
-    uint64_t u2[LIMBS];
-    uint64_t s1[LIMBS];
-    uint64_t s2[LIMBS];
-    uint64_t h[LIMBS];
-    uint64_t rr[LIMBS];
+    uint64_t z1z1[WORDS];
+    uint64_t z2z2[WORDS];
+    uint64_t u1[WORDS];
+    uint64_t u2[WORDS];
+    uint64_t s1[WORDS];
+    uint64_t s2[WORDS];
+    uint64_t h[WORDS];
+    uint64_t rr[WORDS];
     p384_wide_mont_mul(z1z1, a->z, a->z, &p384_wide_modp);
     p384_wide_mont_mul(z2z2, b->z, b->z, &p384_wide_modp);
     p384_wide_mont_mul(u1, a->x, z2z2, &p384_wide_modp);
@@ -123,10 +123,10 @@ static void point_add(p384_wide_point *o, const p384_wide_point *a, const p384_w
         }
         return;
     }
-    uint64_t hh[LIMBS];
-    uint64_t hhh[LIMBS];
-    uint64_t v[LIMBS];
-    uint64_t t[LIMBS];
+    uint64_t hh[WORDS];
+    uint64_t hhh[WORDS];
+    uint64_t v[WORDS];
+    uint64_t t[WORDS];
     p384_wide_point r;
     p384_wide_mont_mul(hh, h, h, &p384_wide_modp);
     p384_wide_mont_mul(hhh, hh, h, &p384_wide_modp);
@@ -145,11 +145,11 @@ static void point_add(p384_wide_point *o, const p384_wide_point *a, const p384_w
 }
 
 // y^2 == x^3 - 3x + b mod p; inputs below p and in the Montgomery domain.
-static int on_curve(const uint64_t x[LIMBS], const uint64_t y[LIMBS]) {
-    uint64_t b[LIMBS];
-    uint64_t lhs[LIMBS];
-    uint64_t rhs[LIMBS];
-    uint64_t t[LIMBS];
+static int on_curve(const uint64_t x[WORDS], const uint64_t y[WORDS]) {
+    uint64_t b[WORDS];
+    uint64_t lhs[WORDS];
+    uint64_t rhs[WORDS];
+    uint64_t t[WORDS];
     to_montgomery(b, B);
     p384_wide_mont_mul(lhs, y, y, &p384_wide_modp);
     p384_wide_mont_mul(t, x, x, &p384_wide_modp);
@@ -162,7 +162,7 @@ static int on_curve(const uint64_t x[LIMBS], const uint64_t y[LIMBS]) {
 }
 
 // Bits [pos, pos + count) of k as a number, for pos + count at most 384.
-static uint32_t scalar_bits(const uint64_t k[LIMBS], int pos, int count) {
+static uint32_t scalar_bits(const uint64_t k[WORDS], int pos, int count) {
     uint32_t value = 0;
     for (int i = 0; i < count; i++) {
         int bit = pos + i;
@@ -184,7 +184,7 @@ static uint32_t scalar_bits(const uint64_t k[LIMBS], int pos, int count) {
 // above the five is 1. Either way the other four of the five positions
 // get a zero and are passed over. Fewer than five bits are left near the
 // top, and there the value is under 16.
-static int signed_digits(int8_t digits[DIGITS_LEN], const uint64_t k[LIMBS]) {
+static int signed_digits(int8_t digits[DIGITS_LEN], const uint64_t k[WORDS]) {
     int len = 0;
     uint32_t carry = 0;
     int passed_over = 0; // positions still to pass over after the last digit
@@ -222,7 +222,7 @@ static void odd_multiples(p384_wide_point table[TABLE_LEN], const p384_wide_poin
 // acc += digit * p, for an odd digit in [-15, 15] and the table of p's
 // odd multiples. The negative of (x, y, z) is (x, -y, z).
 static void add_multiple(p384_wide_point *acc, const p384_wide_point table[TABLE_LEN], int digit) {
-    static const uint64_t zero[LIMBS] = {0};
+    static const uint64_t zero[WORDS] = {0};
     p384_wide_point term = table[(digit < 0 ? -digit : digit) / 2];
     if (digit < 0) {
         p384_wide_mod_sub(term.y, zero, term.y, &p384_wide_modp);
@@ -231,8 +231,8 @@ static void add_multiple(p384_wide_point *acc, const p384_wide_point table[TABLE
 }
 
 // One pass down both scalars' digits.
-void p384_wide_double_mul(p384_wide_point *o, const uint64_t u1[P384_WIDE_LIMBS],
-                          const uint64_t u2[P384_WIDE_LIMBS], const p384_wide_point *q) {
+void p384_wide_double_mul(p384_wide_point *o, const uint64_t u1[P384_WIDE_WORDS],
+                          const uint64_t u2[P384_WIDE_WORDS], const p384_wide_point *q) {
     p384_wide_point g;
     p384_wide_point g_table[TABLE_LEN];
     p384_wide_point q_table[TABLE_LEN];
@@ -263,8 +263,8 @@ void p384_wide_double_mul(p384_wide_point *o, const uint64_t u1[P384_WIDE_LIMBS]
 // at or above p or a p384_wide_point off the curve. Infinity has no X||Y encoding,
 // so on-curve suffices.
 int p384_wide_point_decode(p384_wide_point *q, const uint8_t pub[P384_PUB_LEN]) {
-    uint64_t x[LIMBS];
-    uint64_t y[LIMBS];
+    uint64_t x[WORDS];
+    uint64_t y[WORDS];
     p384_wide_from_bytes(x, pub);
     p384_wide_from_bytes(y, pub + P384_LEN);
     if (p384_wide_compare(x, p384_wide_modp.m) >= 0 ||
@@ -279,8 +279,8 @@ int p384_wide_point_decode(p384_wide_point *q, const uint8_t pub[P384_PUB_LEN]) 
 
 // 1 when the affine x of sum is c, for c below p and zz = Z^2: the test
 // is X == c * Z^2, both sides in the Montgomery domain.
-static int x_is(const p384_wide_point *sum, const uint64_t zz[LIMBS], const uint64_t c[LIMBS]) {
-    uint64_t scaled[LIMBS];
+static int x_is(const p384_wide_point *sum, const uint64_t zz[WORDS], const uint64_t c[WORDS]) {
+    uint64_t scaled[WORDS];
     to_montgomery(scaled, c);
     p384_wide_mont_mul(scaled, scaled, zz, &p384_wide_modp);
     return p384_wide_compare(scaled, sum->x) == 0;
@@ -292,9 +292,9 @@ int p384_wide_point_is_infinity(const p384_wide_point *p) {
 
 // x is below p and p is below 2n, so x mod n is r for two values of x at
 // most: r, and r + n when that is below p.
-int p384_wide_point_x_is_r(const p384_wide_point *sum, const uint64_t r[P384_WIDE_LIMBS]) {
-    uint64_t zz[LIMBS];
-    uint64_t r_plus_n[LIMBS];
+int p384_wide_point_x_is_r(const p384_wide_point *sum, const uint64_t r[P384_WIDE_WORDS]) {
+    uint64_t zz[WORDS];
+    uint64_t r_plus_n[WORDS];
     p384_wide_mont_mul(zz, sum->z, sum->z, &p384_wide_modp);
     if (x_is(sum, zz, r)) {
         return 1;

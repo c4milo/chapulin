@@ -1,6 +1,6 @@
 // Proves: p256_wide_fe_mul, p256_wide_fe_sqr, p256_wide_fe_to_mont,
 // p256_wide_fe_from_mont and sqr_times are memory-safe and UB-free over
-// fully nondet limbs and wrap no unsigned value (--unsigned-overflow-check
+// fully nondet words and wrap no unsigned value (--unsigned-overflow-check
 // on the launch line), in every aliasing shape a point formula and
 // p256_wide_fe_inv use: the output distinct from both inputs, over the
 // first, over the second, and with both inputs one object.
@@ -9,9 +9,9 @@
 // which p256_wide_row_harness.c discharges on the real multiply, and so is a
 // square's ten products, which p256_wide_sqr_harness.c discharges. What runs
 // here on the shipped code is everything between the rows and the output:
-// which limbs each row is handed, the four rounds of the reduction, the one
+// which words each row is handed, the four rounds of the reduction, the one
 // sum in a round that has to fit, the carry of the round before beside the
-// high limb of that round's multiple of p, and the conditional subtraction.
+// high word of that round's multiple of p, and the conditional subtraction.
 // The product over the real multiply, 16 widened 64x64 multipliers in one
 // formula, also converged, in 165 s at 474 MB, and has no launch line: it
 // states the row's claim four more times and nothing else.
@@ -36,8 +36,8 @@
 #include "p256_wide_field.c"
 
 static void fe_nondet(p256_wide_fe *f) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        f->limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        f->word[i] = nondet_u64();
     }
 }
 

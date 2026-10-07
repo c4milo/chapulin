@@ -1,6 +1,6 @@
 // The field half of bin/p384_equiv_test: p384_wide_field.c, the six
-// 64-bit limbs a host object computes on, against p384_field.c, the twelve
-// 32-bit limbs that stay the reference (docs/decisions.md 97). The two
+// 64-bit words a host object computes on, against p384_field.c, the twelve
+// 32-bit words that stay the reference (docs/decisions.md 97). The two
 // files hold the same routines, so each routine runs at both widths on the
 // same 48 bytes and must leave the same number, and each constant must be
 // the same number at both widths.
@@ -52,21 +52,21 @@ static void expect(int same, const char *what, const moduli *mod) {
     if (!same) {
         differences++;
         (void)fprintf(stderr,
-                      "p384_equiv: %s mod %s: the 64-bit limbs and the 32-bit limbs differ\n", what,
+                      "p384_equiv: %s mod %s: the 64-bit words and the 32-bit words differ\n", what,
                       mod->name);
     }
 }
 
-static void wide_to_bytes(uint8_t b[P384_LEN], const uint64_t a[P384_WIDE_LIMBS]) {
-    for (int i = 0; i < P384_WIDE_LIMBS; i++) {
+static void wide_to_bytes(uint8_t b[P384_LEN], const uint64_t a[P384_WIDE_WORDS]) {
+    for (int i = 0; i < P384_WIDE_WORDS; i++) {
         for (int j = 0; j < 8; j++) {
             b[P384_LEN - 1 - 8 * i - j] = (uint8_t)(a[i] >> (8 * j));
         }
     }
 }
 
-// 1 when the six limbs and the twelve are one number.
-static int same_number(const uint64_t wide[P384_WIDE_LIMBS], const uint32_t portable[P384_LIMBS]) {
+// 1 when the six words and the twelve are one number.
+static int same_number(const uint64_t wide[P384_WIDE_WORDS], const uint32_t portable[P384_WORDS]) {
     uint8_t x[P384_LEN];
     uint8_t y[P384_LEN];
     wide_to_bytes(x, wide);
@@ -78,7 +78,7 @@ static void constants(const moduli *mod) {
     expect(same_number(mod->wide->m, mod->portable->m), "the modulus", mod);
     expect(same_number(mod->wide->r2, mod->portable->r2), "r2", mod);
     expect((uint32_t)mod->wide->m0inv == mod->portable->m0inv, "the low half of m0inv", mod);
-    // m0inv is -m^-1 modulo 2^64, so its product with m's low limb is -1
+    // m0inv is -m^-1 modulo 2^64, so its product with m's low word is -1
     // there. The product wraps on purpose.
     expect(mod->wide->m0inv * mod->wide->m[0] == UINT64_MAX, "m0inv", mod);
 }
@@ -86,12 +86,12 @@ static void constants(const moduli *mod) {
 // The reading of 48 bytes, the two predicates, and the plain sum and
 // difference with the carry and the borrow they return.
 static void plain(const moduli *mod, const uint8_t a_be[P384_LEN], const uint8_t b_be[P384_LEN]) {
-    uint64_t wide_a[P384_WIDE_LIMBS];
-    uint64_t wide_b[P384_WIDE_LIMBS];
-    uint64_t wide_o[P384_WIDE_LIMBS];
-    uint32_t a[P384_LIMBS];
-    uint32_t b[P384_LIMBS];
-    uint32_t o[P384_LIMBS];
+    uint64_t wide_a[P384_WIDE_WORDS];
+    uint64_t wide_b[P384_WIDE_WORDS];
+    uint64_t wide_o[P384_WIDE_WORDS];
+    uint32_t a[P384_WORDS];
+    uint32_t b[P384_WORDS];
+    uint32_t o[P384_WORDS];
     uint8_t back[P384_LEN];
     p384_wide_from_bytes(wide_a, a_be);
     p384_wide_from_bytes(wide_b, b_be);
@@ -121,8 +121,8 @@ static void routine(const moduli *mod, size_t op, int shape, const uint8_t a_be[
                     const uint8_t b_be[P384_LEN]) {
     static const int RESULT[4] = {2, 0, 1, 0};
     static const int RIGHT[4] = {1, 1, 1, 0};
-    uint64_t wide[3][P384_WIDE_LIMBS] = {{0}};
-    uint32_t portable[3][P384_LIMBS] = {{0}};
+    uint64_t wide[3][P384_WIDE_WORDS] = {{0}};
+    uint32_t portable[3][P384_WORDS] = {{0}};
     p384_wide_from_bytes(wide[0], a_be);
     p384_wide_from_bytes(wide[1], b_be);
     p384_from_bytes(portable[0], a_be);
@@ -136,10 +136,10 @@ static void routine(const moduli *mod, size_t op, int shape, const uint8_t a_be[
 
 // The inverse of a, which is not zero, into a second array and over a.
 static void inverse(const moduli *mod, const uint8_t a_be[P384_LEN]) {
-    uint64_t wide_a[P384_WIDE_LIMBS];
-    uint64_t wide_o[P384_WIDE_LIMBS];
-    uint32_t a[P384_LIMBS];
-    uint32_t o[P384_LIMBS];
+    uint64_t wide_a[P384_WIDE_WORDS];
+    uint64_t wide_o[P384_WIDE_WORDS];
+    uint32_t a[P384_WORDS];
+    uint32_t o[P384_WORDS];
     p384_wide_from_bytes(wide_a, a_be);
     p384_from_bytes(a, a_be);
     p384_wide_mod_inverse(wide_o, wide_a, mod->wide);
@@ -189,13 +189,13 @@ static void edges(uint8_t out[EDGES][P384_LEN], const moduli *mod) {
 // 48 random bytes as a number below the modulus: one subtraction, because
 // both moduli are above 2^383.
 static void random_below(uint8_t out[P384_LEN], const moduli *mod) {
-    uint32_t limbs[P384_LIMBS];
+    uint32_t words[P384_WORDS];
     p384_equiv_rng_bytes(out, P384_LEN);
-    p384_from_bytes(limbs, out);
-    if (p384_compare(limbs, mod->portable->m) >= 0) {
-        (void)p384_sub_raw(limbs, limbs, mod->portable->m);
+    p384_from_bytes(words, out);
+    if (p384_compare(words, mod->portable->m) >= 0) {
+        (void)p384_sub_raw(words, words, mod->portable->m);
     }
-    p384_portable_to_bytes(out, limbs);
+    p384_portable_to_bytes(out, words);
 }
 
 static void one_modulus(const moduli *mod) {

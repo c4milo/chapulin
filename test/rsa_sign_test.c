@@ -245,8 +245,8 @@ int main(int argc, char **argv) {
     }
     run_refusals(&vectors[0]);
 #ifdef CH_CPU_RUNTIME
-    // RSA-2048, and RSA-2112, whose primes are half a limb past a whole
-    // number of 64-bit limbs.
+    // RSA-2048, and RSA-2112, whose primes are half a word past a whole
+    // number of 64-bit words.
     run_faults(&vectors[0]);
     run_faults(&vectors[1]);
 #endif

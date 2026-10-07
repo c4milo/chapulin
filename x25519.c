@@ -2,7 +2,7 @@
 
 #include "ct.h"
 
-// A device object compiles this file once, with the 16-limb field below. A
+// A device object compiles this file once, with the 16-word field below. A
 // host object compiles it a second time inside x25519_wide.c, which defines
 // CH_X25519_WIDE and renames the two entries: that copy holds no field of
 // its own and calls x25519_wide.c's radix-2^51 ladder (docs/decisions.md
@@ -13,15 +13,15 @@
 #include "x25519_wide.h"
 #else
 
-// Field element: 16 limbs of 16 bits, little-endian, radix 2^16, values
-// mod 2^255-19. Limbs live in int64 so products and transient negatives
+// Field element: 16 words of 16 bits, little-endian, radix 2^16, values
+// mod 2^255-19. Words live in int64 so products and transient negatives
 // from subtraction stay exact; carries re-normalize.
 typedef int64_t fe[16];
 
 static const fe F121665 = {0xdb41, 1};
 
 // One carry pass. The 2^16 bias before the shift makes the floor shift
-// round negative limbs correctly; the top limb's carry folds back to limb
+// round negative words correctly; the top word's carry folds back to word
 // 0 times 38 (= 2*19, since 2^256 = 38 mod p).
 static void carry(fe o) {
     for (int i = 0; i < 16; i++) {
@@ -32,7 +32,7 @@ static void carry(fe o) {
         uint64_t fold = (uint64_t)(c - 1) & ((uint64_t)0 - (uint64_t)(i == 15));
         o[(size_t)((i + 1) * (i < 15))] += c - 1 + (int64_t)ct_mulsmall(fold, 37);
         // c * 2^16 on the unsigned form: c goes negative for negative
-        // limbs, so shifting it signed would be UB, and writing it as a
+        // words, so shifting it signed would be UB, and writing it as a
         // multiply would be umull on the M3.
         o[i] -= (int64_t)((uint64_t)c << 16);
     }
@@ -41,8 +41,8 @@ static void carry(fe o) {
 // Constant-time conditional swap: b is 1 or 0. The mask is b's bit moved to
 // the top and spread down by an arithmetic shift. Written as `~(b - 1)`, gcc
 // saw a negated 0-or-1 value and rewrote `x & -b` as `x * b` (match.pd), a
-// umull of a secret limb by the secret bit on the M3, and it also selected
-// the stored limb with a branch on b; the shift form does neither
+// umull of a secret word by the secret bit on the M3, and it also selected
+// the stored word with a branch on b; the shift form does neither
 // (https://github.com/c4milo/chapulin/issues/106).
 static void cswap(fe p, fe q, int64_t b) {
     int64_t mask = (int64_t)((uint64_t)b << 63) >> 63;
@@ -70,13 +70,13 @@ static void mul(fe o, const fe a, const fe b) {
     for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 16; j++) {
             // The narrowing is exact: proof/x25519_step_harness.c proves
-            // every limb the ladder hands mul lies in (-2^18, 2^18). Two
-            // carry passes leave limbs 1..15 in [0, 2^16) and limb 0 in
+            // every word the ladder hands mul lies in (-2^18, 2^18). Two
+            // carry passes leave words 1..15 in [0, 2^16) and word 0 in
             // [-38, 2^16 + 38), and add/sub at most double that. That is
             // well under the 2^24 x25519_mul_harness assumes, and
             // instrumenting mul() over the RFC 7748 vectors, 6000 random
             // scalar multiplies and the low-order points put the largest
-            // limb seen at 131070 -- 14 bits below where an int32 would
+            // word seen at 131070 -- 14 bits below where an int32 would
             // overflow.
             t[i + j] += ct_widemul_s((int32_t)a[i], (int32_t)b[j]);
         }
@@ -154,7 +154,7 @@ static void pack(uint8_t o[X25519_LEN], const fe n) {
 // projective points, r the scalar bit, x the base point, e and f
 // scratch that ladder() owns so it can wipe them with the rest. A
 // function of its own so proof/x25519_step_harness.c can run one step
-// over symbolic limbs and prove it keeps every limb inside the range
+// over symbolic words and prove it keeps every word inside the range
 // the field-op proofs assume; the loop in ladder() is the induction
 // over it.
 static void step(fe a, fe b, fe c, fe d, fe e, fe f, const fe x, int64_t r) {

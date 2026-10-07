@@ -914,7 +914,7 @@ largest single cost", and each rank names the measure.
    measured as failing today and the split is unattempted. If it does not
    converge this lane does not land at all.
 3. **RSA-PSS signing**, by new code with no existing shape: a constant-time
-   secret-exponent ladder, a new CBMC formula at 96 or 128 limbs, and a Lean
+   secret-exponent ladder, a new CBMC formula at 96 or 128 words, and a Lean
    module written from nothing.
 4. **Constant-time P-256**, which the mandatory group forces anyway, in two
    files: `p256_field.[ch]` for the arithmetic and `p256_ecdh.[ch]` for the
@@ -1107,7 +1107,7 @@ multiply branches on the scalar bit:
 
 `mont_mul`'s final conditional subtract branches on its operands:
 
-    p256.c:142        if (t[LIMBS] || fe_cmp(t, mod->m) >= 0) {
+    p256.c:142        if (t[WORDS] || fe_cmp(t, mod->m) >= 0) {
 
 `mod_add` and `mod_sub` carry the same correction (`p256.c:98`, `:105`), and
 `point_add` branches on whether an input is infinity and on whether the points
@@ -1151,10 +1151,10 @@ The arithmetic under those three declarations is `p256_field.[ch]`, which
 exchange performs and no arithmetic of its own.
 
 **Point validation lives here, not in `p256.c`, and the first draft of this
-record had that wrong.** `on_curve` is file-static and takes internal limb
+record had that wrong.** `on_curve` is file-static and takes internal word
 arrays:
 
-    p256.c:295    static int on_curve(const uint32_t x[LIMBS], const uint32_t y[LIMBS]) {
+    p256.c:295    static int on_curve(const uint32_t x[WORDS], const uint32_t y[WORDS]) {
 
 It also depends on `MODP`, `B`, `mod_mul`, `mod_sub`, `mod_add` and `fe_cmp`,
 all static in the same file, and `p256.h` has exactly one declaration, at
@@ -1184,7 +1184,7 @@ is static and unreachable.
 include, and the tree already did this once for the same reason.**
 `p384_field.[ch]` is the field and scalar arithmetic `p384.c` uses, split out
 under exactly this naming: `p384_field.h:1-3` reads "NIST P-384 field and
-scalar arithmetic for p384.c: the limb layout, the two moduli (the field prime
+scalar arithmetic for p384.c: the word layout, the two moduli (the field prime
 p and the group order n) and the modular routines both share."
 `CLAUDE.md:61-62` already lists `p384.[ch]`/`p384_field.[ch]` as a pair, so the
 shape needs no new rule. The split also keeps both new files inside
@@ -1211,7 +1211,7 @@ read as a randomness retry, which is the opposite of what
 // public signature (p256.c:142 branches on mont_mul's operands, and
 // p256.c:161 builds mod_inv entirely out of mont_mul).
 //
-// Elements are 8 little-endian uint32 limbs; products and carries live in
+// Elements are 8 little-endian uint32 words; products and carries live in
 // uint64 through ct.h's widening multiply. Every conditional correction is
 // a branchless mask select in the shape x25519.c:36 writes cswap, never an
 // if. Every routine is a pure function of its inputs and writes only
@@ -1222,12 +1222,12 @@ read as a randomness retry, which is the opposite of what
 
 #include <stdint.h>
 
-#define P256_LIMBS 8  // limb: one 32-bit word of a big number; P-256 = 8 limbs
+#define P256_WORDS 8  // a big number's 32-bit words; P-256 holds 8
 #define P256_LEN 32   // bytes in one coordinate or one scalar
 
 typedef struct {
-    uint32_t m[P256_LIMBS];   // the modulus
-    uint32_t r2[P256_LIMBS];  // 2^512 mod m, entry ticket to the Montgomery domain
+    uint32_t m[P256_WORDS];   // the modulus
+    uint32_t r2[P256_WORDS];  // 2^512 mod m, entry ticket to the Montgomery domain
     uint32_t m0inv;           // -m^-1 mod 2^32
 } p256_modulus;
 
@@ -1236,50 +1236,50 @@ extern const p256_modulus p256_modp;
 extern const p256_modulus p256_modn;
 
 // Predicates, branchless. p256_is_zero returns an all-ones mask when every
-// limb is zero and an all-zero mask otherwise; p256_less returns an
+// word is zero and an all-zero mask otherwise; p256_less returns an
 // all-ones mask when a < b. Neither returns early, and neither is an int
 // the caller may branch on without stating that its operand is public.
-uint32_t p256_is_zero(const uint32_t a[P256_LIMBS]);
-uint32_t p256_less(const uint32_t a[P256_LIMBS], const uint32_t b[P256_LIMBS]);
+uint32_t p256_is_zero(const uint32_t a[P256_WORDS]);
+uint32_t p256_less(const uint32_t a[P256_WORDS], const uint32_t b[P256_WORDS]);
 
-// o = mask ? a : b, one limb at a time, no branch.
-void p256_select(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
-                 const uint32_t b[P256_LIMBS], uint32_t mask);
+// o = mask ? a : b, one word at a time, no branch.
+void p256_select(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
+                 const uint32_t b[P256_WORDS], uint32_t mask);
 
-// 32 big-endian bytes <-> 8 little-endian limbs, byte by byte, no host
+// 32 big-endian bytes <-> 8 little-endian words, byte by byte, no host
 // endianness assumed.
-void p256_from_bytes(uint32_t o[P256_LIMBS], const uint8_t b[P256_LEN]);
-void p256_to_bytes(uint8_t b[P256_LEN], const uint32_t a[P256_LIMBS]);
+void p256_from_bytes(uint32_t o[P256_WORDS], const uint8_t b[P256_LEN]);
+void p256_to_bytes(uint8_t b[P256_LEN], const uint32_t a[P256_WORDS]);
 
 // Modular arithmetic. Inputs below mod->m, results below mod->m; o may
 // alias a or b in every routine. The final conditional subtract is a mask
 // select over the borrow, not the compare-and-branch p256.c:142 writes.
-void p256_mod_add(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
-                  const uint32_t b[P256_LIMBS], const p256_modulus *mod);
-void p256_mod_sub(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
-                  const uint32_t b[P256_LIMBS], const p256_modulus *mod);
+void p256_mod_add(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
+                  const uint32_t b[P256_WORDS], const p256_modulus *mod);
+void p256_mod_sub(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
+                  const uint32_t b[P256_WORDS], const p256_modulus *mod);
 // Montgomery product o = a*b / 2^256 mod m.
-void p256_mont_mul(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
-                   const uint32_t b[P256_LIMBS], const p256_modulus *mod);
+void p256_mont_mul(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
+                   const uint32_t b[P256_WORDS], const p256_modulus *mod);
 // Plain product o = a*b mod m.
-void p256_mod_mul(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
-                  const uint32_t b[P256_LIMBS], const p256_modulus *mod);
+void p256_mod_mul(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
+                  const uint32_t b[P256_WORDS], const p256_modulus *mod);
 // o = a^-1 mod m by Fermat, a^(m-2). The exponent is the public constant
 // m-2, so the square-and-multiply schedule is fixed and public; what makes
 // the routine constant time in a is p256_mont_mul, which has no
 // operand-dependent correction. a must be non-zero, and the caller checks
 // that with p256_is_zero before calling.
-void p256_mod_inverse(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS],
+void p256_mod_inverse(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS],
                       const p256_modulus *mod);
 // o = a mod n for an a below p. One masked conditional subtract of n,
 // because p < 2n. This is how r is taken from the x coordinate.
-void p256_reduce_n(uint32_t o[P256_LIMBS], const uint32_t a[P256_LIMBS]);
+void p256_reduce_n(uint32_t o[P256_WORDS], const uint32_t a[P256_WORDS]);
 
 // A point in Jacobian coordinates. The point at infinity is z == 0.
 typedef struct {
-    uint32_t x[P256_LIMBS];
-    uint32_t y[P256_LIMBS];
-    uint32_t z[P256_LIMBS];
+    uint32_t x[P256_WORDS];
+    uint32_t y[P256_WORDS];
+    uint32_t z[P256_WORDS];
 } p256_point;
 
 // SEC 2 secp256r1's generator G, in affine coordinates with z = 1.
@@ -1294,13 +1294,13 @@ void p256_point_double(p256_point *o, const p256_point *a);
 // Constant time in k: the trip count is 256 whatever k is, and no step
 // indexes memory by a bit of k. This is the one ladder in the build, and
 // p256_base_mul is the k*G case, written out because G is a constant.
-void p256_scalar_mul(p256_point *o, const uint32_t k[P256_LIMBS], const p256_point *p);
-void p256_base_mul(p256_point *o, const uint32_t k[P256_LIMBS]);
+void p256_scalar_mul(p256_point *o, const uint32_t k[P256_WORDS], const p256_point *p);
+void p256_base_mul(p256_point *o, const uint32_t k[P256_WORDS]);
 
 // Jacobian to affine: one mod-p inverse of z, then x/z^2 and y/z^3.
 // Returns 0 for the point at infinity, which is what p256_ecdh.c rejects
 // and what p256_sign.c can never see for a nonce in [1, n-1].
-int p256_to_affine(uint32_t x[P256_LIMBS], uint32_t y[P256_LIMBS], const p256_point *a);
+int p256_to_affine(uint32_t x[P256_WORDS], uint32_t y[P256_WORDS], const p256_point *a);
 
 #endif
 ```
@@ -1474,7 +1474,7 @@ A host object (`-DCH_CPU_RUNTIME`) holds a second signer beside the ladder,
 `rsa_sign64.[ch]`, and a session that states its multiply
 (`CH_CPU_CONSTANT_TIME_MULTIPLY`) signs with it. There `ch_rsa_priv` holds p,
 q, dP, dQ and qInv after n, d and `n_len`, each `n_len / 2` raw big-endian
-bytes. The signer runs the Chinese remainder theorem over 64-bit limbs: one
+bytes. The signer runs the Chinese remainder theorem over 64-bit words: one
 exponentiation modulo each prime, each a 4-bit window whose table reads are
 constant-time scans, joined by Garner's formula with masks. It then raises the
 signature to the public exponent and compares it with the encoded message
@@ -1486,7 +1486,7 @@ the reasons, and INV-42 the tests.
 
 That signer does share its arithmetic with the verify side, which the ladder
 does not: both run `rsa_mont64.c` in a host object. The file is constant time
-in every limb, for the signer's sake, and the verifier runs it because one
+in every word, for the signer's sake, and the verifier runs it because one
 64-bit arithmetic is less to audit than two (INV-41).
 
 The signing frame is *measured* now, by the method `make lint-stack` uses,
@@ -1814,7 +1814,7 @@ The branch ceilings live in `BRANCH_CEILING` (`Makefile:2253`), not in
 
 `Makefile:2232-2238` says why the two lists differ, and the reason decides
 which new files join which: "The files the branch count covers: the arithmetic
-under the record layer, whose every input is a key, a limb or a block, and
+under the record layer, whose every input is a key, a word or a block, and
 whose only branches are loop control on public counts. The other CODEGEN_SRCS
 files -- buf.c, record.c, keysched.c, io.c, session.c, the handshake files and
 tls.c -- branch on lengths, types and states the peer sent in the clear,
@@ -2718,7 +2718,7 @@ aliasing shapes real callers use, and measure each launch line with
 | `srv_flight_harness.c` | every non-`CH_OK` return from a handler writes an alert first | small |
 | `p256_ecdh_harness.c` | point validation, the field arithmetic and the ladder | **expect no verdict without stub contracts.** `proof/p256_harness.c:11-20` already refuses to unwind `point_mul` and `mod_inv` ("25k+ Montgomery multiplies never leave symex"), and `README.md:380-389` records x25519's ladder returning "no verdict past 14 GB" until `proof/x25519_stubs.h` replaced the widening multiply with a contract |
 | `p256_sign_harness.c` | the RFC 6979 generator over a stubbed HMAC, and the DER writer's bounds | the `hkdf_expand_harness` shape. The generator's retry loop has no fixed trip count, so the unwind bound needs its own argument |
-| `rsa_sign_harness.c` | the private exponentiation's bounds and the PSS encoder | written and launched: the marshalling and every limb helper at 96 limbs, the mask, the exponent index, the encoder whole over a stubbed SHA-256, and the `rsa_mul_harness` carry lemma. *Measured* (cbmc 6.11.0, kissat, `/usr/bin/time -l`): 759 properties, 7 s, 194 MB |
+| `rsa_sign_harness.c` | the private exponentiation's bounds and the PSS encoder | written and launched: the marshalling and every word helper at 96 words, the mask, the exponent index, the encoder whole over a stubbed SHA-256, and the `rsa_mul_harness` carry lemma. *Measured* (cbmc 6.11.0, kissat, `/usr/bin/time -l`): 759 properties, 7 s, 194 MB |
 | `aes_harness.c` | the constant-time AES against its spec, at both key sizes | the table version converges at 377 properties, 23 s, 0.67 GB (`gcm.patch:910`); the constant-time version is **unmeasured** |
 | `gcm_harness.c`, `gcm_forge_harness.c` | GCM seal and open, and that a forged tag opens nothing | **measured as failing today**: 2,144 s under kissat with no verdict, and the forge harness at 2.6 GB and climbing (`gcm.patch:917-918`). The split is unattempted and is on this design's critical path |
 

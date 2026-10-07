@@ -5,10 +5,10 @@
 // ch_cfg.cpu holds CH_CPU_CONSTANT_TIME_MULTIPLY (docs/decisions.md 89 and 94).
 // p256_wide_mul.c holds the two scalar multiplications over these formulas.
 //
-// A point here is p256_point.h's point in the wide field's limbs: homogeneous projective
+// A point here is p256_point.h's point in the wide field's words: homogeneous projective
 // (X : Y : Z), every coordinate in the Montgomery domain, Z = 0 the point at infinity. The two
 // files hold the same numbers, so a p256_point one of them wrote is a point the other reads.
-// The entries widemul.h calls take and leave p256_point, and keep the wide limbs inside the
+// The entries widemul.h calls take and leave p256_point, and keep the wide words inside the
 // call.
 //
 // Every routine is constant time in every operand: no branch and no memory index reads a
@@ -37,7 +37,7 @@ typedef struct {
     p256_wide_fe y;
 } p256_wide_affine;
 
-// The same point in the other field's limbs.
+// The same point in the other field's words.
 void p256_wide_point_from_portable(p256_wide_point *o, const p256_point *a);
 void p256_wide_point_to_portable(p256_point *o, const p256_wide_point *a);
 

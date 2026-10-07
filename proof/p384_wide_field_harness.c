@@ -1,5 +1,5 @@
 // Proves, for p384_wide_field.c: every routine but the Fermat loop is
-// memory-safe and UB-free, and no sum in it wraps, for any limbs, any
+// memory-safe and UB-free, and no sum in it wraps, for any words, any
 // modulus record and any m0inv.
 //
 //   p384_wide_from_bytes               : any 48 bytes
@@ -15,14 +15,14 @@
 //
 // The no-wrap half is --unsigned-overflow-check on the launch line, which
 // makes every unsigned +, - and * a property: each sum of a product, a
-// limb of the running sum and a carry; the two top steps of a round; and
-// every limb of a subtraction, which adds a complement where a borrow
+// word of the running sum and a carry; the two top steps of a round; and
+// every word of a subtraction, which adds a complement where a borrow
 // would wrap.
 //
 // The products are a contract: ct_mul128 returns any value at or below
 // (2^64 - 1)^2, which proof/rsa_mont64_mul128_harness.c proves of the real
 // multiply for every pair of operands. Under it the bound is the one
-// p384_wide_field.c's header states: a product and two limbs are at most
+// p384_wide_field.c's header states: a product and two words are at most
 // 2^128 - 1. What the contract gives up is the value: nothing here says a
 // result is the Montgomery product, or is below the modulus.
 // bin/p384_equiv_test holds each routine to p384_field.c's result.
@@ -56,17 +56,17 @@ static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
 
 #include "p384_wide_field.c"
 
-static void havoc_limbs(uint64_t a[P384_WIDE_LIMBS]) {
-    for (size_t i = 0; i < P384_WIDE_LIMBS; i++) {
+static void havoc_words(uint64_t a[P384_WIDE_WORDS]) {
+    for (size_t i = 0; i < P384_WIDE_WORDS; i++) {
         a[i] = nondet_u64();
     }
 }
 
-// A modulus record with every limb unconstrained: the memory accesses and
+// A modulus record with every word unconstrained: the memory accesses and
 // the sums hold for any modulus, odd or not, and for any m0inv.
 static void havoc_modulus(p384_wide_modulus *mod) {
-    havoc_limbs(mod->m);
-    havoc_limbs(mod->r2);
+    havoc_words(mod->m);
+    havoc_words(mod->r2);
     mod->m0inv = nondet_u64();
 }
 
@@ -78,45 +78,45 @@ typedef void routine(uint64_t *o, const uint64_t *a, const uint64_t *b,
 // as all three, and the right operand inside the modulus record.
 static void shapes(routine *run) {
     p384_wide_modulus mod;
-    uint64_t a[P384_WIDE_LIMBS];
-    uint64_t b[P384_WIDE_LIMBS];
-    uint64_t o[P384_WIDE_LIMBS];
+    uint64_t a[P384_WIDE_WORDS];
+    uint64_t b[P384_WIDE_WORDS];
+    uint64_t o[P384_WIDE_WORDS];
 
     havoc_modulus(&mod);
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     run(o, a, b, &mod);
 
     havoc_modulus(&mod);
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     run(a, a, b, &mod);
 
     havoc_modulus(&mod);
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     run(b, a, b, &mod);
 
     havoc_modulus(&mod);
-    havoc_limbs(a);
+    havoc_words(a);
     run(a, a, a, &mod);
 
     havoc_modulus(&mod);
-    havoc_limbs(a);
+    havoc_words(a);
     run(o, a, mod.r2, &mod);
 }
 
 int main(void) {
     uint8_t bytes[P384_LEN];
-    uint64_t a[P384_WIDE_LIMBS];
-    uint64_t b[P384_WIDE_LIMBS];
-    uint64_t o[P384_WIDE_LIMBS];
+    uint64_t a[P384_WIDE_WORDS];
+    uint64_t b[P384_WIDE_WORDS];
+    uint64_t o[P384_WIDE_WORDS];
 
     fill_nondet(bytes, sizeof bytes);
     p384_wide_from_bytes(a, bytes);
 
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     (void)p384_wide_is_zero(a);
     (void)p384_wide_compare(a, b);
 
@@ -126,7 +126,7 @@ int main(void) {
     (void)p384_wide_add_raw(o, a, b);
     (void)p384_wide_sub_raw(o, a, b);
     (void)p384_wide_add_raw(a, a, b);
-    havoc_limbs(a);
+    havoc_words(a);
     (void)p384_wide_sub_raw(a, a, b);
 
     shapes(p384_wide_mod_add);
@@ -138,19 +138,19 @@ int main(void) {
     // the result, and the result over the left operand.
     p384_wide_modulus mod;
     havoc_modulus(&mod);
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     p384_wide_mod_mul(o, a, b, &mod);
     havoc_modulus(&mod);
-    havoc_limbs(a);
-    havoc_limbs(b);
+    havoc_words(a);
+    havoc_words(b);
     p384_wide_mod_mul(a, a, b, &mod);
 
     // p384_wide_mod_inverse's only iteration-dependent access, for every i
     // its loop produces.
     int i = nondet_int();
     __CPROVER_assume(i >= 0 && i < 384);
-    havoc_limbs(a);
+    havoc_words(a);
     uint64_t bit = (a[i / 64] >> (i % 64)) & 1;
     (void)bit;
     return 0;

@@ -165,7 +165,7 @@ void ct_wipe(void *p, size_t n);
 #endif
 
 // The wide X25519 field (x25519_wide.c), which a host object holds beside
-// x25519.c's, multiplies two 64-bit limbs into a 128-bit product: MUL and
+// x25519.c's, multiplies two 64-bit words into a 128-bit product: MUL and
 // UMULH on arm64, MUL or MULX on x86-64. Whether that multiply runs in
 // constant time is a claim about silicon of the same kind as the one about
 // the 32x32->64 multiply, and one statement covers both: the caller's
@@ -186,7 +186,7 @@ void ct_wipe(void *p, size_t n);
 // CH_CPU_RUNTIME for a target without it, so the multiply below exists in
 // a host object alone. docs/decisions.md entries
 // 52 and 89 say why the field is a host object's and why it shares the
-// multiply's bit. INV-34 in docs/invariants.md states the limb bounds the
+// multiply's bit. INV-34 in docs/invariants.md states the word bounds the
 // field keeps.
 #ifdef CH_CPU_RUNTIME
 // The product type of ct_mul128. C11 has no 128-bit integer, and
@@ -326,7 +326,7 @@ static inline uint64_t ct_mulsmall(uint64_t a, uint32_t k) {
 // one over the same bit patterns, less b<<32 when a is negative and a<<32
 // when b is negative, so only the high word moves. Each correction is
 // masked, never branched: the mask is the operand's sign bit spread across
-// the word by an arithmetic shift, so the sign of a secret limb stays off
+// the word by an arithmetic shift, so the sign of a secret word stays off
 // the control path. It used to be `0 - (ua >> 31)`, and gcc's match.pd
 // rewrites `X & -Y` as `X * Y` when it knows Y is 0 or 1 -- a widening
 // multiply by a secret bit, two umull in x25519 on the M3 and one mulhu on

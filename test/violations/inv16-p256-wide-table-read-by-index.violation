@@ -12,18 +12,18 @@ reason: table_select loads the one entry its digit names, so the address
 --- old
 static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WIDE_TABLE_ENTRIES],
                          uint64_t index) {
-    limb_pair x_low = {0, 0};
-    limb_pair x_high = {0, 0};
-    limb_pair y_low = {0, 0};
-    limb_pair y_high = {0, 0};
+    word_pair x_low = {0, 0};
+    word_pair x_high = {0, 0};
+    word_pair y_low = {0, 0};
+    word_pair y_high = {0, 0};
     for (uint64_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
 --- new
 static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WIDE_TABLE_ENTRIES],
                          uint64_t index) {
     *o = row[index];
     return;
-    limb_pair x_low = {0, 0};
-    limb_pair x_high = {0, 0};
-    limb_pair y_low = {0, 0};
-    limb_pair y_high = {0, 0};
+    word_pair x_low = {0, 0};
+    word_pair x_high = {0, 0};
+    word_pair y_low = {0, 0};
+    word_pair y_high = {0, 0};
     for (uint64_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {

@@ -61,8 +61,8 @@ Other targets:
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
   value names no algorithm. No variable chooses the X25519 field: every
-  object holds the 16-limb one, a host object, below, also holds
-  `x25519_wide.c`'s five 51-bit limbs, and the `X25519` variable, which
+  object holds the 16-word one, a host object, below, also holds
+  `x25519_wide.c`'s five 51-bit words, and the `X25519` variable, which
   chose the second for a whole object, is gone, so the Makefile and
   `build.zig` stop on any value of it (decisions 52 and 89, INV-34).
   No variable chooses the ChaCha20 keystream either: a device object
@@ -127,21 +127,21 @@ Other targets:
   `CH_CPU_CONSTANT_TIME_MULTIPLY` picks for every operation of the
   session: Poly1305, ML-KEM and RSA signing (decision 87). X25519
   takes its second copy from another file: with the bit a session runs
-  `x25519_wide.c`'s five 51-bit limbs on the 64x64->128 multiply, and
-  without it the 16-limb field on the decomposition, so the bit states
+  `x25519_wide.c`'s five 51-bit words on the 64x64->128 multiply, and
+  without it the 16-word field on the decomposition, so the bit states
   the multiply at both widths (decisions 52 and 89). P-256 takes its
   second copy the same way: with the bit a session signs and exchanges
-  keys on the four 64-bit limbs of `p256_wide_field.c` and
+  keys on the four 64-bit words of `p256_wide_field.c` and
   `p256_wide_scalar.c`, and computes k·G from `p256_wide_table.c`'s
   86 KiB of multiples of the generator, and without it on
-  `p256_field.c`'s and `p256_scalar.c`'s eight 32-bit limbs on the
+  `p256_field.c`'s and `p256_scalar.c`'s eight 32-bit words on the
   decomposition, with no table (decisions 94 and 109).
   RSA signing takes its second copy from another file too: with the bit
   a session signs with `rsa_sign64.c`, by the Chinese remainder theorem
-  on 64-bit limbs from the five CRT integers a host object's
+  on 64-bit words from the five CRT integers a host object's
   `ch_rsa_priv` holds, and checks each signature before it returns it;
   without it, with `rsa_sign.c`'s ladder over n and d on the
-  decomposition. Both RSA verifiers run on 64-bit limbs in every session
+  decomposition. Both RSA verifiers run on 64-bit words in every session
   of a host object, because they read no secret (decision 95).
   Set the bit when the multiply runs in constant time on the CPU and in
   the mode the session's thread runs in, which on arm64 means a core with

@@ -1,5 +1,5 @@
 invariant: INV-16
-file: p256_wide_limb.h
+file: p256_wide_word.h
 catches: test/lint-p256-wide.sh
 reason: the header picks the overflow builtins for gcc on x86-64, where
   it must pick the two intrinsics. gcc for another machine still reads

@@ -10,10 +10,10 @@ reason: table_select tests the mask and moves on when the entry is not
 
 --- old
         uint64_t mask = equal_mask(j, index);
-        limb_pair masks = {mask, mask};
+        word_pair masks = {mask, mask};
 --- new
         uint64_t mask = equal_mask(j, index);
         if (mask == 0) {
             continue;
         }
-        limb_pair masks = {mask, mask};
+        word_pair masks = {mask, mask};

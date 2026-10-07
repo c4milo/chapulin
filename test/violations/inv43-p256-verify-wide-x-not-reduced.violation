@@ -9,7 +9,7 @@ reason: the host verifier compares R's affine x with r and never with
   runs them on this file.
 
 --- old
-    if ((uint64_t)(sum_limb >> 64) != 0 || p256_wide_fe_reduced_mask(&c) == 0) {
+    if ((uint64_t)(sum_word >> 64) != 0 || p256_wide_fe_reduced_mask(&c) == 0) {
         return 0;
     }
     return x_is(sum, &zz, &c);

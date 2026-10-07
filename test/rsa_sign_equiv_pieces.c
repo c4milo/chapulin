@@ -20,9 +20,9 @@
 
 #include "rsa_sign_equiv_pieces.h"
 
-void rsa_sign_equiv_reduction(uint64_t *o, const uint64_t *em, size_t em_limbs,
+void rsa_sign_equiv_reduction(uint64_t *o, const uint64_t *em, size_t em_words,
                               const rsa_mont64_modulus *mod) {
-    message_mod_prime(o, em, em_limbs, mod);
+    message_mod_prime(o, em, em_words, mod);
 }
 
 void rsa_sign_equiv_recombination(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *qinv,

@@ -27,8 +27,8 @@
 //             real modexp can produce; nothing proved here rests on a
 //             modexp value. The modexp itself never enters symex (~9k
 //             symbolic Montgomery multiplies per mont_mul over 96
-//             limbs, the RSA counterpart of x25519's mul-vs-SAT split);
-//             its carry arithmetic and byte<->limb marshalling are
+//             words, the RSA counterpart of x25519's mul-vs-SAT split);
+//             its carry arithmetic and byte<->word marshalling are
 //             rsa_mul_harness.c. This mirrors p256_harness leaving
 //             point_mul/mod_inv undriven.
 //   sha256  : asserts the contract the real code relies on, havocs the
@@ -36,7 +36,7 @@
 //             byte accounting stay concrete; the decode's memory shape
 //             never depends on a digest value.
 //
-// Bounds. n_len is fixed to CH_RSA_MODULUS_MAX (96 limbs; 128 in the
+// Bounds. n_len is fixed to CH_RSA_MODULUS_MAX (96 words; 128 in the
 // rsa_webpki variant, which sets CH_TRUST_WEBPKI): the largest admitted
 // modulus is the binding case for every buffer bound and index, and the
 // smaller admitted sizes only shrink the loop counts — the same

@@ -1,14 +1,14 @@
-// The wide X25519 field against the 16-limb one, as a host object holds
+// The wide X25519 field against the 16-word one, as a host object holds
 // them (docs/decisions.md 89): the same scalar and u-coordinate
 // into both fields, the same 32 bytes and the same return value out. The
-// 16-limb field carries ten CBMC harnesses, the Lean differential and a
-// prior Coq proof of its limb scheme; this binary is what carries the
+// 16-word field carries ten CBMC harnesses, the Lean differential and a
+// prior Coq proof of its word scheme; this binary is what carries the
 // radix-2^51 field to the same answers on every input it tries.
 //
 // Both fields also answer the published values directly, so neither is
 // checked only through the other: RFC 7748 section 5.2's two vectors and
 // its iterated vector after 1 and 1,000 rounds, and section 6.1's key
-// exchange. Then come the inputs a limb scheme is most likely to get
+// exchange. Then come the inputs a word scheme is most likely to get
 // wrong, and then random pairs:
 //
 //   - the u-coordinates of order 1, 2, 4 and 8, which must give an all-zero
@@ -25,7 +25,7 @@
 #include <string.h>
 
 // The two fields under the names the library gives them: x25519 and
-// x25519_base, the 16-limb field on ct.h's 16x16 decomposition, and
+// x25519_base, the 16-word field on ct.h's 16x16 decomposition, and
 // x25519_wide and x25519_wide_base. The binary is built as a host object
 // builds x25519.c and x25519_wide.c, so both are the code widemul.h
 // dispatches between.
@@ -182,7 +182,7 @@ static void run_rfc_vectors(void) {
 // round sets k to x25519(k, u) and u to the old k. Every round of both
 // fields is compared, and the values after 1 and 1,000 rounds against the
 // RFC. The 1,000,000-round value is left out: it takes minutes on the
-// 16-limb field.
+// 16-word field.
 static void run_iterated(void) {
     uint8_t k[X25519_LEN] = {9};
     uint8_t u[X25519_LEN] = {9};
@@ -289,7 +289,7 @@ int main(void) {
                      (unsigned long long)seed);
         return 1;
     }
-    (void)printf("x25519_equiv: %lu inputs, the wide field == the 16-limb field (seed 0x%016llx)\n",
+    (void)printf("x25519_equiv: %lu inputs, the wide field == the 16-word field (seed 0x%016llx)\n",
                  compared, (unsigned long long)seed);
     return 0;
 }

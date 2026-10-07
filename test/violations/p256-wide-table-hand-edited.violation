@@ -2,7 +2,7 @@ invariant: INV-16
 file: p256_wide_table.c
 catches: test/lint-p256-wide.sh
 reason: the checked-in table differs from what tools/p256_wide.py table
-  prints: one limb of the last row changed by hand. make lint-p256-wide
+  prints: one word of the last row changed by hand. make lint-p256-wide
   compares the file with the script's output, so the file is a product of
   the script and never an input anyone edits.
 

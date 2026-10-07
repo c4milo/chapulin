@@ -3,7 +3,7 @@ import Spec.Bytes
 /-!
 Poly1305 per RFC 8439 §2.5, written from the RFC text as an executable
 oracle. The accumulator is a plain `Nat` reduced mod `p = 2^130 - 5`
-after every block — definitional, no limb tricks.
+after every block — definitional, no word tricks.
 -/
 namespace Spec.Poly
 open Spec.Bytes

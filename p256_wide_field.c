@@ -1,9 +1,9 @@
 // The wide P-256 field (see p256_wide_field.h for the contracts). Elements are four
-// little-endian uint64 limbs. Multiplication is the 512-bit product, four rows of
-// p256_wide_limb.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, which for
+// little-endian uint64 words. Multiplication is the 512-bit product, four rows of
+// p256_wide_word.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, which for
 // this prime are shifts and adds with no product. A square is p256_wide_sqr_product's ten
 // products in place of the rows' sixteen, and the same reduction. Every carry chain is written out
-// limb by limb, with no loop over limbs and no array of them, so that gcc keeps the limbs in
+// word by word, with no loop over words and no array of them, so that gcc keeps the words in
 // registers as clang does (docs/performance.md, the pitfalls table).
 #include "p256_wide_field.h"
 
@@ -12,11 +12,11 @@
 #include <stddef.h>
 
 #include "ct.h"
-#include "p256_wide_limb.h"
+#include "p256_wide_word.h"
 
-// SEC 2 secp256r1's field prime, least significant limb first. The same prime is
-// p256_field.c's P, in limbs half as wide. tools/p256_wide.py recomputes it and
-// every constant derived from it below and stops if a limb differs.
+// SEC 2 secp256r1's field prime, least significant word first. The same prime is
+// p256_field.c's P, in words half as wide. tools/p256_wide.py recomputes it and
+// every constant derived from it below and stops if a word differs.
 #define P0 UINT64_C(0xffffffffffffffff)
 #define P1 UINT64_C(0x00000000ffffffff)
 #define P2 UINT64_C(0x0000000000000000)
@@ -37,9 +37,9 @@ static const p256_wide_fe ONE = {
 };
 
 // o = (high : t3 : t2 : t1 : t0) - p when that 257-bit value is at or above p, o = t otherwise.
-// high is 0 or 1: a sum of two elements below p carries at most one bit past the four limbs,
+// high is 0 or 1: a sum of two elements below p carries at most one bit past the four words,
 // and so does each round of reduce() below (proof/p256_wide_field_harness.c).
-static inline void reduce_once(uint64_t o[P256_WIDE_FE_LIMBS], uint64_t t0, uint64_t t1,
+static inline void reduce_once(uint64_t o[P256_WIDE_FE_WORDS], uint64_t t0, uint64_t t1,
                                uint64_t t2, uint64_t t3, uint64_t high) {
     uint64_t borrow = 0;
     uint64_t r0 = p256_wide_sub_borrow(&borrow, t0, P0);
@@ -54,15 +54,15 @@ static inline void reduce_once(uint64_t o[P256_WIDE_FE_LIMBS], uint64_t t0, uint
     o[3] = (t3 & keep) | (r3 & ~keep);
 }
 
-// One round of Montgomery reduction on the five limbs (*t4 : *t3 : *t2 : *t1 : u). It adds
-// u * p, which makes the low limb zero, drops that limb, and returns the carry out of *t4, 0
-// or 1. -p^-1 mod 2^64 is 1, because p's low limb is 2^64 - 1, so the multiplier is u itself,
+// One round of Montgomery reduction on the five words (*t4 : *t3 : *t2 : *t1 : u). It adds
+// u * p, which makes the low word zero, drops that word, and returns the carry out of *t4, 0
+// or 1. -p^-1 mod 2^64 is 1, because p's low word is 2^64 - 1, so the multiplier is u itself,
 // and u * (p + 1) / 2^64 is u * (2^192 - 2^160 + 2^128 + 2^32): shifted copies of u, and no
 // product. top is the carry the round before returned, which belongs in *t4.
 static inline uint64_t reduce_round(uint64_t u, uint64_t *t1, uint64_t *t2, uint64_t *t3,
                                     uint64_t *t4, uint64_t top) {
-    // u * (2^64 - 2^32 + 1), the multiple of p's top limb: (u : u) less (u >> 32 : u << 32).
-    // Its high limb is at most 2^64 - 2^32, so top fits beside it.
+    // u * (2^64 - 2^32 + 1), the multiple of p's top word: (u : u) less (u >> 32 : u << 32).
+    // Its high word is at most 2^64 - 2^32, so top fits beside it.
     uint64_t borrow = 0;
     uint64_t multiple_low = p256_wide_sub_borrow(&borrow, u, u << 32);
     uint64_t multiple_high = p256_wide_sub_borrow(&borrow, u, u >> 32);
@@ -74,9 +74,9 @@ static inline uint64_t reduce_round(uint64_t u, uint64_t *t1, uint64_t *t2, uint
     return carry;
 }
 
-// o = (t7 : ... : t0) / 2^256 mod p, for any eight limbs. Four rounds leave a value below
+// o = (t7 : ... : t0) / 2^256 mod p, for any eight words. Four rounds leave a value below
 // 2^256 + p in (high : t7 : t6 : t5 : t4), so one conditional subtraction lands it below
-// 2^256, and below p when the eight limbs are a product of two elements below p.
+// 2^256, and below p when the eight words are a product of two elements below p.
 //
 // The multiply and the square both end here, and the attribute keeps the reduction inside
 // each. With two callers and no attribute, gcc 13 compiled it once, out of line, even when it
@@ -84,7 +84,7 @@ static inline uint64_t reduce_round(uint64_t u, uint64_t *t1, uint64_t *t2, uint
 // stack: under gcc for x86-64 a key exchange retired 1,835,031 instructions with that call,
 // 1,759,594 without it and 1,823,092 before the square had a routine of its own
 // (docs/decisions.md 105). Both compilers a host object builds with read the attribute.
-static inline __attribute__((always_inline)) void reduce(uint64_t o[P256_WIDE_FE_LIMBS],
+static inline __attribute__((always_inline)) void reduce(uint64_t o[P256_WIDE_FE_WORDS],
                                                          uint64_t t0, uint64_t t1, uint64_t t2,
                                                          uint64_t t3, uint64_t t4, uint64_t t5,
                                                          uint64_t t6, uint64_t t7) {
@@ -96,44 +96,44 @@ static inline __attribute__((always_inline)) void reduce(uint64_t o[P256_WIDE_FE
 }
 
 void p256_wide_fe_from_portable(p256_wide_fe *o, const p256_fe *a) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->limb[i] = (uint64_t)a->limb[2 * i] | ((uint64_t)a->limb[2 * i + 1] << 32);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->word[i] = (uint64_t)a->word[2 * i] | ((uint64_t)a->word[2 * i + 1] << 32);
     }
 }
 
 void p256_wide_fe_to_portable(p256_fe *o, const p256_wide_fe *a) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->limb[2 * i] = (uint32_t)a->limb[i];
-        o->limb[2 * i + 1] = (uint32_t)(a->limb[i] >> 32);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->word[2 * i] = (uint32_t)a->word[i];
+        o->word[2 * i + 1] = (uint32_t)(a->word[i] >> 32);
     }
 }
 
 void p256_wide_fe_from_bytes(p256_wide_fe *o, const uint8_t in[P256_FE_LEN]) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        const uint8_t *word = in + P256_FE_LEN - 8 * (i + 1);
-        uint64_t limb = 0;
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        const uint8_t *bytes = in + P256_FE_LEN - 8 * (i + 1);
+        uint64_t word = 0;
         for (size_t j = 0; j < 8; j++) {
-            limb = (limb << 8) | word[j];
+            word = (word << 8) | bytes[j];
         }
-        o->limb[i] = limb;
+        o->word[i] = word;
     }
 }
 
 void p256_wide_fe_to_bytes(uint8_t out[P256_FE_LEN], const p256_wide_fe *a) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        uint8_t *word = out + P256_FE_LEN - 8 * (i + 1);
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        uint8_t *bytes = out + P256_FE_LEN - 8 * (i + 1);
         for (size_t j = 0; j < 8; j++) {
-            word[j] = (uint8_t)(a->limb[i] >> (56 - 8 * j));
+            bytes[j] = (uint8_t)(a->word[i] >> (56 - 8 * j));
         }
     }
 }
 
 uint64_t p256_wide_fe_reduced_mask(const p256_wide_fe *a) {
     uint64_t borrow = 0;
-    (void)p256_wide_sub_borrow(&borrow, a->limb[0], P0);
-    (void)p256_wide_sub_borrow(&borrow, a->limb[1], P1);
-    (void)p256_wide_sub_borrow(&borrow, a->limb[2], P2);
-    (void)p256_wide_sub_borrow(&borrow, a->limb[3], P3);
+    (void)p256_wide_sub_borrow(&borrow, a->word[0], P0);
+    (void)p256_wide_sub_borrow(&borrow, a->word[1], P1);
+    (void)p256_wide_sub_borrow(&borrow, a->word[2], P2);
+    (void)p256_wide_sub_borrow(&borrow, a->word[3], P3);
     return p256_wide_mask(borrow);
 }
 
@@ -141,7 +141,7 @@ uint64_t p256_wide_fe_reduced_mask(const p256_wide_fe *a) {
 // wraps, carries into bit 64 exactly when v is not zero, as p256_wide_mul.c's equal_mask has
 // it. The borrow of 0 - v says the same, and on the overflow builtins gcc 13.3 and 15.2 for
 // x86-64 compiled that borrow to a jump on v, which here is a coordinate (docs/decisions.md
-// 94). gcc reads another form of the step by default (p256_wide_limb.h), and a build that names
+// 94). gcc reads another form of the step by default (p256_wide_word.h), and a build that names
 // the builtins reads this file too. So no step of this file subtracts from a constant zero.
 static uint64_t zero_mask_word(uint64_t v) {
     uint64_t nonzero = (uint64_t)(((ct_u128)v + UINT64_MAX) >> 64);
@@ -149,81 +149,81 @@ static uint64_t zero_mask_word(uint64_t v) {
 }
 
 uint64_t p256_wide_fe_zero_mask(const p256_wide_fe *a) {
-    return zero_mask_word(a->limb[0] | a->limb[1] | a->limb[2] | a->limb[3]);
+    return zero_mask_word(a->word[0] | a->word[1] | a->word[2] | a->word[3]);
 }
 
 uint64_t p256_wide_fe_equal_mask(const p256_wide_fe *a, const p256_wide_fe *b) {
-    return zero_mask_word((a->limb[0] ^ b->limb[0]) | (a->limb[1] ^ b->limb[1]) |
-                          (a->limb[2] ^ b->limb[2]) | (a->limb[3] ^ b->limb[3]));
+    return zero_mask_word((a->word[0] ^ b->word[0]) | (a->word[1] ^ b->word[1]) |
+                          (a->word[2] ^ b->word[2]) | (a->word[3] ^ b->word[3]));
 }
 
 void p256_wide_fe_cmov(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask) {
-    o->limb[0] = (a->limb[0] & mask) | (o->limb[0] & ~mask);
-    o->limb[1] = (a->limb[1] & mask) | (o->limb[1] & ~mask);
-    o->limb[2] = (a->limb[2] & mask) | (o->limb[2] & ~mask);
-    o->limb[3] = (a->limb[3] & mask) | (o->limb[3] & ~mask);
+    o->word[0] = (a->word[0] & mask) | (o->word[0] & ~mask);
+    o->word[1] = (a->word[1] & mask) | (o->word[1] & ~mask);
+    o->word[2] = (a->word[2] & mask) | (o->word[2] & ~mask);
+    o->word[3] = (a->word[3] & mask) | (o->word[3] & ~mask);
 }
 
 void p256_wide_fe_add(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     uint64_t carry = 0;
-    uint64_t s0 = p256_wide_add_carry(&carry, a->limb[0], b->limb[0]);
-    uint64_t s1 = p256_wide_add_carry(&carry, a->limb[1], b->limb[1]);
-    uint64_t s2 = p256_wide_add_carry(&carry, a->limb[2], b->limb[2]);
-    uint64_t s3 = p256_wide_add_carry(&carry, a->limb[3], b->limb[3]);
-    reduce_once(o->limb, s0, s1, s2, s3, carry);
+    uint64_t s0 = p256_wide_add_carry(&carry, a->word[0], b->word[0]);
+    uint64_t s1 = p256_wide_add_carry(&carry, a->word[1], b->word[1]);
+    uint64_t s2 = p256_wide_add_carry(&carry, a->word[2], b->word[2]);
+    uint64_t s3 = p256_wide_add_carry(&carry, a->word[3], b->word[3]);
+    reduce_once(o->word, s0, s1, s2, s3, carry);
 }
 
 void p256_wide_fe_sub(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
     uint64_t borrow = 0;
-    uint64_t d0 = p256_wide_sub_borrow(&borrow, a->limb[0], b->limb[0]);
-    uint64_t d1 = p256_wide_sub_borrow(&borrow, a->limb[1], b->limb[1]);
-    uint64_t d2 = p256_wide_sub_borrow(&borrow, a->limb[2], b->limb[2]);
-    uint64_t d3 = p256_wide_sub_borrow(&borrow, a->limb[3], b->limb[3]);
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, a->word[0], b->word[0]);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, a->word[1], b->word[1]);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, a->word[2], b->word[2]);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, a->word[3], b->word[3]);
     // a < b wrapped the difference by 2^256, and adding p once brings it back into [0, p),
     // because both inputs are below p. The carry out of that sum is the 2^256 the wrap took.
     uint64_t wrapped = p256_wide_mask(borrow);
     uint64_t carry = 0;
-    o->limb[0] = p256_wide_add_carry(&carry, d0, P0 & wrapped);
-    o->limb[1] = p256_wide_add_carry(&carry, d1, P1 & wrapped);
-    o->limb[2] = p256_wide_add_carry(&carry, d2, P2 & wrapped);
-    o->limb[3] = p256_wide_add_carry(&carry, d3, P3 & wrapped);
+    o->word[0] = p256_wide_add_carry(&carry, d0, P0 & wrapped);
+    o->word[1] = p256_wide_add_carry(&carry, d1, P1 & wrapped);
+    o->word[2] = p256_wide_add_carry(&carry, d2, P2 & wrapped);
+    o->word[3] = p256_wide_add_carry(&carry, d3, P3 & wrapped);
 }
 
 void p256_wide_fe_neg(p256_wide_fe *o, const p256_wide_fe *a) {
     // p - a is the answer for every element but zero, whose answer is zero. It is computed as
     // ~a - ~p, which is the same number: (2^256 - 1 - a) - (2^256 - 1 - p). a is below p, so ~a
-    // is above ~p and nothing borrows out. 0 - a subtracts every limb from a constant zero, and
-    // p - a subtracts one from p's third limb, which is zero, and on the overflow builtins gcc
-    // 13.3 for x86-64 compiled the borrow of such a step to a jump on the limb
+    // is above ~p and nothing borrows out. 0 - a subtracts every word from a constant zero, and
+    // p - a subtracts one from p's third word, which is zero, and on the overflow builtins gcc
+    // 13.3 for x86-64 compiled the borrow of such a step to a jump on the word
     // (docs/decisions.md 94).
     uint64_t keep = ~p256_wide_fe_zero_mask(a);
     uint64_t borrow = 0;
-    uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->limb[0], ~P0);
-    uint64_t d1 = p256_wide_sub_borrow(&borrow, ~a->limb[1], ~P1);
-    uint64_t d2 = p256_wide_sub_borrow(&borrow, ~a->limb[2], ~P2);
-    uint64_t d3 = p256_wide_sub_borrow(&borrow, ~a->limb[3], ~P3);
-    o->limb[0] = d0 & keep;
-    o->limb[1] = d1 & keep;
-    o->limb[2] = d2 & keep;
-    o->limb[3] = d3 & keep;
+    uint64_t d0 = p256_wide_sub_borrow(&borrow, ~a->word[0], ~P0);
+    uint64_t d1 = p256_wide_sub_borrow(&borrow, ~a->word[1], ~P1);
+    uint64_t d2 = p256_wide_sub_borrow(&borrow, ~a->word[2], ~P2);
+    uint64_t d3 = p256_wide_sub_borrow(&borrow, ~a->word[3], ~P3);
+    o->word[0] = d0 & keep;
+    o->word[1] = d1 & keep;
+    o->word[2] = d2 & keep;
+    o->word[3] = d3 & keep;
 }
 
 void p256_wide_fe_mul(p256_wide_fe *o, const p256_wide_fe *a, const p256_wide_fe *b) {
-    uint64_t b0 = b->limb[0];
-    uint64_t b1 = b->limb[1];
-    uint64_t b2 = b->limb[2];
-    uint64_t b3 = b->limb[3];
+    uint64_t b0 = b->word[0];
+    uint64_t b1 = b->word[1];
+    uint64_t b2 = b->word[2];
+    uint64_t b3 = b->word[3];
     uint64_t t0 = 0;
     uint64_t t1 = 0;
     uint64_t t2 = 0;
     uint64_t t3 = 0;
-    uint64_t t4 = p256_wide_mul_row(&t0, &t1, &t2, &t3, a->limb[0], b0, b1, b2, b3);
-    uint64_t t5 = p256_wide_mul_row(&t1, &t2, &t3, &t4, a->limb[1], b0, b1, b2, b3);
-    uint64_t t6 = p256_wide_mul_row(&t2, &t3, &t4, &t5, a->limb[2], b0, b1, b2, b3);
-    uint64_t t7 = p256_wide_mul_row(&t3, &t4, &t5, &t6, a->limb[3], b0, b1, b2, b3);
-    // o may alias a or b: every limb of both was read above, and nothing wrote o before this
+    uint64_t t4 = p256_wide_mul_row(&t0, &t1, &t2, &t3, a->word[0], b0, b1, b2, b3);
+    uint64_t t5 = p256_wide_mul_row(&t1, &t2, &t3, &t4, a->word[1], b0, b1, b2, b3);
+    uint64_t t6 = p256_wide_mul_row(&t2, &t3, &t4, &t5, a->word[2], b0, b1, b2, b3);
+    uint64_t t7 = p256_wide_mul_row(&t3, &t4, &t5, &t6, a->word[3], b0, b1, b2, b3);
+    // o may alias a or b: every word of both was read above, and nothing wrote o before this
     // line.
-    reduce(o->limb, t0, t1, t2, t3, t4, t5, t6, t7);
+    reduce(o->word, t0, t1, t2, t3, t4, t5, t6, t7);
 }
 
 void p256_wide_fe_sqr(p256_wide_fe *o, const p256_wide_fe *a) {
@@ -235,10 +235,10 @@ void p256_wide_fe_sqr(p256_wide_fe *o, const p256_wide_fe *a) {
     uint64_t t5;
     uint64_t t6;
     uint64_t t7;
-    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->limb[0], a->limb[1],
-                          a->limb[2], a->limb[3]);
-    // o may alias a: every limb of a was read above.
-    reduce(o->limb, t0, t1, t2, t3, t4, t5, t6, t7);
+    p256_wide_sqr_product(&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, a->word[0], a->word[1],
+                          a->word[2], a->word[3]);
+    // o may alias a: every word of a was read above.
+    reduce(o->word, t0, t1, t2, t3, t4, t5, t6, t7);
 }
 
 void p256_wide_fe_to_mont(p256_wide_fe *o, const p256_wide_fe *a) {

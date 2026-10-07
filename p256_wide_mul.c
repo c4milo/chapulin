@@ -36,9 +36,9 @@
 
 #include "ct.h"
 #include "p256_wide_field.h"
-#include "p256_wide_limb.h"
 #include "p256_wide_point.h"
 #include "p256_wide_table.h"
+#include "p256_wide_word.h"
 
 // p256_wide_mul's windows: 64 of four bits, over the eight odd multiples of its point up to 15.
 // p256_wide_base_mul's are p256_wide_table.h's.
@@ -52,7 +52,7 @@ static const p256_wide_fe FE_ZERO = {
 
 // Bit i of k, for i below 256.
 static inline uint64_t scalar_bit(const p256_scalar *k, size_t i) {
-    return (k->limb[i >> 5] >> (i & 31)) & 1U;
+    return (k->word[i >> 5] >> (i & 31)) & 1U;
 }
 
 // Bit i of k, and zero for i above 255, where a top window reads past the scalar. The test
@@ -101,46 +101,46 @@ static digit window_digit(const p256_scalar *k, size_t window, size_t bits, size
 
 // o |= a where mask is all ones, and o unchanged where it is zero.
 static inline void fe_keep(p256_wide_fe *o, const p256_wide_fe *a, uint64_t mask) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->limb[i] |= a->limb[i] & mask;
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->word[i] |= a->word[i] & mask;
     }
 }
 
-// Two limbs of a coordinate side by side, a GNU C vector type that gcc and clang compile to
-// SSE2 or NEON registers and CBMC reads as two uint64_t. & and | act on both limbs at once.
-typedef uint64_t limb_pair __attribute__((vector_size(16)));
+// Two words of a coordinate side by side, a GNU C vector type that gcc and clang compile to
+// SSE2 or NEON registers and CBMC reads as two uint64_t. & and | act on both words at once.
+typedef uint64_t word_pair __attribute__((vector_size(16)));
 
 // o = row[index], for index below P256_WIDE_TABLE_ENTRIES. It reads every entry of the row, in
 // the same order whatever index holds, and keeps one by mask: no address read and no branch
-// depends on index. A row holds 32 entries, so the scan keeps its four sums in limb_pair
+// depends on index. A row holds 32 entries, so the scan keeps its four sums in word_pair
 // values, which the compiler keeps in vector registers, and reads an entry four vectors at a
 // time (docs/decisions.md 109).
 static void table_select(p256_wide_affine *o, const p256_wide_affine row[P256_WIDE_TABLE_ENTRIES],
                          uint64_t index) {
-    limb_pair x_low = {0, 0};
-    limb_pair x_high = {0, 0};
-    limb_pair y_low = {0, 0};
-    limb_pair y_high = {0, 0};
+    word_pair x_low = {0, 0};
+    word_pair x_high = {0, 0};
+    word_pair y_low = {0, 0};
+    word_pair y_high = {0, 0};
     for (uint64_t j = 0; j < P256_WIDE_TABLE_ENTRIES; j++) {
         uint64_t mask = equal_mask(j, index);
-        limb_pair masks = {mask, mask};
-        limb_pair entry_x_low = {row[j].x.limb[0], row[j].x.limb[1]};
-        limb_pair entry_x_high = {row[j].x.limb[2], row[j].x.limb[3]};
-        limb_pair entry_y_low = {row[j].y.limb[0], row[j].y.limb[1]};
-        limb_pair entry_y_high = {row[j].y.limb[2], row[j].y.limb[3]};
+        word_pair masks = {mask, mask};
+        word_pair entry_x_low = {row[j].x.word[0], row[j].x.word[1]};
+        word_pair entry_x_high = {row[j].x.word[2], row[j].x.word[3]};
+        word_pair entry_y_low = {row[j].y.word[0], row[j].y.word[1]};
+        word_pair entry_y_high = {row[j].y.word[2], row[j].y.word[3]};
         x_low |= entry_x_low & masks;
         x_high |= entry_x_high & masks;
         y_low |= entry_y_low & masks;
         y_high |= entry_y_high & masks;
     }
-    o->x.limb[0] = x_low[0];
-    o->x.limb[1] = x_low[1];
-    o->x.limb[2] = x_high[0];
-    o->x.limb[3] = x_high[1];
-    o->y.limb[0] = y_low[0];
-    o->y.limb[1] = y_low[1];
-    o->y.limb[2] = y_high[0];
-    o->y.limb[3] = y_high[1];
+    o->x.word[0] = x_low[0];
+    o->x.word[1] = x_low[1];
+    o->x.word[2] = x_high[0];
+    o->x.word[3] = x_high[1];
+    o->y.word[0] = y_low[0];
+    o->y.word[1] = y_low[1];
+    o->y.word[2] = y_high[0];
+    o->y.word[3] = y_high[1];
 }
 
 // The same scan over eight projective points.

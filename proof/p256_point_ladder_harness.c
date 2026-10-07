@@ -25,10 +25,10 @@
 #include "p256_point.c"
 
 static void point_nondet(p256_point *p) {
-    for (size_t j = 0; j < P256_FE_LIMBS; j++) {
-        p->x.limb[j] = nondet_u32();
-        p->y.limb[j] = nondet_u32();
-        p->z.limb[j] = nondet_u32();
+    for (size_t j = 0; j < P256_FE_WORDS; j++) {
+        p->x.word[j] = nondet_u32();
+        p->y.word[j] = nondet_u32();
+        p->z.word[j] = nondet_u32();
     }
 }
 
@@ -38,14 +38,14 @@ int main(void) {
     p256_point r1;
     p256_point sum;
 
-    for (size_t j = 0; j < P256_SCALAR_LIMBS; j++) {
-        k.limb[j] = nondet_u32();
+    for (size_t j = 0; j < P256_SCALAR_WORDS; j++) {
+        k.word[j] = nondet_u32();
     }
     point_nondet(&r0);
     point_nondet(&r1);
     point_nondet(&sum);
     int i = (int)nondet_i64();
-    __CPROVER_assume(i >= 0 && i < P256_SCALAR_LIMBS * 32);
+    __CPROVER_assume(i >= 0 && i < P256_SCALAR_WORDS * 32);
     ladder_round(&r0, &r1, &sum, &k, i);
     return 0;
 }

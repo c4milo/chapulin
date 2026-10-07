@@ -1,6 +1,6 @@
-// ECDSA P-384 verification on p384_wide_field.c's six 64-bit limbs, which
+// ECDSA P-384 verification on p384_wide_field.c's six 64-bit words, which
 // a host object holds (-DCH_CPU_RUNTIME, cpu_cfg.h; docs/decisions.md 97).
-// A device object holds none of it and verifies on p384.c's 32-bit limbs,
+// A device object holds none of it and verifies on p384.c's 32-bit words,
 // which stay the reference bin/p384_equiv_test compares this file with.
 //
 // Its one caller is p384_ecdsa_verify (p384.c), in every session of a

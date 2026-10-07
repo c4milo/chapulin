@@ -1,14 +1,14 @@
 // Proves, for p256_scalar.c, CONCRETE (real bodies, no stub):
 //
 //   memory safety and absence of UB in every public routine, over fully
-//   nondet limbs — a superset of the "below n" contract — in the
+//   nondet words — a superset of the "below n" contract — in the
 //   distinct and aliased shapes p256_sign.c calls them in;
 //
 //   functional equivalence of every masked choice to a reference that
-//   writes the same choice as a branch: add_limbs and sub_limbs against
+//   writes the same choice as a branch: add_words and sub_words against
 //   a reference that carries and borrows through comparisons rather
 //   than through 64-bit high words, reduce_once against `if (value >=
-//   n) subtract`, select_limbs and p256_scalar_cmov against
+//   n) subtract`, select_words and p256_scalar_cmov against
 //   `if (mask)`, and both predicates against `==`. An inverted mask
 //   would leave every routine here plausible and wrong, and it fails
 //   these;
@@ -34,10 +34,10 @@
 // Not proven here. mont_mul's value: equality of two multipliers is the
 // classic hard SAT instance (docs/proofs.md, and ctwidemul converges
 // only at 8-bit operands), so the Montgomery product is proven
-// memory-safe and UB-free over full-range limbs, and its value rests on
+// memory-safe and UB-free over full-range words, and its value rests on
 // test/p256_sign_test.c's vectors against Python's integers. The uint64
 // carry chain it shares with p256_field.c's CIOS loop is that file's
-// p256_mul lemma; the two loops are the same eight-limb shape over a
+// p256_mul lemma; the two loops are the same eight-word shape over a
 // different modulus.
 //
 // Not unrolled: p256_scalar_inverse's 256 rounds, thousands of
@@ -66,25 +66,25 @@ void ct_wipe(void *p, size_t n) {
     wiped_len += n;
 }
 
-#define LIMB_COUNT P256_SCALAR_LIMBS
+#define WORD_COUNT P256_SCALAR_WORDS
 
-// Fully nondet limbs, stored through the object's own type
-// (docs/proofs.md). No index in p256_scalar.c depends on a limb value,
+// Fully nondet words, stored through the object's own type
+// (docs/proofs.md). No index in p256_scalar.c depends on a word value,
 // so safety must hold for every one of them.
 static void scalar_nondet(p256_scalar *s) {
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
-        s->limb[i] = nondet_u32();
+    for (size_t i = 0; i < WORD_COUNT; i++) {
+        s->word[i] = nondet_u32();
     }
 }
 
-static void limbs_nondet(uint32_t v[LIMB_COUNT]) {
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
+static void words_nondet(uint32_t v[WORD_COUNT]) {
+    for (size_t i = 0; i < WORD_COUNT; i++) {
         v[i] = nondet_u32();
     }
 }
 
-static int limbs_same(const uint32_t a[LIMB_COUNT], const uint32_t b[LIMB_COUNT]) {
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
+static int words_same(const uint32_t a[WORD_COUNT], const uint32_t b[WORD_COUNT]) {
+    for (size_t i = 0; i < WORD_COUNT; i++) {
         if (a[i] != b[i]) {
             return 0;
         }
@@ -95,10 +95,10 @@ static int limbs_same(const uint32_t a[LIMB_COUNT], const uint32_t b[LIMB_COUNT]
 // The reference arithmetic: the same two operations written with
 // comparisons and branches instead of high words and masks. Nothing here
 // multiplies, so the equivalence costs the solver almost nothing.
-static uint32_t ref_add(uint32_t o[LIMB_COUNT], const uint32_t a[LIMB_COUNT],
-                        const uint32_t b[LIMB_COUNT]) {
+static uint32_t ref_add(uint32_t o[WORD_COUNT], const uint32_t a[WORD_COUNT],
+                        const uint32_t b[WORD_COUNT]) {
     uint32_t carry = 0;
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
+    for (size_t i = 0; i < WORD_COUNT; i++) {
         uint32_t sum = a[i] + b[i];
         uint32_t out = (sum < a[i]) ? 1U : 0U;
         sum += carry;
@@ -111,10 +111,10 @@ static uint32_t ref_add(uint32_t o[LIMB_COUNT], const uint32_t a[LIMB_COUNT],
     return carry;
 }
 
-static uint32_t ref_sub(uint32_t o[LIMB_COUNT], const uint32_t a[LIMB_COUNT],
-                        const uint32_t b[LIMB_COUNT]) {
+static uint32_t ref_sub(uint32_t o[WORD_COUNT], const uint32_t a[WORD_COUNT],
+                        const uint32_t b[WORD_COUNT]) {
     uint32_t borrow = 0;
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
+    for (size_t i = 0; i < WORD_COUNT; i++) {
         uint32_t diff = a[i] - b[i];
         uint32_t out = (a[i] < b[i]) ? 1U : 0U;
         if (diff < borrow) {
@@ -126,41 +126,41 @@ static uint32_t ref_sub(uint32_t o[LIMB_COUNT], const uint32_t a[LIMB_COUNT],
     return borrow;
 }
 
-// 1 when the limbs are below n, which is ref_sub's borrow.
-static uint32_t ref_below_order(const uint32_t a[LIMB_COUNT]) {
-    uint32_t discard[LIMB_COUNT];
+// 1 when the words are below n, which is ref_sub's borrow.
+static uint32_t ref_below_order(const uint32_t a[WORD_COUNT]) {
+    uint32_t discard[WORD_COUNT];
     return ref_sub(discard, a, N);
 }
 
-static void prove_limb_arithmetic(void) {
-    uint32_t a[LIMB_COUNT];
-    uint32_t b[LIMB_COUNT];
-    uint32_t got[LIMB_COUNT];
-    uint32_t want[LIMB_COUNT];
+static void prove_word_arithmetic(void) {
+    uint32_t a[WORD_COUNT];
+    uint32_t b[WORD_COUNT];
+    uint32_t got[WORD_COUNT];
+    uint32_t want[WORD_COUNT];
 
-    limbs_nondet(a);
-    limbs_nondet(b);
-    uint32_t carry = add_limbs(got, a, b);
+    words_nondet(a);
+    words_nondet(b);
+    uint32_t carry = add_words(got, a, b);
     uint32_t ref_carry = ref_add(want, a, b);
-    __CPROVER_assert(limbs_same(got, want), "add_limbs: limbs match the reference");
-    __CPROVER_assert(carry == ref_carry, "add_limbs: carry matches the reference");
+    __CPROVER_assert(words_same(got, want), "add_words: words match the reference");
+    __CPROVER_assert(carry == ref_carry, "add_words: carry matches the reference");
 
-    limbs_nondet(a);
-    limbs_nondet(b);
-    uint32_t borrow_mask = sub_limbs(got, a, b);
+    words_nondet(a);
+    words_nondet(b);
+    uint32_t borrow_mask = sub_words(got, a, b);
     uint32_t ref_borrow = ref_sub(want, a, b);
-    __CPROVER_assert(limbs_same(got, want), "sub_limbs: limbs match the reference");
+    __CPROVER_assert(words_same(got, want), "sub_words: words match the reference");
     __CPROVER_assert(borrow_mask == (ref_borrow ? UINT32_MAX : 0),
-                     "sub_limbs: the borrow comes back as a whole mask");
+                     "sub_words: the borrow comes back as a whole mask");
 
     // The select and the masked mover, under both masks and under
     // nothing else: a mask is 0 or all ones by contract.
-    limbs_nondet(a);
-    limbs_nondet(b);
+    words_nondet(a);
+    words_nondet(b);
     uint32_t mask = nondet_u32();
     __CPROVER_assume(mask == 0 || mask == UINT32_MAX);
-    select_limbs(got, a, b, mask);
-    __CPROVER_assert(limbs_same(got, mask ? a : b), "select_limbs: takes the masked side");
+    select_words(got, a, b, mask);
+    __CPROVER_assert(words_same(got, mask ? a : b), "select_words: takes the masked side");
 
     p256_scalar x;
     p256_scalar y;
@@ -169,15 +169,15 @@ static void prove_limb_arithmetic(void) {
     scalar_nondet(&y);
     before_x = x;
     p256_scalar_cmov(&x, &y, mask);
-    __CPROVER_assert(limbs_same(x.limb, mask ? y.limb : before_x.limb),
+    __CPROVER_assert(words_same(x.word, mask ? y.word : before_x.word),
                      "p256_scalar_cmov: moves under the mask and only then");
 }
 
 static void prove_reduce_once(void) {
-    uint32_t t[LIMB_COUNT];
-    uint32_t got[LIMB_COUNT];
-    uint32_t want[LIMB_COUNT];
-    limbs_nondet(t);
+    uint32_t t[WORD_COUNT];
+    uint32_t got[WORD_COUNT];
+    uint32_t want[WORD_COUNT];
+    words_nondet(t);
     uint32_t high = nondet_u32();
     __CPROVER_assume(high <= 1); // the carry out of an add, or CIOS's ninth word
 
@@ -186,7 +186,7 @@ static void prove_reduce_once(void) {
     // high:t is at or above n unless the low subtraction borrowed out
     // with no high bit to cover it.
     int at_or_above = (high == 1) || !borrow;
-    __CPROVER_assert(limbs_same(got, at_or_above ? want : t),
+    __CPROVER_assert(words_same(got, at_or_above ? want : t),
                      "reduce_once: subtracts n exactly when the value is at or above it");
     __CPROVER_assert(!at_or_above || high == 1 || ref_below_order(got),
                      "reduce_once: a reduced value below 2n lands below n");
@@ -197,14 +197,14 @@ static void prove_predicates(void) {
     scalar_nondet(&a);
 
     int zero = 1;
-    for (size_t i = 0; i < LIMB_COUNT; i++) {
-        if (a.limb[i] != 0) {
+    for (size_t i = 0; i < WORD_COUNT; i++) {
+        if (a.word[i] != 0) {
             zero = 0;
         }
     }
     __CPROVER_assert(p256_scalar_zero_mask(&a) == (zero ? UINT32_MAX : 0),
                      "p256_scalar_zero_mask: all ones for zero and nothing else");
-    __CPROVER_assert(p256_scalar_reduced_mask(&a) == (ref_below_order(a.limb) ? UINT32_MAX : 0),
+    __CPROVER_assert(p256_scalar_reduced_mask(&a) == (ref_below_order(a.word) ? UINT32_MAX : 0),
                      "p256_scalar_reduced_mask: all ones below n and nothing else");
 }
 
@@ -219,15 +219,15 @@ static void prove_scalar_contract(void) {
 
     scalar_nondet(&a);
     p256_scalar_reduce(&o, &a);
-    __CPROVER_assert(ref_below_order(o.limb),
+    __CPROVER_assert(ref_below_order(o.word),
                      "p256_scalar_reduce: any 256-bit value lands below n");
 
     scalar_nondet(&a);
     scalar_nondet(&b);
-    __CPROVER_assume(ref_below_order(a.limb));
-    __CPROVER_assume(ref_below_order(b.limb));
+    __CPROVER_assume(ref_below_order(a.word));
+    __CPROVER_assume(ref_below_order(b.word));
     p256_scalar_add(&o, &a, &b);
-    __CPROVER_assert(ref_below_order(o.limb), "p256_scalar_add: the sum is a scalar");
+    __CPROVER_assert(ref_below_order(o.word), "p256_scalar_add: the sum is a scalar");
 }
 
 static void prove_marshalling(void) {
@@ -243,9 +243,9 @@ static void prove_marshalling(void) {
     }
 }
 
-// Every routine again over unconstrained limbs, in the aliasing shapes
+// Every routine again over unconstrained words, in the aliasing shapes
 // p256_sign.c uses. No assertion on the values: this is the memory
-// safety and UB proof, and it must hold for limbs no contract allows.
+// safety and UB proof, and it must hold for words no contract allows.
 static void prove_safety(void) {
     p256_scalar a;
     p256_scalar b;
@@ -275,12 +275,12 @@ static void prove_safety(void) {
 }
 
 // The wipes of the three routines a session runs on a secret under either
-// answer (p256_scalar.h), over any limbs. Each array is LIMB_COUNT limbs.
+// answer (p256_scalar.h), over any words. Each array is WORD_COUNT words.
 static void prove_wipes(void) {
     p256_scalar a;
     p256_scalar b;
     p256_scalar o;
-    const size_t one = sizeof a.limb;
+    const size_t one = sizeof a.word;
 
     scalar_nondet(&a);
     scalar_nondet(&b);
@@ -307,23 +307,23 @@ static void prove_wipes(void) {
 // What this is and is not. It is the same two expressions over the same
 // range, not a call into p256_scalar_inverse, because calling that
 // function drags 512 Montgomery multiplies into the formula and the
-// solver returns no verdict. So it catches a limb count and a shift
+// solver returns no verdict. So it catches a word count and a shift
 // width that stop agreeing with each other, and it does not prove the
 // real loop. The real loop's body is mont_mul, whose memory safety
-// prove_safety covers over full-range limbs, and its values rest on
+// prove_safety covers over full-range words, and its values rest on
 // test/p256_sign_test.c's inverse vectors.
 static void prove_exponent_index_bounds(void) {
     uint32_t seen = 0;
     for (int i = 256 - 1; i >= 0; i--) {
-        __CPROVER_assert((i >> 5) < LIMB_COUNT, "the exponent index stays inside the limb array");
-        __CPROVER_assert((i & 31) < 32, "the exponent shift stays below the limb width");
+        __CPROVER_assert((i >> 5) < WORD_COUNT, "the exponent index stays inside the word array");
+        __CPROVER_assert((i & 31) < 32, "the exponent shift stays below the word width");
         seen |= (N_MINUS_2[i >> 5] >> (i & 31)) & 1U;
     }
     __CPROVER_assert(seen == 1, "the exponent has at least one set bit");
 }
 
 int main(void) {
-    prove_limb_arithmetic();
+    prove_word_arithmetic();
     prove_reduce_once();
     prove_predicates();
     prove_scalar_contract();

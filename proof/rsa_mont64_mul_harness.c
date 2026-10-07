@@ -1,5 +1,5 @@
 // Proves: rsa_mont64_mont_mul and rsa_mont64_mont_square, each whole, at
-// the largest limb count the build admits (48 for the device bound of
+// the largest word count the build admits (48 for the device bound of
 // RSA-3072; 64 for RSA-4096 in the rsa_mont64_mul_webpki variant, which
 // sets CH_TRUST_WEBPKI), over any operands, any modulus and any m0inv,
 // read and write inside their arrays. The largest count is the binding
@@ -20,12 +20,12 @@
 // operation, the setup and the signer's exponentiation square.
 //
 // rsa_mont64_mul_add, the plain product and sum, runs once at half the
-// largest limb count, a prime's, which is the largest its one caller
-// passes: its output is twice its operands' limbs.
+// largest word count, a prime's, which is the largest its one caller
+// passes: its output is twice its operands' words.
 //
 // This line runs without --unsigned-overflow-check. That every sum in
 // the function stays inside 128 bits is rsa_mont64_sums_harness.c's
-// claim, at four limbs: the whole function at 48 limbs with that check
+// claim, at four words: the whole function at 48 words with that check
 // on returned no verdict in five minutes and 8.5 GB.
 //
 // What this does not prove: that the result is the Montgomery product, or
@@ -36,41 +36,41 @@
 
 int main(void) {
     rsa_mont64_modulus mod;
-    uint64_t a[RSA_MONT64_LIMBS_MAX];
-    uint64_t b[RSA_MONT64_LIMBS_MAX];
-    uint64_t o[RSA_MONT64_LIMBS_MAX];
+    uint64_t a[RSA_MONT64_WORDS_MAX];
+    uint64_t b[RSA_MONT64_WORDS_MAX];
+    uint64_t o[RSA_MONT64_WORDS_MAX];
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
+    havoc_words(b, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_mul(o, a, b, &mod);
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
+    havoc_words(b, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_mul(b, a, b, &mod);
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(b, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
+    havoc_words(b, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_mul(a, a, b, &mod);
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_mul(a, a, a, &mod);
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_square(o, a, &mod);
 
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
     rsa_mont64_mont_square(a, a, &mod);
 
-    uint64_t product[RSA_MONT64_LIMBS_MAX];
-    havoc_limbs(a, RSA_MONT64_LIMBS_MAX / 2);
-    havoc_limbs(b, RSA_MONT64_LIMBS_MAX / 2);
-    havoc_limbs(o, RSA_MONT64_LIMBS_MAX / 2);
-    rsa_mont64_mul_add(product, a, b, o, RSA_MONT64_LIMBS_MAX / 2);
+    uint64_t product[RSA_MONT64_WORDS_MAX];
+    havoc_words(a, RSA_MONT64_WORDS_MAX / 2);
+    havoc_words(b, RSA_MONT64_WORDS_MAX / 2);
+    havoc_words(o, RSA_MONT64_WORDS_MAX / 2);
+    rsa_mont64_mul_add(product, a, b, o, RSA_MONT64_WORDS_MAX / 2);
     return 0;
 }

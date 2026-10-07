@@ -57,7 +57,7 @@
 // on ct.h's widening multiply on the native multiply, the _native copies widemul.h dispatches
 // to, and X25519 on x25519_wide.c's field, whose 64x64->128 multiply the bit states as well. A
 // session without it runs them on ct.h's 16x16 decomposition, the files under their own names,
-// and X25519 on the 16-limb field (docs/decisions.md 52, 87 and 89).
+// and X25519 on the 16-word field (docs/decisions.md 52, 87 and 89).
 //
 // CH_CPU_AVX2 says the CPU has AVX2 and its operating system saves the 256-bit registers, which a
 // probe reads from CPUID and XGETBV, and CH_CPU_VAES that the CPU also has VAES and VPCLMULQDQ on

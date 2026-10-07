@@ -1,11 +1,11 @@
-// Proves: one step of the wide X25519 field's ladder keeps every limb inside
+// Proves: one step of the wide X25519 field's ladder keeps every word inside
 // INV-34's bounds, starting from any state inside them -- the inductive step
-// for x25519_wide.c, as x25519_step_harness.c is for the 16-limb field.
+// for x25519_wide.c, as x25519_step_harness.c is for the 16-word field.
 //
-// The invariant, from proof/x25519_wide_stubs.h: limbs 0, 2, 3 and 4 of a,
-// b, c and d under 2^51, limb 1 under 2^51 + 2^20, and every limb of x under
+// The invariant, from proof/x25519_wide_stubs.h: words 0, 2, 3 and 4 of a,
+// b, c and d under 2^51, word 1 under 2^51 + 2^20, and every word of x under
 // 2^51. Base case, by inspection of x25519_wide_ladder()'s prologue: a = d =
-// 1, c = 0, and b = x, where unpack leaves every limb under 2^51
+// 1, c = 0, and b = x, where unpack leaves every word under 2^51
 // (x25519_wide_ops asserts it). Step, proven here on the shipped step(): from
 // any such state and either scalar bit, the step hands ct_mul128 only
 // operands inside the contract's domain, wraps no unsigned value

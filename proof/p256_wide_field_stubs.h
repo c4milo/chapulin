@@ -38,8 +38,8 @@ static uint64_t nondet_wide_mask(void) {
 
 static void havoc_wide_fe(p256_wide_fe *o) {
     STUB_W_OK(o, sizeof *o);
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        o->limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        o->word[i] = nondet_u64();
     }
 }
 
@@ -55,8 +55,8 @@ void p256_wide_fe_from_portable(p256_wide_fe *o, const p256_fe *a) {
 void p256_wide_fe_to_portable(p256_fe *o, const p256_wide_fe *a) {
     check_wide_fe_readable(a);
     STUB_W_OK(o, sizeof *o);
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        o->limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        o->word[i] = nondet_u32();
     }
 }
 

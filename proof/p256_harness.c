@@ -2,7 +2,7 @@
 // memory-safe and UB-free, CONCRETE (real bodies, real rbuf via buf.c):
 //
 //   der_parse/der_scalar  : any input up to 80 bytes (a valid sig is <= 72)
-//   fe_from_bytes         : the byte->limb marshalling of r/s/pub/hash
+//   fe_from_bytes         : the byte->word marshalling of r/s/pub/hash
 //   fe_cmp/fe_is_zero/fe_add_raw/fe_sub_raw, mod_add/mod_sub (aliased too)
 //   mont_mul/mod_mul      : both moduli, o aliasing a as mod_inv does
 //   on_curve, point_double, point_add : fully nondet points, including the
@@ -25,10 +25,10 @@
 uint32_t nondet_u32(void);
 int nondet_int(void);
 
-// Fully nondet limbs — a superset of the "below m" contract; no index in
-// p256.c depends on limb values, so safety must hold regardless.
-static void fe_nondet(uint32_t f[LIMBS]) {
-    for (size_t i = 0; i < LIMBS; i++) {
+// Fully nondet words — a superset of the "below m" contract; no index in
+// p256.c depends on word values, so safety must hold regardless.
+static void fe_nondet(uint32_t f[WORDS]) {
+    for (size_t i = 0; i < WORDS; i++) {
         f[i] = nondet_u32();
     }
 }
@@ -54,9 +54,9 @@ int main(void) {
     uint8_t hash[32];
     fill_nondet(pub, sizeof pub);
     fill_nondet(hash, sizeof hash);
-    uint32_t a[LIMBS];
-    uint32_t b[LIMBS];
-    uint32_t o[LIMBS];
+    uint32_t a[WORDS];
+    uint32_t b[WORDS];
+    uint32_t o[WORDS];
     fe_from_bytes(a, pub);
     fe_from_bytes(b, pub + 32);
     fe_from_bytes(o, hash);

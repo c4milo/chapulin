@@ -2,8 +2,8 @@ invariant: INV-41
 file: rsa_mont64.c
 catches: proof/prove-one.sh rsa_mont64_ops
 reason: at_or_above subtracts with a borrow where it added a complement,
-  so each limb of the comparison wraps below zero whenever the modulus's
-  limb is the larger. The answer happens to stay right, and the file's
+  so each word of the comparison wraps below zero whenever the modulus's
+  word is the larger. The answer happens to stay right, and the file's
   claim that no sum in it wraps does not. rsa_mont64_ops runs the
   function with --unsigned-overflow-check on, where that subtraction is
   a property.

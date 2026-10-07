@@ -3,7 +3,7 @@
 // rsa_mont64_init_webpki variant, which sets CH_TRUST_WEBPKI) and the bit
 // length that length has with its top bit set, reads and writes inside
 // its arrays: the byte marshalling, neg_inverse, the power of two it
-// starts from, its 2 * limbs + 1 doublings and its five multiplications.
+// starts from, its 2 * words + 1 doublings and its five multiplications.
 // That is the call a modulus of a real key makes, and the largest length
 // is the binding case for every index.
 //
@@ -16,14 +16,14 @@
 // that check on.
 //
 // What it does not drive: a bit length below the top bit. The loop then
-// runs up to 64 * limbs more doublings, 3,072 at this bound, past what
+// runs up to 64 * words more doublings, 3,072 at this bound, past what
 // one formula holds. Each of them is double_mod, which
-// rsa_mont64_ops_harness.c proves for any limbs, and the first limb the
+// rsa_mont64_ops_harness.c proves for any words, and the first word the
 // call writes is power_of_two's, which that harness proves for every bit
 // the call's CH_ASSERT admits. bin/rsa_equiv_test runs moduli of every
 // bit length from 2 up through rsa_vp1.
 //
-// What it does not prove: that the limbs it writes are R^2 mod m and
+// What it does not prove: that the words it writes are R^2 mod m and
 // -m^-1 mod 2^64. bin/rsa_equiv_test and the published vectors hold
 // those, through every answer that depends on them.
 #include "rsa_mont64_stubs.h"
@@ -33,7 +33,7 @@ int main(void) {
     rsa_mont64_modulus mod;
     fill_nondet(m, sizeof m);
     rsa_mont64_modulus_init(&mod, m, sizeof m, 8 * sizeof m);
-    __CPROVER_assert(mod.limbs == RSA_MONT64_LIMBS_MAX,
-                     "the largest modulus takes the largest limb count");
+    __CPROVER_assert(mod.words == RSA_MONT64_WORDS_MAX,
+                     "the largest modulus takes the largest word count");
     return 0;
 }

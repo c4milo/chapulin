@@ -1,5 +1,5 @@
 // A host object's AVX2 Poly1305 kernel on x86-64: the block loop of RFC
-// 8439 §2.5 eight blocks at a time, in four lanes of five 26-bit limbs in
+// 8439 §2.5 eight blocks at a time, in four lanes of five 26-bit words in
 // 256-bit vectors. It is poly1305_vector.c's SSE2 path with four lanes in
 // place of two, and every x86-64 host object carries it beside that path,
 // in poly1305.c's native copy alone. poly1305.c's poly1305_update_avx2

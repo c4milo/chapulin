@@ -2,9 +2,9 @@
 // stays the reference (docs/decisions.md 97): the same key, hash and
 // signature into both, the same verdict out.
 //
-// A host object checks a signature on six 64-bit limbs
+// A host object checks a signature on six 64-bit words
 // (p384_wide_verify.c over p384_wide_field.c) and a device object on
-// p384.c's twelve 32-bit limbs. This binary holds both: p384_ecdsa_verify
+// p384.c's twelve 32-bit words. This binary holds both: p384_ecdsa_verify
 // is the host arm, and p384_ecdsa_verify_portable is the device arm, which
 // test/p384_portable.c compiles under that name. The 32-bit arm carries
 // the RFC 6979 vectors, the Wycheproof suite and the Lean differential;
@@ -429,7 +429,7 @@ int main(void) {
                       (unsigned long long)seed);
         return 1;
     }
-    printf("p384_equiv: %lu field results and %lu verdicts, the 64-bit limbs == the 32-bit limbs "
+    printf("p384_equiv: %lu field results and %lu verdicts, the 64-bit words == the 32-bit words "
            "(seed 0x%llx)\n",
            field_comparisons, comparisons, (unsigned long long)seed);
     return 0;

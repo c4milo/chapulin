@@ -1,7 +1,7 @@
 // Proves: x25519's linear field ops — carry, add, sub, pack, cswap,
 // unpack — are memory-safe and UB-free with the signed-overflow check
-// on, at the documented caller bounds (|limb| < 2^58 into carry, the
-// range any product fold produces; |limb| < 2^24 into add/sub/pack,
+// on, at the documented caller bounds (|word| < 2^58 into carry, the
+// range any product fold produces; |word| < 2^24 into add/sub/pack,
 // far above the 2^17 x25519_step proves the ladder holds them
 // under). add and sub are also
 // driven with the output aliasing the first input, the shape the

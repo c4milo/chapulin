@@ -40,10 +40,10 @@
 #include "p256_point.c"
 
 static void point_nondet(p256_point *p) {
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        p->x.limb[i] = nondet_u32();
-        p->y.limb[i] = nondet_u32();
-        p->z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        p->x.word[i] = nondet_u32();
+        p->y.word[i] = nondet_u32();
+        p->z.word[i] = nondet_u32();
     }
 }
 

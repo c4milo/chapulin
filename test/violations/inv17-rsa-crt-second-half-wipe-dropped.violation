@@ -4,7 +4,7 @@ catches: rsa_sign_equiv_test
 reason: rsa_sign64_sp1 returns without wiping m2, which crt_combine left
   holding the half of the signature modulo q, out of its domain. The
   signature less that half is a multiple of q. bin/rsa_sign_equiv_test
-  copies the stack below one call and finds two limbs of that half there.
+  copies the stack below one call and finds two words of that half there.
 
 --- old
     ct_wipe(m1, sizeof m1);

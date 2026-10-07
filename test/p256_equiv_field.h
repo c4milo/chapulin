@@ -1,8 +1,8 @@
 // The wide P-256 field and scalar arithmetic against p256_field.c and
 // p256_scalar.c, routine by routine, for test/p256_equiv_test.c. Both
 // fields keep an element in the Montgomery domain with R = 2^256, so each
-// wide routine must give the limbs the routine it mirrors gives, taken two
-// at a time: every comparison here is of the limbs, not of a value read
+// wide routine must give the words the routine it mirrors gives, taken two
+// at a time: every comparison here is of the words, not of a value read
 // back through another routine.
 //
 // The wide field also answers test/p256_field_vectors.h directly, the
@@ -17,7 +17,7 @@
 #define WIDE_ONES UINT64_MAX
 #define PORTABLE_ONES UINT32_MAX
 
-// Whether the wide element holds the portable element's limbs.
+// Whether the wide element holds the portable element's words.
 static int same_fe(const p256_wide_fe *wide, const p256_fe *portable) {
     p256_fe back;
     p256_wide_fe_to_portable(&back, wide);
@@ -30,17 +30,17 @@ static int same_mask(uint64_t wide, uint32_t portable) {
     return (wide == WIDE_ONES && portable == PORTABLE_ONES) || (wide == 0 && portable == 0);
 }
 
-// Eight limbs for a field element or a scalar: random, with one limb in
+// Eight words for a field element or a scalar: random, with one word in
 // four all ones and one in four zero, so carries and borrows run the
 // length of the value.
-static void random_limbs(uint32_t limb[8]) {
+static void random_words(uint32_t word[8]) {
     for (size_t i = 0; i < 8; i++) {
         uint64_t r = rng_next();
-        limb[i] = (uint32_t)(r >> 32);
+        word[i] = (uint32_t)(r >> 32);
         if ((r & 3) == 0) {
-            limb[i] = UINT32_MAX;
+            word[i] = UINT32_MAX;
         } else if ((r & 3) == 1) {
-            limb[i] = 0;
+            word[i] = 0;
         }
     }
 }
@@ -48,7 +48,7 @@ static void random_limbs(uint32_t limb[8]) {
 // An element below p.
 static void random_fe(p256_fe *o) {
     do {
-        random_limbs(o->limb);
+        random_words(o->word);
     } while (p256_fe_reduced_mask(o) == 0);
 }
 
@@ -134,7 +134,7 @@ static void reduced_case(const p256_fe *any) {
            same_mask(p256_wide_fe_reduced_mask(&wide), p256_fe_reduced_mask(any)));
 }
 
-// Elements at the edges, as limbs: 0, 1, 2, p - 1, p - 2, R mod p, p - 2^192 and 2^255. Then
+// Elements at the edges, as words: 0, 1, 2, p - 1, p - 2, R mod p, p - 2^192 and 2^255. Then
 // three values that are not elements: p, p + 1 and 2^256 - 1.
 static const p256_fe FE_EDGES[] = {
     {{0, 0, 0, 0, 0, 0, 0, 0}},
@@ -170,7 +170,7 @@ static void run_field(void) {
         random_fe(&a);
         random_fe(&b);
         field_case("random elements", &a, &b, i < 200);
-        random_limbs(a.limb);
+        random_words(a.word);
         reduced_case(&a);
     }
     report("field", "the Montgomery form of 1", same_fe(&p256_wide_fe_one_mont, &p256_fe_one_mont));
@@ -219,7 +219,7 @@ static void run_field_vectors(void) {
 // A scalar below n.
 static void random_scalar(p256_scalar *o) {
     do {
-        random_limbs(o->limb);
+        random_words(o->word);
     } while (p256_scalar_reduced_mask(o) == 0);
 }
 
@@ -250,7 +250,7 @@ static void scalar_case(const char *name, const p256_scalar *a, const p256_scala
     report("scalar", name, ok);
 }
 
-// 0, 1, 2, n - 1, n - 2 and 2^255, as limbs.
+// 0, 1, 2, n - 1, n - 2 and 2^255, as words.
 static const p256_scalar SCALAR_EDGES[] = {
     {{0, 0, 0, 0, 0, 0, 0, 0}},
     {{1, 0, 0, 0, 0, 0, 0, 0}},

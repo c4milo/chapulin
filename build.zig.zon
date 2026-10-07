@@ -114,7 +114,7 @@
         "p256_sign.h",
         "p256_wide_field.c",
         "p256_wide_field.h",
-        "p256_wide_limb.h",
+        "p256_wide_word.h",
         "p256_wide_mul.c",
         "p256_wide_mul.h",
         "p256_wide_point.c",

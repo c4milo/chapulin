@@ -54,7 +54,7 @@ extern const p256_point p256_point_generator;
 
 // A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds p256_point_mul,
 // p256_point_base_mul, p256_point_from_bytes and p256_point_affine a second
-// time, over four 64-bit limbs (p256_wide_point.h, p256_wide_mul.h).
+// time, over four 64-bit words (p256_wide_point.h, p256_wide_mul.h).
 // widemul.h holds a dispatcher for each of them, which a caller outside
 // this file calls with the answer the operation runs under: this file for a
 // session whose caller states nothing about the multiply, and that one for

@@ -1,4 +1,4 @@
-// RSA-PSS signing on 64-bit limbs, which a host object holds beside
+// RSA-PSS signing on 64-bit words, which a host object holds beside
 // rsa_sign.c's ladder (rsa_sign64.h): RSASP1 (RFC 8017 5.2.1) by the
 // Chinese remainder theorem, as two fixed-window exponentiations over
 // rsa_mont64.c's Montgomery arithmetic, one for each prime, constant time
@@ -19,7 +19,7 @@
 // a CRT signature computed with a fault). A signature that fails the
 // comparison is not returned.
 //
-// The branches this file compiles to are loops over limb counts, the
+// The branches this file compiles to are loops over word counts, the
 // sixteen table entries, the four squarings and the exponent's digits,
 // whose count comes from the exponent's length in bytes, the CH_ASSERTs
 // on a key's public length, and the two verdicts a caller sees anyway:
@@ -42,14 +42,14 @@
 _Static_assert(TABLE_ENTRIES == 1 << WINDOW_BITS,
                "the table holds one power for each window value");
 
-// The limbs of one prime: half the modulus's bytes, in limbs of 8.
-#define PRIME_LIMBS_MAX ((CH_RSA_MODULUS_MAX / 2 + 7) / 8)
+// The words of one prime: half the modulus's bytes, in words of 8.
+#define PRIME_WORDS_MAX ((CH_RSA_MODULUS_MAX / 2 + 7) / 8)
 
 // The base's powers 0 to 15, each in the Montgomery domain of one prime.
 // It is a struct so that the read below can take it as a pointer to
 // const: C has no such conversion for an array of arrays.
 typedef struct {
-    uint64_t powers[TABLE_ENTRIES][PRIME_LIMBS_MAX];
+    uint64_t powers[TABLE_ENTRIES][PRIME_WORDS_MAX];
 } power_table;
 
 // All ones when bit is 1, all zeros when bit is 0, in the form
@@ -65,14 +65,14 @@ static uint64_t mask_of_bit(uint64_t bit) {
 // differ.
 //
 // Under an all-ones mask o takes the entry and under a zero mask it keeps
-// the limbs it has, so the loop writes no zeros to o first and o may hold
-// any limbs when it starts. The first form wrote the zeros in a loop of
+// the words it has, so the loop writes no zeros to o first and o may hold
+// any words when it starts. The first form wrote the zeros in a loop of
 // their own, which clang compiled to a call to the C library's fill. The
 // digit was computed before that call and read after it, so clang for
 // arm64 kept it in a register a callee saves, and the multiplication
 // after the read saved that register in its frame: four bits of the
 // exponent in a dead frame, which no wipe names. This function now calls
-// nothing, and its loop over the limbs is neither a fill nor a copy, the
+// nothing, and its loop over the words is neither a fill nor a copy, the
 // two loops a compiler replaces with a call. bin/rsa_sign_equiv_test
 // requires one stack after two exponents
 // (test/rsa_sign_equiv_differential.h).
@@ -96,7 +96,7 @@ static void table_select(uint64_t *o, const power_table *table, uint64_t index, 
             o[i] = (o[i] & ~mask) | (table->powers[entry][i] & mask);
         }
     }
-    // The limb ends on zero and not on the last entry's mask, which says
+    // The word ends on zero and not on the last entry's mask, which says
     // whether the digit was the last index. The write goes through the
     // volatile pointer, so no compiler may drop it.
     *hidden = 0;
@@ -111,12 +111,12 @@ static uint64_t exponent_digit(const uint8_t *e, size_t i) {
 
 void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,
                       const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
-    CH_ASSERT(k >= 1 && k <= PRIME_LIMBS_MAX);
-    // Zeroed at declaration, as rsa_mont64_public's arrays are: the limbs
+    size_t k = mod->words;
+    CH_ASSERT(k >= 1 && k <= PRIME_WORDS_MAX);
+    // Zeroed at declaration, as rsa_mont64_public's arrays are: the words
     // past k are never read.
     power_table table = {0};
-    uint64_t pick[PRIME_LIMBS_MAX] = {0};
+    uint64_t pick[PRIME_WORDS_MAX] = {0};
 
     // powers[i] = base^i in the domain. 1 in the domain is R mod m, which
     // one multiplication of the plain 1 by r2 gives.
@@ -143,27 +143,27 @@ void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_
 }
 
 // o = em mod the prime, in the Montgomery domain of mod, the prime's
-// record: the base of one half of a signature. em is em_limbs limbs, the
+// record: the base of one half of a signature. em is em_words words, the
 // encoded message, which is twice as long as the prime.
 //
-// With k the prime's limb count and R = 2^(64k), em = high * R + low,
-// where low is its k low limbs and high the limbs above them, k of them
+// With k the prime's word count and R = 2^(64k), em = high * R + low,
+// where low is its k low words and high the words above them, k of them
 // or k - 1. A multiplication divides by R, so high times R^3 is
 // high * R^2 and low times R^2 is low * R, each below the prime, and
 // their sum modulo the prime is em * R: em in the domain. Neither product
 // needs its first operand below the prime, only its second, which r2 and
 // r3 are.
-static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_limbs,
+static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_words,
                               const rsa_mont64_modulus *mod) {
-    size_t k = mod->limbs;
-    uint64_t low[PRIME_LIMBS_MAX];
-    uint64_t high[PRIME_LIMBS_MAX];
-    uint64_t r3[PRIME_LIMBS_MAX];
+    size_t k = mod->words;
+    uint64_t low[PRIME_WORDS_MAX];
+    uint64_t high[PRIME_WORDS_MAX];
+    uint64_t r3[PRIME_WORDS_MAX];
     for (size_t i = 0; i < k; i++) {
         low[i] = em[i];
         high[i] = 0;
     }
-    for (size_t i = k; i < em_limbs; i++) {
+    for (size_t i = k; i < em_words; i++) {
         high[i - k] = em[i];
     }
     rsa_mont64_mont_square(r3, mod->r2, mod);
@@ -177,7 +177,7 @@ static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_limbs,
 
 // Garner's formula: s = m2 + q * h, with h = qinv * (m1 - m2) mod p. m1
 // and m2 are the two halves, each in the Montgomery domain of its prime,
-// and s takes 2k plain limbs for primes of k limbs. s is below p * q,
+// and s takes 2k plain words for primes of k words. s is below p * q,
 // because m2 is below q and h is below p.
 //
 // No step tests a value. m2 leaves q's domain by a multiplication with
@@ -190,9 +190,9 @@ static void message_mod_prime(uint64_t *o, const uint64_t *em, size_t em_limbs,
 static void crt_combine(uint64_t *s, uint64_t *m1, uint64_t *m2, const uint8_t *qinv,
                         size_t half_len, const rsa_mont64_modulus *mod_p,
                         const rsa_mont64_modulus *mod_q) {
-    size_t k = mod_p->limbs;
-    uint64_t t[PRIME_LIMBS_MAX];
-    uint64_t h[PRIME_LIMBS_MAX];
+    size_t k = mod_p->words;
+    uint64_t t[PRIME_WORDS_MAX];
+    uint64_t h[PRIME_WORDS_MAX];
     for (size_t i = 0; i < k; i++) {
         t[i] = 0;
     }
@@ -215,21 +215,21 @@ int rsa_sign64_key_ok(const ch_rsa_priv *k) {
         return 0;
     }
     size_t half_len = k->n_len / 2;
-    size_t limbs = (half_len + 7) >> 3;
-    uint64_t p[PRIME_LIMBS_MAX];
-    uint64_t q[PRIME_LIMBS_MAX];
-    const uint64_t zero[PRIME_LIMBS_MAX] = {0};
-    uint64_t product[2 * PRIME_LIMBS_MAX];
-    uint64_t n[2 * PRIME_LIMBS_MAX];
-    rsa_mont64_from_bytes(p, limbs, k->p, half_len);
-    rsa_mont64_from_bytes(q, limbs, k->q, half_len);
-    rsa_mont64_mul_add(product, p, q, zero, limbs);
-    rsa_mont64_from_bytes(n, 2 * limbs, k->n, k->n_len);
-    // Every limb is read whatever the values are, and the one thing that
+    size_t words = (half_len + 7) >> 3;
+    uint64_t p[PRIME_WORDS_MAX];
+    uint64_t q[PRIME_WORDS_MAX];
+    const uint64_t zero[PRIME_WORDS_MAX] = {0};
+    uint64_t product[2 * PRIME_WORDS_MAX];
+    uint64_t n[2 * PRIME_WORDS_MAX];
+    rsa_mont64_from_bytes(p, words, k->p, half_len);
+    rsa_mont64_from_bytes(q, words, k->q, half_len);
+    rsa_mont64_mul_add(product, p, q, zero, words);
+    rsa_mont64_from_bytes(n, 2 * words, k->n, k->n_len);
+    // Every word is read whatever the values are, and the one thing that
     // leaves is whether they all matched, which the caller sees as the
     // key being refused.
     uint64_t differ = 0;
-    for (size_t i = 0; i < 2 * limbs; i++) {
+    for (size_t i = 0; i < 2 * words; i++) {
         differ |= product[i] ^ n[i];
     }
     ct_wipe(p, sizeof p);
@@ -273,15 +273,15 @@ static int write_if_verified(const ch_rsa_priv *k, const uint8_t *em, const uint
 int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     CH_ASSERT(k->n_len >= 256 && k->n_len <= CH_RSA_MODULUS_MAX && (k->n_len & 7) == 0);
     size_t half_len = k->n_len / 2;
-    size_t em_limbs = k->n_len / 8;
+    size_t em_words = k->n_len / 8;
     rsa_mont64_modulus mod_p;
     rsa_mont64_modulus mod_q;
-    uint64_t em_plain[RSA_MONT64_LIMBS_MAX];
-    uint64_t m1[PRIME_LIMBS_MAX];
-    uint64_t m2[PRIME_LIMBS_MAX];
-    // Zeroed at declaration: the limbs past twice the primes' are never
+    uint64_t em_plain[RSA_MONT64_WORDS_MAX];
+    uint64_t m1[PRIME_WORDS_MAX];
+    uint64_t m2[PRIME_WORDS_MAX];
+    // Zeroed at declaration: the words past twice the primes' are never
     // written, and rsa_mont64_to_bytes reads none of them.
-    uint64_t s[2 * PRIME_LIMBS_MAX] = {0};
+    uint64_t s[2 * PRIME_WORDS_MAX] = {0};
     uint8_t candidate[CH_RSA_MODULUS_MAX];
 
     // rsa_sign64_key_ok admits primes whose product is the modulus. The
@@ -289,12 +289,12 @@ int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     // its own top bit: the bit length of each is 8 * half_len.
     rsa_mont64_modulus_init(&mod_p, k->p, half_len, 8 * half_len);
     rsa_mont64_modulus_init(&mod_q, k->q, half_len, 8 * half_len);
-    rsa_mont64_from_bytes(em_plain, em_limbs, em, k->n_len);
+    rsa_mont64_from_bytes(em_plain, em_words, em, k->n_len);
 
     // The two halves: the message modulo each prime, raised to dp and dq.
-    message_mod_prime(m1, em_plain, em_limbs, &mod_p);
+    message_mod_prime(m1, em_plain, em_words, &mod_p);
     rsa_sign64_power(m1, m1, k->dp, half_len, &mod_p);
-    message_mod_prime(m2, em_plain, em_limbs, &mod_q);
+    message_mod_prime(m2, em_plain, em_words, &mod_q);
     rsa_sign64_power(m2, m2, k->dq, half_len, &mod_q);
     crt_combine(s, m1, m2, k->qinv, half_len, &mod_p, &mod_q);
     rsa_mont64_to_bytes(candidate, k->n_len, s);

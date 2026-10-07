@@ -7,7 +7,7 @@
 //
 // RFC 8448 signs with an RSA-1024 key and rsa_pss_verify enforces a
 // 2048-bit floor, so the CertificateVerify check runs one layer down:
-// the real rsa_vp1 does the modexp (a 32-limb size no other test
+// the real rsa_vp1 does the modexp (a 32-word size no other test
 // reaches) and a test-local PSS check validates the recovered message.
 // The floor itself stays: the public API must refuse the RFC's key.
 #ifndef CH_RFC8448_TESTS_H
@@ -101,7 +101,7 @@ static void rfc8448_check_cv(const uint8_t transcript_hash[SHA256_LEN]) {
     // The 2048-bit floor must refuse the RFC's RSA-1024 key outright.
     CHECK(rsa_pss_verify(rfc8448_rsa_n, sizeof rfc8448_rsa_n, signed_hash, sig, 128) == 0);
 
-    // One layer down: RSAVP1 at 32 limbs, then the local PSS check.
+    // One layer down: RSAVP1 at 32 words, then the local PSS check.
     CHECK(memcmp(sig, rfc8448_rsa_n, 128) < 0); // rsa_vp1 needs sig < n
     uint8_t em[128];
     rsa_vp1(rfc8448_rsa_n, sizeof rfc8448_rsa_n, sig, em);

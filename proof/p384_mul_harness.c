@@ -1,9 +1,9 @@
 // Proves the carry lemma behind p384_mont_mul, p256_mul_harness.c's lemma
-// at twelve limbs: in both CIOS passes the uint64 accumulation
+// at twelve words: in both CIOS passes the uint64 accumulation
 // v = x*y + t + c cannot wrap and its carry-out fits back in one 32-bit
-// limb — for ANY uint32 operands, re-establishing c <= 2^32-1 step by
+// word — for ANY uint32 operands, re-establishing c <= 2^32-1 step by
 // step — and each pass's tail fold t[N] + c carries out at most one bit,
-// so the overflow word t[P384_LIMBS+1] only ever holds 0 or 1.
+// so the overflow word t[P384_WORDS+1] only ever holds 0 or 1.
 // p384_mont_mul's memory safety (concrete index walk) is
 // p384_harness.c. The final single conditional subtract (t < 2m at loop
 // exit) is a functional CIOS invariant resting on the RFC 6979 vectors
@@ -24,7 +24,7 @@ static uint64_t mac_pass(uint64_t c) {
         uint64_t p = x * y; // <= (2^32-1)^2, no uint64 wrap possible
         __CPROVER_assert(p <= UINT64_MAX - t - c, "accumulate cannot wrap");
         c = (p + t + c) >> 32;
-        __CPROVER_assert(c <= UINT32_MAX, "carry fits one limb");
+        __CPROVER_assert(c <= UINT32_MAX, "carry fits one word");
     }
     return c;
 }

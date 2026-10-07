@@ -1,11 +1,11 @@
 invariant: INV-17
 file: rsa_sign64.c
 catches: rsa_sign_equiv_test
-reason: rsa_sign64_key_ok returns without wiping the limbs of p, so the
+reason: rsa_sign64_key_ok returns without wiping the words of p, so the
   prime stays in the dead frame after every signature and every init. The
   answer is the same, so no test of the key test's verdict notices.
   bin/rsa_sign_equiv_test copies the stack below the key test and finds
-  two limbs of p there.
+  two words of p there.
 
 --- old
     }

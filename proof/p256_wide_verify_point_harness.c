@@ -64,17 +64,17 @@ int main(void) {
 
     // A key: any point of p256_point.h's type.
     p256_point key;
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        key.x.limb[i] = nondet_u32();
-        key.y.limb[i] = nondet_u32();
-        key.z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        key.x.word[i] = nondet_u32();
+        key.y.word[i] = nondet_u32();
+        key.z.word[i] = nondet_u32();
     }
     p256_wide_jacobian_from_key(&a, &key);
 
     // The last comparison: any point and any r.
     p256_scalar r;
-    for (size_t i = 0; i < P256_SCALAR_LIMBS; i++) {
-        r.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_SCALAR_WORDS; i++) {
+        r.word[i] = nondet_u32();
     }
     havoc_point(&a);
     int infinite = p256_wide_jacobian_is_infinity(&a);

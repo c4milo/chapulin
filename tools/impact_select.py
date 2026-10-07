@@ -105,7 +105,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # lack the instructions and the qemu models have them. A violation of an
 # entry only an arm64 object compiles with two paths names
 # arm64-hash-count, which runs the counting binaries built for arm64. A
-# violation of the x86-64 intrinsics in p256_wide_limb.h's carry steps
+# violation of the x86-64 intrinsics in p256_wide_word.h's carry steps
 # names p256-equiv, because only gcc for x86-64 reads that form and the
 # lane compiles with it. A violation of what sha3_hw.c computes or leaves
 # on the stack names keccak, because the file has a body under clang

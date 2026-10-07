@@ -11,10 +11,10 @@
 // dead frame lay, and run_residue looks in the copy for r^2 to r^8 in
 // each layout the call holds a power in:
 //
-//   five uint32_t limbs side by side, as the struct holds each power;
-//   one limb in every 8 bytes, as a NEON multiplier holds a lane's power;
-//   one limb in every 16 bytes, as an SSE2 multiplier holds it;
-//   one limb in every 32 bytes, as an AVX2 multiplier holds it.
+//   five uint32_t words side by side, as the struct holds each power;
+//   one word in every 8 bytes, as a NEON multiplier holds a lane's power;
+//   one word in every 16 bytes, as an SSE2 multiplier holds it;
+//   one word in every 32 bytes, as an AVX2 multiplier holds it.
 //
 // Five words match a power when each is below 2^27 and together they hold
 // its value modulo 2^130 - 5, so a power in another carry form matches
@@ -53,13 +53,13 @@ static __attribute__((noinline)) void residue_snapshot(void) {
     stack_residue_take(below, RESIDUE_BYTES, residue_copy);
 }
 
-// out = a * b modulo 2^130 - 5, reduced, for limbs of at most 2^26.
+// out = a * b modulo 2^130 - 5, reduced, for words of at most 2^26.
 static void residue_multiply(const uint32_t a[5], const uint32_t b[5], uint32_t out[5]) {
     uint64_t d[5] = {0, 0, 0, 0, 0};
     for (size_t i = 0; i < 5; i++) {
         for (size_t j = 0; j < 5; j++) {
             uint64_t product = (uint64_t)a[i] * b[j];
-            // A product past limb 4 is past 2^130, which is 5 modulo
+            // A product past word 4 is past 2^130, which is 5 modulo
             // 2^130 - 5.
             if (i + j < 5) {
                 d[i + j] += product;
@@ -70,31 +70,31 @@ static void residue_multiply(const uint32_t a[5], const uint32_t b[5], uint32_t 
     }
     for (size_t i = 0; i < 4; i++) {
         d[i + 1] += d[i] >> 26;
-        d[i] &= LIMB_MASK;
+        d[i] &= WORD_MASK;
     }
     d[0] += (d[4] >> 26) * 5;
-    d[4] &= LIMB_MASK;
+    d[4] &= WORD_MASK;
     d[1] += d[0] >> 26;
-    d[0] &= LIMB_MASK;
-    uint32_t limbs[5];
+    d[0] &= WORD_MASK;
+    uint32_t words[5];
     for (size_t i = 0; i < 5; i++) {
-        limbs[i] = (uint32_t)d[i];
+        words[i] = (uint32_t)d[i];
     }
-    reduced(limbs, out);
+    reduced(words, out);
 }
 
 // Whether the copy holds the power as five words stride bytes apart, at
 // any byte offset.
 static int residue_holds(const uint32_t power[5], size_t stride) {
     for (size_t at = 0; at + 4 * stride + 4 <= RESIDUE_BYTES; at++) {
-        uint32_t limbs[5];
+        uint32_t words[5];
         int below_2_27 = 1;
         for (size_t i = 0; i < 5; i++) {
-            memcpy(&limbs[i], &residue_copy[at + i * stride], sizeof limbs[i]);
-            below_2_27 &= limbs[i] < (UINT32_C(1) << 27);
+            memcpy(&words[i], &residue_copy[at + i * stride], sizeof words[i]);
+            below_2_27 &= words[i] < (UINT32_C(1) << 27);
         }
         uint32_t value[5];
-        reduced(limbs, value);
+        reduced(words, value);
         if (below_2_27 && memcmp(value, power, sizeof value) == 0) {
             return 1;
         }
@@ -126,7 +126,7 @@ static void run_residue(void) {
                 char what[96];
                 (void)snprintf(
                     what, sizeof what,
-                    "the stack below the call still holds r^%zu, one limb every %zu bytes", k + 2,
+                    "the stack below the call still holds r^%zu, one word every %zu bytes", k + 2,
                     strides[s]);
                 report("residue", what, RESIDUE_GROUPS * current->group, 0, 0);
                 return;

@@ -163,7 +163,7 @@ eval "$(stats chacha20.o block C)"
     echo "FAIL: mont_mul multiply lowering changed (mtlo/mthi=$M_mtlohi, multu=$M_multu)" >&2
     exit 1
 }
-# ct_widemul builds each limb product from four 16x16 pieces, so blocks()
+# ct_widemul builds each word product from four 16x16 pieces, so blocks()
 # must reach the hi/lo multiplier zero times. A non-zero count here is the
 # leak returning, and lint-wide-multiply guards the same property from the
 # source side (https://github.com/c4milo/chapulin/issues/53).
@@ -208,7 +208,7 @@ change.
 blocks() keeps its single 16-byte block loop. The loop body is
 $P_loop1_insns instructions with $P_loop1_mul mul per block and nothing
 in the hi/lo multiplier: multu $P_multu, maddu $P_maddu, mult $P_mult.
-ct_widemul builds each of the 25 limb products from four 16x16 pieces,
+ct_widemul builds each of the 25 word products from four 16x16 pieces,
 so the 25 products cost 100 mul. mips32r2 documents no timing for mul
 either, but the operands are 16 bits wide by construction, which is what
 the decomposition buys here.
@@ -220,7 +220,7 @@ $M_multu multu, $M_mul mul. Each v = a[i]*b[j] + t[j] + c step preloads
 hi/lo with mtlo/mthi (the t[j] + c partial) and issues one maddu; the
 one mul computes u = t[0]*m0inv, where only the low word matters. Both
 eight-iteration CIOS inner loops carry one maddu each
-($M_loop1_maddu and $M_loop2_maddu), the outer limb loop spans them, and
+($M_loop1_maddu and $M_loop2_maddu), the outer word loop spans them, and
 the trailing compare and subtract loops close the function; nothing
 unrolls at -Os. The $M_calls jal calls are memset (the t[] zeroing) and
 memcpy (the no-subtract exit).

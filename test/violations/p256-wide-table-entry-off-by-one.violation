@@ -1,7 +1,7 @@
 invariant: INV-16
 file: p256_wide_table.c
 catches: p256_equiv_test
-reason: one limb of one entry of the table of multiples of G is off by
+reason: one word of one entry of the table of multiples of G is off by
   one: the X coordinate of 3 * 2^102 * G, entry [17][1]. The base
   multiplication reads it for one digit of one window, so a random scalar
   is wrong one time in 32 and no fixed vector need notice.

@@ -2,7 +2,7 @@ invariant: INV-16
 file: ct.h
 catches: unit_ct_widemul
 reason: dropping the carry out of ct_widemul's first cross sum, which
-  poly1305's limb products overflow on nearly every block, makes the
+  poly1305's word products overflow on nearly every block, makes the
   recombined product wrong; every other unit binary asserts
   CH_NATIVE_WIDEMUL and compiles the line out, so the RFC 7748 and RFC
   8439 vectors see it only over the decomposition

@@ -18,9 +18,9 @@
 // compiles as its native copy alone. x25519.c, p256_field.c, p256_scalar.c, p256_point.c and
 // rsa_sign.c compile under their own names alone, and their second copies are other files on
 // the 64x64->128 multiply: x25519_wide.c, the radix-2^51 field (x25519_wide.h), for P-256 the
-// four limbs of 64 bits in p256_wide_field.c and p256_wide_scalar.c, under p256_wide_point.c
+// four words of 64 bits in p256_wide_field.c and p256_wide_scalar.c, under p256_wide_point.c
 // and p256_wide_mul.c, and for RSA signing rsa_sign64.c, the Chinese remainder theorem over
-// 64-bit limbs (rsa_sign64.h). The dispatchers run the native copy, and for X25519, P-256 and
+// 64-bit words (rsa_sign64.h). The dispatchers run the native copy, and for X25519, P-256 and
 // RSA signing those files, for WIDEMUL_CONSTANT_TIME, and the file under its own names for
 // every other byte. That is one branch per call, on the answer, which the caller's ch_cfg.cpu
 // chose and which is not secret: never one per product, and through no function pointer.

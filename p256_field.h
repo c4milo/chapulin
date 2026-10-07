@@ -8,7 +8,7 @@
 // statements. This pair is for the side that holds a secret: the ECDH
 // private scalar and, later, the ECDSA signing nonce. Every routine
 // below runs the same instruction sequence whatever the operand values
-// are. No branch and no memory index reads a limb, every choice is mask
+// are. No branch and no memory index reads a word, every choice is mask
 // arithmetic, and every product goes through ct_widemul (ct.h), which
 // builds a 64-bit product out of 32-to-32 multiplies because a widening
 // multiply is variable time on some cores
@@ -27,7 +27,7 @@
 // are callers, not part of the field.
 //
 // A host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds a second field beside
-// this one, p256_wide_field.h, the same elements on four 64-bit limbs,
+// this one, p256_wide_field.h, the same elements on four 64-bit words,
 // which a session runs when its caller states the multiply's timing. This
 // pair is the reference that one is held to, and it is the one field a
 // device object carries (docs/decisions.md 94).
@@ -36,14 +36,14 @@
 
 #include <stdint.h>
 
-#define P256_FE_LIMBS 8 // limb: one 32-bit word of a field element
+#define P256_FE_WORDS 8 // the 32-bit words of a field element
 #define P256_FE_LEN 32  // bytes in one field element, big-endian on the wire
 
-// One field element: eight little-endian 32-bit limbs. Every routine
+// One field element: eight little-endian 32-bit words. Every routine
 // takes elements below p and leaves an element below p, unless its own
 // comment says otherwise, and the output may be one of the inputs.
 typedef struct {
-    uint32_t limb[P256_FE_LIMBS];
+    uint32_t word[P256_FE_WORDS];
 } p256_fe;
 
 // Masks. A predicate here returns 0 for false and UINT32_MAX for true,
@@ -69,7 +69,7 @@ extern const p256_fe p256_fe_zero;
 extern const p256_fe p256_fe_one_mont;
 
 // Marshalling. p256_fe_from_bytes reads 32 big-endian bytes, the wire
-// and SEC 1 order, into limbs and reduces nothing: an element from a
+// and SEC 1 order, into words and reduces nothing: an element from a
 // peer can be at or above p, and p256_fe_reduced_mask is how a caller
 // asks. p256_fe_to_bytes writes the 32 big-endian bytes back.
 void p256_fe_from_bytes(p256_fe *o, const uint8_t in[P256_FE_LEN]);
@@ -82,7 +82,7 @@ uint32_t p256_fe_reduced_mask(const p256_fe *a);
 // All ones when a is zero, zero otherwise.
 uint32_t p256_fe_zero_mask(const p256_fe *a);
 // All ones when a and b are the same element, zero otherwise. Both must
-// already be below p; this compares limbs, it does not reduce.
+// already be below p; this compares words, it does not reduce.
 uint32_t p256_fe_equal_mask(const p256_fe *a, const p256_fe *b);
 
 // o = a when mask is all ones, o unchanged when mask is zero.

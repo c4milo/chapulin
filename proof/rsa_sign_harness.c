@@ -1,10 +1,10 @@
 // Proves rsa_sign.c's memory safety and absence of UB over unconstrained
 // inputs, in six pieces, with full checks.
 //
-// Marshalling and the limb helpers, at the real bound. limbs_from_bytes
-// and limbs_to_bytes, and then sub_borrow, sub_masked, below, cond_sub
-// and cswap_limbs, run at k = LIMBS_MAX (96 for the device bound of
-// RSA-3072) over nondet bytes and nondet limbs, with the operands
+// Marshalling and the word helpers, at the real bound. words_from_bytes
+// and words_to_bytes, and then sub_borrow, sub_masked, below, cond_sub
+// and cswap_words, run at k = WORDS_MAX (96 for the device bound of
+// RSA-3072) over nondet bytes and nondet words, with the operands
 // havocked freshly before every call. The maximal k is the binding case
 // for every index: rsa_pss_sign_key_ok's n_len check is what holds k
 // there, and a smaller k only shortens the same loops.
@@ -28,9 +28,9 @@
 //
 // The CIOS carry lemma, behind mont_mul. In both passes the uint64
 // accumulation v = x*y + t + c cannot wrap and its carry-out fits back in
-// one 32-bit limb, for ANY uint32 operands, and each pass's tail spills
+// one 32-bit word, for ANY uint32 operands, and each pass's tail spills
 // at most one bit. The bound is inductive, so a fixed step count stands
-// in for the real k-limb passes and the count never enters the argument.
+// in for the real k-word passes and the count never enters the argument.
 // This is rsa_mul_harness.c's lemma over the same CIOS shape; the two
 // files keep their own copies because rsa_sign.c's products go through
 // ct_widemul and rsa_mont.c's do not.
@@ -40,11 +40,11 @@
 //   mont_mul whole, and rsa_sp1 above it. Its inner passes are k
 //   multiplies deep at k = 96, and a symbolic modexp never leaves
 //   symbolic execution -- the same limit rsa_mul_harness.c records for
-//   rsa_vp1. Every index in it walks a fixed LIMBS_MAX-sized array under
-//   k <= LIMBS_MAX, and the carry lemma covers the arithmetic.
+//   rsa_vp1. Every index in it walks a fixed WORDS_MAX-sized array under
+//   k <= WORDS_MAX, and the carry lemma covers the arithmetic.
 //
 //   mont_r2. Its shift loop runs 64 * k = 6,144 times, past any unwinding
-//   bound this tier can carry. Its body is cond_sub and a limb shift,
+//   bound this tier can carry. Its body is cond_sub and a word shift,
 //   both proved here.
 //
 //   The final conditional subtract's functional claim, that t stays below
@@ -64,7 +64,7 @@ uint32_t nondet_u32(void);
 
 #include "rsa_sign.c"
 
-static void havoc_limbs(uint32_t *a, size_t k) {
+static void havoc_words(uint32_t *a, size_t k) {
     for (size_t i = 0; i < k; i++) {
         a[i] = nondet_u32();
     }
@@ -81,44 +81,44 @@ static uint64_t mac_pass(uint64_t c) {
         uint64_t p = ct_widemul((uint32_t)x, (uint32_t)y); // <= (2^32-1)^2, no wrap
         __CPROVER_assert(p <= UINT64_MAX - t - c, "accumulate cannot wrap");
         c = (p + t + c) >> 32;
-        __CPROVER_assert(c <= UINT32_MAX, "carry fits one limb");
+        __CPROVER_assert(c <= UINT32_MAX, "carry fits one word");
     }
     return c;
 }
 
 static void prove_marshalling(void) {
-    uint8_t b[4 * LIMBS_MAX];
-    uint32_t limbs[LIMBS_MAX];
+    uint8_t b[4 * WORDS_MAX];
+    uint32_t words[WORDS_MAX];
     fill_nondet(b, sizeof b);
-    limbs_from_bytes(limbs, b, LIMBS_MAX);
-    havoc_limbs(limbs, LIMBS_MAX);
-    limbs_to_bytes(b, limbs, LIMBS_MAX);
+    words_from_bytes(words, b, WORDS_MAX);
+    havoc_words(words, WORDS_MAX);
+    words_to_bytes(b, words, WORDS_MAX);
 }
 
-static void prove_limb_helpers(void) {
-    uint32_t a[LIMBS_MAX];
-    uint32_t b[LIMBS_MAX];
-    havoc_limbs(a, LIMBS_MAX);
-    havoc_limbs(b, LIMBS_MAX);
-    uint32_t borrow = sub_borrow(a, b, LIMBS_MAX);
+static void prove_word_helpers(void) {
+    uint32_t a[WORDS_MAX];
+    uint32_t b[WORDS_MAX];
+    havoc_words(a, WORDS_MAX);
+    havoc_words(b, WORDS_MAX);
+    uint32_t borrow = sub_borrow(a, b, WORDS_MAX);
     __CPROVER_assert(borrow <= 1, "sub_borrow answers one bit");
 
-    havoc_limbs(a, LIMBS_MAX);
-    havoc_limbs(b, LIMBS_MAX);
-    sub_masked(a, b, LIMBS_MAX, nondet_u32());
+    havoc_words(a, WORDS_MAX);
+    havoc_words(b, WORDS_MAX);
+    sub_masked(a, b, WORDS_MAX, nondet_u32());
 
-    havoc_limbs(a, LIMBS_MAX);
-    havoc_limbs(b, LIMBS_MAX);
-    uint32_t low = below(a, b, LIMBS_MAX, nondet_u32());
+    havoc_words(a, WORDS_MAX);
+    havoc_words(b, WORDS_MAX);
+    uint32_t low = below(a, b, WORDS_MAX, nondet_u32());
     __CPROVER_assert(low <= 1, "below answers one bit");
 
-    havoc_limbs(a, LIMBS_MAX);
-    havoc_limbs(b, LIMBS_MAX);
-    cond_sub(a, b, LIMBS_MAX, nondet_u32() & 1);
+    havoc_words(a, WORDS_MAX);
+    havoc_words(b, WORDS_MAX);
+    cond_sub(a, b, WORDS_MAX, nondet_u32() & 1);
 
-    havoc_limbs(a, LIMBS_MAX);
-    havoc_limbs(b, LIMBS_MAX);
-    cswap_limbs(a, b, LIMBS_MAX, nondet_u32());
+    havoc_words(a, WORDS_MAX);
+    havoc_words(b, WORDS_MAX);
+    cswap_words(a, b, WORDS_MAX, nondet_u32());
 }
 
 static void prove_masks(void) {
@@ -178,7 +178,7 @@ static void prove_encoder(void) {
 
 int main(void) {
     prove_marshalling();
-    prove_limb_helpers();
+    prove_word_helpers();
     prove_masks();
     prove_key_ok();
     prove_exponent_index();
@@ -204,8 +204,8 @@ int main(void) {
     __CPROVER_assert(spill <= 1, "reduction tail spills one bit at most");
 
     // The reduction tail sets t[k] = t[k+1] + spill; both are 0 or 1, so
-    // the carry word the next round reads stays inside one limb.
+    // the carry word the next round reads stays inside one word.
     uint64_t t_k = (uint64_t)t_k1 + spill;
-    __CPROVER_assert(t_k <= UINT32_MAX, "carry word sum stays in one limb");
+    __CPROVER_assert(t_k <= UINT32_MAX, "carry word sum stays in one word");
     return 0;
 }

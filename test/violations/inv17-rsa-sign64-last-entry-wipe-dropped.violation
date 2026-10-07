@@ -6,7 +6,7 @@ reason: rsa_sign64_power wipes its table and not the entry its last step
   so the dead frame tells four bits of the exponent to whoever reads the
   stack next. No output changes, so no vector notices.
   bin/rsa_sign_equiv_test copies the stack below one call and requires no
-  limb of any power in the copy.
+  word of any power in the copy.
 
 --- old
     ct_wipe(&table, sizeof table);

@@ -124,7 +124,7 @@ What the rows say:
   runs, and it calls nothing in `sha3.c`. The signature's own row, in
   the other program, stayed at 1.74 ms. A build of this tree with
   `-falign-functions=64` put that row at 1.93 ms and left the
-  handshake's at 2.07: on that CPU, under gcc 13, RSA on 64-bit limbs
+  handshake's at 2.07: on that CPU, under gcc 13, RSA on 64-bit words
   runs at one of two speeds by where the linker places it, and the
   handshake program now holds the slower placement. On the M1 Pro the
   same handshake's instruction count did not move. docs/performance.md
@@ -140,16 +140,16 @@ What the rows say:
   runs under two `ch_cfg.cpu` values:
   - `0x1`, `CH_CPU_PROBED` alone, is a caller that states nothing. Every
     operation built on the widening multiply runs ct.h's 16x16
-    decomposition, X25519 the 16-limb field, RSA signing the ladder of
+    decomposition, X25519 the 16-word field, RSA signing the ladder of
     rsa_sign.c, and the hashes portable C. A device object runs the same
     code for those. Three things a device object does not run, a host
     session runs whatever it states: ChaCha20 on the NEON path, where a
     device object runs chacha20.c's portable loop, which bench/aead.sh
-    times; RSA's public operation on rsa_mont64.c's 64-bit limbs, where
-    a device object runs rsa_mont.c's 32-bit limbs (docs/decisions.md
-    95); and the two ECDSA verifiers on 64-bit limbs, P-256's on the
+    times; RSA's public operation on rsa_mont64.c's 64-bit words, where
+    a device object runs rsa_mont.c's 32-bit words (docs/decisions.md
+    95); and the two ECDSA verifiers on 64-bit words, P-256's on the
     wide files and P-384's on the p384_wide files, where a device object
-    runs the 32-bit limbs of p256.c and p384.c (docs/decisions.md 96 and
+    runs the 32-bit words of p256.c and p384.c (docs/decisions.md 96 and
     97).
   - `0x67` is every bit this CPU has that an object reads:
     `CH_CPU_CONSTANT_TIME_AES`, `CH_CPU_CONSTANT_TIME_MULTIPLY`,
@@ -229,9 +229,9 @@ the server selects it. Milliseconds:
 
 Before docs/decisions.md 95 an RSA server's side took 37.5 ms and
 146.3 ms under the multiply bit, on the native copy of the ladder, and
-an RSA-3072 client's 0.77 ms, with its verifier on 32-bit limbs. Before
+an RSA-3072 client's 0.77 ms, with its verifier on 32-bit words. Before
 docs/decisions.md 96 an ECDSA client's side took 3.02 ms under `0x1` and
-1.29 ms under `0x67`, with its verifier on 32-bit limbs.
+1.29 ms under `0x67`, with its verifier on 32-bit words.
 
 The pairing gives the server no ticket key, so it times no resumed
 handshake.
@@ -264,7 +264,7 @@ parsing.
 The rest runs from -0.1% to +4.8% of a side. So the public-key
 operations account for nearly all of the time. Under `0x1` the x25519
 pair is the largest part of every side but the RSA server's: an RSA
-verifier runs on 64-bit limbs under both values (docs/decisions.md 95),
+verifier runs on 64-bit words under both values (docs/decisions.md 95),
 and takes 4.6% of an RSA-3072 client's side. Under `0x67` the pair
 falls from 1,745 us to 64 us, and the verifier or the signer is the
 largest part of every side but one. The one is the ECDSA server's side,
@@ -318,7 +318,7 @@ has one. The last column says who calls it and how often.
 `openssl speed` signs RSA with PKCS#1 v1.5 padding, which chapulin does
 not sign, so the two signing rows have no OpenSSL figure here: it signs
 RSA-2048 in 536 us and RSA-3072 in 1,562 us that way. Under `0x67`
-chapulin signs by the Chinese remainder theorem on 64-bit limbs and
+chapulin signs by the Chinese remainder theorem on 64-bit words and
 checks each signature with the public exponent before it returns it
 (docs/decisions.md 95). Under `0x1` it runs rsa_sign.c's ladder on the
 decomposition, with no CRT.
@@ -390,7 +390,7 @@ Time under `0x1` over time under `0x67`, from the rows above:
 | ECDSA handshake, client side | 11.1 |
 
 The three P-256 rows are docs/decisions.md 94's. Under the bit the field
-has four 64-bit limbs where the 32-bit files have eight limbs. A key
+has four 64-bit words where the 32-bit files have eight words. A key
 generation and a signature add 64 entries of a table of multiples of G
 where the ladder runs 512 additions, and a key exchange runs 253
 doublings and 71 additions in the ladder's place. The native copies of
@@ -398,7 +398,7 @@ the 32-bit files, which the bit picked before that entry, gave 1.97 and
 1.96.
 
 The two RSA signing rows are docs/decisions.md 95's. Under the bit a
-signature is two exponentiations on 64-bit limbs, one modulo each prime,
+signature is two exponentiations on 64-bit words, one modulo each prime,
 each over half the modulus with half the exponent, read four bits at a
 time, and then one public operation that checks the signature. Under
 `0x1` it is one ladder over the whole modulus on the 16x16
@@ -410,12 +410,12 @@ SHA-384 and SHA-512 run on the CPU's instructions, and HMAC and
 HKDF-Expand-Label over them.
 
 Three counts account for most of X25519's 27.3. A field multiply runs 25
-products of 64 by 64 bits where the 16-limb field runs 256 of 32 by 32,
-each built from 16x16 pieces; a squaring runs 15 where the 16-limb field
+products of 64 by 64 bits where the 16-word field runs 256 of 32 by 32,
+each built from 16x16 pieces; a squaring runs 15 where the 16-word field
 runs a whole multiply; and the inversion's fixed chain runs 11
-multiplies where the 16-limb field's square-and-multiply runs 252. A
+multiplies where the 16-word field's square-and-multiply runs 252. A
 device cannot build the wide field, so the device rows in
-docs/performance.md and bench/results-insn*.csv keep the 16-limb one.
+docs/performance.md and bench/results-insn*.csv keep the 16-word one.
 
 ML-KEM barely moves: the multiply sits in its compression and its
 message decoding alone, and its key generation runs neither.
@@ -450,16 +450,16 @@ On them the key exchange retired 5.04 M and the ECDSA handshake 17.23 M.
 
 ## Instruction families that could speed each primitive
 
-These are options to measure, not promised gains. The limb widths are
+These are options to measure, not promised gains. The word widths are
 what the code uses today. This M1 Pro reports FEAT_SHA256, FEAT_SHA512
 and FEAT_SHA3 (`sysctl hw.optional.arm`).
 
 | primitive | arm64 | x86-64 |
 |---|---|---|
-| x25519 (16-bit limbs in int64 words; 51-bit limbs under the multiply bit) | the wide field runs the native 64x64 multiply with UMULH over 51-bit limbs; NEON for two field products at once is still open | the wide field runs MUL; MULX (BMI2) with ADCX and ADOX (ADX), and AVX2 for several field products at once, are still open |
-| the P-256 and P-384 verifiers (64-bit limbs in a host object, in every session; 32-bit limbs in a device object) | P-256's runs the wide files and P-384's the p384_wide files, on MUL and UMULH (docs/decisions.md 96 and 97); NEON UMULL and UMLAL for products in lanes are still open | they run the 64x64->128 multiply; MULX with ADCX and ADOX, AVX2 VPMULUDQ and AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ) are still open |
-| RSA verify and sign (64-bit limbs in a host object, and the CRT for a signature under the multiply bit; 32-bit limbs in a device object) | rsa_mont64.c runs MUL and UMULH (docs/decisions.md 95); NEON UMULL and UMLAL for products in lanes are still open | rsa_mont64.c runs the 64x64->128 multiply; MULX with ADCX and ADOX, and AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ), are still open |
-| P-256 key exchange and signing (32-bit limbs; four 64-bit limbs under the multiply bit) | the wide files run MUL and UMULH, and clang makes add-with-carry chains of their carries (docs/decisions.md 94) | the wide files run the 64x64->128 multiply, and their carries are ADC and SBB: gcc makes them of two intrinsics and clang of the overflow builtins (docs/decisions.md 94). MULX with ADCX and ADOX is still open |
+| x25519 (sixteen int64 words of 16 bits; 51-bit words under the multiply bit) | the wide field runs the native 64x64 multiply with UMULH over 51-bit words; NEON for two field products at once is still open | the wide field runs MUL; MULX (BMI2) with ADCX and ADOX (ADX), and AVX2 for several field products at once, are still open |
+| the P-256 and P-384 verifiers (64-bit words in a host object, in every session; 32-bit words in a device object) | P-256's runs the wide files and P-384's the p384_wide files, on MUL and UMULH (docs/decisions.md 96 and 97); NEON UMULL and UMLAL for products in lanes are still open | they run the 64x64->128 multiply; MULX with ADCX and ADOX, AVX2 VPMULUDQ and AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ) are still open |
+| RSA verify and sign (64-bit words in a host object, and the CRT for a signature under the multiply bit; 32-bit words in a device object) | rsa_mont64.c runs MUL and UMULH (docs/decisions.md 95); NEON UMULL and UMLAL for products in lanes are still open | rsa_mont64.c runs the 64x64->128 multiply; MULX with ADCX and ADOX, and AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ), are still open |
+| P-256 key exchange and signing (32-bit words; four 64-bit words under the multiply bit) | the wide files run MUL and UMULH, and clang makes add-with-carry chains of their carries (docs/decisions.md 94) | the wide files run the 64x64->128 multiply, and their carries are ADC and SBB: gcc makes them of two intrinsics and clang of the overflow builtins (docs/decisions.md 94). MULX with ADCX and ADOX is still open |
 | Poly1305 | under the multiply bit it runs four blocks at a time in NEON lanes (docs/decisions.md 83) | under the multiply bit it runs four blocks at a time in SSE2 lanes; an AVX2 Poly1305 is open (docs/decisions.md 90) |
 | ChaCha20 | every host session runs NEON, eight blocks a pass (docs/decisions.md 86) | SSE2, four blocks a pass, and under `CH_CPU_AVX2` eight (docs/decisions.md 90); AVX-512, sixteen, is open |
 | the DRBG, over chacha20_block | NEON for several blocks of a long draw | AVX2 for the same |
@@ -496,7 +496,7 @@ average of 12 to 24:
 - over the 16x16 decomposition, x25519 took 953 us, p256_ecdh 1,228 us,
   and the RSA-3072 client side 2.57 ms, of which the x25519 pair was
   74%;
-- with `CH_NATIVE_WIDEMUL`, the 16-limb x25519 took 428 us on the native
+- with `CH_NATIVE_WIDEMUL`, the 16-word x25519 took 428 us on the native
   multiply, which no object runs now;
 - as the `X25519=wide` build, the wide field took 34.3 us and the
   RSA-3072 client side 0.77 ms.
@@ -505,10 +505,10 @@ docs/decisions.md entries 52 and 63 and srv_kex.h cite those.
 
 The run this note held before this one was of tree 1f4a922, before
 docs/decisions.md 96 and 97 moved the two ECDSA verifiers to 64-bit
-limbs in every session of a host object. Under either value:
+words in every session of a host object. Under either value:
 
 - p256_ecdsa_verify took 1,214 us and p384_ecdsa_verify 3,937 us, on
-  32-bit limbs;
+  32-bit words;
 - an ECDSA client's side took 1.29 ms under `0x67`, of which the
   verifier was 94%, and 3.02 ms under `0x1`.
 
@@ -519,7 +519,7 @@ P-256 rows docs/decisions.md 94 changed, under `0x1` and `0x7`. Under
 - rsa_pss_sign took 37.2 ms for RSA-2048 and 148 ms for RSA-3072, on the
   native copy of the ladder, and an RSA-3072 server's side 146.3 ms;
 - rsa_pss_verify took 272 us for RSA-2048 and 650 us for RSA-3072, on
-  32-bit limbs, and the RSA-3072 client side 0.77 ms, or 2.72 ms under
+  32-bit words, and the RSA-3072 client side 0.77 ms, or 2.72 ms under
   `0x1`;
 - sha256 took 4.79 ns a byte at 16 KB and sha384 3.20, in portable C,
   and hkdf_expand_label 1.52 us;
@@ -624,7 +624,7 @@ What these show:
 - SHA-384 and SHA-512 take 4.0 times their arm64 time. The M1 Pro runs
   them on its SHA-512 instructions, and this CPU has none.
 - The elliptic-curve and RSA rows take 1.4 to 1.9 times their arm64
-  time, and p384_ecdsa_verify 2.7 times, on the six-limb field of
+  time, and p384_ecdsa_verify 2.7 times, on the six-word field of
   docs/decisions.md 97 under gcc. Before docs/decisions.md 95 RSA signing was the one that ran
   faster here than on the M1 Pro, in 0.54 to 0.65 of its time, on the
   native copy of the ladder.

@@ -5,7 +5,7 @@ reason: rsa_sign64_sp1 returns without wiping m1, which crt_combine left
   holding the difference of the two halves of the signature in p's
   domain. That difference with the signature gives a prime.
   bin/rsa_sign_equiv_test copies the stack below one call and finds two
-  limbs of the difference there.
+  words of the difference there.
 
 --- old
     ct_wipe(em_plain, sizeof em_plain);

@@ -1,13 +1,13 @@
 invariant: INV-17
 file: rsa_sign64.c
 catches: rsa_sign_equiv_test
-reason: rsa_sign64_sp1 returns without wiping s, the limbs of the
+reason: rsa_sign64_sp1 returns without wiping s, the words of the
   candidate it recombined. After a check that passed they are the
   signature the caller holds. A candidate that failed its check differs
   from the signature modulo one prime alone, and it and the message
   factor the modulus. bin/rsa_sign_equiv_test signs under a key with one
   bit of dp changed, copies the stack below the refused call and finds
-  the candidate's limbs there.
+  the candidate's words there.
 
 --- old
     ct_wipe(m2, sizeof m2);

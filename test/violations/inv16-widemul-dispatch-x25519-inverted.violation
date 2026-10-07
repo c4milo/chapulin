@@ -4,7 +4,7 @@ catches: widemul_runtime_test
 reason: widemul_x25519 inverts its branch, so x25519 runs the wide field,
   on the native 64x64->128 multiply, for every answer but
   WIDEMUL_CONSTANT_TIME, a wiped direction's 0 and WIDEMUL_NOT_STATED among
-  them, and the 16-limb field on the decomposition for the one answer that
+  them, and the 16-word field on the decomposition for the one answer that
   states the multiply's timing. Every byte still comes out the same.
   bin/widemul_runtime_test counts the calls into each copy and requires
   the wide field alone under the constant-time answer.

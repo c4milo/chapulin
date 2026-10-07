@@ -1,8 +1,8 @@
 invariant: INV-16
-file: p256_wide_limb.h
+file: p256_wide_word.h
 catches: test/docker-aes-runtime-qemu.sh p256-equiv
 reason: the form of the add with carry that gcc reads for x86-64 hands
-  _addcarry_u64 a carry in of zero, so every chain of limbs drops the
+  _addcarry_u64 a carry in of zero, so every chain of words drops the
   carries between them. CBMC reads no intrinsic, so no proof covers the
   form, and clang reads another, so on a machine whose compiler is clang
   no test binary compiles the line. The script builds

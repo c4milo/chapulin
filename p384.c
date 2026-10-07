@@ -2,13 +2,13 @@
 // is public (see p384.h). The field and scalar arithmetic is in
 // p384_field.c; this file holds the curve: Jacobian points (Z == 0 is
 // infinity), the group law, and the verify equation over strict-DER
-// signatures. It is p256.c line for line at 12 limbs. Clarity over
+// signatures. It is p256.c line for line at 12 words. Clarity over
 // speed: this runs once per connection.
 //
 // That is a device object's arithmetic, and the reference. A host object
 // (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles none of it: its entry reads the
 // signature with the same DER reader and hands r and s to
-// p384_wide_verify.c, which checks the same equation on six 64-bit limbs,
+// p384_wide_verify.c, which checks the same equation on six 64-bit words,
 // in every session, because nothing here is secret and so no caller has
 // to state the multiply's timing (docs/decisions.md 97).
 // bin/p384_equiv_test compiles both arms into one binary and requires one
@@ -40,33 +40,33 @@ static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P38
 // SEC 2 curve constants, printed by test/gen_p384_constants.py after it
 // checks them against openssl. a = p - 3, so the a = -3 doubling
 // formula applies unchanged.
-static const uint32_t B[P384_LIMBS] = {0xd3ec2aef, 0x2a85c8ed, 0x8a2ed19d, 0xc656398d,
+static const uint32_t B[P384_WORDS] = {0xd3ec2aef, 0x2a85c8ed, 0x8a2ed19d, 0xc656398d,
                                        0x5013875a, 0x0314088f, 0xfe814112, 0x181d9c6e,
                                        0xe3f82d19, 0x988e056b, 0xe23ee7e4, 0xb3312fa7};
 
-static const uint32_t GX[P384_LIMBS] = {0x72760ab7, 0x3a545e38, 0xbf55296c, 0x5502f25d,
+static const uint32_t GX[P384_WORDS] = {0x72760ab7, 0x3a545e38, 0xbf55296c, 0x5502f25d,
                                         0x82542a38, 0x59f741e0, 0x8ba79b98, 0x6e1d3b62,
                                         0xf320ad74, 0x8eb1c71e, 0xbe8b0537, 0xaa87ca22};
 
-static const uint32_t GY[P384_LIMBS] = {0x90ea0e5f, 0x7a431d7c, 0x1d7e819d, 0x0a60b1ce,
+static const uint32_t GY[P384_WORDS] = {0x90ea0e5f, 0x7a431d7c, 0x1d7e819d, 0x0a60b1ce,
                                         0xb5f0b8c0, 0xe9da3113, 0x289a147c, 0xf8f41dbd,
                                         0x9292dc29, 0x5d9e98bf, 0x96262c6f, 0x3617de4a};
 
 typedef struct {
-    uint32_t x[P384_LIMBS];
-    uint32_t y[P384_LIMBS];
-    uint32_t z[P384_LIMBS]; // Jacobian: affine (x/z^2, y/z^3); z == 0 is infinity
+    uint32_t x[P384_WORDS];
+    uint32_t y[P384_WORDS];
+    uint32_t z[P384_WORDS]; // Jacobian: affine (x/z^2, y/z^3); z == 0 is infinity
 } point;
 
 // Doubling, a = -3 (EFD dbl-2001-b). Maps infinity to infinity: z == 0
 // forces z3 == 0.
 static void point_double(point *o, const point *a) {
-    uint32_t delta[P384_LIMBS];
-    uint32_t gamma[P384_LIMBS];
-    uint32_t beta[P384_LIMBS];
-    uint32_t alpha[P384_LIMBS];
-    uint32_t t[P384_LIMBS];
-    uint32_t t2[P384_LIMBS];
+    uint32_t delta[P384_WORDS];
+    uint32_t gamma[P384_WORDS];
+    uint32_t beta[P384_WORDS];
+    uint32_t alpha[P384_WORDS];
+    uint32_t t[P384_WORDS];
+    uint32_t t2[P384_WORDS];
     point r;
     p384_mod_mul(delta, a->z, a->z, &p384_modp); // delta = Z^2
     p384_mod_mul(gamma, a->y, a->y, &p384_modp); // gamma = Y^2
@@ -107,14 +107,14 @@ static void point_add(point *o, const point *a, const point *b) {
         *o = *a;
         return;
     }
-    uint32_t z1z1[P384_LIMBS];
-    uint32_t z2z2[P384_LIMBS];
-    uint32_t u1[P384_LIMBS];
-    uint32_t u2[P384_LIMBS];
-    uint32_t s1[P384_LIMBS];
-    uint32_t s2[P384_LIMBS];
-    uint32_t h[P384_LIMBS];
-    uint32_t rr[P384_LIMBS];
+    uint32_t z1z1[P384_WORDS];
+    uint32_t z2z2[P384_WORDS];
+    uint32_t u1[P384_WORDS];
+    uint32_t u2[P384_WORDS];
+    uint32_t s1[P384_WORDS];
+    uint32_t s2[P384_WORDS];
+    uint32_t h[P384_WORDS];
+    uint32_t rr[P384_WORDS];
     p384_mod_mul(z1z1, a->z, a->z, &p384_modp);
     p384_mod_mul(z2z2, b->z, b->z, &p384_modp);
     p384_mod_mul(u1, a->x, z2z2, &p384_modp);
@@ -133,10 +133,10 @@ static void point_add(point *o, const point *a, const point *b) {
         }
         return;
     }
-    uint32_t hh[P384_LIMBS];
-    uint32_t hhh[P384_LIMBS];
-    uint32_t v[P384_LIMBS];
-    uint32_t t[P384_LIMBS];
+    uint32_t hh[P384_WORDS];
+    uint32_t hhh[P384_WORDS];
+    uint32_t v[P384_WORDS];
+    uint32_t t[P384_WORDS];
     point r;
     p384_mod_mul(hh, h, h, &p384_modp);
     p384_mod_mul(hhh, hh, h, &p384_modp);
@@ -155,7 +155,7 @@ static void point_add(point *o, const point *a, const point *b) {
 }
 
 // o = k*p, plain left-to-right double-and-add; k and p are public.
-static void point_mul(point *o, const uint32_t k[P384_LIMBS], const point *p) {
+static void point_mul(point *o, const uint32_t k[P384_WORDS], const point *p) {
     point acc;
     memset(&acc, 0, sizeof acc); // infinity
     for (int i = SCALAR_BITS - 1; i >= 0; i--) {
@@ -168,10 +168,10 @@ static void point_mul(point *o, const uint32_t k[P384_LIMBS], const point *p) {
 }
 
 // y^2 == x^3 - 3x + b mod p; inputs already below p.
-static int on_curve(const uint32_t x[P384_LIMBS], const uint32_t y[P384_LIMBS]) {
-    uint32_t lhs[P384_LIMBS];
-    uint32_t rhs[P384_LIMBS];
-    uint32_t t[P384_LIMBS];
+static int on_curve(const uint32_t x[P384_WORDS], const uint32_t y[P384_WORDS]) {
+    uint32_t lhs[P384_WORDS];
+    uint32_t rhs[P384_WORDS];
+    uint32_t t[P384_WORDS];
     p384_mod_mul(lhs, y, y, &p384_modp);
     p384_mod_mul(t, x, x, &p384_modp);
     p384_mod_mul(rhs, t, x, &p384_modp);
@@ -183,11 +183,11 @@ static int on_curve(const uint32_t x[P384_LIMBS], const uint32_t y[P384_LIMBS]) 
 }
 
 // Whether (r, s) is a signature of msg_hash under pub, for r and s as 48
-// big-endian bytes each: FIPS 186-4's verification on the limbs above.
+// big-endian bytes each: FIPS 186-4's verification on the words above.
 static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P384_LEN],
                      const uint8_t r_be[P384_LEN], const uint8_t s_be[P384_LEN]) {
-    uint32_t r[P384_LIMBS];
-    uint32_t s[P384_LIMBS];
+    uint32_t r[P384_WORDS];
+    uint32_t s[P384_WORDS];
     p384_from_bytes(r, r_be);
     p384_from_bytes(s, s_be);
     if (p384_is_zero(r) || p384_is_zero(s) || p384_compare(r, p384_modn.m) >= 0 ||
@@ -207,15 +207,15 @@ static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P38
 
     // e = the hash as a big-endian integer mod n; one subtract is enough
     // because n > 2^383, so 2n > 2^384.
-    uint32_t e[P384_LIMBS];
+    uint32_t e[P384_WORDS];
     p384_from_bytes(e, msg_hash);
     if (p384_compare(e, p384_modn.m) >= 0) {
         (void)p384_sub_raw(e, e, p384_modn.m);
     }
 
-    uint32_t w[P384_LIMBS];
-    uint32_t u1[P384_LIMBS];
-    uint32_t u2[P384_LIMBS];
+    uint32_t w[P384_WORDS];
+    uint32_t u1[P384_WORDS];
+    uint32_t u2[P384_WORDS];
     p384_mod_inverse(w, s, &p384_modn); // w = s^-1
     p384_mod_mul(u1, e, w, &p384_modn);
     p384_mod_mul(u2, r, w, &p384_modn);
@@ -236,8 +236,8 @@ static int verify_rs(const uint8_t pub[P384_PUB_LEN], const uint8_t msg_hash[P38
     }
 
     // v = (R.X / R.Z^2 mod p) mod n; p < 2n so one subtract reduces.
-    uint32_t z_inv[P384_LIMBS];
-    uint32_t x1[P384_LIMBS];
+    uint32_t z_inv[P384_WORDS];
+    uint32_t x1[P384_WORDS];
     p384_mod_inverse(z_inv, p1.z, &p384_modp);
     p384_mod_mul(z_inv, z_inv, z_inv, &p384_modp);
     p384_mod_mul(x1, p1.x, z_inv, &p384_modp);

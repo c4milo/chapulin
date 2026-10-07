@@ -5,8 +5,8 @@ reason: inverting the mask inverts the conditional subtraction of the
   wide field: a value is reduced exactly when it is already below p and
   left alone when it is not, so every sum and every Montgomery product
   leaves the field. bin/p256_equiv_test compares every wide field routine
-  with p256_field.c's on the same limbs, and
-  proof/p256_wide_field_harness.c fails on it for any limbs at all.
+  with p256_field.c's on the same words, and
+  proof/p256_wide_field_harness.c fails on it for any words at all.
 
 --- old
     uint64_t keep = p256_wide_mask(borrow & (high ^ 1U));

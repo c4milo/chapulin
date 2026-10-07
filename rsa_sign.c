@@ -3,7 +3,7 @@
 // time in the private exponent. rsa_sign.h states what that claim covers
 // and what it does not.
 //
-// Limbs are little-endian uint32 and every product is a uint64 built by
+// Words are little-endian uint32 and every product is a uint64 built by
 // ct.h's ct_widemul, the shape p256.c and rsa_mont.c use. What differs
 // from rsa_mont.c is every place a value decides something: the
 // conditional subtracts and the ladder swap are mask arithmetic, never an
@@ -39,12 +39,12 @@
 #include "rsa_sign64.h"
 #else
 
-// One 32-bit limb per 4 bytes of modulus: RSA-3072 is 96 limbs, RSA-4096
+// One 32-bit word per 4 bytes of modulus: RSA-3072 is 96 words, RSA-4096
 // is 128. The count follows the one bound rsa.h defines, as rsa_mont.c's
 // does, so both files size their arrays from the same number.
-#define LIMBS_MAX (CH_RSA_MODULUS_MAX / 4)
+#define WORDS_MAX (CH_RSA_MODULUS_MAX / 4)
 
-// The limb count divides the byte bound, and the byte bound is the one
+// The word count divides the byte bound, and the byte bound is the one
 // rsa_pss_sign's n_len check enforces.
 _Static_assert(CH_RSA_MODULUS_MAX % 8 == 0 && CH_RSA_MODULUS_MAX >= 256,
                "CH_RSA_MODULUS_MAX must be a multiple of 8 and at least 256");
@@ -59,9 +59,9 @@ static uint32_t mask_of_bit(uint32_t bit) {
     return (uint32_t)((int32_t)(bit << 31) >> 31);
 }
 
-// k big-endian bytes -> k little-endian limbs, most significant limb
+// k big-endian bytes -> k little-endian words, most significant word
 // first in the byte string.
-static void limbs_from_bytes(uint32_t *o, const uint8_t *b, size_t k) {
+static void words_from_bytes(uint32_t *o, const uint8_t *b, size_t k) {
     for (size_t i = 0; i < k; i++) {
         size_t j = (k - 1 - i) * 4;
         o[i] = ((uint32_t)b[j] << 24) | ((uint32_t)b[j + 1] << 16) | ((uint32_t)b[j + 2] << 8) |
@@ -69,8 +69,8 @@ static void limbs_from_bytes(uint32_t *o, const uint8_t *b, size_t k) {
     }
 }
 
-// k little-endian limbs -> big-endian bytes.
-static void limbs_to_bytes(uint8_t *b, const uint32_t *a, size_t k) {
+// k little-endian words -> big-endian bytes.
+static void words_to_bytes(uint8_t *b, const uint32_t *a, size_t k) {
     for (size_t i = 0; i < k; i++) {
         size_t j = (k - 1 - i) * 4;
         b[j] = (uint8_t)(a[i] >> 24);
@@ -80,8 +80,8 @@ static void limbs_to_bytes(uint8_t *b, const uint32_t *a, size_t k) {
     }
 }
 
-// The borrow out of a - b over k limbs, with the difference discarded.
-// Every limb is read whatever the values are, so this answers "is a below
+// The borrow out of a - b over k words, with the difference discarded.
+// Every word is read whatever the values are, so this answers "is a below
 // b" without a comparison that could branch.
 static uint32_t sub_borrow(const uint32_t *a, const uint32_t *b, size_t k) {
     uint32_t borrow = 0;
@@ -92,9 +92,9 @@ static uint32_t sub_borrow(const uint32_t *a, const uint32_t *b, size_t k) {
     return borrow;
 }
 
-// a -= b & mask over k limbs. mask is all ones or all zeros, so this is
+// a -= b & mask over k words. mask is all ones or all zeros, so this is
 // either the whole subtraction or a subtraction of zero, and both take
-// the same time and touch the same limbs.
+// the same time and touch the same words.
 static void sub_masked(uint32_t *a, const uint32_t *b, size_t k, uint32_t mask) {
     uint32_t borrow = 0;
     for (size_t i = 0; i < k; i++) {
@@ -104,25 +104,25 @@ static void sub_masked(uint32_t *a, const uint32_t *b, size_t k, uint32_t mask) 
     }
 }
 
-// 1 when the k+1 limb value top:a is below b, and 0 otherwise. b has no
-// limb above k, so the top step subtracts only the borrow the low limbs
+// 1 when the k+1 word value top:a is below b, and 0 otherwise. b has no
+// word above k, so the top step subtracts only the borrow the low words
 // produced, and its own borrow answers the whole comparison. Subtracting
-// rather than comparing is what keeps a limb off the control path: a
+// rather than comparing is what keeps a word off the control path: a
 // compare here is what clang turns into a predicated move.
 static uint32_t below(const uint32_t *a, const uint32_t *b, size_t k, uint32_t top) {
     uint32_t borrow = sub_borrow(a, b, k);
     return (uint32_t)(((uint64_t)top - borrow) >> 32) & 1;
 }
 
-// r -= m when the k+1 limb value extra:r is at or above m. extra is the
-// bit the caller shifted out above r's top limb. The choice is a mask.
+// r -= m when the k+1 word value extra:r is at or above m. extra is the
+// bit the caller shifted out above r's top word. The choice is a mask.
 static void cond_sub(uint32_t *r, const uint32_t *m, size_t k, uint32_t extra) {
     sub_masked(r, m, k, ~mask_of_bit(below(r, m, k, extra)));
 }
 
 // Exchanges a and b when mask is all ones, leaves them when it is all
 // zeros. Both arrays are written either way.
-static void cswap_limbs(uint32_t *a, uint32_t *b, size_t k, uint32_t mask) {
+static void cswap_words(uint32_t *a, uint32_t *b, size_t k, uint32_t mask) {
     for (size_t i = 0; i < k; i++) {
         uint32_t t = mask & (a[i] ^ b[i]);
         a[i] ^= t;
@@ -159,12 +159,12 @@ static void mont_r2(uint32_t *r2, const uint32_t *m, size_t k) {
 
 // Montgomery product o = a*b / 2^(32k) mod m (CIOS, Koc et al.). Inputs
 // below m, result below m; o may alias a or b, because o is written only
-// after both are read in full. Each round adds one limb of a into t,
-// adds a multiple of m to make t's low limb zero, and shifts down one
-// limb.
+// after both are read in full. Each round adds one word of a into t,
+// adds a multiple of m to make t's low word zero, and shifts down one
+// word.
 static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const uint32_t *m,
                      uint32_t m0inv, size_t k) {
-    uint32_t t[LIMBS_MAX + 2];
+    uint32_t t[WORDS_MAX + 2];
     memset(t, 0, (k + 2) * sizeof(uint32_t));
     for (size_t i = 0; i < k; i++) {
         uint64_t c = 0;
@@ -190,8 +190,8 @@ static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const ui
         t[k + 1] = 0;
     }
     // t is below 2m, so one subtraction brings it below m. t[k] carries
-    // what did not fit in the low limbs, and below() reads it as the top
-    // limb of the comparison.
+    // what did not fit in the low words, and below() reads it as the top
+    // word of the comparison.
     memcpy(o, t, k * sizeof(uint32_t));
     sub_masked(o, m, k, ~mask_of_bit(below(t, m, k, t[k])));
     ct_wipe(t, (k + 2) * sizeof(uint32_t));
@@ -199,26 +199,26 @@ static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const ui
 
 void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     CH_ASSERT(k->n_len >= 256 && k->n_len <= CH_RSA_MODULUS_MAX && k->n_len % 4 == 0);
-    size_t limbs = k->n_len / 4;
-    // Zeroed at declaration, as rsa_mont.c's are: the limbs above
-    // `limbs` are never read, and starting them at zero is what lets a
+    size_t words = k->n_len / 4;
+    // Zeroed at declaration, as rsa_mont.c's are: the words above
+    // `words` are never read, and starting them at zero is what lets a
     // reader, and clang's analyzer, see that without following the
     // length.
-    uint32_t m[LIMBS_MAX] = {0};
-    uint32_t r2[LIMBS_MAX] = {0};
-    uint32_t x1[LIMBS_MAX] = {0}; // the running 1 of the ladder
-    uint32_t x2[LIMBS_MAX] = {0}; // the running base
-    limbs_from_bytes(m, k->n, limbs);
+    uint32_t m[WORDS_MAX] = {0};
+    uint32_t r2[WORDS_MAX] = {0};
+    uint32_t x1[WORDS_MAX] = {0}; // the running 1 of the ladder
+    uint32_t x2[WORDS_MAX] = {0}; // the running base
+    words_from_bytes(m, k->n, words);
     uint32_t m0inv = mont_m0inv(m[0]);
-    mont_r2(r2, m, limbs);
+    mont_r2(r2, m, words);
 
     // x1 starts at 1 and x2 at em, both moved into the Montgomery domain
     // by one multiplication with r2.
-    memset(x1, 0, limbs * sizeof(uint32_t));
+    memset(x1, 0, words * sizeof(uint32_t));
     x1[0] = 1;
-    mont_mul(x1, x1, r2, m, m0inv, limbs);
-    limbs_from_bytes(x2, em, limbs);
-    mont_mul(x2, x2, r2, m, m0inv, limbs);
+    mont_mul(x1, x1, r2, m, m0inv, words);
+    words_from_bytes(x2, em, words);
+    mont_mul(x2, x2, r2, m, m0inv, words);
 
     // The ladder (Montgomery powering ladder): one multiplication and one
     // squaring per exponent bit, over every one of the 8 * n_len bit
@@ -228,17 +228,17 @@ void rsa_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     for (size_t i = 8 * k->n_len; i-- > 0;) {
         uint32_t bit = ((uint32_t)k->d[k->n_len - 1 - (i >> 3)] >> (i & 7)) & 1;
         uint32_t mask = mask_of_bit(bit);
-        cswap_limbs(x1, x2, limbs, mask);
-        mont_mul(x2, x1, x2, m, m0inv, limbs);
-        mont_mul(x1, x1, x1, m, m0inv, limbs);
-        cswap_limbs(x1, x2, limbs, mask);
+        cswap_words(x1, x2, words, mask);
+        mont_mul(x2, x1, x2, m, m0inv, words);
+        mont_mul(x1, x1, x1, m, m0inv, words);
+        cswap_words(x1, x2, words, mask);
     }
 
     // One multiplication by 1 leaves the Montgomery domain.
-    memset(x2, 0, limbs * sizeof(uint32_t));
+    memset(x2, 0, words * sizeof(uint32_t));
     x2[0] = 1;
-    mont_mul(x1, x1, x2, m, m0inv, limbs);
-    limbs_to_bytes(sig, x1, limbs);
+    mont_mul(x1, x1, x2, m, m0inv, words);
+    words_to_bytes(sig, x1, words);
     ct_wipe(x1, sizeof x1);
     ct_wipe(x2, sizeof x2);
 }

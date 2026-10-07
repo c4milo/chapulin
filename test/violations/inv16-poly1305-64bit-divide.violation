@@ -1,7 +1,7 @@
 invariant: INV-16
 file: poly1305.c
 catches: test/lint-wide-multiply.sh
-reason: a 64-bit remainder of the accumulator by a key limb is no
+reason: a 64-bit remainder of the accumulator by a key word is no
   instruction on any of these cores; it is a call into the compiler's
   runtime (__aeabi_uldivmod on the M3, __umoddi3 on mips32r2 and
   rv32imac), whose loop branches on both secret operands, and

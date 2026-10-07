@@ -11,8 +11,8 @@
 #include "ct.h"
 #include "p256_wide_field.h"
 
-// The curve coefficient b, multiplied by R = 2^256: p256_point.c's B_MONT in 64-bit limbs.
-// tools/p256_wide.py recomputes it from the SEC 2 value and stops if a limb differs.
+// The curve coefficient b, multiplied by R = 2^256: p256_point.c's B_MONT in 64-bit words.
+// tools/p256_wide.py recomputes it from the SEC 2 value and stops if a word differs.
 //
 // b = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
 static const p256_wide_fe B_MONT = {

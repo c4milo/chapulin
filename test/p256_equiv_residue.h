@@ -1,5 +1,5 @@
 // What the wide P-256 calls leave on the stack. Each wide routine keeps its
-// secrets in objects it names, the 64-bit limbs of a scalar, the powers of
+// secrets in objects it names, the 64-bit words of a scalar, the powers of
 // the nonce, the running points and the coordinates of the product, and
 // wipes each through ct_wipe before it returns. The compiler keeps more in
 // stack slots of its own, which no ct_wipe can name, so widemul.h calls
@@ -21,7 +21,7 @@
 //   for nearly that length, so the wipe ran and wrote where the frames lay.
 //
 //   run_residue_sign and run_residue_ecdh make one signature and one key
-//   exchange under the constant-time answer and look for any 64-bit limb,
+//   exchange under the constant-time answer and look for any 64-bit word,
 //   in the host's byte order at any byte offset, of the values the call
 //   must not leave behind, and run_residue_sign_on_instructions makes one
 //   more signature through p256_sign_cpu, whose nonce's HMACs run on the
@@ -37,10 +37,10 @@
 //   runs those two on p256_scalar.c under either answer, and they wipe
 //   that temporary themselves (p256_scalar.h).
 //
-// One limb is enough to fail: a compiler that keeps a secret in slots of
-// its own need not keep its four limbs side by side. A limb of 64 random
-// bits matches no other eight bytes by chance. Two 32-bit limbs of
-// p256_scalar.h's scalar are one such limb, so a copy p256_sign.c or
+// One word is enough to fail: a compiler that keeps a secret in slots of
+// its own need not keep its four words side by side. A word of 64 random
+// bits matches no other eight bytes by chance. Two 32-bit words of
+// p256_scalar.h's scalar are one such word, so a copy p256_sign.c or
 // p256_ecdh.c left is found too.
 //
 // The nonce is not an output, so the run recovers it from the signature:
@@ -51,9 +51,9 @@
 // RESIDUE_BYTES stays under 4096 on purpose. A frame of 4096 bytes or more
 // makes the compiler call a stack probe before anything else, and Darwin's
 // stores two scratch registers on the stack. After a call those registers
-// can still hold limbs the call computed with: a register is out of every
+// can still hold words the call computed with: a register is out of every
 // wipe's reach, as it is for every wipe written in C. At 16384 bytes the
-// probe of residue_snapshot itself stored a limb of a shared secret that
+// probe of residue_snapshot itself stored a word of a shared secret that
 // way, which was this file's doing and not the library's.
 //
 // Included by test/p256_equiv_test.c only, which declares the generator,
@@ -211,11 +211,11 @@ static __attribute__((noinline)) int residue_ecdh(void) {
     return p256_ecdh(WIDEMUL_CONSTANT_TIME, residue_priv, residue_peer, residue_shared);
 }
 
-// Whether the copy holds any of the four 64-bit limbs of the eight 32-bit
-// limbs at limb, at any byte offset.
-static int residue_holds(const uint32_t limb[8]) {
+// Whether the copy holds any of the four 64-bit words of the eight 32-bit
+// words at value, at any byte offset.
+static int residue_holds(const uint32_t value[8]) {
     for (size_t i = 0; i < 4; i++) {
-        uint64_t wide = (uint64_t)limb[2 * i] | ((uint64_t)limb[2 * i + 1] << 32);
+        uint64_t wide = (uint64_t)value[2 * i] | ((uint64_t)value[2 * i + 1] << 32);
         for (size_t at = 0; at + sizeof wide <= RESIDUE_BYTES; at++) {
             uint64_t word;
             memcpy(&word, &residue_copy[at], sizeof word);
@@ -227,16 +227,16 @@ static int residue_holds(const uint32_t limb[8]) {
     return 0;
 }
 
-// Whether the copy holds a limb of a - n modulo 2^256.
+// Whether the copy holds a word of a - n modulo 2^256.
 static int residue_holds_less_n(const p256_scalar *a) {
     static const uint32_t n[8] = {0xfc632551, 0xf3b9cac2, 0xa7179e84, 0xbce6faad,
                                   0xffffffff, 0xffffffff, 0x00000000, 0xffffffff};
     uint32_t difference[8];
     uint64_t borrow = 0;
     for (size_t i = 0; i < 8; i++) {
-        uint64_t limb = (uint64_t)a->limb[i] - n[i] - borrow;
-        difference[i] = (uint32_t)limb;
-        borrow = (limb >> 32) & 1U;
+        uint64_t word = (uint64_t)a->word[i] - n[i] - borrow;
+        difference[i] = (uint32_t)word;
+        borrow = (word >> 32) & 1U;
     }
     return residue_holds(difference);
 }
@@ -293,25 +293,25 @@ static void run_residue_sign(uint32_t cpu, const char *group) {
     // k = s^-1 (z + r d), and its inverse is s (z + r d)^-1.
     p256_scalar_mul(&k, &r, &d);
     p256_scalar_add(&k, &z, &k);
-    report(group, "no limb of z + r d below a signature", !residue_holds(k.limb));
-    report(group, "no limb of z + r d less n below a signature", !residue_holds_less_n(&k));
-    report(group, "no limb of the private scalar less n below a signature",
+    report(group, "no word of z + r d below a signature", !residue_holds(k.word));
+    report(group, "no word of z + r d less n below a signature", !residue_holds_less_n(&k));
+    report(group, "no word of the private scalar less n below a signature",
            !residue_holds_less_n(&d));
     p256_scalar_inverse(&k_inverse, &k);
     p256_scalar_mul(&k_inverse, &s, &k_inverse);
     p256_scalar_inverse(&other, &s);
     p256_scalar_mul(&k, &other, &k);
 
-    report(group, "no limb of the private scalar below a signature", !residue_holds(d.limb));
-    report(group, "no limb of the nonce below a signature", !residue_holds(k.limb));
-    report(group, "no limb of the nonce less n below a signature", !residue_holds_less_n(&k));
-    report(group, "no limb of the nonce's inverse below a signature",
-           !residue_holds(k_inverse.limb));
+    report(group, "no word of the private scalar below a signature", !residue_holds(d.word));
+    report(group, "no word of the nonce below a signature", !residue_holds(k.word));
+    report(group, "no word of the nonce less n below a signature", !residue_holds_less_n(&k));
+    report(group, "no word of the nonce's inverse below a signature",
+           !residue_holds(k_inverse.word));
     scalar_to_mont(&other, &k);
-    report(group, "no limb of the nonce times R below a signature", !residue_holds(other.limb));
+    report(group, "no word of the nonce times R below a signature", !residue_holds(other.word));
     scalar_to_mont(&other, &k_inverse);
-    report(group, "no limb of the nonce's inverse times R below a signature",
-           !residue_holds(other.limb));
+    report(group, "no word of the nonce's inverse times R below a signature",
+           !residue_holds(other.word));
 }
 
 // The search above on a signature through p256_sign_cpu with the SHA-256
@@ -350,12 +350,12 @@ static void run_residue_ecdh(void) {
     p256_scalar_from_bytes(&k, residue_priv);
     p256_fe_from_bytes(&x, residue_shared);
     p256_fe_to_mont(&x_mont, &x);
-    report("residue", "no limb of the private scalar below a key exchange", !residue_holds(k.limb));
-    report("residue", "no limb of the private scalar less n below a key exchange",
+    report("residue", "no word of the private scalar below a key exchange", !residue_holds(k.word));
+    report("residue", "no word of the private scalar less n below a key exchange",
            !residue_holds_less_n(&k));
-    report("residue", "no limb of the shared secret below a key exchange", !residue_holds(x.limb));
-    report("residue", "no limb of the shared secret times R below a key exchange",
-           !residue_holds(x_mont.limb));
+    report("residue", "no word of the shared secret below a key exchange", !residue_holds(x.word));
+    report("residue", "no word of the shared secret times R below a key exchange",
+           !residue_holds(x_mont.word));
 }
 
 // The four checks above, unless the environment names CH_P256_EQUIV_NO_STACK. make

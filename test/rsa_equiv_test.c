@@ -3,8 +3,8 @@
 // same bytes out.
 //
 // The public operation, rsa_vp1. A host object computes it on
-// rsa_mont64.c's 64-bit limbs and a device object on rsa_mont.c's 32-bit
-// limbs. This binary holds both: rsa_vp1 is the host arm, and
+// rsa_mont64.c's 64-bit words and a device object on rsa_mont.c's 32-bit
+// words. This binary holds both: rsa_vp1 is the host arm, and
 // rsa_vp1_portable is the device arm, which test/rsa_equiv_portable.c
 // compiles under that name. The 32-bit arm carries the CBMC lemma, the
 // Lean differential and the openssl vectors of bin/rsa_test; this binary
@@ -14,12 +14,12 @@
 //   - random odd moduli with the top bit set at every length rsa.h
 //     admits, 256 bytes to CH_RSA_MODULUS_MAX in steps of 8, each with
 //     random signatures below it;
-//   - moduli a limb scheme is most likely to get wrong: all ones, the top
-//     and bottom bits alone, a low limb of 1 and a low limb of all ones,
+//   - moduli a word scheme is most likely to get wrong: all ones, the top
+//     and bottom bits alone, a low word of 1 and a low word of all ones,
 //     which are the two ends of the inverse rsa_mont64.c computes from
-//     that limb, a top limb of 2^63 with zeros under it, and a modulus
+//     that word, a top word of 2^63 with zeros under it, and a modulus
 //     whose division of R^2 in rsa_mont.c meets the remainder n - 1;
-//   - moduli of every bit length around a limb boundary and down to two
+//   - moduli of every bit length around a word boundary and down to two
 //     bits, in the same number of bytes, which the verifier admits
 //     because a peer's key comes from elsewhere. Those start
 //     rsa_mont64_modulus_init at another power of two and run it through
@@ -28,7 +28,7 @@
 //     single bit and random values.
 //
 // rsa_mont64.c's square is held to its multiplication of a number by
-// itself, at every limb count from 1 to the bound, which the signer's
+// itself, at every word count from 1 to the bound, which the signer's
 // primes need: 0, 1, n - 1, the top bit alone and random values below n.
 //
 // Three answers are known without either arm: 0 and 1 are their own
@@ -36,7 +36,7 @@
 // checked against both arms, so neither is held only to the other.
 //
 // An even modulus is no RSA modulus, and the two arms write different
-// bytes for one: neither has an inverse of its low limb to compute. So
+// bytes for one: neither has an inverse of its low word to compute. So
 // no case here is even, and rsa.h says so of rsa_vp1.
 //
 // The random values come from the seeded generator below, so an ordinary
@@ -118,7 +118,7 @@ static void compare(const char *case_name, const uint8_t *n, size_t n_len, const
     rsa_vp1(n, n_len, sig, out);
     if (memcmp(portable_out, out, n_len) != 0) {
         failures++;
-        (void)fprintf(stderr, "FAIL %s: the two limb widths differ at %zu bytes\n", case_name,
+        (void)fprintf(stderr, "FAIL %s: the two word widths differ at %zu bytes\n", case_name,
                       n_len);
         print_hex("n       ", n, n_len);
         print_hex("sig     ", sig, n_len);
@@ -224,7 +224,7 @@ static void run_random(void) {
     }
 }
 
-// The moduli whose limbs sit at an edge, at the smallest length, the
+// The moduli whose words sit at an edge, at the smallest length, the
 // largest, and one between that is 8 bytes past a multiple of 16.
 static void run_edge_moduli(size_t n_len) {
     uint8_t n[CH_RSA_MODULUS_MAX];
@@ -237,38 +237,38 @@ static void run_edge_moduli(size_t n_len) {
     n[n_len - 1] = 1;
     run_modulus("top and bottom bits", n, n_len, 2);
 
-    // A low 64-bit limb of 1, and of all ones, under random limbs.
+    // A low 64-bit word of 1, and of all ones, under random words.
     rng_fill(n, n_len);
     n[0] |= 0x80;
     memset(n + n_len - 8, 0, 8);
     n[n_len - 1] = 1;
-    run_modulus("low limb 1", n, n_len, 2);
+    run_modulus("low word 1", n, n_len, 2);
     memset(n + n_len - 8, 0xff, 8);
-    run_modulus("low limb all ones", n, n_len, 2);
+    run_modulus("low word all ones", n, n_len, 2);
 
-    // Zero limbs between a random top limb and a random low limb.
+    // Zero words between a random top word and a random low word.
     memset(n, 0, n_len);
     rng_fill(n, 8);
     n[0] |= 0x80;
     rng_fill(n + n_len - 8, 8);
     n[n_len - 1] |= 1;
-    run_modulus("zero middle limbs", n, n_len, 2);
+    run_modulus("zero middle words", n, n_len, 2);
 
-    // (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even limb count k:
-    // limb 0 is 1, every odd limb is all ones and every other limb is
+    // (B^(k + 1) + 1) / (B + 1), for B = 2^64 and an even word count k:
+    // word 0 is 1, every odd word is all ones and every other word is
     // zero. B^(k + 1) is -1 modulo it, so the division by which
-    // rsa_mont.c computes R^2 meets the remainder n - 1, whose top limb is
+    // rsa_mont.c computes R^2 meets the remainder n - 1, whose top word is
     // n's, and its next step takes the largest estimate, 2^64 - 1, where
-    // the division of the top limbs would pass 2^64. No random modulus
-    // meets that step: a remainder's top limb equals the modulus's about
+    // the division of the top words would pass 2^64. No random modulus
+    // meets that step: a remainder's top word equals the modulus's about
     // once in 2^64 steps.
     if ((n_len / 8) % 2 == 0) {
         memset(n, 0, n_len);
-        for (size_t limb = 1; limb < n_len / 8; limb += 2) {
-            memset(n + n_len - 8 * (limb + 1), 0xff, 8);
+        for (size_t word = 1; word < n_len / 8; word += 2) {
+            memset(n + n_len - 8 * (word + 1), 0xff, 8);
         }
         n[n_len - 1] = 1;
-        run_modulus("alternating limbs", n, n_len, 2);
+        run_modulus("alternating words", n, n_len, 2);
     }
 }
 
@@ -284,8 +284,8 @@ static void run_bit_length(size_t n_len, size_t bits) {
     run_modulus("short modulus", n, n_len, 2);
 }
 
-// Bit lengths below the top bit: each side of every limb boundary of both
-// limb widths near the top and near the bottom, and the smallest moduli.
+// Bit lengths below the top bit: each side of every word boundary of both
+// word widths near the top and near the bottom, and the smallest moduli.
 // 3 is the smallest odd modulus above 1, and 5 the smallest with a
 // signature of 2 below n - 2.
 static void run_short_moduli(size_t n_len) {
@@ -318,10 +318,10 @@ static void run_short_moduli(size_t n_len) {
 // operation call it.
 static void compare_square(const char *case_name, const uint64_t *a,
                            const rsa_mont64_modulus *mod) {
-    uint64_t product[RSA_MONT64_LIMBS_MAX];
-    uint64_t square[RSA_MONT64_LIMBS_MAX];
-    uint64_t in_place[RSA_MONT64_LIMBS_MAX];
-    size_t k = mod->limbs;
+    uint64_t product[RSA_MONT64_WORDS_MAX];
+    uint64_t square[RSA_MONT64_WORDS_MAX];
+    uint64_t in_place[RSA_MONT64_WORDS_MAX];
+    size_t k = mod->words;
     rsa_mont64_mont_mul(product, a, a, mod);
     rsa_mont64_mont_square(square, a, mod);
     memcpy(in_place, a, k * sizeof(uint64_t));
@@ -329,21 +329,21 @@ static void compare_square(const char *case_name, const uint64_t *a,
     if (memcmp(product, square, k * sizeof(uint64_t)) != 0 ||
         memcmp(product, in_place, k * sizeof(uint64_t)) != 0) {
         failures++;
-        (void)fprintf(stderr, "FAIL %s: the square differs from the product at %zu limbs\n",
+        (void)fprintf(stderr, "FAIL %s: the square differs from the product at %zu words\n",
                       case_name, k);
         return;
     }
     squared++;
 }
 
-// The square of rsa_mont64.c, at every limb count from 1 to the bound: a
-// prime of the signer has half a modulus's limbs, so the counts below the
+// The square of rsa_mont64.c, at every word count from 1 to the bound: a
+// prime of the signer has half a modulus's words, so the counts below the
 // rows above matter too. Under each modulus it squares 0, 1, n - 1, the
 // top bit alone and random values below n, and each modulus has its top
-// bit set, so n - 1 and the top bit alone make the top limb's top bit,
+// bit set, so n - 1 and the top bit alone make the top word's top bit,
 // which the square adds under a mask, 1.
 static void run_squares(void) {
-    for (size_t k = 1; k <= RSA_MONT64_LIMBS_MAX; k++) {
+    for (size_t k = 1; k <= RSA_MONT64_WORDS_MAX; k++) {
         for (int i = 0; i < 2; i++) {
             uint8_t n[CH_RSA_MODULUS_MAX];
             uint8_t value[CH_RSA_MODULUS_MAX];
@@ -353,7 +353,7 @@ static void run_squares(void) {
             n[len - 1] |= 1;
             rsa_mont64_modulus mod;
             rsa_mont64_modulus_init(&mod, n, len, 8 * len);
-            uint64_t a[RSA_MONT64_LIMBS_MAX] = {0};
+            uint64_t a[RSA_MONT64_WORDS_MAX] = {0};
             compare_square("square of 0", a, &mod);
             a[0] = 1;
             compare_square("square of 1", a, &mod);

@@ -1,8 +1,8 @@
 invariant: INV-16
 file: p256_wide_field.c
 catches: proof/prove-one.sh p256_wide_field
-reason: the multiple of p's top limb loses the subtraction that keeps its
-  high limb at or under 2^64 - 2^32, so that limb is u itself and adding
+reason: the multiple of p's top word loses the subtraction that keeps its
+  high word at or under 2^64 - 2^32, so that word is u itself and adding
   the carry of the round before wraps when u is 2^64 - 1. uint64_t
   defines the wrap, so nothing faults and the round drops 2^64.
   proof/p256_wide_field_harness.c runs reduce() under

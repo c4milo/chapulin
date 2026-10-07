@@ -1,10 +1,10 @@
 invariant: INV-16
 file: p256_scalar.c
 catches: test/docker-mips.sh
-reason: mont_mul's inner product is the one place a secret scalar limb
+reason: mont_mul's inner product is the one place a secret scalar word
   meets another, and ct_widemul is what keeps it four 16x16 pieces. This
   edit hands gcc the 32x32 product instead, so mips32r2 multiplies two
-  whole limbs and the mips32r2-gcc-O2 spec reads far more than the two
+  whole words and the mips32r2-gcc-O2 spec reads far more than the two
   madd it records for this file
   (https://github.com/c4milo/chapulin/issues/122). The recorded two come
   from one constant-operand call and are 16 bits wide; this one is not,

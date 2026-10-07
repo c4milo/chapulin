@@ -32,7 +32,7 @@
 //
 // Not proven here: that the three formulas compute the group law.
 // bin/p256_equiv_test holds the two additions to p256_point_add's
-// coordinates, limb for limb, on random and structured operands, and the
+// coordinates, word for word, on random and structured operands, and the
 // doubling to the point p256_point_add gives for a point with itself. That
 // routine's steps are checked against an affine reference in
 // test/gen_p256_sign_vectors.py. The doubling's steps are proven in Lean
@@ -44,18 +44,18 @@
 #include "p256_wide_point.c"
 
 static void wide_point_nondet(p256_wide_point *p) {
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        p->x.limb[i] = nondet_u64();
-        p->y.limb[i] = nondet_u64();
-        p->z.limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        p->x.word[i] = nondet_u64();
+        p->y.word[i] = nondet_u64();
+        p->z.word[i] = nondet_u64();
     }
 }
 
 static void point_nondet(p256_point *p) {
-    for (size_t i = 0; i < P256_FE_LIMBS; i++) {
-        p->x.limb[i] = nondet_u32();
-        p->y.limb[i] = nondet_u32();
-        p->z.limb[i] = nondet_u32();
+    for (size_t i = 0; i < P256_FE_WORDS; i++) {
+        p->x.word[i] = nondet_u32();
+        p->y.word[i] = nondet_u32();
+        p->z.word[i] = nondet_u32();
     }
 }
 
@@ -86,9 +86,9 @@ static void prove_add_affine(void) {
     p256_wide_affine b;
 
     wide_point_nondet(&a);
-    for (size_t i = 0; i < P256_WIDE_FE_LIMBS; i++) {
-        b.x.limb[i] = nondet_u64();
-        b.y.limb[i] = nondet_u64();
+    for (size_t i = 0; i < P256_WIDE_FE_WORDS; i++) {
+        b.x.word[i] = nondet_u64();
+        b.y.word[i] = nondet_u64();
     }
     p256_wide_point_add_affine(&o, &a, &b);
     wide_point_nondet(&a);

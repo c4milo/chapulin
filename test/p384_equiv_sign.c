@@ -89,8 +89,8 @@ typedef void field_op(uint32_t *o, const uint32_t *a, const uint32_t *b, const p
 
 static void scalar_op(field_op *op, uint8_t o[P384_LEN], const uint8_t a[P384_LEN],
                       const uint8_t b[P384_LEN]) {
-    uint32_t x[P384_LIMBS];
-    uint32_t y[P384_LIMBS];
+    uint32_t x[P384_WORDS];
+    uint32_t y[P384_WORDS];
     p384_from_bytes(x, a);
     p384_from_bytes(y, b);
     op(x, x, y, &p384_modn);
@@ -110,7 +110,7 @@ void scalar_sub(uint8_t o[P384_LEN], const uint8_t a[P384_LEN], const uint8_t b[
 }
 
 void scalar_inverse(uint8_t o[P384_LEN], const uint8_t a[P384_LEN]) {
-    uint32_t x[P384_LIMBS];
+    uint32_t x[P384_WORDS];
     p384_from_bytes(x, a);
     p384_mod_inverse(x, x, &p384_modn);
     p384_portable_to_bytes(o, x);
@@ -118,7 +118,7 @@ void scalar_inverse(uint8_t o[P384_LEN], const uint8_t a[P384_LEN]) {
 
 // v mod n for any 48 bytes: one subtraction, because 2n is above 2^384.
 void scalar_reduce(uint8_t v[P384_LEN]) {
-    uint32_t x[P384_LIMBS];
+    uint32_t x[P384_WORDS];
     p384_from_bytes(x, v);
     if (p384_compare(x, p384_modn.m) >= 0) {
         (void)p384_sub_raw(x, x, p384_modn.m);
@@ -141,8 +141,8 @@ void scalar_small(uint8_t v[P384_LEN], uint8_t value) {
 
 // o = a + b as 384-bit numbers, the carry out dropped.
 void plain_add(uint8_t o[P384_LEN], const uint8_t a[P384_LEN], const uint8_t b[P384_LEN]) {
-    uint32_t x[P384_LIMBS];
-    uint32_t y[P384_LIMBS];
+    uint32_t x[P384_WORDS];
+    uint32_t y[P384_WORDS];
     p384_from_bytes(x, a);
     p384_from_bytes(y, b);
     (void)p384_add_raw(x, x, y);
@@ -151,8 +151,8 @@ void plain_add(uint8_t o[P384_LEN], const uint8_t a[P384_LEN], const uint8_t b[P
 
 // o = a - b as 384-bit numbers, the borrow out dropped.
 void plain_sub(uint8_t o[P384_LEN], const uint8_t a[P384_LEN], const uint8_t b[P384_LEN]) {
-    uint32_t x[P384_LIMBS];
-    uint32_t y[P384_LIMBS];
+    uint32_t x[P384_WORDS];
+    uint32_t y[P384_WORDS];
     p384_from_bytes(x, a);
     p384_from_bytes(y, b);
     (void)p384_sub_raw(x, x, y);

@@ -2,10 +2,10 @@ invariant: INV-41
 file: rsa_mont.c
 catches: rsa_equiv_test
 reason: the division by which a host object's rsa_vp1 computes R^2 divides
-  the remainder's top two limbs by the modulus's top limb even when the
-  remainder's top limb equals the modulus's, where the quotient passes
-  2^64 and its low limb is no estimate. No random modulus meets that step.
-  bin/rsa_equiv_test's alternating-limbs modulus does, and its answers
+  the remainder's top two words by the modulus's top word even when the
+  remainder's top word equals the modulus's, where the quotient passes
+  2^64 and its low word is no estimate. No random modulus meets that step.
+  bin/rsa_equiv_test's alternating-words modulus does, and its answers
   then differ from the 32-bit arm's.
 
 --- old

@@ -6,7 +6,7 @@ reason: rsa_mont64_mont_mul returns without wiping its running sum, so
   of the modulus stay in the dead frame after every multiplication a
   signature makes. No output changes, so no vector notices.
   bin/rsa_sign_equiv_test copies the stack below one signature and finds
-  two limbs of a half of the signature there, which the last
+  two words of a half of the signature there, which the last
   multiplication of an exponentiation left.
 
 --- old

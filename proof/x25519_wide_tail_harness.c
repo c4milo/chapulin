@@ -1,10 +1,10 @@
-// Proves: what the wide X25519 field's ladder does after its loop keeps every limb
+// Proves: what the wide X25519 field's ladder does after its loop keeps every word
 // inside INV-34's bounds, and the output form of mul, sqr and mul_a24 under
 // the multiply contract -- the rest of the induction x25519_wide_step starts.
 //
-// First block: from operands whose limbs are under 2^54, mul, sqr and mul_a24
+// First block: from operands whose words are under 2^54, mul, sqr and mul_a24
 // hand ct_mul128 only operands inside the contract's domain, wrap nothing,
-// and leave limbs 0, 2, 3 and 4 under 2^51 and limb 1 under 2^51 + 2^20. The
+// and leave words 0, 2, 3 and 4 under 2^51 and word 1 under 2^51 + 2^20. The
 // products are the contract's, so the form holds whatever the operands'
 // values are, and one instance of each covers every call the ladder makes.
 // mul runs with its output aliasing each input, the shapes invert() uses.
@@ -16,7 +16,7 @@
 // more than this whole formula: 55 s and 3.9 GB, against about 2 s here.
 #include "x25519_wide_stubs.h"
 
-// Operand limbs under 2^54, the domain of mul, sqr and mul_a24.
+// Operand words under 2^54, the domain of mul, sqr and mul_a24.
 static void assume_operand(fe f) {
     for (size_t i = 0; i < 5; i++) {
         f[i] = nondet_u64() >> 10;

@@ -14,7 +14,7 @@
 # every row under it, and the build column names it:
 #
 #   0x1      CH_CPU_PROBED alone, the value of a caller that states
-#            nothing: the 16x16 multiply decomposition and the 16-limb
+#            nothing: the 16x16 multiply decomposition and the 16-word
 #            X25519 field, which a device object runs too. Its ChaCha20
 #            runs the 128-bit vector path, as every host session's does; a
 #            device object runs chacha20.c's portable loop, which

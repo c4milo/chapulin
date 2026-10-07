@@ -15,7 +15,7 @@
 // modes, raw and CA, stop at 384 (RSA-3072). A TRUST=webpki
 // build (-DCH_TRUST_WEBPKI) admits 512 (RSA-4096), because a public
 // chain ends at a root that size: GTS Root R1 is RSA-4096, measured in
-// docs/webpki.md under "Bounds". rsa_mont.c sizes its limb arrays from
+// docs/webpki.md under "Bounds". rsa_mont.c sizes its word arrays from
 // this value, so it also sets rsa_vp1's stack frame.
 #ifndef CH_RSA_MODULUS_MAX
 #ifdef CH_TRUST_WEBPKI
@@ -38,12 +38,12 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
 // (RSAVP1), all values n_len big-endian bytes. rsa.c handles every check;
 // the caller here guarantees sig < n. Not part of the public API.
 //
-// A device object computes it on 32-bit limbs and a host object
-// (-DCH_CPU_RUNTIME) on rsa_mont64.c's 64-bit limbs, and the two write
+// A device object computes it on 32-bit words and a host object
+// (-DCH_CPU_RUNTIME) on rsa_mont64.c's 64-bit words, and the two write
 // the same bytes for every odd n. For an even n, which is no RSA modulus,
 // each writes n_len bytes that are no power of sig, and the two differ:
-// Montgomery arithmetic needs the inverse of n's low limb, which an even
-// limb does not have.
+// Montgomery arithmetic needs the inverse of n's low word, which an even
+// word does not have.
 void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 
 #endif

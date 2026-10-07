@@ -1,4 +1,4 @@
-// RSA-PSS signing on 64-bit limbs: the signer a host object
+// RSA-PSS signing on 64-bit words: the signer a host object
 // (-DCH_CPU_RUNTIME, cpu_cfg.h) runs for a session whose ch_cfg.cpu holds
 // CH_CPU_CONSTANT_TIME_MULTIPLY, as x25519_wide.c is the X25519 such a
 // session runs (docs/decisions.md 95). widemul.h calls this file's
@@ -14,7 +14,7 @@
 // exponentiations, one modulo each prime with dp and dq, joined by the
 // Chinese remainder theorem, where the ladder runs one modulo n with d:
 // each is over a modulus of half the length and an exponent of half the
-// length. The limbs are rsa_mont64.c's, 64 bits each, on the 64x64->128
+// length. The words are rsa_mont64.c's, 64 bits each, on the 64x64->128
 // multiply the session's bit states. Each exponent is read four bits at a
 // time against a table of the base's first sixteen powers: four squarings
 // and one multiplication for four bits, where the ladder runs four of
@@ -122,8 +122,8 @@ int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
 
 // o = base^e mod m, in the Montgomery domain of mod: base is a Montgomery
 // form below m and o takes one. e is e_len big-endian bytes, every one of
-// which is read. mod is at most a prime's limbs, half of
-// RSA_MONT64_LIMBS_MAX. o may be base. It is an entry of its own so that
+// which is read. mod is at most a prime's words, half of
+// RSA_MONT64_WORDS_MAX. o may be base. It is an entry of its own so that
 // bin/rsa_sign_equiv_test can hold the exponentiation to rsa_sign.c's
 // ladder over any modulus and any exponent. Not part of the public API.
 void rsa_sign64_power(uint64_t *o, const uint64_t *base, const uint8_t *e, size_t e_len,

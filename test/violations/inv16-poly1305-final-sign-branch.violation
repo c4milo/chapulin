@@ -2,7 +2,7 @@ invariant: INV-16
 file: poly1305.c
 catches: test/lint-wide-multiply.sh
 reason: poly1305_final picks h or h - p by the sign of g4, the last
-  limb after the trial subtraction, through a mask. Written as an if
+  word after the trial subtraction, through a mask. Written as an if
   on that sign, whether the reduction borrowed -- a fact about the
   tag's value -- decides which path runs. The multiply tokens see
   nothing. The branch count does: every one of the eight specs emits

@@ -1,5 +1,5 @@
 // Proves: rsa_mont64_public, whole, over any base bytes, any modulus
-// limbs and any m0inv at the largest length the build admits (384 bytes;
+// words and any m0inv at the largest length the build admits (384 bytes;
 // 512 in the rsa_mont64_public_webpki variant, which sets
 // CH_TRUST_WEBPKI), reads and writes inside its arrays: the byte
 // marshalling both ways, its eighteen multiplications in the three
@@ -23,7 +23,7 @@ int main(void) {
     uint8_t base[CH_RSA_MODULUS_MAX];
     uint8_t out[CH_RSA_MODULUS_MAX];
     rsa_mont64_modulus mod;
-    havoc_modulus(&mod, RSA_MONT64_LIMBS_MAX);
+    havoc_modulus(&mod, RSA_MONT64_WORDS_MAX);
     fill_nondet(base, sizeof base);
     rsa_mont64_public(out, base, sizeof base, &mod);
     return 0;

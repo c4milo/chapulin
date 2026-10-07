@@ -58,7 +58,7 @@ static void run_case(const p256_field_case *c) {
     p256_fe_sub(&got, &a, &b);
     CHECK(bytes_are(&got, c->diff));
 
-    // The Montgomery product of the raw limbs is a*b/R mod p.
+    // The Montgomery product of the raw words is a*b/R mod p.
     p256_fe_mul(&got, &a, &b);
     CHECK(bytes_are(&got, c->mont_product));
 
