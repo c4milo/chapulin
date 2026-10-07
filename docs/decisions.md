@@ -8265,3 +8265,47 @@ does nothing more.
       eight multiples affine and each window's addition a mixed one,
       eleven products, but the inversion costs about as much as the 62
       additions would save.
+
+113. **A host object's wide X25519 field keeps its carry inline under gcc.**
+    gcc 13 compiled `x25519_wide.c`'s `carry_columns` once, out of line, as
+    it compiled `p256_wide_field.c`'s `reduce` before entry 105. Timing
+    BMI2 and ADX on the runners, which Camilo asked for before any CPU
+    bit, showed the cost: on the same runner, gcc's X25519 took 27% longer
+    than clang's.
+
+    - **What changes.** `carry_columns` carries
+      `__attribute__((always_inline))`, as `reduce` does. Out of line,
+      each of the field's products and squares passed it a pointer and
+      five 128-bit column sums, eleven words, and x86-64 passes the first
+      six in registers and a 128-bit argument whole, so three of the sums
+      went through the stack: sums of products the ladder computes from
+      the secret scalar, in the caller's outgoing arguments, where no wipe
+      reaches them. Inline they stay in registers.
+    - **Gain.** `bench/primitives.c`'s X25519 shared secret under gcc 13.3
+      and `ch_cfg.cpu 0x5`, the median of three runs on each of four
+      runners a throwaway workflow drew, beside clang 18.1.3's:
+
+      | runner CPU | out of line | inline | clang |
+      | --- | --- | --- | --- |
+      | AMD EPYC 7763 | 61.4 µs | 54.5 µs | 48.4 µs |
+      | AMD EPYC 9V45 | 36.0 µs | 33.7 µs | 30.2 µs |
+      | Intel Xeon Platinum 8573C | 48.4 µs | 45.2 µs | 41.2 µs |
+      | Intel Xeon 6973P-C | 34.3 µs | 32.9 µs | 30.2 µs |
+
+      Under qemu-x86_64 a shared secret retires 697,150 instructions
+      before and 621,874 after under gcc 13.3. Clang 18.1.3's object for
+      x86-64 and Apple clang 21's for arm64 are byte for byte the same
+      either way, so the M1 Pro and clang do not move.
+    - **What holds it.** The attribute changes no step. The seven
+      `x25519_wide` proofs pass on the file with their counts unchanged,
+      1,462 to 1,613 properties each, and the RFC 7748 vectors, the
+      Wycheproof suite and `bin/diff_x25519_wide` hold its answers.
+
+    Rejected:
+
+    - **The multiply, the square and the multiply by a24 inline too.**
+      The ladder step then holds every product, as clang compiles it, but
+      the inversion's products inline with them: the object's text grew
+      from 5,208 bytes to 22,056 under gcc. The two Intel runners took 5
+      to 6% less time again, the EPYC 7763 the same, and the EPYC 9V45 4%
+      more.

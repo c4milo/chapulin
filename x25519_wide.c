@@ -62,7 +62,15 @@ typedef uint64_t fe[5];
 // goes to word 1 and stops there. The carries stay 128 bits wide, so no bit
 // of a sum is dropped: the only narrowings are of values masked to 51 bits
 // and of r0's carry, which is under 2^31 whatever the sums are.
-static void carry_columns(fe o, ct_u128 t0, ct_u128 t1, ct_u128 t2, ct_u128 t3, ct_u128 t4) {
+//
+// The attribute keeps it inside each of its three callers. Without it gcc 13
+// compiled it once, out of line, and each product and square passed it eleven
+// words, six of them on x86-64's stack, where no wipe reaches them: an X25519
+// shared secret took 61.4 µs on an EPYC 7763 that way and 54.5 µs inlined
+// (docs/decisions.md 113). Both compilers of a host object read the
+// attribute, and clang inlined the function already.
+static inline __attribute__((always_inline)) void
+carry_columns(fe o, ct_u128 t0, ct_u128 t1, ct_u128 t2, ct_u128 t3, ct_u128 t4) {
     t1 += t0 >> WORD_BITS;
     t2 += t1 >> WORD_BITS;
     t3 += t2 >> WORD_BITS;
