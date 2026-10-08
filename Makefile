@@ -2431,6 +2431,19 @@ RSA_EQUIV_TEST_UNITS := test/rsa_equiv_test.c test/rsa_equiv_portable.c
 bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+# The same binary on each form of rsa_mont64.h's step: the binary above
+# runs the form its compiler picks, the compare form under clang and the
+# sum form under gcc, and check runs on clang on a Mac and on gcc in CI, so
+# these two rules name each form and every machine runs both
+# (docs/decisions.md 117).
+bin/rsa_equiv_test_compare: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_COMPARE $(RSA_WIDE_DEF) -I. \
+	  -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+bin/rsa_equiv_test_sum: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM $(RSA_WIDE_DEF) -I. \
+	  -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
 # runs, and rsa_sign64.c is the CRT signer on 64-bit words beside it. The
@@ -3413,7 +3426,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/sha2_equiv_test bin/sha3_hw_equiv_test bin/mlkem_hw_equiv_test \
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/hash_runtime_exporter_test \
-                                 bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
+                                 bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
+                                 bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)

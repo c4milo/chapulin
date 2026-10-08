@@ -8546,3 +8546,106 @@ does nothing more.
       change in time the bench resolves. And `p256_wide_inverse.c` holds
       a variable-time entry beside its constant-time one, which an
       auditor must tell apart.
+
+117. **A host object's RSA loops add the carry from the word below last
+    under clang.** On the M1 Pro under Apple clang 21 a 2048-bit Montgomery
+    multiplication took 1.41 µs and a square 1.18 µs, where OpenSSL
+    3.6.5's take 0.88 and 0.58. gcc 13 compiled the same C, run in a Linux
+    container on the same machine, to 1.21 and 0.97 µs. Each word of the
+    two loops added a product, a word of the running sum and the carry
+    from the word below in one 128-bit sum, and clang added the word and
+    the carry first. The carry then passed through three dependent
+    instructions a word, an add, an add and an add with carry, where gcc's
+    code passes it through two.
+
+    - **What changes.** `rsa_mont64.h` defines the step the inner loops
+      run for each product, `rsa_mont64_mul_add_add`: x * y + a + b,
+      returned as two words in a struct, in two forms chosen by compiler,
+      as the wide P-256 files choose their carry form (decision 94). Under
+      clang the compare form adds a, the word of the running sum, and then
+      b, the carry from the word below, to the product's low word in
+      64-bit adds, each carry the compare after it, so the carry passes
+      through an add and an add with carry. Any other compiler reads the
+      sum form, the one 128-bit sum the loops computed before, which gcc
+      compiles as it did.
+    - **Why gcc keeps the sum.** gcc 13 for x86-64 keeps the compare
+      form's product in a stack slot of its own: it stores the product and
+      reads it back at every step, so after a signer's last product the
+      slot holds a word of it. `test/docker-check.sh` found it:
+      `bin/rsa_sign_equiv_test`'s stacks below `rsa_sign64_power` and
+      `rsa_sign64_sp1` under two secrets differed in 24 to 48 bytes, 5,648
+      and 11,744 bytes down. gcc's code for the sum form waits two
+      instructions on the carry already, and keeps its product in
+      registers.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      a 2048-bit multiplication takes 1.22 µs and a square 0.98 µs, and at
+      3,072 bits 2.66 and 2.16 µs where they took 3.13 and 2.65. In
+      `bench/primitives.c`, five runs of each in turn at a load average of
+      about 3.8, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting:
+
+      | one operation | before | after | OpenSSL |
+      | --- | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 24.8 µs | 21.3 µs | 14.2 µs |
+      | RSA-3072 PKCS#1 v1.5 verification | 54.8 µs | 46.4 µs | 30.4 µs |
+      | RSA-2048 PSS signature | 888 µs | 814 µs | 550 µs, PKCS#1 v1.5 |
+      | RSA-3072 PSS signature | 2.79 ms | 2.46 ms | 1.59 ms, PKCS#1 v1.5 |
+
+      A verification retires the same instructions under clang as
+      before, 389,648 where it retired 389,633: the loops run what they
+      ran, on a shorter chain. Under gcc the object is what it was: gcc
+      13's static build for x86-64 runs an RSA-2048 PKCS#1 v1.5
+      verification in 466,488 instructions and a PSS signature in
+      19,697,589, before and after.
+    - **What holds it.** The compare form's two adds wrap on purpose, the
+      second wrap in the file's arithmetic beside `neg_inverse`. The
+      proofs put the 128-bit sum in the step's place
+      (`proof/rsa_mont64_stubs.h`), so `rsa_mont64_sums` still checks
+      every other sum for a wrap, and `rsa_mont64_step` and
+      `rsa_mont64_step_sum` prove that each form returns that sum's two
+      words for every input and every product the multiply's contract
+      admits, the second with the wrap check on. `bin/rsa_equiv_test` runs
+      the form its compiler picks, and `bin/rsa_equiv_test_compare` and
+      `bin/rsa_equiv_test_sum` run each form under any compiler.
+      `inv41-rsa-mont64-step-drops-a-carry` and
+      `inv41-rsa-mont64-step-sum-drops-the-carry` each drop the carry from
+      the word below from one form, and the binary of that form catches
+      each, as does that form's proof.
+      `inv41-rsa-mont64-carries-in-one-sum` now adds the two carries in
+      the 64-bit sum it hands the first step, and `rsa_mont64_sums` still
+      catches it. No test reads which form clang compiles, since both give
+      the same bytes; a gcc that read the compare form fails
+      `bin/rsa_sign_equiv_test` on x86-64, as above.
+
+    Rejected:
+
+    - **One form for every compiler.** The compare form leaves a secret in
+      gcc's stack slot, above. A low word from a 64-bit multiply and a
+      high word from the widening one keep the product out of memory under
+      gcc as well, but gcc for x86-64 then multiplies twice a product: a
+      verification ran 474,356 instructions where it runs 466,488. One
+      widening multiply read twice, which gcc merges, goes back to the
+      stack slot. The step as two 128-bit sums, which wrap nothing, took
+      clang's time, but gcc 13 for x86-64 ran a multiplication and a
+      square in 32,300 and 27,624 instructions where they run 26,318 and
+      23,413.
+    - **The high word through a pointer.** The same code as the struct
+      under both compilers, but cbmc follows the pointer at every one of
+      the thousands of calls a multiplication makes at the bound:
+      `rsa_mont64_mul` took 130 to 145 s where it takes 38.
+    - **Four words a step, with the carries in add-with-carry chains**,
+      the shape of OpenSSL's assembly and of the wide P-256 field's rows.
+      Written with clang's `__builtin_addcll`, a 2048-bit multiplication
+      took 0.86 µs, OpenSSL's time, and a square, its cross products once,
+      doubled and reduced in a pass of its own, 0.75 µs, 1.29 times
+      OpenSSL's. gcc 13 keeps no carry in the flags from one statement to
+      the next: in the container the same code took 2.00 and 1.52 µs, and
+      for x86-64 it ran 32,112 and 24,287 instructions where this tree's
+      run 26,318 and 23,413. It would be a second pair of routines for
+      clang alone, each with its own proofs, and is not done here.
+    - **One column of the result at a time**, its running sum in three
+      words: 1.23 and 1.13 µs under clang.
+
+    The volatile reads that keep the signer's words out of stack slots
+    cost under 2 percent: without them a multiplication took 1.40 µs and
+    a square 1.16 µs.

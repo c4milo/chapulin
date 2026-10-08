@@ -22,6 +22,16 @@
 // result of a multiplication is the Montgomery product, or below the
 // modulus. bin/rsa_equiv_test, the published vectors and the Wycheproof
 // suites hold those.
+//
+// rsa_mont64.h's step, rsa_mont64_mul_add_add, is the second function
+// replaced here: x * y + a + b as one 128-bit sum, which wraps nothing
+// under the product contract, in place of either form of the step, the
+// compare form whose two 64-bit adds wrap on purpose or the sum form
+// (docs/decisions.md 117). The header is read first under its own name, as
+// ct.h is, and the #define renames every later call.
+// rsa_mont64_step_harness.c and rsa_mont64_step_sum_harness.c prove that
+// each form returns this sum's two words for every input and every product
+// the contract admits.
 #ifndef CH_RSA_MONT64_STUBS_H
 #define CH_RSA_MONT64_STUBS_H
 
@@ -44,6 +54,15 @@ static ct_u128 stub_mul128(uint64_t a, uint64_t b) {
     __CPROVER_assume(product <= MUL128_MAX);
     return product;
 }
+
+#include "rsa_mont64.h"
+// From here on the step rsa_mont64.c calls is the sum below, written in
+// place: a function that returned it took rsa_mont64_mul from 36 s and
+// 773 MB to 51 s and 1.7 GB.
+static ct_u128 stub_step_value;
+#define rsa_mont64_mul_add_add(x, y, a, b)                                                         \
+    (stub_step_value = ct_mul128((x), (y)) + (a) + (b),                                            \
+     (rsa_mont64_sum){(uint64_t)stub_step_value, (uint64_t)(stub_step_value >> 64)})
 
 #include "rsa_mont64.c"
 

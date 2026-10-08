@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_mont64.h
+catches: rsa_equiv_test_compare
+reason: the compare form of rsa_mont64_mul_add_add, which clang reads,
+  drops the carry of its second add, the carry in from the word below,
+  so the step's high word is one short whenever that add wraps, which a
+  random word does about half the time. bin/rsa_equiv_test_compare runs
+  that form under any compiler and compares the bytes with the 32-bit
+  arm's.
+
+--- old
+    high += (uint64_t)(second < first);
+--- new
+    (void)first;

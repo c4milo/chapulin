@@ -1204,10 +1204,15 @@ last `ROLE=server` stub, as the entry said it would.
   (2^64 - 1)^2, and with a word of the running sum and a carry added it
   is at most 2^128 - 1. The file computes in `uint64_t` and `unsigned
   __int128`, where C defines every wrap, so a sum that left that range
-  would not fault: it would compute a wrong value.
+  would not fault: it would compute a wrong value. The one exception is
+  the step `rsa_mont64.h` defines for the inner loops,
+  `rsa_mont64_mul_add_add`, in the compare form clang reads: its two
+  64-bit adds wrap on purpose, each carrying by the compare after it.
+  gcc reads the step's sum form, one 128-bit sum, because it keeps the
+  compare form's product in a stack slot of its own (decision 117).
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one word and one carry in each
-  of its two sums, and its top step adds two carries to a word that is 0,
+  of its two steps, and its top step adds two carries to a word that is 0,
   1 or 2. `rsa_mont64_mont_square` keeps that pass and adds a_i V_i in
   a round, with V_i = a_i B^i + 2 (a_{i+1} B^{i+1} + ... + a_{k-1}
   B^{k-1}), each sum still a product, a word and a carry, and a top word
@@ -1232,7 +1237,11 @@ last `ROLE=server` stub, as the entry said it would.
   four words over any operands, `rsa_mont64_ops` the comparison, the
   subtraction, the doubling and the byte marshalling at the build's
   bound, and `rsa_mont64_mul128` proves the real `ct_mul128` meets the
-  bound the others take as a contract (`proof/rsa_mont64_stubs.h`).
+  bound the others take as a contract (`proof/rsa_mont64_stubs.h`). The
+  same file puts the 128-bit sum of a product and two words in the
+  step's place, and `rsa_mont64_step` and `rsa_mont64_step_sum` prove
+  that each form of the step returns that sum's two words for every
+  input and every product the contract admits.
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
   memory accesses of the multiplication and the square, the modulus
   setup and the public operation at that bound, and `rsa_mont_host`
@@ -1243,7 +1252,10 @@ last `ROLE=server` stub, as the entry said it would.
   division takes the largest estimate, moduli of every bit length near a
   word boundary, and the signatures 0, 1 and n - 1, whose powers are
   known, and holds the square to the multiplication of a number by
-  itself at every word count; by `bin/rsa_test_host` and
+  itself at every word count. It runs the step's form its compiler
+  picks, and `bin/rsa_equiv_test_compare` and `bin/rsa_equiv_test_sum`
+  run each form under any compiler. The values are held too by
+  `bin/rsa_test_host` and
   `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the host
   Wycheproof test. `test/widemul-builds.sh` holds each arm to its object.
@@ -1267,19 +1279,23 @@ last `ROLE=server` stub, as the entry said it would.
   operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
   in `make diff`, requires the Lean spec's signatures from each.
 - **Violation.** A PR adds both carries into one sum, which can then
-  pass 2^128; makes the running sum one word short; subtracts with a
-  borrow that wraps; copies a product out without its last subtraction;
-  drops the running sum's top word; squares R^2's seed four times where
-  five are needed; stops the low word's inverse one step short; lets
-  the division of R^2 divide past 2^64 where it caps the estimate; or
-  drops the top bit of 2a from a square's round, or reads it at the
-  word above the square. `make test-invariants` runs the last seven as
+  wrap; makes the running sum one word short; subtracts with a borrow
+  that wraps; copies a product out without its last subtraction; drops
+  the running sum's top word; squares R^2's seed four times where five
+  are needed; stops the low word's inverse one step short; lets the
+  division of R^2 divide past 2^64 where it caps the estimate; drops the
+  top bit of 2a from a square's round, or reads it at the word above the
+  square; or drops the carry from the word below in either form of the
+  step. `make test-invariants` runs the seven before the last as
   `inv41-rsa-mont64-final-subtract-dropped`,
   `inv41-rsa-mont64-top-word-dropped`, `inv41-rsa-mont64-r2-four-squarings`,
   `inv41-rsa-mont64-inverse-five-steps`,
   `inv41-rsa-mont-r2-estimate-not-capped`,
   `inv41-rsa-mont64-square-top-bit-dropped` and
-  `inv41-rsa-mont64-square-next-word-from-double`, through `bin/rsa_equiv_test`,
+  `inv41-rsa-mont64-square-next-word-from-double`, through
+  `bin/rsa_equiv_test`, the last as `inv41-rsa-mont64-step-drops-a-carry`
+  and `inv41-rsa-mont64-step-sum-drops-the-carry`, through
+  `bin/rsa_equiv_test_compare` and `bin/rsa_equiv_test_sum`,
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
   `inv41-rsa-mont64-sum-one-word-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
@@ -1291,7 +1307,7 @@ last `ROLE=server` stub, as the entry said it would.
   words with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it.
-- See [decisions: Engineering](decisions.md#engineering), entries 95, 103 and 106.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106 and 117.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 

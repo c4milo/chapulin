@@ -2329,10 +2329,16 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 # ct.h's ct_mul128 sit behind.
 # rsa_mont64_mul128 proves the bound proof/rsa_mont64_stubs.h states for a
 # product on the real multiply, and every other line but rsa_mont64_ops
-# runs that contract in its place. rsa_mont64_sums, rsa_mont64_ops and
-# rsa_mont64_mul128 add --unsigned-overflow-check, for the reason the
-# wide X25519 field's lines do: the file computes in uint64_t and
-# unsigned __int128, and its header says no sum in it wraps.
+# runs that contract in its place. rsa_mont64_step proves the step
+# rsa_mont64.h defines equal to the 128-bit sum that file puts in its
+# place, for every product the contract admits, in the compare form clang
+# compiles, whose two adds wrap on purpose, and so without the wrap check
+# (docs/decisions.md 117). rsa_mont64_step_sum proves the same of the sum
+# form gcc compiles, which wraps nothing, with the check.
+# rsa_mont64_sums, rsa_mont64_ops and rsa_mont64_mul128 add
+# --unsigned-overflow-check, for the reason the wide X25519 field's lines
+# do: the file computes in uint64_t and unsigned __int128, and its header
+# says no sum in it wraps but the two it names.
 # rsa_mont64_sums runs the multiplication at four words with that check
 # on, and beside it the product and sum the CRT's recombination calls.
 # rsa_mont64_ops runs the marshalling and that recombination's sum,
@@ -2356,21 +2362,25 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 #   rsa_mont64_mul128            3 properties,   1 s, 22 MB
 #   rsa_mont64_ops             610 properties,  21 s, 1.2 GB
 #   rsa_mont64_ops_webpki      610 properties,  31 s, 1.5 GB
-# The lines below that run the square (docs/decisions.md 106) were
-# measured again the same way on 2026-10-06 through proof/prove-one.sh,
-# one at a time, at a load average of 40 to 160:
-#   rsa_mont64_sums            816 properties,  12 s, 357 MB
-#   rsa_mont64_mul             709 properties,  46 s, 775 MB
-#   rsa_mont64_mul_webpki      709 properties,  68 s, 1.4 GB
-#   rsa_mont64_init            697 properties,  56 s, 707 MB
-#   rsa_mont64_init_webpki     697 properties,  92 s, 1.2 GB
-#   rsa_mont64_public          721 properties, 127 s, 2.0 GB, hence fast:3
-#   rsa_mont64_public_webpki   721 properties, 191 s, 3.6 GB, hence slow
+# The lines below that read the step's sum (docs/decisions.md 117) were
+# measured again the same way on 2026-10-07 through proof/prove-one.sh,
+# one at a time, at a load average of 2 to 5:
+#   rsa_mont64_step              3 properties,   1 s, 20 MB
+#   rsa_mont64_step_sum          7 properties,   1 s, 20 MB
+#   rsa_mont64_sums            816 properties,  10 s, 355 MB
+#   rsa_mont64_mul             709 properties,  38 s, 981 MB
+#   rsa_mont64_mul_webpki      709 properties,  60 s, 1.7 GB
+#   rsa_mont64_init            697 properties,  47 s, 834 MB
+#   rsa_mont64_init_webpki     697 properties,  77 s, 1.5 GB
+#   rsa_mont64_public          721 properties, 109 s, 2.5 GB, hence fast:3
+#   rsa_mont64_public_webpki   721 properties, 161 s, 4.4 GB, hence slow
 # The cost of the last four is cbmc's own symbolic execution. A stub of
 # the multiply that assumes nothing moved rsa_mont64_mul by a second.
 # Each multiplication at 48 words adds about 6 s, and the public operation
 # makes eighteen.
 launch fast full rsa_mont64_mul128 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_step 2 "" -DCH_CPU_RUNTIME
+launch fast full rsa_mont64_step_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
@@ -2387,9 +2397,9 @@ launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe
 # the lines above discharge. The step that adds the modulus back wraps a
 # word to zero on purpose, so neither line takes the wrap check.
 # Measured with proof/prove-one.sh under /usr/bin/time -l (cbmc 6.11.0,
-# kissat, an M1 Pro at a load average of 25 to 57), on 2026-10-06:
-#   rsa_mont_host          718 properties, 28 s, 2.6 GB, hence fast:3
-#   rsa_mont_host_webpki   718 properties, 59 s, 5.2 GB, hence slow
+# kissat, an M1 Pro at a load average of 2 to 5), on 2026-10-07:
+#   rsa_mont_host          900 properties, 29 s, 2.6 GB, hence fast:3
+#   rsa_mont_host_webpki   900 properties, 60 s, 5.2 GB, hence slow
 launch fast:3 full rsa_mont_host 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_sign64.c, the RSA signer on those words, which a host object runs

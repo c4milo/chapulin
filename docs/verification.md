@@ -1008,16 +1008,25 @@ The entries are grouped by area:
 
 #### rsa_mont64
 
-- **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow)
+- **Harnesses:** `rsa_mont64_mul128` (fast), `rsa_mont64_step` (fast), `rsa_mont64_step_sum` (fast), `rsa_mont64_sums` (fast), `rsa_mont64_ops` (fast), `rsa_mont64_ops_webpki` (fast), `rsa_mont64_mul` (fast), `rsa_mont64_mul_webpki` (fast), `rsa_mont64_init` (fast), `rsa_mont64_init_webpki` (fast), `rsa_mont64_public` (fast), `rsa_mont64_public_webpki` (slow)
 - **Build:** a host object's Montgomery arithmetic on 64-bit words
   (`rsa_mont64.c`, INV-41), under `-DCH_CPU_RUNTIME`.
-  `rsa_mont64_mul128`, `rsa_mont64_sums` and the two `rsa_mont64_ops`
-  lines add `--unsigned-overflow-check`.
+  `rsa_mont64_mul128`, `rsa_mont64_step_sum`, `rsa_mont64_sums` and the
+  two `rsa_mont64_ops` lines add `--unsigned-overflow-check`.
 - **Proves:**
   - `rsa_mont64_mul128`: on the real 64x64->128 multiply, the product of
     any two words is at or below (2^64 - 1)^2. Every other line but the
     two `rsa_mont64_ops` ones replaces the multiply with that bound as a
     contract (`proof/rsa_mont64_stubs.h`).
+  - `rsa_mont64_step` and `rsa_mont64_step_sum`: `rsa_mont64.h`'s
+    `rsa_mont64_mul_add_add`, the step of the multiplication's and the
+    square's inner loops, returns the two words of x * y + a + b for
+    every x, y, a and b, and for every product the multiply's contract
+    admits, which it records as it returns it. The first runs the
+    compare form clang reads, whose two adds wrap on purpose (decision
+    117), without the wrap check, and the second the sum form gcc reads,
+    with it. Every line over `proof/rsa_mont64_stubs.h` replaces the step
+    with that 128-bit sum, which wraps nothing.
   - `rsa_mont64_sums`: `rsa_mont64_mont_mul` at four words, over any
     operands, any modulus and any `m0inv`, in the four aliasing shapes
     its callers use, wraps no unsigned value: no sum of a product, a
@@ -4055,7 +4064,10 @@ value. Tests hold the values:
   and not only against each other. Its random values come from a seed
   the nightly can vary (`CH_RSA_EQUIV_SEED`). Under random moduli about
   a third of the division's steps add the modulus back once, and about
-  one in sixty twice.
+  one in sixty twice. It runs the form of `rsa_mont64.h`'s step its
+  compiler picks, and `bin/rsa_equiv_test_compare` and
+  `bin/rsa_equiv_test_sum` are the same binary on each form, so a machine
+  of either compiler runs both (decision 117).
 - `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` are the mains of
   `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
   their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,
@@ -4126,8 +4138,9 @@ how it reads an exponent and its memory accesses. Tests hold the values:
   RSASP1 as m^d mod n over `Nat` and has no model of the CRT; the
   comparison is what holds the CRT to it.
 
-Eleven violations hold the arm: four break a value and
-`bin/rsa_equiv_test` catches each; three break a sum, a bound or the
+Sixteen violations hold the arm: nine break a value, and
+`bin/rsa_equiv_test` catches seven of them and `bin/rsa_equiv_test_compare`
+and `bin/rsa_equiv_test_sum` one each; three break a sum, a bound or the
 no-wrap form and a proof catches each; one writes the last subtraction
 as a branch and `lint-wide-multiply`'s count catches it; two move the
 file between the host and the device object and `lint-trust-separation`

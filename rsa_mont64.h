@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ct.h"
 #include "rsa.h" // CH_RSA_MODULUS_MAX
 
 #ifdef CH_CPU_RUNTIME
@@ -39,6 +40,60 @@ typedef struct {
     uint64_t m0inv;                    // -m^-1 mod 2^64
     size_t words;                      // 1..RSA_MONT64_WORDS_MAX
 } rsa_mont64_modulus;
+
+// A value of up to 128 bits as two words.
+typedef struct {
+    uint64_t low;
+    uint64_t high;
+} rsa_mont64_sum;
+
+// The two forms of the step below, and the one each compiler reads: the compare form under
+// clang and the 128-bit sum under any other compiler (docs/decisions.md 117). A build may name
+// either with -DRSA_MONT64_STEP=, as the proofs and bin/rsa_equiv_test_compare and
+// bin/rsa_equiv_test_sum do, so that each form runs whatever compiler builds them.
+#define RSA_MONT64_STEP_COMPARE 1
+#define RSA_MONT64_STEP_SUM 2
+#ifndef RSA_MONT64_STEP
+#ifdef __clang__
+#define RSA_MONT64_STEP RSA_MONT64_STEP_COMPARE
+#else
+#define RSA_MONT64_STEP RSA_MONT64_STEP_SUM
+#endif
+#endif
+#if RSA_MONT64_STEP != RSA_MONT64_STEP_COMPARE && RSA_MONT64_STEP != RSA_MONT64_STEP_SUM
+#error "RSA_MONT64_STEP names neither form of rsa_mont64_mul_add_add"
+#endif
+
+// x * y + a + b, which is at most (2^64 - 1)^2 + 2 * (2^64 - 1) = 2^128 - 1. rsa_mont64.c runs
+// one for each product of a multiplication's and a square's inner loops, where b is the carry
+// from the word below.
+//
+// The sum form is one 128-bit sum, the form the rest of rsa_mont64.c takes. Apple clang 21 for
+// arm64 adds a and b first there, and each word of a loop then waits three instructions on the
+// carry of the word before it. In the compare form two 64-bit adds wrap on purpose, the compare
+// after each is its carry, and b goes in last, so the carry waits two. gcc 13 for x86-64 keeps
+// the compare form's product in a stack slot of its own, which holds a secret word after a
+// signer's last product, so gcc reads the sum form, where its carry waits two already. The
+// proofs replace this function with the 128-bit sum (proof/rsa_mont64_stubs.h), and
+// proof/rsa_mont64_step_harness.c and proof/rsa_mont64_step_sum_harness.c prove each form
+// equal to it for every input.
+static inline rsa_mont64_sum rsa_mont64_mul_add_add(uint64_t x, uint64_t y, uint64_t a,
+                                                    uint64_t b) {
+#if RSA_MONT64_STEP == RSA_MONT64_STEP_COMPARE
+    ct_u128 product = ct_mul128(x, y);
+    uint64_t low = (uint64_t)product;
+    uint64_t high = (uint64_t)(product >> 64);
+    uint64_t first = low + a;
+    high += (uint64_t)(first < low);
+    uint64_t second = first + b;
+    high += (uint64_t)(second < first);
+    rsa_mont64_sum sum = {second, high};
+#else
+    ct_u128 value = ct_mul128(x, y) + a + b;
+    rsa_mont64_sum sum = {(uint64_t)value, (uint64_t)(value >> 64)};
+#endif
+    return sum;
+}
 
 // words[0..count) = the len big-endian bytes at bytes, as a number. It
 // needs len <= 8 * count, and the words past the number are zero.

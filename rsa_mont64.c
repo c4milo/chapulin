@@ -9,10 +9,13 @@
 // complement of the subtrahend and one, and reads the carry where a
 // borrow would be. proof/rsa_mont64_sums_harness.c and
 // proof/rsa_mont64_ops_harness.c run with --unsigned-overflow-check on,
-// the first over a contract of ct_mul128, so each of those sums is a
-// property CBMC checks. neg_inverse is the one function whose arithmetic
-// wraps on purpose, modulo 2^64, and proof/rsa_mont64_init_harness.c
-// runs it with that check off.
+// the first over contracts of ct_mul128 and of rsa_mont64.h's step, so
+// each of those sums is a property CBMC checks. Two pieces wrap on
+// purpose, modulo 2^64: neg_inverse, which proof/rsa_mont64_init_harness.c
+// runs with that check off, and, in the form clang reads, the two adds of
+// the step the inner loops call, rsa_mont64_mul_add_add, which
+// proof/rsa_mont64_step_harness.c proves equal to the sum the contract
+// takes.
 //
 // Constant time: no branch and no memory index depends on a word. The
 // branches the file compiles to are loops over word and byte counts, the
@@ -152,11 +155,11 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
         uint64_t ab_carry = (uint64_t)(ab >> 64);
         uint64_t um_carry = (uint64_t)(um >> 64);
         for (size_t j = 1; j < k; j++) {
-            ab = ct_mul128(*a_word, b[j]) + t[j] + ab_carry;
-            ab_carry = (uint64_t)(ab >> 64);
-            um = ct_mul128(*u, m[j]) + (uint64_t)ab + um_carry;
-            um_carry = (uint64_t)(um >> 64);
-            t[j - 1] = (uint64_t)um;
+            rsa_mont64_sum ab_sum = rsa_mont64_mul_add_add(*a_word, b[j], t[j], ab_carry);
+            ab_carry = ab_sum.high;
+            rsa_mont64_sum um_sum = rsa_mont64_mul_add_add(*u, m[j], ab_sum.low, um_carry);
+            um_carry = um_sum.high;
+            t[j - 1] = um_sum.low;
         }
         ct_u128 top = (ct_u128)t[k] + ab_carry + um_carry;
         t[k - 1] = (uint64_t)top;
@@ -229,9 +232,9 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
             ct_u128 um = ct_mul128(*u, *m_first) + t[0];
             um_carry = (uint64_t)(um >> 64);
             for (size_t j = 1; j < i; j++) {
-                um = ct_mul128(*u, m[j]) + t[j] + um_carry;
-                um_carry = (uint64_t)(um >> 64);
-                t[j - 1] = (uint64_t)um;
+                rsa_mont64_sum um_sum = rsa_mont64_mul_add_add(*u, m[j], t[j], um_carry);
+                um_carry = um_sum.high;
+                t[j - 1] = um_sum.low;
             }
             // Offset i: the square.
             ct_u128 ab = ct_mul128(*a_word, *a_word) + t[i];
@@ -249,11 +252,11 @@ void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
             t[i] = (uint64_t)um;
             // Offsets i + 2 to k - 1: a_i times the words of 2a.
             for (size_t j = i + 2; j < k; j++) {
-                ab = ct_mul128(*a_word, d[j]) + t[j] + ab_carry;
-                ab_carry = (uint64_t)(ab >> 64);
-                um = ct_mul128(*u, m[j]) + (uint64_t)ab + um_carry;
-                um_carry = (uint64_t)(um >> 64);
-                t[j - 1] = (uint64_t)um;
+                rsa_mont64_sum ab_sum = rsa_mont64_mul_add_add(*a_word, d[j], t[j], ab_carry);
+                ab_carry = ab_sum.high;
+                rsa_mont64_sum um_sum = rsa_mont64_mul_add_add(*u, m[j], ab_sum.low, um_carry);
+                um_carry = um_sum.high;
+                t[j - 1] = um_sum.low;
             }
             // Offset k: a_i times d_k, which is 0 or 1, so a_i under a mask.
             ct_u128 sum = (ct_u128)(*a_word & mask_of_bit(*d_top)) + t[k] + ab_carry;

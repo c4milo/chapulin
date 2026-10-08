@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_mont64.h
+catches: rsa_equiv_test_sum
+reason: the sum form of rsa_mont64_mul_add_add, which gcc reads, leaves
+  out b, the carry in from the word below, so every word past the first
+  of a loop loses the carry of the word before it.
+  bin/rsa_equiv_test_sum runs that form under any compiler and compares
+  the bytes with the 32-bit arm's.
+
+--- old
+    ct_u128 value = ct_mul128(x, y) + a + b;
+--- new
+    (void)b;
+    ct_u128 value = ct_mul128(x, y) + a;
