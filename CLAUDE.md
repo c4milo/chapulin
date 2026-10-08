@@ -168,12 +168,13 @@ Home: github.com/c4milo.
   CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
   server role and TRUST=webpki) with the `p256_wide_*` files (the same
-  arithmetic on four 64-bit words, and k·G from a table of multiples of
+  arithmetic on four 64-bit words, an inverse by the binary GCD of
+  `p256_wide_inverse.c`, and k·G from a table of multiples of
   G that is read whole and kept by mask, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_MULTIPLY; `p256_wide_verify.c` and
   `p256_wide_verify_point.c` run `p256.[ch]`'s verification on the wide
-  field, with variable-time Jacobian points of their own, in every
-  session of a host object) +
+  field, with variable-time Jacobian routines of their own and an inverse
+  of s that stops at the first zero a, in every session of a host object) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify; a host object's arm
   computes R^2 by a long division that branches on the public modulus)
   with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
@@ -253,7 +254,10 @@ Home: github.com/c4milo.
   `test/zig-consumer/matches.zig` refuses a `ch_` declaration the object
   neither exports nor imports (INV-36).
 - Everything that touches secret bytes is constant time: no secret-
-  dependent branches, no secret-dependent memory indices. Comparisons go
+  dependent branches, no secret-dependent memory indices. A shift by a
+  secret amount, which clang makes of some masked selects, is allowed in
+  a host object alone: every arm64 and x86-64 core shifts by a register
+  in the same time for every amount (docs/decisions.md 115). Comparisons go
   through `ct_memeq`, and wipes through `ct_wipe`, which calls `memset`
   through a volatile function pointer so the compiler cannot remove it,
   while the proofs read a byte-loop stub in `proof/` with the same
