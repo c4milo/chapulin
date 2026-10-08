@@ -85,6 +85,7 @@ def selftestAll (_ : Unit) : String :=
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("p256_wide_point", Spec.P256WidePoint.selftest),
+    ("p256_wide_inverse", Spec.P256WideInverse.selftest),
     ("rsa", Spec.Rsa.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
@@ -526,6 +527,16 @@ def dispatch : List String → Option String
     let o := Spec.P256WidePoint.addAffineIncomplete ⟨field[0]!, field[1]!, field[2]!⟩
       ⟨field[3]!, field[4]!⟩
     return " ".intercalate ([o.x, o.y, o.z].map fun v => bytesToHex (natToBytesBE v.val 32))
+  | ["p256_wide_inverse", modulus, value] => do
+    -- p256_wide_inverse's modulus and y, each 32 big-endian bytes, y below the modulus and the
+    -- modulus odd; the answer is the model's 17 rounds (Spec/P256WideInverse.lean), 32 bytes.
+    let mb ← hexArg? modulus
+    let yb ← hexArg? value
+    guard (mb.size == 32 && yb.size == 32)
+    let m := bytesToNatBE mb
+    let y := bytesToNatBE yb
+    guard (m % 2 == 1 && y < m)
+    return bytesToHex (natToBytesBE (Spec.P256WideInverse.inverse m y).val 32)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

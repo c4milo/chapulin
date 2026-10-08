@@ -1,0 +1,13 @@
+invariant: INV-16
+file: p256_wide_field.c
+catches: p256_equiv_test
+reason: the field's inverse multiplies p256_wide_inverse's answer by a word
+  off 2^768 mod p, so every inverse leaves the Montgomery domain wrong.
+  bin/p256_equiv_test holds the field's inverse to p256_field.c's, and
+  tools/p256_wide.py, which make lint-p256-wide runs, recomputes the
+  constant.
+
+--- old
+    {UINT64_C(0xfffffffd0000000a), UINT64_C(0xffffffedfffffff7), UINT64_C(0x00000005fffffffc),
+--- new
+    {UINT64_C(0xfffffffd0000000b), UINT64_C(0xffffffedfffffff7), UINT64_C(0x00000005fffffffc),

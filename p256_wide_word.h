@@ -1,8 +1,8 @@
 // The steps on 64-bit words that the wide P-256 arithmetic is built from: an add with carry, a
 // subtract with borrow, one row of a product, the square of four words, and a mask from a bit.
-// p256_wide_field.c and p256_wide_scalar.c include this header and no other file does, so the
-// two moduli share these five and nothing else, as p256_field.c and p256_scalar.c share none of
-// their constants.
+// The wide files include this header: p256_wide_field.h, so every file that includes it,
+// p256_wide_scalar.c and p256_wide_inverse.c. The two moduli share these five steps and no
+// constant, as p256_field.c and p256_scalar.c share none.
 //
 // Every step runs the same instructions whatever its operands hold. No branch and no index
 // reads a word. The one instruction whose timing the C cannot state is the 64x64->128 multiply,

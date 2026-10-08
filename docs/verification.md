@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-94 of the 124 C sources in the tree root are compiled into a
+95 of the 125 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -687,11 +687,15 @@ The entries are grouped by area:
 
 #### p256_wide
 
-- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_sqr` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
+- **Harnesses:** `p256_wide_row` (fast), `p256_wide_row_sum` (fast), `p256_wide_sqr` (fast), `p256_wide_field` (fast), `p256_wide_field_mul` (fast), `p256_wide_scalar` (fast), `p256_wide_inverse_steps` (fast), `p256_wide_inverse_range` (slow), `p256_wide_inverse` (fast), `p256_wide_inverse_round` (fast), `p256_wide_point` (fast), `p256_wide_digit` (fast), `p256_wide_mul` (fast), `p256_wide_wipe` (fast)
 - **Build:** a host object's wide P-256 files (`p256_wide_field.c`,
-  `p256_wide_scalar.c`, `p256_wide_point.c`, `p256_wide_mul.c`,
-  `p256_wide_table.c` and `p256_wide_wipe.c`, decision 94), under
-  `-DCH_CPU_RUNTIME`, with `--unsigned-overflow-check` on every line.
+  `p256_wide_scalar.c`, `p256_wide_inverse.c`, `p256_wide_point.c`,
+  `p256_wide_mul.c`, `p256_wide_table.c` and `p256_wide_wipe.c`,
+  decisions 94 and 115), under `-DCH_CPU_RUNTIME`, with
+  `--unsigned-overflow-check` on every line but `p256_wide_inverse_steps`,
+  `p256_wide_inverse_range` and `p256_wide_inverse_round`: the inverse's
+  masks and packed factors wrap on purpose, and the first two lines fix
+  every value they compute by an equality instead.
 - **Proves:**
   - `p256_wide_row`: on the real 64x64->128 multiply, one row of a
     product, x times four words plus four words, wraps nothing for any
@@ -728,19 +732,45 @@ The entries are grouped by area:
     p * 2^256, which every product of two elements is, to a value below
     p.
   - `p256_wide_field_mul`: `p256_wide_fe_mul`, `p256_wide_fe_sqr`, the
-    two domain conversions and `sqr_times` are safe and wrap nothing in
-    every aliasing shape a point formula and the inversion use. Each row
-    of a product is a contract there, any four words and any word above
-    them, which `p256_wide_row` proves of the real row, and so is the
-    square of four words, any eight words, which `p256_wide_sqr` proves.
+    two domain conversions and `p256_wide_fe_inv` are safe and wrap
+    nothing in every aliasing shape a point formula uses. Each row of a
+    product is a contract there, any four words and any word above them,
+    which `p256_wide_row` proves of the real row, and so is the square of
+    four words, any eight words, which `p256_wide_sqr` proves.
+    `p256_wide_fe_inv` runs over a contract of `p256_wide_inverse`, which
+    reads its input and writes any four words.
   - `p256_wide_scalar`: the same for the arithmetic modulo the group
     order, whose reduction rounds are products. The conditional
     subtraction of n matches a reference that branches, a round's carry
-    out is 0 or 1, and `mont_mul`, `mont_sqr`, `sqr_times` and
-    `p256_wide_scalar_mul` are safe in every aliasing shape
-    `p256_sign.c` and the inverse use. The one read in the inverse that
-    moves with a loop counter, `exponent_low_nibble`, is in bounds and
-    returns a value below 16 at every position the loop passes.
+    out is 0 or 1, and `mont_mul` and `p256_wide_scalar_mul` are safe in
+    every aliasing shape `p256_sign.c` uses. `p256_wide_scalar_inverse`
+    runs whole over the same contract of `p256_wide_inverse`.
+  - `p256_wide_inverse_steps`: the binary GCD's pieces, on their real
+    bodies, over every input. The approximations of any a and b are a
+    reference's, which finds the bit length of a | b one bit at a time
+    and reads the 33 bits from there one at a time. One step on any
+    approximations, any odd second one and any factors packed two to a
+    word leaves what a reference step that branches and keeps each
+    factor in its own signed variable leaves, and the mask of the next
+    approximation's low bit. And the unpacking returns every factor
+    between -(2^31 - 1) and 2^31 from the packed words.
+  - `p256_wide_inverse_range`: the reference's 31 steps, from the
+    factors 1, 0, 0 and 1, end with every factor in that range, for any
+    approximations with the second odd. So `step_factors` returns the
+    reference's factors for every input. One formula holds all 31 steps,
+    because only the whole run keeps a factor off -2^31.
+  - `p256_wide_inverse`: the combinations of a round are safe and wrap
+    nothing: the exact one for any operands and factors, and the one
+    modulo m for any modulus and operands when the factors' sizes add
+    to at most 2^31, over a row contract whose word above the four is at
+    most the multiplier. That bound follows from the row's value, four
+    words plus the multiplier times four words, which is a product's value
+    and rests on the tests below.
+  - `p256_wide_inverse_round`: one round whole, for any state and modulus,
+    over `proof/p256_wide_stubs.h`'s rows: every access and every shift.
+    `p256_wide_inverse` runs that round 17 times on one state and wipes it
+    once; its 17 rounds in one formula left cbmc's symbolic execution
+    without a formula after 18 minutes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
     shapes, `p256_wide_point_add_affine`,
     `p256_wide_point_add_affine_incomplete` and
@@ -770,17 +800,14 @@ The entries are grouped by area:
     its volatile pointer, and the wipe covers the array of
     `P256_WIDE_BELOW_LEN` bytes and no byte outside it.
 - **Bound:** full-range words, any 65-byte point, any scalar, scalar
-  bits 0..255, windows 0..63, row entries 0..7, exponent nibbles 0..31.
+  bits 0..255, windows 0..63, row entries 0..7, the inverse's 17 rounds
+  of 31 steps.
 - **Not proved:**
   - a product's value, and so that the scalar's `mont_mul` leaves a
-    value below n, that either inverse computes an inverse and that the
-    four point formulas compute the group law.
-  - `p256_wide_fe_inv` and `p256_wide_scalar_inverse` whole. Each is a
-    fixed chain of the calls proven above, in the shapes proven above,
-    at counts that are literals. Each product takes the address of 13 to
-    17 locals, cbmc's symbolic execution grows with the square of the
-    objects it tracks, and the field's chain of 267 products was stopped
-    after 11 minutes with no formula.
+    value below n, that a round's combinations compute the sums
+    `spec/lean/Spec/P256WideInverse.lean` models and that the four point
+    formulas compute the group law. That the rounds invert is the Lean
+    proof's, over its model of the steps and the sums.
   - the form of the two carry steps that gcc compiles for x86-64,
     `_addcarry_u64` and `_subborrow_u64`. cbmc reads no intrinsic, and
     `bin/p256_equiv_test` holds that form under gcc and under
@@ -2556,12 +2583,32 @@ the digits and the table as given: `window_digit` builds each digit from
 five bits and a sign, the `p256_wide_digit` proof holds the digits to
 k | 1, and `bin/p256_equiv_test` recomputes every entry of the table.
 
+The inverse both wide moduli run, `p256_wide_inverse.c` (docs/decisions.md
+115), is machine checked too.
+[`spec/lean/Spec/P256WideInverse.lean`](../spec/lean/Spec/P256WideInverse.lean)
+holds its rounds: the approximations, the 31 steps on them, the factors
+and the two combinations, the sums over integers and modulo m. It proves
+that 17 rounds invert every y coprime to an odd modulus below 2^256, and
+send 0 to 0, and states both at P-256 with p and n prime as hypotheses.
+The core is that a round shortens a and b by 31 bits between them while a
+is not zero, although a comparison of the approximations can go the other
+way from the comparison of a and b. Pornin's paper argues that bound; the
+proof here follows a corrected form of the argument, in which a value may
+grow back by one bit after such a step but only while both values are
+below 2^(n - 32). The four `p256_wide_inverse` harnesses tie the C's
+approximations and steps to references that branch, over every input, and
+`bin/diff_p256_wide` holds the C's answers to the model's at both moduli on
+the edges, every power of two and every power of two less one, and random
+values of every length. What none of this shows: that the C's
+combinations compute the model's sums on every input, which the
+differential and `bin/p256_equiv_test` sample.
+
 ### The wide P-256 files
 
 A host session with the multiply bit signs and exchanges keys on
-`p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_point.c` and
-`p256_wide_mul.c`, and computes k·G from `p256_wide_table.c` (decision
-94). The 32-bit files carry the Python
+`p256_wide_field.c`, `p256_wide_scalar.c`, `p256_wide_inverse.c`,
+`p256_wide_point.c` and `p256_wide_mul.c`, and computes k·G from
+`p256_wide_table.c` (decisions 94 and 115). The 32-bit files carry the Python
 vectors, RFC 6979's and the proofs of their masks; these checks carry
 the wide files to the same answers:
 
@@ -2668,11 +2715,13 @@ the wide files to the same answers:
   with Python's integers, and `make lint-p256-wide` fails when the
   checked-in file is not what it prints. The same script recomputes
   every constant the wide files hold from the SEC 2 values: the prime
-  and the order in
-  64-bit words, 2^256 and 2^512 modulo each, the curve's b times 2^256,
-  `N0_INV`, and the low half of n - 2 that `p256_wide_scalar_inverse`
-  reads four bits at a time. It also checks that the runs of ones each
-  inversion chain writes are p - 2 and the high half of n - 2.
+  and the order in 64-bit words, 2^256 modulo p and 2^512 modulo each,
+  2^768 modulo p, which the field's inverse multiplies by, the curve's b
+  times 2^256, `N0_INV`, and -p^-1 mod 2^64, which the field's modulus
+  for `p256_wide_inverse` carries. It also holds `p256_wide_inverse.c`'s
+  `STEPS` and `ROUNDS` to the `steps` and `rounds` of
+  `spec/lean/Spec/P256WideInverse.lean`, which the proof covers: every value
+  the tests draw needs 14 rounds or fewer, so no test would see fewer.
 - `bin/p256_sign_test_host` and `bin/p256_ecdh_test_host` run RFC 6979
   A.2.5 and the Python vectors once with the bit and once without it,
   and the Wycheproof host binary runs the 355 `ecdh_secp256r1` cases and
@@ -2689,9 +2738,11 @@ the wide files to the same answers:
   or fails it under `CH_REQUIRE_HASH_INSTRUCTIONS=1`.
 - `bin/diff_p256_wide`, in `make diff`, runs a key generation, a
   signature and a key exchange against the Lean spec under each answer,
-  and the incomplete additions, the Jacobian doubling and the two
+  the incomplete additions, the Jacobian doubling and the two
   conversions against `spec/lean/Spec/P256WidePoint.lean`'s, coordinate for
-  coordinate ([What `make diff` runs](#what-make-diff-runs)).
+  coordinate, and `p256_wide_inverse` against
+  `spec/lean/Spec/P256WideInverse.lean`'s rounds at both moduli
+  ([What `make diff` runs](#what-make-diff-runs)).
 - `bin/widemul_runtime_test` counts the calls: the wide entries alone
   under the constant-time answer and the 32-bit files alone under every
   other byte ([The host object's two multiplies](#the-host-objects-two-multiplies)).
@@ -4297,13 +4348,14 @@ computes:
 
 It follows the RFC text and never the C, because a differential oracle
 only works when a shared misreading cannot make both sides agree. There
-are two exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
+are three exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
 `tls_write.c` line by line: its theorems bound that code's own
 intermediate values, which no RFC states. `Spec/P256WidePoint.lean`
 models `p256_wide_point_add_affine_incomplete`, the Jacobian doubling,
 the incomplete Jacobian addition and the two conversions the same way:
 its theorems say what that code's steps compute, and no standard states
-those steps.
+those steps. `Spec/P256WideInverse.lean` models the rounds of
+`p256_wide_inverse.c`, whose bound no standard states either.
 [`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
 safe.
 
@@ -4329,7 +4381,7 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 651 comparisons, where the compiler
+4. The constant-time P-256 rows, 2,489 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
@@ -4347,7 +4399,12 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    Z = 0 with Y = 0; 125 doublings, 25 on random coordinates and 25 each
    where Z, Y, X - Z^2 and X + Z^2 is zero; and 125 incomplete
    additions, 25 on random coordinates, 25 each at Z1 = 0 and at Z2 = 0,
-   25 with the same x and Z, and 25 on one point twice.
+   25 with the same x and Z, and 25 on one point twice. Then 1,838
+   inverses through `p256_wide_inverse` against `Spec/P256WideInverse.lean`'s
+   `inverse`, 919 at the field prime and 919 at the group order: 0 to 3
+   and m - 1 to m - 3, every power of two and every power of two less one
+   below 2^256, and 200 random values below m, each whole and cut to a
+   random length. Each runs with the answer apart from y and over it.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

@@ -2166,12 +2166,9 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # p256_wide_field runs every routine with no product on
 # its real body, and the Montgomery reduction, which for this prime is shifts
 # and adds, to its bound. p256_wide_field_mul and p256_wide_scalar run the
-# products over the row's contract, proof/p256_wide_stubs.h, in every shape
-# the two inverses call them in, and neither inverse runs whole: each product
-# takes the address of 13 to 17 locals, cbmc's symbolic execution grows with
-# the square of the objects it tracks, 32 squarings of the field took 57 s
-# of it where 8 took 3, and the field's whole chain was stopped after 11
-# minutes with no formula yet. p256_wide_point runs the point
+# products over the row's contract, proof/p256_wide_stubs.h, and each
+# inverse whole over a contract of p256_wide_inverse, which the four
+# p256_wide_inverse lines below prove. p256_wide_point runs the point
 # formulas over the field's stubs. p256_wide_digit runs the digits of a
 # scalar and the scan of a table row on their real bodies: the digits add up
 # to k | 1 for every k, and the scan returns the row's entry at the index.
@@ -2186,8 +2183,8 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 #   p256_wide_row_sum    116 properties,  4 s, 154 MB
 #   p256_wide_sqr         69 properties,  4 s, 444 MB
 #   p256_wide_field      919 properties,  8 s, 174 MB
-#   p256_wide_field_mul  599 properties,  9 s, 103 MB
-#   p256_wide_scalar     465 properties, 22 s, 715 MB
+#   p256_wide_field_mul  664 properties,  5 s,  66 MB
+#   p256_wide_scalar     392 properties,  7 s, 255 MB
 #   p256_wide_point      319 properties,  3 s,  70 MB
 #   p256_wide_digit      371 properties, 29 s, 519 MB
 #   p256_wide_mul        423 properties, 38 s, 412 MB
@@ -2204,6 +2201,10 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # at a load average of about 5, and the p256_wide_field, p256_wide_field_mul,
 # p256_wide_digit and p256_wide_mul lines again after the addition and the
 # subtraction moved into p256_wide_field.h, inline (docs/decisions.md 114).
+# The p256_wide_field_mul and p256_wide_scalar lines were measured again on
+# 2026-10-07, after both inverses moved to p256_wide_inverse.c
+# (docs/decisions.md 115), the same way at a load average of about 3; the
+# field's line now links ct.c and the wipe's stub, for the inverse's wipe.
 # p256_wide_mul runs with
 # --no-array-field-sensitivity. By default cbmc tracks an array of up to 64
 # elements element by element, and over the 1,376 entries the base
@@ -2211,7 +2212,7 @@ launch fast:3 full x25519_wide_invert 101 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_
 # proves in 36 s. The flag changes how cbmc encodes an array and nothing the
 # line proves.
 # The two lines with --object-bits 10 track more than 256 objects: each
-# product's locals have their addresses taken, and the lines run 14 and 20
+# product's locals have their addresses taken, and the lines run 10 and 12
 # products. p256_wide_mul's ct_wipe bound is the 768 bytes of the eight
 # multiples p256_wide_mul wipes.
 # The field multiply over the real products instead of the contract also
@@ -2221,12 +2222,34 @@ launch fast full p256_wide_row 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_row_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_sqr 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_field 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full p256_wide_field_mul 6 "" --object-bits 10 -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_field_mul 6 "ct_wipe.0:33" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_scalar 34 "" --object-bits 10 ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_point 100 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_digit 66 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full p256_wide_mul 65 "ct_wipe.0:769" ct.c proof/ct_wipe_stub.c p256_wide_table.c -DCH_CPU_RUNTIME --unsigned-overflow-check --no-array-field-sensitivity
 launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+# The wide inverse, p256_wide_inverse.c (docs/decisions.md 115), in four harnesses.
+# p256_wide_inverse_steps holds the approximations and one step to references that branch,
+# over every input, and the unpacking of the factors over the range of each; it runs without
+# --unsigned-overflow-check, because the masks and the packed factors wrap on purpose and the
+# equalities fix every value they compute. p256_wide_inverse_range proves that range of the
+# reference's 31 steps, in one formula, as only the whole run bounds it; it is in the slow
+# tier. p256_wide_inverse runs the combinations of a round with the check on, over a row
+# contract whose word above the four is at most x, which the row's value gives, and
+# p256_wide_inverse_round one round whole over proof/p256_wide_stubs.h's rows, for its memory
+# accesses and its shifts, without the check for the reason above. No line runs the inverse
+# whole: its 17 rounds in one formula kept cbmc's symbolic execution going for 18 minutes with
+# no formula, and each round is the same call on the same state.
+# Measured one line at a time through proof/prove-one.sh (cbmc 6.11.0, kissat 4.0.4, an M1
+# Pro), on 2026-10-07, at a load average of about 3:
+#   p256_wide_inverse_steps   1004 properties,  27 s, 161 MB
+#   p256_wide_inverse_range    119 properties, 506 s, 238 MB
+#   p256_wide_inverse          850 properties,   1 s,  41 MB
+#   p256_wide_inverse_round    802 properties,   1 s,  25 MB
+launch fast full p256_wide_inverse_steps 257 "" -DCH_CPU_RUNTIME
+launch slow full p256_wide_inverse_range 32 "" -DCH_CPU_RUNTIME
+launch fast full p256_wide_inverse 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full p256_wide_inverse_round 33 "" -DCH_CPU_RUNTIME
 # p256_wide_verify: the host object's ECDSA P-256 verifier over contracts of
 # the wide entries it calls, with p256_scalar.c's marshalling, reduction
 # and range predicates on their real bodies (docs/decisions.md 96 and

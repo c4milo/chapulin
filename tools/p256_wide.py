@@ -5,7 +5,8 @@ and writes the table of multiples of the generator.
 Run from the repository root:
 
     python3 tools/p256_wide.py check p256_wide_field.h p256_wide_field.c \
-        p256_wide_scalar.c p256_wide_point.c
+        p256_wide_scalar.c p256_wide_point.c p256_wide_inverse.c \
+        spec/lean/Spec/P256WideInverse.lean
     python3 tools/p256_wide.py table > p256_wide_table.c
 
 check's arguments are the sources the script reads. It takes them so that the
@@ -18,14 +19,16 @@ with a message that names the file and the constant when a word differs:
 
 - p256_wide_field.h: the prime p, whose words the header's inline addition and
   subtraction read.
-- p256_wide_field.c: 2^512 mod p and 2^256 mod p, and the facts its reduction
-  and its inversion rest on: -p^-1 mod 2^64 is 1, (p + 1) / 2^64 is
-  2^192 - 2^160 + 2^128 + 2^32, and p - 2 is the run of bits the inversion
-  chain writes.
-- p256_wide_scalar.c: the group order n, -n^-1 mod 2^64, 2^512 mod n,
-  2^256 mod n, and n - 2 as the two words the inverse reads four bits at a time
-  under the two it writes as runs of ones.
+- p256_wide_field.c: 2^512 mod p, 2^256 mod p and 2^768 mod p, the word
+  -p^-1 mod 2^64 its modulus for p256_wide_inverse carries, and the facts its
+  reduction rests on: -p^-1 mod 2^64 is 1, and (p + 1) / 2^64 is
+  2^192 - 2^160 + 2^128 + 2^32.
+- p256_wide_scalar.c: the group order n, -n^-1 mod 2^64 and 2^512 mod n.
 - p256_wide_point.c: the curve coefficient b in the Montgomery domain.
+- p256_wide_inverse.c: the steps of a round and the rounds, against the
+  `steps` and `rounds` of spec/lean/Spec/P256WideInverse.lean, whose proof
+  shows that those counts invert every value below 2^256. No test sees
+  fewer rounds: every value they draw needs 14 or fewer.
 
 table prints p256_wide_table.c, the 43 by 32 table p256_wide_base_mul reads:
 entry [i][j] is (2j + 1) * 2^(6i) * G as an affine point, each coordinate times
@@ -108,15 +111,17 @@ def check_field():
     expect(name, "RR, 2^512 mod p", initialized(text, "RR"), words(R * R % P))
     expect(name, "p256_wide_fe_one_mont, 2^256 mod p",
            initialized(text, "p256_wide_fe_one_mont"), words(R % P))
+    expect(name, "RRR, 2^768 mod p", initialized(text, "RRR"), words(R * R * R % P))
+    # The modulus p256_wide_fe_inv hands p256_wide_inverse names its words by
+    # P256_WIDE_P0..P3, which the header check above reads; its one literal
+    # is -p^-1 mod 2^64.
+    expect(name, "FIELD_PRIME's -p^-1 mod 2^64", initialized(text, "FIELD_PRIME"),
+           [(-pow(P, -1, WORD)) % WORD])
     # What reduce_round rests on.
     assert (-pow(P, -1, WORD)) % WORD == 1, "-p^-1 mod 2^64 is not 1"
     assert (P + 1) % WORD == 0, "p + 1 is not a multiple of 2^64"
     assert (P + 1) // WORD == 2**192 - 2**160 + 2**128 + 2**32, "(p + 1) / 2^64 has another form"
     assert words(P)[3] == 2**64 - 2**32 + 1, "p's top word is not 2^64 - 2^32 + 1"
-    # What p256_wide_fe_inv's chain writes: 32 ones, 31 zeros, a one, 96
-    # zeros, 94 ones, a zero and a one.
-    bits = "1" * 32 + "0" * 31 + "1" + "0" * 96 + "1" * 94 + "01"
-    assert int(bits, 2) == P - 2, "p - 2 is not the run of bits p256_wide_fe_inv writes"
 
 
 def check_scalar():
@@ -125,13 +130,6 @@ def check_scalar():
     expect(name, "the order N0..N3", [defined(text, f"N{i}") for i in range(4)], words(N))
     expect(name, "N0_INV, -n^-1 mod 2^64", defined(text, "N0_INV"), (-pow(N, -1, WORD)) % WORD)
     expect(name, "RR, 2^512 mod n", initialized(text, "RR"), words(R * R % N))
-    expect(name, "ONE_MONT, 2^256 mod n", initialized(text, "ONE_MONT"), words(R % N))
-    expect(name, "EXPONENT_LOW, the low two words of n - 2",
-           initialized(text, "EXPONENT_LOW"), words(N - 2)[:2])
-    # What p256_wide_scalar_inverse writes as runs of ones: 32 ones, 32
-    # zeros and 64 ones.
-    top = int("1" * 32 + "0" * 32 + "1" * 64, 2)
-    assert (N - 2) >> 128 == top, "n - 2's top two words are not the runs the inverse writes"
     assert 2**255 < N < 2**256, "one conditional subtraction reduces a product only for n > 2^255"
 
 
@@ -142,7 +140,22 @@ def check_point():
     assert on_curve((GX, GY)), "G is not on the curve"
 
 
-CHECKED = ["p256_wide_field.h", "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c"]
+CHECKED = ["p256_wide_field.h", "p256_wide_field.c", "p256_wide_scalar.c", "p256_wide_point.c",
+           "p256_wide_inverse.c", "spec/lean/Spec/P256WideInverse.lean"]
+
+
+def check_inverse():
+    name = "p256_wide_inverse.c"
+    text = source(name)
+    model = source("spec/lean/Spec/P256WideInverse.lean")
+    for macro, lean in (("STEPS", "steps"), ("ROUNDS", "rounds")):
+        found = re.search(rf"^#define {macro} (\d+)\b", text, re.M)
+        proven = re.search(rf"^def {lean} : Nat := (\d+)$", model, re.M)
+        if not found or not proven:
+            failures.append(f"{name}: {macro} or the model's {lean} is missing")
+        elif int(found.group(1)) != int(proven.group(1)):
+            failures.append(f"{name}: {macro} is {found.group(1)}, and the model the Lean proof "
+                            f"is about runs {proven.group(1)}")
 
 
 def check(names):
@@ -153,6 +166,7 @@ def check(names):
     check_field()
     check_scalar()
     check_point()
+    check_inverse()
     if failures:
         for line in failures:
             print(f"p256_wide: {line}", file=sys.stderr)

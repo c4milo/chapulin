@@ -9,37 +9,25 @@
 //   what the round before returned, so the word above the four it gives
 //   reduce_once is 0 or 1, which is what the claim above assumes;
 //
-//   mont_mul, mont_sqr through sqr_times, and p256_wide_scalar_mul are
-//   memory-safe and UB-free over fully nondet words and wrap no unsigned
-//   value (--unsigned-overflow-check on the launch line), in every aliasing
-//   shape p256_sign.c and the inverse use: the output distinct from both
-//   inputs, over the first, over the second, and both inputs one object.
-//   p256_wide_scalar_mul wipes the two copies it makes through ct_wipe,
-//   whose stub proves each wipe inside its object;
+//   mont_mul and p256_wide_scalar_mul are memory-safe and UB-free over fully
+//   nondet words and wrap no unsigned value (--unsigned-overflow-check on
+//   the launch line), in every aliasing shape p256_sign.c uses: the output
+//   distinct from both inputs, over the first, over the second, and both
+//   inputs one object. p256_wide_scalar_mul wipes the two copies it makes
+//   through ct_wipe, whose stub proves each wipe inside its object;
 //
-//   exponent_low_nibble, the one read in p256_wide_scalar_inverse that moves
-//   with a loop counter: for every position the loop passes, 0 to 31, the
-//   read of EXPONENT_LOW is in bounds, its shift is below the word's width,
-//   and the result is below 16, the length of the table of powers it
-//   indexes. Every operand of the index is the build constant or the
-//   counter, never the scalar;
+//   p256_wide_scalar_inverse, whole, in both shapes, over a contract of
+//   p256_wide_inverse below, which reads y and the modulus and writes any
+//   four words: its copies to and from 64-bit words and its wipe;
 //
 //   the two copies to and from p256_scalar.h's scalar: each takes the words
 //   two at a time, and the round trip gives back what went in.
 //
 // The rows of every product are the contract in proof/p256_wide_stubs.h,
-// which p256_wide_row_harness.c discharges on the real multiply, and so is
-// the square of four words mont_sqr starts from, which
-// p256_wide_sqr_harness.c discharges. The one product outside a row and the
-// square, the multiplier each reduction round makes from its low word and
-// N0_INV, runs on the real multiply here.
-//
-// p256_wide_scalar_inverse is not run whole, for the reason
-// proof/p256_wide_field_mul_harness.c gives for the field's: its 305
-// products in one formula cost symbolic execution more than this tier
-// admits. Its chain is mont_mul and sqr_times, whose squares are mont_sqr's,
-// in the shapes proven here, on its own locals and its table, at counts that
-// are literals and at the index proven here.
+// which p256_wide_row_harness.c discharges on the real multiply. The one
+// product outside a row, the multiplier each reduction round makes from its
+// low word and N0_INV, runs on the real multiply here. The four
+// p256_wide_inverse harnesses prove the inverse's own accesses and steps.
 //
 // Not proven here: the product's value, and so the bound that mont_mul
 // leaves a scalar below n. The reduction's rounds are products, not shifts
@@ -47,15 +35,25 @@
 // SAT instance docs/proofs.md says does not converge. bin/p256_equiv_test
 // holds both entries to p256_scalar.c's on random and edge scalars, and
 // bin/p256_sign_test_host runs RFC 6979's vectors through them.
-// tools/p256_wide.py checks that EXPONENT_LOW is the low half of n - 2 and
-// that the high half is the runs of ones the chain writes.
 #include "p256_wide_stubs.h"
 
 #include "p256_wide_reference.h"
 
 #include "p256_wide_scalar.c"
 
-static const uint64_t ORDER[WORDS] = {N0, N1, N2, N3};
+// p256_wide_inverse reads y and the modulus and writes any four words.
+void p256_wide_inverse(uint64_t o[P256_WIDE_INVERSE_WORDS],
+                       const uint64_t y[P256_WIDE_INVERSE_WORDS], const p256_wide_modulus *m) {
+    __CPROVER_assert(__CPROVER_r_ok(y, sizeof(uint64_t) * P256_WIDE_INVERSE_WORDS) &&
+                         __CPROVER_r_ok(m, sizeof *m) &&
+                         __CPROVER_w_ok(o, sizeof(uint64_t) * P256_WIDE_INVERSE_WORDS),
+                     "p256_wide_inverse: y and the modulus readable, the four words writable");
+    for (size_t i = 0; i < P256_WIDE_INVERSE_WORDS; i++) {
+        o[i] = nondet_u64();
+    }
+}
+
+static const uint64_t ORDER_WORDS[WORDS] = {N0, N1, N2, N3};
 
 static void wide_nondet(wide_scalar *s) {
     for (size_t i = 0; i < WORDS; i++) {
@@ -79,7 +77,7 @@ static void prove_reduce_once(void) {
     uint64_t high = nondet_u64();
     __CPROVER_assume(high <= 1); // what prove_reduce_round shows of mont_mul's rounds
 
-    uint64_t borrow = ref_sub(want, t, ORDER);
+    uint64_t borrow = ref_sub(want, t, ORDER_WORDS);
     reduce_once(got, t[0], t[1], t[2], t[3], high);
     int at_or_above = high == 1 || borrow == 0;
     __CPROVER_assert(words_same(got, at_or_above ? want : t),
@@ -116,20 +114,13 @@ static void prove_mont_mul(void) {
     mont_mul(&a, &a, &a); // all three one object
 }
 
-static void prove_sqr_times(void) {
-    wide_scalar a;
-    wide_scalar o;
-    wide_nondet(&a);
-    sqr_times(&o, &a, 4); // the inverse's first use: a power into t
-    wide_nondet(&a);
-    sqr_times(&a, &a, 4); // and its later ones: t over itself
-}
-
-static void prove_exponent_nibble(void) {
-    size_t at = nondet_size_t();
-    __CPROVER_assume(at < EXPONENT_LOW_NIBBLES);
-    uint64_t nibble = exponent_low_nibble(at);
-    __CPROVER_assert(nibble < 16, "exponent_low_nibble: the result indexes sixteen powers");
+static void prove_scalar_inverse(void) {
+    p256_scalar a;
+    p256_scalar o;
+    scalar_nondet(&a);
+    p256_wide_scalar_inverse(&o, &a);
+    scalar_nondet(&a);
+    p256_wide_scalar_inverse(&a, &a); // o == a
 }
 
 static void prove_scalar_mul(void) {
@@ -171,8 +162,7 @@ int main(void) {
     prove_reduce_once();
     prove_reduce_round();
     prove_mont_mul();
-    prove_sqr_times();
-    prove_exponent_nibble();
+    prove_scalar_inverse();
     prove_scalar_mul();
     prove_portable();
     return 0;

@@ -1,0 +1,13 @@
+invariant: INV-16
+file: p256_wide_inverse.c
+catches: test/lint-p256-wide.sh
+reason: the inverse runs 16 rounds, 496 steps, where
+  spec/lean/Spec/P256WideInverse.lean proves that 17 take a to zero for every
+  value below 2^256. No test sees it: every value the tests and the
+  differential draw takes 14 rounds or fewer. tools/p256_wide.py holds
+  STEPS and ROUNDS to the model's steps and rounds.
+
+--- old
+#define ROUNDS 17
+--- new
+#define ROUNDS 16

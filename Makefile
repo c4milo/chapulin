@@ -211,8 +211,8 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
-        p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_point.h p256_wide_mul.h \
-        p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
+        p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
+        p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
@@ -222,13 +222,15 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly13
 # The wide P-256 files and the table of multiples of G the base
 # multiplication reads, which a host object holds beside p256_field.c,
 # p256_scalar.c and p256_point.c (docs/decisions.md 94): the field and the
-# scalar arithmetic on four 64-bit words, the points and the two scalar
-# multiplications over them, and the wipe of the stack their calls used;
-# and the verifier with its own variable-time points (docs/decisions.md 96
-# and 104). They are named once, here, for the object, for the test
-# binaries that link a host object's P-256 and for the lints.
-P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_point.c p256_wide_mul.c \
-                  p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c p256_wide_verify_point.c
+# scalar arithmetic on four 64-bit words and the inverse both run
+# (docs/decisions.md 115), the points and the two scalar multiplications
+# over them, and the wipe of the stack their calls used; and the verifier
+# with its own variable-time points (docs/decisions.md 96 and 104). They
+# are named once, here, for the object, for the test binaries that link a
+# host object's P-256 and for the lints.
+P256_WIDE_SRCS := p256_wide_field.c p256_wide_scalar.c p256_wide_inverse.c p256_wide_point.c \
+                  p256_wide_mul.c p256_wide_table.c p256_wide_wipe.c p256_wide_verify.c \
+                  p256_wide_verify_point.c
 
 # P-384 on six 64-bit words: the field, the points and the verifier over
 # them, which a host object holds in place of p384_field.c and of p384.c's
@@ -539,7 +541,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/sha2_equiv_residue512.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
-         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
+         test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
          test/poly1305_equiv_residue.h test/p256_equiv_field.h test/p256_equiv_residue.h \
@@ -3332,17 +3334,18 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # the wide X25519 field and the three wide P-256 files that hold a
 # dispatched entry, and the stubs that count each call
 # (test/widemul_runtime_count.h). WIDEMUL_COUNTED names what the units
-# replace on a link line. p256_field.c, p256_wide_field.c, the table of
-# multiples of G and the verifier's points hold no dispatched entry, so a
-# counting binary links them as they are (WIDEMUL_COUNT_FIELDS).
+# replace on a link line. p256_field.c, p256_wide_field.c, the inverse both
+# wide moduli call, the table of multiples of G and the verifier's points
+# hold no dispatched entry, so a counting binary links them as they are
+# (WIDEMUL_COUNT_FIELDS).
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
                        test/widemul_count_wide.c \
                        test/widemul_count_wide_p256.c test/widemul_count_sign64.c
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
-WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_table.c p256_wide_wipe.c \
-                        p256_wide_verify_point.c
+WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
+                        p256_wide_wipe.c p256_wide_verify_point.c
 WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
@@ -6576,17 +6579,23 @@ HASH_HW_BRANCH_CEILING := \
   arm64/mlkem_poly_hw.c:37 x86-64/mlkem_poly_hw.c:0
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. Their branches were read before they were
-# recorded, and the counts are the same on both specs. Every one closes a
-# loop over a public count or tests a public value, and none reads a word
-# or a scalar bit.
-#   p256_wide_field.c's 7: the four words in each of the two copies to and
-#     from p256_field.h's element, the four words and the eight bytes of
-#     each in the two marshalling routines, and sqr_times' count, a
-#     constant at every call. The add, the subtract, the multiply and the
-#     three predicates are straight line.
-#   p256_wide_scalar.c's 3: the fourteen powers the inverse computes, the
-#     32 groups of four bits of the exponent n-2, a build constant, and
-#     sqr_times' count. The Montgomery product is straight line.
+# recorded, and the counts are the same on both specs but for
+# p256_wide_inverse.c's. Every one closes a loop over a public count or
+# tests a public value, and none reads a word or a scalar bit.
+#   p256_wide_field.c's 6: the four words in each of the two copies to and
+#     from p256_field.h's element, and the four words and the eight bytes of
+#     each in the two marshalling routines. The add, the subtract, the
+#     multiply, the inverse's one product and the three predicates are
+#     straight line.
+#   p256_wide_scalar.c has none: the Montgomery product and the copies are
+#     straight line.
+#   p256_wide_inverse.c's 12 on arm64 and 14 on x86-64 (docs/decisions.md
+#     115): the 17 rounds, the 31 steps of each, the shifts of the
+#     approximations' ladder, whose count halves from 32 to 1, and loops
+#     over the four or five words of a value: in the start of the rounds,
+#     in the approximations, and in each combination's products, sums,
+#     negations and shifts. x86-64 keeps two of those word loops that arm64
+#     unrolls.
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
@@ -6622,8 +6631,9 @@ HASH_HW_BRANCH_CEILING := \
 #     of u1 or u2, a coordinate of a point computed from the key, or r, and
 #     all of them are public.
 P256_WIDE_BRANCH_CEILING := \
-  arm64/p256_wide_field.c:7 x86-64/p256_wide_field.c:7 \
-  arm64/p256_wide_scalar.c:3 x86-64/p256_wide_scalar.c:3 \
+  arm64/p256_wide_field.c:6 x86-64/p256_wide_field.c:6 \
+  arm64/p256_wide_scalar.c:0 x86-64/p256_wide_scalar.c:0 \
+  arm64/p256_wide_inverse.c:12 x86-64/p256_wide_inverse.c:14 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
   arm64/p256_wide_mul.c:13 x86-64/p256_wide_mul.c:13 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
@@ -7113,7 +7123,7 @@ lint-bench-numbers:
 # version.
 lint-p256-wide:
 	@python3 tools/p256_wide.py check p256_wide_field.h p256_wide_field.c p256_wide_scalar.c \
-	  p256_wide_point.c
+	  p256_wide_point.c p256_wide_inverse.c spec/lean/Spec/P256WideInverse.lean
 	@python3 tools/p256_wide.py table | cmp -s - p256_wide_table.c \
 	  || { echo "lint-p256-wide: p256_wide_table.c is not what tools/p256_wide.py table prints;" \
 	       "regenerate it with: python3 tools/p256_wide.py table > p256_wide_table.c"; exit 1; }

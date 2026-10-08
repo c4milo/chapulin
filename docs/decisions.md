@@ -8377,3 +8377,112 @@ does nothing more.
       multiply and the square as well took the multiplication to 49.9 µs,
       where the addition and the subtraction alone took 50.1: the same
       time, for more code.
+
+115. **A host object inverts by a binary GCD.** The wide field inverted by
+    Fermat, a^(p - 2) in 255 squarings and 12 multiplies, in 3.97 µs on the
+    M1 Pro, and the wide scalar inverse by Fermat over a table of fifteen
+    powers, in 6.37 µs. A key generation and a key exchange each run a field
+    inverse, for the affine form of their point, a signature runs one of each,
+    the field's for r and the scalar's for the nonce, and a verification runs
+    the scalar's, for s.
+
+    - **What changes.** `p256_wide_inverse.[ch]` inverts modulo any odd
+      modulus below 2^256 by the optimized binary GCD of Pornin's "Optimized
+      Binary GCD for Modular Inversion" (https://eprint.iacr.org/2020/972).
+      The binary GCD holds a and b, b odd, from a = y and b = m: a step halves
+      an even a, and replaces an odd a by |a - b| / 2, moving the old a into b
+      when it was the smaller. A round runs 31 steps on 64-bit approximations
+      of a and b, their 31 low bits beside the 33 bits from the top bit of
+      a | b down, records the steps as four factors, two to a word, and
+      applies the factors to the four-word a and b once, and to u and v
+      modulo m with a Montgomery division by 2^31, so that v ends as y^-1 with
+      no correction. 17 rounds take a to zero. `p256_wide_fe_inv` runs it on
+      an element's Montgomery form and multiplies the answer by 2^768 mod p,
+      and `p256_wide_scalar_inverse` runs it on the scalar. The wide files'
+      Fermat chains are gone. `p256_field.c` and `p256_scalar.c` keep theirs,
+      which a device object and a session without the multiply bit run.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      `bench/primitives.c` over five runs of each in turn at a load average
+      of about 3.5, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting:
+
+      | | Fermat | binary GCD | OpenSSL |
+      | --- | --- | --- | --- |
+      | key generation | 12.2 µs, 137,185 instructions | 9.7 µs, 121,873 | — |
+      | key exchange | 54.5 µs, 572,566 instructions | 51.9 µs, 557,256 | 40.8 µs |
+      | signature | 21.3 µs, 217,369 instructions | 13.8 µs, 166,344 | 17.6 µs |
+      | verification | 58.8 µs, 603,635 instructions | 53.9 µs, 567,929 | 54.0 µs |
+
+      A signature takes 0.78 times OpenSSL's time where it took 1.21, a
+      verification 1.00 where it took 1.09, and a key exchange 1.27 where it
+      took 1.34. The inverse takes 1.42 µs at either modulus. Under
+      qemu-x86_64, gcc 13.3's key generation, signature, key exchange and
+      verification retire 267,940, 711,864, 1,110,094 and 1,188,887
+      instructions before and 251,591, 630,844, 1,093,745 and 1,124,216
+      after, and clang 18.1.3's 205,589, 622,418, 899,249 and 933,766 before
+      and 189,156, 553,768, 882,816 and 881,549 after.
+    - **The bound.** The paper argues that a round shortens a and b by 31
+      bits between them while a is not zero, however its comparisons of the
+      approximations go, so 17 rounds, 527 bits, cover the 512 that y and m
+      start with. Where a comparison of the approximations goes the other way
+      from that of a and b, the subtraction leaves a value below zero, and the
+      paper argues that no value below 2^(n - 33) grows past that length again
+      within the round. One can, by a bit: when the positive value is below
+      2^(n - 32) too, the steps can average the two. The bound holds all the
+      same, because a and b are then both below 2^(n - 32) and have already
+      lost at least 33 bits between them. Every a below 2^15 and odd b below
+      2^15, at approximations of 6, 8, 10 and 12 bits, showed each round's
+      reduction at least the paper's bound, and equal to it.
+      `spec/lean/Spec/P256WideInverse.lean` models a round from the C and
+      proves the bound with that case, and that 17 rounds invert every y
+      coprime to an odd modulus below 2^256 and send 0 to 0.
+    - **What holds it.** Four harnesses: `p256_wide_inverse_steps` holds the
+      approximations and one step to references that branch, over every
+      input, and the unpacking of the factors; `p256_wide_inverse_range`, in
+      the slow tier, that the reference's 31 steps leave every factor between
+      -(2^31 - 1) and 2^31, the range the packing needs; `p256_wide_inverse`
+      the combinations, with the check of unsigned wraps on; and
+      `p256_wide_inverse_round` one round whole. `bin/diff_p256_wide` holds
+      the C's answers to the model's on 1,838 values at the two moduli, and
+      `bin/p256_equiv_test` holds both inverses to the 32-bit files' Fermat
+      inverses. Random values need 12.1 rounds on average and none of a
+      million needed more than 14, so no test sees the last three:
+      `tools/p256_wide.py` holds `STEPS` and `ROUNDS` to the model's `steps`
+      and `rounds`. Five violations change the approximations, the
+      unpacking, the sign u and v take, the field's correction and the
+      rounds, and each is caught. The rounds keep their values in one
+      state, which the call wipes once; the scalar inverse writes 504 bytes
+      below its caller where it wrote 728, and the affine conversion 712
+      where it wrote 520, inside the 3,072 bytes `p256_wide_wipe_below`
+      clears.
+    - **Constant time.** Every choice is a mask, and `lint-wide-multiply`
+      holds the file's branches, 12 under clang for arm64 and 14 for x86-64,
+      each one a loop over a constant count. clang compiles some of the
+      approximations' masked shifts into a shift by a register the mask
+      chose: at -O2 the last of the six, by 0 or 1, and at -Os each of them,
+      by 0 or the step's count. A shift by a register takes the same time
+      for every amount on the cores a host object runs on: Arm lists LSLV
+      and LSRV among the instructions whose timing does not depend on their
+      data, and Intel lists the shifts among its data operand independent
+      timing instructions. Reading each mask through a volatile kept the
+      masks in the code the compiler emits and took an inverse from 1.42 µs
+      to 1.76 µs.
+    - **Cost.** None in text: under Apple clang 21 for arm64 the field, the
+      scalar and the inverse take 4,920 bytes where the field and the scalar
+      took 7,136. A device object holds none of these files.
+
+    Rejected:
+
+    - **The paper's update of u and v.** The first scratch version applied
+      the factors to u and v modulo m by adding the words above bit 256 back
+      in as multiples of 2^256 mod m, three times, 20 products a combination
+      against the Montgomery division's 13, and multiplied by 2^-527 at the
+      end. With the paper's step, which swaps and then subtracts, it took
+      2.47 µs. The Montgomery division, the step that takes |a - b| by one
+      select, the packed factors and the parity of the next a read from bit 1
+      of the difference took the scratch version to 1.53 µs, and the tree's
+      round, which works on one state, to 1.42.
+    - **A zero mask that wraps nothing.** `p256_wide_field.c`'s
+      `zero_mask_word` adds 2^64 - 1 in 128 bits. Six of those masks run one
+      after another in each round's approximations, and that form took
+      1.59 µs an inverse where `x | -x` takes 1.42.

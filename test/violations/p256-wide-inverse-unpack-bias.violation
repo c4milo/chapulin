@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_inverse.c
+catches: p256_equiv_test
+reason: the factors are unpacked with a bias of 2^31, which separates the
+  halves of a word for factors from -2^31 to 2^31 - 1, where the steps leave
+  factors from -(2^31 - 1) to 2^31. A round whose 31 steps all halve leaves
+  g1 = 2^31, which this reads as -2^31: every round after a reaches zero
+  then negates b, and the inverse comes out negated. bin/p256_equiv_test
+  holds both inverses to the 32-bit files' Fermat inverses.
+
+--- old
+    uint64_t bias = (UINT64_C(1) << 31) - 1;
+--- new
+    uint64_t bias = UINT64_C(1) << 31;

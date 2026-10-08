@@ -17,8 +17,8 @@
 // its operands hold: no branch and no memory index reads a word, and every choice is mask
 // arithmetic. Every routine takes elements below p and leaves an element below p, unless its
 // own comment says otherwise, and the output may be one of the inputs. No routine wipes its
-// temporaries: p256_wide_fe_inv wipes the powers it names, and the caller that owns a secret
-// wipes its own state.
+// temporaries: p256_wide_fe_inv and p256_wide_inverse wipe the values they name, and the caller
+// that owns a secret wipes its own state.
 #ifndef CH_P256_WIDE_FIELD_H
 #define CH_P256_WIDE_FIELD_H
 
@@ -74,8 +74,8 @@ void p256_wide_fe_sqr(p256_wide_fe *o, const p256_wide_fe *a);
 void p256_wide_fe_to_mont(p256_wide_fe *o, const p256_wide_fe *a);
 void p256_wide_fe_from_mont(p256_wide_fe *o, const p256_wide_fe *a);
 
-// o = a^-1, both in the Montgomery domain. a = 0 gives 0. The exponent is p-2 (Fermat), and
-// the chain of 255 squarings and 12 multiplies that computes it is the same for every a.
+// o = a^-1, both in the Montgomery domain. a = 0 gives 0. p256_wide_inverse.h's binary GCD
+// computes it, where p256_fe_inv raises a to p - 2 (docs/decisions.md 115).
 void p256_wide_fe_inv(p256_wide_fe *o, const p256_wide_fe *a);
 
 // The addition and the subtraction, inline. A point formula runs about two of them for every

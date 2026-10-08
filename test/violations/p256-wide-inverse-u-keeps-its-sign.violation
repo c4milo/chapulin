@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_wide_inverse.c
+catches: p256_equiv_test
+reason: combine_modular no longer gives u and v the sign a and b took, so a
+  round that negates a below zero leaves a = -u y modulo m where the rounds
+  rest on a = u y. Most inverses then come out wrong, and
+  bin/p256_equiv_test holds both inverses to the 32-bit files' Fermat
+  inverses.
+
+--- old
+    f_negative ^= negate;
+    g_negative ^= negate;
+--- new
+    (void)negate;

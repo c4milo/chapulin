@@ -12,7 +12,7 @@
 //
 // The contract is p256_scalar.h's: no branch and no memory index reads a word, and every
 // choice is a mask. The values here are the ECDSA private key and the signing nonce, so each
-// call wipes the words it copied and every power it computed before it returns.
+// call wipes the words it copied and every value it computed before it returns.
 #ifndef CH_P256_WIDE_SCALAR_H
 #define CH_P256_WIDE_SCALAR_H
 
@@ -23,9 +23,8 @@
 // o = a*b mod n, for scalars below n. p256_scalar_mul on 64-bit words.
 void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 
-// o = a^-1 mod n, and 0 for a = 0. p256_scalar_inverse on 64-bit words. The exponent is n-2
-// (Fermat), a constant of this build, so the sequence of squarings and multiplications is the
-// same on every call.
+// o = a^-1 mod n, and 0 for a = 0. p256_wide_inverse.h's binary GCD computes it, where
+// p256_scalar_inverse raises a to n - 2 (docs/decisions.md 115).
 void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a);
 
 #endif // CH_CPU_RUNTIME

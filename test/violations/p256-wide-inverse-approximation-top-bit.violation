@@ -1,0 +1,15 @@
+invariant: INV-16
+file: p256_wide_inverse.c
+catches: proof/prove-one.sh p256_wide_inverse_steps
+reason: the approximations' shifts stop a bit short, so the top bit of a | b
+  ends at bit 126 of the pair and an approximation keeps 32 of the value's
+  top bits where the bound spec/lean/Spec/P256WideInverse.lean proves reads
+  33. p256_wide_inverse_steps holds the approximations to a reference that
+  reads the 33 bits from the bit length of a | b, over every a and b. Each
+  run is a proof, so this belongs to the nightly's
+  test-invariants-proof-backed job.
+
+--- old
+        uint64_t mask = ~nonzero_mask((a_high | b_high) >> (64 - s));
+--- new
+        uint64_t mask = ~nonzero_mask((a_high | b_high) >> (63 - s));

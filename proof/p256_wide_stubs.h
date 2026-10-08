@@ -1,12 +1,12 @@
-// The contract p256_wide_field_mul, p256_wide_field_inv, p256_wide_scalar and
-// p256_wide_scalar_inverse replace p256_wide_word.h's product row with, the
-// way proof/x25519_wide_stubs.h serves the wide X25519 field.
+// The contract p256_wide_field_mul_harness.c, p256_wide_scalar_harness.c and
+// p256_wide_inverse_rounds_harness.c replace p256_wide_word.h's product row
+// with, the way proof/x25519_wide_stubs.h serves the wide X25519 field.
 //
 // Why this exists: one field multiply runs 16 products, each a 64x64
-// multiplier widened to 128 bits, and the field inversion runs 267
-// multiplies. One scalar multiply runs 36 products, and the scalar inverse
-// runs 305 of them. A formula over the real products at
-// that count is the shape docs/proofs.md says does not converge. So the one
+// multiplier widened to 128 bits, and one scalar multiply runs 36. Each of
+// the inverse's 17 rounds runs 10 rows, 40 products, and two more for its
+// Montgomery multipliers. A formula over the real products at those counts
+// is the shape docs/proofs.md says does not converge. So the one
 // routine every product goes through, p256_wide_mul_row, is the contract
 // below. The harness reads p256_wide_word.h first under its own name, the
 // #define renames every later use, and the header's include guard keeps the

@@ -41,6 +41,16 @@
 //   an affine one are the spec's p256_add_affine_incomplete of the same five,
 //   coordinate for coordinate. The same module proves that function adds two
 //   points whose x differ, and this row, like the doubling's, runs once.
+//
+// And the inverse: the four words p256_wide_inverse writes for y modulo the
+// field prime and modulo the group order are the spec's p256_wide_inverse of
+// the same two, the model of its rounds in
+// spec/lean/Spec/P256WideInverse.lean, which proves that the rounds invert
+// every y coprime to an odd modulus below 2^256. The values are the edges,
+// every power of two and every power of two less one, values about the
+// word boundaries, and random values of every length, the lengths at which
+// the approximations change form. Each runs in both shapes the callers use,
+// the answer apart from y and over it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -384,6 +394,8 @@ static void diff_add_jacobian_incomplete(void) {
     diff_point_row("p256_add_jacobian_incomplete", coordinate, 6, run_add_jacobian_incomplete);
 }
 
+#include "diff_p256_wide_inverse.h"
+
 #define ROUNDS 25
 
 int main(int argc, char **argv) {
@@ -404,6 +416,7 @@ int main(int argc, char **argv) {
         diff_jacobian_one_point();
         diff_add_jacobian_incomplete();
     }
+    diff_inverse();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

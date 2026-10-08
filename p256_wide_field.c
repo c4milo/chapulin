@@ -2,11 +2,12 @@
 // little-endian uint64 words. Multiplication is the 512-bit product, four rows of
 // p256_wide_word.h's p256_wide_mul_row, and then four rounds of Montgomery reduction, which for
 // this prime are shifts and adds with no product. A square is p256_wide_sqr_product's ten
-// products in place of the rows' sixteen, and the same reduction. Every carry chain is written out
-// word by word, with no loop over words and no array of them, so that gcc keeps the words in
-// registers as clang does (docs/performance.md, the pitfalls table). The addition, the
-// subtraction, the final subtraction of p the reduction shares with the addition, and p's words
-// are in p256_wide_field.h, inline (docs/decisions.md 114).
+// products in place of the rows' sixteen, and the same reduction. The inverse is
+// p256_wide_inverse.c's binary GCD and one product. Every carry chain is written out word by
+// word, with no loop over words and no array of them, so that gcc keeps the words in registers
+// as clang does (docs/performance.md, the pitfalls table). The addition, the subtraction, the
+// final subtraction of p the reduction shares with the addition, and p's words are in
+// p256_wide_field.h, inline (docs/decisions.md 114).
 #include "p256_wide_field.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -14,6 +15,7 @@
 #include <stddef.h>
 
 #include "ct.h"
+#include "p256_wide_inverse.h"
 #include "p256_wide_word.h"
 
 // 2^512 mod p: multiplying by it enters the Montgomery domain.
@@ -200,58 +202,24 @@ void p256_wide_fe_from_mont(p256_wide_fe *o, const p256_wide_fe *a) {
     p256_wide_fe_mul(o, a, &ONE);
 }
 
-// o = a^(2^n): n squarings in a row. n is a constant at every call.
-static void sqr_times(p256_wide_fe *o, const p256_wide_fe *a, int n) {
-    p256_wide_fe_sqr(o, a);
-    for (int i = 1; i < n; i++) {
-        p256_wide_fe_sqr(o, o);
-    }
-}
+// p as p256_wide_inverse takes it. -p^-1 mod 2^64 is 1, because p's low word is 2^64 - 1.
+static const p256_wide_modulus FIELD_PRIME = {
+    {P256_WIDE_P0, P256_WIDE_P1, P256_WIDE_P2, P256_WIDE_P3},
+    1
+};
+// 2^768 mod p, R^3 for R = 2^256.
+static const p256_wide_fe RRR = {
+    {UINT64_C(0xfffffffd0000000a), UINT64_C(0xffffffedfffffff7), UINT64_C(0x00000005fffffffc),
+     UINT64_C(0x0000001800000001)}
+};
 
-// o = a^(p-2), with p - 2 = 2^256 - 2^224 + 2^192 + 2^96 - 3. In binary, most significant bit
-// first, that is 32 ones, 31 zeros, a one, 96 zeros, 94 ones, a zero and a one. ones_n holds
-// a^(2^n - 1), whose exponent is n one bits, and the chain shifts each run of ones into place
-// with squarings: 255 of them and 12 multiplies, the same for every a.
+// For a = x R, p256_wide_inverse leaves a^-1 = x^-1 R^-1, and the Montgomery product with R^3
+// multiplies that by R^2: x^-1 R, the inverse in the Montgomery domain. a = 0 leaves 0 both
+// times.
 void p256_wide_fe_inv(p256_wide_fe *o, const p256_wide_fe *a) {
-    p256_wide_fe ones_2;
-    p256_wide_fe ones_3;
-    p256_wide_fe ones_6;
-    p256_wide_fe ones_12;
-    p256_wide_fe ones_15;
-    p256_wide_fe ones_30;
-    p256_wide_fe ones_32;
     p256_wide_fe t;
-    p256_wide_fe_sqr(&t, a);
-    p256_wide_fe_mul(&ones_2, &t, a);
-    p256_wide_fe_sqr(&t, &ones_2);
-    p256_wide_fe_mul(&ones_3, &t, a);
-    sqr_times(&t, &ones_3, 3);
-    p256_wide_fe_mul(&ones_6, &t, &ones_3);
-    sqr_times(&t, &ones_6, 6);
-    p256_wide_fe_mul(&ones_12, &t, &ones_6);
-    sqr_times(&t, &ones_12, 3);
-    p256_wide_fe_mul(&ones_15, &t, &ones_3);
-    sqr_times(&t, &ones_15, 15);
-    p256_wide_fe_mul(&ones_30, &t, &ones_15);
-    sqr_times(&t, &ones_30, 2);
-    p256_wide_fe_mul(&ones_32, &t, &ones_2);
-    sqr_times(&t, &ones_32, 32);
-    p256_wide_fe_mul(&t, &t, a); // 32 ones, 31 zeros, a one
-    sqr_times(&t, &t, 128);
-    p256_wide_fe_mul(&t, &t, &ones_32); // then 96 zeros and 32 ones
-    sqr_times(&t, &t, 32);
-    p256_wide_fe_mul(&t, &t, &ones_32); // then 32 more ones
-    sqr_times(&t, &t, 30);
-    p256_wide_fe_mul(&t, &t, &ones_30); // then 30 more ones
-    sqr_times(&t, &t, 2);
-    p256_wide_fe_mul(o, &t, a); // then a zero and a one
-    ct_wipe(&ones_2, sizeof ones_2);
-    ct_wipe(&ones_3, sizeof ones_3);
-    ct_wipe(&ones_6, sizeof ones_6);
-    ct_wipe(&ones_12, sizeof ones_12);
-    ct_wipe(&ones_15, sizeof ones_15);
-    ct_wipe(&ones_30, sizeof ones_30);
-    ct_wipe(&ones_32, sizeof ones_32);
+    p256_wide_inverse(t.word, a->word, &FIELD_PRIME);
+    p256_wide_fe_mul(o, &t, &RRR);
     ct_wipe(&t, sizeof t);
 }
 
