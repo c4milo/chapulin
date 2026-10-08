@@ -27,6 +27,10 @@ void p256_wide_scalar_mul(p256_scalar *o, const p256_scalar *a, const p256_scala
 // p256_scalar_inverse raises a to n - 2 (docs/decisions.md 115).
 void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a);
 
+// The same scalar for an a the caller states is public, by p256_wide_inverse_public, whose time
+// depends on a. p256_wide_verify.c inverts a signature's s with it (docs/decisions.md 116).
+void p256_wide_scalar_inverse_public(p256_scalar *o, const p256_scalar *a);
+
 #endif // CH_CPU_RUNTIME
 
 #endif

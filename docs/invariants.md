@@ -1365,8 +1365,9 @@ last `ROLE=server` stub, as the entry said it would.
   both arms and hands r and s to the arm its build compiled: a call into
   `p256_wide_verify.c` under `-DCH_CPU_RUNTIME`, and its own 32-bit
   arithmetic without it, so an object holds one of the two. The host arm
-  computes on the wide P-256 field: `p256_wide_scalar.c` for s's inverse
-  and the two products, `p256_wide_point.c` for the key's decoding,
+  computes on the wide P-256 field: `p256_wide_scalar.c` for s's inverse,
+  which stops at the first round whose a is zero (decision 116), and the
+  two products, `p256_wide_point.c` for the key's decoding,
   `p256_wide_verify_point.c` for the sum u1·G + u2·Q and the test that
   its x is r modulo n, and `p256_scalar.c` for the range predicates and
   the reductions modulo n. The sum is one pass over both scalars' signed
@@ -1390,7 +1391,10 @@ last `ROLE=server` stub, as the entry said it would.
   no arithmetic run, 0 for a key the decoder refused and for a sum at
   infinity, no x asked of a sum at infinity, and only scalars below n
   handed to the wide scalar routines and the sum.
-  `p256_wide_verify_point` and `p256_wide_verify_digits` prove the
+  `spec/lean/Spec/P256WideInverse.lean` proves that s's inverse gives the
+  answer of all 17 rounds, and `bin/p256_equiv_test` holds it to
+  `p256_scalar.c`'s inverse over edge and random scalars, 2^255 among
+  them. `p256_wide_verify_point` and `p256_wide_verify_digits` prove the
   points' formulas, their table reads and the digits memory-safe, and
   each digit zero or odd in [-15, 15]. `test/widemul-builds.sh` compiles
   `p256.c` either side of the define and holds each arm to its object.
@@ -1402,13 +1406,14 @@ last `ROLE=server` stub, as the entry said it would.
   compares R's x with s; exchanges r and s at the entry; chooses
   `p256.c`'s arm on a define no build passes; or, in an addition of the
   pass, gives the point at infinity for two equal points, doubles two
-  negatives, or runs the formula on a sum at infinity. The sixteen
+  negatives, or runs the formula on a sum at infinity; or stops s's
+  inverse at the first round whose a has a zero low word. The seventeen
   `inv43-*` violations are these. Ten fail `bin/p256_verify_equiv_test`,
-  one the host Wycheproof test, one `test/widemul-builds.sh`, and four
-  the `p256_wide_verify` proof, which holds what a random signature does
-  not show: a hash of n or more is one hash in 2^32, and with a check of
-  r, s or the key gone the arithmetic after it gives an x that matches r
-  one time in 2^256.
+  one the host Wycheproof test, one `bin/p256_equiv_test`, one
+  `test/widemul-builds.sh`, and four the `p256_wide_verify` proof, which
+  holds what a random signature does not show: a hash of n or more is one
+  hash in 2^32, and with a check of r, s or the key gone the arithmetic
+  after it gives an x that matches r one time in 2^256.
 
 ### INV-44 — a host object's ECDSA P-384 verifier gives the portable code's verdict
 
@@ -3128,16 +3133,22 @@ last `ROLE=server` stub, as the entry said it would.
   accumulator to `poly1305.c`'s, and six `poly1305-vector-*` violations
   break its powers, its carries, its lanes, its contract and its word
   bounds, and the test catches each.
-  The same two specs compile the six wide P-256 files, and hold their
+  The same two specs compile the wide P-256 files, and hold their
   divisions and 128-bit runtime calls at zero and their conditional
-  branches at 7, 3, 3, 12, 0 and 0 on each: loop control over a public
+  branches at 6 in `p256_wide_field.c`, 0 in `p256_wide_scalar.c`, 14 on
+  arm64 and 17 on x86-64 in `p256_wide_inverse.c`, 3 in
+  `p256_wide_point.c`, 13 in `p256_wide_mul.c` and 0 in
+  `p256_wide_table.c` and `p256_wide_wipe.c`: loop control over a public
   count, the two public tests of a peer's point, whether a caller asked
   for Y, the test for a scalar's top window, which reads the window's
-  number, and the test of a bit's position against 255, which reads the
-  window's number and a loop counter. `inv16-p256-wide-table-scan-skips-unselected` and
+  number, the test of a bit's position against 255, which reads the
+  window's number and a loop counter, and the test that ends
+  `p256_wide_inverse_public`'s rounds, which reads a value computed from
+  a verifier's s (decision 116).
+  `inv16-p256-wide-table-scan-skips-unselected` and
   `inv16-p256-wide-multiple-scan-skips-unselected` each make one of the
   two scans pass over the entries a digit does not name, and the count
-  of `p256_wide_mul.c` rises to 13.
+  of `p256_wide_mul.c` rises past its 13.
   `inv16-p256-wide-double-branches-on-infinity` writes the doubling's
   masked move for the point at infinity as an `if` on Z1's zero mask,
   and the count of `p256_wide_point.c` rises past its 3. CBMC reads these files, so they have

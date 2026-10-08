@@ -537,6 +537,16 @@ def dispatch : List String → Option String
     let y := bytesToNatBE yb
     guard (m % 2 == 1 && y < m)
     return bytesToHex (natToBytesBE (Spec.P256WideInverse.inverse m y).val 32)
+  | ["p256_wide_inverse_public", modulus, value] => do
+    -- p256_wide_inverse_public's modulus and y, the same way: the rounds stopped at the first
+    -- zero a (Spec/P256WideInverse.lean).
+    let mb ← hexArg? modulus
+    let yb ← hexArg? value
+    guard (mb.size == 32 && yb.size == 32)
+    let m := bytesToNatBE mb
+    let y := bytesToNatBE yb
+    guard (m % 2 == 1 && y < m)
+    return bytesToHex (natToBytesBE (Spec.P256WideInverse.inversePublic m y).val 32)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

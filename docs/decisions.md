@@ -8486,3 +8486,63 @@ does nothing more.
       `zero_mask_word` adds 2^64 - 1 in 128 bits. Six of those masks run one
       after another in each round's approximations, and that form took
       1.59 µs an inverse where `x | -x` takes 1.42.
+
+116. **A host object's verifier inverts s in variable time.** Entry 104
+    kept s's inverse constant time, though s is public. Entry 115 made
+    that inverse a binary GCD of 17 rounds, and a random s has a at zero
+    after about 12 of them: of a million values below n, 14,624 needed
+    11 rounds, 852,639 needed 12, 132,722 needed 13 and 15 needed 14, a
+    mean of 12.1. A round on a zero a changes no value the answer
+    depends on, so the last rounds of a verifier's inverse compute
+    nothing it uses.
+
+    - **What changes.** `p256_wide_inverse_public` runs the rounds of
+      `p256_wide_inverse` from the same start, stops before the first
+      round whose a is zero, and wipes nothing.
+      `p256_wide_scalar_inverse_public` runs it on a scalar, and
+      `p256_wide_verify.c` inverts s with it. A signature, a key
+      generation and a key exchange keep the constant-time inverse.
+    - **The same answer.** On a zero a the 31 steps all halve, so the
+      round's factors are 1, 0, 0 and 2^31: a stays zero, b stays b, and
+      v becomes 2^31 v 2^-31 modulo m, which is v. Every round after the
+      first zero a leaves v as it was, so the call returns what the 17
+      rounds return. `spec/lean/Spec/P256WideInverse.lean`'s
+      `inversePublic_eq_inverse` proves it for every y and every odd
+      modulus.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      an inverse modulo n takes 1.02 µs where the constant-time one takes
+      1.41, over 4,096 values below 2^255, with the same answers. In
+      `bench/primitives.c`, five runs of each in turn at a load average
+      of about 2.7, beside OpenSSL 3.6.5's `openssl speed` in the same
+      sitting, a verification takes 53.43 µs and 563,450 instructions
+      where it took 54.03 µs and 567,973, 1.1% less. OpenSSL's takes
+      53.46 µs, so a verification takes 1.00 times OpenSSL's time where
+      it took 1.01. Under qemu-x86_64 a verification retires 1,109,968
+      instructions under gcc 13.3 where it retired 1,124,216, and 872,739
+      under clang 18.1.3 where it retired 881,549.
+    - **What holds it.** The theorem; `bin/diff_p256_wide`, which holds
+      the new entry to the model's `inversePublic` on the 1,838 values it
+      hands the constant-time inverse, at both moduli; and
+      `bin/p256_equiv_test`, which holds the scalar entry to
+      `p256_scalar.c`'s Fermat inverse over the edge scalars and 2,000
+      random ones, where it held the constant-time inverse over 200. The
+      `p256_wide_scalar` proof holds both scalar entries memory-safe over
+      contracts of the two inverses, `p256_wide_verify` the verifier over
+      the new entry's contract, and `p256_wide_inverse_round` the round
+      both entries run. `inv43-p256-verify-wide-inverse-stops-on-low-word`
+      stops at the first round whose a has a zero low word. A random
+      value never shows that, and `bin/p256_equiv_test` catches it at the
+      edge scalar 2^255.
+    - **Branches.** `lint-wide-multiply` holds `p256_wide_inverse.c` at
+      14 conditional branches under clang for arm64 and 17 for x86-64,
+      where it held 12 and 14: the new entry's loop over the rounds and
+      its test of a, which reads a value computed from s, and on x86-64
+      the loop that starts its rounds, which arm64 unrolls.
+    - **Cost.** Under Apple clang 21 at -O2 the field, the scalar and the
+      inverse take 5,404 bytes where they took 4,920. Two entries call
+      the round now, so clang no longer inlines it into the constant-time
+      one: a key generation retires 122,160 instructions where it retired
+      121,883, and a signature 166,961 where it retired 166,401, with no
+      change in time the bench resolves. And `p256_wide_inverse.c` holds
+      a variable-time entry beside its constant-time one, which an
+      auditor must tell apart.

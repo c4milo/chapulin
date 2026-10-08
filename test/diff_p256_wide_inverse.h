@@ -1,6 +1,7 @@
 // The inverse's rows of bin/diff_p256_wide (test/diff_p256_wide_test.c, which includes this file
-// after the driver's helpers): p256_wide_inverse against the spec's model of its rounds,
-// spec/lean/Spec/P256WideInverse.lean, at the field prime and at the group order.
+// after the driver's helpers): p256_wide_inverse and p256_wide_inverse_public against the spec's
+// models of their rounds, spec/lean/Spec/P256WideInverse.lean, at the field prime and at the
+// group order.
 #ifndef CH_TEST_DIFF_P256_WIDE_INVERSE_H
 #define CH_TEST_DIFF_P256_WIDE_INVERSE_H
 
@@ -40,7 +41,8 @@ static int inverse_words_below(const uint64_t a[INVERSE_WORDS], const uint64_t b
     return 0;
 }
 
-// p256_wide_inverse on y modulo m, the answer apart from y and over it, against the spec.
+// p256_wide_inverse on y modulo m, the answer apart from y and over it, against the spec, and
+// p256_wide_inverse_public on the same y against the spec's model of its rounds.
 static void diff_inverse_row(const p256_wide_modulus *m, const uint64_t y[INVERSE_WORDS]) {
     uint8_t m_bytes[8 * INVERSE_WORDS];
     uint8_t y_bytes[8 * INVERSE_WORDS];
@@ -59,6 +61,15 @@ static void diff_inverse_row(const p256_wide_modulus *m, const uint64_t y[INVERS
     inverse_words_to_bytes(y_bytes, y);
     inverse_words_to_bytes(o_bytes, apart);
     size_t cmd_len = (size_t)snprintf(cmd, sizeof cmd, "p256_wide_inverse ");
+    cmd_len += hex_encode(cmd + cmd_len, m_bytes, sizeof m_bytes);
+    cmd[cmd_len++] = ' ';
+    (void)hex_encode(cmd + cmd_len, y_bytes, sizeof y_bytes);
+    (void)hex_encode(want, o_bytes, sizeof o_bytes);
+    expect(cmd, want);
+    uint64_t public_answer[INVERSE_WORDS];
+    p256_wide_inverse_public(public_answer, y, m);
+    inverse_words_to_bytes(o_bytes, public_answer);
+    cmd_len = (size_t)snprintf(cmd, sizeof cmd, "p256_wide_inverse_public ");
     cmd_len += hex_encode(cmd + cmd_len, m_bytes, sizeof m_bytes);
     cmd[cmd_len++] = ' ';
     (void)hex_encode(cmd + cmd_len, y_bytes, sizeof y_bytes);

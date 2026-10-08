@@ -16,9 +16,11 @@
 //   inputs one object. p256_wide_scalar_mul wipes the two copies it makes
 //   through ct_wipe, whose stub proves each wipe inside its object;
 //
-//   p256_wide_scalar_inverse, whole, in both shapes, over a contract of
-//   p256_wide_inverse below, which reads y and the modulus and writes any
-//   four words: its copies to and from 64-bit words and its wipe;
+//   p256_wide_scalar_inverse and p256_wide_scalar_inverse_public, whole, in
+//   both shapes, over contracts of p256_wide_inverse and
+//   p256_wide_inverse_public below, which read y and the modulus and write
+//   any four words: their copies to and from 64-bit words and the first's
+//   wipe;
 //
 //   the two copies to and from p256_scalar.h's scalar: each takes the words
 //   two at a time, and the round trip gives back what went in.
@@ -41,16 +43,28 @@
 
 #include "p256_wide_scalar.c"
 
-// p256_wide_inverse reads y and the modulus and writes any four words.
-void p256_wide_inverse(uint64_t o[P256_WIDE_INVERSE_WORDS],
-                       const uint64_t y[P256_WIDE_INVERSE_WORDS], const p256_wide_modulus *m) {
+// p256_wide_inverse and p256_wide_inverse_public read y and the modulus and write any four words.
+static void inverse_contract(uint64_t o[P256_WIDE_INVERSE_WORDS],
+                             const uint64_t y[P256_WIDE_INVERSE_WORDS],
+                             const p256_wide_modulus *m) {
     __CPROVER_assert(__CPROVER_r_ok(y, sizeof(uint64_t) * P256_WIDE_INVERSE_WORDS) &&
                          __CPROVER_r_ok(m, sizeof *m) &&
                          __CPROVER_w_ok(o, sizeof(uint64_t) * P256_WIDE_INVERSE_WORDS),
-                     "p256_wide_inverse: y and the modulus readable, the four words writable");
+                     "the inverse: y and the modulus readable, the four words writable");
     for (size_t i = 0; i < P256_WIDE_INVERSE_WORDS; i++) {
         o[i] = nondet_u64();
     }
+}
+
+void p256_wide_inverse(uint64_t o[P256_WIDE_INVERSE_WORDS],
+                       const uint64_t y[P256_WIDE_INVERSE_WORDS], const p256_wide_modulus *m) {
+    inverse_contract(o, y, m);
+}
+
+void p256_wide_inverse_public(uint64_t o[P256_WIDE_INVERSE_WORDS],
+                              const uint64_t y[P256_WIDE_INVERSE_WORDS],
+                              const p256_wide_modulus *m) {
+    inverse_contract(o, y, m);
 }
 
 static const uint64_t ORDER_WORDS[WORDS] = {N0, N1, N2, N3};
@@ -121,6 +135,10 @@ static void prove_scalar_inverse(void) {
     p256_wide_scalar_inverse(&o, &a);
     scalar_nondet(&a);
     p256_wide_scalar_inverse(&a, &a); // o == a
+    scalar_nondet(&a);
+    p256_wide_scalar_inverse_public(&o, &a);
+    scalar_nondet(&a);
+    p256_wide_scalar_inverse_public(&a, &a); // o == a
 }
 
 static void prove_scalar_mul(void) {

@@ -14,7 +14,8 @@
 // symbolic execution going for 18 minutes with no formula at 360 MB. It sets the state's words
 // from y and the modulus, runs run_round 17 times on that one state, copies v out and wipes the
 // state once, so the proof of a round for any state covers each of the 17, and the rest indexes
-// four words with the loop counter alone.
+// four words with the loop counter alone. p256_wide_inverse_public is the same loop, which also
+// reads a's four words to stop at a zero a.
 #include "p256_wide_stubs.h"
 
 #include "p256_wide_inverse.c"

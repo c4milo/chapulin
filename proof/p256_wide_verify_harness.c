@@ -19,7 +19,7 @@
 //   that the bytes it hands the decoder start with 0x04, the leading byte
 //   of the one encoding the decoder reads;
 //
-//   that every scalar it hands p256_wide_scalar_inverse,
+//   that every scalar it hands p256_wide_scalar_inverse_public,
 //   p256_wide_scalar_mul and p256_wide_jacobian_double_mul is below n,
 //   which is what their contract takes, and that the r it compares is in
 //   1..n-1. A hash of n or more is one hash in 2^32, and the wide product
@@ -86,7 +86,7 @@ static int below_n(const p256_scalar *a) {
 }
 
 // p256_wide_scalar.h: both take scalars below n and leave one below n.
-void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
+void p256_wide_scalar_inverse_public(p256_scalar *o, const p256_scalar *a) {
     __CPROVER_assert(__CPROVER_r_ok(a, sizeof *a), "scalar inverse stub: operand readable");
     __CPROVER_assert(__CPROVER_w_ok(o, sizeof *o), "scalar inverse stub: output writable");
     __CPROVER_assert(below_n(a), "scalar inverse stub: the operand is below n");

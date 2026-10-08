@@ -246,6 +246,12 @@ static void scalar_case(const char *name, const p256_scalar *a, const p256_scala
         wide = *a;
         p256_wide_scalar_inverse(&wide, &wide);
         ok &= memcmp(&portable, &wide, sizeof wide) == 0;
+        // The verifier's inverse, which stops at the first zero a, over the same scalars.
+        p256_wide_scalar_inverse_public(&wide, a);
+        ok &= memcmp(&portable, &wide, sizeof wide) == 0;
+        wide = *a;
+        p256_wide_scalar_inverse_public(&wide, &wide);
+        ok &= memcmp(&portable, &wide, sizeof wide) == 0;
     }
     report("scalar", name, ok);
 }
@@ -271,7 +277,7 @@ static void run_scalar(void) {
         p256_scalar b;
         random_scalar(&a);
         random_scalar(&b);
-        scalar_case("random scalars", &a, &b, i < 200);
+        scalar_case("random scalars", &a, &b, i < 2000);
     }
 }
 

@@ -744,7 +744,8 @@ The entries are grouped by area:
     subtraction of n matches a reference that branches, a round's carry
     out is 0 or 1, and `mont_mul` and `p256_wide_scalar_mul` are safe in
     every aliasing shape `p256_sign.c` uses. `p256_wide_scalar_inverse`
-    runs whole over the same contract of `p256_wide_inverse`.
+    and `p256_wide_scalar_inverse_public` run whole over contracts of
+    `p256_wide_inverse` and `p256_wide_inverse_public`.
   - `p256_wide_inverse_steps`: the binary GCD's pieces, on their real
     bodies, over every input. The approximations of any a and b are a
     reference's, which finds the bit length of a | b one bit at a time
@@ -769,8 +770,9 @@ The entries are grouped by area:
   - `p256_wide_inverse_round`: one round whole, for any state and modulus,
     over `proof/p256_wide_stubs.h`'s rows: every access and every shift.
     `p256_wide_inverse` runs that round 17 times on one state and wipes it
-    once; its 17 rounds in one formula left cbmc's symbolic execution
-    without a formula after 18 minutes.
+    once, and `p256_wide_inverse_public` runs it at most 17 times and
+    stops at a zero a. 17 rounds in one formula left cbmc's symbolic
+    execution without a formula after 18 minutes.
   - `p256_wide_point`: `p256_wide_point_add` in all four aliasing
     shapes, `p256_wide_point_add_affine`,
     `p256_wide_point_add_affine_incomplete` and
@@ -845,7 +847,7 @@ The entries are grouped by area:
     sum at infinity, and answers 1 only after the decoder took the key,
     the sum was finite and its x was r modulo n;
   - the encoding it hands the decoder starts with 0x04;
-  - every scalar it hands `p256_wide_scalar_inverse`,
+  - every scalar it hands `p256_wide_scalar_inverse_public`,
     `p256_wide_scalar_mul` and `p256_wide_jacobian_double_mul` is below
     n, and the r it compares is in 1..n-1.
 
@@ -2590,6 +2592,9 @@ holds its rounds: the approximations, the 31 steps on them, the factors
 and the two combinations, the sums over integers and modulo m. It proves
 that 17 rounds invert every y coprime to an odd modulus below 2^256, and
 send 0 to 0, and states both at P-256 with p and n prime as hypotheses.
+It also proves that `p256_wide_inverse_public`, which stops at the first
+round whose a is zero, gives the answer of all 17 rounds for every y
+(docs/decisions.md 116).
 The core is that a round shortens a and b by 31 bits between them while a
 is not zero, although a comparison of the approximations can go the other
 way from the comparison of a and b. Pornin's paper argues that bound; the
@@ -2597,9 +2602,9 @@ proof here follows a corrected form of the argument, in which a value may
 grow back by one bit after such a step but only while both values are
 below 2^(n - 32). The four `p256_wide_inverse` harnesses tie the C's
 approximations and steps to references that branch, over every input, and
-`bin/diff_p256_wide` holds the C's answers to the model's at both moduli on
-the edges, every power of two and every power of two less one, and random
-values of every length. What none of this shows: that the C's
+`bin/diff_p256_wide` holds both entries' answers to the model's at both
+moduli on the edges, every power of two and every power of two less one,
+and random values of every length. What none of this shows: that the C's
 combinations compute the model's sums on every input, which the
 differential and `bin/p256_equiv_test` sample.
 
@@ -2622,7 +2627,8 @@ the wide files to the same answers:
     are all ones and a quarter zero, on the elements at the edges and on
     values at and above p, and the wide field on
     `test/p256_field_vectors.h`'s values, which Python computed;
-  - both scalar routines on random scalars and on the ones at the edges;
+  - the scalar product and both scalar inverses, the constant-time one
+    and the verifier's, on random scalars and on the ones at the edges;
   - the complete addition on 3,000 pairs of random coordinates, which
     are on no curve, and on a point with itself, with its negative and
     with the point at infinity on either side;
@@ -2740,8 +2746,8 @@ the wide files to the same answers:
   signature and a key exchange against the Lean spec under each answer,
   the incomplete additions, the Jacobian doubling and the two
   conversions against `spec/lean/Spec/P256WidePoint.lean`'s, coordinate for
-  coordinate, and `p256_wide_inverse` against
-  `spec/lean/Spec/P256WideInverse.lean`'s rounds at both moduli
+  coordinate, and `p256_wide_inverse` and `p256_wide_inverse_public`
+  against `spec/lean/Spec/P256WideInverse.lean`'s rounds at both moduli
   ([What `make diff` runs](#what-make-diff-runs)).
 - `bin/widemul_runtime_test` counts the calls: the wide entries alone
   under the constant-time answer and the 32-bit files alone under every
@@ -4381,7 +4387,7 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
 3. The x25519 rows, ten times over the wide X25519 field, 1,501
    comparisons, where the compiler passes the host test. The spec
    computes over natural numbers mod p, so one model serves both fields.
-4. The constant-time P-256 rows, 2,489 comparisons, where the compiler
+4. The wide P-256 rows, 4,327 comparisons, where the compiler
    passes the host test: 25 key generations, signatures and key
    exchanges through `p256_ecdh_keygen`, `p256_sign` and `p256_ecdh`
    under each answer, so the wide P-256 files and the 32-bit files each
@@ -4405,6 +4411,8 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    and m - 1 to m - 3, every power of two and every power of two less one
    below 2^256, and 200 random values below m, each whole and cut to a
    random length. Each runs with the answer apart from y and over it.
+   Then the same 1,838 through `p256_wide_inverse_public` against
+   `inversePublic`.
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

@@ -737,15 +737,21 @@ below `2 ^ 256`; `inverse_zero` that they send 0 to 0; and
 `inverse_mul_self_p` and `inverse_mul_self_n` state the inverse at P-256's
 two moduli, with each prime as a hypothesis.
 
+`inversePublic` is `p256_wide_inverse_public`, which the verifier runs on
+its public s: the same rounds, stopped at the first whose `a` is zero. A
+round on a zero `a` leaves `a` zero and `v` as it was, so
+`inversePublic_eq_inverse` proves that it gives `inverse`'s answer for
+every `y` modulo an odd `m` (docs/decisions.md 116).
+
 The C keeps two factors to a 64-bit word and computes the combinations on
 four 64-bit words; the model keeps each factor in an integer of its own and
 computes the combinations exactly. `proof/p256_wide_inverse_steps_harness.c`
 and `proof/p256_wide_inverse_range_harness.c` hold the C's approximations,
 steps and factors to references written as the model's moves are, for every
-input, and `test/diff_p256_wide_inverse.h` compares the C's answers with
-`inverse` at both moduli in `bin/diff_p256_wide`. That the C's combinations
-compute the model's sums on every input stays with the differential and the
-C's tests.
+input, and `test/diff_p256_wide_inverse.h` compares the two entries'
+answers with `inverse` and `inversePublic` at both moduli in
+`bin/diff_p256_wide`. That the C's combinations compute the model's sums on
+every input stays with the differential and the C's tests.
 
 ## Where the C and the model split a check
 
@@ -968,6 +974,8 @@ Spec.P256WideInverse, the rounds of p256_wide_inverse.c (above, "P256WideInverse
   inverse_mul_self             m odd → m < 2 ^ 256 → y < m → Nat.Coprime y m →
                                -- inverse m y * y = 1
   inverse_zero                 inverse m 0 = 0, every m
+  inversePublic_eq_inverse     m odd → inversePublic m y = inverse m y, every y: the
+                               -- rounds stopped at the first zero a give the same v
   inverse_mul_self_p, inverse_mul_self_n
                                the same at P-256's p and n for every y from 1 to the
                                -- modulus less one, under Fact p.Prime and Fact n.Prime
@@ -1203,7 +1211,7 @@ means the module's selftest plus the differential oracle carry it;
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |
-| P256WideInverse | 13 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis. That the C's combinations compute the model's sums stays with the C's tests and the differential |
+| P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |

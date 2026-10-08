@@ -1,0 +1,14 @@
+invariant: INV-43
+file: p256_wide_inverse.c
+catches: p256_equiv_test
+reason: p256_wide_inverse_public stops at the first round whose a has a zero
+  low word, where it must stop at the first round whose a is zero. A
+  random value never shows it: its a has a zero low word and a nonzero
+  high word one time in 2^64. A y of 2^255 stops before the first round
+  and comes out 0. bin/p256_equiv_test holds the verifier's inverse to
+  the 32-bit files' Fermat inverse at 2^255, among its edge scalars.
+
+--- old
+        if ((s.a.word[0] | s.a.word[1] | s.a.word[2] | s.a.word[3]) == 0) {
+--- new
+        if (s.a.word[0] == 0) {

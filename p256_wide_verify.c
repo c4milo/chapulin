@@ -54,7 +54,7 @@ int p256_wide_verify_rs(const uint8_t pub[64], const uint8_t msg_hash[32], const
     p256_scalar u2;
     p256_scalar_from_bytes(&e, msg_hash);
     p256_scalar_reduce(&e, &e);
-    p256_wide_scalar_inverse(&w, &s);
+    p256_wide_scalar_inverse_public(&w, &s);
     p256_wide_scalar_mul(&u1, &e, &w);
     p256_wide_scalar_mul(&u2, &r, &w);
 

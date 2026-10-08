@@ -302,15 +302,20 @@ static void run_round(inverse_state *s, const p256_wide_modulus *m) {
     s->v = s->next_v;
 }
 
+// The state the rounds start from: a = y, b = m, u = 1 and v = 0.
+static void start_rounds(inverse_state *s, const uint64_t y[WORDS], const p256_wide_modulus *m) {
+    for (size_t i = 0; i < WORDS; i++) {
+        s->a.word[i] = y[i];
+        s->b.word[i] = m->word[i];
+        s->u.word[i] = 0;
+        s->v.word[i] = 0;
+    }
+    s->u.word[0] = 1;
+}
+
 void p256_wide_inverse(uint64_t o[WORDS], const uint64_t y[WORDS], const p256_wide_modulus *m) {
     inverse_state s;
-    for (size_t i = 0; i < WORDS; i++) {
-        s.a.word[i] = y[i];
-        s.b.word[i] = m->word[i];
-        s.u.word[i] = 0;
-        s.v.word[i] = 0;
-    }
-    s.u.word[0] = 1;
+    start_rounds(&s, y, m);
     for (int round = 0; round < ROUNDS; round++) {
         run_round(&s, m);
     }
@@ -320,6 +325,24 @@ void p256_wide_inverse(uint64_t o[WORDS], const uint64_t y[WORDS], const p256_wi
         o[i] = s.v.word[i];
     }
     ct_wipe(&s, sizeof s);
+}
+
+void p256_wide_inverse_public(uint64_t o[WORDS], const uint64_t y[WORDS],
+                              const p256_wide_modulus *m) {
+    inverse_state s;
+    start_rounds(&s, y, m);
+    // y is public, and so is every value the rounds compute from it. A round on a zero a leaves a
+    // zero and v as it is, so the rounds stop at the first zero a with the answer all 17 give
+    // (spec/lean/Spec/P256WideInverse.lean, inversePublic_eq_inverse).
+    for (int round = 0; round < ROUNDS; round++) {
+        if ((s.a.word[0] | s.a.word[1] | s.a.word[2] | s.a.word[3]) == 0) {
+            break;
+        }
+        run_round(&s, m);
+    }
+    for (size_t i = 0; i < WORDS; i++) {
+        o[i] = s.v.word[i];
+    }
 }
 
 #endif // CH_CPU_RUNTIME

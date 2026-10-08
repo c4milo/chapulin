@@ -16,8 +16,12 @@ factors to `a` and `b` once: `round`. `inverse` is `rounds` rounds.
 `round_shrinks` proves that a round shortens `a` and `b` by `steps` bits between them while
 `a` is not zero, although the approximations can decide a step otherwise than `a` and `b` would.
 `inverse_mul_self` proves that `rounds` rounds invert every `y` coprime to an odd modulus below
-`2 ^ 256`, and `inverse_zero` that they send 0 to 0. `stepFactors_range` proves the bound on the
-factors that lets the C keep two of them in one 64-bit word.
+`2 ^ 256`, and `inverse_zero` that they send 0 to 0. `inversePublic` is
+`p256_wide_inverse_public`, which stops at the first round whose `a` is zero, and
+`inversePublic_eq_inverse` proves that it gives the same answer.
+
+The model keeps each factor in an integer of its own, where the C keeps two to a 64-bit word.
+`proof/p256_wide_inverse_range_harness.c` proves the range of the factors that packing needs.
 
 This module is written from the C, not from a standard, and CONTRACT.md says why.
 -/
@@ -1358,6 +1362,78 @@ theorem inverse_zero (m : Nat) : inverse m 0 = 0 := by
       simp
   exact (h rounds).2
 
+/-! ## The inverse of a public value
+
+`p256_wide_inverse_public` runs the same rounds and stops at the first whose `a` is zero. A
+round on a zero `a` leaves `a` zero and `v` as it was, so stopping there changes nothing:
+`inversePublic_eq_inverse`. -/
+
+/-- `p256_wide_inverse_public`: the rounds of `inverse`, stopped at the first state whose `a` is
+zero, for a `y` the caller states is public. -/
+def inversePublic (m y : Nat) : ZMod m :=
+  (go rounds ⟨y, m, 1, 0⟩).v
+where
+  /-- At most `k` more rounds, none once `a` is zero. -/
+  go : Nat → State m → State m
+    | 0, s => s
+    | k + 1, s => if s.a = 0 then s else go k (round m s)
+
+/-- A round on a zero `a` leaves `a` zero and `v` as it was, modulo an odd `m`. -/
+private theorem round_of_zero {m : Nat} (h_m : m % 2 = 1) (s : State m) (h_zero : s.a = 0) :
+    (round m s).a = 0 ∧ (round m s).v = s.v := by
+  obtain ⟨a, b, u, v⟩ := s
+  simp only at h_zero
+  subst h_zero
+  have h_approx : approximation (width 0 b) 0 = 0 := by
+    unfold approximation
+    split_ifs <;> simp
+  have h_r : stepFactors (approximation (width 0 b) 0) (approximation (width 0 b) b) =
+      (1, 0, 0, 2 ^ steps) := by
+    rw [h_approx]
+    exact congrArg Prod.snd (factors_of_zero _ steps)
+  have h_unit : ((2 : ZMod m) ^ steps) * ((2 : ZMod m) ^ steps)⁻¹ = 1 := by
+    have h_coprime : Nat.Coprime (2 ^ steps) m :=
+      Nat.Coprime.pow_left _ (Nat.coprime_two_left.mpr (Nat.odd_iff.mpr h_m))
+    have := ZMod.coe_mul_inv_eq_one (2 ^ steps) h_coprime
+    push_cast at this
+    exact this
+  have h_B : ((b : Int) * 2 ^ steps) / 2 ^ steps = b :=
+    Int.mul_ediv_cancel _ (by positivity)
+  have h_sign : signOf (b : Int) = 1 := by
+    simp [signOf]
+  simp only [round, h_r]
+  refine ⟨by simp, ?_⟩
+  simp only [mul_zero, zero_add]
+  rw [h_B, h_sign]
+  push_cast
+  simp [mul_assoc, h_unit]
+
+/-- Stopping at the first zero `a` gives what all the rounds give, modulo an odd `m`. -/
+private theorem go_v {m : Nat} (h_m : m % 2 = 1) :
+    ∀ (k : Nat) (s : State m), (inversePublic.go m k s).v = ((round m)^[k] s).v
+  | 0, _ => rfl
+  | k + 1, s => by
+    simp only [inversePublic.go]
+    split_ifs with h_zero
+    · -- Every later round keeps a zero and v as it is.
+      have h_keep : ∀ j : Nat, ((round m)^[j] s).a = 0 ∧ ((round m)^[j] s).v = s.v := by
+        intro j
+        induction j with
+        | zero => exact ⟨h_zero, rfl⟩
+        | succ j ih =>
+          rw [Function.iterate_succ_apply']
+          obtain ⟨h_a, h_v⟩ := round_of_zero h_m _ ih.1
+          exact ⟨h_a, h_v.trans ih.2⟩
+      exact (h_keep (k + 1)).2.symm
+    · rw [Function.iterate_succ_apply]
+      exact go_v h_m k (round m s)
+
+/-- `p256_wide_inverse_public` gives `p256_wide_inverse`'s answer for every `y`, modulo an odd
+`m`: so it inverts every `y` coprime to an odd `m` below `2 ^ 256`, by `inverse_mul_self`. -/
+theorem inversePublic_eq_inverse {m : Nat} (h_m : m % 2 = 1) (y : Nat) :
+    inversePublic m y = inverse m y :=
+  go_v h_m rounds ⟨y, m, 1, 0⟩
+
 /-! ## At P-256 -/
 
 /-- `p256_wide_fe_inv`'s binary GCD inverts every element from 1 to `p - 1` of the field
@@ -1377,13 +1453,15 @@ theorem inverse_mul_self_n [h_prime : Fact Spec.P256.n.Prime] {y : Nat} (h_pos :
 set_option compiler.extract_closed false in
 /-- `inverse` against the definition of an inverse at both P-256 moduli: `y` times its inverse is
 1 for 1, 2, 3, `m - 1`, `m - 2`, `2 ^ 255`, values of 64 bits and fewer, where the
-approximations are exact, and values on either side of word boundaries; and 0 goes to 0. -/
+approximations are exact, and values on either side of word boundaries; and 0 goes to 0.
+`inversePublic` gives the same answers. -/
 def selftest (_ : Unit) : Bool :=
   let check := fun (m : Nat) =>
     let values := [1, 2, 3, m - 1, m - 2, 2 ^ 255, 2 ^ 64 - 1, 2 ^ 64, 2 ^ 64 + 1, 2 ^ 128 - 1,
       2 ^ 192 + 2 ^ 63, 0x1234567890abcdef, 0x6b8e05f5ee0f8b25101f13b6dc3d514c,
       0x5555666677778888111122223333444409876543210fedcba987654321fedcba]
-    values.all (fun y => ((inverse m y * y : ZMod m) == 1)) && (inverse m 0 == 0)
+    values.all (fun y => ((inverse m y * y : ZMod m) == 1) && inversePublic m y == inverse m y) &&
+      inverse m 0 == 0 && inversePublic m 0 == 0
   check Spec.P256.p && check Spec.P256.n
 
 end Spec.P256WideInverse

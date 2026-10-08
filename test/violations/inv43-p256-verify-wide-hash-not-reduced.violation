@@ -10,6 +10,6 @@ reason: the host verifier multiplies the hash by s's inverse without
 
 --- old
     p256_scalar_reduce(&e, &e);
-    p256_wide_scalar_inverse(&w, &s);
+    p256_wide_scalar_inverse_public(&w, &s);
 --- new
-    p256_wide_scalar_inverse(&w, &s);
+    p256_wide_scalar_inverse_public(&w, &s);

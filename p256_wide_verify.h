@@ -9,10 +9,12 @@
 // travel in the clear. So no bit of ch_cfg.cpu picks this path and no
 // caller states the multiply's timing for it, as none does for RSA's
 // public operation (rsa_mont64.h). The field and the scalar arithmetic
-// are the wide files', which are constant time, and the points are
-// p256_wide_verify_point.c's, which are variable time on purpose: a
-// verifier's sum u1*G + u2*Q runs on Jacobian points in one pass over
-// both scalars, and branches on its public values.
+// are the wide files', which are constant time but for s's inverse,
+// which stops at the first round whose a is zero (docs/decisions.md
+// 116), and the points are p256_wide_verify_point.c's, which are
+// variable time on purpose: a verifier's sum u1*G + u2*Q runs on
+// Jacobian points in one pass over both scalars, and branches on its
+// public values.
 #ifndef CH_P256_WIDE_VERIFY_H
 #define CH_P256_WIDE_VERIFY_H
 

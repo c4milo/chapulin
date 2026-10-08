@@ -132,4 +132,12 @@ void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
     ct_wipe(&t, sizeof t);
 }
 
+// a is public, so the copy holds nothing to wipe.
+void p256_wide_scalar_inverse_public(p256_scalar *o, const p256_scalar *a) {
+    wide_scalar t;
+    from_portable(&t, a);
+    p256_wide_inverse_public(t.word, t.word, &ORDER);
+    to_portable(o, &t);
+}
+
 #endif // CH_CPU_RUNTIME

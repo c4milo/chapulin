@@ -2245,7 +2245,7 @@ launch fast full p256_wide_wipe 2 "ct_wipe.0:3073" ct.c proof/ct_wipe_stub.c -DC
 #   p256_wide_inverse_steps   1004 properties,  27 s, 161 MB
 #   p256_wide_inverse_range    119 properties, 506 s, 238 MB
 #   p256_wide_inverse          850 properties,   1 s,  41 MB
-#   p256_wide_inverse_round    802 properties,   1 s,  25 MB
+#   p256_wide_inverse_round    848 properties,   1 s,  26 MB
 launch fast full p256_wide_inverse_steps 257 "" -DCH_CPU_RUNTIME
 launch slow full p256_wide_inverse_range 32 "" -DCH_CPU_RUNTIME
 launch fast full p256_wide_inverse 34 "" -DCH_CPU_RUNTIME --unsigned-overflow-check

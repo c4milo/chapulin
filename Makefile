@@ -6581,7 +6581,7 @@ HASH_HW_BRANCH_CEILING := \
 # WIDE64_CEILING gives. Their branches were read before they were
 # recorded, and the counts are the same on both specs but for
 # p256_wide_inverse.c's. Every one closes a loop over a public count or
-# tests a public value, and none reads a word or a scalar bit.
+# tests a public value, and none reads a word or a bit of a secret.
 #   p256_wide_field.c's 6: the four words in each of the two copies to and
 #     from p256_field.h's element, and the four words and the eight bytes of
 #     each in the two marshalling routines. The add, the subtract, the
@@ -6589,13 +6589,16 @@ HASH_HW_BRANCH_CEILING := \
 #     straight line.
 #   p256_wide_scalar.c has none: the Montgomery product and the copies are
 #     straight line.
-#   p256_wide_inverse.c's 12 on arm64 and 14 on x86-64 (docs/decisions.md
-#     115): the 17 rounds, the 31 steps of each, the shifts of the
+#   p256_wide_inverse.c's 14 on arm64 and 17 on x86-64 (docs/decisions.md
+#     115 and 116): the 17 rounds, the 31 steps of each, the shifts of the
 #     approximations' ladder, whose count halves from 32 to 1, and loops
 #     over the four or five words of a value: in the start of the rounds,
 #     in the approximations, and in each combination's products, sums,
-#     negations and shifts. x86-64 keeps two of those word loops that arm64
-#     unrolls.
+#     negations and shifts. p256_wide_inverse_public runs the rounds in a
+#     loop of its own and ends it on a test of a's words, which it computes
+#     from a public y. x86-64 keeps three of the word loops that arm64
+#     unrolls: the start of the rounds in each entry, and one in
+#     combine_modular.
 #   p256_wide_point.c's 3: the leading byte and the range of a peer's
 #     point in p256_wide_point_from_bytes, both public, and whether the
 #     caller of p256_wide_point_affine asked for Y.
@@ -6633,7 +6636,7 @@ HASH_HW_BRANCH_CEILING := \
 P256_WIDE_BRANCH_CEILING := \
   arm64/p256_wide_field.c:6 x86-64/p256_wide_field.c:6 \
   arm64/p256_wide_scalar.c:0 x86-64/p256_wide_scalar.c:0 \
-  arm64/p256_wide_inverse.c:12 x86-64/p256_wide_inverse.c:14 \
+  arm64/p256_wide_inverse.c:14 x86-64/p256_wide_inverse.c:17 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
   arm64/p256_wide_mul.c:13 x86-64/p256_wide_mul.c:13 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
