@@ -6,7 +6,7 @@ handshakes, what the wider value changes, and the per-byte costs. That
 table holds the comparison with OpenSSL, primitive by primitive. The two
 files this note reads:
 
-- bench/results-primitives-arm64.csv: every primitive, per byte or per
+- bench/results-primitives-darwin-arm64-clang.csv: every primitive, per byte or per
   operation, and whole handshakes between this tree's client and server,
   each under two `ch_cfg.cpu` values, with OpenSSL's rows beside them.
 - bench/results-primitives-calls.csv: how many times each end of each
@@ -529,7 +529,7 @@ docs/decisions.md entry 94 cites the last of those.
 
 ## x86-64
 
-bench/results-primitives-x86_64.csv is a run of the same script on a
+bench/results-primitives-linux-x86_64-gcc.csv is a run of the same script on a
 GitHub-hosted runner: an AMD EPYC 7763 under Linux 6.17, gcc 13.3 at
 `-std=c11 -O2`, tree e54b20c3, started by hand from
 .github/workflows/bench.yml
@@ -571,7 +571,7 @@ there, and its two rows differ by 0.34 and 0.81 ms in this run, more
 than an encapsulation: the RSA-3072 hybrid row is 11% above the last
 run's on this CPU.
 
-Each row as a multiple of its time in bench/results-primitives-arm64.csv,
+Each row as a multiple of its time in bench/results-primitives-darwin-arm64-clang.csv,
 each machine under its widest value:
 
 | row | x86-64 over arm64 |

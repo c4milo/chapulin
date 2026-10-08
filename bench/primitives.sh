@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Times every primitive chapulin ships, and whole handshakes between this
 # tree's client and server, on this machine, with OpenSSL's figure for the
-# same primitive beside it. Writes bench/results-primitives-<arch>.csv, one
-# file per architecture, and bench/results-primitives-calls.csv, how many
-# times each end of each handshake calls each primitive.
+# same primitive beside it. Writes bench/results-primitives-<os>-<arch>-<compiler>.csv,
+# one file per machine and compiler, the compiler being clang or gcc as
+# bench/record.sh names its files, and bench/results-primitives-calls.csv, how
+# many times each end of each handshake calls each primitive.
 # docs/performance.md, "chapulin beside OpenSSL", renders its table from the
 # first, and bench/notes-primitives.md reads both.
 #
@@ -51,7 +52,9 @@
 # A row's figure is the median over the runs.
 #
 # Every timed build is -O2, the level the packaged object uses. CC picks
-# the compiler (default cc); the x86-64 file uses CC=gcc.
+# the compiler (default cc). bench.yml times the x86-64 runner under gcc and
+# under the pinned clang: CI compiles with gcc, and build.zig, which a Zig
+# project such as colibri builds the object with, compiles with clang.
 #
 # Timings are properties of the machine that ran them. Never record a run
 # under emulation: `bench/primitives.sh --quick` builds everything, checks
@@ -82,7 +85,15 @@ arm64 | aarch64) ARCH=arm64 ;;
 x86_64 | amd64) ARCH=x86_64 ;;
 *) ARCH=$(uname -m) ;;
 esac
-OUT=bench/results-primitives-$ARCH.csv
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+# The two compilers compile the wide fields' carries differently, so each
+# writes a file of its own, named as bench/record.sh names its.
+if "$CC" --version 2>/dev/null | head -1 | grep -qi clang; then
+    FAMILY=clang
+else
+    FAMILY=gcc
+fi
+OUT=bench/results-primitives-$OS-$ARCH-$FAMILY.csv
 CALLS_OUT=bench/results-primitives-calls.csv
 
 # Every timed program is a host object, which a compiler that fails the

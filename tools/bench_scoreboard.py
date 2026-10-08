@@ -28,10 +28,12 @@ import sys
 # bench/primitives.sh wrote on it, and the CSV bench/record.sh wrote on it,
 # which holds the AEAD rows.
 MACHINES = [
-    ("M1 Pro", "bench/results-primitives-arm64.csv",
+    ("M1 Pro", "bench/results-primitives-darwin-arm64-clang.csv",
      "bench/results-record-darwin-arm64-clang.csv"),
-    ("x86-64 runner", "bench/results-primitives-x86_64.csv",
+    ("x86-64 gcc", "bench/results-primitives-linux-x86_64-gcc.csv",
      "bench/results-record-linux-x86_64-gcc.csv"),
+    ("x86-64 clang", "bench/results-primitives-linux-x86_64-clang.csv",
+     "bench/results-record-linux-x86_64-clang.csv"),
 ]
 
 # The first cell of the table's header row, which is how the check finds it.

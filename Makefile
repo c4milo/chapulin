@@ -7493,10 +7493,11 @@ bench-record:
 # host object under the ch_cfg.cpu value a caller on this CPU states and
 # under CH_CPU_PROBED alone, with `openssl speed` beside each primitive
 # OpenSSL has. bench/primitives.sh states what it builds and writes
-# bench/results-primitives-<arch>.csv and the handshake call counts beside
-# it. docs/performance.md, "chapulin beside OpenSSL", renders its table
-# from that file and bench-record's, tools/bench_scoreboard.py prints the
-# table a run gives, and bench/notes-primitives.md reads the other rows.
+# bench/results-primitives-<os>-<arch>-<compiler>.csv and the handshake
+# call counts beside it. docs/performance.md, "chapulin beside OpenSSL",
+# renders its table from those files and bench-record's,
+# tools/bench_scoreboard.py prints the table a run gives, and
+# bench/notes-primitives.md reads the other rows.
 # `check` does not run it, for the reason it does not run bench-aead, and
 # a run took 8 min 41 s on an M1 Pro. `bench/primitives.sh --quick` builds
 # every program, checks every known answer and writes nothing, and

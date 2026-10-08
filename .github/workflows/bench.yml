@@ -3,10 +3,12 @@ name: bench
 # Times ChaCha20-Poly1305 against AES-128-GCM per byte, one TLS record's
 # protection split into its stages, and every primitive and the in-process
 # handshakes with OpenSSL beside them, on an x86-64 runner. It writes the
-# partner of bench/results-aead-arm64.csv, and
-# bench/results-primitives-x86_64.csv and
-# bench/results-record-linux-x86_64-gcc.csv, which fill the x86-64 column
-# of the table in docs/performance.md that sets chapulin beside OpenSSL.
+# partner of bench/results-aead-arm64.csv, and the primitives and record
+# CSVs under gcc and under the pinned clang,
+# bench/results-primitives-linux-x86_64-<compiler>.csv and
+# bench/results-record-linux-x86_64-<compiler>.csv, which fill the two
+# x86-64 columns of the table in docs/performance.md that sets chapulin
+# beside OpenSSL.
 # Someone starts it by hand and nothing else does: a timing belongs to
 # the machine that ran it, and a shared runner is a loaded machine, so a
 # run is a measurement to read, not a check that passes or fails. No job
@@ -49,9 +51,10 @@ jobs:
           path: bench/results-aead-x86_64.csv
           if-no-files-found: error
   record-x86_64:
-    # One job times the record and the primitives, so the two CSVs that
-    # fill one column of the table beside OpenSSL come from one runner and
-    # one CPU: two jobs may draw two CPU models.
+    # One job times the record and the primitives under both compilers, so
+    # the four CSVs that fill the two x86-64 columns of the table beside
+    # OpenSSL come from one runner and one CPU: two jobs may draw two CPU
+    # models.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -88,12 +91,19 @@ jobs:
         run: make bench-primitives CC=gcc
       - name: Time one record under the pinned clang
         run: make bench-record CC="$CLANG_RV"
+      - name: Time every primitive and the handshakes under the pinned clang
+        # build.zig compiles the object with clang, so a Zig project such
+        # as colibri runs clang's code, and clang compiles the wide fields'
+        # carries otherwise than gcc. This run is on the same CPU as gcc's,
+        # in the same job, so the two columns compare. It writes the calls
+        # file again; its counts do not depend on the compiler.
+        run: make bench-primitives CC="$CLANG_RV"
       - name: Print the CSVs on the run page
         # Each CSV's header holds the runner's load average before and
         # after its run.
         run: |
-          for csv in results-primitives-x86_64 results-record-linux-x86_64-gcc \
-            results-record-linux-x86_64-clang; do
+          for csv in results-primitives-linux-x86_64-gcc results-primitives-linux-x86_64-clang \
+            results-record-linux-x86_64-gcc results-record-linux-x86_64-clang; do
             echo '```'
             cat "bench/$csv.csv"
             echo '```'
@@ -103,7 +113,8 @@ jobs:
         with:
           name: results-linux-x86_64
           path: |
-            bench/results-primitives-x86_64.csv
+            bench/results-primitives-linux-x86_64-gcc.csv
+            bench/results-primitives-linux-x86_64-clang.csv
             bench/results-primitives-calls.csv
             bench/results-record-linux-x86_64-gcc.csv
             bench/results-record-linux-x86_64-clang.csv

@@ -5716,8 +5716,8 @@ does nothing more.
     table beside OpenSSL holds a run of `bench/primitives.sh` on each
     machine at 1f4a922, after entries 94 and 95 landed: an M1 Pro under
     Apple clang 21 at a load average of 2.5 to 4.5, and an AMD EPYC 7763
-    under gcc 13.3 at 1.0 (`bench/results-primitives-arm64.csv` and its
-    x86-64 twin). One operation under `CH_CPU_PROBED` alone, under every
+    under gcc 13.3 at 1.0 (`bench/results-primitives-darwin-arm64-clang.csv`
+    and its x86-64 twin, as the files are named now). One operation under `CH_CPU_PROBED` alone, under every
     bit the CPU has, and OpenSSL's time for it in the same run:
 
     | one operation | M1 Pro, `0x1` | `0x67` | OpenSSL 3.6.5 | ratio | EPYC 7763, `0x1` | `0x3f` | OpenSSL 3.6.4 | ratio |

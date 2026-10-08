@@ -1,7 +1,8 @@
 // Times the primitives chapulin ships, each through the call the rest of
 // the tree makes, on the machine that runs it. bench/primitives.sh builds
-// it, runs it and writes bench/results-primitives-<arch>.csv. The method
-// is in this file; the rows are in primitives_symmetric.c,
+// it, runs it and writes
+// bench/results-primitives-<os>-<arch>-<compiler>.csv. The method is in
+// this file; the rows are in primitives_symmetric.c,
 // primitives_public_key.c and primitives_handshake.c.
 //
 // Usage: primitives [--quick] --cpu VALUE group...
