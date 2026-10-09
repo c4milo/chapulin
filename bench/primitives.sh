@@ -6,7 +6,11 @@
 # bench/record.sh names its files, and bench/results-primitives-calls.csv, how
 # many times each end of each handshake calls each primitive.
 # docs/performance.md, "chapulin beside OpenSSL", renders its table from the
-# first, and bench/notes-primitives.md reads both.
+# per-machine files, and bench/notes-primitives.md reads those and the calls
+# file. That table times chapulin beside OpenSSL on two x86-64 CPUs, one
+# without AVX-512 and one with AVX-512 IFMA, so BENCH_MACHINE from the
+# environment names a class of CPU, which the file name then carries after
+# the architecture, as in bench/results-primitives-linux-x86_64-avx512-gcc.csv.
 #
 # Every timed program is a host object, built with -DCH_CPU_RUNTIME from the
 # sources make names for one (print-host-srcs), so it holds each fast path
@@ -29,9 +33,9 @@
 #            on x86-64 the AVX2 ChaCha20. On a CPU with AVX-512 IFMA the
 #            value also holds CH_CPU_AVX512_IFMA. The RSA handshake rows
 #            take that bit through rsa_vp1_cpu, because their ROLE=both
-#            programs set client_cfg.cpu to the value. The primitive
-#            verify rows do not yet: they call the verifiers that take no
-#            value
+#            programs set client_cfg.cpu to the value, and the primitive
+#            RSA verify rows through rsa_pss_verify_cpu and
+#            rsa_pkcs1_verify_cpu
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256
@@ -98,7 +102,7 @@ if "$CC" --version 2>/dev/null | head -1 | grep -qi clang; then
 else
     FAMILY=gcc
 fi
-OUT=bench/results-primitives-$OS-$ARCH-$FAMILY.csv
+OUT=bench/results-primitives-$OS-$ARCH${BENCH_MACHINE:+-$BENCH_MACHINE}-$FAMILY.csv
 CALLS_OUT=bench/results-primitives-calls.csv
 
 # Every timed program is a host object, which a compiler that fails the
@@ -316,7 +320,7 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512 AVX512_IFMA; do
+        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

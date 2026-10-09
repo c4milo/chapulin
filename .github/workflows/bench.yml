@@ -5,10 +5,10 @@ name: bench
 # handshakes with OpenSSL beside them, on an x86-64 runner. It writes the
 # partner of bench/results-aead-arm64.csv, and the primitives and record
 # CSVs under gcc and under the pinned clang,
-# bench/results-primitives-linux-x86_64-<compiler>.csv and
-# bench/results-record-linux-x86_64-<compiler>.csv, which fill the two
-# x86-64 columns of the table in docs/performance.md that sets chapulin
-# beside OpenSSL.
+# bench/results-primitives-linux-x86_64[-avx512]-<compiler>.csv and
+# bench/results-record-linux-x86_64[-avx512]-<compiler>.csv, which fill the
+# four x86-64 column groups, two CPUs under two compilers, of the table in
+# docs/performance.md that sets chapulin beside OpenSSL.
 # Someone starts it by hand and nothing else does: a timing belongs to
 # the machine that ran it, and a shared runner is a loaded machine, so a
 # run is a measurement to read, not a check that passes or fails. No job
@@ -52,12 +52,44 @@ jobs:
           if-no-files-found: error
   record-x86_64:
     # One job times the record and the primitives under both compilers, so
-    # the four CSVs that fill the two x86-64 columns of the table beside
-    # OpenSSL come from one runner and one CPU: two jobs may draw two CPU
-    # models.
+    # the four CSVs that fill one x86-64 machine's columns of the table
+    # beside OpenSSL come from one runner and one CPU: two jobs may draw two
+    # CPU models. The table holds two such machines, one CPU without AVX-512
+    # and one with AVX-512 IFMA, on which an x86-64 host object runs RSA's
+    # public operation on rsa_ifma.c (docs/decisions.md 119). A hosted
+    # runner's CPU model is drawn, not chosen, so each job first checks the
+    # CPU it drew and stops when it is the wrong kind; re-run that job until
+    # it draws the right one. BENCH_MACHINE puts the second machine's name in
+    # its CSVs' file names.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - machine: ""
+            suffix: ""
+          - machine: avx512
+            suffix: -avx512
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      BENCH_MACHINE: ${{ matrix.machine }}
     steps:
+      - name: Check the CPU this runner drew
+        env:
+          MACHINE: ${{ matrix.machine }}
+        run: |
+          grep -m1 '^model name' /proc/cpuinfo
+          flags=$(grep -m1 '^flags' /proc/cpuinfo | tr -s '[:blank:]' '\n')
+          echo "AVX-512 flags: $(grep '^avx512' <<<"$flags" | tr '\n' ' ')"
+          has() { grep -qx "$1" <<<"$flags"; }
+          if [ -z "$MACHINE" ] && has avx512f; then
+            echo "this job times a CPU without AVX-512, and this one has it; re-run the job"
+            exit 1
+          fi
+          if [ "$MACHINE" = avx512 ] && ! has avx512ifma; then
+            echo "this job times a CPU with AVX-512 IFMA, and this one lacks it; re-run the job"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -101,9 +133,12 @@ jobs:
       - name: Print the CSVs on the run page
         # Each CSV's header holds the runner's load average before and
         # after its run.
+        env:
+          SUFFIX: ${{ matrix.suffix }}
         run: |
-          for csv in results-primitives-linux-x86_64-gcc results-primitives-linux-x86_64-clang \
-            results-record-linux-x86_64-gcc results-record-linux-x86_64-clang; do
+          for csv in "results-primitives-linux-x86_64$SUFFIX-gcc" \
+            "results-primitives-linux-x86_64$SUFFIX-clang" \
+            "results-record-linux-x86_64$SUFFIX-gcc" "results-record-linux-x86_64$SUFFIX-clang"; do
             echo '```'
             cat "bench/$csv.csv"
             echo '```'
@@ -111,11 +146,11 @@ jobs:
       - name: Keep the CSVs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: results-linux-x86_64
+          name: results-linux-x86_64${{ matrix.suffix }}
           path: |
-            bench/results-primitives-linux-x86_64-gcc.csv
-            bench/results-primitives-linux-x86_64-clang.csv
+            bench/results-primitives-linux-x86_64${{ matrix.suffix }}-gcc.csv
+            bench/results-primitives-linux-x86_64${{ matrix.suffix }}-clang.csv
             bench/results-primitives-calls.csv
-            bench/results-record-linux-x86_64-gcc.csv
-            bench/results-record-linux-x86_64-clang.csv
+            bench/results-record-linux-x86_64${{ matrix.suffix }}-gcc.csv
+            bench/results-record-linux-x86_64${{ matrix.suffix }}-clang.csv
           if-no-files-found: error

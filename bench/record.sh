@@ -3,7 +3,8 @@
 # for https://github.com/c4milo/chapulin/issues/184 (AES-GCM) and
 # https://github.com/c4milo/chapulin/issues/181 (ChaCha20-Poly1305), and
 # writes bench/results-record-<os>-<arch>-<compiler>.csv, the compiler being
-# clang or gcc. `make bench-record` runs it.
+# clang or gcc. `make bench-record` runs it. BENCH_MACHINE names a class of
+# CPU in the file name, as bench/primitives.sh's does.
 #
 # It asks make for the flags the library's objects compile with, LIB_CFLAGS,
 # and whether this compiler passes the host test, so the bench compiles the
@@ -103,7 +104,7 @@ if "${CC_WORDS[@]}" --version 2>/dev/null | head -1 | grep -qi clang; then
 else
     FAMILY=gcc
 fi
-OUT=bench/results-record-$OS-$ARCH-$FAMILY.csv
+OUT=bench/results-record-$OS-$ARCH${BENCH_MACHINE:+-$BENCH_MACHINE}-$FAMILY.csv
 
 read -r -a AES_HW_SRCS <<<"$(make -s --no-print-directory print-aes-hw-srcs)"
 if [ "${#AES_HW_SRCS[@]}" -eq 0 ]; then

@@ -5,8 +5,12 @@
 // instead of timing garbage.
 //
 // Two groups. verify runs p256.c, p384.c, rsa.c and rsa_pkcs1.c, whose
-// inputs are all public and whose products use the compiler's own
-// multiply, so no bit of ch_cfg.cpu changes them today. secret_key runs
+// inputs are all public. Their products use the compiler's own multiply,
+// but for the RSA rows under CH_CPU_AVX512_IFMA, below. No bit of
+// ch_cfg.cpu changes the two ECDSA verifiers. The RSA
+// rows hand the value to rsa_pss_verify_cpu and rsa_pkcs1_verify_cpu, as a
+// session does, and on x86-64 CH_CPU_AVX512_IFMA runs their public
+// operation on rsa_ifma.c (docs/decisions.md 119). secret_key runs
 // x25519.c, mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c,
 // whose products go through ct.h's widening multiply. Without
 // CH_CPU_CONSTANT_TIME_MULTIPLY its rows run those files on the 16x16
@@ -20,8 +24,9 @@
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
 // TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont64.c's loops
-// run over the modulus's words, not that bound, so the 2048 and 3072
-// rows time the work a host object does at the device bound.
+// run over the modulus's words, not that bound, and rsa_ifma.c runs the
+// copy of its product for the modulus's register count, so the 2048 and
+// 3072 rows time the work a host object does at the device bound.
 #include <string.h>
 
 #include "mlkem.h"
@@ -257,46 +262,47 @@ static void prepare_rsa_message_hash(size_t n) {
 
 static void run_rsa_pss_verify_2048(size_t n) {
     (void)n;
-    expect(rsa_pss_verify(rsa_sign_2048_n, sizeof rsa_sign_2048_n, rsa_message_hash,
-                          rsa_sign_2048_sig, sizeof rsa_sign_2048_sig) == 1,
-           "rsa_pss_verify refused its 2048-bit vector");
+    expect(rsa_pss_verify_cpu(bench_cpu, rsa_sign_2048_n, sizeof rsa_sign_2048_n, rsa_message_hash,
+                              rsa_sign_2048_sig, sizeof rsa_sign_2048_sig) == 1,
+           "rsa_pss_verify_cpu refused its 2048-bit vector");
 }
 
 static void run_rsa_pss_verify_3072(size_t n) {
     (void)n;
-    expect(rsa_pss_verify(RSA_N, sizeof RSA_N, RSA_HASH, RSA_SIG, sizeof RSA_SIG) == 1,
-           "rsa_pss_verify refused its 3072-bit vector");
+    expect(rsa_pss_verify_cpu(bench_cpu, RSA_N, sizeof RSA_N, RSA_HASH, RSA_SIG, sizeof RSA_SIG) ==
+               1,
+           "rsa_pss_verify_cpu refused its 3072-bit vector");
 }
 
 static void run_rsa_pss_verify_4096(size_t n) {
     (void)n;
-    expect(rsa_pss_verify(n4096, sizeof n4096, rsa4096_sha256_digest, rsa4096_pss_sig,
-                          sizeof rsa4096_pss_sig) == 1,
-           "rsa_pss_verify refused its 4096-bit vector");
+    expect(rsa_pss_verify_cpu(bench_cpu, n4096, sizeof n4096, rsa4096_sha256_digest,
+                              rsa4096_pss_sig, sizeof rsa4096_pss_sig) == 1,
+           "rsa_pss_verify_cpu refused its 4096-bit vector");
 }
 
 static void run_rsa_pkcs1_verify_2048(size_t n) {
     (void)n;
-    expect(rsa_pkcs1_verify(n2048, sizeof n2048, rsa2048_sha256_digest,
-                            sizeof rsa2048_sha256_digest, rsa2048_sha256_sig,
-                            sizeof rsa2048_sha256_sig) == 1,
-           "rsa_pkcs1_verify refused its 2048-bit vector");
+    expect(rsa_pkcs1_verify_cpu(bench_cpu, n2048, sizeof n2048, rsa2048_sha256_digest,
+                                sizeof rsa2048_sha256_digest, rsa2048_sha256_sig,
+                                sizeof rsa2048_sha256_sig) == 1,
+           "rsa_pkcs1_verify_cpu refused its 2048-bit vector");
 }
 
 static void run_rsa_pkcs1_verify_3072(size_t n) {
     (void)n;
-    expect(rsa_pkcs1_verify(n3072, sizeof n3072, rsa3072_sha256_digest,
-                            sizeof rsa3072_sha256_digest, rsa3072_sha256_sig,
-                            sizeof rsa3072_sha256_sig) == 1,
-           "rsa_pkcs1_verify refused its 3072-bit vector");
+    expect(rsa_pkcs1_verify_cpu(bench_cpu, n3072, sizeof n3072, rsa3072_sha256_digest,
+                                sizeof rsa3072_sha256_digest, rsa3072_sha256_sig,
+                                sizeof rsa3072_sha256_sig) == 1,
+           "rsa_pkcs1_verify_cpu refused its 3072-bit vector");
 }
 
 static void run_rsa_pkcs1_verify_4096(size_t n) {
     (void)n;
-    expect(rsa_pkcs1_verify(n4096, sizeof n4096, rsa4096_sha256_digest,
-                            sizeof rsa4096_sha256_digest, rsa4096_sha256_sig,
-                            sizeof rsa4096_sha256_sig) == 1,
-           "rsa_pkcs1_verify refused its 4096-bit vector");
+    expect(rsa_pkcs1_verify_cpu(bench_cpu, n4096, sizeof n4096, rsa4096_sha256_digest,
+                                sizeof rsa4096_sha256_digest, rsa4096_sha256_sig,
+                                sizeof rsa4096_sha256_sig) == 1,
+           "rsa_pkcs1_verify_cpu refused its 4096-bit vector");
 }
 
 // The salt comes from ch_rand_bytes, drbg.c here, as a server draws one
