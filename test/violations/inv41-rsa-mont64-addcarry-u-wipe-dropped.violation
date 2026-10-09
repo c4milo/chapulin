@@ -1,0 +1,17 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: test/docker-aes-runtime-qemu.sh rsa-addcarry
+reason: rsa_mont64_addcarry_mul no longer wipes the word that holds u, the
+  last round's multiple of m, which a signer's secret operands make, so
+  the stack below the signer keeps it. Only a gcc build for x86-64 runs
+  the rows. The lane builds bin/rsa_sign_equiv_test for x86-64 with gcc
+  and runs it under qemu-x86_64, where its two stacks under two secrets
+  differ. The lane skips without docker, and this then reports unguarded
+  rather than caught.
+
+--- old
+    ct_wipe(t, (2 * k + 1) * sizeof(addcarry_word));
+    ct_wipe(u_word, sizeof u_word);
+--- new
+    ct_wipe(t, (2 * k + 1) * sizeof(addcarry_word));
+    (void)u_word;

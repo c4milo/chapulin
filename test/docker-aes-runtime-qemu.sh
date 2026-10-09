@@ -22,7 +22,9 @@
 # sends to AVX-512 IFMA; and
 # "rsa-ifma" bin/webpki_loop_aes alone for x86-64, whose server runs
 # ch_srv_check with and without CH_CPU_AVX512_IFMA on a model without
-# AVX-512 IFMA.
+# AVX-512 IFMA; and "rsa-addcarry" bin/rsa_addcarry_equiv_test and
+# bin/rsa_sign_equiv_test alone, which gcc builds for x86-64 on
+# rsa_mont64_addcarry.c's rows.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
 # supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04
@@ -45,7 +47,9 @@
 # violations of what sha3_hw.c leaves on the stack with "keccak", the
 # violations of aes_hw.c's two key expansions with "aes-equiv", and the
 # violations that hand an RSA verifier 0 in place of a session's
-# ch_cfg.cpu with "rsa-ifma-callers".
+# ch_cfg.cpu with "rsa-ifma-callers", and the violations of the rows'
+# intrinsic, their wipes and the define that picks them with
+# "rsa-addcarry".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 

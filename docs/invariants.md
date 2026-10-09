@@ -1213,7 +1213,10 @@ last `ROLE=server` stub, as the entry said it would.
   Under clang for arm64 a multiplication or a square whose word count
   is a multiple of 4 runs on `rsa_mont64_blocks.c`'s blocks of four
   words instead (decision 118), which write the words the loops write
-  and wrap no sum either. On x86-64 a session whose `ch_cfg.cpu` holds
+  and wrap no sum either. Under gcc for x86-64 every multiplication and
+  square runs on `rsa_mont64_addcarry.c`'s rows (decision 122), whose
+  carries go down `_addcarry_u64` chains, which write those words too and
+  wrap no sum. On x86-64 a session whose `ch_cfg.cpu` holds
   `CH_CPU_AVX512_IFMA` runs the public operation on `rsa_ifma.c`, in
   digits of 52 bits on AVX-512 IFMA, for an odd modulus whose bit
   length is a multiple of 64, at least 2,048 (decision 119). That kernel
@@ -1247,7 +1250,14 @@ last `ROLE=server` stub, as the entry said it would.
   most 2^320 - 1. The blocks' square adds the cross products once,
   doubles them and adds the squares before a pass that adds the
   multiples of m, and up to 32 words a square runs as the blocks'
-  multiplication of a by itself.
+  multiplication of a by itself. A row of the rows adds a word times a
+  number to the running sum four words a block: each product takes its
+  own word of the sum in one 128-bit sum, and one chain of four adds with
+  carry adds the block's carry word, the low words and the high words one
+  word up, so a block's five words hold its sum, which is below 2^320.
+  The multiplication adds a[i] * b and then u * m at word i of a sum of
+  2k + 1 words that never moves down, and the square has the blocks'
+  shape.
   `rsa_sign64.c` multiplies only through that file. It reduces the
   encoded message modulo each prime with three multiplications and a
   sum, raises each to dp or dq, reading the exponent one hexadecimal
@@ -1292,6 +1302,9 @@ last `ROLE=server` stub, as the entry said it would.
   input and every product the contract admits. `rsa_mont64_blocks_sums`
   runs the blocks at four and eight words with the check on, and
   `rsa_mont64_blocks` proves their memory accesses at the bound.
+  `rsa_mont64_addcarry_sums` and `rsa_mont64_addcarry` do the same for
+  the rows, on the 128-bit sum form of their add with carry, which CBMC
+  reads.
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
   memory accesses of the multiplication and the square, the modulus
   setup and the public operation at that bound, and `rsa_mont_host`
@@ -1308,7 +1321,11 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_blocks_equiv_test` builds the blocks under any compiler and
   holds their words to the loops' at every word count from 1 to 64, and
   their square to their multiplication of a by itself at every multiple
-  of 4. The values are held too by
+  of 4. `bin/rsa_addcarry_equiv_test` does the same for the rows at every
+  word count, on `_addcarry_u64` on x86-64 and on the sum form elsewhere,
+  and `test/docker-aes-runtime-qemu.sh rsa-addcarry` runs it and
+  `bin/rsa_sign_equiv_test` as gcc builds them for x86-64 on any machine.
+  The values are held too by
   `bin/rsa_test_host` and
   `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the host
@@ -1414,7 +1431,25 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_blocks_equiv_test` catches; or adds a round's top word and
   both carry words in one 64-bit sum,
   `inv41-rsa-mont64-blocks-top-in-one-word`, which
-  `rsa_mont64_blocks_sums` catches in the proof-backed job. Or a PR
+  `rsa_mont64_blocks_sums` catches in the proof-backed job. Or, in the
+  rows, it drops a block's carry out or the carry word it starts from, a
+  row's tail carry or the bit the square's doubling moves up a word:
+  `inv41-rsa-mont64-addcarry-chain-carry-dropped`,
+  `inv41-rsa-mont64-addcarry-chain-skips-w`,
+  `inv41-rsa-mont64-addcarry-tail-carry-dropped` and
+  `inv41-rsa-mont64-addcarry-square-bit-not-moved`, which
+  `bin/rsa_addcarry_equiv_test` catches on every machine; hands
+  `_addcarry_u64` a carry in of zero, drops the multiplication's wipe of
+  its running sum or of u, or turns the rows off under gcc for x86-64:
+  `inv41-rsa-mont64-addcarry-intrinsic-carry-in-dropped`,
+  `inv41-rsa-mont64-addcarry-row-wipe-dropped`,
+  `inv41-rsa-mont64-addcarry-u-wipe-dropped` and
+  `inv41-rsa-mont64-addcarry-off-under-gcc`, which
+  `test/docker-aes-runtime-qemu.sh rsa-addcarry` catches; turns them on
+  under clang, `inv41-rsa-mont64-addcarry-under-clang`, which
+  `test/widemul-builds.sh` catches; or adds a round's top word and its
+  carry word in one 64-bit sum, `inv41-rsa-mont64-addcarry-top-in-one-word`,
+  which `rsa_mont64_addcarry_sums` catches. Or a PR
   starts the read of the table at its second entry, or reads the low
   half of each exponent byte first:
   `inv41-rsa-sign64-table-read-skips-entry-zero` and
@@ -1520,7 +1555,7 @@ last `ROLE=server` stub, as the entry said it would.
   `rsa_sign64_ifma` proofs catch. Or `table_select` reads each byte's low
   half first: `inv41-rsa-ifma-sign-digit-low-half-first`, which
   `bin/diff_rsa_ifma` catches.
-- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118, 119 and 120.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118, 119, 120 and 122.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 

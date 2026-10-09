@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_mont64.h
+catches: test/docker-aes-runtime-qemu.sh rsa-addcarry
+reason: a gcc build for x86-64 no longer runs rsa_mont64_addcarry.c's rows
+  and runs the loops, whose every word waits on the carry of the word
+  below. The words are the same, so no equivalence test sees it. The lane
+  compiles rsa_mont64.c with gcc for x86-64 and requires that it call
+  both row entries. The lane skips without docker, and this then reports
+  unguarded rather than caught.
+
+--- old
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__)
+#define RSA_MONT64_ADDCARRY 1
+--- new
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__)
+#define RSA_MONT64_ADDCARRY 0

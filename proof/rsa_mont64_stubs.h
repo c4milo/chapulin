@@ -38,9 +38,14 @@
 // The harnesses over this file run rsa_mont64.c's own loops, whatever compiler preprocesses
 // them. rsa_mont64_blocks.c's blocks, which a clang build for arm64 runs, have harnesses of
 // their own, which set RSA_MONT64_BLOCKS to 1 before they read this file and include
-// rsa_mont64_blocks.c after it, under the same product contract (docs/decisions.md 118).
+// rsa_mont64_blocks.c after it, under the same product contract (docs/decisions.md 118), and
+// so do rsa_mont64_addcarry.c's rows, which a gcc build for x86-64 runs and which the prove
+// job's cbmc, preprocessing as gcc does for x86-64, would turn on (docs/decisions.md 122).
 #ifndef RSA_MONT64_BLOCKS
 #define RSA_MONT64_BLOCKS 0
+#endif
+#ifndef RSA_MONT64_ADDCARRY
+#define RSA_MONT64_ADDCARRY 0
 #endif
 
 #include "harness.h"

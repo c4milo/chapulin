@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: test/docker-aes-runtime-qemu.sh rsa-addcarry
+reason: the form of the add with carry that x86-64 reads hands
+  _addcarry_u64 a carry in of zero, so every block's chain drops the
+  carries between its four words. CBMC reads the 128-bit sum form, so no
+  proof covers this one, and an arm64 machine compiles that form too. The
+  lane builds bin/rsa_addcarry_equiv_test for x86-64 on the intrinsic and
+  runs it under qemu-x86_64, where it holds the rows to rsa_mont64.c's
+  loops. The lane skips without docker, and this then reports unguarded
+  rather than caught.
+
+--- old
+    return _addcarry_u64(carry, a, b, out);
+--- new
+    return _addcarry_u64(carry & 0, a, b, out);

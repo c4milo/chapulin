@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: rsa_addcarry_equiv_test
+reason: a row's tail, the words past its last block of four, drops the
+  carry word from the word below, so a row whose length is not a multiple
+  of 4 loses it at every tail word. Every row of the square and every row
+  of a multiplication at a word count that is not a multiple of 4 has a
+  tail. bin/rsa_addcarry_equiv_test runs the rows at every word count from
+  1 to 64.
+
+--- old
+        ct_u128 sum = ct_mul128(*x, y[j]) + t[j] + w;
+--- new
+        ct_u128 sum = ct_mul128(*x, y[j]) + t[j] + (w & 0);

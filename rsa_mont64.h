@@ -84,6 +84,27 @@ typedef struct {
 #error "RSA_MONT64_BLOCKS is neither 0 nor 1"
 #endif
 
+// 1 when a multiplication and a square run on rsa_mont64_addcarry.c's rows, whose carries go
+// down _addcarry_u64 chains, at every word count: under gcc for x86-64 alone. gcc keeps no carry
+// in the flags from one 128-bit sum to the next, so its loops wait on every word's carry, and on
+// three runner CPUs the rows ran an RSA-2048 verification in 0.80 to 0.91 of the loops' time.
+// clang's loops run the compare form of the step below, and the rows gained it less
+// (docs/decisions.md 122). A build may name either with -DRSA_MONT64_ADDCARRY=0 or 1, as the
+// proofs, bin/rsa_addcarry_equiv_test, bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum do.
+#ifndef RSA_MONT64_ADDCARRY
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__)
+#define RSA_MONT64_ADDCARRY 1
+#else
+#define RSA_MONT64_ADDCARRY 0
+#endif
+#endif
+#if RSA_MONT64_ADDCARRY != 0 && RSA_MONT64_ADDCARRY != 1
+#error "RSA_MONT64_ADDCARRY is neither 0 nor 1"
+#endif
+#if RSA_MONT64_ADDCARRY && RSA_MONT64_BLOCKS
+#error "RSA_MONT64_ADDCARRY and RSA_MONT64_BLOCKS are both 1"
+#endif
+
 // x * y + a + b, which is at most (2^64 - 1)^2 + 2 * (2^64 - 1) = 2^128 - 1. rsa_mont64.c runs
 // one for each product of a multiplication's and a square's inner loops, where b is the carry
 // from the word below.

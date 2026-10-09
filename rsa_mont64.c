@@ -30,6 +30,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
+#include "rsa_mont64_addcarry.h"
 #include "rsa_mont64_blocks.h"
 
 // All ones when bit is 1, all zeros when bit is 0. The mask comes from
@@ -147,8 +148,33 @@ static void mont_square_blocks(uint64_t *o, const uint64_t *a, const rsa_mont64_
 }
 #endif
 
+#if RSA_MONT64_ADDCARRY
+// The multiplication and the square on rsa_mont64_addcarry.c's rows, at every word count, as the
+// two above run the blocks.
+static void mont_mul_addcarry(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                              const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    uint64_t r[RSA_MONT64_WORDS_MAX];
+    uint64_t top = rsa_mont64_addcarry_mul(r, a, b, mod);
+    reduce_once(o, r, top, mod->m, k);
+    ct_wipe(r, k * sizeof(uint64_t));
+}
+
+static void mont_square_addcarry(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    uint64_t r[RSA_MONT64_WORDS_MAX];
+    uint64_t top = rsa_mont64_addcarry_square(r, a, mod);
+    reduce_once(o, r, top, mod->m, k);
+    ct_wipe(r, k * sizeof(uint64_t));
+}
+#endif
+
 void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod) {
+#if RSA_MONT64_ADDCARRY
+    mont_mul_addcarry(o, a, b, mod);
+    return;
+#endif
     size_t k = mod->words;
     const uint64_t *m = mod->m;
 #if RSA_MONT64_BLOCKS
@@ -237,6 +263,10 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
 // 13 for x86-64 made it once, before the rows, and kept it in a stack slot
 // of its own, which bin/rsa_sign_equiv_test's two stacks found.
 void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
+#if RSA_MONT64_ADDCARRY
+    mont_square_addcarry(o, a, mod);
+    return;
+#endif
     size_t k = mod->words;
     const uint64_t *m = mod->m;
 #if RSA_MONT64_BLOCKS

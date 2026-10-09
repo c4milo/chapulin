@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: rsa_addcarry_equiv_test
+reason: block_mul_add drops the carry out of its chain, the carry from the
+  four low words into the word above the block, so the word it returns is
+  one short whenever that chain carries, which random words do about half
+  the time. bin/rsa_addcarry_equiv_test runs the rows under any compiler
+  and compares their words with rsa_mont64.c's loops.
+
+--- old
+    return (addcarry_word)(q3 >> 64) + carry;
+--- new
+    return (addcarry_word)(q3 >> 64) + (carry & 0);

@@ -198,6 +198,8 @@
         "rsa_mont.c",
         "rsa_mont64.c",
         "rsa_mont64.h",
+        "rsa_mont64_addcarry.c",
+        "rsa_mont64_addcarry.h",
         "rsa_mont64_blocks.c",
         "rsa_mont64_blocks.h",
         "rsa_pkcs1.c",

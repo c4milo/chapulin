@@ -2416,6 +2416,22 @@ launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stu
 launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:145" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_blocks 50 "ct_wipe.0:785" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_mont64_addcarry.c, the multiplication and square in rows whose carries go down
+# _addcarry_u64 chains, which a gcc build for x86-64 runs at every word count (docs/decisions.md
+# 122). These three set RSA_MONT64_ADDCARRY to 1 and the add with carry to its 128-bit sum form,
+# include the rows and run them through the same two entries, over the same product contract.
+# rsa_mont64_addcarry_sums runs them at four words and at eight with the wrap check on.
+# rsa_mont64_addcarry and its _webpki variant run them at the build's bound without the check,
+# for their memory accesses. The multiplication's array is 2k + 1 words, which the unwind of
+# ct_wipe's loop covers byte by byte. Measured one line at a time through proof/prove-one.sh on
+# 2026-10-09 (cbmc 6.11.0, kissat 4.0.4, an M1 Pro) at a load average of 18 to 22, so the time
+# is the processor time of cbmc and the solver:
+#   rsa_mont64_addcarry_sums     981 properties,  47 s, 1.1 GB
+#   rsa_mont64_addcarry          821 properties,  72 s, 1.4 GB
+#   rsa_mont64_addcarry_webpki   821 properties, 124 s, 2.4 GB, hence weight 3
+launch fast full rsa_mont64_addcarry_sums 10 "ct_wipe.0:137" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_addcarry 50 "ct_wipe.0:777" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast:3 full rsa_mont64_addcarry_webpki 66 "ct_wipe.0:1033" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME

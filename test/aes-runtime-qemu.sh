@@ -121,6 +121,14 @@
 #     test/webpki_auth_ifma.h). The first also counts the handshake's
 #     ChaCha20 calls into the AVX-512 kernel. Only an x86-64 object sends
 #     any, so on an arm64 machine this is the run that holds the callers.
+#   - bin/rsa_addcarry_equiv_test and bin/rsa_sign_equiv_test must pass,
+#     built by gcc for x86-64 with rsa_mont64_addcarry.c's rows on: the
+#     rows on the _addcarry_u64 form of their add with carry against
+#     rsa_mont64.c's loops, and the signer on the rows against the ladder,
+#     with the search of the stack below it (docs/decisions.md 122). The
+#     host object's rsa_mont64.c must call both row entries under that gcc.
+#     A gcc build for x86-64 alone runs the rows, so on a machine whose
+#     compiler is clang this is the run that holds them.
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -225,6 +233,9 @@
 #                     hand the RSA verifiers a session's ch_cfg.cpu
 #   rsa-ifma          bin/webpki_loop_aes for x86-64, its rows on the
 #                     model without AVX-512 IFMA alone
+#   rsa-addcarry      bin/rsa_addcarry_equiv_test and bin/rsa_sign_equiv_test
+#                     for x86-64 under gcc, for the violations of the rows'
+#                     intrinsic, their wipes and the define that picks them
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -244,9 +255,9 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
-    aes-equiv | rsa-ifma-callers | rsa-ifma) ;;
+    aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry]" >&2
     exit 2
     ;;
 esac
@@ -274,7 +285,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
-    [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ]; then
+    [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -318,8 +329,10 @@ read -r -a poly1305_equiv_srcs <<< "$(sed -n 14p <<< "$lists")"
 read -r -a blocking_counted_srcs <<< "$(sed -n 15p <<< "$lists")"
 read -r -a webpki_auth_counted_srcs <<< "$(sed -n 16p <<< "$lists")"
 read -r -a aes_equiv_srcs <<< "$(sed -n 17p <<< "$lists")"
-[ "${#aes_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than seventeen lists" >&2; exit 1; }
+read -r -a rsa_addcarry_equiv_srcs <<< "$(sed -n 18p <<< "$lists")"
+read -r -a rsa_sign_equiv_srcs <<< "$(sed -n 19p <<< "$lists")"
+[ "${#rsa_sign_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than nineteen lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
 # unit with no declaration, which -Wpedantic refuses, so the arm64 builds
 # link these copies of the three lists they take, without it.
@@ -489,6 +502,38 @@ if [ -z "$only" ] || [ "$only" = rsa-ifma-callers ]; then
 fi
 if [ "$only" = rsa-ifma-callers ]; then
     echo "aes-runtime-qemu: as an x86-64 object, each caller of the RSA verifiers sent the public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu held CH_CPU_AVX512_IFMA"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = rsa-addcarry ]; then
+    # rsa_mont64_addcarry.c's rows, which a gcc build for x86-64 alone runs
+    # (docs/decisions.md 122): the host object's rsa_mont64.c calls both row
+    # entries under a gcc, and neither under a clang X86_CC names. The two
+    # binaries name the rows, so they run them under either, as their rules
+    # in the Makefile do for bin/rsa_addcarry_equiv_test.
+    rows_called=1
+    "$x86_cc" -dM -E -x c /dev/null | grep -qw __clang__ && rows_called=0
+    "$x86_cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_CPU_RUNTIME -I. -c rsa_mont64.c -o "$x86_out/rsa_mont64.o" ||
+        exit 1
+    for symbol in rsa_mont64_addcarry_mul rsa_mont64_addcarry_square; do
+        called=0
+        nm -u "$x86_out/rsa_mont64.o" | grep -qw "$symbol" && called=1
+        [ "$called" = "$rows_called" ] ||
+            { echo "aes-runtime-qemu: rsa_mont64.c under $x86_cc calls $symbol: $called, where a gcc build alone does" >&2
+              exit 1; }
+    done
+    rows=(-DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 -DCH_RSA_MODULUS_MAX=512)
+    "$x86_cc" "${flags[@]}" "${rows[@]}" -o "$x86_out/rsa_addcarry_equiv_test" "${rsa_addcarry_equiv_srcs[@]}" ||
+        exit 1
+    expect max 0 "the rows on _addcarry_u64 and rsa_mont64.c's loops disagree" rsa_addcarry_equiv_test
+    "$x86_cc" "${flags[@]}" "${rows[@]}" -o "$x86_out/rsa_sign_equiv_test" test/rsa_sign_equiv_test.c \
+        "${rsa_sign_equiv_srcs[@]}" || exit 1
+    expect max 0 \
+        "the signer on the rows and the ladder disagree, or a call left a value it computed from the key on the stack" \
+        rsa_sign_equiv_test
+fi
+if [ "$only" = rsa-addcarry ]; then
+    echo "aes-runtime-qemu: under gcc for x86-64 rsa_mont64.c called the rows, bin/rsa_addcarry_equiv_test held them to the loops on _addcarry_u64, and bin/rsa_sign_equiv_test held the signer on them to the ladder and found nothing on the stack"
     exit 0
 fi
 

@@ -1,13 +1,20 @@
 // rsa_mont64_blocks.c's multiplication and square against rsa_mont64.c's
-// loops, word for word (docs/decisions.md 118).
+// loops, word for word (docs/decisions.md 118), and, compiled once more as
+// bin/rsa_addcarry_equiv_test, rsa_mont64_addcarry.c's rows against the
+// same loops (docs/decisions.md 122).
 //
-// The binary compiles every unit with -DRSA_MONT64_BLOCKS=1, under any
-// compiler, so rsa_mont64_mont_mul and rsa_mont64_mont_square run the
-// blocks for a word count that is a multiple of 4, as a clang build for
-// arm64 runs them. test/rsa_mont64_loops.c compiles rsa_mont64.c once
-// more with the blocks off, under second names: the loops, which the
-// proofs, bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum hold to
-// rsa_mont.c's 32-bit arithmetic.
+// bin/rsa_blocks_equiv_test compiles every unit with -DRSA_MONT64_BLOCKS=1,
+// under any compiler, so rsa_mont64_mont_mul and rsa_mont64_mont_square
+// run the blocks for a word count that is a multiple of 4, as a clang build
+// for arm64 runs them. bin/rsa_addcarry_equiv_test compiles every unit
+// with -DRSA_MONT64_ADDCARRY=1, so the two calls run the rows at every
+// word count, as a gcc build for x86-64 runs them, on the form of the add
+// with carry its machine picks: _addcarry_u64 on x86-64 and a 128-bit sum
+// elsewhere. test/rsa_mont64_loops.c compiles rsa_mont64.c once more with
+// both off, under second names: the loops, which the proofs,
+// bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum hold to
+// rsa_mont.c's 32-bit arithmetic. Below, "the kernel" is the blocks or the
+// rows, whichever the binary compiles.
 //
 // At every word count from 1 to the bound, under random odd moduli with
 // the top bit set and under moduli whose words sit at an edge, both
@@ -22,13 +29,15 @@
 //     with o apart from both, o on a and o on b;
 //   - for each a below m, the multiplication of a by itself, apart from o
 //     and in place, and the square, apart from o and in place;
-//   - at a multiple of 4, rsa_mont64_blocks_square against
-//     rsa_mont64_blocks_mul(o, a, a, mod), both before the last
-//     subtraction, since rsa_mont64_mont_square runs the square only above
-//     RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words.
+//   - where the kernel runs, its square against its multiplication of a
+//     by itself, both before the last subtraction: the blocks at a
+//     multiple of 4, since rsa_mont64_mont_square runs their square only
+//     above RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words, and the rows at every
+//     word count.
 //
-// A word count that is not a multiple of 4 runs the loops on both sides,
-// which shows that the calls pick the blocks for no other count.
+// For the blocks, a word count that is not a multiple of 4 runs the loops
+// on both sides, which shows that the calls pick the blocks for no other
+// count.
 //
 // The random values come from the seeded generator below, so an ordinary
 // run replays exactly.
@@ -39,10 +48,25 @@
 
 #include "ch_assert.h"
 #include "rsa_mont64.h"
+#include "rsa_mont64_addcarry.h"
 #include "rsa_mont64_blocks.h"
 
-#if !RSA_MONT64_BLOCKS
-#error "bin/rsa_blocks_equiv_test compiles with -DRSA_MONT64_BLOCKS=1"
+// The kernel's name in the binary's output, its two entries before the last subtraction, and
+// the word counts at which rsa_mont64.c runs it.
+#if RSA_MONT64_BLOCKS
+#define KERNEL_TEST "rsa_blocks_equiv_test"
+#define KERNEL "the blocks"
+#define KERNEL_SQUARE rsa_mont64_blocks_square
+#define KERNEL_MUL rsa_mont64_blocks_mul
+#define KERNEL_RUNS_AT(k) ((k) % 4 == 0)
+#elif RSA_MONT64_ADDCARRY
+#define KERNEL_TEST "rsa_addcarry_equiv_test"
+#define KERNEL "the rows"
+#define KERNEL_SQUARE rsa_mont64_addcarry_square
+#define KERNEL_MUL rsa_mont64_addcarry_mul
+#define KERNEL_RUNS_AT(k) ((k) >= 1)
+#else
+#error "compile with -DRSA_MONT64_BLOCKS=1 or -DRSA_MONT64_ADDCARRY=1"
 #endif
 
 // rsa_mont64.c's loops under second names (test/rsa_mont64_loops.c).
@@ -113,17 +137,17 @@ static void random_below(uint64_t *a, const uint64_t *m, size_t k) {
     } while (!below(a, m, k));
 }
 
-// The words the blocks wrote against the words the loops wrote, for one
+// The words the kernel wrote against the words the loops wrote, for one
 // case. The first word that differs is printed.
-static void compare(const char *case_name, const char *shape, size_t k, const uint64_t *blocks,
+static void compare(const char *case_name, const char *shape, size_t k, const uint64_t *kernel,
                     const uint64_t *loops) {
     for (size_t i = 0; i < k; i++) {
-        if (blocks[i] != loops[i]) {
+        if (kernel[i] != loops[i]) {
             failures++;
             (void)fprintf(stderr,
-                          "FAIL %s, %s, at %zu words: word %zu is %016llx from the blocks and "
-                          "%016llx from the loops\n",
-                          case_name, shape, k, i, (unsigned long long)blocks[i],
+                          "FAIL %s, %s, at %zu words: word %zu is %016llx from " KERNEL
+                          " and %016llx from the loops\n",
+                          case_name, shape, k, i, (unsigned long long)kernel[i],
                           (unsigned long long)loops[i]);
             return;
         }
@@ -137,39 +161,39 @@ static void compare_product(const char *case_name, const uint64_t *a, const uint
                             const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint64_t loops[WORDS_MAX];
-    uint64_t blocks[WORDS_MAX];
+    uint64_t kernel[WORDS_MAX];
     memset(loops, 0x55, sizeof loops);
     rsa_mont64_loops_mont_mul(loops, a, b, mod);
 
-    memset(blocks, 0xaa, sizeof blocks);
-    rsa_mont64_mont_mul(blocks, a, b, mod);
-    compare(case_name, "o apart", k, blocks, loops);
+    memset(kernel, 0xaa, sizeof kernel);
+    rsa_mont64_mont_mul(kernel, a, b, mod);
+    compare(case_name, "o apart", k, kernel, loops);
 
-    memcpy(blocks, a, k * sizeof(uint64_t));
-    rsa_mont64_mont_mul(blocks, blocks, b, mod);
-    compare(case_name, "o on a", k, blocks, loops);
+    memcpy(kernel, a, k * sizeof(uint64_t));
+    rsa_mont64_mont_mul(kernel, kernel, b, mod);
+    compare(case_name, "o on a", k, kernel, loops);
 
-    memcpy(blocks, b, k * sizeof(uint64_t));
-    rsa_mont64_mont_mul(blocks, a, blocks, mod);
-    compare(case_name, "o on b", k, blocks, loops);
+    memcpy(kernel, b, k * sizeof(uint64_t));
+    rsa_mont64_mont_mul(kernel, a, kernel, mod);
+    compare(case_name, "o on b", k, kernel, loops);
     multiplied += 3;
 }
 
-// The blocks' square against their multiplication of a by itself, both
+// The kernel's square against its multiplication of a by itself, both
 // before the last subtraction. Each computes (a^2 + U m) / R for the one U
 // below R that makes the sum a multiple of R, so the words and the top
 // word are the same.
-static void compare_block_square(const char *case_name, const uint64_t *a,
-                                 const rsa_mont64_modulus *mod) {
+static void compare_kernel_square(const char *case_name, const uint64_t *a,
+                                  const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     uint64_t square_words[WORDS_MAX + 1];
     uint64_t product_words[WORDS_MAX + 1];
     memset(square_words, 0xaa, sizeof square_words);
     memset(product_words, 0x55, sizeof product_words);
-    square_words[k] = rsa_mont64_blocks_square(square_words, a, mod);
-    product_words[k] = rsa_mont64_blocks_mul(product_words, a, a, mod);
-    compare(case_name, "the blocks' square and product before the subtraction", k + 1, square_words,
-            product_words);
+    square_words[k] = KERNEL_SQUARE(square_words, a, mod);
+    product_words[k] = KERNEL_MUL(product_words, a, a, mod);
+    compare(case_name, "the kernel's square and product before the subtraction", k + 1,
+            square_words, product_words);
     squared++;
 }
 
@@ -182,29 +206,29 @@ static void compare_square(const char *case_name, const uint64_t *a,
     size_t k = mod->words;
     uint64_t loops[WORDS_MAX];
     uint64_t x[WORDS_MAX];
-    uint64_t blocks[WORDS_MAX];
+    uint64_t kernel[WORDS_MAX];
     memset(loops, 0x55, sizeof loops);
     rsa_mont64_loops_mont_square(loops, a, mod);
 
     memcpy(x, a, k * sizeof(uint64_t));
-    memset(blocks, 0xaa, sizeof blocks);
-    rsa_mont64_mont_mul(blocks, x, x, mod);
-    compare(case_name, "a on b", k, blocks, loops);
+    memset(kernel, 0xaa, sizeof kernel);
+    rsa_mont64_mont_mul(kernel, x, x, mod);
+    compare(case_name, "a on b", k, kernel, loops);
 
     rsa_mont64_mont_mul(x, x, x, mod);
     compare(case_name, "o, a and b on one array", k, x, loops);
 
-    memset(blocks, 0xaa, sizeof blocks);
-    rsa_mont64_mont_square(blocks, a, mod);
-    compare(case_name, "square, o apart", k, blocks, loops);
+    memset(kernel, 0xaa, sizeof kernel);
+    rsa_mont64_mont_square(kernel, a, mod);
+    compare(case_name, "square, o apart", k, kernel, loops);
 
     memcpy(x, a, k * sizeof(uint64_t));
     rsa_mont64_mont_square(x, x, mod);
     compare(case_name, "square, o on a", k, x, loops);
     multiplied += 2;
     squared += 2;
-    if (k % 4 == 0) {
-        compare_block_square(case_name, a, mod);
+    if (KERNEL_RUNS_AT(k)) {
+        compare_kernel_square(case_name, a, mod);
     }
 }
 
@@ -319,13 +343,13 @@ int main(void) {
         run_word_count(k);
     }
     if (failures != 0) {
-        (void)fprintf(stderr, "rsa_blocks_equiv_test: %d failure(s), seed 0x%llx\n", failures,
+        (void)fprintf(stderr, KERNEL_TEST ": %d failure(s), seed 0x%llx\n", failures,
                       (unsigned long long)seed);
         return 1;
     }
-    (void)printf(
-        "rsa_blocks_equiv_test: %lu multiplications and %lu squares at 1 to %d words, seed "
-        "0x%llx, all equal\n",
-        multiplied, squared, (int)WORDS_MAX, (unsigned long long)seed);
+    (void)printf(KERNEL_TEST
+                 ": %lu multiplications and %lu squares at 1 to %d words, seed 0x%llx, all "
+                 "equal\n",
+                 multiplied, squared, (int)WORDS_MAX, (unsigned long long)seed);
     return 0;
 }

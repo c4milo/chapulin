@@ -9498,6 +9498,111 @@ does nothing more.
       on `chacha20_avx2.c` and 127 to 138 ns with it on 512-bit registers,
       under clang and gcc.
 
+122. **A gcc host object for x86-64 multiplies and squares RSA's words in
+    rows whose carries go down `_addcarry_u64` chains.** After decisions
+    117 and 118, a gcc build for x86-64 ran `rsa_mont64.c`'s loops, whose
+    every word waits on the carry of the word below: gcc keeps no carry in
+    the flags from one 128-bit sum to the next. Camilo ruled on
+    2026-10-09 to land these rows for gcc on x86-64, with no assembly on
+    a secret.
+
+    - **What changes.** `rsa_mont64_addcarry.c` multiplies and squares in
+      rows of blocks of four words, the shape decision 119's prototype
+      called S. In a block each of the four products takes its own word of
+      the running sum in one 128-bit sum, which waits on no carry, and one
+      chain of four `_addcarry_u64` calls then adds the carry word from the
+      block below, the four low words and the high words one word up. gcc
+      13 keeps that chain in the carry flag. The multiplication adds a[i] *
+      b and then u * m at word i of a running sum of 2k + 1 words that
+      never moves down. The square has the blocks' shape: the cross
+      products once, doubled, the squares added, and then the multiples of
+      m. `rsa_mont64.c` calls both at every word count and takes the last
+      subtraction itself. `RSA_MONT64_ADDCARRY` in `rsa_mont64.h` is 1
+      under gcc for x86-64 alone, so the signer runs the rows too.
+    - **Two forms of the add with carry.** `_addcarry_u64` exists on
+      x86-64 alone, and every x86-64 CPU runs it, so no bit of `ch_cfg.cpu`
+      states it. `RSA_MONT64_CARRY` names it there and a 128-bit sum
+      elsewhere, which the proofs read and an arm64 build of the tests
+      runs. The running sum's words are `unsigned long long`, the type the
+      intrinsic writes through, and each chain writes its word in place:
+      the prototype kept a local the intrinsic wrote through in a stack
+      slot of its own under gcc 13.
+    - **Secrets.** The word a row multiplies by is read through a volatile
+      pointer at each product, the multiplication keeps u in a word of its
+      own, and both routines wipe their running sums. Under gcc 13.3 for
+      x86-64 at `-O2` and `-Os`, `bin/rsa_sign_equiv_test` finds no word
+      of a key below the signer, and its two stacks under two secrets
+      agree. At `-O3` they differ in one byte below `rsa_sign64_power` and
+      `rsa_sign64_sp1`, where the loops they replace leave 4 to 17 bytes
+      that differ. The same binary built by clang 23 with the rows named
+      passes at `-O2`, `-O3` and `-Os`.
+    - **Why gcc alone.** Under clang the loops already run decision 117's
+      compare form, and the rows gained less there: on the runners below
+      they ran an RSA-2048 verification in 0.96 to 0.97 of the loops'
+      time and an RSA-2048 signature in 1.00 to 1.04 times it.
+    - **Gain.** Run 37998638725 timed the tree on six ubuntu-24.04
+      runners on 2026-10-09, under gcc 13.3, after holding the rows to the
+      loops on each: `bin/rsa_addcarry_equiv_test`, `bin/rsa_equiv_test`,
+      `bin/rsa_sign_equiv_test` and the verifiers' vectors passed under
+      both compilers. Each row below is the median of five runs of
+      `bench/primitives.c`'s RSA rows built both ways from this tree, in
+      turn, beside OpenSSL 3.6.4's `openssl speed`:
+
+      | CPU | 2048 verification | 3072 verification | 2048 signature | 3072 signature |
+      | --- | --- | --- | --- | --- |
+      | EPYC 7763, two runners | 35.2 → 29.5 µs | 79.4 → 62.1 µs | 1.47 → 1.34–1.35 ms | 4.53 → 3.83 ms |
+      | EPYC 9V74 | 29.7 → 23.7 µs | 64.9 → 50.5 µs | 1.22 → 1.08 ms | 3.78 → 3.11 ms |
+      | EPYC 9V45, three runners | 18.2–18.8 → 16.5–17.0 µs | 38.0–39.3 → 34.2–35.1 µs | 0.73–0.76 → 0.75–0.78 ms | 2.20–2.29 → 2.15–2.26 ms |
+
+      An RSA-4096 verification took 0.75 to 0.84 of the loops' time. On
+      the EPYC 9V45 the rows lose at RSA-2048 signing, 0.985 to 1.027
+      times the loops' time on its three runners: a 1,024-bit
+      multiplication there took 1.00 to 1.04 times the loops' time and a
+      square 0.99, where at 2,048 bits they took 0.94 and 0.85 to 0.93. On
+      the other two CPUs a 1,024-bit product took 0.87 to 0.91. OpenSSL
+      verified RSA-2048 in 18.9, 16.5 and 12.7 µs on the three CPUs, so the
+      rows' verification took 1.56, 1.44 and 1.30 to 1.34 times its time.
+    - **What holds it.** `rsa_mont64_addcarry_sums` runs the rows at four
+      and eight words with `--unsigned-overflow-check` on, over the product
+      contract of `proof/rsa_mont64_stubs.h`, and `rsa_mont64_addcarry` and
+      its `_webpki` line prove the memory accesses at the bound.
+      `bin/rsa_addcarry_equiv_test` builds the rows under any compiler and
+      holds their words to the loops' at every word count from 1 to 64,
+      and their square to their multiplication of a by itself, on the
+      intrinsic on x86-64 and on the sum elsewhere.
+      `test/docker-aes-runtime-qemu.sh rsa-addcarry` builds that binary
+      and `bin/rsa_sign_equiv_test` with gcc for x86-64, runs them under
+      qemu-x86_64, and requires `rsa_mont64.c` under that gcc to call the
+      rows, so a machine whose compiler is clang holds the form gcc ships.
+      `test/widemul-builds.sh` requires the rows from a gcc for x86-64 and
+      not from clang. Ten violations break the rows and a test or a proof
+      catches each (INV-41). Dropping the square's wipe of its running sum
+      or the volatile read of the multiplied word left nothing below the
+      signer under gcc 13, so neither is a violation.
+    - **Branches.** `lint-wide-multiply` compiles the file with the rows
+      named, as no clang build compiles them otherwise, and holds it at 25
+      conditional branches under clang for x86-64 and 13 for arm64, all
+      loop control over the word count. gcc 13 at `-O2` for x86-64, which
+      no spec runs, compiles it to 26, read the same way.
+    - **Cost.** A second multiplication and square beside the loops, in
+      234 lines, for one compiler and one architecture, with three launch
+      lines in the fast tier. Under gcc 13.3 at `-O2` for x86-64 the file
+      compiles to 2,396 bytes of code. Its running sum is 2k + 1 words
+      where the loops' is k + 2, so the multiplication's frame takes 928
+      bytes at the 384-byte bound and 1,184 at 512, and the square's 944
+      and 1,200, below `rsa_mont64.c`'s calls into them, which hold the k
+      words before the last subtraction.
+
+    Rejected:
+
+    - **The rows under clang**, above.
+    - **The blocks of decision 118 for gcc**, whose two chains of 128-bit
+      sums gcc compiles to a carry through a register at every word: that
+      decision measured them at 1.3 to 1.9 times the loops' time.
+    - **One column of the result at a time with the step in inline
+      assembly**, which the prototype ran at 0.73 to 0.95 of the loops'
+      time under gcc. It is assembly on the signer's secrets.
+
 123. **Every x86-64 host object expands an AES key a round key at a time
     in vector registers.** `record.c` and `quic_packet.c` expand a traffic
     key for every record and every packet and wipe the schedule after it

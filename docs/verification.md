@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-99 of the 132 C sources in the tree root are compiled into a
+100 of the 133 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1178,6 +1178,44 @@ The entries are grouped by area:
   `make lint-wide-multiply`'s, which counts the conditional branches it
   compiles to, and `bin/rsa_sign_equiv_test`'s search of the stack,
   which runs the blocks only where a clang build for arm64 runs them.
+
+#### rsa_mont64_addcarry
+
+- **Harnesses:** `rsa_mont64_addcarry_sums` (fast), `rsa_mont64_addcarry` (fast), `rsa_mont64_addcarry_webpki` (fast)
+- **Build:** the multiplication and the square in rows whose carries go
+  down `_addcarry_u64` chains, which a gcc build for x86-64 runs
+  (`rsa_mont64_addcarry.c`, INV-41, decision 122), under
+  `-DCH_CPU_RUNTIME`, with `RSA_MONT64_ADDCARRY` at 1 whatever compiler
+  preprocesses the harness and the add with carry in its 128-bit sum
+  form, `RSA_MONT64_CARRY_SUM`, which CBMC reads, over the product
+  contract of `proof/rsa_mont64_stubs.h`. `rsa_mont64_addcarry_sums`
+  adds `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_mont64_addcarry_sums`: at four words and at eight, over any
+    operands, any modulus and any `m0inv`, no sum in the rows wraps: each
+    sum of a product and a word of the running sum, each add of a
+    block's chain, the word a block returns, a row's tail, the steps
+    that add a row's carry word above it, the doubling and the squares
+    of the square, and each step of its reduction. It runs both
+    routines through `rsa_mont64_mont_mul` and `rsa_mont64_mont_square`.
+  - `rsa_mont64_addcarry`: through the same two entries, the rows read
+    and write inside their arrays at the largest word count, the
+    multiplication in the four aliasing shapes its callers use and the
+    square in its two.
+
+  The `_webpki` line is the same harness at the `CH_TRUST_WEBPKI`
+  bound.
+- **Bound:** 48 words, and 64 under `CH_TRUST_WEBPKI`; full-range words;
+  four and eight words for `rsa_mont64_addcarry_sums`.
+- **Not proved:** any value, and the `_addcarry_u64` form, which CBMC
+  cannot read. That the rows on that form write the words
+  `rsa_mont64.c`'s loops write rests on
+  [tests](#the-host-objects-rsa-arithmetic). The file's timing claim is
+  `make lint-wide-multiply`'s, which counts the conditional branches
+  clang compiles it to with the rows named, and
+  `bin/rsa_sign_equiv_test`'s search of the stack under gcc for x86-64,
+  which `test/docker-aes-runtime-qemu.sh rsa-addcarry` runs on any
+  machine.
 
 #### rsa_ifma
 
@@ -4627,8 +4665,9 @@ value. Tests hold the values:
   `bin/rsa_equiv_test_sum` are the same binary on each form, so a machine
   of either compiler runs both (decision 117). Under clang for arm64 it
   runs `rsa_mont64_blocks.c`'s blocks at a word count that is a multiple
-  of 4, and the other two turn them off, so the loops run at every count
-  (decision 118).
+  of 4, and under gcc for x86-64 `rsa_mont64_addcarry.c`'s rows at every
+  count, and the other two turn both off, so the loops run at every count
+  (decisions 118 and 122).
 - `bin/rsa_blocks_equiv_test`, in `make check`, holds the blocks to the
   loops, word for word. It compiles with the blocks on under any
   compiler, and `test/rsa_mont64_loops.c` compiles `rsa_mont64.c` once
@@ -4645,6 +4684,21 @@ value. Tests hold the values:
   `rsa_mont64_blocks_mul(o, a, a, mod)` before the last subtraction,
   since `rsa_mont64_mont_square` runs the square only above 32 words:
   62,720 multiplications and 7,056 squares in all.
+- `bin/rsa_addcarry_equiv_test`, in `make check`, is the same two units
+  compiled with the rows on and the blocks off, under any compiler, so
+  `rsa_mont64_mont_mul` and `rsa_mont64_mont_square` run the rows at every
+  word count. It makes the comparisons above, and at every word count it
+  holds `rsa_mont64_addcarry_square` to
+  `rsa_mont64_addcarry_mul(o, a, a, mod)` before the last subtraction:
+  62,720 multiplications and 9,408 squares. The add with carry is the
+  machine's form, `_addcarry_u64` on x86-64, where CI's gcc check job
+  runs it, and the 128-bit sum on arm64.
+- `test/docker-aes-runtime-qemu.sh rsa-addcarry` builds
+  `bin/rsa_addcarry_equiv_test` and `bin/rsa_sign_equiv_test` for x86-64
+  with gcc and the rows named, and runs them under qemu-x86_64, so a
+  machine whose compiler is clang runs the rows on the intrinsic and the
+  signer's search of the stack on them. It also compiles `rsa_mont64.c`
+  with that gcc and requires calls to both row entries.
 - `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` are the mains of
   `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
   their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,
@@ -4658,6 +4712,9 @@ value. Tests hold the values:
   CertificateVerify and chain signatures on it.
 - `test/widemul-builds.sh` requires `rsa_mont.c` to call `rsa_mont64.c`
   when it is compiled as a host object compiles it, and not otherwise.
+  It requires `rsa_mont64.c` to call both row entries when the host's
+  compiler is a gcc for x86-64 and neither otherwise, and neither under
+  the pinned clang for x86-64 whatever the host.
 
 Neither arm defines the result for an even modulus, which is no RSA
 modulus, and the two write different bytes for one, so no row here is
@@ -4744,6 +4801,19 @@ invert a dispatch, which `bin/widemul_runtime_test` catches; one adds a
 difference's modulus back by a branch, which `lint-wide-multiply`'s
 count catches; and one puts the signer in a device object, which
 `lint-trust-separation` catches (INV-41, INV-42, INV-16 and INV-17).
+
+Ten hold `rsa_mont64_addcarry.c`'s rows (decision 122): four break a
+value and `bin/rsa_addcarry_equiv_test` catches each on every machine;
+one hands `_addcarry_u64` a carry in of zero, two drop a wipe and one
+turns the rows off under gcc for x86-64, and
+`test/docker-aes-runtime-qemu.sh rsa-addcarry` catches each; one turns
+them on under clang, which `test/widemul-builds.sh` catches; and one adds
+a round's top word and carry word in a 64-bit sum, which
+`rsa_mont64_addcarry_sums` catches. The square's wipe of its running sum
+has no violation: under gcc 13 for x86-64 the bytes it leaves are written
+over by a later call's frame before the search reads them, and the
+search passes without the wipe. Neither has a read of the multiplied word
+through a plain pointer, under which gcc 13 leaves nothing either.
 
 ### The AVX-512 IFMA public operation
 

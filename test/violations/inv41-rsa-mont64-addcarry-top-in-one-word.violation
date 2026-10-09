@@ -1,0 +1,18 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: proof/prove-one.sh rsa_mont64_addcarry_sums
+reason: a round of rsa_mont64_addcarry_mul adds the a[i] * b row's carry
+  word to the running sum's top word in a 64-bit sum. The top word is 0
+  or 1 and the carry word reaches 2^64 - 1, so that sum wraps for some
+  operands, too rarely for a random test to meet. rsa_mont64_addcarry_sums
+  runs the rows with --unsigned-overflow-check on, where that sum is a
+  property.
+
+--- old
+        ct_u128 top = (ct_u128)t[i + k] + carry;
+        t[i + k] = (addcarry_word)top;
+        t[i + k + 1] = (addcarry_word)(top >> 64);
+--- new
+        ct_u128 top = (ct_u128)(t[i + k] + carry);
+        t[i + k] = (addcarry_word)top;
+        t[i + k + 1] = (addcarry_word)(top >> 64);

@@ -215,7 +215,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -507,11 +507,12 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
                     test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c
 # RSA's arithmetic on 64-bit words, the signer built on it and their
-# equivalence tests (docs/decisions.md 95), and rsa_ifma.c, the public
+# equivalence tests (docs/decisions.md 95, 118 and 122), and rsa_ifma.c, the public
 # operation on AVX-512 IFMA, with its two tests, its differential main and
 # the two units that compile it under second names, which compile only
 # under -DCH_CPU_RUNTIME. lint-tidy reads them in passes of their own.
-RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_ifma.c rsa_sign64.c rsa_ifma_sign.c \
+RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_ifma.c rsa_sign64.c \
+                   rsa_ifma_sign.c \
                    test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c \
                    test/rsa_ifma_sign_residue_test.c test/rsa_ifma_sign_count.c test/rsa_equiv_test.c \
                    test/rsa_equiv_portable.c \
@@ -1069,11 +1070,13 @@ endif
 # the multiply's timing for them (docs/decisions.md 95). The file joins
 # every host object that holds rsa_mont.c, and so does rsa_mont64_blocks.c,
 # its multiplication and square in blocks of four words, which compiles
-# to nothing outside a clang build for arm64 (docs/decisions.md 118). So
-# does rsa_ifma.c, the public operation on AVX-512 IFMA, which rsa_mont.c's
+# to nothing outside a clang build for arm64 (docs/decisions.md 118), and
+# rsa_mont64_addcarry.c, the two in rows whose carries go down
+# _addcarry_u64 chains, which compiles to nothing outside a gcc build for
+# x86-64 (docs/decisions.md 122). So does rsa_ifma.c, the public operation on AVX-512 IFMA, which rsa_mont.c's
 # rsa_vp1_cpu calls on x86-64 for a session whose ch_cfg.cpu holds
 # CH_CPU_AVX512_IFMA. It holds nothing on arm64, as chacha20_avx2.c does.
-RSA_MONT64_SRCS := rsa_mont64.c rsa_mont64_blocks.c rsa_ifma.c
+RSA_MONT64_SRCS := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_ifma.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
@@ -1554,8 +1557,9 @@ print-host-srcs:
 # beside theirs, bin/mlkem_vector_equiv_test and
 # bin/mlkem_avx2_equiv_test beside their one each,
 # bin/poly1305_equiv_test beside its one, bin/tcp_blocking_loop_host
-# and bin/webpki_auth_host beside theirs, and bin/aes_equiv_test beside
-# its one.
+# and bin/webpki_auth_host beside theirs, bin/aes_equiv_test beside its
+# one, bin/rsa_addcarry_equiv_test's units and sources, and
+# bin/rsa_sign_equiv_test beside its one.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1575,6 +1579,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
 	@echo $(call widemul_counted,$(WEBPKI_TEST_SRCS))
 	@echo $(AES_EQUIV_TEST_SRCS)
+	@echo $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+	@echo $(RSA_SIGN_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2526,25 +2532,38 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # runs the form its compiler picks, the compare form under clang and the
 # sum form under gcc, and check runs on clang on a Mac and on gcc in CI, so
 # these two rules name each form and every machine runs both
-# (docs/decisions.md 117). Both turn rsa_mont64_blocks.c's blocks off, so
-# the loops run at every word count, where a clang build for arm64 runs
-# the blocks at a multiple of 4 (docs/decisions.md 118).
+# (docs/decisions.md 117). Both turn rsa_mont64_blocks.c's blocks and
+# rsa_mont64_addcarry.c's rows off, so the loops run at every word count,
+# where a clang build for arm64 runs the blocks at a multiple of 4
+# (docs/decisions.md 118) and a gcc build for x86-64 runs the rows
+# (docs/decisions.md 122).
 bin/rsa_equiv_test_compare: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_COMPARE -DRSA_MONT64_BLOCKS=0 \
-	  $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 bin/rsa_equiv_test_sum: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM -DRSA_MONT64_BLOCKS=0 \
-	  $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	  -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 # rsa_mont64_blocks.c's blocks against rsa_mont64.c's loops, word for word
 # (docs/decisions.md 118). Every unit compiles with the blocks on, whatever
 # the compiler, so every machine runs them, and test/rsa_mont64_loops.c
-# compiles rsa_mont64.c once more with them off, under second names.
+# compiles rsa_mont64.c once more with them off, under second names. The
+# rows are off, which a gcc build for x86-64 would otherwise turn on.
 RSA_BLOCKS_EQUIV_TEST_UNITS := test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c
 bin/rsa_blocks_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 $(RSA_WIDE_DEF) -I. \
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. \
+	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
+# rsa_mont64_addcarry.c's rows against the same loops, word for word
+# (docs/decisions.md 122): the same two units with the rows on, whatever
+# the compiler, so every machine runs them. Each machine runs the form of
+# the add with carry it picks, _addcarry_u64 on x86-64 and a 128-bit sum
+# elsewhere, so CI's gcc check job runs the form a gcc build for x86-64
+# ships.
+bin/rsa_addcarry_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -I. \
 	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
 # rsa_ifma.c's kernel over a model of each AVX-512 instruction in portable
 # C, against rsa_mont64.c, on every machine. test/rsa_ifma_model.c
@@ -3672,7 +3691,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
-                                 bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
+                                 bin/rsa_blocks_equiv_test bin/rsa_addcarry_equiv_test \
+                                 bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test \
                                  bin/rsa_sign_equiv_test \
                                  bin/rsa_ifma_sign_model_test bin/rsa_ifma_sign_model_test_384 \
@@ -4992,9 +5012,12 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 $(RSA_WIDE_DEF) -I. \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. \
 	    -o bin/san/rsa_blocks_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c; \
 	  echo "== rsa_blocks_equiv_test (SAN -O$(O))"; ./bin/san/rsa_blocks_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -DRSA_MONT64_BLOCKS=0 $(RSA_WIDE_DEF) -I. \
+	    -o bin/san/rsa_addcarry_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c; \
+	  echo "== rsa_addcarry_equiv_test (SAN -O$(O))"; ./bin/san/rsa_addcarry_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_ifma_model_test \
 	    $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_model_test (SAN -O$(O))"; ./bin/san/rsa_ifma_model_test; \
@@ -5591,7 +5614,22 @@ else
 	# test/rsa_equiv_portable.c does.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,rsa_mont64.c rsa_mont64_blocks.c test/rsa_blocks_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 \
+	  -DRSA_MONT64_ADDCARRY=0 -I.)
+	# rsa_mont64_addcarry.c's rows and rsa_mont64.c's calls into them,
+	# which only a gcc build for x86-64 compiles unless a build names them
+	# (docs/decisions.md 122). This pass names them with
+	# -DRSA_MONT64_ADDCARRY=1, as bin/rsa_addcarry_equiv_test does, on the
+	# host's form of the add with carry: the 128-bit sum on an arm64
+	# machine and _addcarry_u64 on CI's x86-64 runner. The pass after it
+	# reads the intrinsic for an x86-64 target whatever the host.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,rsa_mont64.c rsa_mont64_addcarry.c test/rsa_blocks_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 \
+	  -DRSA_MONT64_BLOCKS=0 -I.)
+	@$(call TIDY_EACH,rsa_mont64_addcarry.c rsa_mont64.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=1 -I.)
 	# rsa_ifma.c over the lane model, the build bin/rsa_ifma_model_test
 	# runs on every host, so this pass reads test/rsa_ifma_model_lanes.h
 	# and, at the 512-byte bound, the kernel's copies for nine and ten
@@ -6544,7 +6582,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 poly1305_ifma.c:0 \
                   poly1305_ifma_native.c:0 sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 \
-                  rsa_mont64_blocks.c:0 rsa_sign64.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
+                  rsa_mont64_blocks.c:0 rsa_mont64_addcarry.c:0 rsa_sign64.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -6629,6 +6667,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
                    poly1305_ifma.c:-DCH_CPU_RUNTIME \
                    x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
+                   rsa_mont64_addcarry.c:-DCH_CPU_RUNTIME$(COMMA)-DRSA_MONT64_ADDCARRY=1$(COMMA)-DRSA_MONT64_BLOCKS=0 \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME avx512_wipe.c:-DCH_CPU_RUNTIME \
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
@@ -6855,6 +6894,20 @@ WIDEMUL_SPECS := \
 # rsa_mont64_blocks.c's 13 under that spec are loop control over the word
 # count and a row's length, and the tests that skip a loop of no
 # iterations. Under the x86-64 spec the file compiles to nothing.
+# rsa_mont64_addcarry.c, the rows a gcc build for x86-64 runs
+# (docs/decisions.md 122), compiles to nothing under clang unless a build
+# names it, so WIDEMUL_DEFINES names it with -DRSA_MONT64_ADDCARRY=1, and
+# each spec reads its own form of the add with carry: _addcarry_u64 for
+# x86-64 and the 128-bit sum for arm64. Its 25 under the x86-64 spec are
+# loop control over the word count: the multiplication's test for no
+# words, the entry, back edge and tail of each of a round's two rows, the
+# round loop and the copy of the result; and the square's tests for fewer
+# than two words and for none, the same four in each row of its cross
+# products and of its reduction, those two loops, the doubling's loop and
+# the copy. Under the arm64 spec clang keeps a row in a function of its
+# own, and the file has 13, the same tests read once in that function.
+# gcc 13 at -O2 for x86-64, which no spec here runs, compiles the file to
+# 26, read the same way.
 #
 # rsa_sign64.c's 26 under the arm64 spec and 29 under the x86-64 one were
 # read the same way. The x86-64 spec's three more are rsa_sign64_sp1's
@@ -7148,8 +7201,8 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c poly1305_ifma.c \
                poly1305_ifma_native.c \
-               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c \
-               rsa_ifma.c rsa_ifma.c@512 $(P256_WIDE_SRCS) \
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c \
+               rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
@@ -7391,6 +7444,7 @@ BRANCH_CEILING := \
   arm64/poly1305_ifma.c:0 x86-64/poly1305_ifma.c:0 \
   arm64/rsa_mont64.c:44 x86-64/rsa_mont64.c:43 \
   arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
+  arm64/rsa_mont64_addcarry.c:13 x86-64/rsa_mont64_addcarry.c:25 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:29 \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:23 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \

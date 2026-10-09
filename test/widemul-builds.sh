@@ -30,6 +30,12 @@
 #     its public operation, and in a device object calls neither: the
 #     device arm holds the 32-bit arithmetic itself, and no bit of
 #     ch_cfg.cpu picks between the two (docs/decisions.md 95).
+#   - rsa_mont64.c in a host object calls rsa_mont64_addcarry.c's rows,
+#     whose carries go down _addcarry_u64 chains, when gcc compiles it for
+#     x86-64, and calls neither row entry under clang or for any other
+#     machine: the pinned clang for x86-64 keeps the loops, and so does the
+#     host's compiler unless it is a gcc for x86-64, as CI's check job's is
+#     (docs/decisions.md 122).
 #   - rsa_ifma.c, RSA's public operation on AVX-512 IFMA, defines
 #     rsa_ifma_public for x86-64, on 512-bit registers and VPMADD52LUQ and
 #     VPMADD52HUQ, and nothing for arm64, both asked of the pinned clang
@@ -215,6 +221,33 @@ body_names() { # $1 = function, $2 = symbol
 }
 x86=x86_64-unknown-linux-gnu
 arm64=aarch64-none-elf
+
+# rsa_mont64.c's rows (docs/decisions.md 122). The host's compiler runs
+# them when it is a gcc for x86-64 and the loops otherwise, and the pinned
+# clang keeps the loops for x86-64 whatever the host.
+host_defines=$("$cc" -dM -E - </dev/null)
+gcc_x86=0
+if grep -q '__x86_64__' <<< "$host_defines" && ! grep -q '__clang__' <<< "$host_defines"; then
+    gcc_x86=1
+fi
+for symbol in rsa_mont64_addcarry_mul rsa_mont64_addcarry_square; do
+    if [ "$gcc_x86" = 1 ] && ! calls rsa_mont64.c "$symbol" -DCH_CPU_RUNTIME; then
+        echo "widemul-builds: rsa_mont64.c under $cc for x86-64 does not call $symbol; a gcc build for x86-64 runs the rows" >&2
+        exit 1
+    fi
+    if [ "$gcc_x86" = 0 ] && calls rsa_mont64.c "$symbol" -DCH_CPU_RUNTIME; then
+        echo "widemul-builds: rsa_mont64.c under $cc calls $symbol; only a gcc build for x86-64 runs the rows" >&2
+        exit 1
+    fi
+done
+cross_object "$x86" rsa_mont64.c
+for function in rsa_mont64_mont_mul rsa_mont64_mont_square; do
+    if body_names "$function" rsa_mont64_addcarry_; then
+        echo "widemul-builds: $function under clang for x86-64 calls rsa_mont64_addcarry.c; clang keeps the loops" >&2
+        exit 1
+    fi
+done
+
 cross_object "$x86" rsa_ifma.c
 if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?rsa_ifma_public$'; then
     echo "widemul-builds: rsa_ifma.c for x86-64 does not define rsa_ifma_public" >&2
@@ -276,7 +309,7 @@ if body_names rsa_vp1_cpu rsa_ifma_public; then
     echo "widemul-builds: rsa_vp1_cpu for arm64 calls rsa_ifma_public, which has a body on x86-64 alone" >&2
     exit 1
 fi
-for src in rsa.c rsa_pkcs1.c rsa_mont.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign.c rsa_sign64.c; do
+for src in rsa.c rsa_pkcs1.c rsa_mont.c rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_sign.c rsa_sign64.c; do
     cross_object "$x86" "$src"
     if grep -q '%zmm' "$work/cross.s"; then
         echo "widemul-builds: $src for x86-64 holds a 512-bit instruction; only rsa_ifma.c and rsa_ifma_sign.c may" >&2

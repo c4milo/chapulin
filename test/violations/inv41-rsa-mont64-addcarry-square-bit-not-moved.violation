@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: rsa_addcarry_equiv_test
+reason: the square's doubling drops the top bit of each odd word of the
+  cross products, the bit that moves into the next even word, so the
+  square is short by a power of two whenever that bit is set.
+  bin/rsa_addcarry_equiv_test holds rsa_mont64_addcarry_square to the
+  rows' multiplication of a by itself and to rsa_mont64.c's loops at every
+  word count.
+
+--- old
+        addcarry_word low = (t[2 * i] << 1) | moved;
+--- new
+        addcarry_word low = (t[2 * i] << 1) | (moved & 0);

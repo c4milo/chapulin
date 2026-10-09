@@ -39,6 +39,11 @@
 // rsa_mont64_modulus_init and rsa_mont64_public whole, which
 // rsa_mont64_init_harness.c and rsa_mont64_public_harness.c prove; and
 // neg_inverse, whose arithmetic wraps on purpose.
+//
+// The rows a gcc build for x86-64 runs are off, as in proof/rsa_mont64_stubs.h: the prove
+// job's cbmc preprocesses as gcc does for x86-64, which would turn them on, and their
+// harnesses are rsa_mont64_addcarry and rsa_mont64_addcarry_sums (docs/decisions.md 122).
+#define RSA_MONT64_ADDCARRY 0
 #include "harness.h"
 
 uint64_t nondet_u64(void);

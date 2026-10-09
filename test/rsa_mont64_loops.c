@@ -1,10 +1,13 @@
-// rsa_mont64.c with RSA_MONT64_BLOCKS at 0, under second names, so one
-// binary can hold the loops beside the blocks (docs/decisions.md 118).
+// rsa_mont64.c with RSA_MONT64_BLOCKS and RSA_MONT64_ADDCARRY at 0, under
+// second names, so one binary can hold the loops beside the blocks
+// (docs/decisions.md 118) or beside the rows (docs/decisions.md 122).
 // bin/rsa_blocks_equiv_test compiles every unit with -DRSA_MONT64_BLOCKS=1,
 // so rsa_mont64.c beside it runs rsa_mont64_blocks.c's blocks for a word
-// count that is a multiple of 4. This unit sets the define back to 0 and
-// compiles the loops, which the proofs, bin/rsa_equiv_test_compare and
-// bin/rsa_equiv_test_sum hold.
+// count that is a multiple of 4, and bin/rsa_addcarry_equiv_test compiles
+// every unit with -DRSA_MONT64_ADDCARRY=1, so rsa_mont64.c beside it runs
+// rsa_mont64_addcarry.c's rows at every word count. This unit sets both
+// defines back to 0 and compiles the loops, which the proofs,
+// bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum hold.
 //
 // The #defines rewrite both the definitions in rsa_mont64.c and the
 // declarations it reads from rsa_mont64.h, because they are in effect
@@ -13,6 +16,8 @@
 // and this list lacks is defined twice, so the binary fails to link.
 #undef RSA_MONT64_BLOCKS
 #define RSA_MONT64_BLOCKS 0
+#undef RSA_MONT64_ADDCARRY
+#define RSA_MONT64_ADDCARRY 0
 #define rsa_mont64_from_bytes rsa_mont64_loops_from_bytes
 #define rsa_mont64_to_bytes rsa_mont64_loops_to_bytes
 #define rsa_mont64_modulus_init rsa_mont64_loops_modulus_init

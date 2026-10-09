@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont64_addcarry.c
+catches: rsa_addcarry_equiv_test
+reason: block_mul_add's chain starts from zero in place of w, the carry
+  word of the block below, so every block but a row's first loses the
+  carry the one below it handed up. bin/rsa_addcarry_equiv_test runs the
+  rows under any compiler and compares their words with rsa_mont64.c's
+  loops.
+
+--- old
+    unsigned char carry = add_carry(0, (addcarry_word)q0, w, &t[0]);
+--- new
+    unsigned char carry = add_carry(0, (addcarry_word)q0, w & 0, &t[0]);
