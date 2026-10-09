@@ -12,4 +12,5 @@ reason: rsa_mont.c's use_ifma answers 1 whatever the session's ch_cfg.cpu
 --- old
     return (cpu & CH_CPU_AVX512_IFMA) != 0;
 --- new
-    return (cpu | CH_CPU_AVX512_IFMA) != 0;
+    (void)cpu;
+    return 1;
