@@ -1,13 +1,16 @@
-// The eight entries of an x86-64 host object's kernels, each a count and a
+// The nine entries of an x86-64 host object's kernels, each a count and a
 // call to the entry it stands beside (test/x86_kernels_count.h).
 // chacha20_vector_xor computes the bytes chacha20_avx2_xor computes,
 // gcm_hw.c's three entries the bytes gcm_vaes.c's compute, mlkem.c's
-// three session calls the bytes of mlkem_avx2.c's, and
+// three session calls the bytes of mlkem_avx2.c's,
 // poly1305_vector_blocks_native the accumulator poly1305_avx2_blocks_native
-// computes, under the same contracts, so a caller sees what it would see
-// from the kernel. On any other target the kernels have no entry and this
-// file holds nothing.
+// computes, and rsa_mont64_public the bytes rsa_ifma_public computes,
+// under the same contracts, so a caller sees what it would see from the
+// kernel. On any other target the kernels have no entry and this file
+// holds nothing.
 #include "x86_kernels_count.h"
+
+#include <string.h>
 
 #include "chacha20_avx2.h"
 #include "chacha20_vector.h"
@@ -16,6 +19,8 @@
 #include "mlkem.h"
 #include "poly1305_avx2.h"
 #include "poly1305_vector.h"
+#include "rsa_ifma.h"
+#include "rsa_mont64.h"
 
 #ifdef __x86_64__
 
@@ -27,6 +32,7 @@ unsigned long x86_mlkem_keygen_calls;
 unsigned long x86_mlkem_encaps_calls;
 unsigned long x86_mlkem_decaps_calls;
 unsigned long x86_poly1305_avx2_calls;
+unsigned long x86_rsa_ifma_calls;
 
 void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                        uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
@@ -76,6 +82,30 @@ void mlkem_decaps_avx2(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t 
 void poly1305_avx2_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
     x86_poly1305_avx2_calls++;
     poly1305_vector_blocks_native(p, m, n);
+}
+
+// rsa_vp1_cpu leaves mod->r2 unwritten (rsa_ifma.h), so this writes R^2 mod
+// m, R = 2^(64k), into a copy of the modulus before it runs
+// rsa_mont64_public. It takes R^2 from the digit_r2 = 2^(104n) mod m the
+// call passed, by one Montgomery product: with shift = 52n - 64k, from 2
+// to 53, 2^(64k - 2 shift) is below m, and its product with digit_r2,
+// divided by R, is 2^(128k) mod m, because 104n = 128k + 2 shift. So a
+// digit_r2 that is not that power of two gives other bytes, and the
+// verifier rows that run this fail.
+void rsa_ifma_public(uint8_t *out, const uint8_t *base, size_t len, const rsa_mont64_modulus *mod,
+                     const uint64_t *digit_r2) {
+    x86_rsa_ifma_calls++;
+    size_t k = mod->words;
+    size_t shift = 52 * rsa_ifma_digit_count(k) - 64 * k;
+    size_t bit = 64 * k - 2 * shift;
+    rsa_mont64_modulus with_r2;
+    memset(&with_r2, 0, sizeof with_r2);
+    memcpy(with_r2.m, mod->m, k * sizeof(uint64_t));
+    with_r2.m0inv = mod->m0inv;
+    with_r2.words = k;
+    with_r2.r2[bit >> 6] = (uint64_t)1 << (bit & 63);
+    rsa_mont64_mont_mul(with_r2.r2, with_r2.r2, digit_r2, &with_r2);
+    rsa_mont64_public(out, base, len, &with_r2);
 }
 
 #endif // __x86_64__

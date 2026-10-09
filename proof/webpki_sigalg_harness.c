@@ -250,7 +250,7 @@ static void verify_any(const uint8_t *cert_buf, const uint8_t *anchor_buf, size_
     verifier_calls = 0;
     verifier_result = 0;
     verifier_alg = 0;
-    int rc = webpki_verify(&cert, &signer);
+    int rc = webpki_verify(nondet_u32(), &cert, &signer);
 
     int rsa_sigalg = cert.sigalg == WEBPKI_SIG_RSA_SHA256 || cert.sigalg == WEBPKI_SIG_RSA_SHA384;
     int ecdsa_sigalg =

@@ -125,7 +125,8 @@ static void p384_message_hash(const uint8_t *digest, size_t digest_len,
     wb_bytes(&writer, digest, digest_len);
 }
 
-int webpki_verify(const webpki_cert *cert, const webpki_spki *signer) {
+int webpki_verify(uint32_t cpu, const webpki_cert *cert, const webpki_spki *signer) {
+    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa_pkcs1.h)
     // x509_emit_header writes at most two length octets, and no parsed
     // certificate's TBS exceeds the certificate cap.
     if (!signer_matches_sigalg(cert->sigalg, signer) || cert->tbs_len > CH_WEBPKI_CERT_MAX) {
@@ -136,8 +137,8 @@ int webpki_verify(const webpki_cert *cert, const webpki_spki *signer) {
     if (signer->alg == WEBPKI_KEY_RSA) {
         // rsa_pkcs1_verify refuses a signature whose length is not the
         // modulus length, and a modulus outside its size range.
-        return rsa_pkcs1_verify(signer->key, signer->key_len, digest, digest_len, cert->sig,
-                                cert->sig_len);
+        return RSA_PKCS1_VERIFY_CPU(cpu, signer->key, signer->key_len, digest, digest_len,
+                                    cert->sig, cert->sig_len);
     }
     if (signer->alg == WEBPKI_KEY_P256) {
         // FIPS 186-4 §6.4 for P-256: the leftmost 256 bits, which are the

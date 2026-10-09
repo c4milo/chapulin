@@ -702,14 +702,14 @@ launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GC
 # x25519_tail 458 properties, 156 s, 2.6 GB.
 launch slow:3 full x25519_step 17 ""
 launch fast:3 full x25519_tail 17 ""
-launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c proof/ct_wipe_stub.c
+launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,encoded_message_verifies.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c proof/ct_wipe_stub.c
 # rsa_webpki is the same harness with CH_TRUST_WEBPKI set, so
 # CH_RSA_MODULUS_MAX is 512 (RSA-4096, the bound the webpki build
 # accepts): every bound above grows from the 384-byte width to the
 # 512-byte one, and the field-sensitivity size follows. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 250 properties, 70 s, 595 MB for
 # cbmc and 89 MB for kissat.
-launch fast full rsa_webpki 513 "fill_nondet.0:513,ct_memeq.0:33,greater_or_equal.0:513,modulus_bits.0:513,modulus_bits.1:9,mgf1.0:16,emsa_pss_verify.0:480,emsa_pss_verify.1:448,rsa_pss_verify.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c proof/ct_wipe_stub.c
+launch fast full rsa_webpki 513 "fill_nondet.0:513,ct_memeq.0:33,greater_or_equal.0:513,modulus_bits.0:513,modulus_bits.1:9,mgf1.0:16,emsa_pss_verify.0:480,emsa_pss_verify.1:448,encoded_message_verifies.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c proof/ct_wipe_stub.c
 # rsa_pkcs1 is rsa's shape without the alignment pins: v1.5 fills every
 # em_len byte, so the modulus stays wholly nondet and one call per
 # admitted digest length runs the encode-and-compare end to end over the

@@ -9,7 +9,8 @@
 // either signer takes, and this file draws it from the source the
 // configuration names (sign_rsa_pss, INV-4). The boot-time check calls
 // the matching verifier, p256_ecdsa_verify or rsa_pss_verify, which a
-// ROLE=server object already carries.
+// ROLE=server object already carries, and in a host object
+// rsa_pss_verify_cpu under the configuration's ch_cfg.cpu.
 //
 // No line here reads a byte behind ch_identity.priv. This file tests
 // priv_len against the size of the type the scheme's signer declares
@@ -23,11 +24,13 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "handshake_message.h"
 #include "p256.h"
 #include "p256_sign.h"
 #include "rand_draw.h"
+#include "rsa.h"
 #include "rsa_sign.h"
 #include "widemul.h"
 
@@ -263,13 +266,17 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 
 // Verifies one signature under the public key in the slot, with the
 // verifier the scheme names. Returns 1 when it verified and 0
-// otherwise, the convention both verifiers use.
-static int verify_digest(const ch_identity *id, uint16_t sigalg, const uint8_t digest[SHA256_LEN],
-                         const uint8_t *sig, size_t sig_len) {
+// otherwise, the convention both verifiers use. cpu is the
+// configuration's ch_cfg.cpu, which the RSA arm hands to rsa.h's
+// rsa_pss_verify_cpu in a host object, so a value that names
+// instructions the CPU lacks faults here, before any session starts.
+static int verify_digest(uint32_t cpu, const ch_identity *id, uint16_t sigalg,
+                         const uint8_t digest[SHA256_LEN], const uint8_t *sig, size_t sig_len) {
+    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa.h)
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
         return p256_ecdsa_verify(id->pub, digest, sig, sig_len);
     }
-    return rsa_pss_verify(id->pub, id->pub_len, digest, sig, sig_len);
+    return RSA_PSS_VERIFY_CPU(cpu, id->pub, id->pub_len, digest, sig, sig_len);
 }
 
 int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
@@ -296,7 +303,7 @@ int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
     if (!sign_digest(cfg, id, sigalg, digest, sig, sizeof sig, &sig_len)) {
         return CH_EINVAL;
     }
-    if (!verify_digest(id, sigalg, digest, sig, sig_len)) {
+    if (!verify_digest(CH_CFG_CPU(*cfg), id, sigalg, digest, sig, sig_len)) {
         return CH_EINVAL;
     }
     return CH_OK;

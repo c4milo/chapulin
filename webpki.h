@@ -289,7 +289,11 @@ int webpki_read_sigalg(rbuf *r, uint8_t *sigalg);
 // cert->tbs_len over CH_WEBPKI_CERT_MAX. All inputs are public;
 // variable time is deliberate. Returns 1 or 0. Defined in
 // webpki_sigalg.c.
-int webpki_verify(const webpki_cert *cert, const webpki_spki *signer);
+//
+// cpu is the session's ch_cfg.cpu, as cpu.h's CH_CFG_CPU passes it: a
+// host object hands it to rsa_pkcs1.h's rsa_pkcs1_verify_cpu, and a
+// device object, which passes 0, reads it nowhere.
+int webpki_verify(uint32_t cpu, const webpki_cert *cert, const webpki_spki *signer);
 
 // Dates. A Time is UTCTime "YYMMDDHHMMSSZ" or GeneralizedTime
 // "YYYYMMDDHHMMSSZ", zulu only, and RFC 5280 §4.1.2.5 fixes which:

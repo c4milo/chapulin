@@ -1335,7 +1335,11 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_sign_equiv_test` catches. Or it reduces the message's high
   words with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
-  same binary reports it.
+  same binary reports it. Or it starts `rsa_mont.c`'s `power_of_two_mod`
+  at bit 0 of the top word whatever the exponent,
+  `inv41-rsa-mont-ifma-power-starts-at-bit-zero`: `bin/x86_kernels_test`'s
+  RSA-3072 row then gives other bytes than `rsa_vp1`, and
+  `test/docker-aes-runtime-qemu.sh x86-kernels` runs it.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117 and 118.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
@@ -1648,7 +1652,7 @@ last `ROLE=server` stub, as the entry said it would.
   runs it on an x86-64 host with AVX2, `make san-check` under the
   sanitizers, and `test/aes-runtime-qemu.sh mlkem-avx2` under qemu on
   any machine. `bin/x86_kernels_test` counts the copy's calls under
-  seventeen values. `test/mlkem-builds.sh` requires the copy's rows to
+  thirty-three values. `test/mlkem-builds.sh` requires the copy's rows to
   call the four-way Keccak and not `mlk_sample_ntt`, both files to hold
   nothing on arm64, and no other source at the root to include
   `keccak_avx2.h` or call its entries, and `make lint-trust-separation`

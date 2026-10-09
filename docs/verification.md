@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-96 of the 126 C sources in the tree root are compiled into a
+96 of the 127 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -45,7 +45,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 30 sources are in no such harness:
+The other 31 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -62,6 +62,7 @@ The other 30 sources are in no such harness:
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
+| `rsa_ifma.c` | It is the stub of RSA's public operation on AVX-512 IFMA, which a later commit replaces with the kernel, and has a body on x86-64 alone. It calls `rsa_mont64.c`'s entries, and no launch line drives `rsa_vp1_cpu`, its one caller. | On an x86-64 CPU with AVX-512 IFMA, the loop tests' rows under every bit the architecture defines run it. `bin/x86_kernels_test` runs the same arithmetic in its stand-in for the call on every x86-64 CPU, and the RSA verifiers accept their vectors through it. |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
@@ -3431,7 +3432,7 @@ file. The kernel rests on these:
   messages of the ChaCha20-Poly1305 suite that hold 512 bytes of whole
   blocks through the kernel. RFC 8439's vectors are shorter than that, so
   `bin/unit_host` under 0xd runs none of them on it.
-- `bin/x86_kernels_test` counts the kernel's calls under 17 `ch_cfg.cpu`
+- `bin/x86_kernels_test` counts the kernel's calls under 33 `ch_cfg.cpu`
   values. Every seal and open of a ChaCha20-Poly1305 record or packet,
   with 528 bytes of whole blocks, and an open that refuses a wrong tag
   must call it once where the value holds both bits and never where it
@@ -3581,7 +3582,7 @@ proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
   an arm64 machine runs it too. The lane's loops with one end stating
   `CH_CPU_AVX2` and the other not complete their handshakes, ML-KEM's
   share included.
-- `bin/x86_kernels_test` counts the copy's calls under seventeen
+- `bin/x86_kernels_test` counts the copy's calls under thirty-three
   `ch_cfg.cpu` values: a session call runs it exactly where the value
   holds `CH_CPU_AVX2`.
 - `test/mlkem-builds.sh` requires the copy's rows to call the four-way
@@ -3651,17 +3652,24 @@ skips a kernel's cases on a CPU without its instructions:
 **Which calls run a kernel** rests on these:
 
 - `bin/x86_kernels_test` counts the calls into each kernel under each of
-  17 `ch_cfg.cpu` values: the 16 the four bits from 0x02 to 0x10 make
-  beside `CH_CPU_PROBED`, and 0, which a wiped record direction holds.
-  Its rows are `chacha20_xor_cpu` and the two AEAD entries that take a
-  value, a record under each of the three suites, a QUIC 1-RTT packet
-  under each suite and a Handshake packet, an Initial packet, and a
-  traffic key's schedule. The same rows count the AVX2 Poly1305's calls
-  ([The AVX2 Poly1305](#the-avx2-poly1305)). Under each value a call must run a kernel
-  exactly when the value names it, and must return the same bytes. The
-  counting entries (`test/x86_kernels_count.c`) forward to the 128-bit
-  paths, so the binary runs no kernel instruction and passes on every
-  x86-64 CPU. An arm64 build of it has no row.
+  33 `ch_cfg.cpu` values: the 32 the five bits from 0x02 to 0x10 and
+  0x100 make beside `CH_CPU_PROBED`, and 0, which a wiped record
+  direction holds. Its rows are `chacha20_xor_cpu` and the two AEAD
+  entries that take a value, a record under each of the three suites, a
+  QUIC 1-RTT packet under each suite and a Handshake packet, an Initial
+  packet, and a traffic key's schedule. The same rows count the AVX2
+  Poly1305's calls ([The AVX2 Poly1305](#the-avx2-poly1305)). Its RSA
+  rows run the two verifiers' entries that take a value and
+  `rsa_vp1_cpu` over five moduli, three of which `rsa_ifma_public` does
+  not take, and count that call, which `CH_CPU_AVX512_IFMA` picks. One of
+  the two it takes is RSA-3072, whose 2^(104n) mod m starts at bit 32 of
+  the top word, so a wrong start bit in `rsa_mont.c`'s
+  `power_of_two_mod` changes its bytes. Under
+  each value a call must run a kernel exactly when the value names it,
+  and must return the same bytes. The counting entries
+  (`test/x86_kernels_count.c`) forward to the 128-bit paths and to
+  `rsa_mont64.c`, so the binary runs no kernel instruction and passes on
+  every x86-64 CPU. An arm64 build of it has no row.
 - `test/aes-runtime-qemu.sh` runs whole handshakes on CPU models, in CI's
   mips job on every push. On `max,-aes,-pclmulqdq,-avx2` the loops with
   `CH_CPU_AVX2` on both ends must die of SIGILL, which shows the model

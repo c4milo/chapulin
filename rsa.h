@@ -46,4 +46,38 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
 // word does not have.
 void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 
+#if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+#include "cpu_cfg.h"
+
+// rsa_vp1 and rsa_pss_verify for one session of a host object: each takes
+// the session's ch_cfg.cpu first, under the contract of the call it is
+// named for, and gives that call's result for every input, an even n
+// included. On x86-64, rsa_vp1_cpu hands the public operation to
+// rsa_ifma.h's AVX-512 IFMA kernel where cpu holds CH_CPU_AVX512_IFMA and
+// n is a modulus the kernel takes: at least RSA-2048, its top bit set, and
+// odd. Every other input, and every input on arm64, takes rsa_vp1. The
+// calls above, which take no value, run rsa_mont64.c in every session. A
+// call holds no session, so a caller that holds one passes its value in
+// an argument, as sha256.h's entries take it.
+//
+// Requires: what the plain call requires, and where cpu holds
+// CH_CPU_AVX512_IFMA, a CPU with AVX-512F and AVX-512 IFMA whose operating
+// system saves the 512-bit registers, which the session's caller states.
+// On a CPU without them the first such instruction faults.
+void rsa_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
+int rsa_pss_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t msg_hash[32],
+                       const uint8_t *sig, size_t sig_len);
+#endif
+
+// rsa_pss_verify as a source compiled into both objects calls it for a
+// session, with its ch_cfg.cpu first, in hkdf.h's form. A host object
+// passes the value to the entry above. A device object holds one public
+// operation, so it calls rsa_pss_verify and never evaluates cpu: the
+// expression may name a field that build does not declare.
+#ifdef CH_CPU_RUNTIME
+#define RSA_PSS_VERIFY_CPU(cpu, ...) rsa_pss_verify_cpu((cpu), __VA_ARGS__)
+#else
+#define RSA_PSS_VERIFY_CPU(cpu, ...) rsa_pss_verify(__VA_ARGS__)
+#endif
+
 #endif

@@ -132,7 +132,7 @@ static const char *diff_webpki_c_verify(uint8_t sigalg, const uint8_t *spki, siz
     cert.sigalg = sigalg;
     cert.sig = sig;
     cert.sig_len = sig_len;
-    return webpki_verify(&cert, &signer) ? "1" : "0";
+    return webpki_verify(0, &cert, &signer) ? "1" : "0";
 }
 
 static void diff_webpki_compare_verify(uint8_t sigalg, const uint8_t *spki, size_t spki_len,

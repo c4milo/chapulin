@@ -7,9 +7,11 @@
 // compares this file with (docs/decisions.md 95).
 //
 // Its caller is rsa_vp1 (rsa_mont.c), the public operation both verifiers
-// run, in every session of a host object. A modulus, a signature and an
-// encoded message are public, so the multiply's timing needs no statement
-// from anybody there.
+// run in a host object. On x86-64, rsa_vp1_cpu hands that operation to
+// rsa_ifma.h's rsa_ifma_public instead, for a session whose ch_cfg.cpu
+// holds CH_CPU_AVX512_IFMA and a modulus that call takes. A modulus, a
+// signature and an encoded message are public, so the multiply's timing
+// needs no statement from anybody there.
 //
 // Everything here is constant time in every word all the same: no branch
 // and no memory index depends on a word's value. A loop counts words, and
@@ -165,6 +167,13 @@ void rsa_mont64_sub(uint64_t *o, const uint64_t *a, const uint64_t *b,
 // o = a mod m, for a below 2m: one subtraction of m, chosen by a mask.
 // o may be a.
 void rsa_mont64_reduce_once(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod);
+
+// o = top:a mod m, for the mod->words + 1 word value top:a below 2m, with
+// top the word above a's k words: rsa_mont64_reduce_once for a sum that
+// has a word above them, the subtraction chosen by the same mask. o may
+// be a.
+void rsa_mont64_reduce_once_with_top(uint64_t *o, const uint64_t *a, uint64_t top,
+                                     const rsa_mont64_modulus *mod);
 
 // o = a * b + c, the plain product and not a Montgomery one: a, b and c
 // are k words each and o is 2k words, which the sum always fits. o

@@ -670,11 +670,19 @@ def select_lints(out, changed, csources, lib):
     # rsa_mont.c calls rsa_mont64.c's arithmetic in a host object alone
     # (docs/decisions.md 95). Both arms give the same bytes, so no test of
     # the verifiers tells which one an object compiled, and the script
-    # compiles the file either side of the define and reads its calls.
-    if "rsa_mont.c" in csources or "rsa_mont64.c" in csources or "rsa_mont64_blocks.c" in csources:
+    # compiles the file either side of the define and reads its calls. It
+    # also compiles rsa_ifma.c and rsa_mont.c's call into it for x86-64 and
+    # arm64, and reads every root source for an include of rsa_ifma.h or a
+    # call into it, so a change to any root source selects it.
+    if set(csources) & {"rsa_mont.c", "rsa_mont64.c", "rsa_mont64_blocks.c", "rsa_ifma.c"}:
         out.add("tests", "test/widemul-builds.sh",
                 "rsa_mont.c calls the 64-bit arithmetic in a host object "
                 "alone, and this script compiles it either side of that define",
+                ["test/widemul-builds.sh"])
+    elif any("/" not in p for p in csources):
+        out.add("tests", "test/widemul-builds.sh",
+                "a root source changed, and this script requires that none but "
+                "rsa_mont.c include rsa_ifma.h or call rsa_ifma_public",
                 ["test/widemul-builds.sh"])
     # p256.c hands a signature to p256_wide_verify.c in a host object alone
     # (docs/decisions.md 96). Both arms give the same verdict, so no test

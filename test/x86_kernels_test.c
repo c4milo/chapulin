@@ -5,16 +5,18 @@
 // where it holds the same bit (docs/decisions.md 107), widemul.h's
 // widemul_poly1305_avx2 picks poly1305_avx2.c's Poly1305 where it holds
 // that bit and CH_CPU_CONSTANT_TIME_MULTIPLY both (docs/decisions.md 110),
-// and gcm_vaes.h's gcm_use_vaes picks gcm_vaes.c's three entries where it
-// holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both. The kernels compute the bytes the
+// gcm_vaes.h's gcm_use_vaes picks gcm_vaes.c's three entries where it
+// holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both, and rsa_mont.c's
+// use_ifma picks rsa_ifma.c's RSA public operation where it holds
+// CH_CPU_AVX512_IFMA. The kernels compute the bytes the
 // paths beside them compute, so no vector can tell which ran:
 // test/x86_kernels_count.c counts the calls instead, and runs each on the
 // entry it stands beside, so this binary runs on every x86-64 CPU.
 //
-// Every row runs under each of the 16 values the four bits from 0x02 to
-// 0x10 make beside CH_CPU_PROBED, and under 0, which a wiped record
-// direction holds. Those four are the AES bit, the multiply bit and the two
-// that name a kernel; a hash bit picks no path a row here takes.
+// Every row runs under each of the 32 values the five bits from 0x02 to
+// 0x10 and 0x100 make beside CH_CPU_PROBED, and under 0, which a wiped
+// record direction holds. Those five are the AES bit, the multiply bit and
+// the three that name a kernel; a hash bit picks no path a row here takes.
 // Under each, a call must run a kernel exactly when the value names it,
 // and must give the same bytes back:
 //
@@ -33,6 +35,9 @@
 //     aes_traffic_key_cpu names what its value does.
 //   - ML-KEM's three session calls, mlkem_keygen_dk_cpu,
 //     mlkem_encaps_derand_cpu and mlkem_decaps_cpu.
+//   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu,
+//     which runs the kernel for each of two moduli it takes and rsa_vp1
+//     for each of three it does not (test/x86_kernels_rsa.h).
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test,
 // bin/poly1305_equiv_test and bin/aes_equiv_test call them against the
@@ -79,6 +84,8 @@ static int failures = 0;
             (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
         }                                                                                          \
     } while (0)
+
+#include "x86_kernels_rsa.h"
 
 // The payload every row seals: four passes of AES-GCM's eight blocks, one
 // whole block more and 7 bytes, so each kernel has whole passes, a whole
@@ -408,6 +415,8 @@ static void check_value(uint32_t cpu) {
     check_traffic_key(AES_128_KEY, cpu);
     check_traffic_key(AES_256_KEY, cpu);
     check_mlkem(cpu);
+    check_rsa_verifiers(cpu);
+    check_rsa_moduli(cpu);
     if (failures != failures_before) {
         (void)fprintf(stderr, "x86 kernels: the checks above ran under ch_cfg.cpu 0x%x\n",
                       (unsigned)cpu);
@@ -416,18 +425,21 @@ static void check_value(uint32_t cpu) {
 
 int main(void) {
     fill(payload, sizeof payload, 0x99);
-    // The four bits are 0x02 to 0x10, so the 16 values are the probe's bit
-    // and each of 0 to 15 shifted up one.
-    for (uint32_t bits = 0; bits < 16; bits++) {
-        check_value(CH_CPU_PROBED | (bits << 1));
+    // The five bits are 0x02 to 0x10 and 0x100, so the 32 values are the
+    // probe's bit with each of 0 to 15 shifted up one, and each of those
+    // with CH_CPU_AVX512_IFMA.
+    for (uint32_t bits = 0; bits < 32; bits++) {
+        uint32_t ifma = (bits & 16U) != 0 ? CH_CPU_AVX512_IFMA : 0U;
+        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma);
     }
     check_value(0);
     if (failures == 0) {
         (void)printf(
-            "x86 kernels: under each of 17 ch_cfg.cpu values, the ChaCha20 keystream and "
+            "x86 kernels: under each of 33 ch_cfg.cpu values, the ChaCha20 keystream and "
             "ML-KEM's matrix ran on the AVX2 kernels where CH_CPU_AVX2 was set, Poly1305 "
             "where CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY were, AES-GCM on the VAES "
-            "kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, and none of them "
+            "kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, RSA's public "
+            "operation on the IFMA kernel where CH_CPU_AVX512_IFMA was, and none of them "
             "anywhere else\n");
     }
     return failures != 0;

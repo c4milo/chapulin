@@ -326,6 +326,22 @@ AUDITED = {
         "ch_cfg.cpu value with the AES and VAES bits. Delete this entry if a "
         "harness can ever compile the file."
     ),
+    "rsa_ifma.c": (
+        "the stub of the AVX-512 IFMA kernel for RSA's public operation, which "
+        "has a body in an x86-64 host object alone, and which no launched "
+        "harness compiles: rsa_mont_host drives rsa_vp1, and no line drives "
+        "rsa_vp1_cpu. No operand in the file is signed. The arithmetic is "
+        "size_t and uint64_t: shift = 52n - 64k, where n is "
+        "RSA_IFMA_DIGIT_COUNT(k), at least (64k + 2) / 52, so the difference "
+        "is 2 to 53 and does not wrap; bit = 64k - 2 shift, at least 1942 "
+        "under the CH_ASSERT that k is 32 to RSA_MONT64_WORDS_MAX; the word "
+        "index bit >> 6, below k; and the shift of the uint64_t 1 by bit & 63. "
+        "The rest is calls into rsa_mont64.c, whose harnesses prove them. "
+        "bin/x86_kernels_test's stand-in for the call runs the same "
+        "arithmetic, and the two RSA verifiers' rows there accept their "
+        "vectors through it under each value with CH_CPU_AVX512_IFMA. Replace "
+        "this entry when the kernel replaces the stub."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` in "

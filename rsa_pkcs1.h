@@ -28,4 +28,24 @@
 int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size_t digest_len,
                      const uint8_t *sig, size_t sig_len);
 
+#if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
+// rsa_pkcs1_verify for one session of a host object: it takes the
+// session's ch_cfg.cpu first, under rsa_pkcs1_verify's contract, and
+// gives its result for every input. It runs the public operation through
+// rsa.h's rsa_vp1_cpu, which takes AVX-512 IFMA on x86-64 where cpu holds
+// CH_CPU_AVX512_IFMA, and so requires what that entry requires.
+int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *digest,
+                         size_t digest_len, const uint8_t *sig, size_t sig_len);
+#endif
+
+// rsa_pkcs1_verify as a source compiled into both objects calls it for a
+// session, in rsa.h's RSA_PSS_VERIFY_CPU form: rsa_pkcs1_verify_cpu in a
+// host object, and rsa_pkcs1_verify, which never evaluates cpu, in a
+// device object.
+#ifdef CH_CPU_RUNTIME
+#define RSA_PKCS1_VERIFY_CPU(cpu, ...) rsa_pkcs1_verify_cpu((cpu), __VA_ARGS__)
+#else
+#define RSA_PKCS1_VERIFY_CPU(cpu, ...) rsa_pkcs1_verify(__VA_ARGS__)
+#endif
+
 #endif

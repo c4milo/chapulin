@@ -120,20 +120,22 @@ static int emsa_pss_verify(const uint8_t msg_hash[32], const uint8_t *em, size_t
     return (int)ct_memeq(h_prime, hh, HLEN);
 }
 
-int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
-                   size_t sig_len) {
+// 1 when rsa_pss_verify takes the lengths and the signature to RSAVP1:
+// n_len from 256 to CH_RSA_MODULUS_MAX in steps of 8, sig_len equal to
+// it, and the signature below the modulus.
+static int inputs_admitted(const uint8_t *n, size_t n_len, const uint8_t *sig, size_t sig_len) {
     if (n_len < 256 || n_len > CH_RSA_MODULUS_MAX || n_len % 8 != 0 || sig_len != n_len) {
         return 0;
     }
     // Reject a signature numerically >= the modulus (covers s == n and
     // s == n + 1). Both are n_len big-endian bytes, so compare directly.
-    if (greater_or_equal(sig, n, n_len)) {
-        return 0;
-    }
+    return !greater_or_equal(sig, n, n_len);
+}
 
-    uint8_t em[CH_RSA_MODULUS_MAX];
-    rsa_vp1(n, n_len, sig, em);
-
+// 1 when em, the n_len bytes RSAVP1 recovered, is a PSS encoding of
+// msg_hash under the modulus n.
+static int encoded_message_verifies(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32],
+                                    const uint8_t *em) {
     // emBits = modBits - 1; emLen = ceil(emBits / 8). For an openssl
     // modulus the top bit is set, so emLen == n_len, but compute both
     // generally and require the I2OSP-dropped leading bytes to be zero.
@@ -147,3 +149,27 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
     }
     return emsa_pss_verify(msg_hash, em + off, em_len, em_bits);
 }
+
+// rsa_pss_verify and rsa_pss_verify_cpu share every check and differ in
+// the one call that computes RSAVP1.
+int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t sig_len) {
+    if (!inputs_admitted(n, n_len, sig, sig_len)) {
+        return 0;
+    }
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    rsa_vp1(n, n_len, sig, em);
+    return encoded_message_verifies(n, n_len, msg_hash, em);
+}
+
+#ifdef CH_CPU_RUNTIME
+int rsa_pss_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t msg_hash[32],
+                       const uint8_t *sig, size_t sig_len) {
+    if (!inputs_admitted(n, n_len, sig, sig_len)) {
+        return 0;
+    }
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    rsa_vp1_cpu(cpu, n, n_len, sig, em);
+    return encoded_message_verifies(n, n_len, msg_hash, em);
+}
+#endif

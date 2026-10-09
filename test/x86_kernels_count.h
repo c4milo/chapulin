@@ -1,13 +1,13 @@
 // The calls bin/x86_kernels_test counts into an x86-64 host object's
 // kernels (docs/decisions.md 89, 90, 107 and 110): chacha20_avx2.c's
 // chacha20_avx2_xor, gcm_vaes.c's three entries, the three session calls
-// of mlkem_avx2.c, and poly1305_avx2.c's poly1305_avx2_blocks_native.
-// test/x86_kernels_count.c defines the eight, each as a count and a call
-// to the entry it stands beside, which computes the same bytes, and the
-// binary links that file in place of the kernel sources. So the
-// library's sources run unchanged, no instruction of a kernel runs, and
-// the test reads which calls the library sent to a kernel, on any x86-64
-// CPU.
+// of mlkem_avx2.c, poly1305_avx2.c's poly1305_avx2_blocks_native and
+// rsa_ifma.c's rsa_ifma_public. test/x86_kernels_count.c defines the
+// nine, each as a count and a call to the entry it stands beside, which
+// computes the same bytes, and the binary links that file in place of the
+// kernel sources. So the library's sources run unchanged, no instruction
+// of a kernel runs, and the test reads which calls the library sent to a
+// kernel, on any x86-64 CPU.
 //
 // The names are this test's alone, as test/aes_runtime_count.h's are.
 #ifndef CH_TEST_X86_KERNELS_COUNT_H
@@ -29,5 +29,8 @@ extern unsigned long x86_mlkem_decaps_calls;
 // Calls to poly1305_avx2_blocks_native, the AVX2 Poly1305 kernel's entry
 // in poly1305.c's native copy (docs/decisions.md 110).
 extern unsigned long x86_poly1305_avx2_calls;
+// Calls to rsa_ifma_public, RSA's public operation on AVX-512 IFMA, which
+// rsa_mont.c's rsa_vp1_cpu makes for the two RSA verifiers.
+extern unsigned long x86_rsa_ifma_calls;
 
 #endif

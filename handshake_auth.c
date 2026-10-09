@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu.h"
 #include "ct.h"
 #include "handshake_message.h"
 #include "handshake_parser.h"
@@ -85,16 +86,19 @@ static uint16_t leaf_scheme(uint8_t alg) {
 
 // The signature against the verified leaf key. The scheme matched the
 // key family above, so each arm reads the digest length its verifier
-// takes: 32 bytes for RSA-PSS and P-256, 48 for P-384.
-static int verify_leaf_signature(const webpki_leaf_info *leaf, const uint8_t *signed_hash,
-                                 const uint8_t *sig, size_t sig_len) {
+// takes: 32 bytes for RSA-PSS and P-256, 48 for P-384. cpu is the
+// session's ch_cfg.cpu, which the RSA arm hands to rsa.h's
+// rsa_pss_verify_cpu in a host object.
+static int verify_leaf_signature(uint32_t cpu, const webpki_leaf_info *leaf,
+                                 const uint8_t *signed_hash, const uint8_t *sig, size_t sig_len) {
+    (void)cpu; // a device object's RSA verifier takes no description of the CPU (rsa.h)
     if (leaf->alg == WEBPKI_KEY_P256) {
         return p256_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);
     }
     if (leaf->alg == WEBPKI_KEY_P384) {
         return p384_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);
     }
-    return rsa_pss_verify(leaf->key, leaf->key_len, signed_hash, sig, sig_len);
+    return RSA_PSS_VERIFY_CPU(cpu, leaf->key, leaf->key_len, signed_hash, sig, sig_len);
 }
 #endif
 
@@ -138,7 +142,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
     }
     uint8_t signed_hash[SHA384_LEN];
     hsa_hash_signed_content(scheme, hash, hash_len, signed_hash);
-    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
+    int sig_ok = verify_leaf_signature(CH_CFG_CPU(h->t->cfg), &h->leaf, signed_hash, sig, sig_len);
 #else
     uint8_t signed_hash[SHA256_LEN];
     hsa_hash_signed_content(CH_PIN_SIGALG, hash, hash_len, signed_hash);
@@ -149,7 +153,8 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
 #ifdef CH_PIN_ECDSA
     sig_ok = p256_ecdsa_verify(h->leaf.key, signed_hash, sig, sig_len);
 #else
-    sig_ok = rsa_pss_verify(h->leaf.key, h->leaf.key_len, signed_hash, sig, sig_len);
+    sig_ok =
+        RSA_PSS_VERIFY_CPU(h->t->cfg.cpu, h->leaf.key, h->leaf.key_len, signed_hash, sig, sig_len);
 #endif
 #else
     // Slot A, then slot B: the second attempt covers rotation.
@@ -160,7 +165,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t *hash, siz
         sig_ok = p256_ecdsa_verify(keys[i], signed_hash, sig, sig_len);
 #else
         size_t len = i == 0 ? h->t->cfg.server_pubkey_len : h->t->cfg.server_pubkey2_len;
-        sig_ok = rsa_pss_verify(keys[i], len, signed_hash, sig, sig_len);
+        sig_ok = RSA_PSS_VERIFY_CPU(h->t->cfg.cpu, keys[i], len, signed_hash, sig, sig_len);
 #endif
         if (sig_ok) {
             h->t->pin_slot = (uint8_t)(i + 1);

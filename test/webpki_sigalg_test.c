@@ -174,7 +174,7 @@ static void test_verify_rows(void) {
         webpki_cert cert;
         webpki_spki signer;
         load_row(v, &cert, &signer);
-        CHECK(webpki_verify(&cert, &signer) == 1);
+        CHECK(webpki_verify(0, &cert, &signer) == 1);
 
         uint8_t tbs[TBS_BUF];
         uint8_t sig[SIG_BUF];
@@ -183,7 +183,7 @@ static void test_verify_rows(void) {
             memcpy(tbs, v->tbs, v->tbs_len);
             tbs[flip_at[j]] ^= 0x01;
             cert.tbs = tbs;
-            CHECK(webpki_verify(&cert, &signer) == 0);
+            CHECK(webpki_verify(0, &cert, &signer) == 0);
         }
         cert.tbs = v->tbs;
 
@@ -192,7 +192,7 @@ static void test_verify_rows(void) {
             memcpy(sig, v->sig, v->sig_len);
             sig[sig_flip_at[j]] ^= 0x01;
             cert.sig = sig;
-            CHECK(webpki_verify(&cert, &signer) == 0);
+            CHECK(webpki_verify(0, &cert, &signer) == 0);
         }
         // One byte short, and one zero byte long: for RSA both are a
         // sig_len other than n_len, for ECDSA a broken DER frame.
@@ -200,24 +200,24 @@ static void test_verify_rows(void) {
         sig[v->sig_len] = 0x00;
         cert.sig = sig;
         cert.sig_len = v->sig_len - 1;
-        CHECK(webpki_verify(&cert, &signer) == 0);
+        CHECK(webpki_verify(0, &cert, &signer) == 0);
         cert.sig_len = v->sig_len + 1;
-        CHECK(webpki_verify(&cert, &signer) == 0);
+        CHECK(webpki_verify(0, &cert, &signer) == 0);
         cert.sig = v->sig;
         cert.sig_len = v->sig_len;
 
         cert.sigalg = other_hash(v->sigalg);
-        CHECK(webpki_verify(&cert, &signer) == 0);
+        CHECK(webpki_verify(0, &cert, &signer) == 0);
         cert.sigalg = other_family(v->sigalg);
-        CHECK(webpki_verify(&cert, &signer) == 0);
+        CHECK(webpki_verify(0, &cert, &signer) == 0);
         for (unsigned bad = 0; bad < 256; bad++) {
             if (bad < WEBPKI_SIG_RSA_SHA256 || bad > WEBPKI_SIG_ECDSA_SHA384) {
                 cert.sigalg = (uint8_t)bad;
-                CHECK(webpki_verify(&cert, &signer) == 0);
+                CHECK(webpki_verify(0, &cert, &signer) == 0);
             }
         }
         cert.sigalg = v->sigalg;
-        CHECK(webpki_verify(&cert, &signer) == 1);
+        CHECK(webpki_verify(0, &cert, &signer) == 1);
     }
 }
 
@@ -239,7 +239,7 @@ static void test_wrong_signer(void) {
             webpki_spki other;
             load_row(a, &cert, &signer);
             load_row(b, &unused, &other);
-            CHECK(webpki_verify(&cert, &other) == 0);
+            CHECK(webpki_verify(0, &cert, &other) == 0);
         }
     }
 }
@@ -250,7 +250,7 @@ static void verify_one(const uint8_t *spki, size_t spki_len, uint8_t sigalg, con
     webpki_cert cert;
     webpki_spki signer;
     load_row(&v, &cert, &signer);
-    CHECK(webpki_verify(&cert, &signer) == expected);
+    CHECK(webpki_verify(0, &cert, &signer) == expected);
 }
 
 // An EC key whose length is the other curve's, and a key of no
@@ -267,14 +267,14 @@ static void test_signer_shape(void) {
     webpki_cert cert;
     webpki_spki signer;
     load_row(&v, &cert, &signer);
-    CHECK(webpki_verify(&cert, &signer) == 1);
+    CHECK(webpki_verify(0, &cert, &signer) == 1);
     signer.key_len = 96;
-    CHECK(webpki_verify(&cert, &signer) == 0);
+    CHECK(webpki_verify(0, &cert, &signer) == 0);
     signer.alg = WEBPKI_KEY_P384;
     signer.key_len = 64;
-    CHECK(webpki_verify(&cert, &signer) == 0);
+    CHECK(webpki_verify(0, &cert, &signer) == 0);
     signer.alg = 0;
-    CHECK(webpki_verify(&cert, &signer) == 0);
+    CHECK(webpki_verify(0, &cert, &signer) == 0);
 }
 
 // The TBS cap: CH_WEBPKI_CERT_MAX bytes is hashed and verifies, one

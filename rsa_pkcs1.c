@@ -90,8 +90,11 @@ static void emsa_pkcs1_v1_5_encode(uint8_t *em, size_t em_len, const uint8_t *di
     memcpy(em + EM_OVERHEAD + ps_len + DIGEST_INFO_LEN, digest, digest_len);
 }
 
-int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size_t digest_len,
-                     const uint8_t *sig, size_t sig_len) {
+// 1 when rsa_pkcs1_verify takes the lengths, the modulus and the signature
+// to RSAVP1: the modulus size check, an odd modulus, a digest length a
+// supported hash produces, and a signature below the modulus.
+static int inputs_admitted(const uint8_t *n, size_t n_len, size_t digest_len, const uint8_t *sig,
+                           size_t sig_len) {
     if (n_len < MODULUS_MIN || n_len > CH_RSA_MODULUS_MAX || n_len % MODULUS_STEP != 0 ||
         sig_len != n_len) {
         return 0;
@@ -101,22 +104,21 @@ int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size
     if ((n[n_len - 1] & 1) == 0) {
         return 0;
     }
-    const uint8_t *digest_info = digest_info_for(digest_len);
-    if (digest_info == NULL) {
+    if (digest_info_for(digest_len) == NULL) {
         return 0;
     }
     // Reject a signature numerically >= the modulus (RSAVP1 step 1), the
     // range rsa_vp1's contract leaves to its caller.
-    if (greater_or_equal(sig, n, n_len)) {
-        return 0;
-    }
+    return !greater_or_equal(sig, n, n_len);
+}
 
-    // em = sig^65537 mod n as n_len bytes (I2OSP with k = n_len, RFC
-    // 8017 §8.2.2 step 2), then the expected encoding at the same length.
-    uint8_t em[CH_RSA_MODULUS_MAX];
-    rsa_vp1(n, n_len, sig, em);
+// 1 when em, the n_len bytes RSAVP1 recovered (I2OSP with k = n_len, RFC
+// 8017 §8.2.2 step 2), is the expected encoding of digest at the same
+// length. inputs_admitted has checked digest_len.
+static int encoded_message_matches(size_t n_len, const uint8_t *digest, size_t digest_len,
+                                   const uint8_t *em) {
     uint8_t expected[CH_RSA_MODULUS_MAX];
-    emsa_pkcs1_v1_5_encode(expected, n_len, digest_info, digest, digest_len);
+    emsa_pkcs1_v1_5_encode(expected, n_len, digest_info_for(digest_len), digest, digest_len);
 
     // Both operands are public, so a plain byte compare would be sound;
     // ct_memeq is the tree's one byte-equality function and costs nothing
@@ -124,3 +126,28 @@ int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size
     // second idiom.
     return (int)ct_memeq(em, expected, n_len);
 }
+
+// rsa_pkcs1_verify and rsa_pkcs1_verify_cpu share every check and differ
+// in the one call that computes RSAVP1, em = sig^65537 mod n as n_len
+// bytes.
+int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size_t digest_len,
+                     const uint8_t *sig, size_t sig_len) {
+    if (!inputs_admitted(n, n_len, digest_len, sig, sig_len)) {
+        return 0;
+    }
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    rsa_vp1(n, n_len, sig, em);
+    return encoded_message_matches(n_len, digest, digest_len, em);
+}
+
+#ifdef CH_CPU_RUNTIME
+int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *digest,
+                         size_t digest_len, const uint8_t *sig, size_t sig_len) {
+    if (!inputs_admitted(n, n_len, digest_len, sig, sig_len)) {
+        return 0;
+    }
+    uint8_t em[CH_RSA_MODULUS_MAX];
+    rsa_vp1_cpu(cpu, n, n_len, sig, em);
+    return encoded_message_matches(n_len, digest, digest_len, em);
+}
+#endif

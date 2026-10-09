@@ -10,10 +10,12 @@ reason: rsa_mont.c chooses its arm on a define no build passes, so a host
 --- old
 #ifdef CH_CPU_RUNTIME
 
+#include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_mont64.h"
 --- new
 #ifdef CH_CPU_HOST
 
+#include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_mont64.h"

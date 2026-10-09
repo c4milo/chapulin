@@ -27,7 +27,11 @@
 #            SHA-512 on its SHA-512 instructions and, in a program clang
 #            built, SHA-3, SHAKE and ML-KEM on its SHA-3 instructions, and
 #            on x86-64 the AVX2 ChaCha20. On a CPU with AVX-512 IFMA the
-#            value also holds CH_CPU_AVX512_IFMA, which no path reads yet
+#            value also holds CH_CPU_AVX512_IFMA. The RSA handshake rows
+#            take that bit through rsa_vp1_cpu, because their ROLE=both
+#            programs set client_cfg.cpu to the value. The primitive
+#            verify rows do not yet: they call the verifiers that take no
+#            value
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256

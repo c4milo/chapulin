@@ -360,6 +360,11 @@ void rsa_mont64_reduce_once(uint64_t *o, const uint64_t *a, const rsa_mont64_mod
     reduce_once(o, a, 0, mod->m, mod->words);
 }
 
+void rsa_mont64_reduce_once_with_top(uint64_t *o, const uint64_t *a, uint64_t top,
+                                     const rsa_mont64_modulus *mod) {
+    reduce_once(o, a, top, mod->m, mod->words);
+}
+
 void rsa_mont64_mul_add(uint64_t *o, const uint64_t *a, const uint64_t *b, const uint64_t *c,
                         size_t k) {
     for (size_t i = 0; i < k; i++) {

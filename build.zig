@@ -512,9 +512,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (host and contains(lib_srcs, "p384.c")) lib_srcs = concat(b, &.{ lib_srcs, &p384_wide_srcs });
     // RSA_MONT64_SRCS: the 64-bit Montgomery arithmetic rsa_mont.c calls
     // in a host object, for the public operation of both RSA verifiers in
-    // every session (docs/decisions.md 95), and its blocks of four words
-    // (docs/decisions.md 118).
-    if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_mont64.c", "rsa_mont64_blocks.c" } });
+    // every session (docs/decisions.md 95), its blocks of four words
+    // (docs/decisions.md 118), and the public operation on AVX-512 IFMA,
+    // which a session's CH_CPU_AVX512_IFMA bit picks on x86-64 and which
+    // holds nothing on arm64.
+    if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_mont64.c", "rsa_mont64_blocks.c", "rsa_ifma.c" } });
     // RSA_SIGN64_SRCS: the signer on those words, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks over rsa_sign.c's ladder
     // (docs/decisions.md 95).

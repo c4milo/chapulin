@@ -22,6 +22,7 @@
 #define rsa_mont64_add rsa_mont64_loops_add
 #define rsa_mont64_sub rsa_mont64_loops_sub
 #define rsa_mont64_reduce_once rsa_mont64_loops_reduce_once
+#define rsa_mont64_reduce_once_with_top rsa_mont64_loops_reduce_once_with_top
 #define rsa_mont64_mul_add rsa_mont64_loops_mul_add
 #define rsa_mont64_public rsa_mont64_loops_public
 

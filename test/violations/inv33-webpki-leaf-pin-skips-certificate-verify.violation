@@ -8,7 +8,7 @@ reason: a chain accepted under pins alone skips CertificateVerify, so a
   want decrypt_error, object.
 
 --- old
-    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
+    int sig_ok = verify_leaf_signature(CH_CFG_CPU(h->t->cfg), &h->leaf, signed_hash, sig, sig_len);
 --- new
-    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len) ||
+    int sig_ok = verify_leaf_signature(CH_CFG_CPU(h->t->cfg), &h->leaf, signed_hash, sig, sig_len) ||
                  (h->t->cfg.anchor_count == 0 && h->t->server_cert_type == CH_CERT_TYPE_X509);

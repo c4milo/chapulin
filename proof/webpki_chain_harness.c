@@ -177,7 +177,8 @@ int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, we
     return CH_OK;
 }
 
-int webpki_verify(const webpki_cert *cert, const webpki_spki *signer) {
+int webpki_verify(uint32_t cpu, const webpki_cert *cert, const webpki_spki *signer) {
+    (void)cpu; // the harness builds a device object, whose verifier reads no cpu value
     __CPROVER_assert(__CPROVER_r_ok(cert, sizeof *cert), "verify stub: certificate readable");
     __CPROVER_assert(__CPROVER_r_ok(signer, sizeof *signer), "verify stub: signer readable");
     __CPROVER_assert(signer->key_len == 0 || __CPROVER_r_ok(signer->key, signer->key_len),

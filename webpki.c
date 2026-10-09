@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "buf.h"
+#include "cpu.h"
 #include "ct.h"
 #include "handshake_message.h"
 #include "rsa.h" // CH_RSA_MODULUS_MAX, the widest key webpki_read_spki returns
@@ -158,7 +159,7 @@ static int anchor_verifies(const ch_cfg *cfg, const webpki_cert *cert, size_t *i
             continue;
         }
         webpki_spki key;
-        if (read_anchor_key(anchor, &key) && webpki_verify(cert, &key)) {
+        if (read_anchor_key(anchor, &key) && webpki_verify(CH_CFG_CPU(*cfg), cert, &key)) {
             *index = i;
             return 1;
         }
@@ -189,9 +190,9 @@ static int path_len_admits(const webpki_cert *issuer, size_t below) {
 // check the clock against its validity, check it is the certificate
 // this one names, check its pathLenConstraint admits the below CA
 // certificates under it, and verify this certificate's signature under
-// its key.
-static int read_issuer(const certificate_list *entries, size_t index, size_t below, uint64_t now,
-                       const webpki_cert *cert, webpki_cert *issuer, uint8_t *alert) {
+// its key, with cpu, the session's ch_cfg.cpu.
+static int read_issuer(uint32_t cpu, const certificate_list *entries, size_t index, size_t below,
+                       uint64_t now, const webpki_cert *cert, webpki_cert *issuer, uint8_t *alert) {
     int rc =
         webpki_parse_certificate(entries->cert[index], entries->cert_len[index], 1, issuer, alert);
     if (rc != CH_OK) {
@@ -209,7 +210,7 @@ static int read_issuer(const certificate_list *entries, size_t index, size_t bel
         *alert = ALERT_UNSUPPORTED_CERTIFICATE;
         return CH_EPROTO;
     }
-    if (!webpki_verify(cert, &issuer->spki)) {
+    if (!webpki_verify(cpu, cert, &issuer->spki)) {
         *alert = ALERT_BAD_CERTIFICATE;
         return CH_EAUTH;
     }
@@ -286,7 +287,7 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
             break; // the walk's cap, or the entries ran out
         }
         webpki_cert issuer;
-        rc = read_issuer(&entries, read, below, now, &cert, &issuer, alert);
+        rc = read_issuer(CH_CFG_CPU(*cfg), &entries, read, below, now, &cert, &issuer, alert);
         if (rc != CH_OK) {
             return rc;
         }

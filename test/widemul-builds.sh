@@ -30,6 +30,14 @@
 #     its public operation, and in a device object calls neither: the
 #     device arm holds the 32-bit arithmetic itself, and no bit of
 #     ch_cfg.cpu picks between the two (docs/decisions.md 95).
+#   - rsa_ifma.c, RSA's public operation on AVX-512 IFMA, defines
+#     rsa_ifma_public for x86-64 and nothing for arm64, both asked of the
+#     pinned clang with no instruction flag whatever the host. For x86-64
+#     rsa_mont.c's rsa_vp1_cpu calls it and rsa_vp1, which takes no value,
+#     does not; for arm64 neither does. No other RSA source holds a
+#     512-bit instruction, and no root source but rsa_mont.c includes
+#     rsa_ifma.h or calls into it, so the signer never calls it: its
+#     input must be public (rsa_ifma.h).
 #   - p256.c in a host object hands the signature it read to
 #     p256_wide_verify.c, and in a device object does not: the device arm
 #     holds the 32-bit arithmetic itself, and no bit of ch_cfg.cpu picks
@@ -158,6 +166,79 @@ for symbol in rsa_mont64_modulus_init rsa_mont64_modulus_load rsa_mont64_public;
     fi
 done
 
+# rsa_ifma.c and the dispatch that calls it, asked of the pinned clang for
+# x86-64 and arm64 targets whatever the host, as test/chacha-builds.sh
+# asks of the AVX2 kernel.
+clang_rv=$(make -s --no-print-directory print-clang-rv)
+if [ -z "$clang_rv" ]; then
+    echo "widemul-builds: no clang to cross-compile with; see the LLVM_MAJOR pin in tools/toolchain.env" >&2
+    exit 1
+fi
+cross_object() { # $1 = target, $2 = source; writes $work/cross.o and $work/cross.s
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -c "$2" -o "$work/cross.o" || exit 1
+    "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -S "$2" -o "$work/cross.s" || exit 1
+}
+# Whether the body of one function in $work/cross.s names a symbol: the
+# lines from the function's label to its .size directive, which clang
+# writes for these ELF targets. It fails the script when the function has
+# no body there, so a renamed function cannot pass by being absent.
+body_names() { # $1 = function, $2 = symbol
+    awk -v f="$1" -v s="$2" '
+        $0 ~ "^" f ":" { inside = 1; seen = 1; next }
+        inside && $0 ~ "^[[:space:]]*\\.size[[:space:]]+" f "," { inside = 0 }
+        inside && index($0, s) { found = 1 }
+        END { if (!seen) exit 2; exit !found }' "$work/cross.s"
+    case $? in
+    0) return 0 ;;
+    1) return 1 ;;
+    *)
+        echo "widemul-builds: rsa_mont.c for a host object defines no $1" >&2
+        exit 1
+        ;;
+    esac
+}
+x86=x86_64-unknown-linux-gnu
+arm64=aarch64-none-elf
+cross_object "$x86" rsa_ifma.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?rsa_ifma_public$'; then
+    echo "widemul-builds: rsa_ifma.c for x86-64 does not define rsa_ifma_public" >&2
+    exit 1
+fi
+cross_object "$arm64" rsa_ifma.c
+if nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]'; then
+    echo "widemul-builds: rsa_ifma.c for arm64 defines a symbol; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+cross_object "$x86" rsa_mont.c
+if ! body_names rsa_vp1_cpu rsa_ifma_public; then
+    echo "widemul-builds: rsa_vp1_cpu for x86-64 does not call rsa_ifma_public; a session with CH_CPU_AVX512_IFMA runs it" >&2
+    exit 1
+fi
+if body_names rsa_vp1 rsa_ifma_public; then
+    echo "widemul-builds: rsa_vp1 for x86-64 calls rsa_ifma_public; it takes no description of the CPU" >&2
+    exit 1
+fi
+cross_object "$arm64" rsa_mont.c
+if body_names rsa_vp1_cpu rsa_ifma_public; then
+    echo "widemul-builds: rsa_vp1_cpu for arm64 calls rsa_ifma_public, which has a body on x86-64 alone" >&2
+    exit 1
+fi
+for src in rsa.c rsa_pkcs1.c rsa_mont.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign.c rsa_sign64.c; do
+    cross_object "$x86" "$src"
+    if grep -q '%zmm' "$work/cross.s"; then
+        echo "widemul-builds: $src for x86-64 holds a 512-bit instruction; only rsa_ifma.c may" >&2
+        exit 1
+    fi
+done
+others=$(git ls-files -- '*.c' '*.h' | grep -v / | grep -vxE 'rsa_ifma\.[ch]|rsa_mont\.c' |
+    xargs grep -lE '#[[:space:]]*include[[:space:]]*"rsa_ifma\.h"|rsa_ifma_[a-z0-9_]+[[:space:]]*\(' || true)
+if [ -n "$others" ]; then
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$others")include rsa_ifma.h or call rsa_ifma_public, which rsa_mont.c's rsa_vp1_cpu alone may call: it takes public input alone" >&2
+    exit 1
+fi
+
 # p256.c's two arms. The host arm hands r and s to p256_wide_verify.c, and
 # the device arm is the 32-bit arithmetic, which calls nothing outside its
 # file but the byte reader, memset and memcpy.
@@ -210,7 +291,7 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
     done
 }
 host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign64.c chacha20_vector.c
-            chacha20_avx2.c poly1305_vector_native.c poly1305_avx2_native.c rsa_mont64.c)
+            chacha20_avx2.c poly1305_vector_native.c poly1305_avx2_native.c rsa_mont64.c rsa_ifma.c)
 p384_words=(p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c)
 server=(ROLE=server TRUST=none)
 
@@ -227,7 +308,7 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_sign64.c*)
     echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
     exit 1
     ;;
@@ -295,7 +376,7 @@ if ! has_words "$(zig_lists "${zig_server[@]}" "$host_target")" "${host_words[@]
 fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_sign64.c*)
     echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
     exit 1
     ;;
@@ -339,4 +420,4 @@ if [ -n "$(zig_lists -DWIDEMUL=runtime)" ]; then
 fi
 rm -rf "$out"
 
-echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"
+echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, rsa_ifma.c has a body for x86-64 alone and only rsa_mont.c's rsa_vp1_cpu calls it, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"

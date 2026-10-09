@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: power_of_two_mod starts rem at bit 0 of its top word whatever the
+  exponent, so rsa_vp1_cpu hands rsa_ifma_public 2^(104n - e) mod m,
+  where e is the exponent mod 64. At RSA-2048 e is 0 and the bytes are
+  the same. At RSA-3072 e is 32, and bin/x86_kernels_test's RSA-3072 row
+  in check_rsa_moduli gives other bytes than rsa_vp1 under every value
+  with CH_CPU_AVX512_IFMA. test/aes-runtime-qemu.sh builds the binary for
+  x86-64 and runs it under qemu-x86_64. The lane skips without docker,
+  and this then reports unguarded rather than caught.
+
+--- old
+    rem[k - 1] = (uint64_t)1 << (exponent & 63);
+--- new
+    rem[k - 1] = 1;

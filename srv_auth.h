@@ -229,7 +229,8 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 //
 // The verifier is the one already in the object: p256_ecdsa_verify
 // (p256.h) for the ECDSA identity and rsa_pss_verify (rsa.h) for the
-// RSA one. A ROLE=server object carries both, which is why the ROLE
+// RSA one, which a host object calls as rsa_pss_verify_cpu under
+// cfg->cpu. A ROLE=server object carries both, which is why the ROLE
 // arm leaves PIN_FILTER empty, because TRUST selects nothing in it.
 //
 // It catches a broken signer and a key the operator paired with the

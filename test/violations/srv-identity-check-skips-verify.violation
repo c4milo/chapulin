@@ -10,8 +10,8 @@ reason: ch_srv_check signs with the private key and then ignores the
   point of a different key pair and requires CH_EINVAL.
 
 --- old
-    if (!verify_digest(id, sigalg, digest, sig, sig_len)) {
+    if (!verify_digest(CH_CFG_CPU(*cfg), id, sigalg, digest, sig, sig_len)) {
         return CH_EINVAL;
     }
 --- new
-    (void)verify_digest(id, sigalg, digest, sig, sig_len);
+    (void)verify_digest(CH_CFG_CPU(*cfg), id, sigalg, digest, sig, sig_len);

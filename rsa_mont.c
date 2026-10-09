@@ -16,12 +16,29 @@
 // a long division of its own, which branches on the modulus
 // (docs/decisions.md 103). bin/rsa_equiv_test compiles both arms into one
 // binary and requires the same bytes from each.
+//
+// The host arm also defines rsa_vp1_cpu, which takes a session's
+// ch_cfg.cpu. On x86-64 it hands the public operation to rsa_ifma.h's
+// rsa_ifma_public where the value holds CH_CPU_AVX512_IFMA, with the power
+// of two that call needs, which the same division computes. Every other
+// session, and every call of rsa_vp1, which takes no value, runs
+// rsa_mont64.c.
 #include "rsa.h"
 
 #ifdef CH_CPU_RUNTIME
 
+#include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_mont64.h"
+
+// rsa_ifma.h's declarations exist in an x86-64 host object and in a test
+// build that names CH_RSA_IFMA_MODEL. A later commit adds that build,
+// which runs the kernel over a scalar model of each instruction on any
+// host. The dispatch and the division that serve it compile under the
+// same condition.
+#if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
+#include "rsa_ifma.h"
+#endif
 
 // The bit length of the n_len-byte n: the position of its top set bit,
 // plus one, and 0 for n == 0, which no caller passes. rsa.c holds the
@@ -128,6 +145,63 @@ void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
         rsa_mont64_modulus_init(&mod, n, n_len, bits);
     }
     rsa_mont64_public(em, sig, n_len, &mod);
+}
+
+#if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
+// Whether rsa_vp1_cpu hands the public operation to rsa_ifma_public: where
+// cpu, the session's ch_cfg.cpu, holds CH_CPU_AVX512_IFMA, which the
+// caller sets from its own probe of the CPU. chapulin probes no CPU
+// (docs/decisions.md 89).
+static int use_ifma(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;
+}
+
+// rem = 2^exponent mod m, for an odd m of k >= 2 words whose top bit is
+// set and an exponent of at least 64(k - 1). It writes the k words of rem
+// and reads the k words of m.
+//
+// It starts rem at 2^(64(k - 1) + exponent mod 64), a single bit in rem's
+// top word. That is at most 2^(64k - 1), and m is above it, because m has
+// that bit and is odd. Each step of times_word_mod multiplies rem by 2^64
+// modulo m, so floor(exponent / 64) - (k - 1) steps end at 2^exponent mod
+// m. For rsa_ifma_public's 2^(104n) that is 34, 50 and 65 steps at
+// RSA-2048, RSA-3072 and RSA-4096, where r2_by_division takes 32, 48 and
+// 64.
+static void power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t exponent) {
+    for (size_t j = 0; j + 1 < k; j++) {
+        rem[j] = 0;
+    }
+    rem[k - 1] = (uint64_t)1 << (exponent & 63);
+    size_t steps = (exponent >> 6) - (k - 1);
+    for (size_t i = 0; i < steps; i++) {
+        times_word_mod(rem, m, k);
+    }
+}
+#endif
+
+// A session whose value holds CH_CPU_AVX512_IFMA, on x86-64, takes
+// rsa_ifma_public for a modulus that call takes: at least
+// RSA_IFMA_WORDS_MIN words, its top bit set, and odd. The division above
+// computes the 2^(104n) mod m it needs, and mod.r2 stays unwritten,
+// because that call does not read it. Every other modulus and every other
+// value take rsa_vp1, so each input gets rsa_vp1's bytes.
+void rsa_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
+#if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
+    size_t k = (n_len + 7) / 8;
+    if (use_ifma(cpu) && k >= RSA_IFMA_WORDS_MIN && bit_length(n, n_len) == 64 * k &&
+        (n[n_len - 1] & 1) == 1) {
+        rsa_mont64_modulus mod;
+        uint64_t digit_r2[RSA_MONT64_WORDS_MAX];
+        rsa_mont64_modulus_load(&mod, n, n_len);
+        power_of_two_mod(digit_r2, mod.m, k, 104 * rsa_ifma_digit_count(k));
+        rsa_ifma_public(em, sig, n_len, &mod, digit_r2);
+        return;
+    }
+#else
+    // arm64 has no such kernel, so no bit picks here.
+    (void)cpu;
+#endif
+    rsa_vp1(n, n_len, sig, em);
 }
 
 #else // !CH_CPU_RUNTIME

@@ -80,8 +80,12 @@
 // bits 16 and 21 of EBX, and that its operating system saves the opmask registers and the 512-bit
 // registers, which XGETBV reports in bits 5 to 7 of XCR0. A probe reads the IFMA bit itself: a
 // CPU can have AVX-512F without IFMA. It is an x86-64 bit for RSA verification, whose inputs are
-// all public, so like CH_CPU_AVX2 it states presence alone and no timing. No path reads it yet: a
-// session with the bit runs what a session without it runs.
+// all public, so like CH_CPU_AVX2 it states presence alone and no timing. rsa_mont.c's
+// rsa_vp1_cpu reads it and sends the verifiers' public operation to rsa_ifma.c for a modulus of
+// 2,048 bits or more whose bit length is a multiple of 64, and to rsa_mont64.c for any other.
+// x509.c verifies the chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu, so
+// they run rsa_mont64.c whatever the bit says. rsa_ifma.c in this tree is a stub on
+// rsa_mont64.c's words: a session with the bit computes what a session without it computes.
 //
 // CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
 // the CPU has the instructions of one hash, and state that they run in constant time on it, in
