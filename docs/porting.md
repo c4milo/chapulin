@@ -110,8 +110,8 @@ them; the AES bit's statement covers those forms, and `CH_CPU_VAES` without it
 runs nothing (decision 90). `CH_CPU_AVX512_IFMA` says the CPU has AVX-512F and
 AVX-512 IFMA and its operating system saves the opmask and 512-bit registers;
 with it a session runs RSA verification's public operation on `rsa_ifma.c`, in
-digits of 52 bits, eight to a 512-bit register, for a modulus of 2,048 bits or
-more whose bit length is a multiple of 64. `x509.c` verifies the chain
+digits of 52 bits, eight to a 512-bit register, for an odd modulus of 2,048
+bits or more whose bit length is a multiple of 64. `x509.c` verifies the chain
 links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they
 run `rsa_mont64.c` whatever the bit says. Set each from your
 probe alone: a session whose bit names instructions its CPU lacks faults on the

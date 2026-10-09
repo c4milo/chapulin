@@ -1326,18 +1326,22 @@ last `ROLE=server` stub, as the entry said it would.
   kernel and `rsa_mont.c`'s dispatch over `test/rsa_ifma_model_lanes.h`,
   each lane operation in portable C, and on every machine requires
   `rsa_vp1`'s bytes from `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` at
-  every word count from 32 to 64, each product's digits below 2^52 and
-  its number below 2m, and on lanes chosen for its carries a
-  `normalize_digits` that keeps the number it was given.
+  every word count from 32 to 64, one call into the kernel under the bit
+  and none without it, each product's digits below 2^52 and its number
+  below 2m, and on lanes chosen for its carries a `normalize_digits`
+  that keeps the number it was given. `bin/rsa_ifma_model_test_384`
+  requires the same at the 384-byte bound, from 32 to 48 words, the
+  layout every host object but a `TRUST=webpki` one compiles.
   `bin/rsa_ifma_equiv_test` holds the instructions to that model on an
   x86-64 CPU with AVX-512 IFMA, and the nightly's `rsa-ifma-sde` job
   runs it under Intel SDE's model of such a CPU.
   `test/widemul-builds.sh` requires the 512-bit instructions in
   `rsa_ifma.c`'s x86-64 object and in no other RSA source, a call to the
   kernel from `rsa_vp1_cpu` and not from `rsa_vp1`, no other root source
-  that includes `rsa_ifma.h` or calls into it, and no library build that
-  names `CH_RSA_IFMA_MODEL`. docs/verification.md, "The AVX-512 IFMA
-  public operation", lists each test.
+  that includes `rsa_ifma.h` or calls into it, no device object that
+  lists the file, and no library build that names `CH_RSA_IFMA_MODEL`.
+  docs/verification.md, "The AVX-512 IFMA public operation", lists each
+  test.
 - **Violation.** A PR adds both carries into one sum, which can then
   wrap; makes the running sum one word short; subtracts with a borrow
   that wraps; copies a product out without its last subtraction; drops
@@ -1403,10 +1407,23 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_ifma_model_test`, which runs the kernel's own text and the
   dispatch over the lane model, catches each on every machine. Bit 0 is
   the right start at RSA-2048, where 104n is a multiple of 64, and the
-  wrong one at RSA-3072, where the binary sees it. Or the Makefile writes
+  wrong one at RSA-3072, where the binary sees it. Or `rsa_mont.c`'s
+  `use_ifma` answers 1 or 0 whatever the session's value says:
+  `inv41-rsa-ifma-runs-without-cpu-bit` and
+  `inv41-rsa-ifma-ignores-cpu-bit`, which the same binary catches through
+  its count of the calls `rsa_vp1_cpu` makes into the kernel. Or the
+  product's switch hands the copy for eight registers a in place of b:
+  `inv41-rsa-ifma-eight-register-copy-takes-a-for-b`, which
+  `bin/rsa_ifma_model_test_384` catches at the bound a server object
+  compiles. Or the Makefile writes
   `CH_RSA_IFMA_MODEL` for a host object, so the library runs the model in
-  place of the instructions: `inv41-rsa-ifma-model-in-library`, which
-  `test/widemul-builds.sh` catches. Or a caller that
+  place of the instructions: `inv41-rsa-ifma-model-in-library`. Or the
+  file drops its target attribute, or the signer includes `rsa_ifma.h`
+  or checks its signatures on the kernel through a declaration of its
+  own: `inv41-rsa-ifma-without-target`,
+  `inv41-rsa-sign64-includes-rsa-ifma` and
+  `inv41-rsa-sign64-checks-on-rsa-ifma`. `test/widemul-builds.sh`
+  catches those four. Or a caller that
   holds a session hands an RSA verifier 0 in place of its `ch_cfg.cpu`:
   the pinned CertificateVerify, `ch_srv_check`'s check of the RSA
   identity, the webpki CertificateVerify, or the chain walk's issuer or
@@ -1953,6 +1970,12 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-host-test-skips-the-vector-probe` and
   `inv36-zig-host-test-takes-big-endian` by `test/host-builds.sh`, and
   `inv36-zig-host-define-on-device-client` by `test/zig-build-check.sh`.
+  `build.zig` also adds the CPU feature evex512 to an x86-64 host
+  object's target, without which `rsa_ifma.c` does not compile for a CPU
+  that lacks AVX-512 (decision 119). `test/zig-build-check.sh` builds
+  colibri's HTTP/2 object for x86-64's baseline CPU on every machine,
+  and catches `inv36-zig-x86-64-host-drops-evex512`, which takes the
+  feature off.
   The slot's `std.crypto.secureZero` has no mutant of its own. Storing
   null leaves an optional's payload undefined, and what Zig 0.16.0
   writes there depends on the backend: LLVM wrote zeros in every mode

@@ -54,10 +54,12 @@
 // target attribute that turns AVX-512F and AVX-512 IFMA on, and no
 // function outside it does, as in chacha20_avx2.c. clang applies it
 // through one attribute push; gcc's target pragma sets it for each
-// function defined after it, until the pop. The object is compiled with no
-// instruction flag, so only these functions hold AVX-512 instructions, and
-// rsa_mont.c calls rsa_ifma_public only where the caller's
-// CH_CPU_AVX512_IFMA bit says the CPU has them.
+// function defined after it, until the pop. make compiles the object with
+// no instruction flag, and build.zig adds only the evex512 feature, which
+// turns on no instruction (build.zig's withEvex512). So only these
+// functions hold AVX-512 instructions, and rsa_mont.c calls
+// rsa_ifma_public only where the caller's CH_CPU_AVX512_IFMA bit says the
+// CPU has them.
 #ifdef __clang__
 #pragma clang attribute push(__attribute__((target("avx512f,avx512ifma"))), apply_to = function)
 #else
@@ -70,8 +72,11 @@
 
 // normalize_digits, add_round and almost_montgomery_product_core below
 // ask the compiler to inline them into each copy of the product, so that
-// a product's registers of eight digits, at most ten of them beside a's
-// and m's, stay in the 32 vector registers rather than in memory.
+// each copy's loops run a constant count over its registers. Under the
+// pinned clang at -O2 for x86-64, the copies of the 384-byte build then
+// keep a product's running sum, at most eight registers, in the 32 vector
+// registers, and the copies of the 512-byte build, with up to ten, store
+// some of them on the stack (docs/decisions.md 119).
 //
 // Eight digits to a 512-bit register, and the most lanes a number takes.
 #define DIGITS_PER_REGISTER ((size_t)8)

@@ -91,13 +91,17 @@ static inline rsa_ifma_lanes lanes_add(rsa_ifma_lanes a, rsa_ifma_lanes b) {
     return _mm512_add_epi64(a, b);
 }
 
-// Bit j is 1 where lane j of a is above lane j of b as unsigned numbers:
-// VPCMPUQ into a mask register.
+// Bit j is 1 where lane j of a is above lane j of b as unsigned numbers,
+// in a mask register: _mm512_cmpgt_epu64_mask. The compiler picks the
+// instruction. clang 23 emits VPCMPGTQ, a signed compare, which gives the
+// unsigned answer for the lanes normalize_digits compares, each below
+// 2^52 + 2^12 (docs/decisions.md 119).
 static inline rsa_ifma_lane_bits lanes_above(rsa_ifma_lanes a, rsa_ifma_lanes b) {
     return _mm512_cmpgt_epu64_mask(a, b);
 }
 
-// Bit j is 1 where lane j of a equals lane j of b: VPCMPUQ.
+// Bit j is 1 where lane j of a equals lane j of b, in a mask register:
+// _mm512_cmpeq_epu64_mask, which clang 23 emits as VPCMPEQQ.
 static inline rsa_ifma_lane_bits lanes_equal(rsa_ifma_lanes a, rsa_ifma_lanes b) {
     return _mm512_cmpeq_epu64_mask(a, b);
 }

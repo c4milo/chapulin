@@ -81,8 +81,8 @@
 // registers, which XGETBV reports in bits 5 to 7 of XCR0. A probe reads the IFMA bit itself: a
 // CPU can have AVX-512F without IFMA. It is an x86-64 bit for RSA verification, whose inputs are
 // all public, so like CH_CPU_AVX2 it states presence alone and no timing. rsa_mont.c's
-// rsa_vp1_cpu reads it and sends the verifiers' public operation to rsa_ifma.c for a modulus of
-// 2,048 bits or more whose bit length is a multiple of 64, and to rsa_mont64.c for any other.
+// rsa_vp1_cpu reads it and sends the verifiers' public operation to rsa_ifma.c for an odd modulus
+// of 2,048 bits or more whose bit length is a multiple of 64, and to rsa_mont64.c for any other.
 // x509.c verifies the chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu, so
 // they run rsa_mont64.c whatever the bit says. rsa_ifma.c runs the public operation in digits
 // of 52 bits, eight to a 512-bit register, on VPMADD52LUQ and VPMADD52HUQ, and writes the bytes

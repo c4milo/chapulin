@@ -374,9 +374,9 @@ const CpuBits = struct {
     /// CH_CPU_AVX512_IFMA: the CPU has AVX-512F and AVX-512 IFMA and its operating system saves
     /// the opmask and 512-bit registers. It states presence alone, as avx2 does, and with it the
     /// session runs RSA verification's public operation on rsa_ifma.c's 52-bit digits, eight to
-    /// a 512-bit register, for a modulus of 2,048 bits or more whose bit length is a multiple of
-    /// 64. x509.c's chain links under TRUST=ca-rsa run rsa_mont64.c whatever this says. An x86-64
-    /// bit, which an arm64 object refuses.
+    /// a 512-bit register, for an odd modulus of 2,048 bits or more whose bit length is a multiple
+    /// of 64. x509.c's chain links under TRUST=ca-rsa run rsa_mont64.c whatever this says. An
+    /// x86-64 bit, which an arm64 object refuses.
     avx512_ifma: bool = false,
 };
 

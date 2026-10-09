@@ -4,8 +4,8 @@ catches: rsa_ifma_model_test
 reason: normalize_digits drops the carry that lane 7 of each register
   generates into lane 0 of the register above in its pass of single-bit
   carries, so a lane above 2^52 - 1 at a register's top loses its carry.
-  A random product's lane reaches 2^52 after the first pass of carries
-  with odds below 2^-40, so bin/rsa_ifma_model_test's run of
+  After the first pass of carries a random product leaves a lane at 2^52
+  or above with odds below 2^-40, so bin/rsa_ifma_model_test's run of
   normalize_digits on lanes at and around 2^52 is what sees the number
   change.
 

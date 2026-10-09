@@ -290,7 +290,12 @@ A host object, which the package builds for a `TRUST=webpki` client,
 caller's description of its CPU in `ch_cfg.cpu` (`cpu_cfg.h`,
 docs/decisions.md 89). `Client.cpu` and `Server.cpu` are `?Cpu`, null by
 default; in any other object they are `void`, and `Cpu` is a
-`@compileError`.
+`@compileError`. For an x86-64 host object the package adds the CPU
+feature evex512 to the target, whatever CPU the program builds for:
+`rsa_ifma.c`'s functions take and return 512-bit vectors, and Zig turns
+evex512 off for a CPU without AVX-512. evex512 alone turns on no
+instruction, so the object holds AVX-512 instructions in `rsa_ifma.c`'s
+functions alone, as make's does (docs/decisions.md 119).
 
 - **A value states what the caller found.** `Cpu` holds eight bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
@@ -305,8 +310,8 @@ default; in any other object they are `void`, and `Cpu` is a
   `avx512_ifma` says the CPU has AVX-512F and AVX-512 IFMA and its
   operating system saves the 512-bit registers, and with it the session
   runs RSA verification's public operation on `rsa_ifma.c`, in digits of
-  52 bits, eight to a 512-bit register, for a modulus of 2,048 bits or
-  more whose bit length is a multiple of 64. `x509.c` verifies the chain
+  52 bits, eight to a 512-bit register, for an odd modulus of 2,048 bits
+  or more whose bit length is a multiple of 64. `x509.c` verifies the chain
   links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so
   they run `rsa_mont64.c` whatever the field says.
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
@@ -757,6 +762,14 @@ well, among them `RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking
 ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
 seeded `std.Random` per side, and whose program defines no
 `ch_rand_bytes`, so its link shows the object imports none.
+
+Both runs also build colibri's HTTP/2 object with `build.zig` alone for
+`x86_64-linux-gnu` at `-Dcpu=baseline`, a CPU without AVX-512, on every
+machine, and require only that the build succeeds: make builds only for
+its own compiler's target, so nothing compares the object. On an arm64
+machine it is the one build that needs the evex512 feature above, and
+`inv36-zig-x86-64-host-drops-evex512`, which takes the feature off,
+fails it.
 
 Thirteen mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script

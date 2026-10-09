@@ -62,7 +62,7 @@ The other 31 sources are in no such harness:
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
-| `rsa_ifma.c` | It runs RSA's public operation on AVX-512 IFMA intrinsics, which CBMC cannot read, and has a body on x86-64 alone. No launch line yet compiles it over the lane model, and none drives `rsa_vp1_cpu`, which calls it. | `bin/rsa_ifma_model_test` compiles the file's own text over `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable C, and holds `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` to `rsa_mont64.c`'s answers on every machine, at every word count from 32 to 64; the same binary checks each product's digits and runs `normalize_digits` on lanes chosen for its carries. On a CPU with AVX-512 IFMA, and in the nightly under Intel SDE, `bin/rsa_ifma_equiv_test` holds each lane operation, the products and `rsa_ifma_public` on the instructions to the model. The model's lanes are only tested against the instructions, not proved equal to them ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)). On such a CPU, `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` under 0x10d, the Wycheproof host binary under 0x11f, and `bin/tcp_blocking_loop_aes`'s `ch_srv_check` row under every bit the architecture defines run their RSA vectors and checks on it. `bin/x86_kernels_test` and the counted loop and session binaries link a stand-in for the call, `test/rsa_ifma_count.c`, which runs `rsa_mont64.c`'s arithmetic, so they count each caller's calls on every x86-64 CPU. |
+| `rsa_ifma.c` | It runs RSA's public operation on AVX-512 IFMA intrinsics, which CBMC cannot read, and has a body on x86-64 alone. No launch line yet compiles it over the lane model, and none drives `rsa_vp1_cpu`, which calls it. | `bin/rsa_ifma_model_test` compiles the file's own text over `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable C, and holds `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` to `rsa_mont64.c`'s answers on every machine, at every word count from 32 to 64, and `bin/rsa_ifma_model_test_384` does the same at the 384-byte bound, from 32 to 48; each binary counts the calls `rsa_vp1_cpu` makes into the kernel with the bit and without it, checks each product's digits and runs `normalize_digits` on lanes chosen for its carries. On a CPU with AVX-512 IFMA, and in the nightly under Intel SDE, `bin/rsa_ifma_equiv_test` holds each lane operation, the products and `rsa_ifma_public` on the instructions to the model. The model's lanes are only tested against the instructions, not proved equal to them ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)). On such a CPU, `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` under 0x10d, the Wycheproof host binary under 0x11f, and `bin/tcp_blocking_loop_aes`'s `ch_srv_check` row under every bit the architecture defines run their RSA vectors and checks on it. `bin/x86_kernels_test` and the counted loop and session binaries link a stand-in for the call, `test/rsa_ifma_count.c`, which runs `rsa_mont64.c`'s arithmetic, so they count each caller's calls on every x86-64 CPU. |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
@@ -3758,11 +3758,17 @@ only `CH_REQUIRE_AVX512_IFMA=1` turns into failures. The nightly's
 SDE, an emulator, on a CPU model that has AVX-512 IFMA
 ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
 
-Twenty-three violations break these rules, and each is caught:
+Twenty-six violations break these rules, and each is caught:
 
 - `test/chacha-builds.sh` catches `chacha-avx2-runs-without-cpu-bit` and
   `chacha-avx2-ignores-cpu-bit`, a `use_avx2` that answers 1 or 0 for
   every value, and `chacha-avx2-without-target`.
+- `bin/rsa_ifma_model_test` catches `inv41-rsa-ifma-runs-without-cpu-bit`
+  and `inv41-rsa-ifma-ignores-cpu-bit`, the same two for `rsa_mont.c`'s
+  `use_ifma`, on every machine: it counts the calls `rsa_vp1_cpu` makes
+  into the kernel over the lane model, under the bit and under
+  `CH_CPU_PROBED` alone. `test/widemul-builds.sh` catches
+  `inv41-rsa-ifma-without-target`.
 - `test/quic-builds.sh` catches `inv26-vaes-runs-without-cpu-bits` and
   `inv26-vaes-ignores-cpu-bits`, the same two for `gcm_use_vaes`, and
   `inv26-vaes-without-target`.
@@ -3795,7 +3801,7 @@ CPU with the kernel's instructions, and `test/violations.py` runs every
 violation on the host that runs it, so on an arm64 host such a mutant
 would pass as unguarded. None is in `test/violations/`. `rsa_ifma.c` is
 the exception: `bin/rsa_ifma_model_test` runs its own text over a model
-of each instruction on every machine, and fourteen violations of its
+of each instruction on every machine, and twenty-one violations of its
 arithmetic, its dispatch and its build are in `test/violations/`
 ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
 For the other two kernels, 27 such mutants were
@@ -4324,29 +4330,39 @@ Until then, every claim below rests on a test.
 
 What the kernel computes rests on these:
 
-- `bin/rsa_ifma_model_test`, in `make check` and `make san-check` on
-  every machine. `test/rsa_ifma_model.c` compiles `rsa_mont.c` and
+- `bin/rsa_ifma_model_test` and `bin/rsa_ifma_model_test_384`, in `make
+  check` and `make san-check` on every machine. The first builds at the
+  512-byte bound, where the kernel has copies of the product for five to
+  ten registers, and the second at the 384-byte bound, which every host
+  object but a `TRUST=webpki` one compiles, with copies for five to
+  eight. `test/rsa_ifma_model.c` compiles `rsa_mont.c` and
   `rsa_ifma.c` under `CH_RSA_IFMA_MODEL` and second names, so
   `rsa_ifma.c` includes `test/rsa_ifma_model_lanes.h`, each lane operation
   written in portable C from Intel's pseudocode, in place of the
-  instructions. At every word count from 32 to 64, so at every register
-  count the kernel has a copy for, under random odd moduli with the top
-  bit set, 2^(64k) - 1, 2^(64k - 1) + 1 and, at an even count,
-  (B^(k + 1) + 1) / (B + 1), it requires `rsa_vp1`'s bytes from
-  `rsa_vp1_cpu` under the bit for the signatures 0, 1, m - 1 and random
-  ones, and the known answer for the first three. It requires
+  instructions. At every word count from 32 to the bound's 64 or 48, so
+  at every register count the build has a copy for, under random odd
+  moduli with the top bit set, 2^(64k) - 1, 2^(64k - 1) + 1 and, at an
+  even count, (B^(k + 1) + 1) / (B + 1), it requires `rsa_vp1`'s bytes
+  from `rsa_vp1_cpu` under the bit and under `CH_CPU_PROBED` alone for
+  the signatures 0, 1, m - 1 and random ones, and the known answer for
+  the first three. It counts the calls `rsa_vp1_cpu` makes into
+  `rsa_ifma_public`, through `test/rsa_ifma_model.c`'s count, and
+  requires one under the bit and none without it. It requires
   `rsa_mont64_public`'s bytes from `rsa_ifma_public` for bases at or
   above m, which no verifier passes, under a power of two it computes by
   doublings that share nothing with `rsa_mont.c`'s division. For each
   product along a public operation, and for products of operands up to
   2m, it requires every digit below 2^52, zeros from digit n up and a
-  number below 2m. It sends an even modulus, one whose top bit is clear,
-  one of 31 words and one of 260 bytes to `rsa_vp1` under the bit, and
-  runs `normalize_digits` alone on 20,000 sets of one to ten registers
-  of lanes chosen for its carries, which random products almost never
-  give it: the number must stay the same modulo 2^(52 × lanes), and every
-  digit must end below 2^52. That is 29,093 checks under the default
-  seed, which `CH_RSA_EQUIV_SEED` replaces.
+  number below 2m. It hands an even modulus, one whose top bit is clear,
+  one of 31 words and one of 260 bytes to `rsa_vp1_cpu` under the bit,
+  and requires `rsa_vp1`'s bytes and no call into the kernel. It runs
+  `normalize_digits` alone on 20,000 sets of lanes chosen for its
+  carries, one to ten registers at the 512-byte bound and one to eight
+  at the 384-byte bound, which random products almost never give it: the
+  number must stay the same modulo 2^(52 × lanes), and every digit must
+  end below 2^52. That is 31,340 checks at the 512-byte bound and 25,868
+  at the 384-byte bound under the default seed, which
+  `CH_RSA_EQUIV_SEED` replaces.
 - `bin/rsa_ifma_equiv_test`, in `make check` and `make san-check`,
   holds the instructions to that model on an x86-64 CPU with AVX-512
   IFMA. It compares each lane operation over 2,000 sets of lanes that mix
@@ -4376,9 +4392,11 @@ What the kernel computes rests on these:
   VAES fails them rather than skips the value; and `bin/webpki_loop_aes`
   with both ends stating 0x101 and then 0x13f, every x86-64 bit, whose
   server's `ch_srv_check` verifies an RSA-PSS signature on the kernel
-  before a handshake. SDE is an emulator: the job shows what the
-  instructions compute, and nothing about how long they take on any
-  CPU.
+  before a handshake. Each run must exit 0 and print the line its binary
+  prints when every check passed, so an `sde64` that exits 0 without
+  starting the program fails the job. SDE is an emulator: the job shows
+  what the instructions compute, and nothing about how long they take on
+  any CPU.
 
 Which calls run it rests on `bin/x86_kernels_test`,
 `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host`, which count the
@@ -4403,14 +4421,22 @@ The build rests on these:
   It refuses a root source that defines `CH_RSA_IFMA_MODEL`, and a host
   object's defines from make or `build.zig` that name it.
 - `make lint-wide-multiply` holds `rsa_ifma.c` at 19 conditional
-  branches under clang for x86-64, each a test of a count or an index,
-  and at 0 for arm64, where it compiles to nothing. `WIDE64_CEILING`
-  holds it at no division and no 128-bit runtime call. Both read clang
-  alone. gcc's code for the file is held by the tests in this section,
-  and its frames by the `lint-stack` of CI's x86-64 `check` job.
+  branches under clang for x86-64 at the 384-byte bound, and, as
+  `rsa_ifma.c@512`, at 23 at the 512-byte bound, whose copies for nine
+  and ten registers the first build does not compile. Each branch tests
+  a count or an index. It holds both at 0 for arm64, where the file
+  compiles to nothing, and at no division and no 128-bit runtime call.
+  Both counts read clang alone. gcc's code for the file is held by the
+  tests in this section, and its frames by the `lint-stack` of CI's
+  x86-64 `check` job.
+- `test/zig-build-check.sh`, in `make check`, builds colibri's HTTP/2
+  object with `build.zig` for x86-64's baseline CPU, which has no
+  AVX-512, on every machine. The file compiles there only because
+  `build.zig` adds the evex512 feature to an x86-64 host object's
+  target (decision 119).
 
-Fourteen violations break the kernel, its dispatch or its build, and
-each is caught. `bin/rsa_ifma_model_test` catches thirteen on every
+Twenty-one violations break the kernel, its dispatch or its build, and
+each is caught. `bin/rsa_ifma_model_test` catches fifteen on every
 machine: `inv41-rsa-ifma-digit-zero-dropped`,
 `inv41-rsa-ifma-high-pass-reads-a-for-m`,
 `inv41-rsa-ifma-quotient-unmasked`, `inv41-rsa-ifma-power-skips-r2`,
@@ -4422,15 +4448,26 @@ machine: `inv41-rsa-ifma-digit-zero-dropped`,
 `inv41-rsa-mont-ifma-power-52n`,
 `inv41-rsa-mont-ifma-power-one-step-short`,
 `inv41-rsa-mont-ifma-power-starts-at-bit-zero` and
-`inv41-rsa-mont-ifma-takes-even-modulus`. `test/widemul-builds.sh`
-catches `inv41-rsa-ifma-model-in-library`, which writes
-`CH_RSA_IFMA_MODEL` for every host object. Five more hand a verifier 0
-in place of a session's value, and `test/docker-aes-runtime-qemu.sh
+`inv41-rsa-mont-ifma-takes-even-modulus`, and the two whose `use_ifma`
+answers 1 or 0 for every value, `inv41-rsa-ifma-runs-without-cpu-bit`
+and `inv41-rsa-ifma-ignores-cpu-bit`, through its count of the calls
+into the kernel. `bin/rsa_ifma_model_test_384` catches
+`inv41-rsa-ifma-eight-register-copy-takes-a-for-b`, whose switch hands
+the copy for eight registers a in place of b: it compiles with no
+warning, because the other cases still read b. `test/widemul-builds.sh`
+catches five: `inv41-rsa-ifma-model-in-library`, which writes
+`CH_RSA_IFMA_MODEL` for every host object;
+`inv41-rsa-ifma-without-target`, which drops the target attribute, so
+the file no longer compiles with no instruction flag;
+`inv41-rsa-sign64-includes-rsa-ifma` and
+`inv41-rsa-sign64-checks-on-rsa-ifma`, whose signer includes
+`rsa_ifma.h` or checks its signatures on the kernel through a
+declaration of its own; and `inv16-device-object-holds-rsa-ifma`, which
+lists the file in a device object. Five more hand a verifier 0 in place
+of a session's value, and `test/docker-aes-runtime-qemu.sh
 rsa-ifma-callers` catches each ([The x86-64 kernels](#the-x86-64-kernels)).
-No violation drops the target attribute, calls the kernel from the
-signer or reads the wrong bit in `use_ifma`; `test/widemul-builds.sh`
-and `bin/x86_kernels_test` check those, and no mutant has shown that
-they catch them.
+`test/zig-build-check.sh` catches `inv36-zig-x86-64-host-drops-evex512`,
+which takes evex512 off `build.zig`'s x86-64 target.
 
 What none of this shows:
 

@@ -8809,10 +8809,13 @@ does nothing more.
       carries once after the last round. The file holds one copy of the
       product for each register count, 5 to 8, and 9 and 10 under the
       512-byte bound of `TRUST=webpki`, so that each copy's loops over
-      registers run a constant count. `rsa_ifma_public` writes its record
-      of the modulus on its own stack at each call, multiplies the base
-      by `digit_r2`, squares sixteen times, multiplies by the base, and
-      ends with one subtraction of m, `rsa_mont64_reduce_once_with_top`.
+      registers run a constant count. The product's switch has a case for
+      each count, the same text for 5 to 8 under both bounds, and its
+      default arm's `CH_ASSERT` fails for any other. `rsa_ifma_public`
+      writes its record of the modulus on its own stack at each call,
+      multiplies the base by `digit_r2`, squares sixteen times, multiplies
+      by the base, and ends with one subtraction of m,
+      `rsa_mont64_reduce_once_with_top`.
     - **The lane operations.** `rsa_ifma_lanes.h` defines one function
       for each, on the type `rsa_ifma_lanes`, each the intrinsic of one
       instruction: `lanes_multiply_add_low` and `lanes_multiply_add_high`
@@ -8828,8 +8831,22 @@ does nothing more.
       pass of carries leaves each lane below 2^52 + 2^12, and it gathers
       the conversions' words with VPGATHERQQ. The target attribute
       `avx512f,avx512ifma` turns the instructions on for the file's own
-      functions, by the push and pop `chacha20_avx2.c` uses, and the
-      object is compiled with no instruction flag.
+      functions, by the push and pop `chacha20_avx2.c` uses, and make
+      compiles the object with no instruction flag. `build.zig` adds the
+      CPU feature evex512 to an x86-64 host object's target. Zig passes
+      clang every feature of the target CPU, on or off, and for a CPU
+      without AVX-512, x86-64's baseline and znver3 among them, that list
+      turns evex512 off. The attribute does not turn it back on, so clang
+      refused every 512-bit argument and return value in the file.
+      evex512 alone turns on no instruction: under Zig 0.16 the 99 other
+      sources of colibri's HTTP/2 object compiled to the same code with it
+      and without it, at `-mcpu=baseline` and at `-mcpu=znver3`, and the
+      object built for either CPU uses the 512-bit registers in
+      `almost_montgomery_product` and `rsa_ifma_public` alone. A
+      `-mevex512` flag fails every file under `-Werror`, because clang
+      calls it deprecated, and neither clang nor gcc takes evex512 in a
+      target attribute. `test/zig-build-check.sh` builds that object for
+      x86-64's baseline CPU on every machine.
     - **Who calls it.** `rsa.h` and `rsa_pkcs1.h` declare `rsa_vp1_cpu`,
       `rsa_pss_verify_cpu` and `rsa_pkcs1_verify_cpu` in a host object.
       Each takes a session's `ch_cfg.cpu` first and gives its plain
@@ -8847,10 +8864,15 @@ does nothing more.
       `srv_auth.c`, and the chain walk's issuer and anchor links in
       `webpki.c`, through `webpki_verify`. `x509.c`'s chain links under
       `TRUST=ca-rsa` keep `rsa_pss_verify`, which takes no value.
-      `ch_srv_check` runs the kernel, so a value that names instructions
-      the CPU lacks faults at boot, before any session starts. The bit is
-      0x100, the first bit past the byte an AES key schedule keeps of the
-      value; entry 93 records how `aes.c`'s assertion changed for it.
+      `ch_srv_check` runs the kernel for a server's RSA identity, so on a
+      server whose RSA identity the kernel takes, a value that names
+      instructions the CPU lacks faults at boot, before any session
+      starts. The RSA identity is optional (`srv_auth.c`): a server with
+      an ECDSA identity alone never calls the kernel, and a `TRUST=webpki`
+      client faults at its first RSA verification, in a handshake. The
+      bit is 0x100, the first bit past the byte an AES key schedule keeps
+      of the value; entry 93 records how `aes.c`'s assertion changed for
+      it.
     - **R'^2 by division.** The first product needs `digit_r2`, which is
       R'^2 mod m = 2^(104n) mod m, where `rsa_mont64.c` takes
       R^2 = 2^(128k) mod m. `rsa_mont.c`'s `power_of_two_mod` starts from
@@ -8891,18 +8913,41 @@ does nothing more.
       candidate, and a wrong candidate factors n, so that check stays on
       `rsa_mont64_public`. `test/widemul-builds.sh` requires that no root
       source but `rsa_mont.c` includes `rsa_ifma.h` or calls into it.
-    - **Gain.** No verification on this tree's kernel has been timed. A
-      prototype of the kernel ran on 2026-10-09 on six ubuntu-24.04
-      runners, from a scratch branch, under gcc 13.3 and clang 23.1,
-      beside `rsa_mont64.c`'s loops. It is not this code: its target
-      attribute also turned on BMI2, it had copies of the product for one
-      to four registers too, and it computed its power of two by
-      doublings. Each run on a CPU with AVX-512 IFMA first compared it
-      with the loops in 8,080 products, squares and public operations
-      from 1,024 to 4,096 bits, and found 0 wrong: the first run of the
-      instructions. It then timed the public operation without its power
-      of two, on both sides, as the median of 201 samples of the thread's
-      CPU time. At 2,048 bits:
+    - **Gain.** Run 37944974426 timed this tree's kernel on 2026-10-09,
+      on six ubuntu-24.04 runners, under gcc 13.3 and clang 23. A timing
+      program on a scratch branch first compared `rsa_vp1_cpu` under
+      `CH_CPU_PROBED | CH_CPU_AVX512_IFMA` with `rsa_vp1` in 600 public
+      operations, 200 random moduli with the top bit set and odd at each
+      of 2,048, 3,072 and 4,096 bits, and found none that differ. It then
+      timed the two calls on one random modulus of each size, in turn,
+      as the median of 101 samples of the thread's CPU time, each sample
+      390 to 781 calls. Each timed span is the whole call: `rsa_vp1`'s
+      load of the modulus, `r2_by_division` and `rsa_mont64.c`'s
+      exponentiation, and `rsa_vp1_cpu`'s load, `power_of_two_mod`, the
+      conversions to and from digits and the kernel. At 2,048 bits:
+
+      | CPU | `rsa_vp1`, gcc | `rsa_vp1_cpu`, gcc | `rsa_vp1`, clang | `rsa_vp1_cpu`, clang |
+      | --- | --- | --- | --- | --- |
+      | EPYC 9V74, one runner | 29.5 µs | 8.1 µs | 29.9 µs | 8.1 µs |
+      | EPYC 9V74, another | 32.1 µs | 8.8 µs | 32.5 µs | 8.8 µs |
+      | Xeon Platinum 8573C | 29.0 µs | 9.2 µs | 24.9 µs | 8.9 µs |
+
+      `rsa_vp1_cpu` took 0.27 of `rsa_vp1`'s time at 2,048 bits on both
+      EPYC 9V74 runners under both compilers, and 0.32 to 0.36 on the
+      Xeon Platinum 8573C. It took 0.24 to 0.30 at 3,072 bits and 0.22 to
+      0.28 at 4,096. The other three runners' EPYC 7763 has no AVX-512,
+      and the program skipped there.
+
+      Earlier the same day a prototype of the kernel ran on six runners
+      from another scratch branch, under gcc 13.3 and clang 23.1, beside
+      `rsa_mont64.c`'s loops. It is not this code: its target attribute
+      also turned on BMI2, it had copies of the product for one to four
+      registers too, and it computed its power of two by doublings. Each
+      run on a CPU with AVX-512 IFMA first compared it with the loops in
+      8,080 products, squares and public operations from 1,024 to 4,096
+      bits, and found 0 wrong. It then timed the public operation without
+      its power of two, on both sides, as the median of 201 samples of
+      the thread's CPU time. At 2,048 bits:
 
       | CPU | loops, gcc | kernel, gcc | loops, clang | kernel, clang |
       | --- | --- | --- | --- | --- |
@@ -8912,11 +8957,13 @@ does nothing more.
       | EPYC 9V45, one runner | 15.9 µs | 5.0 µs | 16.7 µs | 4.2 µs |
       | EPYC 9V45, another | 28.2 µs | 5.3 µs | 16.6 µs | 4.2 µs |
 
-      The kernel took 0.19 to 0.31 of the loops' time at 2,048 bits,
-      0.16 to 0.27 at 3,072 and 0.14 to 0.24 at 4,096. The two EPYC 9V45
-      runners timed the same loops under gcc at 15.9 and 28.2 µs, so a
-      ratio from one runner is a rough figure. The sixth runner's EPYC
-      7763 has no AVX-512, and the prototype skipped there.
+      The prototype took 0.19 to 0.31 of the loops' time at 2,048 bits,
+      0.16 to 0.27 at 3,072 and 0.14 to 0.24 at 4,096, less than this
+      tree's kernel at every size, on spans that leave out the power of
+      two and the conversions. The two EPYC 9V45 runners timed the same
+      loops under gcc at 15.9 and 28.2 µs, so a ratio from one runner is a
+      rough figure. The sixth runner's EPYC 7763 has no AVX-512, and the
+      prototype skipped there.
     - **What holds it.** CBMC cannot read an intrinsic, so no harness
       compiles the file, and no harness drives `rsa_vp1_cpu` or
       `power_of_two_mod`. No Lean theorem states the bound or the no-wrap
@@ -8927,32 +8974,49 @@ does nothing more.
       `test/rsa_ifma_model_lanes.h` writes each lane operation in
       portable C from Intel's pseudocode, and `bin/rsa_ifma_model_test`
       compiles `rsa_ifma.c` and `rsa_mont.c`'s dispatch over it, so the
-      kernel's own text runs on every machine: its 29,093 checks hold
-      `rsa_vp1_cpu` under the bit to `rsa_vp1` at every word count from
-      32 to 64, and so at every register count, and check each product's
-      digits and bound. `bin/rsa_ifma_equiv_test` holds each lane
-      operation, the conversions, `normalize_digits`, the products,
-      `rsa_ifma_public` and `rsa_vp1_cpu` on the instructions to the
-      model, on an x86-64 CPU with AVX-512 IFMA. CI's `check` job runs it
-      on a runner that may lack the instructions, and the binary then
-      skips. The nightly's `rsa-ifma-sde` job runs it with
+      kernel's own text runs on every machine. At the 512-byte bound its
+      31,340 checks hold `rsa_vp1_cpu` under the bit, and under
+      `CH_CPU_PROBED` alone, to `rsa_vp1` at every word count from 32 to
+      64, and so at every register count, count the calls `rsa_vp1_cpu`
+      makes into the kernel with the bit and without it, and check each
+      product's digits and bound. `bin/rsa_ifma_model_test_384` runs the
+      same checks, 25,868 of them, at the 384-byte bound, the layout of at
+      most eight registers that every host object but a `TRUST=webpki`
+      one compiles. `bin/rsa_ifma_equiv_test` holds each lane operation,
+      the conversions, `normalize_digits`, the products and
+      `rsa_ifma_public` on the instructions to the model, and requires
+      `rsa_vp1`'s bytes from `rsa_vp1_cpu` on the instructions, on an
+      x86-64 CPU with AVX-512 IFMA. CI's `check` job runs it on a runner
+      that may lack the instructions, and the binary then skips. The
+      nightly's `rsa-ifma-sde` job runs it with
       `CH_REQUIRE_AVX512_IFMA=1`, which turns a skip into a failure,
       under Intel SDE's model of an Ice Lake server, beside the two
       verifiers' vectors, the Wycheproof suites and a server's boot check
-      on the kernel. SDE emulates the instructions, so that job checks
+      on the kernel. Each of its runs must also print its binary's line
+      for a pass, so an `sde64` that exits 0 without starting the program
+      fails the job. SDE emulates the instructions, so that job checks
       what they compute and nothing about their timing.
       `bin/x86_kernels_test`, `bin/tcp_blocking_loop_host` and
       `bin/webpki_auth_host` count the calls into the kernel for each
-      value and each caller, on a stand-in that runs `rsa_mont64.c`.
+      value and each caller, on a stand-in that runs `rsa_mont64.c`, so
+      they run no AVX-512 instruction.
       `test/aes-runtime-qemu.sh rsa-ifma` requires a server whose value
       holds the bit to die of SIGILL on a QEMU model without AVX-512
-      IFMA, and the same loop without the bit to pass there. Nineteen
-      violations break the kernel, its dispatch, its build or a caller,
-      and a test catches each (INV-41).
+      IFMA, and the same loop without the bit to pass there.
+      Twenty-six violations break the kernel, its dispatch, its build or
+      a caller, and a test catches each (INV-41, and INV-16 for a device
+      object that lists the file). A twenty-seventh,
+      `inv36-zig-x86-64-host-drops-evex512`, takes evex512 off
+      `build.zig`'s target, and `test/zig-build-check.sh` catches it
+      (INV-36).
 
-      When this entry was written, the kernel had run on the instructions
-      in no check: no development machine here has AVX-512 IFMA, Rosetta
-      has no AVX-512, and the nightly job had not yet run.
+      Run 37944974426 (Gain above) was the first to run this kernel on
+      the instructions. On both EPYC 9V74 runners and the Xeon Platinum
+      8573C, under gcc 13.3 and clang 23, `bin/rsa_ifma_equiv_test` found
+      the instructions and the model in agreement in all 37,533 of its
+      comparisons, and the timing program's 600 `rsa_vp1_cpu` results
+      each matched `rsa_vp1`'s. When this entry was amended, the nightly's
+      `rsa-ifma-sde` job had not yet run.
     - **Branches.** `lint-wide-multiply` holds `rsa_ifma.c` at 19
       conditional branches under clang for x86-64 at `-Os`, in the
       384-byte build, which holds four copies of the product, and at 0
@@ -8962,19 +9026,23 @@ does nothing more.
       `words_to_digits` holds 6: each of its two loops' entry and back
       edge, and the two index tests of `value_at_or_zero`.
       `almost_montgomery_product` holds 9: the compare against its jump
-      table, whose miss is the `CH_ASSERT`, and each copy's round loop's
-      entry and back edge. The products branch nowhere: `normalize_digits`
-      picks the lanes that take a carry with a mask register.
+      table, whose miss is the default arm's call to `ch_assert_fail`, and
+      each copy's round loop's entry and back edge. `lint-wide-multiply`
+      compiles the file once more at the 512-byte bound, as
+      `rsa_ifma.c@512`, and holds it at 23: the same 4 and 6, and 13 in
+      `almost_montgomery_product`, whose six copies add two loop branches
+      each. The products branch nowhere: `normalize_digits` picks the
+      lanes that take a carry with a mask register.
       `WIDE64_CEILING` holds the file at no division and no 128-bit
       runtime call.
     - **Cost.** Under the pinned clang 23 at `-O2` for x86-64 the file
       compiles to 8,059 bytes of code at the 384-byte bound and 11,763 at
       512. `rsa_ifma_public`'s frame takes 2,232 bytes at 384 and 2,744
       at 512, where `almost_montgomery_product`'s takes 1,320 more, each
-      inside `lint-stack`'s budgets of 2,560 and 4,096 bytes. gcc's frames
-      were not measured here; the `lint-stack` of CI's x86-64 `check` job
-      holds them to the same budgets. The division runs two steps more
-      than `r2_by_division` at RSA-2048 and RSA-3072, and one more at
+      inside `lint-stack`'s budgets of 2,560 and 4,096 bytes. This entry
+      measured no gcc frame; the `lint-stack` of CI's x86-64 `check` job
+      holds gcc's frames to the same budgets. The division runs two steps
+      more than `r2_by_division` at RSA-2048 and RSA-3072, and one more at
       RSA-4096. An auditor reads a second public operation, in 52-bit
       digits and intrinsics, beside the loops, which stay what every
       other session runs. The nightly downloads Intel SDE, which Intel
