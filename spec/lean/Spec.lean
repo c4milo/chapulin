@@ -15,6 +15,7 @@ import Spec.P256
 import Spec.P256WidePoint
 import Spec.P256WideInverse
 import Spec.Rsa
+import Spec.RsaIfma
 import Spec.P384
 import Spec.RsaPkcs1
 import Spec.Sha3

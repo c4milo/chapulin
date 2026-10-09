@@ -42,3 +42,10 @@ void rsa_ifma_model_public(uint8_t *out, const uint8_t *base, size_t len,
 
 #define RSA_IFMA_ENTRY(name) rsa_ifma_model_##name
 #include "rsa_ifma_entries.h"
+
+// rsa_mont.c's power_of_two_mod, which is static there, for the rows of
+// bin/diff_rsa_ifma (test/diff_rsa_ifma_test.c). Only this unit compiles
+// rsa_mont.c beside the kernel, so the entry has this prefix alone.
+void rsa_ifma_model_power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t exponent) {
+    power_of_two_mod(rem, m, k, exponent);
+}

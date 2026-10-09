@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: diff_rsa_ifma
+reason: normalize_digits hands the register above bit 6 of the generate
+  mask in place of bit 7, so the carry the top lane of each register sends
+  arrives only when the lane below it sends one. bin/diff_rsa_ifma holds
+  normalize_digits, lane for lane, to spec/lean/Spec/RsaIfma.lean's
+  normalize, whose register steps the proof of normalize_value covers,
+  which is what makes that proof a proof about this file.
+
+--- old
+        generate_from_below = generate >> 7;
+--- new
+        generate_from_below = generate >> 6;

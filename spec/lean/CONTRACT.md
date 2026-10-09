@@ -174,6 +174,22 @@ Spec.P256WideInverse.inverse : (m y : Nat) → ZMod m                   -- p256_
                         -- modulo an odd m for y coprime to it, and 0 for y = 0. Line op:
                         -- `p256_wide_inverse <m> <y>` → `<inverse>`, each 32 bytes of
                         -- hex, m odd and y below m.
+Spec.RsaIfma.product  : (n m0inv a b m : Nat) → Array Nat             -- almost_montgomery_product,
+                        -- written from the C (below): n rounds on the digits of a and b, and
+                        -- normalize_digits, in 8 ⌈n / 8⌉ lanes. Line op:
+                        -- `rsa_ifma_product <k> <m0inv> <m> <a> <b>` → the lanes, 8 big-endian
+                        -- bytes each, lane 0 first: k and m0inv in decimal, m, a and b hex of
+                        -- any length, under product_mul's hypotheses.
+Spec.RsaIfma.normalize : (Nat → Nat) → Nat → Nat                       -- normalize_digits. Line op:
+                        -- `rsa_ifma_normalize <lanes>` → `<lanes>`, registers of eight lanes of
+                        -- 8 big-endian bytes each.
+Spec.RsaIfma.powerOfTwoMod : (m k e : Nat) → Nat                       -- rsa_mont.c's
+                        -- power_of_two_mod. Line op: `rsa_ifma_power_of_two <k> <m> <e>` → 8k
+                        -- bytes, for an odd m of 8k bytes whose top bit is set and an e in
+                        -- decimal from 64 (k - 1) to 64 (k + 128).
+Spec.RsaIfma.publicOp : (k m0inv m base digitR2 : Nat) → Nat           -- rsa_ifma_public. Line op:
+                        -- `rsa_ifma_public <k> <m> <base>` → 8k bytes, under m's own m0inv and
+                        -- digitR2 from powerOfTwoMod, for m as above and an 8k-byte base.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -753,6 +769,40 @@ answers with `inverse` and `inversePublic` at both moduli in
 `bin/diff_p256_wide`. That the C's combinations compute the model's sums on
 every input stays with the differential and the C's tests.
 
+## RsaIfma models the C
+
+`Spec/RsaIfma.lean` breaks rule 1 for the same reason. `round` is `rsa_ifma.c`'s `add_round`,
+the almost-Montgomery product of OpenSSL's rsaz-avx512 code in digits of 52 bits, with one
+definition for each of its loops: `lowPass`, `moveDown` and `highPass`, beside the scalar
+`digit_zero`. `normalize` is `normalize_digits`, and `registerStep` is one register of its second
+loop, written with the C's shifts, ORs, ANDs and XOR. `product`, `publicOp` and `powerOfTwoMod`
+are `almost_montgomery_product`, `rsa_ifma_public` and `rsa_mont.c`'s `power_of_two_mod`. No
+standard states those steps; RFC 8017 states only what `publicOp_eq` proves they compute.
+
+The model holds a lane in a `Nat` where the C holds a 64-bit word, and each lane operation is the
+one `test/rsa_ifma_model_lanes.h` writes from Intel's pseudocode, with the registers laid end to
+end. It states nothing about the instructions themselves. `rounds_fit` and `round_fits` prove
+that no lane, no `digit_zero` and no scalar sum the C computes passes its type in 128 rounds or
+fewer, so the C's words hold the model's numbers on every input.
+
+`product_lt` and `product_mul` prove that the product of `a` and `b` below `2 m` is below `2 m`
+and is `a b 2 ^ (-52 n)` modulo `m`, for `m0inv` the C's `-m⁻¹ mod 2 ^ 52`, `4 m ≤ 2 ^ (52 n)` and
+at most 128 digits, and `digitCount_room` that `RSA_IFMA_DIGIT_COUNT` gives `4 m < 2 ^ (52 n)`
+for every `m` below `2 ^ (64 k)`. `normalize_value` and `normalize_lt` prove that
+`normalize_digits` writes the number its lanes hold modulo `2 ^ (52 count)`, in digits below
+`2 ^ 52`, for lanes below `2 ^ 64`: what it drops is the carry out of the top lane. `powerOfTwoStart_lt`
+and `powerOfTwoMod_eq` prove that `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`,
+with `times_word_mod` taken as its contract, `rem 2 ^ 64 mod m`. `publicOp_eq` proves that the
+chain of products computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`.
+
+`test/diff_rsa_ifma_test.c`, in `bin/diff_rsa_ifma`, compares the kernel, compiled over the lane
+model, with these definitions lane for lane at every word count from 32 to 64, so an error in
+the transcription fails a row. The violation `inv41-rsa-ifma-normalize-generate-from-bit-six`
+hands the register above the wrong bit of the generate mask and requires `bin/diff_rsa_ifma` to
+fail. That the instructions write the lane model's values stays with
+`bin/rsa_ifma_equiv_test`, and that `times_word_mod`'s division computes its contract stays
+with the C's tests and the differential's rows of `power_of_two_mod`.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -979,6 +1029,24 @@ Spec.P256WideInverse, the rounds of p256_wide_inverse.c (above, "P256WideInverse
   inverse_mul_self_p, inverse_mul_self_n
                                the same at P-256's p and n for every y from 1 to the
                                -- modulus less one, under Fact p.Prime and Fact n.Prime
+Spec.RsaIfma, the kernel of rsa_ifma.c and rsa_mont.c's power_of_two_mod (above, "RsaIfma
+  models the C"); `value count lanes` is the number `count` lanes hold, 52 bits apart:
+  digitCount_room              m < 2 ^ (64 k) → 4 m < 2 ^ (52 digitCount k)
+  rounds_fit                   a 0, m 0 and every b i below 2 ^ 52 → i ≤ 128 → after i rounds
+                               -- every lane is at most 2 ^ 61 and digit_zero below 2 ^ 62
+  round_fits                   the same digits → i < 128 → round i's scalar sum stays below
+                               -- 2 ^ 106 and every lane after its low pass below 2 ^ 62
+  normalize_lt                 normalize lanes j < 2 ^ 52, for every lane j
+  normalize_value              every lane below count under 2 ^ 64 → value count (normalize
+                               -- lanes) = value count lanes % 2 ^ (52 count)
+  product_lt, product_mul      (m0inv m + 1) % 2 ^ 52 = 0 → 4 m ≤ 2 ^ (52 n) → n ≤ 128 →
+                               -- a < 2 m → b < 2 m → the product is below 2 m, and it times
+                               -- 2 ^ (52 n) is a b in ZMod m
+  powerOfTwoStart_lt           m odd → 2 ^ (64 k - 1) ≤ m → 1 ≤ k → the start is below m
+  powerOfTwoMod_eq             the same → 64 (k - 1) ≤ e → powerOfTwoMod m k e = 2 ^ e % m
+  publicOp_eq                  (m0inv m + 1) % 2 ^ 52 = 0 → 2 ^ (64 k - 1) ≤ m < 2 ^ (64 k) →
+                               -- digitCount k ≤ 128 → base < 2 ^ (64 k) → publicOp k m0inv m base
+                               -- (2 ^ (104 digitCount k) % m) = base ^ 65537 % m
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1212,6 +1280,7 @@ means the module's selftest plus the differential oracle carry it;
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
+| RsaIfma | 10 | the AVX-512 IFMA kernel of `rsa_ifma.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; and the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |

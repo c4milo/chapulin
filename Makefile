@@ -501,14 +501,14 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
                     test/hash_runtime_test.c test/hash_runtime_count.c
 # RSA's arithmetic on 64-bit words, the signer built on it and their
 # equivalence tests (docs/decisions.md 95), and rsa_ifma.c, the public
-# operation on AVX-512 IFMA, with its two tests and the two units that
-# compile it under second names, which compile only under -DCH_CPU_RUNTIME.
-# lint-tidy reads them in passes of their own.
+# operation on AVX-512 IFMA, with its two tests, its differential main and
+# the two units that compile it under second names, which compile only
+# under -DCH_CPU_RUNTIME. lint-tidy reads them in passes of their own.
 RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_ifma.c rsa_sign64.c test/rsa_equiv_test.c \
                    test/rsa_equiv_portable.c \
                    test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c \
                    test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c test/rsa_ifma_model.c \
-                   test/rsa_ifma_instructions.c \
+                   test/rsa_ifma_instructions.c test/diff_rsa_ifma_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
@@ -4224,9 +4224,12 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_p256_wide
 	$(MAKE) bin/diff_rsa_sign64
 	./bin/diff_rsa_sign64
+	$(MAKE) bin/diff_rsa_ifma
+	./bin/diff_rsa_ifma
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
+	@echo "SKIP diff's AVX-512 IFMA binary: $(CC) fails the host test"
 endif
 endif
 
@@ -4265,6 +4268,18 @@ DIFF_RSA_SIGN_SRCS := rsa_sign.c $(RSA_SIGN64_SRCS) $(RSA_MONT64_SRCS) sha256.c 
 bin/diff_rsa_sign64: test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS)
+# The AVX-512 IFMA arm: rsa_ifma.c's products, normalize_digits and
+# rsa_ifma_public, and rsa_mont.c's power_of_two_mod, compiled over the
+# lane model as bin/rsa_ifma_model_test compiles them, against
+# spec/lean/Spec/RsaIfma.lean. Its own main, for bin/diff_x25519_wide's
+# reason: only a unit that defines CH_RSA_IFMA_MODEL compiles the kernel on
+# every host, and no row of bin/diff reads it. It builds at the 512-byte
+# bound, so every register count the kernel has a copy for runs.
+bin/diff_rsa_ifma: test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_mont.c rsa_ifma.c \
+                   $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c $(RSA_IFMA_TEST_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -5399,12 +5414,13 @@ else
 	# rsa_ifma.c over the lane model, the build bin/rsa_ifma_model_test
 	# runs on every host, so this pass reads test/rsa_ifma_model_lanes.h
 	# and, at the 512-byte bound, the kernel's copies for nine and ten
-	# registers, with the two test mains. The x86-64 pass below reads the
-	# instructions. test/rsa_ifma_model.c and test/rsa_ifma_instructions.c
-	# stay out of every pass, for the reason test/aes_equiv_soft.c does
-	# below.
+	# registers, with the two test mains and the differential main. The
+	# x86-64 pass below reads the instructions. test/rsa_ifma_model.c and
+	# test/rsa_ifma_instructions.c stay out of every pass, for the reason
+	# test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_ifma.c test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c, \
+	  $(call TIDY_EACH,rsa_ifma.c test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c \
+	  test/diff_rsa_ifma_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) \
 	  -I. -Itest)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on

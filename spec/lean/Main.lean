@@ -87,6 +87,7 @@ def selftestAll (_ : Unit) : String :=
     ("p256_wide_point", Spec.P256WidePoint.selftest),
     ("p256_wide_inverse", Spec.P256WideInverse.selftest),
     ("rsa", Spec.Rsa.selftest),
+    ("rsa_ifma", Spec.RsaIfma.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -547,6 +548,58 @@ def dispatch : List String → Option String
     let y := bytesToNatBE yb
     guard (m % 2 == 1 && y < m)
     return bytesToHex (natToBytesBE (Spec.P256WideInverse.inversePublic m y).val 32)
+  | ["rsa_ifma_product", words, m0inv, modulus, a, b] => do
+    -- almost_montgomery_product on a and b below 2m, under an m of `words` 64-bit words and
+    -- m0inv, its -m⁻¹ mod 2^52 in decimal; m, a and b are big-endian hex of any length. The
+    -- answer is the laneCount n lanes of the model's product (Spec/RsaIfma.lean), 8 big-endian
+    -- bytes each, lane 0 first. The guard is product_mul's hypotheses.
+    let k ← words.toNat?
+    let inverse ← m0inv.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    let y := bytesToNatBE (← hexArg? b)
+    let n := Spec.RsaIfma.digitCount k
+    guard (n ≤ 128 && m < 2 ^ (64 * k) && (inverse * m + 1) % 2 ^ 52 == 0 && x < 2 * m &&
+      y < 2 * m)
+    return bytesToHex ((Spec.RsaIfma.product n inverse x y m).foldl
+      (fun out lane => out ++ natToBytesBE lane 8) ByteArray.empty)
+  | ["rsa_ifma_normalize", lanes] => do
+    -- normalize_digits on registers of eight lanes, each 8 big-endian bytes, lane 0 first; the
+    -- answer is the model's normalize of the same lanes, written the same way.
+    let bytes ← hexArg? lanes
+    guard (bytes.size > 0 && bytes.size % 64 == 0)
+    let count := bytes.size / 8
+    let values := (List.range count).toArray.map fun j =>
+      bytesToNatBE (bytes.extract (8 * j) (8 * j + 8))
+    let normalized := Spec.RsaIfma.normalize (Spec.RsaIfma.lanesOf values)
+    return bytesToHex ((List.range count).foldl
+      (fun out j => out ++ natToBytesBE (normalized j) 8) ByteArray.empty)
+  | ["rsa_ifma_power_of_two", words, modulus, exponent] => do
+    -- power_of_two_mod under an odd m of `words` 64-bit words whose top bit is set, 8 * words
+    -- big-endian bytes, and an exponent in decimal from 64 (words - 1) to 64 (words + 128); the
+    -- answer is the model's power of two (Spec/RsaIfma.lean), 8 * words bytes.
+    let k ← words.toNat?
+    let e ← exponent.toNat?
+    let mb ← hexArg? modulus
+    guard (mb.size == 8 * k)
+    let m := bytesToNatBE mb
+    guard (m % 2 == 1 && 2 ^ (64 * k - 1) ≤ m && 64 * (k - 1) ≤ e && e ≤ 64 * (k + 128))
+    return bytesToHex (natToBytesBE (Spec.RsaIfma.powerOfTwoMod m k e) (8 * k))
+  | ["rsa_ifma_public", words, modulus, base] => do
+    -- rsa_vp1_cpu's IFMA path: base^65537 mod m for an odd m of `words` 64-bit words whose top
+    -- bit is set and a base of the same 8 * words big-endian bytes. The answer is the model's
+    -- publicOp under m's -m⁻¹ mod 2^52 and the model's power_of_two_mod (Spec/RsaIfma.lean).
+    let k ← words.toNat?
+    let mb ← hexArg? modulus
+    let bb ← hexArg? base
+    guard (mb.size == 8 * k && bb.size == 8 * k && Spec.RsaIfma.digitCount k ≤ 128)
+    let m := bytesToNatBE mb
+    guard (m % 2 == 1 && 2 ^ (64 * k - 1) ≤ m)
+    let inverse := Spec.RsaIfma.m0invOf m
+    guard ((inverse * m + 1) % 2 ^ 52 == 0)
+    let digitR2 := Spec.RsaIfma.powerOfTwoMod m k (104 * Spec.RsaIfma.digitCount k)
+    return bytesToHex
+      (natToBytesBE (Spec.RsaIfma.publicOp k inverse m (bytesToNatBE bb) digitR2) (8 * k))
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

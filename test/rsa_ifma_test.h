@@ -63,7 +63,9 @@ enum rsa_ifma_test_operation {
 //     compiled with the model. public adds 1 to public_calls and then runs
 //     kernel_public, which is rsa_ifma_public's own text, and vp1_cpu
 //     calls public, so public_calls counts the calls of vp1_cpu that ran
-//     the kernel beside the calls of public itself.
+//     the kernel beside the calls of public itself;
+//   - power_of_two_mod is rsa_mont.c's, which test/rsa_ifma_model.c alone
+//     compiles, so it has this prefix only.
 void rsa_ifma_model_lane_operation(int operation, const uint64_t *x, const uint64_t *y,
                                    const uint64_t *z, unsigned bits, uint64_t *out,
                                    unsigned *bits_out);
@@ -81,6 +83,7 @@ extern unsigned long rsa_ifma_model_public_calls;
 void rsa_ifma_model_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 void rsa_ifma_model_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig,
                             uint8_t *em);
+void rsa_ifma_model_power_of_two_mod(uint64_t *rem, const uint64_t *m, size_t k, size_t exponent);
 
 // The same entries on the instructions, which an x86-64 CPU with AVX-512
 // IFMA runs. rsa_ifma_public, rsa_vp1 and rsa_vp1_cpu keep their own
