@@ -54,7 +54,7 @@ The other 33 sources are in no such harness:
 | `srv_flight.c` | Its harness's formula returns no verdict ([srv_flight](#srv_flight)). | `bin/srv_flight_test` |
 | `srv_tcp_nonblocking.c` | Its harness's formula returns no verdict ([srv_tcp_nonblocking](#srv_tcp_nonblocking)). | `bin/srv_tcp_nonblocking_test` |
 | `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
-| `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
+| `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds its cipher and both architectures' key expansions to `quic_aes_soft.c`, and searches the stack each expansion leaves ([The host object's AES key expansions](#the-host-objects-aes-key-expansions)). |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
@@ -3815,6 +3815,73 @@ AES extension: QEMU's arm64 models all implement it, and none turns it
 off. On arm64 the claim rests on the counts and the disassembly. The qemu
 run executes the vectors and the rows the loop binaries hold, and no
 other path.
+
+### The host object's AES key expansions
+
+`aes_hw.c` expands an AES-128 or AES-256 key in one of two ways, by
+architecture (decision 123). On arm64 a loop computes FIPS 197 §5.2 a word
+at a time through two 4-byte arrays, which it wipes when it returns. On
+x86-64 the expansion computes a round key at a time in vector registers,
+on AESENCLAST and SSE2's shifts, shuffle, or and exclusive-or, and stores
+each round key to the schedule once. CBMC cannot unwind an intrinsic, so
+no harness compiles either, and `aes_hw.c` stays in
+[the table of sources with no harness](#sources-with-no-launched-harness).
+These hold both:
+
+- `bin/aes_equiv_test`, in `make check`, holds every schedule to the one
+  `quic_aes_soft.c`'s table writes, byte for byte, over fixed keys, every
+  single-bit key and 200,000 random keys of each size, before it compares
+  a block under it.
+- The same binary searches the stack each expansion leaves
+  (`test/aes_equiv_residue.h`). For 16 random keys of each size it clears
+  the 4,096 bytes below its own frame, makes one expansion one frame
+  deeper, copies the bytes, and looks at every byte offset for a 32-bit
+  word the expansion computed: a word of the schedule, the SubWord,
+  rotation or temporary of a step, or a sum `prefix_xor` forms. A byte
+  the call did not write is zero, so a match is a word the call left. The
+  extra frame matters: called straight from the frame that copies,
+  gcc 13 made the call a jump, and a value an x86-64 leaf function keeps
+  below its stack pointer lay above the copy.
+- A machine's own compiler reads one of the two arms, so
+  `test/aes-runtime-qemu.sh aes-equiv` builds the binary for x86-64 and
+  for arm64 with the container's gcc 13 and runs each under qemu's max
+  model. CI's mips job runs that part in the script's full run on every
+  push.
+- `bin/quic_test_hw` runs FIPS 197's, SP 800-38D's and RFC 9001's
+  vectors on the instructions, the host Wycheproof binary runs the
+  AES-GCM suites under each `ch_cfg.cpu` value `make check` passes it,
+  and `bin/diff_quic_hw` runs the AES and GCM rows of the Lean
+  differential. CI's x86-64 `check` job runs the first two on the register
+  expansion, and its arm64 and macOS jobs run them on the word loop
+  through `suite-check`. `make diff` runs the third, in CI's x86-64
+  `slow` job.
+
+Eight violations break the two expansions, and the qemu part catches each,
+so each verdict is the same on every machine:
+`aes-hw-diverges-from-soft` and `aes256-schedule-one-round-key-short` break
+arm64's round constant and AES-256's length,
+`aes-hw-registers-round-constant-one-round-late`,
+`aes-hw-registers-shuffle-takes-word-2`,
+`aes-hw-registers-256-last-round-key-unstored` and
+`aes-hw-registers-256-second-step-takes-rot-word` break x86-64's
+arithmetic, and `aes-hw-registers-round-key-on-stack` and
+`aes-hw-word-loop-keeps-its-word` leave a round key's word on the stack,
+one on each architecture.
+
+What none of this shows:
+
+- **Every compiler's stack.** The search reads the stack the binary's own
+  build leaves. It found nothing under gcc 13.3 and clang 23 for x86-64 at
+  `-O2`, `-O3` and `-Os`, under Apple clang 21 for arm64 at `-O2`, under
+  the qemu part's gcc 13 for both, and on six x86-64 runners under gcc
+  13.3 and clang 23 at `-O2` (run 38001049465). Under gcc 13 at `-O3` an
+  earlier form left the key in a stack slot, and at `-Os` another left a
+  round key (decision 123). A compiler or a level not listed may differ.
+- **The registers.** When an expansion returns, vector registers still
+  hold its last round keys, as they hold the cipher's state after
+  `aes_cipher_block` returns. C has no statement that clears a register.
+- **Timing.** The register expansion's timing rests on
+  `CH_CPU_CONSTANT_TIME_AES`, as the cipher's does.
 
 ### The vector NTT
 

@@ -9497,3 +9497,159 @@ does nothing more.
       9V45 a message of 256 or 512 bytes took 182 to 191 ns with its rest
       on `chacha20_avx2.c` and 127 to 138 ns with it on 512-bit registers,
       under clang and gcc.
+
+123. **Every x86-64 host object expands an AES key a round key at a time
+    in vector registers.** `record.c` and `quic_packet.c` expand a traffic
+    key for every record and every packet and wipe the schedule after it
+    (INV-26). On x86-64, `aes_hw.c` ran FIPS 197 §5.2 one 4-byte word at a
+    time: each SubWord was an AESKEYGENASSIST on a word copied into a
+    vector register and back out, and each word was read back from the
+    schedule. On a Xeon Platinum 8573C runner under gcc 13, bench/record.sh's
+    `key_expansion` row took 409 ns of a 1 KiB AES-128-GCM `rec_seal` of
+    893 ns (`bench/results-record-linux-x86_64-avx512-gcc.csv`). A
+    prototype on the branch `proto-aesgcm-avx512` timed a register
+    expansion beside a 512-bit AES-GCM. Camilo ruled on 2026-10-09 to land
+    the register key expansion alone from that prototype, and to keep the
+    512-bit AES-GCM a prototype. It lands in every x86-64 host object, with
+    no new bit.
+
+    - **What changes.** On x86-64, `aes_hw.c` computes each round key in
+      one vector register from the round keys before it, and stores it
+      to the schedule once. Unrolled over four words, the round key Nk
+      words after another is that round key's prefix exclusive-or, whose
+      word i is the exclusive-or of its words 0 to i, with the step's
+      temporary exclusive-ored into all four words. `prefix_xor` takes two
+      byte shifts and two exclusive-ors. `sub_word_of_last_word` copies
+      word 3 into the four words and runs AESENCLAST under a zero round
+      key, which with four equal columns is SubBytes alone.
+      `rot_word_each` rotates each word right by 8 bits, which is RotWord
+      in a little-endian lane, and the round constant goes into the low
+      byte of each word. AES-256's second round key of each pair takes
+      SubWord of the first's last word alone. The arm64 arm keeps the
+      word loop.
+    - **No new bit.** The expansion runs AESENCLAST, which the cipher's
+      last round already runs under every key, in place of
+      AESKEYGENASSIST, and SSE2's byte shifts, word shifts, shuffle, or
+      and exclusive-or, which `ghash_vector.h` already runs on the hash
+      subkey. It runs where the word loop ran: for a public key under
+      `CH_CPU_CONSTANT_TIME_AES`, and for every traffic key, which exists
+      only under that bit. So the bit's statement covers it. Every branch
+      reads a loop count the key size fixes.
+    - **No stack slot.** The C keeps every value in a variable of vector
+      type and holds no array to wipe. Two compiler behaviors still put a
+      value on the stack, and the search below found both. gcc 13 at -O3
+      compiled the memcpy that loaded the key as a store of the key to a
+      stack slot and a load of its upper half back from the slot. gcc 13
+      at -Os left one helper out of line, and x86-64's calling convention
+      keeps no vector register across a call, so a round key stayed in a
+      stack slot across each call. So on x86-64 `load_block` and
+      `store_block` move a block with the unaligned load and store
+      intrinsics, as `ghash_vector.h` does, and every function the
+      expansion calls carries `always_inline`. For x86-64 under gcc 13.3
+      and clang 23, at -O2, -O3 and -Os, the search then finds nothing.
+    - **What the search found on main.** On main's word loop for x86-64,
+      under gcc 13.3 at -O2 and -O3, the search found three 16-byte
+      copies of the last step's AESKEYGENASSIST result in the dead frame:
+      SubWord of word 39 of an AES-128 schedule, or of word 55 of an
+      AES-256 one, beside its rotation. Through the inverse S-box that is
+      one word of the last round key but one. clang 23, and gcc at -Os,
+      left nothing. CI's x86-64 `check` job compiles with gcc at -O2, so
+      its binaries left that word, and no check looked.
+    - **Gain.** Run 38001049465 timed main's `aes_hw.c` and this one in
+      turn on six ubuntu-24.04 runners: two bench/record.sh runs of each
+      under gcc 13.3 and two under clang 23, with OpenSSL 3.6.4's `speed
+      -aead` in every run. Before it timed, each job held this `aes_hw.c`
+      to the table and to the published vectors on the runner's own AES
+      instructions under both compilers: `bin/aes_equiv_test`, whose 4,516
+      counter-mode cases there include the VAES kernels', and
+      `bin/quic_test_hw` passed. Five runners drew an EPYC 7763, which has
+      VAES and no AVX-512, and one an EPYC 9V45, which has AVX-512. Each
+      figure is in ns, the mean of two runs' medians on one runner, and
+      the other four EPYC 7763 runners gave figures within 4 percent of
+      the one shown. The 16 KiB rows are the bench's `seal_aes_gcm`, the
+      AEAD under a key expanded for the record as `record.c` runs it, which
+      is what OpenSSL 3.6's `speed -aead` times.
+
+      | | gcc before | gcc after | clang before | clang after | OpenSSL |
+      | --- | --- | --- | --- | --- | --- |
+      | EPYC 7763, AES-128 key expansion | 432 | 24 | 247 | 25 | |
+      | EPYC 7763, AES-256 key expansion | 526 | 26 | 333 | 24 | |
+      | EPYC 7763, AES-128-GCM `rec_seal`, 1 KiB, `0x3` | 957 | 551 | 738 | 498 | |
+      | EPYC 7763, AES-128-GCM `rec_seal`, 1 KiB, `0x1f` | 807 | 415 | 601 | 345 | |
+      | EPYC 7763, AES-128-GCM seal, 16 KiB, `0x1f` | 3,209 | 2,760 | 2,688 | 2,443 | 4,050 |
+      | EPYC 7763, AES-256-GCM seal, 16 KiB, `0x1f` | 3,620 | 3,111 | 3,085 | 2,767 | 4,363 |
+      | EPYC 9V45, AES-128 key expansion | 297 | 16 | 195 | 16 | |
+      | EPYC 9V45, AES-256 key expansion | 363 | 17 | 251 | 16 | |
+      | EPYC 9V45, AES-128-GCM `rec_seal`, 1 KiB, `0x1f` | 560 | 316 | 405 | 234 | |
+      | EPYC 9V45, AES-128-GCM seal, 16 KiB, `0x1f` | 2,096 | 1,841 | 1,721 | 1,547 | 714 |
+      | EPYC 9V45, AES-256-GCM seal, 16 KiB, `0x1f` | 2,318 | 2,000 | 2,018 | 1,741 | 820 |
+
+      Across the two CPUs and both key sizes, the expansion takes 0.05 to
+      0.06 of its earlier time under gcc and 0.06 to 0.10 under clang, a
+      1 KiB record 0.48 to 0.59 under gcc and 0.54 to 0.68 under clang,
+      under `0x3` and `0x1f`, and a 16 KiB seal 0.86 to 0.96. On the EPYC
+      9V45 OpenSSL's 512-bit AES-GCM still seals 16 KiB in 0.39 to 0.47 of
+      this tree's time; by the ruling that path stays a prototype.
+    - **arm64.** The word loop costs as much there. On the M1 Pro under
+      Apple clang 21, at a load average near 28, it took 186 ns for an
+      AES-128 key and 241 ns for an AES-256 key, where a NEON form of the
+      register expansion, in a scratch build held to it byte for byte over
+      100,000 keys of each size, took 14 and 15 ns. This entry covers
+      x86-64, where the prototype measured, so arm64 keeps the word loop,
+      and the NEON form would be an entry of its own.
+    - **What holds it.** `bin/aes_equiv_test` holds every schedule each
+      arm writes to the table's byte for byte, over fixed keys, every
+      single-bit key and 200,000 random keys of each size. It now also
+      searches the stack each expansion leaves (`test/aes_equiv_residue.h`):
+      for 16 keys of each size it clears 4,096 bytes below its own frame,
+      makes one expansion a frame deeper, and requires no 32-bit word the
+      expansion computed in the bytes the call wrote. Made straight from
+      the frame that copies, the call missed a round key kept in a
+      volatile variable under gcc 13, whose jump to the expansion put that
+      value above the copy, so the extra frame is part of the search. A
+      machine's own compiler reads one of the two arms, so the new
+      `aes-equiv` part of `test/aes-runtime-qemu.sh` builds the binary for
+      x86-64 and for arm64 and runs each under qemu's max model, and CI's
+      mips job runs it on every push. Eight violations name that part, and
+      it catches each: four break x86-64's arithmetic, the round constant
+      one round late, the shuffle on word 2, AES-256's last round key
+      unstored and its second step rotated;
+      `aes-hw-registers-round-key-on-stack` keeps x86-64's round key in a
+      volatile variable; `aes-hw-diverges-from-soft` and
+      `aes256-schedule-one-round-key-short`, re-pointed at arm64's word
+      loop, break its round constant and
+      AES-256's length; and `aes-hw-word-loop-keeps-its-word` drops arm64's
+      wipe of its word. Three more mutants, run by hand under gcc 13.3 and
+      clang 23 and not landed, were caught as well: RotWord rotating left,
+      `prefix_xor` without its second shift, and AES-128's last round key
+      unstored. `bin/quic_test_hw`, the host Wycheproof binary and
+      `bin/diff_quic_hw` run the published vectors and the differential on
+      whichever arm the machine runs (docs/verification.md, "The host
+      object's AES key expansions"). Before this landed, the Wycheproof
+      binary ran its AES-128-GCM and AES-256-GCM suites, 67 and 66 cases,
+      on the register expansion under gcc 13.3 and clang 23, in an x86-64
+      container on the M1 Pro whose CPU has AES-NI and PCLMULQDQ and no
+      AVX, and `bin/diff_quic_hw` ran on arm64 alone.
+    - **Cost.** Under the pinned compilers for x86-64 at `-O2`, `aes_hw.c`
+      compiles to 685 bytes of code under gcc 13.3 where it took 765, and
+      to 780 under clang 23 where it took 956, and neither entry keeps a
+      frame beyond its return address. The file holds 407 lines where it
+      held 283, because the word loop stays for arm64 beside the register
+      expansion, and an auditor reads both. The search adds a 203-line
+      test header, and the qemu part adds two builds and two runs to CI's
+      mips job; the runs took 2.0 and 2.6 seconds under qemu on the M1
+      Pro. Vector registers still hold the last round keys when an
+      expansion returns, as they hold the cipher's state after a block; C
+      has no statement that clears a register.
+
+    Rejected:
+
+    - **AESKEYGENASSIST in registers**, the usual AES-NI expansion. The
+      instruction takes its round constant as an immediate, so each key
+      size's loop would unroll into one step per round constant, ten for
+      AES-128 and seven for AES-256. The copy of word 3 and AESENCLAST
+      leave the round constant to an exclusive-or of a value, which keeps
+      one loop per key size.
+    - **memcpy for the loads on x86-64.** gcc 13 at -O3 left the key on
+      the stack, above.
+    - **The prototype's 512-bit AES-GCM**, by the ruling.

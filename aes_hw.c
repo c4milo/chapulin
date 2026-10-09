@@ -225,7 +225,7 @@ static void expand_256(const uint8_t key[AES_256_KEY], uint8_t *round_keys) {
 // vector value, computed from the round keys before it and stored to
 // round_keys once, and nothing reads the schedule back. The arm64
 // expansion above runs a word at a time through two arrays in memory and
-// reads each word back from round_keys; on x86-64 that took 12 to 21
+// reads each word back from round_keys; on x86-64 that took 10 to 21
 // times as long (docs/decisions.md 123). Every loop below runs a count the
 // key size fixes, so every branch reads a public value.
 //

@@ -3828,9 +3828,12 @@ last `ROLE=server` stub, as the entry said it would.
   fails each.
   `test/violations/aes-two-implementations-in-one-object.violation` is
   the mutant that proves it fires, and
-  `aes-hw-diverges-from-soft.violation` breaks the host object's key
-  expansion and requires `bin/aes_equiv_test` to fail, which is what
-  holds the path no proof reaches (docs/quic.md, "What the AES axis
+  `aes-hw-diverges-from-soft.violation` breaks the host object's arm64
+  key expansion, `aes-hw-registers-round-constant-one-round-late.violation`
+  and `aes-hw-registers-shuffle-takes-word-2.violation` its x86-64 one, and
+  each requires `test/docker-aes-runtime-qemu.sh aes-equiv`, which runs
+  `bin/aes_equiv_test` for both architectures, to fail. That binary is
+  what holds the path no proof reaches (docs/quic.md, "What the AES axis
   proves"). `ghash-hw-reduction-constant.violation` and
   `ghash-hw-cross-product-halves-swapped.violation` break the host
   object's GHASH multiply, and `ghash-hw-powers-reversed.violation` and
@@ -3936,7 +3939,10 @@ last `ROLE=server` stub, as the entry said it would.
   *Key material is wiped where a secret could sit.* `gcm.c` wipes the
   hash subkey, the running multiple in the GF(2^128) multiply, the
   keystream block, the tag mask and the tag it computed for comparison;
-  `aes_hw.c` wipes its key-schedule word and its cipher state;
+  `aes_hw.c` wipes its cipher state, and on arm64 the two words its key
+  expansion builds each word in; its x86-64 expansion holds no array, and
+  `bin/aes_equiv_test` searches the stack each expansion leaves for a
+  word it computed (docs/decisions.md 123);
   `ghash_hw.c` wipes the object that holds the hash subkey, its powers,
   the accumulator and the sums of products before each reduction once at
   the end of each entry, not once per block. Under `AES=extern` a schedule holds the traffic key
@@ -4015,11 +4021,16 @@ last `ROLE=server` stub, as the entry said it would.
   AES-256 and requires `test/lint-trust-separation.sh` to fail.
   `aes256-traffic-key-wrong-round-count` records AES-128's round count
   beside an AES-256 schedule and requires the `aes_traffic` proof
-  to fail, and `aes256-schedule-one-round-key-short` stops the host
-  object's AES-256 expansion one round key short and requires
-  `bin/aes_equiv_test` to fail. `inv26-quic-hp-key-cut-to-aes128` keys
-  QUIC header protection with 16 bytes under every AES suite and
-  requires `bin/quic_suite_test`, which checks an AES-256 packet byte for
+  to fail. `aes256-schedule-one-round-key-short` stops the host
+  object's arm64 AES-256 expansion one round key short,
+  `aes-hw-registers-256-last-round-key-unstored` leaves the x86-64 one's
+  last round key unstored, and
+  `aes-hw-registers-256-second-step-takes-rot-word` rotates the temporary
+  of the step AES-128 lacks; each requires
+  `test/docker-aes-runtime-qemu.sh aes-equiv` to fail.
+  `inv26-quic-hp-key-cut-to-aes128` keys QUIC header protection with 16
+  bytes under every AES suite and requires `bin/quic_suite_test`, which
+  checks an AES-256 packet byte for
   byte against an independent computation, to fail; the
   `quic_packet_suite` proof asserts the key length too.
 
@@ -4585,6 +4596,18 @@ last `ROLE=server` stub, as the entry said it would.
   keystream, so no keystream stays live to that wipe; the same binary
   copies the stack below one seal and one open and requires none of them
   there, the last pass's keystream included.
+  `aes_hw.c`'s key expansion on x86-64 keeps every value in a variable of
+  vector type and stores the round keys to the caller's schedule alone,
+  and on arm64 it wipes the two words it builds each word in. Under a
+  `SUITE=aesgcm` build the key is a traffic key, and any one round key of
+  AES-128 gives back the key. `bin/aes_equiv_test` clears the stack below
+  one expansion of each size, makes the call, and requires no word of the
+  schedule, nor any value a step computes, in the bytes the call wrote
+  (`test/aes_equiv_residue.h`, decision 123).
+  `aes-hw-registers-round-key-on-stack` keeps the x86-64 round key in a
+  volatile variable, and `aes-hw-word-loop-keeps-its-word` drops arm64's
+  wipe of the word; `test/docker-aes-runtime-qemu.sh aes-equiv` catches
+  each, built for the architecture its edit shows on.
   An AES-GCM open decrypts while it hashes, so a tag that does not match
   finds the plaintext written, and that plaintext exclusive-ored with the
   ciphertext is the keystream of the nonce. `gcm.c` wipes those n bytes
