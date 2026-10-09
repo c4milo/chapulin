@@ -24,10 +24,11 @@
 #   - cpu_cfg.h's CH_CPU_DEFINED holds each architecture's bits of
 #     ch_cfg.cpu and no other: on arm64 the probe's bit, the AES bit, the
 #     multiply bit and the three hash bits, and on x86-64 the first three,
-#     CH_CPU_AVX2, CH_CPU_VAES and the SHA-256 bit (docs/decisions.md 89
-#     and 93). The pinned clang reads the header for both architectures,
-#     so the check holds both sets on any machine, where the rows of
-#     test/test_cpu.h hold the set of the architecture they run on.
+#     CH_CPU_AVX2, CH_CPU_VAES, the SHA-256 bit and CH_CPU_AVX512_IFMA
+#     (docs/decisions.md 89 and 93, cpu_cfg.h). The pinned clang reads the
+#     header for both architectures, so the check holds both sets on any
+#     machine, where the rows of test/test_cpu.h hold the set of the
+#     architecture they run on.
 #
 # `make check` runs it (check-host-builds). It is the catch target of the
 # violations that break one of the three: test/violations.py runs a script
@@ -82,7 +83,7 @@ done
 # CH_CPU_DEFINED for each architecture, against the bits written out
 # here: 0x01 CH_CPU_PROBED, 0x02 the AES bit, 0x04 the multiply bit, 0x08
 # CH_CPU_AVX2, 0x10 CH_CPU_VAES, 0x20 the SHA-256 bit, 0x40 the SHA-512
-# bit and 0x80 the SHA-3 bit.
+# bit, 0x80 the SHA-3 bit and 0x100 CH_CPU_AVX512_IFMA.
 defined_tu=$out/cpu_defined.c
 printf '%s\n' '#include "cpu_cfg.h"' \
     '_Static_assert(CH_CPU_DEFINED == WANT, "CH_CPU_DEFINED holds another set of bits");' \
@@ -92,7 +93,7 @@ defined() { # $1 = a clang target, $2 = the bits its object defines
         fail "cpu_cfg.h's CH_CPU_DEFINED for $1 is not $2"
 }
 defined aarch64-none-elf 0xe7U
-defined x86_64-none-elf 0x3fU
+defined x86_64-none-elf 0x13fU
 
 # The Makefile's defines for a TRUST=webpki object under a compiler.
 make_defs() {

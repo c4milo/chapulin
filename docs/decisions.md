@@ -4777,7 +4777,9 @@ does nothing more.
     object without `SUITE=aesgcm`, still describes the CPU, and init
     accepts it. In a `SUITE=aesgcm` object with `CH_CPU_CONSTANT_TIME_AES`
     clear, init refuses a `cipher_suites` list that names an AES-GCM suite,
-    as it does for entry 81's absent answer.
+    as it does for entry 81's absent answer. `CH_CPU_AVX512_IFMA`, 0x100,
+    is a third x86-64 bit, which an arm64 object refuses the same way
+    (`cpu_cfg.h`, entry 93).
 
     **How the object chooses.** Entries 81 and 87 already built the parts.
     A target pragma compiles each instruction set's functions for those
@@ -5414,6 +5416,15 @@ does nothing more.
     an AES key schedule keeps of it (`aes_schedule.h`), and `aes.c`'s
     assertion still holds. The next bit a release adds does not fit that
     byte.
+
+    That bit is `CH_CPU_AVX512_IFMA`, 0x100: the CPU has AVX-512F and
+    AVX-512 IFMA, and its operating system saves the opmask and 512-bit
+    registers. It is an x86-64 bit, and like `CH_CPU_AVX2` it states
+    presence alone and no timing. The schedule keeps one byte, and
+    `aes.c`'s assertion now holds `CH_CPU_VAES` and
+    `CH_CPU_CONSTANT_TIME_AES`, the two bits `gcm_use_vaes` reads from
+    it, in that byte. The byte drops the new bit, and nothing that reads
+    the byte reads that bit.
 
     What each bit names (`cpu_cfg.h`):
 

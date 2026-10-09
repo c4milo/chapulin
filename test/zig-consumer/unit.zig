@@ -159,7 +159,8 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
         .{ .constant_time_sha256 = true },
         .{ .constant_time_sha512 = true },
         .{ .constant_time_sha3 = true },
-        .{ .constant_time_aes = true, .constant_time_multiply = true, .avx2 = true, .vaes = true, .constant_time_sha256 = true, .constant_time_sha512 = true, .constant_time_sha3 = true },
+        .{ .avx512_ifma = true },
+        .{ .constant_time_aes = true, .constant_time_multiply = true, .avx2 = true, .vaes = true, .constant_time_sha256 = true, .constant_time_sha512 = true, .constant_time_sha3 = true, .avx512_ifma = true },
     };
     const probed = c.CH_CPU_PROBED;
     const codes = [_]u32{
@@ -172,7 +173,8 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
         probed | c.CH_CPU_CONSTANT_TIME_SHA256,
         probed | c.CH_CPU_CONSTANT_TIME_SHA512,
         probed | c.CH_CPU_CONSTANT_TIME_SHA3,
-        probed | c.CH_CPU_CONSTANT_TIME_AES | c.CH_CPU_CONSTANT_TIME_MULTIPLY | c.CH_CPU_AVX2 | c.CH_CPU_VAES | c.CH_CPU_CONSTANT_TIME_SHA256 | c.CH_CPU_CONSTANT_TIME_SHA512 | c.CH_CPU_CONSTANT_TIME_SHA3,
+        probed | c.CH_CPU_AVX512_IFMA,
+        probed | c.CH_CPU_CONSTANT_TIME_AES | c.CH_CPU_CONSTANT_TIME_MULTIPLY | c.CH_CPU_AVX2 | c.CH_CPU_VAES | c.CH_CPU_CONSTANT_TIME_SHA256 | c.CH_CPU_CONSTANT_TIME_SHA512 | c.CH_CPU_CONSTANT_TIME_SHA3 | c.CH_CPU_AVX512_IFMA,
     };
     for (descriptions, codes) |description, code| {
         if (has_client) {

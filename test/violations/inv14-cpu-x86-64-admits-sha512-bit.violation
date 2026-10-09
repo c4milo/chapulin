@@ -10,6 +10,6 @@ reason: cpu_cfg.h's x86-64 set gains CH_CPU_CONSTANT_TIME_SHA512, so an
   the pinned clang and compares each set with the bits it writes out.
 
 --- old
-     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA)
 --- new
-     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_CONSTANT_TIME_SHA512)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA | CH_CPU_CONSTANT_TIME_SHA512)

@@ -158,9 +158,15 @@ struct Cpu {
     // transcript and derives its keys over SHA-384 on them.
     bool constant_time_sha512 = false;
     // The same for the SHA-3 instructions, FEAT_SHA3:
-    // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well, and no object
-    // runs SHA-3 on the instructions yet.
+    // CH_CPU_CONSTANT_TIME_SHA3. An arm64 bit as well. The session then
+    // runs SHA-3, SHAKE and ML-KEM's hashes on them, in an object that
+    // clang compiled.
     bool constant_time_sha3 = false;
+    // The CPU has AVX-512F and AVX-512 IFMA, and its operating system
+    // saves the opmask and 512-bit registers: CH_CPU_AVX512_IFMA. It
+    // states presence alone, as avx2 does, and no path reads it yet. An
+    // x86-64 bit, which an arm64 object refuses.
+    bool avx512_ifma = false;
 };
 #endif
 
@@ -378,7 +384,8 @@ class Config {
                    (found.avx2 ? CH_CPU_AVX2 : 0U) | (found.vaes ? CH_CPU_VAES : 0U) |
                    (found.constant_time_sha256 ? CH_CPU_CONSTANT_TIME_SHA256 : 0U) |
                    (found.constant_time_sha512 ? CH_CPU_CONSTANT_TIME_SHA512 : 0U) |
-                   (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U);
+                   (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
+                   (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U);
         return *this;
     }
 #endif

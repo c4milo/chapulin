@@ -1,0 +1,14 @@
+invariant: INV-14
+file: cpu_cfg.h
+catches: test/host-builds.sh
+reason: cpu_cfg.h's x86-64 set loses CH_CPU_AVX512_IFMA, so every init
+  call of an x86-64 object refuses a caller that states AVX-512 IFMA, and
+  a caller that copies its probe's answer into ch_cfg.cpu gets CH_EINVAL
+  on such a CPU. On arm64 no test row moves, because that set is
+  unchanged, so the catch is the script, which reads the header for both
+  architectures and compares each set with the bits it writes out.
+
+--- old
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA)
+--- new
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)

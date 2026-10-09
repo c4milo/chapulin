@@ -26,7 +26,8 @@
 #            on the CPU's SHA-256 instructions, on arm64 SHA-384 and
 #            SHA-512 on its SHA-512 instructions and, in a program clang
 #            built, SHA-3, SHAKE and ML-KEM on its SHA-3 instructions, and
-#            on x86-64 the AVX2 ChaCha20
+#            on x86-64 the AVX2 ChaCha20. On a CPU with AVX-512 IFMA the
+#            value also holds CH_CPU_AVX512_IFMA, which no path reads yet
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256
@@ -213,6 +214,7 @@ CPU_VAES=0x10
 CPU_CONSTANT_TIME_SHA256=0x20
 CPU_CONSTANT_TIME_SHA512=0x40
 CPU_CONSTANT_TIME_SHA3=0x80
+CPU_AVX512_IFMA=0x100
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -231,7 +233,8 @@ reports() { # $1 = the list, space separated; the rest = the words
 # the carry-less multiply, the SHA-256 bit where it reports the SHA-256
 # instructions, on arm64 the SHA-512 bit where it reports the SHA-512
 # instructions and the SHA-3 bit where it reports the SHA-3 ones, and on
-# x86-64 the AVX2 and VAES bits where it reports those. A program gcc
+# x86-64 the AVX2 and VAES bits where it reports those and the IFMA bit
+# where it reports AVX-512F and AVX-512 IFMA. A program gcc
 # built holds no Keccak on the SHA-3 instructions, and there the SHA-3
 # bit picks nothing (docs/decisions.md 99). BENCH_CPU from the
 # environment wins, for a system this function has no probe for. The
@@ -295,6 +298,12 @@ cpu_value() {
             value=$((value | CPU_VAES))
         fi
     fi
+    # x86-64 Linux names AVX-512F avx512f and AVX-512 IFMA avx512ifma. A
+    # CPU can have the first without the second, so the probe asks for
+    # both.
+    if [ "$ARCH" = x86_64 ] && reports "$features" avx512f avx512ifma; then
+        value=$((value | CPU_AVX512_IFMA))
+    fi
     printf '0x%x\n' "$value"
 }
 
@@ -303,7 +312,7 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512; do
+        CONSTANT_TIME_SHA512 AVX512_IFMA; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

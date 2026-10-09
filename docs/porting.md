@@ -101,14 +101,16 @@ it must cover those instructions as well as the scalar multiply. A session
 without the bit runs the portable Poly1305 and its 16x16 decomposition
 (decision 83).
 
-On x86-64 two more bits say what the CPU has, and neither states a timing.
+On x86-64 three more bits say what the CPU has, and none states a timing.
 `CH_CPU_AVX2` says the CPU has AVX2 and its operating system saves the 256-bit
 registers, and it moves the ChaCha20 keystream to 256-bit vectors, eight blocks
 a pass. `CH_CPU_VAES` says the CPU also has VAES and VPCLMULQDQ on those
 registers. Beside `CH_CPU_CONSTANT_TIME_AES` it moves AES-GCM's whole blocks to
 them; the AES bit's statement covers those forms, and `CH_CPU_VAES` without it
-runs nothing (decision 90). Set each from your probe alone: a session whose bit
-names instructions its CPU lacks faults on the first one.
+runs nothing (decision 90). `CH_CPU_AVX512_IFMA` says the CPU has AVX-512F and
+AVX-512 IFMA and its operating system saves the opmask and 512-bit registers;
+no path reads it yet. Set each from your probe alone: a session whose bit names
+instructions its CPU lacks faults on the first one.
 
 Three bits state the hash instructions: `CH_CPU_CONSTANT_TIME_SHA256` on both
 architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`

@@ -76,6 +76,13 @@
 // the 128-bit vector ChaCha20 off: every arm64 CPU has NEON and every x86-64 CPU SSE2
 // (docs/decisions.md 82, 89 and 90).
 //
+// CH_CPU_AVX512_IFMA says the CPU has AVX-512F and AVX-512 IFMA, which CPUID leaf 7 reports in
+// bits 16 and 21 of EBX, and that its operating system saves the opmask registers and the 512-bit
+// registers, which XGETBV reports in bits 5 to 7 of XCR0. A probe reads the IFMA bit itself: a
+// CPU can have AVX-512F without IFMA. It is an x86-64 bit for RSA verification, whose inputs are
+// all public, so like CH_CPU_AVX2 it states presence alone and no timing. No path reads it yet: a
+// session with the bit runs what a session without it runs.
+//
 // CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
 // the CPU has the instructions of one hash, and state that they run in constant time on it, in
 // the mode the session's thread runs in, as CH_CPU_CONSTANT_TIME_AES states for AES: a hash reads
@@ -105,13 +112,13 @@
 // DRBG's are such calls.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
-// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2 or CH_CPU_VAES on arm64,
-// CH_CPU_CONSTANT_TIME_SHA512 or CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later release
-// adds. A caller written before such a release leaves the new bit clear and runs the slower
-// path. A defined bit for instructions the object never runs, such as CH_CPU_CONSTANT_TIME_AES in
-// an object that carries no AES, still describes the CPU, and init accepts it. The eight bits
-// fill the low byte of the value, which is the byte an AES key schedule keeps of it
-// (aes_schedule.h).
+// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES or CH_CPU_AVX512_IFMA
+// on arm64, CH_CPU_CONSTANT_TIME_SHA512 or CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later
+// release adds. A caller written before such a release leaves the new bit clear and runs the
+// slower path. A defined bit for instructions the object never runs, such as
+// CH_CPU_CONSTANT_TIME_AES in an object that carries no AES, still describes the CPU, and init
+// accepts it. An AES key schedule keeps the low byte of the value, which holds CH_CPU_VAES and
+// CH_CPU_CONSTANT_TIME_AES, the two bits gcm_use_vaes reads (aes_schedule.h).
 #define CH_CPU_PROBED 0x01U
 #define CH_CPU_CONSTANT_TIME_AES 0x02U
 #define CH_CPU_CONSTANT_TIME_MULTIPLY 0x04U
@@ -120,10 +127,11 @@
 #define CH_CPU_CONSTANT_TIME_SHA256 0x20U
 #define CH_CPU_CONSTANT_TIME_SHA512 0x40U
 #define CH_CPU_CONSTANT_TIME_SHA3 0x80U
+#define CH_CPU_AVX512_IFMA 0x100U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
-     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA)
 #else
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \

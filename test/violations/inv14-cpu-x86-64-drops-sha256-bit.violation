@@ -9,6 +9,6 @@ reason: cpu_cfg.h's x86-64 set loses CH_CPU_CONSTANT_TIME_SHA256, so every
   architectures and compares each set with the bits it writes out.
 
 --- old
-     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA)
 --- new
-     CH_CPU_VAES)
+     CH_CPU_VAES | CH_CPU_AVX512_IFMA)

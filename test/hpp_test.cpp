@@ -278,6 +278,18 @@ static void test_webpki_config(chapulin::Io io) {
         CHECK(avx2.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_AVX2) != 0
                                         ? chapulin::Status::io
                                         : chapulin::Status::invalid));
+        // avx512_ifma to its own bit, which an arm64 object refuses.
+        // connect sends a hello and reads no reply, so the session
+        // verifies no signature, and the CPU under this test may lack
+        // AVX-512 IFMA.
+        chapulin::Cpu ifma;
+        ifma.avx512_ifma = true;
+        cfg.cpu(ifma);
+        CHECK(cfg.raw().cpu == (CH_CPU_PROBED | CH_CPU_AVX512_IFMA));
+        chapulin::Session avx512_ifma;
+        CHECK(avx512_ifma.connect(cfg) == ((CH_CPU_DEFINED & CH_CPU_AVX512_IFMA) != 0
+                                               ? chapulin::Status::io
+                                               : chapulin::Status::invalid));
         // The three hash bits, each to its own bit of ch_cfg.cpu. An
         // x86-64 object refuses the SHA-512 bit, which is arm64's, as
         // an arm64 object refuses avx2. No session runs here under a

@@ -168,8 +168,8 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
 
 #ifdef CH_CPU_RUNTIME
 // Records in k the description of the CPU its session gave, the low byte
-// of ch_cfg.cpu, which holds every bit an object defines and which gcm.c
-// reads to pick gcm_vaes.c's 256-bit kernels for k's whole blocks on
+// of ch_cfg.cpu, which holds the two bits gcm_use_vaes reads and which
+// gcm.c reads to pick gcm_vaes.c's 256-bit kernels for k's whole blocks on
 // x86-64 (aes_schedule.h). aes_traffic_key_init records 0,
 // which names no kernel, so a key this call never sees runs the 128-bit
 // loops: a record direction and a QUIC packet call it, and a header

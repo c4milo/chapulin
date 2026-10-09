@@ -109,11 +109,11 @@ Other targets:
   wrote the field, `CH_CPU_CONSTANT_TIME_AES`,
   `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_CONSTANT_TIME_SHA256` where
   you state those instructions run in constant time on that CPU in the
-  mode your thread runs in, on x86-64 `CH_CPU_AVX2` and `CH_CPU_VAES`, and
-  on arm64 `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`.
-  Every init call and `ch_srv_check` refuse a value without
-  `CH_CPU_PROBED`, and one with a bit this object does not define for its
-  architecture, such as `CH_CPU_AVX2` on arm64 or
+  mode your thread runs in, on x86-64 `CH_CPU_AVX2`, `CH_CPU_VAES` and
+  `CH_CPU_AVX512_IFMA`, and on arm64 `CH_CPU_CONSTANT_TIME_SHA512` and
+  `CH_CPU_CONSTANT_TIME_SHA3`. Every init call and `ch_srv_check` refuse a
+  value without `CH_CPU_PROBED`, and one with a bit this object does not
+  define for its architecture, such as `CH_CPU_AVX2` on arm64 or
   `CH_CPU_CONSTANT_TIME_SHA512` on x86-64. chapulin probes nothing and
   sets no CPU mode.
   The host object holds the AES instructions, and in a QUIC object the
@@ -161,10 +161,13 @@ Other targets:
   VAES and VPCLMULQDQ on those registers, and beside
   `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES
   instructions at every width, AES-GCM's whole blocks then run
-  `gcm_vaes.c`'s kernels (decision 90). Set each bit from your probe
-  alone: a session whose bit names instructions its CPU lacks faults on
-  the first one. The three hash bits say the CPU has the SHA-256, the
-  SHA-512 or the SHA-3 instructions, and state that they run in constant
+  `gcm_vaes.c`'s kernels (decision 90). `CH_CPU_AVX512_IFMA` says the CPU
+  has AVX-512F and AVX-512 IFMA and its operating system saves the opmask
+  and 512-bit registers. It states no timing, and no path reads it yet.
+  Set each bit from your probe alone: a session whose bit names
+  instructions its CPU lacks faults on the first one. The three hash
+  bits say the CPU has the SHA-256, the SHA-512 or the SHA-3
+  instructions, and state that they run in constant
   time in your thread's mode, as the AES bit does: on arm64 FEAT_SHA256,
   FEAT_SHA512 and FEAT_SHA3, and on x86-64 the SHA extensions with SSSE3
   and SSE4.1 for the SHA-256 bit alone (`cpu_cfg.h`). A session hands its

@@ -51,28 +51,28 @@ static uint32_t test_cpu = TEST_CPU;
 #define TEST_CPU_DIR(d) ((&(d))->cpu = test_cpu)
 
 // Every bit a host object defines on the architecture this binary targets: the four of every
-// host object, on x86-64 CH_CPU_AVX2 and CH_CPU_VAES, and on arm64 CH_CPU_CONSTANT_TIME_SHA512
-// and CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from cpu_cfg.h's CH_CPU_DEFINED, so a
-// wrong set there fails a row.
+// host object, on x86-64 CH_CPU_AVX2, CH_CPU_VAES and CH_CPU_AVX512_IFMA, and on arm64
+// CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3. It is written here apart from
+// cpu_cfg.h's CH_CPU_DEFINED, so a wrong set there fails a row.
 #define TEST_CPU_COMMON                                                                            \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \
      CH_CPU_CONSTANT_TIME_SHA256)
 #ifdef __x86_64__
-#define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_AVX2 | CH_CPU_VAES)
+#define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_AVX2 | CH_CPU_VAES | CH_CPU_AVX512_IFMA)
 #else
 #define TEST_CPU_ALL (TEST_CPU_COMMON | CH_CPU_CONSTANT_TIME_SHA512 | CH_CPU_CONSTANT_TIME_SHA3)
 #endif
 
 // The values every init call and ch_srv_check refuse: 0, which a caller that never set the field
-// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_CONSTANT_TIME_SHA3,
-// which no architecture defines; the top bit; and each bit of the other architecture, which an
-// object refuses rather than ignores: the two x86-64 bits on arm64, and the SHA-512 and SHA-3
-// bits on x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
+// leaves; every defined bit but CH_CPU_PROBED; the first bit past CH_CPU_AVX512_IFMA, which no
+// architecture defines; the top bit; and each bit of the other architecture, which an object
+// refuses rather than ignores: the three x86-64 bits on arm64, and the SHA-512 and SHA-3 bits on
+// x86-64. Then the two they take at the edges: CH_CPU_PROBED alone, and every bit the
 // architecture defines.
 static const uint32_t test_cpu_values[] = {
     0,
     TEST_CPU_ALL & ~(uint32_t)CH_CPU_PROBED,
-    CH_CPU_PROBED | (CH_CPU_CONSTANT_TIME_SHA3 << 1),
+    CH_CPU_PROBED | (CH_CPU_AVX512_IFMA << 1),
     CH_CPU_PROBED | 0x80000000U,
 #ifdef __x86_64__
     CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_SHA512,
@@ -80,6 +80,7 @@ static const uint32_t test_cpu_values[] = {
 #else
     CH_CPU_PROBED | CH_CPU_AVX2,
     CH_CPU_PROBED | CH_CPU_VAES,
+    CH_CPU_PROBED | CH_CPU_AVX512_IFMA,
 #endif
     CH_CPU_PROBED,
     TEST_CPU_ALL,
@@ -110,16 +111,31 @@ static inline uint32_t test_cpu_absent_hash_bits(uint32_t value) {
     return absent;
 }
 
+// CH_CPU_AVX512_IFMA where value holds it and this CPU lacks AVX-512 IFMA
+// (test/x86_kernels_cpu.h), and 0 for every other value and on arm64.
+static inline uint32_t test_cpu_absent_ifma_bit(uint32_t value) {
+#ifdef __x86_64__
+    if ((value & CH_CPU_AVX512_IFMA) != 0 && !x86_cpu_has_avx512_ifma()) {
+        return CH_CPU_AVX512_IFMA;
+    }
+#else
+    (void)value;
+#endif
+    return 0;
+}
+
 // test_cpu_values[i] as a row hands it to an init call. A value the call takes starts a session,
 // which hashes its first message, so the row leaves out a hash bit whose instructions this CPU
-// lacks: there the row holds that the call takes the other bits. A value the call refuses runs
-// nothing and stays whole.
+// lacks: there the row holds that the call takes the other bits. It leaves out CH_CPU_AVX512_IFMA
+// where this CPU lacks AVX-512 IFMA for the same reason: a session under a bit that names
+// instructions its CPU lacks faults on the first one. A value the call refuses runs nothing and
+// stays whole.
 static inline uint32_t test_cpu_value(size_t i) {
     uint32_t value = test_cpu_values[i];
     if (!test_cpu_taken(i)) {
         return value;
     }
-    return value & ~test_cpu_absent_hash_bits(value);
+    return value & ~test_cpu_absent_hash_bits(value) & ~test_cpu_absent_ifma_bit(value);
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs
@@ -154,10 +170,10 @@ static inline uint32_t test_cpu_hash_bits(void) {
 
 #ifdef CH_CPU_RUNTIME
 // The instructions test_cpu names and this CPU lacks, or NULL where it has them all: an x86-64
-// kernel's, or a hash's. *required is whether the environment makes their absence a failure:
-// CH_REQUIRE_X86_KERNELS for a kernel, which CI's x86-64 kernels job sets
-// (test/x86_kernels_cpu.h), and CH_REQUIRE_HASH_INSTRUCTIONS for a hash
-// (test/hash_instructions_cpu.h).
+// kernel's, AVX-512 IFMA, or a hash's. *required is whether the environment makes their absence a
+// failure: CH_REQUIRE_X86_KERNELS for a kernel, which CI's x86-64 kernels job sets,
+// CH_REQUIRE_AVX512_IFMA for AVX-512 IFMA (test/x86_kernels_cpu.h), and
+// CH_REQUIRE_HASH_INSTRUCTIONS for a hash (test/hash_instructions_cpu.h).
 static inline const char *test_cpu_lacks(int *required) {
 #ifdef __x86_64__
     *required = x86_kernels_required();
@@ -166,6 +182,10 @@ static inline const char *test_cpu_lacks(int *required) {
     }
     if ((test_cpu & CH_CPU_VAES) != 0 && !x86_cpu_has_vaes()) {
         return "VAES or VPCLMULQDQ";
+    }
+    *required = x86_ifma_required();
+    if (test_cpu_absent_ifma_bit(test_cpu) != 0) {
+        return "AVX-512 IFMA";
     }
 #endif
     *required = hash_instructions_required();

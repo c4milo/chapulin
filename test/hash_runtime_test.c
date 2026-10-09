@@ -11,12 +11,12 @@
 // binary runs no hash instruction and gives the same verdict on every CPU
 // of its architecture.
 //
-// Every row runs under each of the 128 values the seven bits beside
-// CH_CPU_PROBED make, and under 0, which a wiped record direction holds. A
-// row is one call that takes a session's value. It runs first under
-// CH_CPU_PROBED alone, which names no instruction, and that run's calls
-// into sha256.c and sha512.c are the row's counts. Under the value, the row
-// must then, for each of the two hashes:
+// Every row runs under each of the 256 values the eight bits beside
+// CH_CPU_PROBED make, and under 0, which a wiped record direction holds.
+// CH_CPU_AVX512_IFMA, 0x100, picks no hash. A row is one call that takes a
+// session's value. It runs first under CH_CPU_PROBED alone, which names no
+// instruction, and that run's calls into sha256.c and sha512.c are the row's
+// counts. Under the value, the row must then, for each of the two hashes:
 //
 //   - make every one of those calls on the instructions where the value
 //     holds the hash's bit, and none on the portable code;
@@ -483,14 +483,14 @@ int main(void) {
     fill(pseudorandom_key, sizeof pseudorandom_key, 0x44);
     fill(transcript_hash, sizeof transcript_hash, 0x55);
     check_plain_names();
-    // The seven bits beside CH_CPU_PROBED are 0x02 to 0x80, so the 128
-    // values are the probe's bit and each of 0 to 127 shifted up one.
-    for (uint32_t bits = 0; bits < 128 && failures == 0; bits++) {
+    // The eight bits beside CH_CPU_PROBED are 0x02 to 0x100, so the 256
+    // values are the probe's bit and each of 0 to 255 shifted up one.
+    for (uint32_t bits = 0; bits < 256 && failures == 0; bits++) {
         check_value(CH_CPU_PROBED | (bits << 1));
     }
     check_value(0);
     if (failures == 0) {
-        (void)printf("hash runtime: under each of 129 ch_cfg.cpu values, every SHA-256 call of "
+        (void)printf("hash runtime: under each of 257 ch_cfg.cpu values, every SHA-256 call of "
                      "every row ran on the instructions where CH_CPU_CONSTANT_TIME_SHA256 was "
                      "set and on sha256.c anywhere else, and every SHA-512 call where "
                      "CH_CPU_CONSTANT_TIME_SHA512 was set in an arm64 object and on sha512.c "

@@ -42,10 +42,13 @@
 #endif
 
 #ifdef CH_CPU_RUNTIME
-// A schedule records its session's ch_cfg.cpu in one byte
-// (aes_schedule.h), so every bit an object defines must sit in the low
-// byte of the value.
-_Static_assert(CH_CPU_DEFINED <= 0xffU, "a schedule's cpu byte holds every defined ch_cfg.cpu bit");
+// A schedule keeps its session's ch_cfg.cpu in one byte (aes_schedule.h),
+// and gcm_use_vaes reads CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES from that
+// byte, so both bits must sit in the low byte of the value. A bit above
+// that byte, such as CH_CPU_AVX512_IFMA, does not fit in it, and nothing
+// that reads the byte reads such a bit.
+_Static_assert((CH_CPU_VAES | CH_CPU_CONSTANT_TIME_AES) <= 0xffU,
+               "a schedule's cpu byte holds every bit gcm_use_vaes reads");
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

@@ -2,10 +2,11 @@ invariant: INV-14
 file: cpu_cfg.h
 catches: quic_loop_host
 reason: cpu_cfg.h gives each architecture the other's bits: an arm64
-  object takes CH_CPU_AVX2 and CH_CPU_VAES, which it has no path for, and
-  an x86-64 object refuses them. test/test_cpu.h states each
-  architecture's bits apart from CH_CPU_DEFINED, so test/quic_loop_cpu.h
-  sees a refused bit taken on arm64 and a defined one refused on x86-64.
+  object takes CH_CPU_AVX2, CH_CPU_VAES and CH_CPU_AVX512_IFMA, which it
+  has no path for, and an x86-64 object refuses them. test/test_cpu.h
+  states each architecture's bits apart from CH_CPU_DEFINED, so
+  test/quic_loop_cpu.h sees a refused bit taken on arm64 and a defined one
+  refused on x86-64.
 
 --- old
 #ifdef __x86_64__

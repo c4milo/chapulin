@@ -371,6 +371,10 @@ const CpuBits = struct {
     /// arm64 bit as well. The session then runs ML-KEM's hashes on them, in an object that clang
     /// compiled, as `zig build` does.
     constant_time_sha3: bool = false,
+    /// CH_CPU_AVX512_IFMA: the CPU has AVX-512F and AVX-512 IFMA and its operating system saves
+    /// the opmask and 512-bit registers. It states presence alone, as avx2 does, and no path reads
+    /// it yet. An x86-64 bit, which an arm64 object refuses.
+    avx512_ifma: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null.
@@ -381,7 +385,8 @@ fn cpuBits(found: ?CpuBits) u32 {
         (if (cpu.avx2) c.CH_CPU_AVX2 else 0) | (if (cpu.vaes) c.CH_CPU_VAES else 0) |
         (if (cpu.constant_time_sha256) c.CH_CPU_CONSTANT_TIME_SHA256 else 0) |
         (if (cpu.constant_time_sha512) c.CH_CPU_CONSTANT_TIME_SHA512 else 0) |
-        (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0);
+        (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0) |
+        (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0);
 }
 
 /// ch_tls.group's code points (cfg.h).

@@ -3865,9 +3865,10 @@ skips what the CPU has no instructions for, or fails under
 **Which calls run the instructions** rests on these:
 
 - `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test`, in
-  `make check`, count the calls into each path of each hash under 129
-  `ch_cfg.cpu` values: the 128 the seven bits beside `CH_CPU_PROBED`
-  make, and 0. The counting entries (`test/hash_runtime_count.c`) run
+  `make check`, count the calls into each path of each hash under 257
+  `ch_cfg.cpu` values: the 256 the eight bits beside `CH_CPU_PROBED`
+  make, and 0. One of the eight, `CH_CPU_AVX512_IFMA`, picks no hash.
+  The counting entries (`test/hash_runtime_count.c`) run
   every path on the portable code, and the row that seals an Initial
   packet clears the value's AES, AVX2 and VAES bits, so its AES-GCM runs
   on the table. So the binaries run no instruction a bit names and give

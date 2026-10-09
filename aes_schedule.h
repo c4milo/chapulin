@@ -39,13 +39,15 @@
 //
 // A host object (CH_CPU_RUNTIME, cpu_cfg.h) also records cpu: the low byte
 // of the description of the CPU that the schedule's session gave in
-// ch_cfg.cpu, which holds every bit an object defines (aes.c asserts it).
-// gcm.c reads it to pick gcm_vaes.c's 256-bit kernels for the schedule's
-// whole blocks on x86-64, and nothing else reads it. aes_traffic_key_init
-// and the Retry constructor write 0, which names no kernel,
-// aes_traffic_key_cpu and the Initial constructor write the session's
-// value, and no other line writes it. One byte keeps the schedule a run
-// of bytes with no padding, as its other fields do.
+// ch_cfg.cpu, which holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES, the two
+// bits gcm_use_vaes reads (aes.c asserts it). gcm.c reads it to pick
+// gcm_vaes.c's 256-bit kernels for the schedule's whole blocks on x86-64,
+// and nothing else reads it. aes_traffic_key_init and the Retry
+// constructor write 0, which names no kernel, aes_traffic_key_cpu and the
+// Initial constructor write the session's value, and no other line writes
+// it. One byte keeps the schedule a run of bytes with no padding, as its
+// other fields do. A bit above that byte, such as CH_CPU_AVX512_IFMA, does
+// not fit in it, and gcm.c reads no such bit.
 #ifdef CH_AES_TWO_CIPHERS
 #define AES_ON_INSTRUCTIONS 1
 #define AES_ON_TABLE 2
