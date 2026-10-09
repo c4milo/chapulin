@@ -8620,15 +8620,22 @@ does nothing more.
     Rejected:
 
     - **One form for every compiler.** The compare form leaves a secret in
-      gcc's stack slot, above. A low word from a 64-bit multiply and a
-      high word from the widening one keep the product out of memory under
-      gcc as well, but gcc for x86-64 then multiplies twice a product: a
-      verification ran 474,356 instructions where it runs 466,488. One
-      widening multiply read twice, which gcc merges, goes back to the
-      stack slot. The step as two 128-bit sums, which wrap nothing, took
-      clang's time, but gcc 13 for x86-64 ran a multiplication and a
-      square in 32,300 and 27,624 instructions where they run 26,318 and
-      23,413.
+      gcc's stack slot, above, though it ran gcc's public operation in 0.86
+      to 0.92 of the sum form's time on four runner CPUs. A low word from a
+      64-bit multiply and a high word from the widening one, the split
+      form, still left 4 to 16 bytes below the signer that differ between
+      secrets under gcc 13 for x86-64, in `bin/rsa_sign_equiv_test` on four
+      runners, and its second multiply took 0.92 of the sum form's time on
+      an EPYC 7763 and 1.04 times it on an EPYC 9V45. One widening
+      multiply read twice, which gcc merges, goes back to the stack slot.
+      The step as two 128-bit sums, which wrap nothing, took clang's time,
+      but gcc 13 for x86-64 ran a multiplication and a square in 32,300
+      and 27,624 instructions where they run 26,318 and 23,413.
+    - **The sum form for clang on x86-64.** The compare form was chosen on
+      arm64. On four runner CPUs it runs clang's public operation in 0.99
+      to 1.01 of the sum form's time on an EPYC 7763 and an EPYC 9V74, and
+      in 0.91 to 0.95 of it on a Xeon Platinum 8573C and an EPYC 9V45, so
+      clang reads it on x86-64 too.
     - **The high word through a pointer.** The same code as the struct
       under both compilers, but cbmc follows the pointer at every one of
       the thousands of calls a multiplication makes at the bound:
