@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: rsa_ifma_model_test
+reason: normalize_digits adds each register's eight carry bits without the
+  carry out of the register below, so a run of lanes at 2^52 - 1 that
+  crosses a register's edge passes no carry into the register above.
+  bin/rsa_ifma_model_test's run of normalize_digits on lanes at
+  2^52 - 1 sees the number change.
+
+--- old
+        unsigned total = shifted + propagate + carry_from_below;
+--- new
+        unsigned total = shifted + propagate + (carry_from_below & 0);

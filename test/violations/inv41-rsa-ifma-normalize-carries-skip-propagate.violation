@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: rsa_ifma_model_test
+reason: normalize_digits adds a carry only to the lanes directly above a
+  lane that generates one, so a lane at 2^52 - 1 keeps a carry that
+  should pass through it and the lane above it gets none.
+  bin/rsa_ifma_model_test's run of normalize_digits on lanes at
+  2^52 - 1 sees the number change.
+
+--- old
+        rsa_ifma_lane_bits receives = (rsa_ifma_lane_bits)((total ^ propagate) & 0xffU);
+--- new
+        rsa_ifma_lane_bits receives = (rsa_ifma_lane_bits)shifted;

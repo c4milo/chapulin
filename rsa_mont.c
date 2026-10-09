@@ -32,10 +32,10 @@
 #include "rsa_mont64.h"
 
 // rsa_ifma.h's declarations exist in an x86-64 host object and in a test
-// build that names CH_RSA_IFMA_MODEL. A later commit adds that build,
-// which runs the kernel over a scalar model of each instruction on any
-// host. The dispatch and the division that serve it compile under the
-// same condition.
+// unit that defines CH_RSA_IFMA_MODEL, test/rsa_ifma_model.c, which runs
+// the kernel over a scalar model of each instruction on any host. The
+// dispatch and the division that serve it compile under the same
+// condition.
 #if defined(__x86_64__) || defined(CH_RSA_IFMA_MODEL)
 #include "rsa_ifma.h"
 #endif

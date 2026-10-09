@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: rsa_ifma_model_test
+reason: normalize_digits adds the carry out of the top lane of the top
+  register to lane 0 rather than dropping it, so the lanes no longer hold
+  their number modulo 2^(52 * lanes). A product's sum is below 2^(52n),
+  so its top lane carries nothing and no product shows the change.
+  bin/rsa_ifma_model_test's run of normalize_digits on lanes at and
+  above 2^52, the top lane among them, sees the number change.
+
+--- old
+    rsa_ifma_lanes below = lanes_zero(); // the carries of the register below
+--- new
+    rsa_ifma_lanes below = lanes_shift_right_52(sum[registers - 1]);

@@ -350,7 +350,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "poly1305_equiv_test", "p256_equiv_test", "p256_equiv_test_sum",
                 "p256_equiv_test_builtin", "p256_verify_equiv_test", "p384_equiv_test",
                 "p384_test_host", "rsa_equiv_test", "rsa_blocks_equiv_test",
-                "rsa_sign_equiv_test",
+                "rsa_ifma_model_test", "rsa_sign_equiv_test",
                 "rsa_sign_test_host",
                 "quic_test_extern"}
 

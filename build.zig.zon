@@ -183,6 +183,7 @@
         "rsa.h",
         "rsa_ifma.c",
         "rsa_ifma.h",
+        "rsa_ifma_lanes.h",
         "rsa_mont.c",
         "rsa_mont64.c",
         "rsa_mont64.h",

@@ -8,14 +8,16 @@
 // wipe can name, so its input must be public, and a modulus, a signature
 // and an encoded message are.
 //
-// rsa_ifma.c in this tree is a stub, which a later commit replaces with
-// the kernel: it writes rsa_mont64_public's bytes on rsa_mont64.c's words
-// and runs no AVX-512 instruction.
+// rsa_ifma.c writes rsa_mont64_public's bytes for every base. Its
+// Montgomery products divide by R' = 2^(52n), for n digits, in place of
+// rsa_mont64.c's R = 2^(64k), which is why it takes 2^(104n) mod m, R'^2,
+// where rsa_mont64.c takes R^2.
 //
 // The declarations exist in a host object (-DCH_CPU_RUNTIME) on x86-64,
-// and in a test build that names CH_RSA_IFMA_MODEL. A later commit adds
-// that build, which compiles the kernel over a scalar model of each
-// instruction on any host. No library build names that define.
+// and in a test unit that defines CH_RSA_IFMA_MODEL, which compiles
+// rsa_ifma.c over test/rsa_ifma_model_lanes.h, a model of each
+// instruction in portable C, on any host. No library build names that
+// define, which test/widemul-builds.sh checks.
 #ifndef CH_RSA_IFMA_H
 #define CH_RSA_IFMA_H
 

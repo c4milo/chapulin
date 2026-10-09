@@ -304,11 +304,11 @@ default; in any other object they are `void`, and `Cpu` is a
   AES-GCM runs on VAES and VPCLMULQDQ (docs/decisions.md 90).
   `avx512_ifma` says the CPU has AVX-512F and AVX-512 IFMA and its
   operating system saves the 512-bit registers, and with it the session
-  runs RSA verification's public operation on `rsa_ifma.c`, a stub until
-  its kernel lands, for a modulus of 2,048 bits or more whose bit length
-  is a multiple of 64. `x509.c` verifies the chain links of
-  `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they run
-  `rsa_mont64.c` whatever the field says.
+  runs RSA verification's public operation on `rsa_ifma.c`, in digits of
+  52 bits, eight to a 512-bit register, for a modulus of 2,048 bits or
+  more whose bit length is a multiple of 64. `x509.c` verifies the chain
+  links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so
+  they run `rsa_mont64.c` whatever the field says.
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with

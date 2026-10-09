@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: rsa_ifma_model_test
+reason: rsa_vp1_cpu hands rsa_ifma_public an even modulus, which has no
+  inverse of its low digit, so the kernel writes other bytes than
+  rsa_vp1, whose answer rsa.h promises for every input under the bit, an
+  even n included. bin/rsa_ifma_model_test compares rsa_vp1_cpu under
+  the bit with rsa_vp1 for an even modulus that the dispatch must refuse.
+
+--- old
+        (n[n_len - 1] & 1) == 1) {
+--- new
+        1) {

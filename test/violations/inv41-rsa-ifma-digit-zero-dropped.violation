@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: rsa_ifma_model_test
+reason: The product leaves lane 0 of its first register as the rounds
+  wrote it rather than digit_zero, the digit with every carry into it, so
+  every product's digit 0 and the carry out of it are wrong.
+  bin/rsa_ifma_model_test compares rsa_vp1_cpu under the bit with
+  rsa_vp1 and each product with rsa_mont64.c's answer.
+
+--- old
+    sum[0] = lanes_replace_first(sum[0], digit_zero);
+--- new
+    (void)digit_zero;

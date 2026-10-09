@@ -84,8 +84,9 @@
 // rsa_vp1_cpu reads it and sends the verifiers' public operation to rsa_ifma.c for a modulus of
 // 2,048 bits or more whose bit length is a multiple of 64, and to rsa_mont64.c for any other.
 // x509.c verifies the chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu, so
-// they run rsa_mont64.c whatever the bit says. rsa_ifma.c in this tree is a stub on
-// rsa_mont64.c's words: a session with the bit computes what a session without it computes.
+// they run rsa_mont64.c whatever the bit says. rsa_ifma.c runs the public operation in digits
+// of 52 bits, eight to a 512-bit register, on VPMADD52LUQ and VPMADD52HUQ, and writes the bytes
+// rsa_mont64.c writes: a session with the bit computes what a session without it computes.
 //
 // CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
 // the CPU has the instructions of one hash, and state that they run in constant time on it, in

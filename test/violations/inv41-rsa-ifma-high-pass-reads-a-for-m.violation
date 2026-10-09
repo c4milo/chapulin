@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: rsa_ifma_model_test
+reason: A round's second pass of high halves multiplies the quotient by
+  a's digits rather than m's, so the sum gains quotient * a's high halves
+  in place of quotient * m's, and the product is no longer a multiple of
+  m away from a * b. bin/rsa_ifma_model_test compares rsa_vp1_cpu under
+  the bit with rsa_vp1 and each product with rsa_mont64.c's answer.
+
+--- old
+        sum[j] = lanes_multiply_add_high(sum[j], lanes_load(m + 8 * j), quotient_lanes);
+--- new
+        sum[j] = lanes_multiply_add_high(sum[j], lanes_load(a + 8 * j), quotient_lanes);
