@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: normalize_digits adds a carry only to the lanes directly above a
   lane that generates one, so a lane at 2^52 - 1 keeps a carry that

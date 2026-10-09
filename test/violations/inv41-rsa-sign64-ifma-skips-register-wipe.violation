@@ -1,0 +1,20 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: both_powers returns after the exponentiations on AVX-512 IFMA
+  without wiping the vector and mask registers, which hold digits of the
+  primes and of their tables' entries until other code writes them. The
+  signature is the same. bin/x86_kernels_test counts the calls into
+  avx512_wipe_registers on test/rsa_ifma_sign_count.c's stand-in and
+  requires two from each signature on the kernels. Only an x86-64 object
+  makes the call, so test/aes-runtime-qemu.sh builds the binary for
+  x86-64; the lane skips without docker, and this then reports unguarded
+  rather than caught.
+
+--- old
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_wipe_below();
+        wipe_vector_registers();
+--- new
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_wipe_below();

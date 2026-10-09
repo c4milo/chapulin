@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: rsa_ifma_sign_model_test
+reason: state_setup doubles R mod m one time fewer than spare, the bits
+  R' holds beyond R, so the table's first entry is half of 1 in the
+  kernel's domain and every power comes out halved, once for each step.
+  bin/rsa_ifma_sign_model_test compares each exponentiation with
+  rsa_sign64.c's window.
+
+--- old
+    words_to_digits(s->r_mod_m, scaled, k, n, lanes);
+    for (size_t i = 0; i < spare; i++) {
+--- new
+    words_to_digits(s->r_mod_m, scaled, k, n, lanes);
+    for (size_t i = 1; i < spare; i++) {

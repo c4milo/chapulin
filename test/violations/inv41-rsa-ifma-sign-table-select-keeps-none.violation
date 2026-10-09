@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: rsa_ifma_sign_model_test
+reason: table_select's test of an entry adds 16 where it should add 15,
+  so every entry reads as one the digit does not name, the mask keeps
+  none, and each step multiplies by zero. bin/rsa_ifma_sign_model_test
+  compares each exponentiation with rsa_sign64.c's window.
+
+--- old
+            uint64_t differ = ((entry ^ digit) + (TABLE_ENTRIES - 1)) >> WINDOW_BITS;
+--- new
+            uint64_t differ = ((entry ^ digit) + TABLE_ENTRIES) >> WINDOW_BITS;

@@ -55,10 +55,10 @@ uint32_t p256_wide_point_affine_counted(uint8_t x[P256_FE_LEN], uint8_t y[P256_F
                                         const p256_point *a);
 void p256_wide_scalar_mul_counted(p256_scalar *o, const p256_scalar *a, const p256_scalar *b);
 void p256_wide_scalar_inverse_counted(p256_scalar *o, const p256_scalar *a);
-int rsa_sign64_pss_counted(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+int rsa_sign64_pss_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
                            const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
                            size_t *sig_len);
-int rsa_sign64_sp1_counted(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+int rsa_sign64_sp1_counted(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
 int rsa_sign64_key_ok_counted(const ch_rsa_priv *k);
 
 void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
@@ -210,16 +210,16 @@ void p256_wide_scalar_inverse(p256_scalar *o, const p256_scalar *a) {
     p256_wide_scalar_inverse_counted(o, a);
 }
 
-int rsa_sign64_pss(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
                    const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
                    size_t *sig_len) {
     widemul_native_calls++;
-    return rsa_sign64_pss_counted(k, msg_hash, salt, sig, cap, sig_len);
+    return rsa_sign64_pss_counted(cpu, k, msg_hash, salt, sig, cap, sig_len);
 }
 
-int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig) {
     widemul_native_calls++;
-    return rsa_sign64_sp1_counted(k, em, sig);
+    return rsa_sign64_sp1_counted(cpu, k, em, sig);
 }
 
 int rsa_sign64_key_ok(const ch_rsa_priv *k) {

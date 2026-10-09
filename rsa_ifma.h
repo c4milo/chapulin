@@ -1,12 +1,16 @@
-// RSA's public operation on AVX-512 IFMA, for verification alone: base^65537
-// mod m in digits of 52 bits, eight to a 512-bit register, which
-// VPMADD52LUQ and VPMADD52HUQ multiply. rsa_mont.c's rsa_vp1_cpu calls it
-// in an x86-64 host object for a session whose ch_cfg.cpu holds
-// CH_CPU_AVX512_IFMA (cpu_cfg.h), and is the one library source besides
-// rsa_ifma.c that includes this header. rsa_sign64.c never calls it: the
+// RSA's public operation on AVX-512 IFMA: base^65537 mod m in digits of
+// 52 bits, eight to a 512-bit register, which VPMADD52LUQ and VPMADD52HUQ
+// multiply. rsa_mont.c's rsa_vp1_cpu calls it in an x86-64 host object for
+// a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA (cpu_cfg.h). For the
+// verifiers its input is public: a modulus, a signature and an encoded
+// message. rsa_sign64.c's check of a signature runs it too, through
+// rsa_vp1_cpu, on a candidate that factors n when it is wrong. The
 // compiler keeps words of the 512-bit registers in stack slots that no
-// wipe can name, so its input must be public, and a modulus, a signature
-// and an encoded message are.
+// wipe in this file can name, and the registers keep what the last
+// product left, so the signer wipes the stack under its frame and the
+// registers after the call (rsa_ifma_sign.h, docs/decisions.md 120).
+// rsa_mont.c, and rsa_ifma_sign.c for the digit count, are the library
+// sources besides rsa_ifma.c that include this header.
 //
 // rsa_ifma.c writes rsa_mont64_public's bytes for every base. Its
 // Montgomery products divide by R' = 2^(52n), for n digits, in place of

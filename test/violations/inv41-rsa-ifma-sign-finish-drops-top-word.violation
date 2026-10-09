@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: rsa_ifma_sign_model_test
+reason: state_finish reduces the k words of the last product's power and
+  drops the word above them, so a power at or above 2^(64k), which a
+  prime close to 2^(64k) leaves, comes out as the power less 2^(64k) and
+  not less the prime. bin/rsa_ifma_sign_model_test hands state_finish
+  such powers under a prime of all ones and requires them reduced below
+  it.
+
+--- old
+    rsa_mont64_reduce_once_with_top(o, words, words[mod->words], mod);
+--- new
+    rsa_mont64_reduce_once(o, words, mod);

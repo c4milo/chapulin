@@ -39,6 +39,10 @@
 //   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu,
 //     which runs the kernel for each of two moduli it takes and rsa_vp1
 //     for each of three it does not (test/x86_kernels_rsa.h).
+//   - an RSA-PSS signature through widemul.h's entry, which runs
+//     rsa_ifma_sign.c's exponentiations, the check on rsa_ifma.c and the
+//     two wipes after each where the value holds CH_CPU_AVX512_IFMA and
+//     CH_CPU_CONSTANT_TIME_MULTIPLY (test/x86_kernels_rsa.h).
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test,
 // bin/poly1305_equiv_test and bin/aes_equiv_test call them against the
@@ -418,6 +422,7 @@ static void check_value(uint32_t cpu) {
     check_mlkem(cpu);
     check_rsa_verifiers(cpu);
     check_rsa_moduli(cpu);
+    check_rsa_signer(cpu);
     if (failures != failures_before) {
         (void)fprintf(stderr, "x86 kernels: the checks above ran under ch_cfg.cpu 0x%x\n",
                       (unsigned)cpu);
@@ -440,7 +445,9 @@ int main(void) {
             "ML-KEM's matrix ran on the AVX2 kernels where CH_CPU_AVX2 was set, Poly1305 "
             "where CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY were, AES-GCM on the VAES "
             "kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, RSA's public "
-            "operation on the IFMA kernel where CH_CPU_AVX512_IFMA was, and none of them "
+            "operation on the IFMA kernel where CH_CPU_AVX512_IFMA was, RSA signing's "
+            "exponentiations and check on the IFMA kernels, each followed by both wipes, where "
+            "CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and none of them "
             "anywhere else\n");
     }
     return failures != 0;

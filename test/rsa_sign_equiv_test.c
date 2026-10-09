@@ -47,6 +47,15 @@
 // AddressSanitizer makes none of these runs and says why
 // (test/stack_residue.c).
 //
+// The AVX-512 IFMA path (docs/decisions.md 120). Every case above that
+// signs runs under a ch_cfg.cpu value with the multiply bit alone, which
+// takes the window. On an x86-64 CPU with AVX-512 IFMA they run once more
+// with CH_CPU_AVX512_IFMA beside it, which takes rsa_ifma_sign.c's
+// exponentiations, the check on rsa_ifma.c and the wipes after both, so
+// the residue and the differential runs hold those wipes too. A CPU
+// without the instructions skips that pass and says so, and fails instead
+// under CH_REQUIRE_AVX512_IFMA=1 (test/x86_kernels_cpu.h).
+//
 // The random values come from the seeded generator below, so an ordinary
 // run replays exactly and the nightly can vary CH_RSA_EQUIV_SEED.
 #include <stdio.h>
@@ -55,11 +64,13 @@
 #include <string.h>
 
 #include "ch_assert.h"
+#include "cpu_cfg.h"
 #include "rsa_mont64.h"
 #include "rsa_sign.h"
 #include "rsa_sign64.h"
 #include "rsa_sign_equiv_pieces.h"
 #include "rsa_sign_key.h"
+#include "x86_kernels_cpu.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -111,6 +122,11 @@ static void print_hex(const char *name, const uint8_t *p, size_t n) {
 // The key every case writes into. It is static because it is 2 kB at the
 // widest bound.
 static ch_rsa_priv key;
+
+// The ch_cfg.cpu value every signature here runs under: the multiply bit
+// alone in the first pass, and with CH_CPU_AVX512_IFMA in the second.
+#define EQUIV_WINDOW_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
+static uint32_t equiv_cpu = EQUIV_WINDOW_CPU;
 
 // The length of the moduli the window is compared with the ladder under:
 // the ladder's shortest, and the window's longest at this build's bound.
@@ -256,7 +272,7 @@ static void compare_crt(const char *case_name, const uint8_t *em, const uint8_t 
     memset(ladder_out, 0x55, sizeof ladder_out);
     memset(out, 0xaa, sizeof out);
     rsa_sp1(&key, em, ladder_out);
-    if (!rsa_sign64_sp1(&key, em, out)) {
+    if (!rsa_sign64_sp1(equiv_cpu, &key, em, out)) {
         failures++;
         (void)fprintf(stderr, "FAIL %s: the 64-bit signer refused its own signature at %zu bytes\n",
                       case_name, key.n_len);
@@ -400,8 +416,8 @@ static void run_stack(const test_rsa_sign_key *const *keys, size_t count) {
     }
 }
 
-int main(void) {
-    uint64_t seed = rng_seed_from_env();
+// Every case that signs: the stack runs and the four vector keys.
+static void run_signatures(void) {
     static const test_rsa_sign_key key_2048 = TEST_RSA_SIGN_KEY(2048);
     static const test_rsa_sign_key key_2112 = TEST_RSA_SIGN_KEY(2112);
     static const test_rsa_sign_key key_3072 = TEST_RSA_SIGN_KEY(3072);
@@ -413,6 +429,37 @@ int main(void) {
     run_key(&key_2112, 2);
     run_key(&key_3072, 1);
     run_key(&key_4096, 1);
+}
+
+#ifdef __x86_64__
+// The second pass of run_signatures, on AVX-512 IFMA, where this CPU has
+// it. Returns 0 when the CPU lacks it and the environment requires it.
+static int run_ifma_signatures(void) {
+    if (!x86_cpu_has_avx512_ifma()) {
+        if (x86_ifma_required()) {
+            (void)fprintf(stderr, "rsa_sign_equiv_test: this CPU lacks AVX-512 IFMA, and "
+                                  "CH_REQUIRE_AVX512_IFMA is 1\n");
+            return 0;
+        }
+        (void)printf("SKIP rsa_sign_equiv_test on AVX-512 IFMA: this CPU lacks it\n");
+        return 1;
+    }
+    equiv_cpu = EQUIV_WINDOW_CPU | CH_CPU_AVX512_IFMA;
+    run_signatures();
+    equiv_cpu = EQUIV_WINDOW_CPU;
+    (void)printf("rsa_sign_equiv_test: the private operation on AVX-512 IFMA ran\n");
+    return 1;
+}
+#endif
+
+int main(void) {
+    uint64_t seed = rng_seed_from_env();
+    run_signatures();
+#ifdef __x86_64__
+    if (!run_ifma_signatures()) {
+        return 1;
+    }
+#endif
     run_edge_exponents();
 
     // Moduli of one word, of a word and a half, of the two halves of an

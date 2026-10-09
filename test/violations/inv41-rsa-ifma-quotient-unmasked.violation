@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: A round keeps all 64 bits of its quotient rather than the low 52.
   VPMADD52LUQ and VPMADD52HUQ read the low 52 bits of each lane, so the
@@ -12,6 +12,6 @@ reason: A round keeps all 64 bits of its quotient rather than the low 52.
   m0inv is the same quotient, and no test can tell the two apart.
 
 --- old
-    uint64_t quotient = (uint64_t)ct_mul128((uint64_t)low, modulus->m0inv) & DIGIT_MASK;
+    uint64_t quotient = (uint64_t)ct_mul128((uint64_t)low, m0inv) & DIGIT_MASK;
 --- new
-    uint64_t quotient = (uint64_t)ct_mul128((uint64_t)low, modulus->m0inv);
+    uint64_t quotient = (uint64_t)ct_mul128((uint64_t)low, m0inv);

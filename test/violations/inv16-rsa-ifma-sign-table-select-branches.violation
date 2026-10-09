@@ -1,0 +1,14 @@
+invariant: INV-16
+file: rsa_ifma_sign.c
+catches: test/lint-invariants.sh
+reason: table_select chooses each entry's mask with a conditional
+  expression on the exponent's digit, which a compiler may write as a
+  branch, or as a read of the one entry the digit names: a branch and a
+  memory access that follow a secret. The bytes stay right.
+  inv-16-rsa-ifma-table-read refuses a conditional expression inside
+  table_select.
+
+--- old
+            *hidden = mask_of_bit(differ ^ 1);
+--- new
+            *hidden = entry == digit ? ~(uint64_t)0 : 0;

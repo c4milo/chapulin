@@ -75,7 +75,9 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 
 # AVX-512 IFMA, for the nightly's rsa-ifma-sde job: rsa_ifma.c runs RSA's
 # public operation on it for a session whose ch_cfg.cpu holds
-# CH_CPU_AVX512_IFMA. Some hosted runners lack the instructions, an AMD
+# CH_CPU_AVX512_IFMA, and rsa_ifma_sign.c runs RSA signing's two
+# exponentiations on it for a session whose value holds that bit and
+# CH_CPU_CONSTANT_TIME_MULTIPLY. Some hosted runners lack the instructions, an AMD
 # EPYC 7763 among them, and QEMU's TCG implements no AVX-512 instruction,
 # so this target runs the binaries under Intel's Software Development
 # Emulator: SDE64 is the path of its sde64, and SDE_CPU the emulated CPU
@@ -84,14 +86,25 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #   - bin/rsa_ifma_equiv_test holds each lane operation to the scalar
 #     model of its instruction, and then each product, rsa_ifma_public
 #     and rsa_vp1_cpu.
+#   - bin/rsa_ifma_sign_equiv_test and its _384 twin hold the signer's
+#     exponentiations to rsa_sign64.c's window, and rsa_sign64_sp1 on the
+#     instructions to the same call on the window.
+#     bin/rsa_ifma_sign_residue_test and its twin measure how far below
+#     their caller the kernel calls write and search the stack and the
+#     vector registers each leaves after the two wipes.
+#     bin/rsa_sign_equiv_test runs its residue and differential stack runs
+#     over signatures on the instructions, after its pass on the window.
 #   - bin/x86_kernels_test counts the calls each ch_cfg.cpu value sends to
-#     rsa_ifma_public and to the other kernels.
+#     rsa_ifma_public, to the signer's kernels and wipes, and to the other
+#     kernels.
 #   - bin/rsa_test_host and bin/rsa_pkcs1_test_host, under 0x10d, the
 #     second value of X86_UNIT_CPU, run the openssl-minted RSA-PSS and
 #     PKCS#1 v1.5 vectors and every refusal on the kernel.
 #   - the host Wycheproof binary, under 0x11f, the last value of
 #     X86_WYCHEPROOF_CPU, runs the RSA-PSS and PKCS#1 v1.5 suites on the
-#     kernel, and every other suite under the other bits of that value.
+#     kernel, the RSA signing suite on the signer's kernels, whose value
+#     holds the multiply bit too, and every other suite under the other
+#     bits of that value.
 #     It needs the vectors, so it fetches them as the wycheproof target
 #     does.
 #   - bin/webpki_loop_aes, with both ends stating 0x101, the bit beside
@@ -117,13 +130,20 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 # a basic regular expression.
 SDE64 ?= sde64
 SDE_CPU ?= -icx
-RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test
+RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test rsa_ifma_sign_equiv_test \
+                     rsa_ifma_sign_equiv_test_384 rsa_ifma_sign_residue_test \
+                     rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test
 RSA_IFMA_SDE_VECTOR_HOST := rsa_test_host rsa_pkcs1_test_host
 RSA_IFMA_SDE_VECTOR_CPU := 0x10d
 RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x11f
 RSA_IFMA_SDE_LOOP_CPU := 0x101 0x13f
 RSA_IFMA_SDE_PASS_rsa_ifma_equiv_test := rsa_ifma equivalence: [0-9]* comparisons agree
 RSA_IFMA_SDE_PASS_x86_kernels_test := x86 kernels: under each of 33 ch_cfg.cpu values
+RSA_IFMA_SDE_PASS_rsa_ifma_sign_equiv_test := rsa_ifma_sign (instructions): [0-9]* comparisons pass
+RSA_IFMA_SDE_PASS_rsa_ifma_sign_equiv_test_384 := rsa_ifma_sign (instructions): [0-9]* comparisons pass
+RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test := rsa_ifma_sign residue: [0-9]* checks pass
+RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test_384 := rsa_ifma_sign residue: [0-9]* checks pass
+RSA_IFMA_SDE_PASS_rsa_sign_equiv_test := rsa_sign_equiv_test: the private operation on AVX-512 IFMA ran
 RSA_IFMA_SDE_PASS_rsa_test_host := rsa_test: all checks passed
 RSA_IFMA_SDE_PASS_rsa_pkcs1_test_host := rsa_pkcs1_test: all checks passed
 RSA_IFMA_SDE_PASS_wycheproof_test_host := wycheproof: all suites passed

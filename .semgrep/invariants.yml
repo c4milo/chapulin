@@ -161,6 +161,74 @@ rules:
                       metavariable: $CALLEE
                       regex: ^(?!mask_of_bit$)
           - pattern-not: o[$I] = (o[$I] & ~mask) | (table->powers[entry][$I] & mask);
+  - id: inv-16-rsa-ifma-table-read
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: rsa_ifma_sign.c reads each prime's table of powers whole, as
+      rsa_sign64.c reads its own (inv-16-rsa-table-read), so neither an
+      address nor the number of entries read depends on a digit of dp or
+      dq. The file subscripts a table by a constant or a loop counter and
+      by nothing else. table_select holds no if, no conditional expression
+      and no statement that leaves a loop early. It writes each mask
+      through its volatile pointer and broadcasts the value it reads back
+      from that pointer and no other, so a compiler cannot see which entry
+      the mask keeps. It ends by writing zero through the pointer, so the
+      word does not end on the last entry's mask. And it calls mask_of_bit
+      and the lane operations it reads, ands, adds and stores with, and
+      nothing else.
+    paths:
+      include: [rsa_ifma_sign.c]
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: $TABLE.powers[$INDEX]
+              - pattern: $TABLE->powers[$INDEX]
+          - metavariable-regex:
+              metavariable: $INDEX
+              regex: ^(?!(0|1|i|i - 1|entry)$)
+      - patterns:
+          - pattern-inside: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern-either:
+              - pattern: |
+                  if ($COND) {
+                    ...
+                  }
+              - pattern: '$COND ? $A : $B'
+              - pattern: break;
+              - pattern: continue;
+              - pattern: return;
+              - pattern: goto $LABEL;
+              - pattern: $TYPE $MASK = mask_of_bit(...);
+      - patterns:
+          - pattern-inside: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern: lanes_broadcast($VALUE)
+          - pattern-not: lanes_broadcast(*hidden)
+      - patterns:
+          - pattern: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern-not: |
+              static void table_select(...) {
+                ...
+                *hidden = 0;
+              }
+      - patterns:
+          - pattern-inside: |
+              static void table_select(...) {
+                ...
+              }
+          - pattern: $CALLEE(...)
+          - metavariable-regex:
+              metavariable: $CALLEE
+              regex: ^(?!(mask_of_bit|lanes_zero|lanes_broadcast|lanes_load|lanes_and|lanes_add|lanes_store)$)
 
   - id: inv-23-no-division-in-mlkem
     languages: [c]

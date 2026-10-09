@@ -82,7 +82,7 @@ static int residue_admitted;
 static const char *residue_callee;
 
 static __attribute__((noinline)) void residue_sign(void) {
-    residue_signed = rsa_sign64_sp1(&key, residue_em, residue_sig);
+    residue_signed = rsa_sign64_sp1(equiv_cpu, &key, residue_em, residue_sig);
 }
 
 static __attribute__((noinline)) void residue_key_test(void) {

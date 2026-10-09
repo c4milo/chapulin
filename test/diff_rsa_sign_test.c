@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "ch_assert.h"
+#include "cpu_cfg.h"
 #include "rsa_sign.h"
 #include "rsa_sign_key.h"
 
@@ -38,6 +39,11 @@
 #include "rsa_sign64.h"
 
 #define DIFF_RSA_SIGN_ROWS 4
+
+// The ch_cfg.cpu value the 64-bit signer takes here: the multiply bit
+// without CH_CPU_AVX512_IFMA, so it runs rsa_sign64.c's window on every
+// machine.
+#define DIFF_RSA_SIGN64_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -92,7 +98,8 @@ static void diff_key(const test_rsa_sign_key *from) {
         salt[0] |= 1;
         spec_sign(hash, salt, want);
 
-        int signed_ok = rsa_sign64_pss(&key, hash, salt, got, sizeof got, &got_len);
+        int signed_ok =
+            rsa_sign64_pss(DIFF_RSA_SIGN64_CPU, &key, hash, salt, got, sizeof got, &got_len);
         compare("the 64-bit signer", signed_ok, got, got_len, want);
         if (row == 0) {
             got_len = 0;

@@ -216,13 +216,13 @@ static size_t rsa_run(uint8_t widemul, uint8_t out[OUT_MAX]) {
     sha256_update(&h, rsa_sign_2048_msg, sizeof rsa_sign_2048_msg);
     sha256_final(&h, hash);
     size_t sig_len = 0;
-    CHECK(widemul_rsa_pss_sign(widemul, &key, hash, rsa_sign_2048_salt, out, OUT_MAX, &sig_len) ==
-          1);
+    CHECK(widemul_rsa_pss_sign_cpu(cpu_of(widemul), widemul, &key, hash, rsa_sign_2048_salt, out,
+                                   OUT_MAX, &sig_len) == 1);
     CHECK(sig_len == sizeof rsa_sign_2048_sig && memcmp(out, rsa_sign_2048_sig, sig_len) == 0);
     // RSASP1 on the signature's own representative gives the signature.
     uint8_t em[sizeof rsa_sign_2048_n] = {0};
     em[sizeof em - 1] = 2;
-    CHECK(widemul_rsa_sp1(widemul, &key, em, out + sig_len) == 1);
+    CHECK(widemul_rsa_sp1_cpu(cpu_of(widemul), widemul, &key, em, out + sig_len) == 1);
     return 2 * sig_len;
 }
 

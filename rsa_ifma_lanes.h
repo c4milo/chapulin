@@ -1,12 +1,14 @@
-// The lane operations rsa_ifma.c's kernel runs, each one AVX-512
-// instruction on a 512-bit register of eight 64-bit lanes, lane 0 in bits
-// 63..0. test/rsa_ifma_model_lanes.h defines the same names in portable C,
-// written from Intel's pseudocode, and bin/rsa_ifma_equiv_test holds each
-// function here to its model on a CPU with AVX-512 IFMA.
+// The lane operations rsa_ifma.c's and rsa_ifma_sign.c's kernels run,
+// each one AVX-512 instruction on a 512-bit register of eight 64-bit
+// lanes, lane 0 in bits 63..0. test/rsa_ifma_model_lanes.h defines the
+// same names in portable C, written from Intel's pseudocode, and
+// bin/rsa_ifma_equiv_test holds each function here to its model on a CPU
+// with AVX-512 IFMA.
 //
-// Only rsa_ifma.c includes this file, between the attribute push that
-// turns AVX-512F and AVX-512 IFMA on and its pop, so every function here
-// carries that target and none outside the kernel does. Each operation
+// Only rsa_ifma.c and rsa_ifma_sign.c include this file, each between the
+// attribute push that turns AVX-512F and AVX-512 IFMA on and its pop, so
+// every function here carries that target and none outside the kernels
+// does. Each operation
 // works on all eight lanes at once and has no branch and no memory access
 // that depends on a lane's value. The calls take a lane as a long long;
 // the casts below keep its 64 bits, which is how gcc and clang define the

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: normalize_digits adds the carry out of the top lane of the top
   register to lane 0 rather than dropping it, so the lanes no longer hold

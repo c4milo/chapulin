@@ -53,6 +53,13 @@ STACK_KEX_HYBRID_COPIES = $(if $(filter mlkem.c,$(KEX_HYBRID_SRCS)),mlkem_avx2.c
 # host object holds the file, and docs/decisions.md 95 says why the
 # window is sixteen entries. The ceiling applies to that file alone.
 STACK_BUDGET_RSA_SIGN64 := 6656
+# rsa_ifma_sign.c, the signer's exponentiations on AVX-512 IFMA, which only
+# an x86-64 host object holds, gets its own ceiling too. Its frames are
+# the two primes' tables in digits, which the pair entry holds at once,
+# and the array rsa_ifma_sign_wipe_below clears, RSA_IFMA_SIGN_BELOW_LEN
+# bytes: 20,480 at the 512-byte bound (rsa_ifma_sign.h, docs/decisions.md
+# 120). The ceiling applies to that file alone.
+STACK_BUDGET_RSA_IFMA_SIGN := 21504
 # p256_wide_wipe.c, which only a host object holds, gets its own ceiling
 # too: its frame is the array it wipes after each wide P-256 call, and the
 # array must reach as deep as the deepest of them. p256_wide_mul writes
@@ -208,7 +215,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_ifma.h rsa_ifma_lanes.h avx512_wipe.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -504,7 +511,9 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
 # operation on AVX-512 IFMA, with its two tests, its differential main and
 # the two units that compile it under second names, which compile only
 # under -DCH_CPU_RUNTIME. lint-tidy reads them in passes of their own.
-RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_ifma.c rsa_sign64.c test/rsa_equiv_test.c \
+RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_ifma.c rsa_sign64.c rsa_ifma_sign.c \
+                   test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c \
+                   test/rsa_ifma_sign_residue_test.c test/rsa_ifma_sign_count.c test/rsa_equiv_test.c \
                    test/rsa_equiv_portable.c \
                    test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c \
                    test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c test/rsa_ifma_model.c \
@@ -563,6 +572,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/rsa_sign_vectors.h test/rsa_sign_key.h test/rsa_sign_equiv_residue.h \
          test/rsa_sign_equiv_pieces.h test/rsa_sign_equiv_differential.h \
          test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
+         test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_blocking_alert_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_alert_tests.h test/tcp_nonblocking_failure_alert_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
@@ -1080,8 +1090,13 @@ endif
 # signature checked before it returns, which widemul.h runs for a session
 # that does (docs/decisions.md 95). The file joins every host object that
 # holds rsa_sign.c, and every such object holds rsa_mont.c for
-# ch_srv_check's verifier, so rsa_mont64.c is there for it.
-RSA_SIGN64_SRCS := rsa_sign64.c
+# ch_srv_check's verifier, so rsa_mont64.c is there for it. So does
+# rsa_ifma_sign.c, the signer's two exponentiations on AVX-512 IFMA, which
+# rsa_sign64.c runs on x86-64 for a session whose ch_cfg.cpu holds
+# CH_CPU_AVX512_IFMA beside the multiply bit (docs/decisions.md 120). It
+# holds nothing on arm64, as rsa_ifma.c does, and the wipe of the vector
+# registers it needs is in every x86-64 host object (AVX512_WIPE_SRCS).
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
@@ -1334,7 +1349,7 @@ host_srcs = $(1) $(call widemul_native_of,$(1)) $(if $(filter x25519.c,$(1)),x25
             $(if $(filter chacha20.c,$(1)),$(CHACHA_VECTOR_SRCS)) \
             $(if $(filter poly1305.c,$(1)),poly1305_vector_native.c poly1305_avx2_native.c) \
             $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
-            $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS)) \
+            $(if $(filter rsa_sign.c,$(1)),$(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS)) \
             $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
             $(call hash_hw_of,$(1))
 WIDEMUL ?= decomposed
@@ -1706,8 +1721,9 @@ print-aes-runtime-qemu-srcs:
 # The RSA rows hold rsa_mont64.c, the 64-bit arithmetic rsa_mont.c calls
 # in a host object, with its blocks and rsa_ifma.c, the public operation
 # on AVX-512 IFMA, to the host object beside rsa_mont.c, and out of every
-# device object, and rsa_sign64.c, the signer on those words, to the host
-# object that holds rsa_sign.c (docs/decisions.md 95).
+# device object, and rsa_sign64.c, the signer on those words, with
+# rsa_ifma_sign.c, its exponentiations on AVX-512 IFMA, to the host
+# object that holds rsa_sign.c (docs/decisions.md 95 and 120).
 #
 # The wipe rows hold avx512_wipe.c, the wipe of the vector registers, to
 # the host object for x86-64, and out of an arm64 host object and every
@@ -1802,9 +1818,9 @@ lint-trust-separation-run:
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS) rsa_sign.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "$(RSA_MONT64_SRCS) rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "$(RSA_MONT64_SRCS) rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS) rsa_sign.c $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
 	  "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
@@ -1850,7 +1866,7 @@ lint-trust-separation-run:
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
 	  poly1305_avx2_native.c mlkem_poly.c mlkem_poly_native.c" \
-	  "poly1305_vector.c poly1305_avx2.c rsa_sign.c rsa_sign64.c" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
+	  "poly1305_vector.c poly1305_avx2.c rsa_sign.c $(RSA_SIGN64_SRCS)" "-DCH_CPU_RUNTIME" "-DCH_NATIVE_WIDEMUL"; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "poly1305.c poly1305_native.c poly1305_vector_native.c \
 	  poly1305_avx2_native.c mlkem_poly.c mlkem_poly_native.c \
 	  rsa_sign.c" "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" \
@@ -2536,16 +2552,68 @@ bin/rsa_ifma_equiv_test: $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RS
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
 # runs, and rsa_sign64.c is the CRT signer on 64-bit words beside it. The
-# two link under their own names, as a host object holds them.
+# two link under their own names, as a host object holds them, with
+# rsa_ifma_sign.c and the wipe of the vector registers, which the signer
+# runs on x86-64 for a value that names AVX-512 IFMA, and rsa_mont.c, whose
+# rsa_vp1_cpu runs its check there (docs/decisions.md 120).
 # test/stack_residue.c copies the stack a call left, for the check that
 # its wipes cover what it held, and test/rsa_sign_equiv_pieces.c compiles
 # rsa_sign64.c once more under second names, so that the check can call
 # that file's static reduction and recombination on their own.
 RSA_SIGN_EQUIV_TEST_SRCS := test/rsa_sign_equiv_pieces.c test/stack_residue.c rsa_sign.c \
-                            $(RSA_SIGN64_SRCS) $(RSA_MONT64_SRCS) sha256.c ct.c ct_wipe.c
+                            $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) rsa_mont.c $(RSA_MONT64_SRCS) sha256.c \
+                            ct.c ct_wipe.c
 bin/rsa_sign_equiv_test: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
+# rsa_ifma_sign.c's exponentiations against rsa_sign64.c's window, and
+# rsa_sign64_sp1 on AVX-512 IFMA against the same call on the window
+# (docs/decisions.md 120). test/rsa_ifma_sign_entries.c compiles
+# rsa_ifma_sign.c in place of the library's unit, with a count of its
+# calls and an entry into its end. bin/rsa_ifma_sign_model_test compiles
+# every unit under CH_RSA_IFMA_MODEL, over the lane model, so every
+# machine runs the kernel's own text, at the 512-byte bound, where the
+# kernel has copies for three to five registers, and its _384 twin at the
+# 384-byte bound, where it has three and four.
+# bin/rsa_ifma_sign_equiv_test and its twin run the same comparisons on
+# the instructions: they have a body on x86-64 alone, and on a CPU
+# without AVX-512 IFMA they skip unless CH_REQUIRE_AVX512_IFMA is 1.
+RSA_IFMA_SIGN_TEST_UNITS := test/rsa_ifma_sign_test.c test/rsa_ifma_sign_entries.c
+RSA_IFMA_SIGN_TEST_SRCS := rsa_sign64.c rsa_sign.c rsa_mont.c $(RSA_MONT64_SRCS) sha256.c ct.c ct_wipe.c
+bin/rsa_ifma_sign_model_test: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest \
+	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS)
+bin/rsa_ifma_sign_model_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
+                                  $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS)
+bin/rsa_ifma_sign_equiv_test: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS) $(AVX512_WIPE_SRCS)
+bin/rsa_ifma_sign_equiv_test_384: $(RSA_IFMA_SIGN_TEST_UNITS) rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) $(HDRS) \
+                                  $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	  -o $@ $(RSA_IFMA_SIGN_TEST_UNITS) $(RSA_IFMA_SIGN_TEST_SRCS) $(AVX512_WIPE_SRCS)
+# What the kernel calls leave on the stack and in the vector registers,
+# with the two wipes after each and without them, how far below their
+# caller they write, and the stack two secrets leave, on the instructions
+# (test/rsa_ifma_sign_residue_test.c). It links the library's units under
+# their own names, at each bound, and has a body on x86-64 alone.
+RSA_IFMA_SIGN_RESIDUE_SRCS := test/stack_residue.c rsa_ifma_sign.c $(RSA_IFMA_SIGN_TEST_SRCS) \
+                              $(AVX512_WIPE_SRCS)
+bin/rsa_ifma_sign_residue_test: test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	  -o $@ test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS)
+bin/rsa_ifma_sign_residue_test_384: test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS) $(HDRS) \
+                                    $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	  -o $@ test/rsa_ifma_sign_residue_test.c $(RSA_IFMA_SIGN_RESIDUE_SRCS)
 # The RSA-PSS verifier's vectors on a host object's public operation:
 # bin/rsa_test's main, built as a host object builds its sources. It takes
 # the ch_cfg.cpu value it runs under as its argument and calls the
@@ -2686,12 +2754,12 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # the kernels compute is held by the equivalence binaries and by the
 # vectors the host binaries run under the kernels' bits.
 X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c gcm_vaes.c keccak_avx2.c mlkem_avx2.c poly1305_avx2_native.c \
-                           rsa_ifma.c, \
+                           rsa_ifma.c rsa_ifma_sign.c avx512_wipe.c, \
                            $(call host_srcs,record.c \
                            quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
-                           mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c)) \
-                         test/rsa_ifma_count.c
+                           mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c rsa_sign.c)) \
+                         test/rsa_ifma_count.c test/rsa_ifma_sign_count.c
 bin/x86_kernels_test: test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
@@ -3461,7 +3529,8 @@ WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomp
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
                        test/widemul_count_wide.c \
-                       test/widemul_count_wide_p256.c test/widemul_count_sign64.c
+                       test/widemul_count_wide_p256.c test/widemul_count_sign64.c \
+                       test/rsa_ifma_sign_count.c
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
                         p256_wide_wipe.c p256_wide_verify_point.c
@@ -3551,6 +3620,9 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test \
                                  bin/rsa_sign_equiv_test \
+                                 bin/rsa_ifma_sign_model_test bin/rsa_ifma_sign_model_test_384 \
+                                 bin/rsa_ifma_sign_equiv_test bin/rsa_ifma_sign_equiv_test_384 \
+                                 bin/rsa_ifma_sign_residue_test bin/rsa_ifma_sign_residue_test_384 \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
@@ -4288,7 +4360,8 @@ bin/diff_p256_wide: test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS) $(HDRS) $(
 # holds no 64-bit signer; test/diff_rsa_sign_test.c says why the spec
 # needs no second model. It builds at the 512-byte bound, so RSA-4096
 # signs.
-DIFF_RSA_SIGN_SRCS := rsa_sign.c $(RSA_SIGN64_SRCS) $(RSA_MONT64_SRCS) sha256.c ct.c ct_wipe.c
+DIFF_RSA_SIGN_SRCS := rsa_sign.c $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) rsa_mont.c $(RSA_MONT64_SRCS) sha256.c \
+                      ct.c ct_wipe.c
 bin/diff_rsa_sign64: test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS)
@@ -5110,9 +5183,10 @@ lint-stack-run:
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
 	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
+	  case "$$f" in rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -5423,7 +5497,8 @@ else
 	# where HOST_TARGET found a host compiler.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,rsa_mont64.c rsa_mont.c rsa.c rsa_pkcs1.c rsa_sign64.c test/rsa_equiv_test.c \
-	  test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c, \
+	  test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c \
+	  test/rsa_ifma_sign_residue_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
 	# rsa_mont64_blocks.c's blocks and rsa_mont64.c's calls into them,
 	# which only a clang build for arm64 compiles unless a build names them
@@ -5438,13 +5513,15 @@ else
 	# rsa_ifma.c over the lane model, the build bin/rsa_ifma_model_test
 	# runs on every host, so this pass reads test/rsa_ifma_model_lanes.h
 	# and, at the 512-byte bound, the kernel's copies for nine and ten
-	# registers, with the two test mains and the differential main. The
-	# x86-64 pass below reads the instructions. test/rsa_ifma_model.c and
-	# test/rsa_ifma_instructions.c stay out of every pass, for the reason
-	# test/aes_equiv_soft.c does below.
+	# registers, with the two test mains and the differential main. So
+	# does rsa_ifma_sign.c, with rsa_sign64.c, whose calls into it compile
+	# under the model on any host, and the signer's test main. The x86-64
+	# pass below reads the instructions. test/rsa_ifma_model.c,
+	# test/rsa_ifma_instructions.c and test/rsa_ifma_sign_entries.c stay
+	# out of every pass, for the reason test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,rsa_ifma.c test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c \
-	  test/diff_rsa_ifma_test.c, \
+	  test/diff_rsa_ifma_test.c rsa_ifma_sign.c rsa_sign64.c test/rsa_ifma_sign_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) \
 	  -I. -Itest)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on
@@ -5502,8 +5579,11 @@ else
 	# power_of_two_mod and the dispatch in rsa_vp1_cpu that calls it, and
 	# test/rsa_ifma_count.c, the count the test binaries link in its
 	# place, read for an x86-64 target whatever the host, as the kernels'
-	# passes above are.
-	@$(call TIDY_EACH,rsa_ifma.c rsa_mont.c test/rsa_ifma_count.c, \
+	# passes above are. The signer's exponentiations on AVX-512 IFMA join
+	# them, with rsa_sign64.c, whose x86-64 arm calls them and the wipes,
+	# and test/rsa_ifma_sign_count.c, the counts linked in their place.
+	@$(call TIDY_EACH,rsa_ifma.c rsa_mont.c test/rsa_ifma_count.c rsa_ifma_sign.c rsa_sign64.c \
+	  test/rsa_ifma_sign_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	# The wipe of the vector registers, which has a body on x86-64 alone,
@@ -6352,7 +6432,10 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # its body sits behind -DCH_CPU_RUNTIME. Its scalar products are
 # ct_mul128's 64x64->128 multiply and its lanes' are VPMADD52LUQ and
 # VPMADD52HUQ, it divides nowhere, and it calls no 128-bit runtime
-# routine, so its ceiling is zero too. avx512_wipe.c, the wipe of the
+# routine, so its ceiling is zero too. rsa_ifma_sign.c, the signer's
+# exponentiations on AVX-512 IFMA, joins on rsa_ifma.c's terms: its
+# products are the same, through rsa_ifma_product.h, and the rest of the
+# file multiplies through rsa_mont64.c. avx512_wipe.c, the wipe of the
 # vector registers, compiles to nothing on arm64 and to one block of
 # assembly on x86-64, behind -DCH_CPU_RUNTIME. It multiplies and divides
 # nothing, so its ceiling is zero.
@@ -6360,7 +6443,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 \
                   sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_mont64_blocks.c:0 \
-                  rsa_sign64.c:0 rsa_ifma.c:0 \
+                  rsa_sign64.c:0 rsa_ifma.c:0 rsa_ifma_sign.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -6374,8 +6457,10 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305
 # rsa_ifma.c@512 is rsa_ifma.c at the 512-byte bound of a TRUST=webpki
 # object: its copies of the product for nine and ten registers exist
 # there alone, and the shared flags compile the file at the 384-byte
-# bound.
-WIDE64_REBUILT := rsa_ifma.c@512:0
+# bound. rsa_ifma_sign.c@512 is rsa_ifma_sign.c at the same bound, which a
+# ROLE=both TRUST=webpki object compiles: its copy of the pair for five
+# registers exists there alone.
+WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -6444,6 +6529,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME avx512_wipe.c:-DCH_CPU_RUNTIME \
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
+                   rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -6665,10 +6752,14 @@ WIDEMUL_SPECS := \
 # count and a row's length, and the tests that skip a loop of no
 # iterations. Under the x86-64 spec the file compiles to nothing.
 #
-# rsa_sign64.c's 26 under the arm64 spec and 27 under the x86-64 one were
-# read the same way. The x86-64 spec's one more is rsa_sign64_sp1's
+# rsa_sign64.c's 26 under the arm64 spec and 29 under the x86-64 one were
+# read the same way. The x86-64 spec's three more are rsa_sign64_sp1's
 # CH_ASSERT on the key's public length, two tests there and one
-# conditional compare under the arm64 spec.
+# conditional compare under the arm64 spec, and the two tests of the
+# session's ch_cfg.cpu for both CH_CPU_AVX512_IFMA and the multiply bit,
+# which both_powers and check_power make inlined into rsa_sign64_sp1, and
+# which the arm64 spec does not compile (docs/decisions.md 120). The value
+# is the caller's description of the CPU and holds no secret.
 # rsa_sign64_power's seven are loop control: the table's
 # entries, the exponent's digits, whose count comes from its length in
 # bytes, the four squarings, the sixteen entries a read of the table
@@ -6946,7 +7037,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c \
                rsa_ifma.c rsa_ifma.c@512 $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
-               avx512_wipe.c
+               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -7095,6 +7186,27 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # nowhere: normalize_digits picks the lanes that take a carry with a mask
 # register.
 #
+# rsa_ifma_sign.c's entries were read the same way (docs/decisions.md
+# 120). It has no body on arm64. On x86-64 its 24 at the 384-byte bound
+# test counts, indices and its CH_ASSERTs alone, each public.
+# rsa_ifma_sign_power_pair holds 5: its CH_ASSERT that the two primes'
+# word counts match, the back edge of the loop that fills the tables, the
+# test of a zero exponent length, and the back edges of the loop over the
+# exponents' digits and of the four squarings. state_setup holds 4: its
+# CH_ASSERT on the word count's range, one test of whether spare, the bits
+# R' holds beyond R, is zero, and the back edges of the two loops that
+# double R mod m and the base spare times. product_pair holds 6: the two
+# compares of the register count against its two cases, whose miss is
+# the default arm's call to ch_assert_fail, and in each copy the test of a
+# zero digit count and the round loop's back edge. table_select holds 3:
+# the test of a zero register count and the back edges of its loops over
+# the registers and the sixteen entries, whose count is the table's and
+# not the digit's. state_finish holds 1, digits_to_words's loop over the
+# words, and words_to_digits 5, as rsa_ifma.c's does. rsa_ifma_sign.c@512
+# holds 27: product_pair's three cases and three copies give it 9. No
+# branch reads a digit of the exponent: table_select keeps an entry by a
+# mask, which inv-16-rsa-ifma-table-read holds.
+#
 # avx512_wipe.c has no body on arm64, and on x86-64 it is one block of
 # assembly with no branch.
 BRANCH_CEILING := \
@@ -7151,11 +7263,13 @@ BRANCH_CEILING := \
   arm64/poly1305_avx2.c:0 x86-64/poly1305_avx2.c:0 \
   arm64/rsa_mont64.c:44 x86-64/rsa_mont64.c:43 \
   arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
-  arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
+  arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:29 \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:23 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:7 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
+  arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:24 arm64/rsa_ifma_sign.c@512:0 \
+  x86-64/rsa_ifma_sign.c@512:27 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang
@@ -7607,7 +7721,7 @@ bin/timing_p256_wide: test/timing_test.c $(P256_TIMING_SRCS) $(HDRS) $(TESTH)
 bin/timing_rsa_sign64: test/timing_test.c $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CT_WIDEMUL -DCH_CPU_RUNTIME -DTEST_RSA_SIGN64 -I. -o $@ test/timing_test.c \
-	  $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) -lm
+	  $(call host_srcs,$(SRCS)) rsa_sign.c $(RSA_SIGN64_SRCS) $(AVX512_WIPE_SRCS) -lm
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.

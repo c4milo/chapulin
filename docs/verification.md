@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-97 of the 128 C sources in the tree root are compiled into a
+97 of the 129 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -46,7 +46,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 31 sources are in no such harness:
+The other 32 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -70,6 +70,7 @@ The other 31 sources are in no such harness:
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
+| `rsa_ifma_sign.c` | No harness yet. It runs RSA signing's two exponentiations on AVX-512 IFMA, over `rsa_ifma_product.h`'s round, which the `rsa_ifma` harnesses compile through `rsa_ifma.c`. | `bin/rsa_ifma_sign_model_test` holds it over the lane model to `rsa_sign64.c`'s window on every machine, and on a CPU with AVX-512 IFMA `bin/rsa_ifma_sign_equiv_test` holds the instructions to the window and `bin/rsa_ifma_sign_residue_test` searches the stack and the registers each call leaves. |
 | `avx512_wipe.c` | Its one function is a block of inline assembly that zeros the vector and mask registers, and it has a body in an x86-64 host object alone. | `tools/proof-cover.py`'s audit entry records what the block does. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |

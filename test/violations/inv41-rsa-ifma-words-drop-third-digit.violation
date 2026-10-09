@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: digits_to_words never takes a third digit into a word, so a word
   that starts more than 40 bits into a digit loses its top bits, which

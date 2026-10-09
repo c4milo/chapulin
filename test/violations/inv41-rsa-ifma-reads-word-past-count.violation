@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: proof/prove-one.sh rsa_ifma_public_5
 reason: value_at_or_zero reads values[count] where it should return 0, so
   words_to_digits reads one word past the k words of digit_r2 when it

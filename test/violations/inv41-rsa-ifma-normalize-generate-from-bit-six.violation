@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: diff_rsa_ifma
 reason: normalize_digits hands the register above bit 6 of the generate
   mask in place of bit 7, so the carry the top lane of each register sends

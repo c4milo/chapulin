@@ -20,6 +20,12 @@
 // and one multiplication for four bits, where the ladder runs four of
 // each.
 //
+// On x86-64 a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside
+// the multiply bit runs the two exponentiations on rsa_ifma_sign.h's
+// AVX-512 IFMA kernel and the check below on rsa_ifma.h's, and wipes the
+// stack and the vector registers after each (docs/decisions.md 120). The
+// multiply bit's statement covers the 52-bit products those kernels run.
+//
 // The check. rsa_sign64_sp1 raises the signature it computed to the
 // public exponent and compares the result with the encoded message before
 // it writes a byte of the signature. A fault in either half, or a key
@@ -106,19 +112,23 @@ int rsa_sign64_key_ok(const ch_rsa_priv *k);
 
 // rsa_pss_sign (rsa_sign.h) on this file's private operation, under the
 // same contract, with one more way to return 0: a signature that failed
-// its check, after which sig holds what it held before. rsa_sign64.c
-// compiles it from rsa_sign.c, so the test of cap and the PSS encoder are
-// that file's for both signers.
-int rsa_sign64_pss(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+// its check, after which sig holds what it held before. cpu is the
+// session's ch_cfg.cpu, which rsa_sign64_sp1 reads. rsa_sign64.c compiles
+// it from rsa_sign.c, so the test of cap and the PSS encoder are that
+// file's for both signers.
+int rsa_sign64_pss(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
                    const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len);
 
 // rsa_sp1 (rsa_sign.h) by the Chinese remainder theorem: sig = em^d mod
 // n, computed from p, q, dp, dq and qinv, with em and sig both n_len
 // big-endian bytes, for a key rsa_sign64_key_ok admits and an em below n.
 // Returns 1 when the signature passed its check and was written, and 0
-// when it failed, with no byte of sig written. Not part of the public
+// when it failed, with no byte of sig written. cpu is the session's
+// ch_cfg.cpu: on x86-64, a value with CH_CPU_AVX512_IFMA and
+// CH_CPU_CONSTANT_TIME_MULTIPLY runs the IFMA kernels, and every other
+// value the window. Each writes the same bytes. Not part of the public
 // API.
-int rsa_sign64_sp1(const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
+int rsa_sign64_sp1(uint32_t cpu, const ch_rsa_priv *k, const uint8_t *em, uint8_t *sig);
 
 // o = base^e mod m, in the Montgomery domain of mod: base is a Montgomery
 // form below m and o takes one. e is e_len big-endian bytes, every one of

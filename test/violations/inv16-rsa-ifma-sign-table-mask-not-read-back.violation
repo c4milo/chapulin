@@ -1,0 +1,14 @@
+invariant: INV-16
+file: rsa_ifma_sign.c
+catches: test/lint-invariants.sh
+reason: table_select broadcasts the mask it computed and not the value it
+  reads back through its volatile pointer, so the compiler sees which
+  entry each mask keeps and may branch on the digit, as clang for x86-64
+  did for rsa_sign64.c's read. The bytes stay right.
+  inv-16-rsa-ifma-table-read refuses a broadcast in table_select of any
+  value but the one read back.
+
+--- old
+            rsa_ifma_lanes mask = lanes_broadcast(*hidden);
+--- new
+            rsa_ifma_lanes mask = lanes_broadcast(mask_of_bit(differ ^ 1));

@@ -201,8 +201,11 @@ static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t 
                         uint8_t *sig, size_t cap, size_t *sig_len) {
     uint8_t salt[RSA_PSS_SALT_LEN];
     rand_draw(cfg, salt, sizeof salt);
-    int signed_ok =
-        widemul_rsa_pss_sign(widemul_answer(cfg), id->priv, digest, salt, sig, cap, sig_len);
+    // The session's ch_cfg.cpu picks the multiply and, on x86-64, whether
+    // the 64-bit signer's exponentiations run on AVX-512 IFMA
+    // (rsa_sign64.h).
+    int signed_ok = widemul_rsa_pss_sign_cpu(CH_CFG_CPU(*cfg), widemul_answer(cfg), id->priv,
+                                             digest, salt, sig, cap, sig_len);
     ct_wipe(salt, sizeof salt);
     return signed_ok;
 }

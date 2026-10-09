@@ -313,7 +313,8 @@ static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN])
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(widemul_rsa_pss_sign(BENCH_WIDEMUL, k, hash, salt, sig, sizeof sig, &sig_len) == 1,
+    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, hash, salt, sig, sizeof sig,
+                                    &sig_len) == 1,
            "rsa_pss_sign failed");
     expect(rsa_pss_verify(k->n, k->n_len, hash, sig, sig_len) == 1,
            "rsa_pss_verify refused rsa_pss_sign's signature");
@@ -338,8 +339,8 @@ static void run_rsa_sign(const ch_rsa_priv *k) {
     ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(widemul_rsa_pss_sign(BENCH_WIDEMUL, k, rsa_message_hash, salt, sig, sizeof sig,
-                                &sig_len) == 1,
+    expect(widemul_rsa_pss_sign_cpu(bench_cpu, BENCH_WIDEMUL, k, rsa_message_hash, salt, sig,
+                                    sizeof sig, &sig_len) == 1,
            "rsa_pss_sign failed");
     bench_consume(sig, 1);
 }

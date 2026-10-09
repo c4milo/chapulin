@@ -20,9 +20,13 @@
 
 #include "rsa.h"
 #include "rsa_ifma_count.h"
+#include "rsa_ifma_sign_count.h"
 #include "rsa_pkcs1.h"
 #include "rsa_pkcs1_vectors.h"
+#include "rsa_sign.h"
+#include "rsa_sign_key.h"
 #include "sha256.h"
+#include "widemul.h"
 
 // What a value names, written here apart from rsa_mont.c's use_ifma so
 // that a wrong predicate fails a row.
@@ -115,6 +119,69 @@ static void check_rsa_moduli(uint32_t cpu) {
         CHECK(rsa_ifma_calls_are(rows[i].kernel_calls));
         CHECK(memcmp(got, want, rows[i].n_len) == 0);
     }
+}
+
+// What a value names for a signature, written apart from rsa_sign64.c's
+// use_ifma: the exponentiations and the check on AVX-512 IFMA where it
+// holds CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY both.
+static unsigned long names_ifma_signer(uint32_t cpu) {
+    uint32_t both = CH_CPU_AVX512_IFMA | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    return (cpu & both) == both ? 1 : 0;
+}
+
+static void reset_signer_calls(void) {
+    rsa_ifma_sign_pair_calls = 0;
+    rsa_ifma_public_calls = 0;
+    rsa_ifma_sign_wipe_calls = 0;
+    avx512_wipe_calls = 0;
+}
+
+// Whether a signature's calls since the last reset are these: each
+// kernel kernel_calls times, and each of the two wipes after each of
+// them. Resets them.
+static int signer_calls_are(unsigned long kernel_calls) {
+    int same = rsa_ifma_sign_pair_calls == kernel_calls && rsa_ifma_public_calls == kernel_calls &&
+               rsa_ifma_sign_wipe_calls == 2 * kernel_calls &&
+               avx512_wipe_calls == 2 * kernel_calls;
+    if (!same) {
+        (void)fprintf(stderr,
+                      "calls: rsa_ifma_sign_power_pair %lu, rsa_ifma_public %lu, "
+                      "rsa_ifma_sign_wipe_below %lu, avx512_wipe_registers %lu; want %lu, %lu, "
+                      "%lu, %lu\n",
+                      rsa_ifma_sign_pair_calls, rsa_ifma_public_calls, rsa_ifma_sign_wipe_calls,
+                      avx512_wipe_calls, kernel_calls, kernel_calls, 2 * kernel_calls,
+                      2 * kernel_calls);
+    }
+    reset_signer_calls();
+    return same;
+}
+
+// The signer through widemul.h's entry a server signs through, under the
+// answer the value gives and the value itself, over
+// test/rsa_sign_vectors.h's RSA-2048 key: the bytes of rsa_sign.c's
+// ladder, which a value without the multiply bit runs, and the kernels
+// with their wipes exactly where the value names them
+// (docs/decisions.md 120). test/rsa_ifma_sign_count.c and
+// test/rsa_ifma_count.c write the bytes the kernels write, on
+// rsa_mont64.c, so the bytes hold wherever the calls go.
+static void check_rsa_signer(uint32_t cpu) {
+    static const test_rsa_sign_key from = TEST_RSA_SIGN_KEY(2048);
+    static ch_rsa_priv key;
+    static uint8_t want[CH_RSA_MODULUS_MAX];
+    static size_t want_len;
+    static const uint8_t digest[SHA256_LEN] = {0x5a, 0x01};
+    static const uint8_t salt[RSA_PSS_SALT_LEN] = {0xa5, 0x02};
+    if (want_len == 0) {
+        test_rsa_sign_key_load(&key, &from);
+        CHECK(rsa_pss_sign(&key, digest, salt, want, sizeof want, &want_len) == 1);
+    }
+    uint8_t sig[CH_RSA_MODULUS_MAX];
+    size_t sig_len = 0;
+    reset_signer_calls();
+    CHECK(widemul_rsa_pss_sign_cpu(cpu, widemul_of_cpu(cpu), &key, digest, salt, sig, sizeof sig,
+                                   &sig_len) == 1);
+    CHECK(signer_calls_are(names_ifma_signer(cpu)));
+    CHECK(sig_len == want_len && memcmp(sig, want, want_len) == 0);
 }
 
 #endif

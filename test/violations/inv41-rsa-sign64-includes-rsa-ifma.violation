@@ -2,19 +2,17 @@ invariant: INV-41
 file: rsa_sign64.c
 catches: test/widemul-builds.sh
 reason: the signer includes rsa_ifma.h, the first step to a call into the
-  AVX-512 IFMA kernel, which takes public input alone: the compiler keeps
-  its 512-bit registers in stack slots that no wipe can name, and the
-  signer's operands are secret. The script requires that no root source
-  but rsa_mont.c includes rsa_ifma.h or calls into it.
+  public operation's AVX-512 IFMA kernel that does not go through
+  rsa_vp1_cpu, which picks the kernel from the session's value, and that
+  the signer does not follow with its wipes. The script requires that no
+  root source but rsa_mont.c and rsa_ifma_sign.c includes rsa_ifma.h.
 
 --- old
 #include "ch_assert.h"
+#include "cpu_cfg.h"
 #include "ct.h"
-
-// The bits of the exponent one step reads
 --- new
 #include "ch_assert.h"
+#include "cpu_cfg.h"
 #include "ct.h"
 #include "rsa_ifma.h"
-
-// The bits of the exponent one step reads

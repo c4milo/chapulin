@@ -75,11 +75,12 @@ static int key_ok(void) {
     return widemul_rsa_pss_sign_key_ok(TEST_WIDEMUL, &g_key);
 }
 
-// rsa_pss_sign with g_key, under the answer this binary names
-// (test/test_widemul.h).
+// rsa_pss_sign with g_key, under the answer and the ch_cfg.cpu value this
+// binary names (test/test_widemul.h, test/test_cpu.h).
 static int sign(const uint8_t msg_hash[SHA256_LEN], const uint8_t *salt, uint8_t *sig, size_t cap,
                 size_t *sig_len) {
-    return widemul_rsa_pss_sign(TEST_WIDEMUL, &g_key, msg_hash, salt, sig, cap, sig_len);
+    return widemul_rsa_pss_sign_cpu(TEST_SESSION_CPU, TEST_WIDEMUL, &g_key, msg_hash, salt, sig,
+                                    cap, sig_len);
 }
 
 // The known answer, then the round trip: the tree's own verifier accepts

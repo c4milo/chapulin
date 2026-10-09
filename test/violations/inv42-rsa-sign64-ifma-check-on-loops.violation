@@ -1,0 +1,17 @@
+invariant: INV-42
+file: rsa_sign64.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: check_power runs the check's public operation on rsa_vp1, which
+  takes no description of the CPU, where the session's value names AVX-512
+  IFMA, so the check runs rsa_mont64.c's loops beside exponentiations on
+  the kernel, at several times their cost. The verdict is the same.
+  bin/x86_kernels_test counts the calls into rsa_ifma_public on
+  test/rsa_ifma_count.c's stand-in and requires one from each signature
+  on the kernels. Only an x86-64 object makes the call, so
+  test/aes-runtime-qemu.sh builds the binary for x86-64; the lane skips
+  without docker, and this then reports unguarded rather than caught.
+
+--- old
+        rsa_vp1_cpu(cpu, k->n, k->n_len, candidate, power);
+--- new
+        rsa_vp1(k->n, k->n_len, candidate, power);

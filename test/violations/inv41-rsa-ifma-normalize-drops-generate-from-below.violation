@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: normalize_digits drops the carry that lane 7 of each register
   generates into lane 0 of the register above in its pass of single-bit

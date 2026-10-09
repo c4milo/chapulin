@@ -52,6 +52,11 @@
 // call's own check with the public exponent at every signature.
 #include "rsa_sign64_stubs.h"
 
+// The ch_cfg.cpu value the check runs under: the multiply bit without
+// CH_CPU_AVX512_IFMA, which takes its rsa_mont64_public arm on every
+// target, the arm the stubs above model.
+#define HARNESS_CPU (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_MULTIPLY)
+
 static void havoc_modulus(rsa_mont64_modulus *mod, size_t k) {
     havoc_words(mod->m, k);
     havoc_words(mod->r2, k);
@@ -149,7 +154,7 @@ static void prove_check(size_t n_len) {
     havoc_key(n_len);
     fill_nondet(em, sizeof em);
     fill_nondet(candidate, sizeof candidate);
-    int verified = signature_verifies(&key, em, candidate);
+    int verified = signature_verifies(HARNESS_CPU, &key, em, candidate);
     assert_check_arguments(candidate);
     __CPROVER_assert(verified == power_is_message(em, n_len),
                      "the check passes exactly when every byte of the power is the message's");
@@ -167,7 +172,7 @@ static void prove_write(size_t n_len) {
     for (size_t i = 0; i < sizeof sig; i++) {
         before[i] = sig[i];
     }
-    int wrote = write_if_verified(&key, em, candidate, sig);
+    int wrote = write_if_verified(HARNESS_CPU, &key, em, candidate, sig);
     assert_check_arguments(candidate);
     __CPROVER_assert(wrote == power_is_message(em, n_len),
                      "a signature is written exactly when its check passed");

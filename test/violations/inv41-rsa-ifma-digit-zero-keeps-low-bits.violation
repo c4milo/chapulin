@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: proof/prove-one.sh rsa_ifma_sums
 reason: a round keeps the low 64 bits of its scalar sum in digit_zero
   rather than the bits from 52 up, so the division by 2^52 skips digit 0's

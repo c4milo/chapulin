@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: rsa_ifma_sign_model_test
+reason: rsa_sign64.c's use_ifma reads CH_CPU_AVX512_IFMA alone, so a
+  signature runs its exponentiations on AVX-512 IFMA under a value whose
+  caller never stated that the multiply runs in constant time, and the
+  52-bit products of secret digits rest on no statement. Every byte stays
+  right. bin/rsa_ifma_sign_model_test counts the kernel's calls and
+  requires none from rsa_sign64_sp1 under a value with the IFMA bit
+  without the multiply bit.
+
+--- old
+    uint32_t both = CH_CPU_AVX512_IFMA | CH_CPU_CONSTANT_TIME_MULTIPLY;
+    return (cpu & both) == both;
+--- new
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;

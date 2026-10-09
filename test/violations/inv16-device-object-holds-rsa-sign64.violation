@@ -1,18 +1,18 @@
 invariant: INV-16
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: the Makefile adds rsa_sign64.c to every object that holds
-  rsa_sign.c, a device object among them. The file's body sits behind
-  -DCH_CPU_RUNTIME, so the device object compiles it to nothing and every
-  test passes; the object still lists a source that a device build does
-  not take. The RSA rows of lint-trust-separation ban the file from a
-  device server object.
+reason: the Makefile adds rsa_sign64.c and rsa_ifma_sign.c to every
+  object that holds rsa_sign.c, a device object among them. Their bodies
+  sit behind -DCH_CPU_RUNTIME, so the device object compiles them to
+  nothing and every test passes; the object still lists sources that a
+  device build does not take. The RSA rows of lint-trust-separation ban
+  both files from a device server object.
 
 --- old
-RSA_SIGN64_SRCS := rsa_sign64.c
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))
 endif
 --- new
-RSA_SIGN64_SRCS := rsa_sign64.c
+RSA_SIGN64_SRCS := rsa_sign64.c rsa_ifma_sign.c
 LIB_SRCS += $(if $(filter rsa_sign.c,$(LIB_SRCS)),$(RSA_SIGN64_SRCS))

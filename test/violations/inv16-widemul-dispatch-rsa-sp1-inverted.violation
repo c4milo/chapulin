@@ -1,7 +1,7 @@
 invariant: INV-16
 file: widemul.h
 catches: widemul_runtime_test
-reason: widemul_rsa_sp1 inverts its branch, so the private operation runs
+reason: widemul_rsa_sp1_cpu inverts its branch, so the private operation runs
   rsa_sign64.c's words on the native multiply for every answer but
   WIDEMUL_CONSTANT_TIME, a wiped direction's 0 and WIDEMUL_NOT_STATED
   among them, and the ladder on the decomposition for the one answer that
@@ -11,7 +11,7 @@ reason: widemul_rsa_sp1 inverts its branch, so the private operation runs
 
 --- old
     if (widemul_native(widemul)) {
-        return rsa_sign64_sp1(k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, sig);
 --- new
     if (!widemul_native(widemul)) {
-        return rsa_sign64_sp1(k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, sig);

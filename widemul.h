@@ -239,23 +239,28 @@ static inline void widemul_p256_scalar_inverse(uint8_t widemul, p256_scalar *o,
     p256_scalar_inverse(o, a);
 }
 
-static inline int widemul_rsa_pss_sign(uint8_t widemul, const ch_rsa_priv *k,
-                                       const uint8_t msg_hash[32],
-                                       const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
-                                       size_t cap, size_t *sig_len) {
+// An RSA-PSS signature under the answer widemul, in a session whose
+// ch_cfg.cpu is cpu, which the 64-bit signer reads: on x86-64 a value
+// with CH_CPU_AVX512_IFMA runs its exponentiations on AVX-512 IFMA, whose
+// 52-bit products the multiply bit's statement covers (rsa_sign64.h,
+// docs/decisions.md 120). The ladder takes no value.
+static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
+                                           const uint8_t msg_hash[32],
+                                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
+                                           size_t cap, size_t *sig_len) {
     if (widemul_native(widemul)) {
-        return rsa_sign64_pss(k, msg_hash, salt, sig, cap, sig_len);
+        return rsa_sign64_pss(cpu, k, msg_hash, salt, sig, cap, sig_len);
     }
     return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
 }
 
 // The private operation: 1 when sig was written. The 64-bit signer
 // returns 0 for a signature that failed its check (rsa_sign64.h), and the
-// ladder has no check to fail.
-static inline int widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
-                                  uint8_t *sig) {
+// ladder has no check to fail. cpu is read as above.
+static inline int widemul_rsa_sp1_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
+                                      const uint8_t *em, uint8_t *sig) {
     if (widemul_native(widemul)) {
-        return rsa_sign64_sp1(k, em, sig);
+        return rsa_sign64_sp1(cpu, k, em, sig);
     }
     rsa_sp1(k, em, sig);
     return 1;
@@ -378,16 +383,18 @@ static inline void widemul_p256_scalar_inverse(uint8_t widemul, p256_scalar *o,
     p256_scalar_inverse(o, a);
 }
 
-static inline int widemul_rsa_pss_sign(uint8_t widemul, const ch_rsa_priv *k,
-                                       const uint8_t msg_hash[32],
-                                       const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
-                                       size_t cap, size_t *sig_len) {
+static inline int widemul_rsa_pss_sign_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
+                                           const uint8_t msg_hash[32],
+                                           const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig,
+                                           size_t cap, size_t *sig_len) {
+    (void)cpu;
     (void)widemul;
     return rsa_pss_sign(k, msg_hash, salt, sig, cap, sig_len);
 }
 
-static inline int widemul_rsa_sp1(uint8_t widemul, const ch_rsa_priv *k, const uint8_t *em,
-                                  uint8_t *sig) {
+static inline int widemul_rsa_sp1_cpu(uint32_t cpu, uint8_t widemul, const ch_rsa_priv *k,
+                                      const uint8_t *em, uint8_t *sig) {
+    (void)cpu;
     (void)widemul;
     rsa_sp1(k, em, sig);
     return 1;

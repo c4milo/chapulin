@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: The product leaves lane 0 of its first register as the rounds
   wrote it rather than digit_zero, the digit with every carry into it, so

@@ -9,11 +9,11 @@ reason: write_if_verified writes the candidate to sig before it checks
   every byte as it was after an error.
 
 --- old
-    int verified = signature_verifies(k, em, candidate);
+    int verified = signature_verifies(cpu, k, em, candidate);
     if (verified) {
         memcpy(sig, candidate, k->n_len);
     }
     return verified;
 --- new
     memcpy(sig, candidate, k->n_len);
-    return signature_verifies(k, em, candidate);
+    return signature_verifies(cpu, k, em, candidate);

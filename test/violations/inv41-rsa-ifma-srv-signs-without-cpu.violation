@@ -1,0 +1,18 @@
+invariant: INV-41
+file: srv_auth.c
+catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
+reason: the server signs under 0 in place of its configuration's
+  ch_cfg.cpu, so its RSA signatures never run on AVX-512 IFMA, and
+  ch_srv_check no longer runs the signer's kernel at boot under a value
+  that names it. Every byte is the same. test/tcp_blocking_loop_ifma.h
+  counts the server's calls into rsa_ifma_sign_power_pair, on
+  test/rsa_ifma_sign_count.c's stand-in, and requires one from each
+  signature under a value with CH_CPU_AVX512_IFMA. Only an x86-64 object
+  makes the call, so test/aes-runtime-qemu.sh builds
+  bin/tcp_blocking_loop_host for x86-64; the lane skips without docker,
+  and this then reports unguarded rather than caught.
+
+--- old
+    int signed_ok = widemul_rsa_pss_sign_cpu(CH_CFG_CPU(*cfg), widemul_answer(cfg), id->priv,
+--- new
+    int signed_ok = widemul_rsa_pss_sign_cpu(0U, widemul_answer(cfg), id->priv,

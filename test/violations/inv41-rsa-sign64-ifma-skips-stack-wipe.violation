@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: rsa_ifma_sign_model_test
+reason: both_powers returns after rsa_ifma_sign_power_pair without
+  rsa_ifma_sign_wipe_below, so the slots the compiler kept words of the
+  primes' tables and 512-bit registers in stay in the dead frames under
+  the signer's. The signature is the same. bin/rsa_ifma_sign_model_test
+  counts the wipes and requires two from each signature on the kernels,
+  one after the exponentiations and one after the check.
+
+--- old
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+        rsa_ifma_sign_wipe_below();
+--- new
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);

@@ -1,5 +1,5 @@
 invariant: INV-41
-file: rsa_ifma.c
+file: rsa_ifma_product.h
 catches: rsa_ifma_model_test
 reason: normalize_digits adds each register's eight carry bits without the
   carry out of the register below, so a run of lanes at 2^52 - 1 that

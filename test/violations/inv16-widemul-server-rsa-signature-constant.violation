@@ -9,6 +9,6 @@ reason: the server signs with its RSA key under WIDEMUL_NOT_STATED whatever
   under its own names.
 
 --- old
-        widemul_rsa_pss_sign(widemul_answer(cfg), id->priv, digest, salt, sig, cap, sig_len);
+    int signed_ok = widemul_rsa_pss_sign_cpu(CH_CFG_CPU(*cfg), widemul_answer(cfg), id->priv,
 --- new
-        widemul_rsa_pss_sign(WIDEMUL_NOT_STATED, id->priv, digest, salt, sig, cap, sig_len);
+    int signed_ok = widemul_rsa_pss_sign_cpu(CH_CFG_CPU(*cfg), WIDEMUL_NOT_STATED, id->priv,

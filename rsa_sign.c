@@ -33,8 +33,8 @@
 // CH_RSA_SIGN64 and renames the entry: that copy holds no exponentiation
 // of its own and calls rsa_sign64.c's (docs/decisions.md 95). The test
 // of cap and the PSS encoder sit after the ladder, so one line decides
-// each whichever signer runs, and rsa_pss_sign() names each signer's key
-// test and private operation where it calls them.
+// each whichever signer runs, and the entry names each signer's key test
+// and private operation where it calls them.
 #ifdef CH_RSA_SIGN64
 #include "rsa_sign64.h"
 #else
@@ -314,8 +314,19 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], const uint8_t salt[SLEN]
     em[0] &= 0x7f;
 }
 
+// The entry. The 64-bit signer's takes the session's ch_cfg.cpu first,
+// which its private operation reads, under a name of its own, which
+// rsa_sign64.c renames rsa_sign64_pss (rsa_sign64.h); the ladder's takes
+// none.
+#ifdef CH_RSA_SIGN64
+int rsa_pss_sign_cpu(uint32_t cpu, const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                     const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap,
+                     size_t *sig_len)
+#else
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
-                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
+                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len)
+#endif
+{
     // The length bound, an odd modulus and its top bit: rsa_sign.h says
     // why each one. The 64-bit signer's test adds that the key's primes
     // multiply to its modulus (rsa_sign64.h).
@@ -337,7 +348,7 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
 #ifdef CH_RSA_SIGN64
     // The 64-bit signer returns 0 for a signature that failed its check,
     // and has written no byte of it. The ladder has no check to fail.
-    int written = rsa_sign64_sp1(k, em, sig);
+    int written = rsa_sign64_sp1(cpu, k, em, sig);
     ct_wipe(em, sizeof em);
     if (!written) {
         return 0;
