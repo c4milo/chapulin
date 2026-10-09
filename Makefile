@@ -6312,6 +6312,18 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
+# Files the two 64-bit specs compile once more under other defines, each
+# entry name:ceiling, whose name is a file, an @ and a tag.
+# lint-wide-multiply compiles the file before the @ under the defines
+# WIDEMUL_DEFINES gives the whole name, and records its counts under the
+# whole name, which BRANCH_SRCS and BRANCH_CEILING name too. The file
+# keeps its own entry in WIDE64_CEILING, which is the one
+# lint-codegen-partition reads.
+# rsa_ifma.c@512 is rsa_ifma.c at the 512-byte bound of a TRUST=webpki
+# object: its copies of the product for nine and ten registers exist
+# there alone, and the shared flags compile the file at the 384-byte
+# bound.
+WIDE64_REBUILT := rsa_ifma.c@512:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -6379,6 +6391,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME \
+                   rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -6879,7 +6892,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c \
-               rsa_ifma.c $(P256_WIDE_SRCS) \
+               rsa_ifma.c rsa_ifma.c@512 $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
@@ -7010,20 +7023,24 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # from the public seed, and no branch reads a secret.
 #
 # rsa_ifma.c's entries were read the same way. It has no body on arm64.
-# On x86-64, the AVX-512 IFMA kernel's 19 test counts and indices alone,
-# each public: the word count, the digit count, the register count, a
-# digit's index or a round's index. rsa_ifma_public's 4 are its
-# CH_ASSERT, one compare for the word count's range and one for the
-# length, the loop of sixteen squares and digits_to_words's loop over
-# the words, which the compiler writes eight words a pass. words_to_digits
-# holds 6: the digit loop's entry and its back edge, the two reads of
-# value_at_or_zero, each a test of a word's index against the word count,
-# and the zero fill's entry and back edge. almost_montgomery_product holds
-# the other 9: one compare of the register count against its jump table,
-# whose miss is the default arm's call to ch_assert_fail, and in each of
-# the four copies the round loop's entry and back edge, which count the
-# digits. The products themselves branch nowhere: normalize_digits picks
-# the lanes that take a carry with a mask register.
+# On x86-64, the AVX-512 IFMA kernel's 19 at the 384-byte bound test
+# counts and indices alone, each public: the word count, the digit count,
+# the register count, a digit's index or a round's index.
+# rsa_ifma_public's 4 are its CH_ASSERT, one compare for the word count's
+# range and one for the length, the loop of sixteen squares and
+# digits_to_words's loop over the words, which the compiler writes eight
+# words a pass. words_to_digits holds 6: the digit loop's entry and its
+# back edge, the two reads of value_at_or_zero, each a test of a word's
+# index against the word count, and the zero fill's entry and back edge.
+# almost_montgomery_product holds the other 9: one compare of the register
+# count against its jump table, whose miss is the default arm's call to
+# ch_assert_fail, and in each of the four copies the round loop's entry
+# and back edge, which count the digits. rsa_ifma.c@512, the file at the
+# 512-byte bound (WIDE64_REBUILT), holds 23: the same 4 and 6, and 13 in
+# almost_montgomery_product, whose six copies, for five to ten
+# registers, add two loop branches each. The products themselves branch
+# nowhere: normalize_digits picks the lanes that take a carry with a mask
+# register.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
@@ -7079,7 +7096,7 @@ BRANCH_CEILING := \
   arm64/rsa_mont64.c:44 x86-64/rsa_mont64.c:43 \
   arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
-  arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 \
+  arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:23 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:7 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
@@ -7148,20 +7165,20 @@ lint-wide-multiply-run:
 	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
 	   ran="$$ran$$arch "; table=""; btable=""; \
 	   files="$(WIDEMUL_CEILING)"; \
-	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) files="$(WIDE64_CEILING)" ;; esac; \
+	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) files="$(WIDE64_CEILING) $(WIDE64_REBUILT)" ;; esac; \
 	   for e in $$files; do \
-	     f=$${e%%:*}; cap=$${e##*:}; \
+	     f=$${e%%:*}; cap=$${e##*:}; src=$${f%%@*}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
 	     extra=""; \
 	     for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
 	     args="-Os $$flags -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I."; \
-	     key=$$( { printf '%s\n' "$$ccid" "$$cc $$args $$f"; $$cc $$args -E $$f 2>&1; echo "status $$?"; } \
+	     key=$$( { printf '%s\n' "$$ccid" "$$cc $$args $$src"; $$cc $$args -E $$src 2>&1; echo "status $$?"; } \
 	       | $(SHA256) | cut -d' ' -f1); \
 	     memo=bin/stamps/asm/$$key.s; \
 	     err=$$(mktemp); \
 	     if [ "$${CHECK_NO_STAMPS:-0}" = 0 ] && [ -f "$$memo" ]; then asm=$$(cat "$$memo"); \
 	     else \
-	       asm=$$($$cc $$args -S $$f -o - 2>"$$err") || { \
+	       asm=$$($$cc $$args -S $$src -o - 2>"$$err") || { \
 	         echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
 	         sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
 	         rm -f "$$err"; rc=1; continue; }; \

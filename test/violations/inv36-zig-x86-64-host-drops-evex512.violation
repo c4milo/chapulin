@@ -1,0 +1,14 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig stops adding the evex512 feature to an x86-64 host
+  object's target. Zig then turns evex512 off for every CPU without
+  AVX-512, x86-64's baseline and znver3 among them, and clang refuses each
+  512-bit argument and return value in rsa_ifma.c, so the object does not
+  build for those CPUs. The script's cross row builds colibri's HTTP/2
+  object for x86_64-linux-gnu at -Dcpu=baseline on any machine.
+
+--- old
+    const target = withEvex512(b, config, b.standardTargetOptions(.{}));
+--- new
+    const target = b.standardTargetOptions(.{});

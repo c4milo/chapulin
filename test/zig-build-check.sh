@@ -5,7 +5,9 @@
 # colibri links, stompy's, a SUITE=aesgcm record-mode object and colibri's
 # QUIC object holding both widening multiplies. check-slow
 # runs it with --roster, which adds the configuration of every lib-check
-# build in check.
+# build in check. Both runs also build colibri's HTTP/2 object with
+# build.zig alone for x86-64's baseline CPU, whatever this machine is
+# (the cross rows below).
 #
 # The Zig build runs in bin/zig/consumer/package, a copy of exactly the
 # files build.zig.zon's .paths names, because that is what a dependent
@@ -145,6 +147,17 @@ roster=(
     "server-aes|RAND=extern ROLE=server TRUST=none SUITE=aesgcm|"
     "server-aes-extern|RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=|CH_AES_EXTERN_CONSTANT_TIME"
 )
+# Configurations build.zig builds for a target other than this machine's,
+# with the -D options after the second bar. make builds only for its own
+# cc's target, so these rows compare nothing and require only that the
+# Zig build succeeds. The one row builds colibri's HTTP/2 host object for
+# x86-64's baseline CPU, which has no AVX-512: rsa_ifma.c compiles there
+# only because build.zig adds the evex512 feature to an x86-64 host
+# object's target (docs/decisions.md 119), and an arm64 machine runs the
+# row too.
+cross=(
+    "h2-x86-64-baseline|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|-Dtarget=x86_64-linux-gnu -Dcpu=baseline"
+)
 case ${1:-} in
 "") ;;
 --roster) configs+=("${roster[@]}") ;;
@@ -267,6 +280,25 @@ build_zig() {
         cat "$out/$name/zig-build.log" >&2
         fail "$name: zig build ${options[*]} failed"
     }
+}
+
+# build_cross NAME MAKE-VARIABLES ZIG-OPTIONS
+#
+# Builds the Zig object of one cross row from the staged package, with
+# each make variable as a -D option and the row's own options after them.
+build_cross() {
+    local name=$1 vars options=() v
+    read -r -a vars <<< "$2"
+    read -r -a options <<< "$3"
+    for v in "${vars[@]}"; do options+=("-D$v"); done
+    mkdir -p "$out/$name"
+    (cd "$package" && "$zig" build install --summary none --prefix "$root/$out/$name" \
+        --cache-dir "$root/$out/cache" "${options[@]}") > "$out/$name/zig-build.log" 2>&1 || {
+        cat "$out/$name/zig-build.log" >&2
+        fail "$name: zig build ${options[*]} failed"
+    }
+    [ -s "$out/$name/lib/chapulin.o" ] || fail "$name: zig build ${options[*]} wrote no object"
+    echo "lint-zig-build: $name: zig build ${options[*]} builds the object"
 }
 
 # The public headers whose one call TRUST or RAND decides, so that an
@@ -430,6 +462,13 @@ for row in "${configs[@]}"; do
         continue
     fi
     check "$name" "$vars" "$statements" > "$out/$name.out" 2>&1 &
+    names+=("$name")
+    pids+=("$!")
+    [ ${#pids[@]} -lt "$jobs" ] || collect || rc=1
+done
+for row in "${cross[@]}"; do
+    IFS='|' read -r name vars options <<< "$row"
+    build_cross "$name" "$vars" "$options" > "$out/$name.out" 2>&1 &
     names+=("$name")
     pids+=("$!")
     [ ${#pids[@]} -lt "$jobs" ] || collect || rc=1

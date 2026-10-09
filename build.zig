@@ -223,7 +223,8 @@ const declarations = [_]Declaration{
 ///   fails.
 /// - the target's CPU features. Zig compiles for the target the dependent
 ///   passes, which is the machine it builds on unless it says otherwise,
-///   and make compiles for its cc's default CPU.
+///   with evex512 added for an x86-64 host object (withEvex512), and make
+///   compiles for its cc's default CPU.
 const cflags = [_][]const u8{
     "-std=c11", "-D_DEFAULT_SOURCE", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-Wvla",
 };
@@ -245,7 +246,7 @@ pub fn build(b: *std.Build) void {
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
     };
     refuseUnbuildable(config);
-    const target = b.standardTargetOptions(.{});
+    const target = withEvex512(b, config, b.standardTargetOptions(.{}));
     refuseSpeedOnHost(config, target.result);
     const plan = computePlan(b, config, target.result);
     // The flags the sources compile with. The module below is translated
@@ -449,6 +450,28 @@ fn hostTarget(target: std.Target) bool {
 fn hostObject(config: Config, target: std.Target) bool {
     const passed = if (config.host_target) |text| text.len != 0 else hostTarget(target);
     return passed and !deviceClient(config);
+}
+
+/// The target the object compiles for: target, with the CPU feature
+/// evex512 added where config builds an x86-64 host object. rsa_ifma.c's
+/// functions take and return 512-bit
+/// vectors under a target attribute that turns on AVX-512F and AVX-512
+/// IFMA (docs/decisions.md 119). Zig passes clang every feature of the
+/// target CPU, on or off, and for a CPU without AVX-512, such as baseline
+/// or znver3, that list turns evex512 off. The attribute does not turn it
+/// back on, so clang refuses every 512-bit argument and return value.
+/// evex512 alone turns on no instruction: it lets the AVX-512 instructions
+/// some other feature turns on use the 512-bit registers. So, as in make's
+/// object, only the functions under the attribute hold AVX-512
+/// instructions. A -mevex512 flag fails every file under -Werror, because
+/// clang calls it deprecated, and neither clang nor gcc takes evex512 in a
+/// target attribute.
+fn withEvex512(b: *std.Build, config: Config, target: std.Build.ResolvedTarget) std.Build.ResolvedTarget {
+    if (target.result.cpu.arch != .x86_64 or !hostObject(config, target.result)) return target;
+    if (target.result.cpu.has(.x86, .evex512)) return target;
+    var query = target.query;
+    query.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.evex512));
+    return b.resolveTargetQuery(query);
 }
 
 /// A raw or ca client: the one build whose key exchange KEX chooses, and
