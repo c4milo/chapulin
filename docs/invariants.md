@@ -1318,14 +1318,28 @@ last `ROLE=server` stub, as the entry said it would.
   signatures from both signers, the host Wycheproof test runs the private
   operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
   in `make diff`, requires the Lean spec's signatures from each.
-  For the AVX-512 IFMA kernel, nothing is proved yet: no harness
-  compiles `rsa_ifma.c` or drives `rsa_vp1_cpu` and `power_of_two_mod`,
-  and no Lean theorem states the bound or the no-wrap argument above,
-  which the file's comments and its entry in `tools/proof-cover.py`
-  state in prose. Tests hold it. `bin/rsa_ifma_model_test` compiles the
-  kernel and `rsa_mont.c`'s dispatch over `test/rsa_ifma_model_lanes.h`,
-  each lane operation in portable C, and on every machine requires
-  `rsa_vp1`'s bytes from `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` at
+  For the AVX-512 IFMA kernel, CBMC and Lean prove parts of the
+  arithmetic over `test/rsa_ifma_model_lanes.h`, each lane operation in
+  portable C, and nothing proves the instructions equal to that model.
+  The `rsa_ifma` harnesses compile the kernel's own text over the model.
+  They prove that `rsa_ifma_public` and each copy of the product read and
+  write inside their arrays at every register count, that no sum in a
+  product wraps at one and two registers, and that `power_of_two_mod`
+  reads and writes inside its arrays at the exponents `rsa_vp1_cpu`
+  passes. `spec/lean/Spec/RsaIfma.lean` models the product round by
+  round and `normalize_digits` with the C's masks. It proves that a
+  product of operands below 2m is below 2m and congruent to
+  a b / 2^(52n) mod m, that no lane passes 2^61 in up to 128 rounds,
+  that `normalize_digits` keeps the number it was given, that the steps
+  of `power_of_two_mod` from its start bit give 2^e mod m, and that the
+  chain `rsa_ifma_public` runs writes base^65537 mod m.
+  `bin/diff_rsa_ifma`, in `make diff`, holds the C over the model to the
+  spec's operations. No proof drives `rsa_vp1_cpu`, and the spec takes
+  each step of `power_of_two_mod` as rem 2^64 mod m rather than
+  modeling its division. Tests hold the rest. `bin/rsa_ifma_model_test`
+  compiles the kernel and `rsa_mont.c`'s dispatch over the model, and
+  on every machine requires `rsa_vp1`'s bytes from `rsa_vp1_cpu` under
+  `CH_CPU_AVX512_IFMA` at
   every word count from 32 to 64, one call into the kernel under the bit
   and none without it, each product's digits below 2^52 and its number
   below 2m, and on lanes chosen for its carries a `normalize_digits`
@@ -1434,7 +1448,19 @@ last `ROLE=server` stub, as the entry said it would.
   `inv41-rsa-ifma-webpki-anchor-drops-cpu` make each, and
   `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host`, which count the
   calls into `rsa_ifma_public` per caller, catch them under
-  `test/docker-aes-runtime-qemu.sh rsa-ifma-callers`.
+  `test/docker-aes-runtime-qemu.sh rsa-ifma-callers`. Or a round keeps
+  the low bits of its scalar sum in `digit_zero`, `words_to_digits`
+  reads one word past the count, the model's VPMADD52HUQ adds the bits
+  from 51 up, or `power_of_two_mod` writes its start bit one word above
+  the top: `inv41-rsa-ifma-digit-zero-keeps-low-bits`,
+  `inv41-rsa-ifma-reads-word-past-count`,
+  `inv41-rsa-ifma-model-high-half-from-bit-51` and
+  `inv41-rsa-mont-power-start-past-top-word`, which the `rsa_ifma_sums`,
+  `rsa_ifma_public_5`, `rsa_ifma_lanes` and `rsa_mont_power` proofs
+  catch. Or `normalize_digits` hands the register above bit 6 of its
+  generate mask in place of bit 7:
+  `inv41-rsa-ifma-normalize-generate-from-bit-six`, which
+  `bin/diff_rsa_ifma` catches.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118 and 119.
 
 ### INV-42 — a host object returns no RSA signature it has not verified

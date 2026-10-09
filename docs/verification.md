@@ -1005,10 +1005,11 @@ The entries are grouped by area:
   [The host object's RSA arithmetic](#the-host-objects-rsa-arithmetic).
   The lines run without `--unsigned-overflow-check`, because a step
   wraps the word above the modulus's words to zero on purpose when it
-  adds the modulus back. No line drives `rsa_vp1_cpu` or
-  `power_of_two_mod`, the dispatch to `rsa_ifma.c` and the power of two
-  it takes; see
+  adds the modulus back. No line drives `rsa_vp1_cpu`, the dispatch to
+  `rsa_ifma.c`; see
   [The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation).
+  `power_of_two_mod`, which computes the power of two that call takes,
+  has lines of its own under [rsa_ifma](#rsa_ifma).
 
 #### rsa_mont64
 
@@ -1162,16 +1163,22 @@ The entries are grouped by area:
 - **Bound:** 1 and 2 registers for `rsa_ifma_sums`; the word counts
   above for the memory lines; two words and exponents 64 to 131 for
   `rsa_mont_power_value`.
-- **Not proved:** any value of the product or of `rsa_ifma_public`; that
-  rests on `bin/rsa_ifma_model_test`. That no lane wraps at 5 to 10
-  registers rests on the bound a lane's rounds give it, below 2^61; one
-  product at 10 registers wrote 58 million clauses and was not run. The
-  value of a step of `power_of_two_mod` whose quotient estimate has more
-  than four bits, tried at eight and at 33, returned no verdict, so the
-  value at the start bits and remainders `rsa_vp1_cpu` passes rests on
-  tests. The instructions in
-  `rsa_ifma_lanes.h`, which CBMC cannot read, are held to the model only
-  by `bin/rsa_ifma_equiv_test`, on a CPU with AVX-512 IFMA.
+- **Not proved:** any value of the product or of `rsa_ifma_public`.
+  `spec/lean/Spec/RsaIfma.lean` proves them of a model of the C, which
+  `bin/diff_rsa_ifma` compares with the C on samples, and
+  `bin/rsa_ifma_model_test` holds the C to `rsa_mont64.c`
+  ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
+  That no lane wraps at 5 to 10 registers rests on the bound a lane's
+  rounds give it, below 2^61, which Lean proves on its model of the
+  rounds; one product at 10 registers wrote 58 million clauses and was
+  not run. `power_of_two_mod`'s value above exponent 131, where a step's
+  quotient estimate has more than four bits, returned no verdict:
+  exponents 64 to 135 and 160 alone in 600 s each, 64 to 191 in
+  1,200 s. Its value at the exponents `rsa_vp1_cpu` passes rests on
+  tests and on the Lean theorem, which takes each step's division as
+  given. The instructions in `rsa_ifma_lanes.h`, which CBMC cannot read,
+  are held to the model only by `bin/rsa_ifma_equiv_test`, on a CPU with
+  AVX-512 IFMA or under SDE.
 
 #### rsa_sign64
 
@@ -3681,11 +3688,12 @@ path under it (decision 89):
   only for an odd modulus whose bit length is a multiple of 64, at least
   2,048. `rsa_vp1`, which takes no value, runs `rsa_mont64.c`.
 
-CBMC cannot unwind an intrinsic, so no harness compiles the kernels, and
-the [chacha20](#chacha20) and GCM proofs cover the portable code they are
-held to. Two questions need tests: what a kernel computes, and which
-calls run it. For `rsa_ifma.c` the first rests on a model of its
-instructions and has a section of its own,
+CBMC cannot unwind an intrinsic, so no harness compiles the kernels on
+their instructions, and the [chacha20](#chacha20) and GCM proofs cover
+the portable code they are held to. Two questions need tests: what a
+kernel computes, and which calls run it. For `rsa_ifma.c` the first
+rests on a model of its instructions, over which CBMC and Lean prove
+parts of its arithmetic, and has a section of its own,
 [The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation).
 
 **What a kernel computes** rests on these, each in `make check` on an
@@ -3855,7 +3863,7 @@ CPU with the kernel's instructions, and `test/violations.py` runs every
 violation on the host that runs it, so on an arm64 host such a mutant
 would pass as unguarded. None is in `test/violations/`. `rsa_ifma.c` is
 the exception: `bin/rsa_ifma_model_test` runs its own text over a model
-of each instruction on every machine, and twenty-one violations of its
+of each instruction on every machine, and twenty-six violations of its
 arithmetic, its dispatch and its build are in `test/violations/`
 ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
 For the other two kernels, 27 such mutants were
@@ -4373,14 +4381,44 @@ a 512-bit register, on AVX-512 IFMA (decision 119). `rsa_mont.c`'s
 of 64, at least 2,048, with 2^(104n) mod m from `power_of_two_mod`.
 For every input it must write the bytes `rsa_vp1` writes.
 
-Nothing about it is proved. CBMC cannot read an intrinsic, so no
-harness compiles `rsa_ifma.c`. No harness drives `rsa_vp1_cpu` or
-`power_of_two_mod` either, and no Lean theorem states the product's
-bound below 2m, the lanes' bound below 2^61 or the carries of
-`normalize_digits`. The file's comments and its entry in
-`tools/proof-cover.py` state those arguments in prose. A CBMC harness
-over the lane model and a Lean spec of the product are later work.
-Until then, every claim below rests on a test.
+CBMC and Lean prove parts of the arithmetic over the lane model below,
+and nothing proves the instructions equal to that model. CBMC cannot
+read an intrinsic, so the [rsa_ifma](#rsa_ifma) harnesses compile
+`rsa_ifma.c`'s own text over `test/rsa_ifma_model_lanes.h`, with each
+lane multiplication a contract that `rsa_ifma_lanes` discharges on the
+model. They prove that `rsa_ifma_public` and each copy of the product
+read and write inside their arrays at every register count, that no sum
+in the product or in `normalize_digits` wraps at one and two registers,
+and that `power_of_two_mod` reads and writes inside its arrays at the
+exponents `rsa_vp1_cpu` passes. They prove no value.
+
+[`spec/lean/Spec/RsaIfma.lean`](../spec/lean/Spec/RsaIfma.lean) models
+the product round by round as the C runs it, and `normalize_digits`
+register by register with the C's masks, on whole numbers. Its theorems
+state that:
+
+- a product of operands below 2m is below 2m, and is a b / 2^(52n)
+  mod m, for an m0inv with m0inv × m + 1 a multiple of 2^52;
+- every lane stays at or below 2^61, and `digit_zero` below 2^62, for up
+  to 128 rounds;
+- `normalize_digits` writes digits below 2^52 that hold the number it
+  was given modulo 2^(52 × lanes);
+- the steps of `power_of_two_mod` from its start bit give 2^e mod m,
+  where each step computes rem × 2^64 mod m;
+- the chain `rsa_ifma_public` runs, a product, sixteen squares, a
+  product and one subtraction of m, writes base^65537 mod m for every
+  base below 2^(64k).
+
+`bin/diff_rsa_ifma`, in `make diff`, holds the C over the lane model to
+the spec's operations in 3,496 comparisons: every lane of products at
+every word count from 32 to 64, powers of two, public operations, each
+product of the chain at 32, 48 and 64 words, and `normalize_digits` on
+lanes chosen for its carries. It checks on each row that the C's m0inv
+meets the theorems' hypothesis, which no proof covers. No proof drives
+`rsa_vp1_cpu`, and the spec states the division in each step of
+`power_of_two_mod`, the conversions between words and digits and the
+last subtraction on whole numbers. Every claim below about the
+instructions rests on a test.
 
 What the kernel computes rests on these:
 
@@ -4489,7 +4527,7 @@ The build rests on these:
   `build.zig` adds the evex512 feature to an x86-64 host object's
   target (decision 119).
 
-Twenty-one violations break the kernel, its dispatch or its build, and
+Twenty-six violations break the kernel, its dispatch or its build, and
 each is caught. `bin/rsa_ifma_model_test` catches fifteen on every
 machine: `inv41-rsa-ifma-digit-zero-dropped`,
 `inv41-rsa-ifma-high-pass-reads-a-for-m`,
@@ -4517,7 +4555,18 @@ the file no longer compiles with no instruction flag;
 `inv41-rsa-sign64-checks-on-rsa-ifma`, whose signer includes
 `rsa_ifma.h` or checks its signatures on the kernel through a
 declaration of its own; and `inv16-device-object-holds-rsa-ifma`, which
-lists the file in a device object. Five more hand a verifier 0 in place
+lists the file in a device object. The proofs catch five:
+`rsa_ifma_sums` catches `inv41-rsa-ifma-digit-zero-keeps-low-bits`,
+whose round keeps the low bits of its scalar sum in `digit_zero`;
+`rsa_ifma_public_5` catches `inv41-rsa-ifma-reads-word-past-count`,
+whose `words_to_digits` reads one word past the count; `rsa_ifma_lanes`
+catches `inv41-rsa-ifma-model-high-half-from-bit-51`, whose model of
+VPMADD52HUQ adds the bits from 51 up; `rsa_mont_power` catches
+`inv41-rsa-mont-power-start-past-top-word`, whose `power_of_two_mod`
+writes its start bit one word above the top; and `bin/diff_rsa_ifma`
+catches `inv41-rsa-ifma-normalize-generate-from-bit-six`, whose
+`normalize_digits` hands each register bit 6 of the generate mask below
+it in place of bit 7. Five more hand a verifier 0 in place
 of a session's value, and `test/docker-aes-runtime-qemu.sh
 rsa-ifma-callers` catches each ([The x86-64 kernels](#the-x86-64-kernels)).
 `test/zig-build-check.sh` catches `inv36-zig-x86-64-host-drops-evex512`,
@@ -4529,6 +4578,11 @@ What none of this shows:
   are compared on the inputs `bin/rsa_ifma_equiv_test` runs, and only on
   a CPU with AVX-512 IFMA or under SDE. On any other machine the kernel's
   text runs over the model alone.
+- That the C over the model computes what the Lean model computes for
+  every input. `bin/diff_rsa_ifma` compares them on samples.
+- That no sum wraps at five to ten registers in the C. CBMC proves it at
+  one and two, and Lean proves the lanes' bound on its model of the
+  rounds, for up to 128.
 - Anything about time. None is claimed: the inputs are public, and the
   bit states presence alone.
 - The CA client's CertificateVerify under `TRUST=ca-rsa`, which only a

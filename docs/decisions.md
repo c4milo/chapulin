@@ -8964,13 +8964,17 @@ does nothing more.
       loops under gcc at 15.9 and 28.2 µs, so a ratio from one runner is a
       rough figure. The sixth runner's EPYC 7763 has no AVX-512, and the
       prototype skipped there.
-    - **What holds it.** CBMC cannot read an intrinsic, so no harness
-      compiles the file, and no harness drives `rsa_vp1_cpu` or
-      `power_of_two_mod`. No Lean theorem states the bound or the no-wrap
-      argument above: `rsa_ifma.c`'s comments and its entry in
-      `tools/proof-cover.py` state them in prose. A harness over the
-      model and a Lean spec of the product are later work. Tests hold the
-      values (docs/verification.md, "The AVX-512 IFMA public operation").
+    - **What holds it.** CBMC cannot read an intrinsic, so the `rsa_ifma`
+      harnesses compile the file over the lane model below. They prove
+      the memory accesses of `rsa_ifma_public`, of each copy of the
+      product and of `power_of_two_mod`, and that no sum in a product
+      wraps at one and two registers. `spec/lean/Spec/RsaIfma.lean`
+      proves the bound and the no-wrap argument above on a model of the
+      C's rounds, and that the chain `rsa_ifma_public` runs writes
+      base^65537 mod m, and `bin/diff_rsa_ifma` compares the C over the
+      lane model with it. Nothing proves the instructions equal to the
+      model, and tests hold the values the C computes
+      (docs/verification.md, "The AVX-512 IFMA public operation").
       `test/rsa_ifma_model_lanes.h` writes each lane operation in
       portable C from Intel's pseudocode, and `bin/rsa_ifma_model_test`
       compiles `rsa_ifma.c` and `rsa_mont.c`'s dispatch over it, so the
@@ -9003,9 +9007,9 @@ does nothing more.
       `test/aes-runtime-qemu.sh rsa-ifma` requires a server whose value
       holds the bit to die of SIGILL on a QEMU model without AVX-512
       IFMA, and the same loop without the bit to pass there.
-      Twenty-six violations break the kernel, its dispatch, its build or
-      a caller, and a test catches each (INV-41, and INV-16 for a device
-      object that lists the file). A twenty-seventh,
+      Thirty-one violations break the kernel, its dispatch, its build or
+      a caller, and a test or a proof catches each (INV-41, and INV-16
+      for a device object that lists the file). A thirty-second,
       `inv36-zig-x86-64-host-drops-evex512`, takes evex512 off
       `build.zig`'s target, and `test/zig-build-check.sh` catches it
       (INV-36).
@@ -9015,8 +9019,12 @@ does nothing more.
       8573C, under gcc 13.3 and clang 23, `bin/rsa_ifma_equiv_test` found
       the instructions and the model in agreement in all 37,533 of its
       comparisons, and the timing program's 600 `rsa_vp1_cpu` results
-      each matched `rsa_vp1`'s. When this entry was amended, the nightly's
-      `rsa-ifma-sde` job had not yet run.
+      each matched `rsa_vp1`'s. Before it landed, the `rsa-ifma-sde` job
+      ran on four runners of a throwaway branch, run 37954912049: two
+      EPYC 7763s, which have no AVX-512, so SDE emulated the instructions,
+      and a Xeon Platinum 8370C and an EPYC 9V45, which have them. Each run
+      printed every binary's pass line, and the equivalence test's 37,533
+      comparisons agreed on all four.
     - **Branches.** `lint-wide-multiply` holds `rsa_ifma.c` at 19
       conditional branches under clang for x86-64 at `-Os`, in the
       384-byte build, which holds four copies of the product, and at 0
