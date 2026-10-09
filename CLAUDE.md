@@ -179,7 +179,9 @@ Home: github.com/c4milo.
   computes R^2 by a long division that branches on the public modulus)
   with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
   every session of a host object, and the square both it and the signer
-  run) + `p384.[ch]`/
+  run) and `rsa_mont64_blocks.[ch]` (its multiplication and square in
+  blocks of four words, which a clang build for arm64 runs at a word
+  count that is a multiple of 4) + `p384.[ch]`/
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
