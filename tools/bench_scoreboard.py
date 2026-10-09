@@ -26,7 +26,9 @@ import sys
 
 # One machine per column group: the name its header cells carry, the CSV
 # bench/primitives.sh wrote on it, and the CSV bench/record.sh wrote on it,
-# which holds the AEAD rows.
+# which holds the AEAD rows. The x86-64 groups are two CPUs, one without
+# AVX-512 and one with AVX-512 IFMA, each under gcc and the pinned clang;
+# the bench workflow's record-x86_64 job checks which kind it drew.
 MACHINES = [
     ("M1 Pro", "bench/results-primitives-darwin-arm64-clang.csv",
      "bench/results-record-darwin-arm64-clang.csv"),
@@ -34,6 +36,10 @@ MACHINES = [
      "bench/results-record-linux-x86_64-gcc.csv"),
     ("x86-64 clang", "bench/results-primitives-linux-x86_64-clang.csv",
      "bench/results-record-linux-x86_64-clang.csv"),
+    ("x86-64 AVX-512 gcc", "bench/results-primitives-linux-x86_64-avx512-gcc.csv",
+     "bench/results-record-linux-x86_64-avx512-gcc.csv"),
+    ("x86-64 AVX-512 clang", "bench/results-primitives-linux-x86_64-avx512-clang.csv",
+     "bench/results-record-linux-x86_64-avx512-clang.csv"),
 ]
 
 # The first cell of the table's header row, which is how the check finds it.
@@ -91,10 +97,12 @@ AEADS = [
 CPU_LABEL = "ch_cfg.cpu "
 # The bits of ch_cfg.cpu that change a row bench/record.sh times: the probe's
 # bit, the AES and multiply bits and the two x86-64 kernel bits (cpu_cfg.h).
-# A record's protection hashes nothing, so that script states no hash bit,
-# and the widest value of its CSV is the primitives' widest value without
-# the three hash bits (docs/decisions.md 93).
+# A record's protection hashes nothing and verifies no RSA signature, so that
+# script states no hash bit and no CH_CPU_AVX512_IFMA, and the widest value
+# of its CSV is the primitives' widest value without the three hash bits and
+# that one (docs/decisions.md 93 and 119).
 RECORD_BITS = 0x1f
+IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")
 LOAD_LINE = re.compile(r"^# load average \(1, 5, 15 min\) before: (\S+) .*; after: (\S+) ")
@@ -245,7 +253,9 @@ def machine_line(name, primitives, record):
         return None
     values = "`ch_cfg.cpu 0x%x`" % ours["value"]
     if aead["value"] != ours["value"]:
-        values += ", and `0x%x` for the AEAD rows, which no hash bit changes" % aead["value"]
+        unread = ("neither a hash bit nor `CH_CPU_AVX512_IFMA` changes"
+                  if ours["value"] & IFMA_BIT else "no hash bit changes")
+        values += ", and `0x%x` for the AEAD rows, which %s" % (aead["value"], unread)
     return ("**%s**: %s, %s, %s, %s, %s; one-minute load average %s before the "
             "primitives' run and %s after it, and %s and %s around the AEAD rows' run"
             % (name, ours["cpu"], ours["os"], ours["compiler"], ours["openssl"], values,

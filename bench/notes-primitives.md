@@ -16,9 +16,36 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of d699bec6
+
+Both CSVs now hold runs of d699bec6, on 2026-10-09, the tree of
+docs/decisions.md 119, on which the bench's RSA verify rows hand
+`ch_cfg.cpu` to the verifiers. The commit that landed, 6381f62a, differs
+from d699bec6 in comments, in clang-format's line breaks and in one bit
+name a CSV header lists, so it times the same code. The M1 Pro ran under
+`0xe7`. Against the run of 7e58f05f on 2026-10-08, the tree of decision
+117:
+
+- **RSA verifies in 0.73 to 0.85 of its time, and signs in 0.80 of it
+  under `0xe7`.** Decision 118 multiplies and squares in blocks of four
+  words under clang for arm64. An RSA-2048 PSS signature takes 655 µs
+  where it took 813 µs. Under `CH_CPU_PROBED` alone the signer still runs
+  the 16x16 decomposition, and its time does not move.
+- **The handshakes under `CH_CPU_PROBED` alone take 1.00 to 1.25 times
+  their earlier time, and under `0xe7` none that runs no RSA moved.** The
+  tree is not the cause. A build of 7e58f05f timed beside this tree's on
+  the same afternoon took 2.21 to 2.27 ms for the client side of the
+  pinned ECDSA handshake under `CH_CPU_PROBED` alone, as this tree's
+  did, where the run of 7e58f05f recorded 1.90 ms. The machine's state
+  differed between the two runs.
+- **x86-64 now has two runners in docs/performance.md**: an EPYC 7763,
+  which has no AVX-512, and a Xeon Platinum 8573C, which has AVX-512
+  IFMA, so a session that states `CH_CPU_AVX512_IFMA` verifies RSA on
+  `rsa_ifma.c` there (decision 119).
+
 ## The run of 54b479ca
 
-Both CSVs now hold runs of 54b479ca, on 2026-10-06, the tree of
+Both CSVs held runs of 54b479ca, on 2026-10-06, the tree of
 docs/decisions.md 100: ML-KEM's matrix sampler squeezes eight groups a
 call. The M1 Pro ran under `0xe7`, as in the run of 914adee9 below. The
 x86-64 runner was an AMD EPYC 9V74, where earlier runs were mostly on an
