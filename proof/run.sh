@@ -174,15 +174,18 @@ cache_key() {
         printf '%s\n' "$@"
         # Launch-line defines (-DCH_PIN_ECDSA and friends) select code;
         # the preprocess must see them or an edit inside a gated block
-        # would reuse another variant's cached proof.
+        # would reuse another variant's cached proof. A launch line's
+        # include directory, the -Itest that finds the rsa_ifma lane
+        # model, goes in too: without it cc -E stops at that #include, and
+        # an edit to the header it names would reuse the cached proof.
         local a defs=""
         for a in "$@"; do
             case "$a" in
-            -D*) defs="$defs $a" ;;
+            -D* | -I?*) defs="$defs $a" ;;
             esac
         done
         for a in "$@"; do
-            # defs holds one -D argument per define, and the unquoted
+            # defs holds one -D or -I argument per flag, and the unquoted
             # expansion below passes each one to cc as its own argument.
             # shellcheck disable=SC2086
             case "$a" in
@@ -2422,6 +2425,66 @@ launch slow full rsa_mont64_public_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe
 #   rsa_mont_host_webpki   900 properties, 60 s, 5.2 GB, hence slow
 launch fast:3 full rsa_mont_host 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch slow full rsa_mont_host_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_ifma.c, RSA's public operation on AVX-512 IFMA, which an x86-64 host
+# object runs for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA, and
+# rsa_mont.c's power_of_two_mod, which computes the 2^(104n) mod m it takes.
+# CBMC cannot read the intrinsics, so the lines that compile rsa_ifma.c
+# compile it under -DCH_RSA_IFMA_MODEL over test/rsa_ifma_model_lanes.h, the
+# model of each instruction in portable C, which -Itest finds, as the
+# Makefile builds bin/rsa_ifma_model_test. proof/rsa_ifma_stubs.h states the
+# contracts they run over: each lane multiplication adds any value below
+# 2^52 to a lane, the scalar product of two digits is any value below 2^104,
+# and in the memory lines every lane operation is a contract that loads or
+# stores eight words and returns any value.
+# rsa_ifma_lanes discharges those contracts on the model's real operations
+# and the real multiply. rsa_ifma_sums proves no sum in the product or in
+# normalize_digits wraps, at 1 and 2 registers, with --unsigned-overflow-check
+# on; one product at 10 registers and 79 digits wrote 58 million clauses
+# under its flags and was not run. rsa_ifma_public runs rsa_ifma_public whole
+# for its memory accesses at the smallest and the largest register count of
+# each build, 5 and 8 registers and 10 under CH_TRUST_WEBPKI, and
+# rsa_ifma_product the copies of the product between them, 6 and 7, and 8
+# and 9 under CH_TRUST_WEBPKI. With only the multiplications as contracts,
+# rsa_ifma_public_5 took 204 s and 5.6 GB, nearly all of it symbolic
+# execution of the model's loops over eight lanes; with every lane operation
+# a contract it takes 45 s.
+# rsa_mont_power runs power_of_two_mod for its memory accesses at 32 words and
+# the build's largest count with the exponents rsa_vp1_cpu passes, over the
+# product contract of proof/rsa_mont64_stubs.h, and without the wrap check,
+# for the reason the rsa_mont_host lines give. rsa_mont_power_value proves its
+# value at two words, on the real multiply and division, for exponents 64 to
+# 131: no step, or one step whose quotient estimate is below 16. Wider
+# estimates are the multiplier equivalence docs/proofs.md calls the classic
+# hard instance: exponents 64 to 135 returned no verdict in 600 s, 160 alone
+# none in 600 s, and 64 to 191 none in 1200 s.
+# Measured one line at a time through proof/prove-one.sh on 2026-10-09 (cbmc
+# 6.11.0, kissat 4.0.4, an M1 Pro) at a load average of 3 to 11, under a
+# sampler that summed the resident size of every process in the run. The
+# time is the processor time of cbmc and the solver. The first size is
+# /usr/bin/time -l's, the largest single process, and the second the
+# sampler's peak sum, which counts cbmc and kissat while both are alive:
+#   rsa_ifma_lanes            66 properties,   6 s, 349 MB, 407 MB
+#   rsa_ifma_sums           1428 properties,  49 s, 1.6 GB, 2.6 GB, hence fast:3
+#   rsa_ifma_public_5       1119 properties,  45 s, 1.8 GB, 1.8 GB
+#   rsa_ifma_public         1119 properties, 105 s, 4.0 GB, 4.0 GB, hence fast:4
+#   rsa_ifma_public_webpki  1119 properties, 164 s, 6.2 GB, 6.3 GB, hence slow:7
+#   rsa_ifma_product        1117 properties,  15 s, 652 MB, 675 MB
+#   rsa_ifma_product_webpki 1117 properties,  25 s, 1.1 GB, 1.1 GB
+#   rsa_mont_power           870 properties,  24 s, 1.8 GB, 3.2 GB, hence fast:4
+#   rsa_mont_power_webpki    870 properties,  36 s, 2.7 GB, 4.7 GB, hence fast:5
+#   rsa_mont_power_value     233 properties,  18 s, 211 MB, 298 MB
+# rsa_ifma_public_webpki takes the slow tier for its memory, as
+# rsa_mont64_public_webpki does.
+launch fast full rsa_ifma_lanes 9 "" -DCH_CPU_RUNTIME
+launch fast:3 full rsa_ifma_sums 65 "almost_montgomery_product_core.1:17" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest --unsigned-overflow-check
+launch fast full rsa_ifma_public_5 257 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast:4 full rsa_ifma_public 385 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch slow:7 full rsa_ifma_public_webpki 513 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_product 65 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_product_webpki 81 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast:4 full rsa_mont_power 51 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+launch fast:5 full rsa_mont_power_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+launch fast full rsa_mont_power_value 132 "power_of_two_mod.1:2" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
 # rsa_sign64.c, the RSA signer on those words, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and

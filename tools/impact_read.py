@@ -204,22 +204,24 @@ def harness_sources(name, seen=None):
 def proof_includes(path, seen=None):
     """The sources one harness compiles, following its includes.
 
-    Three shapes appear: the module itself (#include "x25519.c"), a
-    sibling harness the PIN variants wrap, and a proof-local header that
+    Four shapes appear: the module itself (#include "x25519.c"), a
+    sibling harness the PIN variants wrap, a proof-local header that
     includes the module for it — proof/x25519_stubs.h holds the multiply
     contract x25519_step and x25519_tail prove against, and includes
     x25519.c itself, so a harness that stops at the header sees no
-    module."""
+    module — and a header named by its path from the root, such as
+    test/rsa_ifma_model_lanes.h, the lane model the rsa_ifma harnesses
+    compile rsa_ifma.c over."""
     seen = seen if seen is not None else set()
     if path in seen or not path.exists():
         return set()
     seen.add(path)
     found = {str(path.relative_to(ROOT))}
-    for inc in re.findall(r'#include "([a-z0-9_]+\.[ch])"', path.read_text()):
+    for inc in re.findall(r'#include "([a-z0-9_/]+\.[ch])"', path.read_text()):
         local = ROOT / "proof" / inc
         if local.exists():
             found |= proof_includes(local, seen)
-        elif inc.endswith(".c"):
+        elif inc.endswith(".c") or ("/" in inc and (ROOT / inc).exists()):
             found.add(inc)
     return found
 

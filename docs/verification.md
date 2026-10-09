@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-96 of the 127 C sources in the tree root are compiled into a
+97 of the 127 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -36,8 +36,9 @@ files' harnesses check it for the same reason
 (see [p256_wide](#p256_wide)). So do four of the harnesses of RSA's
 64-bit arithmetic, whose claim is that no sum in it wraps
 (see [rsa_mont64](#rsa_mont64)), the two that prove how the signer on
-those words reads an exponent (see [rsa_sign64](#rsa_sign64)), and the
-harness of P-384's 64-bit field, whose claim is the same
+those words reads an exponent (see [rsa_sign64](#rsa_sign64)), the
+harness of the AVX-512 IFMA product's sums (see [rsa_ifma](#rsa_ifma)),
+and the harness of P-384's 64-bit field, whose claim is the same
 (see [p384_wide](#p384_wide)).
 
 Where a bound equals the module's real maximum, the proof covers all
@@ -45,7 +46,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 31 sources are in no such harness:
+The other 30 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -62,7 +63,6 @@ The other 31 sources are in no such harness:
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
-| `rsa_ifma.c` | It runs RSA's public operation on AVX-512 IFMA intrinsics, which CBMC cannot read, and has a body on x86-64 alone. No launch line yet compiles it over the lane model, and none drives `rsa_vp1_cpu`, which calls it. | `bin/rsa_ifma_model_test` compiles the file's own text over `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable C, and holds `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` to `rsa_mont64.c`'s answers on every machine, at every word count from 32 to 64, and `bin/rsa_ifma_model_test_384` does the same at the 384-byte bound, from 32 to 48; each binary counts the calls `rsa_vp1_cpu` makes into the kernel with the bit and without it, checks each product's digits and runs `normalize_digits` on lanes chosen for its carries. On a CPU with AVX-512 IFMA, and in the nightly under Intel SDE, `bin/rsa_ifma_equiv_test` holds each lane operation, the products and `rsa_ifma_public` on the instructions to the model. The model's lanes are only tested against the instructions, not proved equal to them ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)). On such a CPU, `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` under 0x10d, the Wycheproof host binary under 0x11f, and `bin/tcp_blocking_loop_aes`'s `ch_srv_check` row under every bit the architecture defines run their RSA vectors and checks on it. `bin/x86_kernels_test` and the counted loop and session binaries link a stand-in for the call, `test/rsa_ifma_count.c`, which runs `rsa_mont64.c`'s arithmetic, so they count each caller's calls on every x86-64 CPU. |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
@@ -1118,6 +1118,60 @@ The entries are grouped by area:
   `make lint-wide-multiply`'s, which counts the conditional branches it
   compiles to, and `bin/rsa_sign_equiv_test`'s search of the stack,
   which runs the blocks only where a clang build for arm64 runs them.
+
+#### rsa_ifma
+
+- **Harnesses:** `rsa_ifma_lanes` (fast), `rsa_ifma_sums` (fast), `rsa_ifma_public_5` (fast), `rsa_ifma_public` (fast), `rsa_ifma_public_webpki` (slow), `rsa_ifma_product` (fast), `rsa_ifma_product_webpki` (fast), `rsa_mont_power` (fast), `rsa_mont_power_webpki` (fast), `rsa_mont_power_value` (fast)
+- **Build:** the public operation on AVX-512 IFMA (`rsa_ifma.c`), under
+  `-DCH_CPU_RUNTIME` and `-DCH_RSA_IFMA_MODEL`, over
+  `test/rsa_ifma_model_lanes.h`, the model of each instruction in
+  portable C that `bin/rsa_ifma_model_test` runs; and `rsa_mont.c`'s
+  `power_of_two_mod`, which computes the 2^(104n) mod m that call takes.
+  The lane multiplications, the scalar multiply and, in the memory
+  lines, every lane operation are contracts (`proof/rsa_ifma_stubs.h`).
+  `rsa_ifma_sums` adds `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_ifma_lanes`: on the model's real operations and the real
+    multiply, a lane multiplication adds a value below 2^52 to each lane,
+    the high one a value at or below 2^52 - 2, the product of two digits
+    is at or below (2^52 - 1)^2, and a load and a store touch nothing
+    outside eight words. Those are the contracts the other lines run.
+  - `rsa_ifma_sums`: no sum in the product or in `normalize_digits`
+    wraps, at 1 and 2 registers, for every digit count they hold, in the
+    two aliasing shapes `rsa_ifma_public` calls: no lane add, no 128-bit
+    scalar sum and no add to `digit_zero`. `normalize_digits` wraps
+    nothing for any lanes at all.
+  - `rsa_ifma_public_5`, `rsa_ifma_public` and `rsa_ifma_public_webpki`:
+    `rsa_ifma_public` whole reads and writes inside its arrays at 32, 48
+    and 64 words, 5, 8 and 10 registers, the smallest and the largest
+    count of each build: the marshalling, the conversions to and from
+    digits, its eighteen products and the last subtraction.
+  - `rsa_ifma_product` and `rsa_ifma_product_webpki`: the copies of the
+    product for 6 and 7 registers, at 38 and 45 words, and under
+    `CH_TRUST_WEBPKI` for 8 and 9, at 51 and 58, read and write inside
+    their arrays in both aliasing shapes.
+  - `rsa_mont_power` and `rsa_mont_power_webpki`: `power_of_two_mod`
+    reads and writes inside its arrays and divides by no zero, at 32
+    words and at the build's largest count, with the exponents
+    `rsa_vp1_cpu` passes, for any modulus words whose top bit is set and
+    whose bottom bit is 1.
+  - `rsa_mont_power_value`: at two words, `power_of_two_mod` writes
+    2^exponent mod m for every odd m whose top bit is set and every
+    exponent from 64 to 131, on the real multiply and division, against
+    a reference that doubles one bit at a time.
+- **Bound:** 1 and 2 registers for `rsa_ifma_sums`; the word counts
+  above for the memory lines; two words and exponents 64 to 131 for
+  `rsa_mont_power_value`.
+- **Not proved:** any value of the product or of `rsa_ifma_public`; that
+  rests on `bin/rsa_ifma_model_test`. That no lane wraps at 5 to 10
+  registers rests on the bound a lane's rounds give it, below 2^61; one
+  product at 10 registers wrote 58 million clauses and was not run. The
+  value of a step of `power_of_two_mod` whose quotient estimate has more
+  than four bits, tried at eight and at 33, returned no verdict, so the
+  value at the start bits and remainders `rsa_vp1_cpu` passes rests on
+  tests. The instructions in
+  `rsa_ifma_lanes.h`, which CBMC cannot read, are held to the model only
+  by `bin/rsa_ifma_equiv_test`, on a CPU with AVX-512 IFMA.
 
 #### rsa_sign64
 

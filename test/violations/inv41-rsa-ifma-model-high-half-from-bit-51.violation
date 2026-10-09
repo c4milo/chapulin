@@ -1,0 +1,15 @@
+invariant: INV-41
+file: test/rsa_ifma_model_lanes.h
+catches: proof/prove-one.sh rsa_ifma_lanes
+reason: the model of VPMADD52HUQ adds bits 102..51 of the lane product
+  where the instruction adds bits 103..52. The half it adds can then reach
+  2^53 - 3, past the 2^52 - 2 that proof/rsa_ifma_stubs.h's contract and
+  the lane bounds of rsa_ifma.c rest on. rsa_ifma_lanes proves that bound
+  on the model's real operation, and fails here.
+  bin/rsa_ifma_equiv_test sees the difference from the instruction only
+  on a CPU with AVX-512 IFMA.
+
+--- old
+        sum.lane[j] += (uint64_t)(model_lane_product(x.lane[j], y.lane[j]) >> 52);
+--- new
+        sum.lane[j] += (uint64_t)(model_lane_product(x.lane[j], y.lane[j]) >> 51);

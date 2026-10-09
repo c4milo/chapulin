@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: proof/prove-one.sh rsa_ifma_public_5
+reason: value_at_or_zero reads values[count] where it should return 0, so
+  words_to_digits reads one word past the k words of digit_r2 when it
+  builds the top digit. The words of a 2048-bit digit_r2 end at word 31
+  and the top digit's next word is word 32. rsa_ifma_public_5 passes
+  digit_r2 as an array of exactly 32 words, where that read is out of
+  bounds.
+
+--- old
+    return index < count ? values[index] : 0;
+--- new
+    return index <= count ? values[index] : 0;

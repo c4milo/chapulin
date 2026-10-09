@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: proof/prove-one.sh rsa_ifma_sums
+reason: a round keeps the low 64 bits of its scalar sum in digit_zero
+  rather than the bits from 52 up, so the division by 2^52 skips digit 0's
+  carry. digit_zero can then be any 64-bit value, and its add of the lane
+  that moves into lane 0 wraps. rsa_ifma_sums runs the product with
+  --unsigned-overflow-check on, where that add is a property.
+  bin/rsa_ifma_model_test sees the wrong product too; this checks that the
+  proof sees the wrap on its own.
+
+--- old
+    *digit_zero = (uint64_t)(low >> 52);
+--- new
+    *digit_zero = (uint64_t)low;

@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: proof/prove-one.sh rsa_mont_power
+reason: power_of_two_mod writes its start bit into rem[k], the word above
+  the k words of rem, where the top word is rem[k - 1]. rsa_vp1_cpu's
+  digit_r2 holds RSA_MONT64_WORDS_MAX words, so for the largest modulus
+  the write is past its end. rsa_mont_power passes rem as an array of
+  exactly k words, where the write is out of bounds at every k.
+
+--- old
+    rem[k - 1] = (uint64_t)1 << (exponent & 63);
+--- new
+    rem[k] = (uint64_t)1 << (exponent & 63);

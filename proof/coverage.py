@@ -70,12 +70,14 @@ def launch_lines():
         # A linked source is a path from the root: a shipped source, or a
         # stub in proof/ such as proof/ct_wipe_stub.c.
         linked = re.findall(r"\b([a-z0-9_/]+\.c)\b", rest)
-        # Every flag the launch line carries, -D and otherwise: a launch
+        # Every flag the launch line carries, -D, -I and otherwise: a launch
         # line that needs --object-bits to prove needs it to cover too,
         # or cbmc stops with "too many addressed objects" and the harness
         # reports not measured -- which is how handshake_record's floor
         # went unenforced (https://github.com/c4milo/chapulin/issues/57).
-        defines = re.findall(r"(-D\S+)", rest)
+        # The rsa_ifma lines' -Itest finds the lane model their sources
+        # include, so the cover command cannot compile them without it.
+        defines = re.findall(r"(-[DI]\S+)", rest)
         options = re.findall(r"(--[a-z-]+ \S+)", rest)
         flags = defines + [w for opt in options for w in opt.split()]
         runs[name] = (tier, int(unwind), set(linked), unwindset, flags)
