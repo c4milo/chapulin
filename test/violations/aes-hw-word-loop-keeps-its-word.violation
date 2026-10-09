@@ -1,0 +1,18 @@
+invariant: INV-17
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the arm64 key expansion returns without wiping the word it copies
+  each word of the schedule into, so its last value, a word of the last
+  round key, stays in the dead frame after the call. Under a
+  SUITE=aesgcm build that key is a traffic key. Every schedule is still
+  right, so no vector notices. bin/aes_equiv_test clears the stack below
+  a call, makes one expansion and looks for any word the expansion
+  computed in the bytes the call wrote. Only an arm64 compiler reads the
+  line, so the script builds that binary for arm64 and runs it under
+  qemu-aarch64.
+
+--- old
+    ct_wipe(word, sizeof word);
+    ct_wipe(substituted, sizeof substituted);
+--- new
+    ct_wipe(substituted, sizeof substituted);

@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the x86-64 AES-256 key expansion rotates the temporary of the step
+  every second round key takes, where FIPS 197 applies SubWord alone. That
+  step is the one AES-128 does not have, so only the AES-256 schedules
+  change. bin/aes_equiv_test compares each schedule with the table's byte
+  for byte, over keys whose second half is all that differs. Only an
+  x86-64 compiler reads the line, so the script builds that binary for
+  x86-64 and runs it under qemu-x86_64.
+
+--- old
+    return _mm_xor_si128(prefix_xor(key), sub_word_of_last_word(first));
+--- new
+    return _mm_xor_si128(prefix_xor(key), rot_word_each(sub_word_of_last_word(first)));

@@ -14,9 +14,12 @@
 # the two forms of their carry steps that gcc reads; "keccak"
 # bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test alone, which clang
 # builds for arm64, the one object that holds Keccak on the SHA-3
-# instructions; "rsa-ifma-callers" bin/tcp_blocking_loop_host and
-# bin/webpki_auth_host alone, for x86-64, which count the RSA public
-# operations each caller of the verifiers sends to AVX-512 IFMA; and
+# instructions; "aes-equiv" bin/aes_equiv_test alone, for x86-64 and for
+# arm64, which holds aes_hw.c's two key expansions to the table and
+# searches the stack each leaves; "rsa-ifma-callers"
+# bin/tcp_blocking_loop_host and bin/webpki_auth_host alone, for x86-64,
+# which count the RSA public operations each caller of the verifiers
+# sends to AVX-512 IFMA; and
 # "rsa-ifma" bin/webpki_loop_aes alone for x86-64, whose server runs
 # ch_srv_check with and without CH_CPU_AVX512_IFMA on a model without
 # AVX-512 IFMA.
@@ -39,7 +42,8 @@
 # constants and wipes with "sha2-equiv", the violations of the
 # SHA-512 entries with "arm64-hash-count", the two violations of the
 # intrinsics in p256_wide_word.h's carry steps with "p256-equiv", the
-# violations of what sha3_hw.c leaves on the stack with "keccak", and the
+# violations of what sha3_hw.c leaves on the stack with "keccak", the
+# violations of aes_hw.c's two key expansions with "aes-equiv", and the
 # violations that hand an RSA verifier 0 in place of a session's
 # ch_cfg.cpu with "rsa-ifma-callers".
 # Needs docker (OrbStack works); skips without it.

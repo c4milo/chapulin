@@ -1,0 +1,17 @@
+invariant: INV-26
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the x86-64 AES-128 key expansion starts from the second round
+  constant, so every round key after the key itself takes the constant of
+  the round after its own, and every Initial packet and AES-128-GCM record
+  runs under a schedule FIPS 197 does not define. bin/aes_equiv_test
+  compares each schedule with the table's byte for byte. Only an x86-64
+  compiler reads the line, so the script builds that binary for x86-64
+  and runs it under qemu-x86_64.
+
+--- old
+    store_block(round_keys, round_key);
+    uint8_t round_constant = 0x01;
+--- new
+    store_block(round_keys, round_key);
+    uint8_t round_constant = 0x02;

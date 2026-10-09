@@ -1,0 +1,14 @@
+invariant: INV-26
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the x86-64 key expansion's shuffle copies word 2 of a round key into
+  the four words where FIPS 197 takes SubWord of word 3, so both key
+  sizes compute the temporary of every step from the wrong word.
+  bin/aes_equiv_test compares each schedule with the table's byte for
+  byte. Only an x86-64 compiler reads the line, so the script builds that
+  binary for x86-64 and runs it under qemu-x86_64.
+
+--- old
+    return _mm_aesenclast_si128(_mm_shuffle_epi32(v, 0xff), _mm_setzero_si128());
+--- new
+    return _mm_aesenclast_si128(_mm_shuffle_epi32(v, 0xaa), _mm_setzero_si128());

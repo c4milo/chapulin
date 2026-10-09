@@ -85,6 +85,16 @@
 #     own compiler reads one of the file's two arms, so this is the run
 #     that holds the other.
 #
+# On the model with every instruction qemu has, which has the AES
+# instructions on both architectures:
+#
+#   - bin/aes_equiv_test must pass for x86-64 and for arm64: aes_hw.c's
+#     AES-NI arm and its Arm arm against quic_aes_soft.c's table, and the
+#     search of the stack each key expansion leaves
+#     (test/aes_equiv_test.c, docs/decisions.md 123). The two arms expand
+#     a key in different code, and a machine's own compiler reads one, so
+#     this is the run that holds the other.
+#
 # On the model with every instruction qemu has, with
 # CH_REQUIRE_X86_KERNELS=1 in the environment, so a qemu without AVX2
 # fails the row and does not skip it:
@@ -204,6 +214,8 @@
 #                     arms
 #   poly1305-avx2     bin/poly1305_equiv_test for x86-64, for the
 #                     violations of poly1305_avx2.c
+#   aes-equiv         bin/aes_equiv_test for x86-64 and for arm64, for the
+#                     violations of aes_hw.c's two key expansions
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
 #                     violations of keccak_avx2.c and mlkem_avx2.c
 #   rsa-ifma-callers  bin/tcp_blocking_loop_host and bin/webpki_auth_host
@@ -230,9 +242,9 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
-    rsa-ifma-callers | rsa-ifma) ;;
+    aes-equiv | rsa-ifma-callers | rsa-ifma) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | rsa-ifma-callers | rsa-ifma]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma]" >&2
     exit 2
     ;;
 esac
@@ -301,8 +313,9 @@ read -r -a mlkem_avx2_equiv_srcs <<< "$(sed -n 13p <<< "$lists")"
 read -r -a poly1305_equiv_srcs <<< "$(sed -n 14p <<< "$lists")"
 read -r -a blocking_counted_srcs <<< "$(sed -n 15p <<< "$lists")"
 read -r -a webpki_auth_counted_srcs <<< "$(sed -n 16p <<< "$lists")"
-[ "${#webpki_auth_counted_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than sixteen lists" >&2; exit 1; }
+read -r -a aes_equiv_srcs <<< "$(sed -n 17p <<< "$lists")"
+[ "${#aes_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than seventeen lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -417,6 +430,28 @@ if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
 fi
 if [ "$only" = poly1305-avx2 ]; then
     echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to poly1305.c's loop, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = aes-equiv ]; then
+    # aes_hw.c against quic_aes_soft.c's table, on AES-NI for x86-64 and
+    # on the Arm AES instructions for arm64, with the search of the stack
+    # each key expansion leaves. test/aes_equiv_hw.c defines
+    # CH_CPU_RUNTIME itself, as the Makefile's rule says, so no line here
+    # passes it.
+    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -o "$x86_out/aes_equiv_test" \
+        test/aes_equiv_test.c "${aes_equiv_srcs[@]}" || exit 1
+    expect max 0 \
+        "aes_hw.c's AES-NI arm and the table disagree, or a key expansion left a word it computed on the stack" \
+        aes_equiv_test
+    "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -o "$arm64_out/aes_equiv_test" \
+        test/aes_equiv_test.c "${aes_equiv_srcs[@]}" || exit 1
+    expect_arm64 max 0 \
+        "aes_hw.c's Arm arm and the table disagree, or a key expansion left a word it computed on the stack" \
+        aes_equiv_test
+fi
+if [ "$only" = aes-equiv ]; then
+    echo "aes-runtime-qemu: bin/aes_equiv_test held aes_hw.c to the table and found no word of a schedule on the stack, on AES-NI for x86-64 and on the Arm AES instructions for arm64"
     exit 0
 fi
 
@@ -673,5 +708,7 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max sha3_hw.c agreed" \
     "with sha3.c and left no lane on the stack, ML-KEM's copies agreed with mlkem.c, and one end on" \
     "the SHA-3 instructions and the other on sha3.c agreed; the vector NTT agreed with" \
-    "mlkem_poly.c's loops on SSE2 and on NEON; and each caller of the RSA verifiers sent the" \
-    "public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu held the bit"
+    "mlkem_poly.c's loops on SSE2 and on NEON; aes_hw.c agreed with the table and left no word of a" \
+    "schedule on the stack on AES-NI and on the Arm AES instructions; and each caller of the RSA" \
+    "verifiers sent the public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu" \
+    "held the bit"

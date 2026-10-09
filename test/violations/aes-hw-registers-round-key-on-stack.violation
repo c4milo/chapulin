@@ -1,0 +1,17 @@
+invariant: INV-17
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the x86-64 AES-128 key expansion keeps its round key in a volatile
+  variable, so each round key passes through a stack slot and the last,
+  from which the expansion runs backwards to the key, stays in the dead
+  frame after the call. Under a SUITE=aesgcm build that key is a traffic
+  key. Every schedule is still right, so no vector notices.
+  bin/aes_equiv_test clears the stack below a call, makes one expansion
+  and looks for any word of the schedule in the bytes the call wrote.
+  Only an x86-64 compiler reads the line, so the script builds that
+  binary for x86-64 and runs it under qemu-x86_64.
+
+--- old
+    aes_state round_key = load_block(key);
+--- new
+    volatile aes_state round_key = load_block(key);

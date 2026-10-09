@@ -1,0 +1,15 @@
+invariant: INV-26
+file: aes_hw.c
+catches: test/docker-aes-runtime-qemu.sh aes-equiv
+reason: the x86-64 AES-256 key expansion stops after round key 13 and never
+  stores round key 14, so the last round of every TLS_AES_256_GCM_SHA384
+  block runs under whatever the caller's schedule held. bin/aes_equiv_test
+  expands into a buffer it did not clear and compares all fifteen round
+  keys with the table's byte for byte. Only an x86-64 compiler reads the
+  lines, so the script builds that binary for x86-64 and runs it under
+  qemu-x86_64.
+
+--- old
+    first = next_round_key(first, second, round_constant);
+    store_block(&round_keys[(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
+--- new

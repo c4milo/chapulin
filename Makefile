@@ -559,7 +559,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h \
          test/rsa_ifma_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
-         test/aes_equiv_counter.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
+         test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
@@ -1553,8 +1553,9 @@ print-host-srcs:
 # beside its one, bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
 # beside theirs, bin/mlkem_vector_equiv_test and
 # bin/mlkem_avx2_equiv_test beside their one each,
-# bin/poly1305_equiv_test beside its one, and bin/tcp_blocking_loop_host
-# and bin/webpki_auth_host beside theirs.
+# bin/poly1305_equiv_test beside its one, bin/tcp_blocking_loop_host
+# and bin/webpki_auth_host beside theirs, and bin/aes_equiv_test beside
+# its one.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1573,6 +1574,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(POLY1305_EQUIV_TEST_SRCS)
 	@echo $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
 	@echo $(call widemul_counted,$(WEBPKI_TEST_SRCS))
+	@echo $(AES_EQUIV_TEST_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2418,20 +2420,24 @@ bin/quic_test_hw: test/quic_vectors.c $(QUIC_TEST_HW_SRCS) $(HDRS) $(TESTH)
 # neither is on the line twice; the second defines the host object's
 # CH_CPU_RUNTIME itself, so the first compiles quic_aes_soft.c under
 # aes_block.h's own names.
-# ct_wipe.c is on the line because aes_hw.c wipes its key-schedule word
-# and its cipher state through ct_wipe; quic_aes_soft.c wipes nothing and
-# links nothing, for the reason its file comment gives.
+# ct_wipe.c is on the line because aes_hw.c wipes its cipher state, and
+# on arm64 its key-schedule word, through ct_wipe; quic_aes_soft.c wipes
+# nothing and links nothing, for the reason its file comment gives.
 # test/aes_equiv_vaes.c compiles gcm_vaes.c's kernels, which the counter
 # cases run as well on an x86-64 CPU with VAES and VPCLMULQDQ, and which
-# gcm_hw.c's entries name on x86-64.
+# gcm_hw.c's entries name on x86-64. test/stack_residue.c copies the stack
+# a key expansion left, for the check that no word of the schedule is
+# still there (test/aes_equiv_residue.h).
 # The line takes HOST_CFLAGS because two of its units define
 # CH_CPU_RUNTIME, and ct.h refuses the test flags' CH_NATIVE_WIDEMUL
 # beside it. No unit on the line multiplies.
-bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
-                    quic_aes_soft.c aes_hw.c gcm_hw.c gcm_vaes.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+AES_EQUIV_TEST_SRCS := test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
+                       test/stack_residue.c ct.c ct_wipe.c
+bin/aes_equiv_test: test/aes_equiv_test.c $(AES_EQUIV_TEST_SRCS) quic_aes_soft.c aes_hw.c gcm_hw.c \
+                    gcm_vaes.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c \
-	  test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c ct.c ct_wipe.c
+	  $(AES_EQUIV_TEST_SRCS)
 # GHASH on the carry-less multiply against gcm.c's portable GHASH, the
 # same check for ghash_hw.c: the multiply, the loop over data and the
 # whole AEAD. The binary is a QUIC host object, so gcm.c holds both GHASH

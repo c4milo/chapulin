@@ -102,7 +102,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the ten arguments that run one part
+# itself, and the lane with one of the eleven arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -120,7 +120,9 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # own compiler reads one arm, a violation of keccak_avx2.c or
 # mlkem_avx2.c names mlkem-avx2, because the two have a body on x86-64
 # alone, and a violation of poly1305_avx2.c names poly1305-avx2, for the
-# same reason. A violation that hands an RSA verifier 0 in place of a
+# same reason. A violation of either of aes_hw.c's key expansions names
+# aes-equiv, because a machine's own compiler reads one of the two. A
+# violation that hands an RSA verifier 0 in place of a
 # session's ch_cfg.cpu names rsa-ifma-callers, because only an x86-64
 # object sends the public operation to AVX-512 IFMA. rsa-ifma runs the
 # webpki loop's rows of CH_CPU_AVX512_IFMA alone, on the x86-64 model
@@ -137,6 +139,7 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh mlkem-vector",
                           "test/docker-aes-runtime-qemu.sh mlkem-avx2",
                           "test/docker-aes-runtime-qemu.sh poly1305-avx2",
+                          "test/docker-aes-runtime-qemu.sh aes-equiv",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma-callers",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma"]
 
@@ -363,8 +366,8 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these sixteen rules hold every file
-# it compiles.
+# test files itself, and the sources of these seventeen rules hold every
+# file it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
                              "bin/x86_kernels_test", "bin/sha2_equiv_test",
@@ -372,7 +375,8 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/p256_equiv_test", "bin/sha3_hw_equiv_test",
                              "bin/mlkem_hw_equiv_test", "bin/mlkem_vector_equiv_test",
                              "bin/mlkem_avx2_equiv_test", "bin/poly1305_equiv_test",
-                             "bin/tcp_blocking_loop_host", "bin/webpki_auth_host")
+                             "bin/tcp_blocking_loop_host", "bin/webpki_auth_host",
+                             "bin/aes_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 

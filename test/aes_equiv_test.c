@@ -15,7 +15,9 @@
 // aes_cipher_block writes is compared, which is the answer callers depend
 // on; and counter mode over whole blocks, which the instructions run
 // several blocks at a time, is compared with the soft cipher run one
-// block at a time (test/aes_equiv_counter.h).
+// block at a time (test/aes_equiv_counter.h). Beside the three, the stack
+// each key expansion on the instructions leaves is searched for a word the
+// expansion computed (test/aes_equiv_residue.h).
 //
 // The inputs are the edge cases first and then random pairs. The edge
 // cases are the ones a table and an instruction are most likely to
@@ -305,6 +307,7 @@ static void run_aes256(void) {
 }
 
 #include "aes_equiv_counter.h"
+#include "aes_equiv_residue.h"
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
@@ -313,9 +316,11 @@ int main(void) {
     run_random();
     run_aes256();
     run_counter_blocks();
+    run_residue();
     printf("aes equivalence: %lu AES-128 pairs, %lu AES-256 pairs and %lu counter-mode cases "
-           "agree between the table and the AES instructions (seed 0x%llx)\n",
-           compared, compared_256, counter_cases, (unsigned long long)seed);
+           "agree between the table and the AES instructions, and %lu key expansions on the "
+           "instructions left no word they computed on the stack (seed 0x%llx)\n",
+           compared, compared_256, counter_cases, residue_runs, (unsigned long long)seed);
     if (failures > 0) {
         printf("aes equivalence: %d mismatches\n", failures);
         return 1;
