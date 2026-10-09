@@ -95,6 +95,18 @@ AUDITED = {
         "on it there, under a ch_cfg.cpu value with CH_CPU_AVX2. Delete this "
         "entry if a harness can ever compile the file."
     ),
+    "avx512_wipe.c": (
+        "the wipe of the vector registers in an x86-64 host object: one "
+        "function, avx512_wipe_registers, whose body is one block of inline "
+        "assembly, which CBMC cannot read, so no harness compiles the file. "
+        "The block runs 32 VPXORD, one for each of xmm0 to xmm31, whose EVEX "
+        "form clears the whole 512-bit register, and 7 KXORW, one for each "
+        "of k1 to k7, and its clobber list names those 39 registers. It "
+        "reads no memory, writes no memory, takes no operand, branches "
+        "nowhere and holds no C arithmetic. It compiles to nothing outside "
+        "an x86-64 host object. Delete this entry if a harness can ever "
+        "compile the file."
+    ),
     "poly1305_vector.c": (
         "the vector Poly1305 of a host object's native copy, written in NEON or SSE2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "

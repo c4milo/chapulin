@@ -208,7 +208,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_ifma.h rsa_ifma_lanes.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_ifma.h rsa_ifma_lanes.h avx512_wipe.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -534,7 +534,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           poly1305_avx2.c test/poly1305_equiv_avx2.c \
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
-          keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
+          keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c avx512_wipe.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
           $(wildcard examples/*.c)
@@ -1151,6 +1151,20 @@ endif
 #   0x1f   those and CH_CPU_VAES
 #   0x11f  those and CH_CPU_AVX512_IFMA: every bit that picks a kernel or a path beside one
 X86_KERNEL_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qw '__x86_64__' && echo yes)
+# The wipe of the vector registers a kernel calls after it ran secrets
+# through 512-bit registers: avx512_wipe.c, one block of assembly that
+# zeros zmm0 to zmm31 and k1 to k7. A host object holds it where the
+# compiler targets x86-64, which X86_64_TARGET says: the probe above sets
+# it, and a command line may set it as it sets HOST_TARGET, so that a lint
+# reads the same lists on every compiler. Elsewhere the file declares
+# nothing, and -Wpedantic refuses a translation unit with no declaration,
+# so no other object lists it. build.zig adds it under the same two
+# conditions.
+X86_64_TARGET := $(X86_KERNEL_PROBE)
+AVX512_WIPE_SRCS := $(if $(X86_64_TARGET),avx512_wipe.c)
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(AVX512_WIPE_SRCS)
+endif
 X86_KERNEL_BINS := $(if $(X86_KERNEL_PROBE),$(if $(HOST_TARGET),bin/x86_kernels_test))
 X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d)
 X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f)
@@ -1695,6 +1709,11 @@ print-aes-runtime-qemu-srcs:
 # device object, and rsa_sign64.c, the signer on those words, to the host
 # object that holds rsa_sign.c (docs/decisions.md 95).
 #
+# The wipe rows hold avx512_wipe.c, the wipe of the vector registers, to
+# the host object for x86-64, and out of an arm64 host object and every
+# device object. Each row sets X86_64_TARGET on its own command line, as
+# it sets HOST_TARGET.
+#
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
 # object packages no generator, because each session names its own source
@@ -1775,6 +1794,11 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "rsa_mont.c" "$(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
+	check "TRUST=raw-rsa X86_64_TARGET=yes" "" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes X86_64_TARGET=yes" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=yes" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=" "" "avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
@@ -5354,7 +5378,7 @@ else
 	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
-	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
+	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c avx512_wipe.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
@@ -5480,6 +5504,15 @@ else
 	# place, read for an x86-64 target whatever the host, as the kernels'
 	# passes above are.
 	@$(call TIDY_EACH,rsa_ifma.c rsa_mont.c test/rsa_ifma_count.c, \
+	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
+	  -DCH_CPU_RUNTIME -I.)
+	# The wipe of the vector registers, which has a body on x86-64 alone,
+	# read for an x86-64 target whatever the host, as the kernels' passes
+	# above are. portability-no-assembler is off for this file alone: its
+	# body is the one block of assembly in the library, because C names
+	# no register, and the block is the file's whole purpose
+	# (avx512_wipe.c).
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler avx512_wipe.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	# A host object's SHA-256 and SHA-512 on the CPU's instructions
@@ -6319,14 +6352,17 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # its body sits behind -DCH_CPU_RUNTIME. Its scalar products are
 # ct_mul128's 64x64->128 multiply and its lanes' are VPMADD52LUQ and
 # VPMADD52HUQ, it divides nowhere, and it calls no 128-bit runtime
-# routine, so its ceiling is zero too.
+# routine, so its ceiling is zero too. avx512_wipe.c, the wipe of the
+# vector registers, compiles to nothing on arm64 and to one block of
+# assembly on x86-64, behind -DCH_CPU_RUNTIME. It multiplies and divides
+# nothing, so its ceiling is zero.
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 \
                   sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_mont64_blocks.c:0 \
                   rsa_sign64.c:0 rsa_ifma.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
-                  keccak_avx2.c:0 mlkem_avx2.c:0 \
+                  keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # Files the two 64-bit specs compile once more under other defines, each
 # entry name:ceiling, whose name is a file, an @ and a tag.
@@ -6406,7 +6442,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
                    x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
-                   rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME \
+                   rsa_sign64.c:-DCH_CPU_RUNTIME rsa_ifma.c:-DCH_CPU_RUNTIME avx512_wipe.c:-DCH_CPU_RUNTIME \
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -6909,7 +6945,8 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c \
                rsa_ifma.c rsa_ifma.c@512 $(P256_WIDE_SRCS) \
-               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c
+               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
+               avx512_wipe.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -7057,6 +7094,9 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # registers, add two loop branches each. The products themselves branch
 # nowhere: normalize_digits picks the lanes that take a carry with a mask
 # register.
+#
+# avx512_wipe.c has no body on arm64, and on x86-64 it is one block of
+# assembly with no branch.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
@@ -7115,6 +7155,7 @@ BRANCH_CEILING := \
   arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:23 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:7 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
+  arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang

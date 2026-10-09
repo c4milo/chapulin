@@ -18,11 +18,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # The builds whose packaged sources make prints through print-lib-srcs. Each
-# names every variable that picks a source, and HOST_TARGET too, so each reads
-# the same on every compiler. Between them they take every value of ROLE,
-# TRUST, TRANSPORT, SUITE, KEX, AES, RAND and the host test that some build
-# accepts, and the union of their lists is every source an accepted build
-# packages. A host object takes no AES or KEX value, so the last three name
+# names every variable that picks a source, and HOST_TARGET and X86_64_TARGET
+# too, so each reads the same on every compiler. Between them they take every
+# value of ROLE, TRUST, TRANSPORT, SUITE, KEX, AES, RAND, the host test and the
+# x86-64 test that some build accepts, and the union of their lists is every
+# source an accepted build packages. A host object takes no AES or KEX value, so the last three name
 # neither. EXPORTER, KEYLOG, TX_RECORD and WIDEMUL change defines and no
 # source, so each build takes their defaults. A source that a later build
 # packages under a combination this list lacks is a root .c file outside the
@@ -36,9 +36,12 @@ BUILDS = [
     "RAND=session HOST_TARGET=",
     "ROLE=client TRUST=ca-ecdsa TRANSPORT=quic-nonblocking SUITE=chacha KEX=pq AES=extern "
     "RAND=drbg HOST_TARGET=",
-    "ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
-    "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
-    "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes",
+    "ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes "
+    "X86_64_TARGET=yes",
+    "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes "
+    "X86_64_TARGET=yes",
+    "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking SUITE=aesgcm RAND=drbg HOST_TARGET=yes "
+    "X86_64_TARGET=",
 ]
 
 # make passes the variables its own command line set to every make below it,

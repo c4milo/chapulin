@@ -556,6 +556,11 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
     // on x86-64 (docs/decisions.md 82, 89 and 90).
     if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c" } });
+    // AVX512_WIPE_SRCS: the wipe of the vector registers a kernel calls
+    // after it ran secrets through 512-bit registers, in an x86-64 host
+    // object. Elsewhere the file declares nothing, and -Wpedantic refuses
+    // a translation unit with no declaration.
+    if (host and target.cpu.arch == .x86_64) lib_srcs = concat(b, &.{ lib_srcs, &.{"avx512_wipe.c"} });
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
     const widemul = config.widemul orelse .decomposed;

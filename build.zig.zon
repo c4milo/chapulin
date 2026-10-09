@@ -23,6 +23,8 @@
         "aes_schedule.h",
         "aes_traffic_key.h",
         "alert.h",
+        "avx512_wipe.c",
+        "avx512_wipe.h",
         "buf.c",
         "buf.h",
         "build.c",
