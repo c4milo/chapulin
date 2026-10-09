@@ -179,9 +179,13 @@ Home: github.com/c4milo.
   computes R^2 by a long division that branches on the public modulus)
   with `rsa_mont64.[ch]` (the same public operation on 64-bit words,
   every session of a host object, and the square both it and the signer
-  run) and `rsa_mont64_blocks.[ch]` (its multiplication and square in
+  run), `rsa_mont64_blocks.[ch]` (its multiplication and square in
   blocks of four words, which a clang build for arm64 runs at a word
-  count that is a multiple of 4) + `p384.[ch]`/
+  count that is a multiple of 4) and `rsa_ifma.[ch]` with
+  `rsa_ifma_lanes.h` (the public operation in 52-bit digits on AVX-512
+  IFMA, for verification alone, in an x86-64 session whose caller sets
+  CH_CPU_AVX512_IFMA, for an odd modulus of 2,048 bits or more whose bit
+  length is a multiple of 64) + `p384.[ch]`/
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
@@ -229,7 +233,10 @@ Home: github.com/c4milo.
   makes under the object's defines as its `chapulin.c`. The Makefile
   stays the source of truth, and `make lint-zig-build` fails when the
   two builds disagree or the module does not describe the object
-  (docs/decisions.md 69, 70 and 73).
+  (docs/decisions.md 69, 70 and 73). `build.zig` adds the CPU feature
+  evex512 to an x86-64 host object's target, which turns on no
+  instruction and lets `rsa_ifma.c` compile for a CPU without AVX-512
+  (docs/decisions.md 119).
   One pair sits off that chain rather than in it: `x509_ca.[ch]`
   (provisioning — one PEM certificate to the key bytes
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
@@ -332,14 +339,17 @@ Home: github.com/c4milo.
   their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
   picks them, and `mlkem_poly.c`'s loops stay the reference and a device
   object's path (docs/decisions.md 101).
-  On x86-64 two more bits each pick a kernel beside a path every
-  CPU runs, and neither states a timing: `CH_CPU_AVX2` runs the keystream
+  On x86-64 three more bits each pick a kernel beside a path every
+  CPU runs, and none states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
   input is public (docs/decisions.md 107), and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
   (docs/decisions.md 90). Beside the multiply bit, `CH_CPU_AVX2` also
   runs a Poly1305 update of 512 bytes or more on `poly1305_avx2.c`
-  (docs/decisions.md 110). Three bits each state a hash's instructions
+  (docs/decisions.md 110). `CH_CPU_AVX512_IFMA` runs RSA verification's
+  public operation on `rsa_ifma.c`, whose input is public, and
+  `rsa_sign64.c` never calls it (docs/decisions.md 119). Three bits
+  each state a hash's instructions
   and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
   runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
   on `sha256_hw.c`. `CH_CPU_CONSTANT_TIME_SHA512`, an arm64 bit, runs its
@@ -362,7 +372,10 @@ Home: github.com/c4milo.
   through volatile pointers, so the powers stay in the one struct the
   call wipes and in no spill slot the compiler picks (docs/decisions.md
   83 and 110). `bin/x86_kernels_test` counts which calls run a
-  kernel under each `ch_cfg.cpu` value. `bin/sha2_equiv_test` holds
+  kernel under each `ch_cfg.cpu` value, and `bin/tcp_blocking_loop_host`
+  and `bin/webpki_auth_host` count the RSA public operations each caller
+  of the two verifiers sends to `rsa_ifma.c`, through a stand-in,
+  `test/rsa_ifma_count.c`. `bin/sha2_equiv_test` holds
   `sha256_hw.c` and `sha512_hw.c` to the portable hashes the same way and
   searches the stack below each call, and `bin/hash_runtime_test` counts
   which calls run a hash's instructions under each value.
@@ -378,7 +391,16 @@ Home: github.com/c4milo.
   the stack each call leaves. `bin/p256_verify_equiv_test` and
   `bin/p384_equiv_test` hold a host object's two ECDSA verifiers to the
   32-bit arms of `p256.c` and `p384.c`, which stay the references
-  (docs/decisions.md 96, 97 and 104). AES is admitted for two purposes. The first is the keys RFC
+  (docs/decisions.md 96, 97 and 104). `bin/rsa_ifma_model_test` and
+  `bin/rsa_ifma_model_test_384` run `rsa_ifma.c`'s own text over
+  `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable
+  C, against `rsa_mont64.c` on every machine. The `rsa_ifma` harnesses
+  prove its memory accesses and its sums over that model,
+  `spec/lean/Spec/RsaIfma.lean` proves its arithmetic on a model of the
+  C, and `bin/rsa_ifma_equiv_test` holds the instructions to the model on
+  a CPU with AVX-512 IFMA, and in the nightly under Intel SDE, an
+  emulator, which shows nothing of their timing (docs/decisions.md 119).
+  AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
   is public — it comes from a salt the RFC prints and a connection ID
@@ -488,8 +510,10 @@ Home: github.com/c4milo.
   unconstrained inputs at the module's real bound. Crypto primitives
   additionally prove functional equivalence to a tiny reference spec at
   bounded sizes, plus RFC test vectors in `test/unit_test.c`. A file of
-  intrinsics carries no harness, because CBMC cannot read an intrinsic:
-  an equivalence test holds it to the proven portable code, and
+  intrinsics carries no harness, because CBMC cannot read an intrinsic,
+  unless the harness compiles it over a model of each instruction in
+  portable C, as `rsa_ifma.c`'s do: an equivalence test holds it to the
+  proven portable code, and
   docs/verification.md lists each source no harness compiles and what
   holds it.
   docs/verification.md states exactly what is proved, at what bounds,
