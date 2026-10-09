@@ -2,7 +2,10 @@
 // model (test/rsa_ifma_model.c), against rsa_mont64.c on every machine.
 // The model is each AVX-512 instruction in portable C, so the kernel's own
 // text runs here on any CPU, and bin/rsa_ifma_equiv_test holds the model
-// to the instructions on a CPU that has them.
+// to the instructions on a CPU that has them. The Makefile builds it at
+// the 512-byte bound, where the kernel has copies of the product for 5 to
+// 10 registers, and again as bin/rsa_ifma_model_test_384 at the 384-byte
+// bound of a server object, where it has copies for 5 to 8.
 //
 // At every word count from RSA_IFMA_WORDS_MIN to RSA_MONT64_WORDS_MAX, so
 // at every register count the kernel has a copy for, under random odd
@@ -10,10 +13,13 @@
 // even count, test/rsa_equiv_test.c's (B^(k + 1) + 1) / (B + 1), it
 // compares:
 //
-//   - rsa_vp1_cpu under CH_CPU_AVX512_IFMA, which takes the kernel, with
-//     rsa_vp1, which takes rsa_mont64.c, for the signatures 0, 1, m - 1
-//     and random values below m. 0, 1 and m - 1 are their own 65537th
-//     powers, so those three are checked against the known answer too;
+//   - rsa_vp1_cpu under CH_CPU_AVX512_IFMA, which takes the kernel, and
+//     under CH_CPU_PROBED alone, which takes rsa_mont64.c, with rsa_vp1,
+//     which takes rsa_mont64.c, for the signatures 0, 1, m - 1 and random
+//     values below m. 0, 1 and m - 1 are their own 65537th powers, so
+//     those three are checked against the known answer too. Under the bit
+//     rsa_vp1_cpu must call rsa_ifma_public once, and without it never
+//     (rsa_ifma_model_public_calls);
 //   - rsa_ifma_public with rsa_mont64_public for bases at or above m,
 //     which the verifiers never pass and the call takes: m, the top word
 //     at all ones and random words below it, and 2^(64k) - 1. Its digit_r2
@@ -26,11 +32,13 @@
 //     digit checks, and the number, less m once, against the product of
 //     the operands less m.
 //
-// Moduli the dispatch refuses go to rsa_vp1 under the bit too: an even
-// one, one whose top bit is clear, one of 31 words and one of 260 bytes.
-// normalize_digits runs alone on lanes chosen for its carries, which no
-// random product reaches: the number they hold must stay the same modulo
-// the lanes' 2^(52 * lanes) and every digit must fall below 2^52.
+// rsa_vp1_cpu under the bit must also write rsa_vp1's bytes, and never
+// call rsa_ifma_public, for moduli the dispatch refuses: an even one, one
+// whose top bit is clear, one of 31 words and one of 260 bytes.
+// normalize_digits runs alone on lanes chosen for its carries, which a
+// random product almost never gives it: the number they hold must stay
+// the same modulo the lanes' 2^(52 * lanes) and every digit must fall
+// below 2^52.
 #define CH_RSA_IFMA_MODEL 1
 
 #include <stdio.h>
@@ -50,9 +58,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
-_Static_assert(
-    RSA_MONT64_WORDS_MAX == 64,
-    "bin/rsa_ifma_model_test builds at the 512-byte bound, the most registers the kernel takes");
+_Static_assert(RSA_MONT64_WORDS_MAX == 48 || RSA_MONT64_WORDS_MAX == 64,
+               "bin/rsa_ifma_model_test builds at the 512-byte bound and "
+               "bin/rsa_ifma_model_test_384 at the 384-byte bound");
 
 #define WORDS_MAX RSA_MONT64_WORDS_MAX
 #define DIGIT_MASK ((UINT64_C(1) << 52) - 1)
@@ -107,16 +115,31 @@ static void reduced_words(uint64_t *words, const uint64_t *digits, const rsa_mon
     rsa_mont64_reduce_once_with_top(words, words, words[mod->words], mod);
 }
 
-// rsa_vp1_cpu with the bit against rsa_vp1, and against the known answer
-// where want is not NULL.
-static void compare_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, const uint8_t *want) {
+// rsa_vp1_cpu with the bit and with the probe's bit alone against
+// rsa_vp1, and with the bit against the known answer where want is not
+// NULL. With the bit rsa_vp1_cpu must call rsa_ifma_public kernel_calls
+// times, 1 for a modulus the kernel takes and 0 for one it refuses, and
+// without it never.
+static void compare_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, const uint8_t *want,
+                        unsigned long kernel_calls) {
     uint8_t kernel[CH_RSA_MODULUS_MAX];
+    uint8_t without_bit[CH_RSA_MODULUS_MAX];
     uint8_t words[CH_RSA_MODULUS_MAX];
     memset(kernel, 0x55, sizeof kernel);
+    memset(without_bit, 0x33, sizeof without_bit);
     memset(words, 0xaa, sizeof words);
+    unsigned long calls = rsa_ifma_model_public_calls;
     rsa_ifma_model_vp1_cpu(IFMA_CPU, n, n_len, sig, kernel);
+    check(rsa_ifma_model_public_calls - calls == kernel_calls,
+          "rsa_vp1_cpu's calls of rsa_ifma_public under the bit", n_len / 8);
+    calls = rsa_ifma_model_public_calls;
+    rsa_ifma_model_vp1_cpu(CH_CPU_PROBED, n, n_len, sig, without_bit);
+    check(rsa_ifma_model_public_calls == calls, "rsa_vp1_cpu calls rsa_ifma_public without the bit",
+          n_len / 8);
     rsa_ifma_model_vp1(n, n_len, sig, words);
     check(memcmp(kernel, words, n_len) == 0, "rsa_vp1_cpu against rsa_vp1", n_len / 8);
+    check(memcmp(without_bit, words, n_len) == 0, "rsa_vp1_cpu without the bit against rsa_vp1",
+          n_len / 8);
     if (want != NULL) {
         check(memcmp(kernel, want, n_len) == 0, "rsa_vp1_cpu against the known power", n_len / 8);
     }
@@ -125,16 +148,16 @@ static void compare_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, cons
 static void signatures_below_m(const uint8_t *n, size_t n_len) {
     uint8_t sig[CH_RSA_MODULUS_MAX];
     memset(sig, 0, n_len);
-    compare_vp1(n, n_len, sig, sig);
+    compare_vp1(n, n_len, sig, sig, 1);
     sig[n_len - 1] = 1;
-    compare_vp1(n, n_len, sig, sig);
+    compare_vp1(n, n_len, sig, sig, 1);
     memcpy(sig, n, n_len);
     sig[n_len - 1] -= 1; // n is odd
-    compare_vp1(n, n_len, sig, sig);
+    compare_vp1(n, n_len, sig, sig, 1);
     for (int c = 0; c < 2; c++) {
         rng_fill(sig, n_len);
         sig[0] = (uint8_t)(sig[0] % n[0]); // below n's top byte, so below n
-        compare_vp1(n, n_len, sig, NULL);
+        compare_vp1(n, n_len, sig, NULL, 1);
     }
 }
 
@@ -262,7 +285,7 @@ static void compare_refused(const uint8_t *n, size_t n_len) {
     uint8_t sig[CH_RSA_MODULUS_MAX];
     rng_fill(sig, n_len);
     sig[0] = (uint8_t)(sig[0] % n[0]);
-    compare_vp1(n, n_len, sig, NULL);
+    compare_vp1(n, n_len, sig, NULL, 0);
 }
 
 static void run_refused_moduli(void) {
@@ -307,7 +330,7 @@ static void lanes_value(uint64_t *words, const uint64_t *lanes, size_t count) {
 
 static void run_normalize(void) {
     for (int c = 0; c < NORMALIZE_CASES; c++) {
-        size_t registers = 1 + (size_t)(rng_next() % 10);
+        size_t registers = 1 + (size_t)(rng_next() % RSA_IFMA_REGISTERS_MAX);
         size_t count = 8 * registers;
         uint64_t lanes[RSA_IFMA_TEST_LANES];
         extreme_lanes(lanes, count);

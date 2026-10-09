@@ -2483,12 +2483,20 @@ bin/rsa_blocks_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.
 # compiles rsa_mont.c and rsa_ifma.c under CH_RSA_IFMA_MODEL and second
 # names, and finds test/rsa_ifma_model_lanes.h through -Itest. The binary
 # builds at the 512-byte bound, so every register count the kernel has a
-# copy for runs.
+# copy for runs. bin/rsa_ifma_model_test_384 is the same binary at the
+# 384-byte bound, which every host object but a TRUST=webpki one compiles,
+# a ROLE=server TRUST=none object among them: the kernel's register counts
+# stop at 8 there, and its arrays and switch take a layout the 512-byte
+# build does not compile.
 RSA_IFMA_MODEL_TEST_UNITS := test/rsa_ifma_model_test.c test/rsa_ifma_model.c
 RSA_IFMA_TEST_SRCS := $(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)) ct.c ct_wipe.c
 bin/rsa_ifma_model_test: $(RSA_IFMA_MODEL_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
+	  -o $@ $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS)
+bin/rsa_ifma_model_test_384: $(RSA_IFMA_MODEL_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
 	  -o $@ $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS)
 # The same kernel on the instructions against the model: each lane
 # operation, normalize_digits, the products and rsa_ifma_public, and
@@ -3516,7 +3524,8 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
-                                 bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_equiv_test \
+                                 bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
+                                 bin/rsa_ifma_equiv_test \
                                  bin/rsa_sign_equiv_test \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
@@ -4806,6 +4815,9 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_ifma_model_test \
 	    $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_model_test (SAN -O$(O))"; ./bin/san/rsa_ifma_model_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=384 -I. -Itest \
+	    -o bin/san/rsa_ifma_model_test_384 $(RSA_IFMA_MODEL_TEST_UNITS) $(RSA_IFMA_TEST_SRCS); \
+	  echo "== rsa_ifma_model_test_384 (SAN -O$(O))"; ./bin/san/rsa_ifma_model_test_384; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_ifma_equiv_test \
 	    $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_IFMA_TEST_SRCS); \
 	  echo "== rsa_ifma_equiv_test (SAN -O$(O))"; ./bin/san/rsa_ifma_equiv_test; \
@@ -7008,7 +7020,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # value_at_or_zero, each a test of a word's index against the word count,
 # and the zero fill's entry and back edge. almost_montgomery_product holds
 # the other 9: one compare of the register count against its jump table,
-# whose miss is the CH_ASSERT of the switch's last case, and in each of
+# whose miss is the default arm's call to ch_assert_fail, and in each of
 # the four copies the round loop's entry and back edge, which count the
 # digits. The products themselves branch nowhere: normalize_digits picks
 # the lanes that take a carry with a mask register.

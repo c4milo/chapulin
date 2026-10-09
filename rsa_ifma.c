@@ -301,8 +301,10 @@ static void almost_montgomery_product_10(uint64_t *out, const uint64_t *a, const
 }
 #endif
 
-// The product, in the copy for the modulus's register count. The last
-// case is the bound's count, which CH_ASSERT holds.
+// The product, in the copy for the modulus's register count.
+// modulus_from_words writes a count from 5 to RSA_IFMA_REGISTERS_MAX, and
+// each has a case below; both bounds share every case up to 8. A count
+// the default arm receives is outside that range, so its CH_ASSERT fails.
 static void almost_montgomery_product(uint64_t *out, const uint64_t *a, const uint64_t *b,
                                       const rsa_ifma_modulus *modulus) {
     switch (modulus->registers) {
@@ -315,23 +317,20 @@ static void almost_montgomery_product(uint64_t *out, const uint64_t *a, const ui
     case 7:
         almost_montgomery_product_7(out, a, b, modulus);
         break;
-#if RSA_IFMA_REGISTERS_MAX == 10
     case 8:
         almost_montgomery_product_8(out, a, b, modulus);
         break;
+#if RSA_IFMA_REGISTERS_MAX == 10
     case 9:
         almost_montgomery_product_9(out, a, b, modulus);
         break;
-    default:
-        CH_ASSERT(modulus->registers == 10);
+    case 10:
         almost_montgomery_product_10(out, a, b, modulus);
         break;
-#else
-    default:
-        CH_ASSERT(modulus->registers == 8);
-        almost_montgomery_product_8(out, a, b, modulus);
-        break;
 #endif
+    default:
+        CH_ASSERT(modulus->registers >= 5 && modulus->registers <= RSA_IFMA_REGISTERS_MAX);
+        break;
     }
 }
 

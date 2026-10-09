@@ -1,0 +1,28 @@
+invariant: INV-41
+file: rsa_ifma.c
+catches: test/widemul-builds.sh
+reason: rsa_ifma.c drops the target attribute that turns AVX-512F and
+  AVX-512 IFMA on for its own functions, so the kernel compiles only where
+  the whole object is built with those instructions, and an object built
+  that way runs AVX-512 in code the caller's CH_CPU_AVX512_IFMA bit never
+  chose. The script compiles the file for x86-64 with no instruction flag,
+  as a host object compiles it, and the compile fails: each intrinsic
+  needs a feature that only the attribute turned on.
+
+--- old
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((target("avx512f,avx512ifma"))), apply_to = function)
+#else
+#pragma GCC push_options
+#pragma GCC target("avx512f,avx512ifma")
+#endif
+
+#include "rsa_ifma_lanes.h"
+--- new
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((cold)), apply_to = function)
+#else
+#pragma GCC push_options
+#endif
+
+#include "rsa_ifma_lanes.h"

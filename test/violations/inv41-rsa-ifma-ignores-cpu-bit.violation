@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: rsa_ifma_model_test
+reason: rsa_mont.c's use_ifma answers 0 whatever the session's ch_cfg.cpu
+  says, so no session runs the AVX-512 IFMA kernel and CH_CPU_AVX512_IFMA
+  picks nothing. Every byte stays right, because rsa_mont64.c computes
+  the same bytes; only the time is wrong. bin/rsa_ifma_model_test counts
+  the calls rsa_vp1_cpu makes into rsa_ifma_public over the lane model
+  and requires one under the bit for every modulus the kernel takes.
+
+--- old
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;
+--- new
+    (void)cpu;
+    return 0;

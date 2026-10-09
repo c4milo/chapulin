@@ -326,7 +326,7 @@ lib_lists() {
         make -s --no-print-directory print-lib-srcs RAND=extern "$@" 2> /dev/null
 }
 if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${host_words[@]}"; then
-    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
+    echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 # Whether a list names CH_RSA_IFMA_MODEL, which no library object may.
@@ -344,7 +344,7 @@ fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
 *_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_sign64.c*)
-    echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
+    echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;
 esac
@@ -406,7 +406,7 @@ zig_server=(-DROLE=server -DTRUST=none)
 host_target=-Dtarget=aarch64-linux-gnu
 device_target=-Dtarget=thumb-freestanding-eabi
 if ! has_words "$(zig_lists "${zig_server[@]}" "$host_target")" "${host_words[@]}"; then
-    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
+    echo "widemul-builds: build.zig must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
 if names_model "$(zig_lists "${zig_server[@]}" -Dtarget=x86_64-linux-gnu)" ||
@@ -417,7 +417,7 @@ fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
 *_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *poly1305_vector* | *poly1305_avx2* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_sign64.c*)
-    echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic or signer or a vector path for a device object" >&2
+    echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;
 esac

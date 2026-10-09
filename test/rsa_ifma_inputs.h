@@ -99,9 +99,9 @@ static inline void power_of_two_by_doubling(uint64_t *power, const rsa_mont64_mo
 // Lanes that normalize_digits's rare steps act on: lanes at 2^52 - 1,
 // which pass a carry on, in runs that cross a register's edge, lanes just
 // below and just above 2^52, lanes with carry bits above 52 and all ones
-// or nearly so below them, and random lanes of up to 64 bits. A random
-// product's lane reaches 2^52 after the first pass of carries with odds
-// below 2^-40, so only lanes such as these test the second pass.
+// or nearly so below them, and random lanes of up to 64 bits. After the
+// first pass of carries a random product leaves a lane at 2^52 or above
+// with odds below 2^-40, so only lanes such as these test the second pass.
 static inline uint64_t extreme_lane(void) {
     const uint64_t digit_mask = (UINT64_C(1) << 52) - 1;
     switch (rng_next() % 7) {

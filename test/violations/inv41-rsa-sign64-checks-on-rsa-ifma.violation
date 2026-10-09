@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: test/widemul-builds.sh
+reason: the signer checks each candidate signature on the AVX-512 IFMA
+  kernel through a declaration of its own, with no include of rsa_ifma.h.
+  A wrong candidate factors n, and the kernel leaves its 512-bit
+  registers in stack slots that no wipe can name, so the check must stay
+  on rsa_mont64_public. The script requires that no root source but
+  rsa_mont.c calls into rsa_ifma.c, whatever it includes.
+
+--- old
+    rsa_mont64_public(power, candidate, k->n_len, &mod);
+--- new
+    void rsa_ifma_public(uint8_t *out, const uint8_t *base, size_t len,
+                         const rsa_mont64_modulus *mod, const uint64_t *digit_r2);
+    rsa_ifma_public(power, candidate, k->n_len, &mod, mod.r2);

@@ -18,7 +18,8 @@
 #include "rsa_mont64.h"
 
 // The most lanes a number takes: ten registers of eight, at the 512-byte
-// bound both binaries build at.
+// bound. bin/rsa_ifma_model_test_384, at the 384-byte bound, uses the
+// first 64.
 #define RSA_IFMA_TEST_LANES 80
 
 // One code for each operation of rsa_ifma_lanes.h. The lane test runs each
@@ -59,7 +60,10 @@ enum rsa_ifma_test_operation {
 //   - product runs almost_montgomery_product under the record of mod's
 //     modulus;
 //   - public, vp1 and vp1_cpu are rsa_ifma_public, rsa_vp1 and rsa_vp1_cpu,
-//     compiled with the model.
+//     compiled with the model. public adds 1 to public_calls and then runs
+//     kernel_public, which is rsa_ifma_public's own text, and vp1_cpu
+//     calls public, so public_calls counts the calls of vp1_cpu that ran
+//     the kernel beside the calls of public itself.
 void rsa_ifma_model_lane_operation(int operation, const uint64_t *x, const uint64_t *y,
                                    const uint64_t *z, unsigned bits, uint64_t *out,
                                    unsigned *bits_out);
@@ -71,6 +75,9 @@ void rsa_ifma_model_product(uint64_t *out, const uint64_t *a, const uint64_t *b,
                             const rsa_mont64_modulus *mod);
 void rsa_ifma_model_public(uint8_t *out, const uint8_t *base, size_t len,
                            const rsa_mont64_modulus *mod, const uint64_t *digit_r2);
+void rsa_ifma_model_kernel_public(uint8_t *out, const uint8_t *base, size_t len,
+                                  const rsa_mont64_modulus *mod, const uint64_t *digit_r2);
+extern unsigned long rsa_ifma_model_public_calls;
 void rsa_ifma_model_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 void rsa_ifma_model_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig,
                             uint8_t *em);
