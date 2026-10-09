@@ -14,17 +14,23 @@
 // a client that offers nothing else; an end without it refuses a suite
 // list that names one; and an end that states the hash instructions and
 // one that does not complete a handshake under either suite
-// (check_runtime_hash_bits).
+// (check_runtime_hash_bits); and ch_srv_check takes a server that holds an
+// RSA-PSS identity beside the r2 one (check_runtime_server_boot).
 //
 // With "absent" as its argument the binary runs check_runtime_absent alone,
 // which test/aes-runtime-qemu.sh does on a CPU model without the AES
 // instructions and the carry-less multiply. With "cpu" and two values it
-// runs check_runtime_values alone, one handshake with each end stating a
-// value, which that script does with values that name the x86-64
-// kernels.
+// runs check_runtime_values alone: ch_srv_check under the server's value,
+// then one handshake with each end stating a value. That script does this
+// with values that name the x86-64 kernels, and test/platforms.mk's
+// rsa-ifma-sde-check does it under Intel SDE with values that name
+// CH_CPU_AVX512_IFMA.
 #ifndef CH_TEST_WEBPKI_LOOP_RUNTIME_H
 #define CH_TEST_WEBPKI_LOOP_RUNTIME_H
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
+
+#include "rsa_sign_key.h"
+#include "srv.h"
 
 // The two values the rows give an end: the AES instructions stated, and
 // the probe's bit alone.
@@ -147,22 +153,58 @@ static int check_runtime_absent(void) {
     return failures != 0;
 }
 
-// One whole handshake with the client stating one ch_cfg.cpu value and the
-// server another, each a number such as 0x1f, at the suite both can run:
-// AES-256-GCM where both state the AES instructions, and ChaCha20 where
-// either does not. On a CPU without the instructions of a kernel a value
-// names, the end that states it dies of SIGILL at the kernel's first
-// instruction, as a session whose caller described the CPU wrongly does.
+// The RSA-PSS identity check_runtime_server_boot adds: the 2048-bit key of
+// test/rsa_sign_vectors.h behind a chain of one entry no line here
+// parses. srv_select_sigalg takes ecdsa_secp256r1_sha256 first, and every
+// client here offers it, so no handshake signs with this key.
+static const uint8_t boot_cert_der[4] = {0x30, 0x02, 0x05, 0x00};
+static const ch_cert boot_chain[1] = {
+    {boot_cert_der, sizeof boot_cert_der}
+};
+static ch_rsa_priv boot_key;
+
+// ch_srv_check under bits, the server's ch_cfg.cpu, over the server's
+// configuration with the RSA-PSS identity beside the r2 one, as a server
+// checks its identities before it serves (srv.h). The check signs with
+// each key and verifies the signature under bits, so the RSA signature's
+// public operation runs on rsa_ifma.c's kernel where bits hold
+// CH_CPU_AVX512_IFMA (rsa_mont.c's rsa_vp1_cpu). The client of this loop
+// verifies the r2 chain and an ECDSA signature, which run no RSA, so this
+// check is the one call in a row that can run that kernel.
+static void check_runtime_server_boot(uint32_t bits) {
+    ch_cfg scfg;
+    server_cpu = bits;
+    server_config(&scfg, ticket_key);
+    test_rsa_sign_key_2048(&boot_key);
+    scfg.srv.rsa_pss.chain = boot_chain;
+    scfg.srv.rsa_pss.chain_count = 1;
+    scfg.srv.rsa_pss.priv = &boot_key;
+    scfg.srv.rsa_pss.priv_len = sizeof boot_key;
+    scfg.srv.rsa_pss.pub = rsa_sign_2048_n;
+    scfg.srv.rsa_pss.pub_len = sizeof rsa_sign_2048_n;
+    CHECK(ch_srv_check(&scfg) == CH_OK);
+    server_cpu = TEST_CPU;
+}
+
+// ch_srv_check under the server's ch_cfg.cpu value
+// (check_runtime_server_boot), then one whole handshake with the client
+// stating one value and the server another, each a number such as 0x1f, at
+// the suite both can run: AES-256-GCM where both state the AES
+// instructions, and ChaCha20 where either does not. On a CPU without the
+// instructions of a kernel a value names, the end that states it dies of
+// SIGILL at the kernel's first instruction, as a session whose caller
+// described the CPU wrongly does.
 static int check_runtime_values(const char *client_text, const char *server_text) {
     uint32_t client_bits = (uint32_t)strtoul(client_text, NULL, 0);
     uint32_t server_bits = (uint32_t)strtoul(server_text, NULL, 0);
     int both_aes = (client_bits & server_bits & CH_CPU_CONSTANT_TIME_AES) != 0;
+    check_runtime_server_boot(server_bits);
     check_runtime_bits(client_bits, server_bits,
                        both_aes ? SUITE_AES_256_GCM_SHA384 : SUITE_CHACHA20_POLY1305_SHA256);
     if (failures == 0) {
-        (void)printf("webpki_loop: a handshake ran with the client stating ch_cfg.cpu 0x%x and"
-                     " the server 0x%x\n",
-                     (unsigned)client_bits, (unsigned)server_bits);
+        (void)printf("webpki_loop: the server's ch_srv_check passed under ch_cfg.cpu 0x%x, and a"
+                     " handshake ran with the client stating 0x%x and the server 0x%x\n",
+                     (unsigned)server_bits, (unsigned)client_bits, (unsigned)server_bits);
     }
     return failures != 0;
 }
@@ -199,6 +241,8 @@ static void check_runtime(void) {
     check_runtime_server_without_aes();
     check_runtime_lists();
     check_runtime_hash_bits();
+    check_runtime_server_boot(RUNTIME_ABSENT);
+    check_runtime_server_boot(TEST_CPU);
 }
 
 #endif // CH_CPU_RUNTIME && CH_SUITE_AES_GCM

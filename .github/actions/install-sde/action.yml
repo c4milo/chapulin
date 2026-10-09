@@ -1,0 +1,37 @@
+# Installs the pinned Intel Software Development Emulator into ~/sde. It
+# puts nothing on PATH: the rsa-ifma-sde job in nightly.yml passes
+# ~/sde/sde64 to make as SDE64. The pin values come from the job's env via
+# ./.github/actions/load-pins: version is SDE_VERSION, download-id is
+# SDE_DOWNLOAD_ID and sha256 is SDE_SHA256, the publisher's hash, which
+# the download is checked against before it is unpacked. No cache keeps
+# the archive between runs, so every run downloads it from Intel's mirror
+# and checks it.
+name: install-sde
+description: Install the pinned Intel Software Development Emulator into ~/sde
+inputs:
+  version:
+    description: The SDE release and its build date (SDE_VERSION)
+    required: true
+  download-id:
+    description: The directory Intel's download mirror serves the release from (SDE_DOWNLOAD_ID)
+    required: true
+  sha256:
+    description: The sha256 of the Linux tarball (SDE_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        DOWNLOAD_ID: ${{ inputs.download-id }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    # sde64 runs a program under Pin, which by default attaches to the
+    # program with ptrace from a child process of it. Ubuntu's Yama module
+    # lets a process trace only its own descendants (ptrace_scope 1), which
+    # refuses that attach, so this step sets the scope to 0, which lets a
+    # process trace any process of its user. A hosted runner is a new
+    # machine for each job, so the setting ends with the job.
+    - shell: bash
+      run: sudo sysctl -w kernel.yama.ptrace_scope=0

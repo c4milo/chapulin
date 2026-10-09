@@ -96,7 +96,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the nine arguments that run one part
+# itself, and the lane with one of the ten arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -116,7 +116,12 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # alone, and a violation of poly1305_avx2.c names poly1305-avx2, for the
 # same reason. A violation that hands an RSA verifier 0 in place of a
 # session's ch_cfg.cpu names rsa-ifma-callers, because only an x86-64
-# object sends the public operation to AVX-512 IFMA.
+# object sends the public operation to AVX-512 IFMA. rsa-ifma runs the
+# webpki loop's rows of CH_CPU_AVX512_IFMA alone, on the x86-64 model
+# without AVX-512 IFMA: a server under the bit must die of SIGILL in
+# ch_srv_check, and one without it must pass, so a violation whose server
+# check runs rsa_ifma.c's kernel without the bit, or runs rsa_mont64.c
+# under it, can name it.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
@@ -126,7 +131,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh mlkem-vector",
                           "test/docker-aes-runtime-qemu.sh mlkem-avx2",
                           "test/docker-aes-runtime-qemu.sh poly1305-avx2",
-                          "test/docker-aes-runtime-qemu.sh rsa-ifma-callers"]
+                          "test/docker-aes-runtime-qemu.sh rsa-ifma-callers",
+                          "test/docker-aes-runtime-qemu.sh rsa-ifma"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).

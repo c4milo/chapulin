@@ -14,9 +14,12 @@
 # the two forms of their carry steps that gcc reads; "keccak"
 # bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test alone, which clang
 # builds for arm64, the one object that holds Keccak on the SHA-3
-# instructions; and "rsa-ifma-callers" bin/tcp_blocking_loop_host and
+# instructions; "rsa-ifma-callers" bin/tcp_blocking_loop_host and
 # bin/webpki_auth_host alone, for x86-64, which count the RSA public
-# operations each caller of the verifiers sends to AVX-512 IFMA.
+# operations each caller of the verifiers sends to AVX-512 IFMA; and
+# "rsa-ifma" bin/webpki_loop_aes alone for x86-64, whose server runs
+# ch_srv_check with and without CH_CPU_AVX512_IFMA on a model without
+# AVX-512 IFMA.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
 # supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04

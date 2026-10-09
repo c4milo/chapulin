@@ -11,7 +11,9 @@
 // that job's runner must run the kernels. AVX-512 IFMA, which
 // CH_CPU_AVX512_IFMA names, has a variable of its own,
 // CH_REQUIRE_AVX512_IFMA, because some of that job's runners, such as an
-// AMD EPYC 7763, lack it.
+// AMD EPYC 7763, lack it. The nightly's rsa-ifma-sde job sets it, and runs
+// its binaries under Intel SDE on a CPU model that has AVX-512 IFMA
+// (test/platforms.mk, rsa-ifma-sde-check).
 #ifndef CH_TEST_X86_KERNELS_CPU_H
 #define CH_TEST_X86_KERNELS_CPU_H
 

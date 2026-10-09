@@ -582,6 +582,31 @@ jobs:
           path: bin/fuzz
           key: fuzz-corpus-${{ github.run_id }}
 
+  # AVX-512 IFMA, on which rsa_ifma.c runs RSA's public operation for a
+  # session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA. The runner of
+  # check.yml's x86-64-kernels job may lack the instructions, as an AMD EPYC
+  # 7763 does, and QEMU's TCG implements no AVX-512 instruction, so no other
+  # job is sure to run the kernel. This one runs bin/rsa_ifma_equiv_test,
+  # bin/x86_kernels_test and bin/webpki_loop_aes under Intel's Software
+  # Development Emulator on a CPU model with AVX-512 IFMA, and a binary that
+  # finds none fails (test/platforms.mk, rsa-ifma-sde-check). SDE is an
+  # emulator: it shows what the instructions compute and nothing about how
+  # long they take on any CPU, so this job checks the kernel's results and
+  # none of its timing.
+  rsa-ifma-sde:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+      - name: Install Intel SDE (pinned)
+        uses: ./.github/actions/install-sde
+        with:
+          version: ${{ env.SDE_VERSION }}
+          download-id: ${{ env.SDE_DOWNLOAD_ID }}
+          sha256: ${{ env.SDE_SHA256 }}
+      - run: make -j"$(nproc)" rsa-ifma-sde-check SDE64="$HOME/sde/sde64"
+
   # A red nightly must be triaged, not scrolled past: file one issue
   # per broken night unless an open nightly-failure issue already
   # exists. Every other job in this file is in the needs list: a job
@@ -590,7 +615,7 @@ jobs:
   # lint-nightly-report (tools/nightly-report.py) holds the list equal
   # to the job set.
   report:
-    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki]
+    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki, rsa-ifma-sde]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

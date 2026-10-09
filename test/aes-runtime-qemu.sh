@@ -117,6 +117,22 @@
 #     ch_cfg.cpu value and run no instruction a bit names
 #     (test/hash_runtime_test.c).
 #
+# On a model without AVX-512 IFMA, which rsa_ifma.c's kernel runs:
+#
+#   - bin/webpki_loop_aes with "cpu 0x1 0x1" must pass: its server's
+#     ch_srv_check verifies an RSA-PSS signature, and with the probe's bit
+#     alone the public operation runs on rsa_mont64.c
+#     (test/webpki_loop_runtime.h).
+#   - the same loop with "cpu 0x101 0x101", both ends adding
+#     CH_CPU_AVX512_IFMA, must die of SIGILL: that check runs the
+#     operation on the kernel, which shows the model traps the kernel's
+#     instructions, and so that the row above ran none of them.
+#
+# QEMU's TCG implements no AVX-512 instruction (QEMU 11.1.2 warns that it
+# cannot give a model avx512f or avx512ifma), so no model here runs the
+# kernel. The nightly's rsa-ifma-sde job runs it under Intel's Software
+# Development Emulator (test/platforms.mk, rsa-ifma-sde-check).
+#
 # The arm64 half holds the SHA-512 bit, which an arm64 object alone
 # defines. QEMU's cortex-a72 model has FEAT_AES, FEAT_PMULL and FEAT_SHA256
 # and no FEAT_SHA512, and its max model has all four. On cortex-a72:
@@ -193,6 +209,8 @@
 #   rsa-ifma-callers  bin/tcp_blocking_loop_host and bin/webpki_auth_host
 #                     for x86-64, for the violations of the callers that
 #                     hand the RSA verifiers a session's ch_cfg.cpu
+#   rsa-ifma          bin/webpki_loop_aes for x86-64, its rows on the
+#                     model without AVX-512 IFMA alone
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -212,9 +230,9 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
-    rsa-ifma-callers) ;;
+    rsa-ifma-callers | rsa-ifma) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | rsa-ifma-callers]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | rsa-ifma-callers | rsa-ifma]" >&2
     exit 2
     ;;
 esac
@@ -242,7 +260,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
-    [ "$only" != rsa-ifma-callers ]; then
+    [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -304,6 +322,27 @@ sigill=132
 # FEAT_PMULL and FEAT_SHA256.
 no_sha512=cortex-a72
 no_sha3=cortex-a72
+# QEMU's x86-64 model without AVX-512 IFMA. Its max model has no AVX-512
+# instruction today, and the minus sign keeps the rows' meaning on a QEMU
+# that adds them.
+no_ifma='max,-avx512ifma'
+
+# bin/webpki_loop_aes for x86-64: this tree's TCP client and server in the
+# ROLE=both TRUST=webpki suite object.
+build_webpki_loop() {
+    "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
+        -o "$x86_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}"
+}
+
+# The rows of CH_CPU_AVX512_IFMA. Each row's server runs ch_srv_check under
+# its value before the handshake, and that check verifies an RSA-PSS
+# signature, on rsa_ifma.c's kernel where the value holds the bit.
+rsa_ifma_rows() {
+    expect "$no_ifma" 0 "a server without CH_CPU_AVX512_IFMA ran an AVX-512 instruction" \
+        webpki_loop_aes cpu 0x1 0x1
+    expect "$no_ifma" "$sigill" "a server with CH_CPU_AVX512_IFMA ran no AVX-512 IFMA instruction" \
+        webpki_loop_aes cpu 0x101 0x101
+}
 
 if [ -z "$only" ] || [ "$only" = x86-kernels ]; then
     "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/x86_kernels_test" \
@@ -403,6 +442,13 @@ if [ "$only" = rsa-ifma-callers ]; then
     exit 0
 fi
 
+if [ "$only" = rsa-ifma ]; then
+    build_webpki_loop || exit 1
+    rsa_ifma_rows
+    echo "aes-runtime-qemu: on $no_ifma bin/webpki_loop_aes passed with both ends stating the probe's bit alone, and died of SIGILL with both stating CH_CPU_AVX512_IFMA"
+    exit 0
+fi
+
 if [ -z "$only" ] || [ "$only" = keccak ]; then
     # sha3_hw.c against sha3.c, with the search of the stack each kind of
     # call leaves, and ML-KEM's two copies against mlkem.c and
@@ -467,8 +513,7 @@ fi
     test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${runtime_test_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
     -o "$x86_out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$x86_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+build_webpki_loop || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
     -o "$x86_out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/hash_runtime_test" \
@@ -522,6 +567,9 @@ no_named="$bare,-sha-ni"
 for b in hash_runtime_test hash_runtime_exporter_test; do
     expect "$no_named" 0 "a binary that counts hash calls ran an instruction a ch_cfg.cpu bit names" "$b"
 done
+
+# No AVX-512 IFMA.
+rsa_ifma_rows
 
 # Every instruction this qemu has. One end on the SHA extensions and the
 # other on sha256.c must compute the same transcript hashes and keys: with
@@ -616,7 +664,8 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "vectors and both loops, and the rows with either died of SIGILL; on $no_avx2 the rows with" \
     "the AES bit passed and the rows that add CH_CPU_VAES died of SIGILL; on $no_sha the rows" \
     "without the SHA-256 bit passed and the rows with it died of SIGILL; on $no_named the two" \
-    "binaries that count each hash's calls passed; on max, sha256_hw.c" \
+    "binaries that count each hash's calls passed; on $no_ifma the webpki loop passed without" \
+    "CH_CPU_AVX512_IFMA and died of SIGILL with it; on max, sha256_hw.c" \
     "agreed with sha256.c, one end on the SHA extensions and the other on sha256.c agreed, and" \
     "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
     "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \

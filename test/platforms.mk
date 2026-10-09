@@ -72,6 +72,45 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # extensions fails them too.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
                    mlkem_avx2_equiv_test poly1305_equiv_test
+
+# AVX-512 IFMA, for the nightly's rsa-ifma-sde job: rsa_ifma.c runs RSA's
+# public operation on it for a session whose ch_cfg.cpu holds
+# CH_CPU_AVX512_IFMA. Some hosted runners lack the instructions, an AMD
+# EPYC 7763 among them, and QEMU's TCG implements no AVX-512 instruction,
+# so this target runs the binaries under Intel's Software Development
+# Emulator: SDE64 is the path of its sde64, and SDE_CPU the emulated CPU
+# model, -icx (Ice Lake server) by default, which has AVX-512 IFMA.
+#
+#   - bin/rsa_ifma_equiv_test holds each lane operation to the scalar
+#     model of its instruction, and then each product, rsa_ifma_public
+#     and rsa_vp1_cpu.
+#   - bin/x86_kernels_test counts the calls each ch_cfg.cpu value sends to
+#     rsa_ifma_public and to the other kernels.
+#   - bin/webpki_loop_aes, with both ends stating 0x101, the bit beside
+#     the probe's, and then 0x13f, every bit an x86-64 object defines,
+#     boots a server whose ch_srv_check verifies an RSA-PSS signature on
+#     the kernel, and then runs a handshake (test/webpki_loop_runtime.h).
+#
+# Each runs under CH_REQUIRE_AVX512_IFMA=1, so a binary that finds no
+# AVX-512 IFMA fails instead of skipping. SDE is an emulator: it shows what
+# the instructions compute and nothing about how long they take on any
+# CPU, so this target checks the kernel's results and none of its timing.
+SDE64 ?= sde64
+SDE_CPU ?= -icx
+RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test
+RSA_IFMA_SDE_LOOP_CPU := 0x101 0x13f
+.PHONY: rsa-ifma-sde-check
+rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS)) bin/webpki_loop_aes
+	@[ -n "$(X86_KERNEL_BINS)" ] || \
+	  { echo "rsa-ifma-sde-check: $(CC) does not build a host object for x86-64"; exit 1; }
+	@command -v "$(SDE64)" > /dev/null || \
+	  { echo "rsa-ifma-sde-check: $(SDE64) is missing; set SDE64 to the path of Intel SDE's sde64"; exit 1; }
+	@set -e; for b in $(RSA_IFMA_SDE_RUNS); do \
+	  echo "== $$b (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
+	  CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/$$b; done
+	@set -e; for bits in $(RSA_IFMA_SDE_LOOP_CPU); do \
+	  echo "== webpki_loop_aes cpu $$bits $$bits (sde64 $(SDE_CPU))"; \
+	  CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/webpki_loop_aes cpu $$bits $$bits; done
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
 x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) \
                       $(addprefix bin/,$(X86_VECTOR_HOST)) bin/sha2_equiv_test
