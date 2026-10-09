@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_mont64_blocks.c
+catches: proof/prove-one.sh rsa_mont64_blocks_sums
+reason: a round of rsa_mont64_blocks_mul adds the running sum's top word
+  and both carry words in one 64-bit sum. Two carry words can pass 2^64,
+  so that sum wraps for some operands. rsa_mont64_blocks_sums runs the
+  blocks with --unsigned-overflow-check on, where that sum is a property.
+
+--- old
+        ct_u128 top = (ct_u128)t[k] + ab_carry + um_carry;
+--- new
+        ct_u128 top = (ct_u128)(t[k] + ab_carry + um_carry);

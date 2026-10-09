@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-95 of the 125 C sources in the tree root are compiled into a
+96 of the 126 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -1076,6 +1076,44 @@ The entries are grouped by area:
   power rest on [tests](#the-host-objects-rsa-arithmetic). The file's
   timing claim is `make lint-wide-multiply`'s, which counts the
   conditional branches it compiles to.
+
+#### rsa_mont64_blocks
+
+- **Harnesses:** `rsa_mont64_blocks_sums` (fast), `rsa_mont64_blocks` (fast), `rsa_mont64_blocks_webpki` (slow)
+- **Build:** the multiplication and the square in blocks of four words
+  that a clang build for arm64 runs (`rsa_mont64_blocks.c`, INV-41,
+  decision 118), under `-DCH_CPU_RUNTIME`, with `RSA_MONT64_BLOCKS` at 1
+  whatever compiler preprocesses the harness, over the product contract
+  of `proof/rsa_mont64_stubs.h`. `rsa_mont64_blocks_sums` adds
+  `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_mont64_blocks_sums`: at four words and at eight, over any
+    operands, any modulus and any `m0inv`, no sum in the blocks wraps:
+    each sum of a block's two carry chains, the word a block returns, a
+    row's tail, the top step of a multiplication's round, the doubling
+    and the squares of the square, and each step of its reduction. It
+    runs the multiplication through `rsa_mont64_mont_mul` and
+    `rsa_mont64_mont_square`, which runs a square of up to
+    `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX` words as the multiplication of
+    a by itself, and the square through `rsa_mont64_blocks_square`
+    itself.
+  - `rsa_mont64_blocks`: through `rsa_mont64_mont_mul` and
+    `rsa_mont64_mont_square`, the blocks read and write inside their
+    arrays at the largest word count, the multiplication in the four
+    aliasing shapes its callers use and the square in its two, and so
+    does the square at 32 words, `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX`,
+    the largest count it runs as the multiplication, in the same two.
+
+  The `_webpki` line is the same harness at the `CH_TRUST_WEBPKI`
+  bound.
+- **Bound:** 48 words, and 64 under `CH_TRUST_WEBPKI`; full-range words;
+  four and eight words for `rsa_mont64_blocks_sums`.
+- **Not proved:** any value. That the blocks write the words
+  `rsa_mont64.c`'s loops write rests on
+  [tests](#the-host-objects-rsa-arithmetic). The file's timing claim is
+  `make lint-wide-multiply`'s, which counts the conditional branches it
+  compiles to, and `bin/rsa_sign_equiv_test`'s search of the stack,
+  which runs the blocks only where a clang build for arm64 runs them.
 
 #### rsa_sign64
 
@@ -4067,7 +4105,26 @@ value. Tests hold the values:
   one in sixty twice. It runs the form of `rsa_mont64.h`'s step its
   compiler picks, and `bin/rsa_equiv_test_compare` and
   `bin/rsa_equiv_test_sum` are the same binary on each form, so a machine
-  of either compiler runs both (decision 117).
+  of either compiler runs both (decision 117). Under clang for arm64 it
+  runs `rsa_mont64_blocks.c`'s blocks at a word count that is a multiple
+  of 4, and the other two turn them off, so the loops run at every count
+  (decision 118).
+- `bin/rsa_blocks_equiv_test`, in `make check`, holds the blocks to the
+  loops, word for word. It compiles with the blocks on under any
+  compiler, and `test/rsa_mont64_loops.c` compiles `rsa_mont64.c` once
+  more with them off, under second names. At every word count from 1 to
+  64, under two random odd moduli with the top bit set and the five
+  edge moduli above, it compares the modulus record each init writes;
+  the multiplication of a from 0, 1, n - 1, the top bit alone, all ones
+  and random values, which may be above n, by b from 0, 1, n - 1, the
+  top bit alone and random values below n, with the output apart, on a
+  and on b; and for each a below n the multiplication of a by itself
+  and the square, each with the output apart from a and on it. At a
+  multiple of 4 it also
+  holds `rsa_mont64_blocks_square` to
+  `rsa_mont64_blocks_mul(o, a, a, mod)` before the last subtraction,
+  since `rsa_mont64_mont_square` runs the square only above 32 words:
+  62,720 multiplications and 7,056 squares in all.
 - `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` are the mains of
   `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
   their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,
@@ -4138,10 +4195,12 @@ how it reads an exponent and its memory accesses. Tests hold the values:
   RSASP1 as m^d mod n over `Nat` and has no model of the CRT; the
   comparison is what holds the CRT to it.
 
-Sixteen violations hold the arm: nine break a value, and
-`bin/rsa_equiv_test` catches seven of them and `bin/rsa_equiv_test_compare`
-and `bin/rsa_equiv_test_sum` one each; three break a sum, a bound or the
-no-wrap form and a proof catches each; one writes the last subtraction
+Twenty-one violations hold the arm: thirteen break a value, and
+`bin/rsa_equiv_test` catches seven of them, `bin/rsa_equiv_test_compare`
+and `bin/rsa_equiv_test_sum` one each and `bin/rsa_blocks_equiv_test`
+four, three in the blocks and one that runs them at every even word
+count; four break a sum, a bound or the no-wrap form and a proof
+catches each; one writes the last subtraction
 as a branch and `lint-wide-multiply`'s count catches it; two move the
 file between the host and the device object and `lint-trust-separation`
 catches each; and one keeps a host object on the 32-bit arm, which

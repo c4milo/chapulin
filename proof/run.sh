@@ -2386,6 +2386,26 @@ launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIM
 launch fast full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+# rsa_mont64_blocks.c, the multiplication and square in blocks of four words that a clang build
+# for arm64 runs (docs/decisions.md 118). Every line over proof/rsa_mont64_stubs.h above runs
+# rsa_mont64.c's own loops, and these three set RSA_MONT64_BLOCKS to 1, include the blocks and
+# run them through the same two entries, over the same product contract. rsa_mont64_blocks_sums
+# runs them at four words and at eight with the wrap check on, the square also through
+# rsa_mont64_blocks_square itself, since rsa_mont64_mont_square runs a square of up to 32 words
+# as the blocks' multiplication. rsa_mont64_blocks and its _webpki variant run them at the
+# build's bound without the check, for their memory accesses, and the square at 32 words too.
+# The square's array is 2k + 2 words, which the unwind of ct_wipe's loop covers byte by byte.
+# Measured one line at a time through proof/prove-one.sh on 2026-10-08 (cbmc 6.11.0, kissat
+# 4.0.4, an M1 Pro) at a load average of 13 to 17, so the time is the processor time of cbmc and
+# the solver:
+#   rsa_mont64_blocks_sums    1265 properties,  70 s, 1.5 GB
+#   rsa_mont64_blocks         1088 properties, 235 s, 1.3 GB
+#   rsa_mont64_blocks_webpki  1088 properties, 450 s, 2.2 GB, hence slow
+# The prove job's runner took about 1.35 times the M1's processor time on the rsa_mont64 lines
+# above, which puts the last line near ten minutes there.
+launch fast full rsa_mont64_blocks_sums 10 "ct_wipe.0:145" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast full rsa_mont64_blocks 50 "ct_wipe.0:785" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch slow full rsa_mont64_blocks_webpki 66 "ct_wipe.0:1041" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_init_webpki 513 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast:3 full rsa_mont64_public 385 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME

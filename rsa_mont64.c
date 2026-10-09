@@ -30,6 +30,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
+#include "rsa_mont64_blocks.h"
 
 // All ones when bit is 1, all zeros when bit is 0. The mask comes from
 // moving the bit to the top and spreading it down with an arithmetic
@@ -116,10 +117,46 @@ static uint64_t neg_inverse(uint64_t m0) {
     return 0U - x;
 }
 
+#if RSA_MONT64_BLOCKS
+// The multiplication on rsa_mont64_blocks.c's blocks, for a word count that is a multiple of 4.
+// Their product goes to r, apart from a and b, which o may be, and the last subtraction moves it
+// to o.
+static void mont_mul_blocks(uint64_t *o, const uint64_t *a, const uint64_t *b,
+                            const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    uint64_t r[RSA_MONT64_WORDS_MAX];
+    uint64_t top = rsa_mont64_blocks_mul(r, a, b, mod);
+    reduce_once(o, r, top, mod->m, k);
+    ct_wipe(r, k * sizeof(uint64_t));
+}
+
+// The square on the blocks, for a word count that is a multiple of 4: up to
+// RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX words as their multiplication of a by itself, and above it
+// as their square.
+static void mont_square_blocks(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
+    size_t k = mod->words;
+    uint64_t r[RSA_MONT64_WORDS_MAX];
+    uint64_t top;
+    if (k <= RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX) {
+        top = rsa_mont64_blocks_mul(r, a, a, mod);
+    } else {
+        top = rsa_mont64_blocks_square(r, a, mod);
+    }
+    reduce_once(o, r, top, mod->m, k);
+    ct_wipe(r, k * sizeof(uint64_t));
+}
+#endif
+
 void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
                          const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     const uint64_t *m = mod->m;
+#if RSA_MONT64_BLOCKS
+    if (k % 4 == 0) {
+        mont_mul_blocks(o, a, b, mod);
+        return;
+    }
+#endif
     // t is k + 2 words. The first k + 1 are the running sum, below 2m
     // after every round when b is below m, so its top word is 0 or 1. The
     // word above them holds u, the round's multiple of m.
@@ -202,6 +239,12 @@ void rsa_mont64_mont_mul(uint64_t *o, const uint64_t *a, const uint64_t *b,
 void rsa_mont64_mont_square(uint64_t *o, const uint64_t *a, const rsa_mont64_modulus *mod) {
     size_t k = mod->words;
     const uint64_t *m = mod->m;
+#if RSA_MONT64_BLOCKS
+    if (k % 4 == 0) {
+        mont_square_blocks(o, a, mod);
+        return;
+    }
+#endif
     uint64_t d[RSA_MONT64_WORDS_MAX + 1];
     uint64_t t[RSA_MONT64_WORDS_MAX + 2];
     uint64_t moved = 0;

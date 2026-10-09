@@ -208,7 +208,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
@@ -502,7 +502,8 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
 # RSA's arithmetic on 64-bit words, the signer built on it and their
 # equivalence tests (docs/decisions.md 95), which compile only under
 # -DCH_CPU_RUNTIME. lint-tidy reads them in a pass of their own.
-RSA_HOST_LINT_C := rsa_mont64.c rsa_sign64.c test/rsa_equiv_test.c test/rsa_equiv_portable.c \
+RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c test/rsa_equiv_test.c test/rsa_equiv_portable.c \
+                   test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
@@ -1044,8 +1045,10 @@ endif
 # on 64-bit words whose products are 64x64->128 multiplies, and every
 # session runs it: a modulus and a signature are public, so no bit states
 # the multiply's timing for them (docs/decisions.md 95). The file joins
-# every host object that holds rsa_mont.c.
-RSA_MONT64_SRCS := rsa_mont64.c
+# every host object that holds rsa_mont.c, and so does rsa_mont64_blocks.c,
+# its multiplication and square in blocks of four words, which compiles
+# to nothing outside a clang build for arm64 (docs/decisions.md 118).
+RSA_MONT64_SRCS := rsa_mont64.c rsa_mont64_blocks.c
 ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
 endif
@@ -1751,13 +1754,13 @@ lint-trust-separation-run:
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa" "rsa_mont.c" "rsa_mont64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "TRUST=raw-rsa" "rsa_mont.c" "$(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c rsa_mont64.c rsa_sign.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "rsa_mont64.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "rsa_mont64.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS) rsa_sign.c rsa_sign64.c" "" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "$(RSA_MONT64_SRCS) rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "$(RSA_MONT64_SRCS) rsa_sign64.c" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
 	  "-DCH_CHACHA_VECTOR"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
@@ -2435,15 +2438,26 @@ bin/rsa_equiv_test: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TES
 # runs the form its compiler picks, the compare form under clang and the
 # sum form under gcc, and check runs on clang on a Mac and on gcc in CI, so
 # these two rules name each form and every machine runs both
-# (docs/decisions.md 117).
+# (docs/decisions.md 117). Both turn rsa_mont64_blocks.c's blocks off, so
+# the loops run at every word count, where a clang build for arm64 runs
+# the blocks at a multiple of 4 (docs/decisions.md 118).
 bin/rsa_equiv_test_compare: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_COMPARE $(RSA_WIDE_DEF) -I. \
-	  -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_COMPARE -DRSA_MONT64_BLOCKS=0 \
+	  $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
 bin/rsa_equiv_test_sum: $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM $(RSA_WIDE_DEF) -I. \
-	  -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_STEP=RSA_MONT64_STEP_SUM -DRSA_MONT64_BLOCKS=0 \
+	  $(RSA_WIDE_DEF) -I. -o $@ $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS)
+# rsa_mont64_blocks.c's blocks against rsa_mont64.c's loops, word for word
+# (docs/decisions.md 118). Every unit compiles with the blocks on, whatever
+# the compiler, so every machine runs them, and test/rsa_mont64_loops.c
+# compiles rsa_mont64.c once more with them off, under second names.
+RSA_BLOCKS_EQUIV_TEST_UNITS := test/rsa_blocks_equiv_test.c test/rsa_mont64_loops.c
+bin/rsa_blocks_equiv_test: $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 $(RSA_WIDE_DEF) -I. \
+	  -o $@ $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
 # runs, and rsa_sign64.c is the CRT signer on 64-bit words beside it. The
@@ -3427,6 +3441,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/mlkem_vector_equiv_test bin/mlkem_avx2_equiv_test bin/hash_runtime_test \
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
+                                 bin/rsa_blocks_equiv_test \
                                  bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
@@ -4706,6 +4721,9 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_equiv_test \
 	    $(RSA_EQUIV_TEST_UNITS) $(RSA_EQUIV_TEST_SRCS); \
 	  echo "== rsa_equiv_test (SAN -O$(O))"; ./bin/san/rsa_equiv_test; \
+	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 $(RSA_WIDE_DEF) -I. \
+	    -o bin/san/rsa_blocks_equiv_test $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c; \
+	  echo "== rsa_blocks_equiv_test (SAN -O$(O))"; ./bin/san/rsa_blocks_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o bin/san/rsa_sign_equiv_test \
 	    test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS); \
 	  echo "== rsa_sign_equiv_test (SAN -O$(O))"; ./bin/san/rsa_sign_equiv_test; \
@@ -5269,6 +5287,16 @@ else
 	  $(call TIDY_EACH,rsa_mont64.c rsa_mont.c rsa_sign64.c test/rsa_equiv_test.c test/rsa_sign_equiv_test.c \
 	  test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	# rsa_mont64_blocks.c's blocks and rsa_mont64.c's calls into them,
+	# which only a clang build for arm64 compiles unless a build names them
+	# (docs/decisions.md 118). This pass names them with
+	# -DRSA_MONT64_BLOCKS=1, as bin/rsa_blocks_equiv_test does, so every
+	# host reads them, CI's x86-64 runner among them.
+	# test/rsa_mont64_loops.c stays out of every pass, for the reason
+	# test/rsa_equiv_portable.c does.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,rsa_mont64.c rsa_mont64_blocks.c test/rsa_blocks_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DRSA_MONT64_BLOCKS=1 -I.)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on
 	# -DCH_CPU_RUNTIME, and chacha20.c and aead.c hold the entries that
 	# take a session's ch_cfg.cpu under it, so this pass reads the three in
@@ -6155,7 +6183,8 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 poly1305_vector.c:0 \
                   poly1305_avx2.c:0 poly1305_native.c:0 mlkem_poly_native.c:0 \
                   poly1305_vector_native.c:0 poly1305_avx2_native.c:0 \
-                  sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_sign64.c:0 \
+                  sha256_hw.c:0 sha512_hw.c:0 hkdf_hw.c:0 keysched_hw.c:0 rsa_mont64.c:0 rsa_mont64_blocks.c:0 \
+                  rsa_sign64.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
@@ -6222,7 +6251,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
                    chacha20_vector.c:-DCH_CPU_RUNTIME chacha20_avx2.c:-DCH_CPU_RUNTIME \
                    poly1305_vector.c:-DCH_CPU_RUNTIME poly1305_avx2.c:-DCH_CPU_RUNTIME \
-                   x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME \
+                   x25519_wide.c:-DCH_CPU_RUNTIME rsa_mont64.c:-DCH_CPU_RUNTIME rsa_mont64_blocks.c:-DCH_CPU_RUNTIME \
                    $(addsuffix :-DCH_CPU_RUNTIME,$(P256_WIDE_SRCS)) \
                    rsa_sign64.c:-DCH_CPU_RUNTIME \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
@@ -6419,8 +6448,8 @@ WIDEMUL_SPECS := \
 # No gcc spec measures the field: no CI lane runs a 64-bit gcc through
 # lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
 #
-# rsa_mont64.c's 43 under both specs were read the same way, function by
-# function. Thirty are loop control over a word count, a byte count,
+# rsa_mont64.c's 43 under the x86-64 spec were read the same way, function
+# by function. Thirty are loop control over a word count, a byte count,
 # the doublings rsa_mont64_modulus_init counts from its bits argument, its
 # five squarings, the public exponent's sixteen and neg_inverse's six
 # steps, and the tests that skip a loop of no iterations. Four are the
@@ -6437,6 +6466,14 @@ WIDEMUL_SPECS := \
 # words. The sum, the difference
 # and the plain product a CRT signature joins its halves with add nine,
 # all loops over words: the difference adds the modulus back under a mask.
+# Under the arm64 spec, whose clang compiles rsa_mont64_blocks.c's blocks
+# in (docs/decisions.md 118), the file has 44: the multiplication's and the
+# square's tests for no words become the tests of whether the word count is
+# a multiple of 4, which a count of zero passes, and the square adds one,
+# the word count against RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX.
+# rsa_mont64_blocks.c's 13 under that spec are loop control over the word
+# count and a row's length, and the tests that skip a loop of no
+# iterations. Under the x86-64 spec the file compiles to nothing.
 #
 # rsa_sign64.c's 26 under the arm64 spec and 27 under the x86-64 one were
 # read the same way. The x86-64 spec's one more is rsa_sign64_sp1's
@@ -6716,7 +6753,8 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                sha512.c \
                sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
                poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c \
-               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_sign64.c $(P256_WIDE_SRCS) \
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c rsa_sign64.c \
+               $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
@@ -6897,7 +6935,8 @@ BRANCH_CEILING := \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:23 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
   arm64/poly1305_avx2.c:0 x86-64/poly1305_avx2.c:0 \
-  arm64/rsa_mont64.c:43 x86-64/rsa_mont64.c:43 \
+  arm64/rsa_mont64.c:44 x86-64/rsa_mont64.c:43 \
+  arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
   arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:27 \
   arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
   arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:7 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \

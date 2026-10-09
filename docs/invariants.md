@@ -1210,6 +1210,10 @@ last `ROLE=server` stub, as the entry said it would.
   64-bit adds wrap on purpose, each carrying by the compare after it.
   gcc reads the step's sum form, one 128-bit sum, because it keeps the
   compare form's product in a stack slot of its own (decision 117).
+  Under clang for arm64 a multiplication or a square whose word count
+  is a multiple of 4 runs on `rsa_mont64_blocks.c`'s blocks of four
+  words instead (decision 118), which write the words the loops write
+  and wrap no sum either.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one word and one carry in each
   of its two steps, and its top step adds two carries to a word that is 0,
@@ -1223,6 +1227,14 @@ last `ROLE=server` stub, as the entry said it would.
   computes R^2 for a modulus whose top bit is set by a long division of
   its own, whose estimate of each quotient word is at most 2 above the
   word, and takes `rsa_mont64_modulus_init` for any other modulus.
+  A block adds a word times four words and a carry word to four words
+  of the running sum: the low halves of the four products go down one
+  chain of 128-bit sums and the high halves down another, each sum two
+  words and a carry, and the five words hold the result, which is at
+  most 2^320 - 1. The blocks' square adds the cross products once,
+  doubles them and adds the squares before a pass that adds the
+  multiples of m, and up to 32 words a square runs as the blocks'
+  multiplication of a by itself.
   `rsa_sign64.c` multiplies only through that file. It reduces the
   encoded message modulo each prime with three multiplications and a
   sum, raises each to dp or dq, reading the exponent one hexadecimal
@@ -1241,7 +1253,9 @@ last `ROLE=server` stub, as the entry said it would.
   same file puts the 128-bit sum of a product and two words in the
   step's place, and `rsa_mont64_step` and `rsa_mont64_step_sum` prove
   that each form of the step returns that sum's two words for every
-  input and every product the contract admits.
+  input and every product the contract admits. `rsa_mont64_blocks_sums`
+  runs the blocks at four and eight words with the check on, and
+  `rsa_mont64_blocks` proves their memory accesses at the bound.
   `rsa_mont64_mul`, `rsa_mont64_init` and `rsa_mont64_public` prove the
   memory accesses of the multiplication and the square, the modulus
   setup and the public operation at that bound, and `rsa_mont_host`
@@ -1254,7 +1268,11 @@ last `ROLE=server` stub, as the entry said it would.
   known, and holds the square to the multiplication of a number by
   itself at every word count. It runs the step's form its compiler
   picks, and `bin/rsa_equiv_test_compare` and `bin/rsa_equiv_test_sum`
-  run each form under any compiler. The values are held too by
+  run each form under any compiler, with the blocks off.
+  `bin/rsa_blocks_equiv_test` builds the blocks under any compiler and
+  holds their words to the loops' at every word count from 1 to 64, and
+  their square to their multiplication of a by itself at every multiple
+  of 4. The values are held too by
   `bin/rsa_test_host` and
   `bin/rsa_pkcs1_test_host`, the
   two verifiers' openssl vectors on the 64-bit arm; and by the host
@@ -1299,15 +1317,26 @@ last `ROLE=server` stub, as the entry said it would.
   and the first three as `inv41-rsa-mont64-carries-in-one-sum`,
   `inv41-rsa-mont64-sum-one-word-short` and
   `inv41-rsa-mont64-borrow-wraps`, through `proof/prove-one.sh`, in the
-  nightly's proof-backed job. Or a PR starts the read of the table at
-  its second entry, or reads the low half of each exponent byte first:
+  nightly's proof-backed job. Or, in the blocks, it drops a block's low
+  carry, the bit the square's doubling moves up a word or the carry
+  between the rows of its reduction, or runs the blocks at every even
+  word count: `inv41-rsa-mont64-blocks-low-carry-dropped`,
+  `inv41-rsa-mont64-blocks-square-bit-not-moved`,
+  `inv41-rsa-mont64-blocks-reduction-carry-dropped` and
+  `inv41-rsa-mont64-blocks-even-word-counts`, which
+  `bin/rsa_blocks_equiv_test` catches; or adds a round's top word and
+  both carry words in one 64-bit sum,
+  `inv41-rsa-mont64-blocks-top-in-one-word`, which
+  `rsa_mont64_blocks_sums` catches in the proof-backed job. Or a PR
+  starts the read of the table at its second entry, or reads the low
+  half of each exponent byte first:
   `inv41-rsa-sign64-table-read-skips-entry-zero` and
   `inv41-rsa-sign64-digits-low-half-first`, which
   `bin/rsa_sign_equiv_test` catches. Or it reduces the message's high
   words with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it.
-- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106 and 117.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117 and 118.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 

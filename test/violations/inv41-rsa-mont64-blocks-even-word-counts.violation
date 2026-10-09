@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_mont64.c
+catches: rsa_blocks_equiv_test
+reason: rsa_mont64_mont_mul runs the blocks for every even word count, not
+  only a multiple of 4, so a count of 6, 10 or more reads a last block of
+  four words past the operands and past the running sum, and writes
+  words that are no product. bin/rsa_blocks_equiv_test compares the
+  multiplication with rsa_mont64.c's loops at every word count from 1 to
+  64.
+
+--- old
+    if (k % 4 == 0) {
+        mont_mul_blocks(o, a, b, mod);
+--- new
+    if (k % 2 == 0) {
+        mont_mul_blocks(o, a, b, mod);

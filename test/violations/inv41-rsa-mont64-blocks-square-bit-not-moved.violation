@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: the square's doubling drops the top bit of each odd word of the
+  cross products, the bit that moves into the next even word, so the
+  square is short by a power of two whenever that bit is set.
+  bin/rsa_blocks_equiv_test holds rsa_mont64_blocks_square to the blocks'
+  multiplication of a by itself at every multiple of 4 words, and to the
+  loops above 32 words, where rsa_mont64_mont_square runs it.
+
+--- old
+        uint64_t low = (t[2 * i] << 1) | moved;
+--- new
+        uint64_t low = (t[2 * i] << 1) | (moved & 0);

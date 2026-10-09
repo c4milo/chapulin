@@ -8656,3 +8656,112 @@ does nothing more.
     The volatile reads that keep the signer's words out of stack slots
     cost under 2 percent: without them a multiplication took 1.40 µs and
     a square 1.16 µs.
+
+118. **A clang host object for arm64 multiplies RSA's words in blocks of
+    four.** After decision 117, on the M1 Pro under Apple clang 21, a
+    2048-bit Montgomery multiplication took 1.22 µs and a square 0.99 to
+    1.03 µs, where decision 117 measured OpenSSL 3.6.5's at 0.88 and 0.58.
+    `rsa_mont64.c`'s loops add one product at a time, and each word waits
+    on the carry from the word below.
+
+    - **What changes.** `rsa_mont64_blocks.c` multiplies and squares in
+      blocks of four words. A block adds a word times four words and a
+      carry word to four words of the running sum: the low halves of the
+      four products go down one chain of 128-bit sums and the high halves
+      down another, which clang compiles to add-with-carry instructions.
+      The multiplication runs `rsa_mont64_mont_mul`'s rounds, a block of
+      a_i b and then a block of u m. The square adds the cross products
+      once, doubles them, adds the squares, and then adds the multiples of
+      m in a pass of its own. `rsa_mont64.c` calls the blocks for a word
+      count that is a multiple of 4, which every modulus of 2,048, 3,072
+      and 4,096 bits and each of their primes has, keeps its loops for any
+      other count, and takes the last subtraction itself.
+      `RSA_MONT64_BLOCKS` in `rsa_mont64.h` is 1 under clang for arm64
+      alone.
+    - **A square of up to 32 words runs as a multiplication.** The blocks'
+      square took 1.28 times the time of their multiplication of a by
+      itself at 16 words, 1.06 at 24 and 0.99 at 32, and 0.95 at 48 and
+      0.93 at 64, though it computes about a quarter fewer products. So
+      `rsa_mont64_mont_square` runs a square of up to
+      `RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX`, 32 words, as
+      `rsa_mont64_blocks_mul(o, a, a, mod)`. Both write the same words:
+      each computes (a^2 + U m) / R for the one U below R that makes the
+      sum a multiple of R.
+    - **Volatile reads.** The first block of every round reads the same
+      four words of b and of m. Apple clang 21 loaded b's once before the
+      rounds and kept three of them in stack slots for the whole call, and
+      in the signer b is secret: `bin/rsa_sign_equiv_test`'s stacks below
+      `rsa_sign64_power` and `rsa_sign64_sp1` under two secrets differed in
+      24 to 48 bytes. The blocks read both operands through volatile
+      pointers, as the loops read the word they multiply by, and the slots
+      then hold pointers and counts alone. The reads cost no time the bench
+      resolves: a 2048-bit multiplication took 0.80 µs with them and 0.83
+      µs without.
+    - **Gain.** On the M1 Pro under Apple clang 21 and `ch_cfg.cpu 0xe7`,
+      a 2048-bit multiplication takes 0.81 µs and a square 0.81 µs, and at
+      3,072 bits 1.77 and 1.69 µs where they took 2.67 and 2.43. In
+      `bench/primitives.c`, five runs of each in turn at a load average of
+      4 to 5, beside OpenSSL 3.6.5's `openssl speed` in the same sitting:
+
+      | one operation | before | after | OpenSSL |
+      | --- | --- | --- | --- |
+      | RSA-2048 PKCS#1 v1.5 verification | 21.4 µs | 17.7 µs | 14.4 µs |
+      | RSA-3072 PKCS#1 v1.5 verification | 46.3 µs | 36.6 µs | 30.1 µs |
+      | RSA-4096 PKCS#1 v1.5 verification | 81.5 µs | 59.2 µs | 52.4 µs |
+      | RSA-2048 PSS signature | 815 µs | 653 µs | 550 µs, PKCS#1 v1.5 |
+      | RSA-3072 PSS signature | 2.46 ms | 1.96 ms | 1.61 ms, PKCS#1 v1.5 |
+
+      A 2048-bit PKCS#1 v1.5 verification retires 331,864 instructions
+      where it retired 389,707, and a 2048-bit signature 13,159,657 where
+      it retired 15,806,350.
+    - **What holds it.** `rsa_mont64_blocks_sums` runs the blocks at four
+      and eight words with `--unsigned-overflow-check` on, so each sum of
+      the two chains, the word a block returns and each step of the
+      square's doubling and reduction is a property, over the product
+      contract of `proof/rsa_mont64_stubs.h`, and
+      `rsa_mont64_blocks` and its `_webpki` line prove the memory accesses
+      at the bound. `bin/rsa_blocks_equiv_test` builds the blocks under any
+      compiler and holds their words to the loops' at every word count
+      from 1 to 64, and their square to their multiplication of a by
+      itself at every multiple of 4. Four violations break a value and
+      that binary catches each, and
+      `inv41-rsa-mont64-blocks-top-in-one-word` adds a round's carries in
+      one 64-bit sum, which the sums proof catches.
+      `bin/rsa_sign_equiv_test` runs the blocks wherever a clang build for
+      arm64 runs them: its stacks hold no residue under Apple clang 21,
+      Homebrew clang 23 and Zig's clang 21, at -O2, -O3 and -Os, and the
+      macOS job's `suite-check` runs it under Apple clang. No violation
+      drops the volatile reads: the nightly runs violations under gcc,
+      which compiles the blocks out.
+    - **Branches.** `lint-wide-multiply` holds `rsa_mont64_blocks.c` at 13
+      conditional branches under clang for arm64, all loop control over
+      the word count and a row's length, and at 0 for x86-64, where the
+      file compiles to nothing. `rsa_mont64.c` holds 44 for arm64 where it
+      held 43: each entry's test for no words becomes the test of whether
+      the count is a multiple of 4, and the square adds its test against
+      32.
+    - **Cost.** Under Apple clang 21 at -O2 the two files take 6,028 bytes
+      of code where `rsa_mont64.c` took 4,160, and an auditor reads a
+      second multiplication and a second square beside the loops, which
+      stay the code every other build runs.
+
+    Rejected:
+
+    - **The blocks under gcc.** gcc 13 keeps no carry in the flags from one
+      statement to the next. On three x86-64 runner CPUs the blocks took
+      1.3 to 1.9 times the loops' time for a multiplication and 1.5 to 2.2
+      times it for a square, and under gcc 13 for arm64 1.54 to 1.60 and
+      1.46 to 1.95 times. Under gcc 13 for x86-64 they also left 200 to 450
+      bytes below the signer that differ between secrets, volatile reads
+      and all.
+    - **The blocks under clang for x86-64.** They ran a multiplication in
+      0.71 to 0.88 of the loops' time on an EPYC 7763, 9V74 and 9V45, but
+      a 2048-bit square in 1.15 and 1.11 times it on the first two and
+      0.92 on the third. An exponentiation is mostly squares, so an x86-64
+      object keeps the loops; the multiplication alone would need a
+      second switch for a few percent of a signature.
+    - **The blocks' square at every count.** 1.28 times the multiplication
+      at 16 words, above, the word count of an RSA-2048 signer's primes.
+    - **`__builtin_addcll`**, decision 117's form of the blocks: the
+      128-bit sums give clang the same add-with-carry chains in C11, and
+      the builtin is clang's alone.

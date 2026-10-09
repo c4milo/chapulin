@@ -64,6 +64,24 @@ typedef struct {
 #error "RSA_MONT64_STEP names neither form of rsa_mont64_mul_add_add"
 #endif
 
+// 1 when a multiplication and a square whose word count is a multiple of 4 run on
+// rsa_mont64_blocks.c's blocks of four words: under clang for arm64 alone. Under clang for
+// x86-64 the blocks ran a 2048-bit square in up to 1.15 times the loops' time, and gcc ran both
+// operations slower on arm64 and x86-64 and, for x86-64, left words of the signer's secrets on
+// the stack (docs/decisions.md 118). A build may name either with
+// -DRSA_MONT64_BLOCKS=0 or 1, as the proofs, bin/rsa_blocks_equiv_test,
+// bin/rsa_equiv_test_compare and bin/rsa_equiv_test_sum do.
+#ifndef RSA_MONT64_BLOCKS
+#if defined(__clang__) && defined(__aarch64__)
+#define RSA_MONT64_BLOCKS 1
+#else
+#define RSA_MONT64_BLOCKS 0
+#endif
+#endif
+#if RSA_MONT64_BLOCKS != 0 && RSA_MONT64_BLOCKS != 1
+#error "RSA_MONT64_BLOCKS is neither 0 nor 1"
+#endif
+
 // x * y + a + b, which is at most (2^64 - 1)^2 + 2 * (2^64 - 1) = 2^128 - 1. rsa_mont64.c runs
 // one for each product of a multiplication's and a square's inner loops, where b is the carry
 // from the word below.

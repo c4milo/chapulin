@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont64_blocks.c
+catches: rsa_blocks_equiv_test
+reason: the square's reduction drops the carry out of word i + k of row i,
+  which the next row adds a word higher, so the result is short by a
+  multiple of a power of two whenever a row carries out of its top word.
+  bin/rsa_blocks_equiv_test holds the square to the blocks' multiplication
+  of a by itself and to rsa_mont64.c's loops.
+
+--- old
+        ct_u128 sum = (ct_u128)t[i + k] + w + top;
+--- new
+        ct_u128 sum = (ct_u128)t[i + k] + w + (top & 0);

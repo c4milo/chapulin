@@ -35,6 +35,14 @@
 #ifndef CH_RSA_MONT64_STUBS_H
 #define CH_RSA_MONT64_STUBS_H
 
+// The harnesses over this file run rsa_mont64.c's own loops, whatever compiler preprocesses
+// them. rsa_mont64_blocks.c's blocks, which a clang build for arm64 runs, have harnesses of
+// their own, which set RSA_MONT64_BLOCKS to 1 before they read this file and include
+// rsa_mont64_blocks.c after it, under the same product contract (docs/decisions.md 118).
+#ifndef RSA_MONT64_BLOCKS
+#define RSA_MONT64_BLOCKS 0
+#endif
+
 #include "harness.h"
 
 #include "ct.h"

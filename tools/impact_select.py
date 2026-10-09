@@ -671,7 +671,7 @@ def select_lints(out, changed, csources, lib):
     # (docs/decisions.md 95). Both arms give the same bytes, so no test of
     # the verifiers tells which one an object compiled, and the script
     # compiles the file either side of the define and reads its calls.
-    if "rsa_mont.c" in csources or "rsa_mont64.c" in csources:
+    if "rsa_mont.c" in csources or "rsa_mont64.c" in csources or "rsa_mont64_blocks.c" in csources:
         out.add("tests", "test/widemul-builds.sh",
                 "rsa_mont.c calls the 64-bit arithmetic in a host object "
                 "alone, and this script compiles it either side of that define",
