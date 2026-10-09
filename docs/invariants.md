@@ -1213,7 +1213,15 @@ last `ROLE=server` stub, as the entry said it would.
   Under clang for arm64 a multiplication or a square whose word count
   is a multiple of 4 runs on `rsa_mont64_blocks.c`'s blocks of four
   words instead (decision 118), which write the words the loops write
-  and wrap no sum either.
+  and wrap no sum either. On x86-64 a session whose `ch_cfg.cpu` holds
+  `CH_CPU_AVX512_IFMA` runs the public operation on `rsa_ifma.c`, in
+  digits of 52 bits on AVX-512 IFMA, for an odd modulus whose bit
+  length is a multiple of 64, at least 2,048 (decision 119). That kernel
+  writes `rsa_mont64.c`'s bytes for every base of the modulus's length,
+  and wraps no sum either: a lane stays below 2^61, and a scalar sum
+  below 2^106. It takes public input alone and wipes nothing, so only
+  `rsa_mont.c`'s `rsa_vp1_cpu` calls it, and `rsa_sign64.c` never does,
+  neither for a signature nor for the check of one.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one word and one carry in each
   of its two steps, and its top step adds two carries to a word that is 0,
@@ -1244,6 +1252,20 @@ last `ROLE=server` stub, as the entry said it would.
   compiles `rsa_sign.c`'s PSS encoder around that, so the two signers
   encode alike. A host object holds both signers, and `widemul.h` picks
   one for a session from its multiply bit (INV-16).
+  The kernel takes n = ceil((64k + 2) / 52) digits for k words, so that
+  4m < R' = 2^(52n). Each round of its almost-Montgomery product adds
+  a * b[i] and quotient * m to eight-digit registers with VPMADD52LUQ
+  and VPMADD52HUQ, four pieces below 2^52 to each lane, and moves every
+  lane down one, so after the most rounds, 79, a lane is below 2^61.
+  Digit 0 runs in a scalar word on `ct_mul128`, whose sum of two
+  products and the word is below 2^106, and the quotient keeps its low
+  52 bits. `normalize_digits` carries each lane's bits above 52 once,
+  then carries single bits through a mask register, and drops the carry
+  out of the top lane, which a product's sum below 2^(52n) leaves zero.
+  A product of a and b is below a * b / R' + m, so below 2m for the
+  operands `rsa_ifma_public` gives it, and one subtraction of m ends the
+  operation. `rsa_mont.c`'s `power_of_two_mod` computes the 2^(104n)
+  mod m the first product takes, with the division's step above.
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
   four words over any operands, `rsa_mont64_ops` the comparison, the
@@ -1296,6 +1318,26 @@ last `ROLE=server` stub, as the entry said it would.
   signatures from both signers, the host Wycheproof test runs the private
   operation on each from Wycheproof's keys, and `bin/diff_rsa_sign64`,
   in `make diff`, requires the Lean spec's signatures from each.
+  For the AVX-512 IFMA kernel, nothing is proved yet: no harness
+  compiles `rsa_ifma.c` or drives `rsa_vp1_cpu` and `power_of_two_mod`,
+  and no Lean theorem states the bound or the no-wrap argument above,
+  which the file's comments and its entry in `tools/proof-cover.py`
+  state in prose. Tests hold it. `bin/rsa_ifma_model_test` compiles the
+  kernel and `rsa_mont.c`'s dispatch over `test/rsa_ifma_model_lanes.h`,
+  each lane operation in portable C, and on every machine requires
+  `rsa_vp1`'s bytes from `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` at
+  every word count from 32 to 64, each product's digits below 2^52 and
+  its number below 2m, and on lanes chosen for its carries a
+  `normalize_digits` that keeps the number it was given.
+  `bin/rsa_ifma_equiv_test` holds the instructions to that model on an
+  x86-64 CPU with AVX-512 IFMA, and the nightly's `rsa-ifma-sde` job
+  runs it under Intel SDE's model of such a CPU.
+  `test/widemul-builds.sh` requires the 512-bit instructions in
+  `rsa_ifma.c`'s x86-64 object and in no other RSA source, a call to the
+  kernel from `rsa_vp1_cpu` and not from `rsa_vp1`, no other root source
+  that includes `rsa_ifma.h` or calls into it, and no library build that
+  names `CH_RSA_IFMA_MODEL`. docs/verification.md, "The AVX-512 IFMA
+  public operation", lists each test.
 - **Violation.** A PR adds both carries into one sum, which can then
   wrap; makes the running sum one word short; subtracts with a borrow
   that wraps; copies a product out without its last subtraction; drops
@@ -1335,12 +1377,36 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/rsa_sign_equiv_test` catches. Or it reduces the message's high
   words with R^2 where R^3 is needed, `inv41-rsa-crt-half-reduced-with-r2`:
   the signature's check then refuses every signature (INV-42), and the
-  same binary reports it. Or it starts `rsa_mont.c`'s `power_of_two_mod`
-  at bit 0 of the top word whatever the exponent,
-  `inv41-rsa-mont-ifma-power-starts-at-bit-zero`: at RSA-3072
-  `rsa_vp1_cpu` under the bit then gives other bytes than `rsa_vp1`, and
-  `bin/rsa_ifma_model_test`, which runs that dispatch over the lane model,
-  catches it on every machine. Or a caller that
+  same binary reports it. Or, in the AVX-512 IFMA kernel, a PR leaves
+  lane 0 of a product as the rounds wrote it in place of `digit_zero`,
+  multiplies the quotient by a's digits in the second pass of high
+  halves, keeps all 64 bits of the quotient, starts the power from the
+  base in place of `digit_r2`, or never takes a third digit into a word;
+  or it breaks a carry of `normalize_digits`: the one a register's top
+  lane generates, the one between registers, one that passes through a
+  lane at 2^52 - 1, or the one out of the top lane, which it must drop.
+  Or `rsa_mont.c` hands the kernel 2^(52n) mod m in place of
+  2^(104n) mod m, runs `power_of_two_mod` one step short, starts it at
+  bit 0 of the top word whatever the exponent, or hands the kernel an
+  even modulus. `inv41-rsa-ifma-digit-zero-dropped`,
+  `inv41-rsa-ifma-high-pass-reads-a-for-m`,
+  `inv41-rsa-ifma-quotient-unmasked`, `inv41-rsa-ifma-power-skips-r2`,
+  `inv41-rsa-ifma-words-drop-third-digit`,
+  `inv41-rsa-ifma-normalize-drops-generate-from-below`,
+  `inv41-rsa-ifma-normalize-drops-carry-between-registers`,
+  `inv41-rsa-ifma-normalize-carries-skip-propagate`,
+  `inv41-rsa-ifma-normalize-keeps-top-carry`,
+  `inv41-rsa-mont-ifma-power-52n`,
+  `inv41-rsa-mont-ifma-power-one-step-short`,
+  `inv41-rsa-mont-ifma-power-starts-at-bit-zero` and
+  `inv41-rsa-mont-ifma-takes-even-modulus` make each, and
+  `bin/rsa_ifma_model_test`, which runs the kernel's own text and the
+  dispatch over the lane model, catches each on every machine. Bit 0 is
+  the right start at RSA-2048, where 104n is a multiple of 64, and the
+  wrong one at RSA-3072, where the binary sees it. Or the Makefile writes
+  `CH_RSA_IFMA_MODEL` for a host object, so the library runs the model in
+  place of the instructions: `inv41-rsa-ifma-model-in-library`, which
+  `test/widemul-builds.sh` catches. Or a caller that
   holds a session hands an RSA verifier 0 in place of its `ch_cfg.cpu`:
   the pinned CertificateVerify, `ch_srv_check`'s check of the RSA
   identity, the webpki CertificateVerify, or the chain walk's issuer or
@@ -1352,7 +1418,7 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host`, which count the
   calls into `rsa_ifma_public` per caller, catch them under
   `test/docker-aes-runtime-qemu.sh rsa-ifma-callers`.
-- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117 and 118.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118 and 119.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 
