@@ -1,0 +1,18 @@
+invariant: INV-41
+file: webpki.c
+catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
+reason: the chain walk verifies a certificate's signature under an
+  anchor's key with 0 in place of the session's ch_cfg.cpu, so a session
+  whose caller set CH_CPU_AVX512_IFMA runs that public operation on
+  rsa_mont64.c. The verdict is the same. test/webpki_auth_ifma.h requires
+  three calls to rsa_ifma_public from the aws chain's flight under a value
+  with the bit, one of them the intermediate's signature under the RSA-2048
+  anchor. Only an x86-64 object makes the call, so test/aes-runtime-qemu.sh
+  builds bin/webpki_auth_host for x86-64 and runs it under qemu-x86_64.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+        if (read_anchor_key(anchor, &key) && webpki_verify(CH_CFG_CPU(*cfg), cert, &key)) {
+--- new
+        if (read_anchor_key(anchor, &key) && webpki_verify(0U, cert, &key)) {

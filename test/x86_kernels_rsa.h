@@ -6,7 +6,7 @@
 // rsa_ifma.c's rsa_ifma_public where the value holds CH_CPU_AVX512_IFMA
 // and the modulus is one that call takes: at least RSA_IFMA_WORDS_MIN
 // words, its top bit set, and odd. The entries that take no value run
-// rsa_mont64.c. test/x86_kernels_count.c counts each call to
+// rsa_mont64.c. test/rsa_ifma_count.c counts each call to
 // rsa_ifma_public and computes its bytes on rsa_mont64.c from the
 // 2^(104n) mod m the call passed, so these rows also fail where
 // rsa_vp1_cpu computed that power of two wrongly: a wrong count of steps
@@ -19,10 +19,10 @@
 #include <string.h>
 
 #include "rsa.h"
+#include "rsa_ifma_count.h"
 #include "rsa_pkcs1.h"
 #include "rsa_pkcs1_vectors.h"
 #include "sha256.h"
-#include "x86_kernels_count.h"
 
 // What a value names, written here apart from rsa_mont.c's use_ifma so
 // that a wrong predicate fails a row.
@@ -33,11 +33,12 @@ static unsigned long names_ifma(uint32_t cpu) {
 // Whether the calls into rsa_ifma_public since the last look are these,
 // and resets them.
 static int rsa_ifma_calls_are(unsigned long calls) {
-    int same = x86_rsa_ifma_calls == calls;
+    int same = rsa_ifma_public_calls == calls;
     if (!same) {
-        (void)fprintf(stderr, "calls: rsa_ifma_public %lu; want %lu\n", x86_rsa_ifma_calls, calls);
+        (void)fprintf(stderr, "calls: rsa_ifma_public %lu; want %lu\n", rsa_ifma_public_calls,
+                      calls);
     }
-    x86_rsa_ifma_calls = 0;
+    rsa_ifma_public_calls = 0;
     return same;
 }
 
@@ -52,7 +53,7 @@ static void check_rsa_verifiers(uint32_t cpu) {
     const uint8_t *pss = rsa2048_sha256_pss_sig;
     const uint8_t *pkcs1 = rsa2048_sha256_sig;
     size_t len = sizeof n2048;
-    x86_rsa_ifma_calls = 0;
+    rsa_ifma_public_calls = 0;
     CHECK(rsa_pss_verify(n2048, len, digest, pss, len) == 1);
     CHECK(rsa_pkcs1_verify(n2048, len, digest, SHA256_LEN, pkcs1, len) == 1);
     CHECK(rsa_ifma_calls_are(0));
@@ -103,7 +104,7 @@ static void check_rsa_moduli(uint32_t cpu) {
     };
     uint8_t two[sizeof n3072] = {0};
     two[sizeof two - 1] = 2;
-    x86_rsa_ifma_calls = 0;
+    rsa_ifma_public_calls = 0;
     for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
         const uint8_t *base = two + sizeof two - rows[i].n_len;
         uint8_t want[sizeof n3072];

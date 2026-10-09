@@ -62,7 +62,7 @@ The other 31 sources are in no such harness:
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
-| `rsa_ifma.c` | It runs RSA's public operation on AVX-512 IFMA intrinsics, which CBMC cannot read, and has a body on x86-64 alone. No launch line yet compiles it over the lane model. | `bin/rsa_ifma_model_test` compiles the file's own text over `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable C, and holds `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` to `rsa_mont64.c`'s answers on every machine, at every word count from 32 to 64; the same binary checks each product's digits and runs `normalize_digits` on lanes chosen for its carries. On a CPU with AVX-512 IFMA, `bin/rsa_ifma_equiv_test` holds each lane operation, the products and `rsa_ifma_public` on the instructions to the model. The model's lanes are only tested against the instructions, not proved equal to them. |
+| `rsa_ifma.c` | It runs RSA's public operation on AVX-512 IFMA intrinsics, which CBMC cannot read, and has a body on x86-64 alone. No launch line yet compiles it over the lane model. | `bin/rsa_ifma_model_test` compiles the file's own text over `test/rsa_ifma_model_lanes.h`, a model of each instruction in portable C, and holds `rsa_vp1_cpu` under `CH_CPU_AVX512_IFMA` to `rsa_mont64.c`'s answers on every machine, at every word count from 32 to 64; the same binary checks each product's digits and runs `normalize_digits` on lanes chosen for its carries. On a CPU with AVX-512 IFMA, `bin/rsa_ifma_equiv_test` holds each lane operation, the products and `rsa_ifma_public` on the instructions to the model. The model's lanes are only tested against the instructions, not proved equal to them. On such a CPU, `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` under 0x10d, the Wycheproof host binary under 0x11f, and `bin/tcp_blocking_loop_aes`'s `ch_srv_check` row under every bit the architecture defines run their RSA vectors and checks on it. `bin/x86_kernels_test` and the counted loop and session binaries link a stand-in for the call, `test/rsa_ifma_count.c`, which runs `rsa_mont64.c`'s arithmetic, so they count each caller's calls on every x86-64 CPU. |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
@@ -3645,9 +3645,13 @@ skips a kernel's cases on a CPU without its instructions:
   a pass's sums and a pass's keystream below a seal and an open.
 - `bin/quic_test_hw` runs FIPS 197's, SP 800-38D's and RFC 9001's
   vectors a second time on the kernels (`run_vectors_on_kernels`).
-- The Wycheproof host binary runs twice more, under 0xf and 0x1f: the
-  ChaCha20-Poly1305 suite on the AVX2 kernel, and then the AES-GCM suites
-  on the VAES kernels.
+- The Wycheproof host binary runs three times more, under 0xf, 0x1f and
+  0x11f: the ChaCha20-Poly1305 suite on the AVX2 kernel, then the AES-GCM
+  suites on the VAES kernels, and then the RSA-PSS and PKCS#1 v1.5 suites
+  on `rsa_ifma.c`.
+- `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` run once more under
+  0x10d: the openssl-minted vectors from RSA-2048 to RSA-4096, and every
+  refusal, on `rsa_ifma.c`.
 
 **Which calls run a kernel** rests on these:
 
@@ -3667,9 +3671,30 @@ skips a kernel's cases on a CPU without its instructions:
   `power_of_two_mod` changes its bytes. Under
   each value a call must run a kernel exactly when the value names it,
   and must return the same bytes. The counting entries
-  (`test/x86_kernels_count.c`) forward to the 128-bit paths and to
-  `rsa_mont64.c`, so the binary runs no kernel instruction and passes on
-  every x86-64 CPU. An arm64 build of it has no row.
+  (`test/x86_kernels_count.c` and `test/rsa_ifma_count.c`) forward to the
+  128-bit paths and to `rsa_mont64.c`, so the binary runs no kernel
+  instruction and passes on every x86-64 CPU. An arm64 build of it has no
+  row.
+- `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host` link
+  `test/rsa_ifma_count.c` in place of `rsa_ifma.c`, as every binary the
+  Makefile's `widemul_counted` builds does, and count the RSA public
+  operations each caller of the two verifiers sends to `rsa_ifma_public`
+  over a handshake, with the bit and without it. A pinned client's
+  CertificateVerify, through `ch_connect` and through the client's
+  handlers, makes one call where the client's value holds
+  `CH_CPU_AVX512_IFMA`, whatever the server's holds, and
+  `ch_srv_check`'s check of the RSA identity makes one where the server's
+  does (`test/tcp_blocking_loop_ifma.h`). The aws chain's flight through
+  `hsa_server_auth`, whose leaf, intermediate and anchor keys are each
+  RSA-2048, makes three: the leaf's signature under the intermediate in
+  `webpki.c`'s `read_issuer`, the intermediate's under the anchor in
+  `anchor_verifies`, and the CertificateVerify in `handshake_auth.c`. The
+  r2 chain, which holds no RSA key, makes none
+  (`test/webpki_auth_ifma.h`). Without the bit every count is 0. An arm64
+  object refuses the bit and makes no call, so there the rows run without
+  it alone. The CA client's CertificateVerify under a pinned CA, which
+  only a `ROLE=both TRUST=ca-rsa` host object compiles, has no such row,
+  because no host binary builds that object.
 - `test/aes-runtime-qemu.sh` runs whole handshakes on CPU models, in CI's
   mips job on every push. On `max,-aes,-pclmulqdq,-avx2` the loops with
   `CH_CPU_AVX2` on both ends must die of SIGILL, which shows the model
@@ -3683,7 +3708,9 @@ skips a kernel's cases on a CPU without its instructions:
   rows and says so. The script also builds and runs
   `bin/x86_kernels_test`, which is the one way an arm64 development
   machine runs it; `test/docker-aes-runtime-qemu.sh x86-kernels` runs
-  that binary alone.
+  that binary alone, and `test/docker-aes-runtime-qemu.sh
+  rsa-ifma-callers` runs `bin/tcp_blocking_loop_host` and
+  `bin/webpki_auth_host` alone, for x86-64.
 - `test/chacha-builds.sh` and `test/quic-builds.sh` compile the kernels
   for x86-64 with no instruction flag under the pinned clang. They
   require each kernel's 256-bit instructions there, no 256-bit register
@@ -3702,9 +3729,11 @@ skips a kernel's cases on a CPU without its instructions:
 CI's `x86-64-kernels` job runs the binaries above and the Wycheproof host
 binary with `CH_REQUIRE_X86_KERNELS=1`, under which a CPU without AVX2,
 VAES and VPCLMULQDQ fails them rather than skips them, after `make
-x86-64-kernels-cpu` names the runner's CPU.
+x86-64-kernels-cpu` names the runner's CPU. A runner without AVX-512
+IFMA still skips the runs under a value with `CH_CPU_AVX512_IFMA`, which
+only `CH_REQUIRE_AVX512_IFMA=1` turns into failures.
 
-Eighteen violations break these rules, and each is caught:
+Twenty-three violations break these rules, and each is caught:
 
 - `test/chacha-builds.sh` catches `chacha-avx2-runs-without-cpu-bit` and
   `chacha-avx2-ignores-cpu-bit`, a `use_avx2` that answers 1 or 0 for
@@ -3726,6 +3755,15 @@ Eighteen violations break these rules, and each is caught:
   and `inv26-packet-open-key-drops-cpu`, a call that hands on no value.
   Each names `test/docker-aes-runtime-qemu.sh x86-kernels` as its catch,
   so `test/violations.py` runs it in a container on an arm64 host.
+- `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host` catch five
+  callers that hand an RSA verifier 0 in place of the session's
+  `ch_cfg.cpu`: `inv41-rsa-ifma-pinned-certificate-verify-drops-cpu`,
+  `inv41-rsa-ifma-srv-check-drops-cpu`,
+  `inv41-rsa-ifma-webpki-certificate-verify-drops-cpu`,
+  `inv41-rsa-ifma-webpki-issuer-drops-cpu` and
+  `inv41-rsa-ifma-webpki-anchor-drops-cpu`. Only an x86-64 object makes
+  the call, so each names `test/docker-aes-runtime-qemu.sh
+  rsa-ifma-callers` as its catch.
 
 A mutant of a kernel's arithmetic is caught only on a CPU with the
 kernel's instructions, and `test/violations.py` runs every violation on
@@ -4138,7 +4176,10 @@ value. Tests hold the values:
   `bin/rsa_test` and `bin/rsa_pkcs1_test` built as a host object builds
   their sources: the openssl-minted RSA-PSS vectors at 2047, 2048, 3072,
   4032 and 4096 bits, the PKCS#1 v1.5 ones at 2048, 3072, 4032 and 4096,
-  and every refusal, on the 64-bit arm.
+  and every refusal, on the 64-bit arm. Each verifies through the entry
+  that takes the `ch_cfg.cpu` value it runs under, and check runs each
+  under every value that changes a path, so on x86-64 its vectors run on
+  `rsa_ifma.c` too ([The x86-64 kernels](#the-x86-64-kernels)).
 - The Wycheproof host binary runs the RSA-PSS and PKCS#1 v1.5 suites on
   it, and every host loop, session and webpki test verifies its
   CertificateVerify and chain signatures on it.

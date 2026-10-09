@@ -15,6 +15,13 @@
 // -DCH_RSA_MODULUS_MAX=512, the webpki build's bound, so those
 // verify; at the device bound of 384 the same test expects the size
 // check to refuse them.
+//
+// bin/rsa_pkcs1_test_host is the same main built as a host object. It
+// takes the ch_cfg.cpu value it runs under as its argument and verifies
+// through rsa_pkcs1_verify_cpu and rsa_pss_verify_cpu under that value,
+// whose CH_CPU_AVX512_IFMA runs the public operation on rsa_ifma.c on
+// x86-64 (test/test_cpu.h). Every other build calls the entries that take
+// no value, as RSA_PKCS1_VERIFY_CPU and RSA_PSS_VERIFY_CPU write them.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -27,6 +34,7 @@
 #include "rsa_pkcs1_wide_vectors.h"
 #include "sha256.h"
 #include "sha512.h"
+#include "test_cpu.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -122,9 +130,10 @@ static void test_table(const vector *table, size_t count, int want) {
         uint8_t digest[SHA384_LEN];
         size_t digest_len = hash_message(v, digest);
         CHECK(memcmp(digest, v->digest, digest_len) == 0);
-        CHECK(rsa_pkcs1_verify(v->n, v->n_len, digest, digest_len, v->sig, v->sig_len) == want);
-        CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, v->sig, v->sig_len) ==
-              want);
+        CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, digest, digest_len, v->sig,
+                                   v->sig_len) == want);
+        CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len,
+                                   v->sig, v->sig_len) == want);
     }
 }
 
@@ -135,12 +144,14 @@ static void test_tampered(const vector *v) {
     uint8_t bad_sig[VECTOR_N_MAX];
     memcpy(bad_sig, v->sig, v->sig_len);
     bad_sig[v->sig_len / 2] ^= 0x01;
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, bad_sig, v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len, bad_sig,
+                               v->sig_len) == 0);
 
     uint8_t bad_digest[SHA384_LEN];
     memcpy(bad_digest, v->digest, v->digest_len);
     bad_digest[0] ^= 0x01;
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, bad_digest, v->digest_len, v->sig, v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, bad_digest, v->digest_len, v->sig,
+                               v->sig_len) == 0);
 
     // The other supported length, and lengths no supported hash has,
     // over the same digest bytes. A shorter length reads a prefix of
@@ -149,21 +160,28 @@ static void test_tampered(const vector *v) {
     uint8_t padded[SHA384_LEN] = {0};
     memcpy(padded, v->digest, v->digest_len);
     size_t other_len = v->digest_len == SHA256_LEN ? SHA384_LEN : SHA256_LEN;
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, padded, other_len, v->sig, v->sig_len) == 0);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, padded, 0, v->sig, v->sig_len) == 0);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, padded, SHA256_LEN - 1, v->sig, v->sig_len) == 0);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, padded, SHA256_LEN + 1, v->sig, v->sig_len) == 0);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, padded, SHA384_LEN - 1, v->sig, v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, padded, other_len, v->sig,
+                               v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, padded, 0, v->sig, v->sig_len) ==
+          0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, padded, SHA256_LEN - 1, v->sig,
+                               v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, padded, SHA256_LEN + 1, v->sig,
+                               v->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, padded, SHA384_LEN - 1, v->sig,
+                               v->sig_len) == 0);
 
     // sig_len != n_len, one byte either side.
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, v->sig, v->sig_len - 1) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len, v->sig,
+                               v->sig_len - 1) == 0);
     uint8_t long_sig[VECTOR_N_MAX + 1] = {0};
     memcpy(long_sig, v->sig, v->sig_len);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, long_sig, v->sig_len + 1) ==
-          0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len, long_sig,
+                               v->sig_len + 1) == 0);
 
     // A signature at or above the modulus is out of RSAVP1's range.
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, v->n, v->n_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len, v->n,
+                               v->n_len) == 0);
 }
 
 // The modulus size check, at its exact boundaries: 255 bytes is refused and
@@ -177,34 +195,37 @@ static void test_tampered(const vector *v) {
 static void test_modulus_gate(void) {
     const vector *v = &vectors[0]; // n2048, SHA-256
     CHECK(v->n_len == MODULUS_MIN);
-    CHECK(rsa_pkcs1_verify(v->n, MODULUS_MIN, v->digest, v->digest_len, v->sig, MODULUS_MIN) == 1);
-    CHECK(rsa_pkcs1_verify(v->n, MODULUS_MIN - 1, v->digest, v->digest_len, v->sig,
-                           MODULUS_MIN - 1) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, MODULUS_MIN, v->digest, v->digest_len,
+                               v->sig, MODULUS_MIN) == 1);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, MODULUS_MIN - 1, v->digest, v->digest_len,
+                               v->sig, MODULUS_MIN - 1) == 0);
 
     const vector *w = wide ? &wide_vectors[0] : &vectors[2]; // SHA-256 at the bound
     CHECK(w->n_len == CH_RSA_MODULUS_MAX);
-    CHECK(rsa_pkcs1_verify(w->n, w->n_len, w->digest, w->digest_len, w->sig, w->n_len) == 1);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, w->n, w->n_len, w->digest, w->digest_len, w->sig,
+                               w->n_len) == 1);
     uint8_t wide_n[OVER_MAX_LEN] = {0};
     uint8_t wide_sig[OVER_MAX_LEN] = {0};
     memcpy(wide_n, w->n, w->n_len);
     memcpy(wide_sig, w->sig, w->sig_len);
     wide_n[OVER_MAX_LEN - 1] = 0x01; // odd, so only the size check refuses it
-    CHECK(rsa_pkcs1_verify(wide_n, OVER_MAX_LEN, w->digest, w->digest_len, wide_sig,
-                           OVER_MAX_LEN) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, wide_n, OVER_MAX_LEN, w->digest, w->digest_len,
+                               wide_sig, OVER_MAX_LEN) == 0);
     wide_n[NOT_A_STEP_LEN - 1] = 0x01;
-    CHECK(rsa_pkcs1_verify(wide_n, NOT_A_STEP_LEN, w->digest, w->digest_len, wide_sig,
-                           NOT_A_STEP_LEN) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, wide_n, NOT_A_STEP_LEN, w->digest, w->digest_len,
+                               wide_sig, NOT_A_STEP_LEN) == 0);
 
     const vector *below = &wide_vectors[2]; // n4032, SHA-256
     CHECK(below->n_len == 512 - 8);
-    CHECK(rsa_pkcs1_verify(below->n, below->n_len, below->digest, below->digest_len, below->sig,
-                           below->sig_len) == wide);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, below->n, below->n_len, below->digest,
+                               below->digest_len, below->sig, below->sig_len) == wide);
 
     // An even modulus is refused before any arithmetic runs.
     uint8_t even_n[VECTOR_N_MAX];
     memcpy(even_n, w->n, w->n_len);
     even_n[w->n_len - 1] &= (uint8_t)~0x01;
-    CHECK(rsa_pkcs1_verify(even_n, w->n_len, w->digest, w->digest_len, w->sig, w->sig_len) == 0);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, even_n, w->n_len, w->digest, w->digest_len, w->sig,
+                               w->sig_len) == 0);
 }
 
 // Algorithm confusion: an RSA-PSS signature under the same key over the
@@ -217,11 +238,11 @@ static void test_modulus_gate(void) {
 static void test_pss_refused(void) {
     const vector *v = &vectors[0]; // n2048, SHA-256, message one
     CHECK(sizeof rsa2048_sha256_pss_sig == v->n_len);
-    CHECK(rsa_pss_verify(v->n, v->n_len, v->digest, rsa2048_sha256_pss_sig,
-                         sizeof rsa2048_sha256_pss_sig) == 1);
-    CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, rsa2048_sha256_pss_sig,
-                           sizeof rsa2048_sha256_pss_sig) == 0);
-    CHECK(rsa_pss_verify(v->n, v->n_len, v->digest, v->sig, v->sig_len) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, rsa2048_sha256_pss_sig,
+                             sizeof rsa2048_sha256_pss_sig) == 1);
+    CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->digest_len,
+                               rsa2048_sha256_pss_sig, sizeof rsa2048_sha256_pss_sig) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, v->n, v->n_len, v->digest, v->sig, v->sig_len) == 0);
 
     const vector pss[2] = {
         {n4096, sizeof n4096, rsa4096_message, rsa4096_sha256_digest, sizeof rsa4096_sha256_digest,
@@ -233,13 +254,17 @@ static void test_pss_refused(void) {
         const vector *p = &pss[i];
         const vector *k = &wide_vectors[2 * i]; // the same key, SHA-256, v1.5
         CHECK(p->n == k->n && p->sig_len == p->n_len);
-        CHECK(rsa_pss_verify(p->n, p->n_len, p->digest, p->sig, p->sig_len) == wide);
-        CHECK(rsa_pkcs1_verify(p->n, p->n_len, p->digest, p->digest_len, p->sig, p->sig_len) == 0);
-        CHECK(rsa_pss_verify(k->n, k->n_len, k->digest, k->sig, k->sig_len) == 0);
+        CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, p->n, p->n_len, p->digest, p->sig, p->sig_len) ==
+              wide);
+        CHECK(RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, p->n, p->n_len, p->digest, p->digest_len,
+                                   p->sig, p->sig_len) == 0);
+        CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, k->n, k->n_len, k->digest, k->sig, k->sig_len) ==
+              0);
     }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     test_table(vectors, COUNT(vectors), 1);
     test_table(wide_vectors, COUNT(wide_vectors), wide);
     for (size_t i = 0; i < COUNT(vectors); i++) {

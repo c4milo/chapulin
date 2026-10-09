@@ -1339,7 +1339,18 @@ last `ROLE=server` stub, as the entry said it would.
   at bit 0 of the top word whatever the exponent,
   `inv41-rsa-mont-ifma-power-starts-at-bit-zero`: `bin/x86_kernels_test`'s
   RSA-3072 row then gives other bytes than `rsa_vp1`, and
-  `test/docker-aes-runtime-qemu.sh x86-kernels` runs it.
+  `test/docker-aes-runtime-qemu.sh x86-kernels` runs it. Or a caller that
+  holds a session hands an RSA verifier 0 in place of its `ch_cfg.cpu`:
+  the pinned CertificateVerify, `ch_srv_check`'s check of the RSA
+  identity, the webpki CertificateVerify, or the chain walk's issuer or
+  anchor link. `inv41-rsa-ifma-pinned-certificate-verify-drops-cpu`,
+  `inv41-rsa-ifma-srv-check-drops-cpu`,
+  `inv41-rsa-ifma-webpki-certificate-verify-drops-cpu`,
+  `inv41-rsa-ifma-webpki-issuer-drops-cpu` and
+  `inv41-rsa-ifma-webpki-anchor-drops-cpu` make each, and
+  `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host`, which count the
+  calls into `rsa_ifma_public` per caller, catch them under
+  `test/docker-aes-runtime-qemu.sh rsa-ifma-callers`.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117 and 118.
 
 ### INV-42 — a host object returns no RSA signature it has not verified

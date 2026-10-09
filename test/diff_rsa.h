@@ -15,6 +15,12 @@
 // so bin/diff builds with -DCH_RSA_MODULUS_MAX=512 (the Makefile's
 // RSA_WIDE_DEF) and diff_rsa_check_c stops on a build whose bound is
 // below a sampled modulus.
+// A host build, bin/diff_webpki_aes, verifies through rsa_pss_verify_cpu
+// under DIFF_RSA_CPU: every bit test/test_cpu.h's last value names, less
+// the instructions this CPU lacks (test_cpu_value). So on an x86-64 CPU
+// with AVX-512 IFMA the public operation runs on rsa_ifma.c, and on every
+// other CPU on rsa_mont64.c. Every other build calls rsa_pss_verify, as
+// RSA_PSS_VERIFY_CPU writes it.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFRSA_H
 #define CH_DIFFRSA_H
@@ -24,6 +30,14 @@
 #include "rsa.h"
 #define DIFF_HAVE_RSA 1
 #endif
+#endif
+
+#ifdef CH_CPU_RUNTIME
+#include "test_cpu.h"
+// The value the two RSA sections hand the verifiers' entries that take
+// one: every bit this architecture defines, AVX-512 IFMA among them on
+// x86-64, less those whose instructions this CPU lacks.
+#define DIFF_RSA_CPU test_cpu_value(TEST_CPU_VALUES - 1)
 #endif
 
 // Fixed public exponent for every test key (F4).
@@ -144,11 +158,11 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
         die("rsa: CH_RSA_MODULUS_MAX is below the sampled modulus; build with "
             "-DCH_RSA_MODULUS_MAX=512");
     }
-    if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
+    if (RSA_PSS_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, hash, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);
         exit(1);
     }
-    if (rsa_pss_verify(n, n_len, bad, sig, sig_len) != 0) {
+    if (RSA_PSS_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, bad, sig, sig_len) != 0) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n",
                       hash_hex);
         exit(1);
@@ -170,7 +184,7 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
         uint8_t bad_sig[DIFF_RSA_N_MAX];
         memcpy(bad_sig, sig, sig_len);
         bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
-        if (rsa_pss_verify(n, n_len, hash, bad_sig, sig_len) != 0) {
+        if (RSA_PSS_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, hash, bad_sig, sig_len) != 0) {
             (void)fprintf(stderr,
                           "diff mismatch: C rsa_pss_verify accepted a mutated signature\n"
                           "  flipped byte: %zu\n  h: %s\n",

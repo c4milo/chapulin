@@ -11,10 +11,12 @@
 # counting binaries for arm64, which alone compiles the SHA-512 entries;
 # "p256-equiv" bin/p256_equiv_test alone, for x86-64 and for arm64,
 # which holds the wide P-256 files to the files under their own names on
-# the two forms of their carry steps that gcc reads; and "keccak"
+# the two forms of their carry steps that gcc reads; "keccak"
 # bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test alone, which clang
 # builds for arm64, the one object that holds Keccak on the SHA-3
-# instructions.
+# instructions; and "rsa-ifma-callers" bin/tcp_blocking_loop_host and
+# bin/webpki_auth_host alone, for x86-64, which count the RSA public
+# operations each caller of the verifiers sends to AVX-512 IFMA.
 # The mips job in .github/workflows/check.yml runs the same script on its
 # runner. tools/toolchain.env pins the container, and the container's apt
 # supplies gcc, clang and qemu-user, as the runner's does (Ubuntu 24.04
@@ -33,8 +35,10 @@
 # it with "x86-kernels", the violations of sha256_hw.c's and sha512_hw.c's
 # constants and wipes with "sha2-equiv", the violations of the
 # SHA-512 entries with "arm64-hash-count", the two violations of the
-# intrinsics in p256_wide_word.h's carry steps with "p256-equiv", and the
-# violations of what sha3_hw.c leaves on the stack with "keccak".
+# intrinsics in p256_wide_word.h's carry steps with "p256-equiv", the
+# violations of what sha3_hw.c leaves on the stack with "keccak", and the
+# violations that hand an RSA verifier 0 in place of a session's
+# ch_cfg.cpu with "rsa-ifma-callers".
 # Needs docker (OrbStack works); skips without it.
 set -euo pipefail
 

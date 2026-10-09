@@ -99,6 +99,17 @@
 #     each leaves for the powers of r (test/poly1305_equiv_test.c,
 #     docs/decisions.md 110). The kernel has a body on x86-64 alone.
 #
+# On any model, for x86-64:
+#
+#   - bin/tcp_blocking_loop_host and bin/webpki_auth_host must pass. On
+#     the stand-in test/rsa_ifma_count.c, which runs no AVX-512
+#     instruction, they count the RSA public operations each caller of the
+#     two verifiers sends to AVX-512 IFMA: a pinned CertificateVerify,
+#     ch_srv_check's check of the RSA identity, and a webpki chain with
+#     RSA links and its CertificateVerify (test/tcp_blocking_loop_ifma.h,
+#     test/webpki_auth_ifma.h). Only an x86-64 object sends any, so on an
+#     arm64 machine this is the run that holds the callers.
+#
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
 #   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass.
@@ -179,6 +190,9 @@
 #                     violations of poly1305_avx2.c
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
 #                     violations of keccak_avx2.c and mlkem_avx2.c
+#   rsa-ifma-callers  bin/tcp_blocking_loop_host and bin/webpki_auth_host
+#                     for x86-64, for the violations of the callers that
+#                     hand the RSA verifiers a session's ch_cfg.cpu
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -197,9 +211,10 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2) ;;
+"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
+    rsa-ifma-callers) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | rsa-ifma-callers]" >&2
     exit 2
     ;;
 esac
@@ -226,7 +241,8 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     x86_cc=$(compiler_for "${X86_CC:-}" __x86_64__ x86_64-linux-gnu-gcc) || exit 1
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
-if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ]; then
+if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
+    [ "$only" != rsa-ifma-callers ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -265,8 +281,10 @@ read -r -a mlkem_hw_equiv_srcs <<< "$(sed -n 11p <<< "$lists")"
 read -r -a mlkem_vector_equiv_srcs <<< "$(sed -n 12p <<< "$lists")"
 read -r -a mlkem_avx2_equiv_srcs <<< "$(sed -n 13p <<< "$lists")"
 read -r -a poly1305_equiv_srcs <<< "$(sed -n 14p <<< "$lists")"
-[ "${#poly1305_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than fourteen lists" >&2; exit 1; }
+read -r -a blocking_counted_srcs <<< "$(sed -n 15p <<< "$lists")"
+read -r -a webpki_auth_counted_srcs <<< "$(sed -n 16p <<< "$lists")"
+[ "${#webpki_auth_counted_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than sixteen lists" >&2; exit 1; }
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -360,6 +378,28 @@ if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
 fi
 if [ "$only" = poly1305-avx2 ]; then
     echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to poly1305.c's loop, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = rsa-ifma-callers ]; then
+    # The binaries that count the RSA public operations each caller of the
+    # two verifiers sends to AVX-512 IFMA, as their rules in the Makefile
+    # build them. They link test/rsa_ifma_count.c in place of rsa_ifma.c,
+    # so no row runs an AVX-512 instruction and any model runs them.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
+        -o "$x86_out/tcp_blocking_loop_host" test/tcp_blocking_loop_test.c "${blocking_counted_srcs[@]}" ||
+        exit 1
+    expect max 0 \
+        "a pinned CertificateVerify or ch_srv_check's check sent RSA's public operation to AVX-512 IFMA under a value without CH_CPU_AVX512_IFMA, or none under a value with it" \
+        tcp_blocking_loop_host
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI \
+        -o "$x86_out/webpki_auth_host" test/webpki_auth_test.c "${webpki_auth_counted_srcs[@]}" || exit 1
+    expect max 0 \
+        "a webpki chain's link or its CertificateVerify sent RSA's public operation to AVX-512 IFMA under a value without CH_CPU_AVX512_IFMA, or none under a value with it" \
+        webpki_auth_host
+fi
+if [ "$only" = rsa-ifma-callers ]; then
+    echo "aes-runtime-qemu: as an x86-64 object, each caller of the RSA verifiers sent the public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu held CH_CPU_AVX512_IFMA"
     exit 0
 fi
 
@@ -583,5 +623,6 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "instructions and the other on sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \
     "without the SHA-3 bit passed and the rows with it died of SIGILL, and on max sha3_hw.c agreed" \
     "with sha3.c and left no lane on the stack, ML-KEM's copies agreed with mlkem.c, and one end on" \
-    "the SHA-3 instructions and the other on sha3.c agreed; and the vector NTT agreed with" \
-    "mlkem_poly.c's loops on SSE2 and on NEON"
+    "the SHA-3 instructions and the other on sha3.c agreed; the vector NTT agreed with" \
+    "mlkem_poly.c's loops on SSE2 and on NEON; and each caller of the RSA verifiers sent the" \
+    "public operation to AVX-512 IFMA exactly where its session's ch_cfg.cpu held the bit"

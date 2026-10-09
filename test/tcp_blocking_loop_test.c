@@ -448,6 +448,7 @@ static void server_reads_client(int after_finished, size_t bytes) {
 #include "tcp_blocking_session_tests.h"
 #endif
 #include "tcp_blocking_loop_cpu.h"
+#include "tcp_blocking_loop_ifma.h"
 #include "tcp_blocking_loop_runtime.h"
 #include "tcp_blocking_loop_widemul.h"
 
@@ -470,6 +471,7 @@ int main(void) {
 #endif
 #ifdef TEST_WIDEMUL_COUNTED
     test_multiply_bit();
+    test_rsa_ifma_callers();
 #endif
 #ifdef CH_CPU_RUNTIME
     test_cpu_values_at_init();

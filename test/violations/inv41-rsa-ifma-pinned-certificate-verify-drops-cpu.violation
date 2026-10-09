@@ -1,0 +1,17 @@
+invariant: INV-41
+file: handshake_auth.c
+catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
+reason: the pinned client verifies the server's CertificateVerify under 0
+  in place of the session's ch_cfg.cpu, so a session whose caller set
+  CH_CPU_AVX512_IFMA never runs RSA's public operation on AVX-512 IFMA
+  there. The verdict is the same. test/tcp_blocking_loop_ifma.h requires
+  one call to rsa_ifma_public per handshake from a client whose value holds
+  the bit. Only an x86-64 object makes the call, so
+  test/aes-runtime-qemu.sh builds bin/tcp_blocking_loop_host for x86-64
+  and runs it under qemu-x86_64. The lane skips without docker, and this
+  then reports unguarded rather than caught.
+
+--- old
+        sig_ok = RSA_PSS_VERIFY_CPU(h->t->cfg.cpu, keys[i], len, signed_hash, sig, sig_len);
+--- new
+        sig_ok = RSA_PSS_VERIFY_CPU(0U, keys[i], len, signed_hash, sig, sig_len);

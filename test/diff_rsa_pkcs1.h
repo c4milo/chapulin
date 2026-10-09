@@ -15,6 +15,9 @@
 // DigestInfo.
 //
 // The signature crosses the pipe as raw k-octet hex, as in diff_rsa.h.
+// A host build verifies through rsa_pkcs1_verify_cpu under diff_rsa.h's
+// DIFF_RSA_CPU, and every other build calls rsa_pkcs1_verify, as
+// RSA_PKCS1_VERIFY_CPU writes it.
 // Included by test/diff_test.c after diff_driver.h and diff_rsa.h
 // (single translation unit): the keys, DIFF_RSA_E, DIFF_RSA_N_MAX and
 // DIFF_RSA_ROWS come from there.
@@ -56,11 +59,11 @@ static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_
         die("rsa_pkcs1: CH_RSA_MODULUS_MAX is below the sampled modulus; build with "
             "-DCH_RSA_MODULUS_MAX=512");
     }
-    if (rsa_pkcs1_verify(n, n_len, digest, digest_len, sig, sig_len) != 1) {
+    if (RSA_PKCS1_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, digest, digest_len, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pkcs1_verify rejected\n  h: %s\n", digest_hex);
         exit(1);
     }
-    if (rsa_pkcs1_verify(n, n_len, bad, digest_len, sig, sig_len) != 0) {
+    if (RSA_PKCS1_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, bad, digest_len, sig, sig_len) != 0) {
         (void)fprintf(stderr,
                       "diff mismatch: C rsa_pkcs1_verify accepted a mutated digest\n  h: %s\n",
                       digest_hex);
@@ -84,7 +87,8 @@ static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_
         uint8_t bad_sig[DIFF_RSA_N_MAX];
         memcpy(bad_sig, sig, sig_len);
         bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
-        if (rsa_pkcs1_verify(n, n_len, digest, digest_len, bad_sig, sig_len) != 0) {
+        if (RSA_PKCS1_VERIFY_CPU(DIFF_RSA_CPU, n, n_len, digest, digest_len, bad_sig, sig_len) !=
+            0) {
             (void)fprintf(stderr,
                           "diff mismatch: C rsa_pkcs1_verify accepted a mutated signature\n"
                           "  flipped byte: %zu\n  h: %s\n",

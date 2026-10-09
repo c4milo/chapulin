@@ -16,6 +16,12 @@
 // builds with -DCH_RSA_MODULUS_MAX=512, the webpki build's bound, so
 // both verify; built at the device bound of 384, as the coverage
 // lane builds it, the same test expects the size check to refuse them.
+//
+// bin/rsa_test_host is the same main built as a host object. It takes the
+// ch_cfg.cpu value it runs under as its argument and verifies through
+// rsa_pss_verify_cpu under that value, whose CH_CPU_AVX512_IFMA runs the
+// public operation on rsa_ifma.c on x86-64 (test/test_cpu.h). Every other
+// build calls rsa_pss_verify, as RSA_PSS_VERIFY_CPU writes it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -25,6 +31,7 @@
 #include "rsa.h"
 #include "rsa_wide_vectors.h"
 #include "sha256.h"
+#include "test_cpu.h"
 
 // The modulus size test below knows the two bounds rsa.h defines and no other.
 _Static_assert(CH_RSA_MODULUS_MAX == 384 || CH_RSA_MODULUS_MAX == 512,
@@ -238,31 +245,35 @@ static void test_modulus_gate(void) {
     CHECK(memcmp(h4032, rsa4032_sha256_digest, sizeof h4032) == 0);
     CHECK(sizeof n4096 == 512 && sizeof rsa4096_pss_sig == 512);
     CHECK(sizeof n4032 == 504 && sizeof rsa4032_pss_sig == 504);
-    CHECK(rsa_pss_verify(n4096, sizeof n4096, h4096, rsa4096_pss_sig, sizeof rsa4096_pss_sig) ==
-          wide);
-    CHECK(rsa_pss_verify(n4032, sizeof n4032, h4032, rsa4032_pss_sig, sizeof rsa4032_pss_sig) ==
-          wide);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n4096, sizeof n4096, h4096, rsa4096_pss_sig,
+                             sizeof rsa4096_pss_sig) == wide);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n4032, sizeof n4032, h4032, rsa4032_pss_sig,
+                             sizeof rsa4032_pss_sig) == wide);
 
     uint8_t bad_sig[sizeof rsa4096_pss_sig];
     memcpy(bad_sig, rsa4096_pss_sig, sizeof bad_sig);
     bad_sig[200] ^= 0x01;
-    CHECK(rsa_pss_verify(n4096, sizeof n4096, h4096, bad_sig, sizeof bad_sig) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n4096, sizeof n4096, h4096, bad_sig,
+                             sizeof bad_sig) == 0);
 
     const uint8_t *top_n = wide ? n4096 : n3072;
     const uint8_t *top_sig = wide ? rsa4096_pss_sig : sig1;
     const uint8_t *top_hash = wide ? h4096 : h3072;
     size_t top_len = wide ? sizeof n4096 : sizeof n3072;
     CHECK(top_len == CH_RSA_MODULUS_MAX);
-    CHECK(rsa_pss_verify(top_n, top_len, top_hash, top_sig, top_len) == 1);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, top_n, top_len, top_hash, top_sig, top_len) == 1);
     uint8_t wide_n[CH_RSA_MODULUS_MAX + 8] = {0};
     uint8_t wide_sig[CH_RSA_MODULUS_MAX + 8] = {0};
     memcpy(wide_n, top_n, top_len);
     memcpy(wide_sig, top_sig, top_len);
-    CHECK(rsa_pss_verify(wide_n, sizeof wide_n, top_hash, wide_sig, sizeof wide_sig) == 0);
-    CHECK(rsa_pss_verify(wide_n, top_len + 4, top_hash, wide_sig, top_len + 4) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, wide_n, sizeof wide_n, top_hash, wide_sig,
+                             sizeof wide_sig) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, wide_n, top_len + 4, top_hash, wide_sig,
+                             top_len + 4) == 0);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    test_take_cpu(argc, argv);
     uint8_t h1[32];
     uint8_t h2[32];
     uint8_t h3[32];
@@ -271,38 +282,44 @@ int main(void) {
     sha256_of((const uint8_t *)msg3, strlen(msg3), h3);
 
     // Valid signatures verify: two at RSA-3072, one at RSA-2048.
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, sig1, sizeof sig1) == 1);
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h2, sig2, sizeof sig2) == 1);
-    CHECK(rsa_pss_verify(n2048, sizeof n2048, h3, sig3, sizeof sig3) == 1);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h1, sig1, sizeof sig1) == 1);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h2, sig2, sizeof sig2) == 1);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2048, sizeof n2048, h3, sig3, sizeof sig3) == 1);
 
     // The non-byte-aligned modulus: valid signature verifies, and a
     // signature value at or above the modulus is rejected outright.
     uint8_t h4[32];
     sha256_of((const uint8_t *)msg2047, strlen(msg2047), h4);
-    CHECK(rsa_pss_verify(n2047, sizeof n2047, h4, sig2047, sizeof sig2047) == 1);
-    CHECK(rsa_pss_verify(n2047, sizeof n2047, h4, n2047, sizeof n2047) == 0); // sig == n
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2047, sizeof n2047, h4, sig2047, sizeof sig2047) ==
+          1);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2047, sizeof n2047, h4, n2047, sizeof n2047) ==
+          0); // sig == n
     uint8_t bad2047[sizeof sig2047];
     memcpy(bad2047, sig2047, sizeof bad2047);
     bad2047[0] ^= 0x80; // drives sig above the 2047-bit modulus
-    CHECK(rsa_pss_verify(n2047, sizeof n2047, h4, bad2047, sizeof bad2047) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2047, sizeof n2047, h4, bad2047, sizeof bad2047) ==
+          0);
     bad2047[0] = sig2047[0];
     bad2047[128] ^= 0x01; // an in-range corruption fails the PSS decode
-    CHECK(rsa_pss_verify(n2047, sizeof n2047, h4, bad2047, sizeof bad2047) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2047, sizeof n2047, h4, bad2047, sizeof bad2047) ==
+          0);
 
     // A flipped message-hash bit breaks H recomputation.
     uint8_t bad_hash[32];
     memcpy(bad_hash, h1, sizeof bad_hash);
     bad_hash[0] ^= 0x01;
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, bad_hash, sig1, sizeof sig1) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, bad_hash, sig1, sizeof sig1) ==
+          0);
 
     // A flipped signature byte changes the recovered EM.
     uint8_t bad_sig[sizeof sig1];
     memcpy(bad_sig, sig1, sizeof bad_sig);
     bad_sig[100] ^= 0x01;
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, bad_sig, sizeof bad_sig) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h1, bad_sig, sizeof bad_sig) ==
+          0);
 
     // A signature equal to the modulus is out of range.
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, n3072, sizeof n3072) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h1, n3072, sizeof n3072) == 0);
 
     // A signature one greater than the modulus is out of range.
     uint8_t n_plus_1[sizeof n3072];
@@ -312,14 +329,16 @@ int main(void) {
             break;
         }
     }
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, n_plus_1, sizeof n_plus_1) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h1, n_plus_1,
+                             sizeof n_plus_1) == 0);
 
     // A truncated signature (sig_len != n_len) is rejected.
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, sig1, sizeof sig1 - 1) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n3072, sizeof n3072, h1, sig1, sizeof sig1 - 1) ==
+          0);
 
     // A modulus of a disallowed size (below the 256-byte minimum) is
     // rejected before any arithmetic runs.
-    CHECK(rsa_pss_verify(n2048, 248, h3, sig3, 248) == 0);
+    CHECK(RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n2048, 248, h3, sig3, 248) == 0);
 
     test_modulus_gate();
 

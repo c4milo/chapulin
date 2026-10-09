@@ -37,7 +37,9 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 	@set -e; for b in $(notdir $(X86_KERNEL_BINS) $(HOST_BINS)); do echo "== $$b (host object)"; ./bin/$$b; done
 	@set -e; for b in $(notdir $(HOST_VECTOR_BINS)); do for bits in $(HOST_VECTOR_CPU); do \
 	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
-	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(X86_UNIT_CPU) $(HASH_UNIT_CPU)); do \
+	@set -e; for b in $(if $(HOST_VECTOR_BINS),$(X86_VECTOR_HOST)); do for bits in $(X86_UNIT_CPU); do \
+	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
+	@set -e; for bits in $(if $(HOST_VECTOR_BINS),$(HASH_UNIT_CPU)); do \
 	  echo "== unit_host $$bits (host object)"; ./bin/unit_host $$bits; done
 	@set -e; for b in $(if $(HOST_VECTOR_BINS),$(HASH_VECTOR_HOST)); do for bits in $(HASH512_UNIT_CPU); do \
 	  echo "== $$b $$bits (host object)"; ./bin/$$b $$bits; done; done
@@ -59,7 +61,9 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # CH_REQUIRE_X86_KERNELS=1, so on such a CPU it fails instead, after
 # x86-64-kernels-cpu names the CPU. bin/x86_kernels_test, which counts
 # the calls into the kernels and runs none of their instructions, runs
-# here too.
+# here too. AVX-512 IFMA, which the values with CH_CPU_AVX512_IFMA name,
+# is absent from some of the job's runners, so CH_REQUIRE_X86_KERNELS=1
+# leaves those values skipping there (test/x86_kernels_cpu.h).
 #
 # The same job holds sha256_hw.c's x86-64 arm on the SHA extensions
 # (docs/decisions.md 93), which a CPU with the kernels' instructions has:
@@ -69,13 +73,14 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
                    mlkem_avx2_equiv_test poly1305_equiv_test
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
-x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) bin/unit_host bin/sha2_equiv_test
+x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) \
+                      $(addprefix bin/,$(X86_VECTOR_HOST)) bin/sha2_equiv_test
 	@[ -n "$(X86_KERNEL_BINS)" ] || \
 	  { echo "x86-64-kernels-check: $(CC) does not build a host object for x86-64"; exit 1; }
 	@set -e; for b in $(X86_KERNEL_RUNS); do \
 	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
-	@set -e; for bits in $(X86_UNIT_CPU); do \
-	  echo "== unit_host $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/unit_host $$bits; done
+	@set -e; for b in $(X86_VECTOR_HOST); do for bits in $(X86_UNIT_CPU); do \
+	  echo "== $$b $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b $$bits; done; done
 	@echo "== sha2_equiv_test (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/sha2_equiv_test
 	@set -e; for bits in $(HASH_UNIT_CPU); do \
 	  echo "== unit_host $$bits (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/unit_host $$bits; done

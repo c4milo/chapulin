@@ -22,7 +22,9 @@
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI over the sources that
 // object packages: ch_cfg carries the anchors, the hostname and the
-// clock only there.
+// clock only there. bin/webpki_auth_host is the same main built as a host
+// object, which counts the RSA public operations each caller sends to
+// AVX-512 IFMA (test/webpki_auth_ifma.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +36,7 @@
 #include "record.h"
 #include "session.h"
 #include "sha256.h"
+#include "test_cpu.h"
 #include "test_random.h"
 #include "webpki.h"
 #include "webpki_auth_vectors.h"
@@ -128,9 +131,9 @@ static const webpki_corpus_chain *chain_named(const char *name) {
 }
 
 // A row's configuration: its anchors, its hostname and its clock, as
-// test/webpki_chain_test.c builds them.
+// test/webpki_chain_test.c builds them, and in a host object TEST_CPU.
 static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_cfg *cfg) {
-    memset(cfg, 0, sizeof *cfg);
+    test_cfg_clear(cfg);
     CHECK(row->anchor_count <= CH_WEBPKI_ANCHOR_MAX);
     for (size_t i = 0; i < row->anchor_count; i++) {
         anchors[i].name = row->anchors[i].name;
@@ -313,7 +316,9 @@ static void test_scheme_table(void) {
 }
 
 #include "webpki_auth_pins.h"
-// The leaf pin rows read webpki_auth_pins.h's helpers.
+// The leaf pin rows and the AVX-512 IFMA rows read webpki_auth_pins.h's
+// helpers.
+#include "webpki_auth_ifma.h"
 #include "webpki_leaf_pins.h"
 
 int main(void) {
@@ -324,6 +329,7 @@ int main(void) {
     test_raw_key_bound();
     test_chain_pins();
     test_leaf_pins();
+    test_rsa_ifma_chain();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

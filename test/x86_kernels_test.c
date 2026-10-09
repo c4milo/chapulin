@@ -10,8 +10,9 @@
 // use_ifma picks rsa_ifma.c's RSA public operation where it holds
 // CH_CPU_AVX512_IFMA. The kernels compute the bytes the
 // paths beside them compute, so no vector can tell which ran:
-// test/x86_kernels_count.c counts the calls instead, and runs each on the
-// entry it stands beside, so this binary runs on every x86-64 CPU.
+// test/x86_kernels_count.c and test/rsa_ifma_count.c count the calls
+// instead, and run each on the entry it stands beside, so this binary runs
+// on every x86-64 CPU.
 //
 // Every row runs under each of the 32 values the five bits from 0x02 to
 // 0x10 and 0x100 make beside CH_CPU_PROBED, and under 0, which a wiped

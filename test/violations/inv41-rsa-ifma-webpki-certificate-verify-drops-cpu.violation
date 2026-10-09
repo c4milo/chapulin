@@ -1,0 +1,17 @@
+invariant: INV-41
+file: handshake_auth.c
+catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
+reason: the webpki client verifies an RSA leaf's CertificateVerify under 0
+  in place of the session's ch_cfg.cpu, so a session whose caller set
+  CH_CPU_AVX512_IFMA runs that public operation on rsa_mont64.c. The
+  verdict is the same. test/webpki_auth_ifma.h requires three calls to
+  rsa_ifma_public from the aws chain's flight under a value with the bit:
+  the CertificateVerify and the chain's two links. Only an x86-64 object
+  makes the call, so test/aes-runtime-qemu.sh builds bin/webpki_auth_host
+  for x86-64 and runs it under qemu-x86_64. The lane skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+    int sig_ok = verify_leaf_signature(CH_CFG_CPU(h->t->cfg), &h->leaf, signed_hash, sig, sig_len);
+--- new
+    int sig_ok = verify_leaf_signature(0U, &h->leaf, signed_hash, sig, sig_len);

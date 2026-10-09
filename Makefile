@@ -521,7 +521,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/tcp_blocking_key_limit_test.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
-          test/aes_extern_hook.c test/x86_kernels_test.c test/x86_kernels_count.c \
+          test/aes_extern_hook.c test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c chacha20_avx2.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c \
@@ -545,7 +545,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h \
-         test/initial_cpu.h \
+         test/rsa_ifma_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
@@ -1135,19 +1135,25 @@ ifneq ($(CPU_RUNTIME_DEF),)
 LIB_SRCS += $(CHACHA_VECTOR_SRCS)
 endif
 # Whether the compiler targets x86-64, whose host object holds the AVX2
-# ChaCha20 kernel and the VAES AES-GCM kernels (docs/decisions.md 90).
-# There the host binaries that take a ch_cfg.cpu value also run under the
-# values below, which name the kernels, and bin/x86_kernels_test counts
-# which calls the library sends to a kernel under each value. A binary
-# run under a value that names instructions its CPU lacks skips, and
-# fails instead under CH_REQUIRE_X86_KERNELS=1 (test/test_cpu.h).
-#   0xd   the probe's bit, the multiply bit and CH_CPU_AVX2
-#   0xf   those and the AES bit
-#   0x1f  those and CH_CPU_VAES: every bit that picks a kernel or a path beside one
+# ChaCha20 kernel, the VAES AES-GCM kernels (docs/decisions.md 90) and
+# RSA's public operation on AVX-512 IFMA. There the host binaries that
+# take a ch_cfg.cpu value also run under the values below, which name the
+# kernels, and bin/x86_kernels_test counts which calls the library sends
+# to a kernel under each value. A binary run under a value that names
+# instructions its CPU lacks skips, and fails instead under
+# CH_REQUIRE_X86_KERNELS=1, or for AVX-512 IFMA under
+# CH_REQUIRE_AVX512_IFMA=1 (test/test_cpu.h). The unit suite and the two
+# RSA verifiers' vector binaries run under the first two, and the
+# Wycheproof host binary under the last three.
+#   0xd    the probe's bit, the multiply bit and CH_CPU_AVX2
+#   0x10d  those and CH_CPU_AVX512_IFMA
+#   0xf    0xd's bits and the AES bit
+#   0x1f   those and CH_CPU_VAES
+#   0x11f  those and CH_CPU_AVX512_IFMA: every bit that picks a kernel or a path beside one
 X86_KERNEL_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qw '__x86_64__' && echo yes)
 X86_KERNEL_BINS := $(if $(X86_KERNEL_PROBE),$(if $(HOST_TARGET),bin/x86_kernels_test))
-X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd)
-X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f)
+X86_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd 0x10d)
+X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f)
 # The values under which the host binaries that take a ch_cfg.cpu value run
 # their hashes on the CPU's hash instructions (docs/decisions.md 93). The
 # unit suite runs FIPS 180-4's, RFC 4231's and RFC 5869's vectors and keys
@@ -1500,8 +1506,9 @@ print-host-srcs:
 # bin/hash_runtime_exporter_test links the first, bin/p256_equiv_test
 # beside its one, bin/sha3_hw_equiv_test and bin/mlkem_hw_equiv_test
 # beside theirs, bin/mlkem_vector_equiv_test and
-# bin/mlkem_avx2_equiv_test beside their one each, and
-# bin/poly1305_equiv_test beside its one.
+# bin/mlkem_avx2_equiv_test beside their one each,
+# bin/poly1305_equiv_test beside its one, and bin/tcp_blocking_loop_host
+# and bin/webpki_auth_host beside theirs.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1518,6 +1525,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
 	@echo $(MLKEM_AVX2_EQUIV_TEST_SRCS)
 	@echo $(POLY1305_EQUIV_TEST_SRCS)
+	@echo $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
+	@echo $(call widemul_counted,$(WEBPKI_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2505,13 +2514,16 @@ RSA_SIGN_EQUIV_TEST_SRCS := test/rsa_sign_equiv_pieces.c test/stack_residue.c rs
 bin/rsa_sign_equiv_test: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
-# The RSA-PSS verifier's vectors on a host object's rsa_vp1: bin/rsa_test's
-# main, built as a host object builds its sources. It takes no ch_cfg.cpu
-# value and calls the verifier that takes none, which runs rsa_mont64.c in
-# every session. bin/x86_kernels_test counts which calls of the entries
-# that take a value run rsa_ifma.c, which CH_CPU_AVX512_IFMA picks on
-# x86-64. bin/rsa_pkcs1_test_host is the same for the PKCS#1 v1.5
-# verifier, beside bin/rsa_pkcs1_test.
+# The RSA-PSS verifier's vectors on a host object's public operation:
+# bin/rsa_test's main, built as a host object builds its sources. It takes
+# the ch_cfg.cpu value it runs under as its argument and calls the
+# verifier's entry that takes one, rsa_pss_verify_cpu. check runs it as a
+# vector binary (HOST_VECTOR_TESTS): under X86_UNIT_CPU's 0x10d on x86-64
+# its vectors run on rsa_ifma.c, which CH_CPU_AVX512_IFMA picks, where the
+# CPU has AVX-512 IFMA, and under every other value on rsa_mont64.c.
+# bin/x86_kernels_test counts which calls run rsa_ifma.c.
+# bin/rsa_pkcs1_test_host is the same for the PKCS#1 v1.5 verifier,
+# beside bin/rsa_pkcs1_test.
 bin/rsa_test_host: test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_test.c $(call host_srcs,$(RSA_TEST_SRCS))
@@ -2632,9 +2644,10 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # CH_CPU_VAES picks beside CH_CPU_CONSTANT_TIME_AES, and rsa_ifma.c's
 # public operation, which CH_CPU_AVX512_IFMA picks for the two RSA
 # verifiers' entries that take a value.
-# test/x86_kernels_count.c defines the nine entries, each as a count and
-# a call to the entry it stands beside, and the binary links it in place
-# of the kernel sources. So no instruction of a kernel runs, the binary
+# test/x86_kernels_count.c defines the first eight entries and
+# test/rsa_ifma_count.c the ninth, each as a count and a call to the entry
+# it stands beside, and the binary links the two in place of the kernel
+# sources. So no instruction of a kernel runs, the binary
 # runs on every x86-64 CPU, and its counts say which path the library
 # chose. It holds a TCP object's record layer and a QUIC object's
 # packet calls, so it compiles both under the QUIC and suite defines. What
@@ -2645,7 +2658,8 @@ X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c gcm_vaes.c keccak_avx2.c m
                            $(call host_srcs,record.c \
                            quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
-                           mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c))
+                           mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c)) \
+                         test/rsa_ifma_count.c
 bin/x86_kernels_test: test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
@@ -3054,7 +3068,7 @@ bin/p384_test: test/p384_test.c $(P384_TEST_SRCS) $(HDRS) $(TESTH)
 # The same vectors on a host object's verifier, as bin/rsa_test_host runs
 # RSA's: p384.c compiles the arm that calls p384_wide_verify.c
 # (docs/decisions.md 97). It takes no ch_cfg.cpu value, because no bit
-# picks a verifier. ct_wipe.c links for sha512_hw.c, which host_srcs
+# picks P-384's verifier. ct_wipe.c links for sha512_hw.c, which host_srcs
 # writes beside sha512.c and which wipes its working state.
 P384_TEST_HOST_SRCS := $(call host_srcs,$(P384_TEST_SRCS)) ct_wipe.c
 bin/p384_test_host: test/p384_test.c $(P384_TEST_HOST_SRCS) $(HDRS) $(TESTH)
@@ -3108,8 +3122,9 @@ RSA_PKCS1_TEST_SRCS := rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_com
 bin/rsa_pkcs1_test: test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(RSA_PKCS1_TEST_SRCS)
-# The same vectors on a host object's rsa_vp1, as bin/rsa_test_host runs
-# the RSA-PSS ones.
+# The same vectors on a host object's public operation, through
+# rsa_pkcs1_verify_cpu under the value it takes as its argument, as
+# bin/rsa_test_host runs the RSA-PSS ones.
 bin/rsa_pkcs1_test_host: test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS)) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_pkcs1_test.c $(call host_srcs,$(RSA_PKCS1_TEST_SRCS))
@@ -3358,22 +3373,26 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 # under its own name and as its native copy, with the vector ChaCha20 and
 # the vector Poly1305 a host object holds (host_srcs).
 #
-# The unit, ML-KEM, P-256 and RSA signing vectors, each one host binary
-# that takes the ch_cfg.cpu value it runs under as its argument
-# (test/test_cpu.h): its main hands the answer that value gives to every
-# call built on the multiply and the value to every configuration it
-# builds (test/test_widemul.h), and HOST_VECTOR_CPU runs it with
-# CH_CPU_CONSTANT_TIME_MULTIPLY and without it, so the same vectors run
-# through widemul.h's dispatchers on the native copies and then on the
-# decomposition. The host Wycheproof test below does the same.
-# bin/widemul_runtime_test counts which copy each operation ran. On
-# x86-64 the unit suite runs once more, under X86_UNIT_CPU, which names
-# AVX2: RFC 8439's vectors and every record the suite seals and opens
-# then run ChaCha20 on the AVX2 kernel (test/test_aead.h). On both
-# architectures it runs once more under HASH_UNIT_CPU, which names the
-# SHA-256 instructions: FIPS 180-4's, RFC 4231's and RFC 5869's vectors and
-# every record direction the suite keys then hash on them
-# (test/test_hash.h).
+# The unit, ML-KEM, P-256, RSA signing and RSA verifying vectors, each one
+# host binary that takes the ch_cfg.cpu value it runs under as its
+# argument (test/test_cpu.h): its main hands the answer that value gives
+# to every call built on the multiply and the value to every
+# configuration it builds (test/test_widemul.h), and HOST_VECTOR_CPU runs
+# it with CH_CPU_CONSTANT_TIME_MULTIPLY and without it, so the same
+# vectors run through widemul.h's dispatchers on the native copies and
+# then on the decomposition. The host Wycheproof test below does the
+# same. bin/widemul_runtime_test counts which copy each operation ran. On
+# x86-64 the unit suite runs twice more, under X86_UNIT_CPU, which names
+# AVX2 and then AVX-512 IFMA beside it: RFC 8439's vectors and every
+# record the suite seals and opens then run ChaCha20 on the AVX2 kernel
+# (test/test_aead.h). The suite runs no RSA public operation, because its
+# RSA rows are refusals at the device bound, so the second value moves
+# nothing the first does not. The two RSA verifiers' vector binaries run
+# under X86_UNIT_CPU too, and under the second value their public
+# operation runs on rsa_ifma.c. On both architectures the unit suite runs
+# once more under HASH_UNIT_CPU, which names the SHA-256 instructions:
+# FIPS 180-4's, RFC 4231's and RFC 5869's vectors and every record
+# direction the suite keys then hash on them (test/test_hash.h).
 HOST_VECTOR_CPU := 0x5 0x1
 # $(1) the binary's stem, $(2) its main, $(3) the library sources it
 # links, $(4) its own flags.
@@ -3382,7 +3401,8 @@ bin/$(1)_host: $(2) $(3) $$(call host_srcs,$(3)) $$(HDRS) $$(TESTH)
 	@mkdir -p bin
 	$$(CC) $$(HOST_CFLAGS) -DCH_CPU_RUNTIME $(4) -I. -Itest -o $$@ $(2) $$(call host_srcs,$(3))
 endef
-HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test
+HOST_VECTOR_TESTS := unit mlkem_test p256_ecdh_test p256_sign_test rsa_sign_test sha512_test hkdf384_test \
+                     rsa_test rsa_pkcs1_test
 $(eval $(call HOST_VECTOR_BIN,unit,test/unit_test.c,$(SRCS),))
 $(eval $(call HOST_VECTOR_BIN,mlkem_test,test/mlkem_test.c,$(MLKEM_TEST_SRCS),))
 $(eval $(call HOST_VECTOR_BIN,p256_ecdh_test,test/p256_ecdh_test.c,$(P256_ECDH_TEST_SRCS),))
@@ -3438,32 +3458,46 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # test/*_widemul.h rows set each end's multiply bit. cpu_cfg.h refuses the
 # define on a compiler that fails the host test, so the binaries are named
 # only where HOST_TARGET found one, and check-skips says when it did not.
+# A binary that links rsa_mont.c links test/rsa_ifma_count.c in place of
+# rsa_ifma.c, so its test/*_ifma.h rows count the RSA public operations
+# each caller sends to AVX-512 IFMA on any x86-64 CPU (test/rsa_ifma_count.h).
 widemul_counted = $(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1)) $(WIDEMUL_COUNT_FIELDS) \
                   $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(CHACHA_VECTOR_SRCS) \
-                  $(if $(filter rsa_mont.c,$(1)),$(RSA_MONT64_SRCS)) \
+                  $(if $(filter rsa_mont.c,$(1)),$(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)) test/rsa_ifma_count.c) \
                   $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
                   $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
                   $(call hash_hw_of,$(1))
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                            test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
+                            test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -Itest -o $@ \
 	  test/tcp_blocking_loop_test.c $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
 bin/tcp_nonblocking_loop_host: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) \
-                               $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
+                               $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
 	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -Itest -o $@ test/tcp_nonblocking_loop_test.c \
 	  $(call widemul_counted,$(TCP_NONBLOCKING_LOOP_SRCS))
 bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                    test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
+                    test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
 bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                         test/widemul_runtime_count.c $(RSA_MONT64_SRCS) $(HDRS) $(TESTH)
+                         test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_session_test.c \
+	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
+# The TRUST=webpki CertificateVerify test as the same host object, on the
+# same counting copies. No mock server signs a CertificateVerify over this
+# client's random ClientHello, so this is the binary whose flight walks a
+# chain with RSA links and verifies an RSA CertificateVerify: its
+# test/webpki_auth_ifma.h rows count the public operations each of the
+# three callers sends to AVX-512 IFMA.
+bin/webpki_auth_host: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
+                      test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_auth_test.c \
 	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
 # The binaries of the host object's AES are named here with them: the
 # vectors, the two equivalence tests, the two ciphers' counts, and each
@@ -3473,7 +3507,8 @@ bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMU
 # and the equivalence test and the two counting tests of its SHA-256 on the
 # CPU's instructions.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
-                                 bin/webpki_session_host bin/widemul_runtime_test bin/x25519_equiv_test \
+                                 bin/webpki_session_host bin/webpki_auth_host bin/widemul_runtime_test \
+                                 bin/x25519_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
                                  bin/chacha20_equiv_test bin/poly1305_equiv_test \
@@ -3482,7 +3517,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
                                  bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_equiv_test \
-                                 bin/rsa_sign_equiv_test bin/rsa_test_host bin/rsa_pkcs1_test_host \
+                                 bin/rsa_sign_equiv_test \
                                  bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test \
                                  bin/aes_runtime_test bin/aes_suite_test bin/quic_suite_test bin/srv_flight_test_aes \
                                  bin/webpki_session_aes bin/webpki_loop_aes bin/quic_loop_aes bin/tcp_blocking_loop_aes)
@@ -3672,8 +3707,9 @@ $(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
 # A host vector binary runs once for each ch_cfg.cpu value of
 # HOST_VECTOR_CPU, which it takes as its argument (test/test_cpu.h), and
 # its target fails when any run does. $(2) names the values a binary runs
-# under beside those: the unit suite's, X86_UNIT_CPU on x86-64 and
-# HASH_UNIT_CPU, and HASH512_UNIT_CPU for the two SHA-512 vector binaries.
+# under beside those: X86_UNIT_CPU on x86-64 for the unit suite and the
+# two RSA verifiers' binaries, HASH_UNIT_CPU for the unit suite, and
+# HASH512_UNIT_CPU for the two SHA-512 vector binaries.
 define CHECK_RUN_HOST_VECTOR_BIN
 check-run-$(1): bin/$(1)
 	@mkdir -p bin/check; : > bin/check/$$@.log; rc=0; \
@@ -3681,7 +3717,8 @@ check-run-$(1): bin/$(1)
 	(exit $$$$rc); $$(CHECK_REPORT)
 endef
 HASH_VECTOR_HOST := sha512_test_host hkdf384_test_host
-$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter unit_host,$(b)),$(X86_UNIT_CPU) $(HASH_UNIT_CPU))$(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
+X86_VECTOR_HOST := unit_host rsa_test_host rsa_pkcs1_test_host
+$(foreach b,$(patsubst bin/%,%,$(HOST_VECTOR_BINS)),$(eval $(call CHECK_RUN_HOST_VECTOR_BIN,$(b),$(if $(filter $(X86_VECTOR_HOST),$(b)),$(X86_UNIT_CPU)) $(if $(filter unit_host,$(b)),$(HASH_UNIT_CPU)) $(if $(filter $(HASH_VECTOR_HOST),$(b)),$(HASH512_UNIT_CPU)))))
 
 # The host object's AES runs: the published vectors on the instructions
 # and on the table, and each instruction path against its software twin
@@ -4556,10 +4593,12 @@ wycheproof-run-default:
 # file under its own names, on the decomposition, and with it the native
 # copy, the vector Poly1305 included, and X25519 the wide field, whose
 # 518 cases the x25519 suite then answers for (test/test_widemul.h). On
-# x86-64 it runs twice more, under X86_WYCHEPROOF_CPU: with CH_CPU_AVX2
-# the ChaCha20-Poly1305 suite runs its keystream on the AVX2 kernel, and
-# with CH_CPU_VAES beside the AES bit both AES-GCM suites run their whole
-# blocks on the VAES kernels (docs/decisions.md 90). On both
+# x86-64 it runs three times more, under X86_WYCHEPROOF_CPU: with
+# CH_CPU_AVX2 the ChaCha20-Poly1305 suite runs its keystream on the AVX2
+# kernel, with CH_CPU_VAES beside the AES bit both AES-GCM suites run
+# their whole blocks on the VAES kernels (docs/decisions.md 90), and with
+# CH_CPU_AVX512_IFMA beside those the RSA-PSS and PKCS#1 v1.5 suites run
+# their public operation on rsa_ifma.c. On both
 # architectures it runs once more under HASH_WYCHEPROOF_CPU, where the
 # HMAC-SHA-256 and HKDF-SHA-256 suites hash on the CPU's SHA-256
 # instructions (docs/decisions.md 93). Running the
@@ -5289,7 +5328,7 @@ else
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
-	  test/x86_kernels_test.c test/x86_kernels_count.c \
+	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
@@ -5408,10 +5447,11 @@ else
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	# RSA's public operation on AVX-512 IFMA, which has a body on x86-64
 	# alone, with rsa_mont.c, whose x86-64 host arm holds use_ifma,
-	# power_of_two_mod and the dispatch in rsa_vp1_cpu that calls it, read
-	# for an x86-64 target whatever the host, as the kernels' passes above
-	# are.
-	@$(call TIDY_EACH,rsa_ifma.c rsa_mont.c, \
+	# power_of_two_mod and the dispatch in rsa_vp1_cpu that calls it, and
+	# test/rsa_ifma_count.c, the count the test binaries link in its
+	# place, read for an x86-64 target whatever the host, as the kernels'
+	# passes above are.
+	@$(call TIDY_EACH,rsa_ifma.c rsa_mont.c test/rsa_ifma_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	# A host object's SHA-256 and SHA-512 on the CPU's instructions
@@ -5569,7 +5609,7 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER \
 	  -DCH_ROLE_BOTH -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,tls.c test/webpki_session_test.c examples/webpki_client.c, \
+	  $(call TIDY_EACH,tls.c test/webpki_session_test.c test/webpki_auth_test.c examples/webpki_client.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI \
 	  -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \

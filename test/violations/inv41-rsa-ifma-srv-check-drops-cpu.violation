@@ -1,0 +1,18 @@
+invariant: INV-41
+file: srv_auth.c
+catches: test/docker-aes-runtime-qemu.sh rsa-ifma-callers
+reason: ch_srv_check verifies the RSA identity's signature under 0 in
+  place of the configuration's ch_cfg.cpu, so the check never runs the
+  AVX-512 IFMA path a session under the same value runs, and a value that
+  names instructions the CPU lacks no longer faults at boot. The verdict
+  is the same. test/tcp_blocking_loop_ifma.h requires one call to
+  rsa_ifma_public from the check under a value with CH_CPU_AVX512_IFMA.
+  Only an x86-64 object makes the call, so test/aes-runtime-qemu.sh builds
+  bin/tcp_blocking_loop_host for x86-64 and runs it under qemu-x86_64. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    if (!verify_digest(CH_CFG_CPU(*cfg), id, sigalg, digest, sig, sig_len)) {
+--- new
+    if (!verify_digest(0U, id, sigalg, digest, sig, sig_len)) {

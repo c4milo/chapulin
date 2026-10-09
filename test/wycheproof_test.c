@@ -320,7 +320,8 @@ static void run_rsa(void) {
         const uint8_t *p = wp_rsa_data + wp_rsa[i].off;
         uint8_t hash[SHA256_LEN];
         sha256_of(p, wp_rsa[i].msg_len, hash);
-        int ok = rsa_pss_verify(n, wp_rsa[i].n_len, hash, p + wp_rsa[i].msg_len, wp_rsa[i].sig_len);
+        int ok = RSA_PSS_VERIFY_CPU(TEST_SESSION_CPU, n, wp_rsa[i].n_len, hash,
+                                    p + wp_rsa[i].msg_len, wp_rsa[i].sig_len);
         check_verdict("rsa-pss", wp_rsa[i].tc, ok, wp_rsa[i].valid);
     }
     printf("wycheproof rsa-pss: %zu cases\n", COUNT(wp_rsa));
@@ -344,8 +345,9 @@ static void run_rsa_pkcs1(void) {
             fail("rsa-pkcs1", wp_rsa_pkcs1[i].tc, "digest length without a hash");
             continue;
         }
-        int ok = rsa_pkcs1_verify(n, wp_rsa_pkcs1[i].n_len, digest, digest_len,
-                                  p + wp_rsa_pkcs1[i].msg_len, wp_rsa_pkcs1[i].sig_len);
+        int ok =
+            RSA_PKCS1_VERIFY_CPU(TEST_SESSION_CPU, n, wp_rsa_pkcs1[i].n_len, digest, digest_len,
+                                 p + wp_rsa_pkcs1[i].msg_len, wp_rsa_pkcs1[i].sig_len);
         check_verdict("rsa-pkcs1", wp_rsa_pkcs1[i].tc, ok, wp_rsa_pkcs1[i].valid);
     }
     printf("wycheproof rsa-pkcs1: %zu cases, %d skipped (a public exponent other than 65537)\n",
