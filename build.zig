@@ -555,13 +555,15 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // arm64 both hold nothing (docs/decisions.md 107).
     if (host and contains(lib_srcs, "mlkem.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "keccak_avx2.c", "mlkem_avx2.c" } });
     // CHACHA_VECTOR_SRCS: the vector ChaCha20 every session of a host
-    // object runs, and the AVX2 kernel a session's CH_CPU_AVX2 bit picks
-    // on x86-64 (docs/decisions.md 82, 89 and 90).
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c" } });
-    // AVX512_WIPE_SRCS: the wipe of the vector registers a kernel calls
-    // after it ran secrets through 512-bit registers, in an x86-64 host
-    // object. Elsewhere the file declares nothing, and -Wpedantic refuses
-    // a translation unit with no declaration.
+    // object runs, the AVX2 kernel a session's CH_CPU_AVX2 bit picks on
+    // x86-64 (docs/decisions.md 82, 89 and 90), and the AVX-512 kernel its
+    // CH_CPU_AVX512_IFMA bit picks there.
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "chacha20_vector.c", "chacha20_avx2.c", "chacha20_avx512.c" } });
+    // AVX512_WIPE_SRCS: the wipe of every vector register and the mask
+    // registers k1 to k7, which an x86-64 kernel that ran secrets through
+    // 512-bit registers calls before it returns. An x86-64 host object
+    // alone lists it: on arm64 the file has no body, and -Wpedantic
+    // refuses a translation unit with no declaration.
     if (host and target.cpu.arch == .x86_64) lib_srcs = concat(b, &.{ lib_srcs, &.{"avx512_wipe.c"} });
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });

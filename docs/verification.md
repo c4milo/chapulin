@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-98 of the 129 C sources in the tree root are compiled into a
+98 of the 130 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -46,7 +46,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 31 sources are in no such harness:
+The other 32 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -59,6 +59,7 @@ The other 31 sources are in no such harness:
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
+| `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |

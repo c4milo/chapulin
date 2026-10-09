@@ -1,0 +1,16 @@
+invariant: INV-16
+file: chacha20.c
+catches: test/chacha-builds.sh
+reason: chacha20.c's use_avx512 answers 1 whatever the session's ch_cfg.cpu
+  says, so every session of an x86-64 host object runs the AVX-512 kernel
+  and dies of SIGILL on a CPU without AVX-512F. Every vector and
+  equivalence case passes on a CPU with it, because the kernel computes the
+  same bytes. The script compiles chacha20.c for x86-64 and requires
+  chacha20_xor_cpu to call the AVX2 kernel and chacha20_vector_xor, the
+  paths a session without CH_CPU_AVX512_IFMA runs.
+
+--- old
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;
+--- new
+    (void)cpu;
+    return 1;

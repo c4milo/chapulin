@@ -2,6 +2,7 @@
 
 #ifdef CH_CPU_RUNTIME
 #include "chacha20_avx2.h"
+#include "chacha20_avx512.h"
 #include "chacha20_vector.h"
 #include "cpu_cfg.h"
 #endif
@@ -13,6 +14,15 @@
 // chapulin probes no CPU (docs/decisions.md 89 and 90).
 static int use_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0;
+}
+
+// Whether chacha20_xor_cpu runs chacha20_avx512.c's kernel in place of
+// both paths above: where cpu holds CH_CPU_AVX512_IFMA, which says the CPU
+// has AVX-512F and its operating system saves the 512-bit and mask
+// registers. The kernel needs AVX-512F alone, which every CPU with AVX-512
+// IFMA has, and no bit states a timing for it.
+static int use_avx512(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;
 }
 #endif
 
@@ -113,6 +123,12 @@ void chacha20_xor_cpu(uint32_t cpu, const uint8_t key[CHACHA20_KEY],
                       const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, const uint8_t *in,
                       uint8_t *out, size_t n) {
 #ifdef __x86_64__
+    // Sixteen blocks a pass in 512-bit vectors where the session's caller
+    // says the CPU has AVX-512 (chacha20_avx512.h).
+    if (use_avx512(cpu)) {
+        chacha20_avx512_xor(key, nonce, counter, in, out, n);
+        return;
+    }
     // Eight blocks a pass in 256-bit vectors where the session's caller
     // says the CPU has AVX2 (chacha20_avx2.h).
     if (use_avx2(cpu)) {

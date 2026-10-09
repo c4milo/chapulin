@@ -95,6 +95,24 @@ AUDITED = {
         "on it there, under a ch_cfg.cpu value with CH_CPU_AVX2. Delete this "
         "entry if a harness can ever compile the file."
     ),
+    "chacha20_avx512.c": (
+        "a host object's AVX-512 ChaCha20 kernel on x86-64, written in AVX-512F "
+        "intrinsics, which CBMC cannot read, so no harness compiles the file. "
+        "Every bitwise operator takes unsigned operands: the lane operations "
+        "run on __m512i values through the intrinsics, load32 shifts uint32_t "
+        "values, and the last block's XOR takes two uint8_t bytes, which widen "
+        "to int and hold 0 to 255. The (int) casts hand a uint32_t word to "
+        "_mm512_set1_epi32 and _mm_setr_epi32, a conversion gcc and clang "
+        "define as keeping its 32 bits, and no arithmetic runs on the int. The "
+        "VPSHUFD and VSHUFI32X4 orders are int constants below 256. The rest is "
+        "size_t arithmetic on the byte count n and on block indices below 16. "
+        "bin/chacha20_equiv_test holds the kernel to chacha20.c's proven loop on "
+        "a CPU with AVX-512F, and bin/unit_host and the host Wycheproof test run "
+        "the published vectors on it there, under a ch_cfg.cpu value with "
+        "CH_CPU_AVX512_IFMA; the nightly's rsa-ifma-sde job runs the first "
+        "under Intel SDE. Delete this entry if a harness can ever compile the "
+        "file."
+    ),
     "avx512_wipe.c": (
         "the wipe of the AVX-512 registers in an x86-64 host object: one "
         "function, avx512_wipe_registers, whose body is one block of inline "

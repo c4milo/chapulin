@@ -2,13 +2,16 @@
 // nonce, counter and input, the same output, byte for byte. This is what
 // holds the vector paths, because CBMC cannot read an intrinsic:
 // proof/chacha20_harness.c proves chacha20.c's loop, and this binary holds
-// chacha20_vector.c to that loop's answer, and on an x86-64 CPU with AVX2
-// chacha20_avx2.c's kernel too, over the same cases. chacha20.c compiles
-// here without -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, and
-// test/chacha20_equiv_vector.c and test/chacha20_equiv_avx2.c compile the
-// two vector sources under the define, all in one binary. Whether the CPU
-// has AVX2 is test/x86_kernels_cpu.h's question, which only test code
-// asks.
+// chacha20_vector.c to that loop's answer, on an x86-64 CPU with AVX2
+// chacha20_avx2.c's kernel too, and on one with AVX-512F
+// chacha20_avx512.c's, over the same cases. chacha20.c compiles here
+// without -DCH_CPU_RUNTIME, so chacha20_xor is the portable loop, and
+// test/chacha20_equiv_vector.c, test/chacha20_equiv_avx2.c and
+// test/chacha20_equiv_avx512.c compile the three vector sources under the
+// define, all in one binary. Whether the CPU has AVX2 or AVX-512F is
+// test/x86_kernels_cpu.h's question, which only test code asks. A CPU
+// without AVX-512F skips the AVX-512 kernel, unless CH_REQUIRE_AVX512_IFMA
+// is 1, which the nightly's rsa-ifma-sde job sets.
 //
 // Every comparison checks two things over the bytes a case uses: the
 // output holds the portable path's bytes, and no byte outside the output
@@ -16,19 +19,23 @@
 // separate output, the output on the input, and the output below the
 // input, as rec_open decrypts over its header, each at every alignment
 // past a 32-byte boundary, which covers every offset inside a row of the
-// 128-bit paths and of the AVX2 kernel.
+// 128-bit paths and of the AVX2 kernel. The AVX-512 kernel loads and
+// stores 64 bytes at any address.
 //
 // The inputs, in order:
 //
-//   - every length from 0 to LENGTH_MAX, which crosses the path's pass
-//     of eight blocks four times on NEON and on AVX2 and its pass of four
-//     blocks eight times on SSE2, so the pass loop, the last partial pass,
-//     every length of that pass, and on NEON a last pass that ends in
-//     either of its two groups all run;
+//   - every length from 0 to LENGTH_MAX, which crosses the AVX-512
+//     kernel's pass of sixteen blocks four times, the pass of eight blocks
+//     on NEON and on AVX2 eight times and the pass of four blocks on SSE2
+//     sixteen times, so the pass loop, the last partial pass, every length
+//     of that pass, on NEON a last pass that ends in either of its two
+//     groups, and on AVX-512 a last pass of four blocks alone and beside a
+//     pass of sixteen all run;
 //   - the counter's last values, 2^32 - 17 to 2^32 - 1, and 0, at every
-//     length to 20 blocks, so the 32-bit counter wraps inside a group, at
+//     length to 36 blocks, so the 32-bit counter wraps inside a group, at
 //     the edge between a pass's two groups, at a pass's edge, inside the
-//     pass after it, and in the last partial pass;
+//     pass after it, and in the last partial pass, the AVX-512 kernel's
+//     two passes of sixteen blocks and four after them among them;
 //   - RANDOM_CASES cases with a random key, nonce, counter, length up to
 //     RANDOM_LENGTH_MAX, alignment and aliasing shape;
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
@@ -40,12 +47,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-// chacha20_vector.h and chacha20_avx2.h declare the vector paths only in
-// a host object, which the define states. This file compiles no library
-// source, so the define changes nothing else.
+// chacha20_vector.h, chacha20_avx2.h and chacha20_avx512.h declare the
+// vector paths only in a host object, which the define states. This file
+// compiles no library source, so the define changes nothing else.
 #define CH_CPU_RUNTIME
 #include "chacha20.h"
 #include "chacha20_avx2.h"
+#include "chacha20_avx512.h"
 #include "chacha20_vector.h"
 #include "x86_kernels_cpu.h"
 
@@ -86,14 +94,15 @@ static void rng_fill(uint8_t *p, size_t n) {
     }
 }
 
-// The vector path computes one pass of eight blocks at a time on NEON,
-// two groups of four side by side, and on AVX2, and of four blocks on
-// SSE2. The lengths below count in the larger pass, so each path crosses
-// its own pass's edge at least four times.
-#define PASS_BYTES_MAX ((size_t)8 * CHACHA20_BLOCK)
+// The vector path computes one pass of sixteen blocks at a time on
+// AVX-512, of eight blocks on NEON, two groups of four side by side, and on
+// AVX2, and of four blocks on SSE2. The lengths below count in the largest
+// pass, so each path crosses its own pass's edge at least four times. The
+// counter's wrap runs to two passes of sixteen blocks and four more.
+#define PASS_BYTES_MAX ((size_t)16 * CHACHA20_BLOCK)
 #define LENGTH_MAX (4 * PASS_BYTES_MAX)
 #define WRAP_BACK_MAX 17
-#define WRAP_LENGTH_MAX ((size_t)20 * CHACHA20_BLOCK)
+#define WRAP_LENGTH_MAX ((size_t)36 * CHACHA20_BLOCK)
 #define RANDOM_CASES 20000
 #define RANDOM_LENGTH_MAX (4 * PASS_BYTES_MAX)
 #define LARGE_LENGTH ((size_t)65536)
@@ -143,8 +152,8 @@ typedef struct {
                       uint32_t counter, const uint8_t *in, uint8_t *out, size_t n);
 } vector_path;
 
-// The 128-bit path this build compiles, and the AVX2 kernel beside it on
-// x86-64.
+// The 128-bit path this build compiles, and the AVX2 and AVX-512 kernels
+// beside it on x86-64.
 #ifdef __ARM_NEON
 static const vector_path vector_128 = {"the 128-bit path on NEON", chacha20_vector_xor};
 #else
@@ -152,6 +161,7 @@ static const vector_path vector_128 = {"the 128-bit path on SSE2", chacha20_vect
 #endif
 #ifdef __x86_64__
 static const vector_path vector_avx2 = {"the AVX2 kernel", chacha20_avx2_xor};
+static const vector_path vector_avx512 = {"the AVX-512 kernel", chacha20_avx512_xor};
 #endif
 
 static const vector_path *current = &vector_128;
@@ -339,6 +349,15 @@ int main(void) {
         return 1;
     } else {
         printf("chacha20 equivalence: SKIP the AVX2 kernel: this CPU lacks AVX2\n");
+    }
+    if (x86_cpu_has_avx512f()) {
+        run_path(&vector_avx512, seed);
+    } else if (x86_ifma_required()) {
+        (void)fprintf(stderr, "chacha20 equivalence: this CPU lacks AVX-512F, and "
+                              "CH_REQUIRE_AVX512_IFMA is 1\n");
+        return 1;
+    } else {
+        printf("chacha20 equivalence: SKIP the AVX-512 kernel: this CPU lacks AVX-512F\n");
     }
 #endif
     if (failures > 0) {

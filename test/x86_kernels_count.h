@@ -1,8 +1,9 @@
 // The calls bin/x86_kernels_test counts into an x86-64 host object's
 // kernels (docs/decisions.md 89, 90, 107 and 110): chacha20_avx2.c's
-// chacha20_avx2_xor, gcm_vaes.c's three entries, the three session calls
-// of mlkem_avx2.c and poly1305_avx2.c's poly1305_avx2_blocks_native.
-// test/x86_kernels_count.c defines the eight, each as a count and a call
+// chacha20_avx2_xor, chacha20_avx512.c's chacha20_avx512_xor, gcm_vaes.c's
+// three entries, the three session calls of mlkem_avx2.c and
+// poly1305_avx2.c's poly1305_avx2_blocks_native.
+// test/x86_kernels_count.c defines the nine, each as a count and a call
 // to the entry it stands beside, which computes the same bytes, and the
 // binary links that file in place of the kernel sources. So the library's
 // sources run unchanged, no instruction of a kernel runs, and the test
@@ -14,8 +15,9 @@
 #ifndef CH_TEST_X86_KERNELS_COUNT_H
 #define CH_TEST_X86_KERNELS_COUNT_H
 
-// Calls to chacha20_avx2_xor.
+// Calls to chacha20_avx2_xor and to chacha20_avx512_xor.
 extern unsigned long x86_avx2_calls;
+extern unsigned long x86_avx512_calls;
 // Calls to gcm_seal_passes_vaes, gcm_open_passes_vaes and
 // gcm_counter_blocks_vaes.
 extern unsigned long x86_vaes_seal_calls;

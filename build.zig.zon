@@ -35,6 +35,8 @@
         "chacha20.h",
         "chacha20_avx2.c",
         "chacha20_avx2.h",
+        "chacha20_avx512.c",
+        "chacha20_avx512.h",
         "chacha20_vector.c",
         "chacha20_vector.h",
         "chapulin.hpp",

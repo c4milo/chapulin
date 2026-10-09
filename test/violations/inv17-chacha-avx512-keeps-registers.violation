@@ -1,0 +1,16 @@
+invariant: INV-17
+file: chacha20_avx512.c
+catches: test/chacha-builds.sh
+reason: chacha20_avx512_xor returns without calling avx512_wipe_registers,
+  so the key words, the state and the keystream it ran through the 512-bit
+  registers stay there after the call. Every byte it writes is still
+  right, so no vector sees it. The script compiles the kernel for x86-64
+  and requires the call in chacha20_avx512_xor.
+
+--- old
+    xor_passes(words, counter, in, out, n);
+    // The key, the state and the keystream passed through the vector
+    // registers, and the compiler clears none of them on return.
+    avx512_wipe_registers();
+--- new
+    xor_passes(words, counter, in, out, n);

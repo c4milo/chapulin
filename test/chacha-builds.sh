@@ -20,18 +20,21 @@
 #     test/widemul-builds.sh holds a host object's Poly1305;
 #   - in a host object, chacha20_xor must call chacha20_vector_xor, so no
 #     session runs the portable loop under the vector name, and on x86-64
-#     it must not call the AVX2 kernel: it takes no description of the
-#     CPU, so it runs the path every CPU has. chacha20_xor_cpu, which
-#     takes a session's ch_cfg.cpu, must call chacha20_vector_xor, on
-#     x86-64 the kernel too, and on arm64 no kernel. A use_avx2 that
-#     answers one value for every session leaves one of the two calls out,
-#     so this holds both answers; bin/x86_kernels_test holds which bit
-#     gives which;
+#     it must call neither kernel: it takes no description of the CPU, so
+#     it runs the path every CPU has. chacha20_xor_cpu, which takes a
+#     session's ch_cfg.cpu, must call chacha20_vector_xor, on x86-64 both
+#     kernels too, and on arm64 no kernel. A use_avx2 or use_avx512 that
+#     answers one value for every session leaves one of the calls out, so
+#     this holds both answers; bin/x86_kernels_test holds which bit gives
+#     which;
 #   - for x86-64, with no instruction flag, chacha20_avx2.c must define
 #     chacha20_avx2_xor and hold 256-bit instructions, which its target
-#     attribute turns on, while chacha20.c and chacha20_vector.c hold
-#     none, so the rest of the object runs on any x86-64 CPU; and for
-#     arm64, chacha20_avx2.c must define nothing (docs/decisions.md 90);
+#     attribute turns on, and chacha20_avx512.c must define
+#     chacha20_avx512_xor on 512-bit registers and call
+#     avx512_wipe_registers, while chacha20.c and chacha20_vector.c hold
+#     neither, so the rest of the object runs on any x86-64 CPU; and for
+#     arm64, the two kernels' files must define nothing (docs/decisions.md
+#     90);
 #   - the same for the AVX2 Poly1305, the AEAD's other half
 #     (docs/decisions.md 110): for x86-64, poly1305_avx2_native.c must
 #     define poly1305_avx2_blocks_native on 256-bit registers, and
@@ -140,10 +143,12 @@ for target in "$x86" "$arm64"; do
         echo "chacha-builds: chacha20_xor for a host object on $target does not call chacha20_vector_xor" >&2
         exit 1
     fi
-    if body_names chacha20_xor chacha20_avx2_xor; then
-        echo "chacha-builds: chacha20_xor for a host object on $target calls the AVX2 kernel; it takes no description of the CPU" >&2
-        exit 1
-    fi
+    for kernel in chacha20_avx2_xor chacha20_avx512_xor; do
+        if body_names chacha20_xor "$kernel"; then
+            echo "chacha-builds: chacha20_xor for a host object on $target calls $kernel; it takes no description of the CPU" >&2
+            exit 1
+        fi
+    done
     if ! body_names chacha20_xor_cpu chacha20_vector_xor; then
         echo "chacha-builds: chacha20_xor_cpu on $target does not call chacha20_vector_xor; a session without CH_CPU_AVX2 runs it" >&2
         exit 1
@@ -154,11 +159,17 @@ if ! body_names chacha20_xor_cpu chacha20_avx2_xor; then
     echo "chacha-builds: chacha20_xor_cpu for x86-64 does not call the AVX2 kernel; a session with CH_CPU_AVX2 runs it" >&2
     exit 1
 fi
-cross_object "$arm64" chacha20.c
-if body_names chacha20_xor_cpu chacha20_avx2_xor; then
-    echo "chacha-builds: chacha20_xor_cpu for arm64 calls the AVX2 kernel, which has a body on x86-64 alone" >&2
+if ! body_names chacha20_xor_cpu chacha20_avx512_xor; then
+    echo "chacha-builds: chacha20_xor_cpu for x86-64 does not call the AVX-512 kernel; a session with CH_CPU_AVX512_IFMA runs it" >&2
     exit 1
 fi
+cross_object "$arm64" chacha20.c
+for kernel in chacha20_avx2_xor chacha20_avx512_xor; do
+    if body_names chacha20_xor_cpu "$kernel"; then
+        echo "chacha-builds: chacha20_xor_cpu for arm64 calls $kernel, which has a body on x86-64 alone" >&2
+        exit 1
+    fi
+done
 
 # The AVX2 kernel's instructions.
 cross_object "$x86" chacha20_avx2.c
@@ -169,14 +180,32 @@ if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?chacha20_avx2_xor$'
 fi
 for src in chacha20.c chacha20_vector.c; do
     cross_object "$x86" "$src"
-    if grep -q '%ymm' "$work/cross.s"; then
-        echo "chacha-builds: $src for x86-64 holds a 256-bit instruction; only chacha20_avx2.c may" >&2
+    if grep -qE '%[yz]mm' "$work/cross.s"; then
+        echo "chacha-builds: $src for x86-64 holds a 256-bit or 512-bit instruction; only the kernels' files may" >&2
         exit 1
     fi
 done
 cross_object "$arm64" chacha20_avx2.c
 if nm "$work/cross.o" | grep -q chacha20_avx2_xor; then
     echo "chacha-builds: chacha20_avx2.c for arm64 defines chacha20_avx2_xor; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+
+# The AVX-512 kernel's instructions, and the wipe of the registers it ran
+# the key through, which it calls before it returns.
+cross_object "$x86" chacha20_avx512.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?chacha20_avx512_xor$' ||
+    ! grep -q '%zmm' "$work/cross.s"; then
+    echo "chacha-builds: chacha20_avx512.c for x86-64 must define chacha20_avx512_xor on 512-bit registers" >&2
+    exit 1
+fi
+if ! body_names chacha20_avx512_xor avx512_wipe_registers; then
+    echo "chacha-builds: chacha20_avx512_xor for x86-64 does not call avx512_wipe_registers, so the key stays in the vector registers" >&2
+    exit 1
+fi
+cross_object "$arm64" chacha20_avx512.c
+if nm "$work/cross.o" | grep -q chacha20_avx512_xor; then
+    echo "chacha-builds: chacha20_avx512.c for arm64 defines chacha20_avx512_xor; it has a body on x86-64 alone" >&2
     exit 1
 fi
 
@@ -247,4 +276,4 @@ if nm "$work/cross.o" | grep -q avx512_wipe_registers; then
     exit 1
 fi
 
-echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 the AVX2 kernel, the kernel's 256-bit instructions stay in chacha20_avx2.c, the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"
+echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 both kernels, the kernels' 256-bit and 512-bit instructions stay in chacha20_avx2.c and chacha20_avx512.c, which calls avx512_wipe_registers, the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"

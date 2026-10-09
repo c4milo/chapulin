@@ -640,6 +640,13 @@ def select_lints(out, changed, csources, lib):
                 "chacha20_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles it for x86-64 with no instruction flag",
                 ["test/chacha-builds.sh"])
+    # chacha20_avx512.c does the same for AVX-512F, and the script requires
+    # its call to avx512_wipe_registers.
+    if "chacha20_avx512.c" in csources:
+        out.add("tests", "test/chacha-builds.sh",
+                "chacha20_avx512.c turns AVX-512F on for its own functions, and this "
+                "script compiles it for x86-64 with no instruction flag",
+                ["test/chacha-builds.sh"])
     # avx512_wipe.c holds the one block of assembly that zeros the AVX-512
     # registers, and the script compiles it for x86-64 and requires a zeroing
     # instruction for each register.
