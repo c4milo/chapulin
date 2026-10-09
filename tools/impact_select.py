@@ -86,6 +86,12 @@ NEEDS_VARIABLE = {
     # source is what select_recipe_gates looks for.
     "lib-check": ["make lib-check RAND=drbg",
                   "make lib-check cxx-check RAND=extern"],
+    # A bare `make rsa-ifma-sde-check` stops unless SDE64 names Intel SDE's
+    # sde64 and the compiler builds an x86-64 host object. Only the
+    # nightly's rsa-ifma-sde job sets up both, so no plan runs the target.
+    # Its recipe names sources because it compiles the host Wycheproof
+    # binary.
+    "rsa-ifma-sde-check": [],
 }
 
 # Targets no single change selects on its own. Each is an aggregate

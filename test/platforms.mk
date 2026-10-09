@@ -86,21 +86,36 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #     and rsa_vp1_cpu.
 #   - bin/x86_kernels_test counts the calls each ch_cfg.cpu value sends to
 #     rsa_ifma_public and to the other kernels.
+#   - bin/rsa_test_host and bin/rsa_pkcs1_test_host, under 0x10d, the
+#     second value of X86_UNIT_CPU, run the openssl-minted RSA-PSS and
+#     PKCS#1 v1.5 vectors and every refusal on the kernel.
+#   - the host Wycheproof binary, under 0x11f, the last value of
+#     X86_WYCHEPROOF_CPU, runs the RSA-PSS and PKCS#1 v1.5 suites on the
+#     kernel, and every other suite under the other bits of that value.
+#     It needs the vectors, so it fetches them as the wycheproof target
+#     does.
 #   - bin/webpki_loop_aes, with both ends stating 0x101, the bit beside
 #     the probe's, and then 0x13f, every bit an x86-64 object defines,
 #     boots a server whose ch_srv_check verifies an RSA-PSS signature on
 #     the kernel, and then runs a handshake (test/webpki_loop_runtime.h).
 #
 # Each runs under CH_REQUIRE_AVX512_IFMA=1, so a binary that finds no
-# AVX-512 IFMA fails instead of skipping. SDE is an emulator: it shows what
-# the instructions compute and nothing about how long they take on any
-# CPU, so this target checks the kernel's results and none of its timing.
+# AVX-512 IFMA fails instead of skipping. The vector and Wycheproof
+# binaries also run under CH_REQUIRE_X86_KERNELS=1: their values name
+# AVX2, and 0x11f names VAES, and a binary that finds either missing would
+# otherwise skip the whole value before it asks for AVX-512 IFMA
+# (test/test_cpu.h). SDE is an emulator: it shows what the instructions
+# compute and nothing about how long they take on any CPU, so this target
+# checks the kernel's results and none of its timing.
 SDE64 ?= sde64
 SDE_CPU ?= -icx
 RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test
+RSA_IFMA_SDE_VECTOR_HOST := rsa_test_host rsa_pkcs1_test_host
+RSA_IFMA_SDE_VECTOR_CPU := 0x10d
+RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x11f
 RSA_IFMA_SDE_LOOP_CPU := 0x101 0x13f
 .PHONY: rsa-ifma-sde-check
-rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS)) bin/webpki_loop_aes
+rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS) $(RSA_IFMA_SDE_VECTOR_HOST)) bin/webpki_loop_aes
 	@[ -n "$(X86_KERNEL_BINS)" ] || \
 	  { echo "rsa-ifma-sde-check: $(CC) does not build a host object for x86-64"; exit 1; }
 	@command -v "$(SDE64)" > /dev/null || \
@@ -108,6 +123,16 @@ rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS)) bin/webpki_loop_aes
 	@set -e; for b in $(RSA_IFMA_SDE_RUNS); do \
 	  echo "== $$b (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
 	  CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/$$b; done
+	@set -e; for b in $(RSA_IFMA_SDE_VECTOR_HOST); do \
+	  echo "== $$b $(RSA_IFMA_SDE_VECTOR_CPU) (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
+	  CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_X86_KERNELS=1 "$(SDE64)" $(SDE_CPU) -- \
+	    ./bin/$$b $(RSA_IFMA_SDE_VECTOR_CPU); done
+	@$(call wycheproof_fetch,rsa-ifma-sde-check); \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	$(WYCHEPROOF_HOST) -o bin/wycheproof_test_host && \
+	echo "== wycheproof_test_host $(RSA_IFMA_SDE_WYCHEPROOF_CPU) (sde64 $(SDE_CPU), AVX-512 IFMA required)" && \
+	CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_X86_KERNELS=1 "$(SDE64)" $(SDE_CPU) -- \
+	  ./bin/wycheproof_test_host $(RSA_IFMA_SDE_WYCHEPROOF_CPU)
 	@set -e; for bits in $(RSA_IFMA_SDE_LOOP_CPU); do \
 	  echo "== webpki_loop_aes cpu $$bits $$bits (sde64 $(SDE_CPU))"; \
 	  CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/webpki_loop_aes cpu $$bits $$bits; done

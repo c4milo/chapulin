@@ -587,7 +587,8 @@ jobs:
   # check.yml's x86-64-kernels job may lack the instructions, as an AMD EPYC
   # 7763 does, and QEMU's TCG implements no AVX-512 instruction, so no other
   # job is sure to run the kernel. This one runs bin/rsa_ifma_equiv_test,
-  # bin/x86_kernels_test and bin/webpki_loop_aes under Intel's Software
+  # bin/x86_kernels_test, the two RSA verifiers' vector binaries, the host
+  # Wycheproof binary and bin/webpki_loop_aes under Intel's Software
   # Development Emulator on a CPU model with AVX-512 IFMA, and a binary that
   # finds none fails (test/platforms.mk, rsa-ifma-sde-check). SDE is an
   # emulator: it shows what the instructions compute and nothing about how

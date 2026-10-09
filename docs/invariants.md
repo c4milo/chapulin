@@ -1337,9 +1337,10 @@ last `ROLE=server` stub, as the entry said it would.
   the signature's check then refuses every signature (INV-42), and the
   same binary reports it. Or it starts `rsa_mont.c`'s `power_of_two_mod`
   at bit 0 of the top word whatever the exponent,
-  `inv41-rsa-mont-ifma-power-starts-at-bit-zero`: `bin/x86_kernels_test`'s
-  RSA-3072 row then gives other bytes than `rsa_vp1`, and
-  `test/docker-aes-runtime-qemu.sh x86-kernels` runs it. Or a caller that
+  `inv41-rsa-mont-ifma-power-starts-at-bit-zero`: at RSA-3072
+  `rsa_vp1_cpu` under the bit then gives other bytes than `rsa_vp1`, and
+  `bin/rsa_ifma_model_test`, which runs that dispatch over the lane model,
+  catches it on every machine. Or a caller that
   holds a session hands an RSA verifier 0 in place of its `ch_cfg.cpu`:
   the pinned CertificateVerify, `ch_srv_check`'s check of the RSA
   identity, the webpki CertificateVerify, or the chain walk's issuer or

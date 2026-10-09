@@ -4508,9 +4508,9 @@ endif
 WYCHEPROOF_DIR := bin/wycheproof
 WYCHEPROOF_URL := https://github.com/C2SP/wycheproof
 
-# The fetch, shared by the four targets that build the vectors: the three
-# below and the Cortex-M3 lane in test/platforms.mk. One copy, so all four
-# check the pin the same way. $(1) names the calling target in the skip and
+# The fetch, shared by the five targets that build the vectors: the three
+# below, and the Cortex-M3 lane and rsa-ifma-sde-check in test/platforms.mk.
+# One copy, so all five check the pin the same way. $(1) names the calling target in the skip and
 # failure messages. A shallow fetch of the one commit, as the FreeRTOS
 # kernel does, rather than a clone of the branch.
 define wycheproof_fetch
