@@ -100,7 +100,10 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #   - bin/avx512_wipe_test requires every vector register and k1 to k7 to
 #     hold zero after avx512_wipe_registers.
 #   - bin/chacha20_equiv_test holds chacha20_avx512.c's kernel, which
-#     CH_CPU_AVX512_IFMA picks, to chacha20.c's loop.
+#     CH_CPU_AVX512_IFMA picks, to chacha20.c's loop, and
+#     bin/poly1305_equiv_test poly1305_ifma.c's kernel, which it picks
+#     beside the multiply bit, to poly1305.c's, and searches the stack
+#     below each call for the powers of r.
 #   - bin/rsa_test_host and bin/rsa_pkcs1_test_host, under 0x10d, the
 #     second value of X86_UNIT_CPU, run the openssl-minted RSA-PSS and
 #     PKCS#1 v1.5 vectors and every refusal on the kernel.
@@ -135,8 +138,8 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 SDE64 ?= sde64
 SDE_CPU ?= -icx
 RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test avx512_wipe_test chacha20_equiv_test \
-                     rsa_ifma_sign_equiv_test rsa_ifma_sign_equiv_test_384 rsa_ifma_sign_residue_test \
-                     rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test
+                     poly1305_equiv_test rsa_ifma_sign_equiv_test rsa_ifma_sign_equiv_test_384 \
+                     rsa_ifma_sign_residue_test rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test
 RSA_IFMA_SDE_VECTOR_HOST := rsa_test_host rsa_pkcs1_test_host
 RSA_IFMA_SDE_VECTOR_CPU := 0x10d
 RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x11f
@@ -145,6 +148,7 @@ RSA_IFMA_SDE_PASS_rsa_ifma_equiv_test := rsa_ifma equivalence: [0-9]* comparison
 RSA_IFMA_SDE_PASS_x86_kernels_test := x86 kernels: under each of 33 ch_cfg.cpu values
 RSA_IFMA_SDE_PASS_avx512_wipe_test := avx512_wipe: zmm0 to zmm31 and k1 to k7 hold zero
 RSA_IFMA_SDE_PASS_chacha20_equiv_test := chacha20 equivalence: [0-9]* cases agree between the portable loop and the AVX-512 kernel
+RSA_IFMA_SDE_PASS_poly1305_equiv_test := poly1305 equivalence: [0-9]* cases agree between the portable loop and the AVX-512 IFMA kernel
 RSA_IFMA_SDE_PASS_rsa_ifma_sign_equiv_test := rsa_ifma_sign (instructions): [0-9]* comparisons pass
 RSA_IFMA_SDE_PASS_rsa_ifma_sign_equiv_test_384 := rsa_ifma_sign (instructions): [0-9]* comparisons pass
 RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test := rsa_ifma_sign residue: [0-9]* checks pass

@@ -1,14 +1,13 @@
-// The nine entries of an x86-64 host object's kernels, each a count and a
+// The ten entries of an x86-64 host object's kernels, each a count and a
 // call to the entry it stands beside (test/x86_kernels_count.h).
 // chacha20_vector_xor computes the bytes chacha20_avx2_xor and
 // chacha20_avx512_xor compute,
 // gcm_hw.c's three entries the bytes gcm_vaes.c's compute, mlkem.c's
 // three session calls the bytes of mlkem_avx2.c's, and
 // poly1305_vector_blocks_native the accumulator poly1305_avx2_blocks_native
-// computes, under the same contracts, so a caller sees what it would see
-// from the kernel. On any other target the kernels have no entry and this
-// file holds nothing. test/rsa_ifma_count.c stands beside rsa_ifma.c's
-// entry the same way.
+// and poly1305_ifma_blocks_native compute, under the same contracts, so a caller sees what it would
+// see from the kernel. On any other target the kernels have no entry and this file holds nothing.
+// test/rsa_ifma_count.c stands beside rsa_ifma.c's entry the same way.
 #include "x86_kernels_count.h"
 
 #include "chacha20_avx2.h"
@@ -18,6 +17,7 @@
 #include "gcm_vaes.h"
 #include "mlkem.h"
 #include "poly1305_avx2.h"
+#include "poly1305_ifma.h"
 #include "poly1305_vector.h"
 
 #ifdef __x86_64__
@@ -31,6 +31,7 @@ unsigned long x86_mlkem_keygen_calls;
 unsigned long x86_mlkem_encaps_calls;
 unsigned long x86_mlkem_decaps_calls;
 unsigned long x86_poly1305_avx2_calls;
+unsigned long x86_poly1305_ifma_calls;
 
 void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                        uint32_t counter, const uint8_t *in, uint8_t *out, size_t n) {
@@ -85,6 +86,12 @@ void mlkem_decaps_avx2(uint8_t widemul, uint8_t ss[MLKEM_SS_LEN], const uint8_t 
 // of four blocks, and a group of eight is two of them.
 void poly1305_avx2_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
     x86_poly1305_avx2_calls++;
+    poly1305_vector_blocks_native(p, m, n);
+}
+
+// A group of sixteen blocks is four of poly1305_vector_blocks_native's.
+void poly1305_ifma_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
+    x86_poly1305_ifma_calls++;
     poly1305_vector_blocks_native(p, m, n);
 }
 

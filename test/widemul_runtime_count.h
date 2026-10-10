@@ -25,8 +25,8 @@ extern unsigned long widemul_decomposed_calls;
 // 64-bit RSA signer, which is RSA signing's.
 extern unsigned long widemul_native_calls;
 // Calls into poly1305_vector_native.c's entry, and on x86-64 into
-// poly1305_avx2_native.c's, which only poly1305_native.c's block loop
-// makes.
+// poly1305_avx2_native.c's and poly1305_ifma_native.c's, which only
+// poly1305_native.c's block loop makes.
 extern unsigned long widemul_vector_calls;
 
 // One end's calls into the dispatched entries of each copy, which the

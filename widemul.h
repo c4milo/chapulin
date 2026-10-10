@@ -99,22 +99,35 @@ static inline void widemul_poly1305_final(uint8_t widemul, poly1305 *p, uint8_t 
 
 #ifdef __x86_64__
 // Whether a Poly1305 update under the answer widemul, in a session whose ch_cfg.cpu is cpu, runs
+// poly1305_ifma.c's kernel: under WIDEMUL_CONSTANT_TIME, whose statement covers the kernel's
+// widening multiply, AVX-512 IFMA's 52-bit products, where cpu holds CH_CPU_AVX512_IFMA, which
+// says the CPU has AVX-512F and AVX-512 IFMA. The bit states no timing.
+static inline int widemul_poly1305_ifma(uint32_t cpu, uint8_t widemul) {
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX512_IFMA) != 0;
+}
+
+// Whether a Poly1305 update under the answer widemul, in a session whose ch_cfg.cpu is cpu, runs
 // poly1305_avx2.c's kernel: under WIDEMUL_CONSTANT_TIME, whose statement covers the kernel's
 // widening multiply, where cpu holds CH_CPU_AVX2, which says the CPU has AVX2. The bit states no
-// timing (docs/decisions.md 110).
+// timing (docs/decisions.md 110). widemul_poly1305_update_cpu asks widemul_poly1305_ifma first.
 static inline int widemul_poly1305_avx2(uint32_t cpu, uint8_t widemul) {
     return widemul_native(widemul) && (cpu & CH_CPU_AVX2) != 0;
 }
 #endif
 
 // widemul_poly1305_update with the session's ch_cfg.cpu first, for an update that may be long: a
-// record's or a packet's ciphertext. On x86-64, where widemul_poly1305_avx2 says so, it runs
-// poly1305_update_avx2_native, whose long updates take the AVX2 kernel; every other call runs
-// widemul_poly1305_update. A caller that holds no description of the CPU passes 0, which names
-// no kernel.
+// record's or a packet's ciphertext. On x86-64, where widemul_poly1305_ifma says so, it runs
+// poly1305_update_ifma_native, whose long updates take the AVX-512 IFMA kernel, and where
+// widemul_poly1305_avx2 says so, poly1305_update_avx2_native, whose long updates take the AVX2
+// kernel; every other call runs widemul_poly1305_update. A caller that holds no description of the
+// CPU passes 0, which names no kernel.
 static inline void widemul_poly1305_update_cpu(uint32_t cpu, uint8_t widemul, poly1305 *p,
                                                const uint8_t *in, size_t n) {
 #ifdef __x86_64__
+    if (widemul_poly1305_ifma(cpu, widemul)) {
+        poly1305_update_ifma_native(p, in, n);
+        return;
+    }
     if (widemul_poly1305_avx2(cpu, widemul)) {
         poly1305_update_avx2_native(p, in, n);
         return;

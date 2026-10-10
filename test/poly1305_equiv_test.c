@@ -2,16 +2,19 @@
 // and message, the same accumulator modulo 2^130 - 5 after every update
 // and the same tag. This is what holds the vector paths, because CBMC
 // cannot read an intrinsic: proof/poly1305_harness.c proves poly1305.c's
-// loop, and this binary holds poly1305_vector.c to that loop's answer,
-// and on an x86-64 CPU with AVX2 poly1305_avx2.c's kernel too, over the
-// same cases. poly1305.c compiles here without -DCH_CPU_RUNTIME, so
-// poly1305_update is the portable loop alone, as a device object runs it,
-// and test/poly1305_equiv_vector.c compiles a host object's native copy
-// of poly1305.c beside it, which holds the vector path, as
-// poly1305_update_native, and on x86-64 the kernel, as
-// poly1305_update_avx2_native. test/poly1305_equiv_avx2.c compiles the
-// kernel's own source. Whether the CPU has AVX2 is
-// test/x86_kernels_cpu.h's question, which only test code asks.
+// loop, and this binary holds poly1305_vector.c to that loop's answer, on
+// an x86-64 CPU with AVX2 poly1305_avx2.c's kernel too, and on one with
+// AVX-512 IFMA poly1305_ifma.c's, over the same cases. poly1305.c compiles
+// here without -DCH_CPU_RUNTIME, so poly1305_update is the portable loop
+// alone, as a device object runs it, and test/poly1305_equiv_vector.c
+// compiles a host object's native copy of poly1305.c beside it, which
+// holds the vector path, as poly1305_update_native, and on x86-64 the
+// kernels, as poly1305_update_avx2_native and poly1305_update_ifma_native.
+// test/poly1305_equiv_avx2.c and test/poly1305_equiv_ifma.c compile the
+// kernels' own sources. Whether the CPU has AVX2 or AVX-512 IFMA is
+// test/x86_kernels_cpu.h's question, which only test code asks. A CPU
+// without AVX-512 IFMA skips that kernel, unless CH_REQUIRE_AVX512_IFMA is
+// 1, which the nightly's rsa-ifma-sde job sets.
 //
 // Every case runs the portable path over the whole message in one update,
 // and the native copy over the same message in two or three updates cut
@@ -30,8 +33,8 @@
 //   - the path's blocks entry called alone, from an accumulator that
 //     earlier blocks left, for one group to GROUPS_MAX groups, below the
 //     threshold too, with the word bounds poly1305_vector.h states checked
-//     on return, and once on a group a search found, whose h1 the first
-//     pass of carry_scalar leaves past 2^26;
+//     on return, and, for a path that has one, once on a group a search
+//     found, whose h1 the first pass of carry_scalar leaves past 2^26;
 //   - RANDOM_CASES cases with a random key, length up to RANDOM_LENGTH_MAX,
 //     cuts and alignment;
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
@@ -47,15 +50,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-// poly1305_vector.h and poly1305_avx2.h declare the paths' group sizes and
-// thresholds only to the native copy of a host object, which the two
-// defines state, the second as widemul_native.h states it. This file
-// compiles no library source, so the defines change nothing else.
+// poly1305_vector.h, poly1305_avx2.h and poly1305_ifma.h declare the
+// paths' group sizes and thresholds only to the native copy of a host
+// object, which the two defines state, the second as widemul_native.h
+// states it. This file compiles no library source, so the defines change
+// nothing else.
 #define CH_CPU_RUNTIME
 #define CH_WIDEMUL_NATIVE_COPY 1
 #include "ch_assert.h"
 #include "poly1305.h"
 #include "poly1305_avx2.h"
+#include "poly1305_ifma.h"
 #include "poly1305_vector.h"
 #include "x86_kernels_cpu.h"
 
@@ -65,9 +70,9 @@
 
 // test/poly1305_equiv_vector.c: a host object's native copy of poly1305.c,
 // under the names widemul_native.h gives it. poly1305.h declares the
-// copy's update and final for a host object, and on x86-64 its AVX2
-// update, and poly1305_vector.h and poly1305_avx2.h the paths' entries in
-// that copy.
+// copy's update and final for a host object, and on x86-64 its AVX2 and
+// IFMA updates, and poly1305_vector.h, poly1305_avx2.h and poly1305_ifma.h
+// the paths' entries in that copy.
 void poly1305_init_native(poly1305 *p, const uint8_t key[POLY1305_KEY]);
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -134,11 +139,13 @@ static void unhex(const char *hex, uint8_t *out, size_t n) {
 
 // A path this binary holds to the portable loop: its update, the entry
 // that update hands whole groups to, the bytes of a group, the fewest
-// bytes of whole blocks the update hands the entry, and a key and one
-// group in hex whose lane totals leave h1 past 2^26 after the first pass
-// of carry_scalar, which about one call in two million does, so the
-// random cases below almost never meet it. A search over random keys and
-// groups found each.
+// bytes of whole blocks the update hands the entry, a key and one group in
+// hex whose lane totals leave h1 past 2^26 after the first pass of
+// carry_scalar, which about one call in two million does, so the random
+// cases below almost never meet it, or NULL where no search has found
+// one, and whether the path holds its powers of r as digits of 44, 44 and
+// 42 bits, as poly1305_ifma.c does, rather than as 26-bit words. A search
+// over random keys and groups found each key and group.
 typedef struct {
     const char *name;
     void (*update)(poly1305 *p, const uint8_t *in, size_t n);
@@ -147,6 +154,7 @@ typedef struct {
     size_t min;
     const char *wide_h1_key;
     const char *wide_h1_group;
+    int digits;
 } vector_path;
 
 static const vector_path vector_128 = {
@@ -158,6 +166,7 @@ static const vector_path vector_128 = {
     "da026d5d18ad6338e42d34b3bd32ab72537c70fd5eb14a40df78c4559b76e594",
     "51047e886250af05749c24b0a3b551306f5665dba6dbdeef122a49d8cafad4ed"
     "7f08fd47ec5c361b89c8f3842293b6308e96a9696d6739983e8a278457de0aa1",
+    0,
 };
 #ifdef CH_POLY1305_AVX2
 static const vector_path vector_avx2 = {
@@ -171,6 +180,19 @@ static const vector_path vector_avx2 = {
     "76d066bc4f547a4695a49c9445d255b8cfefebc5e4de9e45841d8285fb147666"
     "7cb51baeded83b1c477ebbabc0683130d8572b56f317a5b8f728dc4a684a33df"
     "6d1ab3c5a354a59447dfaeb5d471955a7ddacdfd4f6a9c92f76e4c22953f8b25",
+    0,
+};
+#endif
+#ifdef CH_POLY1305_IFMA
+static const vector_path vector_ifma = {
+    "the AVX-512 IFMA kernel",
+    poly1305_update_ifma_native,
+    poly1305_ifma_blocks_native,
+    POLY1305_IFMA_GROUP,
+    POLY1305_IFMA_MIN,
+    NULL,
+    NULL,
+    1,
 };
 #endif
 
@@ -356,6 +378,9 @@ static void run_direct(void) {
 // first pass of carry_scalar. The second pass must bring h1 back to at
 // most 2^26.
 static void run_wide_h1(void) {
+    if (current->wide_h1_key == NULL) {
+        return;
+    }
     uint8_t key[POLY1305_KEY];
     unhex(current->wide_h1_key, key, sizeof key);
     unhex(current->wide_h1_group, message, GROUP);
@@ -420,6 +445,17 @@ int main(void) {
         return 1;
     } else {
         printf("poly1305 equivalence: SKIP the AVX2 kernel: this CPU lacks AVX2\n");
+    }
+#endif
+#ifdef CH_POLY1305_IFMA
+    if (x86_cpu_has_avx512_ifma()) {
+        run_path(&vector_ifma, seed);
+    } else if (x86_ifma_required()) {
+        (void)fprintf(stderr, "poly1305 equivalence: this CPU lacks AVX-512 IFMA, and "
+                              "CH_REQUIRE_AVX512_IFMA is 1\n");
+        return 1;
+    } else {
+        printf("poly1305 equivalence: SKIP the AVX-512 IFMA kernel: this CPU lacks it\n");
     }
 #endif
     if (failures > 0) {

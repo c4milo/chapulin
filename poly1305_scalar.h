@@ -5,7 +5,9 @@
 // object's native copy alone, where ct_widemul is the native multiply
 // (widemul_native.h). poly1305_avx2.c includes it before it turns AVX2 on,
 // so neither file's copy of these steps carries an instruction set the
-// other's lacks.
+// other's lacks. poly1305_ifma.c computes its powers in the lanes and
+// takes the carry alone, so it defines POLY1305_SCALAR_CARRY_ONLY first,
+// and the header leaves out the product it would never call.
 #ifndef CH_POLY1305_SCALAR_H
 #define CH_POLY1305_SCALAR_H
 
@@ -42,6 +44,7 @@ static void carry_scalar(uint32_t h[5], uint64_t d[5]) {
     h[0] &= WORD_MASK;
 }
 
+#ifndef POLY1305_SCALAR_CARRY_ONLY
 // out = left * right modulo 2^130 - 5, for the powers of r, with words of
 // at most 2^26 in and out.
 static void multiply_scalar(uint32_t out[5], const uint32_t left[5], const uint32_t right[5]) {
@@ -63,5 +66,6 @@ static void multiply_scalar(uint32_t out[5], const uint32_t left[5], const uint3
            ct_widemul(left[4], right[0]);
     carry_scalar(out, d);
 }
+#endif // POLY1305_SCALAR_CARRY_ONLY
 
 #endif

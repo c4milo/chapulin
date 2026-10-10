@@ -44,6 +44,15 @@
 #     nothing of it; and poly1305.c under its own names, and its native copy
 #     under -DCH_CT_WIDEMUL, which turns the vector paths off, must call
 #     no AVX2 entry on either target;
+#   - the same for the AVX-512 IFMA Poly1305: for x86-64,
+#     poly1305_ifma_native.c must define poly1305_ifma_blocks_native on
+#     512-bit registers and call avx512_wipe_registers, poly1305_native.c
+#     must call it, and aead.c, whose MAC runs widemul.h's dispatcher, must
+#     call poly1305_update_ifma_native and poly1305_update_avx2_native, so a
+#     predicate that answers one value for every session leaves one out;
+#     for arm64 the file must define nothing and nothing call it, and
+#     poly1305.c under its own names, and its native copy under
+#     -DCH_CT_WIDEMUL, must call no IFMA entry on either target;
 #   - for x86-64, avx512_wipe.c must define avx512_wipe_registers, whose
 #     body zeros each of the 32 vector registers with a VPXORD of the
 #     register with itself and each of k1 to k7 with a KXORW, and for
@@ -223,8 +232,8 @@ if ! nm -u "$work/cross.o" | grep -qE '(^|[[:space:]_])poly1305_avx2_blocks_nati
 fi
 for src in poly1305_native.c poly1305_vector_native.c; do
     cross_object "$x86" "$src"
-    if grep -q '%ymm' "$work/cross.s"; then
-        echo "chacha-builds: $src for x86-64 holds a 256-bit instruction; only poly1305_avx2_native.c may" >&2
+    if grep -qE '%[yz]mm' "$work/cross.s"; then
+        echo "chacha-builds: $src for x86-64 holds a 256-bit or 512-bit instruction; only the kernels' copies may" >&2
         exit 1
     fi
 done
@@ -238,15 +247,48 @@ for target in "$x86" "$arm64"; do
         # shellcheck disable=SC2086
         "$clang_rv" -target "$target" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 \
             -I. -DCH_CPU_RUNTIME -c $build -o "$work/cross.o" || exit 1
-        if nm "$work/cross.o" | grep -q poly1305_avx2; then
-            echo "chacha-builds: $build for $target defines or calls an AVX2 Poly1305 entry; only the native copy on x86-64 may" >&2
+        if nm "$work/cross.o" | grep -qE 'poly1305_avx2|poly1305_ifma'; then
+            echo "chacha-builds: $build for $target defines or calls an AVX2 or IFMA Poly1305 entry; only the native copy on x86-64 may" >&2
             exit 1
         fi
     done
 done
 cross_object "$arm64" poly1305_native.c
-if nm "$work/cross.o" | grep -q poly1305_avx2; then
-    echo "chacha-builds: poly1305_native.c for arm64 defines or calls an AVX2 Poly1305 entry; the kernel has a body on x86-64 alone" >&2
+if nm "$work/cross.o" | grep -qE 'poly1305_avx2|poly1305_ifma'; then
+    echo "chacha-builds: poly1305_native.c for arm64 defines or calls an AVX2 or IFMA Poly1305 entry; the kernels have a body on x86-64 alone" >&2
+    exit 1
+fi
+
+# The AVX-512 IFMA Poly1305's instructions, the wipe of the registers it
+# ran the powers of r through, the one copy that calls it, and the
+# dispatcher that runs that copy's update.
+cross_object "$x86" poly1305_ifma_native.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?poly1305_ifma_blocks_native$' ||
+    ! grep -q '%zmm' "$work/cross.s"; then
+    echo "chacha-builds: poly1305_ifma_native.c for x86-64 must define poly1305_ifma_blocks_native on 512-bit registers" >&2
+    exit 1
+fi
+if ! body_names poly1305_ifma_blocks_native avx512_wipe_registers; then
+    echo "chacha-builds: poly1305_ifma_blocks_native for x86-64 does not call avx512_wipe_registers, so the powers of r stay in the vector registers" >&2
+    exit 1
+fi
+cross_object "$x86" poly1305_native.c
+if ! nm -u "$work/cross.o" | grep -qE '(^|[[:space:]_])poly1305_ifma_blocks_native$'; then
+    echo "chacha-builds: poly1305_native.c for x86-64 does not call poly1305_ifma_blocks_native; a session with CH_CPU_AVX512_IFMA and the multiply bit runs it" >&2
+    exit 1
+fi
+# aead.c reads cfg.h through widemul.h, which needs an entropy pattern.
+"$clang_rv" -target "$x86" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
+    -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -c aead.c -o "$work/cross.o" || exit 1
+for update in poly1305_update_ifma_native poly1305_update_avx2_native; do
+    if ! nm -u "$work/cross.o" | grep -qE "(^|[[:space:]_])$update\$"; then
+        echo "chacha-builds: aead.c for x86-64 does not call $update; widemul.h's dispatcher runs it for a session whose bits name it" >&2
+        exit 1
+    fi
+done
+cross_object "$arm64" poly1305_ifma_native.c
+if nm "$work/cross.o" | grep -q poly1305_ifma; then
+    echo "chacha-builds: poly1305_ifma_native.c for arm64 defines the IFMA Poly1305; it has a body on x86-64 alone" >&2
     exit 1
 fi
 
@@ -276,4 +318,4 @@ if nm "$work/cross.o" | grep -q avx512_wipe_registers; then
     exit 1
 fi
 
-echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 both kernels, the kernels' 256-bit and 512-bit instructions stay in chacha20_avx2.c and chacha20_avx512.c, which calls avx512_wipe_registers, the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"
+echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 both kernels, the kernels' 256-bit and 512-bit instructions stay in chacha20_avx2.c and chacha20_avx512.c, which calls avx512_wipe_registers, the AVX2 and IFMA Poly1305s' stay in their native copies, which only poly1305.c's native copy on x86-64 calls, the IFMA one calls avx512_wipe_registers, aead.c runs both kernels' updates on x86-64, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"

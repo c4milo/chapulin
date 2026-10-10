@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: widemul_poly1305_ifma reads CH_CPU_AVX512_IFMA alone, so a session
+  whose caller did not state CH_CPU_CONSTANT_TIME_MULTIPLY runs IFMA's
+  52-bit products on its one-time key, which no statement covers. Every tag
+  is still right. bin/x86_kernels_test counts the kernel's calls under every
+  ch_cfg.cpu value, and the script builds it for x86-64, where widemul.h
+  compiles the function.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX512_IFMA) != 0;
+--- new
+    (void)widemul;
+    return (cpu & CH_CPU_AVX512_IFMA) != 0;

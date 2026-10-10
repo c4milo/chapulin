@@ -122,7 +122,7 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     bench/record_chacha_vector.c bench/record_aead.c bench/record_stub.c
     record.c gcm.c aes.c "${AES_HW_SRCS[@]}" aead.c chacha20.c chacha20_vector.c chacha20_avx2.c
     chacha20_avx512.c poly1305.c poly1305_native.c poly1305_vector_native.c poly1305_avx2_native.c
-    ct.c ct_wipe.c
+    poly1305_ifma_native.c ct.c ct_wipe.c
     hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress.c sha512_hw.c)
 # avx512_wipe.c, which the AVX-512 kernels call before they return, has a
 # body on x86-64 alone, and -Wpedantic refuses a translation unit with no

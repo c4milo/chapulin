@@ -8,6 +8,7 @@
 #include "widemul_runtime_count.h"
 
 #include "poly1305_avx2.h"
+#include "poly1305_ifma.h"
 #include "poly1305_vector.h"
 #include "widemul.h"
 
@@ -253,5 +254,20 @@ void poly1305_update_avx2_native(poly1305 *p, const uint8_t *in, size_t n) {
 void poly1305_avx2_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
     widemul_vector_calls++;
     poly1305_avx2_blocks_native_counted(p, m, n);
+}
+
+// The native copy's IFMA update and the AVX-512 IFMA kernel's entry, the
+// same way.
+void poly1305_update_ifma_native_counted(poly1305 *p, const uint8_t *in, size_t n);
+void poly1305_ifma_blocks_native_counted(poly1305 *p, const uint8_t *m, size_t n);
+
+void poly1305_update_ifma_native(poly1305 *p, const uint8_t *in, size_t n) {
+    widemul_native_calls++;
+    poly1305_update_ifma_native_counted(p, in, n);
+}
+
+void poly1305_ifma_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
+    widemul_vector_calls++;
+    poly1305_ifma_blocks_native_counted(p, m, n);
 }
 #endif

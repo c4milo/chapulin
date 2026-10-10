@@ -20,15 +20,18 @@
 
 #define CH_WIDEMUL_NATIVE_COPY 1
 
-// poly1305.c, and poly1305_vector.c and poly1305_avx2.c, which a host object holds in its
-// native copy alone, because the vector paths run on the native multiply (docs/decisions.md 83
-// and 110). poly1305_update_avx2 and poly1305_avx2_blocks exist in an x86-64 object alone.
+// poly1305.c, and poly1305_vector.c, poly1305_avx2.c and poly1305_ifma.c, which a host object
+// holds in its native copy alone, because the vector paths run on the native multiply
+// (docs/decisions.md 83 and 110). poly1305_update_avx2, poly1305_avx2_blocks,
+// poly1305_update_ifma and poly1305_ifma_blocks exist in an x86-64 object alone.
 #define poly1305_init poly1305_init_native
 #define poly1305_update poly1305_update_native
 #define poly1305_update_avx2 poly1305_update_avx2_native
 #define poly1305_final poly1305_final_native
 #define poly1305_vector_blocks poly1305_vector_blocks_native
 #define poly1305_avx2_blocks poly1305_avx2_blocks_native
+#define poly1305_update_ifma poly1305_update_ifma_native
+#define poly1305_ifma_blocks poly1305_ifma_blocks_native
 
 // mlkem_poly.c.
 #define mlk_poly_reduce mlk_poly_reduce_native

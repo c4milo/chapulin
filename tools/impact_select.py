@@ -658,7 +658,8 @@ def select_lints(out, changed, csources, lib):
     # poly1305_avx2.c does the same for the AVX2 Poly1305, and the script
     # requires the kernel in its native copy for x86-64 and nowhere else
     # (docs/decisions.md 110).
-    if set(csources) & {"poly1305_avx2.c", "poly1305_avx2_native.c"}:
+    if set(csources) & {"poly1305_avx2.c", "poly1305_avx2_native.c", "poly1305_ifma.c",
+                        "poly1305_ifma_native.c"}:
         out.add("tests", "test/chacha-builds.sh",
                 "poly1305_avx2.c turns AVX2 on for its own functions, and this "
                 "script compiles its native copy for x86-64 with no instruction flag",

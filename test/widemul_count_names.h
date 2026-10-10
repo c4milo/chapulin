@@ -24,12 +24,14 @@
 #ifdef CH_WIDEMUL_NATIVE_COPY
 #undef poly1305_update
 #undef poly1305_update_avx2
+#undef poly1305_update_ifma
 #undef poly1305_final
 #undef mlk_polyvec_compress
 #undef mlk_poly_compress
 #undef mlk_poly_tomsg
 #define poly1305_update poly1305_update_native_counted
 #define poly1305_update_avx2 poly1305_update_avx2_native_counted
+#define poly1305_update_ifma poly1305_update_ifma_native_counted
 #define poly1305_final poly1305_final_native_counted
 #define mlk_polyvec_compress mlk_polyvec_compress_native_counted
 #define mlk_poly_compress mlk_poly_compress_native_counted

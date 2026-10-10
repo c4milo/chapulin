@@ -1,0 +1,15 @@
+invariant: INV-17
+file: poly1305_ifma.c
+catches: test/chacha-builds.sh
+reason: poly1305_ifma_blocks returns without calling avx512_wipe_registers,
+  so the powers of r, the sums and the accumulator's lanes it ran through
+  the 512-bit registers stay there after the call. r and a tag seen on the
+  wire give the pad, and r and the pad forge any message under that key.
+  Every tag is still right, so no vector sees it. The script compiles the
+  native copy for x86-64 and requires the call in poly1305_ifma_blocks_native.
+
+--- old
+    avx512_wipe_registers();
+    words_of_totals(p->h, total);
+--- new
+    words_of_totals(p->h, total);

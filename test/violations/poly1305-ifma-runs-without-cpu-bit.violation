@@ -1,0 +1,15 @@
+invariant: INV-16
+file: widemul.h
+catches: test/chacha-builds.sh
+reason: widemul_poly1305_ifma reads the multiply bit alone, so every session
+  with it runs the AVX-512 IFMA Poly1305 and dies of SIGILL on a CPU without
+  AVX-512 IFMA. Every vector passes on a CPU with it, because the kernel
+  computes the same accumulator. The script compiles aead.c for x86-64 and
+  requires its MAC to call poly1305_update_avx2_native, the update a
+  session with the multiply bit and CH_CPU_AVX2 alone runs.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX512_IFMA) != 0;
+--- new
+    (void)cpu;
+    return widemul_native(widemul);

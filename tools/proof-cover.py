@@ -166,6 +166,28 @@ AUDITED = {
         "under a ch_cfg.cpu value with the multiply bit and CH_CPU_AVX2. "
         "Delete this entry if a harness can ever compile the file."
     ),
+    "poly1305_ifma.c": (
+        "the AVX-512 IFMA Poly1305 of an x86-64 host object's native copy, "
+        "written in AVX-512F and AVX-512 IFMA intrinsics through "
+        "poly1305_ifma_lanes.h, which CBMC cannot read, so no harness compiles "
+        "the file. Every bitwise operator takes unsigned operands: the lane "
+        "operations run on __m512i values through the intrinsics, with shift "
+        "counts the unsigned constants 2, 4, 8, 10, 20, 24, 42 and 44; "
+        "DIGIT_MASK, TOP_MASK and HIGH_BIT are uint64_t; digits_of_words and "
+        "words_of_totals shift and mask uint32_t and uint64_t values, and "
+        "poly1305_scalar.h's carry_scalar does the same. The (long long) casts "
+        "hand a uint64_t to _mm512_set1_epi64 and _mm512_maskz_set1_epi64, a "
+        "conversion gcc and clang define as keeping its 64 bits, and the "
+        "masks are the constants 0x0f, 0x3f, 0x03 and 0x55. The rest is size_t: "
+        "the byte count n, a positive multiple of 256 by the CH_ASSERT at the "
+        "entry, which the group loop lowers by 256 while it is above 256. "
+        "bin/poly1305_equiv_test holds the file to poly1305.c's proven loop on "
+        "a CPU with AVX-512 IFMA, and the host Wycheproof test runs the "
+        "published vectors whose messages hold 512 bytes of whole blocks on it "
+        "there, under a ch_cfg.cpu value with the multiply bit and "
+        "CH_CPU_AVX512_IFMA; the nightly's rsa-ifma-sde job runs both under "
+        "Intel SDE. Delete this entry if a harness can ever compile the file."
+    ),
     "mlkem_vector.c": (
         "a host object's ML-KEM NTT, inverse NTT and base multiplication on "
         "eight 16-bit lanes, written in NEON or SSE2 intrinsics through "
@@ -461,9 +483,10 @@ COPIES = {
         "The poly1305 harness compiles that text on the native multiply too, "
         "because proof/run.sh passes it CH_NATIVE_WIDEMUL, except "
         "whole_blocks' arms for the vector paths and, on x86-64, "
-        "poly1305_update_avx2, which only this copy compiles: size_t "
-        "arithmetic on a byte count and a call of update with a constant, "
-        "with no bitwise operator, which bin/poly1305_equiv_test runs."
+        "poly1305_update_avx2 and poly1305_update_ifma, which only this copy "
+        "compiles: size_t arithmetic on a byte count and a call of update "
+        "with a constant, with no bitwise operator, which "
+        "bin/poly1305_equiv_test runs."
     ),
     "mlkem_poly_native.c": (
         "mlkem_poly.c",
@@ -479,6 +502,11 @@ COPIES = {
     "poly1305_avx2_native.c": (
         "poly1305_avx2.c",
         "poly1305_avx2.c's intrinsics under widemul_native.h's names: the "
+        "text its AUDITED entry reads."
+    ),
+    "poly1305_ifma_native.c": (
+        "poly1305_ifma.c",
+        "poly1305_ifma.c's intrinsics under widemul_native.h's names: the "
         "text its AUDITED entry reads."
     ),
     "hkdf_hw.c": (

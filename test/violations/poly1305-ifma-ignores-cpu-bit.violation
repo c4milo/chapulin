@@ -1,0 +1,16 @@
+invariant: INV-16
+file: widemul.h
+catches: test/chacha-builds.sh
+reason: widemul_poly1305_ifma answers 0 whatever the session's ch_cfg.cpu
+  says, so no session runs the AVX-512 IFMA Poly1305 and CH_CPU_AVX512_IFMA
+  picks no Poly1305. Every tag is still right, because the AVX2 kernel and
+  the 128-bit path compute the same accumulator; only the time is wrong.
+  The script compiles aead.c for x86-64 and requires its MAC to call
+  poly1305_update_ifma_native.
+
+--- old
+    return widemul_native(widemul) && (cpu & CH_CPU_AVX512_IFMA) != 0;
+--- new
+    (void)cpu;
+    (void)widemul;
+    return 0;

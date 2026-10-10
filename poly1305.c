@@ -3,6 +3,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "poly1305_avx2.h"
+#include "poly1305_ifma.h"
 #include "poly1305_vector.h"
 
 static uint32_t load32(const uint8_t *p) {
@@ -89,25 +90,42 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
     p->h[4] = h4;
 }
 
+// The kernel an update may hand its whole groups to: none,
+// poly1305_avx2.c's, or poly1305_ifma.c's.
+#define KERNEL_NONE 0
+#define KERNEL_AVX2 1
+#define KERNEL_IFMA 2
+
 // Absorbs the n bytes at m, whole blocks. This is the one place that
 // chooses between the loop above and the vector paths. Under
-// CH_POLY1305_AVX2 (poly1305_avx2.h), for an update poly1305_update_avx2
-// started, which sets avx2, n of POLY1305_AVX2_MIN or more hands its whole
-// groups of eight blocks to poly1305_avx2_blocks. Under CH_POLY1305_VECTOR
-// (poly1305_vector.h), n of POLY1305_VECTOR_MIN or more that remains
-// hands its whole groups of four blocks to poly1305_vector_blocks. The
-// loop above takes the blocks after the last group. It is the reference
-// that bin/poly1305_equiv_test holds both paths to.
-static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n, int avx2) {
+// CH_POLY1305_IFMA (poly1305_ifma.h), for an update poly1305_update_ifma
+// started, n of POLY1305_IFMA_MIN or more hands its whole groups of
+// sixteen blocks to poly1305_ifma_blocks. Under CH_POLY1305_AVX2
+// (poly1305_avx2.h), for an update poly1305_update_avx2 started, n of
+// POLY1305_AVX2_MIN or more hands its whole groups of eight blocks to
+// poly1305_avx2_blocks. Under CH_POLY1305_VECTOR (poly1305_vector.h), n of
+// POLY1305_VECTOR_MIN or more that remains hands its whole groups of four
+// blocks to poly1305_vector_blocks. The loop above takes the blocks after
+// the last group. It is the reference that bin/poly1305_equiv_test holds
+// every path to.
+static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n, int kernel) {
+#ifdef CH_POLY1305_IFMA
+    if (kernel == KERNEL_IFMA && n >= POLY1305_IFMA_MIN) {
+        size_t grouped = n - n % POLY1305_IFMA_GROUP;
+        poly1305_ifma_blocks(p, m, grouped);
+        m += grouped;
+        n -= grouped;
+    }
+#endif
 #ifdef CH_POLY1305_AVX2
-    if (avx2 && n >= POLY1305_AVX2_MIN) {
+    if (kernel == KERNEL_AVX2 && n >= POLY1305_AVX2_MIN) {
         size_t grouped = n - n % POLY1305_AVX2_GROUP;
         poly1305_avx2_blocks(p, m, grouped);
         m += grouped;
         n -= grouped;
     }
 #else
-    (void)avx2;
+    (void)kernel;
 #endif
 #ifdef CH_POLY1305_VECTOR
     if (n >= POLY1305_VECTOR_MIN) {
@@ -120,8 +138,8 @@ static void whole_blocks(poly1305 *p, const uint8_t *m, size_t n, int avx2) {
     blocks(p, m, n, (uint32_t)1 << 24);
 }
 
-// poly1305_update's work, with avx2 passed to whole_blocks.
-static void update(poly1305 *p, const uint8_t *in, size_t n, int avx2) {
+// poly1305_update's work, with kernel passed to whole_blocks.
+static void update(poly1305 *p, const uint8_t *in, size_t n, int kernel) {
     if (p->fill > 0) {
         while (n > 0 && p->fill < 16) {
             p->block[p->fill++] = *in++;
@@ -134,7 +152,7 @@ static void update(poly1305 *p, const uint8_t *in, size_t n, int avx2) {
     }
     size_t whole = n & ~(size_t)15;
     if (whole > 0) {
-        whole_blocks(p, in, whole, avx2);
+        whole_blocks(p, in, whole, kernel);
         in += whole;
         n -= whole;
     }
@@ -148,12 +166,18 @@ static void update(poly1305 *p, const uint8_t *in, size_t n, int avx2) {
 }
 
 void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
-    update(p, in, n, 0);
+    update(p, in, n, KERNEL_NONE);
 }
 
 #ifdef CH_POLY1305_AVX2
 void poly1305_update_avx2(poly1305 *p, const uint8_t *in, size_t n) {
-    update(p, in, n, 1);
+    update(p, in, n, KERNEL_AVX2);
+}
+#endif
+
+#ifdef CH_POLY1305_IFMA
+void poly1305_update_ifma(poly1305 *p, const uint8_t *in, size_t n) {
+    update(p, in, n, KERNEL_IFMA);
 }
 #endif
 

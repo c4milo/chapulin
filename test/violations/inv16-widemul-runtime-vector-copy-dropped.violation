@@ -7,9 +7,9 @@ reason: a host object stops carrying poly1305_vector_native.c, so
 
 --- old
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c
+LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c poly1305_ifma_native.c
 endif
 --- new
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += poly1305_avx2_native.c
+LIB_SRCS += poly1305_avx2_native.c poly1305_ifma_native.c
 endif

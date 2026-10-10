@@ -97,7 +97,9 @@ static int failures = 0;
 // block and a partial block to take or leave. The four passes are one
 // pass of ChaCha20's eight blocks, and the 528 bytes of whole blocks are
 // past the 512 a Poly1305 update needs before it hands its four whole
-// groups of eight blocks to the AVX2 kernel (POLY1305_AVX2_MIN).
+// groups of eight blocks to the AVX2 kernel (POLY1305_AVX2_MIN), or its
+// two whole groups of sixteen to the AVX-512 IFMA kernel
+// (POLY1305_IFMA_MIN).
 #define PAYLOAD ((size_t)(4 * 128 + 16 + 7))
 
 static uint8_t payload[PAYLOAD];
@@ -111,9 +113,11 @@ static void fill(uint8_t *p, size_t n, uint8_t seed) {
 // What a value names, written here apart from the library's predicates so
 // that a wrong predicate fails a row: ML-KEM's AVX2 copy under
 // CH_CPU_AVX2, the AVX-512 ChaCha20 under CH_CPU_AVX512_IFMA, the AVX2
-// ChaCha20 under CH_CPU_AVX2 without it, the AVX2 Poly1305 under
-// CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY both, and the VAES kernels
-// under CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both.
+// ChaCha20 under CH_CPU_AVX2 without it, the AVX-512 IFMA Poly1305 under
+// CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY both, the AVX2
+// Poly1305 under CH_CPU_AVX2 and the multiply bit without
+// CH_CPU_AVX512_IFMA, and the VAES kernels under CH_CPU_VAES and
+// CH_CPU_CONSTANT_TIME_AES both.
 static unsigned long names_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0 ? 1 : 0;
 }
@@ -126,8 +130,15 @@ static unsigned long names_chacha20_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0 && (cpu & CH_CPU_AVX512_IFMA) == 0 ? 1 : 0;
 }
 
+static unsigned long names_poly1305_ifma(uint32_t cpu) {
+    return (cpu & CH_CPU_AVX512_IFMA) != 0 && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? 1 : 0;
+}
+
 static unsigned long names_poly1305_avx2(uint32_t cpu) {
-    return (cpu & CH_CPU_AVX2) != 0 && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 ? 1 : 0;
+    return (cpu & CH_CPU_AVX2) != 0 && (cpu & CH_CPU_CONSTANT_TIME_MULTIPLY) != 0 &&
+                   names_poly1305_ifma(cpu) == 0
+               ? 1
+               : 0;
 }
 
 static unsigned long names_vaes(uint32_t cpu) {
@@ -138,24 +149,28 @@ static void reset_calls(void) {
     x86_avx512_calls = 0;
     x86_avx2_calls = 0;
     x86_poly1305_avx2_calls = 0;
+    x86_poly1305_ifma_calls = 0;
     x86_vaes_seal_calls = 0;
     x86_vaes_open_calls = 0;
     x86_vaes_counter_calls = 0;
 }
 
 // Whether the calls since the last reset are these, and resets them.
-static int calls_are(unsigned long avx512, unsigned long avx2, unsigned long poly1305,
-                     unsigned long seal, unsigned long open, unsigned long counter) {
+static int calls_are(unsigned long avx512, unsigned long avx2, unsigned long poly1305_ifma,
+                     unsigned long poly1305_avx2, unsigned long seal, unsigned long open,
+                     unsigned long counter) {
     int same = x86_avx512_calls == avx512 && x86_avx2_calls == avx2 &&
-               x86_poly1305_avx2_calls == poly1305 && x86_vaes_seal_calls == seal &&
+               x86_poly1305_ifma_calls == poly1305_ifma &&
+               x86_poly1305_avx2_calls == poly1305_avx2 && x86_vaes_seal_calls == seal &&
                x86_vaes_open_calls == open && x86_vaes_counter_calls == counter;
     if (!same) {
         (void)fprintf(stderr,
-                      "calls: AVX-512 %lu, AVX2 %lu, AVX2 Poly1305 %lu, VAES seal %lu, open %lu, "
-                      "counter %lu; want %lu, %lu, %lu, %lu, %lu, %lu\n",
-                      x86_avx512_calls, x86_avx2_calls, x86_poly1305_avx2_calls,
-                      x86_vaes_seal_calls, x86_vaes_open_calls, x86_vaes_counter_calls, avx512,
-                      avx2, poly1305, seal, open, counter);
+                      "calls: AVX-512 %lu, AVX2 %lu, IFMA Poly1305 %lu, AVX2 Poly1305 %lu, VAES "
+                      "seal %lu, open %lu, counter %lu; want %lu, %lu, %lu, %lu, %lu, %lu, %lu\n",
+                      x86_avx512_calls, x86_avx2_calls, x86_poly1305_ifma_calls,
+                      x86_poly1305_avx2_calls, x86_vaes_seal_calls, x86_vaes_open_calls,
+                      x86_vaes_counter_calls, avx512, avx2, poly1305_ifma, poly1305_avx2, seal,
+                      open, counter);
     }
     reset_calls();
     return same;
@@ -168,18 +183,18 @@ static int calls_are(unsigned long avx512, unsigned long avx2, unsigned long pol
 // Poly1305 kernel once.
 static int sealed_on(uint16_t suite, uint32_t cpu) {
     if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, 0, 0, names_vaes(cpu), 0, names_vaes(cpu));
+        return calls_are(0, 0, 0, 0, names_vaes(cpu), 0, names_vaes(cpu));
     }
-    return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_avx2(cpu),
-                     0, 0, 0);
+    return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
+                     names_poly1305_avx2(cpu), 0, 0, 0);
 }
 
 static int opened_on(uint16_t suite, uint32_t cpu) {
     if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, 0, 0, 0, names_vaes(cpu), names_vaes(cpu));
+        return calls_are(0, 0, 0, 0, 0, names_vaes(cpu), names_vaes(cpu));
     }
-    return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_avx2(cpu),
-                     0, 0, 0);
+    return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
+                     names_poly1305_avx2(cpu), 0, 0, 0);
 }
 
 // The keystream and the AEAD. The entries that take no description run
@@ -197,33 +212,33 @@ static void check_chacha20(uint32_t cpu) {
     fill(aad, sizeof aad, 0x33);
 
     chacha20_xor(key, nonce, 1, payload, want, PAYLOAD);
-    CHECK(calls_are(0, 0, 0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0, 0, 0));
     chacha20_xor_cpu(cpu, key, nonce, 1, payload, got, PAYLOAD);
-    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), 0, 0, 0, 0));
+    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), 0, 0, 0, 0, 0));
     CHECK(memcmp(got, want, PAYLOAD) == 0);
 
     aead_seal(widemul_of_cpu(cpu), key, nonce, aad, sizeof aad, payload, PAYLOAD, want, want_tag);
-    CHECK(calls_are(0, 0, 0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0, 0, 0));
     aead_seal_cpu(cpu, key, nonce, aad, sizeof aad, payload, PAYLOAD, got, got_tag);
-    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_avx2(cpu),
-                    0, 0, 0));
+    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
+                    names_poly1305_avx2(cpu), 0, 0, 0));
     CHECK(memcmp(got, want, PAYLOAD) == 0 && memcmp(got_tag, want_tag, AEAD_TAG) == 0);
 
     uint8_t back[PAYLOAD];
     CHECK(aead_open(widemul_of_cpu(cpu), key, nonce, aad, sizeof aad, want, PAYLOAD, want_tag,
                     back) == 1);
-    CHECK(calls_are(0, 0, 0, 0, 0, 0));
+    CHECK(calls_are(0, 0, 0, 0, 0, 0, 0));
     CHECK(memcmp(back, payload, PAYLOAD) == 0);
     memset(back, 0, sizeof back);
     CHECK(aead_open_cpu(cpu, key, nonce, aad, sizeof aad, got, PAYLOAD, got_tag, back) == 1);
-    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_avx2(cpu),
-                    0, 0, 0));
+    CHECK(calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
+                    names_poly1305_avx2(cpu), 0, 0, 0));
     CHECK(memcmp(back, payload, PAYLOAD) == 0);
     // A wrong tag runs no keystream: the open computes the tag and
     // compares it before it decrypts.
     got_tag[0] ^= 1;
     CHECK(aead_open_cpu(cpu, key, nonce, aad, sizeof aad, got, PAYLOAD, got_tag, back) == 0);
-    CHECK(calls_are(0, 0, names_poly1305_avx2(cpu), 0, 0, 0));
+    CHECK(calls_are(0, 0, names_poly1305_ifma(cpu), names_poly1305_avx2(cpu), 0, 0, 0));
 }
 
 // One record under suite, sealed by a direction whose cpu is the value
@@ -455,15 +470,16 @@ int main(void) {
     check_value(0);
     if (failures == 0) {
         (void)printf(
-            "x86 kernels: under each of 33 ch_cfg.cpu values, the ChaCha20 keystream ran on "
-            "the AVX-512 kernel where CH_CPU_AVX512_IFMA was set and on the AVX2 kernel where "
+            "x86 kernels: under each of 33 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
+            "AVX-512 kernel where CH_CPU_AVX512_IFMA was set and on the AVX2 kernel where "
             "CH_CPU_AVX2 was and that bit was not, ML-KEM's matrix on the AVX2 kernel where "
-            "CH_CPU_AVX2 was, Poly1305 where CH_CPU_AVX2 and CH_CPU_CONSTANT_TIME_MULTIPLY "
-            "were, AES-GCM on the VAES kernels where CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES "
-            "were, RSA's public operation on the IFMA kernel where CH_CPU_AVX512_IFMA was, RSA "
-            "signing's exponentiations and check on the IFMA kernels, each followed by both "
-            "wipes, where CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and none "
-            "of them anywhere else\n");
+            "CH_CPU_AVX2 was, Poly1305 on the IFMA kernel where CH_CPU_AVX512_IFMA and "
+            "CH_CPU_CONSTANT_TIME_MULTIPLY were and on the AVX2 kernel where CH_CPU_AVX2 and the "
+            "multiply bit were and CH_CPU_AVX512_IFMA was not, AES-GCM on the VAES kernels where "
+            "CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, RSA's public operation on the IFMA "
+            "kernel where CH_CPU_AVX512_IFMA was, RSA signing's exponentiations and check on the "
+            "IFMA kernels, each followed by both wipes, where CH_CPU_AVX512_IFMA and "
+            "CH_CPU_CONSTANT_TIME_MULTIPLY were, and none of them anywhere else\n");
     }
     return failures != 0;
 }

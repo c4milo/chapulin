@@ -575,9 +575,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     if (host) lib_srcs = concat(b, &.{ lib_srcs, nativeCopies(b, lib_srcs) });
     // The vector Poly1305 multiplies, so a host object holds it as the
     // native copy the multiply bit picks, and a device object holds none
-    // (docs/decisions.md 83 and 89). The AVX2 Poly1305 joins it the same
-    // way, and has a body on x86-64 alone (docs/decisions.md 110).
-    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "poly1305_vector_native.c", "poly1305_avx2_native.c" } });
+    // (docs/decisions.md 83 and 89). The AVX2 Poly1305 and the AVX-512
+    // IFMA Poly1305 join it the same way, and have a body on x86-64 alone
+    // (docs/decisions.md 110).
+    if (host) lib_srcs = concat(b, &.{ lib_srcs, &.{ "poly1305_vector_native.c", "poly1305_avx2_native.c", "poly1305_ifma_native.c" } });
     // hash_hw_of: SHA-256 on the CPU's SHA-256 instructions beside
     // sha256.c, and hkdf.c and keysched.c compiled once more over it, which
     // a session's CH_CPU_CONSTANT_TIME_SHA256 bit picks. With SUITE=aesgcm,
