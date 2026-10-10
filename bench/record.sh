@@ -32,6 +32,12 @@
 #   target, and a run takes its rows only where /proc/cpuinfo names the
 #   instructions
 #
+#   0x11f, those and CH_CPU_AVX512_IFMA, on an x86-64 CPU with AVX-512
+#   IFMA as well: the ChaCha20-Poly1305 rows again, with the keystream on
+#   chacha20_avx512.c's kernel and Poly1305's long updates on
+#   poly1305_ifma.c's. --build compiles it for every x86-64 target, and a
+#   run takes its rows only where /proc/cpuinfo names avx512ifma
+#
 # A host object never runs chacha20.c's portable loop, so no row here
 # times it; bench/aead.sh times it in a device object's sources.
 #
@@ -135,13 +141,19 @@ fi
 # The x86-64 kernels' build. It compiles for every x86-64 target, and its
 # rows run only where this CPU has the kernels' instructions.
 KERNELS=""
+IFMA=""
 KERNELS_NOTE="no ch_cfg.cpu 0x1f rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
 if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -qw __x86_64__; then
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x1f -o "$W/record_kernels" "${SRCS[@]}"
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x11f -o "$W/record_ifma" "${SRCS[@]}"
     if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo && grep -qw vaes /proc/cpuinfo &&
         grep -qw vpclmulqdq /proc/cpuinfo; then
         KERNELS=yes
         KERNELS_NOTE="ch_cfg.cpu 0x1f adds CH_CPU_AVX2 and CH_CPU_VAES, the AVX2 ChaCha20 and Poly1305 and the VAES AES-GCM"
+        if grep -qw avx512ifma /proc/cpuinfo; then
+            IFMA=yes
+            KERNELS_NOTE="$KERNELS_NOTE; ch_cfg.cpu 0x11f adds CH_CPU_AVX512_IFMA, the AVX-512 ChaCha20 and the IFMA Poly1305"
+        fi
     fi
 fi
 if [ -n "$BUILD_ONLY" ]; then
@@ -240,6 +252,9 @@ LOAD_BEFORE=$(load)
     "$W/record_multiply" ${QUICK:+"$QUICK"} chacha20poly1305
     if [ -n "$KERNELS" ]; then
         "$W/record_kernels" ${QUICK:+"$QUICK"} aes128gcm aes256gcm chacha20poly1305
+    fi
+    if [ -n "$IFMA" ]; then
+        "$W/record_ifma" ${QUICK:+"$QUICK"} chacha20poly1305
     fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"

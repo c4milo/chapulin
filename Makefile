@@ -4759,7 +4759,9 @@ wycheproof-run-default:
 # kernel, with CH_CPU_VAES beside the AES bit both AES-GCM suites run
 # their whole blocks on the VAES kernels (docs/decisions.md 90), and with
 # CH_CPU_AVX512_IFMA beside those the RSA-PSS and PKCS#1 v1.5 suites run
-# their public operation on rsa_ifma.c. On both
+# their public operation on rsa_ifma.c, and the ChaCha20-Poly1305 suite
+# its keystream on chacha20_avx512.c's kernel and its four longest
+# messages' Poly1305 on poly1305_ifma.c's. On both
 # architectures it runs once more under HASH_WYCHEPROOF_CPU, where the
 # HMAC-SHA-256 and HKDF-SHA-256 suites hash on the CPU's SHA-256
 # instructions (docs/decisions.md 93). Running the

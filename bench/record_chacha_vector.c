@@ -1,13 +1,16 @@
 // The vector ChaCha20 source the bench's rows run under BENCH_CPU, compiled
-// with one more entry, for bench/record.c: chacha20_avx2.c where the value
-// names AVX2 on x86-64, and chacha20_vector.c under every other value
-// (record_stages.h). The functions this entry runs are static in those
-// files, so this file includes the source. The bench also links the
+// with one more entry, for bench/record.c: chacha20_avx512.c where the
+// value names AVX-512 IFMA on x86-64, chacha20_avx2.c where it names AVX2
+// there, and chacha20_vector.c under every other value (record_stages.h). The functions this entry
+// runs are static in those files, so this file includes the source. The bench also links the
 // library's own object of it, so this file first renames the external name
 // the source defines, and nothing calls the renamed function.
 #include "record_stages.h"
 
-#ifdef BENCH_ON_AVX2
+#if defined(BENCH_ON_AVX512)
+#define chacha20_avx512_xor bench_chacha20_avx512_copy_xor
+#include "chacha20_avx512.c"
+#elif defined(BENCH_ON_AVX2)
 #define chacha20_avx2_xor bench_chacha20_avx2_copy_xor
 #include "chacha20_avx2.c"
 #else
@@ -19,10 +22,34 @@
 // last one for a shorter tail, and adds the pass's blocks to the block
 // counter after each. This runs the same passes with the same counters
 // and stores each pass's keystream to out, so the time it takes is the
-// xor's less the loads, the exclusive-or and the stores of the data. On the
-// AVX2 kernel it takes the kernel's target attribute, because it holds the
-// kernel's 256-bit values.
-#ifdef BENCH_ON_AVX2
+// xor's less the loads, the exclusive-or and the stores of the data. On a
+// kernel it takes the kernel's target attribute, because it holds the
+// kernel's 256-bit or 512-bit values. On the AVX-512 kernel it runs every
+// pass on sixteen blocks: the kernel runs a last 1 to 256 bytes as a pass
+// of four, which no record this bench times ends on.
+#if defined(BENCH_ON_AVX512)
+__attribute__((target("avx512f"))) void
+bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
+                             uint32_t counter, size_t n,
+                             uint8_t out[BENCH_CHACHA20_VECTOR_PASS_MAX]) {
+    _Static_assert(PASS_BYTES <= BENCH_CHACHA20_VECTOR_PASS_MAX, "out holds one pass");
+    uint32_t words[16];
+    setup(words, key, nonce);
+    for (size_t off = 0; off < n; off += PASS_BYTES) {
+        lanes x[16];
+        pass_input(x, words, counter);
+        for (int i = 0; i < 10; i++) {
+            double_round(x);
+        }
+        pass_keystream(x, words, counter);
+#pragma GCC unroll 16
+        for (size_t b = 0; b < PASS_BLOCKS; b++) {
+            _mm512_storeu_si512((void *)(out + CHACHA20_BLOCK * b), x[b]);
+        }
+        counter += PASS_BLOCKS;
+    }
+}
+#elif defined(BENCH_ON_AVX2)
 __attribute__((target("avx2"))) void
 bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                              uint32_t counter, size_t n,

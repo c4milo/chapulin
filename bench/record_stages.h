@@ -50,9 +50,12 @@
 #define bench_gcm_open_passes gcm_open_passes_hw
 #endif
 
-// Whether the ChaCha20 rows run chacha20_avx2.c's kernel under BENCH_CPU, as
-// chacha20.c's use_avx2 picks it.
-#if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX2) != 0
+// Whether the ChaCha20 rows run chacha20_avx512.c's kernel under BENCH_CPU,
+// as chacha20.c's use_avx512 picks it, or chacha20_avx2.c's, as its
+// use_avx2 picks it beside that.
+#if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX512_IFMA) != 0
+#define BENCH_ON_AVX512 1
+#elif defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_AVX2) != 0
 #define BENCH_ON_AVX2 1
 #endif
 
@@ -66,11 +69,12 @@ void bench_gcm_compute_tag(const aes_traffic_key *k, const uint8_t nonce[AES_IV]
                            uint8_t tag[GCM_TAG]);
 
 // bench/record_chacha_vector.c. The passes of the ChaCha20 path BENCH_CPU
-// names, chacha20_vector.c's or the AVX2 kernel's, run as often and with
+// names, chacha20_vector.c's or one of the kernels', run as often and with
 // the same counters as the path's xor runs them over n bytes, with each
-// pass's keystream written to out and no exclusive-or. A pass is eight
-// blocks on NEON and on AVX2 and four on SSE2, so out holds the larger.
-#define BENCH_CHACHA20_VECTOR_PASS_MAX (8 * CHACHA20_BLOCK)
+// pass's keystream written to out and no exclusive-or. A pass is sixteen
+// blocks on AVX-512, eight on NEON and on AVX2 and four on SSE2, so out
+// holds the largest.
+#define BENCH_CHACHA20_VECTOR_PASS_MAX (16 * CHACHA20_BLOCK)
 void bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY],
                                   const uint8_t nonce[CHACHA20_NONCE], uint32_t counter, size_t n,
                                   uint8_t out[BENCH_CHACHA20_VECTOR_PASS_MAX]);

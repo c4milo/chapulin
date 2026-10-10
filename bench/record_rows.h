@@ -46,7 +46,7 @@ typedef struct {
     uint8_t subkey[AES_BLOCK]; // GHASH's hash subkey under key
     uint8_t acc[AES_BLOCK];
     uint8_t counter[AES_BLOCK];
-    uint8_t keystream[8 * CHACHA20_BLOCK]; // one pass of the widest ChaCha20 path
+    uint8_t keystream[16 * CHACHA20_BLOCK]; // one pass of the widest ChaCha20 path
     uint8_t tag[AEAD_TAG];
     uint8_t poly_key[POLY1305_KEY];
     poly1305 poly;
