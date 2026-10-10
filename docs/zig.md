@@ -294,8 +294,11 @@ default; in any other object they are `void`, and `Cpu` is a
 feature evex512 to the target, whatever CPU the program builds for:
 `rsa_ifma.c`'s functions take and return 512-bit vectors, and Zig turns
 evex512 off for a CPU without AVX-512. evex512 alone turns on no
-instruction, so the object holds AVX-512 instructions in `rsa_ifma.c`'s
-functions alone, as make's does (docs/decisions.md 119).
+instruction, so the object holds AVX-512 instructions in the functions of
+the AVX-512 kernels alone, `rsa_ifma.c`, `rsa_ifma_sign.c`,
+`chacha20_avx512.c` and `poly1305_ifma.c`, under their target attributes,
+and in `avx512_wipe.c`'s block of assembly, as make's does
+(docs/decisions.md 119 to 121).
 
 - **A value states what the caller found.** `Cpu` holds eight bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
@@ -315,9 +318,14 @@ functions alone, as make's does (docs/decisions.md 119).
   operating system saves the 512-bit registers, and with it the session
   runs RSA verification's public operation on `rsa_ifma.c`, in digits of
   52 bits, eight to a 512-bit register, for an odd modulus of 2,048 bits
-  or more whose bit length is a multiple of 64. `x509.c` verifies the chain
-  links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so
-  they run `rsa_mont64.c` whatever the two fields say.
+  or more whose bit length is a multiple of 64, and its ChaCha20 keystream
+  sixteen blocks a pass on `chacha20_avx512.c` in place of the AVX2 kernel.
+  Beside `constant_time_multiply`, whose statement covers IFMA's 52-bit
+  products, the session also signs with RSA on `rsa_ifma_sign.c` and runs
+  a Poly1305 update of 512 bytes or more on `poly1305_ifma.c`
+  (docs/decisions.md 120 and 121). `x509.c` verifies the chain links of
+  `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they run
+  `rsa_mont64.c` whatever the two fields say.
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with

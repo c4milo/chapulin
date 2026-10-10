@@ -172,7 +172,13 @@ Other targets:
   or 27 above 3,072 bits, four to a 256-bit register, and writes the
   same bytes (decision 122). `x509.c` verifies the chain links of
   `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they run
-  `rsa_mont64.c` whatever the two bits say.
+  `rsa_mont64.c` whatever the two bits say. With `CH_CPU_AVX512_IFMA` the
+  session's ChaCha20 keystream also runs sixteen blocks a pass on
+  `chacha20_avx512.c` in place of the AVX2 kernel, and beside
+  `CH_CPU_CONSTANT_TIME_MULTIPLY`, whose statement covers IFMA's 52-bit
+  products, the session signs with RSA on `rsa_ifma_sign.c` and runs a
+  Poly1305 update of 512 bytes or more on `poly1305_ifma.c` (decisions
+  120 and 121).
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

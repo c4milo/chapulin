@@ -349,7 +349,8 @@ const CpuBits = struct {
     constant_time_aes: bool = false,
     /// CH_CPU_CONSTANT_TIME_MULTIPLY: the caller states the widening multiply runs in constant time,
     /// and the session runs the native multiply in place of ct.h's 16x16 decomposition, and X25519
-    /// on the 51-bit-word field.
+    /// on the 51-bit-word field. On x86-64 the statement covers AVX-512 IFMA's 52-bit products too,
+    /// which avx512_ifma runs beside this bit.
     constant_time_multiply: bool = false,
     /// CH_CPU_AVX2: the CPU has AVX2 and its operating system saves the 256-bit registers, and the
     /// session's ChaCha20 keystream runs in 256-bit vectors. Without avx512_ifma the session also
@@ -377,8 +378,11 @@ const CpuBits = struct {
     /// the opmask and 512-bit registers. It states presence alone, as avx2 does, and with it the
     /// session runs RSA verification's public operation on rsa_ifma.c's 52-bit digits, eight to
     /// a 512-bit register, for an odd modulus of 2,048 bits or more whose bit length is a multiple
-    /// of 64. x509.c's chain links under TRUST=ca-rsa run rsa_mont64.c whatever this says. An
-    /// x86-64 bit, which an arm64 object refuses.
+    /// of 64, and its ChaCha20 keystream sixteen blocks a pass on chacha20_avx512.c in place of
+    /// avx2's kernel. Beside constant_time_multiply the session also signs with RSA on
+    /// rsa_ifma_sign.c and runs a Poly1305 update of 512 bytes or more on poly1305_ifma.c. x509.c's
+    /// chain links under TRUST=ca-rsa run rsa_mont64.c whatever this says. An x86-64 bit, which an
+    /// arm64 object refuses.
     avx512_ifma: bool = false,
 };
 

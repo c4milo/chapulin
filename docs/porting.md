@@ -97,7 +97,9 @@ A host session with `CH_CPU_CONSTANT_TIME_MULTIPLY` also runs Poly1305 four
 blocks at a time on the vector unit's widening multiply, NEON's UMULL and UMLAL
 or SSE2's PMULUDQ. The bit states that every widening multiply the session
 runs, scalar or vector, runs in constant time, so the vendor statement behind
-it must cover those instructions as well as the scalar multiply. A session
+it must cover those instructions as well as the scalar multiply, and on x86-64
+AVX-512 IFMA's 52-bit products, which `CH_CPU_AVX512_IFMA` runs beside the bit
+(below). A session
 without the bit runs the portable Poly1305 and its 16x16 decomposition
 (decision 83).
 
@@ -115,10 +117,13 @@ bits or more whose bit length is a multiple of 64. A session with `CH_CPU_AVX2`
 and without the IFMA bit runs the same moduli on `rsa_avx2.c`, in digits of 28
 bits, or 27 above 3,072 bits, four to a 256-bit register (decision 122).
 `x509.c` verifies the chain links of `TRUST=ca-rsa` with `rsa_pss_verify`,
-which takes no `cpu`, so they run `rsa_mont64.c` whatever the two bits say. Set
-each from your
-probe alone: a session whose bit names instructions its CPU lacks faults on the
-first one.
+which takes no `cpu`, so they run `rsa_mont64.c` whatever the two bits say.
+With `CH_CPU_AVX512_IFMA` the ChaCha20 keystream also runs sixteen blocks a pass
+on `chacha20_avx512.c` in place of the AVX2 kernel, and beside
+`CH_CPU_CONSTANT_TIME_MULTIPLY` the session signs with RSA on `rsa_ifma_sign.c`
+and runs a Poly1305 update of 512 bytes or more on `poly1305_ifma.c` (decisions
+120 and 121). Set each from your probe alone: a session whose bit names
+instructions its CPU lacks faults on the first one.
 
 Three bits state the hash instructions: `CH_CPU_CONSTANT_TIME_SHA256` on both
 architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`
