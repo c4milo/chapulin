@@ -283,14 +283,18 @@ static inline __attribute__((always_inline)) aes_state next_round_key(aes_state 
     return _mm_xor_si128(prefix_xor(key), temporary);
 }
 
+#ifdef CH_AES_256
 // AES-256's round key after first, a round key next_round_key wrote, by
 // the step the word four after every eighth takes: the temporary is
 // SubWord of first's last word, with no RotWord and no round constant.
-// key is the round key before first.
+// key is the round key before first. expand_256 alone calls it, so it
+// sits under the same define: clang's -Wunused-function names an unused
+// static inline function, and -Werror makes that an error.
 static inline __attribute__((always_inline)) aes_state next_second_round_key(aes_state key,
                                                                              aes_state first) {
     return _mm_xor_si128(prefix_xor(key), sub_word_of_last_word(first));
 }
+#endif
 
 static void expand_128(const uint8_t key[AES_128_KEY], uint8_t *round_keys) {
     aes_state round_key = load_block(key);
