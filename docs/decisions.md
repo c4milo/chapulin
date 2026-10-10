@@ -4984,7 +4984,10 @@ does nothing more.
       of 32 bytes in block order. The pass XORs them into the data from
       the registers in ascending order, so the output may sit on the input
       or below it, as entry 86's path allows. The last 1 to 31 bytes pass
-      through a buffer of 32 bytes that `ct_wipe` clears.
+      through a buffer of 32 bytes that `ct_wipe` clears. Entry 121 amends
+      which sessions run it: one whose `ch_cfg.cpu` holds
+      `CH_CPU_AVX512_IFMA` runs `chacha20_avx512.c`'s sixteen blocks a
+      pass instead.
     - **The AES-GCM kernels.** `gcm_vaes.c` runs `gcm_hw.c`'s three loops
       two blocks to a 256-bit register. VAESENC runs one AES round on each
       half of a register, so each round key is loaded into both halves.
@@ -7955,7 +7958,11 @@ does nothing more.
       that call, and `aead_seal` and `aead_open`, which take no
       description of the CPU, pass 0, which names no kernel. The
       associated data and the lengths keep `widemul_poly1305_update`: no
-      record or packet holds 512 bytes of them.
+      record or packet holds 512 bytes of them. Entry 121 amends this
+      bullet: `widemul_poly1305_update_cpu` first asks
+      `widemul_poly1305_ifma`, and a session whose value holds
+      `CH_CPU_AVX512_IFMA` beside the multiply bit runs the AVX-512 IFMA
+      kernel instead.
     - **The statements.** The multiply bit's statement covers VPMULUDQ as
       it covers SSE2's PMULUDQ (entries 83 and 89), and `CH_CPU_AVX2`
       states no timing (entry 90). A session without the multiply bit runs
@@ -8919,6 +8926,10 @@ does nothing more.
       signature on this kernel through `rsa_vp1_cpu`, and `rsa_sign64.c`
       wipes the stack below each call and the 512-bit and mask registers
       after it.
+      Entry 121 adds the AVX-512 ChaCha20 and Poly1305 kernels to the
+      callers of `avx512_wipe_registers`. A stack slot the compiler picks
+      still has no statement that clears it, and `rsa_ifma.c` calls the
+      wipe nowhere.
     - **Gain.** Run 37944974426 timed this tree's kernel on 2026-10-09,
       on six ubuntu-24.04 runners, under gcc 13.3 and clang 23. A timing
       program on a scratch branch first compared `rsa_vp1_cpu` under
@@ -9300,3 +9311,189 @@ does nothing more.
       are widening multiplies.
     - **VZEROUPPER or VZEROALL.** Each leaves zmm16 to zmm31 and the mask
       registers as they were (ruling 2).
+
+121. **An x86-64 host object runs ChaCha20 sixteen blocks a pass on
+    AVX-512 for a session whose `ch_cfg.cpu` holds `CH_CPU_AVX512_IFMA`,
+    and Poly1305's block loop on AVX-512 IFMA when the value also holds
+    `CH_CPU_CONSTANT_TIME_MULTIPLY`.** Entries 90 and 110 left a session
+    on a CPU with AVX-512 on the AVX2 kernels. On the bench machine's Xeon
+    Platinum 8573C, OpenSSL 3.6.4 encrypted and hashed 16 KiB of
+    ChaCha20-Poly1305 in 0.39 to 0.45 of chapulin's time under `0x1f`
+    (docs/performance.md). This entry amends entry 90's choice of the
+    ChaCha20 keystream and entry 110's choice of the Poly1305 kernel, and
+    adds two callers of entry 120's `avx512_wipe.c`, which `rsa_ifma.c`,
+    whose inputs are public, still calls nowhere.
+
+    Entry 120's two rulings of 2026-10-09 settle the two questions this
+    raised: the multiply bit's statement covers AVX-512 IFMA's 52-bit
+    products, so secrets may reach them in a session whose `ch_cfg.cpu`
+    holds both bits, and a kernel that held secrets in 512-bit registers
+    calls `avx512_wipe_registers` before it returns.
+
+    - **The ChaCha20 kernel.** `chacha20_avx512.c` computes sixteen
+      blocks a pass: word w of each block sits in lane b of the vector
+      that holds word w. The quarter rounds are adds, exclusive-ors and
+      VPROLD rotations, and two transposes, of 32-bit words within each
+      128-bit quarter and of the quarters, put each block's 64 bytes in
+      one vector. The last 1 to 256 bytes of a message run as a row pass of
+      four blocks, block k in quarter k of four vectors, and where a whole
+      pass comes before them the row pass's rounds run in the same loop as
+      that pass's. A rest above 256 bytes runs one more pass of sixteen.
+      `chacha20.c`'s `use_avx512` answers for `CH_CPU_AVX512_IFMA`, and
+      `chacha20_xor_cpu` asks it before `use_avx2`. The kernel uses no
+      multiply, so its timing rests on construction, as the AVX2 kernel's
+      does, and the bit states presence alone.
+    - **The Poly1305 kernel.** `poly1305_ifma.c` absorbs sixteen blocks a
+      group in eight 64-bit lanes. A lane holds its number in three digits of
+      44, 44 and 42 bits, the radix of OpenSSL's `poly1305_blocks_vpmadd52`,
+      and a product is eighteen VPMADD52LUQ and VPMADD52HUQ and one round of
+      carries. Two loads and VPUNPCKLQDQ and VPUNPCKHQDQ give lanes 0 to 7
+      blocks 0, 4, 1, 5, 2, 6, 3 and 7 of a group's first eight, and the
+      same of its last eight, so lane l runs Horner's rule over every eighth
+      block: (h + first) r^16 + second r^8 in each group but the last, which
+      takes r^(16 - b) and r^(8 - b) for the lane's block b. Five products
+      in the lanes compute r^2, r^4, the last group's two multipliers and,
+      from lane 0 of each, r^8 and r^16. The lanes' totals end as five
+      26-bit words through `carry_scalar`. `poly1305_update_ifma`, which
+      only the native copy on x86-64 defines, hands whole groups of an
+      update with 512 bytes or more of whole blocks to it, and `widemul.h`'s
+      `widemul_poly1305_update_cpu` calls it where `widemul_poly1305_ifma`
+      finds `WIDEMUL_CONSTANT_TIME` and `CH_CPU_AVX512_IFMA`, before it asks
+      about AVX2. A session without the multiply bit runs `poly1305.c` on
+      the decomposition, whatever else its value holds.
+    - **The bound.** From digits 0 and 1 below 2^44 + 2^17 and digit 2 below
+      2^42 + 2^17, every operand of a multiplication is below 2^52, where the
+      instruction reads all of it, every sum below 2^56, and a group's carry
+      leaves the digits within those bounds again. `poly1305_ifma_sums` and
+      `poly1305_ifma_product` prove it of the C over contracts for the
+      products, and `spec/lean/Spec/Poly1305Ifma.lean` of a model of the C
+      on the products themselves, with the value a group step computes
+      modulo 2^130 - 5 and the power of r each lane holds. The kernel's
+      totals are below 2^48, so the five sums `carry_scalar` takes stay
+      below 2^60, and its first pass leaves h1 at most 2^26: no key gives
+      the AVX2 kernel's wide h1 case here.
+    - **The wipe.** `avx512_wipe.c`, which entry 120 added, holds ruling
+      2's block: an EVEX VPXORD of each of xmm0 to xmm31 with itself,
+      which clears the whole 512-bit register, and a KXORW of each of k1
+      to k7, with every one of them in its clobber list. Both kernels call
+      it before they return. The powers of r and the four multipliers sit
+      in one struct of 1,984 bytes, which `poly1305_ifma_blocks` wipes
+      through `ct_wipe` when it ends, and `multiply_add` reads each
+      multiplier through a volatile pointer, for entry 83's reason. The
+      wipe of the registers clears no stack slot the compiler picked:
+      under gcc 13.3 the ChaCha20 kernel stores a vector register to the
+      stack 74 times and the Poly1305 copy 31 times, and under clang 23 14
+      and 53 times.
+    - **What stays on the stack.** Run 38000834109 called each path twice
+      over the same message, under two keys whose r differs, each time on a
+      stack first filled with one pattern, and counted the bytes below the
+      call that differ between the two copies, on two runners with AVX-512
+      IFMA. Below the IFMA kernel no byte depended on r under either
+      compiler. Below the paths that were there before, bytes did, and
+      this entry changes none of them: under gcc 13.3 the AVX2
+      Poly1305 left 799 such bytes in 125 runs and the 128-bit path 231 in
+      43, and under clang 23 74 and 155. Those are the lanes' running sums,
+      which `bin/poly1305_equiv_test`'s search does not look for, because it
+      looks for the powers of r. A lane's running sum is a polynomial in r
+      over blocks that travel in the clear, so it gives r, and r with the
+      tag on the wire gives the pad. Below the ChaCha20 kernels bytes that
+      depend on the key stayed too: under gcc 1,079 below the AVX-512
+      kernel, 768 below the AVX2 one and 111 below the 128-bit path, and
+      under clang 35, 706 and 266. A fix belongs to the paths, not to this
+      kernel.
+    - **Gain.** Run 38000834109 timed the kernels on 2026-10-09, on six
+      ubuntu-24.04 runners from a scratch branch, under gcc 13.3 and clang
+      23; two drew a CPU with AVX-512 IFMA, an EPYC 9V74 and an EPYC 9V45.
+      Each first ran the equivalence tests, the counting test, the wipe test
+      and the Wycheproof suite under 0x11f on the instructions, which all
+      passed. Each figure is the median of 101 batches of the thread's CPU
+      time per call, in rounds that run every path once in a rotating
+      order, under gcc:
+
+      | CPU | ChaCha20, AVX2 / AVX-512, 1 KiB | 16 KiB | Poly1305, AVX2 / IFMA, 1 KiB | 16 KiB |
+      | --- | --- | --- | --- | --- |
+      | EPYC 9V74 | 363 / 216 ns | 5.77 / 3.31 µs | 291 / 178 ns | 2.25 / 1.00 µs |
+      | EPYC 9V45 | 362 / 140 ns | 5.74 / 2.14 µs | 211 / 110 ns | 1.94 / 0.57 µs |
+
+      `bench/record.sh` timed a 16 KiB record sealed by `aead_seal` in the
+      same run, where `openssl speed -aead` timed OpenSSL 3.6.4's update
+      over the same bytes:
+
+      | CPU, compiler | 0x1f | 0x11f | OpenSSL 3.6.4 |
+      | --- | --- | --- | --- |
+      | EPYC 9V74, gcc | 8.58 µs | 4.68 µs | 4.32 µs |
+      | EPYC 9V74, clang | 8.41 µs | 4.33 µs | 4.32 µs |
+      | EPYC 9V45, gcc | 7.95 µs | 2.85 µs | 3.16 µs |
+      | EPYC 9V45, clang | 7.65 µs | 2.75 µs | 3.14 µs |
+
+      A 1 KiB record took 1.06 µs under 0x1f and 0.67 under 0x11f on the
+      9V74, and 0.91 and 0.43 on the 9V45, under gcc.
+    - **Where the AVX-512 ChaCha20 loses.** A rest above 256 bytes runs a
+      whole pass of sixteen blocks. On the EPYC 9V74, which runs a 512-bit
+      operation in two halves, 257 to 512 bytes took 209 to 210 ns where
+      the AVX2 kernel took 181 to 183, under gcc; at 256 bytes and below,
+      and from 1 KiB up, the AVX-512 kernel was faster. On the EPYC 9V45 it
+      was faster at every length timed: 134 ns for 257 to 512 bytes
+      against 181 to 183. The bit picks the kernel for every length.
+    - **The Poly1305 threshold.** `POLY1305_IFMA_MIN` is 512, the AVX2
+      kernel's. The run timed the kernel's entry alone on one group of 256
+      bytes at 128 ns on the 9V74 and 77 ns on the 9V45, where the 128-bit
+      path's update took 169 and 119 ns under gcc, so a threshold of 256
+      would gain too. It would change which Wycheproof messages and which
+      counting rows run the kernel, and is not done here.
+    - **What holds it.** `bin/chacha20_equiv_test` holds the ChaCha20
+      kernel to `chacha20.c`'s loop over 73,787 cases on a CPU with AVX-512F.
+      `bin/poly1305_equiv_test` holds the Poly1305 kernel to `poly1305.c`'s
+      loop over 358,545 cases on a CPU with AVX-512 IFMA, and the kernel's
+      own text over `test/poly1305_ifma_model_lanes.h`, a model of each
+      instruction, on every machine. `bin/avx512_wipe_test` sets every bit
+      of the 32 vector registers and k1 to k7, calls the wipe, and reads
+      each back as zero. The nightly's `rsa-ifma-sde` job runs the three
+      with `CH_REQUIRE_AVX512_IFMA=1` under Intel SDE.
+      `bin/x86_kernels_test` counts which calls run each kernel under its
+      33 values of `ch_cfg.cpu`, `test/chacha-builds.sh` reads which entries
+      each object calls and requires the wipe's 32 VPXORD and 7 KXORW, and
+      `bin/diff_poly1305_ifma` compares the C over the model with the Lean
+      model. Eighteen violations break the kernels, the model, the choice
+      and the wipe, and a test catches each (INV-16 and INV-17).
+      docs/verification.md, "The AVX-512 IFMA Poly1305" and "The x86-64
+      kernels", says what each check runs on. Run 38011830462 ran the
+      equivalence tests, the wipe test, the counting test, the unit suite
+      and the Wycheproof suite under 0x11f on this entry's tree, on an EPYC
+      9V45 and a Xeon 6973P-C under gcc 13.3 and clang 23, and each passed;
+      the stack bytes it counted were the ones above.
+    - **Branches.** `lint-wide-multiply` holds `chacha20_avx512.c` at 35
+      conditional branches under clang for x86-64 at `-Os`, each a loop
+      over a public count or a test of the byte count, and
+      `poly1305_ifma_native.c` at 4, on the byte count. `poly1305_native.c`
+      holds 21 there, one more than before: the IFMA update's test of n
+      against 512. `avx512_wipe.c` holds none.
+    - **Cost.** Under gcc 13.3 at `-O2` for x86-64 the ChaCha20 kernel is
+      6,619 bytes of text, the Poly1305 copy 4,289 and the wipe 308, and
+      under clang 23 6,708, 4,942 and 269. The largest frames are gcc's
+      `pass_with_rows`, 2,176 bytes, and `poly1305_ifma_blocks_native`,
+      2,112, and clang's `poly1305_ifma_blocks_native`, 2,040, each inside
+      `lint-stack`'s budget of 2,560. A device object and an arm64 host
+      object hold none of it. An auditor reads a second ChaCha20 and a
+      third Poly1305 in intrinsics, beside the 128-bit paths that stay what
+      every other session runs. No measurement here shows whether a CPU
+      lowers its clock while it runs 512-bit instructions, which would slow
+      the code that runs after a record; the caller chooses whether to set
+      the bit.
+
+    Rejected:
+
+    - **Poly1305 on 512-bit VPMULUDQ, in 26-bit words.** It needs no IFMA,
+      but in prototype run 37989532119 it took 1.13 times the AVX2
+      kernel's time for 1 KiB on the EPYC 9V74 and 0.97 to 1.02 times it on
+      the EPYC 9V45 and the Xeon Platinum 8573C, under gcc.
+    - **IFMA on 256-bit registers.** AVX-512VL gives VPMADD52LUQ on ymm
+      registers, which a CPU that runs 512-bit operations in two halves
+      might prefer. In the same run it took 0.86 of the 512-bit kernel's
+      time for 1 KiB on the EPYC 9V74, 1.09 times it on the Xeon Platinum
+      8573C and 1.01 on the EPYC 9V45. Choosing between them would need a
+      bit that names a CPU's width, which `ch_cfg.cpu` does not state.
+    - **The AVX2 kernel for a ChaCha20 rest.** In the same run on the EPYC
+      9V45 a message of 256 or 512 bytes took 182 to 191 ns with its rest
+      on `chacha20_avx2.c` and 127 to 138 ns with it on 512-bit registers,
+      under clang and gcc.

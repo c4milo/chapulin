@@ -24,7 +24,7 @@
 // them. Only the byte count n decides how many blocks run, and n is
 // public. The kernel ran the key through 512-bit registers, which no C
 // statement can name, so it calls avx512_wipe_registers before it returns
-// (avx512_wipe.h).
+// (avx512_wipe.h, docs/decisions.md 121).
 #ifndef CH_CHACHA20_AVX512_H
 #define CH_CHACHA20_AVX512_H
 

@@ -3685,7 +3685,7 @@ compiles the kernel's own text over it under second names. The
 [poly1305_ifma](#poly1305_ifma) harnesses compile the same text with
 each lane multiplication a contract that `poly1305_ifma_lanes`
 discharges on the model. They prove that no sum wraps and no operand of a
-multiplication reaches 2^52, from the start through a group, the powers
+multiplication is 2^52 or more, from the start through a group, the powers
 of r and the lane totals, and that the whole call reads and writes inside
 its arrays. They prove no value.
 
@@ -3909,18 +3909,24 @@ by the arithmetic its entry in `tools/proof-cover.py` reads.
 vectors, and `gcm_vaes.c` runs `gcm_hw.c`'s three loops two blocks to a
 256-bit register on VAES and VPCLMULQDQ (decision 90). `rsa_ifma.c` runs
 RSA's public operation in digits of 52 bits on AVX-512 IFMA (decision
-119), and `rsa_ifma_sign.c` RSA signing's two exponentiations on the same
-product (decision 120). Every x86-64 host object carries the first three,
-and every one that signs with RSA the fourth, each function turning its
-instructions on through its own target attribute. Four predicates read
-the caller's bits, and one branch per call picks a kernel or the path
-under it (decision 89):
+119), `chacha20_avx512.c` computes ChaCha20 sixteen blocks a pass in
+512-bit vectors (decision 121), and `rsa_ifma_sign.c` runs RSA signing's
+two exponentiations on `rsa_ifma.c`'s product (decision 120). Every
+x86-64 host object carries the first four and the AVX-512 IFMA Poly1305,
+which has a section of its own
+([The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)), and every one
+that signs with RSA the fifth, each function turning its instructions on
+through its own target attribute. Five predicates read the caller's bits,
+and one branch per call picks a kernel or the path under it (decision
+89):
 
 - `chacha20.c`'s `use_avx2` answers for `CH_CPU_AVX2`. `aead_seal_cpu`
   and `aead_open_cpu` hand it the session's `ch_cfg.cpu`, which a record
   direction holds and a QUIC packet call takes, through
   `chacha20_xor_cpu`. `chacha20_xor`, which takes no value, runs the
   128-bit path.
+- `chacha20.c`'s `use_avx512` answers for `CH_CPU_AVX512_IFMA`, and
+  `chacha20_xor_cpu` asks it before `use_avx2`, with the same value.
 - `gcm_vaes.h`'s `gcm_use_vaes` answers for `CH_CPU_VAES` and
   `CH_CPU_CONSTANT_TIME_AES` together. It reads the byte each AES key
   schedule records from its session's `ch_cfg.cpu`, and `gcm.c` asks it
@@ -3951,17 +3957,20 @@ x86-64 host. Each binary asks its CPU through `__builtin_cpu_supports`
 and CPUID (`test/x86_kernels_cpu.h`), which only test code does, and
 skips a kernel's cases on a CPU without its instructions:
 
-- `bin/chacha20_equiv_test` runs its 49,211 cases on the AVX2 kernel
-  after the 128-bit path, from the same seed, with buffers at every
-  offset past a 32-byte boundary, which covers every offset inside the
-  kernel's 32-byte rows.
+- `bin/chacha20_equiv_test` runs its 73,787 cases on the AVX2 kernel
+  and then on the AVX-512 kernel after the 128-bit path, from the same
+  seed, with buffers at every offset past a 32-byte boundary, which
+  covers every offset inside the AVX2 kernel's 32-byte rows, and every
+  length that crosses the AVX-512 kernel's pass of sixteen blocks four
+  times, with its row pass of four blocks alone and beside a pass.
 - `bin/aes_equiv_test` runs its 2,258 counter-mode cases on
   `gcm_counter_blocks_vaes` after `gcm_counter_blocks_hw`: every block
   count to three passes and one, so each odd count's last block runs
   through half a register, and counters within two passes of 2^32.
 - `bin/unit_host` runs once more under `ch_cfg.cpu` 0xd, which adds
   `CH_CPU_AVX2`: the unit suite with RFC 8439's vectors and every record
-  it seals, on the AVX2 kernel.
+  it seals, on the AVX2 kernel. Under 0x10d, which adds
+  `CH_CPU_AVX512_IFMA`, it runs them again on the AVX-512 kernel.
 - `bin/ghash_equiv_test` runs its 3,213 AEAD cases and its stack checks
   a second time under a key whose schedule names the kernels
   (`test/ghash_equiv_vaes.h`). The stack checks look for H, its powers,
@@ -3970,8 +3979,9 @@ skips a kernel's cases on a CPU without its instructions:
   vectors a second time on the kernels (`run_vectors_on_kernels`).
 - The Wycheproof host binary runs three times more, under 0xf, 0x1f and
   0x11f: the ChaCha20-Poly1305 suite on the AVX2 kernel, then the AES-GCM
-  suites on the VAES kernels, and then the RSA-PSS and PKCS#1 v1.5 suites
-  on `rsa_ifma.c`, where the CPU has AVX-512 IFMA.
+  suites on the VAES kernels, and then, where the CPU has AVX-512 IFMA,
+  the RSA-PSS and PKCS#1 v1.5 suites on `rsa_ifma.c` and the
+  ChaCha20-Poly1305 suite on the AVX-512 kernel and the IFMA Poly1305.
 - `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` run once more under
   0x10d: the openssl-minted vectors from RSA-2048 to RSA-4096, and every
   refusal, on `rsa_ifma.c` where the CPU has AVX-512 IFMA.
@@ -3988,8 +3998,10 @@ skips a kernel's cases on a CPU without its instructions:
   direction holds. Its rows are `chacha20_xor_cpu` and the two AEAD
   entries that take a value, a record under each of the three suites, a
   QUIC 1-RTT packet under each suite and a Handshake packet, an Initial
-  packet, and a traffic key's schedule. The same rows count the AVX2
-  Poly1305's calls ([The AVX2 Poly1305](#the-avx2-poly1305)). Its RSA
+  packet, and a traffic key's schedule. The same rows count the AVX-512
+  kernel's calls, and the two Poly1305 kernels'
+  ([The AVX2 Poly1305](#the-avx2-poly1305),
+  [The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)). Its RSA
   rows run the two verifiers' entries that take a value and
   `rsa_vp1_cpu` over five moduli, three of which `rsa_ifma_public` does
   not take, and count that call, which `CH_CPU_AVX512_IFMA` picks. One of
@@ -4055,17 +4067,19 @@ skips a kernel's cases on a CPU without its instructions:
   alone.
 - `test/chacha-builds.sh` and `test/quic-builds.sh` compile the kernels
   for x86-64 with no instruction flag under the pinned clang. They
-  require each kernel's 256-bit instructions there, no 256-bit register
-  in `chacha20.c`, `chacha20_vector.c`, `gcm.c` or `gcm_hw.c`, and no
-  kernel on arm64. They also read which entries each source calls.
-  `chacha20_xor_cpu`'s own body must call both the kernel and the
-  128-bit path, and `chacha20_xor`'s the 128-bit path alone. `gcm.c`
+  require each kernel's 256-bit instructions there, the AVX-512 ChaCha20's
+  512-bit ones and its call to `avx512_wipe_registers`, a zeroing
+  instruction in `avx512_wipe.c` for each of zmm0 to zmm31 and k1 to k7,
+  no 256-bit register in `chacha20.c`, `chacha20_vector.c`, `gcm.c` or
+  `gcm_hw.c`, and no kernel on arm64. They also read which entries each
+  source calls. `chacha20_xor_cpu`'s own body must call both kernels and
+  the 128-bit path, and `chacha20_xor`'s the 128-bit path alone. `gcm.c`
   must call all six entries, the three kernels and `gcm_hw.c`'s three,
   and `gcm_hw.c` no kernel. A predicate that answers one value for every
   session leaves a call out.
 - `make lint-wide-multiply` holds `chacha20_avx2.c`'s conditional
-  branches at 23 on x86-64 and 0 on arm64, each a loop over a public
-  count or a test of the byte count. `gcm_vaes.c` sits in
+  branches at 23 on x86-64 and 0 on arm64, and `chacha20_avx512.c`'s at
+  35 and 0, each a loop over a public count or a test of the byte count. `gcm_vaes.c` sits in
   `WIDEMUL_PUBLIC` beside `gcm_hw.c`.
 
 CI's `x86-64-kernels` job runs the binaries above and the Wycheproof host
@@ -4074,15 +4088,21 @@ VAES and VPCLMULQDQ fails them rather than skips them, after `make
 x86-64-kernels-cpu` names the runner's CPU. A runner without AVX-512
 IFMA still skips the runs under a value with `CH_CPU_AVX512_IFMA`, which
 only `CH_REQUIRE_AVX512_IFMA=1` turns into failures. The nightly's
-`rsa-ifma-sde` job sets it and runs `rsa_ifma.c`'s binaries under Intel
-SDE, an emulator, on a CPU model that has AVX-512 IFMA
+`rsa-ifma-sde` job sets it and runs `rsa_ifma.c`'s binaries, and
+`bin/chacha20_equiv_test`, `bin/poly1305_equiv_test` and
+`bin/avx512_wipe_test`, under Intel SDE, an emulator, on a CPU model that
+has AVX-512 IFMA
 ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
 
-Thirty-two violations break these rules, and each is caught:
+Thirty-six violations break these rules, and each is caught:
 
 - `test/chacha-builds.sh` catches `chacha-avx2-runs-without-cpu-bit` and
   `chacha-avx2-ignores-cpu-bit`, a `use_avx2` that answers 1 or 0 for
-  every value, and `chacha-avx2-without-target`.
+  every value, and `chacha-avx2-without-target`, and the same three for
+  `use_avx512`, `chacha-avx512-runs-without-cpu-bit`,
+  `chacha-avx512-ignores-cpu-bit` and `chacha-avx512-without-target`, and
+  `inv17-chacha-avx512-keeps-registers`, a kernel that returns without
+  the wipe.
 - `bin/rsa_ifma_model_test` catches `inv41-rsa-ifma-runs-without-cpu-bit`
   and `inv41-rsa-ifma-ignores-cpu-bit`, the same two for `rsa_mont.c`'s
   `use_ifma`, on every machine: it counts the calls `rsa_vp1_cpu` makes
@@ -4178,7 +4198,8 @@ Each passed. That run holds the calls that pick the kernels and the
 kernels' AES rounds, and not the 256-bit multiply itself. The
 ChaCha20 kernel's timing rests on construction, as the portable loop's
 does: adds, exclusive-ors, shifts and byte shuffles under constant
-orders, with no table and no multiply. The GCM kernels' timing rests on
+orders, with no table and no multiply, and so does the AVX-512 kernel's,
+whose rotations are VPROLD's under constant counts. The GCM kernels' timing rests on
 the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `gcm_use_vaes`
 requires beside `CH_CPU_VAES` and whose statement covers the AES
 instructions and the carry-less multiply at every width (decision 89).

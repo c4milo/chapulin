@@ -31,7 +31,7 @@ void chacha20_block(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA2
 // other value with CH_CPU_AVX2 chacha20_avx2.c's kernel, eight blocks a
 // pass in 256-bit vectors, and every other value chacha20_vector.c's SSE2
 // path. On arm64 every value runs that file's NEON path (docs/decisions.md
-// 89 and 90). The AEAD calls it for a record
+// 89, 90 and 121). The AEAD calls it for a record
 // or a packet. chacha20_xor in a host object runs the 128-bit path, which
 // every CPU of the architecture has, for a caller that holds no session's
 // description of the CPU.

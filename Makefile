@@ -6943,7 +6943,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # which hands the whole groups to the AVX2 kernel (docs/decisions.md 110),
 # and a 21st, n against POLY1305_IFMA_MIN together with the kernel an
 # update names, which hands the whole groups to the AVX-512 IFMA kernel:
-# clang folds the update functions into one body that takes the kernel as
+# clang merges the update functions into one body that takes the kernel as
 # an argument, a constant each entry passes. poly1305_vector_native.c's 4
 # are the vector path's, and poly1305_avx2_native.c's 4 the AVX2 kernel's,
 # read below. poly1305_ifma_native.c's 4 are the IFMA kernel's: its

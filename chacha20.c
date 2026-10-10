@@ -20,7 +20,7 @@ static int use_avx2(uint32_t cpu) {
 // both paths above: where cpu holds CH_CPU_AVX512_IFMA, which says the CPU
 // has AVX-512F and its operating system saves the 512-bit and mask
 // registers. The kernel needs AVX-512F alone, which every CPU with AVX-512
-// IFMA has, and no bit states a timing for it.
+// IFMA has, and no bit states a timing for it (docs/decisions.md 121).
 static int use_avx512(uint32_t cpu) {
     return (cpu & CH_CPU_AVX512_IFMA) != 0;
 }

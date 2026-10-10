@@ -65,7 +65,12 @@ void ct_wipe(void *p, size_t n);
 //                      alone. The vector multiply is the lane multiply of
 //                      poly1305_vector.c, NEON's UMULL and UMLAL or SSE2's
 //                      PMULUDQ, which only that copy holds, so the bit
-//                      states its timing too (docs/decisions.md 83).
+//                      states its timing too (docs/decisions.md 83). On
+//                      x86-64 the copy also holds poly1305_avx2.c's
+//                      VPMULUDQ, whose timing the bit states
+//                      (docs/decisions.md 110), and poly1305_ifma.c's
+//                      AVX-512 IFMA products, whose timing the bit
+//                      states too, as the paragraph on IFMA below says.
 //                      X25519's second copy is x25519_wide.c's
 //                      field, on ct_mul128 below, which the same
 //                      dispatchers run for the same sessions. The build
@@ -183,9 +188,11 @@ void ct_wipe(void *p, size_t n);
 // On x86-64 the same statement covers AVX-512 IFMA's 52-bit products,
 // VPMADD52LUQ and VPMADD52HUQ, which multiply eight pairs of 52-bit digits
 // and add bits 51..0 or bits 103..52 of each product to a 64-bit lane.
-// rsa_sign64.c runs RSA signing's exponentiations and its check on them
-// for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside the bit,
-// and on its 64-bit words for every other (docs/decisions.md 120).
+// For a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside the bit,
+// rsa_sign64.c runs RSA signing's exponentiations and its check on them,
+// and on its 64-bit words for every other (docs/decisions.md 120), and
+// poly1305.c's native copy runs Poly1305's long updates on them in
+// poly1305_ifma.c (docs/decisions.md 121).
 //
 // The field needs unsigned __int128, the type of the product, which gcc
 // and clang have on 64-bit targets and on none of the 32-bit targets this

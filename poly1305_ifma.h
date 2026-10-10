@@ -23,7 +23,7 @@
 // Only the byte count decides how many groups run, and it is public. The
 // powers of r and the accumulator pass through 512-bit registers, which no
 // C statement can name, so the kernel calls avx512_wipe_registers before it
-// returns (avx512_wipe.h).
+// returns (avx512_wipe.h, docs/decisions.md 121).
 //
 // Every function in poly1305_ifma.c carries the target attribute that
 // turns AVX-512F and AVX-512 IFMA on for that function alone, as

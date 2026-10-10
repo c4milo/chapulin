@@ -3210,7 +3210,10 @@ last `ROLE=server` stub, as the entry said it would.
   path, and that a device object's calls none (decisions 82 and 89). On
   x86-64 a session whose caller set `CH_CPU_AVX2` computes the keystream
   on `chacha20_avx2.c`'s kernel, the same operations in 256-bit vectors,
-  which states no timing either (decision 90).
+  which states no timing either (decision 90), and one whose caller set
+  `CH_CPU_AVX512_IFMA` on `chacha20_avx512.c`'s, the same operations in
+  512-bit vectors with VPROLD's fixed rotations, which states none
+  either (decision 121).
   A host object's vector Poly1305 multiplies on NEON's UMULL and UMLAL or
   SSE2's PMULUDQ, so it runs only for a session whose caller set
   `CH_CPU_CONSTANT_TIME_MULTIPLY`, which states that every widening
@@ -3229,6 +3232,13 @@ last `ROLE=server` stub, as the entry said it would.
   covers. `widemul.h`'s `widemul_poly1305_avx2` asks for both bits, the
   kernel sits in the native copy alone, and `test/chacha-builds.sh`
   checks that only that copy calls it, on x86-64 alone (decision 110).
+  A session whose caller set `CH_CPU_AVX512_IFMA` beside the multiply bit
+  absorbs it on `poly1305_ifma.c`'s kernel instead, on AVX-512 IFMA's
+  VPMADD52LUQ and VPMADD52HUQ in eight lanes: the multiply bit's
+  statement covers their 52-bit products, and `CH_CPU_AVX512_IFMA` states
+  presence alone. `widemul_poly1305_ifma` asks for both bits, the kernel
+  sits in the native copy alone, and `test/chacha-builds.sh` checks that
+  only that copy calls it, on x86-64 alone (decision 121).
   A host object holds both multiplies, and the caller's
   `CH_CPU_CONSTANT_TIME_MULTIPLY` bit in `ch_cfg.cpu` picks one for each
   operation of a session (decisions 87 and 89). `poly1305.c`,
@@ -4434,7 +4444,24 @@ last `ROLE=server` stub, as the entry said it would.
   The AVX2 Poly1305 computes r^2 to r^8 and wipes them the same way
   (decision 110). The same binary searches the stack below its calls, and
   `poly1305-avx2-keeps-powers` drops that wipe and the binary's x86-64
-  build under qemu catches it.
+  build under qemu catches it. The AVX-512 IFMA Poly1305 computes r^2 to
+  r^16 into one struct of 1,984 bytes and wipes it the same way, and the
+  binary's search reads its digits as well, on the instructions and over
+  the lane model. That kernel and the AVX-512 ChaCha20 also hold the key's
+  values in 512-bit registers, which no C statement names, so each calls
+  `avx512_wipe_registers` before it returns: one block of assembly in
+  `avx512_wipe.c` that zeros zmm0 to zmm31 and k1 to k7, because
+  VZEROUPPER and VZEROALL leave zmm16 to zmm31 (decisions 120 and 121).
+  `bin/avx512_wipe_test` sets every bit of those registers and reads each
+  back as zero after the call, and `test/chacha-builds.sh` requires a
+  zeroing instruction for each and the call in both kernels:
+  `inv17-avx512-wipe-skips-zmm31`, `inv17-chacha-avx512-keeps-registers`
+  and `inv17-poly1305-ifma-keeps-registers` make each edit, and the script
+  catches them. The wipe clears no stack slot the compiler picked
+  for a register: under gcc 13.3 the ChaCha20 kernel leaves bytes that
+  depend on the key below its call, and so do the AVX2 and 128-bit paths
+  of both primitives, whose Poly1305 running sums give r (decision 121).
+  No test looks for those bytes.
   `rsa_mont64.c` and `rsa_sign64.c` wipe every array they hold a value
   computed from an RSA key in, twenty-three wipes: the multiplication's
   running sum, with the round's multiple above it; the square's running

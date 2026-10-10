@@ -101,7 +101,7 @@ static inline void widemul_poly1305_final(uint8_t widemul, poly1305 *p, uint8_t 
 // Whether a Poly1305 update under the answer widemul, in a session whose ch_cfg.cpu is cpu, runs
 // poly1305_ifma.c's kernel: under WIDEMUL_CONSTANT_TIME, whose statement covers the kernel's
 // widening multiply, AVX-512 IFMA's 52-bit products, where cpu holds CH_CPU_AVX512_IFMA, which
-// says the CPU has AVX-512F and AVX-512 IFMA. The bit states no timing.
+// says the CPU has AVX-512F and AVX-512 IFMA. The bit states no timing (docs/decisions.md 121).
 static inline int widemul_poly1305_ifma(uint32_t cpu, uint8_t widemul) {
     return widemul_native(widemul) && (cpu & CH_CPU_AVX512_IFMA) != 0;
 }
