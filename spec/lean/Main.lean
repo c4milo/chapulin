@@ -600,6 +600,25 @@ def dispatch : List String → Option String
     let digitR2 := Spec.RsaIfma.powerOfTwoMod m k (104 * Spec.RsaIfma.digitCount k)
     return bytesToHex
       (natToBytesBE (Spec.RsaIfma.publicOp k inverse m (bytesToNatBE bb) digitR2) (8 * k))
+  | ["rsa_ifma_sign_power", words, modulus, base, exponent] => do
+    -- rsa_ifma_sign_power_pair for one prime: base^e R mod m in rsa_mont64.c's domain,
+    -- R = 2^(64 words), for an odd m of `words` 64-bit words, 8 * words big-endian bytes, a base
+    -- in that domain below m in as many bytes, and the exponent's bytes, most significant first.
+    -- The answer is the model's signPower under m's -m⁻¹ mod 2^52 and 2^(64 words) mod m
+    -- (Spec/RsaIfma.lean), 8 * words bytes. The guard is signPower_eq's hypotheses.
+    let k ← words.toNat?
+    let mb ← hexArg? modulus
+    let bb ← hexArg? base
+    let eb ← hexArg? exponent
+    guard (mb.size == 8 * k && bb.size == 8 * k && Spec.RsaIfma.digitCount k ≤ 128)
+    let m := bytesToNatBE mb
+    let x := bytesToNatBE bb
+    guard (m % 2 == 1 && x < m)
+    let inverse := Spec.RsaIfma.m0invOf m
+    guard ((inverse * m + 1) % 2 ^ 52 == 0)
+    let e := eb.toList.map (·.toNat)
+    return bytesToHex
+      (natToBytesBE (Spec.RsaIfma.signPower k inverse m (2 ^ (64 * k) % m) x e) (8 * k))
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

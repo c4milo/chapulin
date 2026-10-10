@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: diff_rsa_ifma
+reason: table_select reads the low four bits of the exponent's byte for an
+  even digit index and the high four for an odd one, so the window raises
+  the base to an exponent with the halves of every byte swapped.
+  bin/diff_rsa_ifma holds rsa_ifma_sign_power_pair, word for word, to
+  spec/lean/Spec/RsaIfma.lean's signPower, whose digits windowValue_bytes
+  proves are the exponent's bytes, which is what makes signPower_eq a proof
+  about this file.
+
+--- old
+    uint64_t digit = ((uint64_t)e[i >> 1] >> (WINDOW_BITS * (1 - (i & 1)))) & (TABLE_ENTRIES - 1);
+--- new
+    uint64_t digit = ((uint64_t)e[i >> 1] >> (WINDOW_BITS * (i & 1))) & (TABLE_ENTRIES - 1);

@@ -27,6 +27,15 @@ to any lanes below `2 ^ 64`, and `publicOp_eq` that `rsa_ifma_public`'s chain of
 computes `base ^ 65537 mod m`. `powerOfTwoMod_eq` proves that `power_of_two_mod` writes
 `2 ^ e mod m`.
 
+`signPower` is one prime's half of `rsa_ifma_sign.c`'s `rsa_ifma_sign_power_pair`, which runs RSA
+signing's two exponentiations side by side on the same product. `state_setup` doubles `R mod m`
+and the base `spare` times, which moves them from `rsa_mont64.c`'s domain, `R = 2 ^ (64 k)`, into
+the kernel's, `2 ^ (52 n)`; `windowPower` is the 4-bit window over a table of sixteen powers; and
+the last product, by `R mod m`, moves the power back. `windowPower_eq` proves what the window
+computes on any product that `product_lt` and `product_mul` describe, `windowValue_bytes` that
+its digits read the exponent's bytes, and `signPower_eq` that the whole computes `b ^ e R mod m`
+for the base `b R mod m`.
+
 This module is written from the C, not from a standard, and CONTRACT.md says why.
 -/
 
@@ -959,6 +968,31 @@ theorem powerOfTwoMod_eq {m k e : Nat} (h_odd : m % 2 = 1) (h_top : 2 ^ (64 * k 
 
 /-! ## `rsa_ifma_public` -/
 
+/-- An `m` that has a `-m⁻¹ mod 2 ^ 52` is odd. -/
+private theorem odd_of_m0inv {m0inv m : Nat} (h_m0inv : (m0inv * m + 1) % 2 ^ 52 = 0) :
+    m % 2 = 1 := by
+  have h_two : (m0inv * m + 1) % 2 = 0 := by
+    rw [← Nat.mod_mod_of_dvd _ (show 2 ∣ 2 ^ 52 by norm_num), h_m0inv]
+  rcases Nat.mod_two_eq_zero_or_one m with h_even | h_one
+  · have : m0inv * m % 2 = 0 := by rw [Nat.mul_mod, h_even, mul_zero, Nat.zero_mod]
+    omega
+  · exact h_one
+
+/-- Every power of 2 is a unit modulo an odd `m`: the kernel's `2 ^ (52 n)` among them. -/
+private theorem two_pow_unit {m : Nat} (h_odd : m % 2 = 1) (j : Nat) :
+    IsUnit ((2 : ZMod m) ^ j) := by
+  have h_two : IsUnit ((2 : ℕ) : ZMod m) :=
+    (ZMod.isUnit_iff_coprime 2 m).mpr (Nat.coprime_two_left.mpr (Nat.odd_iff.mpr h_odd))
+  exact (by exact_mod_cast h_two : IsUnit (2 : ZMod m)).pow _
+
+/-- `reduceOnce` takes a number below `2 m` below `m` and keeps it modulo `m`. -/
+private theorem reduceOnce_eq {m x : Nat} (h_x : x < 2 * m) :
+    reduceOnce m x < m ∧ (reduceOnce m x : ZMod m) = x := by
+  unfold reduceOnce
+  split_ifs with h_ge
+  · exact ⟨by omega, by rw [Nat.cast_sub h_ge, ZMod.natCast_self, sub_zero]⟩
+  · exact ⟨by omega, rfl⟩
+
 /-- `rsa_ifma_public`'s chain of products computes RSAVP1 (RFC 8017 5.2.2) for every base below
 `2 ^ (64 k)`: `base ^ 65537 mod m`, for an `m` of `k` words whose top bit is set, `m0inv` the C's
 `-m⁻¹ mod 2 ^ 52`, `digit_r2 = 2 ^ (104 n) mod m` and at most 128 digits. -/
@@ -979,17 +1013,7 @@ theorem publicOp_eq {k m0inv m base : Nat} (h_m0inv : (m0inv * m + 1) % 2 ^ 52 =
       congr 1
       omega
     omega
-  have h_odd : m % 2 = 1 := by
-    have h_two : (m0inv * m + 1) % 2 = 0 := by
-      rw [← Nat.mod_mod_of_dvd _ (show 2 ∣ 2 ^ 52 by norm_num), h_m0inv]
-    rcases Nat.mod_two_eq_zero_or_one m with h_even | h_one
-    · have : m0inv * m % 2 = 0 := by rw [Nat.mul_mod, h_even, mul_zero, Nat.zero_mod]
-      omega
-    · exact h_one
-  have h_unit : IsUnit ((2 : ZMod m) ^ (52 * digitCount k)) := by
-    have h_two : IsUnit ((2 : ℕ) : ZMod m) :=
-      (ZMod.isUnit_iff_coprime 2 m).mpr (Nat.coprime_two_left.mpr (Nat.odd_iff.mpr h_odd))
-    exact (by exact_mod_cast h_two : IsUnit (2 : ZMod m)).pow _
+  have h_unit := two_pow_unit (odd_of_m0inv h_m0inv) (52 * digitCount k)
   have h_product : ∀ x y, x < 2 * m → y < 2 * m →
       value (laneCount (digitCount k)) (lanesOf (product (digitCount k) m0inv x y m)) < 2 * m ∧
         (value (laneCount (digitCount k)) (lanesOf (product (digitCount k) m0inv x y m)) : ZMod m) *
@@ -1034,18 +1058,265 @@ theorem publicOp_eq {k m0inv m base : Nat} (h_m0inv : (m0inv * m + 1) % 2 ^ 52 =
     refine h_unit.mul_right_cancel ?_
     rw [h_last, h_power]
     ring
-  have h_reduce_lt : reduceOnce m last < m := by
-    unfold reduceOnce
-    split_ifs <;> omega
-  have h_reduce : (reduceOnce m last : ZMod m) = base ^ 65537 := by
-    rw [← h_last']
-    unfold reduceOnce
-    split_ifs with h_ge
-    · rw [Nat.cast_sub h_ge, ZMod.natCast_self, sub_zero]
-    · rfl
+  obtain ⟨h_reduce_lt, h_reduce⟩ := reduceOnce_eq h_last_lt
   show reduceOnce m last = _
   rw [← Nat.mod_eq_of_lt h_reduce_lt]
-  exact (ZMod.natCast_eq_natCast_iff' _ _ m).mp (by push_cast; exact h_reduce)
+  exact (ZMod.natCast_eq_natCast_iff' _ _ m).mp (by push_cast; rw [h_reduce, h_last'])
+
+/-! ## RSA signing's exponentiation, `rsa_ifma_sign.c` -/
+
+/-- `state_setup`'s doublings: `x` added to itself modulo `m`, `spare` times, as
+`rsa_mont64_add` adds two numbers below `m`. -/
+def doubled (m spare x : Nat) : Nat :=
+  (fun y => (y + y) % m)^[spare] x
+
+/-- Digit `i` of the exponent whose bytes are `e`, most significant first: the high four bits of
+byte `i / 2` for an even `i` and the low four for an odd one, as `table_select` reads it. -/
+def windowDigit (e : List Nat) (i : Nat) : Nat :=
+  e.getD (i / 2) 0 / 16 ^ (1 - i % 2) % 16
+
+/-- The number the first `j` digits of `e` hold, most significant first. -/
+def windowValue (e : List Nat) (j : Nat) : Nat :=
+  (List.range j).foldl (fun acc i => 16 * acc + windowDigit e i) 0
+
+/-- The number the bytes of `e` hold, most significant first. -/
+def bytesValue (e : List Nat) : Nat :=
+  e.foldl (fun acc byte => 256 * acc + byte) 0
+
+/-- `rsa_ifma_sign_power_pair`'s table of sixteen entries on the product `multiply`: `first`,
+then `one` and fourteen more, each the entry before it times `one`. -/
+def windowTable (multiply : Nat → Nat → Nat) (first one : Nat) : List Nat :=
+  first :: (List.range 14).scanl (fun t _ => multiply t one) one
+
+/-- One step of the window: four squares of `p`, then the product by the entry at digit `d`,
+which `table_select` reads. -/
+def windowStep (multiply : Nat → Nat → Nat) (table : List Nat) (p d : Nat) : Nat :=
+  multiply ((fun q => multiply q q)^[4] p) (table.getD d 0)
+
+/-- `rsa_ifma_sign_power_pair`'s window on the product `multiply` over the first `j` digits of
+`e`: the table from `first` and `one`, and from `first` one step for each digit. -/
+def windowPower (multiply : Nat → Nat → Nat) (first one : Nat) (e : List Nat) (j : Nat) : Nat :=
+  let table := windowTable multiply first one
+  (List.range j).foldl (fun p i => windowStep multiply table p (windowDigit e i)) first
+
+/-- `rsa_ifma_sign_power_pair` for one prime, on numbers: `m` of `k` words, its `m0inv`,
+`rModM`, which is `R mod m` for `R = 2 ^ (64 k)`, the base in `rsa_mont64.c`'s domain, and the
+exponent's bytes. `state_setup` writes the table's entries 0 and 1, `R mod m` and the base, each
+doubled `spare` times into the kernel's domain, `R' = 2 ^ (52 n)`; the window runs two steps for
+each byte; the last product, by `R mod m`, leaves the kernel's domain; and `state_finish`
+subtracts `m` once. -/
+def signPower (k m0inv m rModM baseR : Nat) (e : List Nat) : Nat :=
+  let n := digitCount k
+  let spare := 52 * n - 64 * k
+  let multiply := fun a b => value (laneCount n) (lanesOf (product n m0inv a b m))
+  let power := windowPower multiply (doubled m spare rModM) (doubled m spare baseR) e
+    (2 * e.length)
+  reduceOnce m (multiply power rModM)
+
+/-! ## What signing's exponentiation computes -/
+
+/-- `spare` doublings modulo `m` multiply a number below `m` by `2 ^ spare`. -/
+private theorem doubled_eq {m x : Nat} (h_x : x < m) :
+    ∀ spare, doubled m spare x = x * 2 ^ spare % m
+  | 0 => by simp [doubled, Nat.mod_eq_of_lt h_x]
+  | spare + 1 => by
+    have h_prev := doubled_eq h_x spare
+    unfold doubled at h_prev ⊢
+    rw [Function.iterate_succ_apply', h_prev, ← Nat.add_mod]
+    congr 1
+    ring
+
+/-- One more digit is sixteen times the number and the digit. -/
+private theorem windowValue_succ (e : List Nat) (j : Nat) :
+    windowValue e (j + 1) = 16 * windowValue e j + windowDigit e j := by
+  simp [windowValue, List.range_succ, List.foldl_append]
+
+/-- Two more digits at the end of the exponent are one more byte. -/
+private theorem windowValue_append {e : List Nat} {x : Nat} (h_x : x < 256) :
+    windowValue (e ++ [x]) (2 * (e ++ [x]).length) = 256 * windowValue e (2 * e.length) + x := by
+  have h_prefix : ∀ i ∈ List.range (2 * e.length),
+      windowDigit (e ++ [x]) i = windowDigit e i := by
+    intro i h_i
+    rw [List.mem_range] at h_i
+    simp only [windowDigit, List.getD_eq_getElem?_getD,
+      List.getElem?_append_left (show i / 2 < e.length by omega)]
+  have h_byte : (e ++ [x]).getD e.length 0 = x := by
+    simp [List.getD_eq_getElem?_getD]
+  have h_high : windowDigit (e ++ [x]) (2 * e.length) = x / 16 := by
+    simp only [windowDigit, show 2 * e.length / 2 = e.length by omega, h_byte,
+      show 2 * e.length % 2 = 0 by omega]
+    omega
+  have h_low : windowDigit (e ++ [x]) (2 * e.length + 1) = x % 16 := by
+    simp only [windowDigit, show (2 * e.length + 1) / 2 = e.length by omega, h_byte,
+      show (2 * e.length + 1) % 2 = 1 by omega]
+    simp
+  have h_prefix_value : windowValue (e ++ [x]) (2 * e.length) = windowValue e (2 * e.length) :=
+    List.foldl_ext _ _ _ (fun acc i h_i => by rw [h_prefix i h_i])
+  rw [List.length_append, List.length_singleton, show 2 * (e.length + 1) = 2 * e.length + 1 + 1
+    by ring, windowValue_succ, windowValue_succ, h_prefix_value, h_high, h_low]
+  omega
+
+/-- The window reads the exponent's bytes, two digits to a byte. -/
+theorem windowValue_bytes {e : List Nat} (h_e : ∀ byte ∈ e, byte < 256) :
+    windowValue e (2 * e.length) = bytesValue e := by
+  induction e using List.reverseRecOn with
+  | nil => rfl
+  | append_singleton e x ih =>
+    have h_x : x < 256 := h_e x (by simp)
+    rw [windowValue_append h_x, ih (fun byte h_byte => h_e byte (by simp [h_byte]))]
+    simp [bytesValue, List.foldl_append]
+
+/-- What the window needs of a product, which `product_lt` and `product_mul` give
+`almost_montgomery_product` with `w = 2 ^ (52 n)`: for `a` and `b` below `2 m`, a number below
+`2 m` that is `a b / w` modulo `m`. -/
+def IsAlmostMontgomery (m : Nat) (w : ZMod m) (multiply : Nat → Nat → Nat) : Prop :=
+  ∀ a b, a < 2 * m → b < 2 * m → multiply a b < 2 * m ∧ (multiply a b : ZMod m) * w = a * b
+
+/-- `List.foldl` with a step that ignores the list's elements applies the step once for each of
+them. -/
+private theorem foldl_ignore (g : Nat → Nat) :
+    ∀ (l : List Nat) (a : Nat), l.foldl (fun t _ => g t) a = g^[l.length] a
+  | [], _ => rfl
+  | _ :: l, a => by
+    rw [List.foldl_cons, foldl_ignore g l, List.length_cons, Function.iterate_succ_apply]
+
+section Window
+
+variable {m : Nat} {w : ZMod m} {multiply : Nat → Nat → Nat}
+
+/-- `j` products by `one`, which is `b` in the domain `w`, raise it to `b ^ (j + 1)`. -/
+private theorem iterate_times (h_mul : IsAlmostMontgomery m w multiply) (h_unit : IsUnit w)
+    {one : Nat} {b : ZMod m} (h_one_lt : one < 2 * m) (h_one : (one : ZMod m) = b * w) :
+    ∀ j, (fun t => multiply t one)^[j] one < 2 * m ∧
+      ((fun t => multiply t one)^[j] one : ZMod m) = b ^ (j + 1) * w
+  | 0 => ⟨h_one_lt, by simp [h_one]⟩
+  | j + 1 => by
+    obtain ⟨h_lt, h_eq⟩ := iterate_times h_mul h_unit h_one_lt h_one j
+    obtain ⟨h_next_lt, h_next⟩ := h_mul _ _ h_lt h_one_lt
+    rw [Function.iterate_succ_apply']
+    refine ⟨h_next_lt, h_unit.mul_right_cancel ?_⟩
+    rw [h_next, h_eq, h_one]
+    ring
+
+/-- `j` squares raise `y` in the domain `w` to `y ^ 2 ^ j`. -/
+private theorem iterate_squares (h_mul : IsAlmostMontgomery m w multiply) (h_unit : IsUnit w)
+    {p : Nat} {y : ZMod m} (h_p_lt : p < 2 * m) (h_p : (p : ZMod m) = y * w) :
+    ∀ j, (fun q => multiply q q)^[j] p < 2 * m ∧
+      ((fun q => multiply q q)^[j] p : ZMod m) = y ^ 2 ^ j * w
+  | 0 => ⟨h_p_lt, by simp [h_p]⟩
+  | j + 1 => by
+    obtain ⟨h_lt, h_eq⟩ := iterate_squares h_mul h_unit h_p_lt h_p j
+    obtain ⟨h_next_lt, h_next⟩ := h_mul _ _ h_lt h_lt
+    rw [Function.iterate_succ_apply']
+    refine ⟨h_next_lt, h_unit.mul_right_cancel ?_⟩
+    rw [h_next, h_eq]
+    ring
+
+/-- Entry `d` of the table is `b ^ d` in the domain `w`, when `first` is 1 and `one` is `b`
+there. -/
+private theorem table_entries (h_mul : IsAlmostMontgomery m w multiply) (h_unit : IsUnit w)
+    {first one : Nat} {b : ZMod m} (h_first_lt : first < 2 * m) (h_first : (first : ZMod m) = w)
+    (h_one_lt : one < 2 * m) (h_one : (one : ZMod m) = b * w) :
+    ∀ d < 16, (windowTable multiply first one).getD d 0 < 2 * m ∧
+      ((windowTable multiply first one).getD d 0 : ZMod m) = b ^ d * w := by
+  intro d h_d
+  rcases d with _ | d
+  · simp [windowTable, h_first_lt, h_first]
+  · have h_get : (windowTable multiply first one).getD (d + 1) 0 =
+        (fun t => multiply t one)^[d] one := by
+      simp [windowTable, List.getD_eq_getElem?_getD, List.getElem?_scanl,
+        show d ≤ 14 by omega, foldl_ignore]
+    rw [h_get]
+    exact iterate_times h_mul h_unit h_one_lt h_one d
+
+/-- The window over `j` digits raises `b` to the number they hold, in the domain `w`. -/
+private theorem window_steps (h_mul : IsAlmostMontgomery m w multiply) (h_unit : IsUnit w)
+    {table : List Nat} {b : ZMod m} {first : Nat}
+    (h_table : ∀ d < 16, table.getD d 0 < 2 * m ∧ (table.getD d 0 : ZMod m) = b ^ d * w)
+    (h_first_lt : first < 2 * m) (h_first : (first : ZMod m) = w) (e : List Nat) :
+    ∀ j, (List.range j).foldl (fun p i => windowStep multiply table p (windowDigit e i)) first <
+        2 * m ∧
+      (((List.range j).foldl (fun p i => windowStep multiply table p (windowDigit e i))
+        first : Nat) : ZMod m) = b ^ windowValue e j * w
+  | 0 => ⟨h_first_lt, by simp [windowValue, h_first]⟩
+  | j + 1 => by
+    obtain ⟨h_lt, h_eq⟩ := window_steps h_mul h_unit h_table h_first_lt h_first e j
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, windowValue_succ]
+    obtain ⟨h_squared_lt, h_squared⟩ := iterate_squares h_mul h_unit h_lt h_eq 4
+    obtain ⟨h_entry_lt, h_entry⟩ := h_table (windowDigit e j) (Nat.mod_lt _ (by norm_num))
+    obtain ⟨h_next_lt, h_next⟩ := h_mul _ _ h_squared_lt h_entry_lt
+    rw [windowStep]
+    refine ⟨h_next_lt, h_unit.mul_right_cancel ?_⟩
+    rw [h_next, h_squared, h_entry]
+    ring
+
+/-- The window raises `b` to the number `e`'s first `j` digits hold, in the domain `w`, when
+`first` is 1 and `one` is `b` there. -/
+theorem windowPower_eq (h_mul : IsAlmostMontgomery m w multiply) (h_unit : IsUnit w)
+    {first one : Nat} {b : ZMod m} (h_first_lt : first < 2 * m) (h_first : (first : ZMod m) = w)
+    (h_one_lt : one < 2 * m) (h_one : (one : ZMod m) = b * w) (e : List Nat) (j : Nat) :
+    windowPower multiply first one e j < 2 * m ∧
+      (windowPower multiply first one e j : ZMod m) = b ^ windowValue e j * w :=
+  window_steps h_mul h_unit (table_entries h_mul h_unit h_first_lt h_first h_one_lt h_one)
+    h_first_lt h_first e j
+
+end Window
+
+/-- `rsa_ifma_sign_power_pair` raises one prime's base to its exponent: for the base `b` in
+`rsa_mont64.c`'s domain, `b R mod m` with `R = 2 ^ (64 k)`, and `R mod m` beside it, it writes
+`b ^ e R mod m`, where `e` is the number the exponent's bytes hold, for an `m` below `2 ^ (64 k)`,
+`m0inv` the C's `-m⁻¹ mod 2 ^ 52` and at most 128 digits. The doublings move the two entries into
+the kernel's domain, `R' = 2 ^ (52 n) = R 2 ^ spare`, and the last product, by `R mod m`, moves
+the power back. -/
+theorem signPower_eq {k m0inv m b : Nat} {e : List Nat} (h_m0inv : (m0inv * m + 1) % 2 ^ 52 = 0)
+    (h_m : m < 2 ^ (64 * k)) (h_n : digitCount k ≤ 128) (h_e : ∀ byte ∈ e, byte < 256) :
+    signPower k m0inv m (2 ^ (64 * k) % m) (b * 2 ^ (64 * k) % m) e =
+      b ^ bytesValue e * 2 ^ (64 * k) % m := by
+  have h_room : 4 * m ≤ 2 ^ (52 * digitCount k) := (digitCount_room h_m).le
+  have h_odd := odd_of_m0inv h_m0inv
+  have h_pos : 0 < m := by omega
+  have h_unit := two_pow_unit h_odd (52 * digitCount k)
+  have h_mul : IsAlmostMontgomery m ((2 : ZMod m) ^ (52 * digitCount k)) (fun a c =>
+      value (laneCount (digitCount k)) (lanesOf (product (digitCount k) m0inv a c m))) :=
+    fun a c h_a h_c =>
+      ⟨product_lt h_m0inv h_room h_n h_a h_c, product_mul h_m0inv h_room h_n h_a h_c⟩
+  have h_spare : 64 * k + (52 * digitCount k - 64 * k) = 52 * digitCount k := by
+    unfold digitCount
+    omega
+  have h_r_lt : 2 ^ (64 * k) % m < m := Nat.mod_lt _ h_pos
+  have h_base_lt : b * 2 ^ (64 * k) % m < m := Nat.mod_lt _ h_pos
+  have h_first_lt : doubled m (52 * digitCount k - 64 * k) (2 ^ (64 * k) % m) < 2 * m := by
+    rw [doubled_eq h_r_lt]
+    have := Nat.mod_lt (2 ^ (64 * k) % m * 2 ^ (52 * digitCount k - 64 * k)) h_pos
+    omega
+  have h_one_lt : doubled m (52 * digitCount k - 64 * k) (b * 2 ^ (64 * k) % m) < 2 * m := by
+    rw [doubled_eq h_base_lt]
+    have := Nat.mod_lt (b * 2 ^ (64 * k) % m * 2 ^ (52 * digitCount k - 64 * k)) h_pos
+    omega
+  have h_first : (doubled m (52 * digitCount k - 64 * k) (2 ^ (64 * k) % m) : ZMod m) =
+      2 ^ (52 * digitCount k) := by
+    rw [doubled_eq h_r_lt, ZMod.natCast_mod, Nat.cast_mul, ZMod.natCast_mod]
+    push_cast
+    rw [← pow_add, h_spare]
+  have h_one : (doubled m (52 * digitCount k - 64 * k) (b * 2 ^ (64 * k) % m) : ZMod m) =
+      b * 2 ^ (52 * digitCount k) := by
+    rw [doubled_eq h_base_lt, ZMod.natCast_mod, Nat.cast_mul, ZMod.natCast_mod]
+    push_cast
+    rw [mul_assoc, ← pow_add, h_spare]
+  obtain ⟨h_power_lt, h_power⟩ :=
+    windowPower_eq h_mul h_unit h_first_lt h_first h_one_lt h_one e (2 * e.length)
+  obtain ⟨h_last_lt, h_last⟩ := h_mul _ _ h_power_lt (by omega : 2 ^ (64 * k) % m < 2 * m)
+  obtain ⟨h_reduce_lt, h_reduce⟩ := reduceOnce_eq h_last_lt
+  have h_value : (signPower k m0inv m (2 ^ (64 * k) % m) (b * 2 ^ (64 * k) % m) e : ZMod m) =
+      b ^ bytesValue e * 2 ^ (64 * k) := by
+    refine h_unit.mul_right_cancel ?_
+    show (reduceOnce m _ : ZMod m) * _ = _
+    rw [h_reduce, h_last, h_power, windowValue_bytes h_e, ZMod.natCast_mod]
+    push_cast
+    ring
+  rw [← Nat.mod_eq_of_lt (show signPower k m0inv m (2 ^ (64 * k) % m) (b * 2 ^ (64 * k) % m) e < m
+    from h_reduce_lt)]
+  exact (ZMod.natCast_eq_natCast_iff' _ _ m).mp (by rw [h_value]; push_cast; rfl)
 
 /-! ## Selftest -/
 
@@ -1054,12 +1325,20 @@ the model: the selftest's reference. -/
 private def referencePublic (m base : Nat) : Nat :=
   (fun x => x * x % m)^[16] (base % m) * base % m
 
+/-- `b ^ e mod m` for the exponent's bytes `e`, by eight squares and a product for each byte,
+which shares nothing with the model: the selftest's reference for signing. -/
+private def referencePower (m b : Nat) (e : List Nat) : Nat :=
+  e.foldl (fun acc byte => (fun x => x * x % m)^[8] acc * (b ^ byte % m) % m) (1 % m)
+
 set_option compiler.extract_closed false in
 /-- The digit counts and `power_of_two_mod`'s steps at RSA-2048, RSA-3072 and RSA-4096;
 `normalize` on lanes whose carries run across a register's edge and out of the top lane,
 against the number they hold; and at RSA-2048, under `2 ^ 2048 - 1`, `2 ^ 2047 + 1` and a third
 odd modulus with the top bit set, `power_of_two_mod` against `2 ^ (104 n) mod m` and
-`rsa_ifma_public` against `base ^ 65537 mod m` for the bases 2, `m - 1` and `2 ^ 2048 - 1`. -/
+`rsa_ifma_public` against `base ^ 65537 mod m` for the bases 2, `m - 1` and `2 ^ 2048 - 1`. At
+the prime of RSA-2048, 16 words, under `2 ^ 1024 - 1`, `2 ^ 1023 + 1` and a third such modulus,
+signing's exponentiation against `b ^ e R mod m` for the bases 0, 2 and `m - 1`, each in
+`rsa_mont64.c`'s domain, and the exponents 0, 1 and `ff10a53c`. -/
 def selftest (_ : Unit) : Bool :=
   let counts := [32, 48, 64].map digitCount == [40, 60, 79]
   let steps := [32, 48, 64].map (fun k => powerOfTwoSteps k (104 * digitCount k)) == [34, 50, 65]
@@ -1073,6 +1352,10 @@ def selftest (_ : Unit) : Bool :=
     let digitR2 := powerOfTwoMod m 32 (104 * 40)
     digitR2 == 2 ^ (104 * 40) % m && [2, m - 1, 2 ^ 2048 - 1].all fun base =>
       publicOp 32 (m0invOf m) m base digitR2 == referencePublic m base
-  counts && steps && normalized && moduli.all check
+  let primes := [2 ^ 1024 - 1, 2 ^ 1023 + 1, 2 ^ 1023 + 0x6c1e9b3d5a2f4087 * 2 ^ 600 + 0x3b]
+  let checkSign := fun m => [0, 2, m - 1].all fun b => [[0], [1], [0xff, 0x10, 0xa5, 0x3c]].all
+    fun e => signPower 16 (m0invOf m) m (2 ^ 1024 % m) (b * 2 ^ 1024 % m) e ==
+      referencePower m b e * 2 ^ 1024 % m
+  counts && steps && normalized && moduli.all check && primes.all checkSign
 
 end Spec.RsaIfma

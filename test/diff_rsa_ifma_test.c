@@ -32,6 +32,18 @@
 // rsa_vp1_cpu runs them. At RSA-2048, RSA-3072 and RSA-4096, each product of
 // rsa_ifma_public's chain for a random base. And normalize_digits on lanes
 // chosen for its carries, at every register count up to ten.
+//
+// RSA signing's two exponentiations, rsa_ifma_sign.c's
+// rsa_ifma_sign_power_pair, compiled over the same model: at every prime
+// word count from RSA_IFMA_SIGN_WORDS_MIN to RSA_IFMA_SIGN_WORDS_MAX, the
+// words each prime's half writes for a random base and a random exponent
+// of 4 bytes, beside a random second prime; at the word counts where the
+// register count changes, at RSA-3072's 24 and at the first and the last,
+// the same under each other kind of modulus, and for the bases 0, 1 and
+// m - 1 in rsa_mont64.c's domain with the exponents of all ones, of all
+// zeros and 1; and at RSA-2048's prime, a random exponent of the 128 bytes
+// rsa_sign64.c passes. Spec/RsaIfma.lean's signPower_eq proves what those
+// words are.
 #define CH_RSA_IFMA_MODEL 1
 
 #include <stdio.h>
@@ -412,6 +424,8 @@ static void diff_normalize(void) {
     }
 }
 
+#include "diff_rsa_ifma_sign.h"
+
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff rsa ifma: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
@@ -426,6 +440,7 @@ int main(int argc, char **argv) {
             }
         }
     }
+    diff_signs();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

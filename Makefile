@@ -572,7 +572,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/rsa_sign_vectors.h test/rsa_sign_key.h test/rsa_sign_equiv_residue.h \
          test/rsa_sign_equiv_pieces.h test/rsa_sign_equiv_differential.h \
          test/rsa_ifma_model_lanes.h test/rsa_ifma_test.h test/rsa_ifma_entries.h test/rsa_ifma_inputs.h \
-         test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h \
+         test/rsa_ifma_sign_test.h test/rsa_ifma_sign_count.h test/diff_rsa_ifma_sign.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_blocking_alert_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_alert_tests.h test/tcp_nonblocking_failure_alert_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
@@ -4366,17 +4366,18 @@ bin/diff_rsa_sign64: test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS) $(HDRS) $(T
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/diff_rsa_sign_test.c $(DIFF_RSA_SIGN_SRCS)
 # The AVX-512 IFMA arm: rsa_ifma.c's products, normalize_digits and
-# rsa_ifma_public, and rsa_mont.c's power_of_two_mod, compiled over the
-# lane model as bin/rsa_ifma_model_test compiles them, against
+# rsa_ifma_public, rsa_mont.c's power_of_two_mod and rsa_ifma_sign.c's
+# exponentiations, compiled over the lane model as bin/rsa_ifma_model_test
+# and bin/rsa_ifma_sign_model_test compile them, against
 # spec/lean/Spec/RsaIfma.lean. Its own main, for bin/diff_x25519_wide's
-# reason: only a unit that defines CH_RSA_IFMA_MODEL compiles the kernel on
-# every host, and no row of bin/diff reads it. It builds at the 512-byte
-# bound, so every register count the kernel has a copy for runs.
+# reason: only a unit that defines CH_RSA_IFMA_MODEL compiles the kernels on
+# every host, and no row of bin/diff reads them. It builds at the 512-byte
+# bound, so every register count each kernel has a copy for runs.
 bin/diff_rsa_ifma: test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_mont.c rsa_ifma.c \
-                   $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
+                   rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o $@ \
-	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c $(RSA_IFMA_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
