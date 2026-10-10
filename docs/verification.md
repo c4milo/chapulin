@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-100 of the 134 C sources in the tree root are compiled into a
+101 of the 134 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -37,17 +37,18 @@ files' harnesses check it for the same reason
 64-bit arithmetic, whose claim is that no sum in it wraps
 (see [rsa_mont64](#rsa_mont64)), the two that prove how the signer on
 those words reads an exponent (see [rsa_sign64](#rsa_sign64)), the
-harness of the AVX-512 IFMA product's sums (see [rsa_ifma](#rsa_ifma)),
-the two that bound the AVX-512 IFMA Poly1305's sums and powers of r
-(see [poly1305_ifma](#poly1305_ifma)), and the harness of P-384's
-64-bit field, whose claim is the same (see [p384_wide](#p384_wide)).
+harnesses of the AVX-512 IFMA and AVX2 products' sums (see
+[rsa_ifma](#rsa_ifma) and [rsa_avx2](#rsa_avx2)), the two that bound
+the AVX-512 IFMA Poly1305's sums and powers of r (see
+[poly1305_ifma](#poly1305_ifma)), and the harness of P-384's 64-bit
+field, whose claim is the same (see [p384_wide](#p384_wide)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
 
 ### Sources with no launched harness
 
-The other 34 sources are in no such harness:
+The other 33 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -67,7 +68,6 @@ The other 34 sources are in no such harness:
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
-| `rsa_avx2.c` | It runs RSA's public operation on AVX2 intrinsics (`rsa_avx2_lanes.h`), and has a body on x86-64 alone. | `bin/rsa_avx2_model_test` runs its own text over `test/rsa_avx2_model_lanes.h` against `rsa_mont64.c` on every machine, and on a CPU with AVX2 `bin/rsa_avx2_equiv_test` holds each lane operation, the products and the public operation on the instructions to that model ([The AVX2 public operation](#the-avx2-public-operation)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
@@ -1336,6 +1336,71 @@ The entries are grouped by area:
   it. That a compiler emits no branch for `table_select`'s mask rests on
   a Semgrep rule and on the branch counts of `make lint-wide-multiply`
   (INV-16).
+
+#### rsa_avx2
+
+- **Harnesses:** `rsa_avx2_lanes` (fast), `rsa_avx2_sums_multiply_2` (fast), `rsa_avx2_sums_multiply_3` (fast), `rsa_avx2_sums_square_2` (fast), `rsa_avx2_sums_square_3` (fast), `rsa_avx2_sums_multiply_2_webpki` (fast), `rsa_avx2_sums_multiply_3_webpki` (fast), `rsa_avx2_sums_square_2_webpki` (fast), `rsa_avx2_sums_square_3_webpki` (fast), `rsa_avx2_number` (fast), `rsa_avx2_number_webpki` (fast), `rsa_avx2_chain_32` (fast), `rsa_avx2_chain` (fast), `rsa_avx2_chain_49_webpki` (fast), `rsa_avx2_chain_webpki` (fast), `rsa_mont_power_avx2` (fast), `rsa_mont_power_avx2_webpki` (fast)
+- **Build:** the public operation on AVX2 (`rsa_avx2.c`, with
+  `rsa_avx2_number.h`), under `-DCH_CPU_RUNTIME` and
+  `-DCH_RSA_AVX2_MODEL`, over `test/rsa_avx2_model_lanes.h`, the model of
+  each instruction in portable C that `bin/rsa_avx2_model_test` runs; and
+  `rsa_mont.c`'s `power_of_two_mod`, which computes the 2^(2Dn) mod m that
+  call takes. The lane multiplication and, in the memory lines, every
+  lane operation are contracts (`proof/rsa_avx2_stubs.h`).
+  `rsa_avx2_lanes` and the `rsa_avx2_sums` lines add
+  `--unsigned-overflow-check`.
+- **Proves:**
+  - `rsa_avx2_lanes`: on the model's real operation, a lane
+    multiplication gives each lane a value at or below (2^32 - 1)^2, and
+    at or below (2^29 - 1)^2 where both lanes are below 2^29, and a load
+    and a store touch nothing outside four words. Those are the
+    contracts the other lines run.
+  - the eight `rsa_avx2_sums` lines: no sum in the product wraps, at 2
+    and 3 groups, for every digit count they hold, in the multiplication
+    and the square and the aliasing shapes `rsa_avx2_public` calls: no
+    lane add, no scalar sum or product of the triangle and no sum of the
+    last pass. Each line runs one product. The `_webpki` lines run the
+    copies for 27-bit digits, which only a `TRUST=webpki` build
+    compiles.
+  - `rsa_avx2_number` and `rsa_avx2_number_webpki`: `modulus_from_words`,
+    `words_to_digits` and `digits_to_words` read and write inside their
+    arrays at a word count that is any value from 32 to 48, or to 64
+    under `CH_TRUST_WEBPKI`, over arrays of words of exactly the words
+    each call reads or writes.
+  - `rsa_avx2_chain_32`, `rsa_avx2_chain`, `rsa_avx2_chain_49_webpki` and
+    `rsa_avx2_chain_webpki`: each step of `rsa_avx2_public`, made once,
+    in its order and on arrays of the sizes it passes, reads and writes
+    inside its arrays at 32, 48, 49 and 64 words, the smallest and the
+    largest count of each copy of the product: the record of the
+    modulus, the conversions to and from digits, the marshalling of the
+    base and of the result, a multiplication, a square and the last
+    subtraction.
+  - `rsa_mont_power_avx2` and `rsa_mont_power_avx2_webpki`:
+    `power_of_two_mod` reads and writes inside its arrays and divides by
+    no zero, at 32 words and at the build's largest count, with the
+    exponents `rsa_vp1_cpu` passes the AVX2 kernel, for any modulus words
+    whose top bit is set and whose bottom bit is 1.
+- **Bound:** 2 and 3 groups for the `rsa_avx2_sums` lines, every word
+  count for the `rsa_avx2_number` lines, and 32, 48, 49 and 64 words for
+  the `rsa_avx2_chain` lines.
+- **Not proved:** `rsa_avx2_public` itself. No line calls it: at 32 words
+  its eighteen products returned no verdict in 1,200 s, all of it
+  symbolic execution, because each product cost cbmc more than the one
+  before. It makes the calls a chain line makes, with fifteen more
+  squares and a second `multiply_by_base` on the same arrays. The
+  products' memory at the group counts between the ones the chain lines
+  run, 20 to 27 and 31 to 37, rests on an argument the harness states:
+  the product runs the same statements at every count, and each index of
+  a lane is at least a constant and at most a sum that grows with the
+  group count. Nor any value of the product or of `rsa_avx2_public`.
+  `spec/lean/Spec/RsaAvx2.lean` proves them of a model of the C, which
+  `bin/diff_rsa_avx2` compares with the C on samples, and
+  `bin/rsa_avx2_model_test` holds the C to `rsa_mont64.c`
+  ([The AVX2 public operation](#the-avx2-public-operation)). That no lane
+  wraps at 19 to 38 groups rests on the Lean theorem `multiply_fits`, on
+  its model of the C. The instructions in `rsa_avx2_lanes.h`, which CBMC
+  cannot read, are held to the model only by `bin/rsa_avx2_equiv_test`,
+  on a CPU with AVX2 or under QEMU.
 
 #### rsa_sign64
 
@@ -5212,11 +5277,48 @@ an odd modulus whose bit length is a multiple of 64, at least 2,048,
 with 2^(2Dn) mod m from `power_of_two_mod`, for n digits of D bits. For
 every input it must write the bytes `rsa_vp1` writes.
 
-No proof covers the file: CBMC cannot read its intrinsics, and
-`tools/proof-cover.py` audits its operators by hand. Every claim below
-rests on a test.
+CBMC and Lean prove parts of the arithmetic over the lane model below,
+and nothing proves the instructions equal to that model. CBMC cannot
+read an intrinsic, so the [rsa_avx2](#rsa_avx2) harnesses compile
+`rsa_avx2.c`'s own text over `test/rsa_avx2_model_lanes.h`, with the lane
+multiplication a contract that `rsa_avx2_lanes` discharges on the model.
+They prove that each step of `rsa_avx2_public`, made once, reads and
+writes inside its arrays at the smallest and the largest word count of
+each copy of the product, that the conversions between words and digits
+do at every word count, that no sum in a product wraps at 2 and 3
+groups, and that `power_of_two_mod` reads and writes inside its arrays
+at the exponents `rsa_vp1_cpu` passes the kernel. No line calls
+`rsa_avx2_public` itself, and they prove no value.
 
-What the kernel computes rests on these:
+[`spec/lean/Spec/RsaAvx2.lean`](../spec/lean/Spec/RsaAvx2.lean) models
+the product lane by lane: what the rows add to each lane, the triangles
+in the order of the lanes, the sum after the last triangle and the last
+pass of carries, on whole numbers. The C adds the same numbers to each
+lane in another order, four rows at a time in a window of registers, and
+the model states nothing about that order. Its theorems state that:
+
+- a square's rows put in each lane what the multiplication of a by
+  itself puts there, so the square is that multiplication;
+- no triangle's sum and no sum of the last pass passes 2^64 at the C's
+  digit widths and counts, 110 digits of 28 bits and 152 of 27, for any
+  digits below 2^D;
+- `RSA_AVX2_DIGIT_COUNT` leaves 4m < 2^(Dn) for every m below 2^(64k);
+- a product of operands below 2m is below 2m, and is a b / 2^(Dn) mod m,
+  for a k0 with k0 × m + 1 a multiple of 2^D;
+- the chain `rsa_avx2_public` runs, a product, sixteen squares, a product
+  and one subtraction of m, writes base^65537 mod m for every base below
+  2^(64k), with 2^(2Dn) mod m as its power of two.
+
+`bin/diff_rsa_avx2`, in `make diff`, holds the C over the lane model to
+the spec's operations in 1,545 comparisons: every digit of
+multiplications and squares at every word count from 32 to 64,
+`rsa_vp1_cpu`'s bytes under `CH_CPU_AVX2` where the group count or the
+digit width changes, and each product of the chain at 32, 48 and 64
+words. Its public rows hold the C's `power_of_two_mod` to the spec's
+model of it, `Spec.RsaIfma.powerOfTwoMod`. It checks on each row that the
+C's k0 meets the theorems' hypothesis, which no proof covers.
+
+What the kernel computes rests on these too:
 
 - `bin/rsa_avx2_model_test` and `bin/rsa_avx2_model_test_384`, in `make
   check` and `make san-check` on every machine. The first builds at the
@@ -5298,7 +5400,7 @@ The build rests on these:
   2,080 bytes under gcc 13 at `-O2` at the 384-byte bound and 2,752 at
   the 512-byte bound, where each product's is at most 1,600 and 1,920.
 
-Nineteen violations break the kernel, its dispatch or its build, and
+Twenty-one violations break the kernel, its dispatch or its build, and
 each is caught. `bin/rsa_avx2_model_test` catches ten on every machine:
 `inv41-rsa-avx2-triangle-drops-carry`, whose triangle drops the carry
 out of a lane; `inv41-rsa-avx2-row-past-n-takes-y`, which gives a row
@@ -5324,16 +5426,23 @@ right and make clang multiply on more than one VPMULUDQ.
 where it takes one, and `inv41-rsa-avx2-model-multiply-whole-lanes`,
 whose model multiplies whole lanes, through `rsa-avx2`; and
 `inv41-rsa-avx2-before-ifma`, which asks for AVX2 before AVX-512 IFMA,
-through `x86-kernels`.
+through `x86-kernels`. The proofs catch two that leave every byte right:
+`rsa_avx2_number` catches `inv41-rsa-avx2-reads-word-past-count`, whose
+`words_to_digits` reads one word past the count, and
+`rsa_avx2_sums_multiply_2` catches
+`inv41-rsa-avx2-quotient-product-wraps`, whose triangle multiplies the
+whole lane by k0, a product that wraps.
 
 What none of this shows:
 
 - That a model function equals its instruction for every input. The two
   are compared on the inputs `bin/rsa_avx2_equiv_test` runs, on a CPU
   with AVX2 or under QEMU.
-- That no lane of a product passes 2^64 for every input. The file's
-  comment states the bound, and the tests run products of operands up
-  to 2m at every word count.
+- That the C over the model computes what the Lean model computes for
+  every input. `bin/diff_rsa_avx2` compares them on samples.
+- That no sum wraps at 19 to 38 groups in the C. CBMC proves it at 2 and
+  3, and Lean proves the lanes' bound on its model of the product at
+  every count the C takes.
 - Anything about time. None is claimed: the inputs are public, and the
   bit states presence alone.
 - The CA client's CertificateVerify under `TRUST=ca-rsa`, as for the

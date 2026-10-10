@@ -1424,9 +1424,23 @@ last `ROLE=server` stub, as the entry said it would.
   on every machine, and `bin/rsa_ifma_sign_equiv_test` does the same on
   the instructions; docs/verification.md, "The AVX-512 IFMA signer",
   lists each test.
-  The AVX2 kernel has no proof yet: CBMC cannot read its
-  intrinsics. `bin/rsa_avx2_model_test` and `bin/rsa_avx2_model_test_384`
-  compile it and `rsa_mont.c`'s dispatch over
+  For the AVX2 kernel, CBMC and Lean prove parts of the arithmetic
+  over `test/rsa_avx2_model_lanes.h` in the same way, and nothing proves
+  the instructions equal to that model. The `rsa_avx2` harnesses prove
+  that each step of `rsa_avx2_public`, made once, reads and writes inside
+  its arrays at the smallest and the largest word count of each copy of
+  the product, the conversions between words and digits at every word
+  count, that no sum of a product wraps at 2 and 3 groups, and that
+  `power_of_two_mod` reads and writes inside its arrays at the exponents
+  `rsa_vp1_cpu` passes the kernel. `spec/lean/Spec/RsaAvx2.lean`
+  models the product lane by lane and proves that a square's rows put in
+  each lane what the multiplication of a by itself puts there, that no
+  lane passes 2^64 at the C's digit widths and counts, that a product of
+  operands below 2m is below 2m and congruent to a b / 2^(Dn) mod m, and
+  that the chain `rsa_avx2_public` runs writes base^65537 mod m.
+  `bin/diff_rsa_avx2`, in `make diff`, holds the C over the model to the
+  spec's operations. `bin/rsa_avx2_model_test` and
+  `bin/rsa_avx2_model_test_384` compile it and `rsa_mont.c`'s dispatch over
   `test/rsa_avx2_model_lanes.h` and require, on every machine,
   `rsa_vp1`'s bytes from `rsa_vp1_cpu` under `CH_CPU_AVX2` at every word
   count from 32 to the bound, one call into the kernel under the bit and
@@ -1625,7 +1639,12 @@ last `ROLE=server` stub, as the entry said it would.
   `inv41-rsa-avx2-first-from-takes-two-lanes`,
   `inv41-rsa-avx2-model-multiply-whole-lanes` and
   `inv41-rsa-avx2-before-ifma`, which `test/docker-aes-runtime-qemu.sh`
-  catches under `rsa-avx2` and `x86-kernels`.
+  catches under `rsa-avx2` and `x86-kernels`. Or `words_to_digits` reads
+  one word past the count, or the triangle multiplies the whole lane by
+  k0, which wraps and leaves every byte right:
+  `inv41-rsa-avx2-reads-word-past-count` and
+  `inv41-rsa-avx2-quotient-product-wraps`, which the `rsa_avx2_number`
+  and `rsa_avx2_sums_multiply_2` proofs catch.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118, 119, 120 and 122.
 
 ### INV-42 — a host object returns no RSA signature it has not verified

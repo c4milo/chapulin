@@ -17,6 +17,7 @@ import Spec.P256WideInverse
 import Spec.Rsa
 import Spec.RsaIfma
 import Spec.Poly1305Ifma
+import Spec.RsaAvx2
 import Spec.P384
 import Spec.RsaPkcs1
 import Spec.Sha3

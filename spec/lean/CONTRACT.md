@@ -207,6 +207,18 @@ Spec.Poly1305Ifma.computePowers : (r : Digits) → Powers               -- compu
                         -- `poly1305_ifma_powers <words>` → last_first, last_second, by_16
                         -- and by_8, each a register as above, from r's five words of 4
                         -- big-endian bytes, each below 2 ^ 26.
+Spec.RsaAvx2.multiply : (D n k0 a b m : Nat) → Array Nat               -- rsa_avx2.c's product,
+                        -- written from the C (below): the triangles over 4 ⌈n / 4⌉ lanes and
+                        -- the last pass of carries, the result's n digits. Line op:
+                        -- `rsa_avx2_multiply <k> <k0> <m> <a> <b>` → the n digits, 8
+                        -- big-endian bytes each, digit 0 first: k and k0 in decimal, m, a and
+                        -- b hex of any length, under product_mul's hypotheses.
+Spec.RsaAvx2.square : (D n k0 a m : Nat) → Array Nat                   -- the square, from its
+                        -- own rows. Line op: `rsa_avx2_square <k> <k0> <m> <a>`, as above.
+Spec.RsaAvx2.publicOp : (k k0 m base digitR2 : Nat) → Nat              -- rsa_avx2_public. Line op:
+                        -- `rsa_avx2_public <k> <m> <base>` → 8k bytes, under m's own k0 and
+                        -- digitR2 = Spec.RsaIfma.powerOfTwoMod m k (2 D n), for an odd m of 8k
+                        -- bytes, two words or more, whose top bit is set, and an 8k-byte base.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -860,6 +872,37 @@ transcription fails a row. The violation `poly1305-ifma-last-group-powers-exchan
 it. That the instructions write the lane model's values stays with `bin/poly1305_equiv_test` on
 a CPU with AVX-512 IFMA.
 
+## RsaAvx2 models the C
+
+`Spec/RsaAvx2.lean` breaks rule 1 for the same reason. `rsa_avx2.c` adds four rows at a time to
+registers of four lanes, in a window of registers that moves down one register a group, and the
+model adds the same numbers to each lane in the order of the lanes: `multiplyRows` and
+`squareRows` are what the rows of `a` add to a lane, `squareMultiplier` the blend of `2 a_r`, `a_r`
+and nothing a square's row takes, `lower` the triangles lane by lane, `upperLane` the sum after
+the last triangle with the last carry at lane `4 ⌈n / 4⌉`, and `carryPass` `product_core`'s last
+loop. A lane's sum is the same natural number in either order, and the C forms none of it above
+the lane's whole sum, so the model's bound on the whole sum bounds every partial one. No standard
+states those steps; RFC 8017 states only what `publicOp_eq` proves they compute.
+
+The model holds a lane in a `Nat` where the C holds a 64-bit word, and states nothing about the
+instructions. `lanes_fit` proves that no lane the C sums passes `2 ^ 64` for any digit width and
+count that leave room for `2 n` products of two digits and two carries below `2 ^ (64 - D)`, and
+`room_28`, `room_27` and `multiply_fits` that the C's widths and counts leave it, so the C's words
+hold the model's numbers on every input.
+
+`squareRows_eq` proves that a square's rows put in each lane what the multiplication of `a` by
+itself puts there, so the square is that multiplication (`square_eq_multiply`). `product_lt` and
+`product_mul` prove that the product of `a` and `b` below `2 m` is below `2 m` and is
+`a b 2 ^ (-D n)` modulo `m`, for `k0` the C's `-m⁻¹ mod 2 ^ D`, `4 m ≤ 2 ^ (D n)` and four digits
+or more, and `digitCount_room` that `RSA_AVX2_DIGIT_COUNT` gives `4 m < 2 ^ (D n)` for every `m`
+below `2 ^ (64 k)`. `publicOp_eq` proves that the chain of products computes `base ^ 65537 mod m`
+for every base below `2 ^ (64 k)`, with `power_of_two_mod`'s value as `Spec.RsaIfma` models it.
+
+`test/diff_rsa_avx2_test.c`, in `bin/diff_rsa_avx2`, compares the kernel, compiled over the lane
+model, with these definitions digit for digit at every word count from 32 to 64, so an error in
+the transcription fails a row. That the instructions write the lane model's values stays with
+`bin/rsa_avx2_equiv_test`.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -1135,6 +1178,25 @@ Spec.Poly1305Ifma, the kernel of poly1305_ifma.c (above, "Poly1305Ifma models th
   powers_mod                   Fits r → lane l of last_first and last_second holds
                                -- r ^ (16 - blockOf l) and r ^ (8 - blockOf l), every lane of
                                -- by_16 and by_8 r ^ 16 and r ^ 8, and each fits
+Spec.RsaAvx2, the kernel of rsa_avx2.c (above, "RsaAvx2 models the C"); `value D count lanes` is
+  the number `count` lanes hold, D bits apart:
+  squareRows_eq                squareRows a p = multiplyRows a a p, for every a and lane p
+  square_eq_multiply           square D n k0 a m = multiply D n k0 a a m
+  digitCount_room              m < 2 ^ (64 k) → 4 m < 2 ^ (digitBits k digitCount k)
+  lanes_fit                    D ≤ 32 → 2 n (2 ^ D - 1) ^ 2 + 2 2 ^ (64 - D) ≤ 2 ^ 64 → every
+                               -- rows p ≤ n (2 ^ D - 1) ^ 2 → every m j < 2 ^ D → every
+                               -- triangle's x and every sum of the last loop is below 2 ^ 64
+  multiplyRows_le              a multiplication's rows of digits hold at most n products of two
+                               -- digits at every lane
+  room_28, room_27             n ≤ 110 at 28 bits, and n ≤ 152 at 27, leave lanes_fit's room
+  multiply_fits                k ≤ 64 → no lane of the multiplication passes 2 ^ 64 at the C's
+                               -- digit width and count, for any digits of a, b and m
+  product_lt, product_mul      (k0 m + 1) % 2 ^ D = 0 → 4 m ≤ 2 ^ (D n) → 4 ≤ n → a < 2 m →
+                               -- b < 2 m → the product is below 2 m, and it times 2 ^ (D n)
+                               -- is a b in ZMod m
+  publicOp_eq                  (k0 m + 1) % 2 ^ digitBits k = 0 → 2 ^ (64 k - 1) ≤ m <
+                               -- 2 ^ (64 k) → 2 ≤ k → base < 2 ^ (64 k) → publicOp k k0 m
+                               -- base (2 ^ (2 digitBits k digitCount k) % m) = base ^ 65537 % m
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1368,6 +1430,7 @@ means the module's selftest plus the differential oracle carry it;
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
+| RsaAvx2 | 11 | the AVX2 kernel of `rsa_avx2.c`, modeled from the C with a lane in a `Nat`: a square's rows put in each lane what the multiplication of `a` by itself puts there; no triangle's sum and no sum of the last pass passes `2 ^ 64` at the C's digit widths and counts; `RSA_AVX2_DIGIT_COUNT` leaves `4 m < 2 ^ (D n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-D n) mod m`; and the chain `rsa_avx2_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_avx2_equiv_test`, and the order in which the C adds a lane's numbers with the C's tests and the differential |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
 | Poly1305Ifma | 17 | the AVX-512 IFMA Poly1305 of `poly1305_ifma.c`, modeled from the C with a lane in a `Nat`: from digits within the bounds every operand is below `2 ^ 52` and every sum below `2 ^ 56`, and a group step and a product leave the digits within them again; a group step computes `(h + first) x + second y` and a product `a b` modulo `2 ^ 130 - 5`; `compute_powers` gives lane `l` the power of `r` its blocks are owed; and the loads and both conversions keep their numbers. That the eight lanes' groups add up to the message's polynomial stays with `bin/poly1305_equiv_test`, and that the instructions compute the lane model's values with the same binary on a CPU with AVX-512 IFMA |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |

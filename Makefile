@@ -510,7 +510,7 @@ HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_eq
 # equivalence tests (docs/decisions.md 95, 118 and 122), rsa_ifma.c and
 # rsa_avx2.c, the public operation on AVX-512 IFMA and on AVX2, each with
 # its two tests and the two units that compile it under second names, the
-# IFMA kernel's differential main, and rsa_ifma_sign.c, the signer's
+# two kernels' differential mains, and rsa_ifma_sign.c, the signer's
 # exponentiations on AVX-512 IFMA, with its tests and counts, which
 # compile only under -DCH_CPU_RUNTIME. lint-tidy reads them in passes of
 # their own.
@@ -523,7 +523,7 @@ RSA_HOST_LINT_C := rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_if
                    test/rsa_ifma_model_test.c test/rsa_ifma_equiv_test.c test/rsa_ifma_model.c \
                    test/rsa_ifma_instructions.c test/diff_rsa_ifma_test.c \
                    test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c test/rsa_avx2_model.c \
-                   test/rsa_avx2_instructions.c \
+                   test/rsa_avx2_instructions.c test/diff_rsa_avx2_test.c \
                    test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c
 LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha3_equiv_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
@@ -4443,10 +4443,13 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_rsa_ifma
 	$(MAKE) bin/diff_poly1305_ifma
 	./bin/diff_poly1305_ifma
+	$(MAKE) bin/diff_rsa_avx2
+	./bin/diff_rsa_avx2
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
 	@echo "SKIP diff's AVX-512 IFMA binaries: $(CC) fails the host test"
+	@echo "SKIP diff's AVX2 binary: $(CC) fails the host test"
 endif
 endif
 
@@ -4510,6 +4513,15 @@ bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -I. -Itest -o $@ test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c \
 	  ct.c ct_wipe.c
+# The AVX2 arm: rsa_avx2.c's products and squares and rsa_vp1_cpu's AVX2
+# path, compiled over the lane model as bin/rsa_avx2_model_test compiles
+# them, against spec/lean/Spec/RsaAvx2.lean. Its own main for the same
+# reason. It builds at the 512-byte bound, so both digit widths run.
+bin/diff_rsa_avx2: test/diff_rsa_avx2_test.c test/rsa_avx2_model.c rsa_mont.c rsa_avx2.c \
+                   $(RSA_AVX2_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o $@ \
+	  test/diff_rsa_avx2_test.c test/rsa_avx2_model.c $(RSA_AVX2_TEST_SRCS)
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -5715,7 +5727,8 @@ else
 	# test/rsa_avx2_instructions.c stay out of every pass, for the reason
 	# test/aes_equiv_soft.c does below.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,rsa_avx2.c rsa_mont.c test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c, \
+	  $(call TIDY_EACH,rsa_avx2.c rsa_mont.c test/rsa_avx2_model_test.c test/rsa_avx2_equiv_test.c \
+	  test/diff_rsa_avx2_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL $(RSA_WIDE_DEF) \
 	  -I. -Itest)
 	# The AVX2 kernel on the instructions at the 512-byte bound, where its

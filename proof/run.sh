@@ -2592,6 +2592,69 @@ launch fast full poly1305_ifma_lanes 9 "" -DCH_CPU_RUNTIME
 launch fast full poly1305_ifma_sums 257 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
 launch fast full poly1305_ifma_product 9 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
 launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:1945" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest
+# rsa_avx2.c, RSA's public operation on AVX2, which an x86-64 host object
+# runs for a session whose ch_cfg.cpu holds CH_CPU_AVX2 and not
+# CH_CPU_AVX512_IFMA (docs/decisions.md 122). As for rsa_ifma.c, the lines
+# compile the file under -DCH_RSA_AVX2_MODEL over
+# test/rsa_avx2_model_lanes.h, which -Itest finds, and proof/rsa_avx2_stubs.h
+# states the contracts: each lane multiplication gives a value at or below
+# (2^29 - 1)^2 for two operands below 2^29, and in the memory lines every
+# lane operation is a contract that loads or stores four words and returns
+# any value. rsa_avx2_lanes discharges them on the model's real operations.
+# The rsa_avx2_sums lines prove no sum of a product wraps, at 2 and 3
+# groups, with --unsigned-overflow-check on, one product a line: the four
+# products in one formula passed 8 GB in the solver. rsa_avx2_number runs
+# the conversions between words and digits at every word count, and
+# rsa_avx2_chain makes each call rsa_avx2_public makes, once, at the
+# smallest and the largest word count of each copy of the product: 32 and
+# 48 words, and 49 and 64 under CH_TRUST_WEBPKI. No line runs
+# rsa_avx2_public whole: at 32 words its eighteen products returned no
+# verdict in 1200 s, all of it symbolic execution, which took 12 s of
+# processor time for one multiplication at 19 groups and 114 s for four.
+# A line that ran a multiplication and a square at a word count that was
+# any value from 32 to 48 passed 8 GB in symbolic execution.
+# rsa_mont_power_avx2 runs power_of_two_mod with the exponents of
+# rsa_avx2_public's 2^(2Dn) mod m.
+# Measured one line at a time through proof/prove-one.sh on 2026-10-09 (cbmc
+# 6.11.0, kissat 4.0.4, an M1 Pro) at a load average of 5 to 30, under a
+# sampler that summed the resident size of every process in the run. The
+# time is the processor time of cbmc and the solver. The first size is
+# /usr/bin/time -l's, the largest single process, and the second the
+# sampler's peak sum:
+#   rsa_avx2_lanes                     58 properties,   0 s,  31 MB
+#   rsa_avx2_sums_multiply_2         1983 properties,   8 s, 1.4 GB, 1.8 GB
+#   rsa_avx2_sums_multiply_3         1983 properties,  19 s, 2.2 GB, 2.8 GB, hence fast:3
+#   rsa_avx2_sums_square_2           1983 properties,   9 s, 1.4 GB, 1.8 GB
+#   rsa_avx2_sums_square_3           1983 properties,  19 s, 2.2 GB, 2.8 GB, hence fast:3
+#   rsa_avx2_sums_multiply_2_webpki  1995 properties,  11 s, 1.9 GB, 2.5 GB, hence fast:3
+#   rsa_avx2_sums_multiply_3_webpki  1995 properties,  23 s, 2.3 GB, 3.0 GB, hence fast:4
+#   rsa_avx2_sums_square_2_webpki    1995 properties,  11 s, 1.9 GB, 2.5 GB, hence fast:3
+#   rsa_avx2_sums_square_3_webpki    1995 properties,  16 s, 2.2 GB, 2.9 GB, hence fast:3
+#   rsa_avx2_number                  1763 properties,  18 s, 1.2 GB, 1.9 GB
+#   rsa_avx2_number_webpki           1775 properties,  27 s, 1.6 GB, 2.6 GB, hence fast:3
+#   rsa_avx2_chain_32                1747 properties,  34 s, 519 MB, 541 MB
+#   rsa_avx2_chain                   1747 properties,  91 s, 1.0 GB, 1.0 GB
+#   rsa_avx2_chain_49_webpki         1759 properties, 102 s, 1.2 GB, 1.2 GB
+#   rsa_avx2_chain_webpki            1759 properties, 197 s, 1.8 GB, 1.9 GB
+#   rsa_mont_power_avx2               870 properties,  22 s, 1.6 GB, 3.2 GB, hence fast:4
+#   rsa_mont_power_avx2_webpki        870 properties,  34 s, 2.5 GB, 4.4 GB, hence fast:5
+launch fast full rsa_avx2_lanes 5 "" --unsigned-overflow-check
+launch fast full rsa_avx2_sums_multiply_2 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:3 full rsa_avx2_sums_multiply_3 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast full rsa_avx2_sums_square_2 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:3 full rsa_avx2_sums_square_3 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:3 full rsa_avx2_sums_multiply_2_webpki 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:4 full rsa_avx2_sums_multiply_3_webpki 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:3 full rsa_avx2_sums_square_2_webpki 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast:3 full rsa_avx2_sums_square_3_webpki 21 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest --unsigned-overflow-check
+launch fast full rsa_avx2_number 121 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast:3 full rsa_avx2_number_webpki 161 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast full rsa_avx2_chain_32 257 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast full rsa_avx2_chain 385 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast full rsa_avx2_chain_49_webpki 393 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast full rsa_avx2_chain_webpki 513 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL -Itest
+launch fast:4 full rsa_mont_power_avx2 51 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL
+launch fast:5 full rsa_mont_power_avx2_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_AVX2_MODEL
 # rsa_sign64.c, the RSA signer on those words, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and

@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: proof/prove-one.sh rsa_avx2_sums_multiply_2
+reason: the triangle multiplies the whole lane by k0 for row 0's y, where it
+  multiplies the lane's low D bits. The product wraps 2^64 for a lane
+  above 2^36, and its low D bits stay the same, so every byte stays right
+  and every test passes. rsa_avx2_sums_multiply_2 runs a product with
+  --unsigned-overflow-check on, so every multiply and add of the triangle
+  is a property, and fails on the wrap.
+
+--- old
+    uint64_t y0 = ((l0 & mask) * k0) & mask;
+--- new
+    uint64_t y0 = (l0 * k0) & mask;

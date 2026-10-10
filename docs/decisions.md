@@ -9703,9 +9703,18 @@ does nothing more.
       the instructions to that model on a CPU with AVX2, which
       `test/docker-aes-runtime-qemu.sh rsa-avx2` runs under QEMU's `max`
       model on any machine with docker. `bin/x86_kernels_test` counts the
-      calls each value sends to the kernel. INV-41 states the claim, and
-      docs/verification.md, "The AVX2 public operation", lists each test
-      and the nineteen violations they catch.
+      calls each value sends to the kernel. Over the model CBMC proves the
+      memory accesses of each step of `rsa_avx2_public` at the smallest
+      and the largest word count of each copy of the product, of the
+      conversions at every word count, and that no sum wraps at 2 and 3
+      groups. `spec/lean/Spec/RsaAvx2.lean` proves of a model of
+      the C that no lane passes 2^64 at the C's widths and counts, that a
+      square equals the multiplication of a by itself, that a product is
+      below 2m and a b / 2^(Dn) mod m, and that the chain writes
+      base^65537 mod m, and `bin/diff_rsa_avx2` holds the C to that model.
+      INV-41 states the claim, and docs/verification.md, "The AVX2 public
+      operation", lists each test and proof and the twenty-one violations
+      they catch.
     - **Branches.** `lint-wide-multiply` holds the file at 38 conditional
       branches under clang for x86-64 at the 384-byte bound and 68 at the
       512-byte bound, each a test of a count or an index.

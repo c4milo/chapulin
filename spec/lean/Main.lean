@@ -109,6 +109,7 @@ def selftestAll (_ : Unit) : String :=
     ("rsa", Spec.Rsa.selftest),
     ("rsa_ifma", Spec.RsaIfma.selftest),
     ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
+    ("rsa_avx2", Spec.RsaAvx2.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -669,6 +670,50 @@ def dispatch : List String → Option String
       (Spec.Poly1305Ifma.digitsOfWords (w 0) (w 1) (w 2) (w 3) (w 4))
     return bytesToHex (ifmaRegisterBytes powers.lastFirst ++ ifmaRegisterBytes powers.lastSecond ++
       ifmaRegisterBytes powers.by16 ++ ifmaRegisterBytes powers.by8)
+  | ["rsa_avx2_multiply", words, k0, modulus, a, b] => do
+    -- rsa_avx2.c's multiplication of a by b, both below 2m, under an m of `words` 64-bit words
+    -- and k0, its -m⁻¹ mod 2^D in decimal; m, a and b are big-endian hex of any length. The
+    -- answer is the n digits of the model's product (Spec/RsaAvx2.lean), 8 big-endian bytes
+    -- each, digit 0 first. The guard is product_mul's hypotheses.
+    let k ← words.toNat?
+    let inverse ← k0.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    let y := bytesToNatBE (← hexArg? b)
+    let D := Spec.RsaAvx2.digitBits k
+    let n := Spec.RsaAvx2.digitCount k
+    guard (4 ≤ n && m < 2 ^ (64 * k) && (inverse * m + 1) % 2 ^ D == 0 && x < 2 * m &&
+      y < 2 * m)
+    return bytesToHex ((Spec.RsaAvx2.multiply D n inverse x y m).foldl
+      (fun out digit => out ++ natToBytesBE digit 8) ByteArray.empty)
+  | ["rsa_avx2_square", words, k0, modulus, a] => do
+    -- rsa_avx2.c's square of a below 2m, as rsa_avx2_multiply, from the square's own rows.
+    let k ← words.toNat?
+    let inverse ← k0.toNat?
+    let m := bytesToNatBE (← hexArg? modulus)
+    let x := bytesToNatBE (← hexArg? a)
+    let D := Spec.RsaAvx2.digitBits k
+    let n := Spec.RsaAvx2.digitCount k
+    guard (4 ≤ n && m < 2 ^ (64 * k) && (inverse * m + 1) % 2 ^ D == 0 && x < 2 * m)
+    return bytesToHex ((Spec.RsaAvx2.square D n inverse x m).foldl
+      (fun out digit => out ++ natToBytesBE digit 8) ByteArray.empty)
+  | ["rsa_avx2_public", words, modulus, base] => do
+    -- rsa_vp1_cpu's AVX2 path: base^65537 mod m for an odd m of `words` 64-bit words, two or
+    -- more, whose top bit is set and a base of the same 8 * words big-endian bytes. The answer
+    -- is the model's publicOp under m's -m⁻¹ mod 2^D and the model's power_of_two_mod for
+    -- 2^(2Dn) (Spec/RsaAvx2.lean, Spec/RsaIfma.lean).
+    let k ← words.toNat?
+    let mb ← hexArg? modulus
+    let bb ← hexArg? base
+    guard (2 ≤ k && mb.size == 8 * k && bb.size == 8 * k)
+    let m := bytesToNatBE mb
+    guard (m % 2 == 1 && 2 ^ (64 * k - 1) ≤ m)
+    let D := Spec.RsaAvx2.digitBits k
+    let inverse := Spec.RsaAvx2.k0Of D m
+    guard ((inverse * m + 1) % 2 ^ D == 0)
+    let digitR2 := Spec.RsaIfma.powerOfTwoMod m k (2 * D * Spec.RsaAvx2.digitCount k)
+    return bytesToHex
+      (natToBytesBE (Spec.RsaAvx2.publicOp k inverse m (bytesToNatBE bb) digitR2) (8 * k))
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

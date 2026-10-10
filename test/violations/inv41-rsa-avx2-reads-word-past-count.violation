@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2_number.h
+catches: proof/prove-one.sh rsa_avx2_number
+reason: value_at_or_zero reads values[count], one word past the count, so
+  words_to_digits reads one word past the k words of the modulus, of
+  digit_r2 and of the base when it fills the top digits. The arrays the
+  tests pass are larger than k words, so their bytes hold and every test
+  passes. rsa_avx2_number runs words_to_digits over a heap object of
+  exactly k words, at every word count, and fails on the read.
+
+--- old
+    return index < count ? values[index] : 0;
+--- new
+    return index <= count ? values[index] : 0;
