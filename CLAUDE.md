@@ -105,7 +105,10 @@ Home: github.com/c4milo.
   closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` with `ct_wipe.c` (constant-time bytes, and the wipe the
-  compiler cannot remove) ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
+  compiler cannot remove) and `avx512_wipe.[ch]` (the tree's one block of
+  assembly, 32 VPXORD and 7 KXORW, which zeros zmm0 to zmm31 and k1 to k7
+  for a kernel that held secrets in them, an x86-64 host object alone)
+  ← `sha256.[ch]` with `sha256_hw.c` (SHA-256 on
   FEAT_SHA256 or the x86-64 SHA extensions, a host session whose caller
   sets CH_CPU_CONSTANT_TIME_SHA256) + `sha3.[ch]` with
   `keccak_round_constants.h` (the round constants every Keccak here
@@ -133,13 +136,18 @@ Home: github.com/c4milo.
   and `keysched.c` compiled once more over the hash instructions, a host
   object) ← `chacha20.[ch]` with `chacha20_vector.[ch]` (eight blocks a
   pass on NEON, two groups of four side by side, and four on SSE2, every
-  session of a host object) and `chacha20_avx2.[ch]` (eight blocks a pass
-  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) +
+  session of a host object), `chacha20_avx2.[ch]` (eight blocks a pass
+  in 256-bit vectors, an x86-64 session whose caller sets CH_CPU_AVX2) and
+  `chacha20_avx512.[ch]` (sixteen blocks a pass in 512-bit vectors, an
+  x86-64 session whose caller sets CH_CPU_AVX512_IFMA) +
   `poly1305.[ch]` with `poly1305_vector.[ch]` (four blocks at a time in
   two NEON or SSE2 lanes, a host session whose caller sets
   CH_CPU_CONSTANT_TIME_MULTIPLY), `poly1305_avx2.[ch]` (eight blocks at a
   time in four AVX2 lanes, an x86-64 session whose caller sets that bit
-  and CH_CPU_AVX2) and `poly1305_scalar.h` (the scalar steps both
+  and CH_CPU_AVX2), `poly1305_ifma.[ch]` with `poly1305_ifma_lanes.h`
+  (sixteen blocks at a time in eight AVX-512 IFMA lanes of three 44-, 44-
+  and 42-bit digits, an x86-64 session whose caller sets that bit and
+  CH_CPU_AVX512_IFMA) and `poly1305_scalar.h` (the scalar steps all three
   share) +
   `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
@@ -181,11 +189,23 @@ Home: github.com/c4milo.
   every session of a host object, and the square both it and the signer
   run), `rsa_mont64_blocks.[ch]` (its multiplication and square in
   blocks of four words, which a clang build for arm64 runs at a word
-  count that is a multiple of 4) and `rsa_ifma.[ch]` with
-  `rsa_ifma_lanes.h` (the public operation in 52-bit digits on AVX-512
-  IFMA, for verification alone, in an x86-64 session whose caller sets
-  CH_CPU_AVX512_IFMA, for an odd modulus of 2,048 bits or more whose bit
-  length is a multiple of 64) + `p384.[ch]`/
+  count that is a multiple of 4), `rsa_mont64_addcarry.[ch]` (its
+  multiplication and square in rows of four words whose carries go down
+  `_addcarry_u64` chains, which a gcc build for x86-64 runs at every word
+  count, with a 128-bit sum in the intrinsic's place everywhere else),
+  `rsa_ifma.[ch]` with `rsa_ifma_lanes.h` and `rsa_ifma_product.h` (the
+  public operation in 52-bit digits on AVX-512 IFMA, in an x86-64 session
+  whose caller sets CH_CPU_AVX512_IFMA, for an odd modulus of 2,048 bits
+  or more whose bit length is a multiple of 64; `rsa_ifma_product.h`
+  holds the round, the conversions and `normalize_digits` both IFMA
+  kernels run), `rsa_ifma_sign.[ch]` (RSA signing's two CRT
+  exponentiations on the same product, side by side, in an x86-64 session
+  whose caller sets CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY)
+  and `rsa_avx2.[ch]` with `rsa_avx2_lanes.h` and `rsa_avx2_number.h`
+  (the public operation in 28-bit digits, 27 above RSA-3072, four to a
+  256-bit register on AVX2's VPMULUDQ, for verification alone, in an
+  x86-64 session whose caller sets CH_CPU_AVX2 and not
+  CH_CPU_AVX512_IFMA, for the moduli `rsa_ifma.c` takes) + `p384.[ch]`/
   `p384_field.[ch]` with the `p384_wide_*` files (the same verification
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
@@ -270,7 +290,10 @@ Home: github.com/c4milo.
   through `ct_memeq`, and wipes through `ct_wipe`, which calls `memset`
   through a volatile function pointer so the compiler cannot remove it,
   while the proofs read a byte-loop stub in `proof/` with the same
-  contract (docs/decisions.md 91); constant-time selects,
+  contract (docs/decisions.md 91); a kernel that held secrets in 512-bit
+  registers calls `avx512_wipe_registers` before it returns, because C
+  names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
+  (docs/decisions.md 120 and 121); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
   poly1305's final reduction), never an `if`. A core with no hardware
   multiplier turns `*` into a runtime-library call that branches on its
@@ -308,8 +331,8 @@ Home: github.com/c4milo.
   A host object holds both multiplies. `poly1305.c` and `mlkem_poly.c`
   compile once under their own names on the decomposition and again as
   `<file>_native.c` under `widemul_native.h`'s renames, and
-  `poly1305_vector.c` and `poly1305_avx2.c` compile as their native copies
-  alone. Three more take
+  `poly1305_vector.c`, `poly1305_avx2.c` and `poly1305_ifma.c` compile as
+  their native copies alone. Three more take
   their second copy from other files on the 64x64->128 multiply:
   X25519's is `x25519_wide.c`, P-256's is the `p256_wide_*` files, and
   RSA signing's is `rsa_sign64.c`, which signs by the Chinese remainder
@@ -318,14 +341,19 @@ Home: github.com/c4milo.
   `widemul.h` runs the native copy for a session whose `ch_cfg.cpu` holds
   `CH_CPU_CONSTANT_TIME_MULTIPLY`: one branch per operation and no
   function pointer. The bit is the caller's statement about every
-  widening multiply the session runs, 32x32 and 64x64, scalar and vector:
-  under it Poly1305 runs `poly1305_vector.c`, whose lanes multiply with
-  NEON's UMULL and UMLAL or SSE2's PMULUDQ, or on x86-64 with CH_CPU_AVX2
+  widening multiply the session runs, 32x32 and 64x64, scalar and vector,
+  and AVX-512 IFMA's 52-bit products, VPMADD52LUQ and VPMADD52HUQ: under
+  it Poly1305 runs `poly1305_vector.c`, whose lanes multiply with NEON's
+  UMULL and UMLAL or SSE2's PMULUDQ, or on x86-64 with CH_CPU_AVX512_IFMA
+  `poly1305_ifma.c` on IFMA's products, or with CH_CPU_AVX2
   `poly1305_avx2.c` on VPMULUDQ, X25519 runs the wide field's five 51-bit
   words, P-256 runs the wide files' four 64-bit words, and RSA signs with
-  `rsa_sign64.c`. `ct.h` refuses
+  `rsa_sign64.c`, which on x86-64 with CH_CPU_AVX512_IFMA runs both CRT
+  exponentiations on `rsa_ifma_sign.c` and its check on `rsa_ifma.c`
+  through `rsa_vp1_cpu`, and wipes the stack below each call and the
+  vector registers after it. `ct.h` refuses
   `CH_NATIVE_WIDEMUL` in a host object and a native copy outside one
-  (docs/decisions.md 52, 83, 87, 94 and 95, INV-34).
+  (docs/decisions.md 52, 83, 87, 94, 95, 120 and 121, INV-34).
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way. No variable picks the X25519 field or the ChaCha20 keystream.
   Every object holds the 16-word field and `chacha20.c`'s loop, which stay
@@ -347,8 +375,15 @@ Home: github.com/c4milo.
   (docs/decisions.md 90). Beside the multiply bit, `CH_CPU_AVX2` also
   runs a Poly1305 update of 512 bytes or more on `poly1305_avx2.c`
   (docs/decisions.md 110). `CH_CPU_AVX512_IFMA` runs RSA verification's
-  public operation on `rsa_ifma.c`, whose input is public, and
-  `rsa_sign64.c` never calls it (docs/decisions.md 119). Three bits
+  public operation on `rsa_ifma.c`, whose input is public
+  (docs/decisions.md 119), and the ChaCha20 keystream on
+  `chacha20_avx512.c` ahead of the AVX2 kernel. Beside the multiply bit
+  it also runs RSA signing on `rsa_ifma_sign.c` (docs/decisions.md 120)
+  and a Poly1305 update of 512 bytes or more on `poly1305_ifma.c` ahead
+  of `poly1305_avx2.c` (docs/decisions.md 121). `CH_CPU_AVX2` without
+  `CH_CPU_AVX512_IFMA` runs RSA verification's public operation on
+  `rsa_avx2.c`, which no signature calls, and states no timing, because
+  the input is public (docs/decisions.md 122). Three bits
   each state a hash's instructions
   and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
   runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
@@ -365,13 +400,17 @@ Home: github.com/c4milo.
   HMAC of its RFC 6979 nonce (docs/decisions.md 102). CBMC cannot read an
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
-  8439 vectors and the Wycheproof suite. `bin/poly1305_equiv_test` holds
-  `poly1305_vector.c`, and on a CPU with AVX2 `poly1305_avx2.c`, to
-  `poly1305.c`'s loop the same way, and searches the stack below a call
-  for the powers of r: on x86-64 both paths read their multipliers
-  through volatile pointers, so the powers stay in the one struct the
-  call wipes and in no spill slot the compiler picks (docs/decisions.md
-  83 and 110). `bin/x86_kernels_test` counts which calls run a
+  8439 vectors and the Wycheproof suite, on a CPU with their instructions
+  for `chacha20_avx2.c` and `chacha20_avx512.c`. `bin/poly1305_equiv_test`
+  holds `poly1305_vector.c`, on a CPU with AVX2 `poly1305_avx2.c` and on
+  one with AVX-512 IFMA `poly1305_ifma.c`, to `poly1305.c`'s loop the
+  same way, runs `poly1305_ifma.c`'s own text over
+  `test/poly1305_ifma_model_lanes.h` on every machine, and searches the
+  stack below a call for the powers of r: on x86-64 the three paths read
+  their multipliers through volatile pointers, so the powers stay in the
+  one struct the call wipes and in no spill slot the compiler picks
+  (docs/decisions.md 83, 110 and 121). `bin/x86_kernels_test` counts
+  which calls run a
   kernel under each `ch_cfg.cpu` value, and `bin/tcp_blocking_loop_host`
   and `bin/webpki_auth_host` count the RSA public operations each caller
   of the two verifiers sends to `rsa_ifma.c`, through a stand-in,
@@ -400,6 +439,33 @@ Home: github.com/c4milo.
   C, and `bin/rsa_ifma_equiv_test` holds the instructions to the model on
   a CPU with AVX-512 IFMA, and in the nightly under Intel SDE, an
   emulator, which shows nothing of their timing (docs/decisions.md 119).
+  `bin/rsa_ifma_sign_model_test` and its `_384` twin run
+  `rsa_ifma_sign.c`'s own text over the same model against
+  `rsa_sign64.c`'s window on every machine; `bin/rsa_ifma_sign_equiv_test`
+  holds the instructions to it, and `bin/rsa_ifma_sign_residue_test`
+  searches the stack below each call and zmm0 to zmm31 after it, on a CPU
+  with AVX-512 IFMA and in the nightly under SDE. The `rsa_ifma_sign`
+  harnesses prove its memory accesses over the model, and
+  `spec/lean/Spec/RsaIfma.lean`'s `signPower_eq` proves that its window
+  writes b^e R mod m on a model of the C, which `bin/diff_rsa_ifma`
+  compares with the C (docs/decisions.md 120). The `poly1305_ifma`
+  harnesses prove `poly1305_ifma.c`'s memory accesses and its sums over
+  its own lane model, `spec/lean/Spec/Poly1305Ifma.lean` proves a group
+  step's value and bounds and the power of r each lane holds, and
+  `bin/diff_poly1305_ifma` compares the two. `bin/avx512_wipe_test`
+  reads every vector register and k1 to k7 back as zero after the wipe
+  (docs/decisions.md 121). `bin/rsa_avx2_model_test` and
+  `bin/rsa_avx2_model_test_384` run `rsa_avx2.c`'s own text over
+  `test/rsa_avx2_model_lanes.h` against `rsa_mont64.c` on every machine.
+  The `rsa_avx2` harnesses prove its sums at 2 and 3 groups, its
+  conversions at every word count and each step of `rsa_avx2_public` at
+  the edge word counts over that model, `spec/lean/Spec/RsaAvx2.lean`
+  proves its arithmetic on a model of the C, which `bin/diff_rsa_avx2`
+  holds the C to, and `bin/rsa_avx2_equiv_test` holds the instructions to
+  the model on a CPU with AVX2, or under QEMU through
+  `test/docker-aes-runtime-qemu.sh rsa-avx2`. `bin/rsa_addcarry_equiv_test`
+  holds `rsa_mont64_addcarry.c` to the loops, and the `rsa-addcarry` part
+  of that script runs it under gcc for x86-64 (docs/decisions.md 122).
   AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
@@ -464,6 +530,13 @@ Home: github.com/c4milo.
   `test/aes_equiv_test.c` and `test/ghash_equiv_test.c`, by the published
   vectors in `bin/quic_test_hw`, by the host Wycheproof binary under both
   values of the bit and by the differential, `bin/diff_quic_hw`.
+  `aes_hw.c` expands a key a word at a time on arm64, and on x86-64 a
+  round key at a time in vector registers. The x86-64 expansion keeps no
+  array to wipe and calls nothing out of line (docs/decisions.md 123).
+  `bin/aes_equiv_test` holds both expansions to the table and searches
+  the stack each one leaves for a word it computed. The qemu lane's
+  `aes-equiv` part runs the arm that a machine's own compiler does not
+  read.
   AES=extern is proved over a contract stub of `ch_aes_block`, and its
   test binaries link `test/aes_extern_hook.c`, a hook over the software
   cipher, for the same vectors, Wycheproof suite, differential and e2e.
@@ -512,10 +585,12 @@ Home: github.com/c4milo.
   bounded sizes, plus RFC test vectors in `test/unit_test.c`. A file of
   intrinsics carries no harness, because CBMC cannot read an intrinsic,
   unless the harness compiles it over a model of each instruction in
-  portable C, as `rsa_ifma.c`'s do: an equivalence test holds it to the
-  proven portable code, and
+  portable C, as `rsa_ifma.c`'s, `rsa_ifma_sign.c`'s, `poly1305_ifma.c`'s
+  and `rsa_avx2.c`'s do: an equivalence test holds it to the proven
+  portable code, and
   docs/verification.md lists each source no harness compiles and what
-  holds it.
+  holds it. `avx512_wipe.c`'s block of assembly carries none either, and
+  `tools/proof-cover.py` records what the block does.
   docs/verification.md states exactly what is proved, at what bounds,
   and what is only tested — never overclaim.
 - Write harnesses by docs/proofs.md. The rules that keep formulas
