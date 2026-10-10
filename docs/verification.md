@@ -3824,11 +3824,15 @@ Tests hold the rest:
 
 - `bin/poly1305_equiv_test`, in `make check` on every host, runs the
   128-bit path's kinds of case on the kernel's text over the model, from
-  the same seed, 358,545 in all, and searches the stack below a call over
-  four groups for r^2 to r^16 in every layout the residue search reads,
-  three 64-bit digits among them. On an x86-64 CPU with AVX-512 IFMA it
-  runs them again on the instructions. On a CPU without it skips that run
-  and says so, and under `CH_REQUIRE_AVX512_IFMA=1` fails instead.
+  the same seed, 358,545 in all. On an x86-64 CPU with AVX-512 IFMA it
+  runs them again on the instructions and searches the stack below a call
+  over four groups for r^2 to r^16 in every layout the residue search
+  reads, three 64-bit digits among them. On a CPU without it skips that
+  run and says so, and under `CH_REQUIRE_AVX512_IFMA=1` fails instead.
+  The model run searches no stack: the model's lane operations are plain
+  C functions that the compiler spills as it chooses, and no object ships
+  them. Under gcc 13 for arm64 and Apple clang for x86-64 that run's
+  spills held powers of r.
 - The Wycheproof host binary's run under 0x11f puts the four messages of
   the ChaCha20-Poly1305 suite that hold 512 bytes of whole blocks through
   the kernel, where the CPU has AVX-512 IFMA.

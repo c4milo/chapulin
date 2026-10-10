@@ -445,7 +445,14 @@ static void run_path(const vector_path *path, uint64_t seed) {
     run_extremes();
     run_direct();
     run_wide_h1();
-    run_residue();
+    // The model run searches no stack: the lane operations of
+    // test/poly1305_ifma_model_lanes.h are plain C functions, which the
+    // compiler spills as it chooses, and no object ships them. The search
+    // runs on the kernel's instructions, on a CPU with AVX-512 IFMA and in
+    // the nightly under SDE (docs/decisions.md 121).
+    if (path != &vector_ifma_model) {
+        run_residue();
+    }
     run_random();
     run_large();
     printf("poly1305 equivalence: %lu cases agree between the portable loop and %s "
