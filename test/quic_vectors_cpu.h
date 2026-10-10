@@ -19,9 +19,13 @@
 // a CPU that has VAES and VPCLMULQDQ, and so AVX2: gcm.c then runs the
 // whole blocks of the Initial keys and of SP 800-38D's keys on
 // gcm_vaes.c's kernels, and Appendix A.5's packet its ChaCha20 keystream
-// on chacha20_avx2.c's. A CPU without the instructions skips the pass, and
-// under CH_REQUIRE_X86_KERNELS=1 fails it (test/x86_kernels_cpu.h). The
-// value leaves out a hash bit whose instructions the CPU lacks.
+// on chacha20_avx2.c's, or on chacha20_avx512.c's where the CPU has
+// AVX-512 IFMA. A CPU without the instructions skips the pass, and under
+// CH_REQUIRE_X86_KERNELS=1 fails it (test/x86_kernels_cpu.h). The value
+// leaves out a hash bit whose instructions the CPU lacks, and
+// CH_CPU_AVX512_IFMA where it lacks AVX-512 IFMA, as test_cpu_value does:
+// many CPUs with VAES, the EPYC 7763 among them, have no AVX-512, and the
+// AVX-512 ChaCha20 faults on its first instruction there.
 static void run_vectors_on_kernels(void) {
     if (!x86_cpu_has_vaes()) {
         if (x86_kernels_required()) {
@@ -34,7 +38,8 @@ static void run_vectors_on_kernels(void) {
                      "VPCLMULQDQ\n");
         return;
     }
-    test_initial_cpu = TEST_CPU_ALL & ~test_cpu_absent_hash_bits(TEST_CPU_ALL);
+    test_initial_cpu = TEST_CPU_ALL & ~test_cpu_absent_hash_bits(TEST_CPU_ALL) &
+                       ~test_cpu_absent_ifma_bit(TEST_CPU_ALL);
     test_cpu = test_initial_cpu;
     run_vectors();
 }
