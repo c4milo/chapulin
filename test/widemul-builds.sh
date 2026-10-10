@@ -48,8 +48,10 @@
 #     signature reaches the kernels only through the call that wipes after
 #     them (docs/decisions.md 120). No root source defines
 #     CH_RSA_IFMA_MODEL, which makes rsa_ifma.c and rsa_ifma_sign.c run
-#     test/rsa_ifma_model_lanes.h's model of each instruction, and neither
-#     make nor build.zig writes it for a host object.
+#     test/rsa_ifma_model_lanes.h's model of each instruction, or
+#     CH_POLY1305_IFMA_MODEL, which makes poly1305_ifma.c run
+#     test/poly1305_ifma_model_lanes.h's, and neither make nor build.zig
+#     writes either for a host object.
 #   - p256.c in a host object hands the signature it read to
 #     p256_wide_verify.c, and in a device object does not: the device arm
 #     holds the 32-bit arithmetic itself, and no bit of ch_cfg.cpu picks
@@ -309,13 +311,14 @@ if [ -n "$others" ]; then
 fi
 # CH_RSA_IFMA_MODEL makes rsa_ifma.c read test/rsa_ifma_model_lanes.h, a
 # model of each instruction in portable C, in place of the instructions:
-# a build for tests alone. No root source defines it, and the defines
-# make and build.zig write for a library object, checked below, never
-# name it.
+# a build for tests alone. CH_POLY1305_IFMA_MODEL does the same for
+# poly1305_ifma.c and test/poly1305_ifma_model_lanes.h. No root source
+# defines either, and the defines make and build.zig write for a library
+# object, checked below, never name either.
 model_defined=$(git ls-files -- '*.c' '*.h' | grep -v / |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_RSA_IFMA_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_(RSA|POLY1305)_IFMA_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, which only a test unit may: under it rsa_ifma.c runs the model of each instruction" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL or CH_POLY1305_IFMA_MODEL, which only a test unit may: under it the kernel runs the model of each instruction" >&2
     exit 1
 fi
 
@@ -387,16 +390,17 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
     echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
-# Whether a list names CH_RSA_IFMA_MODEL, which no library object may.
+# Whether a list names CH_RSA_IFMA_MODEL or CH_POLY1305_IFMA_MODEL, which
+# no library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
-    *CH_RSA_IFMA_MODEL*) return 0 ;;
+    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }
 if names_model "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" ||
     names_model "$(lib_lists TRUST=webpki HOST_TARGET=yes | tr '\n' ' ')"; then
-    echo "widemul-builds: make writes CH_RSA_IFMA_MODEL for a host object; only a test unit may name it" >&2
+    echo "widemul-builds: make writes a kernel model define for a host object; only a test unit may name one" >&2
     exit 1
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')

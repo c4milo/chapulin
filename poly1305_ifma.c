@@ -4,6 +4,10 @@
 // in an x86-64 host object's native copy.
 #ifdef CH_POLY1305_IFMA
 
+// avx512_wipe.h comes before the attribute push below, so its declaration
+// carries no target attribute: clang reads a declaration under the push
+// and avx512_wipe.c's definition under target("avx512f") alone as two
+// versions of one function, and refuses a unit that holds both.
 #include "avx512_wipe.h"
 #include "ch_assert.h"
 #include "ct.h"
@@ -11,6 +15,11 @@
 #define POLY1305_SCALAR_CARRY_ONLY
 #include "poly1305_scalar.h"
 
+#ifdef CH_POLY1305_IFMA_MODEL
+// Each lane operation in portable C (test/poly1305_ifma_model_lanes.h),
+// which only a build with -Itest finds.
+#include "poly1305_ifma_model_lanes.h"
+#else
 // Every function from here to the pop at the end of this file carries the
 // target attribute that turns AVX-512F and AVX-512 IFMA on, and no function
 // outside it does, as in poly1305_avx2.c: poly1305_scalar.h's carry above
@@ -28,6 +37,7 @@
 #endif
 
 #include "poly1305_ifma_lanes.h"
+#endif
 
 typedef poly1305_ifma_lanes lanes;
 
@@ -325,18 +335,20 @@ void poly1305_ifma_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     total[1] = lanes_total(h[1]);
     total[2] = lanes_total(h[2]);
     // The powers, the sums and the accumulator's lanes passed through the
-    // vector registers, and the compiler clears none of them on return.
-    // No vector is live past this call, so the compiler keeps none on the
-    // stack across it.
-    avx512_wipe_registers();
+    // vector registers, and the compiler clears none of them on return:
+    // lanes_wipe_registers is avx512_wipe_registers. No vector is live past
+    // this call, so the compiler keeps none on the stack across it.
+    lanes_wipe_registers();
     words_of_totals(p->h, total);
     ct_wipe(&of_r, sizeof of_r);
 }
 
+#ifndef CH_POLY1305_IFMA_MODEL
 #ifdef __clang__
 #pragma clang attribute pop
 #else
 #pragma GCC pop_options
+#endif
 #endif
 
 #endif // CH_POLY1305_IFMA

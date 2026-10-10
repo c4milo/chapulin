@@ -196,6 +196,17 @@ Spec.RsaIfma.signPower : (k m0inv m rModM baseR : Nat) → (e : List Nat) → Na
                         -- under m's own m0inv and rModM = 2^(64k) mod m, for an odd m of 8k
                         -- bytes, a base below m in rsa_mont64.c's domain in 8k bytes and the
                         -- exponent's bytes.
+Spec.Poly1305Ifma.groupStep : (h first second : Digits) → (x y : Multiplier) → Digits
+                        -- one lane of poly1305_ifma.c's group loop, group_sums and carry,
+                        -- written from the C (below). Line op:
+                        -- `poly1305_ifma_group <digits> <message> <first> <second>` → the
+                        -- lanes' digits: three registers of 24 lanes of 8 big-endian bytes,
+                        -- digit 0 of lanes 0 to 7 first, and the group's 256 bytes, with every
+                        -- digit within Fits.
+Spec.Poly1305Ifma.computePowers : (r : Digits) → Powers               -- compute_powers. Line op:
+                        -- `poly1305_ifma_powers <words>` → last_first, last_second, by_16
+                        -- and by_8, each a register as above, from r's five words of 4
+                        -- big-endian bytes, each below 2 ^ 26.
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer) →
                         (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
@@ -819,6 +830,36 @@ each byte's halves in the wrong order, and each requires `bin/diff_rsa_ifma` to 
 `bin/rsa_ifma_equiv_test`, and that `times_word_mod`'s division computes its contract stays
 with the C's tests and the differential's rows of `power_of_two_mod`.
 
+## Poly1305Ifma models the C
+
+`Spec/Poly1305Ifma.lean` breaks rule 1 for the same reason. `multiplyAdd` is `poly1305_ifma.c`'s
+`multiply_add`, its eighteen multiplications in the C's order, and `carry` is its one round of
+carries, with `Sums.t0`, `Sums.t1` and `Sums.t2` the C's `t0`, `t1` and `t2`. `groupStep` is one
+lane of `group_sums` and `carry`, `product` is `multiplier_product`, and `computePowers` is
+`compute_powers`, statement for statement, with `select`, `selectOne` and `broadcastFirst` the
+C's selects under constant masks. `blockDigits`, `digitsOfWords` and `totalsSums` are
+`load_blocks` on one block, `digits_of_words` and `words_of_totals`. RFC 8439 states only the
+polynomial these compute.
+
+The model holds a digit in a `Nat` where the C holds a 64-bit lane, and each lane multiplication
+is the one `test/poly1305_ifma_model_lanes.h` writes from Intel's pseudocode. It states nothing
+about the instructions themselves. `groupStep_bounds` and `product_bounds` prove that from digits
+within `Fits` every operand is below `2 ^ 52`, where the instruction reads all of it, and every
+sum below `2 ^ 56`, so the C's lanes hold the model's numbers at every group.
+
+`groupStep_mod` and `product_mod` prove what a group step and a product compute modulo
+`2 ^ 130 - 5`, and `powers_mod` that lane `l` of the four multipliers holds the power of `r` its
+blocks are owed. No theorem joins the eight lanes' groups into the polynomial of the whole
+message: that the lanes' order and the powers add up to RFC 8439's accumulator stays with
+`bin/poly1305_equiv_test`, which holds the C to `poly1305.c`'s loop.
+
+`test/diff_poly1305_ifma_test.c`, in `bin/diff_poly1305_ifma`, compares the kernel, compiled over
+the lane model, with `groupStep` and `computePowers` digit for digit, so an error in the
+transcription fails a row. The violation `poly1305-ifma-last-group-powers-exchanged` hands lanes
+0 to 3 the wrong power of `r`, and `bin/poly1305_equiv_test` and the differential both fail on
+it. That the instructions write the lane model's values stays with `bin/poly1305_equiv_test` on
+a CPU with AVX-512 IFMA.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
@@ -1072,6 +1113,28 @@ Spec.RsaIfma, the kernel of rsa_ifma.c and rsa_mont.c's power_of_two_mod (above,
                                -- → every byte of e below 256 → signPower k m0inv m
                                -- (2 ^ (64 k) % m) (b 2 ^ (64 k) % m) e = b ^ bytesValue e
                                -- 2 ^ (64 k) % m
+Spec.Poly1305Ifma, the kernel of poly1305_ifma.c (above, "Poly1305Ifma models the C"); `Fits`
+  is digits 0 and 1 below 2 ^ 44 + 2 ^ 17 and digit 2 below 2 ^ 42 + 2 ^ 17, and `BlockFits` the
+  digits load_blocks writes:
+  multiplyAdd_value            every operand below 2 ^ 52 → the six sums grow by productValue
+  productValue_mod             productValue a (complete r) = a r in ZMod (2 ^ 130 - 5)
+  carry_mod                    carry s = s in ZMod (2 ^ 130 - 5)
+  multiplyAdd_le               bounds on the operands → bounds on each of the six sums
+  carry_fits                   sums that fit → t0, t1 and t2 below 2 ^ 56, and Fits (carry s)
+  groupStep_bounds             Fits h → BlockFits first and second → Fits x and y → every
+                               -- operand below 2 ^ 52, the sums fit, t0 to t2 below 2 ^ 56,
+                               -- and Fits of the result
+  groupStep_mod                the same → the result is (h + first) x + second y in ZMod
+  product_bounds, product_mod  Fits a → Fits b → the same of multiplier_product, and a b
+  blockDigits_value            low < 2 ^ 64 → the digits hold low + 2 ^ 64 high + 2 ^ 128
+  blockDigits_fits             high < 2 ^ 64 → BlockFits
+  digitsOfWords_value          the digits hold w0 + 2 ^ 26 w1 + ... + 2 ^ 104 w4
+  digitsOfWords_fits           every word at most 2 ^ 26 → Fits
+  totals_value, totals_lt      words_of_totals keeps t0 + 2 ^ 44 t1 + 2 ^ 88 t2, and from
+                               -- totals below 2 ^ 48 writes sums below 2 ^ 60
+  powers_mod                   Fits r → lane l of last_first and last_second holds
+                               -- r ^ (16 - blockOf l) and r ^ (8 - blockOf l), every lane of
+                               -- by_16 and by_8 r ^ 16 and r ^ 8, and each fits
 Spec.WebpkiTime.packSeconds_mono
                              a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
                              -- keeps the order of clocks, which is what lets
@@ -1306,6 +1369,7 @@ means the module's selftest plus the differential oracle carry it;
 | P256WidePoint | 13 | the incomplete additions, the Jacobian doubling and the two conversions `p256_wide_point.c` runs, modeled from the C: the incomplete mixed addition gives `P + Q` for a finite `P` and an affine `Q` whose x differ, over every field, and the loop of windows 1 to 41 in `p256_wide_base_mul` meets that condition at every addition, so it computes the sum of the windows' multiples of `G`, at P-256 with `p` and `n` prime and `n • G = 0` as hypotheses; the conversions keep every point; the Jacobian doubling gives `P + P` for every point of every curve y² = x³ - 3x + b over every field in which 2 is not zero, the point at infinity and a point with y = 0 among them; the incomplete Jacobian addition gives `P + Q` for two finite points whose x differ, over every field; and `p256_wide_mul`'s odd multiples and windows 62 to 1 meet that condition at every addition, at P-256 for every finite point with `p` and `n` prime and `n • P = 0` as hypotheses. The two complete additions, the top window of k·G, window 0 of the key exchange and both corrections stay with the C's tests and the differential |
 | P256WideInverse | 14 | the binary GCD `p256_wide_inverse.c` runs, modeled from the C: a round's 31 steps on 64-bit approximations take 31 bits off `a` and `b` between them while `a` is not zero, the steps whose comparison of the approximations differs from that of the exact values included; a round keeps `b` odd, `gcd a b`, and `a = u y` and `b = v y` modulo an odd `m`, and leaves a zero `a` zero; 17 rounds invert every `y` coprime to an odd `m` below `2 ^ 256` and send 0 to 0, at P-256's `p` and `n` with each prime as a hypothesis; and the rounds stopped at the first zero `a`, as the verifier's entry runs them, give the same answer for every `y`. That the C's combinations compute the model's sums stays with the C's tests and the differential |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
+| Poly1305Ifma | 17 | the AVX-512 IFMA Poly1305 of `poly1305_ifma.c`, modeled from the C with a lane in a `Nat`: from digits within the bounds every operand is below `2 ^ 52` and every sum below `2 ^ 56`, and a group step and a product leave the digits within them again; a group step computes `(h + first) x + second y` and a product `a b` modulo `2 ^ 130 - 5`; `compute_powers` gives lane `l` the power of `r` its blocks are owed; and the loads and both conversions keep their numbers. That the eight lanes' groups add up to the message's polynomial stays with `bin/poly1305_equiv_test`, and that the instructions compute the lane model's values with the same binary on a CPU with AVX-512 IFMA |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |

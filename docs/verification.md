@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-98 of the 132 C sources in the tree root are compiled into a
+99 of the 132 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,15 +38,16 @@ files' harnesses check it for the same reason
 (see [rsa_mont64](#rsa_mont64)), the two that prove how the signer on
 those words reads an exponent (see [rsa_sign64](#rsa_sign64)), the
 harness of the AVX-512 IFMA product's sums (see [rsa_ifma](#rsa_ifma)),
-and the harness of P-384's 64-bit field, whose claim is the same
-(see [p384_wide](#p384_wide)).
+the two that bound the AVX-512 IFMA Poly1305's sums and powers of r
+(see [poly1305_ifma](#poly1305_ifma)), and the harness of P-384's
+64-bit field, whose claim is the same (see [p384_wide](#p384_wide)).
 
 Where a bound equals the module's real maximum, the proof covers all
 inputs.
 
 ### Sources with no launched harness
 
-The other 34 sources are in no such harness:
+The other 33 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -63,7 +64,6 @@ The other 34 sources are in no such harness:
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
 | `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
-| `poly1305_ifma.c` | It runs Poly1305's block loop on AVX-512 IFMA intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX-512 IFMA, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and searches the stack below a call for every power of r it computes, and the Wycheproof suite's four longest messages run on it; the nightly's `rsa-ifma-sde` job runs both under Intel SDE. |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
@@ -76,7 +76,7 @@ The other 34 sources are in no such harness:
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2` and `poly1305_update_ifma`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
 | `poly1305_avx2_native.c` | It is `poly1305_avx2.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX2. |
-| `poly1305_ifma_native.c` | It is `poly1305_ifma.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop on a CPU with AVX-512 IFMA. |
+| `poly1305_ifma_native.c` | It is `poly1305_ifma.c` under the names `widemul_native.h` gives, on the AVX-512 IFMA intrinsics in `poly1305_ifma_lanes.h`, which CBMC cannot read. | The `poly1305_ifma` harnesses prove the same text over a model of each instruction ([poly1305_ifma](#poly1305_ifma)), and on a CPU with AVX-512 IFMA `bin/poly1305_equiv_test` holds the copy to `poly1305.c`'s proven loop and searches the stack below a call for every power of r it computes; the nightly's `rsa-ifma-sde` job runs it under Intel SDE. |
 | `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
@@ -345,6 +345,59 @@ The entries are grouped by area:
   `-DCH_CPU_RUNTIME`, so `whole_blocks` calls the loop it proves, and
   [The vector Poly1305](#the-vector-poly1305) states what holds the
   vector path to that loop.
+
+#### poly1305_ifma
+
+- **Harnesses:** `poly1305_ifma_lanes` (fast), `poly1305_ifma_sums` (fast), `poly1305_ifma_product` (fast), `poly1305_ifma_blocks` (fast)
+- **Build:** Poly1305's block loop on AVX-512 IFMA (`poly1305_ifma.c`),
+  under `-DCH_CPU_RUNTIME` and `-DCH_POLY1305_IFMA_MODEL`, over
+  `test/poly1305_ifma_model_lanes.h`, the model of each instruction in
+  portable C that `bin/poly1305_equiv_test` runs on every machine. The
+  two lane multiplications are contracts (`proof/poly1305_ifma_stubs.h`):
+  each asserts that its operands are below 2^52 and adds a value below
+  the power of two their bit lengths give. `poly1305_ifma_blocks` takes
+  any value from each instead. `poly1305_ifma_sums` and
+  `poly1305_ifma_product` add `--unsigned-overflow-check`.
+- **Proves:**
+  - `poly1305_ifma_lanes`: on the model's real multiply, each lane
+    multiplication adds a value in its contract's set, for every sum and
+    every pair of operands below 2^52.
+  - `poly1305_ifma_sums`: no sum wraps and every multiplication's
+    operands are below 2^52, at each step of the kernel's loop, from
+    digits within the bounds the stubs name, digits 0 and 1 below
+    2^44 + 2^17 and digit 2 below 2^42 + 2^17: `digits_of_words` on any
+    accumulator whose words are at most 2^26; a group's `group_sums` and
+    `carry` over any 256 bytes and any two multipliers within the bounds,
+    which leave the lanes within them again; and the lane totals,
+    `words_of_totals` and `carry_scalar` at the end.
+  - `poly1305_ifma_product`: `multiplier_product` from any two
+    multipliers within the bounds, the same struct or two, wraps no sum,
+    takes no operand of 2^52 or more, and writes a product within them.
+    `compute_powers` runs that step five times on r, whose digits
+    `digits_of_words` writes within the bounds, and on products, and its
+    selects copy lanes of those or 1, so its four multipliers keep the
+    bounds by induction; the Lean model's `powers_mod` proves that
+    composition.
+  - `poly1305_ifma_blocks`: `poly1305_ifma_blocks` whole, `compute_powers`
+    included, reads and writes inside the message, the context, its frame
+    and the struct of powers it wipes, at one group and at two, which run
+    every statement.
+- **Bound:** one group of sixteen blocks for `poly1305_ifma_sums`, which
+  the loop repeats from the bounds it proves; one and two groups for
+  `poly1305_ifma_blocks`.
+- **Not proved:** any value the kernel computes.
+  `spec/lean/Spec/Poly1305Ifma.lean` proves on a model of the C that a
+  group step computes (h + first) x + second y modulo 2^130 - 5 for its
+  two multipliers x and y, that `compute_powers` gives each lane the
+  power of r its blocks are owed, and the same bounds on the products
+  themselves. `bin/diff_poly1305_ifma` compares that model with the C on
+  samples, and `bin/poly1305_equiv_test` holds the C to `poly1305.c`'s
+  loop
+  ([The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)). No proof
+  joins the lanes' groups into Horner's rule over the whole message. The
+  instructions in `poly1305_ifma_lanes.h`, which CBMC cannot read, are
+  held to `poly1305.c`'s loop only by `bin/poly1305_equiv_test`, on a CPU
+  with AVX-512 IFMA or under SDE.
 
 #### aead
 
@@ -3611,6 +3664,115 @@ left on one call: gcc 13 and clang 18 under qemu, and gcc 13 on CI's
 runner. The kernel's timing rests on the caller's multiply bit for
 VPMULUDQ and on construction for the rest, as the 128-bit path's does.
 
+### The AVX-512 IFMA Poly1305
+
+`poly1305_ifma.c` runs Poly1305's block loop sixteen blocks at a time in
+eight 64-bit lanes, on AVX-512 IFMA's VPMADD52LUQ and VPMADD52HUQ. A
+lane holds its number in three digits of 44, 44 and 42 bits. The kernel
+exists in an x86-64 host object's native copy alone,
+`poly1305_ifma_native.c`, which `poly1305_native.c`'s
+`poly1305_update_ifma_native` calls for an update with 512 bytes or more
+of whole blocks. `widemul.h` calls that update for a session whose caller
+set both `CH_CPU_CONSTANT_TIME_MULTIPLY` and `CH_CPU_AVX512_IFMA`
+(`widemul_poly1305_ifma`), ahead of the AVX2 kernel, and only for a
+record's or a packet's ciphertext.
+
+CBMC and Lean prove parts of the kernel over a model of its
+instructions, and nothing proves the instructions equal to that model.
+`test/poly1305_ifma_model_lanes.h` writes each lane operation in
+portable C from Intel's pseudocode, and `test/poly1305_ifma_model.c`
+compiles the kernel's own text over it under second names. The
+[poly1305_ifma](#poly1305_ifma) harnesses compile the same text with
+each lane multiplication a contract that `poly1305_ifma_lanes`
+discharges on the model. They prove that no sum wraps and no operand of a
+multiplication reaches 2^52, from the start through a group, the powers
+of r and the lane totals, and that the whole call reads and writes inside
+its arrays. They prove no value.
+
+[`spec/lean/Spec/Poly1305Ifma.lean`](../spec/lean/Spec/Poly1305Ifma.lean)
+models one lane of the C's group step, its product and its carry, and
+`compute_powers` lane by lane with the C's masks, on whole numbers. Its
+theorems state that:
+
+- a group step computes (h + first) x + second y modulo 2^130 - 5, for
+  digits, blocks and multipliers within the bounds (`groupStep_mod`), and
+  `multiplier_product` computes a b (`product_mod`);
+- from those bounds every operand is below 2^52, every sum below 2^56,
+  and the result within the bounds again (`groupStep_bounds` and
+  `product_bounds`), on the real products where the CBMC harnesses take
+  the contracts;
+- lane l of the last group's two multipliers holds r^(16 - b) and
+  r^(8 - b), and every lane of the other groups' multipliers r^16 and
+  r^8, b being the block `load_blocks` gives lane l (`powers_mod`);
+- `load_blocks`, `digits_of_words` and `words_of_totals` keep the number
+  they convert (`blockDigits_value`, `digitsOfWords_value` and
+  `totals_value`).
+
+`bin/diff_poly1305_ifma`, in `make diff`, holds the C over the lane model
+to the spec in 4,001 comparisons: the selftest, 1,000 runs of
+`compute_powers` from r's words at 0, at 2^26 - 1, at random below 2^26
+and from random keys, and 3,000 group steps from digits at and below the
+bounds and from the multipliers `compute_powers` writes for random keys,
+over random blocks and blocks of all ones bits. Each row compares every
+digit of every lane.
+
+Tests hold the rest:
+
+- `bin/poly1305_equiv_test`, in `make check` on every host, runs the
+  128-bit path's kinds of case on the kernel's text over the model, from
+  the same seed, 358,545 in all, and searches the stack below a call over
+  four groups for r^2 to r^16 in every layout the residue search reads,
+  three 64-bit digits among them. On an x86-64 CPU with AVX-512 IFMA it
+  runs them again on the instructions. On a CPU without it skips that run
+  and says so, and under `CH_REQUIRE_AVX512_IFMA=1` fails instead.
+- The Wycheproof host binary's run under 0x11f puts the four messages of
+  the ChaCha20-Poly1305 suite that hold 512 bytes of whole blocks through
+  the kernel, where the CPU has AVX-512 IFMA.
+- `bin/x86_kernels_test` counts the kernel's calls under its 33
+  `ch_cfg.cpu` values: every seal and open of a record or packet with 528
+  bytes of whole blocks must call it once where the value holds both bits
+  and never where it lacks one, and the AVX2 kernel must not run where
+  the IFMA kernel does.
+- `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7,
+  calls `avx512_wipe_registers`, and requires each to read back as zero.
+- `test/chacha-builds.sh` compiles for x86-64 and arm64 under the pinned
+  clang and requires the kernel's 512-bit instructions in
+  `poly1305_ifma_native.c` alone, its call to `avx512_wipe_registers`,
+  its call from `poly1305_native.c` on x86-64 alone, and no IFMA entry in
+  `poly1305.c` under its own names or in the native copy under
+  `CH_CT_WIDEMUL`.
+- `make lint-wide-multiply` holds the kernel's conditional branches at 4
+  on x86-64, and `poly1305_native.c`'s at 21 there.
+  `test/widemul-builds.sh` refuses a library build that names
+  `CH_POLY1305_IFMA_MODEL`.
+
+The nightly's `rsa-ifma-sde` job runs `bin/poly1305_equiv_test`,
+`bin/chacha20_equiv_test` and `bin/avx512_wipe_test` with
+`CH_REQUIRE_AVX512_IFMA=1` under Intel SDE's model of an Ice Lake server,
+and requires each binary's line for a pass.
+
+Fourteen violations break the kernel, its model, its choice and its wipe,
+and each is caught. `bin/poly1305_equiv_test`, through the model on every
+host, catches `poly1305-ifma-carry-drops-fold`,
+`poly1305-ifma-block-without-high-bit`,
+`poly1305-ifma-last-group-powers-exchanged`,
+`poly1305-ifma-product-without-times-20` and
+`poly1305-ifma-digits-keep-high-bits`. `test/chacha-builds.sh` catches
+`poly1305-ifma-ignores-cpu-bit`, `poly1305-ifma-runs-without-cpu-bit`,
+`poly1305-ifma-without-target`, `inv17-poly1305-ifma-keeps-registers`
+and `inv17-avx512-wipe-skips-zmm31`. `test/aes-runtime-qemu.sh
+x86-kernels` catches `poly1305-ifma-without-multiply-bit`.
+`test/lint-trust-separation.sh` catches `inv16-poly1305-ifma-copy-dropped`
+and `inv16-device-object-holds-avx512-wipe`, and `test/widemul-builds.sh`
+catches `inv16-poly1305-ifma-model-in-library`.
+
+None of this proves the kernel and the loop agree on an input no case
+runs, and no proof joins the eight lanes' Horner steps into the whole
+message's polynomial. The stack search reads what one compiler left on
+one call. The kernel's timing rests on the caller's multiply bit for
+VPMADD52LUQ and VPMADD52HUQ and on construction for the rest, as the
+other kernels' does.
+
 ### A host session without the AES bit
 
 A host object's session whose caller did not set
@@ -5072,7 +5234,7 @@ computes:
 
 It follows the RFC text and never the C, because a differential oracle
 only works when a shared misreading cannot make both sides agree. There
-are three exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
+are five exceptions. `Spec/TlsWrite.lean` models `ch_writable_len` from
 `tls_write.c` line by line: its theorems bound that code's own
 intermediate values, which no RFC states. `Spec/P256WidePoint.lean`
 models `p256_wide_point_add_affine_incomplete`, the Jacobian doubling,
@@ -5080,6 +5242,8 @@ the incomplete Jacobian addition and the two conversions the same way:
 its theorems say what that code's steps compute, and no standard states
 those steps. `Spec/P256WideInverse.lean` models the rounds of
 `p256_wide_inverse.c`, whose bound no standard states either.
+`Spec/RsaIfma.lean` and `Spec/Poly1305Ifma.lean` model the AVX-512 IFMA
+kernels of `rsa_ifma.c` and `poly1305_ifma.c` the same way.
 [`spec/lean/CONTRACT.md`](../spec/lean/CONTRACT.md) says why that is
 safe.
 
@@ -5131,6 +5295,12 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    random length. Each runs with the answer apart from y and over it.
    Then the same 1,838 through `p256_wide_inverse_public` against
    `inversePublic`.
+5. The AVX-512 IFMA rows, where the compiler passes the host test, on
+   each kernel's text compiled over its lane model: `bin/diff_rsa_ifma`'s
+   ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)),
+   and `bin/diff_poly1305_ifma`'s 4,001, which hold `compute_powers` and
+   a group step to `Spec/Poly1305Ifma.lean` digit for digit
+   ([The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)).
 
 `make diff-ecdsa`, `make diff-pq` and `make diff-webpki` rebuild the
 same driver under `TRUST=raw-ecdsa`, `KEX=pq` and `TRUST=webpki`, whose

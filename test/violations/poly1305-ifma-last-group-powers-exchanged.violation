@@ -1,0 +1,14 @@
+invariant: INV-16
+file: poly1305_ifma.c
+catches: poly1305_equiv_test
+reason: compute_powers takes r^2 for lanes 4 to 7 and r for lanes 0 to
+  3, the reverse of what load_blocks' order owes them, so the last group
+  multiplies each lane's blocks by the wrong power of r and the tag is
+  wrong for every update the kernel takes. bin/poly1305_equiv_test runs
+  the kernel's own text over the lane model on every host, and
+  bin/diff_poly1305_ifma compares the multipliers with the spec's.
+
+--- old
+    multiplier_select(&of_r->last_second, 0x0f, r_one, r_two);  // r^[2,2,2,2,1,1,1,1]
+--- new
+    multiplier_select(&of_r->last_second, 0xf0, r_one, r_two);  // r^[2,2,2,2,1,1,1,1]

@@ -61,6 +61,7 @@
 #include "poly1305.h"
 #include "poly1305_avx2.h"
 #include "poly1305_ifma.h"
+#include "poly1305_ifma_model.h"
 #include "poly1305_vector.h"
 #include "x86_kernels_cpu.h"
 
@@ -183,6 +184,11 @@ static const vector_path vector_avx2 = {
     0,
 };
 #endif
+// The IFMA kernel has no key and group for the wide h1 case: its lane
+// totals are below 8 (2^44 + 2^17), so the sum carry_scalar takes for word
+// 4 is below 2^29 + 2^5, h0 >> 26 is at most 1, and the first pass leaves
+// h1 at most 2^26. A search over 1.2 billion random keys and groups on the
+// lane model found none either.
 #ifdef CH_POLY1305_IFMA
 static const vector_path vector_ifma = {
     "the AVX-512 IFMA kernel",
@@ -195,6 +201,20 @@ static const vector_path vector_ifma = {
     1,
 };
 #endif
+
+// The IFMA kernel's own text over the lane model (test/poly1305_ifma_model.c),
+// which runs on every machine. Its group and its fewest bytes are the
+// unit's, which main writes here.
+static vector_path vector_ifma_model = {
+    "the AVX-512 IFMA kernel over the lane model",
+    poly1305_ifma_model_update,
+    poly1305_ifma_model_blocks,
+    0,
+    0,
+    NULL,
+    NULL,
+    1,
+};
 
 static const vector_path *current = &vector_128;
 
@@ -436,6 +456,9 @@ static void run_path(const vector_path *path, uint64_t seed) {
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_path(&vector_128, seed);
+    vector_ifma_model.group = poly1305_ifma_model_group;
+    vector_ifma_model.min = poly1305_ifma_model_min;
+    run_path(&vector_ifma_model, seed);
 #ifdef CH_POLY1305_AVX2
     if (x86_cpu_has_avx2()) {
         run_path(&vector_avx2, seed);

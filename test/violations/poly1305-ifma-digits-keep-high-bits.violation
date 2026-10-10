@@ -1,0 +1,13 @@
+invariant: INV-16
+file: poly1305_ifma.c
+catches: poly1305_equiv_test
+reason: digits_of_words keeps digit 0's bits from 44 up after it adds them
+  to digit 1, so the accumulator the kernel starts from counts those bits
+  twice and the tag is wrong for every update whose prefix leaves them
+  set. bin/poly1305_equiv_test runs the kernel's own text over the lane
+  model on every host and compares it with poly1305.c's loop, and
+  poly1305_ifma_sums proves the digit below 2^44 + 2^17.
+
+--- old
+    l0 &= DIGIT_MASK;
+--- new

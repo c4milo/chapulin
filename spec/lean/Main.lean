@@ -60,6 +60,26 @@ def webpkiSigned : Option (ByteArray × ByteArray) → String
   | some (spki, sig) => s!"{emit spki} {emit sig}"
   | none => "FAIL"
 
+/-- A register of `poly1305_ifma.c` from 192 bytes: digit `i` of lane `l` is the 8 big-endian bytes
+at `8 (8 i + l)`, digit 0 of lanes 0 to 7 first. -/
+def ifmaRegister? (b : ByteArray) : Option Spec.Poly1305Ifma.Register := do
+  guard (b.size == 192)
+  let digit := fun (i : Nat) (l : Fin 8) =>
+    bytesToNatBE (b.extract (8 * (8 * i + l)) (8 * (8 * i + l) + 8))
+  return fun l => ⟨digit 0 l, digit 1 l, digit 2 l⟩
+
+/-- A register as `ifmaRegister?` reads one. -/
+def ifmaRegisterBytes (register : Spec.Poly1305Ifma.Register) : ByteArray :=
+  [0, 1, 2].foldl (init := ByteArray.empty) fun out i =>
+    (List.finRange 8).foldl (init := out) fun out l =>
+      let x := register l
+      out ++ natToBytesBE ([x.d0, x.d1, x.d2].getD i 0) 8
+
+/-- Block `j` of a group's 256 bytes as `load_blocks` reads it: two little-endian halves. -/
+def ifmaBlock (m : ByteArray) (j : Nat) : Spec.Poly1305Ifma.Digits :=
+  Spec.Poly1305Ifma.blockDigits (bytesToNatLE (m.extract (16 * j) (16 * j + 8)))
+    (bytesToNatLE (m.extract (16 * j + 8) (16 * j + 16)))
+
 /-- Every module's `selftest`, in order: `ok`, or `FAIL` and the first
 module that failed. Each entry is the function, not its result, and
 `never_extract` keeps `dispatch` from lifting `selftestAll ()` into a
@@ -88,6 +108,7 @@ def selftestAll (_ : Unit) : String :=
     ("p256_wide_inverse", Spec.P256WideInverse.selftest),
     ("rsa", Spec.Rsa.selftest),
     ("rsa_ifma", Spec.RsaIfma.selftest),
+    ("poly1305_ifma", Spec.Poly1305Ifma.selftest),
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
@@ -619,6 +640,35 @@ def dispatch : List String → Option String
     let e := eb.toList.map (·.toNat)
     return bytesToHex
       (natToBytesBE (Spec.RsaIfma.signPower k inverse m (2 ^ (64 * k) % m) x e) (8 * k))
+  | ["poly1305_ifma_group", digits, message, first, second] => do
+    -- One group of poly1305_ifma.c's loop on eight lanes: the lanes' digits, the group's 256
+    -- bytes and the digits of its two multipliers, each register as `ifmaRegister?` reads it. The
+    -- answer is `groupStep` on each lane (Spec/Poly1305Ifma.lean), lane l taking blocks
+    -- `blockOf l` and `8 + blockOf l`, written the same way. The guard is the hypotheses of
+    -- `groupStep_bounds` the bytes do not give.
+    let h ← ifmaRegister? (← hexArg? digits)
+    let x ← ifmaRegister? (← hexArg? first)
+    let y ← ifmaRegister? (← hexArg? second)
+    let m ← hexArg? message
+    guard (m.size == 256 && (List.finRange 8).all fun l =>
+      decide (Spec.Poly1305Ifma.Fits (h l)) && decide (Spec.Poly1305Ifma.Fits (x l)) &&
+        decide (Spec.Poly1305Ifma.Fits (y l)))
+    return bytesToHex (ifmaRegisterBytes fun l =>
+      let b := Spec.Poly1305Ifma.blockOf l
+      Spec.Poly1305Ifma.groupStep (h l) (ifmaBlock m b) (ifmaBlock m (8 + b))
+        (Spec.Poly1305Ifma.complete (x l)) (Spec.Poly1305Ifma.complete (y l)))
+  | ["poly1305_ifma_powers", words] => do
+    -- compute_powers from r's five 26-bit words, 4 big-endian bytes each, word 0 first. The
+    -- answer is the model's last_first, last_second, by_16 and by_8, each register as
+    -- `ifmaRegister?` reads one.
+    let b ← hexArg? words
+    guard (b.size == 20)
+    let w := fun (i : Nat) => bytesToNatBE (b.extract (4 * i) (4 * i + 4))
+    guard ((List.range 5).all fun i => w i < 2 ^ 26)
+    let powers := Spec.Poly1305Ifma.computePowers
+      (Spec.Poly1305Ifma.digitsOfWords (w 0) (w 1) (w 2) (w 3) (w 4))
+    return bytesToHex (ifmaRegisterBytes powers.lastFirst ++ ifmaRegisterBytes powers.lastSecond ++
+      ifmaRegisterBytes powers.by16 ++ ifmaRegisterBytes powers.by8)
   | ["p384_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 48)

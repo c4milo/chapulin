@@ -1,0 +1,13 @@
+invariant: INV-16
+file: poly1305_ifma.c
+catches: poly1305_equiv_test
+reason: multiply_add adds a2 times r2 at 2^44 rather than a2 times 20 r2,
+  the part of the product at 2^176 that is 20 2^44 modulo 2^130 - 5, so
+  every product the kernel computes is wrong and so is the tag.
+  bin/poly1305_equiv_test runs the kernel's own text over the lane model
+  on every host and compares it with poly1305.c's loop.
+
+--- old
+    lo[1] = lanes_multiply_add_low(lo[1], a[2], by->s2);
+--- new
+    lo[1] = lanes_multiply_add_low(lo[1], a[2], by->r2);

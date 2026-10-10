@@ -1,7 +1,11 @@
 // The lane operations poly1305_ifma.c's kernel runs, each one AVX-512
 // instruction on a 512-bit register of eight 64-bit lanes, lane 0 in bits
 // 63..0, but for lanes_total, the eight lanes' sum, which the compiler
-// writes as a few adds and lane moves.
+// writes as a few adds and lane moves, and lanes_wipe_registers, the call
+// that zeros every vector register. test/poly1305_ifma_model_lanes.h
+// defines the same names in portable C, written from Intel's pseudocode,
+// and bin/poly1305_equiv_test holds the kernel on these to poly1305.c's
+// loop on a CPU with AVX-512 IFMA.
 //
 // Only poly1305_ifma.c includes this file, between the attribute push that
 // turns AVX-512F and AVX-512 IFMA on and its pop, so every function here
@@ -117,6 +121,13 @@ static inline poly1305_ifma_lanes lanes_keep(poly1305_ifma_lane_bits bits, poly1
 // of the sum, three times.
 static inline uint64_t lanes_total(poly1305_ifma_lanes a) {
     return (uint64_t)_mm512_reduce_add_epi64(a);
+}
+
+// Every vector register and k1 to k7 zeroed: avx512_wipe.h's one call, a
+// block of assembly, because C names no register. poly1305_ifma.c includes
+// avx512_wipe.h before its attribute push, and says why.
+static inline void lanes_wipe_registers(void) {
+    avx512_wipe_registers();
 }
 
 #endif // CH_CPU_RUNTIME && __x86_64__

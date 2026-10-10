@@ -1,0 +1,14 @@
+invariant: INV-16
+file: Makefile
+catches: test/widemul-builds.sh
+reason: make writes CH_POLY1305_IFMA_MODEL for every host object, so
+  poly1305_ifma.c would read test/poly1305_ifma_model_lanes.h, the
+  portable model of each instruction, in place of the AVX-512
+  instructions, and a session with CH_CPU_AVX512_IFMA would run test code
+  that no library build may hold. test/widemul-builds.sh refuses a host
+  object's defines that name it.
+
+--- old
+             $(CPU_RUNTIME_DEF))
+--- new
+             $(CPU_RUNTIME_DEF) $(if $(CPU_RUNTIME_DEF),-DCH_POLY1305_IFMA_MODEL))

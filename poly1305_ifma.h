@@ -41,8 +41,12 @@
 
 // The kernel's two conditions, poly1305_vector.h's path and an x86-64
 // target, the AVX2 kernel's too, meet here, and poly1305.c and
-// poly1305_ifma.c read this one macro.
-#if defined(CH_POLY1305_VECTOR) && defined(__x86_64__)
+// poly1305_ifma.c read this one macro. A test unit that defines
+// CH_POLY1305_IFMA_MODEL defines it too, on any host: poly1305_ifma.c then
+// compiles over test/poly1305_ifma_model_lanes.h, a model of each
+// instruction in portable C. No library build names that define, which
+// test/widemul-builds.sh checks.
+#if (defined(CH_POLY1305_VECTOR) && defined(__x86_64__)) || defined(CH_POLY1305_IFMA_MODEL)
 #define CH_POLY1305_IFMA 1
 #endif
 

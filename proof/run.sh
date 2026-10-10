@@ -2540,6 +2540,42 @@ launch fast:5 full rsa_ifma_sign_power 33 "ct_wipe.0:5185" proof/ct_wipe_stub.c 
 launch slow:7 full rsa_ifma_sign_power_webpki 41 "ct_wipe.0:6465" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
 launch fast full rsa_ifma_sign_wipe 2 "ct_wipe.0:15361" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
 launch fast full rsa_ifma_sign_wipe_webpki 2 "ct_wipe.0:20481" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+# poly1305_ifma.c, Poly1305's block loop on AVX-512 IFMA, which an x86-64
+# host object runs for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA
+# beside the multiply bit. The lines that compile it compile it under
+# -DCH_POLY1305_IFMA_MODEL over test/poly1305_ifma_model_lanes.h, the model
+# of each instruction in portable C, which -Itest finds, as
+# bin/poly1305_equiv_test builds it. proof/poly1305_ifma_stubs.h states the
+# contracts they run over: each lane multiplication asserts that its
+# operands are below 2^52 and adds a value below the power of two the
+# operands' bit lengths give. poly1305_ifma_lanes discharges those
+# contracts on the model's real multiplications. poly1305_ifma_sums proves
+# no sum wraps and every carried number keeps its bounds, with
+# --unsigned-overflow-check on, from the start through a group and the lane
+# totals, and poly1305_ifma_product the same of one product of two powers,
+# the step compute_powers repeats. poly1305_ifma_blocks runs
+# poly1305_ifma_blocks whole for its memory accesses at one group and at
+# two, with each product any value and ct_wipe the stub's loop over the
+# struct of powers, 1,944 bytes in the model's layout. Its message's length
+# is a choice of two, so symbolic execution cannot tell when the group loop
+# ends, and without poly1305_ifma_blocks.1:2 it unrolled the loop toward
+# the global bound and grew past 6 GB with no verdict in 1,200 s.
+# Measured one line at a time through proof/prove-one.sh on 2026-10-09 (cbmc
+# 6.11.0, kissat 4.0.4, an M1 Pro) at a load average of 3 to 9, under a
+# sampler that summed the resident size of every process in the run. The
+# time is the processor time of cbmc and the solver. The first size is
+# /usr/bin/time -l's, the largest single process, and the second the
+# sampler's peak sum:
+#   poly1305_ifma_lanes      37 properties,  79 s, 510 MB, 583 MB
+#   poly1305_ifma_sums     1849 properties,  73 s, 1.4 GB, 2.0 GB
+#   poly1305_ifma_product  1808 properties,  28 s, 785 MB, 1.1 GB
+#   poly1305_ifma_blocks   1757 properties,  13 s, 591 MB, 986 MB
+# One formula that ran compute_powers whole on the bounded contracts took
+# 315 s and 2.9 GB, so poly1305_ifma_product proves its step instead.
+launch fast full poly1305_ifma_lanes 9 "" -DCH_CPU_RUNTIME
+launch fast full poly1305_ifma_sums 257 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
+launch fast full poly1305_ifma_product 9 "" -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest --unsigned-overflow-check
+launch fast full poly1305_ifma_blocks 513 "poly1305_ifma_blocks.1:2,ct_wipe.0:1945" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -Itest
 # rsa_sign64.c, the RSA signer on those words, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and

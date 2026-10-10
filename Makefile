@@ -545,6 +545,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           $(RSA_HOST_LINT_C) \
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
+          test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
           keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
@@ -563,7 +564,8 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8439_tests.h test/rfc8448_vectors.h \
-         test/poly1305_equiv_residue.h test/p256_equiv_field.h test/p256_equiv_residue.h \
+         test/poly1305_equiv_residue.h test/poly1305_ifma_model.h test/poly1305_ifma_model_lanes.h \
+         test/p256_equiv_field.h test/p256_equiv_residue.h \
          test/p256_equiv_table.h test/p256_verify_equiv_joint.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
@@ -2684,13 +2686,14 @@ bin/chacha20_equiv_test: test/chacha20_equiv_test.c $(CHACHA20_EQUIV_TEST_SRCS) 
 # stack a call left, for the check that the powers of r are gone
 # (test/poly1305_equiv_residue.h).
 POLY1305_EQUIV_TEST_SRCS := test/poly1305_equiv_vector.c test/poly1305_equiv_avx2.c \
-                            test/poly1305_equiv_ifma.c test/stack_residue.c poly1305.c ct.c ct_wipe.c
+                            test/poly1305_equiv_ifma.c test/poly1305_ifma_model.c test/stack_residue.c \
+                            poly1305.c ct.c ct_wipe.c
 bin/poly1305_equiv_test: test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS) poly1305_native.c \
                          poly1305_vector_native.c poly1305_vector.c poly1305_avx2_native.c \
                          poly1305_avx2.c poly1305_ifma_native.c poly1305_ifma.c avx512_wipe.c \
                          $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -I. -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
+	$(CC) $(HOST_CFLAGS) -I. -Itest -o $@ test/poly1305_equiv_test.c $(POLY1305_EQUIV_TEST_SRCS)
 # A host object's SHA-256 on the CPU's instructions against sha256.c, and
 # the copies of hkdf.c and keysched.c over it against the files under
 # their own names, all in one binary under the names the library gives
@@ -4361,10 +4364,12 @@ ifneq ($(HOST_TARGET),)
 	./bin/diff_rsa_sign64
 	$(MAKE) bin/diff_rsa_ifma
 	./bin/diff_rsa_ifma
+	$(MAKE) bin/diff_poly1305_ifma
+	./bin/diff_poly1305_ifma
 else
 	@echo "SKIP diff's wide X25519 and P-256 binaries: $(CC) fails the host test"
 	@echo "SKIP diff's RSA signers' binary: $(CC) fails the host test"
-	@echo "SKIP diff's AVX-512 IFMA binary: $(CC) fails the host test"
+	@echo "SKIP diff's AVX-512 IFMA binaries: $(CC) fails the host test"
 endif
 endif
 
@@ -4417,6 +4422,17 @@ bin/diff_rsa_ifma: test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_mont.c rs
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) -I. -Itest -o $@ \
 	  test/diff_rsa_ifma_test.c test/rsa_ifma_model.c rsa_ifma_sign.c $(RSA_IFMA_TEST_SRCS)
+# The AVX-512 IFMA Poly1305 arm: poly1305_ifma.c's group step and
+# compute_powers, compiled over the lane model as bin/poly1305_equiv_test
+# compiles them, against spec/lean/Spec/Poly1305Ifma.lean. Its own main,
+# for bin/diff_rsa_ifma's reason. test/poly1305_ifma_model.c defines
+# CH_CPU_RUNTIME itself, for ct.h's 64x64->128 multiply, so the line
+# names no define.
+bin/diff_poly1305_ifma: test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c poly1305.c \
+                        poly1305_ifma.c ct.c ct_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -I. -Itest -o $@ test/diff_poly1305_ifma_test.c test/poly1305_ifma_model.c \
+	  ct.c ct_wipe.c
 
 # The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -4942,7 +4958,7 @@ san-check:
 	  $(CC) $(SAN_HOST_CFLAGS) -I. -o bin/san/chacha20_equiv_test test/chacha20_equiv_test.c \
 	    $(CHACHA20_EQUIV_TEST_SRCS); \
 	  echo "== chacha20_equiv_test (SAN -O$(O))"; ./bin/san/chacha20_equiv_test; \
-	  $(CC) $(SAN_HOST_CFLAGS) -I. -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
+	  $(CC) $(SAN_HOST_CFLAGS) -I. -Itest -o bin/san/poly1305_equiv_test test/poly1305_equiv_test.c \
 	    $(POLY1305_EQUIV_TEST_SRCS); \
 	  echo "== poly1305_equiv_test (SAN -O$(O))"; ./bin/san/poly1305_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
@@ -5503,6 +5519,7 @@ else
 	  avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
+	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
@@ -5576,6 +5593,18 @@ else
 	  test/diff_rsa_ifma_test.c rsa_ifma_sign.c rsa_sign64.c test/rsa_ifma_sign_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL $(RSA_WIDE_DEF) \
 	  -I. -Itest)
+	# poly1305_ifma.c over the lane model, the build bin/poly1305_equiv_test
+	# and bin/diff_poly1305_ifma run on every host, so this pass reads
+	# test/poly1305_ifma_model_lanes.h; the pass of the native copies below
+	# reads the instructions. The two mains follow under their binaries'
+	# flags. test/poly1305_ifma_model.c stays out of every pass, for the
+	# reason test/aes_equiv_soft.c does below.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,poly1305_ifma.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -I. -Itest)
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,test/poly1305_equiv_test.c test/diff_poly1305_ifma_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I. -Itest)
 	# A host object's ChaCha20. chacha20_vector.c guards its body on
 	# -DCH_CPU_RUNTIME, and chacha20.c and aead.c hold the entries that
 	# take a session's ch_cfg.cpu under it, so this pass reads the three in
