@@ -1,6 +1,6 @@
 invariant: INV-17
 file: rsa_mont64.c
-catches: rsa_sign_equiv_test
+catches: rsa_sign_equiv_test_loops
 reason: rsa_mont64_mont_mul returns without wiping its running sum, so
   the last product before its subtraction and the last round's multiple
   of the modulus stay in the dead frame after every multiplication a

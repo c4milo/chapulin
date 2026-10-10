@@ -1,6 +1,6 @@
 invariant: INV-41
 file: rsa_mont64.c
-catches: rsa_equiv_test
+catches: rsa_equiv_test_sum
 reason: rsa_mont64_mont_square multiplies a_i by word i + 1 of 2a, which
   holds the top bit of a_i, where V_i holds a_{i+1} shifted up one bit and
   no bit of a_i: a square whose word i has its top bit set is then wrong.

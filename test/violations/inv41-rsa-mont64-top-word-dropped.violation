@@ -1,6 +1,6 @@
 invariant: INV-41
 file: rsa_mont64.c
-catches: rsa_equiv_test
+catches: rsa_equiv_test_sum
 reason: a round of rsa_mont64_mont_mul drops the running sum's top word,
   the bit above its k words, so a sum at or above 2^(64k) loses that bit
   and the product is wrong by a power of two. A modulus with its top bit

@@ -2660,6 +2660,14 @@ RSA_SIGN_EQUIV_TEST_SRCS := test/rsa_sign_equiv_pieces.c test/stack_residue.c rs
 bin/rsa_sign_equiv_test: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -o $@ test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
+# The same check with rsa_mont64.c's loops wherever a build would take the
+# _addcarry_u64 rows, as bin/rsa_equiv_test_sum holds the loops' words
+# (docs/decisions.md 122): gcc's x86-64 build of the signer runs the rows,
+# so without this build no x86-64 run reads the loops' wipes.
+bin/rsa_sign_equiv_test_loops: test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DRSA_MONT64_ADDCARRY=0 $(RSA_WIDE_DEF) -I. -o $@ \
+	  test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS)
 # rsa_ifma_sign.c's exponentiations against rsa_sign64.c's window, and
 # rsa_sign64_sp1 on AVX-512 IFMA against the same call on the window
 # (docs/decisions.md 120). test/rsa_ifma_sign_entries.c compiles
@@ -3738,7 +3746,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
                                  bin/rsa_ifma_equiv_test bin/avx512_wipe_test bin/rsa_avx2_model_test \
                                  bin/rsa_avx2_model_test_384 bin/rsa_avx2_equiv_test \
-                                 bin/rsa_sign_equiv_test \
+                                 bin/rsa_sign_equiv_test bin/rsa_sign_equiv_test_loops \
                                  bin/rsa_ifma_sign_model_test bin/rsa_ifma_sign_model_test_384 \
                                  bin/rsa_ifma_sign_equiv_test bin/rsa_ifma_sign_equiv_test_384 \
                                  bin/rsa_ifma_sign_residue_test bin/rsa_ifma_sign_residue_test_384 \

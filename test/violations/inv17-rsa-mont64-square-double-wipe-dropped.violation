@@ -1,6 +1,6 @@
 invariant: INV-17
 file: rsa_mont64.c
-catches: rsa_sign_equiv_test
+catches: rsa_sign_equiv_test_loops
 reason: rsa_mont64_mont_square returns without wiping d, twice its operand,
   so after every square a signature makes the dead frame holds the
   power it squared, shifted up one bit. No output changes, so no vector

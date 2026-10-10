@@ -1,6 +1,6 @@
 invariant: INV-41
 file: rsa_mont64.c
-catches: rsa_equiv_test
+catches: rsa_equiv_test_sum
 reason: rsa_mont64_mont_square adds nothing at a row's offset k, where a_i
   times the top bit of a_{k-1} belongs, so every square of a number whose
   top word has its top bit set comes out short. bin/rsa_equiv_test holds
