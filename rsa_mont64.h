@@ -9,7 +9,9 @@
 // Its caller is rsa_vp1 (rsa_mont.c), the public operation both verifiers
 // run in a host object. On x86-64, rsa_vp1_cpu hands that operation to
 // rsa_ifma.h's rsa_ifma_public instead, for a session whose ch_cfg.cpu
-// holds CH_CPU_AVX512_IFMA and a modulus that call takes. A modulus, a
+// holds CH_CPU_AVX512_IFMA and a modulus that call takes, and to
+// rsa_avx2.h's rsa_avx2_public for a session whose ch_cfg.cpu holds
+// CH_CPU_AVX2 and not that bit and the same moduli. A modulus, a
 // signature and an encoded message are public, so the multiply's timing
 // needs no statement from anybody there.
 //

@@ -139,7 +139,10 @@ struct Cpu {
     bool constant_time_multiply = false;
     // The CPU has AVX2 and its operating system saves the 256-bit
     // registers: CH_CPU_AVX2, which runs the session's ChaCha20 keystream
-    // in 256-bit vectors. An x86-64 bit, which an arm64 object refuses.
+    // in 256-bit vectors, and without avx512_ifma RSA verification's
+    // public operation on rsa_avx2.c's 28-bit digits, or 27-bit above
+    // 3,072 bits, four to a 256-bit register, for the moduli avx512_ifma
+    // names. An x86-64 bit, which an arm64 object refuses.
     bool avx2 = false;
     // The CPU also has VAES and VPCLMULQDQ on those registers:
     // CH_CPU_VAES, which beside constant_time_aes runs AES-GCM's whole

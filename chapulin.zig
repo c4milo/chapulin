@@ -352,8 +352,10 @@ const CpuBits = struct {
     /// on the 51-bit-word field.
     constant_time_multiply: bool = false,
     /// CH_CPU_AVX2: the CPU has AVX2 and its operating system saves the 256-bit registers, and the
-    /// session's ChaCha20 keystream runs in 256-bit vectors. An x86-64 bit, which an arm64 object
-    /// refuses.
+    /// session's ChaCha20 keystream runs in 256-bit vectors. Without avx512_ifma the session also
+    /// runs RSA verification's public operation on rsa_avx2.c's 28-bit digits, or 27-bit above
+    /// 3,072 bits, four to a 256-bit register, for the moduli avx512_ifma names. An x86-64 bit,
+    /// which an arm64 object refuses.
     avx2: bool = false,
     /// CH_CPU_VAES: the CPU also has VAES and VPCLMULQDQ on those registers, and beside
     /// constant_time_aes AES-GCM's whole blocks run two to a register. An x86-64 bit as well.

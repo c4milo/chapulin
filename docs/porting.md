@@ -111,9 +111,12 @@ runs nothing (decision 90). `CH_CPU_AVX512_IFMA` says the CPU has AVX-512F and
 AVX-512 IFMA and its operating system saves the opmask and 512-bit registers;
 with it a session runs RSA verification's public operation on `rsa_ifma.c`, in
 digits of 52 bits, eight to a 512-bit register, for an odd modulus of 2,048
-bits or more whose bit length is a multiple of 64. `x509.c` verifies the chain
-links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they
-run `rsa_mont64.c` whatever the bit says. Set each from your
+bits or more whose bit length is a multiple of 64. A session with `CH_CPU_AVX2`
+and without the IFMA bit runs the same moduli on `rsa_avx2.c`, in digits of 28
+bits, or 27 above 3,072 bits, four to a 256-bit register (decision 122).
+`x509.c` verifies the chain links of `TRUST=ca-rsa` with `rsa_pss_verify`,
+which takes no `cpu`, so they run `rsa_mont64.c` whatever the two bits say. Set
+each from your
 probe alone: a session whose bit names instructions its CPU lacks faults on the
 first one.
 

@@ -306,14 +306,18 @@ functions alone, as make's does (docs/decisions.md 119).
   `cpu_cfg.h` says what each claims. `avx2`, `vaes` and `avx512_ifma` are
   x86-64's and say what the CPU has: with `avx2` the session's ChaCha20
   runs in 256-bit vectors, and with `vaes` beside `constant_time_aes` its
-  AES-GCM runs on VAES and VPCLMULQDQ (docs/decisions.md 90).
+  AES-GCM runs on VAES and VPCLMULQDQ (docs/decisions.md 90). With `avx2`
+  and without `avx512_ifma` the session runs RSA verification's public
+  operation on `rsa_avx2.c`, in digits of 28 bits, or 27 above 3,072
+  bits, four to a 256-bit register, for the moduli `avx512_ifma` names
+  below (docs/decisions.md 122).
   `avx512_ifma` says the CPU has AVX-512F and AVX-512 IFMA and its
   operating system saves the 512-bit registers, and with it the session
   runs RSA verification's public operation on `rsa_ifma.c`, in digits of
   52 bits, eight to a 512-bit register, for an odd modulus of 2,048 bits
   or more whose bit length is a multiple of 64. `x509.c` verifies the chain
   links of `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so
-  they run `rsa_mont64.c` whatever the field says.
+  they run `rsa_mont64.c` whatever the two fields say.
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with

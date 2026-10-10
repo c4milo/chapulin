@@ -74,7 +74,9 @@
 // packet's Poly1305 runs a ciphertext of 512 bytes or more of whole blocks eight blocks at a time
 // in four lanes, on poly1305_avx2.c's kernel, and without one of the two bits it takes the path
 // that bit leaves (widemul.h's widemul_poly1305_avx2, docs/decisions.md 110), and
-// CH_CPU_AVX512_IFMA, below, picks a 512-bit kernel ahead of each AVX2 one. A session with
+// CH_CPU_AVX512_IFMA, below, picks a 512-bit kernel ahead of each AVX2 one. CH_CPU_AVX2 also
+// picks RSA verification's AVX2 kernel, which the RSA entry under CH_CPU_AVX512_IFMA below
+// states beside the IFMA one. A session with
 // CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES runs AES-GCM's whole blocks two to a 256-bit register,
 // and one with the AES bit alone on the 128-bit instructions (gcm_vaes.h's gcm_use_vaes): the AES
 // bit's statement covers the 256-bit forms, and CH_CPU_VAES without it runs nothing. No bit turns
@@ -88,11 +90,15 @@
 // presence alone and no timing. Four kernels read it:
 //   - RSA verification, whose inputs are all public. rsa_mont.c's rsa_vp1_cpu sends the
 //     verifiers' public operation to rsa_ifma.c for an odd modulus of 2,048 bits or more whose
-//     bit length is a multiple of 64, and to rsa_mont64.c for any other. x509.c verifies the
-//     chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu, so they run
-//     rsa_mont64.c whatever the bit says. rsa_ifma.c runs the public operation in digits of 52
-//     bits, eight to a 512-bit register, on VPMADD52LUQ and VPMADD52HUQ, and writes the bytes
-//     rsa_mont64.c writes: a session with the bit computes what a session without it computes.
+//     bit length is a multiple of 64. A session with CH_CPU_AVX2 and without this bit sends the
+//     same moduli to rsa_avx2.c, and every session sends any other modulus to rsa_mont64.c.
+//     x509.c verifies the chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu,
+//     so they run rsa_mont64.c whatever the two bits say. rsa_ifma.c runs the public operation
+//     in digits of 52 bits, eight to a 512-bit register, on VPMADD52LUQ and VPMADD52HUQ, and
+//     rsa_avx2.c in digits of 28 bits, or 27 above 3,072 bits, four to a 256-bit register, on
+//     VPMULUDQ, whose operands are public, so it needs no CH_CPU_CONSTANT_TIME_MULTIPLY. Each
+//     writes the bytes rsa_mont64.c writes: a session with either bit computes what a session
+//     with neither computes (docs/decisions.md 119 and 122).
 //   - RSA signing, with CH_CPU_CONSTANT_TIME_MULTIPLY beside it, whose statement covers those
 //     52-bit products: rsa_sign64.c computes a server's two exponentiations on rsa_ifma_sign.c
 //     and checks each signature on rsa_ifma.c through rsa_vp1_cpu, and after each call wipes

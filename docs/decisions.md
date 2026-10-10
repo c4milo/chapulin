@@ -6295,7 +6295,9 @@ does nothing more.
       `CH_CPU_AVX512_IFMA` runs the public operation on `rsa_ifma.c`
       for an odd modulus whose bit length is a multiple of 64, at least
       2,048. Every other session, and every other modulus, still runs the
-      64-bit arm.
+      64-bit arm. Entry 122 amends it once more: a session that holds
+      `CH_CPU_AVX2` and not `CH_CPU_AVX512_IFMA` runs the same moduli on
+      `rsa_avx2.c`.
     - **One pass a round.** A round of the multiplication adds `a[i] * b`
       and `u * m` to the running sum in one pass over the words, each
       product with a carry of its own. `rsa_mont.c` makes two passes. In
@@ -7707,7 +7709,10 @@ does nothing more.
       `keccak_avx2.h` or call its entries.
     - **The bit.** `CH_CPU_AVX2` already picks `chacha20_avx2.c` (entry
       90). It states no timing, and this path needs none, because its
-      input is public.
+      input is public. Entry 122 amends this bullet: the bit also picks
+      `rsa_avx2.c` for RSA verification's public operation, in a session
+      that does not hold `CH_CPU_AVX512_IFMA`, and that input is public
+      too.
     - **One rejection step.** `mlk_sample_groups` in `mlkem_poly.h` is the
       loop over three-byte groups that `mlk_sample_ntt` ran inline, so
       both paths read a stream by the text the `mlkem_poly` proof covers.
@@ -8672,7 +8677,11 @@ does nothing more.
       the next: in the container the same code took 2.00 and 1.52 µs, and
       for x86-64 it ran 32,112 and 24,287 instructions where this tree's
       run 26,318 and 23,413. It would be a second pair of routines for
-      clang alone, each with its own proofs, and is not done here.
+      clang alone, each with its own proofs, and is not done here. Entry
+      122 amends this bullet: gcc 13 keeps a chain of `_addcarry_u64`
+      calls in the carry flag, and a gcc host object for x86-64 multiplies
+      and squares in rows of four words on such chains, in
+      `rsa_mont64_addcarry.c`.
     - **One column of the result at a time**, its running sum in three
       words: 1.23 and 1.13 µs under clang.
 
@@ -9086,7 +9095,10 @@ does nothing more.
       bits, the size of an RSA-2048 signer's primes, in 0.94 to 1.39
       times it. It would also run under `CH_CPU_AVX2`, which picks
       ChaCha20's and ML-KEM's kernels too, so a caller could not keep it
-      off a CPU where it loses.
+      off a CPU where it loses. Entry 122 amends this bullet: a session
+      that holds `CH_CPU_AVX2` and not `CH_CPU_AVX512_IFMA` verifies on
+      `rsa_avx2.c`, which took 0.50 to 0.71 of the loops' time on six
+      runners, and no signature runs it.
     - **MULX.** It needs BMI2, which no bit of `ch_cfg.cpu` states, so it
       would need a bit of its own. In the same run its blocks of four
       words ran a 2,048-bit multiplication in 0.62 to 0.95 of the loops'
@@ -9101,7 +9113,10 @@ does nothing more.
       Under clang that shape took 0.95, 1.05 and 1.07 times it on the
       three Intel CPUs, and the other shape 1.10 to 1.29 times it. It
       would be a second multiplication and square for gcc alone, in
-      intrinsics no harness reads, and is not done here.
+      intrinsics no harness reads, and is not done here. Entry 122 amends
+      this bullet: a gcc host object for x86-64 runs that second
+      multiplication and square, and its proofs read the chains as 128-bit
+      sums.
     - **Signing on IFMA.** The signer's operands are secret, and neither
       the 512-bit registers nor the slots the compiler keeps them in can
       be wiped (above). Entry 120 reverses this under the multiply bit.
@@ -9508,7 +9523,9 @@ does nothing more.
     verified on those loops. Camilo ruled on 2026-10-09 to land these rows
     for gcc on x86-64, with no assembly on a secret, and for CPUs without
     AVX-512 to run verification's public operation on AVX2 under
-    `CH_CPU_AVX2`, with no new bit.
+    `CH_CPU_AVX2`, with no new bit. This entry amends entries 95, 107, 117
+    and 119 where they say what `CH_CPU_AVX2` picks, how gcc adds RSA's
+    carries, and what a CPU without AVX-512 IFMA verifies on.
 
     The rows:
 

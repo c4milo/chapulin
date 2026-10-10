@@ -33,7 +33,8 @@ int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size
 // session's ch_cfg.cpu first, under rsa_pkcs1_verify's contract, and
 // gives its result for every input. It runs the public operation through
 // rsa.h's rsa_vp1_cpu, which takes AVX-512 IFMA on x86-64 where cpu holds
-// CH_CPU_AVX512_IFMA, and so requires what that entry requires.
+// CH_CPU_AVX512_IFMA, and AVX2 where it holds CH_CPU_AVX2 and not that
+// bit, and so requires what that entry requires.
 int rsa_pkcs1_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *digest,
                          size_t digest_len, const uint8_t *sig, size_t sig_len);
 #endif

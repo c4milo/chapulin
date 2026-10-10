@@ -167,9 +167,12 @@ Other targets:
   RSA verification's public operation on `rsa_ifma.c`, in digits of 52
   bits, eight to a 512-bit register, for an odd modulus of 2,048 bits or
   more whose bit length is a multiple of 64. It writes the bytes
-  `rsa_mont64.c` writes. `x509.c` verifies the chain links of
+  `rsa_mont64.c` writes. A session with `CH_CPU_AVX2` and without the
+  IFMA bit runs the same moduli on `rsa_avx2.c`, in digits of 28 bits,
+  or 27 above 3,072 bits, four to a 256-bit register, and writes the
+  same bytes (decision 122). `x509.c` verifies the chain links of
   `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they run
-  `rsa_mont64.c` whatever the bit says.
+  `rsa_mont64.c` whatever the two bits say.
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

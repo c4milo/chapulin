@@ -53,17 +53,20 @@ void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 // the session's ch_cfg.cpu first, under the contract of the call it is
 // named for, and gives that call's result for every input, an even n
 // included. On x86-64, rsa_vp1_cpu hands the public operation to
-// rsa_ifma.h's AVX-512 IFMA kernel where cpu holds CH_CPU_AVX512_IFMA and
-// n is a modulus the kernel takes: at least RSA-2048, its top bit set, and
-// odd. Every other input, and every input on arm64, takes rsa_vp1. The
+// rsa_ifma.h's AVX-512 IFMA kernel where cpu holds CH_CPU_AVX512_IFMA, and
+// to rsa_avx2.h's AVX2 kernel where it holds CH_CPU_AVX2 and not that bit,
+// for n a modulus the kernels take: at least RSA-2048, its top bit set,
+// and odd. Every other input, and every input on arm64, takes rsa_vp1. The
 // calls above, which take no value, run rsa_mont64.c in every session. A
 // call holds no session, so a caller that holds one passes its value in
 // an argument, as sha256.h's entries take it.
 //
-// Requires: what the plain call requires, and where cpu holds
+// Requires: what the plain call requires; where cpu holds
 // CH_CPU_AVX512_IFMA, a CPU with AVX-512F and AVX-512 IFMA whose operating
-// system saves the 512-bit registers, which the session's caller states.
-// On a CPU without them the first such instruction faults.
+// system saves the 512-bit registers; and where it holds CH_CPU_AVX2, a
+// CPU with AVX2 whose operating system saves the 256-bit registers. The
+// session's caller states both. On a CPU without them the first such
+// instruction faults.
 void rsa_vp1_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 int rsa_pss_verify_cpu(uint32_t cpu, const uint8_t *n, size_t n_len, const uint8_t msg_hash[32],
                        const uint8_t *sig, size_t sig_len);
