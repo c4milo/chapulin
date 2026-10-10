@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: proof/prove-one.sh rsa_ifma_sign_power
+reason: the exponentiation runs one step more than the exponent has
+  digits, so table_select reads the byte past the exponent's end and the
+  power is raised once more. The rsa_ifma_sign_power proof runs
+  rsa_ifma_sign_power_pair whole and checks every read of the exponent.
+
+--- old
+    for (size_t i = 0; i < 2 * e_len; i++) {
+--- new
+    for (size_t i = 0; i < 2 * e_len + 1; i++) {

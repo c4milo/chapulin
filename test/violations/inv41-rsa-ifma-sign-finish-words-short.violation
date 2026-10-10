@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: proof/prove-one.sh rsa_ifma_sign_setup
+reason: state_finish's array holds a prime's largest word count and not
+  the word above it, which digits_to_words writes and the subtraction
+  reads, so at that count both pass the array's end. The rsa_ifma_sign_setup
+  proof runs state_finish at every prime word count the build admits, the
+  largest among them.
+
+--- old
+    uint64_t words[RSA_IFMA_SIGN_WORDS_MAX + 1];
+    digits_to_words(words, mod->words, s->power, s->modulus.digit_count);
+--- new
+    uint64_t words[RSA_IFMA_SIGN_WORDS_MAX];
+    digits_to_words(words, mod->words, s->power, s->modulus.digit_count);

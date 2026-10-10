@@ -1,0 +1,16 @@
+invariant: INV-41
+file: rsa_ifma_sign.c
+catches: proof/prove-one.sh rsa_ifma_sign_select
+reason: table_select's register loop stops one register short, so the top
+  eight lanes of every entry it reads keep what the output held before:
+  the product by the entry then multiplies by a number whose high digits
+  belong to an earlier step. The rsa_ifma_sign_select proof states that
+  every lane of the build's registers holds the digit's entry, for every
+  register count the build admits.
+
+--- old
+    for (size_t j = 0; j < registers; j++) {
+        rsa_ifma_lanes picked = lanes_zero();
+--- new
+    for (size_t j = 0; j + 1 < registers; j++) {
+        rsa_ifma_lanes picked = lanes_zero();

@@ -2365,6 +2365,13 @@ launch fast full rsa_sign 385 "" ct.c proof/ct_wipe_stub.c
 #   rsa_mont64_mul128            3 properties,   1 s, 22 MB
 #   rsa_mont64_ops             610 properties,  21 s, 1.2 GB
 #   rsa_mont64_ops_webpki      610 properties,  31 s, 1.5 GB
+# The two rsa_mont64_ops lines were measured again on 2026-10-09 through
+# proof/prove-one.sh, at a load average of 3 to 5, after the sum with its
+# output and both operands one array joined them, the doubling
+# rsa_ifma_sign.c's state_setup runs (wall time, the largest process and
+# the summed size of cbmc and the solver):
+#   rsa_mont64_ops             851 properties,  21 s, 1.6 GB, 2.0 GB
+#   rsa_mont64_ops_webpki      851 properties,  42 s, 1.5 GB, 2.1 GB, hence fast:3
 # The lines below that read the step's sum (docs/decisions.md 117) were
 # measured again the same way on 2026-10-07 through proof/prove-one.sh,
 # one at a time, at a load average of 2 to 5:
@@ -2386,7 +2393,7 @@ launch fast full rsa_mont64_step 2 "" -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_step_sum 2 "" -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_sums 6 "ct_wipe.0:49" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_ops 385 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
-launch fast full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
+launch fast:3 full rsa_mont64_ops_webpki 513 "" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_mont64_mul 50 "ct_wipe.0:401" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_mont64_mul_webpki 66 "ct_wipe.0:529" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # rsa_mont64_blocks.c, the multiplication and square in blocks of four words that a clang build
@@ -2485,6 +2492,54 @@ launch fast full rsa_ifma_product_webpki 81 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MO
 launch fast:4 full rsa_mont_power 51 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
 launch fast:5 full rsa_mont_power_webpki 66 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
 launch fast full rsa_mont_power_value 132 "power_of_two_mod.1:2" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+# rsa_ifma_sign.c, RSA signing's two exponentiations on AVX-512 IFMA,
+# which an x86-64 host object runs for a session whose ch_cfg.cpu holds
+# CH_CPU_AVX512_IFMA and the multiply bit (docs/decisions.md 120). Its lines
+# compile it over the lane model as the rsa_ifma lines compile rsa_ifma.c,
+# and each has a variant under CH_TRUST_WEBPKI, the 512-byte bound, whose
+# primes take five registers. rsa_ifma_sign_pair runs the copies of the two
+# products side by side, 3 and 4 registers and 5 under CH_TRUST_WEBPKI, in
+# each aliasing shape the exponentiation calls them in, for their memory
+# accesses, over proof/rsa_ifma_stubs.h's contracts for every lane
+# operation. rsa_ifma_sign_select proves table_select writes the digit's
+# entry, every lane of it, on the model's own lane operations, which run no
+# multiplication. rsa_ifma_sign_setup runs state_setup and state_finish at
+# every prime word count, and proves the two conversions between words and
+# digits inverse at each. rsa_ifma_sign_power runs rsa_ifma_sign_power_pair
+# whole at the smallest and the largest prime word count, with one-byte
+# exponents, for its memory accesses. Those two lines run the three
+# rsa_mont64.c entries the file calls as proof/rsa_ifma_sign_stubs.h's
+# contracts: with rsa_mont64.c's own text there, the setup line passed 8 GB
+# in two minutes. rsa_ifma_sign_wipe runs the wipe of the stack below the
+# caller, whose ct_wipe loop must run exactly its array's length. No sum of
+# the round wraps: the round is rsa_ifma_product.h's, which rsa_ifma_sums
+# proves through rsa_ifma.c.
+# Measured one line at a time through proof/prove-one.sh on 2026-10-09
+# (cbmc 6.11.0, kissat 4.0.4, an M1 Pro), at a load average of 3 to 7, as
+# the rsa_ifma lines above were: properties, wall time, the largest
+# process's resident size and the summed size of cbmc and the solver.
+#   rsa_ifma_sign_pair            1223 properties,  20 s, 796 MB, 782 MB
+#   rsa_ifma_sign_pair_webpki     1223 properties,  18 s, 776 MB, 762 MB
+#   rsa_ifma_sign_select           723 properties, 268 s, 473 MB, 728 MB
+#   rsa_ifma_sign_select_webpki    723 properties,  70 s, 440 MB, 625 MB
+#   rsa_ifma_sign_setup           1390 properties,  78 s, 1.9 GB, 2.6 GB, hence fast:3
+#   rsa_ifma_sign_setup_webpki    1390 properties, 153 s, 3.6 GB, 4.5 GB, hence fast:5
+#   rsa_ifma_sign_power           1362 properties, 327 s, 4.9 GB, 4.7 GB, hence fast:5
+#   rsa_ifma_sign_power_webpki    1362 properties, 474 s, 6.9 GB, 6.6 GB, hence slow:7
+#   rsa_ifma_sign_wipe             725 properties,   9 s, 112 MB, 127 MB
+#   rsa_ifma_sign_wipe_webpki      725 properties,   7 s, 147 MB, 148 MB
+# rsa_ifma_sign_power_webpki takes the slow tier for its memory, as
+# rsa_ifma_public_webpki does.
+launch fast full rsa_ifma_sign_pair 33 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_sign_pair_webpki 41 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_sign_select 33 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_sign_select_webpki 41 "" -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast:3 full rsa_ifma_sign_setup 49 "ct_wipe.0:209" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast:5 full rsa_ifma_sign_setup_webpki 53 "ct_wipe.0:273" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast:5 full rsa_ifma_sign_power 33 "ct_wipe.0:5185" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch slow:7 full rsa_ifma_sign_power_webpki 41 "ct_wipe.0:6465" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_sign_wipe 2 "ct_wipe.0:15361" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
+launch fast full rsa_ifma_sign_wipe_webpki 2 "ct_wipe.0:20481" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL -Itest
 # rsa_sign64.c, the RSA signer on those words, which a host object runs
 # for a session that states its multiply (docs/decisions.md 95). It
 # multiplies only through rsa_mont64.c, so rsa_sign64_power's and
@@ -2522,12 +2577,24 @@ launch fast full rsa_mont_power_value 132 "power_of_two_mod.1:2" -DCH_CPU_RUNTIM
 # of 12 to 41 while it still wrote zeros to its output first. The window
 # lines took 190 MB and 232 MB then: the output's own words are an input
 # of the read now.
+# rsa_sign64_ifma runs the AVX-512 IFMA arm under -DCH_RSA_IFMA_MODEL,
+# which compiles it on any target (docs/decisions.md 120): both_powers,
+# the check and the copy, with the two kernels and the wipe below the
+# caller as contracts in the harness that record what each call was
+# handed. It states the arguments of each call, that a wipe follows each,
+# and rsa_sign64_crt's statements of the check and the copy. Measured on
+# 2026-10-09 through proof/prove-one.sh at a load average of 6 (wall
+# time, the largest process and the summed size of cbmc and the solver):
+#   rsa_sign64_ifma            849 properties,  13 s, 529 MB, 527 MB
+#   rsa_sign64_ifma_webpki     849 properties,  17 s, 793 MB, 776 MB
 launch fast full rsa_sign64_window 385 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_sign64_window_webpki 513 "" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME --unsigned-overflow-check
 launch fast full rsa_sign64_power 385 "ct_wipe.0:3073" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_power_webpki 513 "ct_wipe.0:4097" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_crt 385 "ct_wipe.0:385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 launch fast full rsa_sign64_crt_webpki 513 "ct_wipe.0:513" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full rsa_sign64_ifma 385 "ct_wipe.0:385" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
+launch fast full rsa_sign64_ifma_webpki 513 "ct_wipe.0:513" ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME -DCH_RSA_IFMA_MODEL
 
 FAIL=0
 i=0

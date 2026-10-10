@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-97 of the 129 C sources in the tree root are compiled into a
+98 of the 129 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -46,7 +46,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 32 sources are in no such harness:
+The other 31 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -70,7 +70,6 @@ The other 32 sources are in no such harness:
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
-| `rsa_ifma_sign.c` | No harness yet. It runs RSA signing's two exponentiations on AVX-512 IFMA, over `rsa_ifma_product.h`'s round, which the `rsa_ifma` harnesses compile through `rsa_ifma.c`. | `bin/rsa_ifma_sign_model_test` holds it over the lane model to `rsa_sign64.c`'s window on every machine, and on a CPU with AVX-512 IFMA `bin/rsa_ifma_sign_equiv_test` holds the instructions to the window and `bin/rsa_ifma_sign_residue_test` searches the stack and the registers each call leaves. |
 | `avx512_wipe.c` | Its one function is a block of inline assembly that zeros the vector and mask registers, and it has a body in an x86-64 host object alone. | `tools/proof-cover.py`'s audit entry records what the block does. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
@@ -1052,7 +1051,9 @@ The entries are grouped by area:
     arrays and wrap nothing, at the largest word count. `mask_of_bit` is
     all ones or all zeros, and `at_or_above` answers one bit. So do
     `rsa_mont64_add` and `rsa_mont64_sub`, with the output apart from
-    both operands, on the first and on the second, and
+    both operands, on the first and on the second, `rsa_mont64_add` with
+    the output and both operands one array, the doubling of
+    [rsa_ifma_sign](#rsa_ifma_sign)'s `state_setup`, and
     `rsa_mont64_reduce_once`.
   - `rsa_mont64_mul`: the multiplication reads and writes inside its
     arrays at the largest word count, in the four aliasing shapes, the
@@ -1182,9 +1183,65 @@ The entries are grouped by area:
   are held to the model only by `bin/rsa_ifma_equiv_test`, on a CPU with
   AVX-512 IFMA or under SDE.
 
+#### rsa_ifma_sign
+
+- **Harnesses:** `rsa_ifma_sign_pair` (fast), `rsa_ifma_sign_pair_webpki` (fast), `rsa_ifma_sign_select` (fast), `rsa_ifma_sign_select_webpki` (fast), `rsa_ifma_sign_setup` (fast), `rsa_ifma_sign_setup_webpki` (fast), `rsa_ifma_sign_power` (fast), `rsa_ifma_sign_power_webpki` (slow), `rsa_ifma_sign_wipe` (fast), `rsa_ifma_sign_wipe_webpki` (fast)
+- **Build:** RSA signing's two exponentiations on AVX-512 IFMA
+  (`rsa_ifma_sign.c`, INV-41), under `-DCH_CPU_RUNTIME` and
+  `-DCH_RSA_IFMA_MODEL`, over `test/rsa_ifma_model_lanes.h`, as the
+  [rsa_ifma](#rsa_ifma) lines compile `rsa_ifma.c`. The pair, setup and
+  power lines run every lane operation as a contract
+  (`proof/rsa_ifma_stubs.h`), and the setup and power lines the three
+  `rsa_mont64.c` entries the file calls as contracts
+  (`proof/rsa_ifma_sign_stubs.h`), which the [rsa_mont64](#rsa_mont64)
+  harnesses discharge. The select line runs the model's own lane
+  operations, which multiply nothing there. The
+  `_webpki` lines are the same harnesses at the `CH_TRUST_WEBPKI` bound,
+  whose largest primes take five registers.
+- **Proves:**
+  - `rsa_ifma_sign_pair`: `product_pair` and the copies of the two
+    products side by side read and write inside their arrays at 3 and 4
+    registers, and at 5 under `CH_TRUST_WEBPKI`, each at the largest
+    prime word count it holds, over any digits and any m0inv below 2^52,
+    in each aliasing shape the exponentiation calls them in.
+  - `rsa_ifma_sign_select`: `table_select` writes the table's entry at
+    the exponent's digit to every lane of the build's registers and
+    leaves the lanes past them as they were, for any table, any exponent
+    byte and either digit of it: the high half of the byte for an even
+    index and the low half for an odd one.
+  - `rsa_ifma_sign_setup`: `state_setup` and `state_finish` read and
+    write inside their arrays at every prime word count from 16 to 24,
+    and to 32 under `CH_TRUST_WEBPKI`; and at each of those counts
+    `words_to_digits` and then `digits_to_words` write any k words back,
+    with a zero word above them.
+  - `rsa_ifma_sign_power`: `rsa_ifma_sign_power_pair` whole reads and
+    writes inside its arrays at the smallest and the largest prime word
+    count of each build, with each output on its base, as `rsa_sign64.c`
+    calls it.
+  - `rsa_ifma_sign_wipe`: `rsa_ifma_sign_wipe_below` runs `wipe_frame`
+    through its volatile pointer, and that wipe writes zero to every byte
+    of its array of `RSA_IFMA_SIGN_BELOW_LEN` bytes and to no byte
+    outside it.
+- **Bound:** the prime word counts above; exponents of one byte, two
+  steps, for `rsa_ifma_sign_power`, whose steps run the same statements
+  at every index. `rsa_ifma_sign_power_webpki` peaks near 7 GB, so it
+  runs in the slow tier, and its verdict comes from the last nightly.
+- **Not proved:** any value of a product or of an exponentiation.
+  `bin/rsa_ifma_sign_model_test` holds every exponentiation to
+  `rsa_sign64.c`'s window over the lane model, and on a CPU with AVX-512
+  IFMA `bin/rsa_ifma_sign_equiv_test` holds the instructions to it. That
+  no sum of the round wraps rests on `rsa_ifma_sums`, which compiles the
+  same round, `rsa_ifma_product.h`'s, through `rsa_ifma.c`, and on the
+  bound Lean proves on its model of the rounds ([rsa_ifma](#rsa_ifma)).
+  That the wipe's array lies where the frames of the calls before it
+  lay is not a property of C: `bin/rsa_ifma_sign_residue_test` measures
+  it. That a compiler emits no branch for `table_select`'s mask rests on
+  a Semgrep rule and on the branch counts of `make lint-wide-multiply`
+  (INV-16).
+
 #### rsa_sign64
 
-- **Harnesses:** `rsa_sign64_window` (fast), `rsa_sign64_window_webpki` (fast), `rsa_sign64_power` (fast), `rsa_sign64_power_webpki` (fast), `rsa_sign64_crt` (fast), `rsa_sign64_crt_webpki` (fast)
+- **Harnesses:** `rsa_sign64_window` (fast), `rsa_sign64_window_webpki` (fast), `rsa_sign64_power` (fast), `rsa_sign64_power_webpki` (fast), `rsa_sign64_crt` (fast), `rsa_sign64_crt_webpki` (fast), `rsa_sign64_ifma` (fast), `rsa_sign64_ifma_webpki` (fast)
 - **Build:** a host object's RSA signer on 64-bit words
   (`rsa_sign64.c`, INV-41 and INV-42), under `-DCH_CPU_RUNTIME`. The two
   `rsa_sign64_window` lines add `--unsigned-overflow-check`.
@@ -1219,6 +1276,20 @@ The entries are grouped by area:
     buffer as it was unless that check passed, and then the buffer
     holds the candidate; and the key test returns 1 exactly when every
     word of the product is the word of the modulus (INV-42).
+  - `rsa_sign64_ifma`: the AVX-512 IFMA arm, under a `ch_cfg.cpu` value
+    that holds `CH_CPU_AVX512_IFMA` and the multiply bit and with
+    `-DCH_RSA_IFMA_MODEL`, under which the arm compiles on any target.
+    `both_powers` calls `rsa_ifma_sign_power_pair` once, on both halves
+    in place, with `dp`, `dq`, both primes' records and the primes'
+    length, and then wipes the stack below it once. The check calls
+    `rsa_vp1_cpu` once, under the session's value, on the key's modulus
+    and the whole candidate, and then wipes the stack below it once; and
+    the check and the write keep `rsa_sign64_crt`'s statements. The
+    kernels and the wipe are contracts in the harness that assert what
+    each needs of its arguments, and the [rsa_ifma_sign](#rsa_ifma_sign)
+    and [rsa_ifma](#rsa_ifma) harnesses prove the real ones. Over the
+    model no vector register holds a value, so the arm's wipe of them is
+    empty there; `bin/x86_kernels_test` counts it on x86-64.
 
   Every call into `rsa_mont64.c` is a contract
   (`proof/rsa_sign64_stubs.h`) that asserts what the real entry needs,

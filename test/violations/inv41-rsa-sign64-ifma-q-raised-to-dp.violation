@@ -1,0 +1,12 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: proof/prove-one.sh rsa_sign64_ifma
+reason: the IFMA arm of both_powers raises the second half to dp in place
+  of dq, so every signature it computes is wrong modulo q, and the check
+  of INV-42 is all that keeps it from leaving. The rsa_sign64_ifma proof
+  states that the kernel's exponents are dp and dq, every byte of each.
+
+--- old
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dq, mod_q, half_len);
+--- new
+        rsa_ifma_sign_power_pair(m1, m1, k->dp, mod_p, m2, m2, k->dp, mod_q, half_len);

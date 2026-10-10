@@ -27,7 +27,9 @@
 //
 // The sum, the difference and the reduction. rsa_mont64_add and
 // rsa_mont64_sub run over any operands and any modulus, with the output
-// apart from both operands, on the first and on the second, and
+// apart from both operands, on the first and on the second;
+// rsa_mont64_add also with the output and both operands one array, the
+// doubling rsa_ifma_sign.c's state_setup runs; and
 // rsa_mont64_reduce_once with its output apart from its input and on it.
 // The difference's second loop adds the modulus back under a mask and
 // drops a carry out of the top word, which is a cast and not a wrap.
@@ -129,6 +131,9 @@ static void prove_modular(void) {
     havoc_words(a, RSA_MONT64_WORDS_MAX);
     havoc_words(b, RSA_MONT64_WORDS_MAX);
     rsa_mont64_add(b, a, b, &mod);
+    havoc_record(&mod);
+    havoc_words(a, RSA_MONT64_WORDS_MAX);
+    rsa_mont64_add(a, a, a, &mod);
 
     havoc_record(&mod);
     havoc_words(a, RSA_MONT64_WORDS_MAX);

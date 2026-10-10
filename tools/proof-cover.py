@@ -107,21 +107,6 @@ AUDITED = {
         "an x86-64 host object. Delete this entry if a harness can ever "
         "compile the file."
     ),
-    "rsa_ifma_sign.c": (
-        "RSA signing's two exponentiations on AVX-512 IFMA, which has a body "
-        "in an x86-64 host object and in a test unit that defines "
-        "CH_RSA_IFMA_MODEL. No harness compiles it yet. Every bitwise "
-        "operator takes unsigned operands: the digit conversions and the "
-        "round are rsa_ifma_product.h's, which the rsa_ifma harnesses compile "
-        "through rsa_ifma.c over the lane model, mask_of_bit shifts a "
-        "uint64_t through int64_t as rsa_sign64.c's does, and table_select's "
-        "digit is a uint8_t shifted by 0 or 4 and masked to four bits. Every "
-        "index is a count or a loop counter below a bound a static assertion "
-        "or a CH_ASSERT on the word count holds. bin/rsa_ifma_sign_model_test "
-        "runs the file over the lane model on every machine against "
-        "rsa_sign64.c's window, and bin/rsa_ifma_sign_equiv_test on the "
-        "instructions. Delete this entry when a harness compiles the file."
-    ),
     "poly1305_vector.c": (
         "the vector Poly1305 of a host object's native copy, written in NEON or SSE2 intrinsics, "
         "which CBMC cannot read, so no harness compiles the file. Every "
