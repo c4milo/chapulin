@@ -496,8 +496,7 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_nat
                           test/widemul_runtime_test.c test/widemul_runtime_count.c \
                           test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                           test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
-                          test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
-                          test/widemul_count_native_ifma.c
+                          test/widemul_count_native_vector.c test/widemul_count_native_avx2.c
 # The host object's hash sources and tests (docs/decisions.md 93), which
 # compile only under -DCH_CPU_RUNTIME: SHA-256 and SHA-512 on the CPU's
 # instructions, the two copies over them, the equivalence test, and the
@@ -532,6 +531,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_equiv_vaes.c \
           test/aes_extern_hook.c test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
+          test/aead_avx512_count.c \
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c chacha20_avx2.c chacha20_avx512.c test/chacha20_equiv_test.c \
@@ -558,7 +558,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h \
-         test/rsa_ifma_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
+         test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_p256_wide_inverse.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
@@ -3569,25 +3569,29 @@ $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-
 # wide moduli call, the table of multiples of G and the verifier's points
 # hold no dispatched entry, so a counting binary links them as they are
 # (WIDEMUL_COUNT_FIELDS). test/rsa_ifma_sign_count.c, one of the units,
-# stands in for avx512_wipe.c as well, so on x86-64 the AVX-512 kernels a
-# counting binary links call its count, and no counting binary links
-# avx512_wipe.c.
+# stands in for avx512_wipe.c as well, so no counting binary links
+# avx512_wipe.c. test/aead_avx512_count.c, another, stands in for
+# chacha20_avx512.c and for poly1305_ifma.c's native copy, each a call to
+# the 128-bit path, so no counting binary links either kernel
+# (WIDEMUL_COUNT_CHACHA). With test/rsa_ifma_count.c below, the loop and
+# session binaries run no AVX-512 instruction on any x86-64 CPU, whatever
+# their rows' ch_cfg.cpu values hold.
 WIDEMUL_COUNT_UNITS := test/widemul_count_decomposed.c test/widemul_count_decomposed_point.c \
                        test/widemul_count_decomposed_scalar.c test/widemul_count_native.c \
                        test/widemul_count_native_vector.c test/widemul_count_native_avx2.c \
-                       test/widemul_count_native_ifma.c test/widemul_count_wide.c \
+                       test/widemul_count_wide.c \
                        test/widemul_count_wide_p256.c test/widemul_count_sign64.c \
-                       test/rsa_ifma_sign_count.c
+                       test/rsa_ifma_sign_count.c test/aead_avx512_count.c
+WIDEMUL_COUNT_CHACHA := $(filter-out chacha20_avx512.c,$(CHACHA_VECTOR_SRCS))
 WIDEMUL_COUNTED := $(WIDEMUL_COPIED) x25519.c p256_scalar.c p256_point.c rsa_sign.c
 WIDEMUL_COUNT_FIELDS := p256_field.c p256_wide_field.c p256_wide_inverse.c p256_wide_table.c \
                         p256_wide_wipe.c p256_wide_verify_point.c
-WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(CHACHA_VECTOR_SRCS) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
+WIDEMUL_COUNT_SRCS := aead.c chacha20.c $(WIDEMUL_COUNT_CHACHA) hkdf.c sha256.c $(call hash_hw_of,hkdf.c sha256.c) \
                       ct.c ct_wipe.c buf.c record.c mlkem.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
                       sha3.c p256.c p256_ecdh.c p256_sign.c rsa.c rsa_mont.c $(RSA_MONT64_SRCS) \
                       $(WIDEMUL_COUNT_FIELDS)
 bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count.c $(WIDEMUL_COUNT_UNITS) \
                           $(WIDEMUL_COUNT_SRCS) $(WIDEMUL_COUNTED) x25519_wide.c poly1305_vector.c poly1305_avx2.c \
-                          poly1305_ifma.c \
                           $(P256_WIDE_SRCS) $(RSA_SIGN64_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/widemul_runtime_test.c test/widemul_runtime_count.c \
@@ -3610,8 +3614,11 @@ bin/widemul_runtime_test: test/widemul_runtime_test.c test/widemul_runtime_count
 # A binary that links rsa_mont.c links test/rsa_ifma_count.c in place of
 # rsa_ifma.c, so its test/*_ifma.h rows count the RSA public operations
 # each caller sends to AVX-512 IFMA on any x86-64 CPU (test/rsa_ifma_count.h).
+# Each links test/aead_avx512_count.c in place of the AVX-512 ChaCha20 and
+# Poly1305, so the same rows count the ChaCha20 calls a record makes there
+# (test/aead_avx512_count.h).
 widemul_counted = $(filter-out $(WIDEMUL_COUNTED) $(WIDEMUL_COUNT_FIELDS),$(1)) $(WIDEMUL_COUNT_FIELDS) \
-                  $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(CHACHA_VECTOR_SRCS) \
+                  $(WIDEMUL_COUNT_UNITS) test/widemul_runtime_count.c $(WIDEMUL_COUNT_CHACHA) \
                   $(if $(filter rsa_mont.c,$(1)),$(filter-out rsa_ifma.c,$(RSA_MONT64_SRCS)) test/rsa_ifma_count.c) \
                   $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
                   $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
@@ -5528,7 +5535,7 @@ else
 	  test/poly1305_equiv_test.c test/poly1305_ifma_model.c test/diff_poly1305_ifma_test.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
-	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
+	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
@@ -5628,8 +5635,10 @@ else
 	# target, and chacha20.c's use_avx2 and gcm_vaes.h's gcm_use_vaes
 	# compile on x86-64 alone, so on an arm64 machine no pass above reads them. The
 	# counting test of the kernels joins the second line, whose defines are
-	# its binary's. Freestanding, with tools/freestanding's string.h.
-	@$(call TIDY_EACH,chacha20_avx2.c chacha20_avx512.c chacha20.c, \
+	# its binary's, and test/aead_avx512_count.c, the counting binaries'
+	# stand-in for the AVX-512 kernels, joins the first. Freestanding, with
+	# tools/freestanding's string.h.
+	@$(call TIDY_EACH,chacha20_avx2.c chacha20_avx512.c chacha20.c test/aead_avx512_count.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	@$(call TIDY_EACH,gcm_vaes.c gcm.c test/x86_kernels_count.c, \
@@ -6058,7 +6067,7 @@ WIDEMUL_NATIVE_COPY_DEFS := -DCH_CPU_RUNTIME -D__x86_64__ -D__SIZEOF_INT128__=16
 WIDEMUL_NATIVE_COPY_C := poly1305_native.c mlkem_poly_native.c \
                          poly1305_vector_native.c poly1305_avx2_native.c poly1305_ifma_native.c \
                          test/widemul_count_native.c test/widemul_count_native_vector.c \
-                         test/widemul_count_native_avx2.c test/widemul_count_native_ifma.c \
+                         test/widemul_count_native_avx2.c \
                          hkdf_hw.c keysched_hw.c
 CPPCHECK_C = $(filter-out $(WIDEMUL_NATIVE_COPY_C),$(LINT_C))
 .PHONY: lint-cppcheck-run

@@ -4088,7 +4088,11 @@ skips a kernel's cases on a CPU without its instructions:
   row.
 - `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host` link
   `test/rsa_ifma_count.c` in place of `rsa_ifma.c`, as every binary the
-  Makefile's `widemul_counted` builds does, and count the RSA public
+  Makefile's `widemul_counted` builds does, beside
+  `test/rsa_ifma_sign_count.c` and `test/aead_avx512_count.c`, which
+  stand in for the signer's kernel, `avx512_wipe.c`, `chacha20_avx512.c`
+  and the AVX-512 IFMA Poly1305, so each runs no AVX-512 instruction and
+  passes on every x86-64 CPU. They count the RSA public
   operations each caller of the two verifiers sends to `rsa_ifma_public`
   over a handshake, with the bit and without it. A pinned client's
   CertificateVerify, through `ch_connect` and through the client's
@@ -4104,7 +4108,9 @@ skips a kernel's cases on a CPU without its instructions:
   `webpki.c`'s `read_issuer`, the intermediate's under the anchor in
   `anchor_verifies`, and the CertificateVerify in `handshake_auth.c`. The
   r2 chain, which holds no RSA key, makes none
-  (`test/webpki_auth_ifma.h`). Without the bit every count is 0. An arm64
+  (`test/webpki_auth_ifma.h`). The blocking loop's handshakes also call
+  `chacha20_avx512_xor` at least once where either end's value holds
+  the bit. Without the bit every count is 0. An arm64
   object refuses the bit and makes no call, so there the rows run without
   it alone. The CA client's CertificateVerify under a pinned CA, which
   only a `ROLE=both TRUST=ca-rsa` host object compiles, has no such row,

@@ -257,7 +257,8 @@ void poly1305_avx2_blocks_native(poly1305 *p, const uint8_t *m, size_t n) {
 }
 
 // The native copy's IFMA update and the AVX-512 IFMA kernel's entry, the
-// same way.
+// same way. test/aead_avx512_count.c defines the kernel's second name as a
+// call to the 128-bit path, so these binaries run no AVX-512 instruction.
 void poly1305_update_ifma_native_counted(poly1305 *p, const uint8_t *in, size_t n);
 void poly1305_ifma_blocks_native_counted(poly1305 *p, const uint8_t *m, size_t n);
 

@@ -112,13 +112,15 @@
 # On any model, for x86-64:
 #
 #   - bin/tcp_blocking_loop_host and bin/webpki_auth_host must pass. On
-#     the stand-in test/rsa_ifma_count.c, which runs no AVX-512
-#     instruction, they count the RSA public operations each caller of the
-#     two verifiers sends to AVX-512 IFMA: a pinned CertificateVerify,
-#     ch_srv_check's check of the RSA identity, and a webpki chain with
-#     RSA links and its CertificateVerify (test/tcp_blocking_loop_ifma.h,
-#     test/webpki_auth_ifma.h). Only an x86-64 object sends any, so on an
-#     arm64 machine this is the run that holds the callers.
+#     the stand-ins test/rsa_ifma_count.c, test/rsa_ifma_sign_count.c and
+#     test/aead_avx512_count.c, which run no AVX-512 instruction, they
+#     count the RSA public operations each caller of the two verifiers
+#     sends to AVX-512 IFMA: a pinned CertificateVerify, ch_srv_check's
+#     check of the RSA identity, and a webpki chain with RSA links and its
+#     CertificateVerify (test/tcp_blocking_loop_ifma.h,
+#     test/webpki_auth_ifma.h). The first also counts the handshake's
+#     ChaCha20 calls into the AVX-512 kernel. Only an x86-64 object sends
+#     any, so on an arm64 machine this is the run that holds the callers.
 #
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
@@ -470,7 +472,9 @@ if [ -z "$only" ] || [ "$only" = rsa-ifma-callers ]; then
     # The binaries that count the RSA public operations each caller of the
     # two verifiers sends to AVX-512 IFMA, as their rules in the Makefile
     # build them. They link test/rsa_ifma_count.c in place of rsa_ifma.c,
-    # so no row runs an AVX-512 instruction and any model runs them.
+    # and the Makefile's other stand-ins in place of the AVX-512 signer,
+    # ChaCha20 and Poly1305, so no row runs an AVX-512 instruction and any
+    # model runs them.
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
         -o "$x86_out/tcp_blocking_loop_host" test/tcp_blocking_loop_test.c "${blocking_counted_srcs[@]}" ||
         exit 1
