@@ -294,8 +294,10 @@ runtime=(-DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME)
 both=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI)
 exporter=(-DCH_EXPORTER -DHKDF_LABEL_MAX=32)
 # Each binary links the sources its rule in the Makefile links, one list
-# a line, so each list here is the one check links.
-lists=$(make -s --no-print-directory print-aes-runtime-qemu-srcs) ||
+# a line, so each list here is the one check links. X86_64_TARGET=yes
+# makes each list name avx512_wipe.c where an x86-64 host object holds it,
+# whatever this machine's compiler targets.
+lists=$(make -s --no-print-directory print-aes-runtime-qemu-srcs X86_64_TARGET=yes) ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs failed" >&2; exit 1; }
 read -r -a quic_srcs <<< "$(sed -n 1p <<< "$lists")"
 read -r -a tcp_srcs <<< "$(sed -n 2p <<< "$lists")"
@@ -316,6 +318,15 @@ read -r -a webpki_auth_counted_srcs <<< "$(sed -n 16p <<< "$lists")"
 read -r -a aes_equiv_srcs <<< "$(sed -n 17p <<< "$lists")"
 [ "${#aes_equiv_srcs[@]}" -gt 0 ] ||
     { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than seventeen lists" >&2; exit 1; }
+# avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
+# unit with no declaration, which -Wpedantic refuses, so the arm64 builds
+# link these copies of the three lists they take, without it.
+arm64_quic_srcs=()
+arm64_tcp_srcs=()
+arm64_hash_count_srcs=()
+for src in "${quic_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
+for src in "${tcp_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
+for src in "${hash_count_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -532,9 +543,9 @@ fi
 # entries. They run no hash instruction, so the model without FEAT_SHA512
 # runs them.
 "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$arm64_out/hash_runtime_test" \
-    test/hash_runtime_test.c "${hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
+    test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
 "$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$arm64_out/hash_runtime_exporter_test" \
-    test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
+    test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" || exit 1
 for b in hash_runtime_test hash_runtime_exporter_test; do
     expect_arm64 "$no_sha512" 0 \
         "a hash call ran on a path its ch_cfg.cpu value does not name" "$b"
@@ -654,9 +665,9 @@ fi
 # hash SHA-384 on the SHA-512 instructions exactly where their ch_cfg.cpu
 # holds the SHA-512 bit.
 "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$arm64_out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+    -o "$arm64_out/quic_loop_aes" test/quic_loop_test.c "${arm64_quic_srcs[@]}" || exit 1
 "$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$arm64_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+    -o "$arm64_out/webpki_loop_aes" test/webpki_loop_test.c "${arm64_tcp_srcs[@]}" || exit 1
 for b in "${loops[@]}"; do
     for bits in 0x25 0x27; do
         expect_arm64 "$no_sha512" 0 "a session without the SHA-512 bit ran a SHA-512 instruction" \
@@ -677,9 +688,9 @@ done
 # whose hashes run on the instructions exactly where an end's ch_cfg.cpu
 # holds the SHA-3 bit.
 "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" \
-    "${runtime[@]}" -o "$arm64_out/quic_loop_keccak" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+    "${runtime[@]}" -o "$arm64_out/quic_loop_keccak" test/quic_loop_test.c "${arm64_quic_srcs[@]}" || exit 1
 "$keccak_cc" --target=aarch64-linux-gnu "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" \
-    "${runtime[@]}" -o "$arm64_out/webpki_loop_keccak" test/webpki_loop_test.c "${tcp_srcs[@]}" || exit 1
+    "${runtime[@]}" -o "$arm64_out/webpki_loop_keccak" test/webpki_loop_test.c "${arm64_tcp_srcs[@]}" || exit 1
 for b in quic_loop_keccak webpki_loop_keccak; do
     for bits in 0x25 0x27; do
         expect_arm64 "$no_sha3" 0 "a session without the SHA-3 bit ran a SHA-3 instruction" \
