@@ -388,13 +388,15 @@ The machines, as the CSV headers state them:
   primitives' run and 1.00 after it, and 1.00 and 1.00 around the AEAD rows' run.
 - **x86-64 AVX-512 gcc**: INTEL(R) XEON(R) PLATINUM 8573C, Linux 6.17.0-1022-azure, gcc (Ubuntu
   13.3.0-6ubuntu2~24.04.1) 13.3.0, OpenSSL 3.6.4, `ch_cfg.cpu 0x13f`, and `0x1f` for the AEAD rows,
-  which neither a hash bit nor `CH_CPU_AVX512_IFMA` changes; one-minute load average 0.97 before the
-  primitives' run and 1.00 after it, and 0.66 and 0.89 around the AEAD rows' run.
+  which no hash bit changes, recorded before `CH_CPU_AVX512_IFMA` picked the AVX-512
+  ChaCha20-Poly1305 (decision 121); one-minute load average 0.97 before the primitives' run and
+  1.00 after it, and 0.66 and 0.89 around the AEAD rows' run.
 - **x86-64 AVX-512 clang**: INTEL(R) XEON(R) PLATINUM 8573C, Linux 6.17.0-1022-azure, Ubuntu clang
   version 23.1.2 (++20260919103626+4b1925210476-1~exp1~20260919223755.77), OpenSSL 3.6.4,
-  `ch_cfg.cpu 0x13f`, and `0x1f` for the AEAD rows, which neither a hash bit nor
-  `CH_CPU_AVX512_IFMA` changes; one-minute load average 1.00 before the primitives' run and 1.00
-  after it, and 1.00 and 1.00 around the AEAD rows' run.
+  `ch_cfg.cpu 0x13f`, and `0x1f` for the AEAD rows, which no hash bit changes, recorded before
+  `CH_CPU_AVX512_IFMA` picked the AVX-512 ChaCha20-Poly1305 (decision 121); one-minute load
+  average 1.00 before the primitives' run and 1.00 after it, and 1.00 and 1.00 around the AEAD
+  rows' run.
 
 [`bench/primitives.sh`](../bench/primitives.sh) (`make bench-primitives`) writes the rows above the
 AEADs to a CSV for each machine and compiler, such as
@@ -578,7 +580,9 @@ What the AVX-512 machine's columns show:
   3.6.4's source holds AVX-512 code for both: `crypto/modes/asm/aes-gcm-avx512.pl`, and AVX-512
   paths in `crypto/chacha/asm/chacha-x86_64.pl` and `crypto/poly1305/asm/poly1305-x86_64.pl`.
   chapulin runs AES-GCM two blocks to a 256-bit register on VAES and its ChaCha20 keystream on AVX2
-  (decision 90), and Poly1305 in four AVX2 lanes (decision 110).
+  (decision 90), and Poly1305 in four AVX2 lanes (decision 110). These rows ran under `0x1f`
+  before decision 121, under which a session that states `CH_CPU_AVX512_IFMA` runs ChaCha20
+  sixteen blocks a pass on AVX-512 and Poly1305 on AVX-512 IFMA; no column here holds that run.
 - Under clang P-256's key generation, signature and verification take 0.99, 0.85 and 0.83 of
   OpenSSL's time and its shared secret 1.07 times, and P-384 verifies in 0.51 of it. Under gcc
   P-256 takes 1.08 to 1.42 times and P-384 0.95.

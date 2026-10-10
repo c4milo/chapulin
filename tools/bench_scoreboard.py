@@ -96,12 +96,15 @@ AEADS = [
 
 CPU_LABEL = "ch_cfg.cpu "
 # The bits of ch_cfg.cpu that change a row bench/record.sh times: the probe's
-# bit, the AES and multiply bits and the two x86-64 kernel bits (cpu_cfg.h).
-# A record's protection hashes nothing and verifies no RSA signature, so that
-# script states no hash bit and no CH_CPU_AVX512_IFMA, and the widest value
-# of its CSV is the primitives' widest value without the three hash bits and
-# that one (docs/decisions.md 93 and 119).
-RECORD_BITS = 0x1f
+# bit, the AES and multiply bits, the two x86-64 kernel bits, and
+# CH_CPU_AVX512_IFMA, which runs the ChaCha20-Poly1305 rows on the AVX-512
+# kernels (cpu_cfg.h, docs/decisions.md 121). A record's protection hashes
+# nothing, so that script states no hash bit, and the widest value of its CSV
+# is the primitives' widest value without the three hash bits. A record CSV
+# written before decision 121 states no CH_CPU_AVX512_IFMA either, and
+# machine_line reads such a CSV without that bit (docs/decisions.md 93 and
+# 119).
+RECORD_BITS = 0x11f
 IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")
@@ -249,12 +252,17 @@ def machine_line(name, primitives, record):
         return "**%s**: no run recorded" % name
     if any(ours[k] != aead[k] for k in ("cpu", "os", "compiler", "openssl")):
         return None
-    if aead["value"] is None or ours["value"] & RECORD_BITS != aead["value"]:
+    if aead["value"] is None:
+        return None
+    before_ifma = ours["value"] & IFMA_BIT and not aead["value"] & IFMA_BIT
+    record_bits = RECORD_BITS & ~IFMA_BIT if before_ifma else RECORD_BITS
+    if ours["value"] & record_bits != aead["value"]:
         return None
     values = "`ch_cfg.cpu 0x%x`" % ours["value"]
     if aead["value"] != ours["value"]:
-        unread = ("neither a hash bit nor `CH_CPU_AVX512_IFMA` changes"
-                  if ours["value"] & IFMA_BIT else "no hash bit changes")
+        unread = ("no hash bit changes, recorded before `CH_CPU_AVX512_IFMA` picked the "
+                  "AVX-512 ChaCha20-Poly1305 (decision 121)" if before_ifma
+                  else "no hash bit changes")
         values += ", and `0x%x` for the AEAD rows, which %s" % (aead["value"], unread)
     return ("**%s**: %s, %s, %s, %s, %s; one-minute load average %s before the "
             "primitives' run and %s after it, and %s and %s around the AEAD rows' run"
