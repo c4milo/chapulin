@@ -58,6 +58,15 @@
 #     CH_POLY1305_IFMA_MODEL, which makes poly1305_ifma.c run
 #     test/poly1305_ifma_model_lanes.h's, and neither make nor build.zig
 #     writes either for a host object.
+#   - rsa_avx2.c, RSA's public operation on AVX2, does the same on 256-bit
+#     registers and VPMULUDQ (docs/decisions.md 122), one VPMULUDQ to a
+#     product, with no lane shifted left by 32 at either bound, which is how
+#     clang writes a full 64-bit product: it defines
+#     rsa_avx2_public for x86-64 and nothing for arm64, rsa_vp1_cpu calls
+#     it for x86-64 and rsa_vp1 does not, no other RSA source holds a
+#     256-bit register, no root source but rsa_mont.c includes rsa_avx2.h
+#     or calls into it, and no root source, make or build.zig defines
+#     CH_RSA_AVX2_MODEL.
 #   - p256.c in a host object hands the signature it read to
 #     p256_wide_verify.c, and in a device object does not: the device arm
 #     holds the 32-bit arithmetic itself, and no bit of ch_cfg.cpu picks
@@ -194,11 +203,11 @@ if [ -z "$clang_rv" ]; then
     echo "widemul-builds: no clang to cross-compile with; see the LLVM_MAJOR pin in tools/toolchain.env" >&2
     exit 1
 fi
-cross_object() { # $1 = target, $2 = source; writes $work/cross.o and $work/cross.s
+cross_object() { # $1 = target, $2 = source, $3 = one more flag or none; writes $work/cross.o and $work/cross.s
     "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
-        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -c "$2" -o "$work/cross.o" || exit 1
+        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN ${3:+"$3"} -c "$2" -o "$work/cross.o" || exit 1
     "$clang_rv" -target "$1" -ffreestanding -nostdlibinc -Itools/freestanding -std=c11 -O2 -I. \
-        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -S "$2" -o "$work/cross.s" || exit 1
+        -DCH_CPU_RUNTIME -DCH_RAND_EXTERN ${3:+"$3"} -S "$2" -o "$work/cross.s" || exit 1
 }
 # Whether the body of one function in $work/cross.s names a symbol: the
 # lines from the function's label to its .size directive, which clang
@@ -309,10 +318,56 @@ if body_names rsa_vp1_cpu rsa_ifma_public; then
     echo "widemul-builds: rsa_vp1_cpu for arm64 calls rsa_ifma_public, which has a body on x86-64 alone" >&2
     exit 1
 fi
+if body_names rsa_vp1_cpu rsa_avx2_public; then
+    echo "widemul-builds: rsa_vp1_cpu for arm64 calls rsa_avx2_public, which has a body on x86-64 alone" >&2
+    exit 1
+fi
+# rsa_avx2.c, RSA's public operation on AVX2, and the dispatch that calls
+# it, as above for the IFMA kernel.
+cross_object "$x86" rsa_avx2.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?rsa_avx2_public$'; then
+    echo "widemul-builds: rsa_avx2.c for x86-64 does not define rsa_avx2_public" >&2
+    exit 1
+fi
+if ! grep -q '%ymm' "$work/cross.s" || ! grep -q 'vpmuludq' "$work/cross.s"; then
+    echo "widemul-builds: rsa_avx2.c for x86-64 holds no 256-bit register or no VPMULUDQ; its target attribute turns them on" >&2
+    exit 1
+fi
+# Every product of the kernel is one VPMULUDQ of two lanes below 2^32,
+# and nothing else in it shifts a lane by 32. clang 23 multiplied by a
+# digit it could not show was below 2^32 on two VPMULUDQs, a shift by 32
+# and an add, until broadcast_four masked each digit it read through a
+# volatile pointer; at the 512-byte bound the copies for 27-bit digits
+# compile too.
+for bound in "" -DCH_RSA_MODULUS_MAX=512; do
+    cross_object "$x86" rsa_avx2.c "$bound"
+    if grep -qE 'vpsllq[[:space:]]+[$]32,' "$work/cross.s"; then
+        echo "widemul-builds: rsa_avx2.c for x86-64 ${bound:+under $bound }shifts a lane left by 32: clang multiplied two lanes on more than one VPMULUDQ" >&2
+        exit 1
+    fi
+done
+cross_object "$arm64" rsa_avx2.c
+if nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]'; then
+    echo "widemul-builds: rsa_avx2.c for arm64 defines a symbol; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+cross_object "$x86" rsa_mont.c
+if ! body_names rsa_vp1_cpu rsa_avx2_public; then
+    echo "widemul-builds: rsa_vp1_cpu for x86-64 does not call rsa_avx2_public; a session with CH_CPU_AVX2 runs it" >&2
+    exit 1
+fi
+if body_names rsa_vp1 rsa_avx2_public; then
+    echo "widemul-builds: rsa_vp1 for x86-64 calls rsa_avx2_public; it takes no description of the CPU" >&2
+    exit 1
+fi
 for src in rsa.c rsa_pkcs1.c rsa_mont.c rsa_mont64.c rsa_mont64_blocks.c rsa_mont64_addcarry.c rsa_sign.c rsa_sign64.c; do
     cross_object "$x86" "$src"
     if grep -q '%zmm' "$work/cross.s"; then
         echo "widemul-builds: $src for x86-64 holds a 512-bit instruction; only rsa_ifma.c and rsa_ifma_sign.c may" >&2
+        exit 1
+    fi
+    if grep -q '%ymm' "$work/cross.s"; then
+        echo "widemul-builds: $src for x86-64 holds a 256-bit instruction; only rsa_avx2.c and rsa_ifma.c may" >&2
         exit 1
     fi
 done
@@ -342,16 +397,24 @@ if [ -n "$others" ]; then
     echo "widemul-builds: $(tr '\n' ' ' <<< "$others")include rsa_ifma_sign.h or call into rsa_ifma_sign.c, which rsa_sign64.c alone may, beside the wipes after each call" >&2
     exit 1
 fi
+# rsa_avx2_number.h, which only rsa_avx2.c includes, reads rsa_avx2.h too.
+others=$(git ls-files -- '*.c' '*.h' | grep -v / | grep -vxE 'rsa_avx2\.[ch]|rsa_avx2_number\.h|rsa_mont\.c' |
+    xargs grep -lE '#[[:space:]]*include[[:space:]]*"rsa_avx2(_number)?\.h"|rsa_avx2_[a-z0-9_]+[[:space:]]*\(' || true)
+if [ -n "$others" ]; then
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$others")include rsa_avx2.h or rsa_avx2_number.h or call rsa_avx2_public, which rsa_mont.c's rsa_vp1_cpu alone may call: it takes public input alone" >&2
+    exit 1
+fi
 # CH_RSA_IFMA_MODEL makes rsa_ifma.c read test/rsa_ifma_model_lanes.h, a
 # model of each instruction in portable C, in place of the instructions:
 # a build for tests alone. CH_POLY1305_IFMA_MODEL does the same for
-# poly1305_ifma.c and test/poly1305_ifma_model_lanes.h. No root source
-# defines either, and the defines make and build.zig write for a library
-# object, checked below, never name either.
+# poly1305_ifma.c and test/poly1305_ifma_model_lanes.h, and
+# CH_RSA_AVX2_MODEL for rsa_avx2.c and test/rsa_avx2_model_lanes.h. No
+# root source defines any of the three, and the defines make and build.zig
+# write for a library object, checked below, never name one.
 model_defined=$(git ls-files -- '*.c' '*.h' | grep -v / |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_(RSA|POLY1305)_IFMA_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2)_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL or CH_POLY1305_IFMA_MODEL, which only a test unit may: under it the kernel runs the model of each instruction" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL or CH_RSA_AVX2_MODEL, which only a test unit may: under each a kernel runs the model of each instruction" >&2
     exit 1
 fi
 
@@ -408,7 +471,7 @@ has_words() { # $1 = a list of words, $2... = the words it must hold
 }
 host_words=(-DCH_CPU_RUNTIME poly1305_native.c x25519_wide.c rsa_sign64.c chacha20_vector.c
             chacha20_avx2.c chacha20_avx512.c poly1305_vector_native.c poly1305_avx2_native.c
-            poly1305_ifma_native.c rsa_mont64.c rsa_ifma.c rsa_ifma_sign.c)
+            poly1305_ifma_native.c rsa_mont64.c rsa_ifma.c rsa_ifma_sign.c rsa_avx2.c)
 p384_words=(p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c)
 server=(ROLE=server TRUST=none)
 
@@ -423,11 +486,11 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
     echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
-# Whether a list names CH_RSA_IFMA_MODEL or CH_POLY1305_IFMA_MODEL, which
-# no library object may.
+# Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL or
+# CH_RSA_AVX2_MODEL, which no library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
-    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL*) return 0 ;;
+    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }
@@ -438,7 +501,7 @@ if names_model "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" ||
 fi
 device=$(lib_lists "${server[@]}" HOST_TARGET= WIDEMUL=native | tr '\n' ' ')
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
     echo "widemul-builds: make writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;
@@ -506,12 +569,12 @@ if ! has_words "$(zig_lists "${zig_server[@]}" "$host_target")" "${host_words[@]
 fi
 if names_model "$(zig_lists "${zig_server[@]}" -Dtarget=x86_64-linux-gnu)" ||
     names_model "$(zig_lists -DTRUST=webpki -Dtarget=x86_64-linux-gnu)"; then
-    echo "widemul-builds: build.zig writes CH_RSA_IFMA_MODEL for an x86-64 host object; only a test unit may name it" >&2
+    echo "widemul-builds: build.zig writes a kernel's model define for an x86-64 host object; only a test unit may name it" >&2
     exit 1
 fi
 device=$(zig_lists "${zig_server[@]}" "$device_target" -DWIDEMUL=native)
 case " $device " in
-*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_sign64.c*)
+*_native.c* | *x25519_wide.c* | *chacha20_vector.c* | *chacha20_avx2.c* | *chacha20_avx512.c* | *poly1305_vector* | *poly1305_avx2* | *poly1305_ifma* | *rsa_mont64.c* | *rsa_ifma.c* | *rsa_ifma_sign.c* | *rsa_avx2.c* | *rsa_sign64.c*)
     echo "widemul-builds: build.zig writes a native copy, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation or signer or a vector path for a device object" >&2
     exit 1
     ;;
@@ -555,4 +618,4 @@ if [ -n "$(zig_lists -DWIDEMUL=runtime)" ]; then
 fi
 rm -rf "$out"
 
-echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, rsa_ifma.c and rsa_ifma_sign.c have a body on 512-bit registers for x86-64 alone, only rsa_mont.c's rsa_vp1_cpu calls the first and only rsa_sign64.c the second, beside the wipes, and no library build names their model, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"
+echo "widemul-builds: ct.h admits a host object without CH_NATIVE_WIDEMUL, and a native copy and the 64x64->128 multiply only inside it, each file under its own names compiles to its decomposed build's code, only poly1305_native.c calls the vector Poly1305, rsa_mont.c calls rsa_mont64.c in a host object alone, rsa_ifma.c and rsa_ifma_sign.c have a body on 512-bit registers and rsa_avx2.c one on 256-bit registers with one VPMULUDQ to a product, each for x86-64 alone, only rsa_mont.c's rsa_vp1_cpu calls rsa_ifma.c and rsa_avx2.c and only rsa_sign64.c calls rsa_ifma_sign.c, beside the wipes, and no library build names their models, and make and build.zig each write the copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object alone, refuse it a WIDEMUL value and refuse every X25519 and CHACHA value"

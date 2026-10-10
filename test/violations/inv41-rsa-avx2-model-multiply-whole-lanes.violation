@@ -1,0 +1,16 @@
+invariant: INV-41
+file: test/rsa_avx2_model_lanes.h
+catches: test/docker-aes-runtime-qemu.sh rsa-avx2
+reason: the model of VPMULUDQ multiplies whole 64-bit lanes where the
+  instruction multiplies their bits 31..0. Every digit the kernel
+  multiplies is below 2^29, so the model's products stay the same and
+  bin/rsa_avx2_model_test passes; the model no longer states the
+  instruction, which a kernel that let a multiplier pass 2^32 would need.
+  bin/rsa_avx2_equiv_test runs the lane operation on lanes with high bits
+  set, on the instruction and on the model, and compares them; it runs
+  under qemu for x86-64, and skips without docker.
+
+--- old
+        result.lane[j] = (x.lane[j] & MODEL_LOW_32_BITS) * (y.lane[j] & MODEL_LOW_32_BITS);
+--- new
+        result.lane[j] = x.lane[j] * y.lane[j];

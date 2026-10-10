@@ -2,7 +2,9 @@
 // bin/rsa_ifma_equiv_test draw, from one seeded generator, so that an
 // ordinary run replays exactly and the nightly can vary
 // CH_RSA_EQUIV_SEED, as test/rsa_equiv_test.c does. Each binary's main
-// unit includes this file once.
+// unit includes this file once. bin/rsa_avx2_model_test and
+// bin/rsa_avx2_equiv_test draw the AVX2 kernel's inputs from it too
+// (docs/decisions.md 122): the moduli, and the power of two by doubling.
 #ifndef CH_TEST_RSA_IFMA_INPUTS_H
 #define CH_TEST_RSA_IFMA_INPUTS_H
 

@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: the triangle gives row 3 of every group a y, where the last group's
+  rows from the digit count n up must take none: their lanes hold the
+  result's low digits. At RSA-2048 n is 74, so the last group's row 75
+  adds y times m above the result's digit 0 and the number passes 2m.
+  bin/rsa_avx2_model_test requires every product below 2m and equal to
+  rsa_mont64.c's less m.
+
+--- old
+    uint64_t step3 = rows > 3 ? mask : 0;
+--- new
+    uint64_t step3 = mask;

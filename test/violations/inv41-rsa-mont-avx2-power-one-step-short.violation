@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: rsa_avx2_model_test
+reason: rsa_vp1_cpu hands rsa_avx2_public 2^(2Dn - 64) mod m in place of
+  2^(2Dn) mod m, so power_of_two_mod runs one step short and the first
+  product leaves base * R' / 2^64 where the chain needs base * R'.
+  bin/rsa_avx2_model_test compares rsa_vp1_cpu under CH_CPU_AVX2 with
+  rsa_vp1 at every word count.
+
+--- old
+        power_of_two_mod(digit_r2, mod.m, k, rsa_avx2_r2_exponent(k));
+--- new
+        power_of_two_mod(digit_r2, mod.m, k, rsa_avx2_r2_exponent(k) - 64);

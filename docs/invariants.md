@@ -1230,6 +1230,15 @@ last `ROLE=server` stub, as the entry said it would.
   signature on that kernel through `rsa_vp1_cpu`; `rsa_sign64.c` wipes
   the stack below each of the two calls and the vector registers after
   it (decision 120). Every other session signs on the window.
+  A session whose value holds `CH_CPU_AVX2` and not
+  `CH_CPU_AVX512_IFMA` runs the public operation for the same moduli on
+  `rsa_avx2.c`, in digits of 28 bits, or 27 above RSA-3072, on AVX2
+  (decision 122). That kernel writes `rsa_mont64.c`'s bytes for every base
+  too, and no lane of its sums wraps: a lane holds at most 2n products of
+  two digits and two carries below 2^(64 - D). It takes public input
+  alone, wipes nothing, and runs for `rsa_vp1_cpu` alone, which the
+  signer's check never sends to it: that check runs on the IFMA kernel or
+  on `rsa_mont64.c`.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one word and one carry in each
   of its two steps, and its top step adds two carries to a word that is 0,
@@ -1290,6 +1299,21 @@ last `ROLE=server` stub, as the entry said it would.
   the product, and the last product, by R mod m, leaves the power in
   `rsa_mont64.c`'s domain below 2m, which `state_finish` reduces with the
   word above the k words.
+  The AVX2 kernel takes n = ceil((64k + 2) / D) digits, D = 28 up to 48
+  words and 27 above, so that 4m < R' = 2^(Dn). Its almost-Montgomery
+  product adds rows of four digits at a time: each row's digit of b times
+  a, and the row's y times m, to four-lane registers of a running sum
+  with VPMULUDQ, whose products are below 2^(2D). A scalar triangle per
+  register computes the four y's, each the digit that makes its lane a
+  multiple of 2^D, and carries each lane's bits above D into the lane
+  above; a last pass carries the result's lanes. A lane then holds at
+  most 2n products and two carries below 2^(64 - D), below 2^64 for 110
+  digits of 28 bits and 152 of 27, the most each width takes. A square
+  adds each cross product once, from a multiplier of twice the row's
+  digit, and so puts in each lane what the multiplication of a by itself
+  puts there. A product of a and b is below a * b / R' + m, so below 2m,
+  and one subtraction of m ends the operation, with 2^(2Dn) mod m from
+  the same `power_of_two_mod`.
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
   four words over any operands, `rsa_mont64_ops` the comparison, the
@@ -1400,6 +1424,22 @@ last `ROLE=server` stub, as the entry said it would.
   on every machine, and `bin/rsa_ifma_sign_equiv_test` does the same on
   the instructions; docs/verification.md, "The AVX-512 IFMA signer",
   lists each test.
+  The AVX2 kernel has no proof yet: CBMC cannot read its
+  intrinsics. `bin/rsa_avx2_model_test` and `bin/rsa_avx2_model_test_384`
+  compile it and `rsa_mont.c`'s dispatch over
+  `test/rsa_avx2_model_lanes.h` and require, on every machine,
+  `rsa_vp1`'s bytes from `rsa_vp1_cpu` under `CH_CPU_AVX2` at every word
+  count from 32 to the bound, one call into the kernel under the bit and
+  none without it, each product's digits below 2^D and its number below
+  2m, and each square equal to the multiplication of its operand by
+  itself, lane for lane. `bin/rsa_avx2_equiv_test` holds the instructions
+  to that model on an x86-64 CPU with AVX2, and
+  `test/docker-aes-runtime-qemu.sh rsa-avx2` runs it under QEMU's model
+  of one. `test/widemul-builds.sh` requires the 256-bit instructions in
+  `rsa_avx2.c`'s x86-64 object, one VPMULUDQ to a product, a call from
+  `rsa_vp1_cpu` and not from `rsa_vp1`, and the same separations it
+  requires of `rsa_ifma.c`. docs/verification.md, "The AVX2 public
+  operation", lists each test.
 - **Violation.** A PR adds both carries into one sum, which can then
   wrap; makes the running sum one word short; subtracts with a borrow
   that wraps; copies a product out without its last subtraction; drops
@@ -1554,7 +1594,38 @@ last `ROLE=server` stub, as the entry said it would.
   `rsa_ifma_sign_select`, `rsa_ifma_sign_setup`, `rsa_ifma_sign_power` and
   `rsa_sign64_ifma` proofs catch. Or `table_select` reads each byte's low
   half first: `inv41-rsa-ifma-sign-digit-low-half-first`, which
-  `bin/diff_rsa_ifma` catches.
+  `bin/diff_rsa_ifma` catches. Or, in the AVX2 kernel, a PR drops the
+  carry out of a lane in the triangle, gives a row past the digit count a
+  y, doubles a square's row at its own digit, moves the window down in
+  the last group, drops the last triangle's lanes, drops the bits of a
+  digit that run into the next word when it writes words, or, in
+  `rsa_mont.c`, runs `power_of_two_mod` one step short or hands the
+  kernel an even modulus: `inv41-rsa-avx2-triangle-drops-carry`,
+  `inv41-rsa-avx2-row-past-n-takes-y`,
+  `inv41-rsa-avx2-square-doubles-own-digit`,
+  `inv41-rsa-avx2-last-group-moves-down`,
+  `inv41-rsa-avx2-last-triangle-lanes-dropped`,
+  `inv41-rsa-avx2-digits-to-words-drops-spill`,
+  `inv41-rsa-mont-avx2-power-one-step-short` and
+  `inv41-rsa-mont-avx2-takes-even-modulus`, which `bin/rsa_avx2_model_test`
+  catches, as it catches `inv41-rsa-avx2-runs-without-cpu-bit` and
+  `inv41-rsa-avx2-ignores-cpu-bit` through its count of the calls. Or the
+  Makefile writes `CH_RSA_AVX2_MODEL` for a host object, the file drops
+  its target attribute, the signer includes `rsa_avx2.h`, a device object
+  lists the file, or `broadcast_four` drops its AND or reads its digits
+  through a plain pointer, so clang multiplies on more than one VPMULUDQ:
+  `inv41-rsa-avx2-model-in-library`, `inv41-rsa-avx2-without-target`,
+  `inv41-rsa-sign64-includes-rsa-avx2`,
+  `inv16-device-object-holds-rsa-avx2`,
+  `inv41-rsa-avx2-broadcast-without-and` and
+  `inv41-rsa-avx2-broadcast-read-not-volatile`, which
+  `test/widemul-builds.sh` catches. Or a blend takes two lanes where it
+  takes one, the model of VPMULUDQ multiplies whole lanes, or
+  `rsa_vp1_cpu` asks for AVX2 before AVX-512 IFMA:
+  `inv41-rsa-avx2-first-from-takes-two-lanes`,
+  `inv41-rsa-avx2-model-multiply-whole-lanes` and
+  `inv41-rsa-avx2-before-ifma`, which `test/docker-aes-runtime-qemu.sh`
+  catches under `rsa-avx2` and `x86-kernels`.
 - See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118, 119, 120 and 122.
 
 ### INV-42 — a host object returns no RSA signature it has not verified

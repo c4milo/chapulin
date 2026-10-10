@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: the triangle drops the carry out of lane 0, the bits of x above D,
+  where it adds row 0's y times m's digit 1 to lane 1. Lane 0 still ends
+  as zero, so the result keeps the shape of a product, and its number is
+  short by the carry at every group. bin/rsa_avx2_model_test compares
+  every product of the chain, and rsa_vp1_cpu under CH_CPU_AVX2, with
+  rsa_mont64.c's.
+
+--- old
+    l1 += y0 * m[1] + (x >> bits);
+--- new
+    l1 += y0 * m[1];

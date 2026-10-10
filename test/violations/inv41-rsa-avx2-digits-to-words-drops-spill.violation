@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2_number.h
+catches: rsa_avx2_model_test
+reason: digits_to_words writes each digit's bits below the next word's
+  edge and drops the bits that run into the next word, so the bytes
+  rsa_avx2_public writes lose them wherever a digit runs into the next word.
+  bin/rsa_avx2_model_test compares rsa_vp1_cpu under CH_CPU_AVX2 with
+  rsa_vp1, and the chain's end with rsa_mont64_public.
+
+--- old
+        if (offset + bits > 64 && index + 1 <= word_count) {
+            words[index + 1] |= digit >> (63 - offset) >> 1;
+        }
+--- new

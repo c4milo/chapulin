@@ -1,0 +1,22 @@
+invariant: INV-41
+file: rsa_sign64.c
+catches: test/widemul-builds.sh
+reason: the signer includes rsa_avx2.h, the first step to a call into the
+  AVX2 RSA kernel, which takes public input alone: the compiler keeps
+  its 256-bit registers in stack slots that no wipe can name, and the
+  signer's operands are secret. The script requires that no root source
+  but rsa_mont.c includes rsa_avx2.h or calls into it.
+
+--- old
+#include "ch_assert.h"
+#include "cpu_cfg.h"
+#include "ct.h"
+
+// rsa_ifma_sign.h's declarations exist
+--- new
+#include "ch_assert.h"
+#include "cpu_cfg.h"
+#include "ct.h"
+#include "rsa_avx2.h"
+
+// rsa_ifma_sign.h's declarations exist

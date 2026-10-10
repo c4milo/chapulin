@@ -1,0 +1,20 @@
+invariant: INV-16
+file: Makefile
+catches: test/widemul-builds.sh
+reason: the Makefile adds rsa_avx2.c to every object that holds
+  rsa_mont.c, a device object among them, while rsa_mont64.c stays in
+  host objects alone. The file's body sits behind -DCH_CPU_RUNTIME, so
+  the device object compiles it to nothing and every test passes; the
+  object still lists the AVX2 RSA kernel, which a device build does not
+  take. The script requires that make writes no rsa_avx2.c for a device
+  object.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(RSA_MONT64_SRCS))
+endif
+--- new
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),$(filter-out rsa_avx2.c,$(RSA_MONT64_SRCS)))
+endif
+LIB_SRCS += $(if $(filter rsa_mont.c,$(LIB_SRCS)),rsa_avx2.c)

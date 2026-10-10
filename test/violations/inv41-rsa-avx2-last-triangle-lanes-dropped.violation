@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: the last triangle runs on its copy of the register and leaves the
+  window's register 0 as it was. Its lanes from the digit count n up hold
+  the result's low digits, so the result loses them; at RSA-2048, whose
+  n of 74 leaves two such lanes, the products come out wrong.
+  bin/rsa_avx2_model_test compares every product with rsa_mont64.c's.
+
+--- old
+        if (next + 1 == groups) {
+            memcpy(window, lanes, sizeof lanes);
+        }
+--- new

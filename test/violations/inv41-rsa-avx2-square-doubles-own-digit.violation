@@ -1,0 +1,13 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: the square multiplies row 0 of each group by twice its digit in
+  lane 0, the lane of its own digit, so it adds 2 a_r^2 where the
+  multiplication of a by itself adds a_r^2 once. bin/rsa_avx2_model_test
+  compares each square with the multiplication of its operand by itself,
+  lane for lane, and the chain of products with rsa_mont64.c's.
+
+--- old
+        rsa_avx2_lanes x[4] = {lanes_first_from(twice[0], digit[0]),
+--- new
+        rsa_avx2_lanes x[4] = {twice[0],

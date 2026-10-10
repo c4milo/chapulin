@@ -1,0 +1,14 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: rsa_avx2_model_test
+reason: the last group writes each register it adds to one register lower
+  in the window, as the groups before it do, where it must write in
+  place. The last pass of carries reads the result's lanes where the last
+  group leaves them in place, so it reads every lane one register too
+  high and the product's top register as zeros. bin/rsa_avx2_model_test
+  compares every product with rsa_mont64.c's.
+
+--- old
+    size_t shift = next < groups ? 1 : 0;
+--- new
+    size_t shift = 1;

@@ -130,6 +130,16 @@
 #     A gcc build for x86-64 alone runs the rows, so on a machine whose
 #     compiler is clang this is the run that holds them.
 #
+# On the model with every instruction qemu has, with
+# CH_REQUIRE_X86_KERNELS=1 in the environment, so a qemu without AVX2
+# fails the row and does not skip it:
+#
+#   - bin/rsa_avx2_equiv_test must pass for x86-64: rsa_avx2.c's RSA public
+#     operation on AVX2 against the same file over its lane model, and
+#     rsa_vp1_cpu under CH_CPU_AVX2 against rsa_vp1
+#     (test/rsa_avx2_equiv_test.c, docs/decisions.md 122). The kernel has
+#     a body on x86-64 alone.
+#
 # On a model without AES-NI, PCLMULQDQ, AVX2 and the SHA extensions:
 #
 #   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass.
@@ -236,6 +246,8 @@
 #   rsa-addcarry      bin/rsa_addcarry_equiv_test and bin/rsa_sign_equiv_test
 #                     for x86-64 under gcc, for the violations of the rows'
 #                     intrinsic, their wipes and the define that picks them
+#   rsa-avx2          bin/rsa_avx2_equiv_test for x86-64, for the
+#                     violations of rsa_avx2_lanes.h's instructions
 #
 # Linux only: qemu-user runs a Linux binary. X86_CC and ARM64_CC name the
 # two compilers. Each is cc by default where cc targets its architecture,
@@ -255,9 +267,9 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
-    aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry) ;;
+    aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
     exit 2
     ;;
 esac
@@ -285,7 +297,8 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
-    [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ]; then
+    [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
+    [ "$only" != rsa-avx2 ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -331,8 +344,9 @@ read -r -a webpki_auth_counted_srcs <<< "$(sed -n 16p <<< "$lists")"
 read -r -a aes_equiv_srcs <<< "$(sed -n 17p <<< "$lists")"
 read -r -a rsa_addcarry_equiv_srcs <<< "$(sed -n 18p <<< "$lists")"
 read -r -a rsa_sign_equiv_srcs <<< "$(sed -n 19p <<< "$lists")"
-[ "${#rsa_sign_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than nineteen lists" >&2; exit 1; }
+read -r -a rsa_avx2_equiv_srcs <<< "$(sed -n 20p <<< "$lists")"
+[ "${#rsa_avx2_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
 # unit with no declaration, which -Wpedantic refuses, so the arm64 builds
 # link these copies of the three lists they take, without it.
@@ -532,6 +546,21 @@ if [ -z "$only" ] || [ "$only" = rsa-addcarry ]; then
         "the signer on the rows and the ladder disagree, or a call left a value it computed from the key on the stack" \
         rsa_sign_equiv_test
 fi
+if [ -z "$only" ] || [ "$only" = rsa-avx2 ]; then
+    # RSA's public operation on AVX2 against its lane model, which has a
+    # body on x86-64 alone. The binary builds at the 512-byte bound, where
+    # the kernel holds both digit widths.
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_RSA_MODULUS_MAX=512 -o "$x86_out/rsa_avx2_equiv_test" \
+        "${rsa_avx2_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "rsa_avx2.c on AVX2 and its lane model disagree, or rsa_vp1_cpu under CH_CPU_AVX2 and rsa_vp1 do" \
+        rsa_avx2_equiv_test
+fi
+if [ "$only" = rsa-avx2 ]; then
+    echo "aes-runtime-qemu: bin/rsa_avx2_equiv_test held rsa_avx2.c on AVX2 to its lane model, and rsa_vp1_cpu under CH_CPU_AVX2 to rsa_vp1, for x86-64"
+    exit 0
+fi
+
 if [ "$only" = rsa-addcarry ]; then
     echo "aes-runtime-qemu: under gcc for x86-64 rsa_mont64.c called the rows, bin/rsa_addcarry_equiv_test held them to the loops on _addcarry_u64, and bin/rsa_sign_equiv_test held the signer on them to the ladder and found nothing on the stack"
     exit 0

@@ -1,12 +1,12 @@
 invariant: INV-41
 file: rsa_mont.c
-catches: rsa_ifma_model_test
+catches: rsa_avx2_model_test
 reason: rsa_mont.c's kernel_takes admits an even modulus, so rsa_vp1_cpu
-  hands rsa_ifma_public a modulus that has no inverse of its low digit,
+  hands rsa_avx2_public a modulus that has no inverse of its low digit,
   and the kernel writes other bytes than rsa_vp1, whose answer rsa.h
   promises for every input under the bit, an even n included.
-  bin/rsa_ifma_model_test compares rsa_vp1_cpu under the bit with rsa_vp1
-  for an even modulus that the dispatch must refuse.
+  bin/rsa_avx2_model_test compares rsa_vp1_cpu under CH_CPU_AVX2 with
+  rsa_vp1 for an even modulus that the dispatch must refuse.
 
 --- old
     return k >= words_min && bit_length(n, n_len) == 64 * k && (n[n_len - 1] & 1) == 1;

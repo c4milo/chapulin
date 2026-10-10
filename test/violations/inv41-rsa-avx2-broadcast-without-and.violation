@@ -1,0 +1,21 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: test/widemul-builds.sh
+reason: broadcast_four drops the AND with the digit mask, which changes no
+  digit, so every byte stays right. Without it clang 23 cannot show that a
+  multiplier's bits from 32 up are zero, and multiplies by b's digits,
+  and by the y's it carries from the last group, on two VPMULUDQs, two
+  shifts and an add each. The script compiles the file for x86-64 with
+  the pinned clang at both bounds and refuses a lane shifted left by 32.
+
+--- old
+    x[0] = lanes_broadcast(digits[0] & mask);
+    x[1] = lanes_broadcast(digits[1] & mask);
+    x[2] = lanes_broadcast(digits[2] & mask);
+    x[3] = lanes_broadcast(digits[3] & mask);
+--- new
+    (void)mask;
+    x[0] = lanes_broadcast(digits[0]);
+    x[1] = lanes_broadcast(digits[1]);
+    x[2] = lanes_broadcast(digits[2]);
+    x[3] = lanes_broadcast(digits[3]);

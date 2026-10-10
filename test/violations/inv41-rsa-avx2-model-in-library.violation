@@ -1,0 +1,13 @@
+invariant: INV-41
+file: Makefile
+catches: test/widemul-builds.sh
+reason: make writes CH_RSA_AVX2_MODEL for every host object, so rsa_avx2.c
+  would read test/rsa_avx2_model_lanes.h, the scalar model of each
+  instruction, in place of the AVX2 instructions, and a session with
+  CH_CPU_AVX2 would run test code that no library build may hold.
+  test/widemul-builds.sh refuses a host object's defines that name it.
+
+--- old
+             $(CPU_RUNTIME_DEF))
+--- new
+             $(CPU_RUNTIME_DEF) $(if $(CPU_RUNTIME_DEF),-DCH_RSA_AVX2_MODEL))

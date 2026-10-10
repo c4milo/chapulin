@@ -1,0 +1,15 @@
+invariant: INV-41
+file: rsa_avx2.c
+catches: test/widemul-builds.sh
+reason: broadcast_four reads its digits through a plain pointer, so the
+  compiler carries each group's y's to the next group in registers and
+  drops the AND, because the triangle that wrote them masked them
+  already. Every byte stays right, and clang 23 multiplies by a y, and
+  by b's digits, on two VPMULUDQs, two shifts and an add. The script
+  compiles the file for x86-64 with the pinned clang at both bounds and
+  refuses a lane shifted left by 32.
+
+--- old
+broadcast_four(rsa_avx2_lanes x[4], const volatile uint64_t *digits, uint64_t mask) {
+--- new
+broadcast_four(rsa_avx2_lanes x[4], const uint64_t *digits, uint64_t mask) {

@@ -102,7 +102,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the eleven arguments that run one part
+# itself, and the lane with one of the twelve arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -132,6 +132,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # under it, can name it. A violation of rsa_mont64_addcarry.c's intrinsic,
 # its wipes or the define that picks it names rsa-addcarry, because only
 # a gcc build for x86-64 runs the rows and the lane builds it with that gcc.
+# A violation of rsa_avx2_lanes.h's instructions names rsa-avx2, because
+# the AVX2 kernel has a body on x86-64 alone.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
@@ -144,7 +146,8 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh aes-equiv",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma-callers",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma",
-                          "test/docker-aes-runtime-qemu.sh rsa-addcarry"]
+                          "test/docker-aes-runtime-qemu.sh rsa-addcarry",
+                          "test/docker-aes-runtime-qemu.sh rsa-avx2"]
 
 # What "everything" means, in the order to run it: the two tiers, then
 # the targets only the nightly runs. Each entry is (tier, command, reason).
@@ -369,7 +372,7 @@ def select_pairs(out, changed, lib):
 # bin/qemu-arm64/ and runs them under qemu-x86_64 and qemu-aarch64
 # (docs/decisions.md 81, 89, 90, 93 and 94). No make rule builds the
 # copies. The script asks make for each binary's source list and names its
-# test files itself, and the sources of these nineteen rules hold every
+# test files itself, and the sources of these twenty rules hold every
 # file it compiles.
 AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/webpki_loop_aes", "bin/quic_test_hw",
@@ -380,7 +383,7 @@ AES_RUNTIME_QEMU_BINARIES = ("bin/aes_runtime_test", "bin/quic_loop_aes",
                              "bin/mlkem_avx2_equiv_test", "bin/poly1305_equiv_test",
                              "bin/tcp_blocking_loop_host", "bin/webpki_auth_host",
                              "bin/aes_equiv_test", "bin/rsa_addcarry_equiv_test",
-                             "bin/rsa_sign_equiv_test")
+                             "bin/rsa_sign_equiv_test", "bin/rsa_avx2_equiv_test")
 AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-qemu.sh"}
 
 
@@ -712,12 +715,12 @@ def select_lints(out, changed, csources, lib):
     # the verifiers tells which one an object compiled, and the script
     # compiles the file either side of the define and reads its calls. It
     # reads rsa_mont64.c's calls into rsa_mont64_addcarry.c's rows the same
-    # way (docs/decisions.md 122). It also compiles rsa_ifma.c and
-    # rsa_mont.c's call into it for x86-64 and arm64, and reads every root
-    # source for an include of rsa_ifma.h or a call into it, so a change to
-    # any root source selects it.
+    # way (docs/decisions.md 122). It also compiles rsa_ifma.c, rsa_avx2.c
+    # and rsa_mont.c's calls into them for x86-64 and arm64, and reads every
+    # root source for an include of rsa_ifma.h or rsa_avx2.h or a call into
+    # either, so a change to any root source selects it.
     if set(csources) & {"rsa_mont.c", "rsa_mont64.c", "rsa_mont64_blocks.c",
-                        "rsa_mont64_addcarry.c", "rsa_ifma.c"}:
+                        "rsa_mont64_addcarry.c", "rsa_ifma.c", "rsa_avx2.c"}:
         out.add("tests", "test/widemul-builds.sh",
                 "rsa_mont.c calls the 64-bit arithmetic in a host object "
                 "alone, and this script compiles it either side of that define",

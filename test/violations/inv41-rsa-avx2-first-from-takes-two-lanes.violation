@@ -1,0 +1,17 @@
+invariant: INV-41
+file: rsa_avx2_lanes.h
+catches: test/docker-aes-runtime-qemu.sh rsa-avx2
+reason: lanes_first_from blends four 32-bit halves of low where it takes
+  two, so lanes 0 and 1 come from low and the square multiplies a digit
+  above row 2's own by a_r where it takes 2 a_r. The model of the blend
+  keeps lane 0 alone, so every test that runs the model passes.
+  bin/rsa_avx2_equiv_test runs each lane operation on the instruction and
+  on its model and compares the lanes; only an x86-64 object holds the
+  instructions, so the lane builds the binary for x86-64 and runs it under
+  qemu; it skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+    return _mm256_blend_epi32(high, low, 0x03);
+--- new
+    return _mm256_blend_epi32(high, low, 0x0f);

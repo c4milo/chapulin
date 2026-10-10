@@ -9498,13 +9498,19 @@ does nothing more.
       on `chacha20_avx2.c` and 127 to 138 ns with it on 512-bit registers,
       under clang and gcc.
 
-122. **A gcc host object for x86-64 multiplies and squares RSA's words in
-    rows whose carries go down `_addcarry_u64` chains.** After decisions
-    117 and 118, a gcc build for x86-64 ran `rsa_mont64.c`'s loops, whose
-    every word waits on the carry of the word below: gcc keeps no carry in
-    the flags from one 128-bit sum to the next. Camilo ruled on
-    2026-10-09 to land these rows for gcc on x86-64, with no assembly on
-    a secret.
+122. **On x86-64 a gcc host object multiplies and squares RSA's words in
+    rows whose carries go down `_addcarry_u64` chains, and a session that
+    states AVX2 and not AVX-512 IFMA verifies RSA on AVX2.** After
+    decisions 117 and 118, a gcc build for x86-64 ran `rsa_mont64.c`'s
+    loops, whose every word waits on the carry of the word below: gcc
+    keeps no carry in the flags from one 128-bit sum to the next. And
+    after decision 119 a CPU without AVX-512 IFMA, such as the EPYC 7763,
+    verified on those loops. Camilo ruled on 2026-10-09 to land these rows
+    for gcc on x86-64, with no assembly on a secret, and for CPUs without
+    AVX-512 to run verification's public operation on AVX2 under
+    `CH_CPU_AVX2`, with no new bit.
+
+    The rows:
 
     - **What changes.** `rsa_mont64_addcarry.c` multiplies and squares in
       rows of blocks of four words, the shape decision 119's prototype
@@ -9593,6 +9599,124 @@ does nothing more.
       and 1,200, below `rsa_mont64.c`'s calls into them, which hold the k
       words before the last subtraction.
 
+    The AVX2 public operation:
+
+    - **What changes.** `rsa_avx2.c` computes base^65537 mod m in digits
+      of D bits, one digit to a 64-bit lane and four to a 256-bit
+      register, which VPMULUDQ multiplies 32 x 32 -> 64. A modulus of k
+      words takes n = ceil((64k + 2) / D) digits, two bits more than its
+      k words: 74, 110 and 152 at RSA-2048, RSA-3072 and RSA-4096. The
+      product is the almost-Montgomery multiplication in radix 2^D by
+      operand scanning: rows of four digits add b's digits times a and
+      the rows' y's times m to a running sum whose lanes carry into each
+      other only in a scalar triangle at each register and in one pass
+      at the end. `rsa_mont.c`'s `rsa_vp1_cpu` asks for AVX-512 IFMA
+      first, then for `CH_CPU_AVX2`, and takes the kernel for the moduli
+      the IFMA kernel takes, an odd one whose bit length is a multiple of
+      64, at least 2,048, with 2^(2Dn) mod m from `power_of_two_mod`.
+      `rsa_avx2_number.h` holds the layout of a number and the
+      conversions to and from words.
+    - **28 bits, and 27 above RSA-3072.** A lane of the sum holds at most
+      2n products of two digits and two carries below 2^(64 - D). At 28
+      bits RSA-3072's 110 digits leave room and RSA-4096's 147 would not,
+      where its 152 digits of 27 bits do. 29-bit digits would need a pass
+      of carries every few groups, which the ruling left out.
+    - **The square.** Row r multiplies a's digits above its own by 2 a_r,
+      its own by a_r and those below by nothing, so each lane of a square
+      holds what the multiplication of a by itself puts there, from about
+      half its products. Which of the three a lane takes depends on the
+      register's offset from the group alone, so a blend of two
+      broadcast multipliers makes the pattern at the two offsets where
+      it changes.
+    - **The window.** Group g adds to the G registers above register g
+      alone, for G groups, so the sum lives in G + 1 registers that move
+      down one register a group rather than in 2G + 1. At the 512-byte
+      bound that keeps each product's frame at or below 1,920 bytes under
+      gcc 13.
+    - **The bit.** `CH_CPU_AVX2` already picks ChaCha20's and ML-KEM's
+      kernels (decisions 90 and 107), and states presence alone. The
+      kernel's inputs are a modulus, a signature and an encoded message,
+      all public, so it needs no statement of timing and no bit of its
+      own. Decision 119 rejected AVX2 in place of IFMA in part because a
+      caller could not keep it off a CPU where it loses: on every runner
+      below it took 0.50 to 0.71 of the loops' time for a verification,
+      and no signature runs it.
+    - **Public input alone.** The compiler keeps 256-bit registers in
+      stack slots no wipe can name, so the file wipes nothing, only
+      `rsa_vp1_cpu` calls it, and `rsa_sign64.c` never does
+      (`test/widemul-builds.sh`).
+    - **Why gcc ran the prototype slower.** The prototype ran under gcc
+      in 1.04 to 1.18 times its time under clang. Runs 38004169595,
+      38005190910, 38007792079 and 38008262430 timed variants on the
+      runners and found two causes. gcc kept the four broadcast
+      multipliers of a group in a stack array that a loop filled, and
+      reloaded them in every row; writing the four statements out fixed
+      that. And the square read a copy of 2a in memory through loads that
+      span two of the 32-byte stores that had just written it: in up to 5
+      of 16 processes on a runner gcc's code ran the whole operation 1.1
+      to 1.9 times slower, with address space layout randomization on or
+      off. Doubling the multiplier in a register in place of the number
+      removed it: 0 of 16 processes slow on any of six runners, under
+      either compiler.
+    - **clang's products.** VPMULUDQ multiplies bits 31..0 of each lane,
+      and clang uses one only where it can show that a multiplier's bits
+      from 32 up are zero. In a loop it showed that only of a value an
+      AND wrote in the same pass: without it it multiplied by b's digits,
+      and by a y it carried over from the last group in a register, on two
+      VPMULUDQs, two shifts and an add, which took about 1.5 times the
+      kernel's time on the EPYC 7763. `broadcast_four` ANDs each multiplier with
+      the digit mask and reads its digits through a volatile pointer, and
+      `test/widemul-builds.sh` refuses an object that shifts a lane left
+      by 32.
+    - **Gain.** Run 38009825458 timed the tree on six ubuntu-24.04
+      runners on 2026-10-09, after holding the kernel to its model on each
+      CPU with `bin/rsa_avx2_equiv_test` and the verifiers' vectors under
+      both compilers. Each figure is the median of five runs of
+      `bench/primitives.c`'s RSA PKCS#1 v1.5 verification, the loops of
+      the tree before this entry beside the AVX2 kernel, under gcc 13.3
+      and then clang 23, and OpenSSL 3.6.4's `openssl speed`, in µs:
+
+      | CPU | RSA-2048 | RSA-3072 | RSA-4096 | OpenSSL |
+      | --- | --- | --- | --- | --- |
+      | EPYC 7763, two runners | 36.6 → 20.3; 36.7 → 18.4 | 82.8–83.0 → 37.8–38.0; 82.5 → 35.3 | 145.5–145.8 → 62.0–62.1; 148.7–148.8 → 58.5 | 18.9, 40.1–40.2, 69.3–69.4 |
+      | EPYC 9V74 | 29.7 → 16.7; 30.0 → 15.4 | 65.4 → 31.8; 66.1 → 29.8 | 112.0 → 52.6; 114.6 → 50.6 | 16.3, 35.5, 60.7 |
+      | EPYC 9V45, two runners | 18.6–19.6 → 12.4–13.0; 18.6–19.8 → 10.9–11.4 | 38.6–41.4 → 23.7–25.1; 39.4–42.0 → 21.7–22.8 | 67.6–74.0 → 39.7–42.0; 70.4–75.2 → 37.1–38.5 | 12.4–13.1, 26.8–28.7, 46.1–49.1 |
+      | Xeon Platinum 8370C | 31.9 → 21.9; 29.8 → 21.2 | 68.2 → 40.1; 63.6 → 38.9 | 120.2 → 65.8; 113.3 → 63.1 | 17.9, 37.6, 64.7 |
+
+      The EPYC 9V74, the EPYC 9V45 and the Xeon have AVX-512 IFMA, so a
+      session that states it runs `rsa_ifma.c`; their rows here ran under
+      a value without that bit. On the EPYC 7763, which has no AVX-512, an
+      RSA-2048 verification took 1.07 times OpenSSL's time under gcc and
+      0.97 under clang, and an RSA-3072 one 0.94 and 0.88. On every CPU
+      but the Xeon the kernel beat OpenSSL from RSA-3072 up under both
+      compilers. Each of eight processes ran an RSA-2048 `rsa_vp1_cpu`
+      within 2% of the others on every runner but the two EPYC 9V45s,
+      whose times spread for every path in every run of this entry, and a
+      stack moved by 0 to 4,080 bytes changed none by more than 8% on the
+      7763s, the 9V74 and the Xeon. The kernel alone took 0.95 to 0.99 of
+      the prototype's time under gcc on the AMD CPUs and 1.02 to 1.03 on
+      the Xeon, and under clang 1.02 on the 7763s and the 9V74, 0.96 to
+      0.98 on the 9V45s and 1.09 to 1.11 on the Xeon.
+    - **What holds it.** `bin/rsa_avx2_model_test` compiles the file and
+      the dispatch over `test/rsa_avx2_model_lanes.h` and holds them to
+      `rsa_mont64.c` on every machine, and `bin/rsa_avx2_equiv_test` holds
+      the instructions to that model on a CPU with AVX2, which
+      `test/docker-aes-runtime-qemu.sh rsa-avx2` runs under QEMU's `max`
+      model on any machine with docker. `bin/x86_kernels_test` counts the
+      calls each value sends to the kernel. INV-41 states the claim, and
+      docs/verification.md, "The AVX2 public operation", lists each test
+      and the nineteen violations they catch.
+    - **Branches.** `lint-wide-multiply` holds the file at 38 conditional
+      branches under clang for x86-64 at the 384-byte bound and 68 at the
+      512-byte bound, each a test of a count or an index.
+    - **Cost.** 488 lines in `rsa_avx2.c`, 109 in `rsa_avx2_number.h` and
+      69 in `rsa_avx2_lanes.h`. Under gcc 13 at `-O2` the file compiles
+      to 6,879 bytes of code at the 384-byte bound and 12,368 at the
+      512-byte bound, where it holds the copies for both digit widths.
+      The largest frame is `rsa_avx2_public`'s, 2,080 bytes at the
+      384-byte bound and 2,752 at the 512-byte one, beside each product's
+      at most 1,600 and 1,920.
+
     Rejected:
 
     - **The rows under clang**, above.
@@ -9602,6 +9726,19 @@ does nothing more.
     - **One column of the result at a time with the step in inline
       assembly**, which the prototype ran at 0.73 to 0.95 of the loops'
       time under gcc. It is assembly on the signer's secrets.
+    - **29-bit digits**, which would let RSA-4096 keep the 28-bit
+      copies' fewer digits but need a pass of carries every few groups.
+      The ruling left them out.
+    - **2a as a number in memory**, above: some gcc processes ran the
+      kernel up to 1.6 times slower.
+    - **The whole sum in 2G + 1 registers**, the prototype's layout,
+      which ran no faster than the window and took 1,184 more bytes of
+      stack a product at the 512-byte bound.
+    - **AVX2 for a signature.** A signer's numbers are secret, and the
+      compiler keeps 256-bit registers in stack slots no wipe can name.
+      Decision 119's prototype also ran a 1,024-bit product, the size of
+      an RSA-2048 signer's primes, in 0.94 to 1.39 times the loops'
+      time.
 
 123. **Every x86-64 host object expands an AES key a round key at a time
     in vector registers.** `record.c` and `quic_packet.c` expand a traffic

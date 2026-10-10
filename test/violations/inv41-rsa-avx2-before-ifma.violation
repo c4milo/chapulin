@@ -1,0 +1,17 @@
+invariant: INV-41
+file: rsa_mont.c
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: rsa_vp1_cpu asks for AVX2 before AVX-512 IFMA, so a session whose
+  ch_cfg.cpu holds both bits runs the AVX2 kernel, which took more time
+  than the IFMA kernel on every runner that had both. The bytes are the
+  same, so no vector sees it. bin/x86_kernels_test counts the calls into
+  each kernel under each value, on stand-ins that run no kernel
+  instruction, and requires the IFMA kernel's call where the value holds
+  its bit. Only an x86-64 object holds the two dispatches, so the lane
+  builds the binary for x86-64; it skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    if (use_ifma(cpu) && kernel_takes(n, n_len, RSA_IFMA_WORDS_MIN)) {
+--- new
+    if (use_ifma(cpu) && !use_avx2(cpu) && kernel_takes(n, n_len, RSA_IFMA_WORDS_MIN)) {

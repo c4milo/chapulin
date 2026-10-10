@@ -538,10 +538,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // every session (docs/decisions.md 95), its blocks of four words
     // (docs/decisions.md 118), its rows on _addcarry_u64, which a gcc build
     // alone runs and Zig's clang compiles to nothing (docs/decisions.md
-    // 122), and the public operation on AVX-512 IFMA,
-    // which a session's CH_CPU_AVX512_IFMA bit picks on x86-64 and which
-    // holds nothing on arm64.
-    if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_mont64.c", "rsa_mont64_blocks.c", "rsa_mont64_addcarry.c", "rsa_ifma.c" } });
+    // 122), and the public operation on AVX-512 IFMA and on AVX2, which a
+    // session's CH_CPU_AVX512_IFMA and CH_CPU_AVX2 bits pick on x86-64 and
+    // which hold nothing on arm64 (docs/decisions.md 119 and 122).
+    if (host and contains(lib_srcs, "rsa_mont.c")) lib_srcs = concat(b, &.{ lib_srcs, &.{ "rsa_mont64.c", "rsa_mont64_blocks.c", "rsa_mont64_addcarry.c", "rsa_ifma.c", "rsa_avx2.c" } });
     // RSA_SIGN64_SRCS: the signer on those words, which a session's
     // CH_CPU_CONSTANT_TIME_MULTIPLY bit picks over rsa_sign.c's ladder
     // (docs/decisions.md 95), and its exponentiations on AVX-512 IFMA,
