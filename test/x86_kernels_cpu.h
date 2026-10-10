@@ -71,6 +71,18 @@ static inline int x86_cpu_has_avx512_ifma(void) {
 #endif
 }
 
+// AVX-512F alone, which avx512_wipe.c's one call runs. __builtin_cpu_supports
+// also reads whether the operating system saves the opmask registers and
+// the 512-bit registers.
+static inline int x86_cpu_has_avx512f(void) {
+#ifdef __x86_64__
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx512f") != 0;
+#else
+    return 0;
+#endif
+}
+
 // Whether a binary whose CPU lacks a kernel's instructions must fail
 // rather than skip.
 static inline int x86_kernels_required(void) {

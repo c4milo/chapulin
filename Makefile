@@ -534,7 +534,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           chacha20_vector.c chacha20_avx2.c test/chacha20_equiv_test.c test/chacha20_equiv_vector.c \
-          test/chacha20_equiv_avx2.c x25519_wide.c test/x25519_equiv_test.c \
+          test/chacha20_equiv_avx2.c avx512_wipe.c test/avx512_wipe_test.c x25519_wide.c \
+          test/x25519_equiv_test.c \
           $(P256_WIDE_SRCS) test/p256_equiv_test.c test/diff_p256_wide_test.c \
           test/p256_verify_equiv_test.c test/p256_verify_portable.c \
           $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
@@ -543,7 +544,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           poly1305_vector.c test/poly1305_equiv_test.c test/poly1305_equiv_vector.c test/stack_residue.c \
           poly1305_avx2.c test/poly1305_equiv_avx2.c \
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
-          keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c avx512_wipe.c \
+          keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
           $(wildcard examples/*.c)
@@ -1683,7 +1684,10 @@ print-aes-runtime-qemu-srcs:
 # object, so a device object carries the portable loop alone, and require
 # every value of the CHACHA variable to stop the build, which is gone
 # (docs/decisions.md 89). Every row bans -DCH_CHACHA_VECTOR, which no
-# source reads.
+# source reads. The same rows hold avx512_wipe.c, the wipe of the AVX-512
+# registers, to the x86-64 host object, and out of every device object and
+# of a host object for any other target. Each row sets X86_64_TARGET on
+# its own command line, as it sets HOST_TARGET.
 #
 # The hash rows hold sha256_hw.c, hkdf_hw.c and keysched_hw.c to the host
 # object, over TCP and over QUIC, beside the three files they stand
@@ -1724,11 +1728,6 @@ print-aes-runtime-qemu-srcs:
 # device object, and rsa_sign64.c, the signer on those words, with
 # rsa_ifma_sign.c, its exponentiations on AVX-512 IFMA, to the host
 # object that holds rsa_sign.c (docs/decisions.md 95 and 120).
-#
-# The wipe rows hold avx512_wipe.c, the wipe of the vector registers, to
-# the host object for x86-64, and out of an arm64 host object and every
-# device object. Each row sets X86_64_TARGET on its own command line, as
-# it sets HOST_TARGET.
 #
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
@@ -1810,25 +1809,25 @@ lint-trust-separation-run:
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "$$p256_portable $(P256_WIDE_SRCS)" "$$p256_gone" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "$$p256_portable" "$(P256_WIDE_SRCS) $$p256_gone" "" "-DCH_CPU_RUNTIME"; \
 	check "TRUST=raw-rsa" "rsa_mont.c" "$(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa X86_64_TARGET=yes" "" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes X86_64_TARGET=yes" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=yes" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=" "" "avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "" "avx512_wipe.c" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "p384.c p384_field.c $(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "p384.c p384_field.c" "$(P384_WIDE_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=server TRUST=none HOST_TARGET=yes" "rsa_mont.c $(RSA_MONT64_SRCS) rsa_sign.c $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME" ""; \
 	check "ROLE=client TRUST=webpki HOST_TARGET=" "rsa_mont.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
 	check "ROLE=server TRUST=none HOST_TARGET=" "rsa_mont.c rsa_sign.c" "$(RSA_MONT64_SRCS) $(RSA_SIGN64_SRCS)" "" "-DCH_CPU_RUNTIME"; \
-	check "TRUST=raw-rsa" "chacha20.c" "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
+	check "TRUST=raw-rsa X86_64_TARGET=yes" "chacha20.c" \
+	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes X86_64_TARGET=yes" \
+	  "chacha20.c chacha20_vector.c chacha20_avx2.c avx512_wipe.c" \
 	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "chacha20.c chacha20_vector.c chacha20_avx2.c" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=yes" \
+	  "chacha20.c chacha20_vector.c chacha20_avx2.c avx512_wipe.c" \
 	  "poly1305_vector.c poly1305_avx2.c" "-DCH_CPU_RUNTIME" "-DCH_CHACHA_VECTOR"; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "chacha20.c" \
-	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c" "" \
+	check "ROLE=server TRUST=none HOST_TARGET=yes X86_64_TARGET=" \
+	  "chacha20.c chacha20_vector.c chacha20_avx2.c" "avx512_wipe.c" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET= X86_64_TARGET=yes" "chacha20.c" \
+	  "chacha20_vector.c chacha20_avx2.c poly1305_vector.c poly1305_avx2.c avx512_wipe.c" "" \
 	  "-DCH_CHACHA_VECTOR -DCH_CPU_RUNTIME"; \
 	for value in portable vector; do \
 	  for axis in "TRUST=raw-rsa" "ROLE=client TRUST=webpki HOST_TARGET=yes" "ROLE=server TRUST=none HOST_TARGET="; do \
@@ -2549,6 +2548,16 @@ bin/rsa_ifma_equiv_test: $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c rsa_ifma.c $(RS
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest \
 	  -o $@ $(RSA_IFMA_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_IFMA_TEST_SRCS)
+# avx512_wipe.c's call on the instructions: every vector register and k1
+# to k7 set, the call, and each of them read back as zero
+# (test/avx512_wipe_test.c). The file is in an x86-64 host object alone,
+# so the binary compiles it on x86-64 alone; elsewhere the test's main
+# prints SKIP. On a CPU without AVX-512F it skips unless
+# CH_REQUIRE_AVX512_IFMA is 1.
+bin/avx512_wipe_test: test/avx512_wipe_test.c avx512_wipe.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/avx512_wipe_test.c \
+	  $(AVX512_WIPE_SRCS)
 # The same for the signer: rsa_sign.c is the ladder a host object holds
 # for a session that does not state its multiply, the code a device object
 # runs, and rsa_sign64.c is the CRT signer on 64-bit words beside it. The
@@ -3618,7 +3627,7 @@ HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_
                                  bin/hash_runtime_exporter_test \
                                  bin/rsa_equiv_test bin/rsa_equiv_test_compare bin/rsa_equiv_test_sum \
                                  bin/rsa_blocks_equiv_test bin/rsa_ifma_model_test bin/rsa_ifma_model_test_384 \
-                                 bin/rsa_ifma_equiv_test \
+                                 bin/rsa_ifma_equiv_test bin/avx512_wipe_test \
                                  bin/rsa_sign_equiv_test \
                                  bin/rsa_ifma_sign_model_test bin/rsa_ifma_sign_model_test_384 \
                                  bin/rsa_ifma_sign_equiv_test bin/rsa_ifma_sign_equiv_test_384 \
@@ -5432,6 +5441,13 @@ else
 	# declares its one call beside the definition, where its callers
 	# declare it too, and misc-use-internal-linkage asks a file read alone
 	# to make that call static, which its callers' link would refuse.
+	# test/avx512_wipe_test.c stays out of every pass, as softmul.c stays
+	# out of LINT_C: it fills the AVX-512 registers and reads them back in
+	# a block of assembly because C names no register, so
+	# portability-no-assembler's finding in that block is the design.
+	# Leaving the file out keeps the check on every other file.
+	# clang-format and cppcheck still read it. avx512_wipe.c, the wipe
+	# itself, has a pass of its own below with that check off.
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c \
@@ -5450,10 +5466,11 @@ else
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
-	  poly1305_vector.c test/poly1305_equiv_vector.c test/stack_residue.c \
+	  avx512_wipe.c test/avx512_wipe_test.c poly1305_vector.c test/poly1305_equiv_vector.c \
+	  test/stack_residue.c \
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c \
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
-	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c avx512_wipe.c \
+	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
@@ -6494,8 +6511,8 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # -DCH_AES_EXTERN.
 # The native copies of a host object need -DCH_CPU_RUNTIME, because ct.h
 # refuses a native copy anywhere else, and x25519_wide.c, rsa_mont64.c,
-# rsa_sign64.c and rsa_ifma.c need it because their whole bodies sit
-# behind that define.
+# rsa_sign64.c, rsa_ifma.c and avx512_wipe.c need it because their whole
+# bodies sit behind that define.
 # sha256_hw.c needs it for that reason too, and hkdf_hw.c and keysched_hw.c
 # because hash_hw.h refuses a copy without it; the two copies take
 # -DCH_HASH_SHA384 as hkdf.c and keysched.c do, so the count reads both

@@ -1,0 +1,13 @@
+invariant: INV-17
+file: avx512_wipe.c
+catches: test/chacha-builds.sh
+reason: avx512_wipe_registers zeros zmm0 to zmm30 and leaves zmm31, so a
+  kernel that held a secret there still holds it after the call. No vector
+  sees it: the register is dead to the caller. bin/avx512_wipe_test reads
+  every register back on a CPU with AVX-512F, which this machine may lack;
+  the script compiles the file for x86-64 and requires a VPXORD of each of
+  the 32 vector registers with itself.
+
+--- old
+                     "vpxord %%xmm31, %%xmm31, %%xmm31\n\t"
+--- new

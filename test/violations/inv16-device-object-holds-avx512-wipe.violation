@@ -1,0 +1,15 @@
+invariant: INV-16
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: every object on an x86-64 compiler lists avx512_wipe.c, a device
+  object among them. The file compiles to nothing there, so nothing fails,
+  and the object holds the one block of assembly no device build asked
+  for. lint-trust-separation's ChaCha20 rows ban the file from every device
+  object's source list.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS += $(AVX512_WIPE_SRCS)
+endif
+--- new
+LIB_SRCS += $(AVX512_WIPE_SRCS)

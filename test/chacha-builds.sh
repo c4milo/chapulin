@@ -40,7 +40,11 @@
 #     poly1305_avx2_native.c must define nothing and poly1305_native.c call
 #     nothing of it; and poly1305.c under its own names, and its native copy
 #     under -DCH_CT_WIDEMUL, which turns the vector paths off, must call
-#     no AVX2 entry on either target.
+#     no AVX2 entry on either target;
+#   - for x86-64, avx512_wipe.c must define avx512_wipe_registers, whose
+#     body zeros each of the 32 vector registers with a VPXORD of the
+#     register with itself and each of k1 to k7 with a KXORW, and for
+#     arm64 it must define nothing.
 #
 # The cross targets use the pinned clang, which make resolves, with no
 # toolchain beside it, the way lint-wide-multiply compiles for them.
@@ -217,4 +221,30 @@ if nm "$work/cross.o" | grep -q poly1305_avx2; then
     exit 1
 fi
 
-echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 the AVX2 kernel, the kernel's 256-bit instructions stay in chacha20_avx2.c, and the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls"
+# The wipe of the AVX-512 registers: one VPXORD for each of xmm0 to xmm31,
+# which zeros the whole 512-bit register, and one KXORW for each of k1 to
+# k7, in the one function the file defines for x86-64.
+cross_object "$x86" avx512_wipe.c
+if ! nm "$work/cross.o" | grep -qE '[[:space:]]T[[:space:]]_?avx512_wipe_registers$'; then
+    echo "chacha-builds: avx512_wipe.c for x86-64 must define avx512_wipe_registers" >&2
+    exit 1
+fi
+for n in $(seq 0 31); do
+    if ! grep -qE "^[[:space:]]*vpxord[[:space:]]+%xmm$n, %xmm$n, %xmm$n$" "$work/cross.s"; then
+        echo "chacha-builds: avx512_wipe_registers for x86-64 does not zero zmm$n" >&2
+        exit 1
+    fi
+done
+for n in $(seq 1 7); do
+    if ! grep -qE "^[[:space:]]*kxorw[[:space:]]+%k$n, %k$n, %k$n$" "$work/cross.s"; then
+        echo "chacha-builds: avx512_wipe_registers for x86-64 does not zero k$n" >&2
+        exit 1
+    fi
+done
+cross_object "$arm64" avx512_wipe.c
+if nm "$work/cross.o" | grep -q avx512_wipe_registers; then
+    echo "chacha-builds: avx512_wipe.c for arm64 defines avx512_wipe_registers; it has a body on x86-64 alone" >&2
+    exit 1
+fi
+
+echo "chacha-builds: chacha20_vector.h admits NEON or SSE2 on a little-endian target alone, a device object calls no vector path, a host object's chacha20_xor calls the 128-bit path and no kernel, chacha20_xor_cpu calls the 128-bit path and on x86-64 the AVX2 kernel, the kernel's 256-bit instructions stay in chacha20_avx2.c, the AVX2 Poly1305's stay in poly1305_avx2_native.c, which only poly1305.c's native copy on x86-64 calls, and avx512_wipe_registers zeros zmm0 to zmm31 and k1 to k7 on x86-64 alone"
