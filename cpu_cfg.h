@@ -53,11 +53,14 @@
 // CH_CPU_CONSTANT_TIME_MULTIPLY states that the widening multiply runs in constant time on the
 // CPU, in that mode: MADD, UMULH, MUL and MULX are on the same two lists. On arm64 that needs a
 // core with FEAT_DIT and a thread that has set PSTATE.DIT, and on x86-64 a part on the DOIT list
-// and the DOITM policy of its operating system. A session with the bit runs every operation built
-// on ct.h's widening multiply on the native multiply, the _native copies widemul.h dispatches
-// to, and X25519 on x25519_wide.c's field, whose 64x64->128 multiply the bit states as well. A
-// session without it runs them on ct.h's 16x16 decomposition, the files under their own names,
-// and X25519 on the 16-word field (docs/decisions.md 52, 87 and 89).
+// and the DOITM policy of its operating system. On x86-64 the statement also covers AVX-512
+// IFMA's 52-bit products, VPMADD52LUQ and VPMADD52HUQ, which rsa_ifma_sign.c and rsa_ifma.c run
+// on the key's primes and on a candidate signature for a session whose value holds
+// CH_CPU_AVX512_IFMA beside this bit (docs/decisions.md 120). A session with the bit runs every
+// operation built on ct.h's widening multiply on the native multiply, the _native copies
+// widemul.h dispatches to, and X25519 on x25519_wide.c's field, whose 64x64->128 multiply the
+// bit states as well. A session without it runs them on ct.h's 16x16 decomposition, the files
+// under their own names, and X25519 on the 16-word field (docs/decisions.md 52, 87 and 89).
 //
 // CH_CPU_AVX2 says the CPU has AVX2 and its operating system saves the 256-bit registers, which a
 // probe reads from CPUID and XGETBV, and CH_CPU_VAES that the CPU also has VAES and VPCLMULQDQ on
@@ -79,14 +82,19 @@
 // CH_CPU_AVX512_IFMA says the CPU has AVX-512F and AVX-512 IFMA, which CPUID leaf 7 reports in
 // bits 16 and 21 of EBX, and that its operating system saves the opmask registers and the 512-bit
 // registers, which XGETBV reports in bits 5 to 7 of XCR0. A probe reads the IFMA bit itself: a
-// CPU can have AVX-512F without IFMA. It is an x86-64 bit for RSA verification, whose inputs are
-// all public, so like CH_CPU_AVX2 it states presence alone and no timing. rsa_mont.c's
+// CPU can have AVX-512F without IFMA. It is an x86-64 bit, and like CH_CPU_AVX2 it states
+// presence alone and no timing: RSA verification's inputs are all public. rsa_mont.c's
 // rsa_vp1_cpu reads it and sends the verifiers' public operation to rsa_ifma.c for an odd modulus
 // of 2,048 bits or more whose bit length is a multiple of 64, and to rsa_mont64.c for any other.
 // x509.c verifies the chain links of TRUST=ca-rsa with rsa_pss_verify, which takes no cpu, so
 // they run rsa_mont64.c whatever the bit says. rsa_ifma.c runs the public operation in digits
 // of 52 bits, eight to a 512-bit register, on VPMADD52LUQ and VPMADD52HUQ, and writes the bytes
 // rsa_mont64.c writes: a session with the bit computes what a session without it computes.
+// Beside CH_CPU_CONSTANT_TIME_MULTIPLY, whose statement covers those 52-bit products, the bit
+// also runs a server's RSA signatures: rsa_sign64.c computes the two exponentiations on
+// rsa_ifma_sign.c and checks each signature on rsa_ifma.c through rsa_vp1_cpu, and after each
+// call wipes the stack below it and the 512-bit and mask registers (docs/decisions.md 120).
+// Without the multiply bit a session signs on rsa_sign64.c's window, whatever this bit says.
 //
 // CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
 // the CPU has the instructions of one hash, and state that they run in constant time on it, in

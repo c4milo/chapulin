@@ -1219,9 +1219,14 @@ last `ROLE=server` stub, as the entry said it would.
   length is a multiple of 64, at least 2,048 (decision 119). That kernel
   writes `rsa_mont64.c`'s bytes for every base of the modulus's length,
   and wraps no sum either: a lane stays below 2^61, and a scalar sum
-  below 2^106. It takes public input alone and wipes nothing, so only
-  `rsa_mont.c`'s `rsa_vp1_cpu` calls it, and `rsa_sign64.c` never does,
-  neither for a signature nor for the check of one.
+  below 2^106. It wipes nothing, so only `rsa_mont.c`'s `rsa_vp1_cpu`
+  calls it. On x86-64 a session whose `ch_cfg.cpu` holds
+  `CH_CPU_AVX512_IFMA` and `CH_CPU_CONSTANT_TIME_MULTIPLY` signs on
+  `rsa_ifma_sign.c`, whose two exponentiations run on the same product
+  and write the words of `rsa_sign64.c`'s window, and checks each
+  signature on that kernel through `rsa_vp1_cpu`; `rsa_sign64.c` wipes
+  the stack below each of the two calls and the vector registers after
+  it (decision 120). Every other session signs on the window.
 - **Mechanism.** Every product is one `ct_mul128`. A round of
   `rsa_mont64_mont_mul` adds one product, one word and one carry in each
   of its two steps, and its top step adds two carries to a word that is 0,
@@ -1266,6 +1271,15 @@ last `ROLE=server` stub, as the entry said it would.
   operands `rsa_ifma_public` gives it, and one subtraction of m ends the
   operation. `rsa_mont.c`'s `power_of_two_mod` computes the 2^(104n)
   mod m the first product takes, with the division's step above.
+  The signer's kernel runs that product on a prime of k words, 16 to 24
+  or to 32 under `TRUST=webpki`, in 3 to 5 registers, and runs a round
+  under p beside the same round under q. It holds a number x as
+  x R' mod m, where `rsa_mont64.c` holds x R mod m, R = 2^(64k), and
+  R' = R 2^spare. So `state_setup` doubles R mod m and the base spare
+  times modulo m into the table's first two entries, the window runs on
+  the product, and the last product, by R mod m, leaves the power in
+  `rsa_mont64.c`'s domain below 2m, which `state_finish` reduces with the
+  word above the k words.
 - **Check.** CBMC, with `--unsigned-overflow-check` on the lines whose
   claim is a sum: `rsa_mont64_sums` runs the shipped multiplication at
   four words over any operands, `rsa_mont64_ops` the comparison, the
@@ -1355,7 +1369,20 @@ last `ROLE=server` stub, as the entry said it would.
   that includes `rsa_ifma.h` or calls into it, no device object that
   lists the file, and no library build that names `CH_RSA_IFMA_MODEL`.
   docs/verification.md, "The AVX-512 IFMA public operation", lists each
-  test.
+  test. For the signer's kernel the `rsa_ifma_sign` harnesses prove the
+  memory accesses of each copy of the pair, of the setup and the finish
+  at every prime word count and of the whole exponentiation, that
+  `table_select` writes the digit's entry and that the conversions are
+  inverse, and `rsa_sign64_ifma` proves that `rsa_sign64.c`'s arm hands
+  the kernels the key's integers and wipes after each. The Lean spec's
+  `signPower_eq` proves that the window over its model of the product
+  writes b^e R mod m for the base b R mod m, and `bin/diff_rsa_ifma`
+  holds the C to that model at every prime word count.
+  `bin/rsa_ifma_sign_model_test` holds the pair to `rsa_sign64_power`
+  and the signer under the two bits to the window over the lane model
+  on every machine, and `bin/rsa_ifma_sign_equiv_test` does the same on
+  the instructions; docs/verification.md, "The AVX-512 IFMA signer",
+  lists each test.
 - **Violation.** A PR adds both carries into one sum, which can then
   wrap; makes the running sum one word short; subtracts with a borrow
   that wraps; copies a product out without its last subtraction; drops
@@ -1460,8 +1487,40 @@ last `ROLE=server` stub, as the entry said it would.
   catch. Or `normalize_digits` hands the register above bit 6 of its
   generate mask in place of bit 7:
   `inv41-rsa-ifma-normalize-generate-from-bit-six`, which
+  `bin/diff_rsa_ifma` catches. Or, in the signer's kernel, a PR runs the
+  second prime's rounds under the first prime's digits, doubles R mod m
+  one time fewer than spare, leaves out the last product by R mod m,
+  keeps no entry in `table_select`, or drops the word above the k words
+  in `state_finish`: `inv41-rsa-ifma-sign-second-prime-on-first`,
+  `inv41-rsa-ifma-sign-setup-short-of-spare`,
+  `inv41-rsa-ifma-sign-stays-in-kernel-domain`,
+  `inv41-rsa-ifma-sign-table-select-keeps-none` and
+  `inv41-rsa-ifma-sign-finish-drops-top-word`, which
+  `bin/rsa_ifma_sign_model_test` catches. Or `rsa_sign64.c`'s
+  `use_ifma` reads one of its two bits alone, or `both_powers` returns
+  without the wipe of the stack below:
+  `inv41-rsa-sign64-ifma-ignores-ifma-bit`,
+  `inv41-rsa-sign64-ifma-ignores-multiply-bit` and
+  `inv41-rsa-sign64-ifma-skips-stack-wipe`, which the same binary
+  catches through its counts of the calls. Or it returns without the
+  wipe of the registers, or the server signs under 0 in place of its
+  `ch_cfg.cpu`: `inv41-rsa-sign64-ifma-skips-register-wipe` and
+  `inv41-rsa-ifma-srv-signs-without-cpu`, which `bin/x86_kernels_test`
+  and `bin/tcp_blocking_loop_host` catch under
+  `test/docker-aes-runtime-qemu.sh`. Or `rsa_ifma_sign.c` drops its
+  target attribute: `inv41-rsa-ifma-sign-without-target`, which
+  `test/widemul-builds.sh` catches. Or `table_select` stops one register
+  short, `state_finish`'s array holds no word above the k words, the
+  exponentiation runs one step past the exponent, or `both_powers` raises
+  the second half to dp: `inv41-rsa-ifma-sign-select-skips-last-register`,
+  `inv41-rsa-ifma-sign-finish-words-short`,
+  `inv41-rsa-ifma-sign-steps-past-exponent` and
+  `inv41-rsa-sign64-ifma-q-raised-to-dp`, which the
+  `rsa_ifma_sign_select`, `rsa_ifma_sign_setup`, `rsa_ifma_sign_power` and
+  `rsa_sign64_ifma` proofs catch. Or `table_select` reads each byte's low
+  half first: `inv41-rsa-ifma-sign-digit-low-half-first`, which
   `bin/diff_rsa_ifma` catches.
-- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118 and 119.
+- See [decisions: Engineering](decisions.md#engineering), entries 95, 103, 106, 117, 118, 119 and 120.
 
 ### INV-42 — a host object returns no RSA signature it has not verified
 
@@ -1479,9 +1538,12 @@ last `ROLE=server` stub, as the entry said it would.
   its 65537th power and the message shares that prime with n, and one
   such value factors the modulus (Boneh, DeMillo and Lipton). A fault in
   the arithmetic makes one, and so does a key whose dp, dq or qinv does
-  not belong to its modulus. The check's power is `rsa_mont64_public`,
-  the arithmetic the verifier runs, which is constant time in its base,
-  and the comparison is `ct_memeq`; the power is wiped. The candidate
+  not belong to its modulus. The check's power is the verifier's public
+  operation, constant time in its base: `rsa_mont64_public`, or, for a
+  session whose `ch_cfg.cpu` holds `CH_CPU_AVX512_IFMA` and the multiply
+  bit, `rsa_ifma.c` through `rsa_vp1_cpu`, after which `rsa_sign64.c`
+  wipes the stack below and the vector registers (decision 120). The
+  comparison is `ct_memeq`, and the power is wiped. The candidate
   stays in a buffer of the call's own until the check passes.
   `srv_sign_certificate_verify` wipes its output and answers `CH_EAUTH`
   when a signer returns 0, and `ch_srv_check` signs once with each
@@ -1520,8 +1582,14 @@ last `ROLE=server` stub, as the entry said it would.
   byte of the power, or all but the top word of the product, which every
   test passes: `inv42-rsa-crt-check-skips-last-byte` and
   `inv42-rsa-crt-key-test-skips-top-word`, each of which the
-  `rsa_sign64_crt` proof refutes.
-- See [decisions: Engineering](decisions.md#engineering), entry 95.
+  `rsa_sign64_crt` proof refutes. Or, under the AVX-512 IFMA bits, the
+  check runs its power on `rsa_mont64.c`'s loops through `rsa_vp1`, or
+  returns without the wipe of the stack below:
+  `inv42-rsa-sign64-ifma-check-on-loops`, which `bin/x86_kernels_test`
+  catches under `test/docker-aes-runtime-qemu.sh`, and
+  `inv42-rsa-sign64-ifma-check-skips-stack-wipe`, which
+  `bin/rsa_ifma_sign_model_test` catches.
+- See [decisions: Engineering](decisions.md#engineering), entries 95 and 120.
 
 ### INV-43 — a host object's ECDSA P-256 verifier gives the portable code's verdict
 

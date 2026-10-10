@@ -8913,6 +8913,12 @@ does nothing more.
       candidate, and a wrong candidate factors n, so that check stays on
       `rsa_mont64_public`. `test/widemul-builds.sh` requires that no root
       source but `rsa_mont.c` includes `rsa_ifma.h` or calls into it.
+      Entry 120 amends this bullet: a session whose `ch_cfg.cpu` holds
+      `CH_CPU_AVX512_IFMA` and `CH_CPU_CONSTANT_TIME_MULTIPLY` computes
+      the signer's exponentiations on `rsa_ifma_sign.c` and checks each
+      signature on this kernel through `rsa_vp1_cpu`, and `rsa_sign64.c`
+      wipes the stack below each call and the 512-bit and mask registers
+      after it.
     - **Gain.** Run 37944974426 timed this tree's kernel on 2026-10-09,
       on six ubuntu-24.04 runners, under gcc 13.3 and clang 23. A timing
       program on a scratch branch first compared `rsa_vp1_cpu` under
@@ -9087,4 +9093,210 @@ does nothing more.
       intrinsics no harness reads, and is not done here.
     - **Signing on IFMA.** The signer's operands are secret, and neither
       the 512-bit registers nor the slots the compiler keeps them in can
-      be wiped (above).
+      be wiped (above). Entry 120 reverses this under the multiply bit.
+
+120. **An x86-64 host object runs RSA signing's two exponentiations on
+    AVX-512 IFMA for a session whose caller sets `CH_CPU_AVX512_IFMA` and
+    `CH_CPU_CONSTANT_TIME_MULTIPLY`.** Entry 119 kept the signer off the
+    kernel: the signer's operands are secret, and no statement covered
+    the timing of IFMA's products or cleared the 512-bit registers that
+    held them. Camilo ruled on 2026-10-09:
+
+    1. "CH_CPU_CONSTANT_TIME_MULTIPLY's statement covers AVX-512 IFMA's
+       52-bit products (VPMADD52LUQ/HUQ): secrets may reach IFMA in a
+       session whose ch_cfg.cpu holds both that bit and
+       CH_CPU_AVX512_IFMA. No new bit. Its text in cpu_cfg.h, the headers
+       and docs must name IFMA's products."
+    2. "A kernel that held secrets in 512-bit registers calls
+       avx512_wipe_registers() before it returns: an inline-asm block of
+       32 VPXORD and 7 KXORW, the one assembly in these paths, because C
+       names no register and VZEROUPPER/VZEROALL leave zmm16-31."
+
+    This entry amends entry 119's "Why verification only" bullet and
+    reverses its rejection of signing on IFMA.
+
+    - **What changes.** `rsa_ifma_sign.c`'s `rsa_ifma_sign_power_pair`
+      computes both halves of a CRT signature, m1^dp mod p and
+      m2^dq mod q, on entry 119's almost-Montgomery product. The round,
+      the conversions between words and digits and `normalize_digits`
+      moved out of `rsa_ifma.c` into `rsa_ifma_product.h`, which both
+      files include, so the product has one text. A prime of k words
+      takes n = ceil((64k + 2) / 52) digits: 20, 30 and 40 at RSA-2048,
+      RSA-3072 and RSA-4096, in 3, 4 and 5 registers. The file holds a
+      copy of the product for 3 and 4 registers, and for 5 under the
+      512-byte bound of `TRUST=webpki`. Each copy runs a round of the
+      product under p beside the same round under q, as OpenSSL's
+      `ossl_rsaz_mod_exp_avx512_x2` does, so the two chains of dependent
+      multiplies overlap. The exponentiation is `rsa_sign64_power`'s
+      window of four bits: a table of base^i for i from 0 to 15, which
+      fourteen products fill, and for each digit of the exponent four
+      squares and one product by the digit's entry, whatever the digit
+      is. `table_select` reads all sixteen entries and keeps one by a
+      mask that it writes through a volatile word and reads back, as
+      `rsa_sign64.c`'s does (INV-16).
+    - **The domains.** `rsa_mont64.c` holds a number x as x R mod m, with
+      R = 2^(64k), and the kernel as x R' mod m, with R' = 2^(52n) =
+      R 2^spare and spare = 52n - 64k: 16 bits at 16 words, 24 at 24 and
+      32 at 32. `state_setup` writes the table's entry 0, R mod m, which
+      one product of the plain 1 by r2 gives, and entry 1, the base, each
+      doubled spare times modulo m by `rsa_mont64_add`. The last product,
+      by R mod m, divides by R' and multiplies by R, so the power leaves
+      the kernel in `rsa_mont64.c`'s domain, below 2m. `state_finish`
+      converts it to k words and the word above them and subtracts m once
+      with `rsa_mont64_reduce_once_with_top`. A number below 2m can be
+      2^(64k) or more, so the word above is needed, and
+      `bin/rsa_ifma_sign_model_test` runs the finish on such a number.
+    - **Who calls it.** `rsa_sign64_sp1` and `rsa_sign64_pss` take the
+      session's `ch_cfg.cpu` first, and so do `widemul.h`'s
+      `widemul_rsa_pss_sign_cpu` and `widemul_rsa_sp1_cpu`. `srv_auth.c`
+      calls the first with the server's value for a CertificateVerify and
+      for `ch_srv_check`'s signature with each provisioned RSA key.
+      `rsa_sign64.c`'s `use_ifma` requires both bits. Under it
+      `both_powers` runs the pair, and the check of each signature
+      (INV-42) raises the candidate on `rsa_ifma.c` through `rsa_vp1_cpu`,
+      which takes every modulus `rsa_sign64_key_ok` admits: odd, of 32
+      words or more, with its top bit set. `rsa_sign64.c` follows each of
+      the two calls with `rsa_ifma_sign_wipe_below` and
+      `avx512_wipe_registers`. Every other value runs the window and
+      `rsa_mont64_public`, and an arm64 object holds neither kernel. gcc
+      builds take the kernel as clang builds do.
+    - **The wipes.** C names no register and no stack slot the compiler
+      picks, and the compiler keeps 512-bit registers in such slots. Run
+      37999949864 measured, under gcc 13.3 and clang 23 on three CPUs,
+      how far below its caller each call writes: the pair 11,696 to
+      11,848 bytes in the 384-byte build and 14,544 to 14,744 in the
+      512-byte build, and the check 3,504 to 3,664 and 4,432 to 5,840.
+      `rsa_ifma_sign_wipe_below`, in `p256_wide_wipe.c`'s form, wipes an
+      array of `RSA_IFMA_SIGN_BELOW_LEN` bytes, 40 times
+      `CH_RSA_MODULUS_MAX`: 15,360 and 20,480. The array is the frame of a
+      function called through a volatile pointer, so it lies where those
+      frames lay. The prototype's run 37987281071 found digits of both
+      primes in zmm registers after a signature, so
+      `avx512_wipe_registers` (`avx512_wipe.c`) follows: its VPXORD clears
+      all 512 bits of each of zmm0 to zmm31, and its KXORW clears k1 to
+      k7. `bin/rsa_ifma_sign_residue_test` searches the stack below each
+      call and the 32 registers after it for every word the call computed
+      from the key; its 24 checks at the 512-byte bound and 16 at the
+      384-byte bound passed on each of the three CPUs.
+    - **The statement.** The multiply bit now states the timing of IFMA's
+      52-bit products beside that of the 32x32 and 64x64 multiplies
+      (ruling 1), and `cpu_cfg.h` and `ct.h` say so. As for the AES bit,
+      the statement is the caller's, and nothing here checks it. The IFMA
+      bit alone still states presence and no timing: a session with it and
+      without the multiply bit verifies on the kernel and signs on the
+      window. Every branch and every memory index in `rsa_ifma_sign.c`
+      depends on a word count, a digit count, a register count, a loop
+      index or the exponent's length, which is half the modulus's, and
+      every array that held a value computed from the key is wiped before
+      its function returns.
+    - **Gain.** Run 37999949864 timed whole RSA-PSS signatures,
+      `rsa_sign64_pss`, on 2026-10-09 on six ubuntu-24.04 runners, under
+      gcc 13.3 and clang 23. A timing program on a scratch branch first
+      compared the signatures of the two values, the multiply bit alone
+      and the multiply bit with `CH_CPU_AVX512_IFMA`, over 64 random
+      digests under a key of each size, and found none that differ. It
+      then timed the two values in turn, as the median of 101 samples of
+      the thread's CPU time. In the 512-byte build, the window's time and
+      then the kernel's, in µs:
+
+      | CPU | compiler | RSA-2048 | RSA-3072 | RSA-4096 |
+      | --- | --- | --- | --- | --- |
+      | EPYC 9V45 | gcc | 753.3, 201.0 | 2,324.3, 440.4 | 5,299.2, 796.6 |
+      | EPYC 9V45 | clang | 694.3, 181.1 | 2,142.1, 406.8 | 4,881.5, 736.8 |
+      | Xeon Platinum 8573C | gcc | 1,144.4, 285.6 | 3,436.3, 678.5 | 7,620.7, 1,292.7 |
+      | Xeon Platinum 8573C | clang | 928.0, 286.8 | 2,813.8, 706.1 | 6,576.1, 1,444.4 |
+      | EPYC 9V74 | gcc | 1,218.0, 294.1 | 3,783.7, 753.8 | 8,572.7, 1,543.9 |
+      | EPYC 9V74 | clang | 1,177.7, 282.9 | 3,716.5, 719.9 | 8,526.3, 1,506.7 |
+
+      The kernel took 0.24 to 0.31 of the window's time at 2,048 bits,
+      0.19 to 0.25 at 3,072 and 0.15 to 0.22 at 4,096. The 384-byte build
+      under clang gave 0.24 to 0.31 at 2,048 bits and 0.19 to 0.25 at
+      3,072. The other three runners' EPYC 7763 has no AVX-512, and the
+      program skipped there. The same runners ran `openssl speed` of the
+      pinned OpenSSL 3.6.4, whose sign time for RSA-2048, RSA-3072 and
+      RSA-4096 was 196, 563 and 1,201 µs on the EPYC 9V45, 323, 864 and
+      1,735 µs on the Xeon Platinum 8573C, and 243, 696 and 1,451 µs on
+      the EPYC 9V74. That figure is OpenSSL's own loop over its own
+      private operation, so the comparison is rough. By it this signer is
+      faster on the Xeon Platinum 8573C at every size, faster on the EPYC
+      9V45 at 3,072 and 4,096 bits and at 2,048 under clang, 3% slower
+      there under gcc, and slower on the EPYC 9V74 at every size, by 16%
+      to 21% at 2,048 bits and by 3% to 8% at 3,072 and 4,096.
+    - **What holds it.** CBMC cannot read an intrinsic, so the
+      `rsa_ifma_sign` harnesses compile the file over
+      `test/rsa_ifma_model_lanes.h`. They prove the memory accesses of the
+      pair's copies at every register count, of `state_setup` and
+      `state_finish` at every prime word count and of the whole
+      exponentiation at the smallest and the largest, that `table_select`
+      writes the digit's entry to every lane of the build's registers,
+      that the two conversions are inverse, and that the wipe below the
+      caller clears its whole array. `rsa_sign64_ifma` proves that the
+      signer's arm hands the kernels the key's integers and wipes after
+      each call. `spec/lean/Spec/RsaIfma.lean` proves that the window over
+      its model of the product computes b^e R mod m for the base b R mod m,
+      the domain conversions included (`signPower_eq`), and
+      `bin/diff_rsa_ifma` holds the C over the lane model to that
+      model at every prime word count. Tests hold the values on the
+      instructions (docs/verification.md, "The AVX-512 IFMA signer").
+      `bin/rsa_ifma_sign_model_test` runs the kernel's own text over the
+      model on every machine: 3,022 checks at the 512-byte bound and 1,744
+      at the 384-byte bound hold the pair to `rsa_sign64_power` and
+      `rsa_sign64_sp1` under the two values to each other, count the
+      calls into the kernel and the wipes, and run the finish at the top
+      word. `bin/rsa_ifma_sign_equiv_test` runs the same comparisons on
+      the instructions at every prime word count, 7,022 and 3,744 of
+      them, `bin/rsa_ifma_sign_residue_test` the search for residue, and
+      `bin/rsa_sign_equiv_test` signs on the kernel beside the ladder.
+      Each skips on an x86-64 CPU without AVX-512 IFMA, and the nightly's
+      `rsa-ifma-sde` job runs each under SDE with
+      `CH_REQUIRE_AVX512_IFMA=1` and requires its pass line.
+      `bin/x86_kernels_test` and `bin/tcp_blocking_loop_host` count the
+      calls each value makes into the pair, the check and the two wipes.
+      Run 37999949864 ran the model, equivalence and residue binaries,
+      `bin/rsa_sign_equiv_test` and `bin/x86_kernels_test` on the three
+      CPUs with AVX-512 IFMA under both compilers, and each passed.
+      Run 38004528544 ran the nightly's `rsa-ifma-sde` job on four runners
+      of a throwaway branch: an EPYC 7763, which has no AVX-512, so SDE
+      emulated the instructions, and a Xeon Platinum 8370C and two EPYC
+      9V74s, which have them. Each run printed every binary's pass line.
+      Twenty violations break
+      the kernel, its dispatch, its wipes or its build, and a test, a
+      proof, `bin/diff_rsa_ifma` or a lint catches each (INV-41, INV-42
+      and INV-16).
+    - **Branches.** `lint-wide-multiply` holds `rsa_ifma_sign.c` at 24
+      conditional branches under clang for x86-64 at `-Os` at the
+      384-byte bound and at 27 at the 512-byte bound, and at 0 for arm64,
+      where the file compiles to nothing. Each tests a count, an index or
+      a `CH_ASSERT`; none reads a digit of the exponent. `rsa_sign64.c`
+      went from 27 to 29 for x86-64: `use_ifma`'s test in `both_powers`
+      and in `check_power`. `avx512_wipe.c` holds 0.
+    - **Cost.** Under the pinned clang 23 at `-O2` for x86-64 the file
+      compiles to 8,942 bytes of code at the 384-byte bound and 10,894 at
+      512. `rsa_ifma_sign_power_pair`'s frame takes 10,680 and 13,304
+      bytes, and the wipe's frame 15,368 and 20,488, inside the
+      `lint-stack` budget of 21,504 bytes for the file. The two wipes of
+      the stack below each signature's calls are inside the times above.
+      An auditor reads a second exponentiation beside the window and one
+      block of assembly, and a caller who sets both bits states the
+      timing of IFMA's products on its CPU.
+
+    Rejected:
+
+    - **256-bit registers.** OpenSSL runs its IFMA exponentiations on
+      256-bit registers. On the Xeon Platinum 8573C the prototype's copy
+      on them took 1.08 to 1.38 times the 512-bit pair's time for the
+      private operation at 2,048 to 4,096 bits, and it was a second
+      kernel to read.
+    - **One prime at a time.** The prototype ran the two exponentiations
+      one after the other on the same product too: that took 1.23 to 1.46
+      times the pair's time there.
+    - **The check on `rsa_mont64_public`.** The prototype's private
+      operation with the check on the loops took 1.07 to 1.10 times its
+      time with the check on `rsa_ifma.c` there. The check's input is a
+      candidate, which is secret until it passes, so it runs under the
+      same bits and the same wipes as the pair.
+    - **A bit of its own.** Ruling 1: the multiply bit's statement is
+      about every widening multiply a session runs, and IFMA's products
+      are widening multiplies.
+    - **VZEROUPPER or VZEROALL.** Each leaves zmm16 to zmm31 and the mask
+      registers as they were (ruling 2).

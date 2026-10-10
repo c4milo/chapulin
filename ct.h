@@ -180,6 +180,13 @@ void ct_wipe(void *p, size_t n);
 // this tree sets either mode. widemul.h calls the field for a session with
 // the bit alone, and no build define makes it run.
 //
+// On x86-64 the same statement covers AVX-512 IFMA's 52-bit products,
+// VPMADD52LUQ and VPMADD52HUQ, which multiply eight pairs of 52-bit digits
+// and add bits 51..0 or bits 103..52 of each product to a 64-bit lane.
+// rsa_sign64.c runs RSA signing's exponentiations and its check on them
+// for a session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA beside the bit,
+// and on its 64-bit words for every other (docs/decisions.md 120).
+//
 // The field needs unsigned __int128, the type of the product, which gcc
 // and clang have on 64-bit targets and on none of the 32-bit targets this
 // tree builds for. The host test requires the type, and cpu_cfg.h refuses

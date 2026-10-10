@@ -1226,7 +1226,10 @@ The entries are grouped by area:
   steps, for `rsa_ifma_sign_power`, whose steps run the same statements
   at every index. `rsa_ifma_sign_power_webpki` peaks near 7 GB, so it
   runs in the slow tier, and its verdict comes from the last nightly.
-- **Not proved:** any value of a product or of an exponentiation.
+- **Not proved:** any value of the C. `spec/lean/Spec/RsaIfma.lean`
+  proves the exponentiation's value of a model of the C, which
+  `bin/diff_rsa_ifma` compares with the C on samples
+  ([The AVX-512 IFMA signer](#the-avx-512-ifma-signer)).
   `bin/rsa_ifma_sign_model_test` holds every exponentiation to
   `rsa_sign64.c`'s window over the lane model, and on a CPU with AVX-512
   IFMA `bin/rsa_ifma_sign_equiv_test` holds the instructions to it. That
@@ -3741,10 +3744,12 @@ by the arithmetic its entry in `tools/proof-cover.py` reads.
 vectors, and `gcm_vaes.c` runs `gcm_hw.c`'s three loops two blocks to a
 256-bit register on VAES and VPCLMULQDQ (decision 90). `rsa_ifma.c` runs
 RSA's public operation in digits of 52 bits on AVX-512 IFMA (decision
-119). Every x86-64 host object carries all three, each function turning
-its instructions on through its own target attribute. Three predicates
-read the caller's bits, and one branch per call picks a kernel or the
-path under it (decision 89):
+119), and `rsa_ifma_sign.c` RSA signing's two exponentiations on the same
+product (decision 120). Every x86-64 host object carries the first three,
+and every one that signs with RSA the fourth, each function turning its
+instructions on through its own target attribute. Four predicates read
+the caller's bits, and one branch per call picks a kernel or the path
+under it (decision 89):
 
 - `chacha20.c`'s `use_avx2` answers for `CH_CPU_AVX2`. `aead_seal_cpu`
   and `aead_open_cpu` hand it the session's `ch_cfg.cpu`, which a record
@@ -3760,6 +3765,11 @@ path under it (decision 89):
   `rsa_pkcs1_verify_cpu` hand on from a session, and takes the kernel
   only for an odd modulus whose bit length is a multiple of 64, at least
   2,048. `rsa_vp1`, which takes no value, runs `rsa_mont64.c`.
+- `rsa_sign64.c`'s `use_ifma` answers for `CH_CPU_AVX512_IFMA` and
+  `CH_CPU_CONSTANT_TIME_MULTIPLY` together. `rsa_sign64_sp1` asks it with
+  the value `widemul_rsa_pss_sign_cpu` hands on from a server's session,
+  and under it runs the pair and the check through `rsa_vp1_cpu`, each
+  followed by the wipe of the stack below and `avx512_wipe_registers`.
 
 CBMC cannot unwind an intrinsic, so no harness compiles the kernels on
 their instructions, and the [chacha20](#chacha20) and GCM proofs cover
@@ -3767,7 +3777,9 @@ the portable code they are held to. Two questions need tests: what a
 kernel computes, and which calls run it. For `rsa_ifma.c` the first
 rests on a model of its instructions, over which CBMC and Lean prove
 parts of its arithmetic, and has a section of its own,
-[The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation).
+[The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation),
+and so does it for `rsa_ifma_sign.c`,
+[The AVX-512 IFMA signer](#the-avx-512-ifma-signer).
 
 **What a kernel computes** rests on these, each in `make check` on an
 x86-64 host. Each binary asks its CPU through `__builtin_cpu_supports`
@@ -3818,11 +3830,16 @@ skips a kernel's cases on a CPU without its instructions:
   not take, and count that call, which `CH_CPU_AVX512_IFMA` picks. One of
   the two it takes is RSA-3072, whose 2^(104n) mod m starts at bit 32 of
   the top word, so a wrong start bit in `rsa_mont.c`'s
-  `power_of_two_mod` changes its bytes. Under
+  `power_of_two_mod` changes its bytes. Its signer rows sign with
+  `widemul_rsa_pss_sign_cpu` under an RSA-2048 key and count the calls
+  into the pair, into `rsa_ifma_public` for the check, into the wipe
+  below and into `avx512_wipe_registers`, which must run where the value
+  holds `CH_CPU_AVX512_IFMA` and the multiply bit and nowhere else. Under
   each value a call must run a kernel exactly when the value names it,
   and must return the same bytes. The counting entries
-  (`test/x86_kernels_count.c` and `test/rsa_ifma_count.c`) forward to the
-  128-bit paths and to `rsa_mont64.c`, so the binary runs no kernel
+  (`test/x86_kernels_count.c`, `test/rsa_ifma_count.c` and
+  `test/rsa_ifma_sign_count.c`) forward to the 128-bit paths and to
+  `rsa_mont64.c`, so the binary runs no kernel
   instruction and passes on every x86-64 CPU. An arm64 build of it has no
   row.
 - `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host` link
@@ -3834,7 +3851,10 @@ skips a kernel's cases on a CPU without its instructions:
   handlers, makes one call where the client's value holds
   `CH_CPU_AVX512_IFMA`, whatever the server's holds, and
   `ch_srv_check`'s check of the RSA identity makes one where the server's
-  does (`test/tcp_blocking_loop_ifma.h`). The aws chain's flight through
+  does (`test/tcp_blocking_loop_ifma.h`). Where the server's value holds
+  the multiply bit too, `ch_srv_check`'s signature with that identity
+  makes one call into the signer's pair and one more into
+  `rsa_ifma_public` for its check. The aws chain's flight through
   `hsa_server_auth`, whose leaf, intermediate and anchor keys are each
   RSA-2048, makes three: the leaf's signature under the intermediate in
   `webpki.c`'s `read_issuer`, the intermediate's under the anchor in
@@ -3893,7 +3913,7 @@ only `CH_REQUIRE_AVX512_IFMA=1` turns into failures. The nightly's
 SDE, an emulator, on a CPU model that has AVX-512 IFMA
 ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
 
-Twenty-six violations break these rules, and each is caught:
+Thirty-two violations break these rules, and each is caught:
 
 - `test/chacha-builds.sh` catches `chacha-avx2-runs-without-cpu-bit` and
   `chacha-avx2-ignores-cpu-bit`, a `use_avx2` that answers 1 or 0 for
@@ -3904,6 +3924,12 @@ Twenty-six violations break these rules, and each is caught:
   into the kernel over the lane model, under the bit and under
   `CH_CPU_PROBED` alone. `test/widemul-builds.sh` catches
   `inv41-rsa-ifma-without-target`.
+- `bin/rsa_ifma_sign_model_test` catches
+  `inv41-rsa-sign64-ifma-ignores-ifma-bit` and
+  `inv41-rsa-sign64-ifma-ignores-multiply-bit`, a `use_ifma` in
+  `rsa_sign64.c` that reads one of its two bits alone, on every machine,
+  through its count of the calls into the pair. `test/widemul-builds.sh`
+  catches `inv41-rsa-ifma-sign-without-target`.
 - `test/quic-builds.sh` catches `inv26-vaes-runs-without-cpu-bits` and
   `inv26-vaes-ignores-cpu-bits`, the same two for `gcm_use_vaes`, and
   `inv26-vaes-without-target`.
@@ -3920,7 +3946,10 @@ Twenty-six violations break these rules, and each is caught:
   `inv26-record-open-key-drops-cpu`, `inv26-packet-seal-key-drops-cpu`
   and `inv26-packet-open-key-drops-cpu`, a call that hands on no value.
   Each names `test/docker-aes-runtime-qemu.sh x86-kernels` as its catch,
-  so `test/violations.py` runs it in a container on an arm64 host.
+  so `test/violations.py` runs it in a container on an arm64 host. So do
+  `inv41-rsa-sign64-ifma-skips-register-wipe` and
+  `inv42-rsa-sign64-ifma-check-on-loops`, a signer that leaves out the
+  wipe of the registers and a check that runs on `rsa_vp1`.
 - `bin/tcp_blocking_loop_host` and `bin/webpki_auth_host` catch five
   callers that hand an RSA verifier 0 in place of the session's
   `ch_cfg.cpu`: `inv41-rsa-ifma-pinned-certificate-verify-drops-cpu`,
@@ -3929,16 +3958,20 @@ Twenty-six violations break these rules, and each is caught:
   `inv41-rsa-ifma-webpki-issuer-drops-cpu` and
   `inv41-rsa-ifma-webpki-anchor-drops-cpu`. Only an x86-64 object makes
   the call, so each names `test/docker-aes-runtime-qemu.sh
-  rsa-ifma-callers` as its catch.
+  rsa-ifma-callers` as its catch. `bin/tcp_blocking_loop_host` catches
+  `inv41-rsa-ifma-srv-signs-without-cpu` the same way, a server that
+  signs under 0.
 
 A mutant of the ChaCha20 or GCM kernels' arithmetic is caught only on a
 CPU with the kernel's instructions, and `test/violations.py` runs every
 violation on the host that runs it, so on an arm64 host such a mutant
-would pass as unguarded. None is in `test/violations/`. `rsa_ifma.c` is
-the exception: `bin/rsa_ifma_model_test` runs its own text over a model
-of each instruction on every machine, and twenty-six violations of its
-arithmetic, its dispatch and its build are in `test/violations/`
-([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)).
+would pass as unguarded. None is in `test/violations/`. `rsa_ifma.c` and
+`rsa_ifma_sign.c` are the exception: `bin/rsa_ifma_model_test` and
+`bin/rsa_ifma_sign_model_test` run their own text over a model of each
+instruction on every machine, and violations of their arithmetic, their
+dispatch and their build are in `test/violations/`
+([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)
+and [The AVX-512 IFMA signer](#the-avx-512-ifma-signer)).
 For the other two kernels, 27 such mutants were
 run by hand once, built with gcc 13 and run under `qemu-x86_64 -cpu max`
 from QEMU 8.2, with VPCLMULQDQ, which QEMU does not implement, replaced
@@ -3984,8 +4017,13 @@ orders, with no table and no multiply. The GCM kernels' timing rests on
 the caller's `CH_CPU_CONSTANT_TIME_AES` bit, which `gcm_use_vaes`
 requires beside `CH_CPU_VAES` and whose statement covers the AES
 instructions and the carry-less multiply at every width (decision 89).
-`rsa_ifma.c`'s timing needs no statement: its inputs are public, and
-`CH_CPU_AVX512_IFMA` states presence alone (decision 119).
+`rsa_ifma.c`'s timing needs no statement for a verifier: its inputs are
+public, and `CH_CPU_AVX512_IFMA` states presence alone (decision 119).
+For a signature, `rsa_ifma_sign.c`'s timing, and `rsa_ifma.c`'s in the
+signature's check, rest on the caller's
+`CH_CPU_CONSTANT_TIME_MULTIPLY`, whose statement covers IFMA's 52-bit
+products and which `rsa_sign64.c`'s `use_ifma` requires beside
+`CH_CPU_AVX512_IFMA` (decision 120).
 
 ### The hash instructions
 
@@ -4371,7 +4409,10 @@ are no power of the signature in either object.
 A host object signs on those words too, in a session that states its
 multiply: `rsa_sign64.c`, by the Chinese remainder theorem from the
 key's primes, beside `rsa_sign.c`'s ladder over n and d, which stays the
-reference (decision 95). The proofs of [rsa_sign64](#rsa_sign64) hold
+reference (decision 95). On x86-64 a session that also sets
+`CH_CPU_AVX512_IFMA` computes the two exponentiations on
+`rsa_ifma_sign.c`, which
+[The AVX-512 IFMA signer](#the-avx-512-ifma-signer) covers. The proofs of [rsa_sign64](#rsa_sign64) hold
 how it reads an exponent and its memory accesses. Tests hold the values:
 
 - `bin/rsa_sign_equiv_test`, in `make check`, requires the ladder's
@@ -4404,10 +4445,10 @@ how it reads an exponent and its memory accesses. Tests hold the values:
   sixteen and says why (`test/stack_residue.c`), so the sanitizer lane
   runs the binary's other 129 comparisons and no run over the stack.
 - `bin/rsa_sign_test_host` signs the four keys through
-  `widemul_rsa_pss_sign` under each value of the multiply bit and
+  `widemul_rsa_pss_sign_cpu` under each value of the multiply bit and
   requires OpenSSL's bytes. It changes one bit of each CRT integer and
   requires an error and no signature bytes from the 64-bit signer
-  (INV-42). The Wycheproof host binary runs `widemul_rsa_sp1` over the
+  (INV-42). The Wycheproof host binary runs `widemul_rsa_sp1_cpu` over the
   PKCS#1 v1.5 generation vectors under each value too, with the CRT
   integers of Wycheproof's own keys.
 - `bin/widemul_runtime_test` counts the calls into each signer and into
@@ -4483,10 +4524,11 @@ state that:
   base below 2^(64k).
 
 `bin/diff_rsa_ifma`, in `make diff`, holds the C over the lane model to
-the spec's operations in 3,496 comparisons: every lane of products at
+the spec's operations in 3,626 comparisons: every lane of products at
 every word count from 32 to 64, powers of two, public operations, each
-product of the chain at 32, 48 and 64 words, and `normalize_digits` on
-lanes chosen for its carries. It checks on each row that the C's m0inv
+product of the chain at 32, 48 and 64 words, `normalize_digits` on
+lanes chosen for its carries, and the signer's exponentiations
+([The AVX-512 IFMA signer](#the-avx-512-ifma-signer)). It checks on each row that the C's m0inv
 meets the theorems' hypothesis, which no proof covers. No proof drives
 `rsa_vp1_cpu`, and the spec states the division in each step of
 `power_of_two_mod`, the conversions between words and digits and the
@@ -4581,8 +4623,10 @@ The build rests on these:
   `rsa_vp1` nor the arm64 `rsa_vp1_cpu` to call it. It requires no
   512-bit register in `rsa.c`, `rsa_pkcs1.c`, `rsa_mont.c`,
   `rsa_mont64.c`, `rsa_mont64_blocks.c`, `rsa_sign.c` or `rsa_sign64.c`
-  for x86-64, and no root source but `rsa_mont.c` that includes
-  `rsa_ifma.h` or calls into it, so the signer never calls the kernel.
+  for x86-64. It requires no root source but `rsa_mont.c` that calls
+  `rsa_ifma_public`, and none but it and `rsa_ifma_sign.c` that includes
+  `rsa_ifma.h`, so the signer's check runs the kernel through
+  `rsa_vp1_cpu` alone.
   It refuses a root source that defines `CH_RSA_IFMA_MODEL`, and a host
   object's defines from make or `build.zig` that name it.
 - `make lint-wide-multiply` holds `rsa_ifma.c` at 19 conditional
@@ -4661,6 +4705,162 @@ What none of this shows:
 - The CA client's CertificateVerify under `TRUST=ca-rsa`, which only a
   `ROLE=both TRUST=ca-rsa` host object compiles with the kernel: no host
   binary builds that object, so no row counts its call.
+
+### The AVX-512 IFMA signer
+
+`rsa_ifma_sign.c` runs RSA signing's two exponentiations, m1^dp mod p
+and m2^dq mod q, in digits of 52 bits on AVX-512 IFMA, on the product
+`rsa_ifma.c` runs (decision 120). `rsa_sign64.c` calls it on x86-64 for
+a session whose `ch_cfg.cpu` holds `CH_CPU_AVX512_IFMA` and
+`CH_CPU_CONSTANT_TIME_MULTIPLY`, checks each signature on `rsa_ifma.c`
+through `rsa_vp1_cpu`, and after each of the two calls wipes the stack
+below it and the vector registers. For every key and every message it
+must write the bytes `rsa_sign64.c`'s window writes, and leave no word it
+computed from the key on the stack below its caller or in a vector
+register.
+
+CBMC and Lean prove parts of it over the lane model, and nothing proves
+the instructions equal to that model. The [rsa_ifma_sign](#rsa_ifma_sign)
+harnesses compile the file's own text over `test/rsa_ifma_model_lanes.h`.
+They prove the memory accesses of each copy of the pair at every register
+count, of `state_setup` and `state_finish` at every prime word count and
+of the whole exponentiation at the smallest and the largest, that
+`table_select` writes the digit's entry to every lane, that the two
+conversions between words and digits are inverse, and that the wipe below
+the caller clears its whole array. [rsa_sign64](#rsa_sign64)'s
+`rsa_sign64_ifma` proves that `rsa_sign64.c`'s arm hands the kernels the
+key's integers and wipes after each call.
+
+[`spec/lean/Spec/RsaIfma.lean`](../spec/lean/Spec/RsaIfma.lean) models
+the exponentiation on its model of the product as the C runs it: the
+doublings of `state_setup`, a table of sixteen entries each the one
+before it times entry 1, four squares and a product by the digit's entry
+for each digit, and the last product by R mod m. Its theorems state that:
+
+- `windowPower_eq`: the window raises the base to the number the
+  exponent's digits hold, on any product below 2m whose result is
+  a b / w modulo m, which `product_lt` and `product_mul` show the
+  kernel's product is;
+- `windowValue_bytes`: the digits `table_select` reads, the high half of
+  each byte and then the low half, hold the number the exponent's bytes
+  hold;
+- `signPower_eq`: for the base b R mod m in `rsa_mont64.c`'s domain,
+  R = 2^(64k), and R mod m beside it, the exponentiation writes
+  b^e R mod m, for an m below 2^(64k), m0inv the C's -m^-1 mod 2^52 and
+  at most 128 digits.
+
+`bin/diff_rsa_ifma`, in `make diff`, holds the C over the lane model to
+that model: at every prime word count from 16 to 32 a call of the pair on
+a random base and a random exponent of 4 bytes beside a random second
+prime; at the word counts where the register count changes, at
+RSA-3072's 24 and at the first and the last, the same under each other
+kind of modulus, and the bases 0, 1 and m - 1 with the exponents of all
+ones, all zeros and 1; and at RSA-2048's prime a random exponent of the
+128 bytes `rsa_sign64.c` passes. Each call's two halves are a row each,
+130 rows in all. The spec takes about 3 ms a product at 32 words, so most
+rows use exponents of 4 bytes, eight digits, which run the table, the
+squares and every kind of step. Every claim below about the instructions
+rests on a test.
+
+What the kernel computes rests on these:
+
+- `bin/rsa_ifma_sign_model_test` and `bin/rsa_ifma_sign_model_test_384`,
+  in `make check` on every machine, compile `rsa_ifma_sign.c`,
+  `rsa_sign64.c`, `rsa_ifma.c` and `rsa_mont.c`'s dispatch under
+  `CH_RSA_IFMA_MODEL`. They hold the pair to two calls of
+  `rsa_sign64_power` at the first and the last prime word count of each
+  register count, under moduli of four shapes, the bases 0, 1, m - 1 and
+  random ones, and exponents of all zeros, all ones, 1, every digit value
+  in turn and the top bit alone, with each output on a base of its own
+  and written over its base. They hold `rsa_sign64_sp1` under the IFMA
+  value to the same call under the multiply bit alone for the keys of
+  `test/rsa_sign_vectors.h` the build takes, require one call into the
+  pair and two wipes of the stack below from each signature under the
+  IFMA value and none under any other, and require a key with one bit of
+  dp changed refused with the signature untouched. They run
+  `state_finish` on powers at or above 2^(64k), which only the word above
+  the k words holds. That is 3,022 checks at the 512-byte bound and 1,744
+  at the 384-byte bound.
+- `bin/rsa_ifma_sign_equiv_test` and its `_384` twin run the same
+  comparisons on the instructions at every prime word count, 7,022 and
+  3,744 of them, on an x86-64 CPU with AVX-512 IFMA.
+- `bin/rsa_sign_equiv_test`, on such a CPU, signs on the kernel beside
+  the ladder and prints a line that says it did.
+- `bin/rsa_ifma_sign_residue_test` and its `_384` twin, on such a CPU,
+  measure how far below its caller the pair and the check write and
+  require the wipe to cover it, and search the stack below each call and
+  zmm0 to zmm31 after it for every word the call computed from the key:
+  24 checks at the 512-byte bound and 16 at the 384-byte bound.
+- Each of the four binaries above skips on an x86-64 CPU without AVX-512
+  IFMA, and fails instead under `CH_REQUIRE_AVX512_IFMA=1`. The nightly's
+  `rsa-ifma-sde` job runs each under SDE with that variable and requires
+  its pass line, beside the RSA vector binaries, the Wycheproof host
+  binary and the webpki loop, whose values hold the multiply bit and
+  `CH_CPU_AVX512_IFMA`, so their signatures run the kernel too.
+- Run 37999949864 ran the model, equivalence and residue binaries,
+  `bin/rsa_sign_equiv_test` and `bin/x86_kernels_test` on three runners
+  whose CPUs have AVX-512 IFMA, an EPYC 9V45, a Xeon Platinum 8573C and
+  an EPYC 9V74, under gcc 13.3 and clang 23, and each passed. Run
+  38004528544 ran the nightly's `rsa-ifma-sde` job on four runners of a
+  throwaway branch, an EPYC 7763 without AVX-512 and a Xeon Platinum
+  8370C and two EPYC 9V74s with it, and each run printed every binary's
+  pass line.
+
+Which calls run it rests on `bin/x86_kernels_test` and
+`bin/tcp_blocking_loop_host`, which count the calls each value and each
+caller makes into the pair, the check's kernel and the two wipes
+([The x86-64 kernels](#the-x86-64-kernels)).
+
+The build rests on these:
+
+- `test/widemul-builds.sh`, in `make check`, requires the x86-64 object
+  of `rsa_ifma_sign.c` to define `rsa_ifma_sign_power_pair` on 512-bit
+  registers with VPMADD52LUQ and VPMADD52HUQ, and the arm64 object to
+  define nothing. It requires `rsa_sign64.c` for x86-64 to call the
+  pair, the wipe below, `avx512_wipe_registers` and `rsa_vp1_cpu`, and
+  for arm64 none of them, and no root source but `rsa_sign64.c` that
+  includes `rsa_ifma_sign.h` or calls into the file.
+- `make lint-wide-multiply` holds `rsa_ifma_sign.c` at 24 conditional
+  branches under clang for x86-64 at the 384-byte bound and 27 at the
+  512-byte bound, and `rsa_sign64.c` at 29, each a test of a count, an
+  index or a `CH_ASSERT`, and both files at 0 for arm64.
+  `inv-16-rsa-ifma-table-read` refuses a `table_select` that keeps an
+  entry by any means but the mask it reads back through its volatile
+  word.
+- `make lint-stack` holds the file's frames under 21,504 bytes, which
+  holds the wipe's array of 20,480.
+
+Twenty violations break the kernel, its dispatch, its wipes or its
+build, and each is caught (INV-41, INV-42 and INV-16 in
+docs/invariants.md). `bin/rsa_ifma_sign_model_test` catches nine on
+every machine: five that break a value, two that make `use_ifma` read
+one bit, and two that leave out a wipe of the stack below.
+`bin/x86_kernels_test` and `bin/tcp_blocking_loop_host` catch three,
+under `test/docker-aes-runtime-qemu.sh`: a signer that leaves out the
+wipe of the registers, a check on the loops, and a server that signs
+under 0. `test/widemul-builds.sh` catches the file without its target
+attribute, and `lint-invariants` two reads of the table that a compiler
+may turn into a branch. The proofs catch four: `rsa_ifma_sign_select` a
+read that stops one register short, `rsa_ifma_sign_setup` a finish whose
+array has no word above the k words, `rsa_ifma_sign_power` a step past
+the exponent's end, and `rsa_sign64_ifma` a second half raised to dp.
+`bin/diff_rsa_ifma` catches a read of each byte's low half first.
+
+What none of this shows:
+
+- That a model function equals its instruction for every input, as for
+  the public operation.
+- That the C over the model computes what the Lean model computes for
+  every input. `bin/diff_rsa_ifma` compares them on samples.
+- That the wipes clear every copy. The residue test searches for the
+  words it knows on the CPUs and compilers it ran on; a compiler that
+  writes further below its caller than `RSA_IFMA_SIGN_BELOW_LEN` would
+  leave words below the wipe's array, and the test's depth check would
+  then fail.
+- Anything about time. The kernel's timing rests on the caller's
+  multiply bit, whose statement covers IFMA's 52-bit products, and on
+  the code's shape: every branch and every memory index depends on a
+  count, an index or the exponent's length. No test here measures it.
 
 ### The host object's description of the CPU
 

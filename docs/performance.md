@@ -570,8 +570,10 @@ What the AVX-512 machine's columns show:
   v1.5 signature takes 324 and 303 µs. On a CPU with AVX-512 IFMA, OpenSSL 3.6.4 runs the two
   exponentiations of a 2,048-, 3,072- or 4,096-bit private key on it
   (`ossl_rsaz_mod_exp_avx512_x2`, `crypto/bn/asm/rsaz-2k-avx512.pl` and its 3k and 4k files).
-  chapulin signs on `rsa_sign64.c`'s 64-bit words under the multiply bit, with
-  `CH_CPU_AVX512_IFMA` or without it, and `rsa_ifma.c` takes public inputs alone (decision 119).
+  These columns were recorded before decision 120, when chapulin signed on `rsa_sign64.c`'s 64-bit
+  words under the multiply bit with `CH_CPU_AVX512_IFMA` or without it. Under both bits it now
+  computes the two exponentiations on `rsa_ifma_sign.c` and checks the signature on `rsa_ifma.c`,
+  and decision 120 records what that changed on this CPU model.
 - AES-GCM takes 2.0 to 2.3 times OpenSSL's time and ChaCha20-Poly1305 2.2 to 2.5 times. OpenSSL
   3.6.4's source holds AVX-512 code for both: `crypto/modes/asm/aes-gcm-avx512.pl`, and AVX-512
   paths in `crypto/chacha/asm/chacha-x86_64.pl` and `crypto/poly1305/asm/poly1305-x86_64.pl`.
