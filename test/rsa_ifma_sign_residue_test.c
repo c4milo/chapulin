@@ -230,28 +230,38 @@ static void add_prime_values(const char *which, const rsa_mont64_modulus *mod,
     }
 }
 
+// The first of two words of value v that len bytes hold side by side,
+// with their offset in *at, or the value's count when they hold no two.
+static size_t pair_held(size_t v, const uint8_t *bytes, size_t len, size_t *at) {
+    for (size_t i = 0; i + 2 <= values[v].count; i++) {
+        if (values[v].words[i] <= 1) {
+            continue;
+        }
+        for (size_t j = 0; j + 16 <= len; j++) {
+            if (memcmp(&bytes[j], &values[v].words[i], 16) == 0) {
+                *at = j;
+                return i;
+            }
+        }
+    }
+    return values[v].count;
+}
+
 // Whether len bytes hold two words of a value side by side at any offset.
 // Reports each value found, as a failure where counted, and as what the
 // wipes are there for where not.
 static int bytes_hold(const char *where, const uint8_t *bytes, size_t len, int counted) {
     int found = 0;
     for (size_t v = 0; v < value_count; v++) {
-        int this_value = 0;
-        for (size_t i = 0; i + 2 <= values[v].count && !this_value; i++) {
-            if (values[v].words[i] <= 1) {
-                continue;
-            }
-            for (size_t at = 0; at + 16 <= len && !this_value; at++) {
-                if (memcmp(&bytes[at], &values[v].words[i], 16) == 0) {
-                    (void)fprintf(counted ? stderr : stdout,
-                                  "%s %s holds two words of %s from word %zu, %zu bytes from "
-                                  "the end\n",
-                                  counted ? "FAIL" : "INFO", where, values[v].name, i, len - at);
-                    this_value = 1;
-                }
-            }
+        size_t at = 0;
+        size_t i = pair_held(v, bytes, len, &at);
+        if (i == values[v].count) {
+            continue;
         }
-        found |= this_value;
+        (void)fprintf(counted ? stderr : stdout,
+                      "%s %s holds two words of %s from word %zu, %zu bytes from the end\n",
+                      counted ? "FAIL" : "INFO", where, values[v].name, i, len - at);
+        found = 1;
     }
     return found;
 }
@@ -291,10 +301,46 @@ static void set_inputs(const test_rsa_sign_key *from) {
     add_value("the candidate in digits", digits, RSA_IFMA_DIGIT_COUNT(k));
 }
 
+// How far below its caller the call just made wrote, against the length
+// the wipe clears.
+static void check_depth(const char *key_name, const char *callee) {
+    size_t below_len = (size_t)RSA_IFMA_SIGN_BELOW_LEN;
+    size_t depth = 0;
+    for (size_t i = 0; i < RESIDUE_BYTES && depth == 0; i++) {
+        if (residue_copy[i] != RESIDUE_PAINT) {
+            depth = RESIDUE_BYTES - i;
+        }
+    }
+    (void)printf("%s %s: writes %zu bytes below its caller, and the wipe clears %zu\n", key_name,
+                 callee, depth, below_len);
+    if (depth == 0 || depth > below_len) {
+        failures++;
+        (void)fprintf(stderr, "FAIL depth: %s %s writes %zu bytes below its caller\n", key_name,
+                      callee, depth);
+    } else {
+        passed++;
+    }
+}
+
+// What the call just made left on the stack and in zmm0 to zmm31. After
+// the wipes a value found in either is a failure.
+static void check_residue(const char *key_name, const char *callee, int wipes) {
+    char where[128];
+    const char *after = wipes ? "and the two wipes" : "with no wipe";
+    (void)snprintf(where, sizeof where, "%s: the stack after %s %s", key_name, callee, after);
+    int stack_held = bytes_hold(where, residue_copy, RESIDUE_BYTES, wipes);
+    (void)snprintf(where, sizeof where, "%s: zmm0 to zmm31 after %s %s", key_name, callee, after);
+    int registers_held =
+        bytes_hold(where, (const uint8_t *)registers_after, sizeof registers_after, wipes);
+    if (wipes) {
+        failures += stack_held + registers_held;
+        passed += (unsigned long)(2 - stack_held - registers_held);
+    }
+}
+
 // The depth of each call and its residue, with and without the wipes.
 static void run_depth_and_residue(const char *key_name) {
     static const char *const callee[2] = {"rsa_ifma_sign_power_pair", "the check's rsa_vp1_cpu"};
-    char where[128];
     for (int check = 0; check < 2; check++) {
         for (int wipes = 0; wipes < 2; wipes++) {
             calling_check = check;
@@ -303,34 +349,9 @@ static void run_depth_and_residue(const char *key_name) {
             call_under_test();
             residue_snapshot();
             if (!wipes) {
-                size_t depth = 0;
-                for (size_t i = 0; i < RESIDUE_BYTES && depth == 0; i++) {
-                    if (residue_copy[i] != RESIDUE_PAINT) {
-                        depth = RESIDUE_BYTES - i;
-                    }
-                }
-                (void)printf("%s %s: writes %zu bytes below its caller, and the wipe clears %d\n",
-                             key_name, callee[check], depth, RSA_IFMA_SIGN_BELOW_LEN);
-                if (depth == 0 || depth > RSA_IFMA_SIGN_BELOW_LEN) {
-                    failures++;
-                    (void)fprintf(stderr, "FAIL depth: %s %s writes %zu bytes below its caller\n",
-                                  key_name, callee[check], depth);
-                } else {
-                    passed++;
-                }
+                check_depth(key_name, callee[check]);
             }
-            const char *after = wipes ? "and the two wipes" : "with no wipe";
-            (void)snprintf(where, sizeof where, "%s: the stack after %s %s", key_name,
-                           callee[check], after);
-            int stack_held = bytes_hold(where, residue_copy, RESIDUE_BYTES, wipes);
-            (void)snprintf(where, sizeof where, "%s: zmm0 to zmm31 after %s %s", key_name,
-                           callee[check], after);
-            int registers_held =
-                bytes_hold(where, (const uint8_t *)registers_after, sizeof registers_after, wipes);
-            if (wipes) {
-                failures += stack_held + registers_held;
-                passed += (unsigned long)(2 - stack_held - registers_held);
-            }
+            check_residue(key_name, callee[check], wipes);
         }
     }
 }

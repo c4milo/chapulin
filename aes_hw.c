@@ -325,7 +325,7 @@ static void expand_256(const uint8_t key[AES_256_KEY], uint8_t *round_keys) {
         round_constant = xtime(round_constant);
     }
     first = next_round_key(first, second, round_constant);
-    store_block(&round_keys[(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
+    store_block(&round_keys[(size_t)(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
 }
 #endif
 

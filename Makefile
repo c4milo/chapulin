@@ -5667,7 +5667,14 @@ else
 	# where HOST_TARGET found a host compiler.
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,rsa_mont64.c rsa_mont.c rsa.c rsa_pkcs1.c rsa_sign64.c test/rsa_equiv_test.c \
-	  test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c \
+	  test/rsa_sign_equiv_test.c test/rsa_sign_equiv_pieces.c test/diff_rsa_sign_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
+	# The IFMA signer's residue test, under the same defines, with
+	# portability-no-assembler off for this file alone: on x86-64 it reads
+	# zmm0 to zmm31 back with a block of assembly, because C names no
+	# register (docs/decisions.md 120). Every other check reads it.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
 	  test/rsa_ifma_sign_residue_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I.)
 	# rsa_mont64_blocks.c's blocks and rsa_mont64.c's calls into them,

@@ -11,5 +11,5 @@ reason: the x86-64 AES-256 key expansion stops after round key 13 and never
 
 --- old
     first = next_round_key(first, second, round_constant);
-    store_block(&round_keys[(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
+    store_block(&round_keys[(size_t)(AES_256_ROUND_KEYS - 1) * AES_BLOCK], first);
 --- new
