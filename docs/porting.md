@@ -307,12 +307,12 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 
 | compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3 | 4 | 17 | 40 | 13 | 9 | 19 | 4 | 33 | 14 | 43 | 9 | 0 |
-| clang 23, mips32r2 | 4 | 16 | 26 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
-| clang 23, rv32imac | 4 | 17 | 34 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
+| clang 23, Cortex-M3 | 4 | 17 | 38 | 13 | 9 | 19 | 4 | 33 | 14 | 43 | 9 | 0 |
+| clang 23, mips32r2 | 4 | 16 | 25 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
+| clang 23, rv32imac | 4 | 17 | 32 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
 | Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 21 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 18 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 36 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 17 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 32 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
 | Bootlin gcc 14.3, rv32imac | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 0 |
 | Bootlin gcc 14.3, rv32ic | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
 
@@ -322,7 +322,7 @@ emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
 255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
 `softmul`'s fixed 32 and 64 iterations (the two `bne` on rv32ic, the one
 core where it compiles to anything), read and recorded. The Cortex-M3 clang
-counts include IT blocks — 16 of sha3's 40 and 12 of mlkem_poly's 43. A
+counts include IT blocks — 15 of sha3's 38 and 12 of mlkem_poly's 43. A
 predicated instruction takes the same cycles on that core whether or not its
 condition holds, so an IT block is no timing leak there; the count holds them
 because an IT block is the form clang gives an `if` on a word, and a count of

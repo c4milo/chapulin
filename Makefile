@@ -7418,7 +7418,20 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # the bytes left, the rate, the squeezing flag and the round counter.
 # keccak_round holds none: it is straight-line. No branch reads a lane
 # or a message byte. The entry fell to 33 when absorb's loop over whole
-# blocks moved into absorb_whole_blocks (docs/decisions.md 99).
+# blocks moved into absorb_whole_blocks (docs/decisions.md 99). It fell
+# to 32, and this gcc's -Os entry from 18 to 17, when lane_to_bytes
+# named a lane's eight bytes in place of a loop over them
+# (docs/performance.md, the pitfalls table). This gcc inlines
+# lane_to_bytes into block_bytes, and the branch it no longer emits
+# closed that loop: a compare of the shift count with 64. Both entries
+# were read again. At -O2 block_xor and block_bytes hold nine each,
+# absorb six, squeeze four, and pad_finish, shake128_init,
+# shake256_init and shake_squeeze one each. At -Os block_xor and
+# block_bytes hold four each, absorb three, squeeze two, and
+# keccak_f1600, shake128_init, shake256_init and shake_squeeze one each.
+# Each reads a length, a position in the block, the squeezing flag, the
+# round counter or, in shake128_init and shake256_init, the count of the
+# lanes they zero.
 #
 # mlkem_poly.c's entry, and its native and _hw copies', rose by two on
 # every spec when mlk_sample_ntt took the stream eight three-byte groups a
@@ -7435,7 +7448,19 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # absorb's four branches, on the block's fill, the bytes it takes, a full
 # block and the bytes left against the rate, and keccak holds the last of
 # them again, because its block starts empty. The branches were read.
-# None reads a lane or a message byte.
+# None reads a lane or a message byte. The three entries are 21 and 22
+# again since lane_to_bytes named a lane's eight bytes in place of a loop
+# over them (docs/performance.md, the pitfalls table): both gccs inline
+# it into block_bytes, and the branch they no longer emit closed that
+# loop, a compare of the shift count with 64. The entries were read
+# again. block_xor, block_bytes, squeeze and shake_absorb hold four each,
+# and keccak_f1600, keccak, shake128_init, shake256_init and
+# shake_squeeze one each. Each reads a length, a position in the block,
+# the squeezing flag, the round counter or, in shake128_init and
+# shake256_init, the count of the lanes they zero. Under the riscv32 gcc
+# keccak holds one more, as it did before: the test of the
+# stack-protector canary this toolchain adds to a function holding an
+# array.
 #
 # x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
 # moved into clamp_and_ladder(), which the wide field shares. Both branches
@@ -7479,28 +7504,28 @@ BRANCH_CEILING := \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:38 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/aes_extern.c:0 \
   rv32imac/gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:1 m3-gcc/ct_wipe.c:1 m3-gcc/sha256.c:12 \
-  m3-gcc/sha3.c:22 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
+  m3-gcc/sha3.c:21 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:39 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/aes_extern.c:0 m3-gcc/gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:1 mips32r2-gcc/ct_wipe.c:1 \
-  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:18 mips32r2-gcc/hkdf.c:18 \
+  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:17 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
   mips32r2-gcc/mlkem_poly.c:43 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/aes_extern.c:0 \
   mips32r2-gcc/gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
-  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:33 \
+  mips32r2-gcc-O2/ct.c:2 mips32r2-gcc-O2/ct_wipe.c:1 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:32 \
   mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:41 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:23 rv32imac-gcc/hkdf.c:23 \
+  rv32imac-gcc/ct.c:1 rv32imac-gcc/ct_wipe.c:1 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:22 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:41 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/aes_extern.c:0 \
   rv32imac-gcc/gcm.c:23 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:1 rv32ic-gcc/ct_wipe.c:1 \
-  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:23 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
+  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:22 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:41 \
   rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/aes.c:4 \
