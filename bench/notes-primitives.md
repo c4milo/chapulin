@@ -16,6 +16,66 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 9ac23a2e
+
+The x86-64 CSVs now hold runs of 2026-10-11 on the tree of
+docs/decisions.md 123. The EPYC 7763's are of 9ac23a2e. The Xeon
+Platinum 8573C's are of 3be3f3f7, which differs from 9ac23a2e in
+bench.yml and in one paragraph of docs/performance.md, so it times the
+same code. The two files this note reads still hold the runs of
+d699bec6: decisions 120 to 123 changed x86-64 code alone. In a run of
+9ac23a2e on the M1 Pro every row that counts instructions retired within
+1% of what it retired in the earlier run, and each end of each handshake
+made the same calls. Against the run of d699bec6, on the EPYC 7763:
+
+- **RSA verifies in 0.45 to 0.62 of its time under `0x3f` and gcc, and
+  in 0.42 to 0.58 under clang.** `CH_CPU_AVX2` without
+  `CH_CPU_AVX512_IFMA` runs the public operation on `rsa_avx2.c`
+  (decision 122). An RSA-4096 PKCS#1 v1.5 verification takes 63.0 µs
+  under gcc where it took 140.
+- **Under gcc RSA runs faster wherever it runs on `rsa_mont64.c`.** A
+  gcc build for x86-64 runs that file's products in rows of four words
+  on `_addcarry_u64` chains (decision 122). Under `CH_CPU_PROBED` alone,
+  which states neither `CH_CPU_AVX2` nor `CH_CPU_AVX512_IFMA` and so
+  runs the public operation on `rsa_mont64.c`, a verification takes 0.75
+  to 0.86 of its time, and under `0x3f` a signature takes 0.91 and 0.85
+  of it. Under clang, which keeps the loops, neither moved. A signature
+  under `CH_CPU_PROBED` alone runs `rsa_sign.c`'s ladder, which calls
+  nothing in `rsa_mont64.c`, and under gcc it did not move.
+- **Under `0x3f` the client side of a pinned RSA-3072 handshake takes
+  166 µs under gcc, where it took 212, and 149 µs under clang, where it
+  took 193.** Under gcc the server side takes 3.90 ms where it took
+  4.77.
+- **An AES key expansion takes 24.4 ns for AES-128 and 25.9 ns for
+  AES-256 under gcc, where it took 432 and 526** (decision 123), so
+  `rec_seal` of a 1 KiB AES-128-GCM record under `0x1f` takes 400 ns
+  where it took 810.
+- **Three P-256 rows under `CH_CPU_PROBED` alone read 1.11 times their
+  earlier time under clang, and the two RSA signatures 1.07 times.** The
+  tree's code is not the cause. The pinned clang compiles
+  `p256_field.c`, `p256_point.c`, `p256_scalar.c`, `p256_ecdh.c` and
+  `p256_sign.c` to the same code bytes from both trees, and the RSA
+  handshakes' server side, which signs on the same files in another
+  program, did not move. docs/performance.md's pitfalls record the same
+  effect on this CPU: where the linker places a loop moves a row by
+  about a tenth.
+
+On the Xeon Platinum 8573C:
+
+- **The server side of a pinned RSA-2048 handshake takes 423 µs under
+  gcc, where the run of d699bec6 read 1.30 ms, and the RSA-3072 one
+  877 µs, where it read 3.70 ms.** Under `0x13f` the server signs on
+  `rsa_ifma_sign.c` (decision 120): an RSA-2048 PSS signature takes
+  320 µs where it took 1.24 ms.
+- **This run's runner is another machine of that model, and a slower
+  one.** OpenSSL's rows in the primitives CSV took 1.04 to 1.08 times
+  their time in the run of d699bec6 under gcc and 1.09 to 1.17 times
+  under clang, and most of chapulin's rows that no decision changed read
+  slower by about as much, so the two runs compare by their ratios to
+  OpenSSL. bench.yml's `avx512_model` input now holds the AVX-512 job to
+  a CPU model: this run's first draw with AVX-512 IFMA was an AMD EPYC
+  9V74.
+
 ## The run of d699bec6
 
 Both CSVs now hold runs of d699bec6, on 2026-10-09, the tree of

@@ -9774,7 +9774,8 @@ does nothing more.
     vector register and back out, and each word was read back from the
     schedule. On a Xeon Platinum 8573C runner under gcc 13, bench/record.sh's
     `key_expansion` row took 409 ns of a 1 KiB AES-128-GCM `rec_seal` of
-    893 ns (`bench/results-record-linux-x86_64-avx512-gcc.csv`). A
+    893 ns (`bench/results-record-linux-x86_64-avx512-gcc.csv` as dda97a3f
+    recorded it; the file now holds a run of this entry's tree). A
     prototype on the branch `proto-aesgcm-avx512` timed a register
     expansion beside a 512-bit AES-GCM. Camilo ruled on 2026-10-09 to land
     the register key expansion alone from that prototype, and to keep the
