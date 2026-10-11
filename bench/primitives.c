@@ -35,8 +35,11 @@
 // by its process's user CPU time, so both sides count the same thing. On
 // macOS the clock steps every 42 ns, and a sample spans 2 ms. No sample
 // does I/O. Every operation is a call into another translation unit, and
-// bench_consume adds output bytes into a volatile, so the compiler cannot
-// drop the work.
+// bench_consume adds one byte of its output into a volatile, so the
+// compiler cannot drop the work. A row consumes one byte and no more: the
+// sink loads, adds and stores for each byte, and over a whole digest that
+// took a fifth as long as a one-block hash, which OpenSSL's row does not
+// pay (docs/performance.md, the pitfalls).
 //
 // Each row also prints the instructions one operation retired, where the
 // system counts them for a program: the count over the kept samples,

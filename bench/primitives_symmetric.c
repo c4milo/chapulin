@@ -70,25 +70,25 @@ static void prepare_inputs(size_t n) {
 static void run_sha256(size_t n) {
     uint8_t digest[SHA256_LEN];
     sha256_of_cpu(bench_cpu, input, n, digest);
-    bench_consume(digest, sizeof digest);
+    bench_consume(&digest[sizeof digest - 1], 1);
 }
 
 static void run_sha384(size_t n) {
     uint8_t digest[SHA384_LEN];
     sha384_of_cpu(bench_cpu, input, n, digest);
-    bench_consume(digest, sizeof digest);
+    bench_consume(&digest[sizeof digest - 1], 1);
 }
 
 static void run_sha512(size_t n) {
     uint8_t digest[SHA512_LEN];
     sha512_of_cpu(bench_cpu, input, n, digest);
-    bench_consume(digest, sizeof digest);
+    bench_consume(&digest[sizeof digest - 1], 1);
 }
 
 static void run_sha3_256(size_t n) {
     uint8_t digest[SHA3_256_LEN];
     sha3_256_cpu(bench_cpu, input, n, digest);
-    bench_consume(digest, sizeof digest);
+    bench_consume(&digest[sizeof digest - 1], 1);
 }
 
 // SHAKE the way ML-KEM uses it: absorb a 32-byte seed, then squeeze n
@@ -112,7 +112,7 @@ static void run_shake256(size_t n) {
 static void run_hmac_sha256(size_t n) {
     uint8_t mac[SHA256_LEN];
     hmac_sha256_cpu(bench_cpu, key, sizeof key, input, n, mac);
-    bench_consume(mac, sizeof mac);
+    bench_consume(&mac[sizeof mac - 1], 1);
 }
 
 // One traffic secret: the label and the 32-byte transcript hash the key
@@ -120,7 +120,7 @@ static void run_hmac_sha256(size_t n) {
 static void run_hkdf_expand_label(size_t n) {
     uint8_t secret[SHA256_LEN];
     hkdf_expand_label_cpu(bench_cpu, SHA256_LEN, key, "c hs traffic", input, SHA256_LEN, secret, n);
-    bench_consume(secret, sizeof secret);
+    bench_consume(&secret[sizeof secret - 1], 1);
 }
 
 static void run_chacha20(size_t n) {
@@ -142,7 +142,7 @@ static void run_poly1305(size_t n) {
     poly1305_init(&state, key);
     widemul_poly1305_update_cpu(bench_cpu, BENCH_WIDEMUL, &state, input, n);
     widemul_poly1305_final(BENCH_WIDEMUL, &state, tag);
-    bench_consume(tag, sizeof tag);
+    bench_consume(&tag[sizeof tag - 1], 1);
 }
 
 // The seal and the open as a record calls them, with its session's
@@ -150,7 +150,7 @@ static void run_poly1305(size_t n) {
 static void run_seal(size_t n) {
     uint8_t tag[AEAD_TAG];
     aead_seal_cpu(bench_cpu, key, nonce, aad, sizeof aad, input, n, output, tag);
-    bench_consume(tag, sizeof tag);
+    bench_consume(&tag[sizeof tag - 1], 1);
 }
 
 static void prepare_open(size_t n) {
