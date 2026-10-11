@@ -1,544 +1,544 @@
-# bench/record.sh on INTEL(R) XEON(R) PLATINUM 8573C (x86_64), Linux 6.17.0-1022-azure, 2026-10-11, tree 3be3f3f-dirty
+# bench/record.sh on INTEL(R) XEON(R) PLATINUM 8573C (x86_64), Linux 6.17.0-1022-azure, 2026-10-11, tree 58d534c-dirty
 # Ubuntu clang version 23.1.2 (++20260919103626+4b1925210476-1~exp1~20260919223755.77); clang-23 -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -Wvla -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibench; the build column is the ch_cfg.cpu value the rows run under, -DBENCH_CPU: 0x3 states the AES instructions, and 0x7 adds CH_CPU_CONSTANT_TIME_MULTIPLY, the vector Poly1305; ch_cfg.cpu 0x1f adds CH_CPU_AVX2 and CH_CPU_VAES, the AVX2 ChaCha20 and Poly1305 and the VAES AES-GCM; ch_cfg.cpu 0x11f adds CH_CPU_AVX512_IFMA, the AVX-512 ChaCha20 and the IFMA Poly1305
 # no zig row: zig 0.16.0 is not on PATH; OpenSSL 3.6.4, whose rows' stages are openssl_ and the stage here that times one operation of its `speed -aead`
-# load average (1, 5, 15 min) before: 1.03 0.99 0.65; after: 1.01 1.00 0.68
+# load average (1, 5, 15 min) before: 1.00 0.97 0.64; after: 1.00 0.98 0.66
 # ns: per record, the median of 5 runs, each the median of 15 batches of at least 1 ms; ns_per_byte and mb_per_s: per byte of the record's plaintext; spread_pct: the slowest run less the fastest, percent of ns; p10_ns and p90_ns: the batches at the 10th and 90th percentile over every run; # check lines: aead, build, record_bytes, a whole and its parts, the whole's ns, the parts' summed ns, and their difference
 aead,build,stage,record_bytes,ns,ns_per_byte,mb_per_s,spread_pct,p10_ns,p90_ns
-aes128gcm,ch_cfg.cpu 0x3,rec_seal,1024,464.2,0.4534,2205.7,1.1,451.4,469.7
-aes128gcm,ch_cfg.cpu 0x3,refill,1024,11.9,0.0117,85714.4,1.8,11.2,12.0
-aes128gcm,ch_cfg.cpu 0x3,rec_open,1024,465.6,0.4547,2199.1,3.4,441.0,472.6
-aes128gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,36.3,0.0354,28240.7,2.0,34.9,36.8
-aes128gcm,ch_cfg.cpu 0x3,rec_open_without_aead,1024,28.7,0.0280,35666.9,0.9,28.2,29.2
-aes128gcm,ch_cfg.cpu 0x3,key_expansion,0,20.6,,,0.2,20.2,21.1
-aes128gcm,ch_cfg.cpu 0x3,key_wipe,0,5.0,,,0.5,4.9,5.1
-aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,1024,475.8,0.4647,2152.0,1.0,463.3,477.7
-aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,1024,448.3,0.4378,2284.3,0.1,440.4,452.6
-aes128gcm,ch_cfg.cpu 0x3,aead_seal,1024,443.4,0.4330,2309.6,0.4,431.4,448.5
-aes128gcm,ch_cfg.cpu 0x3,aead_open,1024,434.6,0.4244,2356.2,2.0,422.1,442.1
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,1024,210.9,0.2059,4855.6,0.8,204.9,213.6
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,1024,209.3,0.2044,4891.4,0.7,203.9,212.7
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,1024,171.3,0.1673,5977.7,1.5,166.0,174.2
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,1024,170.4,0.1664,6011.2,1.6,167.1,174.0
-aes128gcm,ch_cfg.cpu 0x3,seal_passes,1024,331.1,0.3233,3092.8,0.4,324.8,336.9
-aes128gcm,ch_cfg.cpu 0x3,open_passes,1024,328.6,0.3209,3115.8,0.5,322.2,332.2
-aes128gcm,ch_cfg.cpu 0x3,compute_tag,1024,203.7,0.1989,5026.5,0.4,199.0,206.5
-aes128gcm,ch_cfg.cpu 0x3,ghash_data,1024,147.2,0.1437,6957.3,0.5,142.6,150.0
-aes128gcm,ch_cfg.cpu 0x3,compute_tag_fixed,0,64.2,,,1.1,62.3,64.7
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,1024,40.0,0.0391,25572.6,7.9,,
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,1024,39.2,0.0383,26126.2,3.9,,
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,475.8,469.1,-1.4%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,448.3,460.3,+2.7%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,aead_seal = seal_passes + compute_tag_fixed,443.4,395.2,-10.9%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,aead_open = open_passes + compute_tag_fixed,434.6,392.8,-9.6%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,compute_tag = ghash_data + compute_tag_fixed,203.7,211.3,+3.7%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,464.2,479.6,+3.3%
-# check,aes128gcm,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,465.6,463.3,-0.5%
-aes128gcm,ch_cfg.cpu 0x3,rec_seal,16384,4945.1,0.3018,3313.1,0.5,4785.6,5035.2
-aes128gcm,ch_cfg.cpu 0x3,refill,16384,118.8,0.0073,137890.4,4.0,110.0,120.1
-aes128gcm,ch_cfg.cpu 0x3,rec_open,16384,4891.8,0.2986,3349.3,0.5,4741.8,5042.2
-aes128gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,146.4,0.0089,111893.5,0.7,141.8,148.4
-aes128gcm,ch_cfg.cpu 0x3,rec_open_without_aead,16384,28.7,0.0018,570317.8,0.4,28.0,29.1
-aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,16384,4843.2,0.2956,3382.9,0.5,4720.2,4900.2
-aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,16384,4874.6,0.2975,3361.1,1.9,4728.8,4946.4
-aes128gcm,ch_cfg.cpu 0x3,aead_seal,16384,4799.5,0.2929,3413.7,0.3,4654.1,4862.6
-aes128gcm,ch_cfg.cpu 0x3,aead_open,16384,4857.4,0.2965,3373.0,1.2,4699.1,4919.8
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,16384,2547.6,0.1555,6431.2,2.3,2503.5,2603.8
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,16384,2571.9,0.1570,6370.3,1.3,2505.7,2601.9
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,16384,2556.2,0.1560,6409.4,1.0,2489.3,2606.8
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,16384,2545.9,0.1554,6435.6,0.6,2483.0,2604.7
-aes128gcm,ch_cfg.cpu 0x3,seal_passes,16384,4686.4,0.2860,3496.1,0.1,4540.6,4738.1
-aes128gcm,ch_cfg.cpu 0x3,open_passes,16384,4761.6,0.2906,3440.8,0.5,4619.7,4812.1
-aes128gcm,ch_cfg.cpu 0x3,compute_tag,16384,1796.6,0.1097,9119.3,1.9,1757.6,1828.7
-aes128gcm,ch_cfg.cpu 0x3,ghash_data,16384,1759.0,0.1074,9314.5,1.0,1703.7,1788.0
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,16384,-14.7,-0.0009,-1117140.5,-489.0,,
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,16384,25.4,0.0016,644880.7,136.5,,
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,4843.2,4825.2,-0.4%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,4874.6,4883.1,+0.2%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,aead_seal = seal_passes + compute_tag_fixed,4799.5,4750.5,-1.0%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,aead_open = open_passes + compute_tag_fixed,4857.4,4825.8,-0.7%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,compute_tag = ghash_data + compute_tag_fixed,1796.6,1823.1,+1.5%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,4945.1,4946.0,+0.0%
-# check,aes128gcm,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,4891.8,4886.1,-0.1%
-aes128gcm,ch_cfg.cpu 0x3,refill,65536,1654.3,0.0252,39614.5,0.1,1610.6,1679.8
-aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,65536,18822.3,0.2872,3481.8,0.1,18244.8,19045.7
-aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,65536,19405.8,0.2961,3377.1,0.2,18873.1,19664.5
-aes128gcm,ch_cfg.cpu 0x3,aead_seal,65536,18750.0,0.2861,3495.3,0.1,18229.5,18867.5
-aes128gcm,ch_cfg.cpu 0x3,aead_open,65536,19391.6,0.2959,3379.6,0.6,18758.7,19588.5
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,65536,10168.5,0.1552,6445.0,0.6,9867.5,10303.5
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,65536,10186.0,0.1554,6433.9,1.9,9884.3,10349.4
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,65536,10124.8,0.1545,6472.8,2.9,9862.7,10375.4
-aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,65536,10135.6,0.1547,6465.9,2.0,9858.7,10374.4
-aes128gcm,ch_cfg.cpu 0x3,seal_passes,65536,18636.2,0.2844,3516.6,1.6,18042.4,18856.1
-aes128gcm,ch_cfg.cpu 0x3,open_passes,65536,18937.8,0.2890,3460.6,1.8,18386.3,19227.3
-aes128gcm,ch_cfg.cpu 0x3,compute_tag,65536,6985.5,0.1066,9381.8,0.7,6773.4,7037.1
-aes128gcm,ch_cfg.cpu 0x3,ghash_data,65536,6942.9,0.1059,9439.3,0.3,6742.2,6982.7
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,65536,57.3,0.0009,1144109.1,534.2,,
-aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,65536,50.4,0.0008,1300357.8,337.2,,
-# check,aes128gcm,ch_cfg.cpu 0x3,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,18822.3,18775.6,-0.2%
-# check,aes128gcm,ch_cfg.cpu 0x3,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,19405.8,19417.2,+0.1%
-# check,aes128gcm,ch_cfg.cpu 0x3,65536,aead_seal = seal_passes + compute_tag_fixed,18750.0,18700.4,-0.3%
-# check,aes128gcm,ch_cfg.cpu 0x3,65536,aead_open = open_passes + compute_tag_fixed,19391.6,19001.9,-2.0%
-# check,aes128gcm,ch_cfg.cpu 0x3,65536,compute_tag = ghash_data + compute_tag_fixed,6985.5,7007.1,+0.3%
-aes256gcm,ch_cfg.cpu 0x3,rec_seal,1024,534.7,0.5222,1914.9,0.2,526.0,545.3
-aes256gcm,ch_cfg.cpu 0x3,refill,1024,12.0,0.0117,85570.5,0.2,11.2,12.0
-aes256gcm,ch_cfg.cpu 0x3,rec_open,1024,535.2,0.5227,1913.3,0.1,502.7,536.4
-aes256gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,38.3,0.0374,26718.2,2.6,36.1,38.6
-aes256gcm,ch_cfg.cpu 0x3,rec_open_without_aead,1024,30.3,0.0296,33828.8,0.8,29.3,30.6
-aes256gcm,ch_cfg.cpu 0x3,key_expansion,0,22.0,,,0.3,21.4,22.3
-aes256gcm,ch_cfg.cpu 0x3,key_wipe,0,5.0,,,0.1,4.9,5.1
-aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,1024,517.3,0.5051,1979.6,0.1,500.7,520.8
-aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,1024,507.3,0.4954,2018.4,0.2,491.0,510.3
-aes256gcm,ch_cfg.cpu 0x3,aead_seal,1024,500.3,0.4886,2046.6,0.1,485.7,504.2
-aes256gcm,ch_cfg.cpu 0x3,aead_open,1024,492.9,0.4813,2077.7,0.2,479.1,495.4
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,1024,275.5,0.2690,3717.4,0.5,267.1,280.0
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,1024,273.9,0.2675,3739.0,0.4,265.0,276.4
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,1024,234.0,0.2285,4375.9,0.3,227.5,236.5
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,1024,232.7,0.2272,4400.7,0.2,225.6,234.2
-aes256gcm,ch_cfg.cpu 0x3,seal_passes,1024,389.5,0.3803,2629.2,0.3,380.7,392.9
-aes256gcm,ch_cfg.cpu 0x3,open_passes,1024,379.8,0.3709,2695.9,0.4,370.2,382.4
-aes256gcm,ch_cfg.cpu 0x3,compute_tag,1024,204.1,0.1994,5015.9,0.3,198.2,207.3
-aes256gcm,ch_cfg.cpu 0x3,ghash_data,1024,147.2,0.1437,6956.6,0.1,143.3,149.1
-aes256gcm,ch_cfg.cpu 0x3,compute_tag_fixed,0,65.1,,,0.5,63.5,66.4
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,1024,41.0,0.0401,24963.6,2.8,,
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,1024,41.2,0.0402,24882.5,2.1,,
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,517.3,527.3,+1.9%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,507.3,519.9,+2.5%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,aead_seal = seal_passes + compute_tag_fixed,500.3,454.6,-9.1%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,aead_open = open_passes + compute_tag_fixed,492.9,445.0,-9.7%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,compute_tag = ghash_data + compute_tag_fixed,204.1,212.3,+4.0%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,534.7,538.7,+0.7%
-# check,aes256gcm,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,535.2,523.1,-2.3%
-aes256gcm,ch_cfg.cpu 0x3,rec_seal,16384,5832.0,0.3560,2809.3,0.9,5664.5,5945.0
-aes256gcm,ch_cfg.cpu 0x3,refill,16384,118.0,0.0072,138798.4,5.3,110.6,120.0
-aes256gcm,ch_cfg.cpu 0x3,rec_open,16384,5731.0,0.3498,2858.8,0.3,5566.9,5799.2
-aes256gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,147.4,0.0090,111127.0,0.9,142.7,149.5
-aes256gcm,ch_cfg.cpu 0x3,rec_open_without_aead,16384,30.2,0.0018,542743.9,0.3,29.3,30.4
-aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,16384,5713.3,0.3487,2867.7,0.4,5530.4,5751.0
-aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,16384,5728.5,0.3496,2860.1,0.6,5563.0,5778.2
-aes256gcm,ch_cfg.cpu 0x3,aead_seal,16384,5690.7,0.3473,2879.1,0.4,5515.1,5751.8
-aes256gcm,ch_cfg.cpu 0x3,aead_open,16384,5702.7,0.3481,2873.0,0.4,5533.6,5778.3
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,16384,3627.8,0.2214,4516.2,0.4,3533.9,3650.7
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,16384,3623.6,0.2212,4521.5,0.3,3521.7,3650.5
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,16384,3596.9,0.2195,4555.1,0.5,3494.8,3624.8
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,16384,3582.8,0.2187,4572.9,0.3,3489.2,3606.4
-aes256gcm,ch_cfg.cpu 0x3,seal_passes,16384,5571.7,0.3401,2940.6,0.3,5415.7,5602.5
-aes256gcm,ch_cfg.cpu 0x3,open_passes,16384,5603.3,0.3420,2924.0,0.3,5439.0,5663.0
-aes256gcm,ch_cfg.cpu 0x3,compute_tag,16384,1816.8,0.1109,9018.1,0.7,1759.1,1829.6
-aes256gcm,ch_cfg.cpu 0x3,ghash_data,16384,1759.4,0.1074,9312.5,1.0,1705.0,1770.1
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,16384,39.1,0.0024,419095.1,47.9,,
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,16384,42.9,0.0026,382290.8,41.6,,
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,5713.3,5717.7,+0.1%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,5728.5,5729.7,+0.0%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,aead_seal = seal_passes + compute_tag_fixed,5690.7,5636.9,-0.9%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,aead_open = open_passes + compute_tag_fixed,5702.7,5668.5,-0.6%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,compute_tag = ghash_data + compute_tag_fixed,1816.8,1824.5,+0.4%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,5832.0,5838.1,+0.1%
-# check,aes256gcm,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,5731.0,5732.9,+0.0%
-aes256gcm,ch_cfg.cpu 0x3,refill,65536,1650.2,0.0252,39715.0,1.6,1600.6,1672.9
-aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,65536,22275.9,0.3399,2942.0,1.0,21622.6,22631.2
-aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,65536,22797.3,0.3479,2874.7,1.2,22032.2,23272.0
-aes256gcm,ch_cfg.cpu 0x3,aead_seal,65536,22247.9,0.3395,2945.7,2.4,21559.3,22614.0
-aes256gcm,ch_cfg.cpu 0x3,aead_open,65536,22759.5,0.3473,2879.5,1.9,22011.9,22963.9
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,65536,14372.9,0.2193,4559.7,2.7,13960.1,14530.2
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,65536,14365.2,0.2192,4562.1,2.0,13945.6,14601.6
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,65536,14367.4,0.2192,4561.4,1.5,13948.1,14628.0
-aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,65536,14322.0,0.2185,4575.9,0.3,13892.4,14537.7
-aes256gcm,ch_cfg.cpu 0x3,seal_passes,65536,22113.7,0.3374,2963.6,0.8,21481.2,22341.5
-aes256gcm,ch_cfg.cpu 0x3,open_passes,65536,22279.6,0.3400,2941.5,1.0,21637.0,22460.3
-aes256gcm,ch_cfg.cpu 0x3,compute_tag,65536,6961.1,0.1062,9414.6,0.9,6773.6,7044.5
-aes256gcm,ch_cfg.cpu 0x3,ghash_data,65536,6856.0,0.1046,9558.9,1.5,6729.3,7011.4
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,65536,10.7,0.0002,6132023.4,1847.6,,
-aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,65536,14.7,0.0002,4466777.4,1968.8,,
-# check,aes256gcm,ch_cfg.cpu 0x3,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,22275.9,22274.9,-0.0%
-# check,aes256gcm,ch_cfg.cpu 0x3,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,22797.3,22786.5,-0.0%
-# check,aes256gcm,ch_cfg.cpu 0x3,65536,aead_seal = seal_passes + compute_tag_fixed,22247.9,22178.8,-0.3%
-# check,aes256gcm,ch_cfg.cpu 0x3,65536,aead_open = open_passes + compute_tag_fixed,22759.5,22344.8,-1.8%
-# check,aes256gcm,ch_cfg.cpu 0x3,65536,compute_tag = ghash_data + compute_tag_fixed,6961.1,6921.2,-0.6%
-chacha20poly1305,ch_cfg.cpu 0x3,rec_seal,1024,4978.1,4.8614,205.7,0.5,4842.7,5096.8
-chacha20poly1305,ch_cfg.cpu 0x3,refill,1024,11.9,0.0116,85999.4,1.1,11.4,12.0
-chacha20poly1305,ch_cfg.cpu 0x3,rec_open,1024,5127.9,5.0077,199.7,0.7,4883.4,5175.1
-chacha20poly1305,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,18.0,0.0175,56993.9,0.9,17.1,18.1
-chacha20poly1305,ch_cfg.cpu 0x3,rec_open_without_aead,1024,8.6,0.0084,118687.3,0.8,8.3,8.9
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,1024,4983.5,4.8667,205.5,0.6,4825.9,5136.3
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open,1024,4979.0,4.8623,205.7,0.3,4821.7,5144.8
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,1024,1257.3,1.2278,814.4,0.6,1222.8,1272.0
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,1024,1257.5,1.2280,814.3,0.1,1221.0,1264.8
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,1024,1190.3,1.1624,860.3,0.4,1152.5,1199.6
-chacha20poly1305,ch_cfg.cpu 0x3,mac,1024,3696.9,3.6102,277.0,1.1,3604.9,3773.9
-chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,1024,3369.1,3.2902,303.9,1.4,3292.4,3445.6
-chacha20poly1305,ch_cfg.cpu 0x3,mac_fixed,0,263.0,,,1.0,256.5,270.0
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,1024,67.2,0.0656,15248.2,16.1,,
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,1024,67.3,0.0657,15214.8,5.4,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,1024,4720.1,4.6095,216.9,0.7,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,1024,4717.7,4.6071,217.1,0.3,,
-# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,4983.5,4889.5,-1.9%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,4979.0,4889.6,-1.8%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,mac = poly1305_data + mac_fixed,3696.9,3632.1,-1.8%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,4978.1,5001.4,+0.5%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,5127.9,4987.6,-2.7%
-chacha20poly1305,ch_cfg.cpu 0x3,rec_seal,16384,70425.1,4.2984,232.6,0.4,68383.1,72441.8
-chacha20poly1305,ch_cfg.cpu 0x3,refill,16384,119.8,0.0073,136773.0,5.0,110.7,120.5
-chacha20poly1305,ch_cfg.cpu 0x3,rec_open,16384,70356.9,4.2942,232.9,1.8,68249.0,71272.5
-chacha20poly1305,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,138.8,0.0085,118068.1,0.2,134.8,142.7
-chacha20poly1305,ch_cfg.cpu 0x3,rec_open_without_aead,16384,8.6,0.0005,1907119.8,1.6,8.4,8.8
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,16384,70577.8,4.3077,232.1,1.0,69312.9,72569.5
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open,16384,70308.3,4.2913,233.0,2.1,68366.5,72007.6
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,16384,16443.1,1.0036,996.4,1.4,15926.3,16769.8
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,16384,16437.3,1.0033,996.8,0.3,15935.9,16737.0
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,16384,15274.9,0.9323,1072.6,0.5,14889.7,15506.6
-chacha20poly1305,ch_cfg.cpu 0x3,mac,16384,53809.1,3.2842,304.5,2.2,52583.7,55137.7
-chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,16384,53452.1,3.2625,306.5,1.3,52228.3,54881.6
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,16384,1169.0,0.0713,14015.5,23.4,,
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,16384,1164.7,0.0711,14067.7,8.7,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,16384,70315.2,4.2917,233.0,1.0,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,16384,70044.3,4.2752,233.9,2.1,,
-# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,70577.8,70158.2,-0.6%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,70308.3,70152.5,-0.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,mac = poly1305_data + mac_fixed,53809.1,53715.1,-0.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,70425.1,70716.5,+0.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,70356.9,70316.9,-0.1%
-chacha20poly1305,ch_cfg.cpu 0x3,refill,65536,1644.3,0.0251,39855.5,0.6,1595.1,1681.3
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,65536,280721.8,4.2835,233.5,1.2,272139.5,285796.5
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open,65536,280089.7,4.2738,234.0,1.9,271717.3,283246.1
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,65536,65001.1,0.9918,1008.2,0.2,62933.0,65658.4
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,65536,65003.1,0.9919,1008.2,0.1,62935.5,65864.2
-chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,65536,60298.8,0.9201,1086.9,0.9,58940.5,60653.6
-chacha20poly1305,ch_cfg.cpu 0x3,mac,65536,215738.2,3.2919,303.8,0.9,209125.9,218790.5
-chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,65536,213523.0,3.2581,306.9,1.9,208763.6,217818.4
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,65536,4741.6,0.0724,13821.4,8.9,,
-chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,65536,4704.4,0.0718,13930.9,10.4,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,65536,280458.7,4.2795,233.7,1.2,,
-chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,65536,279826.3,4.2698,234.2,1.9,,
-# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,280721.8,278787.1,-0.7%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,280089.7,278789.1,-0.5%
-# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,mac = poly1305_data + mac_fixed,215738.2,213786.0,-0.9%
-chacha20poly1305,ch_cfg.cpu 0x7,rec_seal,1024,1893.2,1.8488,540.9,1.1,1841.0,1918.0
-chacha20poly1305,ch_cfg.cpu 0x7,refill,1024,11.9,0.0116,86302.7,0.4,11.2,11.9
-chacha20poly1305,ch_cfg.cpu 0x7,rec_open,1024,1942.3,1.8968,527.2,0.9,1831.0,1982.0
-chacha20poly1305,ch_cfg.cpu 0x7,rec_seal_without_aead,1024,17.4,0.0170,58944.3,3.3,16.3,17.5
-chacha20poly1305,ch_cfg.cpu 0x7,rec_open_without_aead,1024,8.6,0.0084,118492.7,2.2,8.3,8.8
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,1024,1869.4,1.8256,547.8,1.5,1823.3,1910.5
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open,1024,1883.7,1.8396,543.6,1.7,1829.7,1925.9
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,1024,1257.5,1.2280,814.3,1.7,1218.1,1270.7
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,1024,1257.0,1.2276,814.6,1.0,1217.4,1276.0
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,1024,1190.9,1.1630,859.9,0.7,1153.3,1211.6
-chacha20poly1305,ch_cfg.cpu 0x7,mac,1024,624.3,0.6097,1640.2,1.9,600.0,650.4
-chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,1024,391.2,0.3821,2617.4,0.5,379.6,395.3
-chacha20poly1305,ch_cfg.cpu 0x7,mac_fixed,0,194.5,,,1.6,187.5,200.9
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,1024,66.6,0.0651,15368.9,27.3,,
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,1024,66.1,0.0646,15484.5,15.4,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,1024,1674.9,1.6356,611.4,1.6,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,1024,1689.2,1.6496,606.2,1.9,,
-# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1869.4,1843.3,-1.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1883.7,1842.8,-2.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,mac = poly1305_data + mac_fixed,624.3,585.8,-6.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,rec_seal = rec_seal_without_aead + aead_seal,1893.2,1886.8,-0.3%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,rec_open = rec_open_without_aead + aead_open,1942.3,1892.4,-2.6%
-chacha20poly1305,ch_cfg.cpu 0x7,rec_seal,16384,22179.7,1.3537,738.7,0.6,21505.3,22545.8
-chacha20poly1305,ch_cfg.cpu 0x7,refill,16384,118.7,0.0072,137999.3,1.5,111.8,120.2
-chacha20poly1305,ch_cfg.cpu 0x7,rec_open,16384,22026.4,1.3444,743.8,0.6,21336.8,22351.8
-chacha20poly1305,ch_cfg.cpu 0x7,rec_seal_without_aead,16384,138.7,0.0085,118115.0,0.6,134.5,141.3
-chacha20poly1305,ch_cfg.cpu 0x7,rec_open_without_aead,16384,8.6,0.0005,1909022.0,0.6,8.3,8.7
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,16384,22056.0,1.3462,742.8,0.7,21389.5,22236.3
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open,16384,22035.9,1.3450,743.5,0.5,21350.6,22189.2
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,16384,16438.1,1.0033,996.7,0.7,15928.7,16563.0
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,16384,16406.4,1.0014,998.6,1.6,15935.8,16522.3
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,16384,15277.4,0.9325,1072.4,0.3,14928.7,15422.1
-chacha20poly1305,ch_cfg.cpu 0x7,mac,16384,5595.5,0.3415,2928.1,0.5,5438.1,5662.3
-chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,16384,5376.0,0.3281,3047.6,0.3,5248.7,5477.9
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,16384,1140.8,0.0696,14362.2,8.0,,
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,16384,1136.4,0.0694,14417.7,20.6,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,16384,21863.1,1.3344,749.4,0.7,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,16384,21840.0,1.3330,750.2,0.5,,
-# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,22056.0,22008.7,-0.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,22035.9,21976.9,-0.3%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,mac = poly1305_data + mac_fixed,5595.5,5570.5,-0.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,rec_seal = rec_seal_without_aead + aead_seal,22179.7,22194.7,+0.1%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,rec_open = rec_open_without_aead + aead_open,22026.4,22044.4,+0.1%
-chacha20poly1305,ch_cfg.cpu 0x7,refill,65536,1634.1,0.0249,40104.2,2.0,1595.5,1651.8
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,65536,86573.6,1.3210,757.0,1.8,84149.8,87182.9
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open,65536,86620.3,1.3217,756.6,1.8,83899.4,87521.3
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,65536,65021.5,0.9921,1007.9,1.1,62934.4,66120.5
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,65536,65007.4,0.9919,1008.1,2.4,62933.7,65814.7
-chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,65536,60294.1,0.9200,1086.9,1.8,58532.0,61059.2
-chacha20poly1305,ch_cfg.cpu 0x7,mac,65536,21484.1,0.3278,3050.4,1.8,20826.1,23156.2
-chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,65536,21346.6,0.3257,3070.1,0.6,20703.1,21522.0
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,65536,4768.9,0.0728,13742.4,9.7,,
-chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,65536,4691.3,0.0716,13969.7,51.8,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,65536,86380.7,1.3181,758.7,1.8,,
-chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,65536,86424.9,1.3187,758.3,1.8,,
-# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,86573.6,86562.6,-0.0%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,86620.3,86548.5,-0.1%
-# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,mac = poly1305_data + mac_fixed,21484.1,21541.1,+0.3%
-aes128gcm,ch_cfg.cpu 0x1f,rec_seal,1024,301.0,0.2940,3401.7,0.2,291.6,304.9
-aes128gcm,ch_cfg.cpu 0x1f,refill,1024,12.0,0.0117,85337.7,1.2,11.4,12.1
-aes128gcm,ch_cfg.cpu 0x1f,rec_open,1024,320.2,0.3127,3198.2,2.5,305.0,322.6
-aes128gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,37.0,0.0361,27705.6,3.5,35.3,37.3
-aes128gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,28.7,0.0280,35656.3,0.3,27.8,29.2
-aes128gcm,ch_cfg.cpu 0x1f,key_expansion,0,20.9,,,0.7,20.3,21.1
-aes128gcm,ch_cfg.cpu 0x1f,key_wipe,0,5.0,,,0.4,4.9,5.1
-aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,1024,312.1,0.3048,3281.1,0.2,303.7,315.2
-aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,1024,300.2,0.2932,3411.1,0.4,290.7,304.8
-aes128gcm,ch_cfg.cpu 0x1f,aead_seal,1024,273.7,0.2673,3741.6,0.7,265.0,275.7
-aes128gcm,ch_cfg.cpu 0x1f,aead_open,1024,291.1,0.2843,3517.3,0.5,281.8,295.2
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,1024,92.0,0.0899,11125.2,1.0,89.7,93.7
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,1024,88.5,0.0864,11573.2,0.5,85.8,89.4
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,1024,69.6,0.0679,14717.6,0.1,65.1,69.8
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,1024,68.6,0.0670,14927.6,2.4,64.5,68.9
-aes128gcm,ch_cfg.cpu 0x1f,seal_passes,1024,175.9,0.1717,5822.9,3.0,165.9,176.9
-aes128gcm,ch_cfg.cpu 0x1f,open_passes,1024,182.9,0.1787,5597.4,0.8,177.5,185.5
-aes128gcm,ch_cfg.cpu 0x1f,compute_tag,1024,204.2,0.1994,5015.8,0.3,197.7,206.6
-aes128gcm,ch_cfg.cpu 0x1f,ghash_data,1024,147.3,0.1439,6950.3,0.2,143.3,152.2
-aes128gcm,ch_cfg.cpu 0x1f,compute_tag_fixed,0,64.3,,,1.4,62.7,65.2
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,1024,22.5,0.0219,45584.7,3.8,,
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,1024,20.0,0.0195,51246.0,7.4,,
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,312.1,299.6,-4.0%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,300.2,317.0,+5.6%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,aead_seal = seal_passes + compute_tag_fixed,273.7,240.1,-12.3%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,aead_open = open_passes + compute_tag_fixed,291.1,247.2,-15.1%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,compute_tag = ghash_data + compute_tag_fixed,204.2,211.6,+3.6%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,301.0,310.6,+3.2%
-# check,aes128gcm,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,320.2,319.8,-0.1%
-aes128gcm,ch_cfg.cpu 0x1f,rec_seal,16384,2433.3,0.1485,6733.2,0.3,2365.8,2455.1
-aes128gcm,ch_cfg.cpu 0x1f,refill,16384,119.4,0.0073,137233.2,2.9,110.7,120.2
-aes128gcm,ch_cfg.cpu 0x1f,rec_open,16384,2425.4,0.1480,6755.3,0.3,2347.2,2455.9
-aes128gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,146.7,0.0090,111706.4,0.5,142.8,149.3
-aes128gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,28.7,0.0018,570402.0,0.4,28.1,29.2
-aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,16384,2329.8,0.1422,7032.2,0.7,2255.5,2353.7
-aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,16384,2416.9,0.1475,6778.9,1.0,2348.3,2438.2
-aes128gcm,ch_cfg.cpu 0x1f,aead_seal,16384,2289.2,0.1397,7157.1,0.4,2228.1,2305.1
-aes128gcm,ch_cfg.cpu 0x1f,aead_open,16384,2399.2,0.1464,6828.8,0.4,2329.7,2415.0
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,16384,1055.4,0.0644,15524.7,0.8,988.6,1064.2
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,16384,1037.2,0.0633,15796.4,1.5,978.4,1044.9
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,16384,1042.8,0.0636,15711.3,2.8,992.1,1054.1
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,16384,1031.1,0.0629,15889.8,1.9,969.0,1035.0
-aes128gcm,ch_cfg.cpu 0x1f,seal_passes,16384,2262.4,0.1381,7241.8,3.2,2125.9,2273.3
-aes128gcm,ch_cfg.cpu 0x1f,open_passes,16384,2360.6,0.1441,6940.7,2.9,2242.5,2396.6
-aes128gcm,ch_cfg.cpu 0x1f,compute_tag,16384,1853.8,0.1131,8838.0,2.5,1774.5,1871.5
-aes128gcm,ch_cfg.cpu 0x1f,ghash_data,16384,1759.7,0.1074,9310.5,0.5,1705.6,1767.8
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,16384,6.5,0.0004,2506681.0,399.9,,
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,16384,4.9,0.0003,3374339.5,647.7,,
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,2329.8,2315.1,-0.6%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,2416.9,2425.2,+0.3%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,aead_seal = seal_passes + compute_tag_fixed,2289.2,2326.7,+1.6%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,aead_open = open_passes + compute_tag_fixed,2399.2,2424.8,+1.1%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,compute_tag = ghash_data + compute_tag_fixed,1853.8,1824.0,-1.6%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,2433.3,2435.9,+0.1%
-# check,aes128gcm,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,2425.4,2428.0,+0.1%
-aes128gcm,ch_cfg.cpu 0x1f,refill,65536,1651.6,0.0252,39680.4,0.1,1616.2,1663.5
-aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,65536,8808.3,0.1344,7440.2,0.1,8581.9,8891.0
-aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,65536,9547.6,0.1457,6864.1,0.5,9322.3,9679.4
-aes128gcm,ch_cfg.cpu 0x1f,aead_seal,65536,8760.7,0.1337,7480.7,0.2,8501.6,8837.3
-aes128gcm,ch_cfg.cpu 0x1f,aead_open,65536,9544.2,0.1456,6866.6,0.3,9259.7,9714.3
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,65536,4209.6,0.0642,15568.4,0.1,4018.4,4228.7
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,65536,4119.9,0.0629,15907.1,2.4,3949.7,4141.1
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,65536,4193.3,0.0640,15628.6,3.4,4029.5,4211.1
-aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,65536,4104.6,0.0626,15966.5,1.5,3858.5,4117.3
-aes128gcm,ch_cfg.cpu 0x1f,seal_passes,65536,8944.5,0.1365,7327.0,0.8,8571.3,9000.2
-aes128gcm,ch_cfg.cpu 0x1f,open_passes,65536,9409.1,0.1436,6965.2,1.7,8970.4,9469.0
-aes128gcm,ch_cfg.cpu 0x1f,compute_tag,65536,7054.4,0.1076,9290.1,1.2,6858.7,7125.0
-aes128gcm,ch_cfg.cpu 0x1f,ghash_data,65536,6940.9,0.1059,9442.0,0.3,6781.2,6996.7
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,65536,17.0,0.0003,3847103.0,836.2,,
-aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,65536,12.8,0.0002,5119687.5,314.0,,
-# check,aes128gcm,ch_cfg.cpu 0x1f,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,8808.3,8786.6,-0.2%
-# check,aes128gcm,ch_cfg.cpu 0x1f,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,9547.6,9570.1,+0.2%
-# check,aes128gcm,ch_cfg.cpu 0x1f,65536,aead_seal = seal_passes + compute_tag_fixed,8760.7,9008.7,+2.8%
-# check,aes128gcm,ch_cfg.cpu 0x1f,65536,aead_open = open_passes + compute_tag_fixed,9544.2,9473.4,-0.7%
-# check,aes128gcm,ch_cfg.cpu 0x1f,65536,compute_tag = ghash_data + compute_tag_fixed,7054.4,7005.2,-0.7%
-aes256gcm,ch_cfg.cpu 0x1f,rec_seal,1024,334.3,0.3265,3062.9,0.5,325.2,338.4
-aes256gcm,ch_cfg.cpu 0x1f,refill,1024,12.0,0.0117,85337.6,0.3,11.5,12.1
-aes256gcm,ch_cfg.cpu 0x1f,rec_open,1024,351.9,0.3437,2909.7,0.4,335.0,354.3
-aes256gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,38.4,0.0375,26663.7,1.0,36.9,38.7
-aes256gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,30.2,0.0295,33880.7,0.5,29.4,30.5
-aes256gcm,ch_cfg.cpu 0x1f,key_expansion,0,22.0,,,0.4,21.5,22.3
-aes256gcm,ch_cfg.cpu 0x1f,key_wipe,0,5.0,,,0.2,4.9,5.1
-aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,1024,317.4,0.3100,3226.0,0.3,307.3,320.0
-aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,1024,330.0,0.3223,3102.9,0.2,323.5,335.1
-aes256gcm,ch_cfg.cpu 0x1f,aead_seal,1024,297.8,0.2909,3438.0,0.5,289.6,304.5
-aes256gcm,ch_cfg.cpu 0x1f,aead_open,1024,318.2,0.3108,3217.9,0.5,309.1,323.1
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,1024,114.9,0.1122,8908.9,0.7,112.8,116.5
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,1024,112.5,0.1099,9102.7,0.6,109.2,113.6
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,1024,86.7,0.0846,11815.1,0.3,84.1,87.9
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,1024,86.4,0.0844,11848.9,0.4,84.2,87.4
-aes256gcm,ch_cfg.cpu 0x1f,seal_passes,1024,192.9,0.1883,5309.8,0.3,189.3,195.7
-aes256gcm,ch_cfg.cpu 0x1f,open_passes,1024,202.9,0.1981,5046.8,0.3,198.9,205.9
-aes256gcm,ch_cfg.cpu 0x1f,compute_tag,1024,204.7,0.1999,5001.9,0.3,199.2,207.7
-aes256gcm,ch_cfg.cpu 0x1f,ghash_data,1024,147.4,0.1439,6948.9,0.2,143.2,149.2
-aes256gcm,ch_cfg.cpu 0x1f,compute_tag_fixed,0,65.4,,,1.1,63.5,66.0
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,1024,28.3,0.0276,36209.8,2.8,,
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,1024,25.9,0.0253,39565.9,2.4,,
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,317.4,324.9,+2.3%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,330.0,345.2,+4.6%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,aead_seal = seal_passes + compute_tag_fixed,297.8,258.2,-13.3%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,aead_open = open_passes + compute_tag_fixed,318.2,268.3,-15.7%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,compute_tag = ghash_data + compute_tag_fixed,204.7,212.7,+3.9%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,334.3,336.2,+0.6%
-# check,aes256gcm,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,351.9,348.4,-1.0%
-aes256gcm,ch_cfg.cpu 0x1f,rec_seal,16384,2792.7,0.1705,5866.6,0.4,2737.2,2812.4
-aes256gcm,ch_cfg.cpu 0x1f,refill,16384,119.8,0.0073,136742.4,0.6,116.2,120.4
-aes256gcm,ch_cfg.cpu 0x1f,rec_open,16384,2774.3,0.1693,5905.6,0.4,2717.2,2820.6
-aes256gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,147.9,0.0090,110791.8,0.1,147.1,149.4
-aes256gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,30.2,0.0018,541881.4,0.2,30.1,30.6
-aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,16384,2668.3,0.1629,6140.3,0.5,2632.8,2694.6
-aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,16384,2766.7,0.1689,5921.8,0.3,2743.7,2795.9
-aes256gcm,ch_cfg.cpu 0x1f,aead_seal,16384,2642.9,0.1613,6199.2,0.3,2632.9,2663.3
-aes256gcm,ch_cfg.cpu 0x1f,aead_open,16384,2747.2,0.1677,5963.9,0.4,2740.3,2783.6
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,16384,1321.8,0.0807,12395.6,0.4,1300.2,1331.2
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,16384,1298.0,0.0792,12622.9,0.1,1295.5,1305.8
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,16384,1296.7,0.0791,12635.2,0.2,1262.7,1307.4
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,16384,1274.1,0.0778,12859.5,0.4,1244.4,1291.8
-aes256gcm,ch_cfg.cpu 0x1f,seal_passes,16384,2536.6,0.1548,6458.9,0.3,2467.2,2550.8
-aes256gcm,ch_cfg.cpu 0x1f,open_passes,16384,2648.7,0.1617,6185.6,0.4,2580.7,2668.7
-aes256gcm,ch_cfg.cpu 0x1f,compute_tag,16384,1816.8,0.1109,9018.2,0.8,1781.6,1829.0
-aes256gcm,ch_cfg.cpu 0x1f,ghash_data,16384,1760.7,0.1075,9305.3,0.4,1730.4,1769.6
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,16384,25.1,0.0015,653522.0,11.8,,
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,16384,24.0,0.0015,681335.9,20.0,,
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,2668.3,2670.0,+0.1%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,2766.7,2774.2,+0.3%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,aead_seal = seal_passes + compute_tag_fixed,2642.9,2602.0,-1.5%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,aead_open = open_passes + compute_tag_fixed,2747.2,2714.1,-1.2%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,compute_tag = ghash_data + compute_tag_fixed,1816.8,1826.1,+0.5%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,2792.7,2790.8,-0.1%
-# check,aes256gcm,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,2774.3,2777.5,+0.1%
-aes256gcm,ch_cfg.cpu 0x1f,refill,65536,1652.5,0.0252,39658.6,0.4,1611.1,1682.9
-aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,65536,10210.2,0.1558,6418.7,0.4,9998.5,10373.5
-aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,65536,10891.3,0.1662,6017.3,0.7,10673.1,11072.2
-aes256gcm,ch_cfg.cpu 0x1f,aead_seal,65536,10166.5,0.1551,6446.3,0.5,9961.0,10288.0
-aes256gcm,ch_cfg.cpu 0x1f,aead_open,65536,10896.3,0.1663,6014.5,0.4,10680.2,10992.4
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,65536,5273.0,0.0805,12428.6,1.0,5100.8,5302.8
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,65536,5101.5,0.0778,12846.3,0.6,4998.3,5159.7
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,65536,5247.7,0.0801,12488.5,2.2,5042.4,5286.2
-aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,65536,5079.3,0.0775,12902.7,0.6,4959.9,5156.3
-aes256gcm,ch_cfg.cpu 0x1f,seal_passes,65536,10054.5,0.1534,6518.1,0.4,9786.0,10203.1
-aes256gcm,ch_cfg.cpu 0x1f,open_passes,65536,10476.9,0.1599,6255.3,0.6,10171.8,10594.9
-aes256gcm,ch_cfg.cpu 0x1f,compute_tag,65536,6996.6,0.1068,9366.9,0.4,6871.0,7068.3
-aes256gcm,ch_cfg.cpu 0x1f,ghash_data,65536,6941.9,0.1059,9440.6,0.4,6754.7,7090.8
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,65536,37.7,0.0006,1737491.3,221.8,,
-aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,65536,24.1,0.0004,2717838.3,181.0,,
-# check,aes256gcm,ch_cfg.cpu 0x1f,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,10210.2,10193.5,-0.2%
-# check,aes256gcm,ch_cfg.cpu 0x1f,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,10891.3,10923.3,+0.3%
-# check,aes256gcm,ch_cfg.cpu 0x1f,65536,aead_seal = seal_passes + compute_tag_fixed,10166.5,10119.9,-0.5%
-# check,aes256gcm,ch_cfg.cpu 0x1f,65536,aead_open = open_passes + compute_tag_fixed,10896.3,10542.2,-3.2%
-# check,aes256gcm,ch_cfg.cpu 0x1f,65536,compute_tag = ghash_data + compute_tag_fixed,6996.6,7007.3,+0.2%
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal,1024,1200.5,1.1724,853.0,1.7,1173.3,1224.8
-chacha20poly1305,ch_cfg.cpu 0x1f,refill,1024,12.0,0.0117,85257.6,3.4,11.3,12.1
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_open,1024,1224.9,1.1962,836.0,2.9,1167.4,1261.6
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,17.8,0.0173,57665.8,2.9,16.7,17.9
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,8.6,0.0084,118446.1,0.6,8.4,8.9
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,1024,1185.6,1.1578,863.7,2.0,1166.2,1223.6
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,1024,1194.1,1.1661,857.5,1.2,1172.3,1230.5
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,1024,676.3,0.6605,1514.1,0.1,666.2,684.0
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,1024,676.0,0.6601,1514.9,0.3,668.6,687.1
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,1024,643.2,0.6282,1592.0,0.3,631.0,653.6
-chacha20poly1305,ch_cfg.cpu 0x1f,mac,1024,510.1,0.4982,2007.3,1.2,494.3,521.4
-chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,1024,280.7,0.2741,3648.6,0.6,277.4,284.8
-chacha20poly1305,ch_cfg.cpu 0x1f,mac_fixed,0,193.7,,,1.8,189.1,199.4
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,1024,32.7,0.0319,31322.3,7.8,,
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,1024,32.7,0.0319,31362.6,1.1,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,1024,992.5,0.9692,1031.8,2.2,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,1024,1000.8,0.9773,1023.2,1.3,,
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1185.6,1150.7,-2.9%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1194.1,1150.3,-3.7%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,mac = poly1305_data + mac_fixed,510.1,474.4,-7.0%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,1200.5,1203.4,+0.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,1224.9,1202.8,-1.8%
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal,16384,11243.6,0.6863,1457.2,0.5,11023.1,11464.4
-chacha20poly1305,ch_cfg.cpu 0x1f,refill,16384,119.7,0.0073,136901.5,2.7,112.8,120.2
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_open,16384,10941.6,0.6678,1497.4,0.6,10644.4,11196.8
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,138.9,0.0085,117970.6,0.1,135.2,139.9
-chacha20poly1305,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,8.6,0.0005,1901042.1,0.4,8.4,8.7
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,16384,11049.4,0.6744,1482.8,0.5,10759.0,11283.8
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,16384,10882.5,0.6642,1505.5,0.8,10540.1,11023.7
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,16384,7521.3,0.4591,2178.3,0.4,7307.5,7583.1
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,16384,7532.1,0.4597,2175.2,0.2,7322.6,7555.9
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,16384,6957.4,0.4246,2354.9,0.3,6746.5,7007.1
-chacha20poly1305,ch_cfg.cpu 0x1f,mac,16384,3190.5,0.1947,5135.2,1.5,3003.7,3224.9
-chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,16384,2964.0,0.1809,5527.6,2.2,2759.2,2979.9
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,16384,561.2,0.0343,29196.2,7.5,,
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,16384,578.2,0.0353,28334.0,2.2,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,16384,10852.6,0.6624,1509.7,0.5,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,16384,10689.2,0.6524,1532.8,0.7,,
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,11049.4,10679.1,-3.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,10882.5,10689.8,-1.8%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,mac = poly1305_data + mac_fixed,3190.5,3157.7,-1.0%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,11243.6,11188.2,-0.5%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,10941.6,10891.1,-0.5%
-chacha20poly1305,ch_cfg.cpu 0x1f,refill,65536,1651.4,0.0252,39685.9,0.5,1613.5,1667.0
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,65536,41666.4,0.6358,1572.9,0.2,40755.7,43312.3
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,65536,42209.1,0.6441,1552.7,0.5,41086.5,43259.3
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,65536,29497.2,0.4501,2221.8,0.1,28773.6,29653.0
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,65536,29490.6,0.4500,2222.3,1.3,28883.8,29680.5
-chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,65536,27185.7,0.4148,2410.7,0.4,26360.6,27409.9
-chacha20poly1305,ch_cfg.cpu 0x1f,mac,65536,11549.2,0.1762,5674.5,1.9,10825.9,11831.4
-chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,65536,11271.5,0.1720,5814.3,0.7,10874.5,11369.8
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,65536,2307.8,0.0352,28398.0,3.8,,
-chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,65536,2277.2,0.0347,28779.6,19.1,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,65536,41473.1,0.6328,1580.2,0.2,,
-chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,65536,42015.9,0.6411,1559.8,0.6,,
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,41666.4,40962.4,-1.7%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,42209.1,40955.8,-3.0%
-# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,mac = poly1305_data + mac_fixed,11549.2,11465.3,-0.7%
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal,1024,694.8,0.6785,1473.8,3.5,668.8,728.0
-chacha20poly1305,ch_cfg.cpu 0x11f,refill,1024,11.9,0.0116,85938.6,0.5,11.2,12.0
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_open,1024,706.5,0.6900,1449.3,6.6,653.8,741.3
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal_without_aead,1024,17.5,0.0171,58639.0,0.2,16.9,17.6
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_open_without_aead,1024,8.9,0.0087,115244.9,1.3,8.4,9.0
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,1024,647.6,0.6324,1581.3,3.5,627.3,685.3
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,1024,665.2,0.6496,1539.3,4.1,644.5,713.0
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,1024,263.8,0.2576,3882.4,0.2,258.1,265.6
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,1024,263.6,0.2574,3884.5,0.1,255.3,267.5
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,1024,380.9,0.3720,2688.4,0.4,373.5,387.2
-chacha20poly1305,ch_cfg.cpu 0x11f,mac,1024,394.0,0.3847,2599.1,2.5,369.7,416.7
-chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,1024,176.2,0.1721,5811.6,1.2,168.7,179.2
-chacha20poly1305,ch_cfg.cpu 0x11f,mac_fixed,0,193.0,,,1.3,187.8,201.1
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,1024,-117.0,-0.1143,-8748.6,-1.3,,
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,1024,-117.1,-0.1144,-8743.1,-1.3,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,1024,454.6,0.4439,2252.6,5.4,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,1024,471.0,0.4600,2174.0,5.6,,
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,647.6,632.9,-2.3%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,665.2,632.8,-4.9%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,mac = poly1305_data + mac_fixed,394.0,369.2,-6.3%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,rec_seal = rec_seal_without_aead + aead_seal,694.8,665.0,-4.3%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,rec_open = rec_open_without_aead + aead_open,706.5,674.1,-4.6%
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal,16384,5640.9,0.3443,2904.5,13.9,5071.6,6262.9
-chacha20poly1305,ch_cfg.cpu 0x11f,refill,16384,119.9,0.0073,136608.4,0.7,111.9,120.4
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_open,16384,5532.3,0.3377,2961.5,13.6,4959.7,6505.9
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal_without_aead,16384,139.0,0.0085,117905.9,0.2,134.8,140.9
-chacha20poly1305,ch_cfg.cpu 0x11f,rec_open_without_aead,16384,8.6,0.0005,1904760.1,0.6,8.4,8.7
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,16384,5029.1,0.3070,3257.9,13.7,4869.9,6105.1
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,16384,4934.7,0.3012,3320.1,3.8,4670.7,5505.9
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,16384,3325.3,0.2030,4927.1,0.1,3276.0,3344.9
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,16384,3321.4,0.2027,4932.9,0.1,3228.7,3348.6
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,16384,3044.4,0.1858,5381.7,0.3,2981.3,3057.5
-chacha20poly1305,ch_cfg.cpu 0x11f,mac,16384,1332.7,0.0813,12293.9,0.7,1268.0,1364.6
-chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,16384,1046.6,0.0639,15654.1,0.2,991.0,1050.9
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,16384,282.0,0.0172,58093.3,2.4,,
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,16384,277.8,0.0170,58980.0,2.4,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,16384,4836.4,0.2952,3387.6,14.2,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,16384,4740.3,0.2893,3456.4,3.9,,
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,5029.1,4564.9,-9.2%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,4934.7,4561.0,-7.6%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,mac = poly1305_data + mac_fixed,1332.7,1239.6,-7.0%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,rec_seal = rec_seal_without_aead + aead_seal,5640.9,5168.0,-8.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,rec_open = rec_open_without_aead + aead_open,5532.3,4943.3,-10.6%
-chacha20poly1305,ch_cfg.cpu 0x11f,refill,65536,1651.4,0.0252,39685.7,0.6,1604.1,1669.5
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,65536,20383.5,0.3110,3215.1,0.8,18576.5,20935.1
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,65536,18915.0,0.2886,3464.8,7.4,18565.6,20649.3
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,65536,13535.2,0.2065,4841.9,3.6,13233.0,14015.6
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,65536,13276.4,0.2026,4936.3,3.5,12897.3,13626.6
-chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,65536,11870.8,0.1811,5520.8,3.2,11519.0,12045.2
-chacha20poly1305,ch_cfg.cpu 0x11f,mac,65536,4220.6,0.0644,15527.7,0.4,4080.1,4299.4
-chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,65536,3847.7,0.0587,17032.4,1.5,3698.6,3856.9
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,65536,1864.9,0.0285,35141.9,27.3,,
-chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,65536,1497.0,0.0228,43777.5,23.6,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,65536,20189.0,0.3081,3246.1,0.8,,
-chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,65536,18723.1,0.2857,3500.3,7.5,,
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,20383.5,17576.0,-13.8%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,18915.0,17317.2,-8.4%
-# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,mac = poly1305_data + mac_fixed,4220.6,4040.7,-4.3%
-aes128gcm,OpenSSL 3.6.4,openssl_seal_aes_gcm,16384,1253.3,0.0765,13072.9,1.2,,
-aes128gcm,OpenSSL 3.6.4,openssl_open_aes_gcm,16384,1309.2,0.0799,12514.7,0.6,,
-aes256gcm,OpenSSL 3.6.4,openssl_seal_aes_gcm,16384,1525.6,0.0931,10739.4,2.0,,
-aes256gcm,OpenSSL 3.6.4,openssl_open_aes_gcm,16384,1544.5,0.0943,10607.9,0.6,,
-chacha20poly1305,OpenSSL 3.6.4,openssl_aead_seal_data,16384,4739.2,0.2893,3457.1,0.5,,
-chacha20poly1305,OpenSSL 3.6.4,openssl_aead_open_data,16384,4739.5,0.2893,3456.9,0.4,,
+aes128gcm,ch_cfg.cpu 0x3,rec_seal,1024,450.0,0.4395,2275.5,3.1,448.9,467.0
+aes128gcm,ch_cfg.cpu 0x3,refill,1024,11.4,0.0112,89669.5,3.5,11.2,12.1
+aes128gcm,ch_cfg.cpu 0x3,rec_open,1024,446.7,0.4363,2292.2,1.9,440.8,465.8
+aes128gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,34.1,0.0333,30023.1,1.1,33.7,35.6
+aes128gcm,ch_cfg.cpu 0x3,rec_open_without_aead,1024,27.9,0.0272,36710.2,2.0,27.8,28.9
+aes128gcm,ch_cfg.cpu 0x3,key_expansion,0,20.2,,,0.8,19.9,20.8
+aes128gcm,ch_cfg.cpu 0x3,key_wipe,0,4.9,,,2.0,4.9,5.1
+aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,1024,462.1,0.4513,2215.8,1.8,460.0,476.1
+aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,1024,439.8,0.4295,2328.3,3.1,434.3,453.9
+aes128gcm,ch_cfg.cpu 0x3,aead_seal,1024,439.8,0.4294,2328.6,2.6,431.0,453.2
+aes128gcm,ch_cfg.cpu 0x3,aead_open,1024,430.3,0.4202,2379.9,2.0,422.5,441.6
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,1024,208.2,0.2034,4917.3,2.2,205.0,215.2
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,1024,207.7,0.2028,4930.3,2.4,203.7,212.9
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,1024,175.0,0.1709,5851.9,0.7,172.4,179.0
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,1024,167.1,0.1632,6126.3,1.4,165.0,172.3
+aes128gcm,ch_cfg.cpu 0x3,seal_passes,1024,321.9,0.3144,3181.1,2.1,320.1,332.1
+aes128gcm,ch_cfg.cpu 0x3,open_passes,1024,321.5,0.3140,3184.9,1.9,317.9,331.4
+aes128gcm,ch_cfg.cpu 0x3,compute_tag,1024,200.8,0.1961,5098.8,1.7,197.8,208.0
+aes128gcm,ch_cfg.cpu 0x3,ghash_data,1024,143.3,0.1399,7146.8,1.5,142.5,149.1
+aes128gcm,ch_cfg.cpu 0x3,compute_tag_fixed,0,63.4,,,1.0,63.0,66.2
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,1024,34.2,0.0334,29955.6,13.4,,
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,1024,39.3,0.0384,26036.1,10.2,,
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,462.1,464.9,+0.6%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,439.8,455.4,+3.5%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,aead_seal = seal_passes + compute_tag_fixed,439.8,385.3,-12.4%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,aead_open = open_passes + compute_tag_fixed,430.3,384.9,-10.5%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,compute_tag = ghash_data + compute_tag_fixed,200.8,206.7,+2.9%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,450.0,473.9,+5.3%
+# check,aes128gcm,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,446.7,458.2,+2.6%
+aes128gcm,ch_cfg.cpu 0x3,rec_seal,16384,4798.9,0.2929,3414.1,3.2,4771.7,4961.4
+aes128gcm,ch_cfg.cpu 0x3,refill,16384,111.6,0.0068,146824.9,2.0,109.1,118.2
+aes128gcm,ch_cfg.cpu 0x3,rec_open,16384,4886.3,0.2982,3353.0,2.8,4731.8,4956.8
+aes128gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,138.9,0.0085,117992.7,2.3,136.7,143.1
+aes128gcm,ch_cfg.cpu 0x3,rec_open_without_aead,16384,28.1,0.0017,583442.5,2.4,27.8,28.8
+aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,16384,4734.7,0.2890,3460.4,1.3,4685.7,4918.8
+aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,16384,4756.1,0.2903,3444.9,1.2,4724.0,4944.1
+aes128gcm,ch_cfg.cpu 0x3,aead_seal,16384,4698.4,0.2868,3487.1,2.5,4646.2,4866.1
+aes128gcm,ch_cfg.cpu 0x3,aead_open,16384,4793.8,0.2926,3417.8,3.3,4698.9,4990.0
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,16384,2532.1,0.1545,6470.4,0.7,2492.5,2602.6
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,16384,2509.0,0.1531,6530.0,0.9,2489.2,2591.3
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,16384,2494.2,0.1522,6568.8,2.4,2461.5,2576.7
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,16384,2515.7,0.1535,6512.6,1.9,2465.4,2581.1
+aes128gcm,ch_cfg.cpu 0x3,seal_passes,16384,4574.3,0.2792,3581.7,3.5,4537.8,4785.6
+aes128gcm,ch_cfg.cpu 0x3,open_passes,16384,4654.6,0.2841,3520.0,3.2,4607.3,4810.7
+aes128gcm,ch_cfg.cpu 0x3,compute_tag,16384,1785.0,0.1089,9178.6,1.6,1758.4,1831.5
+aes128gcm,ch_cfg.cpu 0x3,ghash_data,16384,1722.3,0.1051,9512.9,1.6,1702.5,1761.7
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,16384,37.3,0.0023,439125.2,172.1,,
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,16384,-5.9,-0.0004,-2753975.0,-1035.3,,
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,4734.7,4723.5,-0.2%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,4756.1,4818.9,+1.3%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,aead_seal = seal_passes + compute_tag_fixed,4698.4,4637.7,-1.3%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,aead_open = open_passes + compute_tag_fixed,4793.8,4718.0,-1.6%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,compute_tag = ghash_data + compute_tag_fixed,1785.0,1785.7,+0.0%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,4798.9,4837.3,+0.8%
+# check,aes128gcm,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,4886.3,4821.9,-1.3%
+aes128gcm,ch_cfg.cpu 0x3,refill,65536,1608.8,0.0245,40736.0,2.1,1590.0,1651.9
+aes128gcm,ch_cfg.cpu 0x3,seal_aes_gcm,65536,18413.7,0.2810,3559.1,1.5,18216.2,19016.5
+aes128gcm,ch_cfg.cpu 0x3,open_aes_gcm,65536,18926.9,0.2888,3462.6,1.5,18761.9,19497.4
+aes128gcm,ch_cfg.cpu 0x3,aead_seal,65536,18249.4,0.2785,3591.1,1.4,18141.5,18792.3
+aes128gcm,ch_cfg.cpu 0x3,aead_open,65536,18963.8,0.2894,3455.8,2.3,18743.1,19510.1
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_in_place,65536,9925.5,0.1515,6602.8,0.9,9817.0,10270.2
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_shifted,65536,9990.6,0.1524,6559.7,1.2,9837.7,10343.6
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,65536,10024.5,0.1530,6537.6,1.0,9824.8,10288.7
+aes128gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,65536,9951.3,0.1518,6585.7,2.0,9799.9,10357.5
+aes128gcm,ch_cfg.cpu 0x3,seal_passes,65536,18327.3,0.2797,3575.9,0.7,18038.1,18797.7
+aes128gcm,ch_cfg.cpu 0x3,open_passes,65536,18507.0,0.2824,3541.2,0.6,18350.7,19071.6
+aes128gcm,ch_cfg.cpu 0x3,compute_tag,65536,6803.4,0.1038,9632.8,0.5,6756.6,7040.9
+aes128gcm,ch_cfg.cpu 0x3,ghash_data,65536,6753.3,0.1030,9704.3,1.0,6713.6,6977.6
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,65536,-99.0,-0.0015,-661823.1,-78.6,,
+aes128gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,65536,51.4,0.0008,1276028.0,431.3,,
+# check,aes128gcm,ch_cfg.cpu 0x3,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,18413.7,18274.5,-0.8%
+# check,aes128gcm,ch_cfg.cpu 0x3,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,18926.9,18988.9,+0.3%
+# check,aes128gcm,ch_cfg.cpu 0x3,65536,aead_seal = seal_passes + compute_tag_fixed,18249.4,18390.7,+0.8%
+# check,aes128gcm,ch_cfg.cpu 0x3,65536,aead_open = open_passes + compute_tag_fixed,18963.8,18570.4,-2.1%
+# check,aes128gcm,ch_cfg.cpu 0x3,65536,compute_tag = ghash_data + compute_tag_fixed,6803.4,6816.7,+0.2%
+aes256gcm,ch_cfg.cpu 0x3,rec_seal,1024,522.8,0.5106,1958.6,1.3,515.5,541.8
+aes256gcm,ch_cfg.cpu 0x3,refill,1024,11.4,0.0111,89726.2,2.8,11.2,12.1
+aes256gcm,ch_cfg.cpu 0x3,rec_open,1024,503.9,0.4921,2032.2,0.7,500.4,535.5
+aes256gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,35.4,0.0345,28947.2,1.4,35.0,37.2
+aes256gcm,ch_cfg.cpu 0x3,rec_open_without_aead,1024,29.5,0.0288,34672.1,1.3,29.2,30.7
+aes256gcm,ch_cfg.cpu 0x3,key_expansion,0,21.4,,,2.0,21.3,22.1
+aes256gcm,ch_cfg.cpu 0x3,key_wipe,0,4.9,,,2.4,4.9,5.1
+aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,1024,506.8,0.4949,2020.7,1.6,500.8,521.7
+aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,1024,495.1,0.4835,2068.4,2.1,492.5,511.0
+aes256gcm,ch_cfg.cpu 0x3,aead_seal,1024,489.4,0.4779,2092.3,2.5,485.1,502.5
+aes256gcm,ch_cfg.cpu 0x3,aead_open,1024,479.2,0.4680,2136.8,0.9,477.2,493.8
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,1024,268.4,0.2621,3815.8,0.9,266.7,276.7
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,1024,266.7,0.2604,3839.8,0.8,266.0,278.3
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,1024,227.2,0.2218,4507.8,1.5,226.3,235.9
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,1024,227.2,0.2218,4508.0,2.0,225.6,234.3
+aes256gcm,ch_cfg.cpu 0x3,seal_passes,1024,379.1,0.3702,2701.0,0.9,376.0,393.1
+aes256gcm,ch_cfg.cpu 0x3,open_passes,1024,371.2,0.3625,2758.9,1.0,367.5,381.3
+aes256gcm,ch_cfg.cpu 0x3,compute_tag,1024,201.2,0.1965,5090.2,2.4,198.1,206.6
+aes256gcm,ch_cfg.cpu 0x3,ghash_data,1024,145.3,0.1419,7049.1,2.0,142.6,147.9
+aes256gcm,ch_cfg.cpu 0x3,compute_tag_fixed,0,64.3,,,1.9,63.2,65.7
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,1024,41.0,0.0400,24979.5,13.0,,
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,1024,40.0,0.0391,25582.3,11.3,,
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,506.8,515.7,+1.8%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,495.1,505.5,+2.1%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,aead_seal = seal_passes + compute_tag_fixed,489.4,443.4,-9.4%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,aead_open = open_passes + compute_tag_fixed,479.2,435.5,-9.1%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,compute_tag = ghash_data + compute_tag_fixed,201.2,209.6,+4.2%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,522.8,524.8,+0.4%
+# check,aes256gcm,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,503.9,508.8,+1.0%
+aes256gcm,ch_cfg.cpu 0x3,rec_seal,16384,5753.4,0.3512,2847.7,2.9,5632.7,5879.0
+aes256gcm,ch_cfg.cpu 0x3,refill,16384,110.2,0.0067,148633.1,2.6,109.2,119.5
+aes256gcm,ch_cfg.cpu 0x3,rec_open,16384,5594.7,0.3415,2928.5,1.7,5552.4,5822.1
+aes256gcm,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,137.8,0.0084,118920.4,2.5,136.4,142.8
+aes256gcm,ch_cfg.cpu 0x3,rec_open_without_aead,16384,29.5,0.0018,555693.4,2.3,29.2,30.4
+aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,16384,5605.0,0.3421,2923.1,1.2,5518.9,5744.3
+aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,16384,5610.4,0.3424,2920.3,0.9,5547.9,5793.6
+aes256gcm,ch_cfg.cpu 0x3,aead_seal,16384,5536.3,0.3379,2959.4,1.6,5496.8,5715.2
+aes256gcm,ch_cfg.cpu 0x3,aead_open,16384,5571.1,0.3400,2940.9,2.2,5520.7,5783.1
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,16384,3544.6,0.2163,4622.2,2.5,3510.5,3658.7
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,16384,3579.7,0.2185,4576.9,2.2,3511.9,3666.7
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,16384,3498.9,0.2136,4682.7,2.9,3469.5,3627.6
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,16384,3532.9,0.2156,4637.6,2.0,3469.4,3611.0
+aes256gcm,ch_cfg.cpu 0x3,seal_passes,16384,5451.0,0.3327,3005.7,2.0,5393.9,5608.9
+aes256gcm,ch_cfg.cpu 0x3,open_passes,16384,5450.2,0.3327,3006.1,2.1,5419.8,5625.0
+aes256gcm,ch_cfg.cpu 0x3,compute_tag,16384,1789.8,0.1092,9154.3,1.6,1758.4,1845.6
+aes256gcm,ch_cfg.cpu 0x3,ghash_data,16384,1718.1,0.1049,9536.2,1.1,1702.8,1780.5
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,16384,46.0,0.0028,356491.8,349.9,,
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,16384,49.9,0.0030,328578.5,118.8,,
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,5605.0,5562.5,-0.8%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,5610.4,5597.4,-0.2%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,aead_seal = seal_passes + compute_tag_fixed,5536.3,5515.4,-0.4%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,aead_open = open_passes + compute_tag_fixed,5571.1,5514.6,-1.0%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,compute_tag = ghash_data + compute_tag_fixed,1789.8,1782.4,-0.4%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,5753.4,5674.0,-1.4%
+# check,aes256gcm,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,5594.7,5600.6,+0.1%
+aes256gcm,ch_cfg.cpu 0x3,refill,65536,1605.3,0.0245,40823.7,2.5,1590.8,1662.0
+aes256gcm,ch_cfg.cpu 0x3,seal_aes_gcm,65536,21879.1,0.3338,2995.4,1.5,21580.9,22388.5
+aes256gcm,ch_cfg.cpu 0x3,open_aes_gcm,65536,22285.8,0.3401,2940.7,1.7,22015.0,23022.9
+aes256gcm,ch_cfg.cpu 0x3,aead_seal,65536,21678.3,0.3308,3023.1,2.2,21534.3,22401.0
+aes256gcm,ch_cfg.cpu 0x3,aead_open,65536,22245.2,0.3394,2946.1,1.9,22014.6,22854.7
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_in_place,65536,14081.1,0.2149,4654.2,0.9,13924.2,14479.3
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_shifted,65536,13973.6,0.2132,4690.0,1.6,13901.2,14401.5
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_in_place,65536,14140.4,0.2158,4634.7,2.6,13872.5,14583.1
+aes256gcm,ch_cfg.cpu 0x3,counter_blocks_shifted,65536,14040.7,0.2142,4667.6,0.9,13868.8,14469.6
+aes256gcm,ch_cfg.cpu 0x3,seal_passes,65536,21713.3,0.3313,3018.2,1.8,21444.7,22566.0
+aes256gcm,ch_cfg.cpu 0x3,open_passes,65536,21758.4,0.3320,3012.0,2.3,21600.5,22522.0
+aes256gcm,ch_cfg.cpu 0x3,compute_tag,65536,6915.4,0.1055,9476.8,2.6,6770.4,7064.2
+aes256gcm,ch_cfg.cpu 0x3,ghash_data,65536,6789.3,0.1036,9652.8,1.3,6714.9,7013.3
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_in_place,65536,-90.4,-0.0014,-725030.9,-381.3,,
+aes256gcm,ch_cfg.cpu 0x3,counter_mode_tail_shifted,65536,-74.3,-0.0011,-881619.3,-280.6,,
+# check,aes256gcm,ch_cfg.cpu 0x3,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,21879.1,21704.6,-0.8%
+# check,aes256gcm,ch_cfg.cpu 0x3,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,22285.8,22271.5,-0.1%
+# check,aes256gcm,ch_cfg.cpu 0x3,65536,aead_seal = seal_passes + compute_tag_fixed,21678.3,21777.6,+0.5%
+# check,aes256gcm,ch_cfg.cpu 0x3,65536,aead_open = open_passes + compute_tag_fixed,22245.2,21822.7,-1.9%
+# check,aes256gcm,ch_cfg.cpu 0x3,65536,compute_tag = ghash_data + compute_tag_fixed,6915.4,6853.7,-0.9%
+chacha20poly1305,ch_cfg.cpu 0x3,rec_seal,1024,4873.5,4.7593,210.1,2.2,4813.1,5040.9
+chacha20poly1305,ch_cfg.cpu 0x3,refill,1024,11.5,0.0112,89379.1,2.9,11.3,12.1
+chacha20poly1305,ch_cfg.cpu 0x3,rec_open,1024,4873.5,4.7593,210.1,3.0,4812.3,5146.2
+chacha20poly1305,ch_cfg.cpu 0x3,rec_seal_without_aead,1024,16.7,0.0163,61330.7,3.1,16.4,17.5
+chacha20poly1305,ch_cfg.cpu 0x3,rec_open_without_aead,1024,8.5,0.0083,120998.6,2.1,8.3,8.8
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,1024,4862.8,4.7488,210.6,3.2,4794.6,5053.7
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open,1024,4872.5,4.7583,210.2,1.7,4812.8,5057.1
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,1024,1233.2,1.2043,830.3,2.0,1216.4,1266.1
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,1024,1234.1,1.2052,829.8,2.0,1216.3,1274.3
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,1024,1166.8,1.1395,877.6,3.1,1151.6,1204.5
+chacha20poly1305,ch_cfg.cpu 0x3,mac,1024,3625.6,3.5406,282.4,1.4,3581.5,3760.7
+chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,1024,3310.0,3.2324,309.4,1.6,3250.9,3395.7
+chacha20poly1305,ch_cfg.cpu 0x3,mac_fixed,0,258.6,,,1.5,253.7,271.0
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,1024,67.9,0.0663,15089.6,67.0,,
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,1024,67.9,0.0663,15087.0,48.4,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,1024,4601.8,4.4940,222.5,3.4,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,1024,4614.1,4.5059,221.9,1.8,,
+# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,4862.8,4801.8,-1.3%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,4872.5,4802.6,-1.4%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,mac = poly1305_data + mac_fixed,3625.6,3568.5,-1.6%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,rec_seal = rec_seal_without_aead + aead_seal,4873.5,4879.5,+0.1%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,1024,rec_open = rec_open_without_aead + aead_open,4873.5,4881.0,+0.2%
+chacha20poly1305,ch_cfg.cpu 0x3,rec_seal,16384,68850.9,4.2023,238.0,0.8,68116.8,70906.1
+chacha20poly1305,ch_cfg.cpu 0x3,refill,16384,110.3,0.0067,148539.7,1.8,109.1,118.4
+chacha20poly1305,ch_cfg.cpu 0x3,rec_open,16384,68620.1,4.1882,238.8,1.2,68148.8,71384.7
+chacha20poly1305,ch_cfg.cpu 0x3,rec_seal_without_aead,16384,113.7,0.0069,144157.7,2.8,113.1,120.2
+chacha20poly1305,ch_cfg.cpu 0x3,rec_open_without_aead,16384,8.3,0.0005,1962477.0,4.4,8.3,8.7
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,16384,68498.1,4.1808,239.2,3.0,68092.1,71306.2
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open,16384,68601.6,4.1871,238.8,1.0,68032.2,71018.4
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,16384,15959.4,0.9741,1026.6,0.5,15909.1,16694.1
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,16384,16043.0,0.9792,1021.3,1.5,15904.8,16477.3
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,16384,15001.0,0.9156,1092.2,1.3,14784.7,15401.5
+chacha20poly1305,ch_cfg.cpu 0x3,mac,16384,52770.7,3.2209,310.5,0.5,52283.8,54121.3
+chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,16384,52143.4,3.1826,314.2,0.2,51578.8,53687.2
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,16384,966.7,0.0590,16948.9,20.6,,
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,16384,1018.1,0.0621,16092.3,27.0,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,16384,68239.9,4.1650,240.1,3.1,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,16384,68343.0,4.1713,239.7,1.0,,
+# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,68498.1,68361.4,-0.2%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,68601.6,68445.0,-0.2%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,mac = poly1305_data + mac_fixed,52770.7,52402.0,-0.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,rec_seal = rec_seal_without_aead + aead_seal,68850.9,68611.7,-0.3%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,16384,rec_open = rec_open_without_aead + aead_open,68620.1,68609.9,-0.0%
+chacha20poly1305,ch_cfg.cpu 0x3,refill,65536,1613.6,0.0246,40614.6,2.1,1594.4,1651.5
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal,65536,272144.5,4.1526,240.8,0.8,270586.8,283592.0
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open,65536,274285.1,4.1853,238.9,1.1,271136.5,284580.5
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_in_place,65536,63510.5,0.9691,1031.9,2.0,62923.9,65779.0
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_xor_shifted,65536,63281.9,0.9656,1035.6,0.9,62905.6,65796.1
+chacha20poly1305,ch_cfg.cpu 0x3,chacha20_blocks,65536,58763.0,0.8967,1115.3,0.8,58389.5,60595.7
+chacha20poly1305,ch_cfg.cpu 0x3,mac,65536,211317.0,3.2244,310.1,1.1,207657.6,215748.9
+chacha20poly1305,ch_cfg.cpu 0x3,poly1305_data,65536,210127.6,3.2063,311.9,1.8,207117.8,218895.5
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_in_place,65536,4791.6,0.0731,13677.4,30.9,,
+chacha20poly1305,ch_cfg.cpu 0x3,xor_rest_shifted,65536,4372.6,0.0667,14987.8,17.7,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_seal_data,65536,271886.3,4.1487,241.0,0.8,,
+chacha20poly1305,ch_cfg.cpu 0x3,aead_open_data,65536,274023.1,4.1813,239.2,1.1,,
+# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,272144.5,273896.7,+0.6%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,274285.1,273668.1,-0.2%
+# check,chacha20poly1305,ch_cfg.cpu 0x3,65536,mac = poly1305_data + mac_fixed,211317.0,210386.2,-0.4%
+chacha20poly1305,ch_cfg.cpu 0x7,rec_seal,1024,1856.5,1.8130,551.6,1.5,1822.2,1937.1
+chacha20poly1305,ch_cfg.cpu 0x7,refill,1024,11.4,0.0112,89526.4,2.6,11.1,11.9
+chacha20poly1305,ch_cfg.cpu 0x7,rec_open,1024,1870.6,1.8268,547.4,2.1,1815.2,1956.8
+chacha20poly1305,ch_cfg.cpu 0x7,rec_seal_without_aead,1024,16.6,0.0163,61502.6,3.3,16.1,17.3
+chacha20poly1305,ch_cfg.cpu 0x7,rec_open_without_aead,1024,8.5,0.0083,120709.1,3.2,8.3,8.9
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,1024,1844.5,1.8012,555.2,2.2,1802.5,1896.6
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open,1024,1850.1,1.8067,553.5,0.5,1812.7,1913.4
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,1024,1234.3,1.2054,829.6,1.4,1216.2,1264.6
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,1024,1237.4,1.2084,827.5,2.1,1216.9,1270.0
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,1024,1179.4,1.1518,868.2,3.0,1151.4,1223.4
+chacha20poly1305,ch_cfg.cpu 0x7,mac,1024,602.9,0.5887,1698.6,3.0,586.9,639.7
+chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,1024,382.7,0.3737,2675.9,1.6,377.5,396.9
+chacha20poly1305,ch_cfg.cpu 0x7,mac_fixed,0,191.7,,,1.5,185.7,198.6
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,1024,50.5,0.0493,20282.7,59.7,,
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,1024,68.2,0.0666,15005.0,51.3,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,1024,1652.5,1.6138,619.7,2.5,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,1024,1658.0,1.6192,617.6,0.8,,
+# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1844.5,1808.6,-1.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1850.1,1811.8,-2.1%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,mac = poly1305_data + mac_fixed,602.9,574.3,-4.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,rec_seal = rec_seal_without_aead + aead_seal,1856.5,1861.1,+0.3%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,1024,rec_open = rec_open_without_aead + aead_open,1870.6,1858.5,-0.6%
+chacha20poly1305,ch_cfg.cpu 0x7,rec_seal,16384,21518.8,1.3134,761.4,1.3,21417.9,22147.8
+chacha20poly1305,ch_cfg.cpu 0x7,refill,16384,110.4,0.0067,148423.3,1.2,109.0,117.0
+chacha20poly1305,ch_cfg.cpu 0x7,rec_open,16384,21623.5,1.3198,757.7,2.2,21297.6,22342.3
+chacha20poly1305,ch_cfg.cpu 0x7,rec_seal_without_aead,16384,114.7,0.0070,142800.9,6.3,112.9,123.8
+chacha20poly1305,ch_cfg.cpu 0x7,rec_open_without_aead,16384,8.5,0.0005,1935240.1,2.3,8.3,8.8
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,16384,21802.8,1.3307,751.5,2.8,21264.9,22737.4
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open,16384,21757.0,1.3279,753.0,1.6,21320.2,22447.2
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,16384,16129.6,0.9845,1015.8,2.3,15912.8,16540.4
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,16384,15987.8,0.9758,1024.8,3.2,15907.1,16449.5
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,16384,14828.9,0.9051,1104.9,2.5,14776.1,15301.4
+chacha20poly1305,ch_cfg.cpu 0x7,mac,16384,5414.9,0.3305,3025.7,2.9,5374.5,5584.4
+chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,16384,5173.0,0.3157,3167.2,0.9,5140.5,5375.1
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,16384,1208.9,0.0738,13553.3,41.0,,
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,16384,1125.7,0.0687,14554.3,37.3,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,16384,21611.1,1.3190,758.1,2.8,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,16384,21565.0,1.3162,759.7,1.6,,
+# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,21802.8,21494.3,-1.4%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,21757.0,21352.5,-1.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,mac = poly1305_data + mac_fixed,5414.9,5364.7,-0.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,rec_seal = rec_seal_without_aead + aead_seal,21518.8,21917.5,+1.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,16384,rec_open = rec_open_without_aead + aead_open,21623.5,21765.5,+0.7%
+chacha20poly1305,ch_cfg.cpu 0x7,refill,65536,1609.0,0.0246,40730.5,2.7,1587.8,1662.1
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal,65536,84147.4,1.2840,778.8,1.3,83598.2,87010.5
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open,65536,84972.6,1.2966,771.3,2.9,83824.2,87565.2
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_in_place,65536,63750.2,0.9728,1028.0,1.7,62909.9,65323.5
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_xor_shifted,65536,63303.1,0.9659,1035.3,2.7,62910.7,65731.8
+chacha20poly1305,ch_cfg.cpu 0x7,chacha20_blocks,65536,59177.2,0.9030,1107.5,1.6,58409.4,60381.6
+chacha20poly1305,ch_cfg.cpu 0x7,mac,65536,21080.0,0.3217,3108.9,2.2,20704.3,22011.7
+chacha20poly1305,ch_cfg.cpu 0x7,poly1305_data,65536,20540.7,0.3134,3190.5,0.6,20421.4,21181.6
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_in_place,65536,4460.6,0.0681,14692.3,25.1,,
+chacha20poly1305,ch_cfg.cpu 0x7,xor_rest_shifted,65536,4329.2,0.0661,15138.3,52.2,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_seal_data,65536,83955.3,1.2811,780.6,1.3,,
+chacha20poly1305,ch_cfg.cpu 0x7,aead_open_data,65536,84780.6,1.2936,773.0,2.9,,
+# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,84147.4,84482.6,+0.4%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,84972.6,84035.4,-1.1%
+# check,chacha20poly1305,ch_cfg.cpu 0x7,65536,mac = poly1305_data + mac_fixed,21080.0,20732.3,-1.6%
+aes128gcm,ch_cfg.cpu 0x1f,rec_seal,1024,293.8,0.2869,3485.8,1.4,290.0,301.0
+aes128gcm,ch_cfg.cpu 0x1f,refill,1024,11.4,0.0112,89534.1,2.7,11.1,11.9
+aes128gcm,ch_cfg.cpu 0x1f,rec_open,1024,307.8,0.3006,3326.5,3.1,299.8,321.4
+aes128gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,34.3,0.0335,29824.5,3.0,33.6,35.8
+aes128gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,28.3,0.0276,36244.3,2.7,27.8,28.8
+aes128gcm,ch_cfg.cpu 0x1f,key_expansion,0,20.5,,,2.3,20.0,21.1
+aes128gcm,ch_cfg.cpu 0x1f,key_wipe,0,4.9,,,2.3,4.9,5.1
+aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,1024,302.9,0.2958,3380.6,2.8,297.8,309.9
+aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,1024,298.9,0.2919,3425.8,2.5,292.6,305.9
+aes128gcm,ch_cfg.cpu 0x1f,aead_seal,1024,266.8,0.2606,3837.4,1.9,262.6,273.1
+aes128gcm,ch_cfg.cpu 0x1f,aead_open,1024,285.2,0.2785,3590.1,2.4,283.0,296.6
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,1024,89.0,0.0869,11510.6,2.6,87.8,91.6
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,1024,87.0,0.0850,11764.0,2.7,85.0,88.8
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,1024,66.9,0.0654,15300.8,5.2,64.6,69.3
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,1024,64.7,0.0632,15825.4,5.0,63.1,67.6
+aes128gcm,ch_cfg.cpu 0x1f,seal_passes,1024,167.5,0.1636,6114.3,3.8,164.2,175.6
+aes128gcm,ch_cfg.cpu 0x1f,open_passes,1024,178.7,0.1745,5730.4,3.0,175.8,184.4
+aes128gcm,ch_cfg.cpu 0x1f,compute_tag,1024,203.9,0.1991,5021.6,1.6,198.7,208.0
+aes128gcm,ch_cfg.cpu 0x1f,ghash_data,1024,146.4,0.1430,6995.4,2.7,142.5,149.3
+aes128gcm,ch_cfg.cpu 0x1f,compute_tag_fixed,0,64.3,,,2.6,63.0,66.2
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,1024,22.4,0.0219,45746.0,12.0,,
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,1024,21.6,0.0211,47483.5,8.1,,
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,302.9,292.2,-3.5%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,298.9,310.6,+3.9%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,aead_seal = seal_passes + compute_tag_fixed,266.8,231.7,-13.2%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,aead_open = open_passes + compute_tag_fixed,285.2,243.0,-14.8%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,compute_tag = ghash_data + compute_tag_fixed,203.9,210.6,+3.3%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,293.8,301.2,+2.5%
+# check,aes128gcm,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,307.8,313.5,+1.8%
+aes128gcm,ch_cfg.cpu 0x1f,rec_seal,16384,2363.2,0.1442,6932.9,4.4,2349.2,2500.8
+aes128gcm,ch_cfg.cpu 0x1f,refill,16384,110.5,0.0067,148268.4,6.3,108.9,119.5
+aes128gcm,ch_cfg.cpu 0x1f,rec_open,16384,2417.2,0.1475,6778.2,2.7,2349.5,2471.6
+aes128gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,139.1,0.0085,117744.5,2.8,136.5,144.4
+aes128gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,28.2,0.0017,580512.4,2.3,27.8,29.1
+aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,16384,2273.5,0.1388,7206.4,2.5,2250.8,2339.4
+aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,16384,2373.3,0.1449,6903.4,2.5,2346.7,2446.8
+aes128gcm,ch_cfg.cpu 0x1f,aead_seal,16384,2228.7,0.1360,7351.3,3.4,2213.4,2304.9
+aes128gcm,ch_cfg.cpu 0x1f,aead_open,16384,2360.5,0.1441,6941.0,1.5,2325.2,2439.2
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,16384,1010.4,0.0617,16215.4,3.7,983.8,1054.7
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,16384,986.1,0.0602,16614.7,1.6,971.6,1038.6
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,16384,1007.0,0.0615,16270.6,5.7,980.7,1053.5
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,16384,985.6,0.0602,16624.0,3.3,964.3,1036.1
+aes128gcm,ch_cfg.cpu 0x1f,seal_passes,16384,2165.4,0.1322,7566.2,2.2,2116.0,2258.9
+aes128gcm,ch_cfg.cpu 0x1f,open_passes,16384,2255.4,0.1377,7264.5,2.7,2234.0,2381.3
+aes128gcm,ch_cfg.cpu 0x1f,compute_tag,16384,1789.1,0.1092,9157.8,1.0,1759.6,1824.0
+aes128gcm,ch_cfg.cpu 0x1f,ghash_data,16384,1732.6,0.1058,9456.0,2.2,1701.8,1795.8
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,16384,8.9,0.0005,1845069.4,707.9,,
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,16384,6.8,0.0004,2405508.1,493.5,,
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,2273.5,2254.1,-0.9%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,2373.3,2385.8,+0.5%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,aead_seal = seal_passes + compute_tag_fixed,2228.7,2229.7,+0.0%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,aead_open = open_passes + compute_tag_fixed,2360.5,2319.6,-1.7%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,compute_tag = ghash_data + compute_tag_fixed,1789.1,1796.9,+0.4%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,2363.2,2367.9,+0.2%
+# check,aes128gcm,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,2417.2,2388.7,-1.2%
+aes128gcm,ch_cfg.cpu 0x1f,refill,65536,1612.9,0.0246,40633.5,2.4,1594.0,1649.5
+aes128gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,65536,8667.4,0.1323,7561.2,1.2,8518.6,8902.0
+aes128gcm,ch_cfg.cpu 0x1f,open_aes_gcm,65536,9479.8,0.1446,6913.3,2.6,9246.1,9909.0
+aes128gcm,ch_cfg.cpu 0x1f,aead_seal,65536,8629.6,0.1317,7594.3,2.3,8476.7,8934.2
+aes128gcm,ch_cfg.cpu 0x1f,aead_open,65536,9468.3,0.1445,6921.7,2.2,9211.0,9790.5
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,65536,4004.9,0.0611,16363.9,3.7,3925.0,4209.3
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,65536,3925.8,0.0599,16693.7,4.4,3852.9,4124.7
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,65536,3950.4,0.0603,16589.6,2.7,3910.1,4189.9
+aes128gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,65536,3910.4,0.0597,16759.5,3.6,3839.9,4117.7
+aes128gcm,ch_cfg.cpu 0x1f,seal_passes,65536,8487.3,0.1295,7721.7,2.7,8370.8,8946.8
+aes128gcm,ch_cfg.cpu 0x1f,open_passes,65536,9060.7,0.1383,7233.0,3.1,8838.3,9424.7
+aes128gcm,ch_cfg.cpu 0x1f,compute_tag,65536,6911.8,0.1055,9481.8,2.2,6773.7,7087.0
+aes128gcm,ch_cfg.cpu 0x1f,ghash_data,65536,6816.5,0.1040,9614.3,2.2,6718.5,6953.3
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,65536,23.7,0.0004,2766235.1,691.3,,
+aes128gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,65536,25.8,0.0004,2537005.3,821.2,,
+# check,aes128gcm,ch_cfg.cpu 0x1f,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,8667.4,8655.0,-0.1%
+# check,aes128gcm,ch_cfg.cpu 0x1f,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,9479.8,9493.6,+0.1%
+# check,aes128gcm,ch_cfg.cpu 0x1f,65536,aead_seal = seal_passes + compute_tag_fixed,8629.6,8551.5,-0.9%
+# check,aes128gcm,ch_cfg.cpu 0x1f,65536,aead_open = open_passes + compute_tag_fixed,9468.3,9124.9,-3.6%
+# check,aes128gcm,ch_cfg.cpu 0x1f,65536,compute_tag = ghash_data + compute_tag_fixed,6911.8,6880.8,-0.4%
+aes256gcm,ch_cfg.cpu 0x1f,rec_seal,1024,329.9,0.3222,3103.7,2.0,322.7,337.0
+aes256gcm,ch_cfg.cpu 0x1f,refill,1024,11.5,0.0113,88760.2,4.5,11.2,11.9
+aes256gcm,ch_cfg.cpu 0x1f,rec_open,1024,340.8,0.3328,3004.5,5.1,329.8,354.3
+aes256gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,35.6,0.0348,28750.7,2.5,35.0,37.4
+aes256gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,29.7,0.0290,34430.8,2.5,29.2,30.6
+aes256gcm,ch_cfg.cpu 0x1f,key_expansion,0,21.8,,,2.0,21.3,22.3
+aes256gcm,ch_cfg.cpu 0x1f,key_wipe,0,5.0,,,1.2,4.9,5.1
+aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,1024,312.2,0.3049,3279.8,1.3,303.7,320.8
+aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,1024,329.9,0.3222,3103.6,1.8,320.9,337.9
+aes256gcm,ch_cfg.cpu 0x1f,aead_seal,1024,294.8,0.2879,3473.0,2.6,287.1,303.2
+aes256gcm,ch_cfg.cpu 0x1f,aead_open,1024,316.2,0.3088,3238.0,1.6,308.9,323.7
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,1024,110.3,0.1077,9287.8,2.4,108.7,113.6
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,1024,109.2,0.1066,9381.0,2.5,106.6,110.8
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,1024,85.3,0.0833,12001.4,2.3,83.4,86.8
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,1024,84.9,0.0829,12061.3,2.3,83.3,86.9
+aes256gcm,ch_cfg.cpu 0x1f,seal_passes,1024,190.2,0.1858,5382.8,2.9,186.3,193.8
+aes256gcm,ch_cfg.cpu 0x1f,open_passes,1024,198.7,0.1941,5152.5,2.5,195.9,204.6
+aes256gcm,ch_cfg.cpu 0x1f,compute_tag,1024,203.3,0.1985,5036.8,1.9,198.4,211.0
+aes256gcm,ch_cfg.cpu 0x1f,ghash_data,1024,146.8,0.1434,6975.9,2.0,142.5,150.0
+aes256gcm,ch_cfg.cpu 0x1f,compute_tag_fixed,0,64.2,,,1.7,63.1,66.4
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,1024,26.2,0.0256,39085.7,14.7,,
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,1024,23.7,0.0231,43204.3,7.6,,
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,seal_aes_gcm = key_expansion + aead_seal + key_wipe,312.2,321.6,+3.0%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,open_aes_gcm = key_expansion + aead_open + key_wipe,329.9,343.0,+4.0%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,aead_seal = seal_passes + compute_tag_fixed,294.8,254.4,-13.7%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,aead_open = open_passes + compute_tag_fixed,316.2,262.9,-16.9%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,compute_tag = ghash_data + compute_tag_fixed,203.3,211.0,+3.8%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,329.9,330.5,+0.2%
+# check,aes256gcm,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,340.8,346.0,+1.5%
+aes256gcm,ch_cfg.cpu 0x1f,rec_seal,16384,2744.1,0.1675,5970.6,2.1,2694.0,2830.5
+aes256gcm,ch_cfg.cpu 0x1f,refill,16384,111.3,0.0068,147222.6,2.3,109.1,119.2
+aes256gcm,ch_cfg.cpu 0x1f,rec_open,16384,2734.7,0.1669,5991.1,2.8,2670.1,2780.9
+aes256gcm,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,138.6,0.0085,118243.9,3.2,136.4,142.4
+aes256gcm,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,29.6,0.0018,552874.4,1.8,29.2,30.8
+aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,16384,2589.5,0.1581,6327.1,1.5,2576.9,2676.6
+aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,16384,2682.7,0.1637,6107.3,2.8,2666.6,2796.4
+aes256gcm,ch_cfg.cpu 0x1f,aead_seal,16384,2574.5,0.1571,6363.9,1.1,2554.2,2658.4
+aes256gcm,ch_cfg.cpu 0x1f,aead_open,16384,2658.7,0.1623,6162.4,2.3,2644.3,2752.6
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,16384,1272.5,0.0777,12875.3,2.7,1254.5,1327.9
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,16384,1265.3,0.0772,12948.9,2.8,1252.9,1314.1
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,16384,1265.4,0.0772,12947.6,3.0,1233.3,1318.4
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,16384,1240.3,0.0757,13210.2,2.8,1233.1,1288.0
+aes256gcm,ch_cfg.cpu 0x1f,seal_passes,16384,2469.9,0.1508,6633.4,1.2,2455.4,2548.7
+aes256gcm,ch_cfg.cpu 0x1f,open_passes,16384,2559.4,0.1562,6401.6,2.9,2546.3,2661.8
+aes256gcm,ch_cfg.cpu 0x1f,compute_tag,16384,1779.1,0.1086,9209.1,2.1,1755.7,1840.1
+aes256gcm,ch_cfg.cpu 0x1f,ghash_data,16384,1731.2,0.1057,9464.1,2.2,1703.2,1774.5
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,16384,4.4,0.0003,3757495.2,783.4,,
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,16384,25.0,0.0015,654746.2,223.8,,
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,seal_aes_gcm = key_expansion + aead_seal + key_wipe,2589.5,2601.3,+0.5%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,open_aes_gcm = key_expansion + aead_open + key_wipe,2682.7,2685.5,+0.1%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,aead_seal = seal_passes + compute_tag_fixed,2574.5,2534.1,-1.6%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,aead_open = open_passes + compute_tag_fixed,2658.7,2623.6,-1.3%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,compute_tag = ghash_data + compute_tag_fixed,1779.1,1795.4,+0.9%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,2744.1,2713.1,-1.1%
+# check,aes256gcm,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,2734.7,2688.3,-1.7%
+aes256gcm,ch_cfg.cpu 0x1f,refill,65536,1615.3,0.0246,40571.4,1.8,1590.6,1651.5
+aes256gcm,ch_cfg.cpu 0x1f,seal_aes_gcm,65536,9938.8,0.1517,6593.9,1.1,9877.2,10283.2
+aes256gcm,ch_cfg.cpu 0x1f,open_aes_gcm,65536,10622.1,0.1621,6169.8,3.2,10508.9,10990.6
+aes256gcm,ch_cfg.cpu 0x1f,aead_seal,65536,9963.4,0.1520,6577.7,2.6,9841.8,10214.7
+aes256gcm,ch_cfg.cpu 0x1f,aead_open,65536,10572.9,0.1613,6198.5,1.6,10477.0,10952.1
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_in_place,65536,4967.7,0.0758,13192.5,6.1,4931.5,5310.0
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_shifted,65536,4985.1,0.0761,13146.3,2.4,4931.8,5156.5
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_in_place,65536,4974.2,0.0759,13175.1,4.1,4910.9,5271.3
+aes256gcm,ch_cfg.cpu 0x1f,counter_blocks_shifted,65536,4976.6,0.0759,13168.9,2.3,4912.1,5135.6
+aes256gcm,ch_cfg.cpu 0x1f,seal_passes,65536,9894.4,0.1510,6623.6,2.7,9742.3,10147.1
+aes256gcm,ch_cfg.cpu 0x1f,open_passes,65536,10195.3,0.1556,6428.1,1.8,10092.7,10519.6
+aes256gcm,ch_cfg.cpu 0x1f,compute_tag,65536,6854.0,0.1046,9561.8,1.0,6767.4,7078.8
+aes256gcm,ch_cfg.cpu 0x1f,ghash_data,65536,6795.4,0.1037,9644.2,1.3,6719.7,7015.4
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_in_place,65536,18.6,0.0003,3526848.0,569.2,,
+aes256gcm,ch_cfg.cpu 0x1f,counter_mode_tail_shifted,65536,9.2,0.0001,7115019.5,1156.1,,
+# check,aes256gcm,ch_cfg.cpu 0x1f,65536,seal_aes_gcm = key_expansion + aead_seal + key_wipe,9938.8,9990.1,+0.5%
+# check,aes256gcm,ch_cfg.cpu 0x1f,65536,open_aes_gcm = key_expansion + aead_open + key_wipe,10622.1,10599.7,-0.2%
+# check,aes256gcm,ch_cfg.cpu 0x1f,65536,aead_seal = seal_passes + compute_tag_fixed,9963.4,9958.6,-0.0%
+# check,aes256gcm,ch_cfg.cpu 0x1f,65536,aead_open = open_passes + compute_tag_fixed,10572.9,10259.5,-3.0%
+# check,aes256gcm,ch_cfg.cpu 0x1f,65536,compute_tag = ghash_data + compute_tag_fixed,6854.0,6859.6,+0.1%
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal,1024,1206.6,1.1784,848.6,2.1,1167.8,1236.4
+chacha20poly1305,ch_cfg.cpu 0x1f,refill,1024,11.5,0.0112,89204.4,3.0,11.1,12.0
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_open,1024,1201.9,1.1738,852.0,4.7,1167.2,1264.0
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal_without_aead,1024,16.7,0.0163,61430.3,3.9,16.1,17.3
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_open_without_aead,1024,8.5,0.0083,121155.6,3.1,8.3,8.8
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,1024,1184.6,1.1569,864.4,3.1,1157.2,1230.7
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,1024,1180.4,1.1527,867.5,2.2,1159.3,1231.0
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,1024,657.1,0.6417,1558.3,2.9,654.1,680.7
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,1024,658.7,0.6432,1554.7,2.8,653.9,678.4
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,1024,628.0,0.6133,1630.5,3.2,622.0,649.1
+chacha20poly1305,ch_cfg.cpu 0x1f,mac,1024,507.9,0.4960,2016.2,2.4,489.2,528.5
+chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,1024,277.5,0.2710,3690.4,3.3,271.4,286.6
+chacha20poly1305,ch_cfg.cpu 0x1f,mac_fixed,0,193.0,,,2.0,187.3,202.6
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,1024,33.9,0.0331,30204.4,48.5,,
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,1024,33.6,0.0328,30508.9,31.5,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,1024,990.2,0.9670,1034.1,3.7,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,1024,988.0,0.9648,1036.4,3.0,,
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,1184.6,1127.6,-4.8%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,1180.4,1129.1,-4.3%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,mac = poly1305_data + mac_fixed,507.9,470.4,-7.4%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,rec_seal = rec_seal_without_aead + aead_seal,1206.6,1201.3,-0.4%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,1024,rec_open = rec_open_without_aead + aead_open,1201.9,1188.8,-1.1%
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal,16384,11253.6,0.6869,1455.9,5.2,10802.5,12500.1
+chacha20poly1305,ch_cfg.cpu 0x1f,refill,16384,114.0,0.0070,143745.1,5.7,109.4,119.3
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_open,16384,10736.2,0.6553,1526.1,5.1,10378.1,11263.7
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_seal_without_aead,16384,117.1,0.0071,139971.3,6.2,113.1,122.2
+chacha20poly1305,ch_cfg.cpu 0x1f,rec_open_without_aead,16384,8.6,0.0005,1915489.2,2.8,8.3,8.9
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,16384,11053.8,0.6747,1482.2,5.9,10606.1,12253.8
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,16384,10625.8,0.6485,1541.9,3.4,10370.2,11160.0
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,16384,7390.5,0.4511,2216.9,2.4,7301.8,7607.1
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,16384,7449.2,0.4547,2199.4,3.3,7301.5,7615.4
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,16384,6932.0,0.4231,2363.5,1.7,6731.9,7024.4
+chacha20poly1305,ch_cfg.cpu 0x1f,mac,16384,3060.6,0.1868,5353.2,2.6,2970.8,3202.2
+chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,16384,2815.9,0.1719,5818.4,3.4,2738.4,2949.6
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,16384,489.7,0.0299,33458.6,30.2,,
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,16384,515.2,0.0314,31803.7,36.9,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,16384,10859.4,0.6628,1508.7,6.0,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,16384,10433.4,0.6368,1570.3,3.5,,
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,11053.8,10399.4,-5.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,10625.8,10458.0,-1.6%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,mac = poly1305_data + mac_fixed,3060.6,3008.9,-1.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,rec_seal = rec_seal_without_aead + aead_seal,11253.6,11170.8,-0.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,16384,rec_open = rec_open_without_aead + aead_open,10736.2,10634.3,-0.9%
+chacha20poly1305,ch_cfg.cpu 0x1f,refill,65536,1619.1,0.0247,40477.6,2.2,1593.3,1650.9
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal,65536,41679.5,0.6360,1572.4,1.8,39974.4,42655.9
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open,65536,41539.1,0.6338,1577.7,1.5,40024.9,42861.7
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_in_place,65536,28998.5,0.4425,2260.0,2.9,28559.3,29711.9
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_xor_shifted,65536,28845.1,0.4401,2272.0,2.6,28570.1,29789.6
+chacha20poly1305,ch_cfg.cpu 0x1f,chacha20_blocks,65536,26881.5,0.4102,2438.0,1.5,26256.1,27628.5
+chacha20poly1305,ch_cfg.cpu 0x1f,mac,65536,11276.1,0.1721,5811.9,6.5,10857.5,11840.8
+chacha20poly1305,ch_cfg.cpu 0x1f,poly1305_data,65536,11032.0,0.1683,5940.5,3.7,10677.0,11598.5
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_in_place,65536,2117.0,0.0323,30957.0,21.0,,
+chacha20poly1305,ch_cfg.cpu 0x1f,xor_rest_shifted,65536,2115.6,0.0323,30978.0,25.6,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_seal_data,65536,41486.6,0.6330,1579.7,1.8,,
+chacha20poly1305,ch_cfg.cpu 0x1f,aead_open_data,65536,41346.7,0.6309,1585.0,1.5,,
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,41679.5,40223.5,-3.5%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,41539.1,40070.1,-3.5%
+# check,chacha20poly1305,ch_cfg.cpu 0x1f,65536,mac = poly1305_data + mac_fixed,11276.1,11225.0,-0.5%
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal,1024,661.9,0.6464,1547.1,2.6,639.1,702.6
+chacha20poly1305,ch_cfg.cpu 0x11f,refill,1024,11.6,0.0113,88507.6,3.5,11.3,12.2
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_open,1024,677.1,0.6612,1512.3,4.3,637.2,701.5
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal_without_aead,1024,16.7,0.0163,61482.1,2.8,16.4,17.4
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_open_without_aead,1024,8.4,0.0082,122077.6,1.0,8.3,8.8
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,1024,643.2,0.6282,1591.9,5.8,618.4,690.2
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,1024,672.3,0.6565,1523.2,1.6,639.5,697.7
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,1024,257.9,0.2518,3970.8,2.3,255.2,264.8
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,1024,260.1,0.2540,3936.4,2.3,255.2,265.4
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,1024,377.0,0.3682,2716.1,0.4,368.7,385.1
+chacha20poly1305,ch_cfg.cpu 0x11f,mac,1024,384.9,0.3759,2660.4,3.6,367.7,416.2
+chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,1024,165.4,0.1615,6190.5,2.1,158.3,177.3
+chacha20poly1305,ch_cfg.cpu 0x11f,mac_fixed,0,193.1,,,1.2,186.8,197.8
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,1024,-119.1,-0.1163,-8595.6,-6.0,,
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,1024,-116.6,-0.1139,-8782.9,-5.8,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,1024,450.2,0.4396,2274.7,7.9,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,1024,479.7,0.4685,2134.5,2.6,,
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,643.2,616.4,-4.2%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,672.3,618.6,-8.0%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,mac = poly1305_data + mac_fixed,384.9,358.5,-6.9%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,rec_seal = rec_seal_without_aead + aead_seal,661.9,659.9,-0.3%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,1024,rec_open = rec_open_without_aead + aead_open,677.1,680.6,+0.5%
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal,16384,5340.6,0.3260,3067.8,8.0,4804.6,6040.1
+chacha20poly1305,ch_cfg.cpu 0x11f,refill,16384,110.2,0.0067,148663.5,1.3,109.3,117.4
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_open,16384,5114.3,0.3122,3203.6,11.0,4573.1,6073.7
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_seal_without_aead,16384,114.4,0.0070,143231.0,2.1,113.1,121.5
+chacha20poly1305,ch_cfg.cpu 0x11f,rec_open_without_aead,16384,8.4,0.0005,1957650.3,1.0,8.3,8.8
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,16384,4974.5,0.3036,3293.6,10.9,4587.8,5664.3
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,16384,4754.5,0.2902,3446.0,5.3,4492.9,5582.5
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,16384,3254.5,0.1986,5034.3,1.0,3215.3,3342.7
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,16384,3252.2,0.1985,5037.8,1.9,3210.1,3357.3
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,16384,2993.3,0.1827,5473.5,1.9,2950.9,3090.5
+chacha20poly1305,ch_cfg.cpu 0x11f,mac,16384,1264.7,0.0772,12954.4,3.0,1203.4,1356.9
+chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,16384,988.0,0.0603,16582.9,3.2,959.1,1046.4
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,16384,259.7,0.0159,63085.5,20.7,,
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,16384,259.7,0.0158,63096.9,18.9,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,16384,4783.5,0.2920,3425.1,11.3,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,16384,4563.2,0.2785,3590.4,5.6,,
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,4974.5,4435.6,-10.8%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,4754.5,4433.3,-6.8%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,mac = poly1305_data + mac_fixed,1264.7,1181.1,-6.6%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,rec_seal = rec_seal_without_aead + aead_seal,5340.6,5088.9,-4.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,16384,rec_open = rec_open_without_aead + aead_open,5114.3,4762.9,-6.9%
+chacha20poly1305,ch_cfg.cpu 0x11f,refill,65536,1600.4,0.0244,40948.6,1.8,1592.8,1652.4
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal,65536,19942.4,0.3043,3286.3,2.2,18227.6,20500.8
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open,65536,18945.5,0.2891,3459.2,7.9,18106.8,20824.0
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_in_place,65536,13027.8,0.1988,5030.5,1.8,12660.1,13542.1
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_xor_shifted,65536,12856.1,0.1962,5097.6,2.4,12662.7,13301.6
+chacha20poly1305,ch_cfg.cpu 0x11f,chacha20_blocks,65536,11379.3,0.1736,5759.2,1.9,11182.9,11811.9
+chacha20poly1305,ch_cfg.cpu 0x11f,mac,65536,3968.6,0.0606,16513.5,4.3,3870.8,4232.1
+chacha20poly1305,ch_cfg.cpu 0x11f,poly1305_data,65536,3597.9,0.0549,18215.3,3.2,3481.8,3843.1
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_in_place,65536,1612.6,0.0246,40638.7,21.2,,
+chacha20poly1305,ch_cfg.cpu 0x11f,xor_rest_shifted,65536,1476.8,0.0225,44376.0,17.0,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_seal_data,65536,19749.1,0.3013,3318.4,2.2,,
+chacha20poly1305,ch_cfg.cpu 0x11f,aead_open_data,65536,18754.2,0.2862,3494.5,8.0,,
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,aead_seal = chacha20_xor_in_place + poly1305_data + mac_fixed,19942.4,16818.7,-15.7%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,aead_open = chacha20_xor_shifted + poly1305_data + mac_fixed,18945.5,16647.1,-12.1%
+# check,chacha20poly1305,ch_cfg.cpu 0x11f,65536,mac = poly1305_data + mac_fixed,3968.6,3790.9,-4.5%
+aes128gcm,OpenSSL 3.6.4,openssl_seal_aes_gcm,16384,1205.4,0.0736,13592.2,0.4,,
+aes128gcm,OpenSSL 3.6.4,openssl_open_aes_gcm,16384,1252.1,0.0764,13085.0,0.7,,
+aes256gcm,OpenSSL 3.6.4,openssl_seal_aes_gcm,16384,1452.0,0.0886,11283.9,1.7,,
+aes256gcm,OpenSSL 3.6.4,openssl_open_aes_gcm,16384,1477.1,0.0902,11091.7,2.3,,
+chacha20poly1305,OpenSSL 3.6.4,openssl_aead_seal_data,16384,4791.6,0.2925,3419.3,2.0,,
+chacha20poly1305,OpenSSL 3.6.4,openssl_aead_open_data,16384,4828.1,0.2947,3393.5,1.0,,

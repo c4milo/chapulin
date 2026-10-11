@@ -16,6 +16,45 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 58d534cb
+
+The x86-64 CSVs now hold runs of 2026-10-11 on the tree of
+docs/decisions.md 124, 58d534cb, on an EPYC 7763 and on a Xeon Platinum
+8573C. The two files this note reads still hold the runs of d699bec6:
+decision 124 changed x86-64 code alone. Against the run of 9ac23a2e, on
+the EPYC 7763:
+
+- **Under clang ML-KEM-768 takes 0.90 to 0.92 of its time**: 16.7 µs
+  for a key generation where it took 18.5, 18.6 µs for an encapsulation
+  where it took 20.4, and 20.4 µs for a decapsulation where it took
+  22.2. Under clang `keccak_avx2.c`'s permutation now aligns its frame
+  to 32 bytes, as gcc's always did (decision 124). Under gcc the three
+  rows moved by 1% at most.
+- **Under clang a handshake on the hybrid group takes 0.97 to 0.98 of
+  its time at the ends that changed**: the client side of each of the
+  three pinned handshakes, 244, 195 and 215 µs where it took 249, 200
+  and 220, and the server side of the ECDSA P-256 one, 152 µs where it
+  took 157. The RSA handshakes' server sides, which a signature of 1.5
+  and 4.4 ms fills, did not move, and under gcc no handshake moved by
+  more than 0.5%.
+- **The 64-byte rows of the hashes read 0.67 to 0.88 of their time
+  under both compilers, and no code of theirs changed.** 2a80e289 made
+  the bench's sink consume one byte of an output where it consumed
+  every byte, a load, an add and a store for each (docs/performance.md,
+  the pitfalls table). HMAC, HKDF's label expansion, Poly1305 and the
+  ChaCha20-Poly1305 seal read 0.70 to 0.96 of their time for the same
+  reason. No other row under `0x3f` moved by more than 2%.
+
+On the Xeon Platinum 8573C:
+
+- **This run's runner is another machine of that model, and a faster
+  one.** OpenSSL's rows in the primitives CSV took 0.96 to 0.99 of their
+  time in the run of 3be3f3f7 under gcc and 0.94 to 0.99 under clang, so
+  the two runs compare by their ratios to OpenSSL.
+- **Under clang ML-KEM-768 takes 0.92 to 0.93 of its time**, 17.6, 19.5
+  and 21.6 µs where it took 19.1, 21.1 and 23.1, which puts its
+  encapsulation at 0.94 of OpenSSL's time where it was 0.99.
+
 ## The run of 9ac23a2e
 
 The x86-64 CSVs now hold runs of 2026-10-11 on the tree of
