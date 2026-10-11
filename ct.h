@@ -336,27 +336,47 @@ static inline uint64_t ct_mulsmall(uint64_t a, uint32_t k) {
 #endif
 }
 
-// The signed form. Two's complement makes a signed product the unsigned
-// one over the same bit patterns, less b<<32 when a is negative and a<<32
-// when b is negative, so only the high word moves. Each correction is
-// masked, never branched: the mask is the operand's sign bit spread across
-// the word by an arithmetic shift, so the sign of a secret word stays off
-// the control path. It used to be `0 - (ua >> 31)`, and gcc's match.pd
-// rewrites `X & -Y` as `X * Y` when it knows Y is 0 or 1 -- a widening
-// multiply by a secret bit, two umull in x25519 on the M3 and one mulhu on
-// rv32imac (https://github.com/c4milo/chapulin/issues/106). A shifted sign
-// bit is not a negated 0-or-1 value, so the rule does not apply.
+// The signed form: Hacker's Delight's mulhs ladder, which is ct_widemul's
+// with each high half sign-extended and the two shifts that carry t and w1
+// into the high word arithmetic. A low half is a value in [0, 2^16) and a
+// high half one in [-2^15, 2^15), so lh, hl and hh are signed products that
+// fit 32 bits, and the 32-to-32 multiply returns the low 32 bits of a signed
+// product as it does of an unsigned one. None of the sums can overflow as a
+// signed value: a product of a high half and a low half lies within
+// 2^31 - 2^15 of zero, t adds a piece below 2^16 to one and w1 adds a piece
+// below 2^16 to another, and hi is hh, within 2^30 of zero, plus two pieces
+// within 2^15. The sums are written on uint32_t, where wrapping is defined,
+// and proof/ctwidemul_harness.c proves the product.
+//
+// No step reads a sign bit by itself, so there is no mask for a compiler to
+// turn into a jump. This used to be ct_widemul over the bit patterns with two
+// corrections of the high word, `ub & (a >> 31)` and `ua & (b >> 31)`. In
+// x25519's mul the first mask is the same for a whole row, and clang for
+// x86-64 kept the row's products in vector registers and chose between `ub`
+// and zero with a jump on the sign of a word of a field element
+// (docs/decisions.md 125). Before that the masks were `0 - (ua >> 31)`, and
+// gcc's match.pd rewrote `X & -Y` as `X * Y`, a widening multiply by a secret
+// bit (https://github.com/c4milo/chapulin/issues/106).
+//
+// A right shift of a negative value is the implementation's to define, and
+// every compiler chapulin targets defines it as an arithmetic shift.
 static inline int64_t ct_widemul_s(int32_t a, int32_t b) {
 #ifdef CH_WIDEMUL_NATIVE
     return (int64_t)a * b;
 #else
-    uint32_t ua = (uint32_t)a;
-    uint32_t ub = (uint32_t)b;
-    uint64_t p = ct_widemul(ua, ub);
-    uint32_t ma = (uint32_t)(a >> 31);
-    uint32_t mb = (uint32_t)(b >> 31);
-    uint32_t hi = (uint32_t)(p >> 32) - (ub & ma) - (ua & mb);
-    return (int64_t)(((uint64_t)hi << 32) | (uint32_t)p);
+    uint32_t al = (uint32_t)a & 0xFFFFU;
+    uint32_t ah = (uint32_t)(a >> 16);
+    uint32_t bl = (uint32_t)b & 0xFFFFU;
+    uint32_t bh = (uint32_t)(b >> 16);
+    uint32_t ll = al * bl;
+    uint32_t lh = al * bh;
+    uint32_t hl = ah * bl;
+    uint32_t hh = ah * bh;
+    uint32_t t = hl + (ll >> 16);
+    uint32_t w1 = (t & 0xFFFFU) + lh;
+    uint32_t hi = hh + (uint32_t)((int32_t)t >> 16) + (uint32_t)((int32_t)w1 >> 16);
+    uint32_t lo = (w1 << 16) | (ll & 0xFFFFU);
+    return (int64_t)(((uint64_t)hi << 32) | lo);
 #endif
 }
 

@@ -32,9 +32,10 @@
 #   int result of an operation on uint8_t or uint16_t values. The others are
 #   signed on purpose, in the crypto cores: x25519.c's `fe` words are
 #   int64_t, ML-KEM's polynomial coefficients are int16_t, and several
-#   functions, ct.h's `ct_widemul_s` and x25519.c's `cswap` among them, build
-#   a mask by an arithmetic right shift of a sign bit, so no branch depends
-#   on that bit. C11 leaves a right shift of a negative value to the
+#   functions, x25519.c's `cswap` among them, build a mask by an arithmetic
+#   right shift of a sign bit, so no branch depends on that bit. ct.h's
+#   `ct_widemul_s` shifts a signed operand right to sign-extend its high
+#   half. C11 leaves a right shift of a negative value to the
 #   implementation, and gcc and clang define it as an arithmetic shift. A
 #   left shift of a negative value is undefined, which is why x25519.c's
 #   `carry` converts `c` to uint64_t before it shifts `c` left, as the

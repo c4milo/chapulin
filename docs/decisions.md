@@ -49,7 +49,7 @@ does nothing more.
    whose timing the build vouches for; the default build is still
    ChaCha20 alone.
 7. **x25519 in 16-bit words (the TweetNaCl scheme).** Cost: a scalar
-   multiplication takes about 78 ms on the mips32r2 reference target, or
+   multiplication takes about 70 ms on the mips32r2 reference target, or
    57 ms in a build that asserts `CH_NATIVE_WIDEMUL`
    (`bench/results-insn.csv`), and wider words would be faster. Gain: a
    machine-checked overflow lemma and citable prior formal work on the
@@ -10019,3 +10019,122 @@ does nothing more.
     - **A lint over every kernel that holds a wide stack slot.** Camilo
       ruled for the two files. A new AVX2 kernel is held by review and by
       the rule in docs/performance.md's pitfalls table.
+
+125. **`ct_widemul_s` reads no sign bit by itself, and `mlk_poly_frommsg`
+    reads its bit back from a volatile object.** clang for x86-64 wrote
+    two masks on secrets as jumps, in two files a host object runs and no
+    spec of `lint-wide-multiply` compiled for a 64-bit target:
+
+    - `x25519.c`'s `mul`. `ct_widemul_s` was `ct_widemul` over the bit
+      patterns with two corrections of the high word, `ub & (a >> 31)`
+      and `ua & (b >> 31)`. In `mul` the first mask is the same for a
+      whole row. clang keeps the row's products in vector registers, and
+      it picked between a word of `b` and zero with
+      `testl %r8d, %r8d ; js`, a jump on the sign of a word of a field
+      element. The pinned clang 23.1.3 wrote it at `-O2`, `-O3` and `-Os`,
+      hosted and freestanding, and Zig 0.16.0's clang 21.1.8 wrote it in
+      the `chapulin.o` that `zig build -Dtarget=x86_64-linux-gnu
+      -DTRUST=webpki -DRAND=extern` makes. A session without
+      `CH_CPU_CONSTANT_TIME_MULTIPLY` runs that field (`widemul_x25519`),
+      and so does a device object compiled for x86-64. gcc 13.3 for
+      x86-64 and clang for arm64 kept the mask.
+    - `mlkem_poly.c`'s `mlk_poly_frommsg`. Each coefficient was
+      `(0 - bit) & 1665`. A compiler that knows `bit` is 0 or 1 may write
+      that as a choice between 1665 and 0, and clang wrote the choice as
+      a jump on the message bit: `btl ; jae` on every bit at `-Os`, and at
+      `-O2` eight jumps in the loop the function runs when its arguments
+      overlap, which `mlkem.c`'s one call never takes. gcc 13.3 and clang
+      for arm64 kept the mask.
+
+    The count of conditional branches (INV-16) did not show either. The
+    two 64-bit specs compiled `WIDE64_CEILING`'s files alone, and
+    `x25519.c` and `mlkem_poly.c` are on the 32-bit specs' list. The
+    second jump was also in `mlkem_poly_native.c`, which the x86-64 spec
+    did compile, inside that file's recorded ceiling of 36: a count of a
+    file's branches cannot tell a jump on a bit from a loop's. No run
+    here timed either function. Camilo ruled on 2026-10-11 to fix both.
+
+    - **What changes.** `ct_widemul_s` is the signed ladder of Hacker's
+      Delight (mulhs): `ct_widemul`'s four 16x16 products with each high
+      half sign-extended, and the two shifts that carry into the high
+      word arithmetic. It has no correction and no mask, so no step
+      reads a sign bit by itself. `mlk_poly_frommsg` stores each bit to a
+      volatile object and reads it back before it builds the mask, as
+      `ct_widemul_opaque` reads its operands, and stores zero to the
+      object after the last bit. The compiler cannot know what a volatile
+      read returns, so the mask stays arithmetic.
+    - **What holds it.** The two 64-bit specs compile `x25519.c` and
+      `mlkem_poly.c` as a host object does (`x25519.c@host` and
+      `mlkem_poly.c@host` in `WIDE64_REBUILT`), and hold their branches
+      at 28 and 37 on arm64 and 30 and 37 on x86-64, each read as loop
+      control over a public count. `inv16-widemul-s-sign-mask` puts the
+      two masks back: the x86-64 spec reads 31 for `x25519.c@host` and
+      the m3 spec 34 for `x25519.c`, where the mask was an IT block and
+      the ceiling is now 33. `inv16-mlkem-frommsg-bit-known` drops the
+      volatile read: the x86-64 spec reads 38 for `mlkem_poly.c@host` and
+      36 for `mlkem_poly_native.c`, whose ceiling is now 35.
+      `inv16-widemul-s-sign-branch` still writes the corrections as `if`s
+      for the gcc specs. `test/softmul_test.c` holds the signed product to
+      the compiler's own at the ends of each half's range, and
+      `ctwidemul`, `x25519_mul` and `x25519_mul_ct` prove the new form:
+      6, 9 and 8 properties.
+    - **What it costs and buys.** The ladder is also the cheaper form,
+      because it has no correction to run after the products. One X25519
+      scalar multiplication over the decomposition, by the bench scripts:
+
+      | target, compiler | before | now |
+      | --- | --- | --- |
+      | mips32r2, Alpine clang 22, `-Os` | 38,934,900 | 34,973,028 |
+      | Cortex-M3, Arm GNU gcc 15.3, `-O2` | 27,402,147 | 24,363,395 |
+      | rv32imac, Bootlin gcc 14.3, `-Os` | 51,416,123 | 38,160,491 |
+
+      The pinned handshake's crypto takes 82.3 M instructions on mips32r2
+      where it took 90.2 M, 57.7 M on the Cortex-M3 where it took 63.7 M,
+      and 90.4 M on rv32imac where it took 117.0 M. `x25519.c` takes 3,060
+      bytes of flash on mips32r2 under the pinned clang at `-Os` where it
+      took 3,084. The volatile read costs an ML-KEM-768 decapsulation 771
+      instructions on mips32r2, 946 on the Cortex-M3 and 516 on rv32imac,
+      of 1.3 M to 1.6 M. No host row was timed: the rows of the 16-word
+      field under `ch_cfg.cpu` values without the multiply bit, in
+      `bench/results-primitives-*.csv`, are from before this entry.
+    - **Under the other compilers.** Every 32-bit spec holds `x25519.c`
+      at zero widening multiplies and at its branch ceiling: the Arm GNU
+      gcc 15.3, Ubuntu's mips gcc 12.4 at `-Os` and `-O2`, the Bootlin
+      riscv32 gcc 14.3 for rv32imac and rv32ic, and the pinned clang for
+      all three targets. gcc 13.3 for x86-64 runs the multiply test, the
+      unit vectors and the ML-KEM vectors over the decomposition.
+
+    Not covered:
+
+    - The two 64-bit specs compile at `-Os -ffreestanding`, and a host
+      object is compiled hosted at `-O2`. Under those flags the pinned
+      clang's branch counts differ on 24 of the x86-64 spec's 42 entries
+      and 18 of the arm64 spec's, and `-ffreestanding` alone, which
+      implies `-fno-builtin`, moves 11 and 4 of them at `-O2`. Both jumps
+      above show at the specs' flags, so the two new entries hold them.
+    - A host object ships sixteen more files of `BRANCH_SRCS` that only
+      the 32-bit specs compile: `ct.c`, `ct_wipe.c`, `sha256.c`, `sha3.c`,
+      `hkdf.c`, `chacha20.c`, `poly1305.c`, `aead.c`, `mlkem.c`,
+      `rsa_sign.c`, `aes.c`, `gcm.c`, `p256_field.c`, `p256_scalar.c`,
+      `sha512.c` and `sha512_compress.c`. A reading of each one's hosted
+      `-O2` assembly for both targets, for a jump that follows a test of
+      a value, found none on a secret. That reading is not a count the
+      lint holds.
+    - No spec reads a 64-bit gcc, and CI's host object is gcc's.
+
+    Rejected:
+
+    - **The signed product from biased operands**,
+      `a'b' - 2^31 (a' + b') + 2^62` with `a' = a + 2^31`. It reads no
+      sign bit either, and it removed the jump. It grew `mul` by 14
+      instructions on the Cortex-M3, 11 on mips32r2 and 13 on rv32imac
+      under the pinned clang at `-Os`, where the ladder shrank it by 7, 6
+      and 6.
+    - **A volatile read of the two sign masks.** Two stores and two loads
+      for each of the 256 products of a `mul`.
+    - **The change in a host object alone**, behind `CH_CPU_RUNTIME`. A
+      raw or ca client compiled for x86-64 is a device object and runs
+      the same `mul`.
+    - **An out-of-line select in another file**, the Kyber reference
+      code's remedy for `poly_frommsg`. It holds only while no build
+      inlines across files.

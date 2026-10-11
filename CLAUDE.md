@@ -295,7 +295,14 @@ Home: github.com/c4milo.
   names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
   (docs/decisions.md 120 and 121); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
-  poly1305's final reduction), never an `if`. A core with no hardware
+  poly1305's final reduction), never an `if`. A mask does not bind the
+  compiler: where it can prove a mask is all ones or zero it may write
+  the mask as a choice and the choice as a jump, as clang for x86-64 did
+  for a sign mask in x25519's `mul` and for a message bit in
+  `mlk_poly_frommsg` (docs/decisions.md 125). Prefer arithmetic that
+  reads no single bit, as `ct_widemul_s`'s signed ladder does, and where
+  a mask of a secret bit stays, read the bit back from a volatile object
+  before the mask is built. A core with no hardware
   multiplier turns `*` into a runtime-library call that branches on its
   operands, so `softmul.c` supplies constant-time `__mulsi3`/`__muldi3`
   under the compiler's own names; it compiles to nothing where the

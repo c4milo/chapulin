@@ -256,13 +256,13 @@ table.
 |---|---|---|---|---|
 | AEAD seal, per 1 KB record | 82 k | 0.16 | 67 k | 107 k |
 | SHA-256, per 1 KB | 68 k | 0.14 | 57 k | 90 k |
-| x25519 scalar multiply | 38.9 M | 78 | 27.4 M | 51.4 M |
+| x25519 scalar multiply | 35.0 M | 70 | 24.4 M | 38.2 M |
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
 | P-256 verify (`TRUST=raw-ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
-| full pinned handshake crypto (default) | 90.2 M | 180 | 63.7 M | 117.0 M |
+| full pinned handshake crypto (default) | 82.3 M | 165 | 57.7 M | 90.4 M |
 | ML-KEM-768 keygen (`KEX=pq`) | 1.3 M | 3 | 1.0 M | 1.2 M |
 | ML-KEM-768 decapsulate (`KEX=pq`) | 1.6 M | 3 | 1.3 M | 1.6 M |
-| full hybrid handshake crypto (`KEX=pq`) | 94.4 M | 189 | 67.2 M | 121.1 M |
+| full hybrid handshake crypto (`KEX=pq`) | 86.5 M | 173 | 61.1 M | 94.6 M |
 
 ### The multiply decomposition
 
@@ -270,12 +270,12 @@ The multiply decomposition that keeps secrets off a variable-time
 `umull` sets the first and third rows in every instruction column.
 Measured against the same benchmark with the native multiply instead:
 
-- on mips32r2, AEAD seal costs 73% more, x25519 36% more, and the
-  pinned handshake 29% more, or 41 ms at 500 MHz;
-- on the Cortex-M3, AEAD seal costs 94% more, x25519 129% more, and the
-  pinned handshake 94% more;
-- on rv32imac, AEAD seal costs 66% more, x25519 137% more, and the
-  pinned handshake 104% more.
+- on mips32r2, AEAD seal costs 73% more, x25519 22% more, and the
+  pinned handshake 18% more, or 25 ms at 500 MHz;
+- on the Cortex-M3, AEAD seal costs 94% more, x25519 103% more, and the
+  pinned handshake 75% more;
+- on rv32imac, AEAD seal costs 66% more, x25519 76% more, and the
+  pinned handshake 57% more.
 
 SHA-256 and both signature verifies are unchanged, because SHA-256 does
 not multiply and the verifies read only public bytes.
@@ -283,19 +283,19 @@ not multiply and the verifies read only public bytes.
 ### Flash
 
 Flash is 30.3 kB for the default build (`.text` + `.rodata`, `-Os`),
-of which the multiply decomposition is 2.3 kB, nearly all of it
+of which the multiply decomposition is 2.2 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](../bench/results-device.csv) sizes the same
 modules over the native multiply.
 
-The `TRUST=raw-ecdsa` build trades 2.2 kB of RSA for 5.8 kB of P-256
+The `TRUST=raw-ecdsa` build trades 2.3 kB of RSA for 5.8 kB of P-256
 and totals 33.8 kB. Its verify costs 4.0 times the default's on
 mips32r2, so the 64-byte pin costs both flash and handshake time.
 
 ### The hybrid key exchange
 
 The hybrid key exchange costs less than its wire size suggests.
-`KEX=pq` adds two ML-KEM key expansions and one decapsulation for 4.4 M
+`KEX=pq` adds two ML-KEM key expansions and one decapsulation for 4.2 M
 instructions, 5% over the classic handshake. The key pair lives as a
 64-byte seed and is re-expanded rather than stored, which
 [`docs/decisions.md`](decisions.md) 24 explains.
@@ -307,8 +307,8 @@ machine-checked overflow proof.
 ### Where the time goes
 
 Public-key work dominates. Every handshake runs two x25519 for forward
-secrecy, whichever mode it is in, so about 156 ms is the recurring
-floor and 86% of the pinned handshake's crypto. The signature verify is
+secrecy, whichever mode it is in, so about 140 ms is the recurring
+floor and 85% of the pinned handshake's crypto. The signature verify is
 paid only on the first pinned connection; resumptions skip it. Record
 crypto is about 0.15 ms per kilobyte, which is negligible beside the
 handshake.

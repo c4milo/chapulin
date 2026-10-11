@@ -3,11 +3,11 @@ op,insns,native_insns,stack_high_water_bytes
 sha256_1kib,67606,67606,592
 hkdf_expand_label_32b,22366,22366,1104
 aead_seal_1kib,82006,47470,756
-x25519_scalarmult,38934900,28675320,1632
+x25519_scalarmult,34973028,28675320,1632
 p256_ecdsa_verify,46029602,46029602,1572
-rsa_pss_verify_3072,11625119,11625119,3824
+rsa_pss_verify_3072,11625129,11625129,3824
 mlkem_keygen,1253797,1253797,6692
-mlkem_decaps,1624045,1588067,11836
-handshake_crypto,90211647,69692487,4856
-handshake_crypto_pq,94436021,73880885,14956
-# at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.164 ms, x25519_scalarmult 77.870 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 180.423 ms
+mlkem_decaps,1624816,1588838,11836
+handshake_crypto,82287913,69692497,4856
+handshake_crypto_pq,86513058,73881666,14956
+# at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.164 ms, x25519_scalarmult 69.946 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 164.576 ms

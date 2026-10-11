@@ -3516,17 +3516,34 @@ last `ROLE=server` stub, as the entry said it would.
   tell those from a
   branch on a word. What it holds is that no count grows. What the
   ceilings record is a choice each compiler made: the compare-carries
-  in `ct_widemul_opaque` and the sign masks in `ct_widemul_s`, `cswap`
-  and `poly1305_final` are branch-free in C, and every compiler in the
+  in `ct_widemul_opaque` and the sign masks in `cswap` and
+  `poly1305_final` are branch-free in C, and every compiler in the
   table lowers them to a predicated instruction, `sltu` or a shift —
   until this count, nothing held it to that
   ([#141](https://github.com/c4milo/chapulin/issues/141)).
   `inv16-poly1305-final-sign-branch` writes the final select as an
   `if` on the last word's sign and the count rises by one under all
-  eight specs; `inv16-widemul-s-sign-branch` writes `ct_widemul_s`'s
-  corrections as `if`s on the operands' signs, which clang lowers back
-  to the mask and every gcc lowers to two branches in x25519, so only
-  the gcc gate sees it.
+  eight specs; `inv16-widemul-s-sign-branch` writes `ct_widemul_s` as
+  the unsigned product with two corrections, each an `if` on an
+  operand's sign, which clang for the 32-bit targets lowers to a mask
+  and every gcc lowers to two branches in x25519, so the gcc lint sees
+  it.
+  A mask is no protection by itself. `ct_widemul_s` was the unsigned
+  product with two masks of the operands' sign bits, and clang for
+  x86-64 wrote the mask of a row's word in x25519's `mul` as a jump on
+  that word's sign. `mlk_poly_frommsg` built each coefficient as a mask
+  of a message bit and 1665, and the same compiler wrote that as a jump
+  on the bit. A host object runs both, and no spec compiled either file
+  for a 64-bit target (decision 125). `ct_widemul_s` now reads no sign
+  bit by itself: it is the signed ladder of Hacker's Delight, with each
+  high half sign-extended. `mlk_poly_frommsg` reads the bit back from a
+  volatile object before it builds the mask. The two 64-bit specs below
+  compile `x25519.c` and `mlkem_poly.c` as a host object does
+  (`x25519.c@host`, `mlkem_poly.c@host`), and hold their branches at 28
+  and 37 on arm64 and 30 and 37 on x86-64, every one loop control over
+  a public count. `inv16-widemul-s-sign-mask` puts the two masks back
+  and `inv16-mlkem-frommsg-bit-known` drops the volatile read, and the
+  x86-64 spec's count rises by one for each.
   No spec above can compile `x25519_wide.c`, because none of their
   targets has `unsigned __int128`, so two 64-bit specs compile it and
   nothing else (`WIDE64_CEILING`): arm64 and x86-64 under the pinned

@@ -1,23 +1,36 @@
 invariant: INV-16
 file: ct.h
 catches: test/lint-wide-multiply-gcc.sh
-reason: ct_widemul_s corrects the high word once for each negative
-  operand through a mask of that operand's sign bit. Written as two ifs
-  on the signs, clang lowers both back to the mask and
-  lint-wide-multiply's count does not move, so that check passes this;
-  every gcc emits two
-  branches on the signs where x25519 inlines the routine -- two IT
-  blocks on the Cortex-M3, two bgez on mips32r2, two bge on rv32 -- and
-  x25519.c goes two over its ceiling under each gcc spec. The Arm gcc
+reason: ct_widemul_s goes back to the unsigned product of the bit
+  patterns and corrects its high word once for each negative operand,
+  with an if on that operand's sign where the routine now reads no sign
+  bit by itself. clang for the three 32-bit targets lowers both ifs to a
+  mask and lint-wide-multiply's count there does not move; every gcc
+  emits two branches on the signs where x25519 inlines the routine -- two
+  IT blocks on the Cortex-M3, two bgez on mips32r2, two bge on rv32 --
+  and x25519.c goes two over its ceiling under each gcc spec. The Arm gcc
   is the one lint-wide-multiply-gcc resolves without docker, so it is
   the catch target; test/docker-mips.sh and test/docker-riscv32.sh
   object the same way (https://github.com/c4milo/chapulin/issues/141).
 
 --- old
-    uint32_t ma = (uint32_t)(a >> 31);
-    uint32_t mb = (uint32_t)(b >> 31);
-    uint32_t hi = (uint32_t)(p >> 32) - (ub & ma) - (ua & mb);
+    uint32_t al = (uint32_t)a & 0xFFFFU;
+    uint32_t ah = (uint32_t)(a >> 16);
+    uint32_t bl = (uint32_t)b & 0xFFFFU;
+    uint32_t bh = (uint32_t)(b >> 16);
+    uint32_t ll = al * bl;
+    uint32_t lh = al * bh;
+    uint32_t hl = ah * bl;
+    uint32_t hh = ah * bh;
+    uint32_t t = hl + (ll >> 16);
+    uint32_t w1 = (t & 0xFFFFU) + lh;
+    uint32_t hi = hh + (uint32_t)((int32_t)t >> 16) + (uint32_t)((int32_t)w1 >> 16);
+    uint32_t lo = (w1 << 16) | (ll & 0xFFFFU);
+    return (int64_t)(((uint64_t)hi << 32) | lo);
 --- new
+    uint32_t ua = (uint32_t)a;
+    uint32_t ub = (uint32_t)b;
+    uint64_t p = ct_widemul(ua, ub);
     uint32_t hi = (uint32_t)(p >> 32);
     if (a < 0) {
         hi -= ub;
@@ -25,3 +38,4 @@ reason: ct_widemul_s corrects the high word once for each negative
     if (b < 0) {
         hi -= ua;
     }
+    return (int64_t)(((uint64_t)hi << 32) | (uint32_t)p);

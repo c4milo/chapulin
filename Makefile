@@ -6132,8 +6132,8 @@ else
 	# shiftTooManyBitsSigned: it reports a signed right shift by width-1
 	# as undefined, and C11 6.5.7 makes a negative value's right shift
 	# implementation-defined, which every compiler chapulin targets
-	# defines as arithmetic. That shift is the sign-spread mask ct.h's
-	# ct_widemul_s and x25519's cswap build on purpose, the form gcc
+	# defines as arithmetic. That shift is the sign-spread mask x25519's
+	# cswap builds on purpose, the form gcc
 	# leaves alone where it rewrote `x & (0 - bit)` as a multiply
 	# (https://github.com/c4milo/chapulin/issues/106). The undefined
 	# class the check also covers, a left shift out of range, is proven
@@ -6699,7 +6699,15 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
 # registers exists there alone. rsa_avx2.c@512 is rsa_avx2.c at the same
 # bound, where its copies for digits of 27 bits exist alone
 # (docs/decisions.md 122).
-WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0
+# x25519.c@host and mlkem_poly.c@host are those two files as a host object
+# compiles them, under their own names and -DCH_CPU_RUNTIME. Each keeps its
+# entry in WIDEMUL_CEILING, which the 32-bit specs compile. A host object
+# runs x25519.c's field for a session without the multiply bit and
+# mlkem_poly.c's mlk_poly_frommsg in every session, and until these two
+# entries no spec compiled either for a 64-bit target: clang for x86-64
+# wrote a jump on a secret in each (docs/decisions.md 125).
+WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 \
+                  x25519.c@host:0 mlkem_poly.c@host:0
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -6774,6 +6782,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
                    rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   x25519.c@host:-DCH_CPU_RUNTIME mlkem_poly.c@host:-DCH_CPU_RUNTIME \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -6881,11 +6890,13 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # each file emits (https://github.com/c4milo/chapulin/issues/141). INV-16
 # claims no emitted instruction branches on a secret, and the multiply
 # tokens above cannot see one. The compare-carries in ct_widemul_opaque,
-# `mid < lh` and `lo < ll`, and the sign masks in ct_widemul_s, cswap
-# and poly1305_final are branch-free in C, and each compiler in the table
+# `mid < lh` and `lo < ll`, and the sign masks in cswap and
+# poly1305_final are branch-free in C, and each compiler in the table
 # lowers them to a predicated instruction, sltu or an arithmetic shift
 # today -- by its choice, and no check held it to that choice. This count
-# is the check. It cannot tell a branch on a public loop counter from one
+# is the check. ct_widemul_s held two such masks until clang for x86-64
+# wrote one as a jump, in a file no spec then compiled for that target;
+# it reads no sign bit by itself now (docs/decisions.md 125). It cannot tell a branch on a public loop counter from one
 # on a word, so every file in BRANCH_SRCS carries a measured count per
 # spec in BRANCH_CEILING, all of them loop control on public counts (a
 # block loop, x25519's ladder, poly1305's `n >= 16`, Keccak's round and
@@ -6906,11 +6917,19 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # poly1305_final's select as an if on the last word's sign, and the
 # count rises by one under every compiler in the table.
 # test/violations/inv16-widemul-s-sign-branch.violation writes
-# ct_widemul_s's two sign corrections as ifs: clang lowers both back to
-# the mask and its count does not move, and every gcc emits two branches
-# on the signs where x25519 inlines the routine, so only the gcc specs
-# see it -- the split the multiply count found first
-# (https://github.com/c4milo/chapulin/issues/106).
+# ct_widemul_s as the unsigned product and two corrections of its high
+# word, each an if on an operand's sign: clang for the three 32-bit
+# targets lowers both back to a mask and its count there does not move,
+# and every gcc emits two branches on the signs where x25519 inlines the
+# routine, so the gcc specs see it -- the split the multiply count found
+# first (https://github.com/c4milo/chapulin/issues/106).
+# test/violations/inv16-widemul-s-sign-mask.violation writes the two
+# corrections as masks of the sign bits, the form the routine had: x86-64's
+# x25519.c@host goes one over its ceiling, the jump clang writes for the
+# mask of a row's word, and m3's x25519.c one over its own, an IT block.
+# test/violations/inv16-mlkem-frommsg-bit-known.violation builds
+# mlk_poly_frommsg's mask from the bit without the volatile read, and
+# x86-64's mlkem_poly.c@host and mlkem_poly_native.c each go one over.
 #
 # arm counts every b<cond> -- both spellings of carry-set and carry-clear,
 # and the .w and .n widths through the prefix -- cbz and cbnz, the table
@@ -7132,7 +7151,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 WIDEMUL_NATIVE_BRANCH_CEILING := \
   arm64/poly1305_native.c:19 arm64/mlkem_poly_native.c:35 \
   x86-64/poly1305_native.c:21 \
-  x86-64/mlkem_poly_native.c:36 \
+  x86-64/mlkem_poly_native.c:35 \
   arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
   arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4 \
   arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
@@ -7306,7 +7325,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
-               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512
+               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 x25519.c@host mlkem_poly.c@host
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -7511,9 +7530,36 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
 # 27-bit digits, 9 and 18 more, and in rsa_avx2_public and
 # multiply_by_base the 3 tests of the digit width that pick a copy. No
 # branch tests a lane of a product.
+#
+# x25519.c@host and mlkem_poly.c@host were read the same way, under both
+# 64-bit specs (docs/decisions.md 125). Every branch of x25519.c@host, 28
+# on arm64 and 30 on x86-64, closes a loop over a public count or tests a
+# loop's counter. clamp_and_ladder holds the ladder, its steps, the inverse
+# and pack, and has 23 and 25: the loops over the 16 words, two words a
+# pass, 17 on arm64 and 19 on x86-64; the 255 ladder steps; the inverse's
+# 254 squarings and its two tests of a squaring's number against 2 and 4;
+# pack's loop over words 1 to 14; and pack's test of which of its two
+# passes ran. mul has four: its two loops over the products, the 15 words
+# it reduces and the 16 it copies. carry has its loop over the 16 words.
+# No branch reads a word of a field element or a bit of the scalar:
+# ct_widemul_s reads no sign bit by itself, and cswap's mask stays an
+# exclusive-or and an AND. Before ct_widemul_s took that form the x86-64
+# count was 31, with a jump on the sign of a word in mul's inner loop,
+# and m3/x25519.c's 34 held an IT block on the same sign in mul; it is 33
+# now.
+# mlkem_poly.c@host's 37 on both specs are the file's loops over its
+# constants -- the 256 coefficients, the 128 pairs, the 32 bytes and their
+# 8 bits, the three polynomials and the layers of each transform -- and
+# mlk_sample_ntt's seven, which test a candidate against q, the count of
+# coefficients written, the groups a squeeze holds and the squeezes. The
+# candidates come from the public matrix seed. mlk_poly_frommsg holds two,
+# its loops over the 32 bytes and the 8 bits. Before it read the bit back
+# from a volatile object, clang for x86-64 wrote the mask as a jump on the
+# message bit, a third branch there, and x86-64/mlkem_poly_native.c's
+# ceiling of 36 held that jump in the copy; it is 35 now.
 BRANCH_CEILING := \
   m3/ct.c:2 m3/ct_wipe.c:1 m3/sha256.c:17 m3/sha3.c:38 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
-  m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
+  m3/aead.c:4 m3/x25519.c:33 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:45 m3/drbg.c:9 \
   m3/softmul.c:0 m3/aes.c:3 m3/quic_aes_soft.c:12 m3/aes_extern.c:0 \
   m3/gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:2 mips32r2/ct_wipe.c:1 mips32r2/sha256.c:16 mips32r2/sha3.c:25 \
   mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
@@ -7576,6 +7622,8 @@ BRANCH_CEILING := \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
   arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:24 arm64/rsa_ifma_sign.c@512:0 \
   x86-64/rsa_ifma_sign.c@512:27 \
+  arm64/x25519.c@host:28 x86-64/x25519.c@host:30 \
+  arm64/mlkem_poly.c@host:37 x86-64/mlkem_poly.c@host:37 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang

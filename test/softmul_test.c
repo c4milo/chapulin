@@ -59,7 +59,28 @@ int main(void) {
     // ct_widemul, its opaque form (a second recombination, see ct.h) and its
     // signed and small-constant forms, decomposed here, against the host's
     // native product.
-    static const int32_t se[] = {0, 1, -1, 2, -2, INT32_MAX, INT32_MIN, 65535, -65535, 65536};
+    // The signed form splits an operand into a low half in [0, 2^16) and a
+    // sign-extended high half in [-2^15, 2^15), so the list holds the ends
+    // of each half's range beside the ends of the operand's: 0x8000FFFF and
+    // 0x7FFF0000 pair the least and the greatest high half with the
+    // greatest and the least low half.
+    static const int32_t se[] = {0,
+                                 1,
+                                 -1,
+                                 2,
+                                 -2,
+                                 INT32_MAX,
+                                 INT32_MIN,
+                                 65535,
+                                 -65535,
+                                 65536,
+                                 -65536,
+                                 32767,
+                                 32768,
+                                 -32768,
+                                 -32769,
+                                 INT32_MIN + 65535,
+                                 INT32_MAX - 65535};
     for (size_t i = 0; i < sizeof se / sizeof *se; i++) {
         for (size_t j = 0; j < sizeof se / sizeof *se; j++) {
             CHECK(ct_widemul((uint32_t)se[i], (uint32_t)se[j]) ==

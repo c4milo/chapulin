@@ -3423,9 +3423,9 @@ tls_write.c counts two there, one per path.
 
 It was not always so. gcc fused the decomposition's 64-bit
 cross-product sum back into `umlal`, and rewrote the sign mask
-`x & (0 - bit)` in `ct_widemul_s` and in x25519's `cswap` as a multiply
-by the secret bit: eight widening multiplies on the M3 and one on
-rv32imac, until the rework in `ct.h` and `x25519.c` removed both forms
+`x & (0 - bit)` that `ct_widemul_s` and x25519's `cswap` then held as a
+multiply by the secret bit: eight widening multiplies on the M3 and one
+on rv32imac, until the rework in `ct.h` and `x25519.c` removed both forms
 ([#106](https://github.com/c4milo/chapulin/issues/106)).
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum
 back and requires the gcc lint to object.
@@ -3462,20 +3462,42 @@ each compiler's choice, with no check on it until the count
 ([#141](https://github.com/c4milo/chapulin/issues/141)):
 
 - the compare-carries in `ct_widemul_opaque`;
-- the sign masks in `ct_widemul_s` and `poly1305_final`;
+- the sign masks in x25519's `cswap` and in `poly1305_final`;
 - the two select masks in `gcm.c`'s `multiply_by_subkey`.
 
-Three violations show the count sees a branch:
+Five violations show the count sees a branch:
 
 - `test/violations/inv16-poly1305-final-sign-branch.violation` writes
   the final select as an `if` on the last word's sign, and every spec's
   count rises by one;
-- `inv16-widemul-s-sign-branch` does the same to `ct_widemul_s`. clang
-  lowers it back to the mask while every gcc emits two branches in
-  x25519, so only the gcc lint objects;
+- `inv16-widemul-s-sign-branch` writes `ct_widemul_s` as the unsigned
+  product with two corrections, each an `if` on an operand's sign.
+  clang for the 32-bit targets lowers both to a mask while every gcc
+  emits two branches in x25519, so the gcc lint objects;
 - `inv16-ghash-subkey-select-branch` writes `multiply_by_subkey`'s first
   mask as an `if` on the accumulator bit, and every clang spec's count
-  for `gcm.c` rises.
+  for `gcm.c` rises;
+- `inv16-widemul-s-sign-mask` writes those two corrections as masks of
+  the sign bits, and the x86-64 spec's count for `x25519.c@host` and
+  the m3 spec's for `x25519.c` each rise by one;
+- `inv16-mlkem-frommsg-bit-known` builds `mlk_poly_frommsg`'s mask from
+  the bit without the volatile read, and the x86-64 spec's counts for
+  `mlkem_poly.c@host` and `mlkem_poly_native.c` each rise by one.
+
+The last two are compiler choices this count missed for a time.
+`ct_widemul_s` held two sign masks, and clang for x86-64 wrote one of
+them in x25519's `mul` as a jump on the sign of a word of a field
+element. `mlk_poly_frommsg` masked 1665 with a message bit, and the same
+compiler wrote a jump on the bit. A host object runs both functions, and
+the specs compiled `x25519.c` and `mlkem_poly.c` for 32-bit targets
+alone. The second jump was also in `mlkem_poly_native.c`, which the
+x86-64 spec did compile, inside that file's recorded ceiling of 36: a
+count cannot tell a jump on a bit from a loop's. `ct_widemul_s` now
+reads no sign bit by itself, `mlk_poly_frommsg` reads the bit back from
+a volatile object, and the two 64-bit specs compile both files as a host
+object does (`x25519.c@host`, `mlkem_poly.c@host`). What they still do
+not compile, and the flags they compile under, are in
+`docs/decisions.md` 125.
 
 #### The 32-to-32 multiply
 
@@ -3496,8 +3518,8 @@ nothing secret is at risk and solver time is, and filters it out of the
 packaged object.
 
 That cost is measured, not assumed:
-the pinned handshake's crypto costs 29% more on mips32r2, and the
-decomposition is 2.3 kB of flash, itemised in
+the pinned handshake's crypto costs 18% more on mips32r2, and the
+decomposition is 2.2 kB of flash, itemised in
 [`performance.md`](performance.md), "Speed and flash".
 
 #### What carries the proofs to the target

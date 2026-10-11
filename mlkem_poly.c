@@ -242,13 +242,24 @@ void mlk_poly_decompress(mlk_poly *p, const uint8_t in[MLK_POLY_COMP_BYTES]) {
     }
 }
 
+// Constant time: the message is secret, so each coefficient is a mask of
+// its bit and (q+1)/2, never a choice between two values. The bit is read
+// back from a volatile object before the mask is built. A compiler that
+// knows a value is 0 or 1 may write `(0 - bit) & 1665` as a choice between
+// 1665 and 0, and clang for x86-64 wrote that choice as a jump on the bit
+// (docs/decisions.md 125). What a volatile read returns the compiler cannot
+// know, so the mask stays arithmetic. The last store leaves no message bit
+// in the object.
 void mlk_poly_frommsg(mlk_poly *p, const uint8_t msg[32]) {
+    volatile uint32_t opaque = 0;
     for (size_t i = 0; i < 32; i++) {
         for (size_t j = 0; j < 8; j++) {
-            int16_t mask = (int16_t)(-(int16_t)((msg[i] >> j) & 1));
-            p->coeffs[8 * i + j] = (int16_t)(mask & 1665); // (q+1)/2
+            opaque = ((uint32_t)msg[i] >> j) & 1U;
+            uint32_t bit = opaque;
+            p->coeffs[8 * i + j] = (int16_t)((0U - bit) & 1665U); // (q+1)/2
         }
     }
+    opaque = 0;
 }
 
 // Constant time: the decrypted message is secret, so every coefficient

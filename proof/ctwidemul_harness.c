@@ -59,8 +59,9 @@ int main(void) {
     __CPROVER_assume(b <= CH_WIDEMUL_BOUND);
     __CPROVER_assert(ct_widemul(a, b) == (uint64_t)a * b, "ct_widemul matches the C product");
 
-    // The signed form over the same bound, both signs, since the sign
-    // corrections are the part that is masked rather than branched.
+    // The signed form over the same bound, both signs: its high halves are
+    // sign-extended and two of its shifts are arithmetic, which is where it
+    // differs from ct_widemul's ladder.
     int32_t sa = nondet_i32();
     int32_t sb = nondet_i32();
     __CPROVER_assume(sa >= -(int32_t)CH_WIDEMUL_BOUND && sa <= (int32_t)CH_WIDEMUL_BOUND);

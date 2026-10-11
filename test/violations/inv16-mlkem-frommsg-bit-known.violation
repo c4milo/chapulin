@@ -1,0 +1,17 @@
+invariant: INV-16
+file: mlkem_poly.c
+catches: test/lint-wide-multiply.sh
+reason: mlk_poly_frommsg builds each coefficient's mask from the message
+  bit without reading the bit back from a volatile object. The compiler
+  then knows the bit is 0 or 1, and clang for x86-64 writes the mask as a
+  choice between 1665 and 0 with a jump on the bit, which is a bit of the
+  message a shared secret is derived from. The coefficients are the same,
+  so the vectors and the proofs pass. On the x86-64 spec mlkem_poly.c@host
+  goes to 38 against its ceiling of 37 and mlkem_poly_native.c to 36
+  against 35 (docs/decisions.md 125).
+
+--- old
+            opaque = ((uint32_t)msg[i] >> j) & 1U;
+            uint32_t bit = opaque;
+--- new
+            uint32_t bit = ((uint32_t)msg[i] >> j) & 1U;

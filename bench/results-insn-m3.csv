@@ -3,10 +3,10 @@ op,insns,native_insns
 sha256_1kib,57086,57086
 hkdf_expand_label_32b,16316,16316
 aead_seal_1kib,67367,34672
-x25519_scalarmult,27402147,11978513
+x25519_scalarmult,24363395,11978513
 p256_ecdsa_verify,26660456,26660456
-rsa_pss_verify_3072,8400643,8400643
-mlkem_keygen,1004566,1004566
-mlkem_decaps,1323323,1284349
-handshake_crypto,63745404,32898140
-handshake_crypto_pq,67175270,36289028
+rsa_pss_verify_3072,8400632,8400632
+mlkem_keygen,1004737,1004737
+mlkem_decaps,1324269,1285294
+handshake_crypto,57667891,32898129
+handshake_crypto_pq,61099044,36290304

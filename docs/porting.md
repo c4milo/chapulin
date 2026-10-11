@@ -43,8 +43,8 @@ ship a compiler neither lint measures, run the lint with it, or read
 
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
-pieces. Measured, the pinned handshake's crypto costs 29% more on mips32r2, and
-the decomposition is 2.3 kB of flash; the Speed and flash section of
+pieces. Measured, the pinned handshake's crypto costs 18% more on mips32r2, and
+the decomposition is 2.2 kB of flash; the Speed and flash section of
 [`docs/performance.md`](performance.md) has every target's figures.
 
 **Your core's multiply is documented constant-time.** Pass
@@ -253,7 +253,8 @@ and two `umull` and two `umlal` in x25519 under the Arm gcc, one `mulhu` in
 x25519 under the riscv32 gcc. The lint recorded those counts as ceilings until
 `ct_widemul` moved to a recombination that never widens a product,
 `ct_widemul_s` and x25519's `cswap` moved their masks to an arithmetic shift of
-the sign bit, and every row went to zero
+the sign bit (`ct_widemul_s` has held no mask since decision 125), and every
+row went to zero
 ([#106](https://github.com/c4milo/chapulin/issues/106)). The violation
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
 and requires `lint-wide-multiply-gcc` to fail.
@@ -306,7 +307,7 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 
 | compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3 | 4 | 17 | 40 | 13 | 9 | 19 | 4 | 34 | 14 | 43 | 9 | 0 |
+| clang 23, Cortex-M3 | 4 | 17 | 40 | 13 | 9 | 19 | 4 | 33 | 14 | 43 | 9 | 0 |
 | clang 23, mips32r2 | 4 | 16 | 26 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
 | clang 23, rv32imac | 4 | 17 | 34 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
 | Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 21 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
@@ -329,8 +330,8 @@ because an IT block is the form clang gives an `if` on a word, and a count of
 
 What the lint holds is that no count grows. What the ceilings record is a
 choice each compiler made: the compare-carries `ct_widemul_opaque` takes,
-`mid < lh` and `lo < ll`, and the sign masks in `ct_widemul_s`, x25519's
-`cswap` and `poly1305_final` are branch-free in C, and every compiler in the
+`mid < lh` and `lo < ll`, and the sign masks in x25519's `cswap` and in
+`poly1305_final` are branch-free in C, and every compiler in the
 table lowers them to a predicated instruction (`it lo`, `movlo`), to `sltu`
 or to an arithmetic shift. Until this count that was the compiler's choice,
 with nothing holding it. Two violations show what an `if` on a word does to
@@ -338,13 +339,24 @@ the count. `test/violations/inv16-poly1305-final-sign-branch.violation`
 writes `poly1305_final`'s select of `h` or `h - p` as an `if` on the sign of
 the last word, and poly1305's count rises by one under all eight specs.
 `test/violations/inv16-widemul-s-sign-branch.violation` writes
-`ct_widemul_s`'s two sign corrections as `if`s: clang lowers both back to
-the mask and its count does not move, and every gcc emits two branches on
+`ct_widemul_s` as the unsigned product with two corrections of its high
+word, each an `if` on an operand's sign: clang lowers both to a mask and
+its count does not move, and every gcc emits two branches on
 the operands' signs where x25519 inlines the routine — two IT blocks on the
-Cortex-M3, two `bgez` on mips32r2, two `bge` on rv32 — so only the gcc lint
+Cortex-M3, two `bgez` on mips32r2, two `bge` on rv32 — so the gcc lint
 objects. That is the split the multiply count found first
 ([#106](https://github.com/c4milo/chapulin/issues/106)), and why both
 compiler families are measured.
+
+`ct_widemul_s` held those two corrections as masks of the sign bits until
+clang for x86-64 wrote one as a jump: in x25519's `mul` the mask of a row's
+word is the same for the whole row, and the compiler picked between a word
+of the other operand and zero with a jump on the sign. The routine is now
+the signed ladder, which reads no sign bit by itself. The Cortex-M3 clang
+count for x25519 fell from 34 to 33 with it, the IT block that mask had
+been. `test/violations/inv16-widemul-s-sign-mask.violation` puts the masks
+back, and the m3 spec and the x86-64 spec both object
+([decision 125](decisions.md#engineering)).
 
 The count does not see a jump through a register (`jr`, `jalr`, a load into
 `pc`), which is a return as often as a table jump; no file it covers has a
