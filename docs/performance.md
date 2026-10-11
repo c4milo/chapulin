@@ -604,9 +604,12 @@ The four x86-64 column groups are bench.yml's `record-x86_64` job, a matrix of t
 runs both scripts under gcc and under the pinned clang on its own GitHub runner: one on a CPU
 without AVX-512, and one, with `BENCH_MACHINE=avx512`, on a CPU with AVX-512 IFMA. A runner's CPU
 model is drawn, not chosen, so each job first reads `/proc/cpuinfo` and stops when it drew the wrong
-kind; `gh run rerun <run> --failed` draws again. `gh workflow run bench.yml --ref <branch>` starts
-both, and the CSVs they keep in their `results-linux-x86_64` and `results-linux-x86_64-avx512`
-artifacts, `results-primitives-linux-x86_64[-avx512]-<compiler>.csv` and
+kind; `gh run rerun <run> --failed` draws again. The runners with AVX-512 IFMA are several CPU
+models, and a record compares with the one before it only on the same model, so
+`-f avx512_model=8573C` makes the second job also stop unless its model name holds that text.
+`gh workflow run bench.yml --ref <branch>` starts both, and the CSVs they keep in their
+`results-linux-x86_64` and `results-linux-x86_64-avx512` artifacts,
+`results-primitives-linux-x86_64[-avx512]-<compiler>.csv` and
 `results-record-linux-x86_64[-avx512]-<compiler>.csv` for gcc and clang, go into `bench/`.
 
 ### Where a record's time goes

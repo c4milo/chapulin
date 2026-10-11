@@ -17,6 +17,13 @@ name: bench
 # runner's load average from its header.
 on:
   workflow_dispatch:
+    inputs:
+      avx512_model:
+        description: >-
+          Text the AVX-512 job's CPU model name must hold, such as 8573C;
+          empty takes any CPU with AVX-512 IFMA
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -59,8 +66,11 @@ jobs:
     # public operation on rsa_ifma.c (docs/decisions.md 119). A hosted
     # runner's CPU model is drawn, not chosen, so each job first checks the
     # CPU it drew and stops when it is the wrong kind; re-run that job until
-    # it draws the right one. BENCH_MACHINE puts the second machine's name in
-    # its CSVs' file names.
+    # it draws the right one. The runners with AVX-512 IFMA are several CPU
+    # models, Intel's and AMD's, and a record compares with the last one only
+    # on the same model, so the avx512_model input names text the second
+    # job's model name must hold. BENCH_MACHINE puts the second machine's
+    # name in its CSVs' file names.
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +87,7 @@ jobs:
       - name: Check the CPU this runner drew
         env:
           MACHINE: ${{ matrix.machine }}
+          AVX512_MODEL: ${{ inputs.avx512_model }}
         run: |
           grep -m1 '^model name' /proc/cpuinfo
           flags=$(grep -m1 '^flags' /proc/cpuinfo | tr -s '[:blank:]' '\n')
@@ -88,6 +99,11 @@ jobs:
           fi
           if [ "$MACHINE" = avx512 ] && ! has avx512ifma; then
             echo "this job times a CPU with AVX-512 IFMA, and this one lacks it; re-run the job"
+            exit 1
+          fi
+          if [ "$MACHINE" = avx512 ] && [ -n "$AVX512_MODEL" ] &&
+             ! grep -m1 '^model name' /proc/cpuinfo | grep -qF -- "$AVX512_MODEL"; then
+            echo "this job times a CPU whose model name holds $AVX512_MODEL; re-run the job"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
