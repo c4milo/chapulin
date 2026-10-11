@@ -9922,3 +9922,100 @@ does nothing more.
     - **memcpy for the loads on x86-64.** gcc 13 at -O3 left the key on
       the stack, above.
     - **The prototype's 512-bit AES-GCM**, by the ruling.
+
+124. **On x86-64, the two AVX2 kernels whose loops keep 256-bit values in
+    stack slots align their frames to 32 bytes.** `chacha20_avx2.c`'s
+    `pass` holds 16 state words and AVX2 has 16 registers, so its rounds
+    store and reload six words in 32-byte stack slots (entry 90).
+    `keccak_avx2.c`'s permutation holds 25 lanes and keeps lanes in such
+    slots too (entry 107). clang gives a slot it picks the alignment of
+    the frame, and aligns a frame to 32 bytes only for an object declared
+    with that alignment. So both frames sat wherever the caller's stack
+    pointer left them, in steps of 16 bytes. Linux places each process's
+    stack at a random address, and each caller calls at its own depth, so
+    one clang build ran each loop at several speeds:
+
+    - `pass`, the exclusive-or of 16 KiB on an EPYC 7763 under clang 23:
+      6,246 ns with the frame at a multiple of 32; 6,490 ns at 16 bytes
+      past one, where three of the six slots lie across a cache line; and
+      7,785 to 11,511 ns at the 6 of the 256 positions within a page that
+      put one of the six across the page boundary. Five runners agreed
+      within 1%. An EPYC 9V45 took up to 1.39 times its aligned figure at
+      those six positions and a Xeon 6973P-C up to 1.84 times.
+    - `keccak_avx2_permute`, one call on the EPYC 7763: 441 ns aligned,
+      675 ns at 16 bytes past a multiple of 32, and up to 1,228 ns.
+
+    bench/record.sh found it. One runner read `rec_seal` of a 16 KiB
+    ChaCha20-Poly1305 record as 14.42 µs where another of the same CPU
+    model read 9.36, with 0.1% between the five runs of each, because a
+    bench process has one stack address (docs/performance.md, the pitfalls
+    table). With address-space randomization off and the stack moved 16
+    bytes at a time by the size of the environment, the same binary read
+    14.42 µs at one size on two runners and 9.37 at most others, and each
+    of the six rows on the kernel read slow at the sizes its own stack
+    depth predicts. gcc 13 aligns both frames on its own. Camilo ruled on
+    2026-10-11 to align the frames with an attribute and to hold that with
+    a lint and its mutants. This entry amends entries 90 and 107 where
+    they say the compilers keep words and lanes on the stack.
+
+    - **What changes.** `pass` and `keccak_avx2_permute` carry
+      `__attribute__((force_align_arg_pointer))`. Under clang the
+      attribute marks the function for stack realignment, and clang then
+      gives each 256-bit slot its own alignment and aligns the stack
+      pointer to 32 bytes in the prologue. Under gcc 13.3 each function
+      compiles to the same instructions with the attribute and without.
+      bench/record_chacha_vector.c's copy of the passes, which the bench
+      times alone, carries it too.
+    - **What it buys.** One run built the probe with the attribute and
+      with its name defined to one that changes no code, and timed both
+      on two EPYC 7763 runners. With the attribute the exclusive-or of 16
+      KiB took 6,231 to 6,350 ns at every one of 273 stack positions,
+      where the other build took up to 11,528. The permutation took 440
+      to 442 ns at every position, where the other build took 669 ns at
+      the median and up to 1,219. Over 100 new processes of the bench's
+      binary on five runners, 30 had read at least one of its six rows on
+      the kernel more than 5% over its median. Over 80 processes of the
+      binary this entry's tree builds, on two runners, none read one more
+      than 3% over. One row of the probe read 1.16 times its fastest at
+      one position on one runner with the frame aligned, and a gcc build
+      read as much as 1.77 times over a run of positions in one process
+      of five, which this entry does not explain.
+    - **What holds it.** INV-49. `make lint-frame-align` compiles both
+      files for x86-64 with the pinned clang at `-O2` and requires the
+      aligned frame of every function whose loop uses a 256-bit stack
+      slot, and two mutants each remove one attribute. The lint compiles
+      hosted, as the object does: under `-ffreestanding`, which
+      `lint-wide-multiply` compiles with, clang keeps the permutation's 25
+      lanes in an array and aligns the frame for the array, and the lint
+      passed the mutant that way until it compiled hosted.
+    - **Cost.** Under clang 23.1.2 at `-O2`, four more instructions in
+      each function, 378 where `pass` held 374 and 351 where the
+      permutation held 347, and a frame pointer in both. `pass` takes 736
+      bytes of stack below its frame pointer where it took 584 and the
+      128 bytes below the stack pointer that x86-64 lets a function with
+      no call use. `tools/freestanding/` gains an empty `mm_malloc.h`,
+      which clang's `<immintrin.h>` includes in a hosted compile.
+
+    Not covered: in the packaged client and server objects under clang
+    23.1.2, `rsa_ifma.c`'s `almost_montgomery_product` and
+    `rsa_ifma_sign.c`'s `state_setup` use 512-bit stack slots in frames
+    clang does not align. The first loads from them inside a loop and
+    stores to none there, and the second runs twice a signature, once for
+    each prime. No run here timed either. Every other function of those
+    objects that uses a 256-bit or 512-bit stack slot inside a loop aligns
+    its frame: the kernels of `gcm_vaes.c`, `chacha20_avx512.c`,
+    `poly1305_avx2.c`, `poly1305_ifma.c` and `rsa_avx2.c`, and
+    `rsa_ifma.c`'s `rsa_ifma_public`.
+
+    Rejected:
+
+    - **`-mstackrealign` on the two files**, in the Makefile and in
+      build.zig. The code of the two loops is the same, and a firmware
+      tree or a Zig project that compiles the sources itself gets the
+      slow frames unless it copies the flag.
+    - **A local declared with `_Alignas(32)`.** A compiler removes an
+      object nothing reads, and one it keeps is a store on every call
+      whose only purpose is the alignment.
+    - **A lint over every kernel that holds a wide stack slot.** Camilo
+      ruled for the two files. A new AVX2 kernel is held by review and by
+      the rule in docs/performance.md's pitfalls table.

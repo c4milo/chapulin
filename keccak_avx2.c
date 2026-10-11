@@ -161,7 +161,15 @@ static inline void round_x4(lanes a[25], lanes round_constant) {
     a[0] = lanes_xor(a[0], round_constant);
 }
 
-void keccak_avx2_permute(keccak_x4 *s) {
+// The attribute makes the compiler align this function's frame to 32
+// bytes, for the reason chacha20_avx2.c's pass gives. The state is 25
+// vectors and AVX2 has 16 registers, so the rounds store and reload lanes
+// in 32-byte stack slots. Under clang 23 without the attribute, a call
+// took 441 ns on an EPYC 7763 with the frame at a multiple of 32, 675 ns
+// with it 16 bytes past one, and up to 1,228 ns with a slot across a page
+// boundary. gcc 13 aligns the frame without it (docs/decisions.md 124,
+// INV-49).
+__attribute__((force_align_arg_pointer)) void keccak_avx2_permute(keccak_x4 *s) {
     lanes a[25];
     for (size_t i = 0; i < 25; i++) {
         a[i] = _mm256_load_si256((const __m256i *)(const void *)s->lane[i]);

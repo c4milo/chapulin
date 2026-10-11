@@ -24,7 +24,10 @@
 // and stores each pass's keystream to out, so the time it takes is the
 // xor's less the loads, the exclusive-or and the stores of the data. On a
 // kernel it takes the kernel's target attribute, because it holds the
-// kernel's 256-bit or 512-bit values. On the AVX-512 kernel it runs every
+// kernel's 256-bit or 512-bit values. On the AVX2 kernel it also takes the
+// attribute that aligns the frame of the kernel's pass to 32 bytes, for
+// the reason chacha20_avx2.c gives there: this function holds the same
+// rounds and the same stack slots. On the AVX-512 kernel it runs every
 // pass on sixteen blocks: the kernel runs a last 1 to 256 bytes as a pass
 // of four, which no record this bench times ends on.
 #if defined(BENCH_ON_AVX512)
@@ -50,7 +53,7 @@ bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonc
     }
 }
 #elif defined(BENCH_ON_AVX2)
-__attribute__((target("avx2"))) void
+__attribute__((target("avx2"), force_align_arg_pointer)) void
 bench_chacha20_vector_blocks(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                              uint32_t counter, size_t n,
                              uint8_t out[BENCH_CHACHA20_VECTOR_PASS_MAX]) {

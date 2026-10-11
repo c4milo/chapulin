@@ -1,0 +1,17 @@
+invariant: INV-49
+file: chacha20_avx2.c
+catches: test/lint-frame-align.sh
+reason: pass loses the attribute that makes clang align its frame to 32
+  bytes. Its ten double rounds store and reload six state words in 32-byte
+  stack slots, and clang then places those slots wherever the caller's
+  stack pointer leaves them: at 6 of the 256 positions a stack takes within
+  a page one slot lies across a page boundary, and the exclusive-or of 16
+  KiB took up to 1.84 times as long on an EPYC 7763. Every test still
+  passes, on every CPU, because the bytes are the same. gcc aligns the
+  frame on its own and CI compiles with gcc, so no build of check runs the
+  slower code: the lint reads what the pinned clang compiles for x86-64.
+
+--- old
+__attribute__((force_align_arg_pointer)) static lanes
+--- new
+static lanes

@@ -276,6 +276,31 @@ if [ -n "$QUICK" ]; then
     exit 0
 fi
 
+# rec_seal and rec_open each run the AEAD that their check line's last part
+# times alone, on the same record, at another stack depth. So one that
+# differs from its parts by more than a tenth is a row one process read slow
+# or fast. Each binary above is one process, a process has one stack address
+# and one set of physical pages, and the spread between its runs sees
+# neither: under clang a ChaCha20 rec_seal once read 1.54 times its figure by
+# where the stack was (docs/performance.md, the pitfalls table). The other
+# check lines are left out: a 1 KiB AEAD's whole reads 12% to 19% over its
+# stages on every machine in every run. The CSV keeps the rows, and each
+# check line states its difference.
+MISSED=$(awk -F, '/^# check,/ {
+    difference = $NF
+    sub(/%$/, "", difference)
+    whole = $5
+    sub(/ =.*/, "", whole)
+    if (whole ~ /^rec_/ && (difference + 0 > 10 || difference + 0 < -10)) {
+        printf " %s %s %s %s (%s)", $2, $3, $4, whole, $NF
+    }
+}' "$W/rows")
+if [ -n "$MISSED" ]; then
+    echo "record bench: these record rows differ from the sum of their parts by more than a" \
+        "tenth, so this process read one of them slow or fast; run again before" \
+        "recording:$MISSED" >&2
+fi
+
 # The tree is named before the CSV is opened: the redirect below truncates
 # a tracked file, and a later describe would call every tree dirty. A copy
 # of the tree without git, such as a container's, names it in BENCH_TREE.

@@ -2359,6 +2359,47 @@ last `ROLE=server` stub, as the entry said it would.
   entry is checked for presence only, so review holds what it says: a
   file that changes shape owes a fresh reading.
 
+### INV-49 — an AVX2 kernel whose loop uses 256-bit stack slots aligns its frame
+
+- **Claim.** In `chacha20_avx2.c` and `keccak_avx2.c`, a function that
+  stores a 256-bit value to a stack slot, or loads one from it, inside a
+  loop aligns its frame to 32 bytes under clang as it does under gcc. So
+  no such slot lies across a cache line or a page boundary, and the loop
+  takes the same time wherever the caller's stack is. This entry is about
+  speed and no secret: the bytes a kernel writes are the same either way.
+- **Mechanism.** `chacha20_avx2.c`'s `pass` holds 16 state words and
+  `keccak_avx2.c`'s `keccak_avx2_permute` 25 lanes, and AVX2 has 16
+  registers, so each compiler keeps some of them in 32-byte stack slots
+  it picks. gcc aligns such a frame on its own. clang gives a slot it
+  picks the alignment of the frame, and aligns a frame to 32 bytes only
+  for an object declared with that alignment, so both functions carry
+  `__attribute__((force_align_arg_pointer))`, under which clang aligns
+  the frame and each slot. Without it the slots sit wherever the caller's
+  stack pointer leaves them, in steps of 16 bytes, and Linux places each
+  process's stack at a random address (decision 124).
+- **Check.** `make lint-frame-align` runs `tools/frame-align.py`, which
+  compiles both files for x86-64 with the pinned clang at `-O2`, hosted
+  as the object is, and requires `andq $-32, %rsp` of every function
+  that names a 256-bit register and a stack slot inside a loop. It also
+  requires `pass` and `keccak_avx2_permute` to be such functions, so a
+  compile that read nothing fails. The compile must be hosted:
+  `-ffreestanding` implies `-fno-builtin`, under which clang keeps the 25
+  lanes in an array and aligns the frame for it, attribute or none, and
+  the lint passed a mutant that way before it compiled hosted.
+  `inv49-chacha20-avx2-pass-frame-unaligned` and
+  `inv49-keccak-avx2-permute-frame-unaligned` each remove one attribute,
+  and `test/lint-frame-align.sh` catches both. No test times the loops:
+  CI compiles with gcc, whose frames are aligned with or without the
+  attribute, and a timing on a shared runner is a measurement to read
+  and no check.
+- **Violation.** A PR removes an attribute as redundant because gcc's
+  code does not change, or moves a loop that holds more than 16 vectors
+  into a new function without it. The lint reads the two files alone: a
+  new AVX2 kernel with such a loop is held by review, and by reading its
+  prologue under clang for `and rsp` (docs/performance.md, the pitfalls
+  table).
+- See [decisions: Engineering](decisions.md#engineering), entry 124.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

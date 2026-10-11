@@ -247,8 +247,17 @@ static inline lanes xor_rows(const uint8_t *in, uint8_t *out, const lanes x[16],
 // whose first limit % 32 bytes the caller XORs when limit % 32 is not 0.
 // A pass with a limit below PASS_BYTES is the message's last, and it
 // computes all eight blocks, since the lanes run side by side.
-static lanes pass(const uint32_t words[16], uint32_t counter, const uint8_t *in, uint8_t *out,
-                  size_t limit) {
+//
+// The attribute makes the compiler align this function's frame to 32
+// bytes. The rounds store and reload six of the words in 32-byte stack
+// slots. clang 23 without the attribute puts those slots wherever the
+// caller's stack pointer leaves them, in steps of 16 bytes: in half of
+// those places three of the six lie across a cache line, and in 6 of the
+// 256 a page holds one lies across a page boundary, where 16 KiB took up
+// to 1.84 times as long on an EPYC 7763. gcc 13 aligns the frame without
+// it (docs/decisions.md 124, INV-49).
+__attribute__((force_align_arg_pointer)) static lanes
+pass(const uint32_t words[16], uint32_t counter, const uint8_t *in, uint8_t *out, size_t limit) {
     lanes x[16];
     pass_input(x, words, counter);
     for (int i = 0; i < 10; i++) {

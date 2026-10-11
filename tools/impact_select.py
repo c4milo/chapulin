@@ -67,6 +67,7 @@ WRAPPER_GATES = {
     "make handshake-sequence-pq": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq"],
     "make lint-stack-walk": ["test/lint-stack-walk.sh"],
     "make lint-p256-wide": ["test/lint-p256-wide.sh"],
+    "make lint-frame-align": ["test/lint-frame-align.sh"],
     "make lint-proof-cover": ["test/lint-proof-cover.sh"],
 }
 

@@ -24,6 +24,12 @@ extern const size_t bench_record_sizes[BENCH_SIZE_COUNT];
 // and the tag.
 #define BENCH_RECORD_CAP (REC_HDR + BENCH_MAX_PLAINTEXT + 1 + AEAD_TAG)
 
+// The page size bench_state places its plaintext by: 4 KiB, x86-64's, which
+// the copy's time on that machine follows. BENCH_MAX_PLAINTEXT is whole
+// pages, so the bytes after the plaintext start on a page boundary too.
+#define BENCH_PAGE 4096
+_Static_assert(BENCH_MAX_PLAINTEXT % BENCH_PAGE == 0, "the plaintext buffer is whole pages");
+
 typedef enum {
     BENCH_AES_128_GCM,
     BENCH_AES_256_GCM,
@@ -50,7 +56,17 @@ typedef struct {
     uint8_t tag[AEAD_TAG];
     uint8_t poly_key[POLY1305_KEY];
     poly1305 poly;
-    uint8_t app[BENCH_MAX_PLAINTEXT]; // the caller's plaintext
+    // The caller's plaintext, on a page boundary, and half a page that no
+    // row reads or writes, so the record buffer starts 2,048 bytes into a
+    // page and rec_seal's copy writes 2,053 bytes past its source's offset
+    // within a page. glibc 2.39 copies 16 KiB with `rep movsb` on an EPYC
+    // 7763, and that copy takes 22 times as long with its destination 1 to
+    // 31 bytes past its source's offset, and up to 5 times as long 61
+    // bytes past it, where these buffers were, in the processes whose
+    // pages' physical frames agree modulo 16 (docs/performance.md, the
+    // pitfalls table).
+    _Alignas(4096) uint8_t app[BENCH_MAX_PLAINTEXT];
+    uint8_t apart[BENCH_PAGE / 2];
     // The record buffer every row seals and opens in. It starts on a
     // 64-byte boundary, so the ciphertext starts REC_HDR bytes past one.
     _Alignas(64) uint8_t rec[BENCH_RECORD_CAP];

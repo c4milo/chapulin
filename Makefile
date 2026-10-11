@@ -3854,7 +3854,7 @@ bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide lint-frame-align prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, the
@@ -5243,7 +5243,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-frame-align
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -7824,6 +7824,23 @@ ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	@python3 tools/p256-wide-carry.py "$(CLANG_RV)" p256_wide_word.h
+endif
+
+# chacha20_avx2.c's pass and keccak_avx2.c's permutation hold more 256-bit
+# values than AVX2 has registers, so their loops store values to 32-byte
+# stack slots and load them back, and each carries the attribute that makes
+# clang align its frame to 32 bytes (docs/decisions.md 124, INV-49). gcc
+# aligns such a frame on its own, CI compiles with gcc and this machine is
+# arm64, so no build check runs executes clang's code for these files.
+# tools/frame-align.py compiles them for x86-64 with the pinned clang at
+# -O2 and requires, of every function whose loop uses a 256-bit stack slot,
+# the instruction that aligns its frame. The recipe names the files the
+# script reads, which is how make impact selects it for them.
+lint-frame-align:
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
+else
+	@python3 tools/frame-align.py "$(CLANG_RV)" chacha20_avx2.c keccak_avx2.c
 endif
 
 # bench/stack.py, which computes the peaks docs/performance.md states,

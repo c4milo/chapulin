@@ -1,0 +1,16 @@
+invariant: INV-49
+file: keccak_avx2.c
+catches: test/lint-frame-align.sh
+reason: keccak_avx2_permute loses the attribute that makes clang align its
+  frame to 32 bytes. The state is 25 vectors and AVX2 has 16 registers, so
+  the rounds store and reload lanes in 32-byte stack slots, and clang then
+  places those slots 16 bytes past a multiple of 32 for half of all
+  callers' stacks: a call took 675 ns there on an EPYC 7763 where an
+  aligned frame took 441, and up to 1,228 ns with a slot across a page
+  boundary. The streams are the same bytes, so bin/mlkem_avx2_equiv_test
+  passes, and CI compiles with gcc, which aligns the frame on its own.
+
+--- old
+__attribute__((force_align_arg_pointer)) void keccak_avx2_permute(keccak_x4 *s) {
+--- new
+void keccak_avx2_permute(keccak_x4 *s) {
