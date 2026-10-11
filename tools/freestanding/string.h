@@ -2,8 +2,10 @@
 //
 // lint-wide-multiply and lint-runtime-symbols compile every secret-touching
 // source with clang for a bare target (thumbv7m-none-eabi, mips-linux-musl,
-// riscv32-unknown-elf), and a bare clang has its own <stdint.h> and
-// <stddef.h> but no libc headers. The handshake sources reach for
+// riscv32-unknown-elf), and lint-wide-multiply compiles a host object's
+// for aarch64-none-elf and x86_64-unknown-linux-gnu. A clang on a
+// development machine has its own <stdint.h> and <stddef.h> but no libc
+// headers for any of them. The handshake sources include
 // <string.h>, so without this file the checks could not build them, and a
 // module a check does not build is a module it does not measure.
 // These are the five prototypes the library uses, with their C11 types, so

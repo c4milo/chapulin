@@ -7,8 +7,11 @@ reason: mlk_poly_frommsg builds each coefficient's mask from the message
   choice between 1665 and 0 with a jump on the bit, which is a bit of the
   message a shared secret is derived from. The coefficients are the same,
   so the vectors and the proofs pass. On the x86-64 spec mlkem_poly.c@host
-  goes to 38 against its ceiling of 37 and mlkem_poly_native.c to 36
-  against 35 (docs/decisions.md 125).
+  goes to 69 against its ceiling of 59 and mlkem_poly_native.c to 71
+  against 61: eight jumps on the bits of a byte, in the loop clang keeps
+  for overlapping arguments, and two branches of the vector loop beside
+  it. The arm64 spec's three copies each go two over, for the vector loop
+  alone (docs/decisions.md 125 and 126).
 
 --- old
             opaque = ((uint32_t)msg[i] >> j) & 1U;

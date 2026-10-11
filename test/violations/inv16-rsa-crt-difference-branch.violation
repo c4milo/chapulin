@@ -7,7 +7,8 @@ reason: rsa_mont64_sub adds the modulus back with an if where it added it
   private key and the message. The values stay right, so the vectors and
   the equivalence tests pass; the count of what the compiler emits sees
   it. The pinned clang emits more conditional branches for rsa_mont64.c
-  than the 32 its ceiling records on both 64-bit specs.
+  than its ceilings record on both 64-bit specs: 72 against 71 on arm64
+  and 111 against 109 on x86-64.
 
 --- old
     uint64_t mask = mask_of_bit(carry ^ 1);

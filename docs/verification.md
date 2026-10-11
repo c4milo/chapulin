@@ -3430,8 +3430,8 @@ on rv32imac, until the rework in `ct.h` and `x25519.c` removed both forms
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum
 back and requires the gcc lint to object.
 
-The lint compiles at `-Os`, and the mips gcc spec runs once more at
-`-O2`. There that gcc inlines `ct_widemul` into poly1305's block and
+The 32-bit specs compile at `-Os`, and the mips gcc spec runs once more
+at `-O2`. There that gcc inlines `ct_widemul` into poly1305's block and
 puts two of its 75 `product + x` sums through `madd`, a
 multiply-accumulate through the 64-bit HI/LO pair, on the same 16-bit
 operands. The lint holds that count at two as a record, not an
@@ -3482,7 +3482,7 @@ Five violations show the count sees a branch:
   the m3 spec's for `x25519.c` each rise by one;
 - `inv16-mlkem-frommsg-bit-known` builds `mlk_poly_frommsg`'s mask from
   the bit without the volatile read, and the x86-64 spec's counts for
-  `mlkem_poly.c@host` and `mlkem_poly_native.c` each rise by one.
+  `mlkem_poly.c@host` and `mlkem_poly_native.c` each rise by ten.
 
 The last two are compiler choices this count missed for a time.
 `ct_widemul_s` held two sign masks, and clang for x86-64 wrote one of
@@ -3495,9 +3495,23 @@ x86-64 spec did compile, inside that file's recorded ceiling of 36: a
 count cannot tell a jump on a bit from a loop's. `ct_widemul_s` now
 reads no sign bit by itself, `mlk_poly_frommsg` reads the bit back from
 a volatile object, and the two 64-bit specs compile both files as a host
-object does (`x25519.c@host`, `mlkem_poly.c@host`). What they still do
-not compile, and the flags they compile under, are in
-`docs/decisions.md` 125.
+object does (`x25519.c@host`, `mlkem_poly.c@host`).
+
+Those two specs now read what a host object ships
+(`docs/decisions.md` 126). They compile hosted and at `-O2`, as `make
+lib` and `build.zig` compile a host object, where every other spec
+compiles freestanding at `-Os`, as a firmware tree compiles a device
+object. And they compile a host object's copies of the files the 32-bit
+specs compile, `WIDE64_HOST_COPIES` in the Makefile, each as
+`<file>@host`. At `-O2` most of a file's branches are tests clang adds:
+a test of a count before a loop's first pass, tests of the count's low
+bits for the items a pass of two or four leaves over, and a test of
+whether two arguments overlap before a loop runs in vector registers.
+Each branch was read by the instruction that sets its flags and by where
+the values that instruction reads come from, and the Makefile's comment
+above `WIDE64_SPECS` records what each entry's branches read. What the
+specs do not read is in decision 126: a 64-bit gcc, and the four files
+of the AES instructions.
 
 #### The 32-to-32 multiply
 
@@ -3601,7 +3615,7 @@ target:
   under every `ch_cfg.cpu` value that binary takes, with messages up to
   513 bytes.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 40 and 23,
+  the pinned clang and holds its conditional branches at 40 and 26,
   every one loop control over a public count or a test of the byte
   count: most of them test whether the last pass's limit covers a row of
   16 bytes. It multiplies nothing.
@@ -3765,9 +3779,10 @@ file. The kernel rests on these:
   x86-64 alone, and no AVX2 entry in `poly1305.c` under its own names or
   in the native copy under `CH_CT_WIDEMUL`.
 - `make lint-wide-multiply` holds the kernel's conditional branches at 4
-  on x86-64, all on the byte count, and `poly1305_native.c`'s at 20 there,
-  one more than on arm64: the AVX2 update's test of n against 512. `make
-  lint-trust-separation` holds the copy to the host object.
+  on x86-64, all on the byte count, and `poly1305_native.c`'s at 22 there,
+  which hold the update's test of n against 512 beside the kernel an
+  update names. `make lint-trust-separation` holds the copy to the host
+  object.
 
 CI's `x86-64-kernels` job runs `bin/poly1305_equiv_test` with
 `CH_REQUIRE_X86_KERNELS=1`, so a runner without AVX2 fails it rather than
@@ -3872,7 +3887,7 @@ Tests hold the rest:
   `poly1305.c` under its own names or in the native copy under
   `CH_CT_WIDEMUL`.
 - `make lint-wide-multiply` holds the kernel's conditional branches at 4
-  on x86-64, and `poly1305_native.c`'s at 21 there.
+  on x86-64, and `poly1305_native.c`'s at 22 there.
   `test/widemul-builds.sh` refuses a library build that names
   `CH_POLY1305_IFMA_MODEL`.
 
@@ -4044,7 +4059,7 @@ intrinsic, so no harness compiles the file, and these hold it (INV-46):
   decapsulation anchors on the path, and the host Wycheproof test runs
   Wycheproof's ML-KEM-768 suites on it.
 - `make lint-wide-multiply` compiles the file for arm64 and x86-64 under
-  the pinned clang and holds its conditional branches at 9 on each:
+  the pinned clang and holds its conditional branches at 7 on each:
   every one closes a loop whose count is a constant.
 - `test/mlkem-builds.sh` compiles `mlkem.c` both ways. A host object's
   `mlkem.c`, and its copy over the SHA-3 instructions on arm64, must call
@@ -4091,8 +4106,9 @@ proof covers inside `mlk_sample_ntt`. These hold the rest (INV-48):
   Keccak and not `mlk_sample_ntt`, both files to hold nothing on arm64,
   and no other source at the root to include `keccak_avx2.h` or call its
   entries.
-- `make lint-wide-multiply` holds `keccak_avx2.c` at 7 conditional
-  branches and `mlkem_avx2.c` at 28 on x86-64, and `make
+- `make lint-wide-multiply` holds `keccak_avx2.c` at 1 conditional
+  branch, the loop over its rounds, and `mlkem_avx2.c` at 28 on x86-64,
+  and `make
   lint-trust-separation` holds both to the host object.
 
 What none of this shows: the copy at the cap, where an entry's stream
@@ -4291,8 +4307,8 @@ skips a kernel's cases on a CPU without its instructions:
   and `gcm_hw.c` no kernel. A predicate that answers one value for every
   session leaves a call out.
 - `make lint-wide-multiply` holds `chacha20_avx2.c`'s conditional
-  branches at 23 on x86-64 and 0 on arm64, and `chacha20_avx512.c`'s at
-  35 and 0, each a loop over a public count or a test of the byte count. `gcm_vaes.c` sits in
+  branches at 31 on x86-64 and 0 on arm64, and `chacha20_avx512.c`'s at
+  77 and 0, each a loop over a public count or a test of the byte count. `gcm_vaes.c` sits in
   `WIDEMUL_PUBLIC` beside `gcm_hw.c`.
 
 CI's `x86-64-kernels` job runs the binaries above and the Wycheproof host
@@ -5060,9 +5076,9 @@ The build rests on these:
   `rsa_vp1_cpu` alone.
   It refuses a root source that defines `CH_RSA_IFMA_MODEL`, and a host
   object's defines from make or `build.zig` that name it.
-- `make lint-wide-multiply` holds `rsa_ifma.c` at 19 conditional
+- `make lint-wide-multiply` holds `rsa_ifma.c` at 41 conditional
   branches under clang for x86-64 at the 384-byte bound, and, as
-  `rsa_ifma.c@512`, at 23 at the 512-byte bound, whose copies for nine
+  `rsa_ifma.c@512`, at 45 at the 512-byte bound, whose copies for nine
   and ten registers the first build does not compile. Each branch tests
   a count or an index. It holds both at 0 for arm64, where the file
   compiles to nothing, and at no division and no 128-bit runtime call.
@@ -5251,10 +5267,11 @@ The build rests on these:
   pair, the wipe below, `avx512_wipe_registers` and `rsa_vp1_cpu`, and
   for arm64 none of them, and no root source but `rsa_sign64.c` that
   includes `rsa_ifma_sign.h` or calls into the file.
-- `make lint-wide-multiply` holds `rsa_ifma_sign.c` at 24 conditional
-  branches under clang for x86-64 at the 384-byte bound and 27 at the
-  512-byte bound, and `rsa_sign64.c` at 29, each a test of a count, an
-  index or a `CH_ASSERT`, and both files at 0 for arm64.
+- `make lint-wide-multiply` holds `rsa_ifma_sign.c` at 62 conditional
+  branches under clang for x86-64 at the 384-byte bound and 65 at the
+  512-byte bound, and `rsa_sign64.c` at 39 and 41, each a test of a
+  count, an index, a `CH_ASSERT` or a verdict the caller sees. It holds
+  `rsa_ifma_sign.c` at 0 for arm64, where the file compiles to nothing.
   `inv-16-rsa-ifma-table-read` refuses a `table_select` that keeps an
   entry by any means but the mask it reads back through its volatile
   word.
@@ -5416,9 +5433,9 @@ The build rests on these:
   root source that defines `CH_RSA_AVX2_MODEL`, a host object's defines
   from make or `build.zig` that name it, and a device object that lists
   the file.
-- `make lint-wide-multiply` holds `rsa_avx2.c` at 38 conditional
+- `make lint-wide-multiply` holds `rsa_avx2.c` at 49 conditional
   branches under clang for x86-64 at the 384-byte bound, and, as
-  `rsa_avx2.c@512`, at 68 at the 512-byte bound, whose copies for 27-bit
+  `rsa_avx2.c@512`, at 86 at the 512-byte bound, whose copies for 27-bit
   digits the first build does not compile. Each branch tests a count or
   an index. It holds both at 0 for arm64, where the file compiles to
   nothing, and at no division and no 128-bit runtime call.

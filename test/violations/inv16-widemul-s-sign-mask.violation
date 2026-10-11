@@ -8,7 +8,7 @@ reason: ct_widemul_s goes back to the unsigned product of the bit
   proofs all pass. In x25519's mul the first mask is the same for a whole
   row, and clang for x86-64 keeps the row's products in vector registers
   and picks between a word of b and zero with a jump on the sign of a
-  word of a: x25519.c@host goes to 31 against its ceiling of 30 on the
+  word of a: x25519.c@host goes to 13 against its ceiling of 12 on the
   x86-64 spec. On the m3 spec the same mask is an IT block, and x25519.c
   goes to 34 against 33 (docs/decisions.md 125).
 

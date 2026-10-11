@@ -3539,29 +3539,40 @@ last `ROLE=server` stub, as the entry said it would.
   high half sign-extended. `mlk_poly_frommsg` reads the bit back from a
   volatile object before it builds the mask. The two 64-bit specs below
   compile `x25519.c` and `mlkem_poly.c` as a host object does
-  (`x25519.c@host`, `mlkem_poly.c@host`), and hold their branches at 28
-  and 37 on arm64 and 30 and 37 on x86-64, every one loop control over
-  a public count. `inv16-widemul-s-sign-mask` puts the two masks back
-  and `inv16-mlkem-frommsg-bit-known` drops the volatile read, and the
-  x86-64 spec's count rises by one for each.
+  (`x25519.c@host`, `mlkem_poly.c@host`), and hold their branches at 8
+  and 56 on arm64 and 12 and 59 on x86-64, each a loop over a public
+  count or a test of two addresses. `inv16-widemul-s-sign-mask` puts the
+  two masks back and `inv16-mlkem-frommsg-bit-known` drops the volatile
+  read, and the x86-64 spec's count rises by one for the first and by
+  ten for the second.
   No spec above can compile `x25519_wide.c`, because none of their
   targets has `unsigned __int128`, so two 64-bit specs compile it and
-  nothing else (`WIDE64_CEILING`): arm64 and x86-64 under the pinned
-  clang, with the host object's define. They hold its
+  the rest of `WIDE64_CEILING` and `WIDE64_REBUILT`: arm64 and x86-64
+  under the pinned clang, with the host object's define. They compile
+  as a host object is compiled, hosted and at `-O2`, where every other
+  spec compiles freestanding at `-Os` as a firmware tree does: until
+  decision 126 these two did too, and their counts were of code no host
+  object held. The same decision gave them a host object's copies of
+  the files the 32-bit specs compile (`WIDE64_HOST_COPIES`), from `ct.c`
+  to `sha512_compress.c`, which no spec had compiled for a 64-bit
+  target. The Makefile's comment above `WIDE64_SPECS` says how each
+  branch was read, by the instruction that sets its flags and where the
+  values that instruction reads come from, and what each entry's
+  branches read. They hold `x25519_wide.c`'s
   divisions and 128-bit runtime calls at zero and its conditional
-  branches at 16 and 20, every one loop control over a public count.
+  branches at 2 on each, the ladder's steps and a count of squarings.
   `inv16-x25519-wide-cswap-branch` writes that field's `cswap` as an
   `if` on the scalar bit and both counts rise by two. No gcc spec
   measures the file: no CI lane runs a 64-bit gcc through
   `lint-wide-multiply-gcc`. The same two specs compile
   `chacha20_vector.c`, whose intrinsics no 32-bit spec targets, and hold
-  its conditional branches at 40 on arm64 and 23 on x86-64, all loop
+  its conditional branches at 40 on arm64 and 26 on x86-64, all loop
   control over public counts or tests of the byte count. CBMC cannot
   read an intrinsic, so `bin/chacha20_equiv_test` holds that path's
   output to `chacha20.c`'s; four `chacha-vector-*` violations break its
   last partial row, its counter, one lane's XOR and its order of writes,
   and the test catches each. They compile `chacha20_avx2.c` as well,
-  and hold it at 23 on x86-64 and at 0 on arm64, where it has no body.
+  and hold it at 31 on x86-64 and at 0 on arm64, where it has no body.
   They compile `poly1305_vector.c`'s native copy too, and hold its
   conditional branches at 4 on each, the contract check at its entry and
   its group loop, all on the byte count; its multiplies are the ones the
@@ -3573,9 +3584,9 @@ last `ROLE=server` stub, as the entry said it would.
   bounds, and the test catches each.
   The same two specs compile the wide P-256 files, and hold their
   divisions and 128-bit runtime calls at zero and their conditional
-  branches at 6 in `p256_wide_field.c`, 0 in `p256_wide_scalar.c`, 14 on
-  arm64 and 17 on x86-64 in `p256_wide_inverse.c`, 3 in
-  `p256_wide_point.c`, 13 in `p256_wide_mul.c` and 0 in
+  branches at 0 in `p256_wide_field.c` and `p256_wide_scalar.c`, 3 in
+  `p256_wide_inverse.c`, 3 in `p256_wide_point.c`, 14 in
+  `p256_wide_mul.c` and 0 in
   `p256_wide_table.c` and `p256_wide_wipe.c`: loop control over a public
   count, the two public tests of a peer's point, whether a caller asked
   for Y, the test for a scalar's top window, which reads the window's
@@ -3585,8 +3596,12 @@ last `ROLE=server` stub, as the entry said it would.
   a verifier's s (decision 116).
   `inv16-p256-wide-table-scan-skips-unselected` and
   `inv16-p256-wide-multiple-scan-skips-unselected` each make one of the
-  two scans pass over the entries a digit does not name, and the count
-  of `p256_wide_mul.c` rises past its 13.
+  two scans pass over the entries a digit does not name, and the
+  x86-64 spec's count of `p256_wide_mul.c` rises past its 14 for each.
+  The arm64 spec's rises for the second and falls to 12 for the first,
+  where clang writes the skip as a comparison of the scan's index with
+  the digit and drops a vector loop's branches: a count that falls is
+  no sign that a file got safer.
   `inv16-p256-wide-double-branches-on-infinity` writes the doubling's
   masked move for the point at infinity as an `if` on Z1's zero mask,
   and the count of `p256_wide_point.c` rises past its 3. CBMC reads these files, so they have
@@ -3594,22 +3609,22 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/verification.md, "p256_wide"), and `bin/p256_equiv_test` holds
   every routine to the 32-bit files on the same inputs.
   They compile `rsa_mont64.c` as well, RSA's Montgomery arithmetic on
-  64-bit words, and hold its conditional branches at 32 on each: loop
-  control over word counts, byte counts, the doublings
-  `rsa_mont64_modulus_init` counts from its bits argument and the
-  squarings, and the two `CH_ASSERT`s on public lengths.
+  64-bit words, and hold its conditional branches at 71 on arm64 and
+  109 on x86-64: loop control over word counts, byte counts, the
+  doublings `rsa_mont64_modulus_init` counts from its bits argument and
+  the squarings, the tests of a count's low bits that clang adds to a
+  loop it runs two words a pass, and the `CH_ASSERT`s on public lengths.
   `inv16-rsa-mont64-subtract-branch` writes the subtraction that ends a
   multiplication as an `if`, and `inv16-rsa-crt-difference-branch` the
-  step that adds the modulus back to a difference; both counts rise by
-  one under each.
+  step that adds the modulus back to a difference; both counts rise
+  under each.
   They compile `rsa_sign64.c` too, the signer on those words, and hold
-  its conditional branches at 26 on arm64 and 27 on x86-64: loop control
+  its conditional branches at 41 on arm64 and 39 on x86-64: loop control
   over the table's entries, the exponents' digits, the four squarings
-  and the words, the `CH_ASSERT`s on public lengths, one of which is two
-  tests on x86-64, the key test's three on the modulus's length and two
-  of its bits, the seven of `rsa_sign.c`'s encoder, which it compiles,
-  and one on whether the signature passed its check, which the caller
-  sees as the return value.
+  and the words, the `CH_ASSERT`s on public lengths, the key test's on
+  the modulus's length and two of its bits, those of `rsa_sign.c`'s
+  encoder, which it compiles, and one on whether the signature passed
+  its check, which the caller sees as the return value.
   The count does not hold the read of the table by itself. A read that
   stops at the entry it wants compiles to the same counts. And the
   first form of `table_select`, which used each mask as it computed it,
@@ -3734,9 +3749,10 @@ last `ROLE=server` stub, as the entry said it would.
   every object, so a caller with no session's value runs no hash
   instruction. Neither file reads a table with a secret index, and both
   branch on lengths alone: the two 64-bit specs hold `sha256_hw.c`'s
-  conditional branches at 8 on each, `sha512_hw.c`'s at 12 on arm64 and
-  0 on x86-64, where it has no body, the HKDF copy's at 16 and the key
-  schedule copy's at 0, and each branch was read against its source.
+  conditional branches at 6 on arm64 and 10 on x86-64, `sha512_hw.c`'s
+  at 17 on arm64 and 0 on x86-64, where it has no body, the HKDF copy's
+  at 19 and the key schedule copy's at 0, and each branch was read by
+  the instruction that sets its flags.
   `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test` count the
   calls into each path of each hash under 257 `ch_cfg.cpu` values, and
   `test/hash-builds.sh` holds each hash's instructions to its file and
@@ -3789,8 +3805,8 @@ last `ROLE=server` stub, as the entry said it would.
   session's `ch_cfg.cpu` first and branch once on it. `sha3_hw.c` reads
   no table with a secret index and branches on lengths, positions in a
   block and the rate alone: the arm64 spec holds its conditional branches
-  at 31, and the two copies' at 15 and 35, the counts of the files they
-  copy, and each branch was read against its source. For x86-64, and in
+  at 72, and the two copies' at 5 and 56, the counts of the files they
+  copy, and each branch was read by the instruction that sets its flags. For x86-64, and in
   an arm64 object another compiler built, the three files define nothing
   and the bit picks nothing. `test/hash-builds.sh` holds FEAT_SHA3's
   instructions to `sha3_hw.c` and each copy's calls to the `_hw` names,

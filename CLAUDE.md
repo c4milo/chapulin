@@ -315,7 +315,12 @@ Home: github.com/c4milo.
   file and compiler, and a native copy's count at that copy's own
   ceiling, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
-  shows as a count that grows. The statement covers every widening
+  shows as a count that grows. The device specs compile freestanding at
+  `-Os`, as a firmware tree does, and the two 64-bit specs compile a
+  host object's files hosted at `-O2`, as `make lib` and `build.zig` do
+  (docs/decisions.md 126). A count cannot tell a jump on a secret from
+  a loop's, so a count that rises is read by instruction before it is
+  recorded. The statement covers every widening
   multiply the object runs.
   A host object is what the Makefile and `build.zig` build where the
   compiler targets arm64 or x86-64, little-endian with NEON or SSE2 and

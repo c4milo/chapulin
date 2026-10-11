@@ -10138,3 +10138,84 @@ does nothing more.
     - **An out-of-line select in another file**, the Kyber reference
       code's remedy for `poly_frommsg`. It holds only while no build
       inlines across files.
+
+126. **The two 64-bit specs of `lint-wide-multiply` compile what a host
+    object ships: hosted, at `-O2`, and with a host object's copies of
+    the portable files.** Entry 125 left both uncovered, and this entry
+    amends its list of what is not covered. The two specs compiled at
+    `-Os -ffreestanding`, the flags of the device specs, where `make lib`
+    and build.zig compile a host object hosted at `-O2`. Under the pinned
+    clang 23.1.3 the two flag sets gave different branch counts for 24 of
+    the x86-64 spec's 42 entries then and 18 of the arm64 spec's:
+    `-ffreestanding` implies `-fno-builtin`, and at `-O2` clang unrolls
+    loops and runs them in vector registers. And the specs compiled the
+    files of `WIDE64_CEILING` alone, where a host object also runs
+    nineteen files of `BRANCH_SRCS` that only the 32-bit specs compiled.
+    Camilo ruled on 2026-10-11 to move the specs and add the files.
+
+    - **What changes.** The recipe gives a spec a default level and
+      compile mode: `-Os` and `-ffreestanding` for a device spec, `-O2`
+      and hosted for the two 64-bit specs. `WIDE64_HOST_COPIES` lists the
+      nineteen files, from `x25519.c` to `sha512_compress.c`, and each has
+      an entry `<file>@host`, compiled under `-DCH_CPU_RUNTIME` and the
+      defines its own entry takes. `aes.c@host` and `gcm.c@host` take the
+      QUIC and the `SUITE=aesgcm` defines together. `rsa_sign64.c@512` is
+      the signer at the 512-byte bound, which moves its count only at
+      `-O2`. Each spec now holds 62 entries: 924 branches on arm64 and
+      1,297 on x86-64, and no division and no 128-bit runtime call.
+    - **How the branches were read.** By instruction. For each branch the
+      instruction that sets its flags was found, and each value it reads
+      was traced back through the function. A count holds only branches
+      whose values are constants, loop counters, lengths and counts,
+      positions, addresses, a session's CPU bits, a verdict the caller is
+      told, or public values. The Makefile's comment above `WIDE64_SPECS`
+      lists the kinds and what each entry's branches read. At `-O2` most
+      of a file's branches are ones clang adds: a test of a count before
+      a loop's first pass, tests of the count's low bits for the items a
+      pass of two or four leaves over, and a test of whether two
+      arguments overlap before a loop runs in vector registers.
+    - **What the reading found.** No branch on a secret. One jump follows
+      data where the C is a mask: on x86-64, `rsa_sign.c`'s `mont_r2`
+      subtracts the modulus under a jump on the trial subtraction's
+      borrow, for the last word of an odd word count. The modulus is
+      public, and so is R^2 modulo it.
+    - **What a count is worth at `-O2`.** Less than at `-Os`, and it is
+      still the check. `inv16-p256-wide-table-scan-skips-unselected`
+      makes a table scan skip the entries a digit does not name: the
+      x86-64 spec reads 15 against 14, and the arm64 spec reads 12,
+      because clang writes the skip as a comparison of the scan's index
+      with the digit and drops a vector loop's branches. So a count that
+      falls says nothing about a file's safety, and a count that rises is
+      read by instruction before it is recorded. Each of the sixteen
+      mutants that name the lint still raises a count on at least one
+      clang spec, and the new entries read six of them on a 64-bit
+      target for the first time.
+
+    Not covered:
+
+    - A 64-bit gcc. CI's host object is gcc's, and no lane runs one
+      through `lint-wide-multiply-gcc`. gcc 13.3 for x86-64 kept both
+      masks of entry 125.
+    - `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c`. They sit in
+      `WIDEMUL_PUBLIC`, with no count, and a `SUITE=aesgcm` host object
+      runs traffic keys on them. A reading of their hosted `-O2` assembly
+      for both targets, for a jump that follows a test of a value, found
+      only tests of block counts and lengths. That reading is not a count
+      the lint holds.
+    - The libc. The specs compile against `tools/freestanding`'s five
+      prototypes and not against a libc's `<string.h>`, and for
+      `aarch64-none-elf`, where a host object is built for Linux or
+      macOS.
+    - `quic_aes_soft.c` and `aes_extern.c`, which have no entry: a host
+      object runs the first under public keys alone and holds no second.
+
+    Rejected:
+
+    - **A second pair of specs at `-O2` beside the pair at `-Os`.** The
+      `-Os` pair read code no host object holds, and two readings of each
+      file would leave a reader to ask which one ships.
+    - **A count of the jumps that follow a test of a value alone.** It
+      would have shown both jumps of entry 125 as a count of one against
+      zero. It is a third count with a pattern for each instruction set,
+      and what makes a test one of a value is a judgment a pattern only
+      approximates.

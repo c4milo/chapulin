@@ -60,9 +60,8 @@ SOURCES = {
     "keccak_avx2.c": "keccak_avx2_permute",
 }
 
-# lint-wide-multiply's x86-64 machine and headers (the Makefile's
-# WIDE64_SPECS), at the level and under the define of a host object, and
-# hosted, where that lint compiles with -ffreestanding.
+# lint-wide-multiply's x86-64 machine, headers, level and hosted compile
+# (the Makefile's WIDE64_SPECS), under the define of a host object.
 FLAGS = ["--target=x86_64-unknown-linux-gnu", "-march=x86-64", "-std=c11", "-O2",
          "-nostdlibinc", "-Itools/freestanding", "-I.", "-D_DEFAULT_SOURCE",
          "-DCH_RAND_EXTERN", "-DCH_CPU_RUNTIME", "-S", "-o", "-"]

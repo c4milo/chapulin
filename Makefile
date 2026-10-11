@@ -6698,16 +6698,27 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
 # ROLE=both TRUST=webpki object compiles: its copy of the pair for five
 # registers exists there alone. rsa_avx2.c@512 is rsa_avx2.c at the same
 # bound, where its copies for digits of 27 bits exist alone
-# (docs/decisions.md 122).
-# x25519.c@host and mlkem_poly.c@host are those two files as a host object
-# compiles them, under their own names and -DCH_CPU_RUNTIME. Each keeps its
-# entry in WIDEMUL_CEILING, which the 32-bit specs compile. A host object
-# runs x25519.c's field for a session without the multiply bit and
-# mlkem_poly.c's mlk_poly_frommsg in every session, and until these two
-# entries no spec compiled either for a 64-bit target: clang for x86-64
-# wrote a jump on a secret in each (docs/decisions.md 125).
-WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 \
-                  x25519.c@host:0 mlkem_poly.c@host:0
+# (docs/decisions.md 122). rsa_sign64.c@512 is rsa_sign64.c at that bound:
+# at -O2 the loop over a table entry's words holds one more test of the
+# word count for each four words a prime may hold.
+# WIDE64_HOST_COPIES are the BRANCH_SRCS files of WIDEMUL_CEILING that a
+# host object compiles too, and each has an entry here, `<file>@host`: the
+# file under its own name and -DCH_CPU_RUNTIME, with the defines its own
+# entry takes. Each keeps its entry in WIDEMUL_CEILING, which the 32-bit
+# specs compile and lint-codegen-partition reads. A host object runs these
+# files in a session whose ch_cfg.cpu lacks the bit that picks a faster
+# path, and some in every session, and until docs/decisions.md 125 and 126
+# no spec compiled one for a 64-bit target: clang for x86-64 wrote a jump
+# on a secret in two of them. aes.c@host and gcm.c@host take the QUIC and
+# the SUITE=aesgcm defines together, so the count reads the text that
+# carries a traffic key beside the text that carries a public one.
+# quic_aes_soft.c and aes_extern.c have no entry: a host object runs the
+# first under public keys alone, and no host object holds the second.
+WIDE64_HOST_COPIES := x25519.c mlkem_poly.c ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c \
+                      poly1305.c aead.c mlkem.c drbg.c rsa_sign.c aes.c gcm.c p256_field.c \
+                      p256_scalar.c sha512.c sha512_compress.c
+WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 rsa_sign64.c@512:0 \
+                  $(addsuffix @host:0,$(WIDE64_HOST_COPIES))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
 # for rv32ic too, and the whole codegen list, which lint-codegen-partition
 # holds to a partition of the library sources.
@@ -6747,6 +6758,7 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # -DCH_HASH_SHA384 as hkdf.c and keysched.c do, so the count reads both
 # hashes' arms.
 WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME
+WIDE64_HOST_AES_DEFINES := -DCH_CPU_RUNTIME$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING$(COMMA)-DCH_SUITE_AES_GCM
 # webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen lints compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
 # client offers both groups in every build (docs/decisions.md 53). The server
@@ -6782,7 +6794,10 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    rsa_ifma.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
                    rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   x25519.c@host:-DCH_CPU_RUNTIME mlkem_poly.c@host:-DCH_CPU_RUNTIME \
+                   rsa_sign64.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
+                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out hkdf.c aes.c gcm.c,$(WIDE64_HOST_COPIES))) \
+                   hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   aes.c@host:$(WIDE64_HOST_AES_DEFINES) gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -6849,8 +6864,11 @@ lint-codegen-partition:
 #             its toolchain is for and cannot run another's by mistake.
 #   flags     comma-separated: the CPU or arch selection the spec measures,
 #             and after it an optimisation level when the spec measures
-#             one other than -Os. The gate passes -Os before the flags,
-#             so a level in the flags wins.
+#             one other than its default. The lint passes the default
+#             before the flags, so a level in the flags wins. The default
+#             is -Os with -ffreestanding, and for the two 64-bit specs
+#             below -O2 and a hosted compile, which is how a host object
+#             is built.
 #   tokens    comma-separated. A token without a leading __ is an opcode
 #             and counts every instruction whose mnemonic begins with it,
 #             so umullne, umulls, umull.w and udiveq count under umull and
@@ -6929,7 +6947,8 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # mask of a row's word, and m3's x25519.c one over its own, an IT block.
 # test/violations/inv16-mlkem-frommsg-bit-known.violation builds
 # mlk_poly_frommsg's mask from the bit without the volatile read, and
-# x86-64's mlkem_poly.c@host and mlkem_poly_native.c each go one over.
+# x86-64's mlkem_poly.c@host and mlkem_poly_native.c each go ten over:
+# eight jumps on message bits and two branches of a vector loop.
 #
 # arm counts every b<cond> -- both spellings of carry-set and carry-clear,
 # and the .w and .n widths through the prefix -- cbz and cbnz, the table
@@ -6969,91 +6988,220 @@ WIDEMUL_SPECS := \
   mips32r2-gcc-O2:gcc:mips-:-march=mips32r2,-mabi=32,-O2:$(WIDEMUL_OPS_MIPS):$(BRANCH_OPS_MIPS) \
   rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV):$(BRANCH_OPS_RV) \
   rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I):$(BRANCH_OPS_RV)
-# The two 64-bit specs, which compile WIDE64_CEILING's files and nothing else,
-# under the pinned clang, each file with the defines WIDEMUL_DEFINES gives
-# it. Their multiply tokens are the divisions and the 128-bit runtime calls: a
+# The two 64-bit specs compile WIDE64_CEILING's and WIDE64_REBUILT's entries
+# and nothing else, under the pinned clang, each with the defines
+# WIDEMUL_DEFINES gives it. They compile as a host object is compiled:
+# hosted and at -O2, the level `make lib` and build.zig build at. Every other
+# spec compiles freestanding at -Os, which is how a firmware tree builds a
+# device object. These two did so too until docs/decisions.md 126, and
+# their counts were then of code no host object held: at -O2 clang unrolls
+# loops and runs them in vector registers where the -Os reading kept them
+# whole, and -ffreestanding implies -fno-builtin, which changes what clang
+# does with a copy, a fill and an array of lanes. A clang with no libc
+# headers compiles hosted here because tools/freestanding holds the headers
+# the sources and <immintrin.h> include.
+#
+# Their multiply tokens are the divisions and the 128-bit runtime calls: a
 # 64x64->128 multiply is the instruction the wide field is built on, and
 # the session's multiply bit is the statement about its timing, so counting it
 # would hold nothing. What these specs hold is the branch count, which is the
-# field's claim that no instruction branches on a word or a scalar bit: every
-# branch x25519_wide.c emits under both is loop control over a public count
-# -- the 255 ladder steps, the five words, the 40 bytes ct_wipe clears, the
-# eight bytes load_le64 reads, and sqr_times' count -- and cswap and pack's
-# conditional subtraction stay masks. x25519.c's clamp and all-zero check,
-# which the file compiles inside it, add no branch under either spec.
-# arm64 counts b.<cond>, spelled out so
-# the dot cannot match bl, and cbz, cbnz, tbz and tbnz. x86-64 counts every
-# j<cond>, by prefixes that cannot match jmp. A compiler run that emits
-# either family's multiply by a word as a call to __multi3 fails the zero.
-# No gcc spec measures the field: no CI lane runs a 64-bit gcc through
-# lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
+# claim that no instruction branches on a word or a scalar bit. arm64 counts
+# b.<cond>, spelled out so the dot cannot match bl, and cbz, cbnz, tbz and
+# tbnz. x86-64 counts every j<cond>, by prefixes that cannot match jmp. A
+# compiler run that emits either family's multiply by a word as a call to
+# __multi3 fails the zero. No gcc spec measures these entries: no CI lane
+# runs a 64-bit gcc through lint-wide-multiply-gcc, and a spec nothing runs
+# would pass unread.
 #
-# rsa_mont64.c's 43 under the x86-64 spec were read the same way, function
-# by function. Thirty are loop control over a word count, a byte count,
-# the doublings rsa_mont64_modulus_init counts from its bits argument, its
-# five squarings, the public exponent's sixteen and neg_inverse's six
-# steps, and the tests that skip a loop of no iterations. Four are the
-# three CH_ASSERTs on the public lengths the entries take:
-# rsa_mont64_modulus_load, which rsa_mont.c calls for a public modulus,
-# checks its length itself (docs/decisions.md 103). rsa_mont64_mont_square
-# has the other nine, each on a word count or a row's index: the test for
-# no words, the loop that writes twice the operand, the tests for row 0
-# and for row 1, whose part below its square is empty, that part's loop,
-# the tests for a row with words past its square and past the word above
-# it, their loop, and the loop over rows (docs/decisions.md 106). The
-# comparison and the subtraction that end a multiplication stay a carry
-# and a mask: reduce_once's three are its two loops and the test for no
-# words. The sum, the difference
-# and the plain product a CRT signature joins its halves with add nine,
-# all loops over words: the difference adds the modulus back under a mask.
-# Under the arm64 spec, whose clang compiles rsa_mont64_blocks.c's blocks
-# in (docs/decisions.md 118), the file has 44: the multiplication's and the
-# square's tests for no words become the tests of whether the word count is
-# a multiple of 4, which a count of zero passes, and the square adds one,
-# the word count against RSA_MONT64_SQUARE_AS_MUL_WORDS_MAX.
-# rsa_mont64_blocks.c's 13 under that spec are loop control over the word
-# count and a row's length, and the tests that skip a loop of no
-# iterations. Under the x86-64 spec the file compiles to nothing.
-# rsa_mont64_addcarry.c, the rows a gcc build for x86-64 runs
-# (docs/decisions.md 122), compiles to nothing under clang unless a build
-# names it, so WIDEMUL_DEFINES names it with -DRSA_MONT64_ADDCARRY=1, and
-# each spec reads its own form of the add with carry: _addcarry_u64 for
-# x86-64 and the 128-bit sum for arm64. Its 25 under the x86-64 spec are
-# loop control over the word count: the multiplication's test for no
-# words, the entry, back edge and tail of each of a round's two rows, the
-# round loop and the copy of the result; and the square's tests for fewer
-# than two words and for none, the same four in each row of its cross
-# products and of its reduction, those two loops, the doubling's loop and
-# the copy. Under the arm64 spec clang keeps a row in a function of its
-# own, and the file has 13, the same tests read once in that function.
-# gcc 13 at -O2 for x86-64, which no spec here runs, compiles the file to
-# 26, read the same way.
+# How the branches were read. For each conditional branch, the instruction
+# that sets its flags was found, and each value that instruction reads was
+# traced back through the function to where it comes from. A count below
+# holds only branches whose every such value is one of these:
+#   - a constant, or a loop's counter, which a constant steps;
+#   - a length or a count: an argument, or a field such as a modulus's word
+#     count, a hash's or a MAC's count of buffered bytes, or the sponge's
+#     position in its block;
+#   - the position of a word, a digit or a window, which a loop's counter
+#     gives;
+#   - an address: before clang runs a loop in vector registers it tests
+#     whether the loop's arguments overlap, and runs the plain loop where
+#     they do;
+#   - the session's ch_cfg.cpu, or the multiply answer it gives;
+#   - a verdict the caller is told, or a public value. Each of those is
+#     named below.
+# At -O2 the second and fourth kinds are most of a file's branches: a loop
+# that runs two, four or more items a pass tests its count before its first
+# pass and tests the count's low bits for the items left over. A count
+# cannot tell any of these from a jump on a word. The x86-64 ceiling of
+# mlkem_poly_native.c held a jump on a message bit for as long as the count
+# was the whole reading (docs/decisions.md 125), so a count that rises is
+# read by instruction before it is recorded.
 #
-# rsa_sign64.c's 26 under the arm64 spec and 29 under the x86-64 one were
-# read the same way. The x86-64 spec's three more are rsa_sign64_sp1's
-# CH_ASSERT on the key's public length, two tests there and one
-# conditional compare under the arm64 spec, and the two tests of the
-# session's ch_cfg.cpu for both CH_CPU_AVX512_IFMA and the multiply bit,
-# which both_powers and check_power make inlined into rsa_sign64_sp1, and
-# which the arm64 spec does not compile (docs/decisions.md 120). The value
-# is the caller's description of the CPU and holds no secret.
-# rsa_sign64_power's seven are loop control: the table's
-# entries, the exponent's digits, whose count comes from its length in
-# bytes, the four squarings, the sixteen entries a read of the table
-# visits and their words, and its CH_ASSERT on the word count.
-# message_mod_prime's are its loops over the message's words. rsa_sign64_key_ok's four
-# are rsa_pss_sign_key_ok's three on the modulus's length and two of its
-# bits and the loop that compares the product with the modulus; the
-# verdict it returns is a flag and no branch. rsa_sign64_sp1's are its
-# CH_ASSERT on the key's public length, the loop of the recombination,
-# and one on whether the signature passed its check, which the caller
-# sees as the return value. rsa_sign64_pss's seven are rsa_sign.c's,
-# which that file compiles from: the key test, the test of cap, the salt
-# assertion, mgf1's loop and the private operation's verdict. The digit
-# that picks a table entry becomes a mask and no branch. The count does
-# not hold that by itself: a read of the table that stops at the entry it
-# wants compiles to the same counts, so inv-16-rsa-table-read holds it
-# (test/violations/inv16-rsa-sign64-table-read-stops-early.violation).
+# The entries, with arm64's count and then x86-64's. An entry with no body
+# on a target is at zero there.
+#
+# x25519_wide.c, 2 and 2: the 255 ladder steps and sqr_times' count. The
+#   loops over the five words are unrolled, and cswap and pack's conditional
+#   subtraction stay masks.
+# x25519.c@host, 8 and 12: the 255 ladder steps, the inverse's 254
+#   squarings and its two tests of a squaring's number against 2 and 4, and
+#   mul's two loops over its products and its loop over the 15 words it
+#   reduces. arm64 holds one more, pack's test of which of its two passes
+#   ran. x86-64 holds five more, the ends of loops over the 16 words in
+#   pack and in mul. ct_widemul_s reads no sign bit by itself: before it
+#   took that form x86-64 held a 13th, a jump on the sign of a word in
+#   mul's inner loop.
+# chacha20_vector.c, 40 and 26; chacha20_avx2.c, 0 and 31; chacha20_avx512.c,
+#   0 and 77: each closes a loop over a public count or tests the byte
+#   count n. An xor entry tests n against the bytes of a pass, against zero
+#   and against the rows and bytes the last pass leaves, and clang runs the
+#   loops over those last bytes several bytes a pass, each with tests of its
+#   own. A pass holds the loop over the ten double rounds and tests of the
+#   limit against the rows it writes: 34 branches on arm64, whose pass
+#   holds two groups, and 17 in each x86-64 file.
+# poly1305_native.c, 22 and 22; poly1305.c@host, 21 and 19: update's tests
+#   of the count of buffered bytes and of n, final's tests of that count
+#   and the loop that pads the last block, and the block loop. The native
+#   copy's update also tests n against a vector path's minimum and, on
+#   x86-64, the kernel an update names, a constant each entry passes. The
+#   final reduction and its select stay masks.
+# poly1305_vector_native.c, 4 and 4; poly1305_avx2_native.c, 0 and 4;
+#   poly1305_ifma_native.c, 0 and 4: the CH_ASSERT's two tests of n, and
+#   the group loop's entry and back edge. poly1305_vector.c, poly1305_avx2.c
+#   and poly1305_ifma.c have no body under their own names.
+# mlkem_poly_native.c, 76 and 61; mlkem_poly_hw.c, 56 and 0;
+#   mlkem_poly.c@host, 56 and 59: the loops over the file's constants -- the
+#   256 coefficients, the 128 pairs, the 32 bytes, the three polynomials and
+#   the layers of each transform -- the tests of whether a function's two
+#   arguments overlap, one before each loop clang runs in vector registers,
+#   and mlk_sample_ntt's seven, which test a candidate against q, the count
+#   of coefficients written, the groups a squeeze holds and the squeezes.
+#   The candidates come from the public matrix seed. A native copy holds
+#   more than the file under its own name, because clang runs in vector
+#   registers the loops whose multiply is native: one test of addresses
+#   more in each of mlk_poly_compress and mlk_poly_tomsg, and on arm64 18
+#   more in mlk_polyvec_compress, tests of whether the output overlaps the
+#   input or another part of itself and of the range of its index.
+#   mlk_poly_frommsg holds one branch, its loop over the 32 bytes: it reads
+#   each bit back from a volatile object, and before it did x86-64 held
+#   eight jumps on message bits in the loop for overlapping arguments.
+# mlkem.c@host, 5 and 5; mlkem_hw.c, 5 and 0; mlkem_avx2.c, 0 and 28: the
+#   loop of mlkem_encaps_derand's check of an encapsulation key and its two
+#   tests of a coefficient against q, which read a public key, and the test
+#   of the session's multiply answer in mlk_pke_encrypt and in
+#   decapsulation. mlkem_avx2.c holds 23 more in mlk_matvec_row, the row
+#   sampler's tests of the three streams' blocks, of each entry's count of
+#   coefficients and of each candidate against q.
+# mlkem_vector.c, 7 and 7: the loops over the layers and blocks of the two
+#   transforms and the base multiplication's 16 blocks, all constants.
+# keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
+# sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 0; sha256.c@host, 28 and 35;
+#   sha512.c@host, 29 and 37; sha512_compress.c@host, 3 and 3: an update's
+#   tests of n and of the count of buffered bytes, the loop over whole
+#   blocks, a final's tests of where the padding ends and its loops that
+#   pad and write the digest, and the compression function's loops over
+#   its words, rounds and schedule. Each reads a length or a count, and
+#   none reads a message byte or a state word.
+# hkdf_hw.c, 19 and 19; hkdf.c@host, 19 and 19: each HMAC's test of the key
+#   length against a block, the tests of hash_len that pick a hash, the
+#   contract checks of hkdf_expand and hkdf_expand_label, the output loop
+#   and the test of an empty context. keysched_hw.c is calls in a straight
+#   line.
+# sha3_hw.c, 72 and 0; sha3.c@host, 75 and 84: absorb and squeeze test the
+#   position in the block, the bytes left and the rate. block_xor and
+#   block_bytes move 1 to 7 bytes up to a lane's edge, and clang writes that
+#   loop as tests of the count and of the position against each of 1 to 7,
+#   which is most of the two functions' branches. The rest are the loop
+#   over whole lanes, the tests before it, the round loop, and in
+#   sha3_hw.c permute_blocks' loop over blocks and its tests of how many
+#   lanes of the message a block takes. None reads a lane or a message
+#   byte.
+# ct.c@host, 9 and 4: ct_memeq's test of n for zero and its loop, which
+#   clang runs several bytes a pass with a test of n for each width.
+#   ct_wipe.c@host, 1 and 1: its test of n for zero.
+# drbg.c@host, 5 and 5: ch_drbg_seed's CH_ASSERT on the seed's length, and
+#   ch_rand_bytes' tests of whether the generator was seeded and of n for
+#   zero and its loop over n.
+# aead.c@host, 4 and 6: mac's tests of the session's multiply answer and of
+#   the CPU bits that pick a Poly1305, and aead_open's and aead_open_cpu's
+#   `if (!ok)` on the tag, which the caller is told.
+# aes.c@host, 14 and 13; gcm.c@host, 20 and 25: the bytes of a schedule that
+#   record its round count and which cipher expanded it, a key length
+#   against 16 and 32, the session's CPU bits, the lengths counter_mode
+#   takes and its loops, GHASH's block loop, multiply_by_subkey's 128 steps,
+#   and open's `if (!ok)` on the tag. multiply_by_subkey's two selects stay
+#   masks.
+# p256_field.c@host, 4 and 4; p256_scalar.c@host, 4 and 4: mont_mul's two
+#   loops over the eight words, the inverse's 256 rounds and its test of a
+#   bit of the exponent, which is a build constant.
+# p256_wide_field.c, p256_wide_scalar.c, p256_wide_table.c and
+#   p256_wide_wipe.c hold none: clang unrolls the loops over four words.
+# p256_wide_inverse.c, 3 and 3: the 31 steps of a round, and in
+#   p256_wide_inverse_public the loop over the rounds and its test of a's
+#   words, which it computes from a public y.
+# p256_wide_point.c, 3 and 3: the leading byte and the range of a peer's
+#   point in p256_wide_point_from_bytes, both public, and whether the
+#   caller of p256_wide_point_affine asked for Y.
+# p256_wide_mul.c, 14 and 14: the 42 windows of the table's multiplication
+#   and the 32 entries a table scan reads, twice, once in p256_wide_base_mul
+#   and once in digit_entry; the windows of a point's multiplication and
+#   the eight multiples its scan reads; and nine tests of a bit's position
+#   against 255 or of a window's number against the top window's, which
+#   read a window's number and never the scalar. Every scan reads all its
+#   entries and keeps one by mask.
+# p256_wide_verify.c, 6 and 6; p256_wide_verify_point.c, 30 and 30: the
+#   verifier's range checks, digits, point tests and comparisons. Every one
+#   reads a signature, a key or a hash, which are public
+#   (docs/decisions.md 96 and 104).
+# rsa_mont64.c, 71 and 109: every one reads the word count k, a byte length
+#   or the bits argument of rsa_mont64_modulus_init, all public. They are
+#   the tests of k for zero, the loops over words and rows, the tests a
+#   square makes of a row's index, the CH_ASSERTs on the lengths the
+#   entries take, and on arm64 the tests of whether k is a multiple of 4,
+#   which send a multiplication to rsa_mont64_blocks.c. x86-64 holds 38
+#   more because clang runs each loop there two words a pass, with a test
+#   of k's low bit for the odd word and a test of k - 1 for zero, and runs
+#   rsa_mont64_mul_add's copy in vector registers behind a test of k and
+#   one of its arguments' addresses. The comparison and the subtraction
+#   that end a multiplication, a sum and a difference stay a carry and a
+#   mask.
+# rsa_mont64_blocks.c, 13 and 0; rsa_mont64_addcarry.c, 11 and 23: loop
+#   control over the word count and a row's length, and the tests that skip
+#   a loop of no iterations.
+# rsa_sign64.c, 41 and 39; rsa_sign64.c@512, 45 and 41: the CH_ASSERTs on a
+#   key's and a prime's public lengths; rsa_sign64_power's loops over the
+#   exponent's digits, the four squarings and the sixteen entries a read of
+#   the table visits, and its loop over an entry's words, which clang runs
+#   four words a pass with a test of the word count against each multiple
+#   of four; rsa_sign64_key_ok's tests of the modulus's length and of two
+#   of its bits and its loop that compares the product with the modulus;
+#   rsa_sign64_sp1's loops and its test of whether the signature passed its
+#   check, which the caller sees; and rsa_sign64_pss's test of cap, its
+#   salt assertion, mgf1's loops and the verdict. The digit that picks a
+#   table entry is a mask and no branch. A count does not hold that by
+#   itself: a read that stops at the entry it wants compiles to the same
+#   counts, so inv-16-rsa-table-read holds it
+#   (test/violations/inv16-rsa-sign64-table-read-stops-early.violation).
+# rsa_sign.c@host, 55 and 47: the CH_ASSERT on the key's length, the loops
+#   over words in rsa_sp1 and mont_mul, with clang's tests of the count's
+#   low bits beside them, and rsa_pss_sign's tests of the modulus's length
+#   and of two of its bits, of cap, and of the salt assertion. On x86-64
+#   one branch reads data: mont_r2's subtraction of the modulus, a mask in
+#   the C, is a jump on the trial subtraction's borrow for the last word of
+#   an odd count. The modulus is public, and so is R^2 modulo it.
+# rsa_ifma.c, 0 and 41; rsa_ifma.c@512, 0 and 45; rsa_avx2.c, 0 and 49;
+#   rsa_avx2.c@512, 0 and 86: the public operation, whose every input is
+#   public. They test word, digit, group and register counts, a digit's or
+#   a word's index, and the digit width that picks a copy.
+# rsa_ifma_sign.c, 0 and 62; rsa_ifma_sign.c@512, 0 and 65: the CH_ASSERTs
+#   on the word counts, the loops over the exponents' digits, the four
+#   squarings and the sixteen entries a read of the table visits, the tests
+#   of a word's or a digit's index against the word count in the
+#   conversions between words and digits, the register count that picks a
+#   copy of the product, and the loops that double R and the base. No
+#   branch reads a digit of an exponent: table_select keeps an entry by a
+#   mask, which inv-16-rsa-ifma-table-read holds.
+# avx512_wipe.c holds none: it is one block of assembly with no branch.
 WIDE64_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 WIDE64_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
 BRANCH_OPS_ARM64 := b.eq,b.ne,b.cs,b.hs,b.cc,b.lo,b.mi,b.pl,b.vs,b.vc,b.hi,b.ls,b.ge,b.lt,b.gt,b.le,cbz,cbnz,tbz,tbnz
@@ -7121,25 +7269,11 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # A host object's native copies (docs/decisions.md 87 and 89) have their
 # own branch ceilings, in the table below, which BRANCH_CEILING takes in
 # whole. The copy differs from the file under its own names in the
-# multiply alone, which is straight-line code, so its branches are the
-# file's own loop control, and each was read against the file's on the
-# 64-bit specs, whose targets a host object is for. poly1305_native.c's 19
-# are the 18 it held before every host object carried the vector path, and
-# the byte count n against POLY1305_VECTOR_MIN, which hands an update's
-# whole groups to that path; n is public. On x86-64 it holds a 20th, in
-# poly1305_update_avx2's copy of the update: n against POLY1305_AVX2_MIN,
-# which hands the whole groups to the AVX2 kernel (docs/decisions.md 110),
-# and a 21st, n against POLY1305_IFMA_MIN together with the kernel an
-# update names, which hands the whole groups to the AVX-512 IFMA kernel:
-# clang merges the update functions into one body that takes the kernel as
-# an argument, a constant each entry passes. poly1305_vector_native.c's 4
-# are the vector path's, and poly1305_avx2_native.c's 4 the AVX2 kernel's,
-# read below. poly1305_ifma_native.c's 4 are the IFMA kernel's: its
-# CH_ASSERT's two tests of n, against zero and modulo 256, and the group
-# loop's entry and back edge, n against 256. The powers of r, the carries
-# and the lane totals are straight line. No 32-bit spec compiles a copy: a host object
-# targets arm64 or x86-64, so the 96 entries the eight 32-bit specs held
-# for WIDEMUL=runtime's copies went with that value.
+# multiply, and in the vector paths poly1305_native.c's update hands whole
+# groups to. The comment above WIDE64_SPECS says what each copy's branches
+# read. No 32-bit spec compiles a copy: a host object targets arm64 or
+# x86-64, so the 96 entries the eight 32-bit specs held for
+# WIDEMUL=runtime's copies went with that value.
 #
 # p256_scalar.c joined BRANCH_SRCS when it had a native copy, because the
 # branch count held both copies of every file built on the multiply, and
@@ -7149,117 +7283,40 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # p256_scalar_inverse, whose exponent n-2 is a build constant, the same
 # shape as p256_field.c's.
 WIDEMUL_NATIVE_BRANCH_CEILING := \
-  arm64/poly1305_native.c:19 arm64/mlkem_poly_native.c:35 \
-  x86-64/poly1305_native.c:21 \
-  x86-64/mlkem_poly_native.c:35 \
+  arm64/poly1305_native.c:22 arm64/mlkem_poly_native.c:76 \
+  x86-64/poly1305_native.c:22 \
+  x86-64/mlkem_poly_native.c:61 \
   arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
   arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4 \
   arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md
-# 93), under the two 64-bit specs, which are the targets they run on. Each
-# branch was read under both. sha256_hw.c's eight are the same on arm64 and
-# x86-64: in sha256_update_hw the tests of the byte count, of the bytes a
-# context holds, of a block it then fills and of the whole blocks left; in
-# compress_blocks the loop over the blocks and the loop over twelve groups
-# of four rounds; and in sha256_final_hw the test of where the padding
-# ends and the loop that writes the eight digest words. Every one reads a
-# length or a count, which is public, and none reads a message byte or a
-# state word. hkdf_hw.c's sixteen are hkdf.c's under -DCH_HASH_SHA384: each
-# HMAC's test of the key length against a block and its two pad loops, the
-# dispatcher's two tests of hash_len, hkdf_expand's three contract checks
-# and its output loop, and hkdf_expand_label's three contract checks and
-# its test of an empty context. keysched_hw.c is calls in a straight line.
-# sha512_hw.c's twelve on arm64 are sha512_update_hw's four tests, the
-# ones sha256_hw.c's update makes; in compress_blocks the loop over the
-# blocks, the loop over five groups of sixteen rounds and its test for
-# the first group, which takes the block's own words; finalize's test of
-# where the padding ends; and the two loops that write the digest's words
-# and their bytes, once in each final. Every one reads a length or a
-# count. On x86-64 the file has no body and no branch.
-# sha3_hw.c's 31 on arm64 (docs/decisions.md 99): 25 are sha3.c's sponge
-# compiled once more, seven each in block_xor and block_bytes, five in
-# absorb with absorb_whole_blocks's count of the blocks, three in squeeze,
-# the loop that zeroes the state in each init, and shake_squeeze's test of
-# whether the padding ran. Each reads a length, a position in the block or
-# the rate. permute_blocks has the other six: the loop over the blocks,
-# four tests of how many lanes of the message a block takes, and the loop
-# over the 24 rounds. None reads a lane or a message byte.
-# mlkem_hw.c's 15 and mlkem_poly_hw.c's 37 are the branches of mlkem.c and
-# mlkem_poly.c, the same text under keccak_hw.h's names: by function, the
-# counts mlkem_poly_native.c has on this spec, and one more in each of
-# mlk_poly_compress and mlk_poly_tomsg, whose multiply is ct.h's
-# decomposition here. On x86-64 the three files have no body and no branch.
+# 93 and 99), under the two 64-bit specs, which are the targets they run
+# on. sha512_hw.c, sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c have no body
+# on x86-64. The comment above WIDE64_SPECS says what each one's branches
+# read: lengths, counts and positions, and never a message byte, a state
+# word or a lane.
 HASH_HW_BRANCH_CEILING := \
-  arm64/sha256_hw.c:8 x86-64/sha256_hw.c:8 arm64/hkdf_hw.c:16 x86-64/hkdf_hw.c:16 \
-  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:12 x86-64/sha512_hw.c:0 \
-  arm64/sha3_hw.c:31 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:15 x86-64/mlkem_hw.c:0 \
-  arm64/mlkem_poly_hw.c:37 x86-64/mlkem_poly_hw.c:0
+  arm64/sha256_hw.c:6 x86-64/sha256_hw.c:10 arm64/hkdf_hw.c:19 x86-64/hkdf_hw.c:19 \
+  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:0 \
+  arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:5 x86-64/mlkem_hw.c:0 \
+  arm64/mlkem_poly_hw.c:56 x86-64/mlkem_poly_hw.c:0
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
-# WIDE64_CEILING gives. Their branches were read before they were
-# recorded, and the counts are the same on both specs but for
-# p256_wide_inverse.c's. Every one closes a loop over a public count or
-# tests a public value, and none reads a word or a bit of a secret.
-#   p256_wide_field.c's 6: the four words in each of the two copies to and
-#     from p256_field.h's element, and the four words and the eight bytes of
-#     each in the two marshalling routines. The add, the subtract, the
-#     multiply, the inverse's one product and the three predicates are
-#     straight line.
-#   p256_wide_scalar.c has none: the Montgomery product and the copies are
-#     straight line.
-#   p256_wide_inverse.c's 14 on arm64 and 17 on x86-64 (docs/decisions.md
-#     115 and 116): the 17 rounds, the 31 steps of each, the shifts of the
-#     approximations' ladder, whose count halves from 32 to 1, and loops
-#     over the four or five words of a value: in the start of the rounds,
-#     in the approximations, and in each combination's products, sums,
-#     negations and shifts. p256_wide_inverse_public runs the rounds in a
-#     loop of its own and ends it on a test of a's words, which it computes
-#     from a public y. x86-64 keeps three of the word loops that arm64
-#     unrolls: the start of the rounds in each entry, and one in
-#     combine_modular.
-#   p256_wide_point.c's 3: the leading byte and the range of a peer's
-#     point in p256_wide_point_from_bytes, both public, and whether the
-#     caller of p256_wide_point_affine asked for Y.
-#   p256_wide_mul.c's 13: the windows each multiplication adds after its
-#     first, 42 of the table's and 63 of a point's, the 32 entries a table
-#     scan reads, whose words sit in vectors with no loop of their own, the
-#     eight multiples a point's scan reads and the four words of each of a
-#     multiple's three coordinates, the seven multiples p256_wide_mul
-#     computes, the four doublings between windows, twice: once in the loop
-#     over windows 62 to 1 and once before window 0, which adds outside it
-#     (docs/decisions.md 112), and in window_digit the loop over a digit's
-#     bits, the test of a bit's position against 255 and the test for the
-#     top window, whose digit is positive, which read a window's number and
-#     a loop counter.
-#   p256_wide_table.c is constants and p256_wide_wipe.c one call: neither
-#     holds a branch.
-#   p256_wide_verify.c's 5: the range checks of r and of s, the second
-#     test inside the range check, the decoder's verdict on the key and the
-#     infinity test of the sum. Every one reads a signature, a key or a
-#     hash, which are public (docs/decisions.md 96).
-#   p256_wide_verify_point.c's 22, the verifier's points, which are
-#     variable time on purpose (docs/decisions.md 104): on arm64, 4 in
-#     signed_digits (its loop over the bit positions, the positions a digit
-#     passes over, the test of a bit against the carry and the narrower
-#     window at the top), 4 in point_add (either operand at infinity, and
-#     the two tests for equal points and for negatives), 4 in
-#     p256_wide_jacobian_x_is_r (the first comparison, the carry out of r +
-#     n, the test of r + n against p and the loop of that sum), and 10 in
-#     p256_wide_jacobian_double_mul, which holds the loop over the digits,
-#     the tests of each scalar's digit and of its sign, and the doubling
-#     and the mixed addition the compiler put inside it with their tests of
-#     infinity, of equal points and of negatives. Every one reads a digit
-#     of u1 or u2, a coordinate of a point computed from the key, or r, and
-#     all of them are public.
+# WIDE64_CEILING gives. The counts are the same on both specs, and the
+# comment above WIDE64_SPECS says what each file's branches read. Every one
+# closes a loop over a public count or tests a public value, and none reads
+# a word or a bit of a secret. p256_wide_verify.c's and
+# p256_wide_verify_point.c's are the verifier's, which is variable time on
+# purpose (docs/decisions.md 96 and 104).
 P256_WIDE_BRANCH_CEILING := \
-  arm64/p256_wide_field.c:6 x86-64/p256_wide_field.c:6 \
+  arm64/p256_wide_field.c:0 x86-64/p256_wide_field.c:0 \
   arm64/p256_wide_scalar.c:0 x86-64/p256_wide_scalar.c:0 \
-  arm64/p256_wide_inverse.c:14 x86-64/p256_wide_inverse.c:17 \
+  arm64/p256_wide_inverse.c:3 x86-64/p256_wide_inverse.c:3 \
   arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
-  arm64/p256_wide_mul.c:13 x86-64/p256_wide_mul.c:13 \
+  arm64/p256_wide_mul.c:14 x86-64/p256_wide_mul.c:14 \
   arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
   arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
-  arm64/p256_wide_verify.c:5 x86-64/p256_wide_verify.c:5 \
-  arm64/p256_wide_verify_point.c:22 x86-64/p256_wide_verify_point.c:22
+  arm64/p256_wide_verify.c:6 x86-64/p256_wide_verify.c:6 \
+  arm64/p256_wide_verify_point.c:30 x86-64/p256_wide_verify_point.c:30
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
@@ -7325,7 +7382,191 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
-               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 x25519.c@host mlkem_poly.c@host
+               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 \
+               $(addsuffix @host,$(WIDE64_HOST_COPIES))
+# Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
+# file under every spec. A spec that lacks one fails, and the gate's own
+# output is where a new spec reads its numbers. Every number is measured
+# with the spec's compiler at its flags: make lint-wide-multiply for the
+# three clang rows, make lint-wide-multiply-gcc for m3-gcc, and
+# test/docker-mips.sh and test/docker-riscv32.sh for the other four.
+# Going over fails; coming in under prints, and the entry then comes
+# down. softmul.c compiles to nothing where a multiplier exists and to
+# its two fixed-count loops on rv32ic, which is the one nonzero entry
+# for it.
+#
+# p256_field.c's entries were read before they were recorded, which is
+# what the gate's message asks for. Every branch it emits is a loop back
+# edge over a literal count -- eight words, thirty-two bytes, 256 rounds
+# -- except one: p256_fe_inv tests a bit of p-2, a build constant, so the
+# test is the same on every call and no operand reaches it. The two arm
+# numbers also count IT and ITE, which BRANCH_OPS_ARM lists: both
+# compilers write the masked select in reduce_once and the mask in
+# p256_fe_zero_mask as predicated moves, which is the gate's good case
+# rather than its bad one -- a predicated move is the select staying off
+# the control path.
+#
+# sha3.c's entry under the mips gcc at -O2 rose from 31 to 36, and its
+# other seven fell, when block_xor and block_bytes took the byte loops
+# out of absorb and squeeze and the round lost its loops
+# (docs/decisions.md 98). Each of the two has three loops, and at -O2
+# this gcc tests a loop's condition before its first pass as well as
+# after each one. The branches were read. More than half are in
+# block_xor and block_bytes, each a compare of the byte count with the
+# length or of a byte's place in its lane with zero. The rest are in
+# absorb, squeeze and the entries that inline them, on the block's fill,
+# the bytes left, the rate, the squeezing flag and the round counter.
+# keccak_round holds none: it is straight-line. No branch reads a lane
+# or a message byte. The entry fell to 33 when absorb's loop over whole
+# blocks moved into absorb_whole_blocks (docs/decisions.md 99).
+#
+# mlkem_poly.c's entry, and its native and _hw copies', rose by two on
+# every spec when mlk_sample_ntt took the stream eight three-byte groups a
+# squeeze: the loop over a chunk's groups adds its own test and a second
+# test of the coefficients written against 256. The mips gcc at -O2 adds
+# a third, the test before the loop's first pass. Each reads a counter,
+# and the stream the loop parses is the public matrix's.
+#
+# sha3.c's entries under the Arm GNU gcc and the two riscv32 gcc entries
+# rose by one, from 21 to 22 and from 22 to 23, when absorb's loop over
+# whole blocks moved into absorb_whole_blocks, which sha3_hw.c replaces
+# (docs/decisions.md 99). At -Os both gccs then inline absorb into its two
+# callers, where they kept one copy out of line before: shake_absorb holds
+# absorb's four branches, on the block's fill, the bytes it takes, a full
+# block and the bytes left against the rate, and keccak holds the last of
+# them again, because its block starts empty. The branches were read.
+# None reads a lane or a message byte.
+#
+# x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
+# moved into clamp_and_ladder(), which the wide field shares. Both branches
+# that function adds were read: a bne that closes the 32-byte copy loop,
+# and a beq that tests the stack-protector canary this toolchain adds to a
+# function holding an array. ladder() lost the copy loop's branch, so the
+# net is the canary. Neither reads the scalar.
+#
+# drbg.c's two riscv32 gcc entries rose from 9 to 10 when ch_drbg_seed began
+# to hash the seed (docs/decisions.md 66). Both branches the function now
+# holds were read: a bgtu that tests seed_len against CH_DRBG_SEED_MIN for
+# CH_ASSERT, a length the caller chose, and a beq that tests the
+# stack-protector canary this toolchain adds to a function holding an
+# array, here the SHA-256 context. The 32-byte copy loop and its bne are
+# gone. Neither reads a seed byte.
+#
+# gcm.c's two riscv32 gcc entries rose from 22 to 23 when the one-pass
+# open split compute_tag and ghash_schedule into hash_start, hash_finish
+# and mask_tag (docs/decisions.md 85). Their branches moved into
+# hash_finish and mask_tag. The one new branch was read: a beq that
+# tests the stack-protector canary this toolchain adds to a function
+# holding an array, here gcm_ghash, which now keeps the gcm_hash state
+# on its own frame. It reads no key, subkey or data byte.
+#
+# The entries of the two 64-bit specs -- a host object's vector kernels,
+# its RSA on 64-bit words and in vector registers, and the copies of the
+# files above that it compiles for itself (WIDE64_HOST_COPIES) -- are read
+# in the comment above WIDE64_SPECS, at the flags a host object is
+# compiled with.
+BRANCH_CEILING := \
+  arm64/poly1305_native.c:22 arm64/mlkem_poly_native.c:76 \
+  x86-64/poly1305_native.c:22 \
+  x86-64/mlkem_poly_native.c:61 \
+  arm64/poly1305_vector_native.c:4 x86-64/poly1305_vector_native.c:4 \
+  arm64/poly1305_avx2_native.c:0 x86-64/poly1305_avx2_native.c:4 \
+  arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
+# A host object's hash sources on the CPU's instructions (docs/decisions.md
+# 93 and 99), under the two 64-bit specs, which are the targets they run
+# on. sha512_hw.c, sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c have no body
+# on x86-64. The comment above WIDE64_SPECS says what each one's branches
+# read: lengths, counts and positions, and never a message byte, a state
+# word or a lane.
+HASH_HW_BRANCH_CEILING := \
+  arm64/sha256_hw.c:6 x86-64/sha256_hw.c:10 arm64/hkdf_hw.c:19 x86-64/hkdf_hw.c:19 \
+  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:0 \
+  arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:5 x86-64/mlkem_hw.c:0 \
+  arm64/mlkem_poly_hw.c:56 x86-64/mlkem_poly_hw.c:0
+# The wide P-256 files, under the two 64-bit specs alone, for the reason
+# WIDE64_CEILING gives. The counts are the same on both specs, and the
+# comment above WIDE64_SPECS says what each file's branches read. Every one
+# closes a loop over a public count or tests a public value, and none reads
+# a word or a bit of a secret. p256_wide_verify.c's and
+# p256_wide_verify_point.c's are the verifier's, which is variable time on
+# purpose (docs/decisions.md 96 and 104).
+P256_WIDE_BRANCH_CEILING := \
+  arm64/p256_wide_field.c:0 x86-64/p256_wide_field.c:0 \
+  arm64/p256_wide_scalar.c:0 x86-64/p256_wide_scalar.c:0 \
+  arm64/p256_wide_inverse.c:3 x86-64/p256_wide_inverse.c:3 \
+  arm64/p256_wide_point.c:3 x86-64/p256_wide_point.c:3 \
+  arm64/p256_wide_mul.c:14 x86-64/p256_wide_mul.c:14 \
+  arm64/p256_wide_table.c:0 x86-64/p256_wide_table.c:0 \
+  arm64/p256_wide_wipe.c:0 x86-64/p256_wide_wipe.c:0 \
+  arm64/p256_wide_verify.c:6 x86-64/p256_wide_verify.c:6 \
+  arm64/p256_wide_verify_point.c:30 x86-64/p256_wide_verify_point.c:30
+P256_SCALAR_BRANCH_CEILING := \
+  m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
+  mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
+WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
+                        mips32r2-gcc-O2/tls_write.c:2
+# The files the branch count covers: the arithmetic under the record
+# layer, whose every input is a key, a word or a block. Almost every
+# branch they hold is loop control on a public count; the two exceptions
+# are aead_open's and gcm_open's `if (!ok)` on the tag comparison, where
+# ct_memeq has already run in constant time and whether the packet
+# authenticates is what the caller is told anyway. The other CODEGEN_SRCS
+# files -- buf.c, record.c, keysched.c, io.c, session.c, the handshake
+# files and tls.c -- branch on lengths, types and states the peer sent in
+# the clear, several dozen each, so a count there would record the parser
+# and move with every feature. The multiply count still covers them; a
+# secret reaching their control paths is a design change, not a codegen
+# choice, and review holds that line.
+#
+# aes.c, quic_aes_soft.c, aes_extern.c and gcm.c joined the
+# list on the commit that wrote the -DCH_SUITE_AES_GCM rules into ct.h,
+# for the build whose AES key is a traffic secret. INV-26 said what that
+# build would owe -- these files sat in WIDEMUL_PUBLIC, so no codegen
+# gate compiled them and no count held their masked selects to a
+# branchless lowering. gcm.c's multiply_by_subkey is the select that
+# matters: under a secret key the accumulator bit and the shifted-out bit
+# are both derived from the hash subkey, and the two 0xff masks are what
+# keep them off a branch, exactly as poly1305_final's are. aes_hw.c
+# is not here and cannot be: it is an #error under every spec below,
+# because no spec's target has the AES instructions.
+# test/aes_equiv_test.c and the Wycheproof AES-GCM suite on the host
+# object check it instead (docs/quic.md, "What the AES axis proves").
+#
+# aes.c's counts did not move when QUIC version 2's salt, Retry key and
+# labels joined version 1's (docs/decisions.md 79). Each is read from a
+# two-entry table at quic_version_index, the 0 or 1 a comparison of the
+# version yields, and every compiler in the table writes that comparison
+# without a branch. A comparison per constant cost m3 five more and
+# rv32imac three more under the pinned clang. All eight specs were read
+# after the change.
+#
+# sha512.c and sha512_compress.c joined when TLS_AES_256_GCM_SHA384 put
+# SHA-384 under the key schedule: hmac_sha384 hashes HMAC keys and the
+# transcript through them, so they left WIDEMUL_PUBLIC for WIDEMUL_CEILING
+# at 0 and this list. Their branches were read under every spec: the
+# compression function's four are the back edges of its sixteen-word load,
+# its eighty rounds and its message schedule, and the streaming half's are
+# loops over the caller's length and the pad, which are public. hkdf.c is
+# measured under -DCH_HASH_SHA384 (WIDEMUL_DEFINES), the build a suite
+# object compiles, and its count rose by six to twelve with it. The new
+# branches were read too: hmac_sha384's key-length test and its two pad
+# loops, the dispatcher's test of hash_len, and hkdf_expand's CH_ASSERT on
+# hash_len. hash_len is the suite's, which the ServerHello names in the
+# clear, and none of them reads a key byte.
+BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
+               mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c \
+               aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
+               poly1305_vector.c \
+               sha512.c \
+               sha512_compress.c p256_scalar.c poly1305_native.c mlkem_poly_native.c \
+               poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c poly1305_ifma.c \
+               poly1305_ifma_native.c \
+               sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c \
+               rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
+               $(P256_WIDE_SRCS) \
+               sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
+               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 \
+               $(addsuffix @host,$(WIDE64_HOST_COPIES))
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -7605,25 +7846,37 @@ BRANCH_CEILING := \
   m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
   mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
-  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:23 \
-  arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:23 \
-  arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:35 \
+  arm64/x25519_wide.c:2 x86-64/x25519_wide.c:2 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
+  arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:31 \
+  arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:77 \
   arm64/poly1305_vector.c:0 x86-64/poly1305_vector.c:0 \
   arm64/poly1305_avx2.c:0 x86-64/poly1305_avx2.c:0 \
   arm64/poly1305_ifma.c:0 x86-64/poly1305_ifma.c:0 \
-  arm64/rsa_mont64.c:44 x86-64/rsa_mont64.c:43 \
+  arm64/rsa_mont64.c:71 x86-64/rsa_mont64.c:109 \
   arm64/rsa_mont64_blocks.c:13 x86-64/rsa_mont64_blocks.c:0 \
-  arm64/rsa_mont64_addcarry.c:13 x86-64/rsa_mont64_addcarry.c:25 \
-  arm64/rsa_sign64.c:26 x86-64/rsa_sign64.c:29 \
-  arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:19 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:23 \
-  arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:38 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:68 \
-  arm64/mlkem_vector.c:9 x86-64/mlkem_vector.c:9 \
-  arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:7 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
+  arm64/rsa_mont64_addcarry.c:11 x86-64/rsa_mont64_addcarry.c:23 \
+  arm64/rsa_sign64.c:41 x86-64/rsa_sign64.c:39 \
+  arm64/rsa_sign64.c@512:45 x86-64/rsa_sign64.c@512:41 \
+  arm64/rsa_ifma.c:0 x86-64/rsa_ifma.c:41 arm64/rsa_ifma.c@512:0 x86-64/rsa_ifma.c@512:45 \
+  arm64/rsa_avx2.c:0 x86-64/rsa_avx2.c:49 arm64/rsa_avx2.c@512:0 x86-64/rsa_avx2.c@512:86 \
+  arm64/mlkem_vector.c:7 x86-64/mlkem_vector.c:7 \
+  arm64/keccak_avx2.c:0 x86-64/keccak_avx2.c:1 arm64/mlkem_avx2.c:0 x86-64/mlkem_avx2.c:28 \
   arm64/avx512_wipe.c:0 x86-64/avx512_wipe.c:0 \
-  arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:24 arm64/rsa_ifma_sign.c@512:0 \
-  x86-64/rsa_ifma_sign.c@512:27 \
-  arm64/x25519.c@host:28 x86-64/x25519.c@host:30 \
-  arm64/mlkem_poly.c@host:37 x86-64/mlkem_poly.c@host:37 \
+  arm64/rsa_ifma_sign.c:0 x86-64/rsa_ifma_sign.c:62 arm64/rsa_ifma_sign.c@512:0 \
+  x86-64/rsa_ifma_sign.c@512:65 \
+  arm64/x25519.c@host:8 x86-64/x25519.c@host:12 \
+  arm64/mlkem_poly.c@host:56 x86-64/mlkem_poly.c@host:59 \
+  arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:1 x86-64/ct_wipe.c@host:1 \
+  arm64/sha256.c@host:28 x86-64/sha256.c@host:35 arm64/sha3.c@host:75 x86-64/sha3.c@host:84 \
+  arm64/hkdf.c@host:19 x86-64/hkdf.c@host:19 arm64/chacha20.c@host:1 x86-64/chacha20.c@host:3 \
+  arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \
+  arm64/mlkem.c@host:5 x86-64/mlkem.c@host:5 arm64/rsa_sign.c@host:55 x86-64/rsa_sign.c@host:47 \
+  arm64/drbg.c@host:5 x86-64/drbg.c@host:5 \
+  arm64/aes.c@host:14 x86-64/aes.c@host:13 arm64/gcm.c@host:20 x86-64/gcm.c@host:25 \
+  arm64/p256_field.c@host:4 x86-64/p256_field.c@host:4 \
+  arm64/p256_scalar.c@host:4 x86-64/p256_scalar.c@host:4 \
+  arm64/sha512.c@host:29 x86-64/sha512.c@host:37 \
+  arm64/sha512_compress.c@host:3 x86-64/sha512_compress.c@host:3 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
 WIDEMUL_RUN ?= clang
@@ -7689,14 +7942,16 @@ lint-wide-multiply-run:
 	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
 	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
 	   ran="$$ran$$arch "; table=""; btable=""; \
-	   files="$(WIDEMUL_CEILING)"; \
-	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) files="$(WIDE64_CEILING) $(WIDE64_REBUILT)" ;; esac; \
+	   files="$(WIDEMUL_CEILING)"; level="-Os"; freestanding="-ffreestanding"; \
+	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) \
+	     files="$(WIDE64_CEILING) $(WIDE64_REBUILT)"; level="-O2"; freestanding="" ;; \
+	   esac; \
 	   for e in $$files; do \
 	     f=$${e%%:*}; cap=$${e##*:}; src=$${f%%@*}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
 	     extra=""; \
 	     for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
-	     args="-Os $$flags -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I."; \
+	     args="$$level $$flags -std=c11 $$freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I."; \
 	     key=$$( { printf '%s\n' "$$ccid" "$$cc $$args $$src"; $$cc $$args -E $$src 2>&1; echo "status $$?"; } \
 	       | $(SHA256) | cut -d' ' -f1); \
 	     memo=bin/stamps/asm/$$key.s; \

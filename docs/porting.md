@@ -259,8 +259,8 @@ row went to zero
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
 and requires `lint-wide-multiply-gcc` to fail.
 
-The lint compiles at `-Os`, and the mips gcc spec runs once more at `-O2`,
-the one compiler and level where a secret-bearing file is not at zero. Its
+The device specs compile at `-Os`, and the mips gcc spec runs once more at
+`-O2`, the one compiler and level where a secret-bearing file is not at zero. Its
 count of two is a record, not an allowance, and this is what it records
 ([#122](https://github.com/c4milo/chapulin/issues/122)).
 

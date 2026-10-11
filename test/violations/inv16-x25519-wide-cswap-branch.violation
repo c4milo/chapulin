@@ -6,8 +6,7 @@ reason: cswap takes the secret scalar bit, and writing the swap as an if
   values stay right, so the vectors, the equivalence binary and the
   proofs all pass; only the count of what the compiler emits sees it.
   The pinned clang emits two more conditional branches for x25519_wide.c
-  on both 64-bit specs, 18 against 16 on arm64 and 22 against 20 on
-  x86-64, each above the file's ceiling.
+  on both 64-bit specs, 4 against the file's ceiling of 2.
 
 --- old
     uint64_t mask = (uint64_t)((int64_t)(bit << 63) >> 63);
