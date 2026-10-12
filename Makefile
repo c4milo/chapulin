@@ -7080,9 +7080,10 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
 # files in a session whose ch_cfg.cpu lacks the bit that picks a faster
 # path, and some in every session, and until docs/decisions.md 125 and 126
 # no spec compiled one for a 64-bit target: clang for x86-64 wrote a jump
-# on a secret in two of them. aes.c@host and gcm.c@host take the QUIC and
-# the SUITE=aesgcm defines together, so the count reads the text that
-# carries a traffic key beside the text that carries a public one.
+# on a secret in two of them. aes.c@host, gcm.c@host and
+# quic_packet.c@host take the QUIC and the SUITE=aesgcm defines together,
+# so the count reads the text that carries a traffic key beside the text
+# that carries a public one.
 # quic_aes_soft.c and aes_extern.c have no entry: a host object runs the
 # first under public keys alone, and no host object holds the second.
 # sha512.c@host is sha512.c's first arm, the framing that copies with
@@ -7093,7 +7094,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
 # WIDE64_CEILING holds.
 WIDE64_HOST_COPIES := x25519.c mlkem_poly.c ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c \
                       poly1305.c aead.c mlkem.c drbg.c rsa_sign.c aes.c gcm.c p256_field.c \
-                      p256_scalar.c sha512.c
+                      p256_scalar.c sha512.c quic_packet.c
 WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 rsa_sign64.c@512:0 \
                   $(addsuffix @host:0,$(WIDE64_HOST_COPIES))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
@@ -7174,9 +7175,10 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    rsa_ifma_sign.c:-DCH_CPU_RUNTIME \
                    rsa_ifma_sign.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
                    rsa_sign64.c@512:-DCH_CPU_RUNTIME$(COMMA)-DCH_RSA_MODULUS_MAX=512 \
-                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out hkdf.c aes.c gcm.c,$(WIDE64_HOST_COPIES))) \
+                   $(addsuffix @host:-DCH_CPU_RUNTIME,$(filter-out hkdf.c aes.c gcm.c quic_packet.c,$(WIDE64_HOST_COPIES))) \
                    hkdf.c@host:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
                    aes.c@host:$(WIDE64_HOST_AES_DEFINES) gcm.c@host:$(WIDE64_HOST_AES_DEFINES) \
+                   quic_packet.c@host:$(WIDE64_HOST_AES_DEFINES) \
                    $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):$(WIDEMUL_NATIVE_DEFINES)) \
                    poly1305_vector_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
@@ -7737,6 +7739,10 @@ P256_WIDE_BRANCH_CEILING := \
 P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
+QUIC_PACKET_BRANCH_CEILING := \
+  m3/quic_packet.c:58 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
+  mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
+  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:36 x86-64/quic_packet.c@host:34
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
                         mips32r2-gcc-O2/tls_write.c:2
 # The files the branch count covers: the arithmetic under the record
@@ -7787,8 +7793,50 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 # loops, the dispatcher's test of hash_len, and hkdf_expand's CH_ASSERT on
 # hash_len. hash_len is the suite's, which the ServerHello names in the
 # clear, and none of them reads a key byte.
+#
+# quic_packet.c joined for RFC 9001 §9.5, which makes a packet number, its
+# encoded length and the Key Phase bit secrets on the seal and the open
+# path (rfc9001.txt:2110-2116). By the rule above it is a protocol file,
+# and most of its branches are the kind that rule leaves uncounted. It is
+# counted because it also holds mask arithmetic on those secrets, in
+# byte_in_use, mask_pn_field, quic_pn_read, quic_pn_decode and
+# quic_key_set_select, and a compiler that knows a mask is all ones or
+# zero may write a choice by it as a branch. clang for rv32imac did:
+# quic_pn_read's choice by byte_in_use's mask was a bgez on the sign of
+# i - pn_len, until byte_in_use read its borrow back from a volatile
+# object (docs/decisions.md 125).
+# test/violations/inv16-quic-byte-in-use-bit-known.violation builds the
+# mask from the borrow itself again, and the three 32-bit clang specs'
+# counts rise: by three for rv32imac, four for m3 and one for mips32r2.
+# Every branch was read under all ten specs, by the C line each
+# compiler's line table names for it, and each is one of these:
+#   - loop control over a constant count: the four bytes of a packet
+#     number field, the bytes of the header protection sample and mask,
+#     of the nonce, and of the keys and IVs quic_keys_select copies;
+#   - first_byte_bits' compare of level and the compares of the suite,
+#     both of which the wire carries in the clear;
+#   - CH_ASSERT's tests of a pointer and of the writer's error;
+#   - the refusals on entry and the §5.4.2 length check. quic_packet_seal
+#     reads pn_len, pt_len, hdr_len and cap there: every call it admits
+#     takes the same side of each test, and a call it refuses seals
+#     nothing;
+#   - the header step's return code and the AEAD's verdict, which the
+#     caller is told;
+#   - the two §6.6 limits, which compare counts of packets;
+#   - where a compiler writes quic_nonce's 64-bit shift of the packet
+#     number inline, a test of the distance, 8 * i, the loop's counter;
+#   - under the Bootlin gcc, which compiles a stack protector in unless
+#     told otherwise, the test of the guard word at seven returns.
+# The arm64 spec's 36 holds two bics, which the dot in its b.cs matches;
+# they set flags and branch nowhere. One kind reads a secret. Under clang
+# for Cortex-M3, four of the 58 are IT blocks whose condition comes from
+# one: the borrow byte_in_use computes in quic_header_unprotect, the two
+# window tests of quic_pn_decode, and quic_key_set_select's choice of a
+# phase. Each is one predicated instruction and none is a branch, the
+# form the arm list counts for the reason it gives. No other spec has a
+# counted instruction on those lines.
 BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
-               mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c \
+               mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c quic_packet.c \
                aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
                poly1305_vector.c \
                sha512.c \
@@ -7987,7 +8035,7 @@ BRANCH_CEILING := \
   arm64/p256_scalar.c@host:4 x86-64/p256_scalar.c@host:4 \
   arm64/sha512.c@host:9 x86-64/sha512.c@host:9 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
-  $(P256_WIDE_BRANCH_CEILING)
+  $(P256_WIDE_BRANCH_CEILING) $(QUIC_PACKET_BRANCH_CEILING)
 # The third count, read from the same assembly: the calls each file makes
 # to the compiler runtime's 64-bit shift routines. No 32-bit core here
 # shifts a 64-bit value by a register in one instruction. clang writes

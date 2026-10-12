@@ -1603,7 +1603,8 @@ launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOC
 # bound. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l, these flags):
 # 923 properties, 9.7 s, 0.23 GB peak. The same formula with an assert
 # of 0 at each of its three CH_OK tails fails all three (3 of 926, 4
-# iterations), so every tail is reached.
+# iterations), so every tail is reached. With quic_pn_read and
+# quic_pn_decode shifting by constants alone: 921 properties, 7 s.
 launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_packet_suite: the same file in the -DCH_SUITE_AES_GCM QUIC build,
 # over each of the three suites: the mask, the seal and the Handshake open
@@ -1627,7 +1628,8 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # others: 1154 properties, 11 s, 0.48 GB. With the stub of
 # aes_traffic_key_cpu writing the schedule's second cpu byte as well
 # (docs/decisions.md 130), measured as record_suite's was on 2026-10-13:
-# 1159 properties, 21 s, 0.82 GB.
+# 1159 properties, 21 s, 0.82 GB. With quic_pn_read and quic_pn_decode
+# shifting by constants alone: 1158 properties, 15 s, 0.48 GB.
 launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and

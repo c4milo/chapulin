@@ -1,0 +1,16 @@
+invariant: INV-16
+file: quic_packet.c
+catches: test/lint-wide-multiply.sh
+reason: byte_in_use builds its mask from the borrow itself, without the
+  volatile read. A compiler then knows the mask is all ones or zero, and
+  clang for rv32imac writes quic_pn_read's choice by it as a branch on
+  the sign of i - pn_len, the encoded length RFC 9001 section 9.5 makes a
+  secret (rfc9001.txt:2110-2112, docs/decisions.md 125). Every test
+  passes on it, because the value is the same. lint-wide-multiply counts
+  quic_packet.c's conditional branches, and the rv32imac spec then reads
+  more than its ceiling.
+
+--- old
+    uint32_t borrow = opaque;
+--- new
+    uint32_t borrow = ((uint32_t)i - (uint32_t)pn_len) >> 31;

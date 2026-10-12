@@ -202,9 +202,9 @@ size_t quic_header_unprotect(uint8_t *pkt, size_t pn_off, uint8_t level,
 // Reads the encoded packet number out of an unprotected header: the
 // pn_len bytes at pn_off, in network byte order (RFC 9000 §17.1,
 // rfc9000.txt:4897-4899). It always reads QUIC_PN_MAX_LEN bytes and
-// then clears the bytes above pn_len with branchless mask arithmetic,
-// so neither the addresses read nor the work done depends on pn_len,
-// which §9.5 makes a secret.
+// takes each into the value by branchless mask arithmetic, with no
+// shift by a distance pn_len chooses, so neither the addresses read nor
+// the work done depends on pn_len, which §9.5 makes a secret.
 //
 // Requires: pkt points at pn_off + QUIC_PN_MAX_LEN readable bytes;
 // pn_len is 1 to QUIC_PN_MAX_LEN, the value quic_header_unprotect

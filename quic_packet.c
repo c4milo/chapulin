@@ -97,13 +97,16 @@ static uint64_t below_mask(uint64_t a, uint64_t b) {
     return ~(borrow - 1);
 }
 
-// 0xff while i is below pn_len and 0 from pn_len on. Both values are at
-// most QUIC_PN_MAX_LEN, so the borrow out of the 32-bit subtraction is
-// the whole answer, and the caller's loop reads and writes the same
-// four bytes whatever pn_len is.
-static uint8_t byte_in_use(size_t i, size_t pn_len) {
-    uint32_t borrow = ((uint32_t)i - (uint32_t)pn_len) >> 31;
-    return (uint8_t)~(borrow - 1U);
+// All ones while i is below pn_len and zero from pn_len on, for i and
+// pn_len at most QUIC_PN_MAX_LEN, where the borrow out of the 32-bit
+// subtraction is the whole answer. The borrow is read back from a
+// volatile object, so no compiler knows the mask is all ones or zero
+// and writes a choice by it as a branch (docs/decisions.md 125).
+static uint32_t byte_in_use(size_t i, size_t pn_len) {
+    volatile uint32_t opaque = ((uint32_t)i - (uint32_t)pn_len) >> 31;
+    uint32_t borrow = opaque;
+    opaque = 0;
+    return ~(borrow - 1U);
 }
 
 // All ones when the two key set names match, and zero otherwise.
@@ -136,7 +139,7 @@ static uint8_t first_byte_bits(uint8_t level) {
 static void mask_pn_field(uint8_t *pkt, size_t pn_off, size_t pn_len,
                           const uint8_t mask[QUIC_HP_MASK_LEN]) {
     for (size_t i = 0; i < QUIC_PN_MAX_LEN; i++) {
-        pkt[pn_off + i] ^= mask[1 + i] & byte_in_use(i, pn_len);
+        pkt[pn_off + i] ^= (uint8_t)(mask[1 + i] & byte_in_use(i, pn_len));
     }
 }
 
@@ -207,24 +210,21 @@ size_t quic_header_unprotect(uint8_t *pkt, size_t pn_off, uint8_t level,
 }
 
 uint64_t quic_pn_read(const uint8_t *pkt, size_t pn_off, size_t pn_len) {
-    uint32_t whole = 0;
+    // The first pn_len of the four bytes, the most significant first: a
+    // byte in use moves the value up a byte and joins it, by mask (§9.5).
+    uint32_t value = 0;
     for (size_t i = 0; i < QUIC_PN_MAX_LEN; i++) {
-        whole = (whole << 8) | pkt[pn_off + i];
+        value ^= (value ^ ((value << 8) | pkt[pn_off + i])) & byte_in_use(i, pn_len);
     }
-    // The field is the first pn_len of those four bytes, so the bytes
-    // past it shift out. The distance is masked to 0, 8, 16 or 24, so
-    // no pn_len makes the shift undefined, and the distance is all that
-    // depends on pn_len: the four reads above do not.
-    unsigned drop = (unsigned)((QUIC_PN_MAX_LEN - pn_len) & 3U) << 3;
-    return (uint64_t)(whole >> drop);
+    return value;
 }
 
 uint64_t quic_pn_decode(uint64_t largest_pn, uint64_t truncated_pn, size_t pn_len) {
     // RFC 9000 Appendix A.3 (rfc9000.txt:8358-8381). pn_len is a secret
     // (§9.5), so pn_mask is built with no shift by it (docs/porting.md).
-    uint64_t pn_mask = (uint32_t)byte_in_use(0, pn_len) | ((uint32_t)byte_in_use(1, pn_len) << 8) |
-                       ((uint32_t)byte_in_use(2, pn_len) << 16) |
-                       ((uint32_t)byte_in_use(3, pn_len) << 24);
+    uint64_t pn_mask = (byte_in_use(0, pn_len) & 0xffU) | (byte_in_use(1, pn_len) & 0xff00U) |
+                       (byte_in_use(2, pn_len) & 0xff0000U) |
+                       (byte_in_use(3, pn_len) & 0xff000000U);
     uint64_t expected_pn = largest_pn + 1;
     uint64_t pn_win = pn_mask + 1;
     uint64_t pn_hwin = pn_win >> 1;

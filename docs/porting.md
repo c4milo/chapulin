@@ -349,11 +349,11 @@ fail.
 The same pass counts the conditional branches per file — `b<cond>`, `cbz`,
 `cbnz`, `tbb`, `tbh` and the IT instruction on arm; `beq`, `bne` and the
 four compare-with-zero forms on mips; the six base branches and `c.beqz` and
-`c.bnez` on rv32 — in the arithmetic files under the record layer
-(`BRANCH_SRCS` in the Makefile), and holds each at the ceiling
-`BRANCH_CEILING` records for that compiler
+`c.bnez` on rv32 — in the arithmetic files under the record layer and in
+`quic_packet.c` (`BRANCH_SRCS` in the Makefile), and holds each at the
+ceiling `BRANCH_CEILING` records for that compiler
 ([#141](https://github.com/c4milo/chapulin/issues/141)). The eight device
-specs compile 22 of those files, and the two tables below hold every count
+specs compile 23 of those files, and the two tables below hold every count
 the lint prints for them. Read from the lint:
 
 | compiler | ct | ct_wipe | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
@@ -367,18 +367,18 @@ the lint prints for them. Read from the lint:
 | Bootlin gcc 14.3, rv32imac | 1 | 1 | 15 | 22 | 23 | 10 | 15 | 4 | 24 | 20 | 41 | 10 | 0 |
 | Bootlin gcc 14.3, rv32ic | 1 | 1 | 15 | 22 | 23 | 10 | 15 | 4 | 24 | 20 | 41 | 10 | 2 |
 
-| compiler | p256_field | p256_scalar | rsa_sign | sha512 | sha512_compress | aes | quic_aes_soft | aes_extern | gcm |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3 | 24 | 15 | 29 | 24 | 4 | 3 | 12 | 0 | 22 |
-| clang 23, mips32r2 | 21 | 14 | 27 | 20 | 4 | 2 | 12 | 0 | 16 |
-| clang 23, rv32imac | 21 | 14 | 27 | 23 | 4 | 3 | 12 | 0 | 20 |
-| Arm GNU gcc 15.3, Cortex-M3 | 14 | 12 | 26 | 12 | 4 | 3 | 9 | 0 | 15 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 13 | 12 | 23 | 12 | 4 | 3 | 9 | 0 | 13 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 24 | 14 | 26 | 27 | 4 | 3 | 12 | 0 | 16 |
-| Bootlin gcc 14.3, rv32imac | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 |
-| Bootlin gcc 14.3, rv32ic | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 |
+| compiler | p256_field | p256_scalar | rsa_sign | sha512 | sha512_compress | aes | quic_aes_soft | aes_extern | gcm | quic_packet |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3 | 24 | 15 | 29 | 24 | 4 | 3 | 12 | 0 | 22 | 58 |
+| clang 23, mips32r2 | 21 | 14 | 27 | 20 | 4 | 2 | 12 | 0 | 16 | 42 |
+| clang 23, rv32imac | 21 | 14 | 27 | 23 | 4 | 3 | 12 | 0 | 20 | 46 |
+| Arm GNU gcc 15.3, Cortex-M3 | 14 | 12 | 26 | 12 | 4 | 3 | 9 | 0 | 15 | 46 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 13 | 12 | 23 | 12 | 4 | 3 | 9 | 0 | 13 | 46 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 24 | 14 | 26 | 27 | 4 | 3 | 12 | 0 | 16 | 52 |
+| Bootlin gcc 14.3, rv32imac | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 | 55 |
+| Bootlin gcc 14.3, rv32ic | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 | 55 |
 
-`BRANCH_SRCS` lists more files than these 22. The rest are a host object's:
+`BRANCH_SRCS` lists more files than these 23. The rest are a host object's:
 its vector kernels, its hashes on the CPU's instructions, its SHA-512
 compression function in plain C, its arithmetic on 64-bit words, and the
 copies of the files above that it compiles for itself. Its copy of `sha512.c`
@@ -440,13 +440,36 @@ been. `test/violations/inv16-widemul-s-sign-mask.violation` puts the masks
 back, and the m3 spec and the x86-64 spec both object
 ([decision 125](decisions.md#engineering)).
 
+`quic_packet.c` is counted for RFC 9001 §9.5, which makes a packet number,
+its encoded length and the Key Phase bit secrets on the seal and the open
+path. Most of its branches are a protocol file's: loops over constant counts,
+tests of the level, of the suite and of lengths, refusals on entry and the
+AEAD's verdict. It is counted because it also picks bytes and key sets by
+masks of those secrets, and a compiler that knows a mask is all ones or zero
+may write the choice as a branch. clang did. `quic_pn_read` takes each byte of
+the packet number field into its value by `byte_in_use`'s mask, and clang for
+rv32imac wrote that as a `bgez` on the sign of `i - pn_len`. `byte_in_use`
+now reads its borrow back from a volatile object before it builds the mask,
+so no compiler knows what the mask holds
+([decision 125](decisions.md#engineering)).
+`test/violations/inv16-quic-byte-in-use-bit-known.violation` builds the mask
+from the borrow itself again, and the three clang counts for the 32-bit
+targets rise: by three for rv32imac, four for Cortex-M3 and one for mips32r2.
+Four of clang's 58 for Cortex-M3 are IT blocks whose condition comes from a
+secret: one where `quic_header_unprotect` computes `byte_in_use`'s borrow, two
+at `quic_pn_decode`'s window tests and one at `quic_key_set_select`'s choice
+of a phase. No other compiler in the tables has a counted instruction on
+those lines. The Bootlin gcc's 55 hold seven tests of a stack protector's
+guard word, which that toolchain compiles in unless told otherwise. The
+comment above `BRANCH_SRCS` in the Makefile holds the reading.
+
 The count does not see a jump through a register (`jr`, `jalr`, a load into
 `pc`), which is a return as often as a table jump; no file it covers has a
-switch. The protocol files above the record layer are not counted: they
-branch on lengths, types and states the peer sent in the clear, several
-dozen each, and a count there would record the parser and move with every
-feature. A new spec must record a ceiling for every file it counts before
-it passes, so a compiler the tables do not carry cannot pass on counts
+switch. The other protocol files at and above the record layer are not
+counted: they branch on lengths, types and states the peer sent in the clear,
+several dozen each, and a count there would record the parser and move with
+every feature. A new spec must record a ceiling for every file it counts
+before it passes, so a compiler the tables do not carry cannot pass on counts
 nobody read.
 
 ### The shift routines gcc calls at `-Os`

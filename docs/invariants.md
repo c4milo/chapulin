@@ -3781,6 +3781,12 @@ last `ROLE=server` stub, as the entry said it would.
   §9.5 makes `pn_len` a secret; it builds its window from byte masks
   now. `inv16-quic-pn-window-64bit-shift` writes the 64-bit shift back,
   and quic_packet.c goes one over its ceiling in the mips lane.
+  quic_packet.c is in the branch count too, for the masks it builds from
+  the secrets §9.5 names. clang for rv32imac wrote `quic_pn_read`'s choice
+  by `byte_in_use`'s mask as a branch on the sign of `i - pn_len`, so
+  `byte_in_use` reads its borrow back from a volatile object first, and
+  `inv16-quic-byte-in-use-bit-known` drops that read: the three 32-bit
+  clang counts rise.
   A mask is no protection by itself. `ct_widemul_s` was the unsigned
   product with two masks of the operands' sign bits, and clang for
   x86-64 wrote the mask of a row's word in x25519's `mul` as a jump on
@@ -3927,7 +3933,7 @@ last `ROLE=server` stub, as the entry said it would.
   clang or llvm-nm at another version than the pin before they count
   anything (`REQUIRE_PINNED`), because a catch script runs each one alone,
   without `lint-toolchain`; `test/pinned-checkers.sh` hands them older and
-  newer stand-ins. Twenty-four of the `inv16-*` violations
+  newer stand-ins. Twenty-five of the `inv16-*` violations
   in `test/violations/` prove each detection catches its mutant, among
   them `inv16-mul128-outside-host-object`, which defines `ct.h`'s
   64x64->128 multiply outside a host object and which
