@@ -10145,8 +10145,8 @@ does nothing more.
       under gcc the 16-word field's rows, under `ch_cfg.cpu 0x1`, take
       0.81 of their time on an EPYC 7763 and 0.82 on a Xeon Platinum
       8573C, and under clang 1.01 and 1.03 times
-      (`bench/notes-primitives.md`). The M1 Pro's CSV is from before
-      this entry.
+      (`bench/notes-primitives.md`). On an M1 Pro under Apple clang
+      they take 885 µs where they took 901.
     - **Under the other compilers.** Every 32-bit spec holds `x25519.c`
       at zero widening multiplies and at its branch ceiling: the Arm GNU
       gcc 15.3, Ubuntu's mips gcc 12.4 at `-Os` and `-O2`, the Bootlin

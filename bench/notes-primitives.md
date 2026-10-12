@@ -20,8 +20,9 @@ note does not repeat them.
 
 The x86-64 CSVs now hold runs of 2026-10-12 on the tree of
 docs/decisions.md 128, ff287fcd, on an EPYC 7763 and on a Xeon Platinum
-8573C. The two files this note reads still hold the runs of d699bec6.
-Between 58d534cb and this tree three changes reached code a row runs:
+8573C, and bench/results-primitives-darwin-arm64-clang.csv a run of the
+same day on 67da657e, the commit that recorded them, whose code is
+ff287fcd's. Between 58d534cb and this tree three changes reached code a row runs:
 SHA-384 and SHA-512 in a host object (decisions 127 and 128), the signed
 product of the multiply decomposition, which the 16-word X25519 field
 alone calls, and `mlk_poly_frommsg`'s read of a message bit (both
@@ -81,6 +82,29 @@ On the Xeon Platinum 8573C:
 - **Under gcc the 16-word X25519 field takes 0.82 of its time**, 1.87 ms
   where it took 2.29, and under clang 1.03 times, 1.98 ms where it took
   1.92.
+
+On the M1 Pro, against the run of d699bec6:
+
+- **Under `0xe7` the 64-byte rows of the hashes read 0.49 to 0.82 of
+  their time, and no code of theirs changed.** 2a80e289 made the bench's
+  sink consume one byte of an output where it consumed every byte
+  (docs/performance.md, the pitfalls table). HMAC and Poly1305 over 64
+  bytes and HKDF's label expansion read 0.74 to 0.82 of their time for
+  the same reason, and the same primitives' rows over 1,024 and 1,200
+  bytes 0.87 to 0.95. The ChaCha20-Poly1305 seal
+  over 64 bytes read 0.96. No other row under `0xe7` moved by more than
+  3%.
+- **Under `0x1` SHA-384 and SHA-512 take 0.40 to 0.57 of their time**,
+  on `sha512_compress_blocks.c` (decision 127). 16 KiB of SHA-384 take
+  29.3 µs where the portable C took 51.9, and 64 bytes 244 ns where they
+  took 607, a part of which is the sink's.
+- **Under `0x1` the handshake rows that no RSA signature fills take 0.91
+  to 0.95 of their time.** A client's side of the pinned ECDSA P-256
+  handshake takes 2.06 ms where it took 2.21. Under Apple clang the
+  16-word X25519 field takes 885 µs where it took 901 (decision 125), so
+  a client's two operations account for 34 µs of those
+  149. Nothing read
+  accounts for the rest.
 
 ## The run of 58d534cb
 
