@@ -1,0 +1,25 @@
+invariant: INV-16
+file: sha512_hw.c
+catches: test/docker-aes-runtime-qemu.sh sha2-equiv
+reason: the finalize of sha512_hw.c's arm64 arm writes zero as the upper
+  word of the length where FIPS 180-4 §5.1.2 writes the upper 64 bits of
+  the bit count. Every message under 2^61 bytes has the same digest, so
+  the published vectors and the Wycheproof suites pass on the
+  instructions. CBMC cannot read an intrinsic, so no proof covers this
+  arm, and bin/sha2_equiv_test is what holds it: it starts a context at a
+  byte count of 2^61 - 1 and at larger ones and compares the digest with
+  one whose padding the test writes from a 128-bit product
+  (test/sha2_equiv_length512.h). This arm of the file is arm64's, so the
+  catch is the script, which builds the binary for arm64 and runs it under
+  qemu-aarch64, whose max model has the instructions on every host. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+// big-endian integer, written into the pending block as sha512.c's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = s->total_bytes >> 61;
+--- new
+// big-endian integer, written into the pending block as sha512.c's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = 0;

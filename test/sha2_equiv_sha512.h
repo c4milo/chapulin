@@ -26,6 +26,9 @@
 // pointer and the empty message's two digests, which FIPS 180-4 fixes; and,
 // for sha512_hw.c, HMAC, HKDF and the key schedule at SHA-384's hash length
 // in the copies hkdf_hw.c and keysched_hw.c hold.
+// test/sha2_equiv_length512.h adds contexts that start at a byte count of
+// 2^61 - 1 and above, for the upper word of the length a message ends
+// with, and runs them on the reference too.
 // test/sha2_equiv_residue512.h then looks in the stack each kind of call
 // leaves, and on x86-64 in the vector registers after the kernel's call.
 //
@@ -252,6 +255,8 @@ static void run_empty512(const path512 *held) {
     }
 }
 
+#include "sha2_equiv_length512.h"
+
 // Every case that hashes, for one path.
 static void run_cases512(const path512 *held) {
     run_every_length512(held);
@@ -259,13 +264,17 @@ static void run_cases512(const path512 *held) {
     run_random512(held);
     run_large512(held);
     run_empty512(held);
+    run_length512(held);
 }
 
 #include "sha2_equiv_residue512.h"
 
 // sha512.c's first arm, on every machine: the cases, and then what each
-// kind of call leaves on the stack.
+// kind of call leaves on the stack. Before them the reference writes the
+// length of a message of 2^61 bytes and more against FIPS 180-4's padding,
+// which no other case and no proof holds it to.
 static void run_sha512_first_arm(void) {
+    run_length512(&PATH512_REFERENCE);
     run_cases512(&PATH512_FIRST_ARM);
     run_residue512_first_arm();
 }

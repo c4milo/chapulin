@@ -1,0 +1,21 @@
+invariant: INV-50
+file: sha512.c
+catches: sha2_equiv_test
+reason: a host object's finalize writes zero as the upper word of the
+  length where FIPS 180-4 §5.1.2 writes the upper 64 bits of the bit
+  count, which are the top three bits of the byte count. Every message
+  under 2^61 bytes has the same digest, and no message a test hashes is
+  that long, so the published vectors and the Wycheproof suites pass.
+  sha512_hw.c compiles the same text for x86-64. bin/sha2_equiv_test
+  starts a context at a byte count of 2^61 - 1 and at larger ones,
+  absorbs a few bytes and compares the digest with one whose padding the
+  test writes from a 128-bit product (test/sha2_equiv_length512.h).
+
+--- old
+// big-endian integer, written into the pending block as the second arm's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = s->total_bytes >> 61;
+--- new
+// big-endian integer, written into the pending block as the second arm's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = 0;

@@ -1,0 +1,22 @@
+invariant: INV-50
+file: sha512.c
+catches: sha2_equiv_test
+reason: the second arm's finalize, the reference a device object runs,
+  writes zero as the upper word of the length where FIPS 180-4 §5.1.2
+  writes the upper 64 bits of the bit count. Every message under 2^61
+  bytes has the same digest, so the published vectors pass, the first
+  arm still agrees with this one in every case that hashes a message,
+  and no proof holds a value. test/sha512_portable.c compiles this arm
+  into bin/sha2_equiv_test, which starts a context at a byte count of
+  2^61 - 1 and at larger ones on it and compares the digest with one
+  whose padding the test writes from a 128-bit product
+  (test/sha2_equiv_length512.h).
+
+--- old
+// (docs/proofs.md: keep harness-reachable loop structure concrete).
+static void finalize(sha512 *s) {
+    uint64_t high = s->total_bytes >> 61;
+--- new
+// (docs/proofs.md: keep harness-reachable loop structure concrete).
+static void finalize(sha512 *s) {
+    uint64_t high = 0;

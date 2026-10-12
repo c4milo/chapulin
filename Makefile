@@ -584,7 +584,7 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
-         test/sha2_equiv_residue512_avx2.h test/sha512_portable.h \
+         test/sha2_equiv_residue512_avx2.h test/sha2_equiv_length512.h test/sha512_portable.h \
          test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
