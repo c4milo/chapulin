@@ -98,7 +98,7 @@ jobs:
         run: echo "::error file=Makefile::coverage fell below COVERAGE_FLOOR; add tests or move the floor down in the same diff with the reason in the commit message"
       - name: Upload the HTML report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-html
           path: bin/cov/html/
@@ -864,7 +864,7 @@ jobs:
       # output alone; keep the full solver logs.
       - name: Upload proof logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proof-results
           path: proof/results/
