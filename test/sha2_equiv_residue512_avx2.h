@@ -33,7 +33,11 @@
 //   word of the set in the copy, at any byte offset.
 //
 // The three searches hold a claim about optimized code alone
-// (test/stack_residue.c). The registers are read in every build.
+// (test/stack_residue.c). The registers are read in every build but the
+// sanitizer lane's. There AddressSanitizer adds code of its own to the
+// kernel's return, after VZEROALL, and gcc 13.3's writes the marker of a
+// returned frame, 0xf5 in every byte, through ymm0. So that binary reads
+// the sanitizer's marker, which says nothing of the object a caller links.
 //
 // Included by test/sha2_equiv_residue512.h only, on x86-64.
 #ifndef CH_SHA2_EQUIV_RESIDUE512_AVX2_H
@@ -148,6 +152,12 @@ static void run_residue512_avx2_registers(void) {
                       at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS);
         return;
     }
+#ifdef TEST_ADDRESS_SANITIZER
+    (void)printf("SKIP sha2 equivalence, the registers after sha512_avx2.c's kernel: this binary "
+                 "runs under AddressSanitizer, whose code at the kernel's return writes a vector "
+                 "register after VZEROALL\n");
+    return;
+#endif
     residue512_set_call_store(sha512_avx2_compress_blocks, residue512_state.h, residue512_data, 2,
                               0);
     compared++;
@@ -271,8 +281,9 @@ static void run_residue512_avx2_sums(size_t shift) {
     }
 }
 
-// The four checks. The registers are read in every build, and the three
-// that read the stack in a binary whose stack the search can read: an
+// The four checks. The registers are read in every build but the
+// sanitizer lane's (run_residue512_avx2_registers), and the three that
+// read the stack in a binary whose stack the search can read: an
 // optimized build without AddressSanitizer (test/stack_residue.c).
 static void run_residue512_avx2(void) {
     run_residue512_avx2_registers();

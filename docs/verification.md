@@ -4848,7 +4848,10 @@ holds that in four steps:
   kernel and stores the sixteen registers, so no instruction a compiler
   picks runs between the three, and every stored word must be zero.
   The same block with the call left out runs first, and its stores
-  must hold every bit set.
+  must hold every bit set. `make san-check`'s binary makes that first
+  read alone: under AddressSanitizer the kernel's return runs the
+  sanitizer's code after VZEROALL, and under gcc 13.3 ymm0 then holds
+  0xf5 in every byte, the sanitizer's marker of a returned frame.
 - It calls the kernel by name with no wipe after it and requires the
   lowest byte the call wrote, and 16 bytes more, within 512 bytes of
   its caller: the function aligns its frame to 32 bytes, so the depth
