@@ -141,10 +141,19 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     poly1305_ifma_native.c ct.c ct_wipe.c
     hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress_blocks.c sha512_hw.c
     "$SHA512_AVX2_UNIT")
+# Whether the compiler targets x86-64. grep reads every line the compiler
+# writes: with -q it exits at the first match, the compiler may then write
+# to a closed pipe and fail, and under pipefail the test reads false. In the
+# check image under load, 3 of 400 such pipelines failed that way, and one
+# left avx512_wipe.c out of a link.
+X86_64=""
+if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -w __x86_64__ >/dev/null; then
+    X86_64=yes
+fi
 # avx512_wipe.c, which the AVX-512 kernels call before they return, has a
 # body on x86-64 alone, and -Wpedantic refuses a translation unit with no
 # declaration, so the list names it on x86-64 alone, as the Makefile does.
-if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -qw __x86_64__; then
+if [ -n "$X86_64" ]; then
     SRCS+=(avx512_wipe.c)
 fi
 "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x3 -o "$W/record" "${SRCS[@]}"
@@ -154,7 +163,7 @@ fi
 KERNELS=""
 IFMA=""
 KERNELS_NOTE="no ch_cfg.cpu 0x1f rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
-if "${CC_WORDS[@]}" -dM -E -x c /dev/null | grep -qw __x86_64__; then
+if [ -n "$X86_64" ]; then
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x1f -o "$W/record_kernels" "${SRCS[@]}"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x11f -o "$W/record_ifma" "${SRCS[@]}"
     if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo && grep -qw vaes /proc/cpuinfo &&
