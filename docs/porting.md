@@ -106,7 +106,9 @@ without the bit runs the portable Poly1305 and its 16x16 decomposition
 On x86-64 three more bits say what the CPU has, and none states a timing.
 `CH_CPU_AVX2` says the CPU has AVX2 and its operating system saves the 256-bit
 registers, and it moves the ChaCha20 keystream to 256-bit vectors, eight blocks
-a pass. `CH_CPU_VAES` says the CPU also has VAES and VPCLMULQDQ on those
+a pass. In an object with the AES-GCM suites it also moves SHA-384's message
+schedule to 256-bit registers, in `sha512_avx2.c`, for the session's transcript
+and key schedule (decision 128). `CH_CPU_VAES` says the CPU also has VAES and VPCLMULQDQ on those
 registers. Beside `CH_CPU_CONSTANT_TIME_AES` it moves AES-GCM's whole blocks to
 them; the AES bit's statement covers those forms, and `CH_CPU_VAES` without it
 runs nothing (decision 90). `CH_CPU_AVX512_IFMA` says the CPU has AVX-512F and
@@ -137,10 +139,11 @@ arm64 session does the same for SHA-384, the hash of TLS_AES_256_GCM_SHA384,
 and each hash follows its own bit alone. The vendor statement behind a bit must
 cover the instructions `cpu_cfg.h` lists for it. A hash call that takes no
 `ch_cfg.cpu`, such as a certificate's, a signature's or the DRBG's, runs no
-hash instruction in any object. A host object's SHA-384 without the SHA-512
-bit, and with no `ch_cfg.cpu`, runs plain C that needs no statement,
-`sha512.c` over `sha512_compress_blocks.c`, in place of the byte loops and
-`sha512_compress.c` a device object runs (decision 127). With the SHA-3 bit
+hash instruction in any object. A host object's SHA-384 with no `ch_cfg.cpu`,
+and without the SHA-512 bit on arm64 or `CH_CPU_AVX2` on x86-64, runs plain C
+that needs no statement, `sha512.c` over `sha512_compress_blocks.c`, in place
+of the byte loops and `sha512_compress.c` a device object runs (decision 127).
+With the SHA-3 bit
 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
 instructions, in an object that clang compiled. In an object that gcc compiled
 the bit picks nothing, because gcc writes lanes of the Keccak state to stack

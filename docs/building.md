@@ -157,7 +157,11 @@ Other targets:
   widening multiply, which the bit states beside the scalar one (decision
   83). On x86-64, `CH_CPU_AVX2` says the CPU has AVX2 and its operating
   system saves the 256-bit registers, and the session's ChaCha20 then
-  runs `chacha20_avx2.c`'s kernel. `CH_CPU_VAES` says the CPU also has
+  runs `chacha20_avx2.c`'s kernel. In a `SUITE=aesgcm` object its
+  SHA-384, the hash of TLS_AES_256_GCM_SHA384, then compresses on
+  `sha512_avx2.c`'s kernel, which computes the message schedule in
+  256-bit registers, and so do HMAC, HKDF and the key schedule over it
+  (decision 128). `CH_CPU_VAES` says the CPU also has
   VAES and VPCLMULQDQ on those registers, and beside
   `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES
   instructions at every width, AES-GCM's whole blocks then run
@@ -199,9 +203,10 @@ Other targets:
   bit alone. A certificate's hash, a signature's and the DRBG's take no
   `cpu` and run no hash instruction in any object. No bit picks what
   `sha512.c` runs: in a host object it compresses on
-  `sha512_compress_blocks.c`, plain C that every session runs on both
-  architectures, where a device object runs `sha512_compress.c`
-  (decision 127). Under
+  `sha512_compress_blocks.c`, plain C, where a device object runs
+  `sha512_compress.c` (decision 127). Those calls, an arm64 session
+  without the SHA-512 bit and an x86-64 session without `CH_CPU_AVX2`
+  run it. Under
   `CH_CPU_CONSTANT_TIME_SHA3` an arm64 session runs SHA-3, SHAKE and
   ML-KEM on the SHA-3 instructions, in `sha3_hw.c` and ML-KEM's two
   copies over it, where clang compiled the object. In an object another
