@@ -4822,7 +4822,9 @@ under gcc 13.3 and 256 or 272 under clang 23.1.2 on the runners, and
 224 and 256 under gcc 13.3 and clang 18.1.3 on `qemu-x86_64`, and the
 same three things held in the 32 runs of the binary in each of runs
 38182747184, 38184809651 and 38185545665, on EPYC 7763, EPYC 9V74,
-EPYC 9V45 and Xeon Platinum 8573C runners. `make lint-stack` holds the
+EPYC 9V45 and Xeon Platinum 8573C runners, and in the 48 of run
+38187801680, on those four models, a Xeon Platinum 8370C and a Xeon
+6973P-C. `make lint-stack` holds the
 kernel's frame under 384 bytes for an object that packages it, one with
 `SUITE=aesgcm`. `make check` runs that lint for no object with the
 suite, so that ceiling is read when the lint is run for such an object

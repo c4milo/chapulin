@@ -563,8 +563,8 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   compresses on `sha512_compress_blocks.c`, plain C with no bit (decision 127), and one with
   `CH_CPU_AVX2` in a `SUITE=aesgcm` object on `sha512_avx2.c`, whose message schedule runs in
   256-bit registers, a quarter of a schedule step after each round (decision 128). That run
-  predates both, and the two entries hold what they measured: under the bit, 1.01 to 1.07 times
-  OpenSSL's time over 16 KiB and 0.61 to 0.74 of it over 64 bytes. SHA3-256
+  predates both, and the two entries hold what they measured: under the bit, 1.01 to 1.08 times
+  OpenSSL's time over 16 KiB and 0.61 to 0.77 of it over 64 bytes. SHA3-256
   takes 1.33 times and 0.91 of it under gcc, where `sha3.c`'s loops took 7.68 and 5.02 times
   (decision 98).
 - P-256's key generation and shared secret take 1.51 and 1.80 times OpenSSL's time under gcc, and

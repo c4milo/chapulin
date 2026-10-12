@@ -10750,7 +10750,11 @@ does nothing more.
       that clang cannot split it, took this text's time within 0.3
       percent, so the cost is the aligned frame's. Under gcc, which
       aligns the frame for either array, the first copy took this text's
-      time within 0.3 percent on both models. The alignment stays.
+      time within 0.3 percent on both models. Run 38187801680 timed
+      both copies again on six models. Under clang the first copy read
+      1.074 on two Xeon Platinum 8370C runners, where this text read
+      1.060, so on that model the aligned frame is the faster one. The
+      alignment stays.
       Without it the stores of a step's four sums lie across a page
       boundary at some addresses of the caller's stack, where the kernel
       took 1.08 to 1.18 times as long on the EPYC 7763 (below), and
@@ -10760,10 +10764,19 @@ does nothing more.
       Two programs under gcc are outside the table. One EPYC 7763 runner
       read the whole steps at 1.151 at one padding, in each of its five
       processes, and another read the second copy at 1.142, where every
-      other runner of that model read each at the figures above. Entry
-      124 met the like under gcc and did not explain it, and neither
-      does this entry. The kernel as it is now read 1.050 to 1.059 in
-      all 92 of its programs on that model.
+      other runner of that model read each at the figures above. The
+      kernel as it is now read 1.050 to 1.059 in all 92 of its programs
+      on that model in those two runs. Run 38187801680 then timed the
+      committed tree on 24 runners, 18 of them an EPYC 7763, and two of
+      this kernel's 144 programs on that model read the same way: one
+      under gcc at 1.139 and one under clang at 1.085, each on one
+      runner, at 32 bytes of padding and in each of its five processes.
+      The other 71 read 1.049 to 1.059 under gcc and 1.042 to 1.046
+      under clang. So a program of either text, under either compiler,
+      can read 4 to 9 percent slow on one runner of that model, and no
+      range in this entry includes those four programs. Entry 124 met
+      the like under gcc and did not explain it, and neither does this
+      entry.
     - **gcc's second scheduling pass.** gcc 13.3 at `-O2` does not keep
       the source's order. Its second scheduling pass, which runs after
       gcc has picked registers, wrote each step's 36 vector instructions
@@ -10787,7 +10800,11 @@ does nothing more.
 
       So under the flag the quarters take 0.96 to 0.99 of the time they
       take without it, and on the EPYC 9V74 the quarters without it took
-      longer than the whole steps had. The Makefile compiles
+      longer than the whole steps had. Run 38187801680 drew the two
+      Xeon models those runs did not, and on both neither half gained
+      alone: the four columns read 1.111, 1.107, 1.112 and 1.063 on two
+      Xeon Platinum 8370C runners and 1.099, 1.100, 1.102 and 1.069 on
+      a Xeon 6973P-C. The Makefile compiles
       `sha512_avx2.c` with the flag wherever gcc compiles it for x86-64
       (`SHA512_AVX2_GCC_CFLAGS`) and gives it to no other file. A
       command that names several sources gives a flag to all of them, so
@@ -10952,6 +10969,22 @@ does nothing more.
       9V45 runners and a Xeon Platinum 8573C spread 0.2 to 3.7 and 3.0
       to 12.6 percent over 16 KiB, as those models did in the runs
       above.
+
+      Run 38187801680 repeated the probe on the committed tree. Over
+      16 KiB the slowest position took at most 1.0129 times the fastest
+      under clang and 1.0081 under gcc on 18 EPYC 7763 runners, 1.0002
+      and 1.0012 on an EPYC 9V74 and 1.0024 and 1.0033 on two Xeon
+      Platinum 8370C, and no position took 3 percent more than the
+      fastest. An EPYC 9V45, a Xeon 6973P-C and a Xeon Platinum 8573C
+      spread 1.7 to 8.0 percent. For one block under gcc the EPYC 9V74
+      took 1.02 in the first of its two rounds, with no position 3
+      percent over, and 1.18 in the second, with 30 over. The mean over
+      the positions at each of the two stack alignments differed by 0.1
+      percent, so the stack pointer does not pick the slow positions.
+      The plain C's call of 64 bytes in the same program took 1.11 in
+      both rounds, with 4 positions over, and under clang no row of
+      that runner took more than 1.021. This entry does not explain
+      that runner's spread under gcc.
     - **Gain.** Run 38165815673 timed `sha384_of_cpu` under a value
       with `CH_CPU_AVX2` and under `CH_CPU_PROBED` alone, which runs
       entry 127's plain C, on sixteen ubuntu-24.04 runners, under gcc
@@ -11017,14 +11050,28 @@ does nothing more.
       under gcc and 1.01 to 1.07 under clang, and at 64 bytes 0.66 to
       0.74 of it under gcc and 0.61 to 0.73 under clang. No job of those
       two runs drew a Xeon Platinum 8370C or a Xeon 6973P-C, which the
-      runs above timed with whole steps. On the EPYC 7763 the 64-byte
-      figure follows the kernel's address. Under clang it read 202 to
+      runs above timed with whole steps. Run 38187801680, of the
+      committed tree, drew two of the first and one of the second and
+      timed both kernels in each job. Over 16 KiB the Xeon Platinum
+      8370C read 1.063 to 1.064 times OpenSSL's time under gcc and 1.060
+      to 1.061 under clang, where whole steps read 1.111 to 1.112 and
+      1.118 to 1.120. The Xeon 6973P-C read 1.069 to 1.077 and 1.034 to
+      1.044, where whole steps read 1.098 to 1.103 and 1.072 to 1.185.
+      At 64 bytes the two models read 0.71 to 0.77 of OpenSSL's time
+      under gcc and 0.65 to 0.69 under clang. So over the six models the
+      three runs drew, the kernel takes 1.01 to 1.08 times OpenSSL's
+      time over 16 KiB and 0.61 to 0.77 of it at 64 bytes.
+
+      On the EPYC 7763 the 64-byte figure follows the kernel's address.
+      In runs 38184809651 and 38185545665 under clang it read 202 to
       204 ns at one padding of the four and 230 to 233 at the other
       three, and the kernel with whole steps 204 to 207 at one and 234
       to 235 at three, so at like paddings the two texts are 1 to 2
       percent apart and at unlike ones 12 to 13. Under gcc one padding
       read 227 to 231 ns where three read 220 to 224
-      (docs/performance.md, the pitfalls table). So the kernel does not
+      (docs/performance.md, the pitfalls table). In run 38187801680
+      under clang two of the 18 runners read the one padding at 217 and
+      222 ns, and the other 16 at 202 to 205. So the kernel does not
       pass OpenSSL over 16 KiB: OpenSSL's rounds are assembly on RORX
       and ANDN over two blocks at once, and this one is C with no BMI2.
       It does pass it for the one-block message a handshake's HMACs are
@@ -11068,8 +11115,11 @@ does nothing more.
       skipped. The last two built them through the Makefile's rule,
       under gcc with the flag, and then ran `make lint-schedule-order`
       under each compiler and `make x86-64-kernels-check`, which passed
-      in each. No digest shows the order of the kernel's instructions,
-      so `make lint-schedule-order` reads it (INV-51):
+      in each. The 24 jobs of run 38187801680 did all of that on the
+      committed tree, on EPYC 7763, EPYC 9V74, EPYC 9V45, Xeon Platinum
+      8370C, Xeon Platinum 8573C and Xeon 6973P-C runners, and none
+      failed or skipped. No digest shows the order of the kernel's
+      instructions, so `make lint-schedule-order` reads it (INV-51):
       `tools/schedule-order.py` requires at most 40 instructions on
       general registers between two vector instructions of the loop, in
       the pinned clang's code for x86-64 on every machine and, where
