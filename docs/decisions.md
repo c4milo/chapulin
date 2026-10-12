@@ -9996,16 +9996,62 @@ does nothing more.
       no call use. `tools/freestanding/` gains an empty `mm_malloc.h`,
       which clang's `<immintrin.h>` includes in a hosted compile.
 
-    Not covered: in the packaged client and server objects under clang
-    23.1.2, `rsa_ifma.c`'s `almost_montgomery_product` and
-    `rsa_ifma_sign.c`'s `state_setup` use 512-bit stack slots in frames
-    clang does not align. The first loads from them inside a loop and
-    stores to none there, and the second runs twice a signature, once for
-    each prime. No run here timed either. Every other function of those
-    objects that uses a 256-bit or 512-bit stack slot inside a loop aligns
-    its frame: the kernels of `gcm_vaes.c`, `chacha20_avx512.c`,
-    `poly1305_avx2.c`, `poly1305_ifma.c` and `rsa_avx2.c`, and
-    `rsa_ifma.c`'s `rsa_ifma_public`.
+    Not covered: three functions use 512-bit stack slots in frames clang
+    23.1.2 does not align, and Camilo ruled on 2026-10-11 to leave them
+    so.
+
+    - `rsa_ifma.c`'s `almost_montgomery_product`, for an RSA-4096
+      modulus, which the 512-byte `CH_RSA_MODULUS_MAX` of TRUST=webpki
+      admits. Each call stores 20 slots and loads 18 back outside its
+      round loop, and the loop loads the other 2 and stores to none.
+    - `rsa_ifma_sign.c`'s `product_pair`, for an RSA-4096 key at the
+      same bound, which a ROLE=both TRUST=webpki object has. Each call
+      stores 7 slots and loads 3 back outside its round loop, and the
+      loop loads the other 4 and stores to none.
+    - `rsa_ifma_sign.c`'s `state_setup`, at both bounds, which runs
+      twice a signature, once for each prime.
+
+    For a smaller modulus, and at the 384-byte bound, the first two use
+    no stack slot. Their callers, `rsa_ifma_public` and
+    `rsa_ifma_sign_power_pair`, align their own frames to 64 bytes, so
+    each function starts at one of 64 positions within a page. At every
+    position each slot of the first two lies across a cache line. A slot
+    of `almost_montgomery_product` lies across the page boundary at 20
+    of the 64 positions, and one of `product_pair` at 7.
+
+    Run 38184205683 timed the two callers at 273 stack positions 16
+    bytes apart: two processes of a build with the frames as clang
+    leaves them, and one of a build that compiles the two files with
+    `-mstackrealign`, which aligns all three frames. The figures are
+    from an EPYC 9V45, an EPYC 9V74 and a Xeon Platinum 8573C, in that
+    order, and each ratio is to the aligned build's median over the
+    positions:
+
+    - RSA-4096 verification read 9.32, 19.84 and 14.97 µs at the median
+      position, a ratio of 1.002, 1.008 and 1.003. At the slowest
+      position, by the faster of the two processes, the ratio was 1.006,
+      1.030 and 1.014.
+    - The two exponentiations of an RSA-4096 signature read 0.688, 1.419
+      and 1.119 ms at the median position, a ratio of 1.015, 1.010 and
+      1.001, and of 1.026, 1.024 and 1.011 at the slowest position.
+    - Every position that read more than 1% over its build's median in
+      both processes has a slot across the page boundary.
+    - RSA-2048 and RSA-3072, verification and signature, read within
+      0.6% of the aligned build, except that the Xeon verified RSA-2048
+      2.5% slower in the aligned build, in a loop with no stack slot.
+      Their signatures run `state_setup` as an RSA-4096 one does.
+
+    A round of these loops stores to no slot, where a round of `pass`
+    stores each of its slots and loads it back. Aligning the three
+    frames would also change the frames that `RSA_IFMA_SIGN_BELOW_LEN`
+    covers and `bin/rsa_ifma_sign_residue_test` measures, and that test
+    runs on a CPU with AVX-512 IFMA and in the nightly alone.
+
+    Every other function of the packaged client and server objects that
+    uses a 256-bit or 512-bit stack slot inside a loop aligns its frame:
+    the kernels of `gcm_vaes.c`, `chacha20_avx512.c`, `poly1305_avx2.c`,
+    `poly1305_ifma.c` and `rsa_avx2.c`, and `rsa_ifma.c`'s
+    `rsa_ifma_public`.
 
     Rejected:
 
