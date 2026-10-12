@@ -117,9 +117,19 @@ Home: github.com/c4milo.
   CH_CPU_CONSTANT_TIME_SHA3) +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
-  them test-only) with `sha512_hw.c` (both on FEAT_SHA512, an arm64 host
-  object with SUITE=aesgcm, a session whose caller sets
-  CH_CPU_CONSTANT_TIME_SHA512) ←
+  them test-only; `sha512_compress.c` is the reference, and of the
+  packaged objects a device object alone holds it) with
+  `sha512_compress_blocks.[ch]` and `sha512_round_constants.h` (the
+  compression function over whole blocks in plain C, which a host object
+  holds in `sha512_compress.c`'s place and runs with no bit, and the
+  round constants a host object's compression functions read), with
+  `sha512_hw.c` (both hashes under a bit, a host object with
+  SUITE=aesgcm: on FEAT_SHA512 in an arm64 session whose caller sets
+  CH_CPU_CONSTANT_TIME_SHA512, and on x86-64 `sha512.c` compiled once
+  more over `sha512_avx2.c`, in a session whose caller sets CH_CPU_AVX2)
+  and with `sha512_avx2.[ch]` (the compression function with its message
+  schedule four words to a 256-bit register, a quarter of a schedule
+  step after each round, x86-64) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) with `mlkem_zetas.h` (the NTT's twiddle
@@ -384,7 +394,19 @@ Home: github.com/c4milo.
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
   input is public (docs/decisions.md 107), and `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
-  (docs/decisions.md 90). Beside the multiply bit, `CH_CPU_AVX2` also
+  (docs/decisions.md 90). In an object with SUITE=aesgcm `CH_CPU_AVX2`
+  also runs a session's SHA-384, its transcript hash and HMAC, HKDF and
+  the key schedule over it, on `sha512_hw.c` over `sha512_avx2.c`'s
+  kernel, whose input is secret under HMAC. The kernel's instructions
+  are adds, rotates, shifts, bitwise logic and byte shuffles by constant
+  masks, the kinds `chacha20_avx2.c` runs on a key under the same bit.
+  It writes zero to ymm0 to ymm15 before it returns and clears no
+  general register, and its caller wipes the stack below it
+  (docs/decisions.md 128). A TRUST=webpki object without the suite holds
+  neither file. A session's two other SHA-384 calls, over a
+  certificate's signed bytes and a CertificateVerify's input, take no
+  value and run the plain C in every host object.
+  Beside the multiply bit, `CH_CPU_AVX2` also
   runs a Poly1305 update of 512 bytes or more on `poly1305_avx2.c`
   (docs/decisions.md 110). `CH_CPU_AVX512_IFMA` runs RSA verification's
   public operation on `rsa_ifma.c`, whose input is public
@@ -400,14 +422,21 @@ Home: github.com/c4milo.
   and their timing, as the AES bit does. `CH_CPU_CONSTANT_TIME_SHA256`
   runs a session's SHA-256, and HMAC, HKDF and the key schedule over it,
   on `sha256_hw.c`. `CH_CPU_CONSTANT_TIME_SHA512`, an arm64 bit, runs its
-  SHA-384 on `sha512_hw.c`. `CH_CPU_CONSTANT_TIME_SHA3`, an arm64 bit,
+  SHA-384 on `sha512_hw.c`'s instructions. x86-64 has no such bit:
+  `CH_CPU_AVX2` picks `sha512_hw.c` there and states no timing.
+  `CH_CPU_CONSTANT_TIME_SHA3`, an arm64 bit,
   runs its SHA-3, SHAKE and ML-KEM on `sha3_hw.c` and ML-KEM's copies
   over it, in an object that clang compiled; in an object gcc compiled
   it picks nothing (docs/decisions.md 99). A hash call takes the
   session's `ch_cfg.cpu` first, through the `_cpu` entries that end
   `sha256.h`, `sha512.h`, `sha3.h`, `hkdf.h`, `keysched.h`,
-  `transcript.h` and `mlkem.h`, and a call that takes no value runs the
-  portable code (docs/decisions.md 93). `p256_sign_cpu`, the entry a
+  `transcript.h` and `mlkem.h`, and a call that takes no value runs no
+  hash instruction and no kernel. Its SHA-256 and SHA-3 run the portable
+  code. Its SHA-384 and SHA-512 run `sha512.c`, which in a host object
+  compresses whole blocks on `sha512_compress_blocks.c` and wipes the
+  stack below each compression call, as it does for every session whose
+  value does not pick `sha512_hw.c` (docs/decisions.md 93 and 127).
+  `p256_sign_cpu`, the entry a
   host object's server signs through, hands the session's value to each
   HMAC of its RFC 6979 nonce (docs/decisions.md 102). CBMC cannot read an
   intrinsic, so the vector
@@ -428,8 +457,34 @@ Home: github.com/c4milo.
   of the two verifiers sends to `rsa_ifma.c`, through a stand-in,
   `test/rsa_ifma_count.c`. `bin/sha2_equiv_test` holds
   `sha256_hw.c` and `sha512_hw.c` to the portable hashes the same way and
-  searches the stack below each call, and `bin/hash_runtime_test` counts
-  which calls run a hash's instructions under each value.
+  searches the stack below each call. On every machine it holds
+  `sha512.c`'s first arm over `sha512_compress_blocks.c`, which a host
+  object runs, to its second arm over `sha512_compress.c`, the
+  reference, and searches the stack the first arm's calls leave
+  (docs/decisions.md 127). No message a test hashes is 2^61 bytes long,
+  so on each path it also starts a context at such a byte count and
+  holds the upper word of the length to a padding it writes itself. On
+  an x86-64 CPU with AVX2 the `sha512_hw.c` it holds runs
+  `sha512_avx2.c`'s kernel: it requires the kernel's sums at a multiple
+  of 32 bytes for a caller at each stack alignment and reads ymm0 to
+  ymm15 back as zero after a call, and
+  `test/docker-aes-runtime-qemu.sh sha512-avx2` runs it under QEMU
+  (docs/decisions.md 128). The stack each path wipes below a compression
+  call has to cover the frame of every compiler that builds the object,
+  and clang for x86-64 writes the deepest. So that script's
+  `sha512-stack` part builds the binary with clang for x86-64 and runs
+  `make lint-stack` under gcc for the x86-64 object that holds the
+  kernel, as `check-stack-suite` does in `make check` where the compiler
+  targets x86-64. `bin/hash_runtime_test` counts which calls run a
+  hash's instructions, or on x86-64 `sha512_hw.c`, under each value, and
+  requires that a host object's `sha512.c` never calls
+  `sha512_compress.c`'s function. `bin/x86_kernels_test` counts the
+  compression calls each `ch_cfg.cpu` value sends to the AVX2 kernel. No
+  digest shows the order of the kernel's instructions, so
+  `make lint-schedule-order` reads it from assembly: a quarter of a
+  schedule step after each round in the pinned clang's code on every
+  machine, and in gcc's where gcc builds for x86-64 and in the qemu
+  lane's `sha512-avx2` part (INV-51).
   `bin/sha3_hw_equiv_test` holds `sha3_hw.c` to `sha3.c` and searches
   the stack below each call, and `bin/mlkem_hw_equiv_test` holds
   ML-KEM's copies to `mlkem.c` and `mlkem_poly.c`.
@@ -513,8 +568,9 @@ Home: github.com/c4milo.
   that lowers one of their masked selects to a branch shows as a count
   that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` have
   not joined: the 32-bit specs' cores have no such instructions, and the
-  two 64-bit specs, under which `sha256_hw.c` and `sha512_hw.c` hold a
-  branch ceiling through their own target attribute, do not list them.
+  two 64-bit specs, under which `sha256_hw.c`, `sha512_hw.c`'s arm64
+  arm and `sha512_avx2.c` hold a branch ceiling through their own target
+  attribute, do not list them.
   A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
   `gcm_hw.c` and `gcm_vaes.c` turn them on for their own functions alone,
   so the rest of the object runs on any CPU of its architecture, and GHASH
@@ -602,7 +658,17 @@ Home: github.com/c4milo.
   portable code, and
   docs/verification.md lists each source no harness compiles and what
   holds it. `avx512_wipe.c`'s block of assembly carries none either, and
-  `tools/proof-cover.py` records what the block does.
+  `tools/proof-cover.py` records what the block does. Portable C that
+  a host object alone compiles carries harnesses as every module does:
+  `sha512_compress_blocks`, `sha512_compress_blocks_steps` and
+  `sha512_compress_blocks_advancing` prove `sha512_compress_blocks.c`'s
+  memory accesses and five of its steps against FIPS 180-4's forms, and
+  `sha512_host` proves `sha512.c`'s first arm over it. The load of a
+  block's words, the sum that ends a block and the order of the calls
+  rest on `bin/sha2_equiv_test` and the published vectors
+  (docs/decisions.md 127). `sha512_avx2.c` carries no harness and no
+  lane model: `bin/sha2_equiv_test` holds it to that proven code
+  (docs/decisions.md 128).
   docs/verification.md states exactly what is proved, at what bounds,
   and what is only tested — never overclaim.
 - Write harnesses by docs/proofs.md. The rules that keep formulas
@@ -713,7 +779,17 @@ Home: github.com/c4milo.
   gcc cross-compilers, so gcc-only diagnostics belong in CI, not in a
   consumer's build. Between local clang and CI gcc, both major compiler
   families stay covered without a second CI job. Do not switch CI to
-  clang for convenience.
+  clang for convenience. One source takes a compiler flag of its own.
+  Where gcc compiles `sha512_avx2.c` for x86-64 the Makefile gives it
+  `-fno-schedule-insns2`: gcc's second scheduling pass otherwise moves
+  the kernel's schedule instructions out of the order the source writes,
+  and clang keeps the order and refuses the flag. A command that names
+  several sources gives a flag to all of them, so that file compiles
+  apart on every compiler: `hash_hw_of` hands a test binary's list the
+  object `SHA512_AVX2_UNIT` and never the source, and a script that
+  links the kernel asks for the object with `make sha512-avx2-unit`. No
+  other file takes the flag, and no pragma in a source sets it
+  (docs/decisions.md 128, INV-51).
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
   (`make hooks` once after clone) and `make lint-commits` in check.
