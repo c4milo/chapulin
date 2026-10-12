@@ -1,0 +1,19 @@
+invariant: INV-17
+file: sha512_avx2.h
+catches: test/docker-aes-runtime-qemu.sh sha512-stack
+reason: SHA512_AVX2_BELOW_LEN, the bytes of stack sha512_hw.c wipes below
+  each call of the AVX2 kernel, is 240. That covers the 208 or 224 bytes
+  sha512_avx2_compress_blocks writes below its caller under gcc 13.3 and
+  the 16 more the test asks for, so the lane's sha512-avx2 part, a gcc
+  build, passes. Under clang for x86-64 the kernel writes 256 or 272
+  bytes, and the wipe leaves a word the call computed from its message
+  below it. build.zig builds the object with clang. The lane's sha512-stack part
+  builds bin/sha2_equiv_test with clang for x86-64 and runs it under
+  qemu-x86_64, where it measures the kernel's depth against the length
+  and then finds a word. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+#define SHA512_AVX2_BELOW_LEN 512
+--- new
+#define SHA512_AVX2_BELOW_LEN 240

@@ -1,0 +1,20 @@
+invariant: INV-17
+file: sha512_compress_blocks.h
+catches: test/docker-aes-runtime-qemu.sh sha512-stack
+reason: SHA512_COMPRESS_BLOCKS_BELOW_LEN, the bytes of stack sha512.c wipes
+  below each compression call, is 240. That covers the 200 bytes
+  sha512_compress_blocks writes below its caller under gcc 13.3 for
+  x86-64 and the 184 to 224 it writes for arm64, so bin/sha2_equiv_test
+  passes on every machine's own compiler and in the lane's gcc runs.
+  Under clang for x86-64 the function writes 264 bytes, and the wipe
+  leaves a word the call computed from its message below it. build.zig
+  builds the object with clang. The lane's sha512-stack part builds the
+  binary with clang for x86-64 and runs it under qemu-x86_64, where it
+  measures the 264 bytes against the length and then finds the word. The
+  lane skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+#define SHA512_COMPRESS_BLOCKS_BELOW_LEN 512
+--- new
+#define SHA512_COMPRESS_BLOCKS_BELOW_LEN 240

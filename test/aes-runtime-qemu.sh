@@ -76,6 +76,26 @@
 #     names CH_CPU_AVX2, must pass for x86-64: FIPS 180-4's SHA-384 and
 #     SHA-512 vectors, RFC 4231's HMAC-SHA-384 cases and a
 #     TLS_AES_256_GCM_SHA384 key schedule on the kernel.
+#   - bin/sha2_equiv_test must pass once more as clang compiles it for
+#     x86-64. Of the compilers measured, clang writes the deepest frames
+#     of the two SHA-512 compression functions a host object holds: under
+#     clang 18.1.3 sha512_compress_blocks writes 264 bytes below its
+#     caller and the AVX2 kernel 272, where gcc 13.3's write 200 and 208
+#     or 224. clang also addresses slots of sha512_compress_blocks below
+#     the stack pointer, in the red zone, which -Wframe-larger-than does
+#     not count, so make lint-stack cannot stand in for this run. The
+#     wiped lengths SHA512_COMPRESS_BLOCKS_BELOW_LEN and
+#     SHA512_AVX2_BELOW_LEN have to cover clang's frames, because
+#     build.zig builds the object with clang, and every other run of the
+#     binary's stack checks for x86-64 is a gcc build.
+#
+# For x86-64, compiled and not run:
+#
+#   - make lint-stack-run must pass for the TRUST=webpki object with
+#     SUITE=aesgcm: every frame of an x86-64 host object that holds
+#     sha512_hw.c and sha512_avx2.c under its budget, the kernel's under
+#     STACK_BUDGET_SHA512_AVX2. sha512_avx2.c has a body on x86-64 alone,
+#     so on an arm64 machine this is the run that reads its frame.
 #   - each loop with one end stating the SHA-256 bit and the other not, in
 #     both orders, must pass: 0x25 against 0x5 and 0x27 against 0x7, so
 #     the instructions and sha256.c compute the same transcript hashes
@@ -241,6 +261,11 @@
 #                     and under a gcc make lint-schedule-order-gcc, for
 #                     the violation of the flag the Makefile gives that
 #                     file
+#   sha512-stack      make lint-stack-run for the x86-64 host object that
+#                     holds sha512_avx2.c, and bin/sha2_equiv_test for
+#                     x86-64 built with clang, for the violations of the
+#                     kernel's frame budget and of the two wiped lengths
+#                     that gcc's frames fit and clang's do not
 #   arm64-hash-count  the two counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles
@@ -275,7 +300,9 @@
 # and x86_64-linux-gnu-gcc or aarch64-linux-gnu-gcc where it does not.
 # KECCAK_ARM64_CC names the clang that builds the SHA-3 rows for arm64,
 # clang by default; it links with the libraries ARM64_CC's toolchain
-# carries. The
+# carries. SHA512_X86_64_CLANG names the clang that builds
+# bin/sha2_equiv_test for x86-64 a second time, clang by default; it links
+# with the libraries X86_CC's toolchain carries. The
 # mips job in .github/workflows/check.yml runs this script on every push,
 # because the qemu-user package it installs carries both emulators, and
 # test/docker-aes-runtime-qemu.sh runs it in a container elsewhere.
@@ -287,10 +314,10 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | sha512-avx2 | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | \
-    poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
+"" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
+    mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
     exit 2
     ;;
 esac
@@ -319,7 +346,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
-    [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ]; then
+    [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -330,9 +357,18 @@ if [ -z "$only" ] || [ "$only" = keccak ]; then
     "$keccak_cc" --target=aarch64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
         { echo "aes-runtime-qemu: $keccak_cc is not a clang that compiles for aarch64; set KECCAK_ARM64_CC" >&2; exit 1; }
 fi
+# clang for x86-64, which builds bin/sha2_equiv_test a second time.
+sha512_clang=""
+if [ -z "$only" ] || [ "$only" = sha512-stack ]; then
+    sha512_clang=${SHA512_X86_64_CLANG:-clang}
+    "$sha512_clang" --target=x86_64-linux-gnu -dM -E -x c /dev/null 2> /dev/null | grep -qw __clang__ ||
+        { echo "aes-runtime-qemu: $sha512_clang is not a clang that compiles for x86-64; set SHA512_X86_64_CLANG" >&2; exit 1; }
+fi
 x86_out=bin/qemu
 arm64_out=bin/qemu-arm64
-mkdir -p "$x86_out" "$arm64_out"
+# The binary clang builds for x86-64, and the kernel's object under it.
+x86_clang_out=bin/qemu-clang
+mkdir -p "$x86_out" "$arm64_out" "$x86_clang_out"
 # No -DCH_NATIVE_WIDEMUL: every binary here is a host object, which holds
 # both multiplies and whose ct.h refuses the define.
 flags=(-Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE -static -I. -Itest
@@ -684,6 +720,32 @@ if [ "$only" = sha512-avx2 ]; then
     exit 0
 fi
 
+if [ -z "$only" ] || [ "$only" = sha512-stack ]; then
+    # The frames of the x86-64 host object that holds sha512_avx2.c, each
+    # under its budget. make check runs this lint for the same object
+    # (check-stack-suite), and compiles the kernel there only where its
+    # compiler targets x86-64.
+    make -s --no-print-directory lint-stack-run CC="$x86_cc" RAND=extern TRUST=webpki SUITE=aesgcm ||
+        { echo "aes-runtime-qemu: under $x86_cc a frame of the TRUST=webpki SUITE=aesgcm object for x86-64 is over its budget" >&2; exit 1; }
+    # bin/sha2_equiv_test as clang compiles it for x86-64, for the depth
+    # each SHA-512 compression function writes below its caller and the
+    # search of the stack each kind of call leaves. The kernel compiles
+    # apart here too, in the object make's rule builds under this clang.
+    clang_unit=$(make -s --no-print-directory sha512-avx2-unit CC="$sha512_clang --target=x86_64-linux-gnu" \
+        SHA512_AVX2_UNIT_DIR="$x86_clang_out") && [ -f "$clang_unit" ] ||
+        { echo "aes-runtime-qemu: make sha512-avx2-unit built no object under $sha512_clang for x86-64" >&2; exit 1; }
+    "$sha512_clang" --target=x86_64-linux-gnu "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
+        -o "$x86_clang_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]/#sha512_avx2.c/$clang_unit}" ||
+        exit 1
+    CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect_on "$x86_qemu" "$x86_clang_out" max 0 \
+        "as $sha512_clang compiles them for x86-64, a SHA-512 compression function writes below the stack its caller wipes, a call left a value it computed on the stack or in a vector register, a path disagrees with sha512.c's second arm, or this qemu's max model lacks AVX2" \
+        sha2_equiv_test
+fi
+if [ "$only" = sha512-stack ]; then
+    echo "aes-runtime-qemu: under $x86_cc every frame of the x86-64 host object that holds sha512_avx2.c was under its budget, and as $sha512_clang compiled it for x86-64 bin/sha2_equiv_test found each SHA-512 compression function's frame inside the stack its caller wipes and no word of a call on the stack"
+    exit 0
+fi
+
 if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
     # sha256_hw.c against sha256.c, sha512_hw.c against sha512.c's second
     # arm, and sha512.c's first arm against it, each on the model with
@@ -887,7 +949,9 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "binaries that count each hash's calls passed; on $no_ifma the webpki loop passed without" \
     "CH_CPU_AVX512_IFMA and died of SIGILL with it; on max, sha256_hw.c" \
     "agreed with sha256.c, sha512_hw.c over the AVX2 kernel agreed with sha512.c and left no word" \
-    "on the stack or in ymm0 to ymm15," \
+    "on the stack or in ymm0 to ymm15, as $sha512_clang compiled them for x86-64 each SHA-512" \
+    "compression function's frame lay inside the stack its caller wipes, every frame of the" \
+    "object that holds the kernel was under its budget," \
     "one end on the SHA extensions and the other on sha256.c agreed, and" \
     "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
     "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \

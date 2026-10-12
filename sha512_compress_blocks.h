@@ -25,6 +25,11 @@
 // and 192 under clang 18 and clang 23. For x86-64 it measured 200 under gcc 13.3, and 264 under
 // clang 18 and clang 23. lint-stack holds the function's frame under
 // STACK_BUDGET_SHA512_COMPRESS_BLOCKS, which is below this length.
+//
+// The length is for an optimized object. At -O1, -Os, -O2 and -O3 gcc 13.3 and clang 18 report
+// a frame of 144 to 224 bytes for the function on the two architectures. At -O0 they report
+// 4,112 to 7,632 bytes, most of which the wipe then leaves, and bin/sha2_equiv_test makes no
+// search of the stack in an unoptimized binary (INV-17).
 #define SHA512_COMPRESS_BLOCKS_BELOW_LEN 512
 
 // Absorbs blocks whole blocks at p into the eight-word state: the contract of that many calls

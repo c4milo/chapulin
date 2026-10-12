@@ -104,7 +104,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the thirteen arguments that run one part
+# itself, and the lane with one of the fifteen arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -140,11 +140,16 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # names sha512-avx2, for the same reason, and because the lane builds it
 # with gcc, the compiler under which the declared alignment of the sums
 # decides where they lie, and under which the Makefile's flag for that
-# file decides the order of the kernel's instructions.
+# file decides the order of the kernel's instructions. A violation of the
+# kernel's frame budget, or of a wiped length that gcc's frame fits and
+# clang's does not, names sha512-stack, which runs the frame-budget lint
+# for the x86-64 object that holds the kernel and builds
+# bin/sha2_equiv_test with clang for x86-64.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
                           "test/docker-aes-runtime-qemu.sh sha512-avx2",
+                          "test/docker-aes-runtime-qemu.sh sha512-stack",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
                           "test/docker-aes-runtime-qemu.sh keccak",

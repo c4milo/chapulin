@@ -24,8 +24,15 @@
 // ct_wipe can name. bin/sha2_equiv_test measures how far below its caller the call writes and
 // requires that, and 16 bytes more, inside this length: the function aligns its frame to 32
 // bytes, so the depth differs by 16 between callers. It measured 208 and 224 bytes under gcc
-// 13.3, 256 and 272 under clang 23, and 256 under clang 18. lint-stack holds the function's
-// frame under STACK_BUDGET_SHA512_AVX2, which is below this length.
+// 13.3, 256 and 272 under clang 23, and 256 and 272 under clang 18. lint-stack holds the
+// function's frame under STACK_BUDGET_SHA512_AVX2, which is below this length, wherever it
+// compiles this file for x86-64: make check's check-stack-suite does where its compiler
+// targets x86-64, and the qemu lane's sha512-stack part does on every machine with docker.
+//
+// The length is for an optimized object. At -O1, -Os, -O2 and -O3 gcc 13.3 and clang 18 report
+// a frame of 192 to 248 bytes for the function. At -O0 they report 16,672 and 27,960 bytes,
+// most of which the wipe then leaves, and bin/sha2_equiv_test makes no search of the stack in
+// an unoptimized binary (INV-17).
 #define SHA512_AVX2_BELOW_LEN 512
 
 // Absorbs blocks whole blocks at p into the eight-word state: the contract of

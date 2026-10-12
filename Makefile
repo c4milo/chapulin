@@ -84,7 +84,12 @@ STACK_BUDGET_SHA512_COMPRESS_BLOCKS := 384
 # of the stack below each call of it. Its frame is 192 bytes under gcc
 # 13.3 and 248 under clang 18 and clang 23 at -O2, and beside it the
 # function pushes six registers, aligns its frame to 32 bytes and its
-# caller pushes the return address (docs/decisions.md 128).
+# caller pushes the return address (docs/decisions.md 128). The file has
+# a body on x86-64 alone, in an object with SUITE=aesgcm alone, so the
+# ceiling is read where lint-stack compiles such an object for x86-64:
+# check-stack-suite does in CI's check job and in test/docker-check.sh's
+# image, and the qemu lane's sha512-stack part does under its gcc for
+# x86-64 on every machine with docker.
 STACK_BUDGET_SHA512_AVX2 := 384
 
 # cfg.h makes the entropy pattern a declared build choice with no
@@ -4093,7 +4098,7 @@ CHECK_LIBRARY_BUILDS := check-lib-drbg check-lib-session check-lib-session-cxx c
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
               check-lib-server-aes check-lib-server-aes-extern check-lib-quic-aes \
               check-lib-pair \
-              check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
+              check-stack-webpki check-stack-exporter check-stack-quic check-stack-server check-stack-suite
 CHECK_RUN_HOST_VECTOR := $(patsubst bin/%,check-run-%,$(HOST_VECTOR_BINS))
 .PHONY: $(CHECK_LIBRARY_BUILDS) $(addprefix check-run-,$(CHECK_RUN_BINS)) $(CHECK_RUN_HOST_VECTOR) \
         check-chacha-builds check-mlkem-builds check-widemul-builds check-host-builds check-hash-builds \
@@ -4442,6 +4447,23 @@ check-stack-quic:
 # fails here (INV-19).
 check-stack-server:
 	@mkdir -p bin/check; $(MAKE) lint-stack ROLE=server TRUST=none > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The AES-GCM suites in a host object: aes.c, gcm.c and the AES files
+# under them, sha512_hw.c and sha512_avx2.c, which no other frame-budget
+# check of this target compiles. sha512_avx2.c's one function has a
+# ceiling of its own, STACK_BUDGET_SHA512_AVX2, below the stack
+# sha512_hw.c wipes under each call of it, and the file holds nothing
+# where the compiler does not target x86-64. So this target reads that
+# ceiling in CI's check job and in test/docker-check.sh's amd64 image, and
+# the qemu lane's sha512-stack part runs the same lint under its gcc for
+# x86-64 on every machine with docker. A compiler that fails the host
+# test builds no host object, and the target skips there. It took 6.0 to
+# 6.1 s in three timed runs on an M1 Pro.
+check-stack-suite:
+ifeq ($(HOST_TARGET),)
+	@echo "SKIP lint-stack TRUST=webpki SUITE=aesgcm: $(CC) fails the host test"
+else
+	@mkdir -p bin/check; $(MAKE) lint-stack TRUST=webpki SUITE=aesgcm > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
 
 # The gates a change can break, and running them. BASE names the
 # revision to compare against (default HEAD); `git diff BASE` compares
