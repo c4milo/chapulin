@@ -161,7 +161,13 @@ Other targets:
   SHA-384, the hash of TLS_AES_256_GCM_SHA384, then compresses on
   `sha512_avx2.c`'s kernel, which computes the message schedule in
   256-bit registers, and so do HMAC, HKDF and the key schedule over it
-  (decision 128). `CH_CPU_VAES` says the CPU also has
+  (decision 128). Where gcc compiles that file for x86-64 the Makefile
+  gives it `-fno-schedule-insns2`, and gives the flag to no other file:
+  under it gcc keeps a quarter of a schedule step after each round, as
+  the source has it and as clang writes it with no flag. A gcc build of
+  the file by any other means computes the same digests and takes 1 to
+  4 percent longer over 16 KiB unless it passes the flag.
+  `CH_CPU_VAES` says the CPU also has
   VAES and VPCLMULQDQ on those registers, and beside
   `CH_CPU_CONSTANT_TIME_AES`, whose statement covers the AES
   instructions at every width, AES-GCM's whole blocks then run
