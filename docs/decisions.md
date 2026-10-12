@@ -10308,7 +10308,10 @@ does nothing more.
       `sha512_compress_blocks(state, p, blocks)` computes FIPS 180-4
       §6.4.2 over `blocks` whole blocks. It differs from
       `sha512_compress` in seven ways. One expression reads each word of
-      a block, which compiles to a load and a byte swap. The message
+      a block. gcc 13.3 and clang 18 for x86-64, and clang 18 for arm64,
+      compile it to a load and a byte swap. gcc 13.3 for arm64 reads two
+      words at a time into a NEON register and reverses their bytes with
+      REV64. The message
       schedule is a ring of sixteen words, where the reference fills
       eighty first. Each round from 16 on first replaces the ring word
       it takes by the word sixteen after it. The rounds are written out
@@ -10333,7 +10336,8 @@ does nothing more.
     - **No bit.** The file runs 64-bit adds, rotates and shifts by
       constants, and bitwise logic: the operations `sha512_compress.c`
       runs in every object. It reads `sha512_round_constants` at indices
-      the round number fixes, and it branches on the block count alone.
+      the round number fixes, and it branches on the block count and on
+      a loop count that is a constant.
       `make lint-wide-multiply` holds its conditional branches at 3 and
       the first arm's at 9 under the pinned clang for arm64 and for
       x86-64, compiled hosted at `-O2` as entry 126 has the two 64-bit
@@ -10368,7 +10372,21 @@ does nothing more.
       Apple clang 21, 224 under gcc 13.3, and 192 under clang 18 and
       under clang 23.1.2. For x86-64 it wrote 200 under gcc 13.3, and
       264 under clang 18 and under clang 23.1.2. `make lint-stack` holds
-      its frame under 384 bytes. The volatile reads keep gcc and clang
+      its frame under 384 bytes. clang for x86-64 writes the deepest of
+      those frames, `build.zig` builds the object with clang, and every
+      run of the test in `make check` and in the qemu lane's other parts
+      is the machine's own compiler or gcc. So the lane's `sha512-stack`
+      part builds the binary with clang for x86-64 and runs it under
+      `qemu-x86_64`: a wiped length of 240 bytes passes every gcc run
+      and fails that one. `-Wframe-larger-than` cannot stand in for it
+      there, because clang 18.1.3 addresses slots of the function below
+      the stack pointer, in the red zone, and reports a frame of 152
+      bytes, and of 280 with `-mno-red-zone`. The wiped length is for an
+      optimized object. At `-O1`, `-Os`, `-O2` and `-O3` gcc 13.3 and
+      clang 18 report a frame of 144 to 224 bytes for the function on
+      the two architectures, and at `-O0` 4,112 to 7,632, and the test
+      makes no search of the stack in an unoptimized binary. The
+      volatile reads keep gcc and clang
       for x86-64, which has fifteen registers for twenty-five words,
       from holding a second copy of the ring and of the state in stack
       slots of their own: without them the prototype's search found 39
@@ -10471,8 +10489,8 @@ does nothing more.
       scalar assembly. Over 16 KiB this code takes 0.99 to 1.01 times
       that code's time under gcc and 0.97 to 1.04 under clang on the
       twenty runners of run 38156872593. So plain C gets what scalar
-      instructions give, and the rest of the distance to OpenSSL over
-      16 KiB is the vector schedule, which needs a kernel under a bit:
+      instructions give, and the time it takes beyond OpenSSL's over 16
+      KiB is the vector schedule's, which needs a kernel under a bit:
       entry 128.
     - **arm64.** There a session without `CH_CPU_CONSTANT_TIME_SHA512`
       runs this code, and so does every call that takes no value. The
@@ -10489,17 +10507,25 @@ does nothing more.
     - **What holds it.** CBMC reads this path, which it cannot do for a
       file of intrinsics. Four harnesses prove the first arm's framing
       and the function free of out-of-bounds access and undefined
-      behavior, and each of the function's five steps equal to FIPS
-      180-4's own form over every input: the four sigma functions, Ch
-      and Maj, the ring's next word at each of its sixteen indices,
-      eight renamed rounds, and eight rounds that each replace a ring
-      word first. The whole function against `sha512_compress` in one
-      formula returned no verdict in nine minutes at a 1.4 GB peak, so
-      that the steps in the order the function calls them compute the
-      reference's state rests on tests. `bin/sha2_equiv_test` runs
+      behavior, and five of the function's steps equal to FIPS 180-4's
+      own form over every input: the four sigma functions, Ch and Maj,
+      the ring's next word at each of its sixteen indices, eight renamed
+      rounds, and eight rounds that each replace a ring word first. No
+      harness proves a value of the load of a block's words or of the
+      sum that ends a block: a mutant of each passed all three
+      harnesses of the function. And the whole function against
+      `sha512_compress` in one formula returned no verdict in nine
+      minutes at a 1.4 GB peak. So those two steps, and that the steps
+      in the order the function calls them compute the reference's
+      state, rest on tests. `bin/sha2_equiv_test` runs
       124,481 cases of the first arm against the second on every
-      machine, with contexts passed between the two arms at each call,
-      and it searches the stack: it requires the function's frame within
+      machine, with contexts passed between the two arms at each call.
+      No message a test hashes is 2^61 bytes long, the first length
+      whose upper word is not zero, so 84 more cases on each arm start a
+      context at a byte count of 2^61 - 1 or more, absorb a few bytes
+      and compare the digest with one whose padding the test writes from
+      a 128-bit product. The binary also
+      searches the stack: it requires the function's frame within
       the wiped 512 bytes, and after six kinds of call it requires no
       one 64-bit word the call computed from its message in the bytes
       the call wrote. `test/sha512_portable.c` compiles the second arm
@@ -10512,16 +10538,17 @@ does nothing more.
       function and requires that `sha512_compress` took none, and
       `make lint-trust-separation` and `make lint-zig-build` hold each
       of the two files to its object.
-      Twenty-two violations each undo one rule, and its named check
-      catches each: fifteen under the new INV-50, four under INV-17, and
-      one each under INV-16, INV-19 and INV-36 (docs/verification.md,
+      Twenty-five violations each undo one rule, and its named check
+      catches each: seventeen under the new INV-50, five under INV-17,
+      and one each under INV-16, INV-19 and INV-36 (docs/verification.md,
       "SHA-512 in a host object"). `make diff` keeps its SHA-384 rows on
       the reference, which the Lean model's oracle is compared with: the
       differential binary is a device object, and the spec does not
       change.
     - **Cost.** A second SHA-512 that an auditor reads:
-      `sha512_compress_blocks.c` holds 247 lines beside the reference's
-      81, and `sha512.c` holds 276 where it held 128. At `-O2` the
+      `sha512_compress_blocks.c` holds 258 lines beside the reference's
+      81, and `sha512.c` held 276 with this entry where it held 128. At
+      `-O2` the
       function and its constants take 5,692 bytes under gcc 13.3 for
       x86-64 where `sha512_compress.c` takes 1,483, and 4,852 where it
       takes 1,264 for arm64; under clang 18 they take 5,546 and 4,804
@@ -10532,7 +10559,13 @@ does nothing more.
       about 70 seconds to the fast proof tier as an M1 Pro ran them, the
       last at a 2.6 to 3.0 GB peak. Registers still hold what the last
       instruction left in them when a call returns, as after every wipe
-      written in C.
+      written in C. Under gcc 13.3 for arm64 two of them are vector
+      registers: v0 and v1 are the registers it reads a block's words
+      into, and when `sha512_compress_blocks` returns they hold four
+      message words of the last block, W[14] and W[15] in v0 and W[0]
+      and W[1] in v1. clang 18 for both architectures and gcc 13.3 for
+      x86-64 name no vector register in the file. No line clears v0 and
+      v1, and whether one should is Camilo's to rule.
     - **Where a kernel under a bit goes.** `compress_blocks` in the
       first arm is the one place that arm calls a compression function,
       and `sha512_compress_blocks`'s three arguments are what a kernel
@@ -10697,7 +10730,7 @@ does nothing more.
       38145755338). It keeps eight schedule registers where this one
       keeps four, and gcc 13.3 kept most of the eight in stack slots.
       Its frame was 1.4 to 1.9 KiB against 216 bytes, its code 10 to
-      11.5 KiB against 4.4, and a call with one block fell to a second
+      11.5 KiB against 4.4, and a call with one block ran a second
       kernel. A TLS_AES_256_GCM_SHA384 handshake makes 130 compressions
       at the client and 131 at the server, and 71 and 73 percent of
       them are HMAC's, each of one block.
@@ -10738,16 +10771,23 @@ does nothing more.
       9V74 and 0.98 to 1.01 on the EPYC 9V45, where it gains nothing.
       Under clang the EPYC 7763 and the EPYC 9V74 gain less than the
       prototype's text did, which went from 1.056 to 1.066 down to 1.028
-      to 1.039 on the EPYC 7763: the prototype kept its sums in an array
-      aligned to 16 bytes, for which clang aligns no frame and has rbp
-      for the rounds. This kernel declares the 32 bytes entry 124 asks
-      for, and clang then aligns the frame and holds its address in rbp.
+      to 1.039 on the EPYC 7763. The prototype kept its sums in an array
+      aligned to 16 bytes, stored to it with the unaligned store and
+      handed it to `ct_wipe`. clang keeps an array whole when a call
+      takes its address, so for that array it aligned no frame and had
+      rbp for the rounds. This kernel hands its array to no call. clang
+      splits it into the four 256-bit values its stores write, aligns
+      the frame for those with the declared 32 bytes or without them
+      (the frame paragraph below), and holds the frame's address in rbp.
       Run 38185545665 timed a copy of this text with the prototype's
-      array beside it under clang, both with no padding: 1.030 to 1.033
+      array as the prototype had it, aligned to 16 bytes, stored
+      unaligned and handed to `ct_wipe`, beside it under clang, both
+      with no padding: 1.030 to 1.033
       on the EPYC 7763 where this text took 1.043 to 1.046, and 1.050 to
       1.051 on the EPYC 9V74 where it took 1.072 to 1.073. A second
-      copy, which keeps the 32 bytes and hands the array to `ct_wipe` so
-      that clang cannot split it, took this text's time within 0.3
+      copy, which keeps the 32 bytes and the aligned store and hands the
+      array to `ct_wipe`, so that clang keeps it whole and still aligns
+      the frame, took this text's time within 0.3
       percent, so the cost is the aligned frame's. Under gcc, which
       aligns the frame for either array, the first copy took this text's
       time within 0.3 percent on both models. Run 38187801680 timed
@@ -10766,8 +10806,11 @@ does nothing more.
       processes, and another read the second copy at 1.142, where every
       other runner of that model read each at the figures above. The
       kernel as it is now read 1.050 to 1.059 in all 92 of its programs
-      on that model in those two runs. Run 38187801680 then timed the
-      committed tree on 24 runners, 18 of them an EPYC 7763, and two of
+      on that model in those two runs. Run 38187801680 then timed this
+      stack as it stood before its rebase onto 122a26de, whose SHA-512
+      sources differ from the ones this entry lands in the entry numbers
+      of their comments alone, on 24 runners, 18 of them an EPYC 7763,
+      and two of
       this kernel's 144 programs on that model read the same way: one
       under gcc at 1.139 and one under clang at 1.085, each on one
       runner, at 32 bytes of padding and in each of its five processes.
@@ -10840,14 +10883,15 @@ does nothing more.
       others. OpenSSL's sigma0 by shifts alone costs it 0.01 to 0.02
       against this kernel's VPSHUFB. One assembly text with all of that
       but the shifts, which needs BMI1 and BMI2 beside AVX2, took 0.954
-      to 0.991 of OpenSSL's time on the EPYC 7763, 0.983 to 0.988 on the
+      to 0.991 of OpenSSL's time on the EPYC 7763, and 1.019 in one job
+      of seven at one address, 0.983 to 0.988 on the
       EPYC 9V74, 0.966 to 0.969 on the Xeon Platinum 8370C and 0.982 to
       1.011 in the one Xeon 6973P-C job. With AVX2 alone no text passed
       OpenSSL on both makers' CPUs: one block with the schedule among
       the rounds took 0.970 to 0.994 on the EPYC 7763 and 1.03 on the
       Xeon Platinum 8370C, and two blocks took 0.988 to 0.990 on that
-      Xeon and 1.07 to 1.09 on the EPYC 7763. In C two changes survived
-      the compilers, and they are the two this entry lands. The Sigma0
+      Xeon and 1.07 to 1.09 on the EPYC 7763. In C two changes made the
+      kernel faster, and they are the two this entry lands. The Sigma0
       added a round late took 1.095 to 1.103 under gcc, a round written
       one operation a statement 1.08 to 1.11, each Sigma as one rotation
       of an exclusive OR of three words 1.06 to 1.17, and two blocks a
@@ -10881,13 +10925,28 @@ does nothing more.
       quarter steps): the function aligns its frame to 32 bytes, so the
       depth differs by 16 with the caller's stack address, and the test
       requires the measured depth and 16 bytes more inside the wiped
-      length. The prototype measured what that wipe costs this kernel:
+      length. Each of those runs in the lane is a gcc build, and clang's
+      frame is the deeper, so the lane's `sha512-stack` part builds the
+      binary with clang for x86-64 as well, where the kernel wrote 272
+      bytes under clang 18.1.3: a wiped length of 240 bytes passes the
+      gcc run and fails that one. The length is for an optimized
+      object: at `-O0` gcc 13.3 reports a frame of 16,672 bytes for the
+      kernel and clang 18 one of 27,960, where at `-O1`, `-Os`, `-O2`
+      and `-O3` they report 192 to 248, and the test makes no search of
+      the stack in an unoptimized binary. The prototype measured what
+      that wipe costs this kernel:
       nothing over 16 KiB, and between -12 and +17 ns at 64 bytes,
       inside that row's scatter. The vector registers hold schedule
       words when the last block ends. VZEROALL writes zero to ymm0 to
       ymm15, and the function ends with it. It also leaves their upper
       halves clear, which `poly1305_avx2.c` calls VZEROUPPER for (entry
-      110). After a call of one of the five `_hw` calls a register may
+      110). The kernel clears no general register. The ones the ABI
+      lets a call change hold words of the state when it returns: in
+      gcc 13.3's code rcx, rdx, rsi, rdi, r8 and r9 each hold a word of
+      the state it wrote, and r10 a word of the state the last block
+      began with. That is what entry 127 says of the plain C, and of
+      every wipe written in C, and whether to zero them is Camilo's to
+      rule. After a call of one of the five `_hw` calls a register may
       hold bytes again: the copy's `memcpy` and `memset` are the C
       library's, and they use vector registers.
     - **The frame.** The kernel stores four sums at a time, 256 bits,
@@ -10970,7 +11029,8 @@ does nothing more.
       to 12.6 percent over 16 KiB, as those models did in the runs
       above.
 
-      Run 38187801680 repeated the probe on the committed tree. Over
+      Run 38187801680 repeated the probe on the tree before the rebase.
+      Over
       16 KiB the slowest position took at most 1.0129 times the fastest
       under clang and 1.0081 under gcc on 18 EPYC 7763 runners, 1.0002
       and 1.0012 on an EPYC 9V74 and 1.0024 and 1.0033 on two Xeon
@@ -11050,8 +11110,8 @@ does nothing more.
       under gcc and 1.01 to 1.07 under clang, and at 64 bytes 0.66 to
       0.74 of it under gcc and 0.61 to 0.73 under clang. No job of those
       two runs drew a Xeon Platinum 8370C or a Xeon 6973P-C, which the
-      runs above timed with whole steps. Run 38187801680, of the
-      committed tree, drew two of the first and one of the second and
+      runs above timed with whole steps. Run 38187801680, of the tree
+      before the rebase, drew two of the first and one of the second and
       timed both kernels in each job. Over 16 KiB the Xeon Platinum
       8370C read 1.063 to 1.064 times OpenSSL's time under gcc and 1.060
       to 1.061 under clang, where whole steps read 1.111 to 1.112 and
@@ -11116,7 +11176,8 @@ does nothing more.
       under gcc with the flag, and then ran `make lint-schedule-order`
       under each compiler and `make x86-64-kernels-check`, which passed
       in each. The 24 jobs of run 38187801680 did all of that on the
-      committed tree, on EPYC 7763, EPYC 9V74, EPYC 9V45, Xeon Platinum
+      tree before the rebase, on EPYC 7763, EPYC 9V74, EPYC 9V45, Xeon
+      Platinum
       8370C, Xeon Platinum 8573C and Xeon 6973P-C runners, and none
       failed or skipped. No digest shows the order of the kernel's
       instructions, so `make lint-schedule-order` reads it (INV-51):
@@ -11128,10 +11189,19 @@ does nothing more.
       `-fno-schedule-insns2` in the commands of those two rules as make
       prints them for a gcc build for x86-64, and in no other. The qemu
       lane's `sha512-avx2` part reads gcc's code on every machine with
-      docker. Fifteen violations each undo one rule, and its named check
-      catches each (docs/verification.md, "SHA-512 on AVX2").
+      docker. `make lint-stack` holds the kernel's frame under 384
+      bytes, below the wiped length, where it compiles the file for
+      x86-64: `make check`'s `check-stack-suite` runs it for the
+      `TRUST=webpki` object with the suite, which compiles the kernel in
+      CI's check job and in `test/docker-check.sh`'s image, and the
+      lane's `sha512-stack` part runs it under gcc for x86-64 on every
+      machine with docker. Seventeen violations each undo one rule, and
+      its named check catches each (docs/verification.md, "SHA-512 on
+      AVX2").
     - **Cost.** A third SHA-512 compression function that an auditor
-      reads, 342 lines, which no proof compiles. At `-O2` the kernel and
+      reads, 349 lines, which no proof compiles, and `sha512.c` grows
+      from 276 to 296 lines for the copy's two defines. At `-O2` the
+      kernel and
       its constants take 5,421 bytes under gcc 13.3 and 5,356 under
       clang 18.1.3, and `sha512_hw.c`'s x86-64 arm 1,769 and 1,804. The
       kernel's speed under gcc now rests on a flag of the build: the
@@ -11142,26 +11212,31 @@ does nothing more.
       takes the longer time unless it passes `-fno-schedule-insns2` too.
       A host object with the suite holds them beside entry 127's
       function, which the sessions without the bit run. A session with
-      `CH_CPU_AVX2` in such an object now runs AVX2 instructions at its
-      first handshake message, whose transcript it hashes with SHA-384
-      beside SHA-256, where it ran none before its first ChaCha20
-      record: a caller that sets the bit for a CPU without AVX2 faults
-      there. `test/test_cpu.h` leaves the bit out of the rows that start
-      a session on such a CPU. The names `sha512_update_hw` and
+      `CH_CPU_AVX2` in such an object now runs AVX2 instructions when it
+      hashes its first handshake message, whose transcript it hashes
+      with SHA-384 beside SHA-256, where a session that makes or takes
+      no X25519MLKEM768 share ran none before its first ChaCha20 record.
+      A session that makes or takes one already sampled ML-KEM's matrix
+      on `keccak_avx2.c` under the same bit before any record (entry
+      107). A caller that sets the bit for a CPU without AVX2 faults at
+      the first of those. `test/test_cpu.h` leaves the bit out of the
+      rows that start a session on such a CPU. The names
+      `sha512_update_hw` and
       `sha512_on_instructions` mean two things by architecture.
 
     Rejected:
 
     - **The kernel that schedules two blocks a pass**, and **a kernel
       on SSE2 alone** for sessions without the bit, by the ruling. The
-      SSE2 kernel reached 1.08 to 1.46 times OpenSSL's time over 16
+      SSE2 kernel took 1.08 to 1.46 times OpenSSL's time over 16
       KiB, and gcc 13.3 kept its eight schedule registers in stack
       slots unless the function was compiled without one optimization.
     - **A BMI2 build, or a bit for it**, by the ruling and by the
       figures above. **The assembly kernel** of the second prototype
       needs BMI1 and BMI2, and Camilo ruled to stop at C.
     - **`#pragma GCC optimize("no-schedule-insns2")` in the source**,
-      which reaches a gcc build by any means. The prototype measured it
+      which takes effect in a gcc build by any means. The prototype
+      measured it
       as the flag's instructions and the flag's time (run 38173910667).
       Camilo ruled for the flag on this one file in the Makefile.
     - **In C: the Sigma0 added a round late, a round written one

@@ -2013,15 +2013,24 @@ last `ROLE=server` stub, as the entry said it would.
   in 256-bit registers, four words a step, and its rounds in general
   registers (decision 128).
 - **Check.** CBMC proves the framing and the compression function free
-  of out-of-bounds access and undefined behavior, and each of the
-  function's five steps equal to FIPS 180-4's own form over every input
+  of out-of-bounds access and undefined behavior, and five of the
+  function's steps equal to FIPS 180-4's own form over every input: the
+  four sigma functions, Ch and Maj, the ring's next word, eight renamed
+  rounds, and eight rounds that each replace a ring word first
   (`sha512_host`, `sha512_compress_blocks`,
   `sha512_compress_blocks_steps` and `sha512_compress_blocks_advancing`).
-  The composition of the steps is a test's: `bin/sha2_equiv_test` runs
+  No harness proves a value of the load of a block's words or of the
+  sum that ends a block. Those two and the composition of the steps are
+  a test's: `bin/sha2_equiv_test` runs
   124,481 cases of the first arm against the second on every machine,
   over every length to 529 bytes at every cut below 258, both extremes
   at each block boundary, 20,000 random cases, and up to 512 blocks in
-  one call. `bin/sha512_test_host` and `bin/hkdf384_test_host` run FIPS
+  one call. It runs 84 more on each arm from a context that starts at a
+  byte count of 2^61 - 1 or more, against a padding the test writes
+  from a 128-bit product, because the upper word of the length is zero
+  for every message a test can hash
+  (`test/sha2_equiv_length512.h`). `bin/sha512_test_host` and
+  `bin/hkdf384_test_host` run FIPS
   180-4's vectors, RFC 6234's million-byte message, RFC 4231's
   HMAC-SHA-384 cases and a TLS_AES_256_GCM_SHA384 key schedule on the
   path, and the host Wycheproof test its HMAC-SHA-384 and HKDF-SHA-384
@@ -2047,12 +2056,14 @@ last `ROLE=server` stub, as the entry said it would.
   two blocks of one call; takes the padding's second block one byte
   early; joins Maj's two terms with OR; copies the bytes after an
   update's whole blocks from its start; writes the length in the wrong
-  unit; turns a sigma function by the wrong count; names two working
+  unit; writes zero as the upper word of the length, in the first arm
+  or in the reference; turns a sigma function by the wrong count; names
+  two working
   variables in each other's roles; reads a byte past a block; hands the
   compression function a block more than the input holds; picks the
   first arm on a macro no build defines, so a host object runs the
   reference; or packages `sha512_compress_blocks.c` in a device object.
-  The first fifteen `inv50-*` violations are these. Six fail
+  The first seventeen `inv50-*` violations are these. Eight fail
   `bin/sha2_equiv_test`, one each `bin/sha512_test_host`,
   `bin/hkdf384_test_host` and the Wycheproof host test, four a proof,
   one `bin/hash_runtime_test` and one `make lint-trust-separation`.
@@ -3981,7 +3992,10 @@ last `ROLE=server` stub, as the entry said it would.
   `sha512-hw-round-constant-off-by-one` each change one constant, and
   `bin/sha2_equiv_test` catches them under `qemu-x86_64` and
   `qemu-aarch64`, whose `max` models have the instructions on every
-  host.
+  host. `sha512-hw-length-high-word-zero` writes zero as the upper word
+  of the length in `sha512_hw.c`'s arm64 arm, which no message under
+  2^61 bytes reads, and the binary catches it under `qemu-aarch64` from
+  a context that starts at such a byte count.
   No x86-64 CPU this tree targets has SHA-512 instructions. There a
   host object with `SUITE=aesgcm` holds `sha512_avx2.c`, SHA-512's
   compression function with its message schedule in 256-bit registers,
@@ -5067,6 +5081,18 @@ last `ROLE=server` stub, as the entry said it would.
   the compression call, `inv17-sha512-compress-blocks-below-len-short`
   wipes 64 bytes, and `inv17-sha384-host-whole-message-context-kept` and
   `inv17-sha512-host-whole-message-context-kept` keep a context.
+  The wiped length has to cover the frame under every compiler that
+  builds the object, and clang for x86-64 writes the deepest: 264 bytes
+  below the caller where gcc writes 200 and no arm64 build over 224.
+  Every run of the binary in `make check` is the machine's own compiler
+  and every other run in the qemu lane is gcc, so the lane's
+  `sha512-stack` part builds it with clang for x86-64.
+  `inv17-sha512-compress-blocks-below-len-under-clang-frame` wipes 240
+  bytes, which every gcc build passes, and that part catches it. The
+  length is for an optimized object, as the signer's claim above is: at
+  `-O0` gcc 13.3 and clang 18 report a frame of 4,112 to 7,632 bytes
+  for the function, and the binary makes no search of the stack in such
+  a build.
   On x86-64 `sha512_hw.c`, that arm compiled once more, wipes
   `SHA512_AVX2_BELOW_LEN` bytes of the stack below each call of
   `sha512_avx2.c`'s kernel, which leaves the last sixteen schedule
@@ -5084,14 +5110,23 @@ last `ROLE=server` stub, as the entry said it would.
   `qemu-x86_64`: `inv17-sha512-avx2-copy-never-wipes-stack` drops the
   wipe after the kernel's call, `inv17-sha512-avx2-below-len-short`
   wipes 192 bytes, and `inv17-sha512-avx2-registers-not-cleared` ends
-  the kernel with VZEROUPPER.
+  the kernel with VZEROUPPER. Those runs are gcc builds, under which
+  the kernel writes 208 or 224 bytes, and under clang it writes 256 or
+  272. `inv17-sha512-avx2-below-len-under-clang-frame` wipes 240 bytes,
+  which the gcc build passes, and the lane's `sha512-stack` part
+  catches it in the binary clang builds for x86-64. At `-O0` gcc 13.3
+  reports a frame of 16,672 bytes for the kernel and clang 18 one of
+  27,960, so this length too is for an optimized object. VZEROALL
+  clears the vector registers alone: the general registers the ABI lets
+  a call change hold words of the state when the kernel returns.
   `sha256.c`'s `compress` wipes neither its schedule array nor its
   working variables, `sha512_compress.c`'s the same, and `sha256_of`,
   and a device object's `sha384_of` and `sha512_of`, do not wipe their
   contexts (`sha256.h`, `sha512.h`): decisions 93 and 127 leave that
   code as it was. A device object with `SUITE=aesgcm` hashes HMAC keys
   through it, and the same binary prints how many words it leaves, 76
-  to 86 after one `sha384_of` under the six compilers measured.
+  to 86 after one `sha384_of` under the seven builds decision 127
+  lists.
   `sha3_hw.c` keeps the 25 lanes of a state in registers from a
   message's first whole block to its last and writes them to the
   caller's state alone, and `sha3.c`'s `sha3_256` and `sha3_512`, which
@@ -5212,6 +5247,13 @@ last `ROLE=server` stub, as the entry said it would.
   check`, the target CI's `check` job runs, holds the 4,096-byte budget
   too. `make lint-stack ROLE=server TRUST=none` is
   another target, the one that compiles the server's sources.
+  `make lint-stack TRUST=webpki SUITE=aesgcm` is a third,
+  `check-stack-suite`, the one that compiles a host object's AES-GCM
+  sources, `sha512_hw.c` and, where the compiler targets x86-64,
+  `sha512_avx2.c`'s kernel, whose own budget lies below the stack
+  `sha512_hw.c` wipes under each call of it. The qemu lane's
+  `sha512-stack` part runs that lint under gcc for x86-64 on every
+  machine with docker.
   `check-lib-tx-record` runs it on the `TRUST=webpki ROLE=both` object at
   `TX_RECORD=16384`, the one axis that exists to make a buffer larger.
   `srv_frag`, the one stack buffer `CH_TX_PT` used to size, keeps
@@ -5227,7 +5269,11 @@ last `ROLE=server` stub, as the entry said it would.
   file and objects. `inv19-sha512-compress-blocks-frame-past-wipe` puts
   an array of eighty words in `sha512_compress_blocks`, whose frame then
   passes the bytes `sha512.c` wipes below it, and the same check fails
-  at that file's own budget. A published peak can also read low when the
+  at that file's own budget. `inv19-sha512-avx2-frame-past-wipe` puts
+  the same array in `sha512_avx2_compress_blocks`, which has a body on
+  x86-64 alone, and the lane's `sha512-stack` part fails at that
+  file's budget on every machine with docker. A published peak can also
+  read low when the
   walk misses an edge. `inv19-stack-walk-first-instruction-jump` makes
   bench/stack.py read the placeholder target objdump prints on a branch
   at a function's first instruction, as it once did,

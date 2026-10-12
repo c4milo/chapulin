@@ -4510,11 +4510,16 @@ for the binaries that compare them.
 
 CBMC reads this path, which it cannot do for a file of intrinsics. The
 [sha512_host and sha512_compress_blocks](#sha512_host-sha512_compress_blocks)
-harnesses prove its memory accesses, and each of the compression
-function's five steps against FIPS 180-4's own form over every input.
-Three things rest on tests: that the steps, in the order the function
-calls them, compute the reference's state; which code a host object's
-calls run; and what a call leaves on the stack.
+harnesses prove its memory accesses, and five of the compression
+function's steps against FIPS 180-4's own form over every input: the
+four sigma functions, Ch and Maj, the ring's next word, eight renamed
+rounds, and eight rounds that each replace a ring word first. No harness
+proves a value of the load of a block's words, of the sum that ends a
+block or of the order of the calls. `load_word` with two shift counts
+exchanged, and `end_block` with the wrong state word added to a, each
+passed all three harnesses of the function. Three things rest on tests:
+what the function computes from the five steps and those three; which
+code a host object's calls run; and what a call leaves on the stack.
 
 **What the path computes** rests on these:
 
@@ -4535,6 +4540,19 @@ calls run; and what a call leaves on the stack.
   SHA-384 or as SHA-512. The reference's compression function reads its
   own table of round constants, so a wrong word in
   `sha512_round_constants.h` fails here too.
+- The same binary runs 84 more cases on each arm for the length a
+  message ends with (`test/sha2_equiv_length512.h`). The length is 128
+  bits, and each arm's `finalize` writes its upper word from the top
+  three bits of a 64-bit byte count. That word is zero for every message
+  under 2^61 bytes, so no case above and no published vector reads it. A
+  case starts a context at a byte count of 2^61 - 1, 2^61 or one of five
+  larger ones up to 2^64 - 4,096, absorbs 0, 1, 16, 17, 129 or 300
+  bytes, and compares the digest with one the test computes on
+  `sha512_compress` from a padding it writes itself, with the bit count
+  a 128-bit product. From 2^61 - 1 the empty tail gives the last length
+  whose upper word is zero, and one byte the first whose upper word is
+  one. The cases run on the reference as well, whose `finalize` nothing
+  else holds to that word, and on `sha512_hw.c` where the CPU runs it.
 - `bin/sha512_test_host` and `bin/hkdf384_test_host` run under
   `ch_cfg.cpu` 0x5 and 0x1 on both architectures, neither of which names
   a SHA-512 instruction or AVX2: FIPS 180-4's SHA-384 and SHA-512 vectors, RFC
@@ -4619,30 +4637,66 @@ Xeon Platinum 8370C, where the reference left 86 and 84 words, and 224
 and 192 bytes on a Neoverse-N2, where it left 77 (decision 127).
 `make lint-stack` holds the function's frame under 384 bytes, so a
 frame that grows toward the wiped length fails a compile before it
-fails this search. The checks hold the compilers they ran under and no
-other, and an unoptimized or sanitized binary skips the search and says
-so (`test/stack_residue.c`). A register holds what the last instruction
-left in it, as after every wipe written in C. The file reads its ring
+fails this search.
+
+clang for x86-64 writes the deepest of those frames, and `build.zig`
+builds the object with clang. `make check` builds the binary with the
+machine's own compiler, and the qemu lane's `sha2-equiv` and
+`sha512-avx2` parts build it with gcc, under which the function writes
+at most 224 bytes. So the lane's `sha512-stack` part builds the binary
+with clang for x86-64 and runs it under `qemu-x86_64`, where clang
+18.1.3 measured the 264 bytes and the six calls left no word.
+`-Wframe-larger-than` does not stand in for that run: clang addresses
+slots of the function below the stack pointer, in the red zone, and
+reports a frame of 152 bytes, where it reports 280 with
+`-mno-red-zone`.
+
+The checks hold the compilers they ran under and no other: gcc 13.3
+and clang 18.1.3 for both architectures, Apple clang 21 for arm64, and
+clang 23.1.2 on the runners. An unoptimized or sanitized binary skips
+the search and says so (`test/stack_residue.c`), and the wiped length
+is for an optimized object: at `-O0` gcc 13.3 and clang 18 report a
+frame of 4,112 to 7,632 bytes for the function on the two
+architectures, where at `-O1`, `-Os`, `-O2` and `-O3` they report 144
+to 224. A register holds what the last instruction
+left in it, as after every wipe written in C: under gcc 13.3 for arm64,
+which reads a block's words two at a time into NEON registers, v0 and
+v1 hold four message words of the last block when the function returns
+(decision 127). The file reads its ring
 and the caller's state through volatile pointers, which keeps the
 compilers from holding a second copy of them in slots of their own; the
 stack wipe clears such a slot either way, so no mutant shows what the
 reads prevent.
 
-Twenty-two violations break those rules, and each is caught. Six
+One line of the first arm no proof and no violation holds: the early
+return of `sha512_update` for an update of no bytes, which keeps a NULL
+pointer out of `memcpy` (`sha512.h` states the contract). With the
+return removed the `sha512_host` formula gave no verdict: it passed 8
+GiB resident in 44 seconds, where the proof took 39 seconds and 2.5
+GiB. What fails then is the sanitized `bin/sha2_equiv_test` of
+`make san-check`, whose first-arm cases update from a NULL pointer:
+built by gcc 13.3 with that target's flags it stops at "null pointer
+passed as argument 2, which is declared to never be null".
+
+Twenty-five violations break those rules, and each is caught. Eight
 change a value `bin/sha2_equiv_test` compares: a round constant, the
 ring index of `W[t - 7]`, a block's second word loaded twice, the
 constants of a pass's two halves exchanged, b ^ c left stale for a
-call's second block, and the padding's second block taken one byte
-early. Three change a value the published vectors catch:
+call's second block, the padding's second block taken one byte
+early, and the upper word of the length written as zero, in the first
+arm and in the reference. Three change a value the published vectors
+catch:
 Maj joined with OR, in `bin/sha512_test_host`; the bytes after an
 update's whole blocks copied from its start, in
 `bin/hkdf384_test_host`; and the length written in quarter bytes, in the
 Wycheproof host binary. Four fail a proof: a sigma function's rotate
 count, two roles exchanged in `eight_rounds_advancing`, a read one byte
-past a block, and an update that counts one block too many. Four drop
-or misplace a wipe and fail the stack search: the wipe before the
-compression call, the wiped length below the frame, and each of the two
-contexts kept. `inv50-sha512-host-falls-back-to-reference` compiles the
+past a block, and an update that counts one block too many. Five drop,
+misplace or shorten a wipe and fail the stack search: the wipe before
+the compression call, the wiped length at 64 bytes, each of the two
+contexts kept, and the wiped length at 240 bytes, which every gcc build
+passes and the lane's `sha512-stack` part, a clang build for x86-64,
+fails. `inv50-sha512-host-falls-back-to-reference` compiles the
 second arm into a host object and fails `bin/hash_runtime_test`'s count;
 `inv50-device-object-holds-sha512-compress-blocks` and
 `inv36-zig-host-object-keeps-sha512-compress` package the wrong file and
@@ -4824,14 +4878,32 @@ same three things held in the 32 runs of the binary in each of runs
 38182747184, 38184809651 and 38185545665, on EPYC 7763, EPYC 9V74,
 EPYC 9V45 and Xeon Platinum 8573C runners, and in the 48 of run
 38187801680, on those four models, a Xeon Platinum 8370C and a Xeon
-6973P-C. `make lint-stack` holds the
-kernel's frame under 384 bytes for an object that packages it, one with
-`SUITE=aesgcm`. `make check` runs that lint for no object with the
-suite, so that ceiling is read when the lint is run for such an object
-by hand. An unoptimized or sanitized binary skips the three searches
-and still reads the registers.
+6973P-C.
 
-Fifteen violations break those rules, and each is caught. Two change a
+`make lint-stack` holds the kernel's frame under 384 bytes for an
+object that packages it, one with `SUITE=aesgcm`. `make check` runs
+that lint for the `TRUST=webpki` object with the suite
+(`check-stack-suite`), which compiles the kernel where the compiler
+targets x86-64: in CI's check job and in `test/docker-check.sh`'s
+image. The qemu lane's `sha512-stack` part runs the same lint under
+gcc for x86-64, so every machine with docker reads the ceiling. gcc
+13.3 reports a frame of 192 bytes for the kernel and clang 18.1.3 one
+of 248.
+
+Every run of the four steps above in the lane's `sha512-avx2` part is a
+gcc build, and clang's frame is the deeper. So the `sha512-stack` part
+also builds `bin/sha2_equiv_test` with clang for x86-64 and runs it
+under `qemu-x86_64`: under clang 18.1.3 the kernel wrote 272 bytes, the
+six calls left no word, the sums lay at a multiple of 32 bytes and the
+registers read zero. An unoptimized or sanitized binary skips the three
+searches and still reads the registers, and the wiped length is for an
+optimized object: at `-O0` gcc 13.3 reports a frame of 16,672 bytes for
+the kernel and clang 18 one of 27,960, where at `-O1`, `-Os`, `-O2` and
+`-O3` they report 192 to 248. The kernel clears no general register:
+the ones the ABI lets a call change hold words of the state when it
+returns (decision 128).
+
+Seventeen violations break those rules, and each is caught. Two change a
 value `bin/sha2_equiv_test` compares: the upper pair of a schedule step
 computed from the two words before the step, and sigma0's shift count.
 Three fail its checks of what a call leaves: the wipe after the kernel
@@ -4840,7 +4912,13 @@ place. `inv49-sha512-avx2-sums-alignment-dropped` removes the declared
 alignment of `sums` and fails its check of where they lie. Those six
 show on x86-64 alone, so the qemu lane's `sha512-avx2` part is their
 catch, which builds the binary with gcc for x86-64 and runs it under
-`qemu-x86_64`. `inv16-sha512-avx2-entry-reads-sha512-bit` reads arm64's
+`qemu-x86_64`. Two more name the lane's `sha512-stack` part.
+`inv17-sha512-avx2-below-len-under-clang-frame` wipes 240 bytes, which
+covers gcc's frame with the 16 bytes more and not clang's, and the
+binary clang builds fails. `inv19-sha512-avx2-frame-past-wipe` puts an
+array of eighty words in the kernel's frame, which then passes the
+wiped length, and the part's run of `make lint-stack-run` fails at the
+file's budget. `inv16-sha512-avx2-entry-reads-sha512-bit` reads arm64's
 bit on x86-64 and fails `bin/x86_kernels_test`'s count in the lane's
 `x86-kernels` part. `inv50-sha512-avx2-copy-compresses-on-plain-c` and
 `inv16-sha512-avx2-runs-bmi2` fail `test/hash-builds.sh` on every
@@ -4867,6 +4945,20 @@ one. The registers a call of `sha512_hw.c` leaves are the kernel's
 alone to clear: the copies and the wipe that follow it run the C
 library's `memcpy` and `memset`, which use vector registers of their
 own.
+
+Nor does the lane's gcc build show that the kernel reads no byte past
+its last block. gcc 13.3 compiles each load of four words to a 16-byte
+VMOVDQU and a VINSERTI128 whose second operand is 16 bytes of memory.
+`qemu-x86_64` 8.2.2, the lane's, reads past those 16 bytes: given the
+last 16 mapped bytes before an unmapped page, that VINSERTI128 takes
+SIGSEGV there, where a 16-byte VMOVDQU of the same bytes does not and a
+CPU reads 16. A call of the kernel on one block that ends where a
+mapping ends takes that signal in the gcc build and passes in clang
+18's, which loads a block in four 32-byte VMOVDQU. So no test under
+that qemu can place a block at the end of a mapping in a gcc build, and
+`bin/sha2_equiv_test` does not: each of its messages ends where its
+heap buffer ends, which stops the sanitized binary of `make san-check`
+at a read past one, on a CPU with AVX2.
 
 ### The hash instructions
 
@@ -4940,7 +5032,13 @@ skips what the CPU has no instructions for, or fails under
   each call of the two copies against the file under its own names. The
   SHA-512 inputs are the same shapes at its 128-byte block, every length
   to 529 bytes cut below 258, with each case run as SHA-384 or as
-  SHA-512, and the copies at SHA-384's hash length.
+  SHA-512, and the copies at SHA-384's hash length. On arm64 84 more
+  cases start a context at a byte count of 2^61 - 1 or more on
+  `sha512_hw.c`, for the upper word of the length that file's own
+  `finalize` writes, which no message a test hashes reads
+  ([SHA-512 in a host object](#sha-512-in-a-host-object)).
+  `sha512-hw-length-high-word-zero` writes zero there, and the qemu
+  lane's `sha2-equiv` part catches it under `qemu-aarch64`.
 - The same binary copies the stack below five kinds of SHA-256 call and
   six kinds of SHA-512 call, which between them run every call each file
   makes to its compression function. In each copy it requires no four
