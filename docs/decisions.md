@@ -10140,9 +10140,13 @@ does nothing more.
       bytes of flash on mips32r2 under the pinned clang at `-Os` where it
       took 3,084. The volatile read costs an ML-KEM-768 decapsulation 771
       instructions on mips32r2, 946 on the Cortex-M3 and 516 on rv32imac,
-      of 1.3 M to 1.6 M. No host row was timed: the rows of the 16-word
-      field under `ch_cfg.cpu` values without the multiply bit, in
-      `bench/results-primitives-*.csv`, are from before this entry.
+      of 1.3 M to 1.6 M. No host row was timed for this entry. The
+      x86-64 CSVs have held a run of entry 128's tree since 2026-10-12:
+      under gcc the 16-word field's rows, under `ch_cfg.cpu 0x1`, take
+      0.81 of their time on an EPYC 7763 and 0.82 on a Xeon Platinum
+      8573C, and under clang 1.01 and 1.03 times
+      (`bench/notes-primitives.md`). The M1 Pro's CSV is from before
+      this entry.
     - **Under the other compilers.** Every 32-bit spec holds `x25519.c`
       at zero widening multiplies and at its branch ceiling: the Arm GNU
       gcc 15.3, Ubuntu's mips gcc 12.4 at `-Os` and `-O2`, the Bootlin
@@ -10450,8 +10454,11 @@ does nothing more.
       ran `bin/sha2_equiv_test`, `bin/hash_runtime_test`,
       `bin/hash_runtime_exporter_test`, `bin/sha512_test_host` and
       `bin/hkdf384_test_host` under both compilers on the CPU they drew,
-      and every one passed. The table "chapulin beside OpenSSL" still
-      holds the rows a run before this entry recorded.
+      and every one passed. The table "chapulin beside OpenSSL" has
+      held a run of entry 128's tree since 2026-10-12. Its CSVs' rows
+      under `ch_cfg.cpu 0x1` time this code: on an EPYC 7763, 1.42
+      times OpenSSL's time over 16 KiB and 0.89 of it over 64 bytes
+      under gcc, and 1.44 times and 0.81 of it under clang.
     - **What each change is worth.** The prototype timed the six changes
       it began with as one text, and that text with each change undone,
       over 16 KiB under gcc 13.3 and clang 23.1.2. Each cell is the time
@@ -11142,8 +11149,10 @@ does nothing more.
       pass OpenSSL over 16 KiB: OpenSSL's rounds are assembly on RORX
       and ANDN over two blocks at once, and this one is C with no BMI2.
       It does pass it for the one-block message a handshake's HMACs are
-      made of. The table "chapulin beside OpenSSL" still holds the rows
-      a run before entry 127 recorded.
+      made of. The table "chapulin beside OpenSSL" has held a run of
+      this entry's tree since 2026-10-12, on an EPYC 7763 and a Xeon
+      Platinum 8573C: 1.04 to 1.07 times OpenSSL's time over 16 KiB
+      and 0.62 to 0.73 of it over 64 bytes.
     - **What holds it.** CBMC cannot read an intrinsic, so no harness
       compiles the kernel, and the `sha512_host` harness proves the
       copy's text under `sha512.c`'s own names. On a CPU with AVX2

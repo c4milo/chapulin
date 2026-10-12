@@ -16,6 +16,72 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of ff287fcd
+
+The x86-64 CSVs now hold runs of 2026-10-12 on the tree of
+docs/decisions.md 128, ff287fcd, on an EPYC 7763 and on a Xeon Platinum
+8573C. The two files this note reads still hold the runs of d699bec6.
+Between 58d534cb and this tree three changes reached code a row runs:
+SHA-384 and SHA-512 in a host object (decisions 127 and 128), the signed
+product of the multiply decomposition, which the 16-word X25519 field
+alone calls, and `mlk_poly_frommsg`'s read of a message bit (both
+decision 125). Against the run of 58d534cb, on the EPYC 7763:
+
+- **Under `0x3f` SHA-384 and SHA-512 take 0.51 to 0.57 of their time
+  under gcc and 0.39 to 0.47 under clang.** 16 KiB of SHA-384 take 23.2
+  µs under gcc where they took 45.1, and 22.8 µs under clang where they
+  took 48.2. 64 bytes take 227 ns where they took 401, and 205 ns where
+  they took 523. Under `CH_CPU_AVX2` these rows run `sha512_avx2.c`'s
+  kernel (decision 128), where the tree of 58d534cb ran the portable C.
+- **Under `0x1` they take 0.69 to 0.74 of their time under gcc and 0.52
+  to 0.65 under clang**, on `sha512_compress_blocks.c`, the plain C
+  every session of a host object runs (decision 127). 16 KiB of SHA-384
+  take 31.2 µs under gcc where they took 45.0, and 31.4 µs under clang
+  where they took 48.2. 64 bytes take 297 ns where they took 405, and
+  271 ns where they took 523.
+- **Under gcc the 16-word X25519 field takes 0.81 of its time**: 1.60 ms
+  for either row under `0x1` where it took 1.97. Decision 125 wrote the
+  decomposition's signed product as a ladder with no correction after
+  the products, and timed no host row. Under clang the two rows moved by
+  1.4% at most. Under gcc the handshakes under `0x1` moved with the
+  field: a client's side of the three pinned handshakes takes 3.28 to
+  3.33 ms where it took 4.03 to 4.15, and of the three on the hybrid
+  group 3.39 to 3.47 ms where it took 4.14 to 4.25.
+- **Under clang the 32-bit P-256 files and the RSA ladder read 0.89 to
+  0.90 of their time under `0x1`, and no code of theirs changed.**
+  P-256's three rows take 1.80 to 1.94 ms where they took 1.99 to 2.16,
+  and an RSA-2048 signature 92.3 ms where it took 103.4. On the Xeon the
+  same five rows moved by 0.3% at most, so the move is not a change to
+  their code (docs/performance.md, the pitfalls table, on where the
+  linker places a function).
+- **RSA on 64-bit words moved without a change to its code, as it has
+  before on this CPU.** Under gcc and `0x3f` an RSA-2048 signature takes
+  1.27 ms where it took 1.35, and an RSA-3072 one 3.64 ms where it took
+  3.83. Under clang the server sides of the RSA handshakes take 1.05
+  times their time, 1.54 and 4.62 ms on the classic group where they
+  took 1.47 and 4.38, while the signature's own rows moved by 0.1% at
+  most. The pitfalls table has the two speeds.
+- Under gcc ML-KEM-768's three rows and P-384's verification take 1.02
+  to 1.03 times their time. No other row under `0x3f` moved by more than
+  2% under gcc or 2.1% under clang.
+
+On the Xeon Platinum 8573C:
+
+- **This run's runner is again another machine of that model.**
+  OpenSSL's rows in the primitives CSV took 0.95 to 0.99 of their time
+  in the run of 58d534cb under gcc and 0.96 to 1.00 under clang, so the
+  two runs compare by their ratios to OpenSSL.
+- **Under `0x13f` SHA-384 and SHA-512 take 0.57 to 0.58 of their time
+  under gcc and 0.44 to 0.63 under clang.** 16 KiB of SHA-384 take 26.8
+  µs under gcc where they took 46.9, and 26.1 µs under clang where they
+  took 41.4. 64 bytes take 252 ns where they took 433, and 225 ns where
+  they took 511. Under `0x1` the plain C takes 30.4 and 31.3 µs where
+  the portable C took 46.8 and 41.3, and 276 and 247 ns where it took
+  432 and 512.
+- **Under gcc the 16-word X25519 field takes 0.82 of its time**, 1.87 ms
+  where it took 2.29, and under clang 1.03 times, 1.98 ms where it took
+  1.92.
+
 ## The run of 58d534cb
 
 The x86-64 CSVs now hold runs of 2026-10-11 on the tree of
