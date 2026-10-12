@@ -10565,7 +10565,10 @@ does nothing more.
       message words of the last block, W[14] and W[15] in v0 and W[0]
       and W[1] in v1. clang 18 for both architectures and gcc 13.3 for
       x86-64 name no vector register in the file. No line clears v0 and
-      v1, and whether one should is Camilo's to rule.
+      v1. Camilo ruled on 2026-10-12 that this landing clears neither:
+      other kernels return with secrets in vector registers too, and
+      they get one ruling together
+      ([#193](https://github.com/c4milo/chapulin/issues/193)).
     - **Where a kernel under a bit goes.** `compress_blocks` in the
       first arm is the one place that arm calls a compression function,
       and `sha512_compress_blocks`'s three arguments are what a kernel
@@ -10933,7 +10936,9 @@ does nothing more.
       object: at `-O0` gcc 13.3 reports a frame of 16,672 bytes for the
       kernel and clang 18 one of 27,960, where at `-O1`, `-Os`, `-O2`
       and `-O3` they report 192 to 248, and the test makes no search of
-      the stack in an unoptimized binary. The prototype measured what
+      the stack in an unoptimized binary. Camilo ruled on 2026-10-12
+      that `sha512.c` gives no warning in such a build, as no other
+      wipe of the stack does. The prototype measured what
       that wipe costs this kernel:
       nothing over 16 KiB, and between -12 and +17 ns at 64 bytes,
       inside that row's scatter. The vector registers hold schedule
@@ -10945,8 +10950,10 @@ does nothing more.
       gcc 13.3's code rcx, rdx, rsi, rdi, r8 and r9 each hold a word of
       the state it wrote, and r10 a word of the state the last block
       began with. That is what entry 127 says of the plain C, and of
-      every wipe written in C, and whether to zero them is Camilo's to
-      rule. After a call of one of the five `_hw` calls a register may
+      every wipe written in C. Camilo ruled on 2026-10-12 to leave
+      them: no C in the tree clears a general register, and the calls
+      that follow overwrite them. After a call of one of the five `_hw`
+      calls a register may
       hold bytes again: the copy's `memcpy` and `memset` are the C
       library's, and they use vector registers.
     - **The frame.** The kernel stores four sums at a time, 256 bits,
