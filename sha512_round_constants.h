@@ -1,16 +1,18 @@
 // FIPS 180-4 §4.2.3: the eighty constant words of SHA-512 and SHA-384, the first 64 bits of the
-// fractional parts of the cube roots of the first 80 primes. A host object's two compression
-// functions read them: sha512_compress_blocks.c's rounds and sha512_hw.c's.
+// fractional parts of the cube roots of the first 80 primes. A host object's three compression
+// functions read them: sha512_compress_blocks.c's rounds, sha512_hw.c's on arm64 and
+// sha512_avx2.c's on x86-64. The table is aligned to 32 bytes because sha512_avx2.c adds four
+// constants at a time to a 256-bit register from one aligned load.
 //
 // sha512_compress.c, the reference, keeps its own table, K. bin/sha2_equiv_test holds each of
-// the two files to that code's digests, so a wrong word here fails there, and FIPS 180-4's
-// vectors run on both files in bin/sha512_test_host.
+// the three files to that code's digests, so a wrong word here fails there, and FIPS 180-4's
+// vectors run on all three in bin/sha512_test_host.
 #ifndef CH_SHA512_ROUND_CONSTANTS_H
 #define CH_SHA512_ROUND_CONSTANTS_H
 
 #include <stdint.h>
 
-static const uint64_t sha512_round_constants[80] = {
+_Alignas(32) static const uint64_t sha512_round_constants[80] = {
     0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
     0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
     0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,

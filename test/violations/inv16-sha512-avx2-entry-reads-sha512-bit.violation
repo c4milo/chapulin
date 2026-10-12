@@ -1,0 +1,20 @@
+invariant: INV-16
+file: sha512.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: on x86-64 sha512.h's sha512_on_instructions reads
+  CH_CPU_CONSTANT_TIME_SHA512, arm64's bit, which every x86-64 init call
+  refuses, so no session's value holds it and every SHA-384 and SHA-512
+  call of an x86-64 session runs sha512_compress_blocks.c, whatever its
+  caller states. The bytes are the same, so no vector can tell: the AVX2
+  kernel is in the object and nothing runs it. bin/x86_kernels_test counts
+  the compression calls each row sends to the kernel under every
+  ch_cfg.cpu value and requires all of them there under CH_CPU_AVX2. Only
+  an x86-64 object compiles this line of the predicate, so the catch is
+  the script, which builds the binary for x86-64 and runs it under
+  qemu-x86_64 on any host. The lane skips without docker, and this then
+  reports unguarded rather than caught.
+
+--- old
+    return (cpu & CH_CPU_AVX2) != 0;
+--- new
+    return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0;

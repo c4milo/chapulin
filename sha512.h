@@ -59,35 +59,42 @@ void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]);
 #if defined(CH_CPU_RUNTIME) && !defined(__cplusplus)
 #include "cpu_cfg.h"
 
-#ifdef __aarch64__
-// The five calls above that hash, on arm64's SHA-512 instructions (sha512_hw.c,
-// docs/decisions.md 93). An arm64 host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds them beside
-// sha512.c's, which there run sha512_compress_blocks.c. A device object's sha512.c and
-// sha512_compress.c stay the reference: CBMC proves that code, and bin/sha2_equiv_test holds
-// these and a host object's sha512.c to it. Each has the contract of the call it is named for,
-// on the same context type. sha512_init and sha384_init start a context for either path, and
-// the two paths keep the same state in it, so a context may take an update from one and its
-// final from the other. sha512_of_hw and sha384_of_hw also wipe the context they hash in.
+// The five calls above that hash, on the compression function a session's ch_cfg.cpu names
+// (sha512_hw.c). A host object with SUITE=aesgcm holds them beside sha512.c's, which there run
+// sha512_compress_blocks.c. On arm64 they run the SHA-512 instructions (docs/decisions.md 93).
+// On x86-64, which has no such instructions, they run sha512_avx2.c's kernel, the message
+// schedule in AVX2 registers (docs/decisions.md 128): there _hw names that kernel and no hash
+// instruction. A device object's sha512.c and sha512_compress.c stay the reference: CBMC
+// proves that code, and bin/sha2_equiv_test holds these and a host object's sha512.c to it.
+// Each has the contract of the call it is named for, on the same context type. sha512_init and
+// sha384_init start a context for either path, and the two paths keep the same state in it, so
+// a context may take an update from one and its final from the other. sha512_of_hw and
+// sha384_of_hw also wipe the context they hash in.
 //
-// Requires: what the portable call requires, and a CPU with the instructions
-// CH_CPU_CONSTANT_TIME_SHA512 names, which the session's caller states. On a CPU without them
-// the first one faults.
+// Requires: what the portable call requires, and a CPU with what the bit names that
+// sha512_on_instructions reads: on arm64 the instructions of CH_CPU_CONSTANT_TIME_SHA512, and
+// on x86-64 AVX2, CH_CPU_AVX2. The session's caller states either. On a CPU without them the
+// first such instruction faults.
 void sha512_update_hw(sha512 *s, const uint8_t *in, size_t n);
 void sha512_final_hw(sha512 *s, uint8_t out[SHA512_LEN]);
 void sha384_final_hw(sha512 *s, uint8_t out[SHA384_LEN]);
 void sha512_of_hw(const uint8_t *in, size_t n, uint8_t out[SHA512_LEN]);
 void sha384_of_hw(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]);
-#endif
 
 // A copy on the instructions (hash_hw.h) reads the declarations above and none of the entries
 // below, as in sha256.h.
 #ifndef CH_HASH_HW_H
-#ifdef __aarch64__
-// Whether a session's SHA-512 and SHA-384 run on the instructions: where cpu, the session's
-// ch_cfg.cpu, holds CH_CPU_CONSTANT_TIME_SHA512, which the caller sets from its own probe and
-// its own statement of the instructions' timing.
+// Whether a session's SHA-512 and SHA-384 run sha512_hw.c's calls, for cpu, the session's
+// ch_cfg.cpu. On arm64 they do where it holds CH_CPU_CONSTANT_TIME_SHA512, which the caller
+// sets from its own probe and its own statement of the instructions' timing. On x86-64 they do
+// where it holds CH_CPU_AVX2, which states that the CPU has AVX2 and no timing: the kernel's
+// instructions are adds, rotates, shifts, logic and byte shuffles by constant masks.
 static inline int sha512_on_instructions(uint32_t cpu) {
+#ifdef __aarch64__
     return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0;
+#else
+    return (cpu & CH_CPU_AVX2) != 0;
+#endif
 }
 
 // The five calls above that hash, for one session of a host object: each takes the session's
@@ -136,43 +143,6 @@ static inline void sha384_of_cpu(uint32_t cpu, const uint8_t *in, size_t n,
     }
     sha384_of(in, n, out);
 }
-#else
-// No x86-64 CPU this tree targets has SHA-512 instructions, and cpu_cfg.h refuses
-// CH_CPU_CONSTANT_TIME_SHA512 there, so an x86-64 object holds sha512.c alone, over
-// sha512_compress_blocks.c: the answer is no for every value, and each entry runs sha512.c's
-// call.
-static inline int sha512_on_instructions(uint32_t cpu) {
-    (void)cpu;
-    return 0;
-}
-
-static inline void sha512_update_cpu(uint32_t cpu, sha512 *s, const uint8_t *in, size_t n) {
-    (void)cpu;
-    sha512_update(s, in, n);
-}
-
-static inline void sha512_final_cpu(uint32_t cpu, sha512 *s, uint8_t out[SHA512_LEN]) {
-    (void)cpu;
-    sha512_final(s, out);
-}
-
-static inline void sha384_final_cpu(uint32_t cpu, sha512 *s, uint8_t out[SHA384_LEN]) {
-    (void)cpu;
-    sha384_final(s, out);
-}
-
-static inline void sha512_of_cpu(uint32_t cpu, const uint8_t *in, size_t n,
-                                 uint8_t out[SHA512_LEN]) {
-    (void)cpu;
-    sha512_of(in, n, out);
-}
-
-static inline void sha384_of_cpu(uint32_t cpu, const uint8_t *in, size_t n,
-                                 uint8_t out[SHA384_LEN]) {
-    (void)cpu;
-    sha384_of(in, n, out);
-}
-#endif
 #endif
 #endif
 

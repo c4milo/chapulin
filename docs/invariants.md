@@ -1990,7 +1990,9 @@ last `ROLE=server` stub, as the entry said it would.
   for every call that takes no `ch_cfg.cpu`, writes for every message,
   in any split, the context and the digest that the file's second arm
   writes over `sha512_compress.c`. Those two stay the reference and a
-  device object's path, and no object holds both arms.
+  device object's path, and no object holds both arms. On x86-64
+  `sha512_hw.c`'s five calls over `sha512_avx2.c`, which a session whose
+  `ch_cfg.cpu` holds `CH_CPU_AVX2` runs, write the same.
 - **Mechanism.** `sha512.c` picks its arm on `CH_CPU_RUNTIME` alone, in
   one place, so an object compiles one set of the five calls that hash
   under one set of names, and every caller calls it with no change:
@@ -2003,7 +2005,13 @@ last `ROLE=server` stub, as the entry said it would.
   rename the working variables, nested rotates, and Ch and Maj in three
   operations each (decision 127). The path runs no branch and computes
   no address from a word (INV-16), and it wipes the stack each
-  compression call used (INV-17).
+  compression call used (INV-17). For x86-64 `sha512_hw.c` is that
+  first arm compiled once more, under the `_hw` names `hash_hw.h` gives
+  and over `sha512_avx2.c`'s kernel in the plain C's place, and the
+  Makefile and `build.zig` put both files in a host object with
+  `SUITE=aesgcm` alone. The kernel is the same §6.4.2 with its schedule
+  in 256-bit registers, four words a step, and its rounds in general
+  registers (decision 128).
 - **Check.** CBMC proves the framing and the compression function free
   of out-of-bounds access and undefined behavior, and each of the
   function's five steps equal to FIPS 180-4's own form over every input
@@ -2021,6 +2029,17 @@ last `ROLE=server` stub, as the entry said it would.
   function and requires that the reference took none, and
   `make lint-trust-separation` and `make lint-zig-build` hold each file
   to its object (docs/verification.md, "SHA-512 in a host object").
+  CBMC cannot read the kernel's intrinsics, so no harness compiles
+  `sha512_avx2.c`. On a CPU with AVX2 `bin/sha2_equiv_test` runs
+  148,484 cases of `sha512_hw.c` against the second arm: the same
+  lengths, cuts and random cases, and 2,000 random inputs to each call
+  of the two copies at SHA-384's hash length. The two SHA-512 vector
+  binaries run under `ch_cfg.cpu` 0xd,
+  and the host Wycheproof test under its three values with
+  `CH_CPU_AVX2`. `bin/x86_kernels_test` counts every compression call a
+  row sends to the kernel under 33 values, and `test/hash-builds.sh`
+  requires `sha512_hw.c` for x86-64 to call the kernel and not the plain
+  C (docs/verification.md, "SHA-512 on AVX2").
 - **Violation.** A PR changes a round constant in the table the host
   object's two compression functions read; reads the ring one place off
   for `W[t - 7]`; loads one of a block's words twice; gives the two
@@ -2033,12 +2052,23 @@ last `ROLE=server` stub, as the entry said it would.
   compression function a block more than the input holds; picks the
   first arm on a macro no build defines, so a host object runs the
   reference; or packages `sha512_compress_blocks.c` in a device object.
-  The fifteen `inv50-*` violations are these. Six fail
+  The first fifteen `inv50-*` violations are these. Six fail
   `bin/sha2_equiv_test`, one each `bin/sha512_test_host`,
   `bin/hkdf384_test_host` and the Wycheproof host test, four a proof,
   one `bin/hash_runtime_test` and one `make lint-trust-separation`.
   `inv36-zig-host-object-keeps-sha512-compress` leaves `build.zig`
-  without the file, and `make lint-zig-build` fails.
+  without the file, and `make lint-zig-build` fails. Four more are the
+  kernel's. `inv50-sha512-avx2-upper-pair-sigma1-of-last` computes a
+  step's upper two schedule words from the two words before the step,
+  and `inv50-sha512-avx2-sigma0-shift-off` shifts by 6 where the
+  standard shifts by 7; `bin/sha2_equiv_test` catches both built for
+  x86-64, under `qemu-x86_64`. `inv50-sha512-avx2-copy-compresses-on-plain-c`
+  makes `sha512_hw.c`'s copy compress on `sha512_compress_blocks.c`, and
+  `test/hash-builds.sh` catches it on every machine.
+  `inv50-suite-host-object-lacks-sha512-avx2` drops the kernel from the
+  Makefile's list, and `make lint-trust-separation` fails;
+  `inv36-zig-suite-host-object-lacks-sha512-avx2` drops it from
+  `build.zig`'s, and `make lint-zig-build` fails.
 
 ### INV-35 — the build record holds what the object was compiled with
 
@@ -2418,9 +2448,10 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-49 — an AVX2 kernel whose loop uses 256-bit stack slots aligns its frame
 
-- **Claim.** In `chacha20_avx2.c` and `keccak_avx2.c`, a function that
-  stores a 256-bit value to a stack slot, or loads one from it, inside a
-  loop aligns its frame to 32 bytes under clang as it does under gcc. So
+- **Claim.** In `chacha20_avx2.c`, `keccak_avx2.c` and `sha512_avx2.c`,
+  a function that stores a 256-bit value to a stack slot, or loads one
+  from it, inside a loop aligns its frame to 32 bytes under clang as it
+  does under gcc, and each such slot lies at a multiple of 32 bytes. So
   no such slot lies across a cache line or a page boundary, and the loop
   takes the same time wherever the caller's stack is. This entry is about
   speed and no secret: the bytes a kernel writes are the same either way.
@@ -2434,12 +2465,24 @@ last `ROLE=server` stub, as the entry said it would.
   the frame and each slot. Without it the slots sit wherever the caller's
   stack pointer leaves them, in steps of 16 bytes, and Linux places each
   process's stack at a random address (decision 124).
+  `sha512_avx2.c`'s `sha512_avx2_compress_blocks` keeps its sixteen
+  schedule words in four registers and spills none, but it stores four
+  sums at a time to `sums`, an array in its frame, and a round reads
+  each sum back. The array is declared with an alignment of 32 bytes
+  and stored to with the aligned store, so both compilers align the
+  frame for it. The attribute changes no instruction of that function
+  under gcc 13.3, clang 18 or clang 23, so it does not carry it: clang
+  splits the array into the four 256-bit values its stores write, each
+  with a register's alignment, with the declaration or without, and gcc
+  aligns the frame either way and, without the declaration, places the
+  array 16 bytes past a multiple of 32 (decision 128).
 - **Check.** `make lint-frame-align` runs `tools/frame-align.py`, which
-  compiles both files for x86-64 with the pinned clang at `-O2`, hosted
-  as the object is, and requires `andq $-32, %rsp` of every function
-  that names a 256-bit register and a stack slot inside a loop. It also
-  requires `pass` and `keccak_avx2_permute` to be such functions, so a
-  compile that read nothing fails. The compile must be hosted:
+  compiles the three files for x86-64 with the pinned clang at `-O2`,
+  hosted as the object is, and requires `andq $-32, %rsp` of every
+  function that names a 256-bit register and a stack slot inside a loop.
+  It also requires `pass`, `keccak_avx2_permute` and
+  `sha512_avx2_compress_blocks` to be such functions, so a compile that
+  read nothing fails. The compile must be hosted:
   `-ffreestanding` implies `-fno-builtin`, under which clang keeps the 25
   lanes in an array and aligns the frame for it, attribute or none, and
   the lint passed a mutant that way before it compiled hosted.
@@ -2448,14 +2491,25 @@ last `ROLE=server` stub, as the entry said it would.
   and `test/lint-frame-align.sh` catches both. No test times the loops:
   CI compiles with gcc, whose frames are aligned with or without the
   attribute, and a timing on a shared runner is a measurement to read
-  and no check.
+  and no check. The lint requires the aligned frame of
+  `sha512_avx2_compress_blocks` too, and no edit of that file alone
+  makes clang leave it unaligned, so no mutant fails the lint there.
+  What a gcc build shows is checked where gcc builds:
+  `bin/sha2_equiv_test` calls the kernel with the stack pointer at a
+  multiple of 32 bytes and 16 bytes past one, finds the sixteen sums in
+  the stack the call leaves, and requires each four at a multiple of 32
+  bytes. `inv49-sha512-avx2-sums-alignment-dropped` removes the
+  declared alignment, and that check fails in the qemu lane, which
+  builds with gcc for x86-64.
 - **Violation.** A PR removes an attribute as redundant because gcc's
   code does not change, or moves a loop that holds more than 16 vectors
-  into a new function without it. The lint reads the two files alone: a
-  new AVX2 kernel with such a loop is held by review, and by reading its
-  prologue under clang for `and rsp` (docs/performance.md, the pitfalls
-  table).
-- See [decisions: Engineering](decisions.md#engineering), entry 124.
+  into a new function without it, or drops the alignment `sums` is
+  declared with because clang's code does not change. The lint reads the
+  three files alone: a new AVX2 kernel with such a loop is held by
+  review, and by reading its prologue under clang for `and rsp`
+  (docs/performance.md, the pitfalls table).
+- See [decisions: Engineering](decisions.md#engineering), entries 124
+  and 128.
 
 ## Fail-closed
 
@@ -3818,9 +3872,10 @@ last `ROLE=server` stub, as the entry said it would.
   instructions reads a table with a secret index, and both
   branch on lengths alone: the two 64-bit specs hold `sha256_hw.c`'s
   conditional branches at 6 on arm64 and 10 on x86-64, `sha512_hw.c`'s
-  at 17 on arm64 and 0 on x86-64, where it has no body, the HKDF copy's
-  at 19 and the key schedule copy's at 0, and each branch was read by
-  the instruction that sets its flags.
+  at 17 on arm64 and 13 on x86-64, where it is `sha512.c`'s first arm
+  compiled once more, the HKDF copy's at 19 and the key schedule copy's
+  at 0, and each branch was read by the instruction that sets its
+  flags.
   `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test` count the
   calls into each path of each hash under 257 `ch_cfg.cpu` values, and
   `test/hash-builds.sh` holds each hash's instructions to its file and
@@ -3842,8 +3897,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv16-sha512-reads-sha256-bit` and
   `inv16-sha512-update-entry-inverted` do the same to `sha512.h`, and
   `inv16-sha384-call-follows-sha256-bit` answers for a SHA-384 call with
-  the SHA-256 bit. Only an arm64 object compiles what those four edit, so
-  the counting tests catch them built for arm64, under `qemu-aarch64`.
+  the SHA-256 bit. The counting tests catch those four built for arm64,
+  under `qemu-aarch64`, so each has one verdict on every machine.
   `inv16-hash-copy-final-on-portable` and
   `inv16-hash-copy-sha384-final-on-portable` each leave one of a copy's
   hash calls on the portable code, and
@@ -3862,6 +3917,26 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/sha2_equiv_test` catches them under `qemu-x86_64` and
   `qemu-aarch64`, whose `max` models have the instructions on every
   host.
+  No x86-64 CPU this tree targets has SHA-512 instructions. There a
+  host object with `SUITE=aesgcm` holds `sha512_avx2.c`, SHA-512's
+  compression function with its message schedule in 256-bit registers,
+  and `sha512_hw.c` as `sha512.c`'s first arm over it, and
+  `sha512_on_instructions` reads `CH_CPU_AVX2` (decision 128). That bit
+  says the CPU has AVX2 and states no timing, as for
+  `chacha20_avx2.c`: the kernel's instructions are adds, rotates,
+  shifts, bitwise logic and byte shuffles by constant masks, it reads
+  the round constants at indices the round number fixes, and its three
+  conditional branches under the x86-64 spec test the block count and
+  two loop counts. Its target attribute names AVX2 alone, so no BMI1
+  or BMI2 instruction, which the bit does not state, is in its object.
+  `bin/hash_runtime_test` counts the calls into each path under 257
+  values and `bin/x86_kernels_test` every compression call a row sends
+  to the kernel under 33. Two violations break those rules.
+  `inv16-sha512-avx2-entry-reads-sha512-bit` reads arm64's bit on
+  x86-64, which no x86-64 session's value holds, so no call runs the
+  kernel, and `bin/x86_kernels_test` catches it under `qemu-x86_64`.
+  `inv16-sha512-avx2-runs-bmi2` turns BMI1 and BMI2 on for the kernel's
+  functions, and `test/hash-builds.sh` finds RORX in its object.
   An arm64 host object that clang compiled holds Keccak-f[1600] on
   FEAT_SHA3's four instructions, `sha3_hw.c`, beside `sha3.c`, and
   `mlkem.c` and `mlkem_poly.c` a second time, as `mlkem_hw.c` and
@@ -4927,6 +5002,24 @@ last `ROLE=server` stub, as the entry said it would.
   the compression call, `inv17-sha512-compress-blocks-below-len-short`
   wipes 64 bytes, and `inv17-sha384-host-whole-message-context-kept` and
   `inv17-sha512-host-whole-message-context-kept` keep a context.
+  On x86-64 `sha512_hw.c`, that arm compiled once more, wipes
+  `SHA512_AVX2_BELOW_LEN` bytes of the stack below each call of
+  `sha512_avx2.c`'s kernel, which leaves the last sixteen schedule
+  words of the last block, each plus its constant, in its frame. The
+  kernel's vector registers hold schedule words too, which no wipe
+  written in C names, so it ends with VZEROALL, which writes zero to
+  ymm0 to ymm15 (decision 128). On a CPU with AVX2
+  `bin/sha2_equiv_test` requires the kernel's frame, and 16 bytes more
+  for a caller at another stack address, inside the wiped length,
+  requires no one 64-bit word of the same six kinds of call in the
+  bytes they wrote, and reads every word of the sixteen registers back
+  as zero after a call of the kernel
+  (`test/sha2_equiv_residue512_avx2.h`). Three violations each undo one
+  of those, and the binary catches each built for x86-64, under
+  `qemu-x86_64`: `inv17-sha512-avx2-copy-never-wipes-stack` drops the
+  wipe after the kernel's call, `inv17-sha512-avx2-below-len-short`
+  wipes 192 bytes, and `inv17-sha512-avx2-registers-not-cleared` ends
+  the kernel with VZEROUPPER.
   `sha256.c`'s `compress` wipes neither its schedule array nor its
   working variables, `sha512_compress.c`'s the same, and `sha256_of`,
   and a device object's `sha384_of` and `sha512_of`, do not wipe their
@@ -5013,7 +5106,10 @@ last `ROLE=server` stub, as the entry said it would.
   each call of its one function, so that frame has to lie inside them
   (measured 224 with Apple clang 21 and clang 23 and 160 with gcc 13.3
   on arm64, and 152 with clang 23 and 176 with gcc 13.3 on x86-64;
-  decision 127).
+  decision 127). `sha512_avx2.c`, which an x86-64 host object with
+  `SUITE=aesgcm` alone holds, gets the same 384 for the same reason
+  (measured 192 with gcc 13.3 and 248 with clang 18 and clang 23;
+  decision 128).
   ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
   in every build that carries them, `KEX=pq`, every `TRUST=webpki`
   object (decisions.md 53) and every server role (decisions.md 54):

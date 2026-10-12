@@ -7,8 +7,9 @@
 #     ghash_hw.c's, gcm_hw.c's and gcm_vaes.c's functions. gcm_vaes.c
 #     holds the 256-bit kernels on x86-64 and nothing on arm64.
 #   - the SHA-256 instructions in sha256_hw.c's.
-#   - the SHA-512 instructions in sha512_hw.c's, which has a body on arm64
-#     alone and which an object with SUITE=aesgcm alone packages.
+#   - the SHA-512 instructions in sha512_hw.c's, which an object with
+#     SUITE=aesgcm alone packages. No x86-64 CPU this tree targets has
+#     them: there the file runs sha512_avx2.c's kernel and holds none.
 #
 # bin/aes_runtime_test counts the calls into the AES files and finds none
 # without the CH_CPU_CONSTANT_TIME_AES bit, and bin/hash_runtime_test the

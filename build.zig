@@ -806,9 +806,11 @@ fn nativeCopies(b: *std.Build, list: Names) Names {
 
 /// The Makefile's hash_hw_of as it packages an object: what a host object
 /// holds beside the hash files of list, in the Makefile's order. It holds
-/// sha512_hw.c only where suite says the object runs SHA-384 under a
-/// session's value. Keccak on the SHA-3 instructions and ML-KEM's two copies
-/// over it stand beside sha3.c, mlkem.c and mlkem_poly.c the same way.
+/// sha512_hw.c, and after it sha512_avx2.c, the kernel that file's x86-64
+/// arm compresses on (docs/decisions.md 128), only where suite says the
+/// object runs SHA-384 under a session's value. Keccak on the SHA-3
+/// instructions and ML-KEM's two copies over it stand beside sha3.c,
+/// mlkem.c and mlkem_poly.c the same way.
 fn hashHwSources(b: *std.Build, list: Names, suite: bool) Names {
     const pairs = [_][2][]const u8{
         .{ "sha256.c", "sha256_hw.c" },
@@ -819,11 +821,12 @@ fn hashHwSources(b: *std.Build, list: Names, suite: bool) Names {
         .{ "mlkem.c", "mlkem_hw.c" },
         .{ "mlkem_poly.c", "mlkem_poly_hw.c" },
     };
-    var out = std.ArrayList([]const u8).initCapacity(b.allocator, pairs.len) catch @panic("OOM");
+    var out = std.ArrayList([]const u8).initCapacity(b.allocator, pairs.len + 1) catch @panic("OOM");
     for (pairs) |pair| {
         const is_sha512 = std.mem.eql(u8, pair[0], "sha512.c");
         if (is_sha512 and !suite) continue;
         if (contains(list, pair[0])) out.appendAssumeCapacity(pair[1]);
+        if (is_sha512 and contains(list, pair[0])) out.appendAssumeCapacity("sha512_avx2.c");
     }
     return out.items;
 }

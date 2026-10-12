@@ -11,8 +11,15 @@
 // as whole words, compresses on sha512_compress_blocks.c, and wipes the stack below each
 // compression call. bin/sha2_equiv_test compiles both arms into one binary and requires the
 // same contexts and the same digests from them.
+//
+// sha512_hw.c compiles the first arm once more for an x86-64 host object, under the _hw names
+// hash_hw.h gives the five calls, for a session whose ch_cfg.cpu holds CH_CPU_AVX2
+// (docs/decisions.md 128). That copy defines CH_SHA512_AVX2_COPY. It differs from this file in
+// two places, each under that define: it compresses on sha512_avx2.c's kernel, and it holds no
+// initial value and no init call, which both paths take from this file.
 #include "sha512.h"
 
+#ifndef CH_SHA512_AVX2_COPY
 // FIPS 180-4 §5.3.5: the SHA-512 initial value, the first 64 bits of the
 // fractional parts of the square roots of the first eight primes.
 static const uint64_t IV512[8] = {0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b,
@@ -48,24 +55,37 @@ void sha512_init(sha512 *s) {
 void sha384_init(sha512 *s) {
     init_from(s, IV384);
 }
+#endif // CH_SHA512_AVX2_COPY
 
 #ifdef CH_CPU_RUNTIME
 
 #include <string.h>
 
 #include "ct.h"
+
+// The compression function this arm calls and the bytes of stack it wipes below each call:
+// sha512_compress_blocks.c's, and in sha512_hw.c's copy sha512_avx2.c's kernel, which has the
+// same contract and a frame of its own length.
+#ifdef CH_SHA512_AVX2_COPY
+#include "sha512_avx2.h"
+#define COMPRESS_BLOCKS sha512_avx2_compress_blocks
+#define COMPRESS_BLOCKS_BELOW_LEN SHA512_AVX2_BELOW_LEN
+#else
 #include "sha512_compress_blocks.h"
+#define COMPRESS_BLOCKS sha512_compress_blocks
+#define COMPRESS_BLOCKS_BELOW_LEN SHA512_COMPRESS_BLOCKS_BELOW_LEN
+#endif
 
 // SHA-384 is the hash of TLS_AES_256_GCM_SHA384's key schedule, so this arm reads HMAC keys and
-// traffic secrets. sha512_compress_blocks leaves the sixteen words of its message schedule in
-// its frame, and whichever working variables its compiler wrote to stack slots of its own,
-// which no ct_wipe can name. So each call of it below is followed by a wipe of the stack it
-// used, in p256_wide_wipe.c's form.
+// traffic secrets. The compression function leaves words of its message schedule in its frame,
+// and whichever registers its compiler wrote to stack slots of its own, which no ct_wipe can
+// name. So each call of it below is followed by a wipe of the stack it used, in
+// p256_wide_wipe.c's form.
 //
 // The frame of this function is the array. ct_wipe is compiled apart from it and takes the
 // array's address, so the compiler keeps the array in memory and cannot delete the call.
 static void wipe_frame(void) {
-    uint8_t below[SHA512_COMPRESS_BLOCKS_BELOW_LEN];
+    uint8_t below[COMPRESS_BLOCKS_BELOW_LEN];
     ct_wipe(below, sizeof below);
 }
 
@@ -76,10 +96,10 @@ static void wipe_frame(void) {
 static void (*const volatile wipe_frame_call)(void) = wipe_frame;
 
 // The compression function over blocks whole blocks at p, and the wipe of the stack it used.
-// sha512_compress_blocks is another source's function, so its frame lay right under the frame
-// of the function this one is compiled into, where wipe_frame's array lies next.
+// The compression function is another source's, so its frame lay right under the frame of the
+// function this one is compiled into, where wipe_frame's array lies next.
 static void compress_blocks(uint64_t h[8], const uint8_t *p, size_t blocks) {
-    sha512_compress_blocks(h, p, blocks);
+    COMPRESS_BLOCKS(h, p, blocks);
     wipe_frame_call();
 }
 

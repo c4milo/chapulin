@@ -1,0 +1,22 @@
+invariant: INV-50
+file: sha512.c
+catches: test/hash-builds.sh
+reason: sha512.c picks the copy's compression function on a macro no build
+  defines, so sha512_hw.c's copy for x86-64 compresses on
+  sha512_compress_blocks.c, the plain C the calls without _hw run. A
+  session with CH_CPU_AVX2 then runs no kernel. sha512_avx2.c still
+  compiles and links and defines a function nobody calls, and every
+  digest, every equivalence case and every published vector passes,
+  because the plain C computes the same bytes; only the time is wrong, by
+  the factor docs/decisions.md 128 measures. The design refuses a silent
+  fall back: a host object is a statement about what the object contains.
+  The script compiles sha512_hw.c for x86-64 with the pinned clang and
+  requires its object to call sha512_avx2_compress_blocks and not
+  sha512_compress_blocks, on every machine.
+
+--- old
+#ifdef CH_SHA512_AVX2_COPY
+#include "sha512_avx2.h"
+--- new
+#ifdef CH_SHA512_AVX2_KERNEL
+#include "sha512_avx2.h"

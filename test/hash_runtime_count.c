@@ -2,8 +2,9 @@
 // each a count and a call to sha256.c's or sha512.c's code
 // (test/hash_runtime_count.h). The entries of sha256_hw.c and sha512_hw.c
 // compute the digests those two files compute, under the same contracts,
-// so a caller sees what it would see from the instructions, and the binary
-// holds none. sha512.c compiles here as a host object compiles it, to its
+// so a caller sees what it would see from the instructions, or on x86-64
+// from sha512_avx2.c's kernel, and the binary holds neither. sha512.c
+// compiles here as a host object compiles it, to its
 // first arm, whose calls to sha512_compress_blocks
 // test/hash_runtime_compress_count.c counts.
 //
@@ -105,8 +106,8 @@ void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
     sha384_of_uncounted(in, n, out);
 }
 
-#ifdef __aarch64__
-// sha512_hw.c's five entries, which an arm64 host object alone holds.
+// sha512_hw.c's five entries, which run arm64's SHA-512 instructions and on
+// x86-64 sha512_avx2.c's kernel.
 void sha512_update_hw(sha512 *s, const uint8_t *in, size_t n) {
     sha512_hw_calls.updates++;
     sha512_update_uncounted(s, in, n);
@@ -131,4 +132,3 @@ void sha384_of_hw(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
     sha512_hw_calls.whole_messages++;
     sha384_of_uncounted(in, n, out);
 }
-#endif

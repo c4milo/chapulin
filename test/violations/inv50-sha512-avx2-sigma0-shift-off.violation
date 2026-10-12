@@ -1,0 +1,17 @@
+invariant: INV-50
+file: sha512_avx2.c
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: four_lower_sigma0 shifts right by 6 where FIPS 180-4's equation 4.12
+  shifts by 7, which is lower_sigma1's count. Every schedule word past a
+  block's first sixteen is then wrong, and so is every SHA-384 and SHA-512
+  digest a session computes under CH_CPU_AVX2. CBMC cannot read an
+  intrinsic, so no proof covers this file, and bin/sha2_equiv_test is
+  what holds it to sha512.c's second arm. The kernel has a body on x86-64 alone, so the catch is the script,
+  which builds the binary for x86-64 and runs it under qemu-x86_64, whose
+  max model has AVX2 on every host. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+                            _mm256_srli_epi64(x, 7));
+--- new
+                            _mm256_srli_epi64(x, 6));

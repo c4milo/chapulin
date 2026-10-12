@@ -1,0 +1,21 @@
+invariant: INV-50
+file: sha512_avx2.c
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: next_four_words computes W[t + 2] and W[t + 3] with lower_sigma1 of
+  W[t - 2] and W[t - 1], the words W[t] and W[t + 1] take, where FIPS
+  180-4 takes lower_sigma1 of W[t] and W[t + 1]. A schedule step that
+  computed its four words in one 256-bit operation would be this, because
+  the upper two depend on the lower two. Every SHA-384 and SHA-512 digest
+  a session computes under CH_CPU_AVX2 is then wrong and agrees with no
+  peer. CBMC cannot read an intrinsic, so no proof covers this file, and
+  bin/sha2_equiv_test is what holds it to sha512.c's second arm.
+  The kernel has a body on x86-64 alone, so the catch is the script,
+  which builds the binary for x86-64 and runs it under qemu-x86_64, whose
+  max model has AVX2 on every host. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    two_words upper = _mm_add_epi64(_mm256_extracti128_si256(partial, 1), two_lower_sigma1(lower));
+--- new
+    two_words upper = _mm_add_epi64(_mm256_extracti128_si256(partial, 1),
+                                    two_lower_sigma1(_mm256_extracti128_si256(last, 1)));

@@ -14,10 +14,13 @@
 //
 // Every call in the two files runs the one hash its hash_len argument names, so a copy that
 // holds two hashes still runs each on its own bit alone: the entries pick a copy by the bit of
-// that hash (hkdf.h's hash_on_instructions). On x86-64 no object holds SHA-384 on instructions,
-// so there the copies' SHA-384 arms call sha512.c's calls under their own names, which every
-// session of a host object runs over sha512_compress_blocks.c (docs/decisions.md 127), and no
-// entry calls a copy at that hash length.
+// that hash (hkdf.h's hash_on_instructions). For SHA-384 that is the bit sha512_on_instructions
+// reads: CH_CPU_CONSTANT_TIME_SHA512 on arm64, and CH_CPU_AVX2 on x86-64, which has no SHA-512
+// instructions. There the copies' SHA-384 arms call sha512_hw.c's calls over sha512_avx2.c's
+// kernel, the message schedule in AVX2 registers (docs/decisions.md 128).
+//
+// On x86-64 sha512_hw.c includes this header too, and then sha512.c: its copy of that file's
+// first arm defines the five SHA-512 calls under the _hw names below.
 //
 // Every name the copied files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it. sha256.h, sha512.h, hkdf.h and
@@ -36,15 +39,13 @@
 #define sha256_final sha256_final_hw
 #define sha256_of sha256_of_hw
 
-// sha512.c's five calls that hash, on arm64, where sha512_hw.c holds them. sha512_init and
+// sha512.c's five calls that hash, which sha512_hw.c holds under these names. sha512_init and
 // sha384_init keep their names.
-#ifdef __aarch64__
 #define sha512_update sha512_update_hw
 #define sha512_final sha512_final_hw
 #define sha384_final sha384_final_hw
 #define sha512_of sha512_of_hw
 #define sha384_of sha384_of_hw
-#endif
 
 // hkdf.c.
 #define hmac_sha256 hmac_sha256_hw

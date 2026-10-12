@@ -1,57 +1,53 @@
-// bin/x86_kernels_test: which calls an x86-64 host object sends to its
-// kernels under each ch_cfg.cpu value (docs/decisions.md 89 and 90).
-// chacha20.c's use_avx512 picks chacha20_avx512.c's ChaCha20 where the
-// value holds CH_CPU_AVX512_IFMA, and its use_avx2 chacha20_avx2.c's where
-// the value holds CH_CPU_AVX2 and not that bit, mlkem.h's entries pick mlkem_avx2.c's copy of
-// ML-KEM where it holds the same bit (docs/decisions.md 107), widemul.h's widemul_poly1305_avx2
-// picks poly1305_avx2.c's Poly1305 where it holds that bit and CH_CPU_CONSTANT_TIME_MULTIPLY both
-// (docs/decisions.md 110), gcm_vaes.h's gcm_use_vaes picks gcm_vaes.c's three entries where it
-// holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both, and rsa_mont.c's
-// use_ifma picks rsa_ifma.c's RSA public operation where it holds
-// CH_CPU_AVX512_IFMA, and else its use_avx2 picks rsa_avx2.c's where it
-// holds CH_CPU_AVX2 (docs/decisions.md 122). The kernels compute the bytes
-// the paths beside them compute, so no vector can tell which ran:
-// test/x86_kernels_count.c, test/rsa_ifma_count.c and
-// test/rsa_avx2_count.c count the calls instead, and run each on the entry it stands beside, so
-// this binary runs on every x86-64 CPU.
+// bin/x86_kernels_test: which calls an x86-64 host object sends to its kernels under each
+// ch_cfg.cpu value (docs/decisions.md 89 and 90). chacha20.c's use_avx512 picks
+// chacha20_avx512.c's ChaCha20 where the value holds CH_CPU_AVX512_IFMA, and its use_avx2
+// chacha20_avx2.c's where the value holds CH_CPU_AVX2 and not that bit, mlkem.h's entries pick
+// mlkem_avx2.c's copy of ML-KEM where it holds CH_CPU_AVX2 (docs/decisions.md 107), widemul.h's
+// widemul_poly1305_avx2 picks poly1305_avx2.c's Poly1305 where it holds that bit and
+// CH_CPU_CONSTANT_TIME_MULTIPLY both (docs/decisions.md 110), gcm_vaes.h's gcm_use_vaes picks
+// gcm_vaes.c's three entries where it holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both,
+// sha512.h's sha512_on_instructions picks sha512_hw.c's calls over sha512_avx2.c's kernel where
+// it holds CH_CPU_AVX2 (docs/decisions.md 128), and rsa_mont.c's use_ifma picks rsa_ifma.c's RSA
+// public operation where it holds CH_CPU_AVX512_IFMA, and else its use_avx2 picks rsa_avx2.c's
+// where it holds CH_CPU_AVX2 (docs/decisions.md 122). The kernels compute the bytes the paths
+// beside them compute, so no vector can tell which ran: test/x86_kernels_count.c,
+// test/rsa_ifma_count.c and test/rsa_avx2_count.c count the calls instead, and run each on the
+// entry it stands beside, so this binary runs on every x86-64 CPU.
 //
-// Every row runs under each of the 32 values the five bits from 0x02 to
-// 0x10 and 0x100 make beside CH_CPU_PROBED, and under 0, which a wiped
-// record direction holds. Those five are the AES bit, the multiply bit and
-// the three that name a kernel; a hash bit picks no path a row here takes.
-// Under each, a call must run a kernel exactly when the value names it,
-// and must give the same bytes back:
+// Every row runs under each of the 32 values the five bits from 0x02 to 0x10 and 0x100 make
+// beside CH_CPU_PROBED, and under 0, which a wiped record direction holds. Those five are the AES
+// bit, the multiply bit and the three that name a kernel; a hash bit picks no path a row here
+// takes, and SHA-512's kernel follows CH_CPU_AVX2. Under each, a call must run a kernel exactly
+// when the value names it, and must give the same bytes back:
 //
-//   - chacha20_xor_cpu, and aead_seal_cpu and aead_open_cpu, which pass
-//     the value on to the keystream and to Poly1305's update of the
-//     ciphertext. chacha20_xor, aead_seal and aead_open take no value and
-//     run no kernel.
-//   - a record under each of the three suites, sealed and opened: the
-//     direction's cpu picks the AVX-512 or the AVX2 keystream and the AVX2
-//     Poly1305 under ChaCha20 and the VAES kernels under AES-GCM.
-//   - a QUIC 1-RTT packet under each suite, and a Handshake packet, sealed
-//     and opened, with the value the packet calls take first.
-//   - a QUIC Initial packet, whose key the table runs without the AES bit,
-//     so it runs the VAES kernels under both bits alone.
-//   - an AES traffic key: aes_traffic_key_init names no kernel, and
-//     aes_traffic_key_cpu names what its value does.
-//   - ML-KEM's three session calls, mlkem_keygen_dk_cpu,
-//     mlkem_encaps_derand_cpu and mlkem_decaps_cpu.
-//   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu,
-//     which runs the kernel the value names, the IFMA one before the AVX2
-//     one, for each of two moduli they take and rsa_vp1 for each of three
-//     they do not (test/x86_kernels_rsa.h).
-//   - an RSA-PSS signature through widemul.h's entry, which runs
-//     rsa_ifma_sign.c's exponentiations, the check on rsa_ifma.c and the
-//     two wipes after each where the value holds CH_CPU_AVX512_IFMA and
-//     CH_CPU_CONSTANT_TIME_MULTIPLY (test/x86_kernels_rsa.h).
+//   - chacha20_xor_cpu, and aead_seal_cpu and aead_open_cpu, which pass the value on to the
+//     keystream and to Poly1305's update of the ciphertext. chacha20_xor, aead_seal and aead_open
+//     take no value and run no kernel.
+//   - a record under each of the three suites, sealed and opened: the direction's cpu picks the
+//     AVX-512 or the AVX2 keystream and the AVX2 Poly1305 under ChaCha20 and the VAES kernels
+//     under AES-GCM.
+//   - a QUIC 1-RTT packet under each suite, and a Handshake packet, sealed and opened, with the
+//     value the packet calls take first.
+//   - a QUIC Initial packet, whose key the table runs without the AES bit, so it runs the VAES
+//     kernels under both bits alone.
+//   - an AES traffic key: aes_traffic_key_init names no kernel, and aes_traffic_key_cpu names what
+//     its value does.
+//   - ML-KEM's three session calls, mlkem_keygen_dk_cpu, mlkem_encaps_derand_cpu and
+//     mlkem_decaps_cpu.
+//   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu, which runs the kernel
+//     the value names, the IFMA one before the AVX2 one, for each of two moduli they take and
+//     rsa_vp1 for each of three they do not (test/x86_kernels_rsa.h).
+//   - an RSA-PSS signature through widemul.h's entry, which runs rsa_ifma_sign.c's
+//     exponentiations, the check on rsa_ifma.c and the two wipes after each where the value holds
+//     CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY (test/x86_kernels_rsa.h).
+//   - sha512.h's and hkdf.h's entries at SHA-384's hash length and a record direction's keying,
+//     whose every compression call runs sha512_avx2.c's kernel under CH_CPU_AVX2
+//     (test/x86_kernels_sha512.h).
 //
 // What the kernels compute is held elsewhere: bin/chacha20_equiv_test,
-// bin/poly1305_equiv_test and bin/aes_equiv_test call them against the
-// portable code, and
-// bin/unit_host, bin/quic_test_hw, bin/ghash_equiv_test and the host
-// Wycheproof test run the published vectors on them where the CPU has their
-// instructions.
+// bin/poly1305_equiv_test, bin/aes_equiv_test and bin/sha2_equiv_test call them against the
+// portable code, and bin/unit_host, bin/quic_test_hw, bin/ghash_equiv_test and the host
+// Wycheproof test run the published vectors on them where the CPU has their instructions.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +89,7 @@ static int failures = 0;
     } while (0)
 
 #include "x86_kernels_rsa.h"
+#include "x86_kernels_sha512.h"
 
 // The payload every row seals: four passes of AES-GCM's eight blocks, one
 // whole block more and 7 bytes, so each kernel has whole passes, a whole
@@ -454,6 +451,7 @@ static void check_value(uint32_t cpu) {
     check_rsa_verifiers(cpu);
     check_rsa_moduli(cpu);
     check_rsa_signer(cpu);
+    check_sha512(cpu);
     if (failures != failures_before) {
         (void)fprintf(stderr, "x86 kernels: the checks above ran under ch_cfg.cpu 0x%x\n",
                       (unsigned)cpu);
@@ -478,7 +476,8 @@ int main(void) {
             "CH_CPU_AVX2 was, Poly1305 on the IFMA kernel where CH_CPU_AVX512_IFMA and "
             "CH_CPU_CONSTANT_TIME_MULTIPLY were and on the AVX2 kernel where CH_CPU_AVX2 and the "
             "multiply bit were and CH_CPU_AVX512_IFMA was not, AES-GCM on the VAES kernels where "
-            "CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, RSA's public operation on the IFMA "
+            "CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, SHA-512's and SHA-384's compression "
+            "on the AVX2 kernel where CH_CPU_AVX2 was, RSA's public operation on the IFMA "
             "kernel where CH_CPU_AVX512_IFMA was and else on the AVX2 kernel where CH_CPU_AVX2 "
             "was, RSA signing's exponentiations and check on the IFMA kernels, each followed by "
             "both wipes, where CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY were, and none "

@@ -210,7 +210,10 @@ jobs:
     # VAES and VPCLMULQDQ, fails where it lacks one, and runs them under
     # the runner's gcc (test/platforms.mk, x86-64-kernels-check). It
     # requires the SHA extensions the same way, and runs sha256_hw.c's
-    # x86-64 arm on them (docs/decisions.md 93).
+    # x86-64 arm on them (docs/decisions.md 93). It runs sha512_avx2.c's
+    # kernel too, SHA-512's compression function with its message schedule
+    # in AVX2 registers: the equivalence test with its checks of the stack
+    # and the registers, and the published vectors (docs/decisions.md 128).
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

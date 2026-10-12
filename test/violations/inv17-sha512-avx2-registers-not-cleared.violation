@@ -1,0 +1,20 @@
+invariant: INV-17
+file: sha512_avx2.c
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: sha512_avx2_compress_blocks ends with VZEROUPPER where it had
+  VZEROALL, which is all the call cost of the upper halves asks for.
+  VZEROUPPER clears bits 128 to 255 alone, so the low halves of the
+  vector registers still hold schedule words of the last block when the
+  function returns: under HMAC-SHA-384 words computed from the key. No
+  wipe written in C names a register, and every digest is right.
+  bin/sha2_equiv_test sets every bit of ymm0 to ymm15, calls the kernel
+  and stores the sixteen registers in one block of assembly, and requires
+  every stored word zero. The kernel has a body on x86-64 alone, so the catch is the script,
+  which builds the binary for x86-64 and runs it under qemu-x86_64, whose
+  max model has AVX2 on every host. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    _mm256_zeroall();
+--- new
+    _mm256_zeroupper();

@@ -18,11 +18,9 @@ reason: sha512.c picks its first arm on a macro no build defines, so a host
 #include <string.h>
 
 #include "ct.h"
-#include "sha512_compress_blocks.h"
 --- new
 #ifdef CH_SHA512_COMPRESS_BLOCKS
 
 #include <string.h>
 
 #include "ct.h"
-#include "sha512_compress_blocks.h"

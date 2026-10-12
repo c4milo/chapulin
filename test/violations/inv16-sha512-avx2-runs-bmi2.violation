@@ -1,0 +1,17 @@
+invariant: INV-16
+file: sha512_avx2.c
+catches: test/hash-builds.sh
+reason: the target attribute of sha512_avx2.c's functions turns on BMI1 and
+  BMI2 beside AVX2, and the compiler then writes RORX for the rounds'
+  rotations. CH_CPU_AVX2 states AVX2 and no more: a caller reads it from
+  the AVX2 bit of CPUID and from XGETBV, and a session whose CPU or
+  hypervisor has AVX2 without BMI2 dies of SIGILL at its first SHA-384
+  block. Every x86-64 runner CI draws has both, so every test that runs
+  the kernel passes. The script compiles the file for x86-64 with the
+  pinned clang and requires no BMI1 or BMI2 instruction in it, on every
+  machine.
+
+--- old
+#pragma clang attribute push(__attribute__((target("avx2"))), apply_to = function)
+--- new
+#pragma clang attribute push(__attribute__((target("avx2,bmi,bmi2"))), apply_to = function)

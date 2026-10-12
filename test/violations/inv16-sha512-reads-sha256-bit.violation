@@ -9,7 +9,8 @@ reason: sha512.h's sha512_on_instructions reads CH_CPU_CONSTANT_TIME_SHA256,
   bin/hash_runtime_test runs every row under each of the 128 values the
   seven bits beside CH_CPU_PROBED make, which hold each bit with and
   without the other, and counts each hash's calls apart. Only an arm64
-  object compiles this predicate, so the catch is the script, which runs
+  object compiles this line of the predicate, so the catch is the script,
+  which runs
   the arm64 binaries under qemu-aarch64. The lane skips without docker,
   and this then reports unguarded rather than caught.
 

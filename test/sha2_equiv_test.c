@@ -13,7 +13,9 @@
 // over sha512_compress.c, which test/sha512_portable.c compiles under
 // second names, and two paths are held to it: sha512.c's first arm over
 // sha512_compress_blocks.c, the plain C every session runs, on every
-// machine (docs/decisions.md 127), and on arm64 sha512_hw.c.
+// machine (docs/decisions.md 127), and sha512_hw.c, which is the SHA-512
+// instructions on arm64 and sha512_avx2.c's kernel on x86-64
+// (docs/decisions.md 128).
 //
 // Every case hashes the message on the portable path in one call. It then
 // hashes a copy in three updates and a final, each on the path one bit of
@@ -50,10 +52,12 @@
 // other.
 //
 // The cases of sha512.c's first arm run on every CPU. On a CPU without the
-// SHA-256 instructions the binary skips every case of the instructions,
-// and on one without the SHA-512 instructions it skips sha512_hw.c's. Under
+// SHA-256 instructions the binary skips sha256_hw.c's cases, and on an
+// arm64 CPU without the SHA-512 instructions it skips sha512_hw.c's. Under
 // CH_REQUIRE_HASH_INSTRUCTIONS=1 it fails instead
-// (test/hash_instructions_cpu.h).
+// (test/hash_instructions_cpu.h). On an x86-64 CPU without AVX2 it skips
+// sha512_hw.c's cases, and under CH_REQUIRE_X86_KERNELS=1 it fails instead
+// (test/x86_kernels_cpu.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +67,7 @@
 #include "hkdf.h"
 #include "keysched.h"
 #include "sha256.h"
+#include "x86_kernels_cpu.h"
 
 #ifndef CH_CPU_RUNTIME
 #error "bin/sha2_equiv_test links a host object's hash sources: -DCH_CPU_RUNTIME"
@@ -283,9 +288,9 @@ static void run_empty(void) {
 #include "sha2_equiv_residue.h"
 #include "sha2_equiv_sha512.h"
 
-// Every case that runs a hash instruction, on a CPU with the SHA-256
-// instructions. On one without them the cases skip, or fail where the
-// environment requires the instructions.
+// Every case of sha256_hw.c, on a CPU with the SHA-256 instructions. On one
+// without them the cases skip, or fail where the environment requires the
+// instructions.
 static void run_instructions(void) {
     if (!cpu_has_sha256_instructions()) {
         if (hash_instructions_required()) {
@@ -305,15 +310,13 @@ static void run_instructions(void) {
     run_empty();
     run_copies();
     run_residue();
-#ifdef __aarch64__
-    run_sha512_instructions();
-#endif
 }
 
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_sha512_first_arm();
     run_instructions();
+    run_sha512_instructions();
     if (failures != 0) {
         (void)fprintf(stderr, "sha2 equivalence: %d failure(s), seed 0x%016llx\n", failures,
                       (unsigned long long)seed);

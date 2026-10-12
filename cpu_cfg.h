@@ -76,7 +76,13 @@
 // that bit leaves (widemul.h's widemul_poly1305_avx2, docs/decisions.md 110), and
 // CH_CPU_AVX512_IFMA, below, picks a 512-bit kernel ahead of each AVX2 one. CH_CPU_AVX2 also
 // picks RSA verification's AVX2 kernel, which the RSA entry under CH_CPU_AVX512_IFMA below
-// states beside the IFMA one. A session with
+// states beside the IFMA one. And a session with CH_CPU_AVX2 hashes SHA-384 and SHA-512, and
+// runs HMAC, HKDF and the key schedule over SHA-384, on sha512_avx2.c's kernel, which computes
+// the message schedule four words to a 256-bit register, where one without the bit runs
+// sha512_compress_blocks.c (sha512.h's sha512_on_instructions, docs/decisions.md 128). The
+// kernel's instructions are adds, rotates, shifts, logic and byte shuffles by constant masks,
+// so the bit states no timing for them, and it writes zero to ymm0 to ymm15 before it returns.
+// A session with
 // CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES runs AES-GCM's whole blocks two to a 256-bit register,
 // and one with the AES bit alone on the 128-bit instructions (gcm_vaes.h's gcm_use_vaes): the AES
 // bit's statement covers the 256-bit forms, and CH_CPU_VAES without it runs nothing. No bit turns
@@ -143,8 +149,9 @@
 // DRBG's are such calls, and they run sha256.c, sha512.c and sha3.c.
 // No bit picks what sha512.c runs. In a host object its calls compress on
 // sha512_compress_blocks.c, plain C whose operations are 64-bit adds, rotates, shifts and logic,
-// in every session on both architectures and for the calls that take no value, and they wipe
-// the stack that function used (docs/decisions.md 127). sha512_compress.c is a device object's.
+// for the calls that take no value and for a session whose value does not send its SHA-384 to
+// sha512_hw.c: the SHA-512 bit on arm64, and CH_CPU_AVX2 on x86-64, above. They wipe the stack
+// that function used (docs/decisions.md 127). sha512_compress.c is a device object's.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES or CH_CPU_AVX512_IFMA

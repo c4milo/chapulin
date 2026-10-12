@@ -103,7 +103,7 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 
 
 # The catches lines that name the host object's qemu lane: the lane
-# itself, and the lane with one of the twelve arguments that run one part
+# itself, and the lane with one of the thirteen arguments that run one part
 # alone. A violation of chacha20.c's use_avx2 or gcm_vaes.h's gcm_use_vaes
 # names x86-kernels, because only an x86-64 binary compiles either
 # function, and that argument fails on a machine whose qemu cannot run
@@ -134,10 +134,15 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # its wipes or the define that picks it names rsa-addcarry, because only
 # a gcc build for x86-64 runs the rows and the lane builds it with that gcc.
 # A violation of rsa_avx2_lanes.h's instructions names rsa-avx2, because
-# the AVX2 kernel has a body on x86-64 alone.
+# the AVX2 kernel has a body on x86-64 alone. A violation of
+# sha512_avx2.c's kernel, of the wipe after it or of where its sums lie
+# names sha512-avx2, for the same reason, and because the lane builds it
+# with gcc, the compiler under which the declared alignment of the sums
+# decides where they lie.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",
+                          "test/docker-aes-runtime-qemu.sh sha512-avx2",
                           "test/docker-aes-runtime-qemu.sh arm64-hash-count",
                           "test/docker-aes-runtime-qemu.sh p256-equiv",
                           "test/docker-aes-runtime-qemu.sh keccak",
@@ -392,7 +397,7 @@ AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-q
 # which the copies include, are root headers and select every gate.
 HASH_BUILDS_SOURCES = {"sha256.c", "sha512.c", "sha512_compress.c", "sha512_compress_blocks.c",
                        "hkdf.c", "keysched.c",
-                       "sha256_hw.c", "sha512_hw.c", "hkdf_hw.c", "keysched_hw.c",
+                       "sha256_hw.c", "sha512_hw.c", "sha512_avx2.c", "hkdf_hw.c", "keysched_hw.c",
                        "sha3.c", "mlkem.c", "mlkem_poly.c", "mlkem_poly_native.c",
                        "sha3_hw.c", "mlkem_hw.c", "mlkem_poly_hw.c"}
 

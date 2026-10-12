@@ -7,7 +7,10 @@
 # bin/x86_kernels_test alone, which counts the calls into the x86-64
 # kernels; "sha2-equiv" bin/sha2_equiv_test alone, for x86-64 and for
 # arm64, which holds sha256_hw.c and sha512_hw.c to the portable code on
-# the instructions qemu's max models have; "arm64-hash-count" the two
+# the instructions qemu's max models have; "sha512-avx2"
+# bin/sha2_equiv_test, bin/sha512_test_host and bin/hkdf384_test_host
+# alone, for x86-64, which hold sha512_avx2.c's kernel to the portable
+# code and run the published vectors on it; "arm64-hash-count" the two
 # counting binaries for arm64, which alone compiles the SHA-512 entries;
 # "p256-equiv" bin/p256_equiv_test alone, for x86-64 and for arm64,
 # which holds the wide P-256 files to the files under their own names on
@@ -41,7 +44,8 @@
 # hashes a client's transcript under bits its caller never set. The
 # violations of chacha20.c's use_avx2 and gcm_vaes.h's gcm_use_vaes name
 # it with "x86-kernels", the violations of sha256_hw.c's and sha512_hw.c's
-# constants and wipes with "sha2-equiv", the violations of the
+# constants and wipes with "sha2-equiv", the violations of
+# sha512_avx2.c's kernel with "sha512-avx2", the violations of the
 # SHA-512 entries with "arm64-hash-count", the two violations of the
 # intrinsics in p256_wide_word.h's carry steps with "p256-equiv", the
 # violations of what sha3_hw.c leaves on the stack with "keccak", the

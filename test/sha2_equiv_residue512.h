@@ -31,8 +31,12 @@
 // sha512.c's first arm wipes the stack below each compression call, so
 // test/sha2_equiv_residue512_first_arm.h holds it to more: no one word, of
 // a set that also holds the two small sigma values of each schedule word,
-// and for each round the two large sigma values, Ch, Maj, T2 and a ^ b,
-// which sha512_compress_blocks.c carries from round to round.
+// the sum of three terms sha512_avx2.c's schedule step holds before it
+// adds the fourth, and for each round the two large sigma values, Ch, Maj,
+// T2, a ^ b, which sha512_compress_blocks.c carries from round to round,
+// and h plus the schedule word, its constant and Ch. On x86-64
+// sha512_hw.c is that arm compiled once more over sha512_avx2.c's kernel,
+// and test/sha2_equiv_residue512_avx2.h holds it to the same.
 //
 // Included by test/sha2_equiv_sha512.h only. It uses residue_copy,
 // residue_snapshot and RESIDUE_BYTES of test/sha2_equiv_residue.h.
@@ -40,10 +44,10 @@
 #define CH_SHA2_EQUIV_RESIDUE512_H
 
 #define RESIDUE512_BLOCKS_MAX 4
-// The most words one block adds: 16 message words in two forms, four values
-// for each of the 64 schedule words after them, three sums, six values and
-// eight working variables for each of 80 rounds, and the state.
-#define RESIDUE512_BLOCK_WORDS (2 * 16 + 4 * 64 + 80 * (3 + 6 + 8) + 8)
+// The most words one block adds: 16 message words in two forms, five values
+// for each of the 64 schedule words after them, three sums, seven values
+// and eight working variables for each of 80 rounds, and the state.
+#define RESIDUE512_BLOCK_WORDS (2 * 16 + 5 * 64 + 80 * (3 + 7 + 8) + 8)
 
 static uint8_t residue512_data[RESIDUE512_BLOCKS_MAX * SHA512_BLOCK];
 static uint8_t residue512_digest[SHA512_LEN];
@@ -223,6 +227,9 @@ static void residue512_schedule(const uint8_t *p, size_t message_words, uint64_t
             residue512_add_value(s1);
         }
         residue512_add_scheduled(w[i - 16] + s0, from_message[i - 16] | from_message[i - 15]);
+        if (from_message[i - 16] | from_message[i - 15] | from_message[i - 7]) {
+            residue512_add_value(w[i - 16] + s0 + w[i - 7]);
+        }
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
         residue512_add_scheduled(w[i], from_message[i]);
     }
@@ -258,6 +265,7 @@ static void residue512_rounds(uint64_t h[8], const uint64_t w[80], const int fro
         residue512_add_value(maj);
         residue512_add_value(s0 + maj);
         residue512_add_value(v[0] ^ v[1]);
+        residue512_add_value(v[7] + with_constant + ch);
         memmove(&v[1], &v[0], 7 * sizeof v[0]);
         v[4] += t1;
         v[0] = t1 + s0 + maj;
@@ -334,6 +342,10 @@ static int residue512_word_at(const uint8_t *copy, size_t at) {
 }
 
 #include "sha2_equiv_residue512_first_arm.h"
+
+#ifdef __x86_64__
+#include "sha2_equiv_residue512_avx2.h"
+#endif
 
 #ifdef __aarch64__
 // One shape on sha512_hw.c: its calls over n random bytes, then the search

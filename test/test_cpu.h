@@ -124,18 +124,34 @@ static inline uint32_t test_cpu_absent_ifma_bit(uint32_t value) {
     return 0;
 }
 
+// CH_CPU_AVX2 where value holds it and this CPU lacks AVX2 (test/x86_kernels_cpu.h), and 0 for
+// every other value and on arm64.
+static inline uint32_t test_cpu_absent_avx2_bit(uint32_t value) {
+#ifdef __x86_64__
+    if ((value & CH_CPU_AVX2) != 0 && !x86_cpu_has_avx2()) {
+        return CH_CPU_AVX2;
+    }
+#else
+    (void)value;
+#endif
+    return 0;
+}
+
 // test_cpu_values[i] as a row hands it to an init call. A value the call takes starts a session,
 // which hashes its first message, so the row leaves out a hash bit whose instructions this CPU
 // lacks: there the row holds that the call takes the other bits. It leaves out CH_CPU_AVX512_IFMA
 // where this CPU lacks AVX-512 IFMA for the same reason: a session under a bit that names
-// instructions its CPU lacks faults on the first one. A value the call refuses runs nothing and
-// stays whole.
+// instructions its CPU lacks faults on the first one. And it leaves out CH_CPU_AVX2 where this
+// CPU lacks AVX2: a session of a suite object hashes that message with SHA-384 too, and under
+// the bit on sha512_avx2.c's kernel (docs/decisions.md 128). A value the call refuses runs
+// nothing and stays whole.
 static inline uint32_t test_cpu_value(size_t i) {
     uint32_t value = test_cpu_values[i];
     if (!test_cpu_taken(i)) {
         return value;
     }
-    return value & ~test_cpu_absent_hash_bits(value) & ~test_cpu_absent_ifma_bit(value);
+    return value & ~test_cpu_absent_hash_bits(value) & ~test_cpu_absent_ifma_bit(value) &
+           ~test_cpu_absent_avx2_bit(value);
 }
 
 // The hash bits a row gives an end that states its hash instructions: each one an object runs

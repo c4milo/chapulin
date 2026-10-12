@@ -1,0 +1,15 @@
+invariant: INV-50
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile lists sha512_hw.c beside sha512.c and no
+  sha512_avx2.c, so an x86-64 host object with SUITE=aesgcm holds
+  sha512_hw.c's five calls and no kernel for them to compress on. A
+  relocatable object links with the call undefined, so the object builds,
+  and the consumer's link is where it fails, naming a missing symbol and
+  not the build that lost its source. The lint reads the packaged source
+  list per build, and its host rows with the suite require both files.
+
+--- old
+SHA512_HW_SRCS := sha512_hw.c sha512_avx2.c
+--- new
+SHA512_HW_SRCS := sha512_hw.c

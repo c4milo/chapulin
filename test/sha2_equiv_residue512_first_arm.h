@@ -56,12 +56,15 @@
 static uint8_t residue512_copy[RESIDUE512_BYTES];
 // What the copy holds when no call runs between the paint and the copy.
 static uint8_t residue512_no_call[RESIDUE512_BYTES];
+// Where in the stack the byte lay that residue512_copy[0] holds.
+static uintptr_t residue512_copy_address;
 
 // test/stack_residue.c, compiled as a source of its own.
 void stack_residue_fill(volatile uint8_t *below, size_t n, uint8_t value);
 
 static __attribute__((noinline)) void residue512_snapshot(void) {
     volatile uint8_t below[RESIDUE512_BYTES];
+    residue512_copy_address = (uintptr_t)(const volatile void *)below;
     stack_residue_take(below, RESIDUE512_BYTES, residue512_copy);
 }
 
@@ -163,17 +166,20 @@ static void run_residue512_depth(void) {
     }
 }
 
-static void run_residue512_first_arm_shape(const residue512_shape *shape) {
-    if (!residue512_painted_call(shape, &PATH512_FIRST_ARM)) {
+// One shape's calls on path, which wipes the stack below each compression
+// call: the copy must hold every byte the calls wrote, and no word of the
+// set.
+static void run_residue512_wiped_shape(const residue512_shape *shape, const path512 *path) {
+    if (!residue512_painted_call(shape, path)) {
         return;
     }
     size_t depth = residue512_depth();
     if (depth > RESIDUE512_BYTES - RESIDUE512_UNWRITTEN_MIN) {
         failures++;
         (void)fprintf(stderr,
-                      "sha2 equivalence: residue: %s on sha512.c's first arm writes %zu bytes "
-                      "below its caller, and the copy holds %d\n",
-                      shape->name, depth, RESIDUE512_BYTES);
+                      "sha2 equivalence: residue: %s on %s writes %zu bytes below its caller, and "
+                      "the copy holds %d\n",
+                      shape->name, path->name, depth, RESIDUE512_BYTES);
         return;
     }
     size_t first_at = 0;
@@ -181,10 +187,10 @@ static void run_residue512_first_arm_shape(const residue512_shape *shape) {
     if (found != 0) {
         failures++;
         (void)fprintf(stderr,
-                      "sha2 equivalence: residue: after %s on sha512.c's first arm, the stack "
-                      "below the call holds %zu words that the call computed from its input, the "
-                      "first %zu bytes below the top of the copy\n",
-                      shape->name, found, RESIDUE512_BYTES - first_at);
+                      "sha2 equivalence: residue: after %s on %s, the stack below the call holds "
+                      "%zu words that the call computed from its input, the first %zu bytes below "
+                      "the top of the copy\n",
+                      shape->name, path->name, found, RESIDUE512_BYTES - first_at);
     }
 }
 
@@ -213,7 +219,7 @@ static void run_residue512_first_arm(void) {
     residue512_take_no_call();
     run_residue512_depth();
     for (size_t i = 0; i < RESIDUE512_SHAPES; i++) {
-        run_residue512_first_arm_shape(&residue512_shapes[i]);
+        run_residue512_wiped_shape(&residue512_shapes[i], &PATH512_FIRST_ARM);
     }
     report_residue512_reference();
 }

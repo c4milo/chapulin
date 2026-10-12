@@ -1,11 +1,13 @@
 // HMAC, HKDF and the key schedule at SHA-384's hash length in the copies
 // a host object runs on the CPU's hash instructions, against hkdf.c and
 // keysched.c: test/sha2_equiv_copies.h's cases for the hash of
-// TLS_AES_256_GCM_SHA384. On arm64 a copy's SHA-384 calls run on
-// sha512_hw.c (hash_hw.h), so each case here runs one call under its own
-// name and under its copy's, and the two must write the same bytes.
+// TLS_AES_256_GCM_SHA384. A copy's SHA-384 calls run on sha512_hw.c
+// (hash_hw.h), which is the SHA-512 instructions on arm64 and
+// sha512_avx2.c's kernel on x86-64, so each case here runs one call under
+// its own name and under its copy's, and the two must write the same
+// bytes.
 //
-// Included by test/sha2_equiv_sha512.h only, on arm64.
+// Included by test/sha2_equiv_sha512.h only.
 #ifndef CH_SHA2_EQUIV_COPIES384_H
 #define CH_SHA2_EQUIV_COPIES384_H
 

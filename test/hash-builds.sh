@@ -6,8 +6,8 @@
 #
 #   - a device object's sources call no entry on the instructions:
 #     sha256.c, sha512.c, hkdf.c and keysched.c, compiled without
-#     -DCH_CPU_RUNTIME, name no symbol that ends in _hw, and sha256_hw.c
-#     and sha512_hw.c compiled that way define nothing;
+#     -DCH_CPU_RUNTIME, name no symbol that ends in _hw, and sha256_hw.c,
+#     sha512_hw.c and sha512_avx2.c compiled that way define nothing;
 #   - hash_hw.h refuses a build without -DCH_CPU_RUNTIME, so no device
 #     object compiles a copy on the instructions;
 #   - for x86-64 and for arm64, with no instruction flag, sha256_hw.c must
@@ -16,24 +16,34 @@
 #     for its own functions alone. A file without the attribute does not
 #     compile here;
 #   - for arm64, with no instruction flag, sha512_hw.c must compile, define
-#     its five entries and hold SHA-512 instructions, and for x86-64, which
-#     has none, it must define nothing;
+#     its five entries and hold SHA-512 instructions. For x86-64, which
+#     has none, it must define the same five, call
+#     sha512_avx2_compress_blocks and not sha512_compress_blocks, and hold
+#     no instruction on a 256-bit register: it is sha512.c's first arm
+#     compiled once more over the kernel (docs/decisions.md 128), and the
+#     copy must not compress on the plain C the other arm runs;
+#   - for x86-64, with no instruction flag, sha512_avx2.c must compile,
+#     define sha512_avx2_compress_blocks, hold instructions on 256-bit
+#     registers, which its target attribute turns on for its own
+#     functions alone, and hold no BMI1 or BMI2 instruction, which
+#     CH_CPU_AVX2 does not state. For arm64 it must define nothing;
 #   - for arm64, sha512_hw.c must hold none of FEAT_SHA3's instructions.
 #     The compilers turn them on with FEAT_SHA512's under one target
 #     attribute and write them for plain C, and the SHA-512 bit states
 #     nothing about them;
 #   - for both targets, a host object's sha256.c, sha512.c,
-#     sha512_compress_blocks.c, hkdf.c, keysched.c, hkdf_hw.c and
-#     keysched_hw.c, and sha512_compress.c under the same define, hold no
-#     SHA-256 and no SHA-512 instruction, sha256_hw.c no SHA-512 one and
-#     sha512_hw.c no SHA-256 one;
+#     sha512_compress_blocks.c, sha512_avx2.c, hkdf.c, keysched.c,
+#     hkdf_hw.c and keysched_hw.c, and sha512_compress.c under the same
+#     define, hold no SHA-256 and no SHA-512 instruction, sha256_hw.c no
+#     SHA-512 one and sha512_hw.c no SHA-256 one;
 #   - for both targets, the copies call the hash on the instructions and
 #     the files under their own names the portable one: hkdf_hw.c names
 #     sha256_update_hw, sha256_final_hw and sha256_of_hw and none of
 #     sha256.c's three, hkdf.c the reverse, and keysched_hw.c names
-#     hkdf_hw.c's calls where keysched.c names hkdf.c's. On arm64 the same
-#     holds for the three SHA-384 calls the two files make. On x86-64 the
-#     copies name sha512.c's three, because that object holds no other.
+#     hkdf_hw.c's calls where keysched.c names hkdf.c's. The same holds
+#     for the three SHA-384 calls the two files make: the copies name
+#     sha512_hw.c's, which run the SHA-512 instructions on arm64 and the
+#     AVX2 kernel on x86-64.
 #
 # The same for Keccak (docs/decisions.md 99), which has a body on the
 # instructions where clang compiles an arm64 host object:
@@ -80,7 +90,7 @@ device_symbols() { # $1 = source
     "$cc" -std=c11 -O2 -DCH_RAND_EXTERN -DCH_HASH_SHA384 -I. -c "$1" -o "$work/device.o" || exit 1
     nm "$work/device.o"
 }
-for src in sha256.c sha512.c hkdf.c keysched.c sha256_hw.c sha512_hw.c; do
+for src in sha256.c sha512.c hkdf.c keysched.c sha256_hw.c sha512_hw.c sha512_avx2.c; do
     symbols=$(device_symbols "$src") || fail "$src does not compile without -DCH_CPU_RUNTIME"
     if grep -qE '_hw$' <<< "$symbols"; then
         fail "$src without -DCH_CPU_RUNTIME names an entry on the instructions; a device object holds the portable hash alone"
@@ -89,7 +99,7 @@ done
 # A global definition is an uppercase type letter other than U. A Mach-O
 # object holds one local symbol for its empty section, which is none of
 # the file's.
-for src in sha256_hw.c sha512_hw.c; do
+for src in sha256_hw.c sha512_hw.c sha512_avx2.c; do
     if device_symbols "$src" | grep -qE '[[:space:]][A-TV-Z][[:space:]]'; then
         fail "$src without -DCH_CPU_RUNTIME defines a symbol; it has a body in a host object alone"
     fi
@@ -144,6 +154,19 @@ holds_sha3() {
     grep -qE '^[[:space:]]+(eor3|rax1|xar|bcax)[[:space:]]' "$work/cross.s"
 }
 
+# Whether it holds an instruction that names a 256-bit register, which on
+# x86-64 is an AVX or AVX2 instruction.
+holds_256_bit() {
+    grep -qE '^[[:space:]]+[a-z0-9]+[[:space:]].*%ymm[0-9]' "$work/cross.s"
+}
+
+# Whether it holds a BMI1 or BMI2 instruction: andn, bextr, blsi, blsmsk,
+# blsr and tzcnt, and bzhi, mulx, pdep, pext, rorx, sarx, shlx and shrx.
+holds_bmi() {
+    grep -qE '^[[:space:]]+(andn|bextr|blsi|blsmsk|blsr|tzcnt|bzhi|mulx|pdep|pext|rorx|sarx|shlx|shrx)[lq]?[[:space:]]' \
+        "$work/cross.s"
+}
+
 # Whether $work/cross.o names a symbol, defined or not.
 names() { # $1 = symbol
     nm "$work/cross.o" | grep -qE "[[:space:]]$1\$"
@@ -190,28 +213,45 @@ for target in "$x86" "$arm64"; do
         holds_sha3 &&
             fail "sha512_hw.c for $target holds one of FEAT_SHA3's instructions, which CH_CPU_CONSTANT_TIME_SHA512 does not name"
     else
-        nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
-            fail "sha512_hw.c for $target defines a symbol; x86-64 has no SHA-512 instructions to run it on"
+        for symbol in "${sha512_entries[@]}"; do
+            defines "$symbol" || fail "sha512_hw.c for $target does not define $symbol"
+        done
+        names sha512_avx2_compress_blocks ||
+            fail "sha512_hw.c for $target does not call sha512_avx2_compress_blocks; its calls are the ones a session runs under CH_CPU_AVX2"
+        names sha512_compress_blocks &&
+            fail "sha512_hw.c for $target calls sha512_compress_blocks, the plain C the calls without _hw run"
         holds_sha512 && fail "sha512_hw.c for $target holds a SHA-512 instruction"
+        holds_256_bit &&
+            fail "sha512_hw.c for $target holds an instruction on a 256-bit register; only sha512_avx2.c may"
     fi
 
-    for src in sha256.c sha512.c sha512_compress.c sha512_compress_blocks.c hkdf.c keysched.c hkdf_hw.c \
-        keysched_hw.c; do
+    # The kernel sha512_hw.c's x86-64 arm compresses on.
+    cross_object "$target" sha512_avx2.c
+    if [ "$target" = "$x86" ]; then
+        defines sha512_avx2_compress_blocks ||
+            fail "sha512_avx2.c for $target does not define sha512_avx2_compress_blocks"
+        holds_256_bit || fail "sha512_avx2.c for $target holds no instruction on a 256-bit register"
+        holds_bmi &&
+            fail "sha512_avx2.c for $target holds a BMI1 or BMI2 instruction, which CH_CPU_AVX2 does not state"
+    else
+        nm "$work/cross.o" | grep -qE '[[:space:]][A-TV-Z][[:space:]]' &&
+            fail "sha512_avx2.c for $target defines a symbol; the kernel has a body on x86-64 alone"
+    fi
+
+    for src in sha256.c sha512.c sha512_compress.c sha512_compress_blocks.c sha512_avx2.c hkdf.c keysched.c \
+        hkdf_hw.c keysched_hw.c; do
         cross_object "$target" "$src"
         if holds_sha256 || holds_sha512; then
             fail "$src for $target holds a hash instruction; only sha256_hw.c and sha512_hw.c may"
         fi
     done
 
-    # hkdf.c under its own names, and its copy. On arm64 the copy's SHA-384
-    # calls are sha512_hw.c's, and on x86-64 sha512.c's.
-    sha384_ending=""
-    [ "$target" = "$arm64" ] && sha384_ending=_hw
+    # hkdf.c under its own names, and its copy, whose SHA-384 calls are
+    # sha512_hw.c's on both targets.
     cross_object "$target" hkdf.c
     calls "hkdf.c for $target" "" "${sha256_calls[@]}" "${sha384_calls[@]}"
     cross_object "$target" hkdf_hw.c
-    calls "hkdf_hw.c for $target" _hw "${sha256_calls[@]}"
-    calls "hkdf_hw.c for $target" "$sha384_ending" "${sha384_calls[@]}"
+    calls "hkdf_hw.c for $target" _hw "${sha256_calls[@]}" "${sha384_calls[@]}"
     defines hkdf_extract_hw || fail "hkdf_hw.c for $target does not define hkdf_extract_hw"
     defines hkdf_extract && fail "hkdf_hw.c for $target defines hkdf_extract, which hkdf.c defines"
 
@@ -267,4 +307,4 @@ for target in "$x86" "$arm64"; do
     calls "mlkem_poly_hw.c for $target" _hw "${mlkem_poly_keccak_calls[@]}"
 done
 
-echo "hash-builds: a device object holds the portable hashes alone, hash_hw.h refuses a copy outside a host object, sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and has no body on x86-64, no other hash source holds one, and each copy calls the hashes on the instructions its target has; and the same holds for Keccak on FEAT_SHA3 in sha3_hw.c, on arm64 alone, and ML-KEM's two copies over it"
+echo "hash-builds: a device object holds the portable hashes alone, hash_hw.h refuses a copy outside a host object, sha256_hw.c compiles for x86-64 and arm64 with no instruction flag and holds the SHA-256 instructions, sha512_hw.c does the same for arm64 with the SHA-512 instructions and none of FEAT_SHA3's and for x86-64 defines the same five calls over sha512_avx2.c's kernel, which holds 256-bit instructions and no BMI1 or BMI2 one, no other hash source holds a hash instruction, and each copy calls sha256_hw.c's and sha512_hw.c's entries; and the same holds for Keccak on FEAT_SHA3 in sha3_hw.c, on arm64 alone, and ML-KEM's two copies over it"

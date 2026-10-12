@@ -1,12 +1,14 @@
 // The calls bin/hash_runtime_test counts into a host object's SHA-256 and
 // SHA-512, on each hash's two paths (docs/decisions.md 93): sha256.c's
 // three calls that hash and sha512.c's five, and the same calls of
-// sha256_hw.c and sha512_hw.c, which run on the CPU's hash instructions.
-// test/hash_runtime_count.c defines them all, each as a count and a call
-// to sha256.c's or sha512.c's code, and the binary links that file in
-// place of sha256.c, sha256_hw.c, sha512.c and sha512_hw.c. So the
-// library's other sources run unchanged, no hash instruction runs, and the
-// test reads which path each call of the library took, on any CPU.
+// sha256_hw.c and sha512_hw.c, which run on the CPU's hash instructions,
+// or for sha512_hw.c on x86-64 on sha512_avx2.c's kernel (docs/decisions.md
+// 128). test/hash_runtime_count.c defines them all, each as a count and a
+// call to sha256.c's or sha512.c's code, and the binary links that file in
+// place of sha256.c, sha256_hw.c, sha512.c, sha512_hw.c and sha512_avx2.c.
+// So the library's other sources run unchanged, no hash instruction and no
+// instruction of the kernel runs, and the test reads which path each call
+// of the library took, on any CPU.
 //
 // sha512.c's code in a host object is its first arm, which compresses on
 // sha512_compress_blocks.c (docs/decisions.md 127).
@@ -35,8 +37,8 @@ extern hash_calls sha256_hw_calls;
 // Calls to sha512_update, sha512_final, sha384_final, sha512_of and
 // sha384_of, sha512.c's five.
 extern hash_calls sha512_c_calls;
-// Calls to the same five with _hw after their names, which an arm64 host
-// object alone holds. On x86-64 nothing counts here.
+// Calls to the same five with _hw after their names: sha512_hw.c's, on
+// arm64's SHA-512 instructions and on x86-64 over sha512_avx2.c's kernel.
 extern hash_calls sha512_hw_calls;
 
 // Calls to sha512_compress_blocks, which sha512.c's first arm makes.

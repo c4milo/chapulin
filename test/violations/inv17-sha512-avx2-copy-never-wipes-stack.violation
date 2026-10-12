@@ -1,0 +1,26 @@
+invariant: INV-17
+file: sha512.c
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: sha512_hw.c's copy of sha512.c's first arm, which an x86-64 session
+  with CH_CPU_AVX2 runs, calls sha512_avx2_compress_blocks and never wipes
+  the stack below the call, so the kernel's dead frame keeps the last
+  sixteen schedule words of the last block, each plus its round constant.
+  Under HMAC-SHA-384 the first block is the key, and those words give
+  back the block. Every digest is still right, so no vector sees it, and
+  the arm under sha512.c's own names still wipes. bin/sha2_equiv_test
+  paints the stack, makes each kind of call on sha512_hw.c, and requires
+  no word the call computed in the bytes it wrote. The kernel has a body on x86-64 alone, so the catch is the script,
+  which builds the binary for x86-64 and runs it under qemu-x86_64, whose
+  max model has AVX2 on every host. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+    COMPRESS_BLOCKS(h, p, blocks);
+    wipe_frame_call();
+--- new
+    COMPRESS_BLOCKS(h, p, blocks);
+#ifdef CH_SHA512_AVX2_COPY
+    (void)wipe_frame_call;
+#else
+    wipe_frame_call();
+#endif

@@ -1,16 +1,18 @@
 // bin/hash_runtime_test: which SHA-256 and which SHA-512 a host object's
 // hash calls run under each ch_cfg.cpu value (docs/decisions.md 93).
 // sha256.h's sha256_on_instructions picks sha256_hw.c's code where the
-// value holds CH_CPU_CONSTANT_TIME_SHA256, sha512.h's
-// sha512_on_instructions picks sha512_hw.c's on arm64 where it holds
-// CH_CPU_CONSTANT_TIME_SHA512, and hkdf.h's hash_on_instructions picks the
-// copies hkdf_hw.c and keysched_hw.c hold where the value holds the bit of
-// the hash a call runs. The two paths of a hash compute the same bytes, so
-// no vector can tell which ran: test/hash_runtime_count.c counts the calls
-// into each instead, and runs every one on sha256.c's or sha512.c's code,
-// so this binary runs no hash instruction and gives the same verdict on
-// every CPU of its architecture. test/hash_runtime_compress_count.c counts
-// which compression function sha512.c's code then calls.
+// value holds CH_CPU_CONSTANT_TIME_SHA256. sha512.h's
+// sha512_on_instructions picks sha512_hw.c's where it holds
+// CH_CPU_CONSTANT_TIME_SHA512 on arm64 and CH_CPU_AVX2 on x86-64, where
+// that file runs sha512_avx2.c's kernel (docs/decisions.md 128). hkdf.h's
+// hash_on_instructions picks the copies hkdf_hw.c and keysched_hw.c hold
+// where the value holds the bit of the hash a call runs. The two paths of
+// a hash compute the same bytes, so no vector can tell which ran:
+// test/hash_runtime_count.c counts the calls into each instead, and runs
+// every one on sha256.c's or sha512.c's code, so this binary runs no hash
+// instruction and none of the kernel's, and gives the same verdict on every
+// CPU of its architecture. test/hash_runtime_compress_count.c counts which
+// compression function sha512.c's code then calls.
 //
 // Every row runs under each of the 256 values the eight bits beside
 // CH_CPU_PROBED make, and under 0, which a wiped record direction holds.
@@ -30,8 +32,8 @@
 // fails its count, a copy that calls a hash under its own name fails it
 // too, and a SHA-384 call that follows the SHA-256 bit, or a SHA-256 call
 // that follows the SHA-512 bit, fails under a value with one of the two.
-// An x86-64 object holds SHA-512 on sha512.c alone, so there every SHA-512
-// call must run it under every value.
+// On x86-64 a SHA-512 call follows CH_CPU_AVX2, and one that follows the
+// SHA-512 bit or the SHA-256 bit fails the same way.
 //
 // The rows: sha256.h's three entries and sha512.h's five; hkdf.h's five
 // and keysched.h's, at each hash length; p256_sign_cpu, whose RFC 6979
@@ -117,8 +119,8 @@ static void fill(uint8_t *p, size_t n, uint8_t seed) {
 
 // What a value names, written here apart from the library's predicates so
 // that a wrong predicate fails a row: the SHA-256 instructions under the
-// SHA-256 bit, and the SHA-512 instructions under the SHA-512 bit on arm64
-// and under no value on x86-64.
+// SHA-256 bit, and sha512_hw.c's calls under the SHA-512 bit on arm64 and
+// under CH_CPU_AVX2 on x86-64.
 static int names_sha256(uint32_t cpu) {
     return (cpu & CH_CPU_CONSTANT_TIME_SHA256) != 0;
 }
@@ -127,8 +129,7 @@ static int names_sha512(uint32_t cpu) {
 #ifdef __aarch64__
     return (cpu & CH_CPU_CONSTANT_TIME_SHA512) != 0;
 #else
-    (void)cpu;
-    return 0;
+    return (cpu & CH_CPU_AVX2) != 0;
 #endif
 }
 
@@ -491,9 +492,9 @@ int main(void) {
     if (failures == 0) {
         (void)printf("hash runtime: under each of 257 ch_cfg.cpu values, every SHA-256 call of "
                      "every row ran on the instructions where CH_CPU_CONSTANT_TIME_SHA256 was "
-                     "set and on sha256.c anywhere else, and every SHA-512 call where "
-                     "CH_CPU_CONSTANT_TIME_SHA512 was set in an arm64 object and on sha512.c "
-                     "anywhere else\n");
+                     "set and on sha256.c anywhere else, and every SHA-512 call on sha512_hw.c "
+                     "where CH_CPU_CONSTANT_TIME_SHA512 was set in an arm64 object or CH_CPU_AVX2 "
+                     "in an x86-64 one, and on sha512.c anywhere else\n");
     }
     return failures != 0;
 }

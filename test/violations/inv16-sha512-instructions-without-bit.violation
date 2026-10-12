@@ -8,8 +8,9 @@ reason: sha512.h's sha512_on_instructions answers yes for a value without
   SIGILL at its first message (docs/decisions.md 93). The two paths
   compute the same bytes, so no vector can tell. bin/hash_runtime_test
   counts the calls into each path under every ch_cfg.cpu value. Only an
-  arm64 object compiles this predicate, so the catch is the script, which
-  builds the counting binaries for arm64 and runs them under qemu-aarch64
+  arm64 object compiles this line of the predicate, so the catch is the
+  script, which builds the counting binaries for arm64 and runs them under
+  qemu-aarch64
   on any host. The lane skips without docker, and this then reports
   unguarded rather than caught.
 

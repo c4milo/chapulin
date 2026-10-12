@@ -222,6 +222,8 @@
         "sha3_hw.c",
         "sha512.c",
         "sha512.h",
+        "sha512_avx2.c",
+        "sha512_avx2.h",
         "sha512_compress.c",
         "sha512_compress.h",
         "sha512_compress_blocks.c",

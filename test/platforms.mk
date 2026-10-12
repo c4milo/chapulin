@@ -70,6 +70,15 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # bin/sha2_equiv_test, bin/unit_host under HASH_UNIT_CPU and the host Wycheproof
 # test run under CH_REQUIRE_HASH_INSTRUCTIONS=1, so a CPU without the
 # extensions fails them too.
+#
+# It holds sha512_avx2.c's kernel too, SHA-512's compression function with
+# its message schedule in AVX2 registers (docs/decisions.md 128):
+# bin/sha2_equiv_test runs under CH_REQUIRE_X86_KERNELS=1 as well, so its
+# cases of sha512_hw.c, its search of the stack and its read of ymm0 to
+# ymm15 cannot skip, the two SHA-512 vector binaries run under
+# HASH512_UNIT_CPU, which names CH_CPU_AVX2, and the host Wycheproof test
+# runs its HMAC-SHA-384 and HKDF-SHA-384 suites on the kernel under
+# X86_WYCHEPROOF_CPU's values.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
                    mlkem_avx2_equiv_test poly1305_equiv_test
 
@@ -194,14 +203,17 @@ rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS) $(RSA_IFMA_SDE_VECTOR_
 	    env CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/webpki_loop_aes cpu $(bits) $(bits);)
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
 x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) \
-                      $(addprefix bin/,$(X86_VECTOR_HOST)) bin/sha2_equiv_test
+                      $(addprefix bin/,$(X86_VECTOR_HOST) $(HASH_VECTOR_HOST)) bin/sha2_equiv_test
 	@[ -n "$(X86_KERNEL_BINS)" ] || \
 	  { echo "x86-64-kernels-check: $(CC) does not build a host object for x86-64"; exit 1; }
 	@set -e; for b in $(X86_KERNEL_RUNS); do \
 	  echo "== $$b (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b; done
 	@set -e; for b in $(X86_VECTOR_HOST); do for bits in $(X86_UNIT_CPU); do \
 	  echo "== $$b $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b $$bits; done; done
-	@echo "== sha2_equiv_test (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/sha2_equiv_test
+	@echo "== sha2_equiv_test (the SHA extensions and the x86-64 kernels required)"; \
+	  CH_REQUIRE_HASH_INSTRUCTIONS=1 CH_REQUIRE_X86_KERNELS=1 ./bin/sha2_equiv_test
+	@set -e; for b in $(HASH_VECTOR_HOST); do for bits in $(HASH512_UNIT_CPU); do \
+	  echo "== $$b $$bits (the x86-64 kernels required)"; CH_REQUIRE_X86_KERNELS=1 ./bin/$$b $$bits; done; done
 	@set -e; for bits in $(HASH_UNIT_CPU); do \
 	  echo "== unit_host $$bits (the SHA extensions required)"; CH_REQUIRE_HASH_INSTRUCTIONS=1 ./bin/unit_host $$bits; done
 	CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 $(MAKE) --no-print-directory wycheproof

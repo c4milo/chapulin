@@ -1,27 +1,59 @@
-// SHA-512 and SHA-384 (FIPS 180-4) on arm64's SHA-512 instructions, through <arm_neon.h>'s
-// vsha512hq_u64, vsha512h2q_u64, vsha512su0q_u64 and vsha512su1q_u64: the compression function
-// over whole blocks, and the five calls sha512.h declares around it. An arm64 host object
-// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles this file beside sha512.c and sha512_compress_blocks.c,
-// and sha512.h's entries call it for a session whose caller set CH_CPU_CONSTANT_TIME_SHA512
-// (docs/decisions.md 93). No x86-64 CPU this tree targets has SHA-512 instructions, so on
-// x86-64 the file holds nothing, and cpu_cfg.h refuses the bit there.
+// The five calls sha512.h declares with _hw after their names: SHA-512 and SHA-384 (FIPS 180-4)
+// for a session of a host object (-DCH_CPU_RUNTIME, cpu_cfg.h) whose ch_cfg.cpu names the
+// architecture's faster compression function. A host object with SUITE=aesgcm compiles this
+// file beside sha512.c and sha512_compress_blocks.c, and sha512.h's entries call it for such a
+// session. The file has two arms, one for each architecture.
+//
+// For x86-64 it is sha512.c's first arm compiled once more, under the _hw names hash_hw.h gives
+// the five calls, over sha512_avx2.c's kernel, which computes the message schedule in AVX2
+// registers. sha512.h's entries call it for a session whose caller set CH_CPU_AVX2
+// (docs/decisions.md 128). No x86-64 CPU this tree targets has SHA-512 instructions, and
+// cpu_cfg.h refuses CH_CPU_CONSTANT_TIME_SHA512 there, so on x86-64 the _hw names run no hash
+// instruction: they run that kernel. The copy is sha512.c's own text, so its framing, its wipe
+// of the stack below each compression call and its wipe of the context in the two calls that
+// take a whole message are that file's. CBMC cannot read the kernel's intrinsics, and
+// bin/sha2_equiv_test holds this arm to sha512.c's second arm on a CPU with AVX2
+// (docs/verification.md, "SHA-512 on AVX2").
+//
+// For arm64 it is the rest of this file: the compression function over whole blocks on arm64's
+// SHA-512 instructions, through <arm_neon.h>'s vsha512hq_u64, vsha512h2q_u64, vsha512su0q_u64
+// and vsha512su1q_u64, and the five calls around it. sha512.h's entries call it for a session
+// whose caller set CH_CPU_CONSTANT_TIME_SHA512 (docs/decisions.md 93).
 //
 // The object compiles this file with no instruction flag, so the rest of the object runs on any
 // arm64 CPU. The pragma below puts the target attribute that turns the instructions on onto
-// each function in this file and on no function outside it, as sha256_hw.c does. Nothing here
-// probes a CPU: the caller does, and states what it found in ch_cfg.cpu.
+// each function of the arm64 arm and on no function outside it, as sha256_hw.c does. Nothing
+// here probes a CPU: the caller does, and states what it found in ch_cfg.cpu.
 //
-// SHA-384 is the hash of TLS_AES_256_GCM_SHA384's key schedule, so this file reads HMAC keys
-// and traffic secrets, and its timing matters. It reads no table with a secret index and
-// branches on lengths alone, which is what it can state for itself. Whether the instructions
-// take the same time whatever their operands are is the CPU's, in the mode the thread runs in,
-// and CH_CPU_CONSTANT_TIME_SHA512 is the caller's statement that they do (cpu_cfg.h).
+// SHA-384 is the hash of TLS_AES_256_GCM_SHA384's key schedule, so both arms read HMAC keys
+// and traffic secrets, and their timing matters. Each reads no table with a secret index and
+// branches on lengths alone, which is what it can state for itself. For the arm64 arm, whether
+// the instructions take the same time whatever their operands are is the CPU's, in the mode the
+// thread runs in, and CH_CPU_CONSTANT_TIME_SHA512 is the caller's statement that they do
+// (cpu_cfg.h). The x86-64 arm's kernel runs adds, rotates, shifts, logic and byte shuffles by
+// constant masks, and CH_CPU_AVX2 states no timing for them (sha512_avx2.c).
 //
-// CBMC cannot read an intrinsic, so no proof compiles this file. bin/sha2_equiv_test holds it
-// to sha512.c's second arm over sha512_compress.c, the reference a device object runs, over
-// every length and split it tries, FIPS 180-4's vectors run on it in bin/sha512_test_host, RFC
-// 4231's and RFC 5869's in bin/hkdf384_test_host, and the Wycheproof HMAC and HKDF suites in
-// the Wycheproof host binary (docs/verification.md, "The hash instructions").
+// CBMC cannot read an intrinsic, so no proof compiles the arm64 arm. bin/sha2_equiv_test holds
+// each arm to sha512.c's second arm over sha512_compress.c, the reference a device object
+// runs, over every length and split it tries, FIPS 180-4's vectors run on it in
+// bin/sha512_test_host, RFC 4231's and RFC 5869's in bin/hkdf384_test_host, and the Wycheproof
+// HMAC and HKDF suites in the Wycheproof host binary (docs/verification.md, "The hash
+// instructions").
+#if defined(CH_CPU_RUNTIME) && defined(__x86_64__)
+
+// sha512.c's first arm compiled once more. The define makes the copy compress on
+// sha512_avx2.c's kernel and leave the two init calls to sha512.c, and the header's renames
+// give its five calls that hash the _hw names.
+#define CH_SHA512_AVX2_COPY
+#include "hash_hw.h"
+
+// After the renames, so they apply to every declaration the source includes. sha512.h declares
+// each _hw name this copy defines for the callers that read it, so a definition here that
+// differs from that declaration stops the compile.
+#include "sha512.c"
+
+#else
+
 #include "sha512.h"
 
 #if defined(CH_CPU_RUNTIME) && defined(__aarch64__)
@@ -283,3 +315,5 @@ void sha384_of_hw(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
 #endif
 
 #endif // CH_CPU_RUNTIME && __aarch64__
+
+#endif // CH_CPU_RUNTIME && __x86_64__

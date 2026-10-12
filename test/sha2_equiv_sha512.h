@@ -6,8 +6,10 @@
 //   - sha512.c's first arm over sha512_compress_blocks.c, plain C that every
 //     session runs under the library's own names (docs/decisions.md 127),
 //     which the cases run on every machine;
-//   - sha512_hw.c, on arm64's SHA-512 instructions, which the cases run on a
-//     CPU that has them. The file has a body on arm64 alone.
+//   - sha512_hw.c: on arm64 the SHA-512 instructions, and on x86-64
+//     sha512.c's first arm once more over sha512_avx2.c's kernel, the
+//     message schedule in AVX2 registers (docs/decisions.md 128). The cases
+//     run on a CPU with the instructions or with AVX2.
 //
 // Every case hashes the message on the reference in one call, and a copy of
 // it in three updates and a final. Each of those four calls runs on the
@@ -25,7 +27,7 @@
 // for sha512_hw.c, HMAC, HKDF and the key schedule at SHA-384's hash length
 // in the copies hkdf_hw.c and keysched_hw.c hold.
 // test/sha2_equiv_residue512.h then looks in the stack each kind of call
-// leaves.
+// leaves, and on x86-64 in the vector registers after the kernel's call.
 //
 // Included by test/sha2_equiv_test.c only, which declares the generator,
 // the message, report and the counts this file uses.
@@ -59,10 +61,10 @@ static const path512 PATH512_REFERENCE = {"sha512.c's second arm", sha512_update
 static const path512 PATH512_FIRST_ARM = {"sha512.c's first arm", sha512_update, sha512_final,
                                           sha384_final,           sha512_of,     sha384_of};
 
-#ifdef __aarch64__
+// sha512_hw.c's five calls: the SHA-512 instructions on arm64, and
+// sha512_avx2.c's kernel on x86-64.
 static const path512 PATH512_INSTRUCTIONS = {"sha512_hw.c",   sha512_update_hw, sha512_final_hw,
                                              sha384_final_hw, sha512_of_hw,     sha384_of_hw};
-#endif
 
 // The two hashes a case runs: SHA-384 where is384 is set, and SHA-512.
 // Either path's contexts start from the library's two calls, as a
@@ -268,9 +270,28 @@ static void run_sha512_first_arm(void) {
     run_residue512_first_arm();
 }
 
-#ifdef __aarch64__
 #include "sha2_equiv_copies384.h"
 
+#ifdef __x86_64__
+// sha512_hw.c over sha512_avx2.c's kernel, on a CPU with AVX2. On one
+// without it the cases skip, or fail where the environment requires the
+// x86-64 kernels (test/x86_kernels_cpu.h).
+static void run_sha512_instructions(void) {
+    if (!x86_cpu_has_avx2()) {
+        if (x86_kernels_required()) {
+            failures++;
+            (void)fprintf(stderr, "sha2 equivalence: this CPU lacks AVX2, and "
+                                  "CH_REQUIRE_X86_KERNELS is 1\n");
+            return;
+        }
+        (void)printf("SKIP sha2 equivalence, SHA-512 on AVX2: this CPU lacks AVX2\n");
+        return;
+    }
+    run_cases512(&PATH512_INSTRUCTIONS);
+    run_copies384();
+    run_residue512_avx2();
+}
+#else
 // sha512_hw.c, on a CPU with the instructions. On one without them the
 // cases skip, or fail where the environment requires the instructions
 // (test/hash_instructions_cpu.h).

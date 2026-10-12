@@ -1,0 +1,19 @@
+invariant: INV-17
+file: sha512_avx2.h
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: SHA512_AVX2_BELOW_LEN, the bytes of stack sha512_hw.c wipes below
+  each call of the AVX2 kernel, is 192, less than the frame
+  sha512_avx2_compress_blocks writes, so the wipe runs and still leaves
+  sums of the message schedule where they lay. Every digest is right.
+  bin/sha2_equiv_test measures how far below its caller the kernel writes
+  and requires that, and 16 bytes more for a caller at another stack
+  address, inside the length, and then requires no word a call computed
+  in the stack below it. The kernel has a body on x86-64 alone, so the catch is the script,
+  which builds the binary for x86-64 and runs it under qemu-x86_64, whose
+  max model has AVX2 on every host. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+#define SHA512_AVX2_BELOW_LEN 512
+--- new
+#define SHA512_AVX2_BELOW_LEN 192

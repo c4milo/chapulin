@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-102 of the 135 C sources in the tree root are compiled into a
+102 of the 136 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 33 sources are in no such harness:
+The other 34 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -69,10 +69,11 @@ The other 33 sources are in no such harness:
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
-| `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
+| `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
+| `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([SHA-512 on AVX2](#sha-512-on-avx2)). |
 | `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
-| `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
+| `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 | `poly1305_native.c`, `mlkem_poly_native.c` | Each is its file compiled once more for a host object, on the native multiply and under the names `widemul_native.h` gives (decisions 87 and 89). | The file's own harnesses, which compile it on the native multiply because `proof/run.sh` passes them `CH_NATIVE_WIDEMUL`: the same text under other names, but for the arms of `poly1305.c`'s `whole_blocks` that hand whole groups of blocks to the vector paths, and on x86-64 `poly1305_update_avx2` and `poly1305_update_ifma`, which only `poly1305_native.c` compiles ([The host object's two multiplies](#the-host-objects-two-multiplies)). |
 | `poly1305_vector_native.c` | It is `poly1305_vector.c` under the names `widemul_native.h` gives, on the same intrinsics. | `bin/poly1305_equiv_test` holds `poly1305_vector.c` to `poly1305.c`'s proven loop, and the host object's binaries run the copy over RFC 8439's vectors and the Wycheproof suite. |
@@ -4500,7 +4501,9 @@ and for the calls that take no `ch_cfg.cpu` (decision 127). A device
 object compiles the same file's second arm over `sha512_compress.c`,
 which stays the reference. On arm64 a session whose value holds
 `CH_CPU_CONSTANT_TIME_SHA512` runs `sha512_hw.c`
-([The hash instructions](#the-hash-instructions)). The source picks its
+([The hash instructions](#the-hash-instructions)), and on x86-64 a
+session whose value holds `CH_CPU_AVX2` runs that file over
+`sha512_avx2.c` ([SHA-512 on AVX2](#sha-512-on-avx2)). The source picks its
 arm on `CH_CPU_RUNTIME` alone, so the two arms never meet in one object,
 and `test/sha512_portable.c` compiles the second arm under second names
 for the binaries that compare them.
@@ -4534,18 +4537,21 @@ calls run; and what a call leaves on the stack.
   `sha512_round_constants.h` fails here too.
 - `bin/sha512_test_host` and `bin/hkdf384_test_host` run under
   `ch_cfg.cpu` 0x5 and 0x1 on both architectures, neither of which names
-  a SHA-512 instruction: FIPS 180-4's SHA-384 and SHA-512 vectors, RFC
+  a SHA-512 instruction or AVX2: FIPS 180-4's SHA-384 and SHA-512 vectors, RFC
   6234's million-byte message, RFC 4231's HMAC-SHA-384 cases and a
   TLS_AES_256_GCM_SHA384 key schedule on this path.
 - The Wycheproof host binary runs its HMAC-SHA-384 and HKDF-SHA-384
-  suites on this path under each value it takes but arm64's 0x67, and
-  the sanitizer lane's host binary runs them under AddressSanitizer and
+  suites on this path under each value it takes but arm64's 0x67 and
+  x86-64's three with `CH_CPU_AVX2`, and the sanitizer lane's host
+  binary runs them under AddressSanitizer and
   UndefinedBehaviorSanitizer.
 - `bin/quic_loop_aes` and `bin/webpki_loop_aes` run whole handshakes
   under AES-256-GCM, whose transcript and key schedule hash with
-  SHA-384: on this path at each end that states no SHA-512 bit, which on
-  x86-64 is both, and on arm64 against an end on `sha512_hw.c` where
-  the CPU has the instructions.
+  SHA-384: on this path at each end that states no SHA-512 bit on arm64
+  and no `CH_CPU_AVX2` on x86-64. On an arm64 CPU with the SHA-512
+  instructions they also run it against an end on `sha512_hw.c`, and
+  `test/aes-runtime-qemu.sh` runs it against an end on the AVX2 kernel
+  for x86-64.
 - `make diff` keeps its SHA-384 rows on the reference, which is what the
   Lean model's oracle is compared with: the differential binary is a
   device object.
@@ -4652,31 +4658,186 @@ architectures' cores run in the same time for every operand, it reads
 no table at an index a word decides, and the branch count holds its
 branches to lengths and counts. Nothing here measures it.
 
+### SHA-512 on AVX2
+
+No x86-64 CPU this tree targets has SHA-512 instructions. An x86-64
+host object with `SUITE=aesgcm` holds `sha512_avx2.c`, whose one
+function, `sha512_avx2_compress_blocks`, is FIPS 180-4 §6.4.2 over whole
+blocks with the message schedule in 256-bit registers, four words a
+step, and the rounds in general registers (decision 128). `sha512_hw.c`
+is there `sha512.c`'s first arm compiled once more, under the `_hw`
+names and over that function, and `sha512.h`'s entries call it for a
+session whose `ch_cfg.cpu` holds `CH_CPU_AVX2`. Every other session and
+every call that takes no value run
+[the plain C](#sha-512-in-a-host-object), and so does a `TRUST=webpki`
+object without the suite, which holds neither file.
+
+CBMC cannot unwind an intrinsic, so no harness compiles `sha512_avx2.c`.
+The [sha512_host](#sha512_host-sha512_compress_blocks) harness proves
+the text `sha512_hw.c` compiles, under its own names and over
+`sha512_compress_blocks.c`. Everything the kernel computes, leaves and
+is called for rests on tests.
+
+**What the kernel computes** rests on these. Each binary asks its CPU
+(`test/x86_kernels_cpu.h`), and skips on one without AVX2, or fails
+under `CH_REQUIRE_X86_KERNELS=1`:
+
+- `bin/sha2_equiv_test`, in `make check`, runs 148,484 cases of
+  `sha512_hw.c` against `sha512.c`'s second arm: the lengths, cuts,
+  extremes, random cases and large messages of
+  [SHA-512 in a host object](#sha-512-in-a-host-object), with a context
+  passed between the two paths at each call, and 2,000 random inputs to
+  each call of `hkdf_hw.c` and `keysched_hw.c` at SHA-384's hash length
+  against the files under their own names.
+- `bin/sha512_test_host` and `bin/hkdf384_test_host` run once more
+  under 0xd, which names `CH_CPU_AVX2`: FIPS 180-4's SHA-384 and SHA-512
+  vectors, RFC 6234's million-byte message, RFC 4231's HMAC-SHA-384
+  cases and a TLS_AES_256_GCM_SHA384 key schedule on the kernel.
+- The Wycheproof host binary runs its HMAC-SHA-384 and HKDF-SHA-384
+  suites on the kernel under 0xf, 0x1f and 0x11f.
+- `test/aes-runtime-qemu.sh` runs `bin/quic_loop_aes` and
+  `bin/webpki_loop_aes` for x86-64 on qemu's `max` model: whole
+  handshakes under AES-256-GCM with one end stating 0xf, which holds
+  `CH_CPU_AVX2`, and the other 0x7, which does not, in both orders. The
+  kernel and the plain C must compute one transcript hash and one set
+  of keys. No run of `make check` on an x86-64 machine holds such a
+  row: the loops' own rows there vary the SHA-256 bit alone.
+
+**Which calls run the kernel** rests on these:
+
+- `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test` count
+  the calls into `sha512.c`'s five entries and into `sha512_hw.c`'s
+  under 257 `ch_cfg.cpu` values, on stand-ins that run no instruction of
+  the kernel ([The hash instructions](#the-hash-instructions)). On
+  x86-64 a row's SHA-512 calls must all run `sha512_hw.c` where the
+  value holds `CH_CPU_AVX2` and `sha512.c` where it does not.
+- `bin/x86_kernels_test` links `sha512_hw.c` itself and counts the
+  compression calls under it, on a stand-in for the kernel that runs
+  each on `sha512_compress_blocks`, so it runs on every x86-64 CPU. A
+  row is `sha384_of_cpu`, `sha512_of_cpu`, the streamed calls,
+  `hmac_cpu` and HKDF at each hash length, or a record direction keyed
+  under each suite. Under each of 33 values every compression call the
+  row makes under `CH_CPU_PROBED` alone must run the kernel where the
+  value holds `CH_CPU_AVX2` and none anywhere else, a row at SHA-256's
+  hash length must make none, and the calls that take no value must
+  run none (`test/x86_kernels_sha512.h`).
+- `test/hash-builds.sh` compiles both files for x86-64 with the pinned
+  clang. It requires `sha512_hw.c` to define the five `_hw` calls, to
+  call `sha512_avx2_compress_blocks` and not `sha512_compress_blocks`,
+  and to hold no instruction on a 256-bit register; and
+  `sha512_avx2.c` to hold such instructions and no BMI1 or BMI2
+  instruction, which `CH_CPU_AVX2` does not state.
+- `make lint-trust-separation` requires both files in each host object
+  with the suite and neither in any other object, and
+  `make lint-zig-build` requires `build.zig` to package what the
+  Makefile packages.
+- `make lint-wide-multiply` holds the kernel's conditional branches at 3
+  and `sha512_hw.c`'s at 13 under the pinned clang for x86-64, compiled
+  hosted at `-O2`. Each was read by the instruction that sets its flags:
+  all test a length or a count. `sha512_hw.c` holds four more than
+  `sha512.c`'s first arm, two each in `sha512_of_hw` and `sha384_of_hw`:
+  the copy calls `sha512.c`'s two init functions, so clang keeps the
+  tests of the count of buffered bytes that it drops in `sha512_of` and
+  `sha384_of`.
+
+**What a call leaves.** The kernel wipes nothing. It leaves the last
+sixteen schedule words of the last block, each plus its round constant,
+in `sums`, an array in its frame, and its vector registers hold
+schedule words when the last block ends. So `sha512_hw.c` wipes
+`SHA512_AVX2_BELOW_LEN`, 512, bytes of the stack below each call of it,
+as `sha512.c` does for the plain C, and the kernel ends with VZEROALL,
+which writes zero to ymm0 to ymm15. `test/sha2_equiv_residue512_avx2.h`
+holds that in four steps:
+
+- One block of assembly sets every bit of ymm0 to ymm15, calls the
+  kernel and stores the sixteen registers, so no instruction a compiler
+  picks runs between the three, and every stored word must be zero.
+  The same block with the call left out runs first, and its stores
+  must hold every bit set.
+- It calls the kernel by name with no wipe after it and requires the
+  lowest byte the call wrote, and 16 bytes more, within 512 bytes of
+  its caller: the function aligns its frame to 32 bytes, so the depth
+  differs by 16 between callers. The search must find a word of the
+  schedule there.
+- It calls the kernel with the stack pointer at a multiple of 32 bytes
+  and then 16 bytes past one, finds the sixteen sums in the stack the
+  call leaves, and requires each four at a multiple of 32 bytes
+  (INV-49).
+- It makes the six kinds of call under the `_hw` names and requires no
+  64-bit word that FIPS 180-4 computes from the message in the bytes
+  they wrote, of the set
+  [SHA-512 in a host object](#sha-512-in-a-host-object) lists.
+
+The kernel wrote 208 or 224 bytes below its caller under gcc 13.3 and
+248 or 264 under clang 23.1.2 on hosted runners, by the runner's stack
+address, and 224 and 248 under gcc 13.3 and clang 18.1.3 on
+`qemu-x86_64`. Under all three the six calls left no word, the sums lay
+at a multiple of 32 bytes and the registers read zero: on EPYC 7763,
+EPYC 9V74, Xeon 6973P-C and Xeon Platinum 8573C runners in run
+38165815673, 32 runs of the binary, on EPYC 7763, EPYC 9V74 and EPYC
+9V45 runners in run 38168270311, 32 more, and on those three models, a
+Xeon Platinum 8370C and a Xeon Platinum 8573C in run 38169325916, 48
+more. `make lint-stack` holds the
+kernel's frame under 384 bytes. An unoptimized or sanitized binary
+skips the three searches and still reads the registers.
+
+Eleven violations break those rules, and each is caught. Two change a
+value `bin/sha2_equiv_test` compares: the upper pair of a schedule step
+computed from the two words before the step, and sigma0's shift count.
+Three fail its checks of what a call leaves: the wipe after the kernel
+dropped, the wiped length below the frame, and VZEROUPPER in VZEROALL's
+place. `inv49-sha512-avx2-sums-alignment-dropped` removes the declared
+alignment of `sums` and fails its check of where they lie. Those six
+show on x86-64 alone, so the qemu lane's `sha512-avx2` part is their
+catch, which builds the binary with gcc for x86-64 and runs it under
+`qemu-x86_64`. `inv16-sha512-avx2-entry-reads-sha512-bit` reads arm64's
+bit on x86-64 and fails `bin/x86_kernels_test`'s count in the lane's
+`x86-kernels` part. `inv50-sha512-avx2-copy-compresses-on-plain-c` and
+`inv16-sha512-avx2-runs-bmi2` fail `test/hash-builds.sh` on every
+machine, and `inv50-suite-host-object-lacks-sha512-avx2` and
+`inv36-zig-suite-host-object-lacks-sha512-avx2` leave the kernel out of
+the object and fail `make lint-trust-separation` and
+`make lint-zig-build`.
+
+What none of this shows: the time the kernel takes on a CPU. Its
+instructions are adds, rotates, shifts, bitwise logic and byte shuffles
+by constant masks on general and 256-bit registers, it reads the round
+constants at indices the round number fixes, and the branch count holds
+its branches to the block count and two loop counts. `CH_CPU_AVX2`
+states that the CPU has AVX2 and no timing, and nothing here measures
+one. The registers a call of `sha512_hw.c` leaves are the kernel's
+alone to clear: the copies and the wipe that follow it run the C
+library's `memcpy` and `memset`, which use vector registers of their
+own.
+
 ### The hash instructions
 
 `sha256_hw.c` computes SHA-256 on the CPU's SHA-256 instructions:
 FEAT_SHA256 on arm64, and the SHA extensions with SSSE3 and SSE4.1 on
-x86-64. `sha512_hw.c` computes SHA-384 and SHA-512 on arm64's SHA-512
-instructions, FEAT_SHA512, and has no body on x86-64 (decision 93).
+x86-64. `sha512_hw.c`'s arm64 arm computes SHA-384 and SHA-512 on
+arm64's SHA-512 instructions, FEAT_SHA512 (decision 93). No x86-64 CPU
+this tree targets has such instructions, and the file's x86-64 arm runs
+`sha512_avx2.c`'s kernel ([SHA-512 on AVX2](#sha-512-on-avx2)).
 Every host object carries the first beside `sha256.c`, and a host object
 with `SUITE=aesgcm` the second beside `sha512.c`. Each function turns
 its instructions on through its file's own target attribute. A host
 object also carries `hkdf.c` and `keysched.c` a second time, as
 `hkdf_hw.c` and `keysched_hw.c`: the same source text under the names
-`hash_hw.h` gives, with its SHA-256 calls on `sha256_hw.c` and, on
-arm64, its SHA-384 calls on `sha512_hw.c`. Three predicates read the
+`hash_hw.h` gives, with its SHA-256 calls on `sha256_hw.c` and its
+SHA-384 calls on `sha512_hw.c`. Three predicates read the
 caller's bits, and one branch per call picks a path:
 
 - `sha256.h`'s `sha256_on_instructions` answers for
   `CH_CPU_CONSTANT_TIME_SHA256`. The three entries that end `sha256.h`
   ask it.
 - `sha512.h`'s `sha512_on_instructions` answers for
-  `CH_CPU_CONSTANT_TIME_SHA512` on arm64, and no on x86-64. The five
+  `CH_CPU_CONSTANT_TIME_SHA512` on arm64, and for `CH_CPU_AVX2` on
+  x86-64, where the path it picks runs no hash instruction. The five
   entries that end `sha512.h` ask it. `transcript.h`'s two entries call
   both headers', so each hash of a transcript follows its own bit.
 - `hkdf.h`'s `hash_on_instructions` answers for a call that names its
-  hash by `hash_len`: the SHA-256 bit where the hash is SHA-256, and the
-  SHA-512 bit where it is SHA-384. The entries that end `hkdf.h` and
+  hash by `hash_len`: the SHA-256 bit where the hash is SHA-256, and
+  what `sha512_on_instructions` answers where it is SHA-384. The entries that end `hkdf.h` and
   `keysched.h` ask it.
 
 A call that takes no value runs no hash instruction. Its SHA-256 runs
@@ -4769,16 +4930,17 @@ skips what the CPU has no instructions for, or fails under
   it makes under `CH_CPU_PROBED` alone on the instructions where the
   value holds the SHA-256 bit and on `sha256.c` where it does not, the
   same for its SHA-512 calls and the SHA-512 bit, and write the same
-  bytes. An x86-64 binary requires every SHA-512 call on `sha512.c` under
-  every value.
+  bytes. An x86-64 binary requires every SHA-512 call on `sha512_hw.c`
+  where the value holds `CH_CPU_AVX2` and on `sha512.c` where it does
+  not.
 - `test/hash-builds.sh`, in `make check`, compiles the hash sources for
   x86-64 and arm64 with no instruction flag under the pinned clang. It
   requires SHA-256 instructions in `sha256_hw.c`, SHA-512 instructions
   in arm64's `sha512_hw.c`, and neither in any other hash source; none
   of FEAT_SHA3's four instructions in `sha512_hw.c`, whose target
   attribute turns them on beside FEAT_SHA512's; each file's entries
-  defined, and none in x86-64's `sha512_hw.c`; each copy's calls on the
-  `_hw` names its target has and the files' own on the portable ones;
+  defined, x86-64's `sha512_hw.c` among them; each copy's calls on the
+  `_hw` names and the files' own on the portable ones;
   and no `_hw` symbol in a device object's sources.
 - `test/aes-runtime-disasm.sh` disassembles three packaged host objects
   built with the host's compiler and requires every SHA-256 instruction

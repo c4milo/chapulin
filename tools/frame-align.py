@@ -3,7 +3,8 @@
 
 Run from the repository root, with the pinned clang:
 
-    python3 tools/frame-align.py "$(make -s print-clang-rv)" chacha20_avx2.c keccak_avx2.c
+    python3 tools/frame-align.py "$(make -s print-clang-rv)" chacha20_avx2.c keccak_avx2.c \
+        sha512_avx2.c
 
 The arguments after the compiler are the sources the script reads. It takes
 them so that the recipe of make lint-frame-align names them, and it refuses
@@ -21,6 +22,19 @@ each store and load of it stalls (docs/decisions.md 124, INV-49). gcc aligns
 the frame on its own, and no clang build of this machine or of CI's check job
 runs these files on a CPU: this machine is arm64 and CI compiles with gcc. So
 this script reads what clang compiles.
+
+sha512_avx2.c's sha512_avx2_compress_blocks is the third function it reads.
+Its loop stores four sums at a time, 256 bits, to an array in its frame, and a
+round reads each sum back. The array is declared with an alignment of 32
+bytes, so both compilers must align the frame, and clang 18 and 23 align it
+with the declaration and without: they split the array into the four 256-bit
+values its stores write, each with a 256-bit register's alignment. So no edit
+of that file alone makes this script fail. The script still requires the
+aligned frame of it, for a later clang or a later source that stores to the
+array another way. bin/sha2_equiv_test finds the sums in the stack the
+function leaves and requires them at a multiple of 32 bytes under every
+compiler that builds it, and that check is what a gcc build fails when the
+declaration goes (docs/decisions.md 128).
 
 It compiles each source for x86-64 with the pinned clang at -O2, the level of
 the object `make lib` and build.zig build, and reads the assembly. The
@@ -58,6 +72,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCES = {
     "chacha20_avx2.c": "pass",
     "keccak_avx2.c": "keccak_avx2_permute",
+    "sha512_avx2.c": "sha512_avx2_compress_blocks",
 }
 
 # lint-wide-multiply's x86-64 machine, headers, level and hosted compile
@@ -138,7 +153,8 @@ def check(clang, source, holder):
             failures.append(
                 f"{source}: {name} uses a {8 * width}-bit stack slot in {count} instructions "
                 f"inside a loop and does not align its frame to {width} bytes; give it "
-                f"__attribute__((force_align_arg_pointer)) (docs/decisions.md 124)")
+                f"__attribute__((force_align_arg_pointer)), or the slot a declared alignment "
+                f"(docs/decisions.md 124 and 128)")
     if holder not in found:
         failures.append(f"{source}: the assembly holds no function {holder}; name the function "
                         "that holds its loop in tools/frame-align.py")

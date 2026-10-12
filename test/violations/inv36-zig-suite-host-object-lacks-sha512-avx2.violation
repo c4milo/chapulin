@@ -1,0 +1,13 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig lists sha512_hw.c beside sha512.c in a host object with
+  the suite and no sha512_avx2.c, where the Makefile lists both
+  (docs/decisions.md 128). On x86-64 the Zig object's sha512_hw.c then
+  calls a compression function no source in it defines. A relocatable
+  object links with the call undefined, and the localizer keeps the same
+  exports, so only the comparison with make print-lib-srcs objects.
+
+--- old
+        if (is_sha512 and contains(list, pair[0])) out.appendAssumeCapacity("sha512_avx2.c");
+--- new

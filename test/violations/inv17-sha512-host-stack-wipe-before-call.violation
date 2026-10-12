@@ -2,7 +2,7 @@ invariant: INV-17
 file: sha512.c
 catches: sha2_equiv_test
 reason: a host object's compress_blocks wipes the stack below it before it
-  calls sha512_compress_blocks and not after, so that function's dead
+  calls its compression function and not after, so that function's dead
   frame keeps the last sixteen words of the last block's message
   schedule, and whichever working variables its compiler wrote to slots
   of its own. Under HMAC-SHA-384 the first block is the key, and the
@@ -12,8 +12,8 @@ reason: a host object's compress_blocks wipes the stack below it before it
   computed in the bytes it wrote.
 
 --- old
-    sha512_compress_blocks(h, p, blocks);
+    COMPRESS_BLOCKS(h, p, blocks);
     wipe_frame_call();
 --- new
     wipe_frame_call();
-    sha512_compress_blocks(h, p, blocks);
+    COMPRESS_BLOCKS(h, p, blocks);

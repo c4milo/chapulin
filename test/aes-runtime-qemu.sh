@@ -38,8 +38,10 @@
 #
 #   - each loop with one end stating a kernel's bit and the other not, in
 #     both orders, must pass: 0xd against 0x5, the AVX2 ChaCha20 against
-#     SSE2, and 0x1f against 0x7, the VAES AES-GCM against the 128-bit
-#     loops. A qemu that lacks a kernel's instructions skips its rows.
+#     SSE2, 0xf against 0x7, AES-256-GCM's SHA-384 on sha512_avx2.c's
+#     kernel against the plain C, and 0x1f against 0x7, the VAES AES-GCM
+#     against the 128-bit loops. A qemu that lacks a kernel's instructions
+#     skips its rows.
 #
 # On a model without the SHA extensions:
 #
@@ -63,7 +65,17 @@
 #     every length and split it tries, and no value of a call in the stack
 #     the call leaves (test/sha2_equiv_test.c). It holds sha512.c's first
 #     arm, the plain C a host object runs, to its second on both targets,
-#     as gcc compiles each (docs/decisions.md 127).
+#     as gcc compiles each (docs/decisions.md 127). For x86-64 it also
+#     holds sha512_hw.c over sha512_avx2.c's kernel to that second arm,
+#     with CH_REQUIRE_X86_KERNELS=1, so a qemu without AVX2 fails the row:
+#     the digests, no word of a call in the stack it leaves, the sums at a
+#     multiple of 32 bytes, and ymm0 to ymm15 zero after the kernel
+#     (docs/decisions.md 128). The kernel has a body on x86-64 alone, so
+#     on an arm64 machine this is the run that holds it.
+#   - bin/sha512_test_host and bin/hkdf384_test_host under 0xd, which
+#     names CH_CPU_AVX2, must pass for x86-64: FIPS 180-4's SHA-384 and
+#     SHA-512 vectors, RFC 4231's HMAC-SHA-384 cases and a
+#     TLS_AES_256_GCM_SHA384 key schedule on the kernel.
 #   - each loop with one end stating the SHA-256 bit and the other not, in
 #     both orders, must pass: 0x25 against 0x5 and 0x27 against 0x7, so
 #     the instructions and sha256.c compute the same transcript hashes
@@ -223,6 +235,9 @@
 #   sha2-equiv        bin/sha2_equiv_test for x86-64 and for arm64, for the
 #                     violations of what sha256_hw.c and sha512_hw.c
 #                     compute and wipe
+#   sha512-avx2       bin/sha2_equiv_test, bin/sha512_test_host and
+#                     bin/hkdf384_test_host for x86-64, for the violations
+#                     of sha512_avx2.c's kernel and of the wipe after it
 #   arm64-hash-count  the two counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles
@@ -269,10 +284,10 @@ cd "$(dirname "$0")/.." || exit 1
 ulimit -c 0
 only=${1:-}
 case "$only" in
-"" | x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | \
-    aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
+"" | x86-kernels | sha2-equiv | sha512-avx2 | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | \
+    poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
     exit 2
     ;;
 esac
@@ -301,7 +316,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
-    [ "$only" != rsa-avx2 ]; then
+    [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
     command -v "$arm64_qemu" > /dev/null || { echo "aes-runtime-qemu: $arm64_qemu is missing" >&2; exit 1; }
 fi
@@ -348,8 +363,10 @@ read -r -a aes_equiv_srcs <<< "$(sed -n 17p <<< "$lists")"
 read -r -a rsa_addcarry_equiv_srcs <<< "$(sed -n 18p <<< "$lists")"
 read -r -a rsa_sign_equiv_srcs <<< "$(sed -n 19p <<< "$lists")"
 read -r -a rsa_avx2_equiv_srcs <<< "$(sed -n 20p <<< "$lists")"
-[ "${#rsa_avx2_equiv_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty lists" >&2; exit 1; }
+read -r -a sha512_test_host_srcs <<< "$(sed -n 21p <<< "$lists")"
+read -r -a hkdf384_test_host_srcs <<< "$(sed -n 22p <<< "$lists")"
+[ "${#hkdf384_test_host_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-two lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
 # unit with no declaration, which -Wpedantic refuses, so the arm64 builds
 # link these copies of the three lists they take, without it.
@@ -599,16 +616,46 @@ if [ "$only" = keccak ]; then
     exit 0
 fi
 
-if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
-    # sha256_hw.c against sha256.c, on arm64 sha512_hw.c against
-    # sha512.c's second arm, and on both sha512.c's first arm against it,
-    # each on the model with every instruction. The binary fails where the
-    # model lacks a hash's instructions, so these rows cannot pass by
-    # skipping.
+# bin/sha2_equiv_test for x86-64, which both parts below run.
+build_x86_sha2_equiv() {
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
-        -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
-    CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
-        "sha256_hw.c and sha256.c disagree, a call left a value it computed on the stack, or this qemu's max model lacks the SHA extensions" \
+        -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}"
+}
+
+if [ -z "$only" ] || [ "$only" = sha512-avx2 ]; then
+    # sha512_hw.c over sha512_avx2.c's kernel against sha512.c's second
+    # arm, with the search of the stack each kind of call leaves, where the
+    # sums lie and what ymm0 to ymm15 hold after the kernel, and then the
+    # published vectors on the kernel. The binaries fail where the model
+    # lacks AVX2, so these rows cannot pass by skipping.
+    build_x86_sha2_equiv || exit 1
+    CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
+        "sha512_hw.c over the AVX2 kernel and sha512.c's second arm disagree, a call left a value it computed on the stack or in a vector register, the sums do not lie at a multiple of 32 bytes, or this qemu's max model lacks AVX2" \
+        sha2_equiv_test
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/sha512_test_host" test/sha512_test.c \
+        "${sha512_test_host_srcs[@]}" || exit 1
+    "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -o "$x86_out/hkdf384_test_host" \
+        test/hkdf384_test.c "${hkdf384_test_host_srcs[@]}" || exit 1
+    for b in sha512_test_host hkdf384_test_host; do
+        CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+            "a published SHA-384, SHA-512 or HMAC-SHA-384 vector fails on the AVX2 kernel, or this qemu's max model lacks AVX2" \
+            "$b" 0xd
+    done
+fi
+if [ "$only" = sha512-avx2 ]; then
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha512_hw.c over sha512_avx2.c's kernel to sha512.c's second arm on AVX2 for x86-64, found no word of a call on the stack and none in ymm0 to ymm15, and bin/sha512_test_host and bin/hkdf384_test_host ran the published vectors on it"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
+    # sha256_hw.c against sha256.c, sha512_hw.c against sha512.c's second
+    # arm, and sha512.c's first arm against it, each on the model with
+    # every instruction. The binary fails where the model lacks a hash's
+    # instructions, so these rows cannot pass by skipping, and for x86-64
+    # it fails where the model lacks AVX2, which sha512_hw.c's kernel runs.
+    build_x86_sha2_equiv || exit 1
+    CH_REQUIRE_X86_KERNELS=1 CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
+        "sha256_hw.c and sha256.c disagree, sha512_hw.c over the AVX2 kernel disagrees with sha512.c's second arm, a call left a value it computed on the stack, or this qemu's max model lacks the SHA extensions or AVX2" \
         sha2_equiv_test
     "$arm64_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
         -o "$arm64_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
@@ -617,7 +664,7 @@ if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
         sha2_equiv_test
 fi
 if [ "$only" = sha2-equiv ]; then
-    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c and sha512.c's first arm to its second on x86-64 and arm64, and sha512_hw.c to sha512.c's second arm on arm64"
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c, sha512.c's first arm to its second and sha512_hw.c to that second arm, on x86-64 and arm64"
     exit 0
 fi
 
@@ -734,6 +781,14 @@ if grep -qw avx2 <<< "$cpuid"; then
         expect max 0 "the AVX2 ChaCha20 and the SSE2 one disagree" "$b" cpu 0xd 0x5
         expect max 0 "the AVX2 ChaCha20 and the SSE2 one disagree" "$b" cpu 0x5 0xd
     done
+    # Both ends state the AES bit, so they run AES-256-GCM, whose
+    # transcript and key schedule hash with SHA-384: on sha512_avx2.c's
+    # kernel at the end with CH_CPU_AVX2 and on the plain C at the other.
+    mixed="$mixed, so did one on the AVX2 SHA-384 and the other on the plain C"
+    for b in "${loops[@]}"; do
+        expect max 0 "the AVX2 SHA-384 and the plain C one disagree" "$b" cpu 0xf 0x7
+        expect max 0 "the AVX2 SHA-384 and the plain C one disagree" "$b" cpu 0x7 0xf
+    done
     if grep -qw vaes <<< "$cpuid" && grep -qw vpclmulqdq <<< "$cpuid"; then
         mixed="$mixed, and so did one on the VAES AES-GCM and the other on the 128-bit loops"
         for b in "${loops[@]}"; do
@@ -794,7 +849,9 @@ echo "aes-runtime-qemu: on $bare the rows without the AES bit and without CH_CPU
     "without the SHA-256 bit passed and the rows with it died of SIGILL; on $no_named the two" \
     "binaries that count each hash's calls passed; on $no_ifma the webpki loop passed without" \
     "CH_CPU_AVX512_IFMA and died of SIGILL with it; on max, sha256_hw.c" \
-    "agreed with sha256.c, one end on the SHA extensions and the other on sha256.c agreed, and" \
+    "agreed with sha256.c, sha512_hw.c over the AVX2 kernel agreed with sha512.c and left no word" \
+    "on the stack or in ymm0 to ymm15," \
+    "one end on the SHA extensions and the other on sha256.c agreed, and" \
     "$mixed; on arm64's $no_sha512 the rows without the SHA-512 bit passed and the rows with it" \
     "died of SIGILL, and on its max sha512_hw.c agreed with sha512.c and one end on the SHA-512" \
     "instructions and the other on sha512.c agreed; as clang compiles arm64, on $no_sha3 the rows" \

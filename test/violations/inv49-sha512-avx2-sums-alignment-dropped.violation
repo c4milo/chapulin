@@ -1,0 +1,21 @@
+invariant: INV-49
+file: sha512_avx2.c
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: sums, the array sha512_avx2_compress_blocks stores four sums at a
+  time to, loses its declared alignment of 32 bytes. gcc 13.3 still
+  aligns the function's frame to 32 bytes and then places the array 16
+  bytes past a multiple of 32, so two of every four stores lie across a
+  cache line, and one across a page boundary where the frame meets one.
+  clang 18 and 23 compile the same instructions with the declaration and
+  without, so make lint-frame-align, which reads clang's code, passes.
+  Every digest is right. bin/sha2_equiv_test finds the sixteen sums in
+  the stack the kernel leaves, for a caller at each of two stack
+  positions 16 bytes apart, and requires each four at a multiple of 32
+  bytes. The lane builds with gcc for x86-64 and runs under qemu-x86_64,
+  so the verdict is the same on every machine. It skips without docker,
+  and this then reports unguarded rather than caught.
+
+--- old
+    _Alignas(32) uint64_t sums[16];
+--- new
+    uint64_t sums[16];

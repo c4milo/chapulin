@@ -78,6 +78,14 @@ STACK_BUDGET_P256_WIDE_WIPE := 3584
 # grows past it fails here before bin/sha2_equiv_test measures the depth
 # it writes (docs/decisions.md 127).
 STACK_BUDGET_SHA512_COMPRESS_BLOCKS := 384
+# sha512_avx2.c, the same function with its message schedule in AVX2
+# registers, which only an x86-64 host object holds, gets the same ceiling
+# for the same reason: sha512_hw.c wipes SHA512_AVX2_BELOW_LEN bytes, 512,
+# of the stack below each call of it. Its frame is 192 bytes under gcc
+# 13.3 and 248 under clang 18 and clang 23 at -O2, and beside it the
+# function pushes six registers, aligns its frame to 32 bytes and its
+# caller pushes the return address (docs/decisions.md 128).
+STACK_BUDGET_SHA512_AVX2 := 384
 
 # cfg.h makes the entropy pattern a declared build choice with no
 # default, so every translation unit that sees cfg.h must say which
@@ -228,7 +236,7 @@ SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p25
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
         p384_wide_field.h p384_wide_point.h p384_wide_verify.h \
@@ -439,7 +447,7 @@ QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
 QUIC_UNPROBED := $(if $(HOST_TARGET),,aes_hw.c ghash_hw.c ghash_vector.h gcm_hw.c gcm_vaes.c)
 # The hash sources of a host object hold their body under the same define
 # (docs/decisions.md 93), so the lint skips them on such a compiler too.
-QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c sha512_hw.c hash_hw.h hkdf_hw.c keysched_hw.c)
+QUIC_UNPROBED += $(if $(HOST_TARGET),,sha256_hw.c sha512_hw.c sha512_avx2.c hash_hw.h hkdf_hw.c keysched_hw.c)
 # So do Keccak on the SHA-3 instructions and ML-KEM's two copies over it
 # (docs/decisions.md 99), and the four-way Keccak and ML-KEM's copy over
 # it (107).
@@ -510,10 +518,10 @@ WIDEMUL_HOST_LINT_C := poly1305_native.c mlkem_poly_native.c poly1305_vector_nat
                           test/widemul_count_native_vector.c test/widemul_count_native_avx2.c
 # The host object's hash sources and tests (docs/decisions.md 93), which
 # compile only under -DCH_CPU_RUNTIME: SHA-256 and SHA-512 on the CPU's
-# instructions, the two copies over them, the equivalence test, and the
-# counting test with its counting entries. lint-tidy reads them in passes
-# of their own.
-HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
+# instructions, SHA-512's AVX2 kernel for x86-64 (docs/decisions.md 128),
+# the two copies over them, the equivalence test, and the counting test
+# with its counting entries. lint-tidy reads them in passes of their own.
+HASH_HOST_LINT_C := sha256_hw.c sha512_hw.c sha512_avx2.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c \
                     sha3_hw.c mlkem_hw.c mlkem_poly_hw.c test/sha3_hw_equiv_test.c \
                     test/mlkem_hw_equiv_test.c \
                     test/hash_runtime_test.c test/hash_runtime_count.c \
@@ -575,8 +583,9 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
-         test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h test/sha512_portable.h \
-         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h \
+         test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
+         test/sha2_equiv_residue512_avx2.h test/sha512_portable.h \
+         test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
          test/session_alert_tests.h test/session_hello_tests.h \
@@ -1252,14 +1261,20 @@ X86_WYCHEPROOF_CPU := $(if $(X86_KERNEL_PROBE),0xf 0x1f 0x11f)
 # under a value that names instructions its CPU lacks skips, and an arm64
 # CPU may have FEAT_SHA256 without FEAT_SHA512. Under
 # CH_REQUIRE_HASH_INSTRUCTIONS=1 such a binary fails instead
-# (test/test_cpu.h).
+# (test/test_cpu.h). On x86-64 no bit names SHA-512 instructions:
+# CH_CPU_AVX2 picks sha512_avx2.c's kernel (docs/decisions.md 128), so the
+# two SHA-512 vector binaries run those vectors on it under 0xd, and the
+# Wycheproof host binary its two SHA-384 suites under X86_WYCHEPROOF_CPU's
+# three values. On a CPU without AVX2 a run under 0xd skips, or fails
+# under CH_REQUIRE_X86_KERNELS=1.
 #   0x25  the probe's bit, the multiply bit and CH_CPU_CONSTANT_TIME_SHA256
 #   0x27  those and the AES bit
 #   0x65  the first with CH_CPU_CONSTANT_TIME_SHA512, on arm64
 #   0x67  the second with it, on arm64
+#   0xd   the probe's bit, the multiply bit and CH_CPU_AVX2, on x86-64
 HASH_UNIT_CPU := 0x25
 HASH_WYCHEPROOF_CPU := 0x27 $(if $(X86_KERNEL_PROBE),,0x67)
-HASH512_UNIT_CPU := $(if $(X86_KERNEL_PROBE),,0x65)
+HASH512_UNIT_CPU := $(if $(X86_KERNEL_PROBE),0xd,0x65)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
 # that exports nothing pays neither: docs/performance.md's SRAM numbers
@@ -1361,6 +1376,7 @@ QUIC_EXTRA_DEFINES += $(foreach f,$(WIDEMUL_COPIED),$(f:.c=_native.c):-DCH_CPU_R
 # (docs/decisions.md 93), and sha256_hw.c holds its body under the define.
 QUIC_EXTRA_DEFINES += hash_hw.h:-DCH_CPU_RUNTIME hkdf_hw.c:-DCH_CPU_RUNTIME keysched_hw.c:-DCH_CPU_RUNTIME \
                       sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
+                      sha512_avx2.c:-DCH_CPU_RUNTIME \
                       keccak_hw.h:-DCH_CPU_RUNTIME sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME \
                       mlkem_poly_hw.c:-DCH_CPU_RUNTIME
 # So does ML-KEM's copy for the four-way Keccak, whose mlkem_avx2.h refuses
@@ -1391,13 +1407,19 @@ widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 # sha512.c, and hkdf.c and keysched.c compiled once more over them, as
 # hkdf_hw.c and keysched_hw.c. A session's CH_CPU_CONSTANT_TIME_SHA256 and
 # CH_CPU_CONSTANT_TIME_SHA512 bits pick them, and a device object holds
-# none. sha512_hw.c has no body on x86-64, which has no such instructions.
+# none. No x86-64 CPU this tree targets has SHA-512 instructions. There
+# sha512_hw.c is sha512.c's first arm compiled once more over
+# sha512_avx2.c, the compression function with its message schedule in
+# AVX2 registers, which a session's CH_CPU_AVX2 picks (docs/decisions.md
+# 128). sha512_avx2.c stands beside sha512_hw.c in every list, and on
+# arm64 it holds nothing, as chacha20_avx2.c does.
 # The same for Keccak (docs/decisions.md 99): sha3_hw.c, SHA-3 and SHAKE on
 # arm64's SHA-3 instructions, beside sha3.c, and mlkem.c and mlkem_poly.c
 # compiled once more over it, as mlkem_hw.c and mlkem_poly_hw.c, which a
 # session's CH_CPU_CONSTANT_TIME_SHA3 bit picks. The three have a body
 # where clang compiles an arm64 object and none anywhere else (cpu_cfg.h).
-hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),sha512_hw.c) \
+SHA512_HW_SRCS := sha512_hw.c sha512_avx2.c
+hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),$(SHA512_HW_SRCS)) \
              $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c) \
              $(if $(filter sha3.c,$(1)),sha3_hw.c) $(if $(filter mlkem.c,$(1)),mlkem_hw.c) \
              $(if $(filter mlkem_poly.c,$(1)),mlkem_poly_hw.c)
@@ -1442,13 +1464,14 @@ LIB_SRCS += poly1305_vector_native.c poly1305_avx2_native.c poly1305_ifma_native
 endif
 # A host object holds SHA-256 on the CPU's instructions and the two copies
 # over it (hash_hw_of above); a session's hash bit picks them, and a device
-# object holds the portable hash alone. It holds sha512_hw.c only with
-# SUITE=aesgcm, whose key schedule and transcript run SHA-384 under a
-# session's value. A TRUST=webpki object without the suite hashes
-# certificates with sha512.c through calls that take no value, so no call
-# in it would run sha512_hw.c, and it leaves the file out.
+# object holds the portable hash alone. It holds sha512_hw.c and
+# sha512_avx2.c only with SUITE=aesgcm, whose key schedule and transcript
+# run SHA-384 under a session's value. A TRUST=webpki object without the
+# suite hashes certificates with sha512.c through calls that take no
+# value, so no call in it would run either file, and it leaves both out:
+# its SHA-384 is sha512.c over sha512_compress_blocks.c on every CPU.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,sha512_hw.c),$(call hash_hw_of,$(LIB_SRCS)))
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_of,$(LIB_SRCS)))
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -1603,8 +1626,9 @@ print-host-srcs:
 # bin/poly1305_equiv_test beside its one, bin/tcp_blocking_loop_host
 # and bin/webpki_auth_host beside theirs, bin/aes_equiv_test beside its
 # one, bin/rsa_addcarry_equiv_test's units and sources,
-# bin/rsa_sign_equiv_test beside its one, and bin/rsa_avx2_equiv_test's
-# units and sources.
+# bin/rsa_sign_equiv_test beside its one, bin/rsa_avx2_equiv_test's
+# units and sources, and bin/sha512_test_host and bin/hkdf384_test_host
+# beside their one each.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
 	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
@@ -1627,6 +1651,8 @@ print-aes-runtime-qemu-srcs:
 	@echo $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
 	@echo $(RSA_SIGN_EQUIV_TEST_SRCS)
 	@echo $(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS)
+	@echo $(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c)
+	@echo $(call host_srcs,$(HKDF384_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1763,9 +1789,10 @@ print-aes-runtime-qemu-srcs:
 # The hash rows hold sha256_hw.c, hkdf_hw.c and keysched_hw.c to the host
 # object, over TCP and over QUIC, beside the three files they stand
 # beside, so a device object carries the portable hash alone. They hold
-# sha512_hw.c to the host object with SUITE=aesgcm: a host object without
-# the suite packages sha512.c for its certificates and no sha512_hw.c
-# (docs/decisions.md 93). The SHA-512 rows hold sha512_compress_blocks.c,
+# sha512_hw.c, and sha512_avx2.c, the kernel its x86-64 arm compresses on,
+# to the host object with SUITE=aesgcm: a host object without the suite
+# packages sha512.c for its certificates and neither of the two
+# (docs/decisions.md 93 and 128). The SHA-512 rows hold sha512_compress_blocks.c,
 # the compression function a host object runs in every session, to the
 # host object beside sha512.c, and sha512_compress.c, the reference, to
 # the device object beside it, so no object packages both and none
@@ -1912,18 +1939,19 @@ lint-trust-separation-run:
 	  done; \
 	done; \
 	hash_hw="sha256_hw.c hkdf_hw.c keysched_hw.c"; \
-	check "TRUST=raw-rsa" "sha256.c hkdf.c keysched.c" "$$hash_hw sha512_hw.c" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha256.c hkdf.c keysched.c sha512.c $$hash_hw" "sha512_hw.c" \
+	sha512_hw="sha512_hw.c sha512_avx2.c"; \
+	check "TRUST=raw-rsa" "sha256.c hkdf.c keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=client TRUST=webpki HOST_TARGET=yes" "sha256.c hkdf.c keysched.c sha512.c $$hash_hw" "$$sha512_hw" \
 	  "-DCH_CPU_RUNTIME" "-DCH_SUITE_AES_GCM"; \
-	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "sha512_hw.c" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=yes" "sha256.c hkdf.c keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki EXPORTER=off HOST_TARGET=yes" \
-	  "sha256.c hkdf.c keysched.c $$hash_hw" "sha512_hw.c" "-DCH_CPU_RUNTIME" ""; \
-	check "ROLE=server TRUST=none HOST_TARGET=" "sha256.c hkdf.c keysched.c" "$$hash_hw sha512_hw.c" "" "-DCH_CPU_RUNTIME"; \
-	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "sha512.c sha512_hw.c $$hash_hw" "" \
+	  "sha256.c hkdf.c keysched.c $$hash_hw" "$$sha512_hw" "-DCH_CPU_RUNTIME" ""; \
+	check "ROLE=server TRUST=none HOST_TARGET=" "sha256.c hkdf.c keysched.c" "$$hash_hw $$sha512_hw" "" "-DCH_CPU_RUNTIME"; \
+	check "ROLE=server TRUST=none SUITE=aesgcm HOST_TARGET=yes" "sha512.c $$sha512_hw $$hash_hw" "" \
 	  "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
 	check "TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm EXPORTER=off HOST_TARGET=yes" \
-	  "sha512.c sha512_hw.c $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
-	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "sha512_hw.c $$hash_hw" \
+	  "sha512.c $$sha512_hw $$hash_hw" "" "-DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM" ""; \
+	check "ROLE=server TRUST=none SUITE=aesgcm AES=extern HOST_TARGET=" "sha512.c" "$$sha512_hw $$hash_hw" \
 	  "-DCH_SUITE_AES_GCM" "-DCH_CPU_RUNTIME"; \
 	sha512_both="sha512_compress.c sha512_compress_blocks.c"; \
 	check "TRUST=raw-rsa" "" "sha512.c $$sha512_both" "" "-DCH_CPU_RUNTIME"; \
@@ -2887,7 +2915,7 @@ bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_
 # exporter, which a QUIC object does not hold, so the two exporter entries
 # have a row. Both link the P-256 signer, whose nonce's HMACs follow the
 # SHA-256 bit (p256_sign_cpu).
-HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c sha512_hw.c sha512_compress_blocks.c
+HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c $(SHA512_HW_SRCS) sha512_compress_blocks.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c \
                           $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,record.c aes.c $(AES_HW_SRCS) \
                           gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
@@ -2916,12 +2944,16 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # rsa_avx2.c, which CH_CPU_AVX2 picks without it, for the two RSA
 # verifiers' entries that take a value, and rsa_ifma_sign.c's
 # exponentiations, which CH_CPU_AVX512_IFMA picks beside the multiply bit.
-# test/x86_kernels_count.c defines the first ten entries,
+# test/x86_kernels_count.c defines the first ten entries and
+# sha512_avx2.c's compression function, which CH_CPU_AVX2 picks for
+# SHA-512 and SHA-384 (docs/decisions.md 128),
 # test/rsa_ifma_count.c and test/rsa_avx2_count.c the two RSA public
 # operations' and test/rsa_ifma_sign_count.c the signer's, each as a count
 # and, where the entry computes, a call to the code it stands beside, and
-# the binary links the four in place of the kernel sources. So no
-# instruction of a kernel runs, the binary
+# the binary links the four in place of the kernel sources. It links
+# test/hash_runtime_compress_count.c in place of sha512_compress_blocks.c,
+# so that function's count is every SHA-512 compression call, on either
+# path. So no instruction of a kernel runs, the binary
 # runs on every x86-64 CPU, and its counts say which path the library
 # chose. It holds a TCP object's record layer and a QUIC object's
 # packet calls, so it compiles both under the QUIC and suite defines. What
@@ -2929,13 +2961,15 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # vectors the host binaries run under the kernels' bits.
 X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c chacha20_avx512.c gcm_vaes.c keccak_avx2.c mlkem_avx2.c \
                            poly1305_avx2_native.c poly1305_ifma_native.c rsa_ifma.c rsa_avx2.c rsa_ifma_sign.c \
-                           avx512_wipe.c, \
+                           avx512_wipe.c sha512_avx2.c sha512_compress_blocks.c, \
                            $(call host_srcs,record.c \
                            quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
                            mlkem.c mlkem_poly.c sha3.c rsa.c rsa_pkcs1.c rsa_mont.c rsa_sign.c)) \
-                         test/rsa_ifma_count.c test/rsa_ifma_sign_count.c test/rsa_avx2_count.c
-bin/x86_kernels_test: test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS) $(HDRS) $(TESTH)
+                         test/rsa_ifma_count.c test/rsa_ifma_sign_count.c test/rsa_avx2_count.c \
+                         test/hash_runtime_compress_count.c
+bin/x86_kernels_test: test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS) \
+                      sha512_compress_blocks.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
 	  test/x86_kernels_test.c test/x86_kernels_count.c $(X86_KERNELS_TEST_SRCS)
@@ -3686,7 +3720,8 @@ $(eval $(call HOST_VECTOR_BIN,rsa_sign_test,test/rsa_sign_test.c,$(RSA_SIGN_TEST
 # FIPS 180-4's SHA-384 and SHA-512 vectors, RFC 4231's HMAC-SHA-384 and
 # the TLS_AES_256_GCM_SHA384 key schedule, as a host object's session runs
 # them: under HASH512_UNIT_CPU beside the two values every vector binary
-# takes, which on arm64 names the SHA-512 instructions. sha512_hw.c wipes
+# takes, which on arm64 names the SHA-512 instructions and on x86-64
+# CH_CPU_AVX2, whose kernel sha512_hw.c runs there. sha512_hw.c wipes
 # what it computes, so the first links ct_wipe.c beside the hash.
 $(eval $(call HOST_VECTOR_BIN,sha512_test,test/sha512_test.c,$(SHA512_TEST_SRCS) ct_wipe.c,))
 $(eval $(call HOST_VECTOR_BIN,hkdf384_test,test/hkdf384_test.c,$(HKDF384_SRCS),-DCH_HASH_SHA384))
@@ -5415,9 +5450,10 @@ lint-stack-run:
 	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
 	  case "$$f" in rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  case "$$f" in sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
+	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2) ;; esac; \
 	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	done; rm -rf $$objs; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B and its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
@@ -5895,8 +5931,10 @@ else
 	# (docs/decisions.md 93). sha256_hw.c holds one arm for each
 	# architecture, so two passes read it for a named target whatever the
 	# host, as the pass above reads the kernels: x86-64 and arm64,
-	# freestanding. The arm64 pass reads sha512_hw.c too, which has no body
-	# on x86-64. The two copies and the
+	# freestanding. Both read sha512_hw.c too, which holds an arm for each:
+	# the SHA-512 instructions for arm64, and for x86-64 sha512.c's first
+	# arm once more over sha512_avx2.c's kernel, which the x86-64 pass
+	# reads beside it (docs/decisions.md 128). The two copies and the
 	# files they copy follow under the host's own target with the defines
 	# the equivalence test's binary takes, so the pass reads the entries
 	# that end sha256.h, hkdf.h and keysched.h too, and then the two test
@@ -5905,7 +5943,7 @@ else
 	# sha3_hw.c and ML-KEM's two copies have a body for arm64 under clang
 	# alone (docs/decisions.md 99), which the arm64 pass's target gives
 	# them, and the two Keccak test mains follow under the host's own target.
-	@$(call TIDY_EACH,sha256_hw.c, \
+	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c sha512_avx2.c, \
 	  -std=c11 --target=x86_64-unknown-linux-gnu -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -I.)
 	@$(call TIDY_EACH,sha256_hw.c sha512_hw.c, \
@@ -5915,7 +5953,19 @@ else
 	  -std=c11 --target=aarch64-none-elf -ffreestanding -nostdlibinc -Itools/freestanding \
 	  -DCH_CPU_RUNTIME -DCH_RAND_EXTERN -I.)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,hkdf.c keysched.c hkdf_hw.c keysched_hw.c test/sha2_equiv_test.c, \
+	  $(call TIDY_EACH,hkdf.c keysched.c hkdf_hw.c keysched_hw.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
+	# The equivalence test, under the same defines, with
+	# portability-no-assembler off for this file alone: on x86-64 it sets
+	# ymm0 to ymm15, calls sha512_avx2.c's kernel and stores the sixteen
+	# registers in one block of assembly, because C names no register and
+	# a compiler may use one between two statements (docs/decisions.md
+	# 128). Every other check reads it. A host for arm64 compiles none of
+	# that block, so the x86-64 hosts alone read it: CI's, and
+	# test/docker-check.sh's amd64 image.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
+	  test/sha2_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
 	  $(call TIDY_EACH,test/sha3_hw_equiv_test.c test/mlkem_hw_equiv_test.c test/mlkem_vector_equiv_test.c \
@@ -6711,10 +6761,13 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
 # A host object's hash sources join it too (docs/decisions.md 93):
 # sha256_hw.c, whose SHA-256 instructions no 32-bit spec targets and which
 # compiles under its own target attribute on both 64-bit specs,
-# sha512_hw.c, which does the same on arm64 and has no body on x86-64, and
-# hkdf_hw.c and keysched_hw.c, the copies of hkdf.c and keysched.c over
-# them, which hash_hw.h refuses outside a host object. They multiply and
-# divide nothing, and what the specs hold for each is its branch count.
+# sha512_hw.c, which does the same on arm64 and on x86-64 is sha512.c's
+# first arm compiled once more, sha512_avx2.c, the kernel that arm
+# compresses on, which has a body on x86-64 alone (docs/decisions.md
+# 128), and hkdf_hw.c and keysched_hw.c, the copies of hkdf.c and
+# keysched.c over them, which hash_hw.h refuses outside a host object.
+# They multiply and divide nothing, and what the specs hold for each is
+# its branch count.
 #
 # The wide P-256 files join it for x25519_wide.c's reason
 # (docs/decisions.md 94): their products are unsigned __int128, and they
@@ -6754,6 +6807,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
                   rsa_avx2.c:0 \
                   sha3_hw.c:0 mlkem_hw.c:0 mlkem_poly_hw.c:0 mlkem_vector.c:0 \
                   keccak_avx2.c:0 mlkem_avx2.c:0 avx512_wipe.c:0 sha512_compress_blocks.c:0 \
+                  sha512_avx2.c:0 \
                   $(addsuffix :0,$(P256_WIDE_SRCS))
 # Files the two 64-bit specs compile once more under other defines, each
 # entry name:ceiling, whose name is a file, an @ and a tag.
@@ -6833,9 +6887,9 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # sha256_hw.c needs it for that reason too, and hkdf_hw.c and keysched_hw.c
 # because hash_hw.h refuses a copy without it; the two copies take
 # -DCH_HASH_SHA384 as hkdf.c and keysched.c do, so the count reads both
-# hashes' arms. sha512_compress_blocks.c needs it because its whole body
-# sits behind that define, and in sha512.c@host the define is what picks
-# the file's first arm.
+# hashes' arms. sha512_compress_blocks.c and sha512_avx2.c need it because
+# their whole bodies sit behind that define, and in sha512.c@host the
+# define is what picks the file's first arm.
 WIDEMUL_NATIVE_DEFINES := -DCH_CPU_RUNTIME
 WIDE64_HOST_AES_DEFINES := -DCH_CPU_RUNTIME$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING$(COMMA)-DCH_SUITE_AES_GCM
 # webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen lints compile every
@@ -6882,6 +6936,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    poly1305_avx2_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    poly1305_ifma_native.c:$(WIDEMUL_NATIVE_DEFINES) \
                    sha256_hw.c:-DCH_CPU_RUNTIME sha512_hw.c:-DCH_CPU_RUNTIME \
+                   sha512_avx2.c:-DCH_CPU_RUNTIME \
                    sha512_compress_blocks.c:-DCH_CPU_RUNTIME \
                    sha3_hw.c:-DCH_CPU_RUNTIME mlkem_hw.c:-DCH_CPU_RUNTIME mlkem_poly_hw.c:-DCH_CPU_RUNTIME \
                    keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.c:-DCH_CPU_RUNTIME \
@@ -7175,12 +7230,24 @@ WIDEMUL_SPECS := \
 # mlkem_vector.c, 7 and 7: the loops over the layers and blocks of the two
 #   transforms and the base multiplication's 16 blocks, all constants.
 # keccak_avx2.c, 0 and 1: the permutation's 24 rounds.
-# sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 0; sha256.c@host, 28 and 35:
+# sha256_hw.c, 6 and 10; sha512_hw.c, 17 and 13; sha256.c@host, 28 and 35:
 #   an update's tests of n and of the count of buffered bytes, the loop
 #   over whole blocks, a final's tests of where the padding ends and its
 #   loops that pad and write the digest, and the compression function's
 #   loops over its words, rounds and schedule. Each reads a length or a
-#   count, and none reads a message byte or a state word.
+#   count, and none reads a message byte or a state word. sha512_hw.c's 13
+#   on x86-64 are another text's: there the file is sha512.c's first arm
+#   compiled once more over sha512_avx2.c's kernel (docs/decisions.md
+#   128). They are the five of sha512_update and finalize, read under
+#   sha512.c@host below, under the _hw names, and four each in
+#   sha512_of_hw and sha384_of_hw: the copy calls sha512.c's two init
+#   functions, so clang does not know the count of buffered bytes there
+#   and keeps all four of sha512_update's tests in each.
+# sha512_avx2.c, 0 and 3: the test for no block, the loop over the blocks,
+#   and the loop over the four groups of sixteen rounds that follow a
+#   block's first sixteen. The schedule steps, the rounds and the sum that
+#   ends a block are straight line, and no branch reads a message word, a
+#   schedule word, a sum or a state word.
 # sha512.c@host, 9 and 9; sha512_compress_blocks.c, 3 and 3: SHA-512 as
 #   every session of a host object runs it (docs/decisions.md 127).
 #   sha512.c@host is the file's first arm. sha512_update holds four: its
@@ -7385,18 +7452,21 @@ WIDEMUL_NATIVE_BRANCH_CEILING := \
   arm64/poly1305_ifma_native.c:0 x86-64/poly1305_ifma_native.c:4
 # A host object's hash sources on the CPU's instructions (docs/decisions.md
 # 93 and 99), under the two 64-bit specs, which are the targets they run
-# on. sha512_hw.c, sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c have no body
-# on x86-64. The comment above WIDE64_SPECS says what each one's branches
+# on. sha3_hw.c, mlkem_hw.c and mlkem_poly_hw.c have no body on x86-64.
+# sha512_hw.c has one there since docs/decisions.md 128: sha512.c's first
+# arm compiled once more over sha512_avx2.c's kernel, which has no body
+# on arm64. The comment above WIDE64_SPECS says what each one's branches
 # read: lengths, counts and positions, and never a message byte, a state
 # word or a lane. sha512_compress_blocks.c stands with them, though it is
 # plain C that every session of a host object runs (docs/decisions.md
 # 127): only a host object compiles it, so only these two specs read it.
 HASH_HW_BRANCH_CEILING := \
   arm64/sha256_hw.c:6 x86-64/sha256_hw.c:10 arm64/hkdf_hw.c:19 x86-64/hkdf_hw.c:19 \
-  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:0 \
+  arm64/keysched_hw.c:0 x86-64/keysched_hw.c:0 arm64/sha512_hw.c:17 x86-64/sha512_hw.c:13 \
   arm64/sha3_hw.c:72 x86-64/sha3_hw.c:0 arm64/mlkem_hw.c:5 x86-64/mlkem_hw.c:0 \
   arm64/mlkem_poly_hw.c:56 x86-64/mlkem_poly_hw.c:0 \
-  arm64/sha512_compress_blocks.c:3 x86-64/sha512_compress_blocks.c:3
+  arm64/sha512_compress_blocks.c:3 x86-64/sha512_compress_blocks.c:3 \
+  arm64/sha512_avx2.c:0 x86-64/sha512_avx2.c:3
 # The wide P-256 files, under the two 64-bit specs alone, for the reason
 # WIDE64_CEILING gives. The counts are the same on both specs, and the
 # comment above WIDE64_SPECS says what each file's branches read. Every one
@@ -7476,7 +7546,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                poly1305_vector_native.c poly1305_avx2.c poly1305_avx2_native.c poly1305_ifma.c \
                poly1305_ifma_native.c \
                sha256_hw.c sha512_hw.c hkdf_hw.c keysched_hw.c rsa_mont64.c rsa_mont64_blocks.c \
-               sha512_compress_blocks.c \
+               sha512_compress_blocks.c sha512_avx2.c \
                rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
@@ -7926,13 +7996,15 @@ endif
 # arm64, so no build check runs executes clang's code for these files.
 # tools/frame-align.py compiles them for x86-64 with the pinned clang at
 # -O2 and requires, of every function whose loop uses a 256-bit stack slot,
-# the instruction that aligns its frame. The recipe names the files the
-# script reads, which is how make impact selects it for them.
+# the instruction that aligns its frame. sha512_avx2.c's kernel stores four
+# sums at a time to an array in its frame inside its loop, and the script
+# requires the same of it (docs/decisions.md 128). The recipe names the
+# files the script reads, which is how make impact selects it for them.
 lint-frame-align:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@python3 tools/frame-align.py "$(CLANG_RV)" chacha20_avx2.c keccak_avx2.c
+	@python3 tools/frame-align.py "$(CLANG_RV)" chacha20_avx2.c keccak_avx2.c sha512_avx2.c
 endif
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
