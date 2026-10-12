@@ -61,7 +61,9 @@
 #
 #   - bin/sha2_equiv_test must pass: sha256_hw.c against sha256.c over
 #     every length and split it tries, and no value of a call in the stack
-#     the call leaves (test/sha2_equiv_test.c).
+#     the call leaves (test/sha2_equiv_test.c). It holds sha512.c's first
+#     arm, the plain C a host object runs, to its second on both targets,
+#     as gcc compiles each (docs/decisions.md 127).
 #   - each loop with one end stating the SHA-256 bit and the other not, in
 #     both orders, must pass: 0x25 against 0x5 and 0x27 against 0x7, so
 #     the instructions and sha256.c compute the same transcript hashes
@@ -181,7 +183,8 @@
 # On max, with CH_REQUIRE_HASH_INSTRUCTIONS=1:
 #
 #   - bin/sha2_equiv_test must pass: sha256_hw.c's arm64 arm against
-#     sha256.c and sha512_hw.c against sha512.c.
+#     sha256.c, and sha512_hw.c and sha512.c's first arm against
+#     sha512.c's second.
 #   - each loop with one end stating the SHA-512 bit and the other not, in
 #     both orders, must pass: 0x65 against 0x25 and 0x67 against 0x27.
 #
@@ -597,10 +600,11 @@ if [ "$only" = keccak ]; then
 fi
 
 if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
-    # sha256_hw.c against sha256.c, and on arm64 sha512_hw.c against
-    # sha512.c, each on the model with every instruction. The binary fails
-    # where the model lacks a hash's instructions, so these rows cannot pass
-    # by skipping.
+    # sha256_hw.c against sha256.c, on arm64 sha512_hw.c against
+    # sha512.c's second arm, and on both sha512.c's first arm against it,
+    # each on the model with every instruction. The binary fails where the
+    # model lacks a hash's instructions, so these rows cannot pass by
+    # skipping.
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
         -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}" || exit 1
     CH_REQUIRE_HASH_INSTRUCTIONS=1 expect max 0 \
@@ -613,7 +617,7 @@ if [ -z "$only" ] || [ "$only" = sha2-equiv ]; then
         sha2_equiv_test
 fi
 if [ "$only" = sha2-equiv ]; then
-    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c on x86-64 and arm64, and sha512_hw.c to sha512.c on arm64"
+    echo "aes-runtime-qemu: bin/sha2_equiv_test held sha256_hw.c to sha256.c and sha512.c's first arm to its second on x86-64 and arm64, and sha512_hw.c to sha512.c's second arm on arm64"
     exit 0
 fi
 

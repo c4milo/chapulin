@@ -1,11 +1,11 @@
-// What sha512_hw.c's calls leave on the stack: test/sha2_equiv_residue.h's
-// check for SHA-512 and SHA-384, whose words are 64 bits and whose block is
-// 128 bytes. Each residue512_call_ function makes the calls of one shape,
-// so that every call sha512_hw.c makes to its compression function runs
-// once, and run_residue512_shape looks in the stack the calls left for two
-// 64-bit words in a row that are each one of the call's secret words. Those
-// are every value FIPS 180-4 §6.4.2 computes for a block of the padded
-// message, and the partial sums the instructions leave on the way to them:
+// What a host object's SHA-512 calls leave on the stack:
+// test/sha2_equiv_residue.h's check for SHA-512 and SHA-384, whose words
+// are 64 bits and whose block is 128 bytes. Each residue512_call_ function
+// makes the calls of one shape on the path residue512_path names, so that
+// every call the path makes to its compression function runs once. The
+// words a search looks for are every value FIPS 180-4 §6.4.2 computes for
+// a block of the padded message, and the partial sums the code leaves on
+// the way to them:
 //
 //   the 80 words of the block's message schedule (step 1), whose first 16
 //   are the block's bytes most significant byte first;
@@ -20,26 +20,40 @@
 //
 // A word of the first 16 that holds a byte of padding is public and is not
 // in the set, and neither is its sum with a constant, a word of either
-// initial value, or a word that is zero. Two 64-bit words in a row are as
-// many bits as the four 32-bit words the SHA-256 check asks for.
+// initial value, or a word that is zero. The first arm's set also leaves
+// out every value of the schedule that no byte of the message went into.
 //
-// Included by test/sha2_equiv_sha512.h only, on arm64. It uses
-// residue_copy, residue_snapshot and RESIDUE_BYTES of
-// test/sha2_equiv_residue.h.
+// sha512_hw.c keeps what it computes in one struct and wipes it, and
+// run_residue512_instructions requires no two of those words in a row in
+// the stack below a call: as many bits as the four 32-bit words the SHA-256
+// check asks for.
+//
+// sha512.c's first arm wipes the stack below each compression call, so
+// test/sha2_equiv_residue512_first_arm.h holds it to more: no one word, of
+// a set that also holds the two small sigma values of each schedule word,
+// and for each round the two large sigma values, Ch, Maj, T2 and a ^ b,
+// which sha512_compress_blocks.c carries from round to round.
+//
+// Included by test/sha2_equiv_sha512.h only. It uses residue_copy,
+// residue_snapshot and RESIDUE_BYTES of test/sha2_equiv_residue.h.
 #ifndef CH_SHA2_EQUIV_RESIDUE512_H
 #define CH_SHA2_EQUIV_RESIDUE512_H
 
 #define RESIDUE512_BLOCKS_MAX 4
-// The most words one block adds: 16 message words in two forms, two values
-// for each of the 64 schedule words after them, three sums and eight
-// working variables for each of 80 rounds, and the state.
-#define RESIDUE512_BLOCK_WORDS (2 * 16 + 2 * 64 + 80 * (3 + 8) + 8)
+// The most words one block adds: 16 message words in two forms, four values
+// for each of the 64 schedule words after them, three sums, six values and
+// eight working variables for each of 80 rounds, and the state.
+#define RESIDUE512_BLOCK_WORDS (2 * 16 + 4 * 64 + 80 * (3 + 6 + 8) + 8)
 
 static uint8_t residue512_data[RESIDUE512_BLOCKS_MAX * SHA512_BLOCK];
 static uint8_t residue512_digest[SHA512_LEN];
 static sha512 residue512_state;
 static uint64_t residue512_words[RESIDUE512_BLOCKS_MAX * RESIDUE512_BLOCK_WORDS];
 static size_t residue512_word_count;
+// The path the residue512_call_ functions call.
+static const path512 *residue512_path;
+// Whether the set holds the values the first arm's check adds.
+static int residue512_every_value;
 
 // FIPS 180-4 §4.2.3, §5.3.4 and §5.3.5, written out here apart from the
 // library's tables, so that a wrong word there is not read here too.
@@ -75,15 +89,15 @@ static const uint64_t residue512_initial[2][8] = {
 #define RESIDUE512_WHOLE_LEN ((size_t)(2 * SHA512_BLOCK))
 static __attribute__((noinline)) void residue512_call_whole_blocks(void) {
     sha384_init(&residue512_state);
-    sha512_update_hw(&residue512_state, residue512_data, RESIDUE512_WHOLE_LEN);
+    residue512_path->update(&residue512_state, residue512_data, RESIDUE512_WHOLE_LEN);
 }
 
 // The same two blocks in two updates: the second fills the block the first
 // left in the context, and the update hashes it there.
 static __attribute__((noinline)) void residue512_call_buffered_block(void) {
     sha384_init(&residue512_state);
-    sha512_update_hw(&residue512_state, residue512_data, 40);
-    sha512_update_hw(&residue512_state, residue512_data + 40, RESIDUE512_WHOLE_LEN - 40);
+    residue512_path->update(&residue512_state, residue512_data, 40);
+    residue512_path->update(&residue512_state, residue512_data + 40, RESIDUE512_WHOLE_LEN - 40);
 }
 
 // A SHA-384 final whose padding fits the pending block: one block of
@@ -91,27 +105,49 @@ static __attribute__((noinline)) void residue512_call_buffered_block(void) {
 #define RESIDUE512_FINAL_ONE_LEN ((size_t)(SHA512_BLOCK + 20))
 static __attribute__((noinline)) void residue512_call_final_one_block(void) {
     sha384_init(&residue512_state);
-    sha512_update_hw(&residue512_state, residue512_data, RESIDUE512_FINAL_ONE_LEN);
-    sha384_final_hw(&residue512_state, residue512_digest);
+    residue512_path->update(&residue512_state, residue512_data, RESIDUE512_FINAL_ONE_LEN);
+    residue512_path->final384(&residue512_state, residue512_digest);
 }
 
 // A SHA-512 final whose length does not fit the pending block: two blocks.
 #define RESIDUE512_FINAL_TWO_LEN ((size_t)(SHA512_BLOCK + 120))
 static __attribute__((noinline)) void residue512_call_final_two_blocks(void) {
     sha512_init(&residue512_state);
-    sha512_update_hw(&residue512_state, residue512_data, RESIDUE512_FINAL_TWO_LEN);
-    sha512_final_hw(&residue512_state, residue512_digest);
+    residue512_path->update(&residue512_state, residue512_data, RESIDUE512_FINAL_TWO_LEN);
+    residue512_path->final512(&residue512_state, residue512_digest);
 }
 
-// sha384_of_hw and sha512_of_hw, whose context is on their own frame.
+// The two calls that take a whole message, whose context is on their own
+// frame.
 #define RESIDUE512_OF_LEN ((size_t)(2 * SHA512_BLOCK + 22))
 static __attribute__((noinline)) void residue512_call_whole_message384(void) {
-    sha384_of_hw(residue512_data, RESIDUE512_OF_LEN, residue512_digest);
+    residue512_path->of384(residue512_data, RESIDUE512_OF_LEN, residue512_digest);
 }
 
 static __attribute__((noinline)) void residue512_call_whole_message512(void) {
-    sha512_of_hw(residue512_data, RESIDUE512_OF_LEN, residue512_digest);
+    residue512_path->of512(residue512_data, RESIDUE512_OF_LEN, residue512_digest);
 }
+
+// One shape: what a failure calls it, its calls, the bytes of
+// residue512_data they hash, the hash they run and whether they pad the
+// bytes.
+typedef struct {
+    const char *name;
+    void (*call)(void);
+    size_t n;
+    int is384;
+    int padded;
+} residue512_shape;
+
+static const residue512_shape residue512_shapes[] = {
+    {"an update of whole blocks", residue512_call_whole_blocks,     RESIDUE512_WHOLE_LEN,     1, 0},
+    {"an update of a held block", residue512_call_buffered_block,   RESIDUE512_WHOLE_LEN,     1, 0},
+    {"a final of one block",      residue512_call_final_one_block,  RESIDUE512_FINAL_ONE_LEN, 1, 1},
+    {"a final of two blocks",     residue512_call_final_two_blocks, RESIDUE512_FINAL_TWO_LEN, 0, 1},
+    {"SHA-384 of a message",      residue512_call_whole_message384, RESIDUE512_OF_LEN,        1, 1},
+    {"SHA-512 of a message",      residue512_call_whole_message512, RESIDUE512_OF_LEN,        0, 1},
+};
+#define RESIDUE512_SHAPES (sizeof residue512_shapes / sizeof residue512_shapes[0])
 
 static uint64_t residue512_rotate_right(uint64_t x, unsigned r) {
     return (x >> r) | (x << (64 - r));
@@ -132,18 +168,40 @@ static void residue512_add(uint64_t word) {
     residue512_words[residue512_word_count++] = word;
 }
 
+// residue512_add for a value the first arm's check alone looks for.
+static void residue512_add_value(uint64_t word) {
+    if (residue512_every_value) {
+        residue512_add(word);
+    }
+}
+
+// residue512_add for a value of the schedule past a block's first 16 words.
+// from_message says whether a byte of the message went into it. The first
+// arm's check fails on one word, so its set leaves out a value computed
+// from padding alone: the bit length a message ends with is public, and a
+// function that held it in a register writes it where it saves the
+// register.
+static void residue512_add_scheduled(uint64_t word, int from_message) {
+    if (from_message || !residue512_every_value) {
+        residue512_add(word);
+    }
+}
+
 // The 80 words of the message schedule of the block at p (FIPS 180-4
-// §6.4.2 step 1), into w. It adds to residue512_words each word past the
+// §6.4.2 step 1), into w, and into from_message whether a byte of the
+// message went into each. It adds to residue512_words each word past the
 // first 16 and the sum before it. message_words is how many of the first
 // 16 hold eight bytes of the message: it adds each of those, and the same
 // eight bytes as memory holds them.
-static void residue512_schedule(const uint8_t *p, size_t message_words, uint64_t w[80]) {
+static void residue512_schedule(const uint8_t *p, size_t message_words, uint64_t w[80],
+                                int from_message[80]) {
     for (size_t i = 0; i < 16; i++) {
         uint64_t word = 0;
         for (size_t j = 0; j < 8; j++) {
             word = (word << 8) | p[8 * i + j];
         }
         w[i] = word;
+        from_message[i] = i < message_words;
         if (i < message_words) {
             uint64_t as_stored = 0;
             memcpy(&as_stored, p + 8 * i, sizeof as_stored);
@@ -156,9 +214,17 @@ static void residue512_schedule(const uint8_t *p, size_t message_words, uint64_t
                       residue512_rotate_right(w[i - 15], 8) ^ (w[i - 15] >> 7);
         uint64_t s1 = residue512_rotate_right(w[i - 2], 19) ^
                       residue512_rotate_right(w[i - 2], 61) ^ (w[i - 2] >> 6);
-        residue512_add(w[i - 16] + s0);
+        from_message[i] =
+            from_message[i - 16] | from_message[i - 15] | from_message[i - 7] | from_message[i - 2];
+        if (from_message[i - 15]) {
+            residue512_add_value(s0);
+        }
+        if (from_message[i - 2]) {
+            residue512_add_value(s1);
+        }
+        residue512_add_scheduled(w[i - 16] + s0, from_message[i - 16] | from_message[i - 15]);
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-        residue512_add(w[i]);
+        residue512_add_scheduled(w[i], from_message[i]);
     }
 }
 
@@ -167,12 +233,14 @@ static void residue512_schedule(const uint8_t *p, size_t message_words, uint64_t
 // round it adds to residue512_words the schedule word plus its constant,
 // but for a word of padding among the first 16, that sum plus h, T1, and
 // the eight working variables after the round; then it adds the state.
-static void residue512_rounds(uint64_t h[8], const uint64_t w[80], size_t message_words) {
+static void residue512_rounds(uint64_t h[8], const uint64_t w[80], const int from_message[80]) {
     uint64_t v[8];
     memcpy(v, h, sizeof v);
     for (size_t t = 0; t < 80; t++) {
         uint64_t with_constant = w[t] + residue512_constants[t];
-        if (t >= 16 || t < message_words) {
+        if (t >= 16) {
+            residue512_add_scheduled(with_constant, from_message[t]);
+        } else if (from_message[t]) {
             residue512_add(with_constant);
         }
         uint64_t s1 = residue512_rotate_right(v[4], 14) ^ residue512_rotate_right(v[4], 18) ^
@@ -184,6 +252,12 @@ static void residue512_rounds(uint64_t h[8], const uint64_t w[80], size_t messag
         uint64_t maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
         residue512_add(v[7] + with_constant);
         residue512_add(t1);
+        residue512_add_value(s1);
+        residue512_add_value(ch);
+        residue512_add_value(s0);
+        residue512_add_value(maj);
+        residue512_add_value(s0 + maj);
+        residue512_add_value(v[0] ^ v[1]);
         memmove(&v[1], &v[0], 7 * sizeof v[0]);
         v[4] += t1;
         v[0] = t1 + s0 + maj;
@@ -217,8 +291,8 @@ static size_t residue512_blocks(size_t n, int padded, uint8_t blocks[sizeof resi
 
 // The secret words of a call over the n bytes at residue512_data, into
 // residue512_words, and whether the state this file computed for them is
-// the one sha512.c computes. is384 names the initial value the call began
-// from.
+// the one sha512.c's second arm computes. is384 names the initial value
+// the call began from.
 static int residue512_secret_words(int is384, size_t n, int padded) {
     static uint8_t blocks[sizeof residue512_data];
     size_t count = residue512_blocks(n, padded, blocks);
@@ -235,9 +309,10 @@ static int residue512_secret_words(int is384, size_t n, int padded) {
             message_words = whole_words - 16 * block;
         }
         uint64_t w[80];
-        residue512_schedule(p, message_words, w);
-        residue512_rounds(h, w, message_words);
-        sha512_update(&s, p, SHA512_BLOCK);
+        int from_message[80];
+        residue512_schedule(p, message_words, w, from_message);
+        residue512_rounds(h, w, from_message);
+        sha512_update_portable(&s, p, SHA512_BLOCK);
     }
     return memcmp(h, s.h, sizeof h) == 0;
 }
@@ -251,61 +326,54 @@ static int residue512_is_secret(uint64_t word) {
     return 0;
 }
 
-// Whether the copy holds two secret words in a row at the byte offset at.
-static int residue512_holds_at(size_t at) {
-    for (size_t i = 0; i < 2; i++) {
-        uint64_t word = 0;
-        memcpy(&word, &residue_copy[at + 8 * i], sizeof word);
-        if (!residue512_is_secret(word)) {
-            return 0;
-        }
-    }
-    return 1;
+// Whether copy holds a secret word at the byte offset at.
+static int residue512_word_at(const uint8_t *copy, size_t at) {
+    uint64_t word = 0;
+    memcpy(&word, &copy[at], sizeof word);
+    return residue512_is_secret(word);
 }
 
-// One shape: its calls over n random bytes, then the search of the stack
-// they left.
-static void run_residue512_shape(const char *shape, void (*call)(void), int is384, size_t n,
-                                 int padded) {
+#include "sha2_equiv_residue512_first_arm.h"
+
+#ifdef __aarch64__
+// One shape on sha512_hw.c: its calls over n random bytes, then the search
+// of the stack they left for two secret words in a row.
+static void run_residue512_shape(const residue512_shape *shape) {
     rng_fill(residue512_data, sizeof residue512_data);
-    call();
+    shape->call();
     residue_snapshot();
     compared++;
-    if (!residue512_secret_words(is384, n, padded)) {
-        report("residue", "this file's SHA-512 and sha512.c's disagree", n, 0, 0, 0);
+    if (!residue512_secret_words(shape->is384, shape->n, shape->padded)) {
+        report("residue", "this file's SHA-512 and sha512.c's disagree", shape->n, 0, 0, 0);
         return;
     }
     for (size_t at = 0; at + 16 <= RESIDUE_BYTES; at++) {
-        if (residue512_holds_at(at)) {
+        if (residue512_word_at(residue_copy, at) && residue512_word_at(residue_copy, at + 8)) {
             failures++;
             (void)fprintf(stderr,
-                          "sha2 equivalence: residue: after %s, the stack below the call holds "
-                          "two words in a row that the call computed from its input, %zu bytes "
-                          "into the copy\n",
-                          shape, at);
+                          "sha2 equivalence: residue: after %s on sha512_hw.c, the stack below the "
+                          "call holds two words in a row that the call computed from its input, "
+                          "%zu bytes into the copy\n",
+                          shape->name, at);
             return;
         }
     }
 }
 
-// The six shapes, in a binary whose stack the search can read, as
-// run_residue runs SHA-256's (test/stack_residue.c).
-static void run_residue512(void) {
+// The six shapes on sha512_hw.c, in a binary whose stack the search can
+// read, as run_residue runs SHA-256's (test/stack_residue.c).
+static void run_residue512_instructions(void) {
     const char *unsearched = stack_residue_unsearched();
     if (unsearched != NULL) {
         (void)printf("SKIP sha2 equivalence, the SHA-512 stack check: %s\n", unsearched);
         return;
     }
-    run_residue512_shape("a SHA-384 update over whole blocks", residue512_call_whole_blocks, 1,
-                         RESIDUE512_WHOLE_LEN, 0);
-    run_residue512_shape("a SHA-384 update that fills a buffered block",
-                         residue512_call_buffered_block, 1, RESIDUE512_WHOLE_LEN, 0);
-    run_residue512_shape("a SHA-384 final with one block of padding",
-                         residue512_call_final_one_block, 1, RESIDUE512_FINAL_ONE_LEN, 1);
-    run_residue512_shape("a SHA-512 final with two blocks of padding",
-                         residue512_call_final_two_blocks, 0, RESIDUE512_FINAL_TWO_LEN, 1);
-    run_residue512_shape("sha384_of_hw", residue512_call_whole_message384, 1, RESIDUE512_OF_LEN, 1);
-    run_residue512_shape("sha512_of_hw", residue512_call_whole_message512, 0, RESIDUE512_OF_LEN, 1);
+    residue512_path = &PATH512_INSTRUCTIONS;
+    residue512_every_value = 0;
+    for (size_t i = 0; i < RESIDUE512_SHAPES; i++) {
+        run_residue512_shape(&residue512_shapes[i]);
+    }
 }
+#endif
 
 #endif

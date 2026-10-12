@@ -6,9 +6,14 @@
 // object's hash sources, so sha256_update is the portable call and
 // sha256_update_hw the one on the instructions, and it calls each by name:
 // no ch_cfg.cpu value picks between them here. bin/hash_runtime_test holds
-// the entries that pick. On arm64 the binary then holds sha512_hw.c to
-// sha512.c the same way, for SHA-384 and SHA-512
-// (test/sha2_equiv_sha512.h).
+// the entries that pick.
+//
+// The binary holds a host object's SHA-512 and SHA-384 the same way
+// (test/sha2_equiv_sha512.h). There the reference is sha512.c's second arm
+// over sha512_compress.c, which test/sha512_portable.c compiles under
+// second names, and two paths are held to it: sha512.c's first arm over
+// sha512_compress_blocks.c, the plain C every session runs, on every
+// machine (docs/decisions.md 127), and on arm64 sha512_hw.c.
 //
 // Every case hashes the message on the portable path in one call. It then
 // hashes a copy in three updates and a final, each on the path one bit of
@@ -44,8 +49,9 @@
 // both answer the published standard directly and not only through each
 // other.
 //
-// On a CPU without the SHA-256 instructions the binary skips, and on one
-// without the SHA-512 instructions it skips that half. Under
+// The cases of sha512.c's first arm run on every CPU. On a CPU without the
+// SHA-256 instructions the binary skips every case of the instructions,
+// and on one without the SHA-512 instructions it skips sha512_hw.c's. Under
 // CH_REQUIRE_HASH_INSTRUCTIONS=1 it fails instead
 // (test/hash_instructions_cpu.h).
 #include <stdio.h>
@@ -275,21 +281,23 @@ static void run_empty(void) {
 
 #include "sha2_equiv_copies.h"
 #include "sha2_equiv_residue.h"
-#ifdef __aarch64__
 #include "sha2_equiv_sha512.h"
-#endif
 
-int main(void) {
+// Every case that runs a hash instruction, on a CPU with the SHA-256
+// instructions. On one without them the cases skip, or fail where the
+// environment requires the instructions.
+static void run_instructions(void) {
     if (!cpu_has_sha256_instructions()) {
         if (hash_instructions_required()) {
+            failures++;
             (void)fprintf(stderr, "sha2 equivalence: this CPU lacks the SHA-256 instructions, and "
                                   "CH_REQUIRE_HASH_INSTRUCTIONS is 1\n");
-            return 1;
+            return;
         }
-        (void)printf("SKIP sha2 equivalence: this CPU lacks the SHA-256 instructions\n");
-        return 0;
+        (void)printf("SKIP sha2 equivalence, the hash instructions: this CPU lacks the SHA-256 "
+                     "instructions\n");
+        return;
     }
-    uint64_t seed = rng_seed_from_env();
     run_every_length();
     run_extremes();
     run_random();
@@ -298,8 +306,14 @@ int main(void) {
     run_copies();
     run_residue();
 #ifdef __aarch64__
-    run_sha512();
+    run_sha512_instructions();
 #endif
+}
+
+int main(void) {
+    uint64_t seed = rng_seed_from_env();
+    run_sha512_first_arm();
+    run_instructions();
     if (failures != 0) {
         (void)fprintf(stderr, "sha2 equivalence: %d failure(s), seed 0x%016llx\n", failures,
                       (unsigned long long)seed);

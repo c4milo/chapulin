@@ -627,6 +627,42 @@ launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1
 # 0.5 s / 24 MB, 259 properties; sha512 536 s / 2.0 GB, 417 properties.
 launch fast full sha512_compress 3 "main.0:9,fill_nondet.0:129,sha512_compress.0:17,sha512_compress.1:65,sha512_compress.2:81,load_be64.0:9"
 launch slow:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update.1:3,sha512_update.2:130,sha512_final.0:9,sha384_final.0:7,sha512_compress.0:9,store_be64.0:9,finalize.0:130,finalize.1:130"
+# SHA-512 as a host object runs it (docs/decisions.md 127): sha512.c's
+# first arm over sha512_compress_blocks.c, which the lines above do not
+# compile. It splits the same way, the framing over a stubbed compression
+# and the compression alone, and the compression's value splits once
+# more, because the whole function against sha512_compress in one formula
+# returned no verdict in nine minutes at 1.4 GB.
+# sha512_compress_blocks runs the function over any state and zero, one
+# and two blocks, each on an array of exactly that many, for its memory
+# accesses. sha512_compress_blocks_steps proves four of its five steps
+# against FIPS 180-4's own forms over every input: the four sigma
+# functions, Ch and Maj, the ring's next word at each of sixteen indices
+# and eight renamed rounds. sha512_compress_blocks_advancing proves the
+# fifth, eight rounds that each replace a ring word first, at both
+# indices the file calls it with. sha512_host runs the first arm's
+# framing: an update from any context over an input of up to 320 bytes,
+# both finals from any context, and both whole-message calls, with the
+# compression a contract that sha512_compress_blocks discharges. A first
+# shape of it, one message in two chunks on a stack array, passed 6 GB
+# with no verdict; a heap input of exactly its length and a fresh context
+# for each call took the formula from 14.0 to 7.7 million clauses.
+# The loop bounds: havoc_state's eight words, fill_nondet's two blocks,
+# the compression's four passes of sixteen rounds and two blocks, the
+# steps' eight and sixteen words, and in sha512_host the context's eight
+# words and its 128-byte block, the stub's eight words, the digest's
+# eight, and the 512 bytes ct_wipe clears below a compression call, which
+# also bounds the 208 of a context.
+# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 through this script on
+# an M1 Pro at a load average of 10 to 40): sha512_compress_blocks 1563
+# properties, 4 s, 82 MB; sha512_compress_blocks_steps 1946 properties,
+# 44 s, 271 MB; sha512_compress_blocks_advancing 1940 properties, 30 s,
+# 424 MB; sha512_host 589 properties, 41 to 72 s and a 2.6 to 3.0 GB
+# peak over its runs, which is why its weight is 4.
+launch fast full sha512_compress_blocks 2 "havoc_state.0:9,fill_nondet.0:257,sha512_compress_blocks.0:5,sha512_compress_blocks.1:3" -DCH_CPU_RUNTIME
+launch fast full sha512_compress_blocks_steps 2 "prove_next_word.0:17,prove_eight_rounds.0:9,prove_eight_rounds.1:9" -DCH_CPU_RUNTIME
+launch fast full sha512_compress_blocks_advancing 2 "main.0:9,main.1:17,main.2:9,main.3:17" -DCH_CPU_RUNTIME
+launch fast:4 full sha512_host 2 "havoc_context.0:9,fill_nondet.0:129,ct_wipe.0:513,sha512_compress_blocks.0:9,store_digest.0:9" proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # sha3.c moves bytes between a message and the lanes in block_xor and
 # block_bytes, three loops each: bytes up to a lane's first byte (at most
 # 7), whole lanes (a block's 21 at most, 4 in sha3_stream's 32-byte

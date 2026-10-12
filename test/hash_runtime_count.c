@@ -1,9 +1,11 @@
 // A host object's SHA-256 and SHA-512 entries for bin/hash_runtime_test,
-// each a count and a call to the portable code
+// each a count and a call to sha256.c's or sha512.c's code
 // (test/hash_runtime_count.h). The entries of sha256_hw.c and sha512_hw.c
-// compute the digests the portable ones compute, under the same contracts,
+// compute the digests those two files compute, under the same contracts,
 // so a caller sees what it would see from the instructions, and the binary
-// holds none.
+// holds none. sha512.c compiles here as a host object compiles it, to its
+// first arm, whose calls to sha512_compress_blocks
+// test/hash_runtime_compress_count.c counts.
 //
 // sha256.c and sha512.c compile here under second names for their calls
 // that hash, so this file can define the library's names as the counted
@@ -45,7 +47,7 @@ void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]);
 
 hash_calls sha256_portable_calls;
 hash_calls sha256_hw_calls;
-hash_calls sha512_portable_calls;
+hash_calls sha512_c_calls;
 hash_calls sha512_hw_calls;
 
 void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
@@ -79,27 +81,27 @@ void sha256_of_hw(const uint8_t *in, size_t n, uint8_t out[SHA256_LEN]) {
 }
 
 void sha512_update(sha512 *s, const uint8_t *in, size_t n) {
-    sha512_portable_calls.updates++;
+    sha512_c_calls.updates++;
     sha512_update_uncounted(s, in, n);
 }
 
 void sha512_final(sha512 *s, uint8_t out[SHA512_LEN]) {
-    sha512_portable_calls.finals++;
+    sha512_c_calls.finals++;
     sha512_final_uncounted(s, out);
 }
 
 void sha384_final(sha512 *s, uint8_t out[SHA384_LEN]) {
-    sha512_portable_calls.finals++;
+    sha512_c_calls.finals++;
     sha384_final_uncounted(s, out);
 }
 
 void sha512_of(const uint8_t *in, size_t n, uint8_t out[SHA512_LEN]) {
-    sha512_portable_calls.whole_messages++;
+    sha512_c_calls.whole_messages++;
     sha512_of_uncounted(in, n, out);
 }
 
 void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
-    sha512_portable_calls.whole_messages++;
+    sha512_c_calls.whole_messages++;
     sha384_of_uncounted(in, n, out);
 }
 

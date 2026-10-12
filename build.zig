@@ -533,6 +533,10 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     // P-384's 64-bit field, points and verifier, which p384.c calls in a
     // host object, in every session (docs/decisions.md 97).
     if (host and contains(lib_srcs, "p384.c")) lib_srcs = concat(b, &.{ lib_srcs, &p384_wide_srcs });
+    // sha512_host_of: the SHA-512 compression function over whole blocks in
+    // plain C, which sha512.c's first arm calls in a host object, in every
+    // session, in sha512_compress.c's place (docs/decisions.md 127).
+    if (host and contains(lib_srcs, "sha512.c")) lib_srcs = concat(b, &.{ without(b, lib_srcs, &.{"sha512_compress.c"}), &.{"sha512_compress_blocks.c"} });
     // RSA_MONT64_SRCS: the 64-bit Montgomery arithmetic rsa_mont.c calls
     // in a host object, for the public operation of both RSA verifiers in
     // every session (docs/decisions.md 95), its blocks of four words

@@ -23,9 +23,10 @@
 #     attribute and write them for plain C, and the SHA-512 bit states
 #     nothing about them;
 #   - for both targets, a host object's sha256.c, sha512.c,
-#     sha512_compress.c, hkdf.c, keysched.c, hkdf_hw.c and keysched_hw.c
-#     hold no SHA-256 and no SHA-512 instruction, sha256_hw.c no SHA-512
-#     one and sha512_hw.c no SHA-256 one;
+#     sha512_compress_blocks.c, hkdf.c, keysched.c, hkdf_hw.c and
+#     keysched_hw.c, and sha512_compress.c under the same define, hold no
+#     SHA-256 and no SHA-512 instruction, sha256_hw.c no SHA-512 one and
+#     sha512_hw.c no SHA-256 one;
 #   - for both targets, the copies call the hash on the instructions and
 #     the files under their own names the portable one: hkdf_hw.c names
 #     sha256_update_hw, sha256_final_hw and sha256_of_hw and none of
@@ -194,7 +195,8 @@ for target in "$x86" "$arm64"; do
         holds_sha512 && fail "sha512_hw.c for $target holds a SHA-512 instruction"
     fi
 
-    for src in sha256.c sha512.c sha512_compress.c hkdf.c keysched.c hkdf_hw.c keysched_hw.c; do
+    for src in sha256.c sha512.c sha512_compress.c sha512_compress_blocks.c hkdf.c keysched.c hkdf_hw.c \
+        keysched_hw.c; do
         cross_object "$target" "$src"
         if holds_sha256 || holds_sha512; then
             fail "$src for $target holds a hash instruction; only sha256_hw.c and sha512_hw.c may"

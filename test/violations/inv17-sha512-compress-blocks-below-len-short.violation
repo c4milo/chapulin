@@ -1,0 +1,15 @@
+invariant: INV-17
+file: sha512_compress_blocks.h
+catches: sha2_equiv_test
+reason: SHA512_COMPRESS_BLOCKS_BELOW_LEN, the bytes of stack sha512.c wipes
+  below each compression call, is 64, less than the frame
+  sha512_compress_blocks writes, so the wipe runs and still leaves the
+  message schedule's words where they lay. Every digest is right.
+  bin/sha2_equiv_test measures how far below its caller the function
+  writes and requires that inside the length, and then requires no word a
+  call computed in the stack below it.
+
+--- old
+#define SHA512_COMPRESS_BLOCKS_BELOW_LEN 512
+--- new
+#define SHA512_COMPRESS_BLOCKS_BELOW_LEN 64

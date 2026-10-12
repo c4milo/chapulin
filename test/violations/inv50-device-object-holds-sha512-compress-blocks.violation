@@ -1,0 +1,19 @@
+invariant: INV-50
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile puts sha512_compress_blocks.c in sha512_compress.c's
+  place in every object that holds sha512.c, a device object among them.
+  The file's body sits behind -DCH_CPU_RUNTIME, so a device object
+  compiles it to nothing, and its sha512.c, which compiles the second
+  arm there, calls a compression function no source in the object
+  defines. A linker would refuse the image, but a linker is not the check:
+  it names a missing symbol, not the build that lost its source. The lint
+  reads the packaged source list per build, and its device row with the
+  suites requires sha512_compress.c and bans sha512_compress_blocks.c.
+
+--- old
+ifneq ($(CPU_RUNTIME_DEF),)
+LIB_SRCS := $(call sha512_host_of,$(LIB_SRCS))
+endif
+--- new
+LIB_SRCS := $(call sha512_host_of,$(LIB_SRCS))

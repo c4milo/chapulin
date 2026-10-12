@@ -353,7 +353,8 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "p384_test_host", "rsa_equiv_test", "rsa_blocks_equiv_test",
                 "rsa_ifma_model_test", "rsa_ifma_model_test_384", "rsa_sign_equiv_test",
                 "rsa_sign_test_host",
-                "quic_test_extern"}
+                "quic_test_extern",
+                "sha2_equiv_test", "hash_runtime_test", "sha512_test_host", "hkdf384_test_host"}
 
 
 def catches_of(name):

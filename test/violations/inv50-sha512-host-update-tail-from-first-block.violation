@@ -1,0 +1,20 @@
+invariant: INV-50
+file: sha512.c
+catches: hkdf384_test_host
+reason: after a host object's sha512_update compresses an input's whole
+  blocks where the caller holds them, it copies the bytes left from the
+  input's start and not from past those blocks. An update of less than a
+  block, or of whole blocks alone, is right, so the short published
+  vectors pass. An update of a block and more hashes its first bytes a
+  second time in place of its last. bin/hkdf384_test_host runs RFC
+  4231's HMAC-SHA-384 cases on that path, among them the two with a
+  131-byte key, which HMAC hashes in one call, and the one with a
+  152-byte message, and they fail.
+
+--- old
+        compress_blocks(s->h, in, whole);
+        in += whole * SHA512_BLOCK;
+        n -= whole * SHA512_BLOCK;
+--- new
+        compress_blocks(s->h, in, whole);
+        n -= whole * SHA512_BLOCK;

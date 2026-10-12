@@ -1,0 +1,28 @@
+invariant: INV-50
+file: sha512.c
+catches: hash_runtime_test
+reason: sha512.c picks its first arm on a macro no build defines, so a host
+  object compiles the second arm, a device object's, and every SHA-384
+  call that no kernel takes compresses on sha512_compress.c's function.
+  Every digest is right, because that function is the reference, so no
+  vector, no equivalence case and no proof sees it; only the time is
+  wrong, by the factor docs/decisions.md 127 measures, and the stack
+  below each call is no longer wiped. The design refuses a silent fall
+  back: a host object is a statement about what the object contains.
+  bin/hash_runtime_test counts the calls into each compression function
+  and requires that the reference took none.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+
+#include <string.h>
+
+#include "ct.h"
+#include "sha512_compress_blocks.h"
+--- new
+#ifdef CH_SHA512_COMPRESS_BLOCKS
+
+#include <string.h>
+
+#include "ct.h"
+#include "sha512_compress_blocks.h"

@@ -1,0 +1,22 @@
+invariant: INV-19
+file: sha512_compress_blocks.c
+catches: test/lint-stack-webpki.sh
+reason: sha512_compress_blocks keeps an array of eighty words beside its
+  ring, the size of the reference's message schedule, and writes a state
+  word into it, so its frame is 640 bytes larger and passes the 512 bytes
+  of stack sha512.c wipes below each call of it
+  (SHA512_COMPRESS_BLOCKS_BELOW_LEN): the word stays in the dead frame.
+  Every digest is right, and the frame is far inside the budget every
+  other file of a host object holds. The file has a budget of its own,
+  STACK_BUDGET_SHA512_COMPRESS_BLOCKS, below that length, and the
+  frame-budget check of the TRUST=webpki object, a host object where the
+  compiler targets one, fails on it.
+
+--- old
+    uint64_t ring[16];
+    working_variables v;
+--- new
+    uint64_t ring[16];
+    volatile uint64_t schedule[80];
+    schedule[blocks % 80] = state[0];
+    working_variables v;

@@ -15,8 +15,9 @@
 // Every call in the two files runs the one hash its hash_len argument names, so a copy that
 // holds two hashes still runs each on its own bit alone: the entries pick a copy by the bit of
 // that hash (hkdf.h's hash_on_instructions). On x86-64 no object holds SHA-384 on instructions,
-// so there the copies' SHA-384 arms call sha512.c's portable code, and no entry calls a copy at
-// that hash length.
+// so there the copies' SHA-384 arms call sha512.c's calls under their own names, which every
+// session of a host object runs over sha512_compress_blocks.c (docs/decisions.md 127), and no
+// entry calls a copy at that hash length.
 //
 // Every name the copied files define outside their unit is here. A name left out is defined by
 // both copies, and the link of the object refuses it. sha256.h, sha512.h, hkdf.h and

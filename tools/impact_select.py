@@ -390,7 +390,8 @@ AES_RUNTIME_QEMU_FILES = {"test/aes-runtime-qemu.sh", "test/docker-aes-runtime-q
 
 # The sources test/hash-builds.sh compiles. hash_hw.h and keccak_hw.h,
 # which the copies include, are root headers and select every gate.
-HASH_BUILDS_SOURCES = {"sha256.c", "sha512.c", "sha512_compress.c", "hkdf.c", "keysched.c",
+HASH_BUILDS_SOURCES = {"sha256.c", "sha512.c", "sha512_compress.c", "sha512_compress_blocks.c",
+                       "hkdf.c", "keysched.c",
                        "sha256_hw.c", "sha512_hw.c", "hkdf_hw.c", "keysched_hw.c",
                        "sha3.c", "mlkem.c", "mlkem_poly.c", "mlkem_poly_native.c",
                        "sha3_hw.c", "mlkem_hw.c", "mlkem_poly_hw.c"}

@@ -1,0 +1,18 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: sha2_equiv_test
+reason: end_block leaves b ^ c as the last round wrote it, a ^ b of the
+  working variables before the state was added to them, so the first
+  round of the next block in the same call computes Maj from a stale
+  value. A call over one block is right, and so is every digest of a
+  message that never hands the function two blocks at once: HMAC's one
+  block a call, and FIPS 180-4's short vectors. A record's transcript and
+  a certificate are not. bin/sha2_equiv_test hands it two and more blocks
+  in one update, and those cases differ from the reference, whose
+  function takes one block a call.
+
+--- old
+    state[7] = v->h;
+    v->b_xor_c = v->b ^ v->c;
+--- new
+    state[7] = v->h;

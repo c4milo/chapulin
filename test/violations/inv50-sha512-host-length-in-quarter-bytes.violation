@@ -1,0 +1,22 @@
+invariant: INV-50
+file: sha512.c
+catches: test/wycheproof.sh
+reason: a host object's finalize writes the message's byte count times
+  four as the low word of the length where FIPS 180-4 §5.1.2 writes the
+  bit count, the byte count times eight. Every digest of a message that
+  is not empty is wrong, and every HMAC-SHA-384 and HKDF-SHA-384 output
+  with it. The device arm is untouched, so the Wycheproof test that
+  compiles a device object passes; the host one runs the HMAC-SHA-384
+  and HKDF-SHA-384 suites on sha512.c's first arm under each ch_cfg.cpu
+  value it takes, and their first valid case fails.
+
+--- old
+// big-endian integer, written into the pending block as the second arm's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = s->total_bytes >> 61;
+    uint64_t low = s->total_bytes << 3;
+--- new
+// big-endian integer, written into the pending block as the second arm's finalize writes it.
+static void finalize(sha512 *s) {
+    uint64_t high = s->total_bytes >> 61;
+    uint64_t low = s->total_bytes << 2;

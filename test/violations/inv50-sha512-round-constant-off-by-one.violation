@@ -1,0 +1,15 @@
+invariant: INV-50
+file: sha512_round_constants.h
+catches: sha2_equiv_test
+reason: the first of the eighty round constants a host object's two
+  compression functions read is one more than FIPS 180-4 §4.2.3's, so
+  every SHA-384 and SHA-512 digest a host object computes is wrong, on
+  sha512_compress_blocks.c and on sha512_hw.c alike, and it agrees with no
+  peer. sha512_compress.c, the reference, keeps its own table, so
+  bin/sha2_equiv_test's reference still computes FIPS 180-4, and the
+  first case of sha512.c's first arm differs from it, on every machine.
+
+--- old
+    0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
+--- new
+    0x428a2f98d728ae23, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,

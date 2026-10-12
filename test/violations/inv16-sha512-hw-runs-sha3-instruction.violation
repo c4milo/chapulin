@@ -14,7 +14,7 @@ reason: sha512_hw.c passes a round's words plus their constants through
   object.
 
 --- old
-    c->with_constants = vaddq_u64(current, vld1q_u64(&K[2 * pair]));
+    c->with_constants = vaddq_u64(current, vld1q_u64(&sha512_round_constants[2 * pair]));
 --- new
-    c->with_constants = veor3q_u64(vaddq_u64(current, vld1q_u64(&K[2 * pair])), kept(&c->ab_start),
-                                   kept(&c->ab_start));
+    c->with_constants = veor3q_u64(vaddq_u64(current, vld1q_u64(&sha512_round_constants[2 * pair])),
+                                   kept(&c->ab_start), kept(&c->ab_start));

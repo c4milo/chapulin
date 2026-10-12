@@ -1983,6 +1983,63 @@ last `ROLE=server` stub, as the entry said it would.
   mlkem-avx2`, two `test/docker-aes-runtime-qemu.sh x86-kernels`, and two
   `test/mlkem-builds.sh`.
 
+### INV-50 — a host object's SHA-512 gives the portable code's digests
+
+- **Claim.** `sha512.c`'s first arm over `sha512_compress_blocks.c`,
+  which a host object runs for SHA-512 and SHA-384 in every session and
+  for every call that takes no `ch_cfg.cpu`, writes for every message,
+  in any split, the context and the digest that the file's second arm
+  writes over `sha512_compress.c`. Those two stay the reference and a
+  device object's path, and no object holds both arms.
+- **Mechanism.** `sha512.c` picks its arm on `CH_CPU_RUNTIME` alone, in
+  one place, so an object compiles one set of the five calls that hash
+  under one set of names, and every caller calls it with no change:
+  `hkdf.c` and `keysched.c` under their own names, the transcript, the
+  two certificate hashes and `sha512.h`'s entries for a session without
+  the SHA-512 bit. The Makefile and `build.zig` put
+  `sha512_compress_blocks.c` in `sha512_compress.c`'s place in a host
+  object. The compression function is FIPS 180-4 §6.4.2 with its steps
+  written otherwise: a ring of sixteen schedule words, rounds that
+  rename the working variables, nested rotates, and Ch and Maj in three
+  operations each (decision 127). The path runs no branch and computes
+  no address from a word (INV-16), and it wipes the stack each
+  compression call used (INV-17).
+- **Check.** CBMC proves the framing and the compression function free
+  of out-of-bounds access and undefined behavior, and each of the
+  function's five steps equal to FIPS 180-4's own form over every input
+  (`sha512_host`, `sha512_compress_blocks`,
+  `sha512_compress_blocks_steps` and `sha512_compress_blocks_advancing`).
+  The composition of the steps is a test's: `bin/sha2_equiv_test` runs
+  124,481 cases of the first arm against the second on every machine,
+  over every length to 529 bytes at every cut below 258, both extremes
+  at each block boundary, 20,000 random cases, and up to 512 blocks in
+  one call. `bin/sha512_test_host` and `bin/hkdf384_test_host` run FIPS
+  180-4's vectors, RFC 6234's million-byte message, RFC 4231's
+  HMAC-SHA-384 cases and a TLS_AES_256_GCM_SHA384 key schedule on the
+  path, and the host Wycheproof test its HMAC-SHA-384 and HKDF-SHA-384
+  suites. `bin/hash_runtime_test` counts the calls into each compression
+  function and requires that the reference took none, and
+  `make lint-trust-separation` and `make lint-zig-build` hold each file
+  to its object (docs/verification.md, "SHA-512 in a host object").
+- **Violation.** A PR changes a round constant in the table the host
+  object's two compression functions read; reads the ring one place off
+  for `W[t - 7]`; loads one of a block's words twice; gives the two
+  halves of a pass each other's constants; leaves b ^ c stale between
+  two blocks of one call; takes the padding's second block one byte
+  early; joins Maj's two terms with OR; copies the bytes after an
+  update's whole blocks from its start; writes the length in the wrong
+  unit; turns a sigma function by the wrong count; names two working
+  variables in each other's roles; reads a byte past a block; hands the
+  compression function a block more than the input holds; picks the
+  first arm on a macro no build defines, so a host object runs the
+  reference; or packages `sha512_compress_blocks.c` in a device object.
+  The fifteen `inv50-*` violations are these. Six fail
+  `bin/sha2_equiv_test`, one each `bin/sha512_test_host`,
+  `bin/hkdf384_test_host` and the Wycheproof host test, four a proof,
+  one `bin/hash_runtime_test` and one `make lint-trust-separation`.
+  `inv36-zig-host-object-keeps-sha512-compress` leaves `build.zig`
+  without the file, and `make lint-zig-build` fails.
+
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a
@@ -3554,8 +3611,11 @@ last `ROLE=server` stub, as the entry said it would.
   decision 126 these two did too, and their counts were of code no host
   object held. The same decision gave them a host object's copies of
   the files the 32-bit specs compile (`WIDE64_HOST_COPIES`), from `ct.c`
-  to `sha512_compress.c`, which no spec had compiled for a 64-bit
-  target. The Makefile's comment above `WIDE64_SPECS` says how each
+  to `sha512.c`, which no spec had compiled for a 64-bit
+  target. A host object compiles `sha512_compress_blocks.c` where a
+  device object compiles `sha512_compress.c` (decision 127), so the
+  first is in `WIDE64_CEILING` and the second has no copy. The
+  Makefile's comment above `WIDE64_SPECS` says how each
   branch was read, by the instruction that sets its flags and where the
   values that instruction reads come from, and what each entry's
   branches read. They hold `x25519_wide.c`'s
@@ -3745,9 +3805,17 @@ last `ROLE=server` stub, as the entry said it would.
   four instructions beside FEAT_SHA512's, a compiler writes them for an
   exclusive OR in plain C, and the SHA-512 bit does not name them, so
   the file computes no exclusive OR and its object holds none of the
-  four. A call that takes no value runs the portable code in
-  every object, so a caller with no session's value runs no hash
-  instruction. Neither file reads a table with a secret index, and both
+  four. A call that takes no value runs no hash instruction in any
+  object: its SHA-256 runs `sha256.c` and its SHA-384 `sha512.c`. In a
+  host object `sha512.c` compresses on `sha512_compress_blocks.c`, plain
+  C that every session runs with no bit, because its operations are
+  64-bit adds, rotates, shifts and logic, it reads no table, and its
+  three conditional branches under each 64-bit spec, and the nine of
+  `sha512.c`'s first arm, test a length or a count (decision 127,
+  INV-50). `inv16-sha512-compress-blocks-store-branches-on-word` writes a
+  schedule word only where it differs from the word it replaces, and the
+  branch count catches it under both specs. Neither file on the
+  instructions reads a table with a secret index, and both
   branch on lengths alone: the two 64-bit specs hold `sha256_hw.c`'s
   conditional branches at 6 on arm64 and 10 on x86-64, `sha512_hw.c`'s
   at 17 on arm64 and 0 on x86-64, where it has no body, the HKDF copy's
@@ -4843,10 +4911,29 @@ last `ROLE=server` stub, as the entry said it would.
   `qemu-x86_64` or `qemu-aarch64`, the target its edit shows on. No
   violation drops `sha512_hw.c`'s volatile read: on arm64 neither
   compiler measured puts the state in a slot of its own without it.
+  A host object's `sha512.c` wipes more than a file of instructions can
+  name. `sha512_compress_blocks` keeps the sixteen words of its schedule
+  in its frame, beside whichever working variables its compiler wrote
+  to slots of its own, so `sha512.c`'s first arm wipes
+  `SHA512_COMPRESS_BLOCKS_BELOW_LEN` bytes of the stack below each call
+  of it, in `p256_wide_wipe.c`'s form, and its `sha384_of` and
+  `sha512_of` wipe the context they hash in (decision 127).
+  `bin/sha2_equiv_test` paints the stack below each of six kinds of
+  call, requires the function's frame inside the wiped length, and
+  requires no one 64-bit word that the call computed from its input in
+  the bytes it wrote (`test/sha2_equiv_residue512_first_arm.h`). Four
+  violations each undo one of those, and the binary catches each on
+  every machine: `inv17-sha512-host-stack-wipe-before-call` wipes before
+  the compression call, `inv17-sha512-compress-blocks-below-len-short`
+  wipes 64 bytes, and `inv17-sha384-host-whole-message-context-kept` and
+  `inv17-sha512-host-whole-message-context-kept` keep a context.
   `sha256.c`'s `compress` wipes neither its schedule array nor its
   working variables, `sha512_compress.c`'s the same, and `sha256_of`,
-  `sha384_of` and `sha512_of` do not wipe their contexts (`sha256.h`,
-  `sha512.h`); decision 93 leaves those files as they were.
+  and a device object's `sha384_of` and `sha512_of`, do not wipe their
+  contexts (`sha256.h`, `sha512.h`): decisions 93 and 127 leave that
+  code as it was. A device object with `SUITE=aesgcm` hashes HMAC keys
+  through it, and the same binary prints how many words it leaves, 76
+  to 86 after one `sha384_of` under the six compilers measured.
   `sha3_hw.c` keeps the 25 lanes of a state in registers from a
   message's first whole block to its last and writes them to the
   caller's state alone, and `sha3.c`'s `sha3_256` and `sha3_512`, which
@@ -4921,6 +5008,12 @@ last `ROLE=server` stub, as the entry said it would.
   clang 21 on arm64, and 4,544 and 6,016 with gcc 13.3 on x86-64), and
   its exponentiation a table of sixteen powers, each as long as a prime
   (3,408 and 4,496, and 3,328 and 4,416).
+  `sha512_compress_blocks.c`, which a host object alone holds, gets 384,
+  below every other budget: `sha512.c` wipes 512 bytes of the stack below
+  each call of its one function, so that frame has to lie inside them
+  (measured 224 with Apple clang 21 and clang 23 and 160 with gcc 13.3
+  on arm64, and 152 with clang 23 and 176 with gcc 13.3 on x86-64;
+  decision 127).
   ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
   in every build that carries them, `KEX=pq`, every `TRUST=webpki`
   object (decisions.md 53) and every server role (decisions.md 54):
@@ -4970,8 +5063,11 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:
   a 5,000-byte buffer in `p256_ecdsa_verify`, which an rsa mode filters
   out of every other object, so only the `TRUST=webpki` build compiles the
-  file and objects. A published peak can also read low when the walk
-  misses an edge. `inv19-stack-walk-first-instruction-jump` makes
+  file and objects. `inv19-sha512-compress-blocks-frame-past-wipe` puts
+  an array of eighty words in `sha512_compress_blocks`, whose frame then
+  passes the bytes `sha512.c` wipes below it, and the same check fails
+  at that file's own budget. A published peak can also read low when the
+  walk misses an edge. `inv19-stack-walk-first-instruction-jump` makes
   bench/stack.py read the placeholder target objdump prints on a branch
   at a function's first instruction, as it once did,
   `inv19-stack-walk-static-callee-global` drops every call to a static

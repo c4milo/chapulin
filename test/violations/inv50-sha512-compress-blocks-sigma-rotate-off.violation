@@ -1,0 +1,14 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: proof/prove-one.sh sha512_compress_blocks_steps
+reason: upper_sigma1's first nested rotate turns by 22 where 23 makes the
+  three rotates turn x by 41, 18 and 14, so the function is no longer
+  FIPS 180-4's equation 4.11 and every round's T1 is wrong. The steps
+  harness holds each of the four sigma functions to the standard's three
+  terms over every x, and its assertion "upper_sigma1 is equation 4.11"
+  fails.
+
+--- old
+    return rotate_right(rotate_right(rotate_right(x, 23) ^ x, 4) ^ x, 14);
+--- new
+    return rotate_right(rotate_right(rotate_right(x, 22) ^ x, 4) ^ x, 14);

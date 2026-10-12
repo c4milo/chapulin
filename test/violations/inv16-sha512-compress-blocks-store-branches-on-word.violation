@@ -1,0 +1,20 @@
+invariant: INV-16
+file: sha512_compress_blocks.c
+catches: test/lint-wide-multiply.sh
+reason: next_word writes a schedule word to the ring only where it differs
+  from the word it replaces, so whether W[t] equals W[t - 16] decides
+  which path runs, and under HMAC-SHA-384 both are computed from the key.
+  The value is the same and every digest is right. The multiply tokens
+  see nothing. The branch count does: the arm64 and the x86-64 spec each
+  emit more conditional branches in sha512_compress_blocks.c than the
+  three its ceiling records, which are the test for no block and the two
+  loops.
+
+--- old
+    ring[i] = word;
+    return word;
+--- new
+    if (word != kept(&ring[i])) {
+        ring[i] = word;
+    }
+    return word;

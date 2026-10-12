@@ -10265,3 +10265,313 @@ does nothing more.
       zero. It is a third count with a pattern for each instruction set,
       and what makes a test one of a value is a judgment a pattern only
       approximates.
+
+127. **Every host object hashes SHA-512 and SHA-384 on a compression
+    function in plain C that takes whole blocks.** TLS_AES_256_GCM_SHA384
+    hashes its transcript and runs its key schedule with SHA-384, and a
+    TRUST=webpki client hashes a chain's certificates and a
+    CertificateVerify's input with it. SHA-384 is SHA-512's compression
+    function from another initial value, and `sha512.c` computes both. No
+    x86-64 CPU this tree targets has SHA-512 instructions (decision 93).
+    So on x86-64 every one of those calls ran `sha512.c` over
+    `sha512_compress.c`, the code a device runs, and so did an arm64
+    session without `CH_CPU_CONSTANT_TIME_SHA512` and every call that
+    takes no `ch_cfg.cpu`. On an EPYC 7763 runner under gcc 13.3 that
+    code hashed 16 KiB with SHA-384 at 2.80 ns a byte where OpenSSL 3.6.4
+    took 1.34 (run 38155018361). A prototype on the branch
+    `proto/sha512-host-c` wrote the compression function about forty
+    ways in plain C and timed them on hosted runners in runs
+    38141466297, 38143151984, 38144061794 and 38145368988. Camilo ruled
+    on 2026-10-11: land the best of them for every session of a host
+    object, with no `ch_cfg.cpu` bit and no BMI2 build; wipe the stack
+    below its compression call in `p256_wide_wipe.c`'s form; leave
+    `sha512_compress.c` as it is, the reference; and leave an AVX2 kernel
+    under `CH_CPU_AVX2` to a later entry. This entry amends entry 93
+    where it says a call with no session's value, and a session without
+    the SHA-512 bit, run the portable code: in a host object they run
+    this code. It amends entry 126's list of the portable files a host
+    object also runs, which loses `sha512_compress.c`.
+
+    - **What changes.** `sha512.c` holds the five calls that hash in two
+      arms and picks one on `CH_CPU_RUNTIME` alone, as `p384.c` and
+      `rsa_mont.c` pick theirs. The second arm is the code that was
+      there, and a device object compiles it over `sha512_compress.c` as
+      before. A host object compiles the first arm, and the Makefile and
+      `build.zig` package `sha512_compress_blocks.c` in
+      `sha512_compress.c`'s place. Every caller calls the names it
+      called, so each runs the new code with no change of its own:
+      `hkdf.c` and `keysched.c` under their own names, the transcript,
+      `handshake_auth.c`, `webpki_sigalg.c`, and `sha512.h`'s `_cpu`
+      entries for a session without the SHA-512 bit. On arm64 a session
+      with the bit still runs `sha512_hw.c`.
+
+      `sha512_compress_blocks(state, p, blocks)` computes FIPS 180-4
+      §6.4.2 over `blocks` whole blocks. It differs from
+      `sha512_compress` in seven ways. One expression reads each word of
+      a block, which compiles to a load and a byte swap. The message
+      schedule is a ring of sixteen words, where the reference fills
+      eighty first. Each round from 16 on first replaces the ring word
+      it takes by the word sixteen after it. The rounds are written out
+      sixteen to a pass, and each call names the working variables by
+      the role they have in that round, as `sha512_hw.c`'s
+      `sixteen_rounds` does, so no value moves. Ch is
+      `g ^ (e & (f ^ g))`, and Maj is `b ^ ((a ^ b) & (b ^ c))` with
+      a ^ b kept for the next round, whose b ^ c it is. Each sigma
+      function is nested rotates, so a compiler without RORX copies its
+      operand once where the standard's three terms need three copies.
+      One call takes a count of blocks and reads the working variables
+      from the state once. The function reads each ring word and each
+      state word through a volatile pointer, `kept`, as `sha512_hw.c`
+      reads a field.
+
+      The first arm copies with `memcpy`, writes the length and the
+      digest as whole words, and hands an update's whole blocks to one
+      call. `sha512_round_constants.h` holds the eighty round constants
+      for this file and for `sha512_hw.c`, which held a copy of its own.
+      `sha512_compress.c` keeps its own table, so the reference reads no
+      table that the code held to it reads.
+    - **No bit.** The file runs 64-bit adds, rotates and shifts by
+      constants, and bitwise logic: the operations `sha512_compress.c`
+      runs in every object. It reads `sha512_round_constants` at indices
+      the round number fixes, and it branches on the block count alone.
+      `make lint-wide-multiply` holds its conditional branches at 3 and
+      the first arm's at 9 under the pinned clang for arm64 and for
+      x86-64, compiled hosted at `-O2` as entry 126 has the two 64-bit
+      specs compile. Each was read by instruction, as that entry reads a
+      branch. The function's three are the test for no block, the loop
+      over the blocks and the loop over the four groups of sixteen
+      rounds. The first arm's nine are `sha512_update`'s tests of the
+      byte count for zero, of the count of buffered bytes for zero, of
+      that count against a block and of the count of whole blocks for
+      zero; `finalize`'s test of where the padding ends; and two each in
+      `sha512_of` and `sha384_of`, into which clang compiles
+      `sha512_update` with no byte buffered. None reads a message byte, a
+      schedule word or a state word. Entry 126's `WIDE64_HOST_COPIES`
+      loses `sha512_compress.c`, which no host object compiles now, so it
+      lists eighteen files where that entry counts nineteen. Each spec
+      still holds 62 entries, because `sha512_compress_blocks.c` takes
+      the place of `sha512_compress.c@host`, and they hold 904 branches
+      on arm64 and 1,269 on x86-64. It uses no intrinsic and no
+      target attribute, so it runs on every CPU the object runs on. So a
+      caller has nothing to state, as for `rsa_mont64.c` and
+      `chacha20_vector.c`.
+    - **The stack.** Under SUITE=aesgcm the message is an HMAC key or a
+      traffic secret. The function keeps the ring's sixteen words in its
+      frame, and a compiler may write a working variable to a stack slot
+      of its own, which no `ct_wipe` can name. So `compress_blocks` in
+      the first arm calls the function and then calls `wipe_frame`
+      through a volatile function pointer, which wipes
+      `SHA512_COMPRESS_BLOCKS_BELOW_LEN`, 512, bytes of the stack below
+      it, and `sha512_of` and `sha384_of` wipe the context they hash in.
+      The function is a source of its own, so its frame lies below its
+      caller's. For arm64 it wrote 184 bytes below its caller under
+      Apple clang 21, 224 under gcc 13.3, and 192 under clang 18 and
+      under clang 23.1.2. For x86-64 it wrote 200 under gcc 13.3, and
+      264 under clang 18 and under clang 23.1.2. `make lint-stack` holds
+      its frame under 384 bytes. The volatile reads keep gcc and clang
+      for x86-64, which has fifteen registers for twenty-five words,
+      from holding a second copy of the ring and of the state in stack
+      slots of their own: without them the prototype's search found 39
+      words of a call's values in the dead frame under gcc and 44 under
+      clang, and with them the ring's 16.
+    - **What the second arm leaves.** The search of this entry also runs
+      on the second arm, which wipes nothing, and prints what it finds.
+      After `sha384_of` of a 278-byte message it found, of the words
+      that FIPS 180-4 computes from the message, 76 under Apple clang 21
+      for arm64 and 77 under gcc 13.3, clang 18 and clang 23.1.2 for
+      arm64, and for x86-64 86 under gcc 13.3, 85 under clang 18 and 84
+      under clang 23.1.2. `sha512_compress.h` said the file hashes
+      public data only. That holds for a TRUST=webpki device object. A
+      SUITE=aesgcm device object, which takes AES=extern, hashes HMAC
+      keys and the PSK with it. This entry corrects the comment and
+      changes no device code, and INV-17 states what the arm leaves.
+    - **Gain.** Run 38156872593 timed `sha384_of` of main's tree and of
+      this one in turn on twenty ubuntu-24.04 runners, under gcc 13.3 and
+      clang 23.1.2, with OpenSSL 3.6.4's `speed -evp sha384` in every
+      pass. A figure is the median of five passes, and a pass's figure
+      the median of 25 samples of at least 2 ms. Ten runners drew an
+      EPYC 7763, three an EPYC 9V45, one an EPYC 9V74, three a Xeon
+      Platinum 8370C and three a Xeon Platinum 8573C. The table shows one
+      runner of each model, and the ranges under it are over all twenty.
+      The 16 KiB rows are in ns a byte and the 64-byte rows in ns a
+      message, and the OpenSSL column is the gcc pass's.
+
+      | | gcc before | gcc after | clang before | clang after | OpenSSL |
+      | --- | --- | --- | --- | --- | --- |
+      | EPYC 7763, 16 KiB | 2.75 | 1.90 | 2.93 | 1.91 | 1.34 |
+      | EPYC 7763, 64 bytes | 403 | 292 | 524 | 263 | 333 |
+      | EPYC 9V74, 16 KiB | 2.40 | 1.66 | 2.44 | 1.66 | 1.15 |
+      | EPYC 9V74, 64 bytes | 338 | 237 | 372 | 229 | 247 |
+      | EPYC 9V45, 16 KiB | 2.20 | 1.15 | 1.91 | 1.16 | 0.84 |
+      | EPYC 9V45, 64 bytes | 307 | 164 | 263 | 162 | 182 |
+      | Xeon Platinum 8370C, 16 KiB | 2.93 | 1.96 | 2.64 | 1.93 | 1.56 |
+      | Xeon Platinum 8370C, 64 bytes | 439 | 301 | 517 | 273 | 362 |
+      | Xeon Platinum 8573C, 16 KiB | 2.84 | 1.86 | 2.53 | 1.82 | 1.53 |
+      | Xeon Platinum 8573C, 64 bytes | 430 | 277 | 520 | 247 | 344 |
+
+      Over 16 KiB this code takes 0.52 to 0.69 of main's time under gcc
+      and 0.60 to 0.73 under clang, and at 64 bytes 0.52 to 0.73 and 0.48
+      to 0.62. Beside OpenSSL it takes 1.21 to 1.44 times over 16 KiB
+      under gcc and 1.18 to 1.44 under clang, where main took 1.85 to
+      2.63 and 1.64 to 2.36. At 64 bytes it takes 0.80 to 0.96 of
+      OpenSSL's time under gcc and 0.72 to 0.92 under clang, where main
+      took 1.20 to 1.75 times and 1.41 to 1.58. `sha512_of` gave the
+      same figures within 4 percent.
+
+      Runs 38155018361 and 38155961504 timed bench/primitives.c's
+      `sha384` rows the same way on three EPYC 7763 runners, five EPYC
+      9V45 and two Xeon Platinum 8370C, as that file stood at 837b9fdb,
+      before 2a80e289 changed what a row consumes. There a row added
+      every byte of its digest into a volatile after the call, and
+      OpenSSL's figure has no such loop. Their 16 KiB rows on the EPYC
+      7763 and the Xeon 8370C agree with the table within 2 percent. Their
+      64-byte row holds that loop for both trees: on the EPYC 7763 it
+      reads 382 ns under gcc and 383 under clang where main's read 505
+      and 636, and on the Xeon 8370C 380 and 368 where main's read 496
+      and 540. Before they timed, the ten jobs of those two runs
+      ran `bin/sha2_equiv_test`, `bin/hash_runtime_test`,
+      `bin/hash_runtime_exporter_test`, `bin/sha512_test_host` and
+      `bin/hkdf384_test_host` under both compilers on the CPU they drew,
+      and every one passed. The table "chapulin beside OpenSSL" still
+      holds the rows a run before this entry recorded.
+    - **What each change is worth.** The prototype timed the six changes
+      it began with as one text, and that text with each change undone,
+      over 16 KiB under gcc 13.3 and clang 23.1.2. Each cell is the time
+      added by undoing one change, in percent, gcc then clang:
+
+      | change undone | EPYC 7763 | Xeon 8573C | EPYC 9V45 | EPYC 9V74 |
+      | --- | --- | --- | --- | --- |
+      | the reference's loop over a word's bytes | +26 / +4 | +37 / +4 | +18 / +6 | +24 / +6 |
+      | eighty schedule words first | +4 / +9 | +9 / +8 | +33 / +29 | +5 / +4 |
+      | rounds in a loop that moves the variables | +43 / +29 | +24 / +18 | +43 / +30 | +30 / +28 |
+      | the reference's Ch and Maj | 0 / -1 | +12 / +2 | +6 / +3 | +1 / -1 |
+      | one block a call | -1 / -2 | +2 / -1 | -1 / 0 | 0 / -2 |
+
+      The renamed rounds are worth the most under both compilers. The load
+      matters under gcc alone: gcc 13.3 compiles the reference's loop
+      over eight bytes to that loop, and clang 23 already compiles it to
+      a load and a byte swap. The count of blocks is worth nothing that
+      a 16 KiB timing shows. It stays because an update then makes one
+      call and one wipe for all its whole blocks, and because a kernel
+      that schedules two blocks at once takes the same arguments. Three
+      later changes made the text this entry lands. Replacing a ring
+      word in the round that takes it, where the six replaced sixteen
+      words and then ran sixteen rounds, took 5 to 7 percent off on the
+      three AMD CPUs. The nested rotates took 14 percent off under gcc
+      and 16 under clang on the Xeon 8573C, 5 and 3 on the EPYC 9V45, 2
+      and 5 on the Xeon 8370C, and 5 and 4 under clang on the EPYC 7763
+      and 9V74, and added 3 and 2 percent under gcc on those two. The
+      volatile reads changed gcc's time by under 1 percent and took 2 to
+      9 percent off clang's.
+    - **Beside OpenSSL's own code.** Every runner CPU here has AVX2 and
+      BMI2, so OpenSSL's `sha512-x86_64.pl` takes its AVX2 path: the
+      message schedule in 256-bit registers for two blocks at once, and
+      rounds on RORX and ANDN. Each job also timed OpenSSL with AVX and
+      AVX2 hidden from it through `OPENSSL_ia32cap`, where it runs its
+      scalar assembly. Over 16 KiB this code takes 0.99 to 1.01 times
+      that code's time under gcc and 0.97 to 1.04 under clang on the
+      twenty runners of run 38156872593. So plain C gets what scalar
+      instructions give, and the rest of the distance to OpenSSL over
+      16 KiB is the vector schedule, which needs a kernel under a bit:
+      the later entry.
+    - **arm64.** There a session without `CH_CPU_CONSTANT_TIME_SHA512`
+      runs this code, and so does every call that takes no value. The
+      same run timed it on three ubuntu-24.04-arm runners, each a
+      Neoverse-N2, and the three agree within 1 percent. `sha384_of`
+      over 16 KiB took 1.55 ns a byte under gcc 13.3 where main took
+      3.03, and 1.57 under clang 23.1.2 where main took 2.19. A 64-byte
+      message took 228 ns and 224 ns where main took 415 and 403. The
+      runner's own OpenSSL 3.0.13 runs the SHA-512 instructions on that
+      CPU, at 0.77 ns a byte and 229 ns, which is the code
+      `sha512_hw.c` stands beside and not this one. Each of the three
+      jobs first ran `bin/sha2_equiv_test` and `bin/hash_runtime_test`
+      under both compilers, and both passed.
+    - **What holds it.** CBMC reads this path, which it cannot do for a
+      file of intrinsics. Four harnesses prove the first arm's framing
+      and the function free of out-of-bounds access and undefined
+      behavior, and each of the function's five steps equal to FIPS
+      180-4's own form over every input: the four sigma functions, Ch
+      and Maj, the ring's next word at each of its sixteen indices,
+      eight renamed rounds, and eight rounds that each replace a ring
+      word first. The whole function against `sha512_compress` in one
+      formula returned no verdict in nine minutes at a 1.4 GB peak, so
+      that the steps in the order the function calls them compute the
+      reference's state rests on tests. `bin/sha2_equiv_test` runs
+      124,481 cases of the first arm against the second on every
+      machine, with contexts passed between the two arms at each call,
+      and it searches the stack: it requires the function's frame within
+      the wiped 512 bytes, and after six kinds of call it requires no
+      one 64-bit word the call computed from its message in the bytes
+      the call wrote. `test/sha512_portable.c` compiles the second arm
+      under second names for that binary. `bin/sha512_test_host` and
+      `bin/hkdf384_test_host` run FIPS 180-4's vectors, RFC 6234's
+      million-byte message, RFC 4231's HMAC-SHA-384 cases and a
+      TLS_AES_256_GCM_SHA384 key schedule on the path, and the host
+      Wycheproof binary runs its HMAC-SHA-384 and HKDF-SHA-384 suites on
+      it. `bin/hash_runtime_test` counts the calls into each compression
+      function and requires that `sha512_compress` took none, and
+      `make lint-trust-separation` and `make lint-zig-build` hold each
+      of the two files to its object.
+      Twenty-two violations each undo one rule, and its named check
+      catches each: fifteen under the new INV-50, four under INV-17, and
+      one each under INV-16, INV-19 and INV-36 (docs/verification.md,
+      "SHA-512 in a host object"). `make diff` keeps its SHA-384 rows on
+      the reference, which the Lean model's oracle is compared with: the
+      differential binary is a device object, and the spec does not
+      change.
+    - **Cost.** A second SHA-512 that an auditor reads:
+      `sha512_compress_blocks.c` holds 247 lines beside the reference's
+      81, and `sha512.c` holds 276 where it held 128. At `-O2` the
+      function and its constants take 5,692 bytes under gcc 13.3 for
+      x86-64 where `sha512_compress.c` takes 1,483, and 4,852 where it
+      takes 1,264 for arm64; under clang 18 they take 5,546 and 4,804
+      where it takes 1,233 and 1,136. A host object holds one of the
+      two files, so that difference is what its code grows by. Each
+      compression call is followed by a wipe of 512 bytes, and a 64-byte
+      message makes one such call. The four harnesses add 4, 44, 30 and
+      about 70 seconds to the fast proof tier as an M1 Pro ran them, the
+      last at a 2.6 to 3.0 GB peak. Registers still hold what the last
+      instruction left in them when a call returns, as after every wipe
+      written in C.
+    - **Where a kernel under a bit goes.** `compress_blocks` in the
+      first arm is the one place that arm calls a compression function,
+      and `sha512_compress_blocks`'s three arguments are what a kernel
+      takes. On x86-64 `sha512.h`'s `_cpu` entries run `sha512.c`'s
+      calls for every value, and `hash_hw.h` keeps its five SHA-512
+      renames to arm64. A kernel under `CH_CPU_AVX2` needs the branch
+      that arm64's entries have and those renames, over the first arm
+      compiled once more on the kernel.
+
+    Rejected:
+
+    - **A BMI2 build**, by the ruling. The prototype compiled this text
+      under `target("bmi,bmi2")` and measured no gain: 1.917 ns a byte
+      against 1.902 under gcc on the EPYC 7763, because the nested form
+      already copies an operand once. The three-term sigma text gains
+      from RORX, and under gcc it then ran 1 to 8 percent faster than
+      this text; under clang it ran from 3 percent faster to 4 percent
+      slower.
+    - **Changing `sha512_compress.c`.** A device runs it. This shape
+      takes about four times the code, and a device decision needs
+      bench/sram.sh and the instruction benches. The reference also
+      stays the 81 lines that CBMC proves in half a second and that the
+      differential reads.
+    - **The standard's three-term sigma functions.** The nested form
+      costs gcc 3 percent on the EPYC 7763 and 2 on the 9V74. It saves
+      gcc 14 percent on the Xeon 8573C, and it saves clang 3 to 16
+      percent on each of the five x86-64 CPUs the prototype timed. So
+      one text for every CPU takes the nested form.
+    - **A second set of five names in a file of its own**, the
+      prototype's `sha512_host.c`. The calls that take no `ch_cfg.cpu`
+      call `sha512.c`'s names: `hkdf.c` and `keysched.c` under their own
+      names, and the hashes in `handshake_auth.c` and `webpki_sigalg.c`.
+      Each would need a rename header or a choice of its own. One arm of
+      `sha512.c` gives every one of them the new code and leaves the
+      object one set of names.
+    - **Wiping the ring by name**, in place of the stack below the call.
+      In some of the prototype's variants clang 18 and clang 23 wrote up
+      to five working variables to slots of their own, which only a wipe
+      of the stack clears.
+    - **Two more shapes the prototype timed.** The next e written as a
+      sum of its own, to shorten the chain of adds, added 3 to 7
+      percent. Maj as `(a & (b | c)) | (b & c)` added 1 to 3 percent.

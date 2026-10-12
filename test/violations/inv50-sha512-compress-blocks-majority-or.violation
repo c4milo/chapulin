@@ -1,0 +1,15 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: sha512_test_host
+reason: majority joins a ^ b and b ^ c with OR where the three-operation
+  form of FIPS 180-4's equation 4.9 joins them with AND, so where a and b
+  differ it returns the complement of b whatever c is, every round's T2
+  is wrong, and so is every digest a host object computes under the
+  library's own names. bin/sha512_test_host runs FIPS 180-4's SHA-384 and
+  SHA-512 examples and RFC 6234's million-byte message on that path, and
+  the first vector fails.
+
+--- old
+    return b ^ (a_xor_b & b_xor_c);
+--- new
+    return b ^ (a_xor_b | b_xor_c);

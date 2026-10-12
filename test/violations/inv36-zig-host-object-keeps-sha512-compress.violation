@@ -1,0 +1,15 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig leaves sha512_compress.c in a host object that holds
+  sha512.c and adds no sha512_compress_blocks.c, where the Makefile puts
+  the second in the first's place (docs/decisions.md 127). The Zig
+  object's sha512.c then calls a compression function no source in it
+  defines. A relocatable object links with the call undefined, and the
+  localizer keeps the same exports, so only the comparison with make
+  print-lib-srcs objects.
+
+--- old
+    if (host and contains(lib_srcs, "sha512.c")) lib_srcs = concat(b, &.{ without(b, lib_srcs, &.{"sha512_compress.c"}), &.{"sha512_compress_blocks.c"} });
+--- new
+    if (host and contains(lib_srcs, "sha512_compress_blocks.c")) lib_srcs = concat(b, &.{ without(b, lib_srcs, &.{"sha512_compress.c"}), &.{"sha512_compress_blocks.c"} });

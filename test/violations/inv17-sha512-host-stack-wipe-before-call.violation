@@ -1,0 +1,19 @@
+invariant: INV-17
+file: sha512.c
+catches: sha2_equiv_test
+reason: a host object's compress_blocks wipes the stack below it before it
+  calls sha512_compress_blocks and not after, so that function's dead
+  frame keeps the last sixteen words of the last block's message
+  schedule, and whichever working variables its compiler wrote to slots
+  of its own. Under HMAC-SHA-384 the first block is the key, and the
+  schedule's words give back the block. Every digest is still right, so
+  no vector sees it. bin/sha2_equiv_test paints the stack, makes each
+  kind of call on sha512.c's first arm, and requires no word the call
+  computed in the bytes it wrote.
+
+--- old
+    sha512_compress_blocks(h, p, blocks);
+    wipe_frame_call();
+--- new
+    wipe_frame_call();
+    sha512_compress_blocks(h, p, blocks);

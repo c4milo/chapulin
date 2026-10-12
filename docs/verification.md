@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-101 of the 134 C sources in the tree root are compiled into a
+102 of the 135 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -69,7 +69,7 @@ The other 33 sources are in no such harness:
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
-| `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to `sha512.c`'s and `sha512_compress.c`'s proven code, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
+| `sha512_hw.c` | It runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics, and has no body on x86-64. | On arm64, `bin/sha2_equiv_test` holds it to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, on arm64 its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decision 93). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
@@ -231,6 +231,58 @@ The entries are grouped by area:
 - **Bound:** framing: messages ≤ 192 B, every fill state the padding
   path can see, since the fill is the length mod 128 and 0..192 covers
   all 128 residues. Compression: the full domain.
+
+#### sha512_host, sha512_compress_blocks
+
+- **Harnesses:** `sha512_host` (fast), `sha512_compress_blocks` (fast), `sha512_compress_blocks_steps` (fast), `sha512_compress_blocks_advancing` (fast)
+- **Build:** SHA-512 as a host object compiles it, under
+  `-DCH_CPU_RUNTIME`: `sha512.c`'s first arm, and
+  `sha512_compress_blocks.c`, which that arm compresses on in every
+  session (decision 127). The [sha512](#sha512) harnesses compile the
+  second arm, a device object's, and `sha512_compress.c`.
+- **Proves:**
+  - `sha512_host`: the first arm's framing is safe for both hashes, with
+    the compression function stubbed to its contract.
+    `sha512_update` runs from any context whose fill is below a block
+    and leaves it below a block, which is what lets each call start from
+    any such context; `sha512_final` and `sha384_final` run from any
+    such context; and `sha512_of` and `sha384_of` run whole, with the
+    wipe of their context. The wipe of the stack below each compression
+    call runs in every one. An update of no bytes takes a NULL pointer.
+  - `sha512_compress_blocks`: the compression function is safe over any
+    state and no block, one block and two, each on an array of exactly
+    that many blocks and the first on a NULL pointer, which discharges
+    that stub.
+  - `sha512_compress_blocks_steps`: over every input, each of the four
+    sigma functions, written as nested rotates, equals FIPS 180-4's
+    equations 4.10 to 4.13; `choice` and `majority` equal equations 4.8
+    and 4.9; `next_word` returns and writes §6.4.2 step 1's word at each
+    of the ring's sixteen indices; and `eight_rounds`, whose calls
+    rename the working variables, leaves what eight rounds of step 3
+    that move them leave, from any variables, words and constants.
+  - `sha512_compress_blocks_advancing`: over every input,
+    `eight_rounds_advancing` at each of the two indices the file calls
+    it with leaves the working variables and the ring that the
+    standard's eight steps leave.
+- **Bound:** framing: an input of up to 320 bytes, a heap object of
+  exactly its length, and any context whose fill is below a block. That
+  runs the padding from every fill, a chunk that fills the pending block
+  and then holds two whole blocks, and a tail. Compression: any state
+  and zero to two blocks. The steps: every input, 64-bit words
+  throughout.
+- **Not proved:** that `sha512_compress_blocks` writes the state
+  `sha512_compress` writes. The whole function against the reference in
+  one formula returned no verdict in nine minutes at a 1.4 GB peak, so
+  the proof is of the five steps, and the load of a block's words, the
+  order of the calls and the sum that ends a block rest on tests; see
+  [SHA-512 in a host object](#sha-512-in-a-host-object). The compression
+  harness's two blocks take the path from one block to the next once,
+  and the framing's stub asserts a count of one or two, the counts that
+  harness runs: a longer run of blocks repeats that path. Nor that the
+  wipe covers the frame the compression function used, which is the
+  compiler's layout and a test's to measure. CBMC reads the file's
+  volatile reads as plain reads, and the call of `wipe_frame` through a
+  volatile pointer as a call of the function it was initialized with.
 
 #### sha3
 
@@ -4440,6 +4492,166 @@ signature's check, rest on the caller's
 products and which `rsa_sign64.c`'s `use_ifma` requires beside
 `CH_CPU_AVX512_IFMA` (decision 120).
 
+### SHA-512 in a host object
+
+A host object hashes SHA-512 and SHA-384 on `sha512.c`'s first arm over
+`sha512_compress_blocks.c`, plain C with no intrinsic, in every session
+and for the calls that take no `ch_cfg.cpu` (decision 127). A device
+object compiles the same file's second arm over `sha512_compress.c`,
+which stays the reference. On arm64 a session whose value holds
+`CH_CPU_CONSTANT_TIME_SHA512` runs `sha512_hw.c`
+([The hash instructions](#the-hash-instructions)). The source picks its
+arm on `CH_CPU_RUNTIME` alone, so the two arms never meet in one object,
+and `test/sha512_portable.c` compiles the second arm under second names
+for the binaries that compare them.
+
+CBMC reads this path, which it cannot do for a file of intrinsics. The
+[sha512_host and sha512_compress_blocks](#sha512_host-sha512_compress_blocks)
+harnesses prove its memory accesses, and each of the compression
+function's five steps against FIPS 180-4's own form over every input.
+Three things rest on tests: that the steps, in the order the function
+calls them, compute the reference's state; which code a host object's
+calls run; and what a call leaves on the stack.
+
+**What the path computes** rests on these:
+
+- `bin/sha2_equiv_test`, in `make check`, runs 124,481 cases of the
+  first arm against the second on every machine, whatever instructions
+  its CPU has. Each hashes a message on the reference in one call, and a
+  copy of it in three updates and a final, each on the first arm where
+  its bit of the case's mask is set and on the reference where it is
+  clear, so a context passes between the two arms at each call. It
+  compares the two contexts before the final, then the digests, and the
+  digest of the call that takes a whole message. The inputs are every
+  length from 0 to 529 bytes cut at every offset below 258, messages of
+  all 0x00 and all 0xff at every length next to a block boundary, 20,000
+  random lengths up to 4,096 bytes with random cuts, alignments and
+  masks, 16,385 bytes and 64 KiB, which hand the compression function
+  up to 512 blocks in one call, and an update of no bytes from a NULL
+  pointer with the empty message's two digests. Each case runs as
+  SHA-384 or as SHA-512. The reference's compression function reads its
+  own table of round constants, so a wrong word in
+  `sha512_round_constants.h` fails here too.
+- `bin/sha512_test_host` and `bin/hkdf384_test_host` run under
+  `ch_cfg.cpu` 0x5 and 0x1 on both architectures, neither of which names
+  a SHA-512 instruction: FIPS 180-4's SHA-384 and SHA-512 vectors, RFC
+  6234's million-byte message, RFC 4231's HMAC-SHA-384 cases and a
+  TLS_AES_256_GCM_SHA384 key schedule on this path.
+- The Wycheproof host binary runs its HMAC-SHA-384 and HKDF-SHA-384
+  suites on this path under each value it takes but arm64's 0x67, and
+  the sanitizer lane's host binary runs them under AddressSanitizer and
+  UndefinedBehaviorSanitizer.
+- `bin/quic_loop_aes` and `bin/webpki_loop_aes` run whole handshakes
+  under AES-256-GCM, whose transcript and key schedule hash with
+  SHA-384: on this path at each end that states no SHA-512 bit, which on
+  x86-64 is both, and on arm64 against an end on `sha512_hw.c` where
+  the CPU has the instructions.
+- `make diff` keeps its SHA-384 rows on the reference, which is what the
+  Lean model's oracle is compared with: the differential binary is a
+  device object.
+
+**Which code a host object's calls run** rests on these:
+
+- `bin/hash_runtime_test` and `bin/hash_runtime_exporter_test`, in
+  `make check`, count the calls into `sha512.c`'s five entries and into
+  `sha512_hw.c`'s under 257 `ch_cfg.cpu` values
+  ([The hash instructions](#the-hash-instructions)). They link
+  `test/hash_runtime_compress_count.c` in place of both compression
+  functions, which counts the calls into each, and require that
+  `sha512_compress_blocks` took calls and `sha512_compress` none.
+- `make lint-trust-separation` requires `sha512_compress_blocks.c` and
+  no `sha512_compress.c` in each host object that holds `sha512.c`, and
+  the reverse in a device object, and `make lint-zig-build` requires
+  `build.zig` to package what the Makefile packages.
+- `make lint-wide-multiply` holds the conditional branches of
+  `sha512_compress_blocks.c` at 3 and of `sha512.c`'s first arm,
+  `sha512.c@host`, at 9 under the pinned clang for arm64 and for x86-64,
+  compiled hosted at `-O2` as a host object is. Each was read by the
+  instruction that sets its flags, and the Makefile's comment above
+  `WIDE64_SPECS` says what each reads: all test a length or a count. A
+  host object compiles no `sha512_compress.c`, so that file has no
+  `@host` entry in `WIDE64_HOST_COPIES`.
+
+**What a call leaves on the stack.** `sha512_compress_blocks` keeps the
+sixteen words of its message schedule in its frame and wipes nothing,
+and a compiler may write a working variable to a slot of its own beside
+them. So `sha512.c`'s first arm wipes
+`SHA512_COMPRESS_BLOCKS_BELOW_LEN`, 512, bytes of the stack below each
+call of it, in `p256_wide_wipe.c`'s form, and `sha512_of` and
+`sha384_of` wipe the context they hash in.
+`test/sha2_equiv_residue512_first_arm.h` holds that in three steps, each
+on a copy of the 3,072 bytes of stack below the call after the test has
+painted them:
+
+- It calls `sha512_compress_blocks` by name with no wipe after it,
+  requires the lowest byte the call wrote within 512 bytes of its
+  caller, and requires the search to find a word of the schedule there,
+  so a search that could find nothing fails.
+- It makes six kinds of call under the library's own names, which
+  between them run every call the arm makes to the compression
+  function, and requires no 64-bit word in the copy, at any byte
+  offset, that FIPS 180-4 computes from the message: a schedule word,
+  either small sigma of one, a partial sum before one, a schedule word
+  plus its constant, a round's two large sigmas, Ch, Maj, T1, T2 and
+  a ^ b, a working variable after any round, or a state word. It
+  requires the copy's lowest 64 bytes still painted, so the copy holds
+  everything the calls wrote. A value computed from padding alone, such
+  as the bit length a message ends with, is public and is not in the
+  set.
+- It makes one of those calls on the reference and prints how many of
+  those words it finds, and fails nothing: the second arm and
+  `sha512_compress.c` wipe nothing (INV-17).
+
+The function wrote 184 bytes below its caller under Apple clang 21 for
+arm64, 224 under gcc 13.3 and 192 under clang 18 for arm64, and 200
+under gcc 13.3 and 264 under clang 18 for x86-64, the x86-64 binaries
+under `qemu-x86_64`. Under all five the six calls left no word, and the
+reference left 76 to 86 words after `sha384_of` of a 278-byte message.
+Hosted runners gave the same under gcc 13.3 and under clang 23.1.2, the
+pinned clang: 200 and 264 bytes on an EPYC 7763, an EPYC 9V45 and a
+Xeon Platinum 8370C, where the reference left 86 and 84 words, and 224
+and 192 bytes on a Neoverse-N2, where it left 77 (decision 127).
+`make lint-stack` holds the function's frame under 384 bytes, so a
+frame that grows toward the wiped length fails a compile before it
+fails this search. The checks hold the compilers they ran under and no
+other, and an unoptimized or sanitized binary skips the search and says
+so (`test/stack_residue.c`). A register holds what the last instruction
+left in it, as after every wipe written in C. The file reads its ring
+and the caller's state through volatile pointers, which keeps the
+compilers from holding a second copy of them in slots of their own; the
+stack wipe clears such a slot either way, so no mutant shows what the
+reads prevent.
+
+Twenty-two violations break those rules, and each is caught. Six
+change a value `bin/sha2_equiv_test` compares: a round constant, the
+ring index of `W[t - 7]`, a block's second word loaded twice, the
+constants of a pass's two halves exchanged, b ^ c left stale for a
+call's second block, and the padding's second block taken one byte
+early. Three change a value the published vectors catch:
+Maj joined with OR, in `bin/sha512_test_host`; the bytes after an
+update's whole blocks copied from its start, in
+`bin/hkdf384_test_host`; and the length written in quarter bytes, in the
+Wycheproof host binary. Four fail a proof: a sigma function's rotate
+count, two roles exchanged in `eight_rounds_advancing`, a read one byte
+past a block, and an update that counts one block too many. Four drop
+or misplace a wipe and fail the stack search: the wipe before the
+compression call, the wiped length below the frame, and each of the two
+contexts kept. `inv50-sha512-host-falls-back-to-reference` compiles the
+second arm into a host object and fails `bin/hash_runtime_test`'s count;
+`inv50-device-object-holds-sha512-compress-blocks` and
+`inv36-zig-host-object-keeps-sha512-compress` package the wrong file and
+fail `make lint-trust-separation` and `make lint-zig-build`;
+`inv19-sha512-compress-blocks-frame-past-wipe` grows the frame past the
+budget; and `inv16-sha512-compress-blocks-store-branches-on-word` puts a
+branch on a schedule word, which the branch count catches under both
+64-bit specs.
+
+What none of this shows: the time the path takes on a CPU. Its
+operations are 64-bit adds, rotates, shifts and logic, which the two
+architectures' cores run in the same time for every operand, it reads
+no table at an index a word decides, and the branch count holds its
+branches to lengths and counts. Nothing here measures it.
+
 ### The hash instructions
 
 `sha256_hw.c` computes SHA-256 on the CPU's SHA-256 instructions:
@@ -4467,10 +4679,12 @@ caller's bits, and one branch per call picks a path:
   SHA-512 bit where it is SHA-384. The entries that end `hkdf.h` and
   `keysched.h` ask it.
 
-A call that takes no value runs the portable code. The DRBG, the
-certificate verifiers, the RSA signer, `p256_sign`, the cookie and token
-MACs, the CertificateVerify content hash, an SPKI pin's hash, the
-server's hash of a ClientHello's frozen bytes and the webpki ticket
+A call that takes no value runs no hash instruction. Its SHA-256 runs
+`sha256.c`, and its SHA-384 `sha512.c`, which in a host object is the
+first arm of [SHA-512 in a host object](#sha-512-in-a-host-object). The
+DRBG, the certificate verifiers, the RSA signer, `p256_sign`, the cookie
+and token MACs, the CertificateVerify content hash, an SPKI pin's hash,
+the server's hash of a ClientHello's frozen bytes and the webpki ticket
 binding make such calls, and each starts and ends its context on that
 path. `p256_sign_cpu`, which a server signs a CertificateVerify through,
 takes the session's value and hands it to `hmac_sha256_cpu` for each
@@ -4493,7 +4707,8 @@ skips what the CPU has no instructions for, or fails under
 `CH_REQUIRE_HASH_INSTRUCTIONS=1`:
 
 - `bin/sha2_equiv_test`, in `make check`, runs 75,467 SHA-256 cases, and
-  on arm64 148,479 more for SHA-384 and SHA-512. Each hashes a message
+  on arm64 148,479 more for SHA-384 and SHA-512, whose reference is
+  `sha512.c`'s second arm, a device object's. Each hashes a message
   on the portable code in one call, and a copy of it in three updates
   and a final, each on the path one bit of the case's mask names, so a
   context passes between the two paths at each call. It compares the two
@@ -4540,8 +4755,8 @@ skips what the CPU has no instructions for, or fails under
   `make check`, count the calls into each path of each hash under 257
   `ch_cfg.cpu` values: the 256 the eight bits beside `CH_CPU_PROBED`
   make, and 0. One of the eight, `CH_CPU_AVX512_IFMA`, picks no hash.
-  The counting entries (`test/hash_runtime_count.c`) run
-  every path on the portable code, and the row that seals an Initial
+  The counting entries (`test/hash_runtime_count.c`) run every path on
+  `sha256.c`'s or `sha512.c`'s code, and the row that seals an Initial
   packet clears the value's AES, AVX2 and VAES bits, so its AES-GCM runs
   on the table. So the binaries run no instruction a bit names and give
   one verdict on every CPU of their architecture. A row is one call

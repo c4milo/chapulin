@@ -139,8 +139,12 @@
 // CH_CPU_CONSTANT_TIME_SHA3 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
 // instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang
 // compiled it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. A hash call that
-// takes no value runs the portable code in every object: a certificate's, a signature's and the
-// DRBG's are such calls.
+// takes no value runs no hash instruction in any object: a certificate's, a signature's and the
+// DRBG's are such calls, and they run sha256.c, sha512.c and sha3.c.
+// No bit picks what sha512.c runs. In a host object its calls compress on
+// sha512_compress_blocks.c, plain C whose operations are 64-bit adds, rotates, shifts and logic,
+// in every session on both architectures and for the calls that take no value, and they wipe
+// the stack that function used (docs/decisions.md 127). sha512_compress.c is a device object's.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
 // ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES or CH_CPU_AVX512_IFMA

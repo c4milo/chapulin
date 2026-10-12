@@ -15,6 +15,15 @@
 // in the Makefile's WIDEMUL_CEILING and BRANCH_SRCS, where a compiler
 // that puts a branch on a word shows as a count that grew. Every other
 // build compiles SHA-256 alone.
+//
+// The five calls below that hash have two bodies in sha512.c. A device
+// object compiles the one that moves a byte at a time over
+// sha512_compress.c, the reference CBMC proves. A host object
+// (-DCH_CPU_RUNTIME, cpu_cfg.h) compiles the other, over
+// sha512_compress_blocks.c, in every session and for the calls that take
+// no ch_cfg.cpu, with the same contract but for two things: after each
+// compression it wipes the stack that function used, and sha512_of and
+// sha384_of wipe the context they hash in (docs/decisions.md 127).
 #ifndef CH_SHA512_H
 #define CH_SHA512_H
 
@@ -53,8 +62,9 @@ void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]);
 #ifdef __aarch64__
 // The five calls above that hash, on arm64's SHA-512 instructions (sha512_hw.c,
 // docs/decisions.md 93). An arm64 host object (-DCH_CPU_RUNTIME, cpu_cfg.h) holds them beside
-// sha512.c's and sha512_compress.c's, which stay the reference: CBMC proves the portable code,
-// and bin/sha2_equiv_test holds these to it. Each has the contract of the call it is named for,
+// sha512.c's, which there run sha512_compress_blocks.c. A device object's sha512.c and
+// sha512_compress.c stay the reference: CBMC proves that code, and bin/sha2_equiv_test holds
+// these and a host object's sha512.c to it. Each has the contract of the call it is named for,
 // on the same context type. sha512_init and sha384_init start a context for either path, and
 // the two paths keep the same state in it, so a context may take an update from one and its
 // final from the other. sha512_of_hw and sha384_of_hw also wipe the context they hash in.
@@ -82,7 +92,9 @@ static inline int sha512_on_instructions(uint32_t cpu) {
 
 // The five calls above that hash, for one session of a host object: each takes the session's
 // ch_cfg.cpu first, under the same contract, and branches once on sha512_on_instructions, as
-// sha256.h's entries do. sha512_init and sha384_init take no description of the CPU.
+// sha256.h's entries do. A session without the bit runs sha512.c's calls, which in a host
+// object compress on sha512_compress_blocks.c. sha512_init and sha384_init take no
+// description of the CPU.
 static inline void sha512_update_cpu(uint32_t cpu, sha512 *s, const uint8_t *in, size_t n) {
     if (sha512_on_instructions(cpu)) {
         sha512_update_hw(s, in, n);
@@ -126,8 +138,9 @@ static inline void sha384_of_cpu(uint32_t cpu, const uint8_t *in, size_t n,
 }
 #else
 // No x86-64 CPU this tree targets has SHA-512 instructions, and cpu_cfg.h refuses
-// CH_CPU_CONSTANT_TIME_SHA512 there, so an x86-64 object holds sha512.c alone: the answer is no
-// for every value, and each entry runs the portable call.
+// CH_CPU_CONSTANT_TIME_SHA512 there, so an x86-64 object holds sha512.c alone, over
+// sha512_compress_blocks.c: the answer is no for every value, and each entry runs sha512.c's
+// call.
 static inline int sha512_on_instructions(uint32_t cpu) {
     (void)cpu;
     return 0;

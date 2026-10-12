@@ -1,0 +1,15 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: proof/prove-one.sh sha512_compress_blocks_advancing
+reason: the third of eight_rounds_advancing's eight rounds names the
+  working variables at f and g in each other's roles, so Ch takes them in
+  the wrong order in rounds 18, 26 and every eighth round after, and
+  every digest is wrong. The call still names eight distinct variables,
+  so nothing but the value shows it. The advancing harness holds the
+  eight rounds to FIPS 180-4's own eight over every input, and its
+  assertion on e to h fails.
+
+--- old
+    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, x, k[2] + next_word(ring, i + 2));
+--- new
+    one_round(v->g, v->h, &v->b, v->c, v->e, v->d, &v->f, x, k[2] + next_word(ring, i + 2));

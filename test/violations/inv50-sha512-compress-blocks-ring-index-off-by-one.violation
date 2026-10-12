@@ -1,0 +1,15 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: sha2_equiv_test
+reason: next_word adds the ring word eight places on where FIPS 180-4
+  §6.4.2 step 1 adds W[t - 7], the word nine places on, so every schedule
+  word past a block's sixteenth is wrong and so is every digest a host
+  object computes under the library's own names. The index is inside the
+  ring, so no memory check sees it. bin/sha2_equiv_test holds sha512.c's
+  first arm to the second, which compresses on sha512_compress.c, and the
+  first case differs.
+
+--- old
+    uint64_t word = kept(&ring[i]) + lower_sigma0(fifteen_back) + kept(&ring[(i + 9) & 15]) +
+--- new
+    uint64_t word = kept(&ring[i]) + lower_sigma0(fifteen_back) + kept(&ring[(i + 8) & 15]) +

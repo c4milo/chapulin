@@ -1,0 +1,17 @@
+invariant: INV-50
+file: sha512.c
+catches: proof/prove-one.sh sha512_host
+reason: a host object's sha512_update hands sha512_compress_blocks one
+  block more than the input's whole blocks, so the compression function
+  reads up to 128 bytes past the caller's input, and the bytes after
+  them enter the hash. The harness gives the update an input that is a
+  heap object of exactly its length, and the compression function's
+  contract there asserts that every block it is handed is readable,
+  which fails.
+
+--- old
+        compress_blocks(s->h, in, whole);
+        in += whole * SHA512_BLOCK;
+--- new
+        compress_blocks(s->h, in, whole + 1);
+        in += whole * SHA512_BLOCK;

@@ -1,0 +1,18 @@
+invariant: INV-17
+file: sha512.c
+catches: sha2_equiv_test
+reason: a host object's sha384_of returns without wiping the context it
+  hashed in, so its dead frame keeps the state after the last block and
+  the end of the input. HMAC-SHA-384 hashes a key longer than a block
+  through this call, and the bytes left are the key's last ones and the
+  value HMAC then uses as its key; keysched.c's exporter hashes its
+  caller's context through it. The digest is still right, so no vector
+  sees it. bin/sha2_equiv_test paints the stack, makes one sha384_of call
+  on sha512.c's first arm, and requires no word the call computed in the
+  bytes it wrote.
+
+--- old
+    sha384_final(&s, out);
+    ct_wipe(&s, sizeof s);
+--- new
+    sha384_final(&s, out);

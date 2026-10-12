@@ -1,0 +1,17 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: sha2_equiv_test
+reason: in each pass of sixteen rounds past the first, the first eight
+  rounds take the constants of the last eight and the last eight those of
+  the first, so every digest a host object computes under the library's
+  own names is wrong. eight_rounds_advancing is proved for any eight
+  constants, so its proof holds: which constants each call takes is the
+  order of the calls, which rests on bin/sha2_equiv_test, and its first
+  case differs from the reference.
+
+--- old
+            eight_rounds_advancing(&v, &sha512_round_constants[first], ring, 0);
+            eight_rounds_advancing(&v, &sha512_round_constants[first + 8], ring, 8);
+--- new
+            eight_rounds_advancing(&v, &sha512_round_constants[first + 8], ring, 0);
+            eight_rounds_advancing(&v, &sha512_round_constants[first], ring, 8);

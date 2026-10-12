@@ -1,0 +1,15 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: sha2_equiv_test
+reason: load_block reads the block's third word into the ring's second
+  place as well as its third, so the block's second word never enters
+  the hash, and two messages that differ in those eight bytes alone have
+  one digest. Each step the proofs hold still computes FIPS 180-4's value
+  from what it is given, because the proofs take any ring: the load and
+  the order of the calls rest on bin/sha2_equiv_test, whose first case
+  with a second word differs from the reference.
+
+--- old
+    ring[1] = load_word(p + 8);
+--- new
+    ring[1] = load_word(p + 16);

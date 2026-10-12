@@ -1,0 +1,20 @@
+invariant: INV-50
+file: sha512.c
+catches: sha2_equiv_test
+reason: a host object's finalize takes a second block for the length when
+  the 1 bit ends 112 bytes into the pending block, where FIPS 180-4
+  §5.1.2 still fits the 16-byte length after it. A message of 111 bytes
+  modulo 128 then hashes two blocks of padding where the standard hashes
+  one, and its digest is wrong; every other length is right, so the
+  short published vectors pass. bin/sha2_equiv_test runs every length
+  from 0 to 529 on sha512.c's first arm against the second, and the
+  message of 111 bytes differs where the one of 110 agrees.
+
+--- old
+    s->block[s->fill++] = 0x80;
+    if (s->fill > SHA512_BLOCK - 16) {
+        memset(s->block + s->fill, 0, SHA512_BLOCK - s->fill);
+--- new
+    s->block[s->fill++] = 0x80;
+    if (s->fill >= SHA512_BLOCK - 16) {
+        memset(s->block + s->fill, 0, SHA512_BLOCK - s->fill);

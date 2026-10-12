@@ -1,0 +1,16 @@
+invariant: INV-17
+file: sha512.c
+catches: sha2_equiv_test
+reason: a host object's sha512_of returns without wiping the context it
+  hashed in, so its dead frame keeps the state after the last block and
+  the end of the input. No library source calls it today, and a caller
+  that hashes a secret with it would rely on the wipe sha512_of_hw makes.
+  The digest is still right, so no vector sees it. bin/sha2_equiv_test
+  paints the stack, makes one sha512_of call on sha512.c's first arm, and
+  requires no word the call computed in the bytes it wrote.
+
+--- old
+    sha512_final(&s, out);
+    ct_wipe(&s, sizeof s);
+--- new
+    sha512_final(&s, out);

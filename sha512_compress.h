@@ -4,8 +4,16 @@
 // to its contract, and proves this function apart over one block of
 // unconstrained state. One formula carrying both converged only at a
 // 15.3 GB peak, above the nightly runner's memory; mlkem.c and
-// mlkem_poly.c split the same way for the same reason. Public data only,
-// like everything in sha512.c.
+// mlkem_poly.c split the same way for the same reason.
+//
+// A device object runs this function, and it is the reference a host
+// object's sha512_compress_blocks.c is held to (docs/decisions.md 127). In
+// a TRUST=webpki object it reads public bytes alone. In a SUITE=aesgcm
+// device object, which takes AES=extern, it also reads HMAC keys and the
+// PSK, as sha512.h says. It wipes nothing: its eighty schedule words and
+// its working variables stay in its dead frame, and sha512.c's calls that
+// take a whole message leave their context in theirs (docs/invariants.md,
+// INV-17).
 #ifndef CH_SHA512_COMPRESS_H
 #define CH_SHA512_COMPRESS_H
 

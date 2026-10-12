@@ -1,0 +1,14 @@
+invariant: INV-50
+file: sha512_compress_blocks.c
+catches: proof/prove-one.sh sha512_compress_blocks
+reason: load_block reads the block's last word one byte late, so it reads
+  the byte after the block: the first byte of the next block, or, for a
+  message's last block, a byte past the caller's buffer. Every digest is
+  wrong too, but the read is the finding a digest cannot show. The
+  harness runs the function on arrays of exactly one and exactly two
+  blocks, and its bounds check fails on the read past each.
+
+--- old
+    ring[15] = load_word(p + 120);
+--- new
+    ring[15] = load_word(p + 121);
