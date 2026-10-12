@@ -197,7 +197,11 @@ Other targets:
   `sha512_hw.c`, which a `SUITE=aesgcm` host object holds beside
   `sha512.c`, and without it on `sha512.c`. Each hash follows its own
   bit alone. A certificate's hash, a signature's and the DRBG's take no
-  `cpu` and run the portable code in every object. Under
+  `cpu` and run no hash instruction in any object. No bit picks what
+  `sha512.c` runs: in a host object it compresses on
+  `sha512_compress_blocks.c`, plain C that every session runs on both
+  architectures, where a device object runs `sha512_compress.c`
+  (decision 127). Under
   `CH_CPU_CONSTANT_TIME_SHA3` an arm64 session runs SHA-3, SHAKE and
   ML-KEM on the SHA-3 instructions, in `sha3_hw.c` and ML-KEM's two
   copies over it, where clang compiled the object. In an object another

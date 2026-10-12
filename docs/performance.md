@@ -464,7 +464,10 @@ What the M1 Pro's column shows:
 - SHA-256 and SHA-384 take 1.01 to 1.05 times OpenSSL's time, and a 64-byte SHA-256 0.71 of it.
   Under their bits a session's hashes run on the ARMv8 SHA-256 and SHA-512 instructions (decision
   93), and so do the HMACs of a server's ECDSA nonce (decision 102). A hash call that takes no
-  `ch_cfg.cpu` value still runs portable C: a certificate's, the RSA signer's and the DRBG's.
+  `ch_cfg.cpu` value runs no hash instruction: a certificate's, the RSA signer's and the DRBG's.
+  Its SHA-256 and SHA-3 run portable C, and its SHA-384 the plain C of decision 127,
+  `sha512_compress_blocks.c`, as does a session's without the SHA-512 bit. This column's run
+  predates that decision and holds no row on that path.
 - The two ECDSA verifiers run on 64-bit words in every session, where the 32-bit words took 23
   and 13 times OpenSSL's time. P-384 verifies in 0.88 of it: six 64-bit words, coordinates kept in
   the Montgomery domain and one pass over both scalars' signed digits (decision 97). P-256
@@ -555,8 +558,10 @@ What the columns of the x86-64 CPU without AVX-512 show, where they differ from 
   decisions 97 and 96 and, for P-256, the Jacobian points of decision 104 and the inverse of
   decisions 115 and 116, where the 32-bit words took 8.8 and 30 times.
 - SHA-256 runs in 0.99 of OpenSSL's time over 16 KiB and in 0.60 of it over 64 bytes under gcc, on
-  the SHA extensions (decision 93). SHA-384 stays on portable C there, 2.06 and 1.21 times: the
-  tree holds no x86-64 SHA-512 code, and `sha512_hw.c` is arm64's alone (decision 93). SHA3-256
+  the SHA extensions (decision 93). SHA-384 took 2.06 and 1.21 times on portable C in this column's
+  run: the tree held no x86-64 SHA-512 code, and `sha512_hw.c` is arm64's alone (decision 93).
+  Every session of a host object now compresses on `sha512_compress_blocks.c`, plain C with no bit
+  (decision 127), which that run predates; the entry holds what it measured. SHA3-256
   takes 1.33 times and 0.91 of it under gcc, where `sha3.c`'s loops took 7.68 and 5.02 times
   (decision 98).
 - P-256's key generation and shared secret take 1.51 and 1.80 times OpenSSL's time under gcc, and

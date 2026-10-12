@@ -136,11 +136,15 @@ the instructions, and without it on the portable code. With the SHA-512 bit an
 arm64 session does the same for SHA-384, the hash of TLS_AES_256_GCM_SHA384,
 and each hash follows its own bit alone. The vendor statement behind a bit must
 cover the instructions `cpu_cfg.h` lists for it. A hash call that takes no
-`ch_cfg.cpu`, such as a certificate's, a signature's or the DRBG's, runs the
-portable code in every object. With the SHA-3 bit an arm64 session runs SHA-3,
-SHAKE and ML-KEM's hashes on the SHA-3 instructions, in an object that clang
-compiled. In an object that gcc compiled the bit picks nothing, because gcc
-writes lanes of the Keccak state to stack slots no wipe clears (decision 99).
+`ch_cfg.cpu`, such as a certificate's, a signature's or the DRBG's, runs no
+hash instruction in any object. A host object's SHA-384 without the SHA-512
+bit, and with no `ch_cfg.cpu`, runs plain C that needs no statement,
+`sha512.c` over `sha512_compress_blocks.c`, in place of the byte loops and
+`sha512_compress.c` a device object runs (decision 127). With the SHA-3 bit
+an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
+instructions, in an object that clang compiled. In an object that gcc compiled
+the bit picks nothing, because gcc writes lanes of the Keccak state to stack
+slots no wipe clears (decision 99).
 
 ### Check it on your target, because the compiler can undo it
 
@@ -368,8 +372,12 @@ the lint prints for them. Read from the lint:
 | Bootlin gcc 14.3, rv32ic | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 |
 
 `BRANCH_SRCS` lists more files than these 22. The rest are a host object's:
-its vector kernels, its hashes on the CPU's instructions, its arithmetic on
-64-bit words, and the copies of the files above that it compiles for itself.
+its vector kernels, its hashes on the CPU's instructions, its SHA-512
+compression function in plain C, its arithmetic on 64-bit words, and the
+copies of the files above that it compiles for itself. Its copy of `sha512.c`
+is that file's first arm, and it compiles no `sha512_compress.c`:
+`sha512_compress_blocks.c` takes that file's place (decision 127). So the
+`sha512` and `sha512_compress` columns count a device object's code alone.
 Two more specs count them, arm64 and x86-64 under the pinned clang, hosted
 and at `-O2`, which is how a host object is built
 ([decision 126](decisions.md#engineering)). `BRANCH_CEILING` records those
