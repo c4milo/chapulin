@@ -175,9 +175,9 @@ construction and nothing in them is provably zero. A blanket barrier inside
 pinned clang, over every source a secret passes through (`CODEGEN_SRCS` in the
 Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
 and counts per file the widening multiplies, the divisions and the calls into
-the compiler's 64-bit division runtime, and in the twelve arithmetic files
-under the record layer the conditional branches too ("What each compiler
-branches on today", below). `make lint-wide-multiply-gcc` is the
+the compiler's 64-bit division runtime, and in the arithmetic files under the
+record layer the conditional branches too ("What each compiler branches on
+today", below). `make lint-wide-multiply-gcc` is the
 same count under gcc, which is what a firmware tree ships; each CI lane runs it
 with its own toolchain; the riscv32 lane's gcc matches two specs, rv32imac
 and rv32ic, and the mips lane's matches two, at `-Os` and at `-O2`. Point it
@@ -212,8 +212,8 @@ and flags you actually ship, since this is a property of codegen and not of
 the source; the lint passes `-Os` before the flags, so a level in the flags
 field wins, which is how the mips gcc spec below runs a second time at `-O2`.
 A new spec starts from the default multiply ceilings and no branch ceilings,
-so the first thing it reports is the conditional-branch count of each of the
-twelve arithmetic files. Read every file it reports above its multiply
+so the first thing it reports is the conditional-branch count of each
+arithmetic file it compiles. Read every file it reports above its multiply
 ceiling as the finding it is. The one public division, `ch_writable_len`'s
 in tls_write.c, is the exception: a compiler that copies it into two paths,
 as the mips gcc does at `-O2`, reports two, which you record for your label
@@ -300,39 +300,68 @@ ceiling of two, and the `-Os` spec reads zero.
 The same pass counts the conditional branches per file — `b<cond>`, `cbz`,
 `cbnz`, `tbb`, `tbh` and the IT instruction on arm; `beq`, `bne` and the
 four compare-with-zero forms on mips; the six base branches and `c.beqz` and
-`c.bnez` on rv32 — in the twelve arithmetic files under the record layer
+`c.bnez` on rv32 — in the arithmetic files under the record layer
 (`BRANCH_SRCS` in the Makefile), and holds each at the ceiling
 `BRANCH_CEILING` records for that compiler
-([#141](https://github.com/c4milo/chapulin/issues/141)). Read from the lint:
+([#141](https://github.com/c4milo/chapulin/issues/141)). The eight device
+specs compile 22 of those files, and the two tables below hold every count
+the lint prints for them. Read from the lint:
 
-| compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| clang 23, Cortex-M3 | 4 | 17 | 38 | 13 | 9 | 19 | 4 | 33 | 14 | 43 | 9 | 0 |
-| clang 23, mips32r2 | 4 | 16 | 25 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
-| clang 23, rv32imac | 4 | 17 | 32 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
-| Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 21 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 17 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 32 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
-| Bootlin gcc 14.3, rv32imac | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 0 |
-| Bootlin gcc 14.3, rv32ic | 2 | 15 | 22 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
+| compiler | ct | ct_wipe | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3 | 2 | 1 | 17 | 38 | 19 | 9 | 19 | 4 | 33 | 14 | 45 | 9 | 0 |
+| clang 23, mips32r2 | 2 | 1 | 16 | 25 | 16 | 7 | 18 | 2 | 31 | 13 | 38 | 8 | 0 |
+| clang 23, rv32imac | 2 | 1 | 17 | 32 | 18 | 8 | 18 | 2 | 31 | 14 | 38 | 9 | 0 |
+| Arm GNU gcc 15.3, Cortex-M3 | 1 | 1 | 12 | 21 | 19 | 7 | 14 | 2 | 23 | 14 | 39 | 8 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 1 | 1 | 12 | 17 | 18 | 6 | 14 | 2 | 20 | 14 | 43 | 7 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 | 1 | 23 | 32 | 23 | 7 | 21 | 2 | 28 | 18 | 41 | 8 | 0 |
+| Bootlin gcc 14.3, rv32imac | 1 | 1 | 15 | 22 | 23 | 10 | 15 | 4 | 24 | 20 | 41 | 10 | 0 |
+| Bootlin gcc 14.3, rv32ic | 1 | 1 | 15 | 22 | 23 | 10 | 15 | 4 | 24 | 20 | 41 | 10 | 2 |
 
-None of these is zero, and the lint does not claim they branch on public
+| compiler | p256_field | p256_scalar | rsa_sign | sha512 | sha512_compress | aes | quic_aes_soft | aes_extern | gcm |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3 | 24 | 15 | 29 | 24 | 4 | 3 | 12 | 0 | 22 |
+| clang 23, mips32r2 | 21 | 14 | 27 | 20 | 4 | 2 | 12 | 0 | 16 |
+| clang 23, rv32imac | 21 | 14 | 27 | 23 | 4 | 3 | 12 | 0 | 20 |
+| Arm GNU gcc 15.3, Cortex-M3 | 14 | 12 | 26 | 12 | 4 | 3 | 9 | 0 | 15 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 13 | 12 | 23 | 12 | 4 | 3 | 9 | 0 | 13 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 24 | 14 | 26 | 27 | 4 | 3 | 12 | 0 | 16 |
+| Bootlin gcc 14.3, rv32imac | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 |
+| Bootlin gcc 14.3, rv32ic | 20 | 18 | 27 | 14 | 5 | 4 | 12 | 0 | 23 |
+
+`BRANCH_SRCS` lists more files than these 22. The rest are a host object's:
+its vector kernels, its hashes on the CPU's instructions, its arithmetic on
+64-bit words, and the copies of the files above that it compiles for itself.
+Two more specs count them, arm64 and x86-64 under the pinned clang, hosted
+and at `-O2`, which is how a host object is built
+([decision 126](decisions.md#engineering)). `BRANCH_CEILING` records those
+counts, and no table here repeats them.
+
+Few of these are zero, and the lint does not claim they branch on public
 data: it cannot tell a loop counter from a word. They are what each compiler
-emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
-255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
-`softmul`'s fixed 32 and 64 iterations (the two `bne` on rv32ic, the one
-core where it compiles to anything), read and recorded. The Cortex-M3 clang
-counts include IT blocks — 15 of sha3's 38 and 12 of mlkem_poly's 43. A
-predicated instruction takes the same cycles on that core whether or not its
-condition holds, so an IT block is no timing leak there; the count holds them
-because an IT block is the form clang gives an `if` on a word, and a count of
+emits for `ct_memeq`'s loop and `ct_wipe`'s test of `n`, the block loops,
+x25519's 255-step ladder, Keccak's round and lane counters, `hkdf`'s length
+checks, the loops over words, bytes, bits and rounds in the P-256, RSA,
+SHA-512, AES and GCM files, and `softmul`'s fixed 32 and 64 iterations (the
+two `bne` on rv32ic, the one core where it compiles to anything), read and
+recorded. The comments above `BRANCH_SRCS` and `BRANCH_CEILING` in the
+Makefile hold the readings, and they name the branches that are not loop
+control: tests of a hash length, of an RSA modulus and of whether a tag
+matched, none of them a secret. `hkdf.c` compiles under `-DCH_HASH_SHA384`,
+as a `SUITE=aesgcm` object compiles it, so its count holds HMAC over SHA-256
+and over SHA-384. `aes_extern.c` holds no loop and counts zero: each entry
+copies a key or calls `ch_aes_block`. The Cortex-M3 clang counts include IT
+blocks — 15 of sha3's 38 and 11 of mlkem_poly's 45. A predicated
+instruction takes the same cycles on that core whether or not its condition
+holds, so an IT block is no timing leak there; the count holds them because
+an IT block is the form clang gives an `if` on a word, and a count of
 `b<cond>` alone would pass that form through.
 
 What the lint holds is that no count grows. What the ceilings record is a
 choice each compiler made: the compare-carries `ct_widemul_opaque` takes,
 `mid < lh` and `lo < ll`, and the sign masks in x25519's `cswap` and in
 `poly1305_final` are branch-free in C, and every compiler in the
-table lowers them to a predicated instruction (`it lo`, `movlo`), to `sltu`
+tables lowers them to a predicated instruction (`it lo`, `movlo`), to `sltu`
 or to an arithmetic shift. Until this count that was the compiler's choice,
 with nothing holding it. Two violations show what an `if` on a word does to
 the count. `test/violations/inv16-poly1305-final-sign-branch.violation`
@@ -363,8 +392,9 @@ The count does not see a jump through a register (`jr`, `jalr`, a load into
 switch. The protocol files above the record layer are not counted: they
 branch on lengths, types and states the peer sent in the clear, several
 dozen each, and a count there would record the parser and move with every
-feature. A new spec must record all twelve ceilings before it passes, so a
-compiler the table does not carry cannot pass on counts nobody read.
+feature. A new spec must record a ceiling for every file it counts before
+it passes, so a compiler the tables do not carry cannot pass on counts
+nobody read.
 
 ### What the decomposition does not cover
 
@@ -584,8 +614,8 @@ and why each is renamed or refused.
   conditional-branch count at a ceiling measured per compiler, and those
   ceilings are public loop control, not zero. A compiler the table does not
   carry may lower a select to a branch, and the lint sees that only when you
-  run it with that compiler: add the spec, read and record its twelve
-  counts, and read the histogram it prints when one grows.
+  run it with that compiler: add the spec, read and record its counts, and
+  read the histogram it prints when one grows.
 - **The memory numbers are measured on arm64.** A 32-bit target shrinks the
   pointer fields; [`docs/performance.md`](performance.md) says which numbers
   move.

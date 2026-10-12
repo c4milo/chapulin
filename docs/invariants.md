@@ -3507,7 +3507,7 @@ last `ROLE=server` stub, as the entry said it would.
   The same pass counts the conditional branches — `b<cond>`, `cbz`,
   `cbnz`, the table branches and the IT instruction on arm; `beq`,
   `bne` and the compare-with-zero forms on mips; the six base branches
-  and the compressed pair on rv32 — in the twelve arithmetic files
+  and the compressed pair on rv32 — in the arithmetic files
   under the record layer (`BRANCH_SRCS`) and holds each at a ceiling
   measured per compiler (`BRANCH_CEILING`). Those ceilings are not
   zero: ct_memeq's loop and ct_wipe's test of n, the block loops,
