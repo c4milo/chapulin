@@ -1202,6 +1202,14 @@ endif
 # Whether the compiler targets x86-64, whose host object holds the x86-64
 # kernels below.
 X86_KERNEL_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qw '__x86_64__' && echo yes)
+# Whether the compiler is gcc and targets x86-64: the probe above passed,
+# and the compiler defines __GNUC__ and not __clang__, which clang defines
+# beside it. Where it holds, sha512_avx2.c compiles with one flag more
+# (SHA512_AVX2_GCC_CFLAGS below). A command line may set it, as it sets
+# X86_64_TARGET, so that make lint-schedule-order reads the commands a gcc
+# build for x86-64 runs on every compiler.
+GCC_X86_64_TARGET := $(if $(X86_KERNEL_PROBE),$(shell macros=$$($(CC) -dM -E -x c /dev/null 2>/dev/null); \
+  printf '%s\n' "$$macros" | grep -qw '__GNUC__' && ! printf '%s\n' "$$macros" | grep -qw '__clang__' && echo yes))
 # The wipe of the vector registers a kernel calls after it ran secrets
 # through 512-bit registers: avx512_wipe.c, one block of assembly that
 # zeros zmm0 to zmm31 and k1 to k7. A host object holds it where the
@@ -1419,10 +1427,75 @@ widemul_native_of = $(patsubst %.c,%_native.c,$(filter $(WIDEMUL_COPIED),$(1)))
 # session's CH_CPU_CONSTANT_TIME_SHA3 bit picks. The three have a body
 # where clang compiles an arm64 object and none anywhere else (cpu_cfg.h).
 SHA512_HW_SRCS := sha512_hw.c sha512_avx2.c
-hash_hw_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),$(SHA512_HW_SRCS)) \
-             $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c) \
-             $(if $(filter sha3.c,$(1)),sha3_hw.c) $(if $(filter mlkem.c,$(1)),mlkem_hw.c) \
-             $(if $(filter mlkem_poly.c,$(1)),mlkem_poly_hw.c)
+hash_hw_srcs_of = $(if $(filter sha256.c,$(1)),sha256_hw.c) $(if $(filter sha512.c,$(1)),$(SHA512_HW_SRCS)) \
+                  $(if $(filter hkdf.c,$(1)),hkdf_hw.c) $(if $(filter keysched.c,$(1)),keysched_hw.c) \
+                  $(if $(filter sha3.c,$(1)),sha3_hw.c) $(if $(filter mlkem.c,$(1)),mlkem_hw.c) \
+                  $(if $(filter mlkem_poly.c,$(1)),mlkem_poly_hw.c)
+# sha512_avx2.c's kernel runs a quarter of a schedule step after each
+# round (docs/decisions.md 128, INV-51). clang writes the instructions in
+# that order. gcc's second scheduling pass, which runs after gcc has
+# picked registers, moves each step's vector instructions in among those
+# of one or two rounds and leaves the rounds after them with none, and
+# the kernel then takes longer than with the pass off. So wherever gcc
+# compiles the file for x86-64 it gets -fno-schedule-insns2, which turns
+# that pass off, and no other file gets it. The flag is here and not in a
+# pragma of the source by Camilo's ruling of 2026-10-11. clang refuses
+# the flag, and build.zig compiles the object with clang, so neither
+# takes it.
+#
+# A command that names several sources gives a flag to all of them, so
+# sha512_avx2.c is compiled apart, on every compiler, and three commands
+# of this Makefile compile it with $(CC): the packaged object's rule
+# below, which adds unit_cflags of the source it compiles; the rule
+# here, which compiles the file once for every test binary of a host
+# object; and lint-stack-run, which compiles each source alone and adds
+# unit_cflags of this one, as bench/stack.py does with the flags
+# print-unit-cflags prints. hash_hw_of names the object of the rule here,
+# SHA512_AVX2_UNIT, in the source's place, so no list of a test binary
+# holds the source, and sha512_avx2_named names the source again for a
+# list a script reads. The object holds nothing where the compiler does
+# not target x86-64, as the source does. A script that links the kernel
+# asks for the object with `make sha512-avx2-unit CC=<its compiler>
+# SHA512_AVX2_UNIT_DIR=<its directory>`, which builds it there and prints
+# its path, and san-check asks the same way with its own flags in
+# SHA512_AVX2_UNIT_CFLAGS.
+SHA512_AVX2_GCC_CFLAGS := $(if $(GCC_X86_64_TARGET),-fno-schedule-insns2)
+unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+SHA512_AVX2_UNIT_DIR := bin/obj/host-tests
+SHA512_AVX2_UNIT := $(SHA512_AVX2_UNIT_DIR)/sha512_avx2.o
+SHA512_AVX2_UNIT_CFLAGS = $(HOST_CFLAGS)
+# The rule's compile line without its output, which make
+# lint-schedule-order runs with -S in place of -c, so the lint reads the
+# code the rule's command writes.
+SHA512_AVX2_UNIT_CC = $(CC) $(SHA512_AVX2_UNIT_CFLAGS) -DCH_CPU_RUNTIME $(call unit_cflags,sha512_avx2.c) -I.
+sha512_avx2_apart = $(patsubst sha512_avx2.c,$(SHA512_AVX2_UNIT),$(1))
+sha512_avx2_named = $(patsubst $(SHA512_AVX2_UNIT),sha512_avx2.c,$(1))
+# The object is one file that many binaries link, so it must be the
+# object of this build's command. The rule records the command beside the
+# object, and a record that differs from this build's command forces the
+# compile, whatever the clocks say, as PIN_STAMP_FORCE does for the
+# packaged object's link. The compiler writes to a name of its own and
+# the recipe renames the result, so a second make that builds the same
+# object at the same time, or links it, never reads half of one.
+SHA512_AVX2_UNIT_RECORD := $(SHA512_AVX2_UNIT_DIR)/sha512_avx2.command
+SHA512_AVX2_UNIT_FORCE :=
+ifneq ($(strip $(shell cat $(SHA512_AVX2_UNIT_RECORD) 2>/dev/null)),$(strip $(SHA512_AVX2_UNIT_CC)))
+SHA512_AVX2_UNIT_FORCE := FORCE
+endif
+$(SHA512_AVX2_UNIT): sha512_avx2.c $(HDRS) $(SHA512_AVX2_UNIT_FORCE)
+	@mkdir -p $(SHA512_AVX2_UNIT_DIR)
+	$(SHA512_AVX2_UNIT_CC) -c sha512_avx2.c -o $@.$$$$ && mv -f $@.$$$$ $@
+	@echo "$(strip $(SHA512_AVX2_UNIT_CC))" > $(SHA512_AVX2_UNIT_RECORD)
+.PHONY: sha512-avx2-unit
+sha512-avx2-unit: $(SHA512_AVX2_UNIT)
+	@echo $(SHA512_AVX2_UNIT)
+# bench/stack.py compiles each source of a build alone, as the packaged
+# object's rule does, and reads here the flags a source takes and no
+# other does: one source a line, and after it its flags.
+.PHONY: print-unit-cflags
+print-unit-cflags:
+	@echo sha512_avx2.c $(call unit_cflags,sha512_avx2.c)
+hash_hw_of = $(call sha512_avx2_apart,$(call hash_hw_srcs_of,$(1)))
 host_srcs = $(call sha512_host_of,$(1)) $(call widemul_native_of,$(1)) \
             $(if $(filter x25519.c,$(1)),x25519_wide.c) \
             $(if $(filter p256_point.c p256.c,$(1)),$(P256_WIDE_SRCS)) \
@@ -1471,7 +1544,7 @@ endif
 # value, so no call in it would run either file, and it leaves both out:
 # its SHA-384 is sha512.c over sha512_compress_blocks.c on every CPU.
 ifneq ($(CPU_RUNTIME_DEF),)
-LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_of,$(LIB_SRCS)))
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_srcs_of,$(LIB_SRCS)))
 endif
 # The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
 # Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
@@ -1612,7 +1685,7 @@ print-tcp-nonblocking-loop-srcs:
 # copy of each file that has one and the wide X25519 field (host_srcs).
 .PHONY: print-host-srcs
 print-host-srcs:
-	@echo $(call host_srcs,$(HOST_SRCS_OF))
+	@echo $(call sha512_avx2_named,$(call host_srcs,$(HOST_SRCS_OF)))
 # test/aes-runtime-qemu.sh builds its binaries for x86-64 and for arm64
 # from the sources their rules here link, one list per line:
 # bin/quic_loop_aes, bin/webpki_loop_aes, bin/aes_runtime_test beside its
@@ -1629,30 +1702,34 @@ print-host-srcs:
 # bin/rsa_sign_equiv_test beside its one, bin/rsa_avx2_equiv_test's
 # units and sources, and bin/sha512_test_host and bin/hkdf384_test_host
 # beside their one each.
+# Each list names sha512_avx2.c where its rule here links the file's
+# object (sha512_avx2_named): the script compiles for two architectures
+# under compilers of its own, and asks for each one's object with make
+# sha512-avx2-unit.
 .PHONY: print-aes-runtime-qemu-srcs
 print-aes-runtime-qemu-srcs:
-	@echo $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
-	@echo $(WEBPKI_LOOP_AES_SRCS)
-	@echo $(AES_RUNTIME_TEST_SRCS)
-	@echo $(QUIC_TEST_HW_SRCS)
-	@echo $(X86_KERNELS_TEST_SRCS)
-	@echo $(SHA2_EQUIV_TEST_SRCS)
-	@echo $(HASH_RUNTIME_TEST_SRCS)
-	@echo $(HASH_RUNTIME_QUIC_SRCS)
-	@echo $(P256_EQUIV_TEST_SRCS)
-	@echo $(SHA3_HW_EQUIV_TEST_SRCS)
-	@echo $(MLKEM_HW_EQUIV_TEST_SRCS)
-	@echo $(MLKEM_VECTOR_EQUIV_TEST_SRCS)
-	@echo $(MLKEM_AVX2_EQUIV_TEST_SRCS)
-	@echo $(POLY1305_EQUIV_TEST_SRCS)
-	@echo $(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS))
-	@echo $(call widemul_counted,$(WEBPKI_TEST_SRCS))
-	@echo $(AES_EQUIV_TEST_SRCS)
-	@echo $(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c
-	@echo $(RSA_SIGN_EQUIV_TEST_SRCS)
-	@echo $(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS)
-	@echo $(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c)
-	@echo $(call host_srcs,$(HKDF384_SRCS))
+	@echo $(call sha512_avx2_named,$(call host_srcs,$(QUIC_LOOP_AES_SRCS)))
+	@echo $(call sha512_avx2_named,$(WEBPKI_LOOP_AES_SRCS))
+	@echo $(call sha512_avx2_named,$(AES_RUNTIME_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(QUIC_TEST_HW_SRCS))
+	@echo $(call sha512_avx2_named,$(X86_KERNELS_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(SHA2_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(HASH_RUNTIME_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(HASH_RUNTIME_QUIC_SRCS))
+	@echo $(call sha512_avx2_named,$(P256_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(SHA3_HW_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(MLKEM_HW_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(MLKEM_VECTOR_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(MLKEM_AVX2_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(POLY1305_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(call widemul_counted,$(TCP_BLOCKING_LOOP_SRCS)))
+	@echo $(call sha512_avx2_named,$(call widemul_counted,$(WEBPKI_TEST_SRCS)))
+	@echo $(call sha512_avx2_named,$(AES_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(RSA_BLOCKS_EQUIV_TEST_UNITS) $(RSA_MONT64_SRCS) ct.c ct_wipe.c)
+	@echo $(call sha512_avx2_named,$(RSA_SIGN_EQUIV_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS))
+	@echo $(call sha512_avx2_named,$(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c))
+	@echo $(call sha512_avx2_named,$(call host_srcs,$(HKDF384_SRCS)))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -2116,14 +2193,24 @@ PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT
 # single shared stamp would differ at every switch and rebuild all of
 # them each time.
 CC_STAMP := bin/obj/$(LIB_VARIANT)/cc-stamp
+# The stamp's line: the compile command of every source, and after it the
+# flag sha512_avx2.c alone compiles with (unit_cflags above), so a build
+# that changes either compiles the objects again.
+CC_STAMP_LINE = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,sha512_avx2.c)
 $(CC_STAMP): FORCE
 	@mkdir -p bin/obj/$(LIB_VARIANT)
-	@[ "$$(cat $@ 2>/dev/null)" = "$(CC) $(LIB_CFLAGS) $(LIB_DEF)" ] \
-	  || echo "$(CC) $(LIB_CFLAGS) $(LIB_DEF)" > $@
+	@[ "$$(cat $@ 2>/dev/null)" = "$(CC_STAMP_LINE)" ] \
+	  || echo "$(CC_STAMP_LINE)" > $@
 
+# unit_cflags is empty for every source but sha512_avx2.c, which gets
+# -fno-schedule-insns2 where gcc compiles for x86-64 (SHA512_AVX2_UNIT
+# above says why). LIB_UNIT_CC is the compile line of one source without
+# its output, which make lint-schedule-order runs with -S for
+# sha512_avx2.c.
+LIB_UNIT_CC = $(CC) $(LIB_CFLAGS) $(LIB_DEF) $(call unit_cflags,$(1)) -I.
 bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
-	$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -c $< -o $@
+	$(call LIB_UNIT_CC,$<) -c $< -o $@
 
 # The stamp holds PUBLIC, because the link decides from that list which
 # symbols stay global, and an edit to the list changes no source: without
@@ -2915,7 +3002,8 @@ bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_
 # exporter, which a QUIC object does not hold, so the two exporter entries
 # have a row. Both link the P-256 signer, whose nonce's HMACs follow the
 # SHA-256 bit (p256_sign_cpu).
-HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c $(SHA512_HW_SRCS) sha512_compress_blocks.c
+HASH_RUNTIME_COUNTED := sha256.c sha256_hw.c sha512.c $(call sha512_avx2_apart,$(SHA512_HW_SRCS)) \
+                        sha512_compress_blocks.c
 HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_count.c \
                           $(filter-out $(HASH_RUNTIME_COUNTED),$(call host_srcs,record.c aes.c $(AES_HW_SRCS) \
                           gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
@@ -2961,7 +3049,7 @@ bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRC
 # vectors the host binaries run under the kernels' bits.
 X86_KERNELS_TEST_SRCS := $(filter-out chacha20_avx2.c chacha20_avx512.c gcm_vaes.c keccak_avx2.c mlkem_avx2.c \
                            poly1305_avx2_native.c poly1305_ifma_native.c rsa_ifma.c rsa_avx2.c rsa_ifma_sign.c \
-                           avx512_wipe.c sha512_avx2.c sha512_compress_blocks.c, \
+                           avx512_wipe.c $(SHA512_AVX2_UNIT) sha512_compress_blocks.c, \
                            $(call host_srcs,record.c \
                            quic_packet.c quic_keys.c quic_initial.c aes.c $(AES_HW_SRCS) quic_aes_soft.c gcm.c aead.c \
                            chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c buf.c ct.c ct_wipe.c \
@@ -3791,6 +3879,11 @@ widemul_counted = $(call sha512_host_of,$(filter-out $(WIDEMUL_COUNTED) $(WIDEMU
                   $(if $(filter p384.c,$(1)),$(P384_WIDE_SRCS)) \
                   $(if $(filter mlkem.c,$(1)),mlkem_vector.c keccak_avx2.c mlkem_avx2.c) \
                   $(call hash_hw_of,$(1))
+# A list that holds sha512.c links sha512_avx2.c's object (hash_hw_of),
+# which the five rules below do not name among their prerequisites, so
+# each builds it first.
+bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host bin/webpki_session_host \
+  bin/webpki_auth_host: $(SHA512_AVX2_UNIT)
 bin/tcp_blocking_loop_host: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(WIDEMUL_COUNT_UNITS) \
                             test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3952,7 +4045,7 @@ bin/diff: test/diff_test.c $(DIFF_SRCS) $(HDRS) $(TESTH)
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide lint-frame-align prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-p256-wide lint-frame-align lint-schedule-order prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, the
@@ -4499,7 +4592,7 @@ endif
 # The build links pem.c, x509.c and x509_ca.c too, which the webpki
 # object does not package, because test/diff_x509.h drives them.
 .PHONY: diff-webpki
-diff-webpki:
+diff-webpki: $(if $(HOST_TARGET),$(SHA512_AVX2_UNIT))
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP diff-webpki: lake not on PATH (install elan: https://leanprover.github.io)"
@@ -4980,13 +5073,17 @@ wycheproof-run-default:
 # from rotting when a suite is added. A compiler that fails the host test
 # skips, the way the fetch above skips offline.
 HOST_WYCHEPROOF_CPU := 0x1 0x3 0x5 0x7 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU)
+# WYCHEPROOF_HOST names sha512_avx2.c's object (SHA512_AVX2_UNIT), which
+# both targets build first. The stamp's -E run names the source in its
+# place, so an edit to the kernel runs the test again.
+wycheproof-host wycheproof-run-host rsa-ifma-sde-check: $(if $(HOST_TARGET),$(SHA512_AVX2_UNIT))
 wycheproof-host:
 ifeq ($(HOST_TARGET),)
 	$(call REQUIRE_ON_CI,wycheproof-host)
 	@echo "SKIP the host Wycheproof test: $(CC) fails the host test"
 else
 	@python3 tools/stamp.py wycheproof-host $(WYCHEPROOF_STAMP_INPUTS) \
-	  --output '$(WYCHEPROOF_HOST) -E' -- $(MAKE) --no-print-directory wycheproof-run-host
+	  --output '$(call sha512_avx2_named,$(WYCHEPROOF_HOST)) -E' -- $(MAKE) --no-print-directory wycheproof-run-host
 endif
 wycheproof-run-host:
 	@set -e; $(WYCHEPROOF_HOST) -o bin/wycheproof_test_host; \
@@ -5073,6 +5170,11 @@ SAN_CFLAGS = $(filter-out -O2,$(CFLAGS)) -O$(O) -g \
 # The same for a host object's binary: without the host test flags'
 # CH_NATIVE_WIDEMUL, which ct.h refuses beside -DCH_CPU_RUNTIME.
 SAN_HOST_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(SAN_CFLAGS))
+# A host list as san-check links it: with sha512_avx2.c's object as the
+# rule above compiles it under the sanitizers' flags, in bin/san, in
+# place of the one the test binaries link.
+SAN_SHA512_AVX2_UNIT := bin/san/sha512_avx2.o
+san_host_srcs = $(patsubst $(SHA512_AVX2_UNIT),$(SAN_SHA512_AVX2_UNIT),$(1))
 .PHONY: san-check san-selftest
 san-check:
 	@rm -rf bin/san && mkdir -p bin/san
@@ -5143,6 +5245,8 @@ san-check:
 	# what it leaves there say nothing of the object. The Wycheproof suites
 	# run once more under HASH_WYCHEPROOF_CPU, their HMAC and HKDF on the
 	# SHA-256 instructions, where the CPU has them.
+	@[ -z "$(HOST_TARGET)" ] || $(MAKE) -s --no-print-directory sha512-avx2-unit \
+	  SHA512_AVX2_UNIT_DIR=bin/san SHA512_AVX2_UNIT_CFLAGS='$(SAN_HOST_CFLAGS)' > /dev/null
 	@set -e; if [ -n "$(HOST_TARGET)" ]; then \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
 	    $(X25519_EQUIV_TEST_SRCS); \
@@ -5157,7 +5261,7 @@ san-check:
 	    $(POLY1305_EQUIV_TEST_SRCS); \
 	  echo "== poly1305_equiv_test (SAN -O$(O))"; ./bin/san/poly1305_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) $(SHA2_EQUIV_TEST_DEFS) -I. -Itest -o bin/san/sha2_equiv_test test/sha2_equiv_test.c \
-	    $(SHA2_EQUIV_TEST_SRCS); \
+	    $(call san_host_srcs,$(SHA2_EQUIV_TEST_SRCS)); \
 	  echo "== sha2_equiv_test (SAN -O$(O))"; ./bin/san/sha2_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o bin/san/sha3_hw_equiv_test test/sha3_hw_equiv_test.c \
 	    $(SHA3_HW_EQUIV_TEST_SRCS); \
@@ -5202,14 +5306,14 @@ san-check:
 	    test/rsa_sign_equiv_test.c $(RSA_SIGN_EQUIV_TEST_SRCS); \
 	  echo "== rsa_sign_equiv_test (SAN -O$(O))"; ./bin/san/rsa_sign_equiv_test; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -I. -Itest -o bin/san/rsa_sign_test_host \
-	    test/rsa_sign_test.c $(call host_srcs,$(RSA_SIGN_TEST_SRCS)); \
+	    test/rsa_sign_test.c $(call san_host_srcs,$(call host_srcs,$(RSA_SIGN_TEST_SRCS))); \
 	  for bits in $(HOST_VECTOR_CPU); do \
 	    echo "== rsa_sign_test_host $$bits (SAN -O$(O))"; ./bin/san/rsa_sign_test_host $$bits; \
 	  done; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof host object: the fetch above skipped"; exit 0; }; \
 	  $(CC) $(SAN_HOST_CFLAGS) -DCH_CPU_RUNTIME $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	    $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test_host test/wycheproof_test.c \
-	    $(call host_srcs,$(WYCHEPROOF_SRCS)) $(AES_HW_SRCS) quic_aes_soft.c; \
+	    $(call san_host_srcs,$(call host_srcs,$(WYCHEPROOF_SRCS))) $(AES_HW_SRCS) quic_aes_soft.c; \
 	  for bits in 0x5 $(X86_WYCHEPROOF_CPU) $(HASH_WYCHEPROOF_CPU); do \
 	    echo "== wycheproof_test_host $$bits (SAN -O$(O))"; ./bin/san/wycheproof_test_host $$bits; \
 	  done; \
@@ -5341,7 +5445,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-frame-align
+lint: lint-toolchain lint-pins lint-proof-cover lint-size-floor lint-pinned-checkers lint-rfcs lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-stack-walk lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build lint-p256-wide lint-frame-align lint-schedule-order
 
 # The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
 # held to make's, and the Zig API its module carries (docs/zig.md). zig
@@ -5443,15 +5547,15 @@ lint-stack:
 lint-stack-run:
 	@mkdir -p bin/obj; objs=$$(mktemp -d bin/obj/stack.XXXXXX); \
 	rc=0; for f in $(LIB_SRCS) drbg.c; do \
-	  budget=$(STACK_BUDGET); \
+	  budget=$(STACK_BUDGET); apart=; \
 	  case " $(KEX_HYBRID_SRCS) $(call hash_hw_of,$(KEX_HYBRID_SRCS)) $(STACK_KEX_HYBRID_COPIES) " in \
 	    *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
 	  case " $(RSA_SIGN64_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_RSA_SIGN64) ;; esac; \
 	  case "$$f" in p256_wide_wipe.c) budget=$(STACK_BUDGET_P256_WIDE_WIPE) ;; esac; \
 	  case "$$f" in rsa_ifma_sign.c) budget=$(STACK_BUDGET_RSA_IFMA_SIGN) ;; esac; \
 	  case "$$f" in sha512_compress_blocks.c) budget=$(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) ;; esac; \
-	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2) ;; esac; \
-	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
+	  case "$$f" in sha512_avx2.c) budget=$(STACK_BUDGET_SHA512_AVX2); apart="$(call unit_cflags,sha512_avx2.c)" ;; esac; \
+	  $(CC) $(STACK_CFLAGS) $(LIB_DEF) $$apart -Wframe-larger-than=$$budget -I. -c $$f -o $$objs/$$f.o || rc=1; \
 	done; rm -rf $$objs; \
 	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B, the 64-bit RSA signer's under $(STACK_BUDGET_RSA_SIGN64) B, the wide P-256 stack wipe's under $(STACK_BUDGET_P256_WIDE_WIPE) B, the IFMA signer's under $(STACK_BUDGET_RSA_IFMA_SIGN) B, the SHA-512 block compression's under $(STACK_BUDGET_SHA512_COMPRESS_BLOCKS) B and its AVX2 kernel's under $(STACK_BUDGET_SHA512_AVX2) B"; exit $$rc
 
@@ -8006,6 +8110,67 @@ ifeq ($(CLANG_RV),)
 else
 	@python3 tools/frame-align.py "$(CLANG_RV)" chacha20_avx2.c keccak_avx2.c sha512_avx2.c
 endif
+
+# sha512_avx2.c's kernel runs a quarter of a schedule step after each
+# round, the order is the source's, and gcc keeps it only with its second
+# scheduling pass off (SHA512_AVX2_UNIT above, docs/decisions.md 128,
+# INV-51). Every digest is the same in any order, so no test of what the
+# kernel computes fails when the order goes. tools/schedule-order.py reads
+# the order from assembly, and this target runs it three ways:
+#
+# - over the file as the pinned clang compiles it for x86-64 at -O2, on
+#   every machine, which holds the source's order under the compiler
+#   build.zig runs;
+# - over the commands of the two rules that compile the file into an
+#   object a binary links, the packaged object's and the test binaries',
+#   as make prints them for a gcc build of a host object for x86-64 and
+#   for any other build: the first must give sha512_avx2.c
+#   -fno-schedule-insns2 in both and give sha512.c none, and the second
+#   must give it to none. That reads no compiler, so it runs on every
+#   machine too;
+# - where $(CC) is gcc for x86-64, as CI's is, over the assembly those
+#   two commands write with -S in place of -c
+#   (lint-schedule-order-gcc). The qemu lane's sha512-avx2 part runs that
+#   target under its gcc for x86-64 on every machine.
+#
+# The recipes name the file the script reads, which is how make impact
+# selects the lint for it.
+.PHONY: lint-schedule-order-gcc lint-schedule-order-library print-sha512-avx2-commands
+print-sha512-avx2-commands:
+	@echo $(SHA512_AVX2_UNIT_CC) -c sha512_avx2.c
+	@echo $(call LIB_UNIT_CC,sha512_avx2.c) -c sha512_avx2.c
+	@echo $(call LIB_UNIT_CC,sha512.c) -c sha512.c
+SCHEDULE_ORDER_OBJECT := TRUST=webpki SUITE=aesgcm ROLE=client
+lint-schedule-order:
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
+else
+	@python3 tools/schedule-order.py clang "$(CLANG_RV)" sha512_avx2.c
+endif
+	@for gcc in yes ""; do \
+	  commands=$$($(MAKE) -s --no-print-directory print-sha512-avx2-commands GCC_X86_64_TARGET=$$gcc \
+	    HOST_TARGET=yes $(SCHEDULE_ORDER_OBJECT)) || { echo "lint-schedule-order: make print-sha512-avx2-commands failed"; exit 1; }; \
+	  flagged=$$(printf '%s\n' "$$commands" | grep -n -e '-fno-schedule-insns2' | cut -d: -f1 | tr '\n' ' '); \
+	  want="1 2 "; [ -n "$$gcc" ] || want=""; \
+	  [ "$$flagged" = "$$want" ] || { \
+	    echo "lint-schedule-order: with GCC_X86_64_TARGET=$$gcc, of the commands that compile sha512_avx2.c for the test binaries, sha512_avx2.c for the packaged object and sha512.c for it, the ones with -fno-schedule-insns2 are [ $$flagged] and not [ $$want]: gcc for x86-64 must compile sha512_avx2.c with that flag, and no other compile may carry it (SHA512_AVX2_GCC_CFLAGS, docs/decisions.md 128)"; \
+	    exit 1; }; \
+	done; \
+	echo "lint-schedule-order: a gcc build for x86-64 gives -fno-schedule-insns2 to sha512_avx2.c in the packaged object's rule and in the test binaries', and to no other source, and no other build gives it to any"
+ifneq ($(GCC_X86_64_TARGET),)
+	@$(MAKE) -s --no-print-directory lint-schedule-order-gcc
+endif
+lint-schedule-order-gcc:
+ifeq ($(GCC_X86_64_TARGET),)
+	@echo "lint-schedule-order-gcc: $(CC) is not gcc for x86-64, so it compiles sha512_avx2.c with no flag of its own and this target has nothing to read"; exit 1
+else
+	@$(SHA512_AVX2_UNIT_CC) -S -o - sha512_avx2.c \
+	  | python3 tools/schedule-order.py assembly "$(CC) in the test binaries' rule" sha512_avx2.c
+	@$(MAKE) -s --no-print-directory lint-schedule-order-library $(SCHEDULE_ORDER_OBJECT)
+endif
+lint-schedule-order-library:
+	@$(call LIB_UNIT_CC,sha512_avx2.c) -S -o - sha512_avx2.c \
+	  | python3 tools/schedule-order.py assembly "$(CC) in the packaged object's rule" sha512_avx2.c
 
 # bench/stack.py, which computes the peaks docs/performance.md states,
 # reads the call graph from the relocations objdump prints under each call

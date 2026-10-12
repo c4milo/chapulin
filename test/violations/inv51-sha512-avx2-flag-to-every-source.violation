@@ -1,0 +1,16 @@
+invariant: INV-51
+file: Makefile
+catches: test/lint-schedule-order.sh
+reason: unit_cflags returns -fno-schedule-insns2 for every source, so a
+  gcc build for x86-64 compiles the whole packaged object with its second
+  scheduling pass off. The ruling of 2026-10-11 gives the flag to
+  sha512_avx2.c alone: no other file was measured without the pass, and
+  the other kernels' recorded timings are of code compiled with it. Every
+  test passes. make lint-schedule-order asks make for the commands a gcc
+  build for x86-64 runs and requires that the one that compiles sha512.c
+  for the packaged object carries no such flag.
+
+--- old
+unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+--- new
+unit_cflags = $(SHA512_AVX2_GCC_CFLAGS)

@@ -1,8 +1,8 @@
 invariant: INV-50
 file: sha512_avx2.c
 catches: test/docker-aes-runtime-qemu.sh sha512-avx2
-reason: next_four_words computes W[t + 2] and W[t + 3] with lower_sigma1 of
-  W[t - 2] and W[t - 1], the words W[t] and W[t + 1] take, where FIPS
+reason: step_third_quarter computes W[t + 2] and W[t + 3] with lower_sigma1
+  of W[t - 2] and W[t - 1], the words W[t] and W[t + 1] take, where FIPS
   180-4 takes lower_sigma1 of W[t] and W[t + 1]. A schedule step that
   computed its four words in one 256-bit operation would be this, because
   the upper two depend on the lower two. Every SHA-384 and SHA-512 digest
@@ -15,7 +15,9 @@ reason: next_four_words computes W[t + 2] and W[t + 3] with lower_sigma1 of
   this then reports unguarded rather than caught.
 
 --- old
-    two_words upper = _mm_add_epi64(_mm256_extracti128_si256(partial, 1), two_lower_sigma1(lower));
+    two_words upper =
+        _mm_add_epi64(_mm256_extracti128_si256(step->partial, 1), two_lower_sigma1(step->lower));
 --- new
-    two_words upper = _mm_add_epi64(_mm256_extracti128_si256(partial, 1),
-                                    two_lower_sigma1(_mm256_extracti128_si256(last, 1)));
+    two_words two_back = _mm256_extracti128_si256(w[(j + 3) % 4], 1);
+    two_words upper =
+        _mm_add_epi64(_mm256_extracti128_si256(step->partial, 1), two_lower_sigma1(two_back));

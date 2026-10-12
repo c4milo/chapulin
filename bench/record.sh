@@ -121,6 +121,16 @@ fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
+# sha512_avx2.c compiles apart from every other source: where gcc compiles
+# for x86-64 the Makefile gives that file a flag no other file gets
+# (SHA512_AVX2_UNIT there, docs/decisions.md 128). So the binaries link the
+# object make's rule builds under this compiler, in this run's directory.
+SHA512_AVX2_UNIT=$(make -s --no-print-directory sha512-avx2-unit CC="$CC" SHA512_AVX2_UNIT_DIR="$W")
+if [ ! -f "$SHA512_AVX2_UNIT" ]; then
+    echo "FAIL record bench: make sha512-avx2-unit built no object" >&2
+    exit 1
+fi
+
 # LIB_CFLAGS is a list of flags, so it splits on spaces.
 # shellcheck disable=SC2206
 FLAGS=($LIB_CFLAGS -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -I. -Ibench)
@@ -130,7 +140,7 @@ SRCS=(bench/record.c bench/record_rows.c bench/record_gcm.c bench/record_layer.c
     chacha20_avx512.c poly1305.c poly1305_native.c poly1305_vector_native.c poly1305_avx2_native.c
     poly1305_ifma_native.c ct.c ct_wipe.c
     hkdf.c hkdf_hw.c sha256.c sha256_hw.c sha512.c sha512_compress_blocks.c sha512_hw.c
-    sha512_avx2.c)
+    "$SHA512_AVX2_UNIT")
 # avx512_wipe.c, which the AVX-512 kernels call before they return, has a
 # body on x86-64 alone, and -Wpedantic refuses a translation unit with no
 # declaration, so the list names it on x86-64 alone, as the Makefile does.

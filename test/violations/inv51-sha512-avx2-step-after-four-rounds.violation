@@ -1,0 +1,33 @@
+invariant: INV-51
+file: sha512_avx2.c
+catches: test/lint-schedule-order.sh
+reason: the first schedule step of eight_rounds_advancing stands whole
+  after its four rounds, as the kernel had it before decision 128's
+  second change, which reads as tidier: three calls and a store in a
+  row. The step computes the same four words, so every digest is right
+  and every test of what the kernel computes passes. Under clang, which
+  writes the instructions in the order of the source, the loop then
+  holds a run of more than a hundred instructions on general registers
+  between two vector instructions, where a round is 29 to 31, and
+  SHA-384 over 16 KiB takes longer. make lint-schedule-order compiles the
+  file for x86-64 with the pinned clang on every machine and requires at
+  most 40.
+
+--- old
+    one_round(v->a, v->b, v->c, &v->d, v->e, v->f, v->g, &v->h, now[0]);
+    step_first_quarter(&step, w, from);
+    one_round(v->h, v->a, v->b, &v->c, v->d, v->e, v->f, &v->g, now[1]);
+    step_second_quarter(&step, w, from);
+    one_round(v->g, v->h, v->a, &v->b, v->c, v->d, v->e, &v->f, now[2]);
+    step_third_quarter(&step, w, from);
+    one_round(v->f, v->g, v->h, &v->a, v->b, v->c, v->d, &v->e, now[3]);
+    store_sums(sums, w, from, constants);
+--- new
+    one_round(v->a, v->b, v->c, &v->d, v->e, v->f, v->g, &v->h, now[0]);
+    one_round(v->h, v->a, v->b, &v->c, v->d, v->e, v->f, &v->g, now[1]);
+    one_round(v->g, v->h, v->a, &v->b, v->c, v->d, v->e, &v->f, now[2]);
+    one_round(v->f, v->g, v->h, &v->a, v->b, v->c, v->d, &v->e, now[3]);
+    step_first_quarter(&step, w, from);
+    step_second_quarter(&step, w, from);
+    step_third_quarter(&step, w, from);
+    store_sums(sums, w, from, constants);

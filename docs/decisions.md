@@ -10590,10 +10590,19 @@ does nothing more.
     schedule four words to a 256-bit register over one block a pass, for
     a session with `CH_CPU_AVX2`; no new bit, and no BMI2 anywhere; clear
     the vector registers with VZEROALL before the kernel returns; and
-    wipe the stack below its call in `p256_wide_wipe.c`'s form. This
-    entry amends entry 127's last item, which named where such a kernel
-    goes, entry 93 where it says an x86-64 object runs `sha512.c` under
-    every value, and entry 124, whose invariant now holds a third file.
+    wipe the stack below its call in `p256_wide_wipe.c`'s form. A second
+    prototype, on the branch `proto/sha512-learned`, then read OpenSSL
+    3.6.4's AVX2 path for SHA-512 to learn what it does otherwise, and
+    timed each difference in runs 38164021228 to 38173910667. No text of
+    OpenSSL's is in this tree. Camilo ruled the same day on what it
+    found: the two changes that carried over to C land, a quarter of a
+    schedule step after each round and gcc's second scheduling pass off
+    for this one file by a flag in the Makefile; the assembly that
+    passes OpenSSL with BMI1 and BMI2 does not land; and no BMI bit is
+    added. This entry amends entry 127's last item, which named where
+    such a kernel goes, entry 93 where it says an x86-64 object runs
+    `sha512.c` under every value, and entry 124, whose invariant now
+    holds a third file.
 
     - **What changes.** `sha512_avx2.c` holds one function,
       `sha512_avx2_compress_blocks(state, p, blocks)`, with
@@ -10606,9 +10615,13 @@ does nothing more.
       four sums to `sums`, an array of sixteen in the function's frame.
       The rounds run in general registers as entry 127's do, written
       out eight to a pass with the working variables' roles renamed,
-      and each reads its schedule word plus constant from `sums`. A
-      step follows every four rounds. `sha512_round_constants.h`'s
-      table is now aligned to 32 bytes for that load.
+      and each reads its schedule word plus constant from `sums`. A step
+      is written in four quarters, one after each of the four rounds
+      that read the sums it replaces: the three terms of each new word
+      that read none of the four, then W[t] and W[t + 1], then W[t + 2]
+      and W[t + 3], and then the store of the four sums.
+      `sha512_round_constants.h`'s table is now aligned to 32 bytes for
+      the step's load.
 
       `sha512_hw.c` gains an x86-64 arm: `sha512.c`'s first arm compiled
       once more, under the `_hw` names `hash_hw.h` gives its five calls
@@ -10688,6 +10701,144 @@ does nothing more.
       kernel. A TLS_AES_256_GCM_SHA384 handshake makes 130 compressions
       at the client and 131 at the server, and 71 and 73 percent of
       them are HMAC's, each of one block.
+    - **A quarter of a step after each round.** The kernel first ran
+      each step whole after its four rounds: 36 vector instructions in a
+      row, and then about 120 on general registers before the next.
+      OpenSSL's text writes three round instructions after each schedule
+      instruction, and the second prototype measured what a compiler
+      keeps of that in C: a quarter of a step after each round. clang
+      18.1.3 and 23.1.3 write the source's order. In their code the loop
+      of sixteen rounds holds 145 vector instructions in 24 runs, and at
+      most 31 instructions on general registers lie between two of them,
+      where the first text left 106. The file is one instruction longer
+      under each compiler: 1,202 for 1,201 under clang and 1,228 for
+      1,227 under gcc 13.3.
+
+      Run 38184809651 linked the kernel as it is now and as it first
+      landed, each in a program of its own that differs in the kernel's
+      object alone, and timed `sha384_of_cpu` over 16 KiB in both beside
+      OpenSSL 3.6.4 in the same job, under gcc 13.3.0 and clang 23.1.2.
+      Run 38185545665 did the same. Their 32 jobs drew an EPYC 7763 23
+      times, an EPYC 9V74 and an EPYC 9V45 four times each and a Xeon
+      Platinum 8573C once. Each kernel was linked four times, with 0,
+      16, 32 and 48 bytes of padding before its object, so a figure is a
+      range over a model's runners and those four addresses, as a share
+      of OpenSSL's time:
+
+      | | gcc, whole steps | gcc, quarters | clang, whole steps | clang, quarters |
+      | --- | --- | --- | --- | --- |
+      | EPYC 7763 | 1.077 to 1.102 | 1.050 to 1.059 | 1.058 to 1.062 | 1.042 to 1.046 |
+      | EPYC 9V74 | 1.074 to 1.077 | 1.053 to 1.056 | 1.077 to 1.079 | 1.071 to 1.073 |
+      | EPYC 9V45 | 1.055 to 1.091 | 1.005 to 1.029 | 1.014 to 1.039 | 1.016 to 1.034 |
+      | Xeon Platinum 8573C | 1.067 to 1.096 | 1.047 to 1.053 | 1.051 to 1.082 | 1.011 to 1.029 |
+
+      Under gcc the kernel now takes 0.92 to 0.99 of the time it took,
+      by the model, and under clang 0.93 to 0.97 on the Xeon Platinum
+      8573C, 0.984 to 0.987 on the EPYC 7763, 0.993 to 0.996 on the EPYC
+      9V74 and 0.98 to 1.01 on the EPYC 9V45, where it gains nothing.
+      Under clang the EPYC 7763 and the EPYC 9V74 gain less than the
+      prototype's text did, which went from 1.056 to 1.066 down to 1.028
+      to 1.039 on the EPYC 7763: the prototype kept its sums in an array
+      aligned to 16 bytes, for which clang aligns no frame and has rbp
+      for the rounds. This kernel declares the 32 bytes entry 124 asks
+      for, and clang then aligns the frame and holds its address in rbp.
+      Run 38185545665 timed a copy of this text with the prototype's
+      array beside it under clang, both with no padding: 1.030 to 1.033
+      on the EPYC 7763 where this text took 1.043 to 1.046, and 1.050 to
+      1.051 on the EPYC 9V74 where it took 1.072 to 1.073. A second
+      copy, which keeps the 32 bytes and hands the array to `ct_wipe` so
+      that clang cannot split it, took this text's time within 0.3
+      percent, so the cost is the aligned frame's. Under gcc, which
+      aligns the frame for either array, the first copy took this text's
+      time within 0.3 percent on both models. The alignment stays.
+      Without it the stores of a step's four sums lie across a page
+      boundary at some addresses of the caller's stack, where the kernel
+      took 1.08 to 1.18 times as long on the EPYC 7763 (below), and
+      entry 124 exists so that a kernel does not run at several speeds
+      by where a stack lies.
+
+      Two programs under gcc are outside the table. One EPYC 7763 runner
+      read the whole steps at 1.151 at one padding, in each of its five
+      processes, and another read the second copy at 1.142, where every
+      other runner of that model read each at the figures above. Entry
+      124 met the like under gcc and did not explain it, and neither
+      does this entry. The kernel as it is now read 1.050 to 1.059 in
+      all 92 of its programs on that model.
+    - **gcc's second scheduling pass.** gcc 13.3 at `-O2` does not keep
+      the source's order. Its second scheduling pass, which runs after
+      gcc has picked registers, wrote each step's 36 vector instructions
+      one to four at a time among those of one or two rounds and left
+      the rounds after them with none: runs of 36, 55, 60 and 99
+      instructions on general registers lie between two vector
+      instructions, and 45, 42, 66 and 87 in its code for the first
+      text. With `-fno-schedule-insns2`, which turns that pass off, gcc
+      writes the source's order: 144 vector instructions in 16 runs of
+      11, 11, 12 and 2, and 30 instructions on general registers between
+      each two. Each gcc figure of the table above is under the flag for
+      the quarters and without it for the whole steps. The two runs also
+      timed each half of the change without the other, with no padding:
+
+      | gcc 13.3.0 | whole steps | quarters alone | flag alone | both |
+      | --- | --- | --- | --- | --- |
+      | EPYC 7763 | 1.082 to 1.102 | 1.061 to 1.064 | 1.057 to 1.060 | 1.050 to 1.052 |
+      | EPYC 9V74 | 1.075 to 1.076 | 1.097 to 1.098 | 1.071 to 1.072 | 1.055 to 1.056 |
+      | EPYC 9V45 | 1.055 to 1.085 | 1.047 to 1.067 | 1.015 to 1.031 | 1.016 to 1.029 |
+      | Xeon Platinum 8573C | 1.096 | 1.065 | 1.080 | 1.051 |
+
+      So under the flag the quarters take 0.96 to 0.99 of the time they
+      take without it, and on the EPYC 9V74 the quarters without it took
+      longer than the whole steps had. The Makefile compiles
+      `sha512_avx2.c` with the flag wherever gcc compiles it for x86-64
+      (`SHA512_AVX2_GCC_CFLAGS`) and gives it to no other file. A
+      command that names several sources gives a flag to all of them, so
+      the file compiles apart on every compiler: in the packaged
+      object's rule, which adds the flag for this one source; in one
+      rule that builds the object every test binary of a host object
+      links, which `hash_hw_of` names in the source's place; and in
+      `lint-stack-run` and `bench/stack.py`, which compile each source
+      alone.
+      `bench/record.sh`, `bench/primitives.sh` and
+      `test/aes-runtime-qemu.sh` ask make for that object under their
+      own compiler (`make sha512-avx2-unit`), and `san-check` under its
+      own flags. clang refuses the flag, and `build.zig` compiles the
+      object with clang, so neither takes it.
+    - **What reading OpenSSL's code found.** The second prototype wrote
+      each thing OpenSSL's `sha512-x86_64.pl` does otherwise as one
+      switch on an assembly text of its own, and timed each in 40 jobs:
+      24 on an EPYC 7763, 9 on an EPYC 9V45, 4 on an EPYC 9V74, 2 on a
+      Xeon Platinum 8370C and one on a Xeon 6973P-C. The figures are
+      SHA-384 over 16 KiB as a share of OpenSSL's time in the same job,
+      on the EPYC 7763 unless a model is named. Its own two-block text
+      started at 1.064 to 1.071, and with every difference written in it
+      took 0.977 to 1.024, so no difference is left unread. The order of
+      a round's operations was worth most, 0.05: OpenSSL adds the stored
+      sum first, finishes Sigma1 and Ch before d takes T1, and computes
+      Maj last. Schedule instructions written among the round's, three
+      round instructions after each, were worth 0.02 to 0.04 beside the
+      other changes and under 0.01 alone. A Sigma0 added one round late
+      was worth 0.01 to 0.02 beside them and cost 0.07 alone. A table
+      that holds each two round constants twice, so that one instruction
+      adds them to both blocks' words, was worth 0.01 to 0.02. LEA for a
+      sum of two registers and ANDN for Ch were worth nothing beside the
+      others. OpenSSL's sigma0 by shifts alone costs it 0.01 to 0.02
+      against this kernel's VPSHUFB. One assembly text with all of that
+      but the shifts, which needs BMI1 and BMI2 beside AVX2, took 0.954
+      to 0.991 of OpenSSL's time on the EPYC 7763, 0.983 to 0.988 on the
+      EPYC 9V74, 0.966 to 0.969 on the Xeon Platinum 8370C and 0.982 to
+      1.011 in the one Xeon 6973P-C job. With AVX2 alone no text passed
+      OpenSSL on both makers' CPUs: one block with the schedule among
+      the rounds took 0.970 to 0.994 on the EPYC 7763 and 1.03 on the
+      Xeon Platinum 8370C, and two blocks took 0.988 to 0.990 on that
+      Xeon and 1.07 to 1.09 on the EPYC 7763. In C two changes survived
+      the compilers, and they are the two this entry lands. The Sigma0
+      added a round late took 1.095 to 1.103 under gcc, a round written
+      one operation a statement 1.08 to 1.11, each Sigma as one rotation
+      of an exclusive OR of three words 1.06 to 1.17, and two blocks a
+      pass 1.10 to 1.21. An eighth of a step after each half of a round
+      was within 2 percent of the quarter in both directions. Camilo
+      ruled to stop at C. The assembly needs a BMI bit that `cpu_cfg.h`
+      does not have, its best order of a round was found by trying
+      orders, and the same bytes moved by 0.05 with their address.
     - **What BMI2 and SSSE3 measured.** The prototype compiled this
       kernel under `target("avx2")`, with BMI2, and with BMI1 and BMI2,
       over 16 KiB. With BMI2 the compilers write RORX for a rotation.
@@ -10706,21 +10857,22 @@ does nothing more.
       frame holds the last sixteen sums of the last block when it
       returns, and under HMAC a block is the key. `compress_blocks` in
       the copy calls it and then wipes `SHA512_AVX2_BELOW_LEN`, 512,
-      bytes of the stack below, as entry 127's arm does. On the
-      runners the kernel wrote 208 or 224 bytes below its caller under
-      gcc 13.3 and 248 or 264 under clang 23.1.2, and 248 under clang
-      18.1.3 in the lab: the function aligns its frame to 32 bytes, so
-      the depth differs by 16 with the caller's stack address, and the
-      test requires the measured depth and 16 bytes more inside the
-      wiped length. The prototype measured what that wipe costs this
-      kernel: nothing over 16 KiB, and between -12 and +17 ns at 64
-      bytes, inside that row's scatter. The vector registers hold
-      schedule words when the last block ends. VZEROALL writes zero to
-      ymm0 to ymm15, and the function ends with it. It also leaves
-      their upper halves clear, which `poly1305_avx2.c` calls
-      VZEROUPPER for (entry 110). After a call of one of the five
-      `_hw` calls a register may hold bytes again: the copy's `memcpy`
-      and `memset` are the C library's, and they use vector registers.
+      bytes of the stack below, as entry 127's arm does. On the runners
+      the kernel writes 208 or 224 bytes below its caller under gcc 13.3
+      and 256 or 272 under clang 23.1.2, and in the lab 224 under gcc
+      13.3 and 256 under clang 18.1.3 (248 or 264 under clang before the
+      quarter steps): the function aligns its frame to 32 bytes, so the
+      depth differs by 16 with the caller's stack address, and the test
+      requires the measured depth and 16 bytes more inside the wiped
+      length. The prototype measured what that wipe costs this kernel:
+      nothing over 16 KiB, and between -12 and +17 ns at 64 bytes,
+      inside that row's scatter. The vector registers hold schedule
+      words when the last block ends. VZEROALL writes zero to ymm0 to
+      ymm15, and the function ends with it. It also leaves their upper
+      halves clear, which `poly1305_avx2.c` calls VZEROUPPER for (entry
+      110). After a call of one of the five `_hw` calls a register may
+      hold bytes again: the copy's `memcpy` and `memset` are the C
+      library's, and they use vector registers.
     - **The frame.** The kernel stores four sums at a time, 256 bits,
       to an array on its stack inside its loop, which is what entry
       124's invariant, INV-49, is about. `sums` is declared with an
@@ -10728,10 +10880,10 @@ does nothing more.
       copies of the file were compiled at `-O2`: as it is, with
       `force_align_arg_pointer` and no declared alignment, with both,
       with neither, and with a declared alignment of 16. clang 18.1.3
-      and clang 23.1.3 wrote the same 1,201 instructions for all five,
+      and clang 23.1.3 wrote the same 1,202 instructions for all five,
       with `andq $-32, %rsp` and aligned stores: clang splits the array
       into the four 256-bit values its stores write and gives each a
-      register's alignment. gcc 13.3 wrote 1,227 instructions for all
+      register's alignment. gcc 13.3 wrote 1,228 instructions for all
       five and aligned the frame in all five. With the declared
       alignment of 32 it placed the array at a multiple of 32 bytes,
       and without it 16 bytes past one, where two of every four stores
@@ -10784,6 +10936,22 @@ does nothing more.
       of the probe spread 3.4 percent or more under both compilers,
       the plain C and the copies whose sums lie in a static buffer
       among them, so that spread is the runner's and not the stack's.
+
+      Those three runs timed the kernel with whole steps. Run
+      38184809651 repeated the probe on the kernel with quarter steps.
+      Run 38185545665 did too, both on the object the Makefile's rule
+      builds. Over 16 KiB the slowest of the 273 positions took at most
+      1.0037 times the fastest under clang 23.1.2 and 1.0032 under gcc
+      13.3.0 on 23 EPYC 7763 runners, and 1.0005 and 1.0014 on four EPYC
+      9V74, and no position took 3 percent more than the fastest. For
+      one block it took at most 1.0127 under clang, with no position 3
+      percent over, and under gcc 1.0511 on the EPYC 7763 and 1.0424 on
+      the EPYC 9V74, with at most 11 and 3 positions 3 percent over. The
+      mean over the positions at each of the two stack alignments
+      differed by at most 0.08 percent on those two models. Four EPYC
+      9V45 runners and a Xeon Platinum 8573C spread 0.2 to 3.7 and 3.0
+      to 12.6 percent over 16 KiB, as those models did in the runs
+      above.
     - **Gain.** Run 38165815673 timed `sha384_of_cpu` under a value
       with `CH_CPU_AVX2` and under `CH_CPU_PROBED` alone, which runs
       entry 127's plain C, on sixteen ubuntu-24.04 runners, under gcc
@@ -10825,10 +10993,41 @@ does nothing more.
       38169325916 drew a Xeon Platinum 8370C among its 24 runners,
       where the kernel took 1.11 times OpenSSL's time over 16 KiB
       under gcc and 1.12 under clang, and 0.74 and 0.67 of it at 64
-      bytes. So the kernel does not pass
-      OpenSSL over 16 KiB: OpenSSL's rounds are assembly on RORX and
-      ANDN over two blocks at once, and this one is C with no BMI2. It
-      does pass it for the one-block message a handshake's HMACs are
+      bytes.
+
+      Those runs timed the kernel with whole steps. Runs 38184809651 and
+      38185545665 timed the kernel with quarter steps in the same call,
+      with the plain C and OpenSSL in the same job. A figure is a range
+      over a model's runners, and for the kernel over the four paddings
+      too. The 16 KiB rows are in ns a byte and the 64-byte rows in ns a
+      message:
+
+      | | gcc, plain C | gcc, kernel | clang, plain C | clang, kernel | OpenSSL |
+      | --- | --- | --- | --- | --- | --- |
+      | EPYC 7763, 16 KiB | 1.902 to 1.903 | 1.405 to 1.414 | 1.912 to 1.915 | 1.394 to 1.399 | 1.336 to 1.339 |
+      | EPYC 7763, 64 bytes | 291 to 295 | 220 to 231 | 260 to 264 | 202 to 233 | 332 to 336 |
+      | EPYC 9V74, 16 KiB | 1.655 to 1.657 | 1.212 to 1.214 | 1.657 to 1.664 | 1.231 to 1.234 | 1.149 to 1.151 |
+      | EPYC 9V74, 64 bytes | 237 | 180 to 182 | 229 to 231 | 176 to 181 | 247 to 248 |
+      | EPYC 9V45, 16 KiB | 1.087 to 1.189 | 0.804 to 0.901 | 1.091 to 1.211 | 0.805 to 0.893 | 0.792 to 0.875 |
+      | EPYC 9V45, 64 bytes | 156 to 171 | 124 to 140 | 151 to 168 | 116 to 129 | 170 to 189 |
+      | Xeon Platinum 8573C, 16 KiB | 1.633 | 1.439 to 1.447 | 1.595 | 1.389 to 1.413 | 1.374 to 1.375 |
+      | Xeon Platinum 8573C, 64 bytes | 244 | 219 to 220 | 221 | 197 to 200 | 305 |
+
+      Over 16 KiB the kernel now takes 1.01 to 1.06 times OpenSSL's time
+      under gcc and 1.01 to 1.07 under clang, and at 64 bytes 0.66 to
+      0.74 of it under gcc and 0.61 to 0.73 under clang. No job of those
+      two runs drew a Xeon Platinum 8370C or a Xeon 6973P-C, which the
+      runs above timed with whole steps. On the EPYC 7763 the 64-byte
+      figure follows the kernel's address. Under clang it read 202 to
+      204 ns at one padding of the four and 230 to 233 at the other
+      three, and the kernel with whole steps 204 to 207 at one and 234
+      to 235 at three, so at like paddings the two texts are 1 to 2
+      percent apart and at unlike ones 12 to 13. Under gcc one padding
+      read 227 to 231 ns where three read 220 to 224
+      (docs/performance.md, the pitfalls table). So the kernel does not
+      pass OpenSSL over 16 KiB: OpenSSL's rounds are assembly on RORX
+      and ANDN over two blocks at once, and this one is C with no BMI2.
+      It does pass it for the one-block message a handshake's HMACs are
       made of. The table "chapulin beside OpenSSL" still holds the rows
       a run before entry 127 recorded.
     - **What holds it.** CBMC cannot read an intrinsic, so no harness
@@ -10863,23 +11062,43 @@ does nothing more.
       required, 32 runs of each, and every one passed. The sixteen
       jobs of run 38168270311 and the 24 of run 38169325916 did the
       same and then ran `make x86-64-kernels-check`, which passed in
-      each. Eleven
-      violations each undo one rule, and its named check catches each
-      (docs/verification.md, "SHA-512 on AVX2").
+      each. The sixteen jobs of each of runs 38182747184, 38184809651
+      and 38185545665 built and ran the same binaries on the kernel with
+      quarter steps, 10 runs a compiler a job, and none failed or
+      skipped. The last two built them through the Makefile's rule,
+      under gcc with the flag, and then ran `make lint-schedule-order`
+      under each compiler and `make x86-64-kernels-check`, which passed
+      in each. No digest shows the order of the kernel's instructions,
+      so `make lint-schedule-order` reads it (INV-51):
+      `tools/schedule-order.py` requires at most 40 instructions on
+      general registers between two vector instructions of the loop, in
+      the pinned clang's code for x86-64 on every machine and, where
+      `$(CC)` is gcc for x86-64, in the code the Makefile's two rules
+      for the file write. On every machine it also requires
+      `-fno-schedule-insns2` in the commands of those two rules as make
+      prints them for a gcc build for x86-64, and in no other. The qemu
+      lane's `sha512-avx2` part reads gcc's code on every machine with
+      docker. Fifteen violations each undo one rule, and its named check
+      catches each (docs/verification.md, "SHA-512 on AVX2").
     - **Cost.** A third SHA-512 compression function that an auditor
-      reads, 306 lines, which no proof compiles. At `-O2` the kernel
-      and its constants take 5,410 bytes under gcc 13.3 and 5,355
-      under clang 18.1.3, and `sha512_hw.c`'s x86-64 arm 1,769 and
-      1,804. A host object with the suite holds them beside entry
-      127's function, which the sessions without the bit run. A session
-      with `CH_CPU_AVX2` in such an object now runs AVX2 instructions
-      at its first handshake message, whose transcript it hashes with
-      SHA-384 beside SHA-256, where it ran none before its first
-      ChaCha20 record: a caller that sets the bit for a CPU without
-      AVX2 faults there. `test/test_cpu.h` leaves the bit out of the
-      rows that start a session on such a CPU. The names
-      `sha512_update_hw` and `sha512_on_instructions` mean two things
-      by architecture.
+      reads, 342 lines, which no proof compiles. At `-O2` the kernel and
+      its constants take 5,421 bytes under gcc 13.3 and 5,356 under
+      clang 18.1.3, and `sha512_hw.c`'s x86-64 arm 1,769 and 1,804. The
+      kernel's speed under gcc now rests on a flag of the build: the
+      Makefile compiles the file apart from every other source to give
+      it that flag alone, which is a rule, an object and a lint that no
+      other source has, and a gcc build of the file by any other means,
+      a firmware tree's or a script's, computes the same digests and
+      takes the longer time unless it passes `-fno-schedule-insns2` too.
+      A host object with the suite holds them beside entry 127's
+      function, which the sessions without the bit run. A session with
+      `CH_CPU_AVX2` in such an object now runs AVX2 instructions at its
+      first handshake message, whose transcript it hashes with SHA-384
+      beside SHA-256, where it ran none before its first ChaCha20
+      record: a caller that sets the bit for a CPU without AVX2 faults
+      there. `test/test_cpu.h` leaves the bit out of the rows that start
+      a session on such a CPU. The names `sha512_update_hw` and
+      `sha512_on_instructions` mean two things by architecture.
 
     Rejected:
 
@@ -10889,7 +11108,17 @@ does nothing more.
       KiB, and gcc 13.3 kept its eight schedule registers in stack
       slots unless the function was compiled without one optimization.
     - **A BMI2 build, or a bit for it**, by the ruling and by the
-      figures above.
+      figures above. **The assembly kernel** of the second prototype
+      needs BMI1 and BMI2, and Camilo ruled to stop at C.
+    - **`#pragma GCC optimize("no-schedule-insns2")` in the source**,
+      which reaches a gcc build by any means. The prototype measured it
+      as the flag's instructions and the flag's time (run 38173910667).
+      Camilo ruled for the flag on this one file in the Makefile.
+    - **In C: the Sigma0 added a round late, a round written one
+      operation a statement, each Sigma as one rotation, and an eighth
+      of a step after each half of a round.** The first three measured
+      slower in the second prototype, above, and the eighth was within 2
+      percent of the quarter in both directions with twice the text.
     - **`force_align_arg_pointer` on the kernel**, entry 124's means.
       It changes no instruction here under gcc 13.3, clang 18 or clang
       23, above.

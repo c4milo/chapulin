@@ -1,0 +1,20 @@
+invariant: INV-51
+file: Makefile
+catches: test/docker-aes-runtime-qemu.sh sha512-avx2
+reason: unit_cflags, which hands -fno-schedule-insns2 to the two rules that
+  compile sha512_avx2.c, returns nothing, so gcc compiles the kernel for
+  x86-64 with its second scheduling pass on in the packaged object and in
+  every test binary. The variable that holds the flag is as it was. The
+  kernel computes the same digests, leaves the same stack and clears the
+  same registers, so bin/sha2_equiv_test and the published vectors pass.
+  The lane's sha512-avx2 part runs make lint-schedule-order-gcc under its
+  gcc for x86-64, which reads the assembly the two rules' commands write
+  and finds 99 instructions on general registers between two vector
+  instructions where a round is 30. The lane builds with that gcc on
+  every machine, so the verdict is the same on each. It skips without
+  docker, and this then reports unguarded rather than caught.
+
+--- old
+unit_cflags = $(if $(filter sha512_avx2.c,$(1)),$(SHA512_AVX2_GCC_CFLAGS))
+--- new
+unit_cflags =

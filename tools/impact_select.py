@@ -68,6 +68,7 @@ WRAPPER_GATES = {
     "make lint-stack-walk": ["test/lint-stack-walk.sh"],
     "make lint-p256-wide": ["test/lint-p256-wide.sh"],
     "make lint-frame-align": ["test/lint-frame-align.sh"],
+    "make lint-schedule-order": ["test/lint-schedule-order.sh"],
     "make lint-proof-cover": ["test/lint-proof-cover.sh"],
 }
 
@@ -138,7 +139,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # sha512_avx2.c's kernel, of the wipe after it or of where its sums lie
 # names sha512-avx2, for the same reason, and because the lane builds it
 # with gcc, the compiler under which the declared alignment of the sums
-# decides where they lie.
+# decides where they lie, and under which the Makefile's flag for that
+# file decides the order of the kernel's instructions.
 AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh x86-kernels",
                           "test/docker-aes-runtime-qemu.sh sha2-equiv",

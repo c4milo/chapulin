@@ -1,0 +1,19 @@
+invariant: INV-51
+file: Makefile
+catches: test/lint-schedule-order.sh
+reason: the Makefile no longer gives sha512_avx2.c -fno-schedule-insns2
+  where gcc compiles for x86-64, which is how the build reads to anybody
+  who knows that the flag changes no digest. gcc 13.3's second scheduling
+  pass then moves each schedule step's vector instructions in among those
+  of one or two rounds and leaves up to 99 instructions on general
+  registers in a row with none, and SHA-384 over 16 KiB takes 1 to 4
+  percent longer by the CPU model. Every test of what the kernel computes
+  passes. make lint-schedule-order asks make for the commands a gcc build
+  for x86-64 runs, on every machine, and requires the flag in the two
+  that compile sha512_avx2.c. Where $(CC) is gcc for x86-64 it also reads
+  the assembly those two commands write and finds the long run.
+
+--- old
+SHA512_AVX2_GCC_CFLAGS := $(if $(GCC_X86_64_TARGET),-fno-schedule-insns2)
+--- new
+SHA512_AVX2_GCC_CFLAGS :=

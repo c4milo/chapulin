@@ -70,7 +70,7 @@ The other 34 sources are in no such harness:
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
 | `sha256_hw.c` | It runs SHA-256 on the CPU's SHA-256 intrinsics, which CBMC cannot unwind. | `bin/sha2_equiv_test` holds it to `sha256.c`'s proven code, and FIPS 180-4's vectors and the Wycheproof HMAC and HKDF suites run on it ([The hash instructions](#the-hash-instructions)). |
 | `sha512_hw.c` | Its arm64 arm runs SHA-384 and SHA-512 on arm64's SHA-512 intrinsics. Its x86-64 arm is `sha512.c`'s first arm compiled once more over `sha512_avx2.c`. | `bin/sha2_equiv_test` holds each arm to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([The hash instructions](#the-hash-instructions), [SHA-512 on AVX2](#sha-512-on-avx2)). The `sha512_host` harness proves the text of the x86-64 arm under its own names, over `sha512_compress_blocks.c`. |
-| `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it ([SHA-512 on AVX2](#sha-512-on-avx2)). |
+| `sha512_avx2.c` | It runs SHA-512's compression function with its message schedule on AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/sha2_equiv_test` holds it, under `sha512_hw.c`'s five calls, to the proven code of `sha512.c`'s second arm and `sha512_compress.c`, searches the stack each kind of call leaves and reads ymm0 to ymm15 back as zero after a call, and FIPS 180-4's vectors, RFC 4231's and the Wycheproof HMAC-SHA-384 and HKDF-SHA-384 suites run on it. `make lint-schedule-order` reads the order of its instructions as each compiler wrote them ([SHA-512 on AVX2](#sha-512-on-avx2)). |
 | `sha3_hw.c` | It runs Keccak-f[1600] on arm64's SHA-3 intrinsics. It has no body on x86-64, and none under a compiler other than clang, because gcc 13 keeps lanes of the state in stack slots it picks (decision 99). | Where it has a body, `bin/sha3_hw_equiv_test` holds it to `sha3.c`'s proven code, compares it with FIPS 202 as `proof/sha3_reference.h` writes it, and searches the stack each kind of call leaves for any lane the call computed. |
 | `mlkem_hw.c`, `mlkem_poly_hw.c` | Each is its file compiled once more for a host object, with its SHA-3 and SHAKE calls on `sha3_hw.c` and under the names `keccak_hw.h` gives (decision 99). Each has a body where `sha3_hw.c` has one. | The file's own harnesses prove the same text under its own names, but for the host arms of `mlkem.c`'s three NTT wrappers, each one call into `mlkem_vector.c` ([The vector NTT](#the-vector-ntt)), and `bin/mlkem_hw_equiv_test` holds each copy's keys, ciphertexts and secrets to its file's. |
 | `hkdf_hw.c`, `keysched_hw.c` | Each is its file compiled once more for a host object, with its SHA-256 calls on `sha256_hw.c`, its SHA-384 calls on `sha512_hw.c`, and under the names `hash_hw.h` gives (decisions 93 and 128). | The file's own harnesses prove the same text under its own names, `bin/sha2_equiv_test` holds each copy's output to its file's, and `test/hash-builds.sh` reads which hash each calls. |
@@ -4664,7 +4664,8 @@ No x86-64 CPU this tree targets has SHA-512 instructions. An x86-64
 host object with `SUITE=aesgcm` holds `sha512_avx2.c`, whose one
 function, `sha512_avx2_compress_blocks`, is FIPS 180-4 §6.4.2 over whole
 blocks with the message schedule in 256-bit registers, four words a
-step, and the rounds in general registers (decision 128). `sha512_hw.c`
+step, and the rounds in general registers, a quarter of a step after
+each round (decision 128). `sha512_hw.c`
 is there `sha512.c`'s first arm compiled once more, under the `_hw`
 names and over that function, and `sha512.h`'s entries call it for a
 session whose `ch_cfg.cpu` holds `CH_CPU_AVX2`. Every other session and
@@ -4740,6 +4741,45 @@ under `CH_REQUIRE_X86_KERNELS=1`:
   tests of the count of buffered bytes that it drops in `sha512_of` and
   `sha384_of`.
 
+**The order of its instructions** is the one thing here that a compiler
+decides and no digest shows. The source runs a quarter of a schedule
+step after each round, and the kernel took 1 to 8 percent longer over
+16 KiB under gcc with each step whole after four rounds (decision 128).
+`make lint-schedule-order` holds the order (INV-51).
+`tools/schedule-order.py` reads the function's assembly, finds the
+innermost loop that holds a vector shift, which is the loop of sixteen
+rounds and four steps, and requires at least 100 vector instructions in
+it and at most 40 instructions on general registers between two of
+them. A round is 30 instructions under gcc 13.3 and 29 to 31 under
+clang 18.1.3 and 23.1.3. The lint reads three things:
+
+- The pinned clang's code for x86-64 at `-O2`, on every machine: 145
+  vector instructions in 24 runs, and at most 31 on general registers
+  between two. Before the change clang's code left 106.
+- The commands of the two rules that compile the file, as make prints
+  them for a gcc build of a host object for x86-64 and for another
+  build, on every machine: `make print-sha512-avx2-commands` with
+  `GCC_X86_64_TARGET` set and empty. The first must carry
+  `-fno-schedule-insns2` in the test binaries' rule and in the packaged
+  object's and not in the command that compiles `sha512.c`, and the
+  second in none.
+- Where `$(CC)` is gcc for x86-64, the assembly those two commands
+  write with `-S` in place of `-c` (`make lint-schedule-order-gcc`).
+  Under gcc 13.3 each wrote 144 vector instructions in 16 runs with 30
+  on general registers between each two. Without the flag gcc 13.3
+  wrote them in 92 runs and left 99 in a row with none.
+
+The qemu lane's `sha512-avx2` part runs `make lint-schedule-order-gcc`
+under its gcc for x86-64, so every machine with docker reads gcc's
+order, and CI's check job reads it on every push. Every list of a test
+binary in the Makefile names the object the test binaries' rule builds
+and never the source (`hash_hw_of`), so the stack search, the read of
+the registers and `make lint-stack` run the code the lint read: each is
+built from one of the two rules, or in `lint-stack-run` from a compile
+of the file alone under the same flag, which `bench/stack.py` adds to
+its own compile of the file too. The lint reads no time, and no check
+here does.
+
 **What a call leaves.** The kernel wipes nothing. It leaves the last
 sixteen schedule words of the last block, each plus its round constant,
 in `sums`, an array in its frame, and its vector registers hold
@@ -4768,20 +4808,28 @@ holds that in four steps:
   they wrote, of the set
   [SHA-512 in a host object](#sha-512-in-a-host-object) lists.
 
-The kernel wrote 208 or 224 bytes below its caller under gcc 13.3 and
-248 or 264 under clang 23.1.2 on hosted runners, by the runner's stack
-address, and 224 and 248 under gcc 13.3 and clang 18.1.3 on
-`qemu-x86_64`. Under all three the six calls left no word, the sums lay
-at a multiple of 32 bytes and the registers read zero: on EPYC 7763,
-EPYC 9V74, Xeon 6973P-C and Xeon Platinum 8573C runners in run
-38165815673, 32 runs of the binary, on EPYC 7763, EPYC 9V74 and EPYC
-9V45 runners in run 38168270311, 32 more, and on those three models, a
-Xeon Platinum 8370C and a Xeon Platinum 8573C in run 38169325916, 48
-more. `make lint-stack` holds the
-kernel's frame under 384 bytes. An unoptimized or sanitized binary
-skips the three searches and still reads the registers.
+With whole steps the kernel wrote 208 or 224 bytes below its caller
+under gcc 13.3 and 248 or 264 under clang 23.1.2 on hosted runners, by
+the runner's stack address, and 224 and 248 under gcc 13.3 and clang
+18.1.3 on `qemu-x86_64`. Under all three the six calls left no word,
+the sums lay at a multiple of 32 bytes and the registers read zero: on
+EPYC 7763, EPYC 9V74, Xeon 6973P-C and Xeon Platinum 8573C runners in
+run 38165815673, 32 runs of the binary, on EPYC 7763, EPYC 9V74 and
+EPYC 9V45 runners in run 38168270311, 32 more, and on those three
+models, a Xeon Platinum 8370C and a Xeon Platinum 8573C in run
+38169325916, 48 more. With quarter steps it writes 208 or 224 bytes
+under gcc 13.3 and 256 or 272 under clang 23.1.2 on the runners, and
+224 and 256 under gcc 13.3 and clang 18.1.3 on `qemu-x86_64`, and the
+same three things held in the 32 runs of the binary in each of runs
+38182747184, 38184809651 and 38185545665, on EPYC 7763, EPYC 9V74,
+EPYC 9V45 and Xeon Platinum 8573C runners. `make lint-stack` holds the
+kernel's frame under 384 bytes for an object that packages it, one with
+`SUITE=aesgcm`. `make check` runs that lint for no object with the
+suite, so that ceiling is read when the lint is run for such an object
+by hand. An unoptimized or sanitized binary skips the three searches
+and still reads the registers.
 
-Eleven violations break those rules, and each is caught. Two change a
+Fifteen violations break those rules, and each is caught. Two change a
 value `bin/sha2_equiv_test` compares: the upper pair of a schedule step
 computed from the two words before the step, and sigma0's shift count.
 Three fail its checks of what a call leaves: the wipe after the kernel
@@ -4797,7 +4845,15 @@ bit on x86-64 and fails `bin/x86_kernels_test`'s count in the lane's
 machine, and `inv50-suite-host-object-lacks-sha512-avx2` and
 `inv36-zig-suite-host-object-lacks-sha512-avx2` leave the kernel out of
 the object and fail `make lint-trust-separation` and
-`make lint-zig-build`.
+`make lint-zig-build`. Four are about the order.
+`inv51-sha512-avx2-step-after-four-rounds` writes one step whole after
+its four rounds, and the lint's reading of clang's code fails on every
+machine. `inv51-sha512-avx2-gcc-flag-dropped` empties the flag and
+`inv51-sha512-avx2-flag-to-every-source` gives it to every source of
+the packaged object, and the lint's reading of the commands fails for
+each. `inv51-sha512-avx2-gcc-rules-take-no-flag` keeps the flag and
+leaves it out of both rules, and the lane's `sha512-avx2` part fails on
+gcc's 99 instructions.
 
 What none of this shows: the time the kernel takes on a CPU. Its
 instructions are adds, rotates, shifts, bitwise logic and byte shuffles

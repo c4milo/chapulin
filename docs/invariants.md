@@ -2511,6 +2511,71 @@ last `ROLE=server` stub, as the entry said it would.
 - See [decisions: Engineering](decisions.md#engineering), entries 124
   and 128.
 
+### INV-51 — the AVX2 SHA-512 kernel's schedule lies among its rounds in the code each compiler writes
+
+- **Claim.** In `sha512_avx2_compress_blocks` as clang and as gcc
+  compile it for an x86-64 host object, a quarter of a schedule step
+  follows each round of the loop: at most 40 instructions on general
+  registers lie between two vector instructions there, where a round is
+  29 to 31. This entry is about speed and no secret: the kernel writes
+  the same digest whatever order its instructions have.
+- **Mechanism.** `eight_rounds_advancing` writes a step in four
+  quarters, one after each of the four rounds that read the sums the
+  step replaces. clang 18 and 23 write the instructions in that order.
+  gcc 13.3's second scheduling pass, which runs after gcc has picked
+  registers, does not: it moves each step's vector instructions in among
+  those of one or two rounds and leaves up to 99 instructions on general
+  registers with none. So the Makefile compiles the file with
+  `-fno-schedule-insns2`, which turns that pass off, wherever gcc
+  compiles it for x86-64 (`SHA512_AVX2_GCC_CFLAGS`), and gives the flag
+  to no other file. A command that names several sources gives a flag to
+  all of them, so `sha512_avx2.c` compiles apart on every compiler, by
+  one of two rules: the packaged object's, which adds `unit_cflags` of
+  the source it compiles, and the rule of `SHA512_AVX2_UNIT`, the object
+  every test binary of a host object links in the source's place.
+  `lint-stack-run` and `bench/stack.py` compile each source alone and
+  add the flag to this one. `bench/record.sh`, `bench/primitives.sh` and
+  `test/aes-runtime-qemu.sh`, which link the kernel in programs of their
+  own, ask make for that object under their compiler (`make
+  sha512-avx2-unit`). `test/hash-builds.sh` compiles the file under the
+  host's compiler only without `-DCH_CPU_RUNTIME`, where it holds no
+  function. `build.zig` compiles the object with clang, which keeps the
+  order and refuses the flag (decision 128).
+- **Check.** `make lint-schedule-order` runs `tools/schedule-order.py`,
+  which reads the function's assembly, finds the innermost loop that
+  holds a vector shift, and requires at least 100 vector instructions in
+  it and at most 40 instructions on general registers between two of
+  them. It reads the file three ways. On every machine it compiles it
+  for x86-64 with the pinned clang at `-O2`, as `make lint-frame-align`
+  does. On every machine it asks make for the two commands that compile
+  the file, as a gcc build for x86-64 runs them and as any other build
+  does, and requires the flag in both of the first and in neither of
+  the second, and never in the command that compiles `sha512.c`. Where
+  `$(CC)` is gcc for x86-64, as CI's is, it runs those two commands with
+  `-S` in place of `-c` and reads what gcc wrote
+  (`make lint-schedule-order-gcc`). The qemu lane's `sha512-avx2` part
+  runs that target under its gcc for x86-64, so every machine with
+  docker reads gcc's order too.
+  `inv51-sha512-avx2-step-after-four-rounds` writes one step whole after
+  its four rounds, and the clang reading fails.
+  `inv51-sha512-avx2-gcc-flag-dropped` empties the flag and
+  `inv51-sha512-avx2-flag-to-every-source` gives it to every source, and
+  the reading of the commands fails for each.
+  `inv51-sha512-avx2-gcc-rules-take-no-flag` leaves the flag out of both
+  rules, and the lane's reading of gcc's assembly fails. No test times
+  the kernel: a timing on a shared runner is a measurement to read and
+  no check, and decision 128 holds the measurements.
+- **Violation.** A PR drops the flag because every test passes without
+  it, or moves it to `CFLAGS` to shorten the Makefile; writes the step
+  whole again because three calls in a row read better; adds a binary
+  that names `sha512_avx2.c` among the sources of one compile command,
+  where gcc then compiles the kernel with the pass on; or updates gcc or
+  clang to a release that orders the instructions otherwise. The lint
+  reads the two rules' commands and no other: a new command that
+  compiles the file is held by review, and by `hash_hw_of`, which hands
+  every list of the Makefile the object and never the source.
+- See [decisions: Engineering](decisions.md#engineering), entry 128.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

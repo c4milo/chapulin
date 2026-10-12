@@ -145,6 +145,18 @@ if [ "${#HOST_PRIMITIVE_SRCS[@]}" -le "${#PRIMITIVE_SRCS[@]}" ] ||
     echo "FAIL primitives bench: make print-host-srcs added no source for a host object" >&2
     exit 1
 fi
+# sha512_avx2.c compiles apart from every other source: where gcc compiles
+# for x86-64 the Makefile gives that file a flag no other file gets
+# (SHA512_AVX2_UNIT there, docs/decisions.md 128). So a list that names it
+# links the object make's rule builds under this compiler, in this run's
+# directory.
+SHA512_AVX2_UNIT=$(make -s --no-print-directory sha512-avx2-unit CC="$CC" SHA512_AVX2_UNIT_DIR="$W")
+if [ ! -f "$SHA512_AVX2_UNIT" ]; then
+    echo "FAIL primitives bench: make sha512-avx2-unit built no object" >&2
+    exit 1
+fi
+HOST_PRIMITIVE_SRCS=("${HOST_PRIMITIVE_SRCS[@]/#sha512_avx2.c/$SHA512_AVX2_UNIT}")
+HOST_HANDSHAKE_SRCS=("${HOST_HANDSHAKE_SRCS[@]/#sha512_avx2.c/$SHA512_AVX2_UNIT}")
 
 # --build times nothing, so it compiles every program at once, each into
 # a log of its own, and names the programs that failed once all have

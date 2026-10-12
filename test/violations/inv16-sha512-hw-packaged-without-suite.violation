@@ -11,6 +11,6 @@ reason: a host object packages sha512_hw.c and sha512_avx2.c wherever it
   without the suite.
 
 --- old
-LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_of,$(LIB_SRCS)))
+LIB_SRCS += $(filter-out $(if $(SUITE_DEF),,$(SHA512_HW_SRCS)),$(call hash_hw_srcs_of,$(LIB_SRCS)))
 --- new
-LIB_SRCS += $(call hash_hw_of,$(LIB_SRCS))
+LIB_SRCS += $(call hash_hw_srcs_of,$(LIB_SRCS))

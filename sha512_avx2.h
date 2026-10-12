@@ -24,7 +24,7 @@
 // ct_wipe can name. bin/sha2_equiv_test measures how far below its caller the call writes and
 // requires that, and 16 bytes more, inside this length: the function aligns its frame to 32
 // bytes, so the depth differs by 16 between callers. It measured 208 and 224 bytes under gcc
-// 13.3, 248 and 264 under clang 23, and 248 under clang 18. lint-stack holds the function's
+// 13.3, 256 and 272 under clang 23, and 256 under clang 18. lint-stack holds the function's
 // frame under STACK_BUDGET_SHA512_AVX2, which is below this length.
 #define SHA512_AVX2_BELOW_LEN 512
 

@@ -117,10 +117,26 @@ def library() -> tuple[list[str], list[str]]:
     return lines[0].split(), lines[1].split()
 
 
+def flags_of_its_own() -> dict[str, list[str]]:
+    """The flags make gives one source and no other, by source. sha512_avx2.c
+    takes -fno-schedule-insns2 where cc is gcc for x86-64 (the Makefile's
+    unit_cflags, docs/decisions.md 128). build compiles each source alone, as
+    make's rule for the packaged object does, so it adds them as that rule
+    does."""
+    command = ["make", "-s", "--no-print-directory", "-C", str(ROOT), "print-unit-cflags"]
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL")}
+    made = subprocess.run(command, stdout=subprocess.PIPE, text=True, env=env)
+    if made.returncode != 0:
+        sys.exit(f"stack.py: {shlex.join(command)} failed")
+    listed = (line.split() for line in made.stdout.splitlines())
+    return {words[0]: words[1:] for words in listed if words}
+
+
 def build(tmp: Path, srcs: list[str], flags: list[str]) -> None:
+    own = flags_of_its_own()
     for src in srcs:
-        subprocess.run(["cc", *CFLAGS, "-I", str(ROOT), "-c", str(ROOT / src), *flags],
-                       cwd=tmp, check=True, capture_output=True)
+        subprocess.run(["cc", *CFLAGS, *own.get(src, []), "-I", str(ROOT), "-c", str(ROOT / src),
+                        *flags], cwd=tmp, check=True, capture_output=True)
 
 
 def functions(obj: Path) -> list[tuple[int, str, str]]:

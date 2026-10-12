@@ -237,7 +237,10 @@
 #                     compute and wipe
 #   sha512-avx2       bin/sha2_equiv_test, bin/sha512_test_host and
 #                     bin/hkdf384_test_host for x86-64, for the violations
-#                     of sha512_avx2.c's kernel and of the wipe after it
+#                     of sha512_avx2.c's kernel and of the wipe after it,
+#                     and under a gcc make lint-schedule-order-gcc, for
+#                     the violation of the flag the Makefile gives that
+#                     file
 #   arm64-hash-count  the two counting binaries for arm64, for the
 #                     violations of the entries an arm64 object alone
 #                     compiles
@@ -376,6 +379,31 @@ arm64_hash_count_srcs=()
 for src in "${quic_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_quic_srcs+=("$src"); done
 for src in "${tcp_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_tcp_srcs+=("$src"); done
 for src in "${hash_count_srcs[@]}"; do [ "$src" = avx512_wipe.c ] || arm64_hash_count_srcs+=("$src"); done
+# sha512_avx2.c compiles apart from every other source: where gcc compiles
+# for x86-64 the Makefile gives that file a flag no other file gets
+# (SHA512_AVX2_UNIT there, docs/decisions.md 128). So each list a binary
+# for x86-64 links names, in the source's place, the object make's rule
+# builds under this script's compiler for x86-64. The arm64 lists keep the
+# source, which holds nothing for arm64.
+x86_quic_srcs=()
+x86_tcp_srcs=()
+x86_runtime_test_srcs=()
+x86_sha2_equiv_srcs=()
+x86_webpki_auth_counted_srcs=()
+x86_sha512_test_host_srcs=()
+x86_hkdf384_test_host_srcs=()
+if [ -n "$x86_cc" ]; then
+    x86_unit=$(make -s --no-print-directory sha512-avx2-unit CC="$x86_cc" SHA512_AVX2_UNIT_DIR="$x86_out") &&
+        [ -f "$x86_unit" ] ||
+        { echo "aes-runtime-qemu: make sha512-avx2-unit built no object under $x86_cc" >&2; exit 1; }
+    x86_quic_srcs=("${quic_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_tcp_srcs=("${tcp_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_runtime_test_srcs=("${runtime_test_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_sha2_equiv_srcs=("${sha2_equiv_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_webpki_auth_counted_srcs=("${webpki_auth_counted_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_sha512_test_host_srcs=("${sha512_test_host_srcs[@]/#sha512_avx2.c/$x86_unit}")
+    x86_hkdf384_test_host_srcs=("${hkdf384_test_host_srcs[@]/#sha512_avx2.c/$x86_unit}")
+fi
 
 # Runs one binary on a CPU model and requires its exit status. A run that
 # must pass prints what it wrote when it does not.
@@ -404,7 +432,7 @@ no_ifma='max,-avx512ifma'
 # ROLE=both TRUST=webpki suite object.
 build_webpki_loop() {
     "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_TCP_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-        -o "$x86_out/webpki_loop_aes" test/webpki_loop_test.c "${tcp_srcs[@]}"
+        -o "$x86_out/webpki_loop_aes" test/webpki_loop_test.c "${x86_tcp_srcs[@]}"
 }
 
 # The rows of CH_CPU_AVX512_IFMA. Each row's server runs ch_srv_check under
@@ -529,7 +557,7 @@ if [ -z "$only" ] || [ "$only" = rsa-ifma-callers ]; then
         "a pinned CertificateVerify or ch_srv_check's check sent RSA's public operation to AVX-512 IFMA under a value without CH_CPU_AVX512_IFMA, or none under a value with it" \
         tcp_blocking_loop_host
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI \
-        -o "$x86_out/webpki_auth_host" test/webpki_auth_test.c "${webpki_auth_counted_srcs[@]}" || exit 1
+        -o "$x86_out/webpki_auth_host" test/webpki_auth_test.c "${x86_webpki_auth_counted_srcs[@]}" || exit 1
     expect max 0 \
         "a webpki chain's link or its CertificateVerify sent RSA's public operation to AVX-512 IFMA under a value without CH_CPU_AVX512_IFMA, or none under a value with it" \
         webpki_auth_host
@@ -619,7 +647,7 @@ fi
 # bin/sha2_equiv_test for x86-64, which both parts below run.
 build_x86_sha2_equiv() {
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 "${exporter[@]}" \
-        -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${sha2_equiv_srcs[@]}"
+        -o "$x86_out/sha2_equiv_test" test/sha2_equiv_test.c "${x86_sha2_equiv_srcs[@]}"
 }
 
 if [ -z "$only" ] || [ "$only" = sha512-avx2 ]; then
@@ -633,14 +661,23 @@ if [ -z "$only" ] || [ "$only" = sha512-avx2 ]; then
         "sha512_hw.c over the AVX2 kernel and sha512.c's second arm disagree, a call left a value it computed on the stack or in a vector register, the sums do not lie at a multiple of 32 bytes, or this qemu's max model lacks AVX2" \
         sha2_equiv_test
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -o "$x86_out/sha512_test_host" test/sha512_test.c \
-        "${sha512_test_host_srcs[@]}" || exit 1
+        "${x86_sha512_test_host_srcs[@]}" || exit 1
     "$x86_cc" "${flags[@]}" -DCH_CPU_RUNTIME -DCH_HASH_SHA384 -o "$x86_out/hkdf384_test_host" \
-        test/hkdf384_test.c "${hkdf384_test_host_srcs[@]}" || exit 1
+        test/hkdf384_test.c "${x86_hkdf384_test_host_srcs[@]}" || exit 1
     for b in sha512_test_host hkdf384_test_host; do
         CH_REQUIRE_X86_KERNELS=1 expect max 0 \
             "a published SHA-384, SHA-512 or HMAC-SHA-384 vector fails on the AVX2 kernel, or this qemu's max model lacks AVX2" \
             "$b" 0xd
     done
+    # The order of the kernel's instructions as this gcc wrote them, in the
+    # two commands of the Makefile that compile the file: a quarter of a
+    # schedule step after each round, which gcc keeps only under the flag
+    # the Makefile gives the file. A clang takes no such flag, and make
+    # lint-schedule-order reads clang's order on every machine.
+    if ! "$x86_cc" -dM -E -x c /dev/null | grep -qw __clang__; then
+        make -s --no-print-directory lint-schedule-order-gcc CC="$x86_cc" ||
+            { echo "aes-runtime-qemu: under $x86_cc the kernel's schedule does not lie among its rounds" >&2; exit 1; }
+    fi
 fi
 if [ "$only" = sha512-avx2 ]; then
     echo "aes-runtime-qemu: bin/sha2_equiv_test held sha512_hw.c over sha512_avx2.c's kernel to sha512.c's second arm on AVX2 for x86-64, found no word of a call on the stack and none in ymm0 to ymm15, and bin/sha512_test_host and bin/hkdf384_test_host ran the published vectors on it"
@@ -685,9 +722,9 @@ if [ "$only" = arm64-hash-count ]; then
 fi
 
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/aes_runtime_test" \
-    test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${runtime_test_srcs[@]}" || exit 1
+    test/aes_runtime_test.c test/aes_runtime_soft.c test/aes_runtime_hw.c "${x86_runtime_test_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${both[@]}" "${runtime[@]}" \
-    -o "$x86_out/quic_loop_aes" test/quic_loop_test.c "${quic_srcs[@]}" || exit 1
+    -o "$x86_out/quic_loop_aes" test/quic_loop_test.c "${x86_quic_srcs[@]}" || exit 1
 build_webpki_loop || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
     -o "$x86_out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1

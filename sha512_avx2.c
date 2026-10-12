@@ -12,7 +12,20 @@
 //   one step computes the four words sixteen after a register's and writes them over it;
 //   each step adds the four round constants of its words and stores the four sums to an array
 //   on the stack, and a round reads its sum from that array;
-//   the rounds are written out eight to a pass, and a step follows every four of them.
+//   the rounds are written out eight to a pass, and a quarter of a step follows each of them:
+//   the step that replaces the register whose sums the four rounds around it read.
+//
+// A step's instructions are on vector registers and a round's on general registers. With each
+// step whole after its four rounds, as this file first had it, SHA-384 over 16 KiB took 1 to 8
+// percent longer under gcc on each of four CPU models, and longer under clang on three of them
+// (docs/decisions.md 128). The order is the source's, and a compiler may write another. clang
+// writes the instructions in the source's order. gcc's second scheduling pass, which runs after
+// gcc has picked registers, moves each step's vector instructions in among those of one or two
+// rounds and leaves the rounds after them with none. So the Makefile compiles this file with
+// -fno-schedule-insns2, which turns that pass off, wherever gcc compiles it for x86-64, and
+// gives the flag to no other file (SHA512_AVX2_GCC_CFLAGS there). A gcc build of this file by
+// any other means computes the same state in that slower order unless it passes the flag. make
+// lint-schedule-order reads the order each compiler wrote (INV-51).
 //
 // The object compiles this file with no instruction flag, so the rest of the object runs on any
 // x86-64 CPU. The pragma below puts the target attribute that turns AVX2 on onto each function
@@ -107,15 +120,6 @@ static inline __attribute__((always_inline)) void one_round(uint64_t a, uint64_t
     *h = t1 + (upper_sigma0(a) + majority(a, b, c));
 }
 
-// Two rounds in a row on the variables as the caller names them for the first. The second
-// names each one place on.
-static inline __attribute__((always_inline)) void
-two_rounds(const uint64_t *a, const uint64_t *b, uint64_t *c, uint64_t *d, const uint64_t *e,
-           const uint64_t *f, uint64_t *g, uint64_t *h, uint64_t first, uint64_t second) {
-    one_round(*a, *b, *c, d, *e, *f, *g, h, first);
-    one_round(*h, *a, *b, c, *d, *e, *f, g, second);
-}
-
 // Four 64-bit words in a 256-bit register, and two in a 128-bit one. Each operation below
 // works on every lane at once and has no branch and no memory access that a lane's value
 // decides.
@@ -169,59 +173,87 @@ static inline __attribute__((always_inline)) four_words one_word_on(four_words l
     return _mm256_permute4x64_epi64(_mm256_blend_epi32(low, high, 0x03), 0x39);
 }
 
-// W[t] to W[t + 3] (FIPS 180-4 §6.4.2 step 1) from the sixteen words before them: current holds
-// W[t - 16] to W[t - 13], second the four after, third W[t - 8] to W[t - 5] and last W[t - 4]
-// to W[t - 1]. W[t] and W[t + 1] take lower_sigma1 of W[t - 2] and W[t - 1], last's upper half.
-// W[t + 2] and W[t + 3] take lower_sigma1 of W[t] and W[t + 1], so the lower half is computed
-// first and each half in a 128-bit register.
-static inline __attribute__((always_inline)) four_words next_four_words(four_words current,
-                                                                        four_words second,
-                                                                        four_words third,
-                                                                        four_words last) {
-    four_words fifteen_back = one_word_on(current, second);
-    four_words seven_back = one_word_on(third, last);
-    four_words partial =
-        _mm256_add_epi64(_mm256_add_epi64(current, four_lower_sigma0(fifteen_back)), seven_back);
-    two_words lower = _mm_add_epi64(_mm256_castsi256_si128(partial),
-                                    two_lower_sigma1(_mm256_extracti128_si256(last, 1)));
-    two_words upper = _mm_add_epi64(_mm256_extracti128_si256(partial, 1), two_lower_sigma1(lower));
-    return _mm256_inserti128_si256(_mm256_castsi128_si256(lower), upper, 1);
+// One schedule step computes W[t] to W[t + 3] (FIPS 180-4 §6.4.2 step 1) from the sixteen words
+// before them and writes them over register j of w, which holds W[t - 16] to W[t - 13]. The
+// registers are a ring of four: the one after j holds W[t - 12] to W[t - 9], the next W[t - 8]
+// to W[t - 5], and the one before j W[t - 4] to W[t - 1]. W[t] and W[t + 1] take lower_sigma1
+// of W[t - 2] and W[t - 1], and W[t + 2] and W[t + 3] take lower_sigma1 of W[t] and W[t + 1],
+// so the lower half is computed first and each half in a 128-bit register.
+//
+// The step is written in four quarters, one after each of the four rounds that read the sums
+// of register j, and this is what it holds between them.
+typedef struct {
+    // W[t - 16 + i] + W[t - 7 + i] + lower_sigma0(W[t - 15 + i]) for i from 0 to 3: each new
+    // word less its lower_sigma1 term.
+    four_words partial;
+    // W[t] and W[t + 1].
+    two_words lower;
+} schedule_step;
+
+// The first quarter of the step that replaces register j of w: the three terms of each new
+// word that read none of the four.
+static inline __attribute__((always_inline)) void
+step_first_quarter(schedule_step *step, const four_words w[4], size_t j) {
+    four_words fifteen_back = one_word_on(w[j], w[(j + 1) % 4]);
+    four_words seven_back = one_word_on(w[(j + 2) % 4], w[(j + 3) % 4]);
+    four_words sixteen_and_seven_back = _mm256_add_epi64(w[j], seven_back);
+    step->partial = _mm256_add_epi64(sixteen_and_seven_back, four_lower_sigma0(fifteen_back));
+}
+
+// The second quarter: W[t] and W[t + 1]. W[t - 2] and W[t - 1] are the upper half of the
+// register before j.
+static inline __attribute__((always_inline)) void
+step_second_quarter(schedule_step *step, const four_words w[4], size_t j) {
+    two_words two_back = _mm256_extracti128_si256(w[(j + 3) % 4], 1);
+    step->lower = _mm_add_epi64(_mm256_castsi256_si128(step->partial), two_lower_sigma1(two_back));
+}
+
+// The third quarter: W[t + 2] and W[t + 3], and the four new words over register j.
+static inline __attribute__((always_inline)) void step_third_quarter(const schedule_step *step,
+                                                                     four_words w[4], size_t j) {
+    two_words upper =
+        _mm_add_epi64(_mm256_extracti128_si256(step->partial, 1), two_lower_sigma1(step->lower));
+    w[j] = _mm256_inserti128_si256(_mm256_castsi128_si256(step->lower), upper, 1);
 }
 
 // Writes the four words of register j of w, each plus its round constant, where the rounds
 // read them: sums[4 * j] to sums[4 * j + 3]. constants holds the sixteen constants of the
 // rounds that read the sums. Both arrays are aligned to 32 bytes, so the load and the store
-// each lie inside one cache line.
+// each lie inside one cache line. For the words a step computed, this is its fourth quarter.
 static inline __attribute__((always_inline)) void
 store_sums(uint64_t sums[16], const four_words w[4], size_t j, const uint64_t constants[16]) {
     four_words four_constants = _mm256_load_si256((const __m256i *)(const void *)&constants[4 * j]);
     _mm256_store_si256((__m256i *)(void *)&sums[4 * j], _mm256_add_epi64(w[j], four_constants));
 }
 
-// Replaces register j of w, W[t - 16] to W[t - 13], by W[t] to W[t + 3], and stores the new
-// words' sums for the rounds sixteen on, whose constants are constants[4 * j] and the next
-// three.
-static inline __attribute__((always_inline)) void
-advance(four_words w[4], size_t j, uint64_t sums[16], const uint64_t constants[16]) {
-    w[j] = next_four_words(w[j], w[(j + 1) % 4], w[(j + 2) % 4], w[(j + 3) % 4]);
-    store_sums(sums, w, j, constants);
-}
-
-// Eight rounds on sums[4 * from] to sums[4 * from + 7], and after each four of them the step
-// that replaces the register they read: registers from and from + 1. from is 0 or 2. Each four
-// rounds read their sums before the step stores new ones over them. The reads are plain, so
-// each is the memory operand of its round's add: every pass of the caller's loop reads what the
-// pass before it stored, and no compiler can take such a sum from a register.
+// Eight rounds on sums[4 * from] to sums[4 * from + 7], and the two steps that replace the
+// registers those sums came from, registers from and from + 1, a quarter after each round. from
+// is 0 or 2. Each round names the working variables one place on from the round before it. A
+// step's first three quarters store nothing, and its fourth stores the new sums over the four
+// its rounds read, after the fourth of them has read its own. The reads are plain, so each is
+// the memory operand of its round's add: every pass of the caller's loop reads what the pass
+// before it stored, and no compiler can take such a sum from a register.
 static inline __attribute__((always_inline)) void
 eight_rounds_advancing(working_variables *v, four_words w[4], size_t from, uint64_t sums[16],
                        const uint64_t constants[16]) {
     const uint64_t *now = sums + 4 * from;
-    two_rounds(&v->a, &v->b, &v->c, &v->d, &v->e, &v->f, &v->g, &v->h, now[0], now[1]);
-    two_rounds(&v->g, &v->h, &v->a, &v->b, &v->c, &v->d, &v->e, &v->f, now[2], now[3]);
-    advance(w, from, sums, constants);
-    two_rounds(&v->e, &v->f, &v->g, &v->h, &v->a, &v->b, &v->c, &v->d, now[4], now[5]);
-    two_rounds(&v->c, &v->d, &v->e, &v->f, &v->g, &v->h, &v->a, &v->b, now[6], now[7]);
-    advance(w, from + 1, sums, constants);
+    schedule_step step;
+    one_round(v->a, v->b, v->c, &v->d, v->e, v->f, v->g, &v->h, now[0]);
+    step_first_quarter(&step, w, from);
+    one_round(v->h, v->a, v->b, &v->c, v->d, v->e, v->f, &v->g, now[1]);
+    step_second_quarter(&step, w, from);
+    one_round(v->g, v->h, v->a, &v->b, v->c, v->d, v->e, &v->f, now[2]);
+    step_third_quarter(&step, w, from);
+    one_round(v->f, v->g, v->h, &v->a, v->b, v->c, v->d, &v->e, now[3]);
+    store_sums(sums, w, from, constants);
+    one_round(v->e, v->f, v->g, &v->h, v->a, v->b, v->c, &v->d, now[4]);
+    step_first_quarter(&step, w, from + 1);
+    one_round(v->d, v->e, v->f, &v->g, v->h, v->a, v->b, &v->c, now[5]);
+    step_second_quarter(&step, w, from + 1);
+    one_round(v->c, v->d, v->e, &v->f, v->g, v->h, v->a, &v->b, now[6]);
+    step_third_quarter(&step, w, from + 1);
+    one_round(v->b, v->c, v->d, &v->e, v->f, v->g, v->h, &v->a, now[7]);
+    store_sums(sums, w, from + 1, constants);
 }
 
 // Eight of a block's last sixteen rounds, which no step follows. Each sum is read through a
@@ -230,10 +262,14 @@ eight_rounds_advancing(working_variables *v, four_words w[4], size_t from, uint6
 // registers in stack slots of its own until the rounds ran.
 static inline __attribute__((always_inline)) void eight_rounds(working_variables *v,
                                                                const volatile uint64_t *sums) {
-    two_rounds(&v->a, &v->b, &v->c, &v->d, &v->e, &v->f, &v->g, &v->h, sums[0], sums[1]);
-    two_rounds(&v->g, &v->h, &v->a, &v->b, &v->c, &v->d, &v->e, &v->f, sums[2], sums[3]);
-    two_rounds(&v->e, &v->f, &v->g, &v->h, &v->a, &v->b, &v->c, &v->d, sums[4], sums[5]);
-    two_rounds(&v->c, &v->d, &v->e, &v->f, &v->g, &v->h, &v->a, &v->b, sums[6], sums[7]);
+    one_round(v->a, v->b, v->c, &v->d, v->e, v->f, v->g, &v->h, sums[0]);
+    one_round(v->h, v->a, v->b, &v->c, v->d, v->e, v->f, &v->g, sums[1]);
+    one_round(v->g, v->h, v->a, &v->b, v->c, v->d, v->e, &v->f, sums[2]);
+    one_round(v->f, v->g, v->h, &v->a, v->b, v->c, v->d, &v->e, sums[3]);
+    one_round(v->e, v->f, v->g, &v->h, v->a, v->b, v->c, &v->d, sums[4]);
+    one_round(v->d, v->e, v->f, &v->g, v->h, v->a, v->b, &v->c, sums[5]);
+    one_round(v->c, v->d, v->e, &v->f, v->g, v->h, v->a, &v->b, sums[6]);
+    one_round(v->b, v->c, v->d, &v->e, v->f, v->g, v->h, &v->a, sums[7]);
 }
 
 // FIPS 180-4 §6.4.2 step 4: each word of the state plus its working variable. The state the
@@ -266,8 +302,8 @@ static inline __attribute__((always_inline)) void one_block(uint64_t state[8], c
     store_sums(sums, w, 3, sha512_round_constants);
     working_variables v = {state[0], state[1], state[2], state[3],
                            state[4], state[5], state[6], state[7]};
-    // Rounds 0 to 63, sixteen a pass. Each pass also computes the sixteen words after its own
-    // and stores their sums, which the next pass reads.
+    // Rounds 0 to 63, sixteen a pass. Each pass also computes the sixteen words after its own,
+    // a quarter of a step after each round, and stores their sums, which the next pass reads.
     for (size_t next = 16; next < 80; next += 16) {
         eight_rounds_advancing(&v, w, 0, sums, &sha512_round_constants[next]);
         eight_rounds_advancing(&v, w, 2, sums, &sha512_round_constants[next]);
