@@ -171,17 +171,29 @@ are instruction-for-instruction unchanged, because their operands are wide by
 construction and nothing in them is provably zero. A blanket barrier inside
 `ct_widemul` would have cost 45% of poly1305's block on a Cortex-M3.
 
-`make lint-wide-multiply` covers Cortex-M3, mips32r2 and rv32imac under the
-pinned clang, over every source a secret passes through (`CODEGEN_SRCS` in the
-Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
-and counts per file the widening multiplies, the divisions and the calls into
-the compiler's 64-bit division runtime, and in the arithmetic files under the
-record layer the conditional branches too ("What each compiler branches on
-today", below). `make lint-wide-multiply-gcc` is the
-same count under gcc, which is what a firmware tree ships; each CI lane runs it
-with its own toolchain; the riscv32 lane's gcc matches two specs, rv32imac
-and rv32ic, and the mips lane's matches two, at `-Os` and at `-O2`. Point it
-at the compiler you ship:
+`make lint-wide-multiply` runs five specs under the pinned clang. Three
+compile for Cortex-M3, mips32r2 and rv32imac, freestanding at `-Os`, over
+every source of a device object that a secret passes through
+(`CODEGEN32_SRCS` in the Makefile: the chain from `ct.c` to `tls.c`, plus
+`drbg.c` and `softmul.c`). They count per file the widening multiplies, the
+divisions and the calls into the compiler's 64-bit division runtime, and in
+the arithmetic files under the record layer the conditional branches too
+("What each compiler branches on today", below). The other two
+(`WIDE64_SPECS` in the Makefile) compile for arm64 and x86-64, hosted at
+`-O2`, as `make lib` compiles a host object. They compile the sources that
+only a host object holds (`WIDE64_CEILING`) and a host object's copies of the
+arithmetic files `WIDE64_HOST_COPIES` names, which the 32-bit specs compile
+too. They count per file the divisions, the calls into the compiler's 128-bit
+runtime and the conditional branches, and they read no division and no
+runtime call in any file. `docs/decisions.md` 126 lists what these two specs
+do not compile, the four files of the AES instructions among them. The tables
+of counts below hold the 32-bit specs alone.
+
+`make lint-wide-multiply-gcc` counts the same things in the same device
+sources under gcc, which is what a firmware tree ships, and no gcc spec
+compiles for a 64-bit target. Each CI lane runs it with its own toolchain;
+the riscv32 lane's gcc matches two specs, rv32imac and rv32ic, and the mips
+lane's matches two, at `-Os` and at `-O2`. Point it at the compiler you ship:
 
 ```bash
 make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/arm-none-eabi-gcc
@@ -227,14 +239,23 @@ the branches and found each to be loop control.
 Counts per file at `-Os`, and for the mips gcc at `-O2` as well, read from
 the lint. Every source not listed is at zero under every compiler.
 
-| compiler | poly1305.c | x25519.c | mlkem_poly.c |
-| --- | --- | --- | --- |
-| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 |
-| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 |
-| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 |
-| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 |
-| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 |
+| compiler | poly1305.c | x25519.c | mlkem_poly.c | p256_scalar.c | tls_write.c |
+| --- | --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 0 | 1 |
+| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 0 | 1 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 0 | 1 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 | 2 `madd` | 2 `divu` |
+| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 0 | 1 |
+| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 0 | 1 |
+
+tls_write.c's column is the one public division, `ch_writable_len`'s: the
+caller's buffer length by the length of a record. It is one division
+instruction, `udiv` on Cortex-M3 and `divu` on mips32r2 and rv32imac, and on
+rv32ic one call to `__udivsi3`. At `-O2` the mips gcc copies the function's
+body into both arms of `record_plaintext_max`'s choice between `peer_limit`
+and `CH_TX_PT`, so one arm divides by `peer_limit + REC_OVERHEAD` and the
+other by `CH_TX_PT + REC_OVERHEAD`. Each path still runs one division, and
+every operand is a public length.
 
 rv32ic has no multiply or divide instruction to count, so that spec counts
 the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
@@ -244,8 +265,8 @@ spec exists to hold.
 
 sha3.c held a division until its round was written out lane by lane: `% 5`
 over Keccak's lane counters, which clang lowered to one multiply-high and
-each gcc to five divisions (`docs/decisions.md` 98). The three gcc rows were
-not always zero. gcc rewrites
+each gcc to five divisions (`docs/decisions.md` 98). poly1305.c, x25519.c and
+mlkem_poly.c were not always at zero under gcc. gcc rewrites
 `(uint64_t)lh + hl`, a 64-bit sum of two products it can prove narrow, into
 one widening multiply-accumulate, and `x & (0 - bit)` into `x * bit`, a
 widening multiply by a secret bit: two `umlal` in poly1305 and in mlkem_poly
@@ -253,16 +274,17 @@ and two `umull` and two `umlal` in x25519 under the Arm gcc, one `mulhu` in
 x25519 under the riscv32 gcc. The lint recorded those counts as ceilings until
 `ct_widemul` moved to a recombination that never widens a product,
 `ct_widemul_s` and x25519's `cswap` moved their masks to an arithmetic shift of
-the sign bit (`ct_widemul_s` has held no mask since decision 125), and every
-row went to zero
+the sign bit (`ct_widemul_s` has held no mask since decision 125), and the
+three files went to zero under every `-Os` spec
 ([#106](https://github.com/c4milo/chapulin/issues/106)). The violation
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
 and requires `lint-wide-multiply-gcc` to fail.
 
 The device specs compile at `-Os`, and the mips gcc spec runs once more at
-`-O2`, the one compiler and level where a secret-bearing file is not at zero. Its
-count of two is a record, not an allowance, and this is what it records
-([#122](https://github.com/c4milo/chapulin/issues/122)).
+`-O2`, the one compiler and level where a secret-bearing file holds a
+widening multiply. Two files do: poly1305.c and p256_scalar.c each read two
+`madd`. Each count of two is a record, not an allowance, and this is what the
+two record ([#122](https://github.com/c4milo/chapulin/issues/122)).
 
 At `-O2` the mips gcc inlines `ct_widemul` into poly1305's block, whose 25
 word products hand it 75 sums of the shape `product + x`. On mips32r2 that
@@ -294,6 +316,22 @@ stays. The violation
 compare-carry form into `ct_widemul` and requires `test/docker-mips.sh`, the
 local run of the mips lane, to fail: the `-O2` spec reads four against its
 ceiling of two, and the `-Os` spec reads zero.
+
+p256_scalar.c's two `madd` come from one call, `mont_mul`'s
+`ct_widemul(t[0], N0_INV)`, and unlike poly1305's their operands can be read
+from the assembly. `t[0]` is the low word of the sum `mont_mul` builds, and
+`N0_INV` is `-n^-1 mod 2^32`, a constant of the curve's order `n`. Both
+`madd` are the ladder's middle products. `madd $3,$13` multiplies
+`srl $3,$19,16`, the word's high half, by `li $13,0xbc4f`, `N0_INV`'s low
+half. `madd $31,$24` multiplies `andi $31,$19,0xffff`, the word's low half,
+by `li $24,0xee00`, `N0_INV`'s high half. gcc holds both halves of the
+constant in registers, so it computes two of `ct_widemul`'s sums in the
+multiplier's accumulator in place of `mul` and `addu`: `hl + (ll >> 16)`, and
+the low half of that sum plus `lh`. Every operand is 16 bits wide, and the
+file's other 13 products stay on `mul`. The violation
+`test/violations/p256-scalar-widemul-native.violation` writes `mont_mul`'s
+inner product as one 32x32 multiply and requires `test/docker-mips.sh` to
+fail.
 
 ### What each compiler branches on today
 
