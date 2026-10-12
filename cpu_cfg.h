@@ -76,10 +76,13 @@
 // that bit leaves (widemul.h's widemul_poly1305_avx2, docs/decisions.md 110), and
 // CH_CPU_AVX512_IFMA, below, picks a 512-bit kernel ahead of each AVX2 one. CH_CPU_AVX2 also
 // picks RSA verification's AVX2 kernel, which the RSA entry under CH_CPU_AVX512_IFMA below
-// states beside the IFMA one. And a session with CH_CPU_AVX2 hashes SHA-384 and SHA-512, and
-// runs HMAC, HKDF and the key schedule over SHA-384, on sha512_avx2.c's kernel, which computes
-// the message schedule four words to a 256-bit register, where one without the bit runs
-// sha512_compress_blocks.c (sha512.h's sha512_on_instructions, docs/decisions.md 128). The
+// states beside the IFMA one. And in an object with the AES-GCM suites a session with
+// CH_CPU_AVX2 hashes its transcript with SHA-384, and runs HMAC, HKDF and the key schedule over
+// SHA-384, on sha512_avx2.c's kernel, which computes the message schedule four words to a
+// 256-bit register, where one without the bit runs sha512_compress_blocks.c (sha512.h's
+// sha512_on_instructions, docs/decisions.md 128). An object without the suites holds no such
+// kernel, and a session's two certificate hashes take no ch_cfg.cpu and run
+// sha512_compress_blocks.c in every host object. The
 // kernel's instructions are adds, rotates, shifts, logic and byte shuffles by constant masks,
 // so the bit states no timing for them, and it writes zero to ymm0 to ymm15 before it returns.
 // A session with

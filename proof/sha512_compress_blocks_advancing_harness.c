@@ -8,8 +8,8 @@
 // the round that takes it.
 //
 // It is a formula of its own because it is most of the cost:
-// sha512_compress_blocks_steps_harness.c proves the other four steps in
-// seconds.
+// sha512_compress_blocks_steps_harness.c proves four other steps in
+// seconds, and says which steps of the file no harness proves a value of.
 #include "harness.h"
 
 #include "sha512_compress_blocks.c"

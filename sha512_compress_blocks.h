@@ -38,10 +38,12 @@
 // writes nothing.
 //
 // Constant time: its operations are 64-bit adds, rotates, shifts and bitwise logic, it reads no
-// table at an index a word decides, and it branches on the block count alone.
+// table at an index a word decides, and it branches on the block count and on a loop count
+// that is a constant.
 //
 // It wipes nothing. A caller that hashes a secret wipes SHA512_COMPRESS_BLOCKS_BELOW_LEN bytes
-// of stack below its own frame after the call, as sha512.c does.
+// of stack below its own frame after the call, as sha512.c does. No wipe written in C clears a
+// register: the ones the ABI lets a call change hold what the last instructions left in them.
 void sha512_compress_blocks(uint64_t state[8], const uint8_t *p, size_t blocks);
 
 #endif // CH_CPU_RUNTIME

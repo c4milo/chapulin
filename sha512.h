@@ -43,6 +43,8 @@ typedef struct {
 
 void sha512_init(sha512 *s);
 void sha384_init(sha512 *s);
+// Absorbs the n bytes at in, for either hash. With n == 0 it reads
+// nothing at in, which may then be NULL, and leaves s as it was.
 void sha512_update(sha512 *s, const uint8_t *in, size_t n);
 // Finalizes into out. s is spent; re-init to reuse. Does not wipe, the
 // way sha256_final does not: a caller that hashed a secret wipes the

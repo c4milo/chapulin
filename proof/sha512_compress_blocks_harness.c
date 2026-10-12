@@ -16,9 +16,11 @@
 //
 // What it does not prove: that the state it writes is sha512_compress's.
 // sha512_compress_blocks_steps_harness.c and
-// sha512_compress_blocks_advancing_harness.c prove each step of the file
-// against FIPS 180-4's form, and bin/sha2_equiv_test and the published
-// vectors hold the whole function (docs/verification.md).
+// sha512_compress_blocks_advancing_harness.c prove five of the file's
+// steps against FIPS 180-4's form. bin/sha2_equiv_test and the published
+// vectors hold the whole function, and with it the load of a block's
+// words and the sum that ends a block, which no harness proves a value of
+// (docs/verification.md).
 #include "harness.h"
 
 #include "sha512_compress_blocks.c"

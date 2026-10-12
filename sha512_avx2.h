@@ -42,14 +42,17 @@
 //
 // Constant time: its operations are adds, rotates, shifts, bitwise logic and byte shuffles by
 // constant masks, on 64-bit words and on 256-bit registers, it reads no table at an index a
-// word decides, and it branches on the block count alone.
+// word decides, and it branches on the block count and on a loop count that is a constant.
 //
-// Before it returns it writes zero to ymm0 to ymm15, which held schedule words. It wipes no
-// stack. A caller that hashes a secret wipes SHA512_AVX2_BELOW_LEN bytes of stack below its own
-// frame after the call, as sha512.c's copy in sha512_hw.c does.
+// Before it returns it writes zero to ymm0 to ymm15, which held schedule words. It clears no
+// general register: the ones the ABI lets a call change hold words of the state it wrote when
+// it returns, as after every wipe written in C. It wipes no stack. A caller that hashes a
+// secret wipes SHA512_AVX2_BELOW_LEN bytes of stack below its own frame after the call, as
+// sha512.c's copy in sha512_hw.c does.
 //
 // Requires: a CPU with AVX2 whose operating system saves the 256-bit registers, which the
-// session's caller states with CH_CPU_AVX2. On a CPU without it the first instruction faults.
+// session's caller states with CH_CPU_AVX2. On a CPU without it the first AVX2 instruction
+// faults.
 void sha512_avx2_compress_blocks(uint64_t state[8], const uint8_t *p, size_t blocks);
 
 #endif // CH_CPU_RUNTIME && __x86_64__

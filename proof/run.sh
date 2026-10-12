@@ -635,12 +635,14 @@ launch slow:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update
 # returned no verdict in nine minutes at 1.4 GB.
 # sha512_compress_blocks runs the function over any state and zero, one
 # and two blocks, each on an array of exactly that many, for its memory
-# accesses. sha512_compress_blocks_steps proves four of its five steps
+# accesses. sha512_compress_blocks_steps proves four of its steps
 # against FIPS 180-4's own forms over every input: the four sigma
 # functions, Ch and Maj, the ring's next word at each of sixteen indices
-# and eight renamed rounds. sha512_compress_blocks_advancing proves the
+# and eight renamed rounds. sha512_compress_blocks_advancing proves a
 # fifth, eight rounds that each replace a ring word first, at both
-# indices the file calls it with. sha512_host runs the first arm's
+# indices the file calls it with. No line here proves a value of the load
+# of a block's words or of the sum that ends a block: tests hold those
+# two and the order of the calls. sha512_host runs the first arm's
 # framing: an update from any context over an input of up to 320 bytes,
 # both finals from any context, and both whole-message calls, with the
 # compression a contract that sha512_compress_blocks discharges. A first

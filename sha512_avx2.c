@@ -36,8 +36,9 @@
 // SHA-384 is the hash of TLS_AES_256_GCM_SHA384's key schedule, so this file reads HMAC keys
 // and traffic secrets. Its operations are adds, rotates, shifts, bitwise logic and byte
 // shuffles by constant masks, it reads the round constants at indices the round number fixes,
-// and it branches on the block count alone. CH_CPU_AVX2 states that the instructions exist and
-// no timing, as it does for chacha20_avx2.c, which runs the same kinds of instruction on a key.
+// and it branches on the block count and on a loop count that is a constant. CH_CPU_AVX2
+// states that the instructions exist and no timing, as it does for chacha20_avx2.c, which runs
+// the same kinds of instruction on a key.
 //
 // What a call computes from the message it leaves in its own frame: the last sixteen sums, and
 // whichever registers the compiler wrote to stack slots of its own. So the caller wipes the
@@ -313,14 +314,20 @@ static inline __attribute__((always_inline)) void one_block(uint64_t state[8], c
     end_block(state, &v);
 }
 
-// sums is declared with the alignment of a 256-bit register, so each store of four sums lies
-// inside one cache line, and so that both compilers align this function's frame to 32 bytes.
-// clang gives a stack slot it picks for a 256-bit register the alignment of the frame, and
-// aligns a frame to 32 bytes only for a function that holds such an object or carries
-// force_align_arg_pointer. Without the alignment the stores sit wherever the caller's stack
-// pointer leaves them, in steps of 16 bytes, and one that lies across a cache line or a page
-// boundary stalls (docs/decisions.md 124, INV-49). make lint-frame-align requires the aligned
-// frame of this function under clang.
+// sums is declared with the alignment of a 256-bit register, so that each store of four sums
+// lies inside one cache line: a store that lies across a cache line or a page boundary stalls
+// (docs/decisions.md 124 and 128, INV-49). What the declaration changes differs by compiler.
+// gcc 13.3 aligns this function's frame to 32 bytes with the declaration and without it. With
+// it gcc places the array at a multiple of 32 bytes, and without it 16 bytes past one, where
+// two of every four stores lie across a cache line. clang 18 and clang 23 write the same
+// instructions with it and without it: they split the array into the four 256-bit values its
+// stores write, give each a register's alignment, and align the frame for those.
+//
+// bin/sha2_equiv_test finds the sums in the stack this function leaves and requires each four
+// at a multiple of 32 bytes, which is the check a gcc build fails when the declaration goes.
+// make lint-frame-align reads clang's code and requires the aligned frame there. No edit of
+// the declaration alone makes that lint fail, and it holds a later clang, or a later source
+// that stores to the array another way, to the aligned frame.
 void sha512_avx2_compress_blocks(uint64_t state[8], const uint8_t *p, size_t blocks) {
     _Alignas(32) uint64_t sums[16];
     for (; blocks > 0; blocks--) {

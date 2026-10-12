@@ -1,5 +1,5 @@
-// Proves, over every input, that each step sha512_compress_blocks.c writes
-// otherwise than FIPS 180-4 does computes what the standard's own form
+// Proves, over every input, that four steps sha512_compress_blocks.c writes
+// otherwise than FIPS 180-4 does compute what the standard's own form
 // computes (proof/sha512_compress_blocks_steps.h):
 //
 //   the four sigma functions, written as nested rotates, against equations
@@ -12,13 +12,15 @@
 //   rounds of §6.4.2 step 3 that move them, from any eight variables, any
 //   eight words and any eight constants.
 //
-// sha512_compress_blocks_advancing_harness.c proves the fifth step,
-// eight_rounds_advancing, in a formula of its own. With the load of a
-// block's words and the order of the calls, which bin/sha2_equiv_test and
-// the published vectors hold, these are every step the file's function is
-// made of. The whole function against sha512_compress in one formula
+// sha512_compress_blocks_advancing_harness.c proves a fifth step,
+// eight_rounds_advancing, in a formula of its own. The file's function is
+// made of those five steps and of three things no harness proves a value
+// of: the load of a block's words (load_word and load_block), the sum that
+// ends a block with the b ^ c it leaves for the next (end_block), and the
+// order of the calls. bin/sha2_equiv_test and the published vectors hold
+// those three. The whole function against sha512_compress in one formula
 // returned no verdict in nine minutes (docs/verification.md), which is why
-// the proof is of the steps.
+// the proof is of steps.
 #include "harness.h"
 
 #include "sha512_compress_blocks.c"

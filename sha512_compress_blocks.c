@@ -2,13 +2,15 @@
 // host object holds (sha512_compress_blocks.h). It uses no intrinsic and no instruction-set
 // attribute. Its operations are 64-bit adds, rotates, shifts and bitwise logic, which every
 // arm64 and x86-64 CPU runs in the same time for every operand, it reads no table at an index
-// a word decides, and it branches on the block count alone. So no ch_cfg.cpu bit picks it, and
-// every session of a host object runs it (docs/decisions.md 127).
+// a word decides, and it branches on the block count and on a loop count that is a constant.
+// So no ch_cfg.cpu bit picks it, and every session of a host object runs it
+// (docs/decisions.md 127).
 //
 // sha512_compress.c stays the reference. This file computes the same state and differs from
 // it in seven ways, each of which docs/decisions.md 127 measures:
 //
-//   a block's words are read by one expression each, which compiles to a load and a byte swap;
+//   a block's words are read by one expression each, which compiles to a load and a byte swap
+//   (load_word says what each compiler writes for it);
 //   the message schedule is a ring of sixteen words, where the reference fills eighty first;
 //   each word of the ring is replaced by the word sixteen after it in the round that takes
 //   that word, so the schedule's work lies between the rounds';
@@ -24,10 +26,14 @@
 // ct_wipe can name. So the caller wipes the stack below itself after the call (sha512.c).
 //
 // proof/sha512_compress_blocks_harness.c proves the function reads and writes inside its
-// arrays over any state and zero to two blocks, and proof/sha512_compress_blocks_steps_harness.c
-// proves each step below against FIPS 180-4's own form over every input. That the steps in the
-// order this file calls them compute sha512_compress's state rests on bin/sha2_equiv_test and
-// on the published vectors (docs/verification.md, "SHA-512 in a host object").
+// arrays over any state and zero to two blocks. Two harnesses prove five of the steps below
+// against FIPS 180-4's own form over every input. proof/sha512_compress_blocks_steps_harness.c
+// proves four: the four sigma functions, choice and majority, next_word, and eight_rounds.
+// proof/sha512_compress_blocks_advancing_harness.c proves the fifth, eight_rounds_advancing.
+// No harness proves a value of the rest: load_word and load_block, which read a block's words;
+// end_block, which adds the state and leaves b ^ c for the next block; and the function's own
+// lines, which read the state and order the calls. Those rest on bin/sha2_equiv_test and on
+// the published vectors (docs/verification.md, "SHA-512 in a host object").
 #include "sha512_compress_blocks.h"
 
 #ifdef CH_CPU_RUNTIME
@@ -81,9 +87,14 @@ static inline uint64_t majority(uint64_t b, uint64_t a_xor_b, uint64_t b_xor_c) 
     return b ^ (a_xor_b & b_xor_c);
 }
 
-// One word of the message, most significant byte first (FIPS 180-4 §3.1). gcc and clang
-// compile the expression to one 8-byte load and a byte swap on a little-endian target, where
-// gcc 13 compiles sha512_compress.c's loop over the eight bytes to that loop.
+// One word of the message, most significant byte first (FIPS 180-4 §3.1). No compiler measured
+// keeps a loop over the eight bytes for this expression, where gcc 13 compiles
+// sha512_compress.c's loop to that loop. For x86-64, gcc 13.3 and clang 18 write one 8-byte
+// load and a BSWAP a word, and for arm64 clang 18 writes one load and a REV a word. gcc 13.3
+// for arm64 reads two words at a time into a NEON register and reverses their bytes with
+// REV64. So under that compiler v0 and v1 hold four words of the last block when
+// sha512_compress_blocks returns, and no line of this file or of its caller clears them
+// (docs/decisions.md 127).
 static inline uint64_t load_word(const uint8_t p[8]) {
     return ((uint64_t)p[0] << 56) | ((uint64_t)p[1] << 48) | ((uint64_t)p[2] << 40) |
            ((uint64_t)p[3] << 32) | ((uint64_t)p[4] << 24) | ((uint64_t)p[5] << 16) |
