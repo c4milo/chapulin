@@ -10,6 +10,6 @@ reason: the third of eight_rounds_advancing's eight rounds names the
   assertion on e to h fails.
 
 --- old
-    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, x, k[2] + next_word(ring, i + 2));
+    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, b_xor_c, k[2] + next_word(ring, i + 2));
 --- new
-    one_round(v->g, v->h, &v->b, v->c, v->e, v->d, &v->f, x, k[2] + next_word(ring, i + 2));
+    one_round(v->g, v->h, &v->b, v->c, v->e, v->d, &v->f, b_xor_c, k[2] + next_word(ring, i + 2));

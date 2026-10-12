@@ -150,30 +150,30 @@ static inline __attribute__((always_inline)) uint64_t next_word(uint64_t ring[16
 // every role back to where it began.
 static inline __attribute__((always_inline)) void
 eight_rounds(working_variables *v, const uint64_t k[8], const uint64_t w[8]) {
-    uint64_t *x = &v->b_xor_c;
-    one_round(v->a, v->b, &v->d, v->e, v->f, v->g, &v->h, x, k[0] + kept(&w[0]));
-    one_round(v->h, v->a, &v->c, v->d, v->e, v->f, &v->g, x, k[1] + kept(&w[1]));
-    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, x, k[2] + kept(&w[2]));
-    one_round(v->f, v->g, &v->a, v->b, v->c, v->d, &v->e, x, k[3] + kept(&w[3]));
-    one_round(v->e, v->f, &v->h, v->a, v->b, v->c, &v->d, x, k[4] + kept(&w[4]));
-    one_round(v->d, v->e, &v->g, v->h, v->a, v->b, &v->c, x, k[5] + kept(&w[5]));
-    one_round(v->c, v->d, &v->f, v->g, v->h, v->a, &v->b, x, k[6] + kept(&w[6]));
-    one_round(v->b, v->c, &v->e, v->f, v->g, v->h, &v->a, x, k[7] + kept(&w[7]));
+    uint64_t *b_xor_c = &v->b_xor_c;
+    one_round(v->a, v->b, &v->d, v->e, v->f, v->g, &v->h, b_xor_c, k[0] + kept(&w[0]));
+    one_round(v->h, v->a, &v->c, v->d, v->e, v->f, &v->g, b_xor_c, k[1] + kept(&w[1]));
+    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, b_xor_c, k[2] + kept(&w[2]));
+    one_round(v->f, v->g, &v->a, v->b, v->c, v->d, &v->e, b_xor_c, k[3] + kept(&w[3]));
+    one_round(v->e, v->f, &v->h, v->a, v->b, v->c, &v->d, b_xor_c, k[4] + kept(&w[4]));
+    one_round(v->d, v->e, &v->g, v->h, v->a, v->b, &v->c, b_xor_c, k[5] + kept(&w[5]));
+    one_round(v->c, v->d, &v->f, v->g, v->h, v->a, &v->b, b_xor_c, k[6] + kept(&w[6]));
+    one_round(v->b, v->c, &v->e, v->f, v->g, v->h, &v->a, b_xor_c, k[7] + kept(&w[7]));
 }
 
 // Rounds 16 to 79, eight to a call: each first replaces ring[i] by the word sixteen after it,
 // and takes that word. i is 0 or 8.
 static inline __attribute__((always_inline)) void
 eight_rounds_advancing(working_variables *v, const uint64_t k[8], uint64_t ring[16], size_t i) {
-    uint64_t *x = &v->b_xor_c;
-    one_round(v->a, v->b, &v->d, v->e, v->f, v->g, &v->h, x, k[0] + next_word(ring, i));
-    one_round(v->h, v->a, &v->c, v->d, v->e, v->f, &v->g, x, k[1] + next_word(ring, i + 1));
-    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, x, k[2] + next_word(ring, i + 2));
-    one_round(v->f, v->g, &v->a, v->b, v->c, v->d, &v->e, x, k[3] + next_word(ring, i + 3));
-    one_round(v->e, v->f, &v->h, v->a, v->b, v->c, &v->d, x, k[4] + next_word(ring, i + 4));
-    one_round(v->d, v->e, &v->g, v->h, v->a, v->b, &v->c, x, k[5] + next_word(ring, i + 5));
-    one_round(v->c, v->d, &v->f, v->g, v->h, v->a, &v->b, x, k[6] + next_word(ring, i + 6));
-    one_round(v->b, v->c, &v->e, v->f, v->g, v->h, &v->a, x, k[7] + next_word(ring, i + 7));
+    uint64_t *b_xor_c = &v->b_xor_c;
+    one_round(v->a, v->b, &v->d, v->e, v->f, v->g, &v->h, b_xor_c, k[0] + next_word(ring, i));
+    one_round(v->h, v->a, &v->c, v->d, v->e, v->f, &v->g, b_xor_c, k[1] + next_word(ring, i + 1));
+    one_round(v->g, v->h, &v->b, v->c, v->d, v->e, &v->f, b_xor_c, k[2] + next_word(ring, i + 2));
+    one_round(v->f, v->g, &v->a, v->b, v->c, v->d, &v->e, b_xor_c, k[3] + next_word(ring, i + 3));
+    one_round(v->e, v->f, &v->h, v->a, v->b, v->c, &v->d, b_xor_c, k[4] + next_word(ring, i + 4));
+    one_round(v->d, v->e, &v->g, v->h, v->a, v->b, &v->c, b_xor_c, k[5] + next_word(ring, i + 5));
+    one_round(v->c, v->d, &v->f, v->g, v->h, v->a, &v->b, b_xor_c, k[6] + next_word(ring, i + 6));
+    one_round(v->b, v->c, &v->e, v->f, v->g, v->h, &v->a, b_xor_c, k[7] + next_word(ring, i + 7));
 }
 
 // The sixteen words of the block at p into the ring, written out so that every index into the
