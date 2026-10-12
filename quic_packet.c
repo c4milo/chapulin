@@ -220,14 +220,14 @@ uint64_t quic_pn_read(const uint8_t *pkt, size_t pn_off, size_t pn_len) {
 }
 
 uint64_t quic_pn_decode(uint64_t largest_pn, uint64_t truncated_pn, size_t pn_len) {
-    // RFC 9000 Appendix A.3's DecodePacketNumber, with pn_nbits as
-    // 8 * pn_len (rfc9000.txt:8358-8381). The mask holds the shift distance
-    // below 64 for every pn_len, so no caller can make it undefined.
-    unsigned pn_nbits = (unsigned)(pn_len & 7U) << 3;
+    // RFC 9000 Appendix A.3 (rfc9000.txt:8358-8381). pn_len is a secret
+    // (§9.5), so pn_mask is built with no shift by it (docs/porting.md).
+    uint64_t pn_mask = (uint32_t)byte_in_use(0, pn_len) | ((uint32_t)byte_in_use(1, pn_len) << 8) |
+                       ((uint32_t)byte_in_use(2, pn_len) << 16) |
+                       ((uint32_t)byte_in_use(3, pn_len) << 24);
     uint64_t expected_pn = largest_pn + 1;
-    uint64_t pn_win = UINT64_C(1) << pn_nbits;
+    uint64_t pn_win = pn_mask + 1;
     uint64_t pn_hwin = pn_win >> 1;
-    uint64_t pn_mask = pn_win - 1;
     uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
     // Figure 47's first if: candidate_pn <= expected_pn - pn_hwin and
     // candidate_pn < 2^62 - pn_win. The first is written as an addition

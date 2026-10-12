@@ -2259,9 +2259,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   the buffers its caller gave it and commits no undefined behavior, over
   unconstrained packets, keys, lengths, packet numbers and key set
   names. The formula exists for two things:
-  - the shift distances `quic_pn_read` and `quic_pn_decode` build from
-    `pn_len` stay below the operand's width for any `pn_len`, because
-    both mask the distance;
+  - the shift distance `quic_pn_read` builds from `pn_len` stays below
+    the operand's width for any `pn_len`, because it masks the distance.
+    `quic_pn_decode` takes any `pn_len` too, and shifts by constants
+    alone;
   - the offsets the open path derives from `pn_off` and `pn_len` (the
     packet number field, the associated data, the ciphertext and the
     tag) stay inside the packet.

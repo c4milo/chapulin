@@ -445,6 +445,77 @@ feature. A new spec must record a ceiling for every file it counts before
 it passes, so a compiler the tables do not carry cannot pass on counts
 nobody read.
 
+### The shift routines gcc calls at `-Os`
+
+No 32-bit core here shifts a 64-bit value by a register in one instruction,
+so the compiler builds the shift from 32-bit ones. clang writes it inline for
+Cortex-M3, mips32r2 and rv32imac, and so do the Arm gcc and the mips gcc at
+`-O2`, with predicated instructions or conditional moves. gcc at `-Os` for
+mips32 and riscv32 calls its runtime library instead: `__ashldi3` for a left
+shift, `__lshrdi3` for a logical right shift and `__ashrdi3` for an
+arithmetic one.
+
+Those routines branch. Each was disassembled from the `libgcc.a` of Ubuntu's
+gcc-mips-linux-gnu 12.4.0 and of the Bootlin riscv32 gcc 14.3.0, and each
+holds two conditional branches:
+
+- `beqz` on the distance, which returns the value as it came when the
+  distance is zero;
+- `blez` on 32 less the distance, which chooses between a shift inside one
+  32-bit word and a shift from one word into the other.
+
+Both read the distance alone, and neither reads the value shifted. So the
+time a call takes tells whether its distance is zero and whether it is 32 or
+more, and nothing about the value. A call is allowed where the distance is
+public, and nowhere else.
+
+The same pass counts the calls per file and holds each count at the ceiling
+`SHIFT_CALL_CEILING` records in the Makefile. A file with no entry there is
+held at zero, which is every file under clang, the Arm gcc and the mips gcc
+at `-O2`. The mips gcc at `-Os` and the Bootlin gcc for rv32imac and for
+rv32ic emit the same 13 calls in 9 files. Read from the lint and from the C:
+
+| file | function | shift | distance |
+| --- | --- | --- | --- |
+| aead.c | `mac` | `aad_len >> (8 * i)` and `n >> (8 * i)` | loop counter |
+| gcm.c | `write_length_bits`, twice in `hash_finish` | `bits >> (8 * (7 - i))` | loop counter |
+| quic_packet.c | `quic_nonce` | `pn >> (8 * i)` | loop counter |
+| quic_token.c | `write_instant` | `seconds >> shift` | loop counter |
+| record.c | `nonce_of` | `d->seq >> (8 * i)` | loop counter |
+| sha256.c | `sha256_final` | `bits >> (56 - 8 * i)` | loop counter |
+| sha3.c | `xor_byte` | `byte << (8 * (at % 8))` | a byte's position in its lane |
+| sha3.c | `byte_at`, twice in `block_bytes` | `lane >> (8 * (at % 8))` | a byte's position in its lane |
+| sha512.c | `store_be64` | `v >> (56 - 8 * i)` | loop counter |
+| srv_ticket.c | `write_instant` | `seconds >> shift` | loop counter |
+
+A loop counter steps through the eight bytes of a 64-bit value. A byte's
+position in its lane counts the bytes the sponge absorbed or squeezed so far,
+which is a length. `quic_nonce`'s packet number, sha3.c's lane and sha512.c's
+word can be secret, and each is the value shifted, not the distance.
+
+One call was on a distance that is not public. `quic_pn_decode` computed RFC
+9000 Appendix A.3's window as `1 << (8 * pn_len)`, and RFC 9001 §9.5 makes
+the encoded length of a packet number a secret. Under both gcc above that was
+a call to `__ashldi3`, whose second branch read whether `pn_len` is 4. No
+count saw it: the multiply tokens name no shift routine, and the branch is in
+libgcc, which the branch count does not compile. `quic_pn_decode` now builds
+the window from byte masks and shifts by constants alone. The violation
+`test/violations/inv16-quic-pn-window-64bit-shift.violation` writes the 64-bit
+shift back and requires `test/docker-mips.sh` to fail: quic_packet.c then
+reads two calls against its ceiling of one.
+
+What a port checks:
+
+- The count holds the calls your compiler emits only when you run the lint
+  with it. Another gcc, another 32-bit target or another level may call the
+  routines where the compilers above do not.
+- The statement about the routines is about the two `libgcc.a` files named
+  above. Disassemble `__ashldi3`, `__lshrdi3` and `__ashrdi3` in the runtime
+  library your image links, and require that every branch reads the distance
+  alone. The Bootlin toolchain carries one libgcc, built for ilp32d, so an
+  ilp32 image takes the routines from elsewhere: `bench/insn-rv32.sh`
+  supplies its own, written the way `libgcc2.c` writes them.
+
 ### What the decomposition does not cover
 
 It removes the 32-to-64 multiply, and the table above is the measurement.

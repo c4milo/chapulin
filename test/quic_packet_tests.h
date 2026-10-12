@@ -192,6 +192,26 @@ static void test_pn_decode(void) {
     // connection.
     CHECK(quic_pn_decode(0, 0, 1) == 0);
     CHECK(quic_pn_decode(0, 5, 1) == 5);
+
+    // Both window edges at every encoded length, so a window of the
+    // wrong size for one length fails here: pn_win is 2^(8 * pn_len),
+    // and 4 bytes is the length whose window does not fit 32 bits.
+    // expected_pn is three windows and three quarters, then three
+    // windows and one quarter. In the first, a quarter is the last
+    // truncated value Figure 47 adds a window to. In the second, three
+    // quarters is the last one it takes no window from.
+    for (size_t pn_len = 1; pn_len <= QUIC_PN_MAX_LEN; pn_len++) {
+        uint64_t pn_win = UINT64_C(1) << (8 * pn_len);
+        uint64_t quarter = pn_win / 4;
+        uint64_t base = 3 * pn_win;
+        uint64_t largest_pn = base + 3 * quarter - 1;
+        CHECK(quic_pn_decode(largest_pn, quarter, pn_len) == base + pn_win + quarter);
+        CHECK(quic_pn_decode(largest_pn, quarter + 1, pn_len) == base + quarter + 1);
+        largest_pn = base + quarter - 1;
+        CHECK(quic_pn_decode(largest_pn, 3 * quarter, pn_len) == base + 3 * quarter);
+        CHECK(quic_pn_decode(largest_pn, 3 * quarter + 1, pn_len) ==
+              base - pn_win + 3 * quarter + 1);
+    }
 }
 
 // RFC 9001 §6.5's receive key set rule (rfc9001.txt:1735-1743) and the

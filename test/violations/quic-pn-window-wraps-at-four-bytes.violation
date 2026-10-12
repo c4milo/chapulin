@@ -1,0 +1,14 @@
+invariant: INV-10
+file: quic_packet.c
+catches: quic_test
+reason: the one added to pn_mask in 32 bits wraps to zero at a 4-byte
+  packet number, whose window is 2^32, so quic_pn_decode adds and takes
+  away no window at that length and recovers the wrong number once the
+  truncated one passes a window's edge. The nonce is built from that
+  number, so the peer's packet does not open. test_pn_decode requires both
+  window edges at every encoded length, 1 to QUIC_PN_MAX_LEN bytes.
+
+--- old
+    uint64_t pn_win = pn_mask + 1;
+--- new
+    uint64_t pn_win = (uint64_t)(uint32_t)(pn_mask + 1);

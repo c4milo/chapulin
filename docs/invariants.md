@@ -3715,6 +3715,18 @@ last `ROLE=server` stub, as the entry said it would.
   operand's sign, which clang for the 32-bit targets lowers to a mask
   and every gcc lowers to two branches in x25519, so the gcc lint sees
   it.
+  The same pass counts each file's calls to the compiler runtime's 64-bit
+  shift routines, `__ashldi3`, `__lshrdi3` and `__ashrdi3`, and holds each
+  count at `SHIFT_CALL_CEILING`, which is zero for a file it does not
+  name. gcc at `-Os` for mips32 and riscv32 emits those calls, and
+  libgcc's routines branch on the distance, in code neither other count
+  compiles. Thirteen calls stay under those compilers, each on a loop
+  counter or on a byte's position in its lane
+  ([porting](porting.md#the-shift-routines-gcc-calls-at--os)).
+  `quic_pn_decode` called `__ashldi3` with `8 * pn_len`, and RFC 9001
+  §9.5 makes `pn_len` a secret; it builds its window from byte masks
+  now. `inv16-quic-pn-window-64bit-shift` writes the 64-bit shift back,
+  and quic_packet.c goes one over its ceiling in the mips lane.
   A mask is no protection by itself. `ct_widemul_s` was the unsigned
   product with two masks of the operands' sign bits, and clang for
   x86-64 wrote the mask of a row's word in x25519's `mul` as a jump on
@@ -3861,7 +3873,7 @@ last `ROLE=server` stub, as the entry said it would.
   clang or llvm-nm at another version than the pin before they count
   anything (`REQUIRE_PINNED`), because a catch script runs each one alone,
   without `lint-toolchain`; `test/pinned-checkers.sh` hands them older and
-  newer stand-ins. Twenty-three of the `inv16-*` violations
+  newer stand-ins. Twenty-four of the `inv16-*` violations
   in `test/violations/` prove each detection catches its mutant, among
   them `inv16-mul128-outside-host-object`, which defines `ct.h`'s
   64x64->128 multiply outside a host object and which
@@ -3869,10 +3881,11 @@ last `ROLE=server` stub, as the entry said it would.
   `inv16-wide-multiply-takes-unpinned-clang`,
   `inv16-runtime-symbols-takes-unpinned-clang` and
   `inv16-runtime-symbols-takes-unpinned-llvm-nm`, which drop those version
-  checks. Four
+  checks. Five
   of them catch only under a gcc gate: `inv16-widemul-mid-widened` and
   `inv16-widemul-s-sign-branch` under `lint-wide-multiply-gcc`'s Arm
-  gcc, `inv16-widemul-compare-carries` in the mips lane, and
+  gcc, `inv16-widemul-compare-carries` and
+  `inv16-quic-pn-window-64bit-shift` in the mips lane, and
   `inv16-softmul-mask-as-negate` in the riscv32 lane. Both count
   instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and

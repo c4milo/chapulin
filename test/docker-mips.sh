@@ -31,6 +31,8 @@ apt-get install -y -q make python3 git gcc-mips-linux-gnu qemu-user >/dev/null
 # holds poly1305.c at the two madd it records
 # (https://github.com/c4milo/chapulin/issues/122) -- then the suites.
 # test/violations/inv16-widemul-compare-carries.violation names this
-# script as its catch target for the same reason.
+# script as its catch target for the same reason, and
+# test/violations/inv16-quic-pn-window-64bit-shift.violation for the -Os
+# spec's count of calls to libgcc's 64-bit shift routines.
 make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
 make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips

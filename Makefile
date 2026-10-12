@@ -7864,6 +7864,61 @@ BRANCH_CEILING := \
   arm64/sha512.c@host:9 x86-64/sha512.c@host:9 \
   $(WIDEMUL_NATIVE_BRANCH_CEILING) $(P256_SCALAR_BRANCH_CEILING) $(HASH_HW_BRANCH_CEILING) \
   $(P256_WIDE_BRANCH_CEILING)
+# The third count, read from the same assembly: the calls each file makes
+# to the compiler runtime's 64-bit shift routines. No 32-bit core here
+# shifts a 64-bit value by a register in one instruction. clang writes
+# the shift inline for all three targets, and so do the Arm gcc and the
+# mips gcc at -O2, with predicated instructions or conditional moves. gcc
+# at -Os for mips32 and riscv32 calls libgcc instead: __ashldi3 for a
+# left shift, __lshrdi3 for a logical right shift and __ashrdi3 for an
+# arithmetic one. Each of the three was disassembled from the libgcc.a of
+# Ubuntu's gcc-mips-linux-gnu 12.4.0 and of the Bootlin riscv32 gcc
+# 14.3.0. Each has two conditional branches, and both read the distance
+# alone: one on a distance of zero and one on a distance of 32 or more.
+# Neither reads the value shifted. So a call is a branch on the distance,
+# in code the branch count above does not compile, and INV-16 allows it
+# only where the distance is public.
+#
+# quic_pn_decode called __ashldi3 with 8 * pn_len, the encoded length of
+# a packet number, which RFC 9001 §9.5 makes a secret, and no count held
+# the call. It builds its window from byte masks now, and shifts by
+# constants alone.
+# test/violations/inv16-quic-pn-window-64bit-shift.violation writes the
+# 64-bit shift back, and quic_packet.c then goes one over its ceiling
+# under each of the three specs that record one.
+#
+# SHIFT_CALLS are the routines, matched as the multiply tokens with a
+# leading __ are: every instruction that names one counts, and the
+# prefixes take a 64-bit target's 128-bit routines with them. The Arm
+# EABI names are listed too, and no spec emits one today. The mips gcc
+# compiles for abicalls, so the instruction that names a routine there is
+# the load of its address, and each call loads it once today. A compiler
+# that kept one address for two calls would count one, and the two
+# riscv32 specs, which name the routine in every call, compile the same C.
+#
+# SHIFT_CALL_CEILING is spec/file:count. A file that a spec does not name
+# is held at zero there, which is every file under the three clang specs,
+# m3-gcc, mips32r2-gcc-O2 and the two 64-bit specs. The other three specs
+# emit the same calls, so SHIFT_CALL_FILES holds their counts once,
+# file:count. Going over fails and coming in under prints, as for the
+# branch count. Every call recorded was read in the C, and its distance
+# is one of two kinds:
+#   - a loop counter that steps through the bytes of a 64-bit value:
+#     the two lengths in aead.c's mac and in gcm.c's write_length_bits,
+#     the bit count in sha256_final, sha512.c's store_be64, the sequence
+#     number in record.c's nonce_of, the packet number in quic_nonce, and
+#     the instant in quic_token.c's and srv_ticket.c's write_instant;
+#   - a byte's position in its lane, 8 * (at % 8): sha3.c's xor_byte, and
+#     byte_at, which block_bytes calls twice. The position counts the
+#     bytes absorbed or squeezed so far, which is a length.
+# quic_nonce's packet number, sha3.c's lane and sha512.c's word can be
+# secret. Each is the value shifted, which the routines do not branch on.
+# docs/porting.md, "The shift routines gcc calls at -Os", prints the
+# sites and what a port checks in its own libgcc.
+SHIFT_CALLS := __ashl,__lshr,__ashr,__aeabi_llsl,__aeabi_llsr,__aeabi_lasr
+SHIFT_CALL_FILES := aead.c:2 gcm.c:2 quic_packet.c:1 quic_token.c:1 record.c:1 sha256.c:1 sha3.c:3 \
+                    sha512.c:1 srv_ticket.c:1
+SHIFT_CALL_CEILING := $(foreach s,mips32r2-gcc rv32imac-gcc rv32ic-gcc,$(addprefix $(s)/,$(SHIFT_CALL_FILES)))
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc lint-wide-multiply-run
@@ -7926,7 +7981,8 @@ lint-wide-multiply-run:
 	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no token to count"; exit 1; }; \
 	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
 	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
-	   ran="$$ran$$arch "; table=""; btable=""; \
+	   spattern="[[:space:],(]($(subst $(COMMA),|,$(SHIFT_CALLS)))"; \
+	   ran="$$ran$$arch "; table=""; btable=""; stable=""; \
 	   files="$(WIDEMUL_CEILING)"; level="-Os"; freestanding="-ffreestanding"; \
 	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) \
 	     files="$(WIDE64_CEILING) $(WIDE64_REBUILT)"; level="-O2"; freestanding="" ;; \
@@ -7961,6 +8017,15 @@ lint-wide-multiply-run:
 	     elif [ "$$n" -lt "$$cap" ]; then \
 	       echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
 	     fi; \
+	     s=$$(printf '%s\n' "$$asm" | grep -cE "$$spattern"); \
+	     scap=0; for o in $(SHIFT_CALL_CEILING); do [ "$${o%%:*}" = "$$arch/$$f" ] && scap=$${o##*:}; done; \
+	     [ "$$s" -eq 0 ] || stable="$$stable $$f=$$s"; \
+	     if [ "$$s" -gt "$$scap" ]; then \
+	       echo "lint-wide-multiply: $$f calls a 64-bit shift routine $$s times on $$arch, ceiling is $$scap; the routine branches on the distance, so read each new call's distance in the C before recording it in SHIFT_CALL_CEILING (docs/porting.md)"; \
+	       printf '%s\n' "$$asm" | grep -E "$$spattern" | head -5 | sed 's/^[[:space:]]*/lint-wide-multiply:   /'; rc=1; \
+	     elif [ "$$s" -lt "$$scap" ]; then \
+	       echo "lint-wide-multiply: $$f is down to $$s calls to a 64-bit shift routine from $$scap on $$arch — lower the ceiling"; \
+	     fi; \
 	     case " $(BRANCH_SRCS) " in *" $$f "*) ;; *) continue ;; esac; \
 	     bcap=""; for o in $(BRANCH_CEILING); do [ "$${o%%:*}" = "$$arch/$$f" ] && bcap=$${o##*:}; done; \
 	     b=$$(printf '%s\n' "$$asm" | grep -cE "$$bpattern"); \
@@ -7974,7 +8039,7 @@ lint-wide-multiply-run:
 	       echo "lint-wide-multiply: $$f is down to $$b conditional branches from $$bcap on $$arch — lower the ceiling"; \
 	     fi; \
 	   done; \
-	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}; branches$$btable"; \
+	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}; branches$$btable; shift calls$${stable:- none}"; \
 	 done; \
 	 [ -n "$$ran" ] || { echo "lint-wide-multiply: no $(WIDEMUL_RUN) spec ran$${got:+ — none matches $(WIDEMUL_GCC) ($$got); add one to WIDEMUL_SPECS}"; exit 1; }; \
 	 [ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$ran"; exit $$rc

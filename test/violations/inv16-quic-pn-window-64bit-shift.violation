@@ -1,0 +1,18 @@
+invariant: INV-16
+file: quic_packet.c
+catches: test/docker-mips.sh
+reason: the window written the way RFC 9000 Appendix A.3 writes it, 1
+  shifted left by the encoded length in bits, is a 64-bit shift by a
+  distance pn_len chooses, and RFC 9001 section 9.5 makes pn_len a
+  secret (rfc9001.txt:2110-2112). The value is the same, so every test
+  passes on it. gcc at -Os for mips32 and riscv32 compiles the shift to a
+  call to libgcc's __ashldi3, which branches on whether the distance is at
+  least 32, and that is whether pn_len is 4. lint-wide-multiply-gcc, the
+  mips lane's first step, then counts two calls to a shift routine in
+  quic_packet.c where SHIFT_CALL_CEILING records one. The lane skips
+  without docker, and this then reports unguarded rather than caught.
+
+--- old
+    uint64_t pn_win = pn_mask + 1;
+--- new
+    uint64_t pn_win = UINT64_C(1) << ((unsigned)(pn_len & 7U) << 3);

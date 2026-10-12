@@ -3,12 +3,13 @@
 // unconstrained packets, keys, lengths, packet numbers and key set
 // names.
 //
-// Two shifts are what this formula exists for. quic_pn_read shifts by a
-// distance built from pn_len and quic_pn_decode by one built from
-// pn_len too, and a distance at or past the operand's width is
-// undefined. Both mask the distance rather than trusting the contract,
-// so both calls take an unconstrained pn_len here: --undefined-shift-
-// check is what says the masks hold.
+// One shift is what this formula exists for. quic_pn_read shifts by a
+// distance built from pn_len, and a distance at or past the operand's
+// width is undefined. It masks the distance rather than trusting the
+// contract, so the call takes an unconstrained pn_len here:
+// --undefined-shift-check is what says the mask holds. quic_pn_decode
+// takes one too. It shifts by constants alone, and builds its window
+// from byte masks, which are defined for every pn_len.
 //
 // The three offsets the open path computes are the other half. The
 // §5.4.2 check is an rbuf read, and everything after it -- the packet
@@ -136,8 +137,9 @@ static void prove_pieces(void) {
     __CPROVER_assert(reported >= 1 && reported <= QUIC_PN_MAX_LEN,
                      "quic_header_unprotect: the length it reports is 1 to QUIC_PN_MAX_LEN");
 
-    // pn_len is unconstrained for these two, because each masks its own
-    // shift distance rather than resting on the contract.
+    // pn_len is unconstrained for these two, because neither rests on
+    // the contract: quic_pn_read masks its shift distance, and
+    // quic_pn_decode shifts by no distance pn_len chooses.
     fill_nondet(pkt, sizeof pkt);
     (void)quic_pn_read(pkt, pn_off, nondet_size_t());
     (void)quic_pn_decode(nondet_u64(), nondet_u64(), nondet_size_t());
