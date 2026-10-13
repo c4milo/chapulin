@@ -11273,3 +11273,93 @@ does nothing more.
       copy wipes the stack below the call either way.
     - **VZEROUPPER.** It clears bits 128 to 255 alone, and the low
       halves hold schedule words.
+
+129. **On x86-64, `chacha20_avx2.c` and `poly1305_avx2.c` write zero to
+    ymm0 to ymm15 before they return.** Entries 120 and 121 had each
+    kernel that holds secrets in 512-bit registers call
+    `avx512_wipe_registers`, and entry 128 ended `sha512_avx2.c` with
+    VZEROALL. The two AVX2 kernels of entries 90 and 110 cleared no
+    register of their own. `chacha20_avx2.c` returned with a pass's
+    state and keystream in the vector registers, and they give the key.
+    `poly1305_avx2.c` ended with VZEROUPPER, which entry 110 added for
+    speed: it clears bits 128 to 255 and leaves powers of r and the
+    lanes' sums in the low halves, and r with a tag seen on the wire
+    gives the pad, which forges any message under that one-time key.
+    Issue [#193](https://github.com/c4milo/chapulin/issues/193) listed
+    every path that returns with secrets in vector registers. On
+    2026-10-12 Camilo chose the first of three answers put to him: clear
+    the 256-bit registers in these two kernels and leave every other
+    path as the issue describes it; clear every path, which on arm64
+    takes a block of assembly; or keep the rule at 512-bit registers.
+    This entry adds to entries 90 and 110, and it leaves gcc's v0 and v1
+    after `sha512_compress_blocks` (entry 127) as they are.
+
+    - **What changes.** `chacha20_avx2_xor` ends with
+      `_mm256_zeroall()`. `poly1305_avx2_blocks` keeps entry 110's
+      VZEROUPPER before `carry_scalar` and ends with `_mm256_zeroall()`,
+      after `carry_scalar` and the wipe of its powers: gcc 13.3's code for
+      `carry_scalar` packs the accumulator's words in xmm0 to xmm3 to
+      store them. Each header states the clear in the kernel's contract.
+    - **What holds it.** `test/avx2_registers.h` holds the block of
+      assembly entry 128 wrote for `sha512_avx2.c`, which now takes up to
+      six arguments: it sets every bit of ymm0 to ymm15, calls the
+      kernel and stores the sixteen registers, so no instruction a
+      compiler picks runs between the three. The same block runs first
+      with no call, and its stores must hold every bit set.
+      `bin/chacha20_equiv_test` calls the AVX2 kernel through it over 512
+      bytes, one whole pass, and over 300, whose last 12 bytes the kernel
+      XORs one at a time. `bin/poly1305_equiv_test` calls the AVX2 kernel
+      over one group, which its last step alone takes, and over four,
+      whose first three run its loop. Each requires every stored word
+      zero on a CPU with AVX2, and `make san-check`'s binaries make the
+      first read alone, for entry 128's reason.
+      `inv17-chacha20-avx2-registers-not-cleared` and
+      `inv17-poly1305-avx2-registers-not-cleared` put VZEROUPPER in
+      VZEROALL's place. `test/aes-runtime-qemu.sh` gains the part
+      `chacha20-avx2`, which builds `bin/chacha20_equiv_test` for x86-64
+      and runs it under qemu-x86_64 as `poly1305-avx2` runs the other
+      binary, and each violation names its part. Built with each edit by
+      Apple clang 21 for x86-64 and run under Rosetta 2 on an M1 Pro,
+      each binary failed its check: ymm1 held a nonzero word after the
+      ChaCha20 kernel, and ymm0 after the Poly1305 kernel. Without the
+      edits both passed, and so did `bin/sha2_equiv_test`, whose check
+      now runs through the same block. The qemu lane builds the binaries
+      with gcc 13.3, whose code for `carry_scalar` Rosetta's runs did not
+      read, and it found the placement rejected below.
+    - **Cost.** One instruction more in each kernel. Run 38334503119
+      built `bench/primitives` from main and from this entry's tree on
+      each of six runners and ran the two in turn, five times each, under
+      `ch_cfg.cpu` 0x1f with gcc 13.3 and clang 23. On five of them, three
+      EPYC 7763 and two EPYC 9V74, ChaCha20 over 64 bytes took between 0.2
+      ns less and 1.4 ns more, and a 64-byte ChaCha20-Poly1305 seal or
+      open between 5.9 ns less and 13.5 ns more, of 379 to 555 ns. The two
+      largest, 6.5 and 13.5 ns, are clang's seal on the two EPYC 9V74.
+      Every row at 1,200 bytes and 16 KiB, where the Poly1305 kernel
+      runs, moved by 0.6 percent at most. On the sixth, an EPYC 9V45,
+      runs of the same binary differed by up to 14 percent, so it shows
+      nothing either way.
+    - **What stays.** By the ruling these clear no vector register: the
+      128-bit paths of both primitives, `mlkem_vector.c`, `aes_hw.c`,
+      `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `sha256_hw.c`,
+      `sha512_hw.c`'s arm64 arm, `sha3_hw.c`, and plain C wherever its
+      compiler runs a loop in vector registers. No general register is
+      cleared, by the ruling entry 128 records. The stack below the two
+      kernels keeps what entry 121 found there.
+
+    Rejected:
+
+    - **A clear in every path.** arm64 has no instruction that writes
+      zero to v0 to v31, so each NEON path would call a block of
+      assembly, as `avx512_wipe.c` is for zmm0 to zmm31, and plain C may
+      run any loop in vector registers its compiler picks.
+    - **The rule at 512-bit registers alone.** The AVX2 kernels hold the
+      same secrets in their registers as the AVX-512 kernels do.
+    - **VZEROALL in VZEROUPPER's place, before `carry_scalar`.** It
+      clears the upper halves too, so entry 110's reason would hold, and
+      Apple clang's `carry_scalar` names no vector register. But gcc
+      13.3's packs four words of the accumulator in xmm0 to xmm3 and
+      stores them with MOVUPS, and the qemu lane's x86-64 build of
+      `bin/poly1305_equiv_test` read two of them in ymm1 after the call.
+      A VZEROALL alone after `carry_scalar` would have it run with the
+      upper halves written, which entry 110 measured at about 260 more
+      TSC cycles a call on an EPYC 7763.

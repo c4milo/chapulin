@@ -1,0 +1,21 @@
+invariant: INV-17
+file: poly1305_avx2.c
+catches: test/docker-aes-runtime-qemu.sh poly1305-avx2
+reason: poly1305_avx2_blocks ends with VZEROUPPER where it had VZEROALL,
+  as it already clears the upper halves before carry_scalar (decision
+  110). The low halves still hold powers of r and the lanes' sums when
+  the function returns, and under gcc 13.3 words of the accumulator that
+  carry_scalar packed in xmm0 to xmm3. r and a tag seen on the wire give
+  the pad. No wipe written in C names a register, and every tag is right.
+  bin/poly1305_equiv_test sets every bit of ymm0 to ymm15, calls the
+  kernel and stores the sixteen registers in one block of assembly, and
+  requires every stored word zero. The kernel has a body on x86-64 alone,
+  so the catch is the script, which builds the binary for x86-64 and runs
+  it under qemu-x86_64, whose max model has AVX2 on every host. The lane
+  skips without docker, and this then reports unguarded rather than
+  caught.
+
+--- old
+    _mm256_zeroall();
+--- new
+    _mm256_zeroupper();

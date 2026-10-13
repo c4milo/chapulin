@@ -4902,7 +4902,19 @@ last `ROLE=server` stub, as the entry said it would.
   zeroing instruction for each and the call in both kernels:
   `inv17-avx512-wipe-skips-zmm31`, `inv17-chacha-avx512-keeps-registers`
   and `inv17-poly1305-ifma-keeps-registers` make each edit, and the script
-  catches them. The wipe clears no stack slot the compiler picked
+  catches them. The AVX2 ChaCha20 and the AVX2 Poly1305 hold the key's
+  values in 256-bit registers, and each ends with VZEROALL, which writes
+  zero to ymm0 to ymm15 (decision 129). `bin/chacha20_equiv_test` and
+  `bin/poly1305_equiv_test` set every bit of the sixteen registers, call
+  the kernel and read each back as zero (`test/avx2_registers.h`).
+  `inv17-chacha20-avx2-registers-not-cleared` and
+  `inv17-poly1305-avx2-registers-not-cleared` put VZEROUPPER in
+  VZEROALL's place, and `test/docker-aes-runtime-qemu.sh chacha20-avx2`
+  and `poly1305-avx2` catch them. By the same decision the 128-bit paths
+  of both primitives, `mlkem_vector.c`, `aes_hw.c`, `ghash_hw.c`,
+  `gcm_hw.c`, `gcm_vaes.c`, `sha256_hw.c`, `sha512_hw.c`'s arm64 arm,
+  `sha3_hw.c` and plain C clear no vector register. The wipe clears no
+  stack slot the compiler picked
   for a register: under gcc 13.3 the ChaCha20 kernel leaves bytes that
   depend on the key below its call, and so do the AVX2 and 128-bit paths
   of both primitives, whose Poly1305 running sums give r (decision 121).

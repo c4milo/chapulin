@@ -288,6 +288,9 @@ void chacha20_avx2_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHAC
             xor_partial(in + whole, out + whole, last, n - whole);
         }
     }
+    // The registers hold a pass's state and keystream, which give the key,
+    // and VZEROALL writes zero to all sixteen (docs/decisions.md 129).
+    _mm256_zeroall();
 }
 
 #ifdef __clang__

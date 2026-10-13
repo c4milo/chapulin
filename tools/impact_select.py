@@ -121,8 +121,8 @@ AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
 # mlkem_vector.c's SSE2 or NEON arm names mlkem-vector, because a machine's
 # own compiler reads one arm, a violation of keccak_avx2.c or
 # mlkem_avx2.c names mlkem-avx2, because the two have a body on x86-64
-# alone, and a violation of poly1305_avx2.c names poly1305-avx2, for the
-# same reason. A violation of either of aes_hw.c's key expansions names
+# alone, a violation of poly1305_avx2.c names poly1305-avx2, and one of
+# chacha20_avx2.c names chacha20-avx2, for the same reason. A violation of either of aes_hw.c's key expansions names
 # aes-equiv, because a machine's own compiler reads one of the two. A
 # violation that hands an RSA verifier 0 in place of a
 # session's ch_cfg.cpu names rsa-ifma-callers, because only an x86-64
@@ -156,6 +156,7 @@ AES_RUNTIME_QEMU_GATES = ["test/docker-aes-runtime-qemu.sh",
                           "test/docker-aes-runtime-qemu.sh mlkem-vector",
                           "test/docker-aes-runtime-qemu.sh mlkem-avx2",
                           "test/docker-aes-runtime-qemu.sh poly1305-avx2",
+                          "test/docker-aes-runtime-qemu.sh chacha20-avx2",
                           "test/docker-aes-runtime-qemu.sh aes-equiv",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma-callers",
                           "test/docker-aes-runtime-qemu.sh rsa-ifma",

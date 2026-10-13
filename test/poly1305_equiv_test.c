@@ -469,6 +469,7 @@ int main(void) {
 #ifdef CH_POLY1305_AVX2
     if (x86_cpu_has_avx2()) {
         run_path(&vector_avx2, seed);
+        run_avx2_registers();
     } else if (x86_kernels_required()) {
         (void)fprintf(stderr, "poly1305 equivalence: this CPU lacks AVX2, and "
                               "CH_REQUIRE_X86_KERNELS is 1\n");

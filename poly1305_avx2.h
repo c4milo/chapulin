@@ -59,7 +59,8 @@
 // that poly1305.c's loop leaves for the same blocks, with h0, h2, h3 and
 // h4 below 2^26 and h1 at most 2^26, inside the bounds that loop keeps.
 // It reads p->r and writes nothing but p->h, and it wipes the powers of r
-// it computed before it returns.
+// it computed before it returns, and writes zero to ymm0 to ymm15, which
+// held them (docs/decisions.md 129).
 //
 // Requires: a CPU with AVX2. On a CPU without it the first instruction
 // faults.

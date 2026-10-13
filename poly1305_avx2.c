@@ -327,6 +327,11 @@ void poly1305_avx2_blocks(poly1305 *p, const uint8_t *m, size_t n) {
     _mm256_zeroupper();
     carry_scalar(p->h, total);
     ct_wipe(&of_r, sizeof of_r);
+    // The low halves still hold powers of r and the lanes' sums, which give
+    // r, and gcc 13.3's code for carry_scalar packs the accumulator's words
+    // in xmm0 to xmm3 to store them. VZEROALL writes zero to all sixteen
+    // registers (docs/decisions.md 129).
+    _mm256_zeroall();
 }
 
 #ifdef __clang__

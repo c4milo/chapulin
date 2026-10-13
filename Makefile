@@ -589,7 +589,8 @@ TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
-         test/sha2_equiv_residue512_avx2.h test/sha2_equiv_length512.h test/sha512_portable.h \
+         test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
+         test/sha512_portable.h \
          test/quic_vectors_cpu.h test/x86_kernels_count.h test/x86_kernels_rsa.h test/x86_kernels_sha512.h \
          test/rsa_ifma_count.h test/aead_avx512_count.h test/tcp_blocking_loop_ifma.h test/webpki_auth_ifma.h test/initial_cpu.h \
          test/aes_equiv_counter.h test/aes_equiv_residue.h test/ghash_equiv_residue.h test/ghash_equiv_vaes.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
@@ -1705,8 +1706,8 @@ print-host-srcs:
 # and bin/webpki_auth_host beside theirs, bin/aes_equiv_test beside its
 # one, bin/rsa_addcarry_equiv_test's units and sources,
 # bin/rsa_sign_equiv_test beside its one, bin/rsa_avx2_equiv_test's
-# units and sources, and bin/sha512_test_host and bin/hkdf384_test_host
-# beside their one each.
+# units and sources, bin/sha512_test_host and bin/hkdf384_test_host
+# beside their one each, and bin/chacha20_equiv_test beside its one.
 # Each list names sha512_avx2.c where its rule here links the file's
 # object (sha512_avx2_named): the script compiles for two architectures
 # under compilers of its own, and asks for each one's object with make
@@ -1735,6 +1736,7 @@ print-aes-runtime-qemu-srcs:
 	@echo $(call sha512_avx2_named,$(RSA_AVX2_EQUIV_TEST_UNITS) rsa_mont.c $(RSA_AVX2_TEST_SRCS))
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(SHA512_TEST_SRCS) ct_wipe.c))
 	@echo $(call sha512_avx2_named,$(call host_srcs,$(HKDF384_SRCS)))
+	@echo $(call sha512_avx2_named,$(CHACHA20_EQUIV_TEST_SRCS))
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -5851,6 +5853,7 @@ else
 	  $(P384_WIDE_SRCS) test/p384_equiv_test.c test/p384_equiv_field.c test/p384_equiv_sign.c \
 	  test/p384_portable.c \
 	  test/diff_x25519_test.c test/diff_p256_wide_test.c chacha20_vector.c test/chacha20_equiv_vector.c \
+	  test/chacha20_equiv_test.c \
 	  avx512_wipe.c test/avx512_wipe_test.c test/chacha20_equiv_avx512.c poly1305_vector.c \
 	  test/poly1305_equiv_vector.c test/stack_residue.c \
 	  poly1305_avx2.c test/poly1305_equiv_avx2.c poly1305_ifma.c test/poly1305_equiv_ifma.c \
@@ -5960,8 +5963,22 @@ else
 	  $(call TIDY_EACH,poly1305_ifma.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -DCH_POLY1305_IFMA_MODEL -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/poly1305_equiv_test.c test/diff_poly1305_ifma_test.c, \
+	  $(call TIDY_EACH,test/diff_poly1305_ifma_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I. -Itest)
+	# The ChaCha20 and Poly1305 equivalence tests, each in a pass of its
+	# own with portability-no-assembler off for that file alone: on x86-64
+	# each reads ymm0 to ymm15 back after its AVX2 kernel through
+	# test/avx2_registers.h's block of assembly, for the reason the SHA-2
+	# test's pass below gives (docs/decisions.md 129). Every other check
+	# reads them. A host for arm64 compiles none of that block, so the
+	# x86-64 hosts alone read it.
+	@set -e; [ -z "$(HOST_BINS)" ] || \
+	  $(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
+	  test/poly1305_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I. -Itest)
+	@$(call TIDY_EACH,--tidy-arg --checks=-portability-no-assembler \
+	  test/chacha20_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# rsa_avx2.c over its lane model, as bin/rsa_avx2_model_test runs it on
 	# every host, with rsa_mont.c's dispatch to it and the two test mains
 	# (docs/decisions.md 122). test/rsa_avx2_model.c and

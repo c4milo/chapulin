@@ -32,6 +32,9 @@
 // The powers are computed only after the copy, so this file's own frames
 // cannot hold them first.
 //
+// On x86-64 run_avx2_registers also reads ymm0 to ymm15 back as zero
+// after the AVX2 kernel (test/avx2_registers.h).
+//
 // Included by test/poly1305_equiv_test.c only, which declares the
 // generator, reduced, report, the failure count and the current path this
 // file uses.
@@ -196,5 +199,57 @@ static void run_residue(void) {
         }
     }
 }
+
+#ifdef CH_POLY1305_AVX2
+#include "avx2_registers.h"
+
+// What poly1305_avx2_blocks_native leaves in ymm0 to ymm15 after one group,
+// which the kernel's last step alone takes, and after four, whose first
+// three run its loop. Its registers hold the powers of r and the lanes'
+// sums, which give r, so it writes zero to all sixteen before it returns
+// (docs/decisions.md 129).
+static const size_t avx2_register_groups[] = {1, RESIDUE_GROUPS};
+
+static void run_avx2_registers(void) {
+    static poly1305 state;
+    size_t at = 0;
+    rng_fill(residue_key, sizeof residue_key);
+    rng_fill(residue_data, RESIDUE_GROUPS * POLY1305_AVX2_GROUP);
+    avx2_call c = {
+        NULL, {(uintptr_t)&state, (uintptr_t)residue_data, 0, 0, 0, 0}
+    };
+    avx2_set_call_store(&c, 0);
+    compared++;
+    if (!avx2_registers_hold(UINT64_MAX, &at)) {
+        failures++;
+        (void)fprintf(stderr,
+                      "poly1305 equivalence: registers: the block of assembly left ymm%zu word "
+                      "%zu unset, so it tests nothing\n",
+                      at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS);
+        return;
+    }
+#ifdef TEST_ADDRESS_SANITIZER
+    printf("poly1305 equivalence: SKIP the registers after the AVX2 kernel: this binary runs "
+           "under AddressSanitizer, whose code at the kernel's return writes a vector register "
+           "after VZEROALL\n");
+    return;
+#endif
+    c.call = (avx2_function)poly1305_avx2_blocks_native;
+    for (size_t i = 0; i < sizeof avx2_register_groups / sizeof avx2_register_groups[0]; i++) {
+        poly1305_init_native(&state, residue_key);
+        c.argument[2] = avx2_register_groups[i] * POLY1305_AVX2_GROUP;
+        avx2_set_call_store(&c, 0);
+        compared++;
+        if (!avx2_registers_hold(0, &at)) {
+            failures++;
+            (void)fprintf(stderr,
+                          "poly1305 equivalence: registers: ymm%zu word %zu holds 0x%016llx "
+                          "after poly1305_avx2_blocks_native over %zu bytes\n",
+                          at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS,
+                          (unsigned long long)avx2_register_word(at), (size_t)c.argument[2]);
+        }
+    }
+}
+#endif
 
 #endif

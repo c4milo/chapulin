@@ -280,6 +280,9 @@
 #                     arms
 #   poly1305-avx2     bin/poly1305_equiv_test for x86-64, for the
 #                     violations of poly1305_avx2.c
+#   chacha20-avx2     bin/chacha20_equiv_test for x86-64, for the
+#                     violation of chacha20_avx2.c's clear of its
+#                     registers
 #   aes-equiv         bin/aes_equiv_test for x86-64 and for arm64, for the
 #                     violations of aes_hw.c's two key expansions
 #   mlkem-avx2        bin/mlkem_avx2_equiv_test for x86-64, for the
@@ -315,9 +318,9 @@ ulimit -c 0
 only=${1:-}
 case "$only" in
 "" | x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | \
-    mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
+    mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2) ;;
 *)
-    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
+    echo "usage: $0 [x86-kernels | sha2-equiv | sha512-avx2 | sha512-stack | arm64-hash-count | p256-equiv | keccak | mlkem-vector | mlkem-avx2 | poly1305-avx2 | chacha20-avx2 | aes-equiv | rsa-ifma-callers | rsa-ifma | rsa-addcarry | rsa-avx2]" >&2
     exit 2
     ;;
 esac
@@ -345,6 +348,7 @@ if [ "$only" != arm64-hash-count ] && [ "$only" != keccak ]; then
     command -v "$x86_qemu" > /dev/null || { echo "aes-runtime-qemu: $x86_qemu is missing" >&2; exit 1; }
 fi
 if [ "$only" != x86-kernels ] && [ "$only" != mlkem-avx2 ] && [ "$only" != poly1305-avx2 ] &&
+    [ "$only" != chacha20-avx2 ] &&
     [ "$only" != rsa-ifma-callers ] && [ "$only" != rsa-ifma ] && [ "$only" != rsa-addcarry ] &&
     [ "$only" != rsa-avx2 ] && [ "$only" != sha512-avx2 ] && [ "$only" != sha512-stack ]; then
     arm64_cc=$(compiler_for "${ARM64_CC:-}" __aarch64__ aarch64-linux-gnu-gcc) || exit 1
@@ -404,8 +408,9 @@ read -r -a rsa_sign_equiv_srcs <<< "$(sed -n 19p <<< "$lists")"
 read -r -a rsa_avx2_equiv_srcs <<< "$(sed -n 20p <<< "$lists")"
 read -r -a sha512_test_host_srcs <<< "$(sed -n 21p <<< "$lists")"
 read -r -a hkdf384_test_host_srcs <<< "$(sed -n 22p <<< "$lists")"
-[ "${#hkdf384_test_host_srcs[@]}" -gt 0 ] ||
-    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-two lists" >&2; exit 1; }
+read -r -a chacha20_equiv_srcs <<< "$(sed -n 23p <<< "$lists")"
+[ "${#chacha20_equiv_srcs[@]}" -gt 0 ] ||
+    { echo "aes-runtime-qemu: make print-aes-runtime-qemu-srcs printed fewer than twenty-three lists" >&2; exit 1; }
 # avx512_wipe.c has a body for x86-64 alone. For arm64 it is a translation
 # unit with no declaration, which -Wpedantic refuses, so the arm64 builds
 # link these copies of the three lists they take, without it.
@@ -554,6 +559,21 @@ if [ -z "$only" ] || [ "$only" = poly1305-avx2 ]; then
 fi
 if [ "$only" = poly1305-avx2 ]; then
     echo "aes-runtime-qemu: bin/poly1305_equiv_test held the AVX2 Poly1305 and the SSE2 path to poly1305.c's loop, on AVX2 for x86-64"
+    exit 0
+fi
+
+if [ -z "$only" ] || [ "$only" = chacha20-avx2 ]; then
+    # The AVX2 ChaCha20 and the SSE2 path against chacha20.c's loop, and
+    # ymm0 to ymm15 after the AVX2 kernel. The kernel has a body on x86-64
+    # alone.
+    "$x86_cc" "${flags[@]}" -o "$x86_out/chacha20_equiv_test" test/chacha20_equiv_test.c \
+        "${chacha20_equiv_srcs[@]}" || exit 1
+    CH_REQUIRE_X86_KERNELS=1 expect max 0 \
+        "the AVX2 ChaCha20 or the SSE2 path and chacha20.c's loop disagree, or the AVX2 kernel left a register it wrote" \
+        chacha20_equiv_test
+fi
+if [ "$only" = chacha20-avx2 ]; then
+    echo "aes-runtime-qemu: bin/chacha20_equiv_test held the AVX2 ChaCha20 and the SSE2 path to chacha20.c's loop, on AVX2 for x86-64"
     exit 0
 fi
 

@@ -40,6 +40,10 @@
 //     RANDOM_LENGTH_MAX, alignment and aliasing shape;
 //   - a 16 KiB record with its content type byte, 16,385 bytes, and 64 KiB.
 //
+// After the AVX2 kernel's cases, on a CPU with AVX2, the binary sets every
+// bit of ymm0 to ymm15, calls the kernel and requires every bit of the
+// sixteen registers zero after it (test/avx2_registers.h).
+//
 // RFC 8439's vectors are not repeated here. bin/unit runs them on the
 // portable loop and bin/unit_host on these paths, so each answers the
 // published standard directly and not only through the others.
@@ -337,12 +341,68 @@ static void run_path(const vector_path *path, uint64_t seed) {
            compared - before_path, path->name, (unsigned long long)seed);
 }
 
+#ifdef __x86_64__
+#include "avx2_registers.h"
+
+// What chacha20_avx2_xor leaves in ymm0 to ymm15 for each length: a pass
+// of eight blocks, 512 bytes, whose last rows the kernel XORs whole, and
+// 300 bytes, whose last 12 it XORs one at a time. A pass's state and
+// keystream give the key, so the kernel writes zero to all sixteen before
+// it returns (docs/decisions.md 129).
+static const size_t avx2_register_lengths[] = {512, 300};
+
+static void run_avx2_registers(void) {
+    static uint8_t key[CHACHA20_KEY];
+    static uint8_t nonce[CHACHA20_NONCE];
+    static uint8_t in[512];
+    static uint8_t out[512];
+    size_t at = 0;
+    rng_fill(key, sizeof key);
+    rng_fill(nonce, sizeof nonce);
+    rng_fill(in, sizeof in);
+    avx2_call c = {
+        NULL, {(uintptr_t)key, (uintptr_t)nonce, 1, (uintptr_t)in, (uintptr_t)out, 0}
+    };
+    avx2_set_call_store(&c, 0);
+    compared++;
+    if (!avx2_registers_hold(UINT64_MAX, &at)) {
+        failures++;
+        (void)fprintf(stderr,
+                      "chacha20 equivalence: registers: the block of assembly left ymm%zu word "
+                      "%zu unset, so it tests nothing\n",
+                      at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS);
+        return;
+    }
+#ifdef TEST_ADDRESS_SANITIZER
+    printf("chacha20 equivalence: SKIP the registers after the AVX2 kernel: this binary runs "
+           "under AddressSanitizer, whose code at the kernel's return writes a vector register "
+           "after VZEROALL\n");
+    return;
+#endif
+    c.call = (avx2_function)chacha20_avx2_xor;
+    for (size_t i = 0; i < sizeof avx2_register_lengths / sizeof avx2_register_lengths[0]; i++) {
+        c.argument[5] = avx2_register_lengths[i];
+        avx2_set_call_store(&c, 0);
+        compared++;
+        if (!avx2_registers_hold(0, &at)) {
+            failures++;
+            (void)fprintf(stderr,
+                          "chacha20 equivalence: registers: ymm%zu word %zu holds 0x%016llx "
+                          "after chacha20_avx2_xor over %zu bytes\n",
+                          at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS,
+                          (unsigned long long)avx2_register_word(at), avx2_register_lengths[i]);
+        }
+    }
+}
+#endif
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_path(&vector_128, seed);
 #ifdef __x86_64__
     if (x86_cpu_has_avx2()) {
         run_path(&vector_avx2, seed);
+        run_avx2_registers();
     } else if (x86_kernels_required()) {
         (void)fprintf(stderr, "chacha20 equivalence: this CPU lacks AVX2, and "
                               "CH_REQUIRE_X86_KERNELS is 1\n");

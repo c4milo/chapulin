@@ -60,11 +60,11 @@ The other 34 sources are in no such harness:
 | `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
-| `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
+| `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
 | `avx512_wipe.c` | It is one block of inline assembly, which CBMC does not read, and holds no C a harness could drive. It has a body on x86-64 alone. | On a CPU with AVX-512F, `bin/avx512_wipe_test` sets every bit of zmm0 to zmm31 and k1 to k7, calls it, and requires each register to read back as zero; the nightly's `rsa-ifma-sde` job runs the binary under Intel SDE. |
 | `poly1305_vector.c` | It runs Poly1305's block loop on NEON or SSE2 intrinsics. | `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector Poly1305](#the-vector-poly1305)). |
-| `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
+| `poly1305_avx2.c` | It runs Poly1305's block loop on AVX2 intrinsics, and has a body in an x86-64 host object's native copy alone. | On a CPU with AVX2, `bin/poly1305_equiv_test` holds it to `poly1305.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and the Wycheproof suite's four longest messages run on it ([The AVX2 Poly1305](#the-avx2-poly1305)). |
 | `mlkem_vector.c` | It runs ML-KEM's NTT and base multiplication on NEON or SSE2 intrinsics. | `bin/mlkem_vector_equiv_test` holds it to `mlkem_poly.c`'s proven loops, and the ML-KEM-768 vectors and the Wycheproof suite run on it ([The vector NTT](#the-vector-ntt)). |
 | `keccak_avx2.c` | It runs Keccak-f[1600] on four states at once in AVX2 intrinsics, and has a body on x86-64 alone. | On a CPU with AVX2, `bin/mlkem_avx2_equiv_test` holds its four SHAKE128 streams to `sha3.c`'s proven code for ten blocks each ([The four-way Keccak](#the-four-way-keccak)). |
 | `mlkem_avx2.c` | It is `mlkem.c` compiled once more beside a row sampler that calls `keccak_avx2.c`, so it has a body on x86-64 alone. | The `mlkem` harness proves `mlkem.c`'s text but for `mlk_matvec_row`, which the copy supplies, and `bin/mlkem_avx2_equiv_test` holds the copy's keys, ciphertexts and secrets to `mlkem.c`'s ([The four-way Keccak](#the-four-way-keccak)). |
@@ -3813,8 +3813,12 @@ file. The kernel rests on these:
   carry h1 past 2^26 in the first pass; 20,000 random cases; and the two
   large inputs. It searches the stack below a call over four groups for
   r^2 to r^8 in the layouts the 128-bit path's search reads and in one
-  word every 32 bytes, as an AVX2 multiplier holds a lane's power. On a
-  CPU without AVX2 it skips the kernel and says so.
+  word every 32 bytes, as an AVX2 multiplier holds a lane's power. It
+  then reads ymm0 to ymm15 after a call over one group and one over four,
+  through `test/avx2_registers.h`'s block of assembly, and requires every
+  word zero: the kernel ends with VZEROALL, which clears the powers of r
+  and the lanes' sums (decision 129). On a CPU without AVX2 it skips the
+  kernel and says so.
 - `test/aes-runtime-qemu.sh poly1305-avx2` builds the same binary for
   x86-64 and runs it under qemu-x86_64 with AVX2, in CI's mips job on
   every push, so an arm64 machine runs it too.
@@ -4234,6 +4238,12 @@ skips a kernel's cases on a CPU without its instructions:
   covers every offset inside the AVX2 kernel's 32-byte rows, and every
   length that crosses the AVX-512 kernel's pass of sixteen blocks four
   times, with its row pass of four blocks alone and beside a pass.
+  After the AVX2 kernel's cases it reads ymm0 to ymm15 after a call over
+  512 bytes and one over 300, through `test/avx2_registers.h`'s block of
+  assembly, as [SHA-512 on AVX2](#sha-512-on-avx2) describes it, and
+  requires every word zero: the kernel ends with VZEROALL (decision 129).
+  `test/aes-runtime-qemu.sh chacha20-avx2` runs the binary for x86-64
+  under qemu-x86_64, so an arm64 machine runs it too.
 - `bin/aes_equiv_test` runs its 2,258 counter-mode cases on
   `gcm_counter_blocks_vaes` after `gcm_counter_blocks_hw`: every block
   count to three passes and one, so each odd count's last block runs
@@ -4844,9 +4854,10 @@ as `sha512.c` does for the plain C, and the kernel ends with VZEROALL,
 which writes zero to ymm0 to ymm15. `test/sha2_equiv_residue512_avx2.h`
 holds that in four steps:
 
-- One block of assembly sets every bit of ymm0 to ymm15, calls the
-  kernel and stores the sixteen registers, so no instruction a compiler
-  picks runs between the three, and every stored word must be zero.
+- One block of assembly, in `test/avx2_registers.h`, sets every bit of
+  ymm0 to ymm15, calls the kernel and stores the sixteen registers, so
+  no instruction a compiler picks runs between the three, and every
+  stored word must be zero.
   The same block with the call left out runs first, and its stores
   must hold every bit set. `make san-check`'s binary makes that first
   read alone: under AddressSanitizer the kernel's return runs the

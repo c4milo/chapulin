@@ -37,7 +37,8 @@
 // block after it. out == in is allowed, as is out below in (out <= in):
 // each 32 bytes are read before the 32 bytes at the same offset are
 // written, in ascending order, so each address is written only after it
-// was last read.
+// was last read. Before it returns it writes zero to ymm0 to ymm15, which
+// held the key's words and the keystream (docs/decisions.md 129).
 //
 // Requires: a CPU with AVX2. chacha20_xor_cpu decides that from the
 // session's CH_CPU_AVX2 bit; on a CPU without AVX2 the first instruction

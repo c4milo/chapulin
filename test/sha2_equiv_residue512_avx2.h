@@ -8,11 +8,12 @@
 // checks, on test/sha2_equiv_residue512_first_arm.h's copy of the stack:
 //
 //   run_residue512_avx2_registers sets every bit of ymm0 to ymm15, calls
-//   sha512_avx2_compress_blocks and stores the sixteen registers, in one
-//   block of assembly, so no instruction the compiler picks runs between
-//   the three. Every stored word must be zero. The same block with the call
-//   left out runs first, and its stores must hold every bit set, so a zero
-//   after the call is the call's.
+//   sha512_avx2_compress_blocks and stores the sixteen registers, in
+//   test/avx2_registers.h's one block of assembly, so no instruction the
+//   compiler picks runs between the three. Every stored word must be
+//   zero. The same block with the call left out runs first, and its
+//   stores must hold every bit set, so a zero after the call is the
+//   call's.
 //
 //   run_residue512_avx2_depth calls the kernel by its own name, with no
 //   wipe after it. It requires the lowest byte the call wrote, and 16 bytes
@@ -43,99 +44,20 @@
 #ifndef CH_SHA2_EQUIV_RESIDUE512_AVX2_H
 #define CH_SHA2_EQUIV_RESIDUE512_AVX2_H
 
+#include "avx2_registers.h"
 #include "sha512_avx2.h"
 
-#define AVX2_REGISTERS 16
-#define AVX2_REGISTER_WORDS 4
-
-// ymm0 to ymm15 as the block of assembly stored them, four 64-bit words
-// each.
-static uint64_t residue512_registers[AVX2_REGISTERS][AVX2_REGISTER_WORDS];
-
-// Every bit of ymm0 to ymm15 set, call called on state, p and blocks where
-// it is not NULL, and the sixteen registers stored to residue512_registers.
-// VPCMPEQD of a register with itself sets every bit. Before the call the
-// block lowers the stack pointer past the 128 bytes below it that this
-// function may use, to a multiple of 32 bytes, and then by shift more, and
-// after the call it restores it. The block names as changed the sixteen
-// registers and the general registers the System V ABI lets a call change,
-// so the compiler keeps the addresses the block reads after the call in
-// others. The call's three arguments go to the block in locals, because
-// the call may change the three registers that hold them and writes the
-// eight words at state.
-__attribute__((target("avx2"), noinline)) static void
-residue512_set_call_store(void (*call)(uint64_t *, const uint8_t *, size_t), uint64_t *state,
-                          const uint8_t *p, size_t blocks, size_t shift) {
-    uintptr_t stack_pointer;
-    uint64_t *first = state;
-    const uint8_t *second = p;
-    size_t third = blocks;
-    __asm__ volatile("vpcmpeqd %%ymm0, %%ymm0, %%ymm0\n\t"
-                     "vpcmpeqd %%ymm1, %%ymm1, %%ymm1\n\t"
-                     "vpcmpeqd %%ymm2, %%ymm2, %%ymm2\n\t"
-                     "vpcmpeqd %%ymm3, %%ymm3, %%ymm3\n\t"
-                     "vpcmpeqd %%ymm4, %%ymm4, %%ymm4\n\t"
-                     "vpcmpeqd %%ymm5, %%ymm5, %%ymm5\n\t"
-                     "vpcmpeqd %%ymm6, %%ymm6, %%ymm6\n\t"
-                     "vpcmpeqd %%ymm7, %%ymm7, %%ymm7\n\t"
-                     "vpcmpeqd %%ymm8, %%ymm8, %%ymm8\n\t"
-                     "vpcmpeqd %%ymm9, %%ymm9, %%ymm9\n\t"
-                     "vpcmpeqd %%ymm10, %%ymm10, %%ymm10\n\t"
-                     "vpcmpeqd %%ymm11, %%ymm11, %%ymm11\n\t"
-                     "vpcmpeqd %%ymm12, %%ymm12, %%ymm12\n\t"
-                     "vpcmpeqd %%ymm13, %%ymm13, %%ymm13\n\t"
-                     "vpcmpeqd %%ymm14, %%ymm14, %%ymm14\n\t"
-                     "vpcmpeqd %%ymm15, %%ymm15, %%ymm15\n\t"
-                     "testq %[call], %[call]\n\t"
-                     "jz 1f\n\t"
-                     "movq %%rsp, %[stack_pointer]\n\t"
-                     "subq $128, %%rsp\n\t"
-                     "andq $-32, %%rsp\n\t"
-                     "subq %[shift], %%rsp\n\t"
-                     "call *%[call]\n\t"
-                     "movq %[stack_pointer], %%rsp\n\t"
-                     "1:\n\t"
-                     "vmovdqu %%ymm0, 0(%[out])\n\t"
-                     "vmovdqu %%ymm1, 32(%[out])\n\t"
-                     "vmovdqu %%ymm2, 64(%[out])\n\t"
-                     "vmovdqu %%ymm3, 96(%[out])\n\t"
-                     "vmovdqu %%ymm4, 128(%[out])\n\t"
-                     "vmovdqu %%ymm5, 160(%[out])\n\t"
-                     "vmovdqu %%ymm6, 192(%[out])\n\t"
-                     "vmovdqu %%ymm7, 224(%[out])\n\t"
-                     "vmovdqu %%ymm8, 256(%[out])\n\t"
-                     "vmovdqu %%ymm9, 288(%[out])\n\t"
-                     "vmovdqu %%ymm10, 320(%[out])\n\t"
-                     "vmovdqu %%ymm11, 352(%[out])\n\t"
-                     "vmovdqu %%ymm12, 384(%[out])\n\t"
-                     "vmovdqu %%ymm13, 416(%[out])\n\t"
-                     "vmovdqu %%ymm14, 448(%[out])\n\t"
-                     "vmovdqu %%ymm15, 480(%[out])\n\t"
-                     : "+D"(first), "+S"(second), "+d"(third), [stack_pointer] "=&r"(stack_pointer)
-                     : [call] "r"(call), [shift] "r"(shift), [out] "r"(residue512_registers)
-                     : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8",
-                       "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15", "rax", "rcx",
-                       "r8", "r9", "r10", "r11", "cc", "memory");
-    // The block wrote the four variables, and nothing reads them after it.
-    (void)stack_pointer;
-    (void)first;
-    (void)second;
-    (void)third;
-}
-
-// Whether every stored word of the sixteen registers is want. Where one is
-// not, *at takes its place: the register times AVX2_REGISTER_WORDS plus the
-// word.
-static int residue512_registers_hold(uint64_t want, size_t *at) {
-    for (size_t i = 0; i < AVX2_REGISTERS; i++) {
-        for (size_t j = 0; j < AVX2_REGISTER_WORDS; j++) {
-            if (residue512_registers[i][j] != want) {
-                *at = i * AVX2_REGISTER_WORDS + j;
-                return 0;
-            }
-        }
-    }
-    return 1;
+// sha512_avx2_compress_blocks on state, p and blocks through
+// test/avx2_registers.h's block of assembly, called with the stack
+// pointer shift bytes below a multiple of 32, or the block with no call
+// where call is NULL.
+static void residue512_set_call_store(void (*call)(uint64_t *, const uint8_t *, size_t),
+                                      uint64_t *state, const uint8_t *p, size_t blocks,
+                                      size_t shift) {
+    const avx2_call c = {
+        (avx2_function)call, {(uintptr_t)state, (uintptr_t)p, blocks, 0, 0, 0}
+    };
+    avx2_set_call_store(&c, shift);
 }
 
 static void run_residue512_avx2_registers(void) {
@@ -144,7 +66,7 @@ static void run_residue512_avx2_registers(void) {
     sha512_init(&residue512_state);
     residue512_set_call_store(NULL, residue512_state.h, residue512_data, 2, 0);
     compared++;
-    if (!residue512_registers_hold(UINT64_MAX, &at)) {
+    if (!avx2_registers_hold(UINT64_MAX, &at)) {
         failures++;
         (void)fprintf(stderr,
                       "sha2 equivalence: registers: the block of assembly left ymm%zu word %zu "
@@ -161,14 +83,13 @@ static void run_residue512_avx2_registers(void) {
     residue512_set_call_store(sha512_avx2_compress_blocks, residue512_state.h, residue512_data, 2,
                               0);
     compared++;
-    if (!residue512_registers_hold(0, &at)) {
+    if (!avx2_registers_hold(0, &at)) {
         failures++;
         (void)fprintf(stderr,
                       "sha2 equivalence: registers: ymm%zu word %zu holds 0x%016llx after "
                       "sha512_avx2_compress_blocks\n",
                       at / AVX2_REGISTER_WORDS, at % AVX2_REGISTER_WORDS,
-                      (unsigned long long)
-                          residue512_registers[at / AVX2_REGISTER_WORDS][at % AVX2_REGISTER_WORDS]);
+                      (unsigned long long)avx2_register_word(at));
     }
 }
 
