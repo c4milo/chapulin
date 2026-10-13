@@ -79,8 +79,14 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 # HASH512_UNIT_CPU, which names CH_CPU_AVX2, and the host Wycheproof test
 # runs its HMAC-SHA-384 and HKDF-SHA-384 suites on the kernel under
 # X86_WYCHEPROOF_CPU's values.
+#
+# bin/gcm_avx512_equiv_test, the 512-bit AES-GCM kernel's equivalence,
+# page-end and residue checks (docs/decisions.md 130), runs here too. What
+# CH_CPU_AVX512 names is absent from some of the job's runners, so it skips
+# there, as the values with CH_CPU_AVX512 do; CH_REQUIRE_AVX512=1 makes it
+# fail, and rsa-ifma-sde-check below runs it under Intel SDE with that set.
 X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test_hw x86_kernels_test \
-                   mlkem_avx2_equiv_test poly1305_equiv_test
+                   mlkem_avx2_equiv_test poly1305_equiv_test gcm_avx512_equiv_test
 
 # AVX-512 IFMA, for the nightly's rsa-ifma-sde job: rsa_ifma.c runs RSA's
 # public operation on it for a session whose ch_cfg.cpu holds
@@ -90,7 +96,10 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 # EPYC 7763 among them, and QEMU's TCG implements no AVX-512 instruction,
 # so this target runs the binaries under Intel's Software Development
 # Emulator: SDE64 is the path of its sde64, and SDE_CPU the emulated CPU
-# model, -icx (Ice Lake server) by default, which has AVX-512 IFMA.
+# model, -icx (Ice Lake server) by default, which has AVX-512 IFMA. The same
+# job runs the 512-bit AES-GCM kernel, which CH_CPU_AVX512 picks and which
+# needs AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ, all of which
+# -icx has (docs/decisions.md 130).
 #
 #   - bin/rsa_ifma_equiv_test holds each lane operation to the scalar
 #     model of its instruction, and then each product, rsa_ifma_public
@@ -108,6 +117,13 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #     kernels.
 #   - bin/avx512_wipe_test requires every vector register and k1 to k7 to
 #     hold zero after avx512_wipe_registers.
+#   - bin/gcm_avx512_equiv_test holds the 512-bit AES-GCM kernel, which
+#     CH_CPU_AVX512 picks beside CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES,
+#     to gcm.c's 128-bit loops, at the ends of guarded pages, and measures
+#     its depth and searches the stack and the registers its entries leave
+#     (docs/decisions.md 130). bin/quic_test_hw runs RFC 9001's and RFC
+#     9369's Initial packets and SP 800-38D's cases on the kernel in its
+#     last pass.
 #   - bin/chacha20_equiv_test holds chacha20_avx512.c's kernel, which
 #     CH_CPU_AVX512_IFMA picks, to chacha20.c's loop, and
 #     bin/poly1305_equiv_test poly1305_ifma.c's kernel, which it picks
@@ -116,20 +132,22 @@ X86_KERNEL_RUNS := chacha20_equiv_test aes_equiv_test ghash_equiv_test quic_test
 #   - bin/rsa_test_host and bin/rsa_pkcs1_test_host, under 0x10d, the
 #     second value of X86_UNIT_CPU, run the openssl-minted RSA-PSS and
 #     PKCS#1 v1.5 vectors and every refusal on the kernel.
-#   - the host Wycheproof binary, under 0x11f, the last value of
+#   - the host Wycheproof binary, under 0x31f, the last value of
 #     X86_WYCHEPROOF_CPU, runs the RSA-PSS and PKCS#1 v1.5 suites on the
 #     kernel, the RSA signing suite on the signer's kernels, whose value
-#     holds the multiply bit too, and every other suite under the other
-#     bits of that value.
+#     holds the multiply bit too, the AES-GCM suites on the 512-bit
+#     kernel, which CH_CPU_AVX512 picks, and every other suite under the
+#     other bits of that value.
 #     It needs the vectors, so it fetches them as the wycheproof target
 #     does.
 #   - bin/webpki_loop_aes, with both ends stating 0x101, the bit beside
-#     the probe's, and then 0x13f, every bit an x86-64 object defines,
+#     the probe's, and then 0x33f, every bit an x86-64 object defines,
 #     boots a server whose ch_srv_check verifies an RSA-PSS signature on
 #     the kernel, and then runs a handshake (test/webpki_loop_runtime.h).
 #
-# Each runs under CH_REQUIRE_AVX512_IFMA=1, so a binary that finds no
-# AVX-512 IFMA fails instead of skipping. The vector and Wycheproof
+# Each runs under CH_REQUIRE_AVX512_IFMA=1 and CH_REQUIRE_AVX512=1, so a
+# binary that finds no AVX-512 IFMA, or not what CH_CPU_AVX512 names, fails
+# instead of skipping. The vector and Wycheproof
 # binaries also run under CH_REQUIRE_X86_KERNELS=1: their values name
 # AVX2, and 0x11f names VAES, and a binary that finds either missing would
 # otherwise skip the whole value before it asks for AVX-512 IFMA
@@ -148,13 +166,14 @@ SDE64 ?= sde64
 SDE_CPU ?= -icx
 RSA_IFMA_SDE_RUNS := rsa_ifma_equiv_test x86_kernels_test avx512_wipe_test chacha20_equiv_test \
                      poly1305_equiv_test rsa_ifma_sign_equiv_test rsa_ifma_sign_equiv_test_384 \
-                     rsa_ifma_sign_residue_test rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test
+                     rsa_ifma_sign_residue_test rsa_ifma_sign_residue_test_384 rsa_sign_equiv_test \
+                     gcm_avx512_equiv_test quic_test_hw
 RSA_IFMA_SDE_VECTOR_HOST := rsa_test_host rsa_pkcs1_test_host
 RSA_IFMA_SDE_VECTOR_CPU := 0x10d
-RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x11f
-RSA_IFMA_SDE_LOOP_CPU := 0x101 0x13f
+RSA_IFMA_SDE_WYCHEPROOF_CPU := 0x31f
+RSA_IFMA_SDE_LOOP_CPU := 0x101 0x33f
 RSA_IFMA_SDE_PASS_rsa_ifma_equiv_test := rsa_ifma equivalence: [0-9]* comparisons agree
-RSA_IFMA_SDE_PASS_x86_kernels_test := x86 kernels: under each of 33 ch_cfg.cpu values
+RSA_IFMA_SDE_PASS_x86_kernels_test := x86 kernels: under each of 65 ch_cfg.cpu values
 RSA_IFMA_SDE_PASS_avx512_wipe_test := avx512_wipe: zmm0 to zmm31 and k1 to k7 hold zero
 RSA_IFMA_SDE_PASS_chacha20_equiv_test := chacha20 equivalence: [0-9]* cases agree between the portable loop and the AVX-512 kernel
 RSA_IFMA_SDE_PASS_poly1305_equiv_test := poly1305 equivalence: [0-9]* cases agree between the portable loop and the AVX-512 IFMA kernel
@@ -163,6 +182,8 @@ RSA_IFMA_SDE_PASS_rsa_ifma_sign_equiv_test_384 := rsa_ifma_sign (instructions): 
 RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test := rsa_ifma_sign residue: [0-9]* checks pass
 RSA_IFMA_SDE_PASS_rsa_ifma_sign_residue_test_384 := rsa_ifma_sign residue: [0-9]* checks pass
 RSA_IFMA_SDE_PASS_rsa_sign_equiv_test := rsa_sign_equiv_test: the private operation on AVX-512 IFMA ran
+RSA_IFMA_SDE_PASS_gcm_avx512_equiv_test := gcm_avx512 equivalence: [0-9]* cases agree
+RSA_IFMA_SDE_PASS_quic_test_hw := quic vectors: FIPS 197, SP 800-38D, RFC 9001 Appendix A
 RSA_IFMA_SDE_PASS_rsa_test_host := rsa_test: all checks passed
 RSA_IFMA_SDE_PASS_rsa_pkcs1_test_host := rsa_pkcs1_test: all checks passed
 RSA_IFMA_SDE_PASS_wycheproof_test_host := wycheproof: all suites passed
@@ -183,24 +204,25 @@ rsa-ifma-sde-check: $(addprefix bin/,$(RSA_IFMA_SDE_RUNS) $(RSA_IFMA_SDE_VECTOR_
 	$(foreach b,$(RSA_IFMA_SDE_RUNS), \
 	  echo "== $(b) (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
 	  sde_expect '$(RSA_IFMA_SDE_PASS_$(b))' \
-	    env CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/$(b);)
+	    env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_AVX512=1 "$(SDE64)" $(SDE_CPU) -- ./bin/$(b);)
 	@set -e; $(RSA_IFMA_SDE_EXPECT); \
 	$(foreach b,$(RSA_IFMA_SDE_VECTOR_HOST), \
 	  echo "== $(b) $(RSA_IFMA_SDE_VECTOR_CPU) (sde64 $(SDE_CPU), AVX-512 IFMA required)"; \
-	  sde_expect '$(RSA_IFMA_SDE_PASS_$(b))' env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_X86_KERNELS=1 \
-	    "$(SDE64)" $(SDE_CPU) -- ./bin/$(b) $(RSA_IFMA_SDE_VECTOR_CPU);)
+	  sde_expect '$(RSA_IFMA_SDE_PASS_$(b))' env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_AVX512=1 \
+	    CH_REQUIRE_X86_KERNELS=1 "$(SDE64)" $(SDE_CPU) -- ./bin/$(b) $(RSA_IFMA_SDE_VECTOR_CPU);)
 	@$(call wycheproof_fetch,rsa-ifma-sde-check); \
 	$(RSA_IFMA_SDE_EXPECT); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(WYCHEPROOF_HOST) -o bin/wycheproof_test_host && \
 	echo "== wycheproof_test_host $(RSA_IFMA_SDE_WYCHEPROOF_CPU) (sde64 $(SDE_CPU), AVX-512 IFMA required)" && \
-	sde_expect '$(RSA_IFMA_SDE_PASS_wycheproof_test_host)' env CH_REQUIRE_AVX512_IFMA=1 \
+	sde_expect '$(RSA_IFMA_SDE_PASS_wycheproof_test_host)' env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_AVX512=1 \
 	  CH_REQUIRE_X86_KERNELS=1 "$(SDE64)" $(SDE_CPU) -- ./bin/wycheproof_test_host $(RSA_IFMA_SDE_WYCHEPROOF_CPU)
 	@set -e; $(RSA_IFMA_SDE_EXPECT); \
 	$(foreach bits,$(RSA_IFMA_SDE_LOOP_CPU), \
 	  echo "== webpki_loop_aes cpu $(bits) $(bits) (sde64 $(SDE_CPU))"; \
 	  sde_expect '$(RSA_IFMA_SDE_PASS_webpki_loop_aes)' \
-	    env CH_REQUIRE_AVX512_IFMA=1 "$(SDE64)" $(SDE_CPU) -- ./bin/webpki_loop_aes cpu $(bits) $(bits);)
+	    env CH_REQUIRE_AVX512_IFMA=1 CH_REQUIRE_AVX512=1 "$(SDE64)" $(SDE_CPU) -- \
+	    ./bin/webpki_loop_aes cpu $(bits) $(bits);)
 .PHONY: x86-64-kernels-check x86-64-kernels-cpu
 x86-64-kernels-check: x86-64-kernels-cpu $(addprefix bin/,$(X86_KERNEL_RUNS)) \
                       $(addprefix bin/,$(X86_VECTOR_HOST) $(HASH_VECTOR_HOST)) bin/sha2_equiv_test

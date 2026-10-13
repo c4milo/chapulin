@@ -150,7 +150,8 @@ int aead_open_cpu(uint32_t cpu, const uint8_t key[AEAD_KEY], const uint8_t nonce
 
 void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes cpu: schedule writable");
-    k->key.cpu = cpu;
+    k->key.cpu = (uint8_t)cpu;
+    k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
 #endif
 

@@ -179,6 +179,15 @@ struct Cpu {
     // run rsa_mont64.c whatever this says. An x86-64 bit, which an arm64
     // object refuses.
     bool avx512_ifma = false;
+    // The CPU has AVX-512F, AVX-512BW and AVX-512VL, and VAES and
+    // VPCLMULQDQ on the 512-bit registers, and its operating system saves
+    // the opmask and 512-bit registers: CH_CPU_AVX512. It states presence
+    // alone, as avx2 does. Beside vaes and constant_time_aes the session
+    // runs each AES-GCM seal and open whole, four blocks to a 512-bit
+    // register, on gcm_avx512_kernel.c. It picks nothing else, so you can
+    // leave it clear and keep avx512_ifma's kernels. An x86-64 bit, which
+    // an arm64 object refuses.
+    bool avx512 = false;
 };
 #endif
 
@@ -397,7 +406,8 @@ class Config {
                    (found.constant_time_sha256 ? CH_CPU_CONSTANT_TIME_SHA256 : 0U) |
                    (found.constant_time_sha512 ? CH_CPU_CONSTANT_TIME_SHA512 : 0U) |
                    (found.constant_time_sha3 ? CH_CPU_CONSTANT_TIME_SHA3 : 0U) |
-                   (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U);
+                   (found.avx512_ifma ? CH_CPU_AVX512_IFMA : 0U) |
+                   (found.avx512 ? CH_CPU_AVX512 : 0U);
         return *this;
     }
 #endif

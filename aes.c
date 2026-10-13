@@ -42,13 +42,15 @@
 #endif
 
 #ifdef CH_CPU_RUNTIME
-// A schedule keeps its session's ch_cfg.cpu in one byte (aes_schedule.h),
-// and gcm_use_vaes reads CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES from that
-// byte, so both bits must sit in the low byte of the value. A bit above
-// that byte, such as CH_CPU_AVX512_IFMA, does not fit in it, and nothing
-// that reads the byte reads such a bit.
+// A schedule keeps its session's ch_cfg.cpu in two bytes, cpu and cpu_high
+// (aes_schedule.h). gcm_use_vaes reads CH_CPU_VAES and
+// CH_CPU_CONSTANT_TIME_AES from the low byte, so both bits must sit in it,
+// and gcm_use_avx512 reads CH_CPU_AVX512 beside them from the two bytes, so
+// that bit must sit below the third byte.
 _Static_assert((CH_CPU_VAES | CH_CPU_CONSTANT_TIME_AES) <= 0xffU,
                "a schedule's cpu byte holds every bit gcm_use_vaes reads");
+_Static_assert(CH_CPU_AVX512 <= 0xffffU,
+               "a schedule's two cpu bytes hold every bit gcm_use_avx512 reads");
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -116,6 +118,7 @@ static int on_instructions(const aes_key_schedule *s) {
 // here.
 static void expand_public_key(aes_key_schedule *s, const uint8_t key[AES_128_KEY], uint32_t cpu) {
     s->cpu = (uint8_t)cpu;
+    s->cpu_high = (uint8_t)(cpu >> 8);
     if ((cpu & CH_CPU_CONSTANT_TIME_AES) != 0) {
         s->instructions = AES_ON_INSTRUCTIONS;
         aes_expand_round_keys(key, s->round_keys);
@@ -300,6 +303,7 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
 #ifdef CH_CPU_RUNTIME
     // No kernel until aes_traffic_key_cpu names the session's CPU.
     k->key.cpu = 0;
+    k->key.cpu_high = 0;
 #endif
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);
@@ -313,6 +317,7 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
 #ifdef CH_CPU_RUNTIME
 void aes_traffic_key_cpu(aes_traffic_key *k, uint32_t cpu) {
     k->key.cpu = (uint8_t)cpu;
+    k->key.cpu_high = (uint8_t)(cpu >> 8);
 }
 #endif
 

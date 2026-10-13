@@ -726,7 +726,12 @@ launch slow:4 full record 165 "" ct.c proof/ct_wipe_stub.c
 # (PROVE_ONLY=record_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 576 properties, 20 s, 0.59 GB peak. With the direction's cpu, and
 # aead_seal_cpu, aead_open_cpu and aes_traffic_key_cpu, the entries that
-# take it, stubbed beside the others: 605 properties, 19 s, 0.58 GB.
+# take it, stubbed beside the others: 605 properties, 19 s, 0.58 GB. With
+# the stub of aes_traffic_key_cpu writing the schedule's second cpu byte
+# as well (docs/decisions.md 130), on 2026-10-13 (PROVE_ONLY=record_suite
+# PROVE_NO_CACHE=1, the summed resident size of run.sh, cbmc and the
+# solver polled once a second, at a load average near 15): 629
+# properties, 31 s, 0.99 GB.
 launch fast full record_suite 250 "" ct.c proof/ct_wipe_stub.c -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # The x25519 ladder keeps its words inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -1503,7 +1508,11 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 124 properties, 1 s, 0.02 GB peak. With the schedule's cpu byte, which
 # aes_traffic_key_init zeroes and aes_traffic_key_cpu writes: 136
-# properties, under 1 s, 0.02 GB.
+# properties, under 1 s, 0.02 GB. With the second byte, cpu_high, which
+# both write as well (docs/decisions.md 130), on 2026-10-13
+# (PROVE_ONLY=aes_traffic PROVE_NO_CACHE=1, the summed resident size of
+# run.sh, cbmc and the solver polled once a second, at a load average near
+# 15): 148 properties, 1 s, 0.01 GB.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes.c in the QUIC host suite object, which holds the AES instructions
 # and the table, over contract stubs of both ciphers' six entries: an
@@ -1522,7 +1531,9 @@ launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_CPU_
 # (PROVE_ONLY=aes_runtime PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 196 properties, 1 s, 0.03 GB peak. With the schedule's cpu byte, which
 # the Initial constructor writes and the Retry constructor zeroes: 214
-# properties, 1 s, 0.03 GB.
+# properties, 1 s, 0.03 GB. With the second byte, cpu_high, which both
+# constructors write as well (docs/decisions.md 130), measured as
+# aes_traffic's was on 2026-10-13: 232 properties, 2 s, 0.03 GB.
 launch fast full aes_runtime 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
 # AES=extern defines, so its AES-256 pair is compiled beside the AES-128
@@ -1613,7 +1624,10 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c proof/ct_wipe_stu
 # (PROVE_ONLY=quic_packet_suite PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro):
 # 1143 properties, 20 s, 0.48 GB peak. With the ch_cfg.cpu each packet
 # call takes first, and the entries that take it stubbed beside the
-# others: 1154 properties, 11 s, 0.48 GB.
+# others: 1154 properties, 11 s, 0.48 GB. With the stub of
+# aes_traffic_key_cpu writing the schedule's second cpu byte as well
+# (docs/decisions.md 130), measured as record_suite's was on 2026-10-13:
+# 1159 properties, 21 s, 0.82 GB.
 launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME
 # AEAD_AES_128_GCM's memory safety, its refusal, which leaves zeros where
 # the plaintext went, and
@@ -1646,11 +1660,31 @@ launch fast full quic_packet_suite 250 "" buf.c ct.c proof/ct_wipe_stub.c -DCH_T
 # 2.7 GB; gcm_refusal 464 properties, 50 s, 1.5 GB. gcm_refusal with
 # -DCH_GCM_REACH=1 and with -DCH_GCM_REACH=2 each fails its one assertion,
 # 1 of 460, in 57 s and 66 s at 0.57 GB, so both arms are reached.
+# Measured again after the GHASH bodies moved from gcm.c to gcm_ghash.h,
+# which gcm.c includes (docs/decisions.md 130), on 2026-10-13
+# (PROVE_ONLY=<name> PROVE_NO_CACHE=1, the summed resident size of run.sh,
+# cbmc and the solver polled once a second, at load averages of 4 to 15):
+# gcm_safety 457 properties, 248 s, 5.8 GB; gcm_refusal 464 properties,
+# 72 s, 1.8 GB; ghash 454 properties, 319 s, 2.4 GB.
 # Neither proves a functional or authenticity property; the two harnesses
 # that state those carry no launch line, below.
 launch slow:3 full gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c proof/ct_wipe_stub.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+# gcm_avx512.c's two entries (docs/decisions.md 130), over stubs of the 512-bit kernel's four
+# functions, of ct_wipe and of avx512_wipe_registers that record each call: each entry calls the
+# kernel's function for its direction and round count once, with its own arguments, then wipes
+# GCM_AVX512_BELOW_LEN bytes once through wipe_frame, and then wipes the registers once. The
+# harness's ct_wipe is proof/ct_wipe_stub.c's loop, and the line links no other.
+# CH_GCM_AVX512_MODEL opens the file's x86-64 guard on the machine cbmc runs on.
+# gcm_avx512_wipe compiles a build with the suite, which holds both key sizes, and
+# gcm_avx512_wipe_quic a QUIC build without it. Measured one line at a time with
+# PROVE_ONLY=<name> PROVE_NO_CACHE=1 on 2026-10-13 (cbmc 6.11.0, kissat 4.0.4, an M1 Pro), the
+# summed resident size of run.sh, cbmc and the solver polled once a second:
+#   gcm_avx512_wipe         62 properties, 2 s, 39 MB
+#   gcm_avx512_wipe_quic    62 properties, 2 s, 39 MB
+launch fast full gcm_avx512_wipe 2 "ct_wipe.0:2561" -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME -DCH_GCM_AVX512_MODEL --unsigned-overflow-check
+launch fast full gcm_avx512_wipe_quic 2 "ct_wipe.0:2561" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_GCM_AVX512_MODEL --unsigned-overflow-check
 launch fast full poly1305 85 "blocks.0:8" ct.c proof/ct_wipe_stub.c
 # The ROLE=server authentication flight: the two slot predicates over
 # every SignatureScheme code point, the CertificateVerify signed content

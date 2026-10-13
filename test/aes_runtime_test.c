@@ -162,6 +162,7 @@ static void check_keys(uint32_t cpu, const appendix *a) {
           eq_hex(k.hp.round_keys, a->client_hp));
     CHECK(k.key.instructions == recorded && k.hp.instructions == recorded);
     CHECK(k.key.cpu == (uint8_t)cpu && k.hp.cpu == (uint8_t)cpu);
+    CHECK(k.key.cpu_high == (uint8_t)(cpu >> 8) && k.hp.cpu_high == (uint8_t)(cpu >> 8));
     memset(&k, 0xff, sizeof k);
     CHECK(aes_public_key_initial(&k, cpu, a->version, APPENDIX_DCID, sizeof APPENDIX_DCID,
                                  CH_QUIC_ENDPOINT_SERVER) == CH_OK);
@@ -169,6 +170,7 @@ static void check_keys(uint32_t cpu, const appendix *a) {
           eq_hex(k.hp.round_keys, a->server_hp));
     CHECK(k.key.instructions == recorded && k.hp.instructions == recorded);
     CHECK(k.key.cpu == (uint8_t)cpu && k.hp.cpu == (uint8_t)cpu);
+    CHECK(k.key.cpu_high == (uint8_t)(cpu >> 8) && k.hp.cpu_high == (uint8_t)(cpu >> 8));
 }
 
 // A.2: the client's Initial packet sealed by the client entry, all 1200
@@ -241,7 +243,7 @@ static void check_retry(const appendix *a) {
     aes_public_key k;
     memset(&k, 0xff, sizeof k);
     aes_public_key_retry(&k, a->version);
-    CHECK(k.key.instructions == AES_ON_TABLE && k.key.cpu == 0);
+    CHECK(k.key.instructions == AES_ON_TABLE && k.key.cpu == 0 && k.key.cpu_high == 0);
 }
 
 // Both appendices under one ch_cfg.cpu, and what ran for them.
@@ -270,6 +272,7 @@ static void check_public_keys(uint32_t cpu) {
                                      sizeof APPENDIX_DCID, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
         CHECK(eq_hex(k.key.round_keys, V1_CLIENT_KEY) && k.key.instructions == AES_ON_TABLE);
         CHECK(k.key.cpu == (uint8_t)without_aes[i]);
+        CHECK(k.key.cpu_high == (uint8_t)(without_aes[i] >> 8));
         CHECK(aes_runtime_instruction_calls == 0 && aes_runtime_table_calls > 0);
     }
 }
@@ -313,7 +316,7 @@ static void check_traffic_case(const traffic_case *c) {
     aes_traffic_key k;
     memset(&k, 0xff, sizeof k);
     aes_traffic_key_init(&k, key, key_len);
-    CHECK(k.key.instructions == AES_ON_INSTRUCTIONS && k.key.cpu == 0);
+    CHECK(k.key.instructions == AES_ON_INSTRUCTIONS && k.key.cpu == 0 && k.key.cpu_high == 0);
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
     CHECK(gcm_traffic_open(&k, iv, aad, aad_len, ct, n, tag, opened) == 1);
@@ -322,6 +325,13 @@ static void check_traffic_case(const traffic_case *c) {
     // the same bytes under it.
     aes_traffic_key_cpu(&k, RUNTIME_PRESENT);
     CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.instructions == AES_ON_INSTRUCTIONS);
+    CHECK(k.key.cpu_high == 0);
+    gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
+    CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
+    // CH_CPU_AVX512 lands in the second byte. Without CH_CPU_VAES it names
+    // no kernel, so the bytes are the same on any CPU.
+    aes_traffic_key_cpu(&k, RUNTIME_PRESENT | CH_CPU_AVX512);
+    CHECK(k.key.cpu == RUNTIME_PRESENT && k.key.cpu_high == (uint8_t)(CH_CPU_AVX512 >> 8));
     gcm_traffic_seal(&k, iv, aad, aad_len, pt, n, ct, tag);
     CHECK(eq_hex(ct, c->ct) && eq_hex(tag, c->tag));
 }

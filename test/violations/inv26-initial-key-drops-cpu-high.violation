@@ -1,0 +1,13 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: the Initial key's constructor records the low byte of the
+  session's description of the CPU and leaves the byte above it as the
+  schedule's storage held it, so CH_CPU_AVX512 reads whatever the stack
+  held, and gcm.c picks the 512-bit kernel from it. bin/aes_runtime_test
+  fills the key with 0xff before the call and requires both schedules'
+  second byte to hold the value's.
+
+--- old
+    s->cpu_high = (uint8_t)(cpu >> 8);
+--- new

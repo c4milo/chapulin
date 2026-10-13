@@ -6,17 +6,20 @@
 // widemul_poly1305_avx2 picks poly1305_avx2.c's Poly1305 where it holds that bit and
 // CH_CPU_CONSTANT_TIME_MULTIPLY both (docs/decisions.md 110), gcm_vaes.h's gcm_use_vaes picks
 // gcm_vaes.c's three entries where it holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES both,
-// sha512.h's sha512_on_instructions picks sha512_hw.c's calls over sha512_avx2.c's kernel where
-// it holds CH_CPU_AVX2 (docs/decisions.md 128), and rsa_mont.c's use_ifma picks rsa_ifma.c's RSA
+// gcm_avx512.h's gcm_use_avx512 picks gcm_avx512.c's two entries, and with them
+// gcm_avx512_kernel.c, for a whole AES-GCM seal or open where it holds CH_CPU_AVX512 beside those
+// two bits (docs/decisions.md 130), sha512.h's sha512_on_instructions picks sha512_hw.c's calls
+// over sha512_avx2.c's kernel where it holds CH_CPU_AVX2 (docs/decisions.md 128), and rsa_mont.c's
+// use_ifma picks rsa_ifma.c's RSA
 // public operation where it holds CH_CPU_AVX512_IFMA, and else its use_avx2 picks rsa_avx2.c's
 // where it holds CH_CPU_AVX2 (docs/decisions.md 122). The kernels compute the bytes the paths
 // beside them compute, so no vector can tell which ran: test/x86_kernels_count.c,
 // test/rsa_ifma_count.c and test/rsa_avx2_count.c count the calls instead, and run each on the
 // entry it stands beside, so this binary runs on every x86-64 CPU.
 //
-// Every row runs under each of the 32 values the five bits from 0x02 to 0x10 and 0x100 make
-// beside CH_CPU_PROBED, and under 0, which a wiped record direction holds. Those five are the AES
-// bit, the multiply bit and the three that name a kernel; a hash bit picks no path a row here
+// Every row runs under each of the 64 values the six bits from 0x02 to 0x10, 0x100 and 0x200 make
+// beside CH_CPU_PROBED, and under 0, which a wiped record direction holds. Those six are the AES
+// bit, the multiply bit and the four that name a kernel; a hash bit picks no path a row here
 // takes, and SHA-512's kernel follows CH_CPU_AVX2. Under each, a call must run a kernel exactly
 // when the value names it, and must give the same bytes back:
 //
@@ -24,14 +27,14 @@
 //     keystream and to Poly1305's update of the ciphertext. chacha20_xor, aead_seal and aead_open
 //     take no value and run no kernel.
 //   - a record under each of the three suites, sealed and opened: the direction's cpu picks the
-//     AVX-512 or the AVX2 keystream and the AVX2 Poly1305 under ChaCha20 and the VAES kernels
-//     under AES-GCM.
+//     AVX-512 or the AVX2 keystream and the AVX2 Poly1305 under ChaCha20, and the 512-bit
+//     kernel, followed by avx512_wipe_registers, or else the VAES kernels under AES-GCM.
 //   - a QUIC 1-RTT packet under each suite, and a Handshake packet, sealed and opened, with the
 //     value the packet calls take first.
 //   - a QUIC Initial packet, whose key the table runs without the AES bit, so it runs the VAES
-//     kernels under both bits alone.
+//     kernels or the 512-bit kernel under the bits alone (test/x86_kernels_gcm.h).
 //   - an AES traffic key: aes_traffic_key_init names no kernel, and aes_traffic_key_cpu names what
-//     its value does.
+//     its value does (test/x86_kernels_gcm.h).
 //   - ML-KEM's three session calls, mlkem_keygen_dk_cpu, mlkem_encaps_derand_cpu and
 //     mlkem_decaps_cpu.
 //   - the two RSA verifiers' entries that take a value, and rsa_vp1_cpu, which runs the kernel
@@ -115,8 +118,9 @@ static void fill(uint8_t *p, size_t n, uint8_t seed) {
 // ChaCha20 under CH_CPU_AVX2 without it, the AVX-512 IFMA Poly1305 under
 // CH_CPU_AVX512_IFMA and CH_CPU_CONSTANT_TIME_MULTIPLY both, the AVX2
 // Poly1305 under CH_CPU_AVX2 and the multiply bit without
-// CH_CPU_AVX512_IFMA, and the VAES kernels under CH_CPU_VAES and
-// CH_CPU_CONSTANT_TIME_AES both.
+// CH_CPU_AVX512_IFMA, the 512-bit AES-GCM kernel under CH_CPU_AVX512,
+// CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES, and the VAES kernels under the
+// last two without CH_CPU_AVX512.
 static unsigned long names_avx2(uint32_t cpu) {
     return (cpu & CH_CPU_AVX2) != 0 ? 1 : 0;
 }
@@ -140,8 +144,16 @@ static unsigned long names_poly1305_avx2(uint32_t cpu) {
                : 0;
 }
 
+static unsigned long names_gcm_avx512(uint32_t cpu) {
+    uint32_t all = CH_CPU_AVX512 | CH_CPU_VAES | CH_CPU_CONSTANT_TIME_AES;
+    return (cpu & all) == all ? 1 : 0;
+}
+
 static unsigned long names_vaes(uint32_t cpu) {
-    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0 ? 1 : 0;
+    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0 &&
+                   names_gcm_avx512(cpu) == 0
+               ? 1
+               : 0;
 }
 
 static void reset_calls(void) {
@@ -152,6 +164,28 @@ static void reset_calls(void) {
     x86_vaes_seal_calls = 0;
     x86_vaes_open_calls = 0;
     x86_vaes_counter_calls = 0;
+    x86_gcm_avx512_seal_calls = 0;
+    x86_gcm_avx512_open_calls = 0;
+    avx512_wipe_calls = 0;
+}
+
+// Whether the calls into the 512-bit AES-GCM kernel since the last reset are these, each
+// followed by one call of avx512_wipe_registers (test/rsa_ifma_sign_count.c counts it), and
+// resets them.
+static int gcm_avx512_calls_are(unsigned long seal, unsigned long open) {
+    int same = x86_gcm_avx512_seal_calls == seal && x86_gcm_avx512_open_calls == open &&
+               avx512_wipe_calls == seal + open;
+    if (!same) {
+        (void)fprintf(stderr,
+                      "calls: 512-bit AES-GCM seal %lu, open %lu, avx512_wipe_registers %lu; "
+                      "want %lu, %lu, %lu\n",
+                      x86_gcm_avx512_seal_calls, x86_gcm_avx512_open_calls, avx512_wipe_calls, seal,
+                      open, seal + open);
+    }
+    x86_gcm_avx512_seal_calls = 0;
+    x86_gcm_avx512_open_calls = 0;
+    avx512_wipe_calls = 0;
+    return same;
 }
 
 // Whether the calls since the last reset are these, and resets them.
@@ -175,25 +209,32 @@ static int calls_are(unsigned long avx512, unsigned long avx2, unsigned long pol
     return same;
 }
 
-// One AES-GCM seal hands its whole passes to the one-pass seal and the
-// whole blocks after them to counter mode, once each, and an open the
-// same with the one-pass open (gcm.c). A ChaCha20-Poly1305 seal or open
+// One AES-GCM seal hands itself whole to the 512-bit kernel where the
+// value names it, and otherwise its whole passes to the one-pass seal and
+// the whole blocks after them to counter mode, once each, and an open the
+// same with the open's kernels (gcm.c). A ChaCha20-Poly1305 seal or open
 // runs the keystream once and hands the ciphertext's whole groups to the
 // Poly1305 kernel once.
 static int sealed_on(uint16_t suite, uint32_t cpu) {
-    if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, 0, 0, 0, names_vaes(cpu), 0, names_vaes(cpu));
+    int aes = suite_runs_aes_gcm(suite);
+    int whole = gcm_avx512_calls_are(aes ? names_gcm_avx512(cpu) : 0, 0);
+    if (aes) {
+        return calls_are(0, 0, 0, 0, names_vaes(cpu), 0, names_vaes(cpu)) && whole;
     }
     return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
-                     names_poly1305_avx2(cpu), 0, 0, 0);
+                     names_poly1305_avx2(cpu), 0, 0, 0) &&
+           whole;
 }
 
 static int opened_on(uint16_t suite, uint32_t cpu) {
-    if (suite_runs_aes_gcm(suite)) {
-        return calls_are(0, 0, 0, 0, 0, names_vaes(cpu), names_vaes(cpu));
+    int aes = suite_runs_aes_gcm(suite);
+    int whole = gcm_avx512_calls_are(0, aes ? names_gcm_avx512(cpu) : 0);
+    if (aes) {
+        return calls_are(0, 0, 0, 0, 0, names_vaes(cpu), names_vaes(cpu)) && whole;
     }
     return calls_are(names_chacha20_avx512(cpu), names_chacha20_avx2(cpu), names_poly1305_ifma(cpu),
-                     names_poly1305_avx2(cpu), 0, 0, 0);
+                     names_poly1305_avx2(cpu), 0, 0, 0) &&
+           whole;
 }
 
 // The keystream and the AEAD. The entries that take no description run
@@ -277,6 +318,8 @@ static void check_record(uint16_t suite, uint32_t cpu) {
     CHECK(wr.cpu == cpu);
 }
 
+#include "x86_kernels_gcm.h"
+
 // A short header with an empty connection ID and a two-byte packet number,
 // 5, and a version 1 long header of the Handshake type with two empty
 // connection IDs, the Length of what follows it and the same packet
@@ -321,65 +364,6 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
     CHECK(opened_on(suite, cpu));
     CHECK(pn == 5 && pt_len == PAYLOAD &&
           memcmp(pkt + sizeof handshake_hdr, payload, PAYLOAD) == 0);
-}
-
-// One Initial packet a client seals and a server opens. Its AES-128-GCM
-// key is public, and the value picks its cipher: the table without the AES
-// bit, which runs no instruction and so no kernel, and the instructions
-// with it, on the VAES kernels where the value names them.
-static void check_initial(uint32_t cpu) {
-    static const uint8_t dcid[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08};
-    static const uint8_t hdr[20] = {0xc1, 0x00, 0x00, 0x00, 0x01, 0x08, 0x83, 0x94, 0xc8, 0xf0,
-                                    0x3e, 0x51, 0x57, 0x08, 0x00, 0x00, 0x41, 0x29, 0x00, 0x07};
-    uint8_t pkt[sizeof hdr + PAYLOAD + GCM_TAG];
-    size_t pkt_len = 0;
-    reset_calls();
-    CHECK(quic_initial_seal(cpu, CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid, sizeof dcid, 7,
-                            2, hdr, sizeof hdr, payload, PAYLOAD, pkt, sizeof pkt,
-                            &pkt_len) == CH_OK);
-    CHECK(sealed_on(SUITE_AES_128_GCM_SHA256, cpu));
-    uint64_t pn = 0;
-    size_t pt_len = 0;
-    CHECK(quic_initial_open(cpu, CH_QUIC_ENDPOINT_SERVER, CH_QUIC_VERSION_1, dcid, sizeof dcid, pkt,
-                            pkt_len, sizeof hdr - 2, 0, &pn, &pt_len) == CH_OK);
-    CHECK(opened_on(SUITE_AES_128_GCM_SHA256, cpu));
-    CHECK(pn == 7 && pt_len == PAYLOAD && memcmp(pkt + sizeof hdr, payload, PAYLOAD) == 0);
-}
-
-// A traffic key of key_len bytes. aes_traffic_key_init records no
-// description of the CPU, whatever the storage held, so the key runs no
-// kernel, and aes_traffic_key_cpu records the value, which picks.
-static void check_traffic_key(size_t key_len, uint32_t cpu) {
-    uint8_t key[AES_256_KEY];
-    uint8_t iv[AES_IV];
-    uint8_t aad[5];
-    uint8_t ct[PAYLOAD];
-    uint8_t tag[GCM_TAG];
-    uint8_t back[PAYLOAD];
-    fill(key, sizeof key, 0x66);
-    fill(iv, sizeof iv, 0x77);
-    fill(aad, sizeof aad, 0x88);
-    uint16_t suite = key_len == AES_256_KEY ? SUITE_AES_256_GCM_SHA384 : SUITE_AES_128_GCM_SHA256;
-    aes_traffic_key k;
-    memset(&k, 0xff, sizeof k);
-    aes_traffic_key_init(&k, key, key_len);
-    CHECK(k.key.cpu == 0);
-    reset_calls();
-    gcm_traffic_seal(&k, iv, aad, sizeof aad, payload, PAYLOAD, ct, tag);
-    CHECK(sealed_on(suite, 0));
-    CHECK(gcm_traffic_open(&k, iv, aad, sizeof aad, ct, PAYLOAD, tag, back) == 1);
-    CHECK(opened_on(suite, 0));
-
-    aes_traffic_key_cpu(&k, cpu);
-    CHECK(k.key.cpu == (uint8_t)cpu);
-    uint8_t ct_cpu[PAYLOAD];
-    uint8_t tag_cpu[GCM_TAG];
-    gcm_traffic_seal(&k, iv, aad, sizeof aad, payload, PAYLOAD, ct_cpu, tag_cpu);
-    CHECK(sealed_on(suite, cpu));
-    CHECK(memcmp(ct_cpu, ct, PAYLOAD) == 0 && memcmp(tag_cpu, tag, GCM_TAG) == 0);
-    CHECK(gcm_traffic_open(&k, iv, aad, sizeof aad, ct_cpu, PAYLOAD, tag_cpu, back) == 1);
-    CHECK(opened_on(suite, cpu));
-    CHECK(memcmp(back, payload, PAYLOAD) == 0);
 }
 
 // Whether the calls into ML-KEM's copy since the last look are these, and
@@ -460,23 +444,26 @@ static void check_value(uint32_t cpu) {
 
 int main(void) {
     fill(payload, sizeof payload, 0x99);
-    // The five bits are 0x02 to 0x10 and 0x100, so the 32 values are the
-    // probe's bit with each of 0 to 15 shifted up one, and each of those
-    // with CH_CPU_AVX512_IFMA.
-    for (uint32_t bits = 0; bits < 32; bits++) {
+    // The six bits are 0x02 to 0x10, 0x100 and 0x200, so the 64 values are
+    // the probe's bit with each of 0 to 15 shifted up one, each of those
+    // with CH_CPU_AVX512_IFMA, and each of the 32 with CH_CPU_AVX512.
+    for (uint32_t bits = 0; bits < 64; bits++) {
         uint32_t ifma = (bits & 16U) != 0 ? CH_CPU_AVX512_IFMA : 0U;
-        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma);
+        uint32_t avx512 = (bits & 32U) != 0 ? CH_CPU_AVX512 : 0U;
+        check_value(CH_CPU_PROBED | ((bits & 15U) << 1) | ifma | avx512);
     }
     check_value(0);
     if (failures == 0) {
         (void)printf(
-            "x86 kernels: under each of 33 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
+            "x86 kernels: under each of 65 ch_cfg.cpu values, the ChaCha20 keystream ran on the "
             "AVX-512 kernel where CH_CPU_AVX512_IFMA was set and on the AVX2 kernel where "
             "CH_CPU_AVX2 was and that bit was not, ML-KEM's matrix on the AVX2 kernel where "
             "CH_CPU_AVX2 was, Poly1305 on the IFMA kernel where CH_CPU_AVX512_IFMA and "
             "CH_CPU_CONSTANT_TIME_MULTIPLY were and on the AVX2 kernel where CH_CPU_AVX2 and the "
-            "multiply bit were and CH_CPU_AVX512_IFMA was not, AES-GCM on the VAES kernels where "
-            "CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES were, SHA-512's and SHA-384's compression "
+            "multiply bit were and CH_CPU_AVX512_IFMA was not, a whole AES-GCM seal or open on "
+            "the 512-bit kernel, followed by the register wipe, where CH_CPU_AVX512, CH_CPU_VAES "
+            "and CH_CPU_CONSTANT_TIME_AES were, and on the VAES kernels where the last two were "
+            "and CH_CPU_AVX512 was not, SHA-512's and SHA-384's compression "
             "on the AVX2 kernel where CH_CPU_AVX2 was, RSA's public operation on the IFMA "
             "kernel where CH_CPU_AVX512_IFMA was and else on the AVX2 kernel where CH_CPU_AVX2 "
             "was, RSA signing's exponentiations and check on the IFMA kernels, each followed by "

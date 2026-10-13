@@ -1,0 +1,18 @@
+invariant: INV-26
+file: gcm_avx512.h
+catches: test/docker-aes-runtime-qemu.sh x86-kernels
+reason: gcm_avx512.h's gcm_use_avx512 reads CH_CPU_VAES and
+  CH_CPU_CONSTANT_TIME_AES alone, so every session that states VAES beside
+  the AES instructions runs the 512-bit kernel, and dies of SIGILL on a CPU
+  with VAES and without AVX-512, which an AMD EPYC 7763 is. Every vector
+  passes on a CPU with AVX-512. bin/x86_kernels_test counts the calls into
+  the kernel under every ch_cfg.cpu value and requires none where the value
+  lacks CH_CPU_AVX512, and test/aes-runtime-qemu.sh builds it for x86-64
+  and runs it under qemu-x86_64. The lane skips without docker, and this
+  then reports unguarded rather than caught.
+
+--- old
+    return (cpu & CH_CPU_AVX512) != 0 && (cpu & CH_CPU_VAES) != 0 &&
+           (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;
+--- new
+    return (cpu & CH_CPU_VAES) != 0 && (cpu & CH_CPU_CONSTANT_TIME_AES) != 0;

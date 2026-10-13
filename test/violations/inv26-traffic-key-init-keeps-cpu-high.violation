@@ -1,0 +1,14 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_init leaves the key's second cpu byte as its
+  storage held it, so a key that no call gave a description of the CPU
+  reads CH_CPU_AVX512 from whatever the stack held. bin/aes_runtime_test
+  fills the key with 0xff before the call and requires the byte to read 0
+  after it.
+
+--- old
+    k->key.cpu = 0;
+    k->key.cpu_high = 0;
+--- new
+    k->key.cpu = 0;

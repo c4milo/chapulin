@@ -1,0 +1,14 @@
+invariant: INV-17
+file: gcm_avx512.c
+catches: proof/prove-one.sh gcm_avx512_wipe
+reason: wipe_frame's array holds half of GCM_AVX512_BELOW_LEN, so each
+  entry wipes 1,280 bytes below its frame. The kernel's frames measured
+  about 1,100 bytes deep at -O2, so the residue search after an entry may
+  still find nothing, and the constant the Makefile reads for lint-stack's
+  ceiling has not changed. The harness records the length ct_wipe runs
+  and requires GCM_AVX512_BELOW_LEN.
+
+--- old
+    uint8_t below[GCM_AVX512_BELOW_LEN];
+--- new
+    uint8_t below[GCM_AVX512_BELOW_LEN / 2];

@@ -79,6 +79,7 @@ static void run_aes_gcm(void) {
 #endif
 #ifdef CH_CPU_RUNTIME
         k.key.cpu = (uint8_t)test_cpu;
+        k.key.cpu_high = (uint8_t)(test_cpu >> 8);
 #endif
         check_aes_gcm("aes_gcm", wp_aes_gcm[i].tc, &k, key + AES_128_KEY, wp_aes_gcm[i].aad_len,
                       wp_aes_gcm[i].msg_len, wp_aes_gcm[i].valid);
@@ -114,6 +115,7 @@ static void run_aes256_gcm(void) {
 #endif
 #ifdef CH_CPU_RUNTIME
         k.key.cpu = (uint8_t)test_cpu;
+        k.key.cpu_high = (uint8_t)(test_cpu >> 8);
 #endif
         check_aes_gcm("aes256_gcm", wp_aes256_gcm[i].tc, &k, key + AES_256_KEY,
                       wp_aes256_gcm[i].aad_len, wp_aes256_gcm[i].msg_len, wp_aes256_gcm[i].valid);

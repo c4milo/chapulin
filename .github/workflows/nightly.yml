@@ -275,10 +275,22 @@ jobs:
         # about the rule. The check job installs it the same way.
         run: pip install --require-hashes -r .semgrep/requirements.txt
 
+      - name: Install Intel SDE (pinned)
+        # The violations of the 512-bit AES-GCM kernel that only a run of
+        # the kernel sees name test/avx512-run.sh, which runs their binary
+        # under SDE where the runner's CPU lacks what CH_CPU_AVX512 names,
+        # and reports SKIP without it, which violations.py counts as
+        # unguarded (docs/decisions.md 130).
+        uses: ./.github/actions/install-sde
+        with:
+          version: ${{ env.SDE_VERSION }}
+          download-id: ${{ env.SDE_DOWNLOAD_ID }}
+          sha256: ${{ env.SDE_SHA256 }}
+
       - name: Break every invariant but the proof-backed ones and see what objects
         run: |
           set -o pipefail
-          make test-invariants-not-proof-backed 2>&1 | tee /tmp/invariants.out
+          SDE64="$HOME/sde/sde64" make test-invariants-not-proof-backed 2>&1 | tee /tmp/invariants.out
       - name: Put the tally on the run page
         if: always()
         run: |
@@ -583,17 +595,19 @@ jobs:
           key: fuzz-corpus-${{ github.run_id }}
 
   # AVX-512 IFMA, on which rsa_ifma.c runs RSA's public operation for a
-  # session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA. The runner of
-  # check.yml's x86-64-kernels job may lack the instructions, as an AMD EPYC
-  # 7763 does, and QEMU's TCG implements no AVX-512 instruction, so no other
-  # job is sure to run the kernel. This one runs bin/rsa_ifma_equiv_test,
-  # bin/x86_kernels_test, the two RSA verifiers' vector binaries, the host
-  # Wycheproof binary and bin/webpki_loop_aes under Intel's Software
-  # Development Emulator on a CPU model with AVX-512 IFMA, and a binary that
-  # finds none fails (test/platforms.mk, rsa-ifma-sde-check). SDE is an
-  # emulator: it shows what the instructions compute and nothing about how
-  # long they take on any CPU, so this job checks the kernel's results and
-  # none of its timing.
+  # session whose ch_cfg.cpu holds CH_CPU_AVX512_IFMA, and the 512-bit
+  # AES-GCM kernel, which CH_CPU_AVX512 picks. The runner of check.yml's
+  # x86-64-kernels job may lack the instructions, as an AMD EPYC 7763 does,
+  # and QEMU's TCG implements no AVX-512 instruction, so no other job is
+  # sure to run the kernels. This one runs bin/rsa_ifma_equiv_test,
+  # bin/x86_kernels_test, bin/gcm_avx512_equiv_test, bin/quic_test_hw, the
+  # two RSA verifiers' vector binaries, the host Wycheproof binary and
+  # bin/webpki_loop_aes under Intel's Software Development Emulator on a
+  # CPU model with AVX-512 IFMA and what CH_CPU_AVX512 names, and a binary
+  # that finds either missing fails (test/platforms.mk,
+  # rsa-ifma-sde-check). SDE is an emulator: it shows what the instructions
+  # compute and nothing about how long they take on any CPU, so this job
+  # checks the kernels' results and none of their timing.
   rsa-ifma-sde:
     runs-on: ubuntu-24.04
     timeout-minutes: 45

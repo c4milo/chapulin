@@ -13,7 +13,10 @@
 // CH_REQUIRE_AVX512_IFMA, because some of that job's runners, such as an
 // AMD EPYC 7763, lack it. The nightly's rsa-ifma-sde job sets it, and runs
 // its binaries under Intel SDE on a CPU model that has AVX-512 IFMA
-// (test/platforms.mk, rsa-ifma-sde-check).
+// (test/platforms.mk, rsa-ifma-sde-check). What CH_CPU_AVX512 names,
+// which the 512-bit AES-GCM kernel runs, has one too,
+// CH_REQUIRE_AVX512, for the same runners, and the same nightly job sets
+// it (test/platforms.mk, rsa-ifma-sde-check).
 #ifndef CH_TEST_X86_KERNELS_CPU_H
 #define CH_TEST_X86_KERNELS_CPU_H
 
@@ -83,6 +86,21 @@ static inline int x86_cpu_has_avx512f(void) {
 #endif
 }
 
+// What gcm_avx512_kernel.c runs, which CH_CPU_AVX512 names beside
+// CH_CPU_VAES (cpu_cfg.h): what x86_cpu_has_vaes reads, AVX-512F, AVX-512BW
+// and AVX-512VL, which CPUID leaf 7 reports in bits 16, 30 and 31 of EBX.
+// __builtin_cpu_supports also reads whether the operating system saves the
+// opmask registers and the 512-bit registers. The kernel runs no AVX-512VL
+// instruction, and the bit states it, so the probe asks for it.
+static inline int x86_cpu_has_avx512(void) {
+#ifdef __x86_64__
+    return x86_cpu_has_vaes() && __builtin_cpu_supports("avx512f") != 0 &&
+           __builtin_cpu_supports("avx512bw") != 0 && __builtin_cpu_supports("avx512vl") != 0;
+#else
+    return 0;
+#endif
+}
+
 // Whether a binary whose CPU lacks a kernel's instructions must fail
 // rather than skip.
 static inline int x86_kernels_required(void) {
@@ -94,6 +112,13 @@ static inline int x86_kernels_required(void) {
 // skip.
 static inline int x86_ifma_required(void) {
     const char *required = getenv("CH_REQUIRE_AVX512_IFMA");
+    return required != NULL && strcmp(required, "1") == 0;
+}
+
+// Whether a binary whose CPU lacks what CH_CPU_AVX512 names must fail
+// rather than skip.
+static inline int x86_avx512_required(void) {
+    const char *required = getenv("CH_REQUIRE_AVX512");
     return required != NULL && strcmp(required, "1") == 0;
 }
 

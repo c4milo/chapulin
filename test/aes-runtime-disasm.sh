@@ -4,8 +4,11 @@
 # 81, 88, 89 and 93):
 #
 #   - the AES and carry-less multiply instructions in aes_hw.c's,
-#     ghash_hw.c's, gcm_hw.c's and gcm_vaes.c's functions. gcm_vaes.c
-#     holds the 256-bit kernels on x86-64 and nothing on arm64.
+#     ghash_hw.c's, gcm_hw.c's, gcm_vaes.c's and gcm_avx512_kernel.c's
+#     functions. gcm_vaes.c holds the 256-bit kernels and
+#     gcm_avx512_kernel.c the 512-bit kernel on x86-64, and both hold
+#     nothing on arm64. gcm_avx512.c holds the kernel's entries and none of
+#     the instructions.
 #   - the SHA-256 instructions in sha256_hw.c's.
 #   - the SHA-512 instructions in sha512_hw.c's, which an object with
 #     SUITE=aesgcm alone packages. No x86-64 CPU this tree targets has
@@ -29,7 +32,8 @@
 # source's object and requires:
 #
 #   - no AES or carry-less multiply instruction in any object but
-#     aes_hw.o, ghash_hw.o, gcm_hw.o and gcm_vaes.o, no SHA-256
+#     aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o and gcm_avx512_kernel.o,
+#     no SHA-256
 #     instruction in any object but sha256_hw.o, and no SHA-512
 #     instruction in any object but sha512_hw.o;
 #   - an AES instruction in aes_hw.o, a carry-less multiply in ghash_hw.o,
@@ -43,7 +47,7 @@
 #     object is read for them: Apple clang's default CPU has FEAT_SHA3,
 #     so on macOS any file may hold one;
 #   - as many of those instructions in the linked chapulin.o as in the
-#     six files, so an object this script could not read fails too.
+#     seven files, so an object this script could not read fails too.
 #
 # The instructions: on arm64 aese, aesd, aesmc, aesimc, pmull and pmull2,
 # sha256h, sha256h2, sha256su0 and sha256su1, and sha512h, sha512h2,
@@ -134,9 +138,9 @@ for object in "${objects[@]}"; do
         [ -f "$o" ] || { echo "aes-runtime-disasm: [$object]: $o is missing" >&2; exit 1; }
         found=$(instructions "$o")
         # The sets the file may hold: a pattern that matches no mnemonic
-        # for every file but the six.
+        # for every file but the seven.
         case "$src" in
-        aes_hw.c | ghash_hw.c | gcm_hw.c | gcm_vaes.c) own="$aes|$clmul" ;;
+        aes_hw.c | ghash_hw.c | gcm_hw.c | gcm_vaes.c | gcm_avx512_kernel.c) own="$aes|$clmul" ;;
         sha256_hw.c) own="$sha256" ;;
         sha512_hw.c) own="$sha512" ;;
         *) own='^$' ;;
@@ -173,11 +177,12 @@ for object in "${objects[@]}"; do
     linked=$(count "$(instructions "$obj")" "$every")
     if [ "$linked" -ne "$in_files" ]; then
         echo "aes-runtime-disasm: [$object]: chapulin.o holds $linked of the instructions," \
-            "and aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o, sha256_hw.o and sha512_hw.o hold $in_files" >&2
+            "and aes_hw.o, ghash_hw.o, gcm_hw.o, gcm_vaes.o, gcm_avx512_kernel.o, sha256_hw.o and" \
+            "sha512_hw.o hold $in_files" >&2
         rc=1
     fi
-    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, sha256_hw.c and sha512_hw.c"
+    echo "aes-runtime-disasm: [$object]: $linked instructions, $in_files of them in aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c, gcm_avx512_kernel.c, sha256_hw.c and sha512_hw.c"
 done
 [ "$rc" -ne 0 ] ||
-    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c, gcm_hw.c and gcm_vaes.c, no SHA-256 instruction outside sha256_hw.c, no SHA-512 instruction outside sha512_hw.c and none of FEAT_SHA3's in it"
+    echo "aes-runtime-disasm: on $machine, no AES or carry-less multiply instruction outside aes_hw.c, ghash_hw.c, gcm_hw.c, gcm_vaes.c and gcm_avx512_kernel.c, no SHA-256 instruction outside sha256_hw.c, no SHA-512 instruction outside sha512_hw.c and none of FEAT_SHA3's in it"
 exit "$rc"

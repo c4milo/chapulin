@@ -2046,7 +2046,7 @@ last `ROLE=server` stub, as the entry said it would.
   binaries run under `ch_cfg.cpu` 0xd,
   and the host Wycheproof test under its three values with
   `CH_CPU_AVX2`. `bin/x86_kernels_test` counts every compression call a
-  row sends to the kernel under 33 values, and `test/hash-builds.sh`
+  row sends to the kernel under 65 values, and `test/hash-builds.sh`
   requires `sha512_hw.c` for x86-64 to call the kernel and not the plain
   C (docs/verification.md, "SHA-512 on AVX2").
 - **Violation.** A PR changes a round constant in the table the host
@@ -2586,6 +2586,60 @@ last `ROLE=server` stub, as the entry said it would.
   compiles the file is held by review, and by `hash_hw_of`, which hands
   every list of the Makefile the object and never the source.
 - See [decisions: Engineering](decisions.md#engineering), entry 128.
+
+### INV-52 — a host object's 512-bit AES-GCM kernel gives gcm.c's bytes and touches no byte outside its buffers
+
+- **Claim.** On x86-64, for a schedule whose description of the CPU
+  holds `CH_CPU_AVX512`, `CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES`,
+  `gcm_avx512.c`'s seal writes the ciphertext and the tag, and its open
+  the plaintext and the tag the ciphertext should carry, that `gcm.c`
+  writes on `gcm_hw.c`'s 128-bit loops, at both key sizes, for every
+  length, in place, out of place and with the plaintext below the
+  ciphertext. It reads no byte outside its key, nonce, associated data and
+  input, writes none outside its output and tag, and computes no address
+  outside those buffers.
+- **Mechanism.** `gcm_avx512_kernel.c` runs whole steps of 32 blocks
+  through whole-register loads and stores, at addresses below the last
+  whole step's end. The bytes past it load and store through byte masks,
+  in `load_rest_register` and `store_rest_register`, which compute a
+  register's address only where the register holds a byte of the run,
+  and `register_mask` sets the bits of the bytes the register holds and
+  no others. The associated data loads the same way, a block at a time.
+  The open loads every register past the last whole step before it
+  writes any plaintext there, and hashes each whole step's ciphertext
+  between the rounds of the step that decrypts it, before it writes the
+  step's plaintext (decision 130).
+- **Check.** CBMC cannot read the kernel's intrinsics, and no harness
+  compiles it. On a CPU with what `CH_CPU_AVX512` names
+  `bin/gcm_avx512_equiv_test` holds every seal and open, at both key
+  sizes, to `gcm.c` on the 128-bit loops: every length to 1,100 bytes,
+  each side of the first steps' ends and of 16,384 and 16,385 bytes, 300
+  random lengths to 17,000 and one of 69,000, each in place, out of place,
+  below its ciphertext and in `record.c`'s layout over the record header,
+  and requires the 64 bytes past each output to keep their value and
+  wrong tags and flipped bits refused. It then puts each text, output and
+  associated data so that it ends on the last byte of a page whose next
+  page has no access, for every length to 600 bytes and for 16,385 and
+  16,884, so a byte read or written past any of them faults.
+  `bin/quic_test_hw` runs SP 800-38D's and RFC 9001's and RFC 9369's
+  vectors on the kernel, and the host Wycheproof binary its AES-GCM
+  suites under `ch_cfg.cpu` 0x31f. A machine without the instructions
+  runs none of these: CI's x86-64 kernels job runs them where its runner
+  has AVX-512, and the nightly's `rsa-ifma-sde` job runs them under Intel
+  SDE. No check covers an address the kernel computes and then masks off
+  entirely, which no access shows: review holds that, and the two
+  helpers are where it reads.
+- **Violation.** A PR loads a whole register where the run ends inside
+  it, and masks the bytes off after the load; forms the address of a
+  register the run does not reach; or writes a step's plaintext before
+  the step's ciphertext is hashed. `inv52-gcm-avx512-rest-reads-whole-register`
+  makes `register_mask` answer every byte of a register that holds any
+  byte of the run, and `bin/gcm_avx512_equiv_test` catches it through
+  `test/avx512-run.sh`, which runs the binary on this CPU where it has
+  the instructions and under Intel SDE where `SDE64` names it; the
+  nightly's `test-invariants` job installs SDE for it. Without either it
+  reports unguarded.
+- See [decisions: Engineering](decisions.md#engineering), entry 130.
 
 ## Fail-closed
 
@@ -4023,7 +4077,7 @@ last `ROLE=server` stub, as the entry said it would.
   or BMI2 instruction, which the bit does not state, is in its object.
   `bin/hash_runtime_test` counts the calls into each path under 257
   values and `bin/x86_kernels_test` every compression call a row sends
-  to the kernel under 33. Two violations break those rules.
+  to the kernel under 65. Two violations break those rules.
   `inv16-sha512-avx2-entry-reads-sha512-bit` reads arm64's bit on
   x86-64, which no x86-64 session's value holds, so no call runs the
   kernel, and `bin/x86_kernels_test` catches it under `qemu-x86_64`.
@@ -4096,7 +4150,8 @@ last `ROLE=server` stub, as the entry said it would.
   holds an AES key, and no AES key outlives the call that built it.
 
   A QUIC host object is the one that holds two of the implementations:
-  `aes_hw.c` with `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c`, compiled so
+  `aes_hw.c` with `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `gcm_avx512.c`
+  and `gcm_avx512_kernel.c`, compiled so
   that only their own functions carry the AES instructions, and
   `quic_aes_soft.c` beside them (docs/decisions.md 81 and 89). The
   `CH_CPU_CONSTANT_TIME_AES` bit of the session's `ch_cfg.cpu` puts each
@@ -4119,6 +4174,18 @@ last `ROLE=server` stub, as the entry said it would.
   256-bit forms, so the kernels add no statement, and `CH_CPU_VAES`
   without the AES bit runs nothing. The kernels take the keys the 128-bit
   loops take, so the two claims bound them the same way.
+
+  On x86-64 a third path takes a key's whole seal or open:
+  `gcm_avx512_kernel.c`, four blocks to a 512-bit register on VAES and
+  VPCLMULQDQ, through `gcm_avx512.c`'s two entries (docs/decisions.md 130).
+  The schedule records the byte above the low one too, `cpu_high`, which
+  holds `CH_CPU_AVX512`, at the same places. `gcm_avx512.h`'s
+  `gcm_use_avx512` answers for the kernel only where the two bytes hold
+  `CH_CPU_AVX512`, `CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES`, and
+  `gcm.c` asks it only for a schedule the instructions run, so an Initial
+  key on the instructions runs on it, and the Retry key never does. The
+  AES bit's statement covers the 512-bit forms, so the kernel adds no
+  statement, and it takes the keys the other two paths take.
 
   A `-DCH_SUITE_AES_GCM` build adds the second claim, and the traffic
   keys of two suites. That build holds `TLS_AES_128_GCM_SHA256` and
@@ -4249,11 +4316,12 @@ last `ROLE=server` stub, as the entry said it would.
   The table and `aes_extern.c` define the same two entries, so a second
   one would not link, but a linker says nothing about which implementation
   an object ended up with; the lint reads the packaged source list per
-  build instead. Its host rows require `ghash_hw.c`, `gcm_hw.c` and
-  `gcm_vaes.c` beside `aes_hw.c`, and every device row bans them. Those
+  build instead. Its host rows require `ghash_hw.c`, `gcm_hw.c`,
+  `gcm_vaes.c`, `gcm_avx512.c` and `gcm_avx512_kernel.c` beside
+  `aes_hw.c`, and every device row bans them. Those
   rows admit the one pair of implementations an object may hold: the QUIC
-  host rows require the instructions' four sources and `quic_aes_soft.c`
-  together, the TCP suite host row requires the first four and bans the
+  host rows require the instructions' six sources and `quic_aes_soft.c`
+  together, the TCP suite host row requires the first six and bans the
   table, and a build that names an `AES` value for a host object must be
   refused. `aes-runtime-table-in-tcp-object.violation` puts the table in
   that TCP suite object, `aes-host-quic-object-loses-table.violation`
@@ -4399,12 +4467,14 @@ last `ROLE=server` stub, as the entry said it would.
   `make lint-trust-separation`, `make lint-wide-multiply`, and a
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
-  callers, with `aes.c`, `gcm.c`, the three AES
-  implementations, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c` and
-  `gcm_vaes.h` excluded as the definition sites. The header is there for
-  its three inline entries, which call `gcm_hw.c`'s loops or
-  `gcm_vaes.c`'s kernels for `gcm.c`; a call to one of the three from any
-  other library source still matches the rule in that source.
+  callers, with `aes.c`, `gcm.c` with `gcm_ghash.h`, the three AES
+  implementations, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `gcm_vaes.h`,
+  `gcm_avx512.c`, `gcm_avx512.h`, `gcm_avx512_kernel.c` and
+  `gcm_avx512_kernel.h` excluded as the definition sites. `gcm_vaes.h` is
+  there for its three inline entries, which call `gcm_hw.c`'s loops or
+  `gcm_vaes.c`'s kernels for `gcm.c`, and `gcm_avx512.c` for its calls of
+  the kernel's four functions; a call to one of them from any other
+  library source still matches the rule in that source.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
   every line: `-DCH_SUITE_AES_GCM` with neither `CH_CPU_RUNTIME` nor
@@ -4902,7 +4972,18 @@ last `ROLE=server` stub, as the entry said it would.
   zeroing instruction for each and the call in both kernels:
   `inv17-avx512-wipe-skips-zmm31`, `inv17-chacha-avx512-keeps-registers`
   and `inv17-poly1305-ifma-keeps-registers` make each edit, and the script
-  catches them. The AVX2 ChaCha20 and the AVX2 Poly1305 hold the key's
+  catches them. The 512-bit AES-GCM kernel holds round keys, keystream,
+  the hash subkey, E(K, J0) and GHASH sums in 512-bit registers, and each
+  of `gcm_avx512.c`'s two entries calls `avx512_wipe_registers` after the
+  kernel returns (decision 130). On a CPU with what `CH_CPU_AVX512` names
+  `bin/gcm_avx512_equiv_test` reads zmm0 to zmm31 and k1 to k7 back as
+  zero after each entry, `bin/x86_kernels_test` counts one call of the
+  wipe after each kernel call on every x86-64 CPU, and
+  `test/quic-builds.sh` requires the call in both entries:
+  `inv17-gcm-avx512-keeps-registers` drops it from the seal, and the
+  script catches it, and `inv17-gcm-avx512-open-keeps-registers` drops it
+  from the open, and the binary catches it on such a CPU or under SDE.
+  The AVX2 ChaCha20 and the AVX2 Poly1305 hold the key's
   values in 256-bit registers, and each ends with VZEROALL, which writes
   zero to ymm0 to ymm15 (decision 129). `bin/chacha20_equiv_test` and
   `bin/poly1305_equiv_test` set every bit of the sixteen registers, call
@@ -5168,6 +5249,41 @@ last `ROLE=server` stub, as the entry said it would.
   `inv17-sha3-hw-lane-in-stack-slot` writes one lane to a slot of its own
   each round. The binary catches both, built with clang for arm64 and run
   under `qemu-aarch64`.
+  Each of `gcm_avx512.c`'s two entries wipes `GCM_AVX512_BELOW_LEN`,
+  2,560 bytes, of the stack below its own frame after the kernel returns,
+  through `wipe_frame` and a volatile pointer, in `p256_wide_wipe.c`'s
+  form (decision 130). The kernel keeps the powers of the hash subkey in
+  its frame, and both compilers keep values of their own there: without
+  the wipe the prototype's search found H, E(K, J0) and GHASH sums under
+  both, and nine round keys under clang. A kernel calls no function:
+  every other function of `gcm_avx512_kernel.c` and `gcm_avx512_ghash.h`
+  carries `always_inline`, so a kernel's frame is all the stack it
+  writes. `lint-stack` holds each kernel's frame under the wiped length
+  less 512 bytes, which the Makefile reads from the header, and fails
+  where the kernel's object defines another function. For a kernel,
+  `-fstack-usage` reported at most 1,152 bytes under gcc 13.3 at `-O2`
+  and 2,112 at any level from `-Og` to `-O3` and `-Os`, and at most 952
+  under clang 23, for the baseline x86-64 target and for x86-64-v4. The
+  proofs `gcm_avx512_wipe` and `gcm_avx512_wipe_quic` show each entry
+  wiping exactly that length once, after the kernel and before the
+  register wipe, over stubs of the kernel. On a CPU with what
+  `CH_CPU_AVX512` names `bin/gcm_avx512_equiv_test` requires each kernel
+  function's depth, and 64 bytes more for a caller at another alignment,
+  inside the length. After each entry it requires that the stack below
+  hold none of the round keys, H, the powers of H, E(K, J0), the GHASH
+  sums, and the keystream of the first whole step, the last two and the
+  32 blocks past them, and that zmm0 to zmm31 and k1 to k7 read zero.
+  `test/quic-builds.sh` requires each entry to call both wipes, and
+  compiles the kernel under the ceiling and requires that it make no
+  call, on every machine. `inv17-gcm-avx512-stack-wipe-dropped` drops the
+  open's wipe, `inv17-gcm-avx512-below-len-short` wipes 1,024 bytes and
+  `inv17-gcm-avx512-kernel-calls-a-function` takes `always_inline` off
+  `compute_powers`, and the script catches all three;
+  `inv17-gcm-avx512-wipe-array-short` halves `wipe_frame`'s array, and
+  the proof catches it; and `inv17-gcm-avx512-open-keeps-registers` drops
+  the open's register wipe, and the binary catches it on such a CPU or
+  under SDE. The length is for an optimized object, as the others above
+  are.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
   one close, or keeps the read key once the peer's close_notify has

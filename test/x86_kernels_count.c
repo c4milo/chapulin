@@ -1,8 +1,9 @@
-// The eleven entries of an x86-64 host object's kernels, each a count and a
-// call to the entry it stands beside (test/x86_kernels_count.h).
+// The fifteen entries of an x86-64 host object's kernels, each a count and a
+// call to the code it stands beside (test/x86_kernels_count.h).
 // chacha20_vector_xor computes the bytes chacha20_avx2_xor and
 // chacha20_avx512_xor compute,
-// gcm_hw.c's three entries the bytes gcm_vaes.c's compute, mlkem.c's
+// gcm_hw.c's three entries the bytes gcm_vaes.c's compute, gcm_on_loops below
+// the bytes gcm_avx512_kernel.c's four compute, mlkem.c's
 // three session calls the bytes of mlkem_avx2.c's, and
 // poly1305_vector_blocks_native the accumulator poly1305_avx2_blocks_native
 // and poly1305_ifma_blocks_native compute, and sha512_compress_blocks the
@@ -12,11 +13,14 @@
 // test/rsa_ifma_count.c stands beside rsa_ifma.c's entry the same way.
 #include "x86_kernels_count.h"
 
+#include "aes_block.h"
 #include "chacha20_avx2.h"
 #include "chacha20_avx512.h"
 #include "chacha20_vector.h"
+#include "gcm_avx512_kernel.h"
 #include "gcm_hw.h"
 #include "gcm_vaes.h"
+#include "ghash_hw.h"
 #include "mlkem.h"
 #include "poly1305_avx2.h"
 #include "poly1305_ifma.h"
@@ -26,11 +30,15 @@
 
 #ifdef __x86_64__
 
+#include <string.h>
+
 unsigned long x86_avx2_calls;
 unsigned long x86_avx512_calls;
 unsigned long x86_vaes_seal_calls;
 unsigned long x86_vaes_open_calls;
 unsigned long x86_vaes_counter_calls;
+unsigned long x86_gcm_avx512_seal_calls;
+unsigned long x86_gcm_avx512_open_calls;
 unsigned long x86_mlkem_keygen_calls;
 unsigned long x86_mlkem_encaps_calls;
 unsigned long x86_mlkem_decaps_calls;
@@ -69,6 +77,103 @@ void gcm_open_passes_vaes(const uint8_t *round_keys, size_t rounds, uint8_t coun
     x86_vaes_open_calls++;
     gcm_open_passes_hw(round_keys, rounds, counter, acc, subkey, in, passes, out);
 }
+
+// One block through the forward cipher under round keys for rounds rounds.
+static void cipher_block(const uint8_t *round_keys, size_t rounds, const uint8_t in[AES_BLOCK],
+                         uint8_t out[AES_BLOCK]) {
+#ifdef CH_AES_256
+    if (rounds == AES_256_ROUNDS) {
+        aes_cipher_block_256(round_keys, in, out);
+        return;
+    }
+#else
+    (void)rounds;
+#endif
+    aes_cipher_block(round_keys, in, out);
+}
+
+// SP 800-38D's GCM-AE, or GCM-AD without the comparison where seal is 0, on
+// gcm_hw.c's counter mode and ghash_hw.c's GHASH: the bytes and the tag
+// gcm_avx512_kernel.c's four functions write, under their contracts. The
+// open hashes the ciphertext before it writes any plaintext, so in place
+// and below works as it does there.
+static void gcm_on_loops(const uint8_t *round_keys, size_t rounds, const uint8_t nonce[AES_IV],
+                         const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t n,
+                         uint8_t *out, uint8_t tag[AES_BLOCK], int seal) {
+    static const uint8_t zero[AES_BLOCK] = {0};
+    uint8_t subkey[AES_BLOCK];
+    uint8_t acc[AES_BLOCK] = {0};
+    uint8_t counter[AES_BLOCK] = {0};
+    uint8_t block[AES_BLOCK];
+    cipher_block(round_keys, rounds, zero, subkey);
+    gcm_hash_data_hw(acc, subkey, aad, aad_len);
+    if (!seal) {
+        gcm_hash_data_hw(acc, subkey, in, n);
+    }
+    memcpy(counter, nonce, AES_IV);
+    counter[AES_BLOCK - 1] = 1;
+    uint8_t first[AES_BLOCK];
+    memcpy(first, counter, AES_BLOCK);
+    size_t whole = n / AES_BLOCK * AES_BLOCK;
+    gcm_counter_blocks_hw(round_keys, rounds, counter, in, n / AES_BLOCK, out);
+    if (whole < n) {
+        // The counter holds the last whole block's, and inc32 gives the
+        // next: one more in its last four bytes, read big-endian, modulo
+        // 2^32.
+        uint32_t count = (uint32_t)counter[12] << 24 | (uint32_t)counter[13] << 16 |
+                         (uint32_t)counter[14] << 8 | counter[15];
+        count++;
+        for (size_t i = 0; i < 4; i++) {
+            counter[12 + i] = (uint8_t)(count >> (24 - 8 * i));
+        }
+        cipher_block(round_keys, rounds, counter, block);
+        for (size_t i = whole; i < n; i++) {
+            out[i] = (uint8_t)(in[i] ^ block[i - whole]);
+        }
+    }
+    if (seal) {
+        gcm_hash_data_hw(acc, subkey, out, n);
+    }
+    const uint64_t bits[2] = {(uint64_t)aad_len * 8U, (uint64_t)n * 8U};
+    for (size_t i = 0; i < AES_BLOCK; i++) {
+        acc[i] = (uint8_t)(acc[i] ^ (uint8_t)(bits[i / 8] >> (8 * (7 - i % 8))));
+    }
+    gcm_multiply_by_subkey_hw(acc, subkey);
+    cipher_block(round_keys, rounds, first, block);
+    for (size_t i = 0; i < AES_BLOCK; i++) {
+        tag[i] = (uint8_t)(acc[i] ^ block[i]);
+    }
+}
+
+void gcm_avx512_seal_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                         uint8_t tag[AES_BLOCK]) {
+    x86_gcm_avx512_seal_calls++;
+    gcm_on_loops(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag, 1);
+}
+
+void gcm_avx512_open_128(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
+                         uint8_t want[AES_BLOCK]) {
+    x86_gcm_avx512_open_calls++;
+    gcm_on_loops(round_keys, AES_128_ROUNDS, nonce, aad, aad_len, ct, n, pt, want, 0);
+}
+
+#ifdef CH_AES_256
+void gcm_avx512_seal_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                         uint8_t tag[AES_BLOCK]) {
+    x86_gcm_avx512_seal_calls++;
+    gcm_on_loops(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, pt, n, ct, tag, 1);
+}
+
+void gcm_avx512_open_256(const uint8_t *round_keys, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt,
+                         uint8_t want[AES_BLOCK]) {
+    x86_gcm_avx512_open_calls++;
+    gcm_on_loops(round_keys, AES_256_ROUNDS, nonce, aad, aad_len, ct, n, pt, want, 0);
+}
+#endif
 
 void mlkem_keygen_dk_avx2(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
     x86_mlkem_keygen_calls++;

@@ -1,0 +1,17 @@
+invariant: INV-17
+file: gcm_avx512_ghash.h
+catches: test/quic-builds.sh
+reason: compute_powers loses always_inline, so clang and gcc compile it
+  as a function of its own that each kernel calls, and the powers of the
+  hash subkey it computes lie in its frame, below the kernel's. lint-stack
+  holds each frame under its ceiling on its own, so the two frames
+  together can pass the GCM_AVX512_BELOW_LEN bytes the entry wipes: under
+  gcc at -Og they did, by 64 bytes. Every byte the kernel writes is still
+  right. The script requires that the kernel's object define no function
+  beside the four and make no call.
+
+--- old
+static inline __attribute__((always_inline)) void compute_powers(gcm_avx512_powers *s,
+                                                                 __m128i first_power, size_t top) {
+--- new
+static void compute_powers(gcm_avx512_powers *s, __m128i first_power, size_t top) {

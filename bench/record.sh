@@ -38,6 +38,15 @@
 #   poly1305_ifma.c's. --build compiles it for every x86-64 target, and a
 #   run takes its rows only where /proc/cpuinfo names avx512ifma
 #
+#   0x31f, those and CH_CPU_AVX512, on an x86-64 CPU with AVX-512F,
+#   AVX-512BW and AVX-512VL as well: the AES-128-GCM and AES-256-GCM rows
+#   again, whose whole AEADs, and the records and keyed AEADs over them,
+#   run on gcm_avx512_kernel.c (docs/decisions.md 130). The kernel calls
+#   none of gcm_vaes.c's loops, so the rows that time one of those alone
+#   time a path the whole rows do not take. --build compiles it for every
+#   x86-64 target, and a run takes its rows only where /proc/cpuinfo names
+#   avx512f, avx512bw and avx512vl
+#
 # A host object never runs chacha20.c's portable loop, so no row here
 # times it; bench/aead.sh times it in a device object's sources.
 #
@@ -162,10 +171,12 @@ fi
 # rows run only where this CPU has the kernels' instructions.
 KERNELS=""
 IFMA=""
+AVX512=""
 KERNELS_NOTE="no ch_cfg.cpu 0x1f rows: this CPU is not x86-64 with AVX2, VAES and VPCLMULQDQ"
 if [ -n "$X86_64" ]; then
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x1f -o "$W/record_kernels" "${SRCS[@]}"
     "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x11f -o "$W/record_ifma" "${SRCS[@]}"
+    "${CC_WORDS[@]}" "${FLAGS[@]}" -DBENCH_CPU=0x31f -o "$W/record_avx512" "${SRCS[@]}"
     if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo && grep -qw vaes /proc/cpuinfo &&
         grep -qw vpclmulqdq /proc/cpuinfo; then
         KERNELS=yes
@@ -173,6 +184,11 @@ if [ -n "$X86_64" ]; then
         if grep -qw avx512ifma /proc/cpuinfo; then
             IFMA=yes
             KERNELS_NOTE="$KERNELS_NOTE; ch_cfg.cpu 0x11f adds CH_CPU_AVX512_IFMA, the AVX-512 ChaCha20 and the IFMA Poly1305"
+        fi
+        if grep -qw avx512f /proc/cpuinfo && grep -qw avx512bw /proc/cpuinfo &&
+            grep -qw avx512vl /proc/cpuinfo; then
+            AVX512=yes
+            KERNELS_NOTE="$KERNELS_NOTE; ch_cfg.cpu 0x31f adds CH_CPU_AVX512, the 512-bit AES-GCM kernel, which runs the whole AEAD and none of the stages timed alone"
         fi
     fi
 fi
@@ -275,6 +291,9 @@ LOAD_BEFORE=$(load)
     fi
     if [ -n "$IFMA" ]; then
         "$W/record_ifma" ${QUICK:+"$QUICK"} chacha20poly1305
+    fi
+    if [ -n "$AVX512" ]; then
+        "$W/record_avx512" ${QUICK:+"$QUICK"} aes128gcm aes256gcm
     fi
     if [ -x "$W/record_zig" ]; then
         "$W/record_zig"

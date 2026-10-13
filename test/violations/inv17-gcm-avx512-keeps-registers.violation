@@ -1,0 +1,19 @@
+invariant: INV-17
+file: gcm_avx512.c
+catches: test/quic-builds.sh
+reason: gcm_seal_avx512 returns without calling avx512_wipe_registers, so
+  the round keys, the keystream, H, E(K, J0) and the GHASH sums the kernel
+  ran through the 512-bit registers stay there after the call. Every byte
+  it writes is still right, so no vector sees it. The script compiles the
+  file for x86-64 and requires the call in each entry, and
+  bin/x86_kernels_test counts one call after each call of the kernel.
+
+--- old
+    // The kernel's frames lay below this one and its values passed through the vector
+    // registers, and the compiler clears neither on return.
+    wipe_frame_call();
+    avx512_wipe_registers();
+--- new
+    // The kernel's frames lay below this one and its values passed through the vector
+    // registers, and the compiler clears neither on return.
+    wipe_frame_call();

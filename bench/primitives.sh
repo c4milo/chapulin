@@ -31,11 +31,16 @@
 #            SHA-512 on its SHA-512 instructions and, in a program clang
 #            built, SHA-3, SHAKE and ML-KEM on its SHA-3 instructions, and
 #            on x86-64 the AVX2 ChaCha20. On a CPU with AVX-512 IFMA the
-#            value also holds CH_CPU_AVX512_IFMA. The RSA handshake rows
-#            take that bit through rsa_vp1_cpu, because their ROLE=both
-#            programs set client_cfg.cpu to the value, and the primitive
-#            RSA verify rows through rsa_pss_verify_cpu and
-#            rsa_pkcs1_verify_cpu
+#            value also holds CH_CPU_AVX512_IFMA, and on one with
+#            AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ it holds
+#            CH_CPU_AVX512, which a caller on that CPU would state. No row
+#            here reads that bit: tools/bench_scoreboard.py requires the
+#            value to match bench/record.sh's, whose AES-GCM rows run the
+#            512-bit kernel under it (docs/decisions.md 130). The RSA
+#            handshake rows take CH_CPU_AVX512_IFMA through rsa_vp1_cpu,
+#            because their ROLE=both programs set client_cfg.cpu to the
+#            value, and the primitive RSA verify rows through
+#            rsa_pss_verify_cpu and rsa_pkcs1_verify_cpu
 #
 # The programs are bench/primitives.c with the primitives' rows, and with
 # the handshake's rows once pinning an RSA modulus and once pinning a P-256
@@ -235,6 +240,7 @@ CPU_CONSTANT_TIME_SHA256=0x20
 CPU_CONSTANT_TIME_SHA512=0x40
 CPU_CONSTANT_TIME_SHA3=0x80
 CPU_AVX512_IFMA=0x100
+CPU_AVX512=0x200
 
 # Whether a CPU's feature list names every word given.
 reports() { # $1 = the list, space separated; the rest = the words
@@ -253,8 +259,9 @@ reports() { # $1 = the list, space separated; the rest = the words
 # the carry-less multiply, the SHA-256 bit where it reports the SHA-256
 # instructions, on arm64 the SHA-512 bit where it reports the SHA-512
 # instructions and the SHA-3 bit where it reports the SHA-3 ones, and on
-# x86-64 the AVX2 and VAES bits where it reports those and the IFMA bit
-# where it reports AVX-512F and AVX-512 IFMA. A program gcc
+# x86-64 the AVX2 and VAES bits where it reports those, the IFMA bit
+# where it reports AVX-512F and AVX-512 IFMA, and CH_CPU_AVX512 where it
+# reports AVX-512F, AVX-512BW, AVX-512VL, VAES and VPCLMULQDQ. A program gcc
 # built holds no Keccak on the SHA-3 instructions, and there the SHA-3
 # bit picks nothing (docs/decisions.md 99). BENCH_CPU from the
 # environment wins, for a system this function has no probe for. The
@@ -324,6 +331,11 @@ cpu_value() {
     if [ "$ARCH" = x86_64 ] && reports "$features" avx512f avx512ifma; then
         value=$((value | CPU_AVX512_IFMA))
     fi
+    # The 512-bit AES-GCM kernel's: x86-64 Linux names AVX-512BW avx512bw
+    # and AVX-512VL avx512vl.
+    if [ "$ARCH" = x86_64 ] && reports "$features" avx512f avx512bw avx512vl vaes vpclmulqdq; then
+        value=$((value | CPU_AVX512))
+    fi
     printf '0x%x\n' "$value"
 }
 
@@ -332,7 +344,7 @@ cpu_value() {
 cpu_names() { # $1 = a ch_cfg.cpu value
     local names=CH_CPU_PROBED bit variable
     for bit in CONSTANT_TIME_AES CONSTANT_TIME_MULTIPLY AVX2 VAES CONSTANT_TIME_SHA256 \
-        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA; do
+        CONSTANT_TIME_SHA512 CONSTANT_TIME_SHA3 AVX512_IFMA AVX512; do
         variable=CPU_$bit
         if [ $(($1 & ${!variable})) -ne 0 ]; then
             names="$names, CH_CPU_$bit"

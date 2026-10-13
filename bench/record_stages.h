@@ -37,7 +37,10 @@
 // The three entries gcm.c hands a key's whole blocks to under BENCH_CPU, for
 // the rows that time one alone: gcm_vaes.c's kernels where the value names
 // VAES beside the AES bit on x86-64, as gcm_use_vaes picks them, and
-// gcm_hw.c's 128-bit loops under every other value.
+// gcm_hw.c's 128-bit loops under every other value. Under a value with
+// CH_CPU_AVX512 as well, gcm.c runs each whole AEAD on gcm_avx512_kernel.c
+// and calls none of the three, so those rows then time a path the whole
+// rows do not take (docs/decisions.md 130).
 #if defined(__x86_64__) && ((BENCH_CPU) & CH_CPU_VAES) != 0 &&                                     \
     ((BENCH_CPU) & CH_CPU_CONSTANT_TIME_AES) != 0
 #define BENCH_ON_VAES 1

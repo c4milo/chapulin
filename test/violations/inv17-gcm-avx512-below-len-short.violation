@@ -1,0 +1,16 @@
+invariant: INV-17
+file: gcm_avx512_kernel.h
+catches: test/quic-builds.sh
+reason: GCM_AVX512_BELOW_LEN, the bytes of stack gcm_avx512.c's entries wipe
+  below their frames after each kernel call, is 1,024, less than the
+  frames the kernel writes, so the wipe runs and still leaves the powers of
+  the hash subkey where they lay. Every byte is right. The Makefile reads
+  the length for the kernel's lint-stack ceiling, 512 bytes below it, and
+  the script compiles the kernel for x86-64 under that ceiling, which its
+  frames pass; bin/gcm_avx512_equiv_test measures the depth itself on a
+  CPU with AVX-512.
+
+--- old
+#define GCM_AVX512_BELOW_LEN 2560
+--- new
+#define GCM_AVX512_BELOW_LEN 1024

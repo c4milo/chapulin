@@ -1,0 +1,22 @@
+invariant: INV-17
+file: gcm_avx512.c
+catches: test/quic-builds.sh
+reason: gcm_open_avx512 returns without wiping the stack below its frame,
+  so the powers of the hash subkey in the kernel's frame, and whatever the
+  compiler kept in slots of its own there, stay in the dead frame. Every
+  byte the open writes is still right. The script compiles the file for
+  x86-64 and requires each entry to call wipe_frame through its pointer,
+  and bin/gcm_avx512_equiv_test searches the stack after each entry on a
+  CPU with AVX-512.
+
+--- old
+    wipe_frame_call();
+    avx512_wipe_registers();
+}
+
+#endif // CH_CPU_RUNTIME && (__x86_64__ || CH_GCM_AVX512_MODEL)
+--- new
+    avx512_wipe_registers();
+}
+
+#endif // CH_CPU_RUNTIME && (__x86_64__ || CH_GCM_AVX512_MODEL)

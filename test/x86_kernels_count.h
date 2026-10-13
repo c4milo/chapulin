@@ -1,13 +1,17 @@
 // The calls bin/x86_kernels_test counts into an x86-64 host object's
-// kernels (docs/decisions.md 89, 90, 107, 110 and 128): chacha20_avx2.c's
-// chacha20_avx2_xor, chacha20_avx512.c's chacha20_avx512_xor, gcm_vaes.c's
-// three entries, the three session calls of mlkem_avx2.c, poly1305_avx2.c's
-// poly1305_avx2_blocks_native, poly1305_ifma.c's
+// kernels (docs/decisions.md 89, 90, 107, 110, 128 and 130):
+// chacha20_avx2.c's chacha20_avx2_xor, chacha20_avx512.c's
+// chacha20_avx512_xor, gcm_vaes.c's three entries, gcm_avx512_kernel.c's
+// four functions, the three session calls of mlkem_avx2.c,
+// poly1305_avx2.c's poly1305_avx2_blocks_native, poly1305_ifma.c's
 // poly1305_ifma_blocks_native and sha512_avx2.c's
 // sha512_avx2_compress_blocks.
-// test/x86_kernels_count.c defines the eleven, each as a count and a call
-// to the entry it stands beside, which computes the same bytes, and the
-// binary links that file in place of the kernel sources. So the library's
+// test/x86_kernels_count.c defines the fifteen, each as a count and a call
+// to the code it stands beside, which computes the same bytes, and the
+// binary links that file in place of the kernel sources. gcm_avx512.c's
+// two entries stay, so the binary reads that each call of the 512-bit
+// kernel is followed by avx512_wipe_registers, which
+// test/rsa_ifma_sign_count.c counts. So the library's
 // sources run unchanged, no instruction of a kernel runs, and the test
 // reads which calls the library sent to a kernel, on any x86-64 CPU. The
 // binary counts the calls into rsa_ifma.c's rsa_ifma_public the same way,
@@ -25,6 +29,9 @@ extern unsigned long x86_avx512_calls;
 extern unsigned long x86_vaes_seal_calls;
 extern unsigned long x86_vaes_open_calls;
 extern unsigned long x86_vaes_counter_calls;
+// Calls to gcm_avx512_kernel.c's seals and opens, at either key size.
+extern unsigned long x86_gcm_avx512_seal_calls;
+extern unsigned long x86_gcm_avx512_open_calls;
 // Calls to the three session calls of mlkem_avx2.c, ML-KEM's copy for the
 // four-way Keccak (docs/decisions.md 107): mlkem_keygen_dk_avx2,
 // mlkem_encaps_derand_avx2 and mlkem_decaps_avx2.

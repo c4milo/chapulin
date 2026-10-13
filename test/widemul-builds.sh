@@ -408,13 +408,15 @@ fi
 # model of each instruction in portable C, in place of the instructions:
 # a build for tests alone. CH_POLY1305_IFMA_MODEL does the same for
 # poly1305_ifma.c and test/poly1305_ifma_model_lanes.h, and
-# CH_RSA_AVX2_MODEL for rsa_avx2.c and test/rsa_avx2_model_lanes.h. No
-# root source defines any of the three, and the defines make and build.zig
-# write for a library object, checked below, never name one.
+# CH_RSA_AVX2_MODEL for rsa_avx2.c and test/rsa_avx2_model_lanes.h.
+# CH_GCM_AVX512_MODEL compiles gcm_avx512.c's entries on any target, for a
+# proof unit that stubs the kernel they call. No root source defines any of
+# the four, and the defines make and build.zig write for a library object,
+# checked below, never name one.
 model_defined=$(git ls-files -- '*.c' '*.h' | grep -v / |
-    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2)_MODEL' || true)
+    xargs grep -lE '#[[:space:]]*define[[:space:]]+CH_((RSA|POLY1305)_IFMA|RSA_AVX2|GCM_AVX512)_MODEL' || true)
 if [ -n "$model_defined" ]; then
-    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL or CH_RSA_AVX2_MODEL, which only a test unit may: under each a kernel runs the model of each instruction" >&2
+    echo "widemul-builds: $(tr '\n' ' ' <<< "$model_defined")defines CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL, CH_RSA_AVX2_MODEL or CH_GCM_AVX512_MODEL, which only a test or proof unit may: under each a kernel runs a model" >&2
     exit 1
 fi
 
@@ -486,11 +488,11 @@ if ! has_words "$(lib_lists "${server[@]}" HOST_TARGET=yes | tr '\n' ' ')" "${ho
     echo "widemul-builds: make must write -DCH_CPU_RUNTIME, the native copies, the wide X25519 field, RSA's 64-bit arithmetic, IFMA public operation and signer and the vector ChaCha20 and Poly1305 for a host object" >&2
     exit 1
 fi
-# Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL or
-# CH_RSA_AVX2_MODEL, which no library object may.
+# Whether a list names CH_RSA_IFMA_MODEL, CH_POLY1305_IFMA_MODEL,
+# CH_RSA_AVX2_MODEL or CH_GCM_AVX512_MODEL, which no library object may.
 names_model() { # $1 = a list of words
     case " $1 " in
-    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL*) return 0 ;;
+    *CH_RSA_IFMA_MODEL* | *CH_POLY1305_IFMA_MODEL* | *CH_RSA_AVX2_MODEL* | *CH_GCM_AVX512_MODEL*) return 0 ;;
     *) return 1 ;;
     esac
 }

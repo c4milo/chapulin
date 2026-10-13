@@ -424,6 +424,33 @@ def select_aes_runtime_qemu(out, changed):
                     AES_RUNTIME_QEMU_GATES)
 
 
+# test/avx512-run.sh runs one binary on a CPU with what CH_CPU_AVX512
+# names, or under Intel SDE where SDE64 names it (docs/decisions.md 130).
+# The violations that only a run of the 512-bit AES-GCM kernel sees name
+# it with the binary, and the script runs no make, so a source that binary
+# compiles, or the script itself, selects the build of the binary and the
+# run, which carries the violations' catches line as its gate.
+AVX512_RUN_BINARIES = ("gcm_avx512_equiv_test",)
+AVX512_RUN_SCRIPT = "test/avx512-run.sh"
+
+
+def select_avx512_runs(out, changed):
+    """test/avx512-run.sh: a source its binary compiles can break the
+    run, and so can the script."""
+    for name in AVX512_RUN_BINARIES:
+        compiled = out.mapping.sources.get(f"bin/{name}", set())
+        hits = [p for p in changed if p in compiled or p == AVX512_RUN_SCRIPT]
+        if not hits:
+            continue
+        out.add("tests", f"make RAND=extern bin/{name}",
+                f"{AVX512_RUN_SCRIPT} runs bin/{name} and builds nothing")
+        command = f"{AVX512_RUN_SCRIPT} bin/{name}"
+        out.add("tests", command,
+                f"{hits[0]} is compiled or run by bin/{name}, which "
+                f"{AVX512_RUN_SCRIPT} runs on a CPU with what CH_CPU_AVX512 "
+                f"names or under Intel SDE", [command])
+
+
 # test/script-builds.sh builds the programs the bench and platform
 # scripts compile from source lists of their own (docs/decisions.md 88).
 # Any root source can gain a call into a file one of those lists leaves
@@ -835,6 +862,7 @@ def plan(changed, mapping):
     select_modes(out, sources, mapping.library_builds(), lib)
     select_pairs(out, changed, lib)
     select_aes_runtime_qemu(out, changed)
+    select_avx512_runs(out, changed)
     select_script_builds(out, changed)
     select_zig(out, changed, lib)
     select_codegen(out, csources, lib)

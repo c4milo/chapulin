@@ -1,0 +1,23 @@
+invariant: INV-52
+file: gcm_avx512_kernel.c
+catches: test/avx512-run.sh bin/gcm_avx512_equiv_test
+builds: bin/gcm_avx512_equiv_test
+reason: register_mask answers every byte of a register that holds any
+  byte of the run, so the bytes past the last whole step load and store
+  whole registers: the open reads and hashes up to 63 bytes past its
+  ciphertext, and the seal reads past its plaintext and writes past its
+  ciphertext. bin/gcm_avx512_equiv_test puts each buffer's last byte at a
+  page's end before a page with no access, requires the bytes past each
+  output to keep their value, and holds the tags to the 128-bit loops'.
+  It needs a CPU with what CH_CPU_AVX512 names, or Intel SDE through
+  SDE64, which the nightly's test-invariants job installs; without either
+  this reports unguarded rather than caught.
+
+--- old
+    if (held >= REGISTER_BYTES) {
+        return ~(__mmask64)0;
+    }
+--- new
+    if (held > 0) {
+        return ~(__mmask64)0;
+    }

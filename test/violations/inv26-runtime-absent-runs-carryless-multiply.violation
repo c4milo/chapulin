@@ -1,5 +1,5 @@
 invariant: INV-26
-file: gcm.c
+file: gcm_ghash.h
 catches: aes_runtime_test
 reason: a QUIC host object runs GHASH on the carry-less multiply and
   counter mode's whole blocks on the AES instructions for a schedule the

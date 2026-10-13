@@ -37,17 +37,20 @@
 // session's CH_CPU_CONSTANT_TIME_AES bit names, and no other line writes
 // it.
 //
-// A host object (CH_CPU_RUNTIME, cpu_cfg.h) also records cpu: the low byte
-// of the description of the CPU that the schedule's session gave in
-// ch_cfg.cpu, which holds CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES, the two
-// bits gcm_use_vaes reads (aes.c asserts it). gcm.c reads it to pick
-// gcm_vaes.c's 256-bit kernels for the schedule's whole blocks on x86-64,
-// and nothing else reads it. aes_traffic_key_init and the Retry
-// constructor write 0, which names no kernel, aes_traffic_key_cpu and the
-// Initial constructor write the session's value, and no other line writes
-// it. One byte keeps the schedule a run of bytes with no padding, as its
-// other fields do. A bit above that byte, such as CH_CPU_AVX512_IFMA, does
-// not fit in it, and gcm.c reads no such bit.
+// A host object (CH_CPU_RUNTIME, cpu_cfg.h) also records cpu and cpu_high:
+// the low byte and the byte above it of the description of the CPU that
+// the schedule's session gave in ch_cfg.cpu. The low byte holds CH_CPU_VAES
+// and CH_CPU_CONSTANT_TIME_AES, the two bits gcm_use_vaes reads, and the
+// byte above it CH_CPU_AVX512, which gcm_use_avx512 reads beside them (aes.c
+// asserts both). gcm.c reads the two bytes to pick gcm_vaes.c's 256-bit
+// kernels for the schedule's whole blocks on x86-64, or gcm_avx512.c's
+// 512-bit kernel for its whole seal or open, and nothing else reads them.
+// aes_traffic_key_init and the Retry constructor write 0 to both, which
+// names no kernel, aes_traffic_key_cpu and the Initial constructor write
+// the session's value, and no other line writes them. Two bytes rather than
+// one wider field keep the schedule a run of bytes with no padding, as its
+// other fields do. A bit above the two, which no x86-64 kernel reads, does
+// not fit in them, and gcm.c reads no such bit.
 #ifdef CH_AES_TWO_CIPHERS
 #define AES_ON_INSTRUCTIONS 1
 #define AES_ON_TABLE 2
@@ -62,6 +65,7 @@ struct aes_key_schedule {
 #endif
 #ifdef CH_CPU_RUNTIME
     uint8_t cpu;
+    uint8_t cpu_high;
 #endif
 };
 

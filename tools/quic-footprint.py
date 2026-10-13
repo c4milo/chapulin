@@ -134,10 +134,13 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # carry-less multiply, and both take a hash subkey, and gcm_hw.h and
 # gcm_vaes.h because they declare counter mode over whole blocks and the
 # one-pass seal and open, which take round keys, gcm_vaes.h for the 256-bit
-# kernels gcm_hw.c hands its blocks to. Every name all six declare must be one
-# inv-26-aes-public-keys-only matches, which is what cipher_surface()
-# compares.
-CIPHER_HEADERS = ("aes.h", "aes_block.h", "gcm.h", "ghash_hw.h", "gcm_hw.h", "gcm_vaes.h")
+# kernels gcm_hw.c hands its blocks to. gcm_avx512.h and gcm_avx512_kernel.h
+# join them because they declare the whole seal and open on the 512-bit
+# kernel, which take round keys (docs/decisions.md 130). Every name all eight
+# declare must be one inv-26-aes-public-keys-only matches, which is what
+# cipher_surface() compares.
+CIPHER_HEADERS = ("aes.h", "aes_block.h", "gcm.h", "ghash_hw.h", "gcm_hw.h", "gcm_vaes.h",
+                  "gcm_avx512.h", "gcm_avx512_kernel.h")
 CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"

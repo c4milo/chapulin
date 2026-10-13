@@ -1,0 +1,24 @@
+invariant: INV-17
+file: gcm_avx512.c
+catches: test/avx512-run.sh bin/gcm_avx512_equiv_test
+builds: bin/gcm_avx512_equiv_test
+reason: gcm_open_avx512 returns without calling avx512_wipe_registers, so
+  the round keys, the keystream, H, E(K, J0) and the GHASH sums the kernel
+  ran through the 512-bit registers stay there after the call. Every byte
+  it writes is still right. bin/gcm_avx512_equiv_test stores zmm0 to zmm31
+  and k1 to k7 after each entry's call and requires them zero. It needs a
+  CPU with what CH_CPU_AVX512 names, or Intel SDE through SDE64, which the
+  nightly's test-invariants job installs; without either this reports
+  unguarded rather than caught.
+
+--- old
+    wipe_frame_call();
+    avx512_wipe_registers();
+}
+
+#endif
+--- new
+    wipe_frame_call();
+}
+
+#endif

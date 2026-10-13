@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-102 of the 136 C sources in the tree root are compiled into a
+103 of the 138 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -48,7 +48,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 34 sources are in no such harness:
+The other 35 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -59,6 +59,7 @@ The other 34 sources are in no such harness:
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics, through `ghash_vector.h`. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `gcm_hw.c` | It runs counter mode and the one-pass seal and open on the AES and carry-less multiply intrinsics. | `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test` holds its seal and open to `gcm.c`'s proven one-block loop and portable GHASH. |
 | `gcm_vaes.c` | It runs `gcm_hw.c`'s three loops on the 256-bit VAES and VPCLMULQDQ intrinsics. | On an x86-64 CPU with those instructions, `bin/aes_equiv_test` holds its counter mode to `quic_aes_soft.c`, and `bin/ghash_equiv_test`, `bin/quic_test_hw` and the Wycheproof host binary run its seal and open against `gcm.c`'s proven one-block loop and portable GHASH and the published vectors ([The x86-64 kernels](#the-x86-64-kernels)). |
+| `gcm_avx512_kernel.c` | It runs AES-GCM's whole seal and open on the 512-bit VAES, VPCLMULQDQ and AVX-512 intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with what `CH_CPU_AVX512` names, `bin/gcm_avx512_equiv_test` holds every seal and open to `gcm.c` on `gcm_hw.c`'s loops, which `bin/ghash_equiv_test` holds to the proven portable GHASH, at the ends of guarded pages, and `bin/quic_test_hw` and the Wycheproof host binary run the published vectors on it; the nightly's `rsa-ifma-sde` job runs them under Intel SDE ([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)). |
 | `chacha20_vector.c` | It runs ChaCha20 on NEON or SSE2 intrinsics, which CBMC cannot unwind. | `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and RFC 8439's vectors and the Wycheproof suite run on it ([The vector ChaCha20](#the-vector-chacha20)). |
 | `chacha20_avx2.c` | It runs ChaCha20 on AVX2 intrinsics. | On an x86-64 CPU with AVX2, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop and reads ymm0 to ymm15 back as zero after a call, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it ([The x86-64 kernels](#the-x86-64-kernels)). |
 | `chacha20_avx512.c` | It runs ChaCha20 on AVX-512F intrinsics, and has a body on x86-64 alone. | On an x86-64 CPU with AVX-512F, `bin/chacha20_equiv_test` holds it to `chacha20.c`'s proven loop, and `bin/unit_host` and the Wycheproof host binary run RFC 8439's vectors and the Wycheproof suite on it under a `ch_cfg.cpu` value with `CH_CPU_AVX512_IFMA`; the nightly's `rsa-ifma-sde` job runs the first under Intel SDE. |
@@ -602,6 +603,30 @@ The entries are grouped by area:
   cipher at every block count through three passes and across the 2^32
   counter wrap, and the vectors, the host Wycheproof test and
   `bin/diff_quic_hw` run over both.
+
+#### gcm_avx512_wipe
+
+- **Harnesses:** `gcm_avx512_wipe` (fast), `gcm_avx512_wipe_quic` (fast)
+- **Build:** a host object (`-DCH_CPU_RUNTIME`) with `SUITE=aesgcm` for
+  `gcm_avx512_wipe`, and with `TRANSPORT=quic-nonblocking` and no suite
+  for `gcm_avx512_wipe_quic`, each under `-DCH_GCM_AVX512_MODEL`, which
+  opens `gcm_avx512.c`'s x86-64 guard on the machine cbmc runs on.
+- **Proves:** `gcm_seal_avx512` and `gcm_open_avx512`, the two entries of
+  the 512-bit kernel (decision 130), are safe for each round count
+  `gcm_avx512.h` admits, and each one calls the kernel's function for its
+  direction and round count once, with its own arguments, then wipes
+  `GCM_AVX512_BELOW_LEN` bytes once through `wipe_frame`, inside that
+  function's array, and then calls `avx512_wipe_registers` once. The
+  kernel's four functions, `ct_wipe` and the register wipe are stubs that
+  record each call; each kernel stub asserts the buffers
+  `gcm_avx512_kernel.h` requires at its own key size, and the harness's
+  `ct_wipe` is `proof/ct_wipe_stub.c`'s loop.
+- **Bound:** associated data and text up to 2^32 bytes each, in separate
+  buffers or in place.
+- **Not proved:** that the array lies where the kernel's frames lay,
+  which is not a property of C and which `bin/gcm_avx512_equiv_test`
+  measures; and anything the kernel computes, which CBMC cannot read
+  ([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)).
 
 ### Key exchange
 
@@ -3826,7 +3851,7 @@ file. The kernel rests on these:
   messages of the ChaCha20-Poly1305 suite that hold 512 bytes of whole
   blocks through the kernel. RFC 8439's vectors are shorter than that, so
   `bin/unit_host` under 0xd runs none of them on it.
-- `bin/x86_kernels_test` counts the kernel's calls under 33 `ch_cfg.cpu`
+- `bin/x86_kernels_test` counts the kernel's calls under 65 `ch_cfg.cpu`
   values. Every seal and open of a ChaCha20-Poly1305 record or packet,
   with 528 bytes of whole blocks, and an open that refuses a wrong tag
   must call it once where the value holds both bits and never where it
@@ -4188,9 +4213,11 @@ runs RSA signing's two exponentiations on `rsa_ifma.c`'s product
 AVX-512 IFMA Poly1305, which has a section of its own
 ([The AVX-512 IFMA Poly1305](#the-avx-512-ifma-poly1305)), and every one
 that signs with RSA the sixth, each function turning its instructions on
-through its own target attribute. Six predicates read the caller's bits,
-and one branch per call picks a kernel or the path under it (decision
-89):
+through its own target attribute. Every one that carries AES also holds
+the 512-bit AES-GCM kernel, which has a section of its own
+([The 512-bit AES-GCM kernel](#the-512-bit-aes-gcm-kernel)). Seven
+predicates read the caller's bits, and one branch per call picks a kernel
+or the path under it (decision 89):
 
 - `chacha20.c`'s `use_avx2` answers for `CH_CPU_AVX2`. `aead_seal_cpu`
   and `aead_open_cpu` hand it the session's `ch_cfg.cpu`, which a record
@@ -4203,6 +4230,10 @@ and one branch per call picks a kernel or the path under it (decision
   `CH_CPU_CONSTANT_TIME_AES` together. It reads the byte each AES key
   schedule records from its session's `ch_cfg.cpu`, and `gcm.c` asks it
   only for a schedule the AES instructions run.
+- `gcm_avx512.h`'s `gcm_use_avx512` answers for `CH_CPU_AVX512` beside
+  those two. It reads the schedule's two bytes, and `gcm.c` asks it
+  first, for the whole seal or open, only for a schedule the AES
+  instructions run.
 - `rsa_mont.c`'s `use_ifma` answers for `CH_CPU_AVX512_IFMA`.
   `rsa_vp1_cpu` asks it with the value `rsa_pss_verify_cpu` and
   `rsa_pkcs1_verify_cpu` hand on from a session, and takes the kernel
@@ -4504,6 +4535,96 @@ signature's check, rest on the caller's
 products and which `rsa_sign64.c`'s `use_ifma` requires beside
 `CH_CPU_AVX512_IFMA` (decision 120).
 
+### The 512-bit AES-GCM kernel
+
+`gcm_avx512_kernel.c` runs AES-GCM's whole seal and whole open for a
+96-bit IV in one call each, four blocks to a 512-bit register on VAES and
+VPCLMULQDQ with AVX-512F and AVX-512BW, and `gcm_avx512.c`'s two entries
+call it, wipe `GCM_AVX512_BELOW_LEN` bytes of the stack below their
+frames and call `avx512_wipe_registers` (decision 130). `gcm.c` calls an
+entry in place of its own seal or open for a schedule on the AES
+instructions whose two bytes of `ch_cfg.cpu` hold `CH_CPU_AVX512`,
+`CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES`, and keeps the open's tag
+comparison and the wipe on a mismatch.
+
+No proof covers the kernel: CBMC cannot read an intrinsic, and no model
+of its instructions exists, so no harness compiles it. The
+[gcm_avx512_wipe](#gcm_avx512_wipe) harnesses prove the two entries over
+stubs of it: each calls the kernel's function for its round count, then
+wipes `GCM_AVX512_BELOW_LEN` bytes, then wipes the registers. What holds
+the kernel are tests, and each needs a CPU with what the bit names, or
+Intel SDE:
+
+- `bin/gcm_avx512_equiv_test` holds every seal and open, at both key
+  sizes, to `gcm.c` on `gcm_hw.c`'s 128-bit loops, which
+  `bin/ghash_equiv_test` holds to the portable GHASH the
+  [gcm](#gcm) harnesses prove: every payload length
+  to 1,100 bytes under associated data of 0 to 40 bytes, the lengths
+  each side of the ends of steps 1 to 3, 31 to 33, 127, 128 and 134 and
+  of 16,385 bytes, 300 random lengths to 17,000 with associated data to
+  299 bytes, and 69,000 bytes. Each case seals out of place and in place,
+  opens out of place, in place, up to 2,048 bytes below its ciphertext,
+  and in `record.c`'s layout, with the plaintext written from the start
+  of the 5-byte record header that is its associated data. It requires
+  the 64 bytes past each output to keep their value, and a wrong tag, a
+  flipped ciphertext bit and a flipped associated-data bit refused with
+  the output wiped to zero.
+- In a second pass the same binary puts each text, output and
+  associated data so that it ends on the last byte of a page whose next
+  page has no access, for every length to 600 bytes and for 16,385 and
+  16,884, so a byte read or written past any buffer faults (INV-52).
+- It paints the stack below a direct call of each of the kernel's four
+  functions and requires the lowest byte the call changed, and 64 bytes
+  more, inside `GCM_AVX512_BELOW_LEN`. It then calls each entry and
+  searches the 8,192 bytes below for these values the call computed from
+  the key: each round key, H, H^k times x^-1 for k from 1 to 33,
+  E(K, J0), GHASH after the associated data, after each whole step and
+  with the lengths block, and the keystream E(K, counter block) of the
+  first whole step's 32 blocks, of the last two whole steps' 64 and of
+  the 32 blocks past them, which hold every block the call's last
+  registers encrypt. It looks for each in SP 800-38D's byte order,
+  reversed, and with its 8-byte halves exchanged in both, and it does
+  not look for the keystream of the steps between. It requires zmm0 to
+  zmm31 and k1 to k7 to read zero after the entry. The calls run 16,385
+  bytes, whose 1-byte tail takes its keystream from the call's first
+  register, and 16,884 bytes, whose 500-byte tail runs on eight
+  registers of its own. The values are computed after the stack is
+  copied, and an unoptimized or sanitized build makes no search
+  (`test/stack_residue.c`).
+- `bin/quic_test_hw` runs FIPS 197's, SP 800-38D's, RFC 9001's and RFC
+  9369's vectors once more with every bit an x86-64 object defines, the
+  kernel's among them, and the host Wycheproof binary runs its AES-GCM
+  suites under `ch_cfg.cpu` 0x31f.
+
+`bin/x86_kernels_test` counts on every x86-64 CPU, under 65 values, the
+calls a record, a QUIC packet, an Initial packet and a traffic key send
+to the kernel, and the call of `avx512_wipe_registers` after each,
+through stand-ins in `test/x86_kernels_count.c` that compute the same
+bytes on `gcm_hw.c`'s loops. `test/quic-builds.sh` compiles the files for
+x86-64 with the pinned clang on every machine: the kernel must define its
+four functions on 512-bit VAESENC and VPCLMULQDQ, define no other
+function and make no call, with every frame under `lint-stack`'s ceiling
+for the baseline target and for x86-64-v4; each entry must call the
+kernel, the stack wipe and the register wipe; and no other GCM file may
+hold a 512-bit register. `make lint-stack` holds the kernel's frames
+under the wiped length less 512 bytes, and requires that its object
+define no other function, where it compiles a host object for x86-64. A
+kernel that calls no function writes no stack below its own frame, so
+that ceiling bounds the depth the wipe covers. For a kernel,
+`-fstack-usage` reported at most 1,152 bytes under gcc 13.3 at `-O2` and
+2,112 at any level from `-Og` to `-O3` and `-Os`, and at most 952 under
+clang 23; at `-O0` a frame passes the wiped length, and the search does
+not run (decision 130).
+
+Each of these binaries skips the kernel on a CPU without what the bit
+names, and fails instead under `CH_REQUIRE_AVX512=1`, which CI's x86-64
+kernels job leaves unset because some of its runners lack AVX-512 and
+the nightly's `rsa-ifma-sde` job sets. SDE shows what the instructions
+compute and nothing of their timing. The kernel's timing rests on the
+caller's `CH_CPU_CONSTANT_TIME_AES` bit, as `gcm_vaes.c`'s does: no
+branch and no address reads a value the key decides, and the byte
+shuffles take constant orders. No test measures timing.
+
 ### SHA-512 in a host object
 
 A host object hashes SHA-512 and SHA-384 on `sha512.c`'s first arm over
@@ -4782,7 +4903,7 @@ under `CH_REQUIRE_X86_KERNELS=1`:
   each on `sha512_compress_blocks`, so it runs on every x86-64 CPU. A
   row is `sha384_of_cpu`, `sha512_of_cpu`, the streamed calls,
   `hmac_cpu` and HKDF at each hash length, or a record direction keyed
-  under each suite. Under each of 33 values every compression call the
+  under each suite. Under each of 65 values every compression call the
   row makes under `CH_CPU_PROBED` alone must run the kernel where the
   value holds `CH_CPU_AVX2` and none anywhere else, a row at SHA-256's
   hash length must make none, and the calls that take no value must
@@ -5580,7 +5701,7 @@ What the kernel computes rests on these:
   `CH_REQUIRE_AVX512_IFMA=1`.
 - CI's `check` job runs `make check` on an x86-64 runner. There the
   binary above, `bin/rsa_test_host` and `bin/rsa_pkcs1_test_host` under
-  0x10d, the host Wycheproof binary under 0x11f and the `ch_srv_check`
+  0x10d, the host Wycheproof binary under 0x11f and 0x31f and the `ch_srv_check`
   rows of `bin/tcp_blocking_loop_aes`, under every bit the architecture
   defines, run the kernel when the runner's CPU has AVX-512 IFMA, and
   skip it when it does not.
@@ -5589,10 +5710,10 @@ What the kernel computes rests on these:
   `tools/toolchain.env`, on SDE's model of an Ice Lake server, which has
   AVX-512 IFMA. With `CH_REQUIRE_AVX512_IFMA=1` it runs
   `bin/rsa_ifma_equiv_test` and `bin/x86_kernels_test`; the two RSA
-  vector binaries under 0x10d and the host Wycheproof binary under 0x11f,
+  vector binaries under 0x10d and the host Wycheproof binary under 0x31f,
   with `CH_REQUIRE_X86_KERNELS=1` too, so that a model without AVX2 or
   VAES fails them rather than skips the value; and `bin/webpki_loop_aes`
-  with both ends stating 0x101 and then 0x13f, every x86-64 bit, whose
+  with both ends stating 0x101 and then 0x33f, every x86-64 bit, whose
   server's `ch_srv_check` verifies an RSA-PSS signature on the kernel
   before a handshake. Each run must exit 0 and print the line its binary
   prints when every check passed, so an `sde64` that exits 0 without

@@ -87,8 +87,9 @@
 // so the bit states no timing for them, and it writes zero to ymm0 to ymm15 before it returns.
 // A session with
 // CH_CPU_VAES and CH_CPU_CONSTANT_TIME_AES runs AES-GCM's whole blocks two to a 256-bit register,
-// and one with the AES bit alone on the 128-bit instructions (gcm_vaes.h's gcm_use_vaes): the AES
-// bit's statement covers the 256-bit forms, and CH_CPU_VAES without it runs nothing. No bit turns
+// unless CH_CPU_AVX512 below runs the whole AEAD, and one with the AES bit alone on the 128-bit
+// instructions (gcm_vaes.h's gcm_use_vaes): the AES bit's statement covers the 256-bit forms, and
+// CH_CPU_VAES without it runs nothing. No bit turns
 // the 128-bit vector ChaCha20 off: every arm64 CPU has NEON and every x86-64 CPU SSE2
 // (docs/decisions.md 82, 89 and 90).
 //
@@ -122,6 +123,22 @@
 //     (widemul.h's widemul_poly1305_ifma).
 // The ChaCha20 and Poly1305 kernels hold the key's values in 512-bit registers and zero every
 // vector register and k1 to k7 before they return (avx512_wipe.h, docs/decisions.md 121).
+//
+// CH_CPU_AVX512 says the CPU has AVX-512F, AVX-512BW and AVX-512VL, which CPUID leaf 7 reports in
+// bits 16, 30 and 31 of EBX, and VAES and VPCLMULQDQ, which it reports in bits 9 and 10 of ECX
+// and which AVX-512F extends to the 512-bit registers, and that its operating system saves the
+// opmask registers and the 512-bit registers. It is an x86-64 bit, and like CH_CPU_AVX2 it
+// states presence alone and no timing. One kernel reads it: beside CH_CPU_VAES and
+// CH_CPU_CONSTANT_TIME_AES, a schedule's whole AES-GCM seal and open run four blocks to a 512-bit
+// register on gcm_avx512_kernel.c, in one call each (gcm_avx512.h's gcm_use_avx512,
+// docs/decisions.md 130). The AES bit's statement covers the 512-bit VAESENC and VPCLMULQDQ, as it
+// covers the 256-bit forms, and without either of the other two bits this bit runs nothing. Where
+// the AES bit puts QUIC's Initial keys on the instructions, their packets run on the kernel too.
+// The bit stands apart from CH_CPU_AVX512_IFMA, so a caller can leave it clear and keep the IFMA
+// kernels: on an Ice Lake server the kernel's seal measured only level with OpenSSL's, and on a
+// Xeon Platinum 8573C the first record after a quiet period took up to 3.6 times as long as later
+// ones. Each of gcm_avx512.c's entries zeros every vector register and k1 to k7 after the kernel
+// returns, and wipes the stack below it (gcm_avx512.h).
 //
 // CH_CPU_CONSTANT_TIME_SHA256, CH_CPU_CONSTANT_TIME_SHA512 and CH_CPU_CONSTANT_TIME_SHA3 each say
 // the CPU has the instructions of one hash, and state that they run in constant time on it, in
@@ -157,13 +174,14 @@
 // that function used (docs/decisions.md 127). sha512_compress.c is a device object's.
 //
 // CH_CPU_DEFINED holds the bits this object defines for its architecture. Every init call and
-// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES or CH_CPU_AVX512_IFMA
-// on arm64, CH_CPU_CONSTANT_TIME_SHA512 or CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or a bit a later
-// release adds. A caller written before such a release leaves the new bit clear and runs the
-// slower path. A defined bit for instructions the object never runs, such as
+// ch_srv_check refuse a value with any other bit: CH_CPU_AVX2, CH_CPU_VAES, CH_CPU_AVX512_IFMA or
+// CH_CPU_AVX512 on arm64, CH_CPU_CONSTANT_TIME_SHA512 or CH_CPU_CONSTANT_TIME_SHA3 on x86-64, or
+// a bit a later release adds. A caller written before such a release leaves the new bit clear
+// and runs the slower path. A defined bit for instructions the object never runs, such as
 // CH_CPU_CONSTANT_TIME_AES in an object that carries no AES, still describes the CPU, and init
-// accepts it. An AES key schedule keeps the low byte of the value, which holds CH_CPU_VAES and
-// CH_CPU_CONSTANT_TIME_AES, the two bits gcm_use_vaes reads (aes_schedule.h).
+// accepts it. An AES key schedule keeps the low two bytes of the value, which hold CH_CPU_VAES,
+// CH_CPU_CONSTANT_TIME_AES and CH_CPU_AVX512, the three bits gcm_use_vaes and gcm_use_avx512
+// read (aes_schedule.h).
 #define CH_CPU_PROBED 0x01U
 #define CH_CPU_CONSTANT_TIME_AES 0x02U
 #define CH_CPU_CONSTANT_TIME_MULTIPLY 0x04U
@@ -173,10 +191,11 @@
 #define CH_CPU_CONSTANT_TIME_SHA512 0x40U
 #define CH_CPU_CONSTANT_TIME_SHA3 0x80U
 #define CH_CPU_AVX512_IFMA 0x100U
+#define CH_CPU_AVX512 0x200U
 #ifdef __x86_64__
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY | CH_CPU_AVX2 |      \
-     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA)
+     CH_CPU_VAES | CH_CPU_CONSTANT_TIME_SHA256 | CH_CPU_AVX512_IFMA | CH_CPU_AVX512)
 #else
 #define CH_CPU_DEFINED                                                                             \
     (CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES | CH_CPU_CONSTANT_TIME_MULTIPLY |                    \

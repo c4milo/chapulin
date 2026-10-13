@@ -96,15 +96,16 @@ AEADS = [
 
 CPU_LABEL = "ch_cfg.cpu "
 # The bits of ch_cfg.cpu that change a row bench/record.sh times: the probe's
-# bit, the AES and multiply bits, the two x86-64 kernel bits, and
+# bit, the AES and multiply bits, the two x86-64 kernel bits,
 # CH_CPU_AVX512_IFMA, which runs the ChaCha20-Poly1305 rows on the AVX-512
-# kernels (cpu_cfg.h, docs/decisions.md 121). A record's protection hashes
-# nothing, so that script states no hash bit, and the widest value of its CSV
-# is the primitives' widest value without the three hash bits. A record CSV
-# written before decision 121 states no CH_CPU_AVX512_IFMA either, and
-# machine_line reads such a CSV without that bit (docs/decisions.md 93 and
-# 119).
-RECORD_BITS = 0x11f
+# kernels (cpu_cfg.h, docs/decisions.md 121), and CH_CPU_AVX512, which runs
+# the AES-GCM rows on the 512-bit kernel (docs/decisions.md 130). A record's
+# protection hashes nothing, so that script states no hash bit, and the
+# widest value of its CSV is the primitives' widest value without the three
+# hash bits. A record CSV written before decision 121 states no
+# CH_CPU_AVX512_IFMA either, and machine_line reads such a CSV without that
+# bit (docs/decisions.md 93 and 119).
+RECORD_BITS = 0x31f
 IFMA_BIT = 0x100
 FIRST_LINE = re.compile(r"^# bench/\S+ on (?P<cpu>.+?) \((?P<arch>\w+)\), (?:.+, )?"
                         r"(?P<os>\S+ \S+), (?P<date>\d{4}-\d\d-\d\d), tree (?P<tree>\S+)$")

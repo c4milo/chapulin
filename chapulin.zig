@@ -384,6 +384,13 @@ const CpuBits = struct {
     /// chain links under TRUST=ca-rsa run rsa_mont64.c whatever this says. An x86-64 bit, which an
     /// arm64 object refuses.
     avx512_ifma: bool = false,
+    /// CH_CPU_AVX512: the CPU has AVX-512F, AVX-512BW and AVX-512VL, and VAES and VPCLMULQDQ on
+    /// the 512-bit registers, and its operating system saves the opmask and 512-bit registers. It
+    /// states presence alone, as avx2 does. Beside vaes and constant_time_aes the session runs each
+    /// AES-GCM seal and open whole, four blocks to a 512-bit register, on gcm_avx512_kernel.c. It
+    /// picks nothing else, so a caller can leave it clear and keep avx512_ifma's kernels. An
+    /// x86-64 bit, which an arm64 object refuses.
+    avx512: bool = false,
 };
 
 /// ch_cfg.cpu for what found states, and 0 for null.
@@ -395,7 +402,8 @@ fn cpuBits(found: ?CpuBits) u32 {
         (if (cpu.constant_time_sha256) c.CH_CPU_CONSTANT_TIME_SHA256 else 0) |
         (if (cpu.constant_time_sha512) c.CH_CPU_CONSTANT_TIME_SHA512 else 0) |
         (if (cpu.constant_time_sha3) c.CH_CPU_CONSTANT_TIME_SHA3 else 0) |
-        (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0);
+        (if (cpu.avx512_ifma) c.CH_CPU_AVX512_IFMA else 0) |
+        (if (cpu.avx512) c.CH_CPU_AVX512 else 0);
 }
 
 /// ch_tls.group's code points (cfg.h).

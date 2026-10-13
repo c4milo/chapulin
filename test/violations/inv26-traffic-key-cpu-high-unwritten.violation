@@ -1,0 +1,16 @@
+invariant: INV-26
+file: aes.c
+catches: aes_runtime_test
+reason: aes_traffic_key_cpu writes the low byte of the session's
+  description of the CPU and not the byte above it, so no traffic key
+  records CH_CPU_AVX512 and AES-GCM never runs the 512-bit kernel, whatever
+  the caller stated. The bytes are the same. bin/aes_runtime_test requires
+  the key's second cpu byte to hold the value's after the call.
+
+--- old
+    k->key.cpu = (uint8_t)cpu;
+    k->key.cpu_high = (uint8_t)(cpu >> 8);
+}
+--- new
+    k->key.cpu = (uint8_t)cpu;
+}

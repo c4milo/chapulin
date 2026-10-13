@@ -315,3 +315,97 @@ if nm -u "$gcm_obj" | grep -q '_vaes$'; then
     echo "quic-builds: gcm.c for arm64 calls a VAES kernel, which has a body on x86-64 alone" >&2
     exit 1
 fi
+
+# The 512-bit kernel (docs/decisions.md 130), asked of the same clang:
+#
+#   - for x86-64, gcm_avx512_kernel.c must define its four functions and
+#     run 512-bit VAESENC and VPCLMULQDQ, and every frame it compiles to
+#     must lie under STACK_BUDGET_GCM_AVX512, the ceiling lint-stack holds
+#     it to, which the Makefile computes from GCM_AVX512_BELOW_LEN, the
+#     length the entries wipe, for the baseline target and for x86-64-v4,
+#     the target with AVX-512 that a build for a native AVX-512 CPU
+#     compiles for. A wipe shortened below the frames fails here on any
+#     machine, where lint-stack reads the file for x86-64 in CI and in
+#     test/docker-check.sh's image alone;
+#   - the kernel's object must define no function beside the four and make
+#     no call: every other function in the file and in gcm_avx512_ghash.h
+#     carries always_inline, so a kernel's frame is all the stack it
+#     writes, and the ceiling on that frame bounds the depth the wipe has
+#     to cover;
+#   - gcm_avx512.c must define the two entries and hold no 256-bit or
+#     512-bit register, and each entry must call the kernel, call
+#     wipe_frame through its pointer, which wipes the stack below the
+#     entry, and then call avx512_wipe_registers, which zeros the vector
+#     and mask registers. No vector shows either wipe missing;
+#   - gcm.c, gcm_hw.c and gcm_vaes.c hold no 512-bit register, and gcm.c
+#     calls the two entries;
+#   - for arm64, neither file defines anything and gcm.c calls no entry.
+budget=$(make -s --no-print-directory print-stack-budget-gcm-avx512)
+for march in -march=x86-64 -march=x86-64-v4; do
+    "$clang_rv" -target x86_64-unknown-linux-gnu "$march" -ffreestanding -nostdlibinc -Itools/freestanding \
+        -std=c11 -O2 -I. -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_CPU_RUNTIME "-Wframe-larger-than=$budget" \
+        -Werror -c gcm_avx512_kernel.c -o "$gcm_obj" || {
+        echo "quic-builds: gcm_avx512_kernel.c for x86-64 ($march) has a frame over $budget bytes," \
+            "the ceiling GCM_AVX512_BELOW_LEN leaves it; the entries' wipe would leave part of it" >&2
+        exit 1
+    }
+done
+cross_gcm x86_64-unknown-linux-gnu gcm_avx512_kernel.c
+local_functions=$(nm "$gcm_obj" | awk '$2 == "t" {print $3}' | tr '\n' ' ')
+if [ -n "$local_functions" ] || grep -E '^[[:space:]]+call' "$tu.s" >/dev/null; then
+    echo "quic-builds: gcm_avx512_kernel.c for x86-64 defines [$local_functions] beside its four" \
+        "functions or makes a call; a kernel must call nothing, so that its frame is all the stack" \
+        "it writes and the wipe's length bounds it" >&2
+    exit 1
+fi
+avx512_kernels="gcm_avx512_open_128 gcm_avx512_open_256 gcm_avx512_seal_128 gcm_avx512_seal_256 "
+defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | grep '^gcm_avx512_' | sort | tr '\n' ' ')
+if [ "$defined" != "$avx512_kernels" ] ||
+    ! grep -qE 'vaesenc[[:space:]]+%zmm' "$tu.s" || ! grep -qE 'vpclmulqdq[[:space:]].*%zmm' "$tu.s"; then
+    echo "quic-builds: gcm_avx512_kernel.c for x86-64 defines [$defined]; it must define" \
+        "[$avx512_kernels] on 512-bit VAESENC and VPCLMULQDQ" >&2
+    exit 1
+fi
+cross_gcm x86_64-unknown-linux-gnu gcm_avx512.c
+defined=$(nm "$gcm_obj" | awk '$2 == "T" {print $3}' | sed 's/^_//' | sort | tr '\n' ' ')
+if [ "$defined" != "gcm_open_avx512 gcm_seal_avx512 " ] || grep -qE '%[yz]mm' "$tu.s"; then
+    echo "quic-builds: gcm_avx512.c for x86-64 defines [$defined] or holds a vector register;" \
+        "it must define the two entries alone and hold none" >&2
+    exit 1
+fi
+for entry in gcm_seal_avx512 gcm_open_avx512; do
+    body=$(awk -v f="$entry:" '$1 == f {on = 1; next} on && /^\.Lfunc_end/ {exit} on {print}' "$tu.s")
+    if ! printf '%s\n' "$body" | grep -E 'call[a-z]*[[:space:]]+gcm_avx512_(seal|open)_' >/dev/null ||
+        ! printf '%s\n' "$body" | grep -E 'wipe_frame_call' >/dev/null ||
+        ! printf '%s\n' "$body" | grep -E 'call[a-z]*[[:space:]]+\*' >/dev/null ||
+        ! printf '%s\n' "$body" | grep -E '(call|jmp)[a-z]*[[:space:]]+avx512_wipe_registers' >/dev/null; then
+        echo "quic-builds: $entry for x86-64 must call the kernel, wipe_frame through its pointer and" \
+            "avx512_wipe_registers" >&2
+        exit 1
+    fi
+done
+for source in gcm.c gcm_hw.c gcm_vaes.c; do
+    cross_gcm x86_64-unknown-linux-gnu "$source"
+    if grep -q '%zmm' "$tu.s"; then
+        echo "quic-builds: $source for x86-64 holds a 512-bit register; only gcm_avx512_kernel.c may" >&2
+        exit 1
+    fi
+done
+cross_gcm x86_64-unknown-linux-gnu gcm.c
+called=$(nm -u "$gcm_obj" | awk '{print $NF}' | sed 's/^_//' | grep -E '^gcm_(seal|open)_avx512$' | sort | tr '\n' ' ')
+if [ "$called" != "gcm_open_avx512 gcm_seal_avx512 " ]; then
+    echo "quic-builds: gcm.c for x86-64 calls [$called]; it must call both of gcm_avx512.c's entries" >&2
+    exit 1
+fi
+for source in gcm_avx512.c gcm_avx512_kernel.c; do
+    cross_gcm aarch64-none-elf "$source"
+    if nm "$gcm_obj" | grep -q 'avx512'; then
+        echo "quic-builds: $source for arm64 defines a function; it has a body on x86-64 alone" >&2
+        exit 1
+    fi
+done
+cross_gcm aarch64-none-elf gcm.c
+if nm -u "$gcm_obj" | grep -q 'avx512'; then
+    echo "quic-builds: gcm.c for arm64 calls the 512-bit kernel, which has a body on x86-64 alone" >&2
+    exit 1
+fi

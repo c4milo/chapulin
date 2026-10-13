@@ -5114,6 +5114,10 @@ does nothing more.
     run 40 minutes earlier on the same CPU model, at the same kernels,
     gave gcc's AES-128-GCM seal 4.07 and clang's 3.20, so the gcc figure
     moved by 10% from one runner to the next.
+
+    Entry 130 adds a 512-bit kernel beside these: under `CH_CPU_AVX512` it
+    runs each seal and open whole, and `gcm.c` then calls none of the
+    three loops above.
 91. **`ct_wipe` calls the libc's `memset` through a volatile function
     pointer, and the proofs read a byte-loop stub with the same
     contract.** `ct_wipe` stored one byte per iteration through a
@@ -9921,7 +9925,9 @@ does nothing more.
       one loop per key size.
     - **memcpy for the loads on x86-64.** gcc 13 at -O3 left the key on
       the stack, above.
-    - **The prototype's 512-bit AES-GCM**, by the ruling.
+    - **The prototype's 512-bit AES-GCM**, by the ruling. Camilo
+      reversed that ruling on 2026-10-12, and entry 130 lands a second
+      prototype's kernel.
 
 124. **On x86-64, the two AVX2 kernels whose loops keep 256-bit values in
     stack slots align their frames to 32 bytes.** `chacha20_avx2.c`'s
@@ -11363,3 +11369,268 @@ does nothing more.
       A VZEROALL alone after `carry_scalar` would have it run with the
       upper halves written, which entry 110 measured at about 260 more
       TSC cycles a call on an EPYC 7763.
+130. **On x86-64, a session whose `ch_cfg.cpu` holds `CH_CPU_AVX512`,
+    `CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES` runs each AES-GCM seal and
+    open whole on a 512-bit kernel.** The goal Camilo set is to beat
+    OpenSSL on every primitive. On a Xeon Platinum 8573C runner the path of
+    entry 90, `gcm_vaes.c`'s loops under `gcm.c`, took 1.82 to 2.22 times
+    OpenSSL 3.6.4's time to set a key and seal or open 16 KiB. Entry 123
+    kept the first 512-bit prototype a prototype by Camilo's ruling of
+    2026-10-09: it ran the same loops two blocks wider and still took 1.32
+    to 1.38 times OpenSSL's time there. A second prototype, on the branch
+    `proto/aesgcm-avx512-v2`, ran the whole AEAD in one call with GHASH
+    between the AES rounds. On 2026-10-12 Camilo ruled to land it, which
+    reverses the ruling of 2026-10-09, with a bit of its own, no counter
+    shortcut, and a wipe of the stack sized to the deepest frame any
+    supported compiler writes.
+
+    - **What changes.** `gcm_avx512_kernel.c` holds four functions, a seal
+      and an open for each key size, so that each holds its round count as
+      a constant. One call does what `gcm.c`'s seal and open do for a
+      96-bit IV. One AES pass over one register gives the hash subkey H,
+      the tag's mask E(K, J0) and the keystream of a last block of 1 to 16
+      bytes. GHASH then runs over the associated data, and the call
+      computes H^k times x^-1 for k up to 33. A step is 32 blocks in eight
+      512-bit registers. The seal runs a step's rounds and, between them,
+      GHASH over the step before, and the open hashes a step between the
+      rounds of the same step, so it reads every block before it writes
+      the step's plaintext. GHASH reduces once a step. The bytes past the
+      last whole step run through byte masks, and each register's address
+      is computed only where the register holds a byte of the buffer. The
+      lengths block joins the last group. `gcm_avx512_ghash.h` holds the
+      GHASH steps. `gcm_avx512.c` holds the two entries `gcm.c` calls: each
+      runs the kernel for the key size, wipes the stack below its frame
+      and calls `avx512_wipe_registers`. The open writes the tag the
+      ciphertext should carry, and `gcm.c` compares it and wipes the
+      plaintext on a mismatch, as on every other path (entry 85). The
+      prototype's three measurement forms, the counter add, GHASH after
+      the rounds and no frame wipe, are gone.
+    - **The bit.** `CH_CPU_AVX512`, 0x200, says the CPU has AVX-512F,
+      AVX-512BW and AVX-512VL, and VAES and VPCLMULQDQ on the 512-bit
+      registers, and its operating system saves the opmask and 512-bit
+      registers. It picks the kernel beside `CH_CPU_VAES` and
+      `CH_CPU_CONSTANT_TIME_AES` (`gcm_avx512.h`'s `gcm_use_avx512`) and
+      nothing else. It states no timing: the AES bit states the timing of
+      VAESENC and VPCLMULQDQ at every width, as it does for `gcm_vaes.c`.
+      It stands apart from `CH_CPU_AVX512_IFMA` so that a caller can leave
+      it clear, on an Ice Lake server or where the first record after a
+      quiet period matters, and keep the IFMA kernels. The kernel runs
+      AVX-512BW's byte shuffle and byte masks, which no other bit states.
+      By the ruling the bit states AVX-512VL as well, though the kernel
+      runs no instruction that needs it. An arm64 object refuses the bit
+      (`cpu.h`).
+    - **The schedule.** A schedule kept the low byte of `ch_cfg.cpu`, and
+      0x200 is above it. It now keeps the byte above it as well, in
+      `cpu_high`, written at the same three places as `cpu`. Two bytes keep
+      the schedule a run of bytes with no padding, which a field of 16 or
+      32 bits would break where the build holds an odd number of byte
+      fields. A schedule with the two bytes lives on the stack of
+      `record.c`, `quic_packet.c`, `quic_initial.c` and `quic_retry.c`
+      alone, in a host object alone, so no struct `bench/sram.sh`
+      measures changes, and its run here gives the same figures as
+      before.
+    - **QUIC Initial keys.** Where the AES bit puts an Initial key on the
+      instructions, its packets run on the kernel too. The key is public
+      (INV-26), as it is under `gcm_vaes.c`, and the kernel is one path for
+      every key on the instructions.
+    - **What the kernel leaves.** Round keys, keystream, H, E(K, J0) and
+      the GHASH sums stay in registers or in stack slots the compiler
+      picks, and the powers of H in one struct read through volatile
+      lvalues. Each entry wipes `GCM_AVX512_BELOW_LEN`, 2,560 bytes, below
+      its own frame. A kernel calls no function: every other function of
+      the kernel's two files carries `always_inline`, so a kernel's frame
+      is all the stack it writes. The Makefile reads the length from
+      `gcm_avx512_kernel.h` and holds every function of the kernel's file
+      under it less 512 bytes, 2,048, in `lint-stack`, as
+      `STACK_BUDGET_SHA512_AVX2` holds `sha512_avx2.c`, and `lint-stack`
+      and `test/quic-builds.sh` fail where the kernel's object defines
+      another function. Without the frame wipe the prototype's search
+      found H, E(K, J0) and GHASH sums on the stack under both compilers,
+      and under clang nine round keys (run 38335404764).
+    - **The frames.** For a kernel, `-fstack-usage`, which counts a frame
+      with its saved registers, its return address and its alignment,
+      reported these maxima for x86-64, over the baseline target and
+      x86-64-v4, the target with AVX-512 that a build for a native AVX-512
+      CPU compiles for:
+
+      | Compiler | `-Og` | `-O1` | `-O2` | `-O3` | `-Os` |
+      | --- | --- | --- | --- | --- | --- |
+      | gcc 13.3 | 2,112 | 1,536 | 1,152 | 1,216 | 1,024 |
+      | clang 23 | 952 | 888 | 824 | 824 | 824 |
+
+      Each fits `lint-stack`'s ceiling, which counts the frame without the
+      registers saved and the alignment, at every level, and `-O0` passes
+      the wiped length. Review found the first form of the kernel short of
+      this. It called `compute_powers` and `hash_associated_data` as
+      functions of their own, whose frames lay below the kernel's, and
+      `lint-stack` holds each frame alone, never a kernel and its callees
+      together. In the code gcc wrote at `-Og`, `compute_powers` stored
+      powers of H 64 bytes and more below the wipe's lowest byte, and the
+      recorded maxima, 1,528 under clang 23 and 1,152 under gcc 13.3 at
+      `-O1` to `-O3` and `-Os`, were short too: gcc wrote 1,728 at `-O1`
+      and clang 1,912 for x86-64-v4. With every helper inlined, clang's
+      seal frame fell from 1,528 bytes to 760 at `-O2`.
+    - **`gcm.c` and its GHASH.** `gcm.c` held 488 lines, and the two
+      dispatches and the shared tag check took it past 500. Its GHASH
+      bodies and the choice between them moved, unchanged, to
+      `gcm_ghash.h`, which `gcm.c` alone includes; the proofs compile the
+      same text.
+    - **Gain.** Runs 38334823083, 38335404764 and 38335917422 timed the
+      prototype, main and OpenSSL 3.6.4's `speed -aead` in turn on the same
+      runners, under gcc 13.3 and clang 23.1.2: the key set, a seal or open
+      of 16,385 bytes with the 5-byte header as associated data, and the
+      key wipe, which is what `record.c` runs for a record. Each figure is
+      the prototype's time over OpenSSL's, the range over jobs.
+
+      | CPU | AES-128 seal | AES-128 open | AES-256 seal | AES-256 open |
+      | --- | --- | --- | --- | --- |
+      | Xeon Platinum 8573C, 8 jobs | 0.907 to 0.953 | 0.886 to 0.911 | 0.921 to 0.956 | 0.896 to 0.964 |
+      | EPYC 9V45, 6 jobs | 0.907 to 0.944 | 0.854 to 0.872 | 0.862 to 0.902 | 0.793 to 0.829 |
+      | EPYC 9V74, 7 jobs | 0.903 to 0.966 | 0.878 to 0.910 | 0.902 to 0.933 | 0.880 to 0.904 |
+
+      Against main's path in the same jobs the prototype took 0.42 to 0.52
+      of the time on the 8573C, 0.35 to 0.44 on the 9V45 and 0.60 to 0.69
+      on the 9V74. A 1 KiB record took 0.54 to 0.76 of OpenSSL's time on
+      the 8573C and a 64-byte one 0.40 to 0.59. Per block the kernel and
+      OpenSSL are level, 2.83 to 3.25 cycles a block for AES-128 against
+      2.82 to 3.16; the margin is the fixed work of a call, 90 to 136 ns
+      against OpenSSL's 167 to 259, which includes OpenSSL's EVP calls; no
+      run measured them apart.
+      Run 38338412878 checked those figures on new runners by three
+      benches: the prototype's own, a one-second mean as `openssl speed`
+      takes one, and `bench/record.c`, the scoreboard's. On the 8573C
+      they gave 0.891 to 0.996, 0.890 to 0.950 and 0.872 to 0.973 of
+      OpenSSL's time, and on a Xeon 6973P-C 0.864 to 0.969.
+    - **The kernel as it lands.** Run 38345130445 timed this tree's kernel
+      with `bench/record.sh` under `ch_cfg.cpu` 0x31f, beside main's path
+      under 0x1f and OpenSSL 3.6.4 in the same job, under gcc 13.3 and
+      clang 23 on ten runners. The seal and open of 16 KiB with the key
+      set and wiped took these fractions of OpenSSL's time:
+
+      | CPU | AES-128 seal | AES-128 open | AES-256 seal | AES-256 open |
+      | --- | --- | --- | --- | --- |
+      | Xeon Platinum 8573C, 1 job | 0.919 to 0.943 | 0.871 to 0.882 | 0.928 to 0.955 | 0.893 to 0.901 |
+      | EPYC 9V45, 2 jobs | 0.884 to 0.971 | 0.852 to 0.905 | 0.839 to 0.880 | 0.776 to 0.808 |
+      | EPYC 9V74, 7 jobs | 0.902 to 0.967 | 0.899 to 0.923 | 0.900 to 0.930 | 0.891 to 0.919 |
+
+      Against main's path the kernel took 0.44 to 0.49 of the time on the
+      8573C, 0.37 to 0.44 on the 9V45 and 0.59 to 0.68 on the 9V74. Under
+      gcc the same jobs ran the tests below on the kernel, and caught the
+      four violations of its two wipes, the wipe's length and its tail.
+      The run ends in failure all the same: in each job its clang build
+      stopped at `bin/quic_loop_aes`, where clang 23 refuses
+      `test/quic_loop_test.c`'s line 249 under
+      `-Wunused-but-set-global`, a warning main carries, after the gcc
+      tests and both benches had passed. Run 38346347472 ran the tests
+      under clang 23 on nine runners, three each of the 8573C, the 9V45
+      and the 9V74, with that warning off, and they passed. In run
+      38345130445's SDE job the nightly's `rsa-ifma-sde-check`, with the
+      new runs, took 553 seconds of the job's 45 minutes, and
+      `test/avx512-run.sh` caught the tail's violation under SDE in 37
+      seconds. Neither run drew an Ice Lake.
+    - **The kernel after review.** Review moved every helper of the kernel
+      inline (above, "The frames"), which changes the code both compilers
+      write. Run 38358822932 timed it the same way, in ten jobs, one of
+      them an Ice Lake:
+
+      | CPU | AES-128 seal | AES-128 open | AES-256 seal | AES-256 open |
+      | --- | --- | --- | --- | --- |
+      | Xeon Platinum 8573C, 2 jobs | 0.892 to 0.917 | 0.856 to 0.876 | 0.879 to 0.941 | 0.862 to 0.899 |
+      | Xeon Platinum 8370C, 1 job | 1.002 to 1.023 | 0.924 to 1.013 | 1.003 to 1.032 | 0.926 to 0.995 |
+      | EPYC 9V45, 4 jobs | 0.901 to 0.921 | 0.838 to 0.895 | 0.832 to 0.890 | 0.790 to 0.857 |
+      | EPYC 9V74, 3 jobs | 0.904 to 0.961 | 0.903 to 0.920 | 0.889 to 0.933 | 0.880 to 0.917 |
+
+      Against main's path the kernel took 0.44 to 0.52 of the time on the
+      8573C, 0.50 to 0.54 on the 8370C, 0.36 to 0.43 on the 9V45 and 0.60
+      to 0.67 on the 9V74. The same jobs ran the tests under gcc and under
+      clang 23 with its warning in `test/quic_loop_test.c` off, and caught
+      the six violations a run of the kernel or the pinned clang can
+      catch. The deepest write below a kernel's caller was 1,200 bytes
+      under gcc and 912 under clang. The run reads as failed because the
+      job's own script could not build the test at `-Og`. Run 38360061865
+      built and ran the test at `-Og`, `-O1`, `-O3` and `-Os` under both
+      compilers on six runners, the 8573C, two 9V45 and three 9V74, and it
+      passed at each: the deepest write was 2,088 bytes, under gcc at
+      `-Og`, and 1,032 under clang. In run 38358822932 the SDE job drew a
+      9V74, which has AVX-512, so `test/avx512-run.sh` ran its two
+      violations on the CPU and caught both; `rsa-ifma-sde-check` took 81
+      seconds there.
+    - **Ice Lake.** Run 38338412878 drew four Xeon Platinum 8370C runners,
+      which no earlier run had. There the open took 0.918 to 0.943 of
+      OpenSSL's time on `bench/record.c`, and the seal 0.988 to 1.028, and
+      1.001 to 1.028 under gcc: level. By the one-second mean the seal took
+      0.943 to 0.977 and the open 0.900 to 0.928. In the prototype's own
+      bench most processes of the clang build, and some of gcc's, sealed
+      at 1.26 to 1.65 times OpenSSL's time, with batches inside one process
+      spread from 1.60 to 2.71 µs, while the other two benches never read
+      a slow seal on the same runners. Nobody has found the cause. The
+      seal still took 0.47 to 0.89 of main's time there.
+    - **The first record after a quiet period.** Runs 38334823083 to
+      38335917422 timed records 1, 2 and 8 of a 16 KiB AES-128 seal after
+      0.01 to 5 ms of scalar work, the median of 31 gaps. On the 8573C the
+      first record took 1.4 to 4.0 µs where later ones took about 1.1: 3.99
+      µs after 10 µs of quiet in one gcc job, and 3.63 in one clang job.
+      Depending on the VM it ran up to 0.35 µs slower than the 256-bit
+      path's first record, or up to 1.1 µs faster. At 16 KiB the second
+      record is back at the steady time; at 1 KiB and 64 bytes the slow
+      period lasts longer, and after 2 ms a 1 KiB record 2 took 513 to 600
+      ns against a steady 181 to 224. The EPYC 9V45 showed no such cost,
+      and on the EPYC 9V74 both paths slowed by 80 to 470 ns. The quiet-period
+      test gave no reading on the 8370C: after 2 or 5 ms every record on
+      both paths ran 3.6 to 4 times slower. OpenSSL's first record was not
+      measured.
+    - **What holds it.** CBMC cannot read an intrinsic, so no harness
+      compiles the kernel (docs/verification.md, "The 512-bit AES-GCM
+      kernel"). The `gcm_avx512_wipe` harnesses prove the two entries over
+      stubs of it: each calls the kernel's function for its round count,
+      wipes `GCM_AVX512_BELOW_LEN` bytes and then the registers.
+      `bin/gcm_avx512_equiv_test` holds every seal and open to
+      `gcm.c` on `gcm_hw.c`'s loops over every length to 1,100 bytes and
+      the lengths around the first steps' ends and a record's, at both
+      key sizes, in place, out of place, below the ciphertext and in
+      `record.c`'s layout over the record header, with wrong tags and
+      flipped bits refused; puts each buffer's last byte at a page's end
+      before a page with no access; measures each kernel function's depth
+      against the wipe; and after each entry of 16,385 and 16,884 bytes
+      searches the stack for the round keys, H, the powers of H,
+      E(K, J0), the GHASH sums and the keystream of the first whole step,
+      the last two and the 32 blocks past them, and reads zmm0 to zmm31
+      and k1 to k7 back as zero. `bin/quic_test_hw` runs its
+      vectors on the kernel in a last pass, and the host Wycheproof binary
+      under 0x31f. `bin/x86_kernels_test` counts the kernel's calls and
+      the register wipe after each under 65 values. `test/quic-builds.sh`
+      requires each entry to call the stack wipe and the register wipe,
+      and the kernel to make no call and its frames to fit the ceiling for
+      the baseline target and for x86-64-v4, on every machine. A binary
+      under a value with the bit skips on a CPU without it, and
+      `CH_REQUIRE_AVX512=1` makes it fail; the nightly's `rsa-ifma-sde` job
+      sets it and runs the new binary, `bin/quic_test_hw`, the counts and
+      the Wycheproof binary under Intel SDE. Fifteen violations land:
+      dispatch without the bit and with no bit, the target attribute
+      dropped, each wipe dropped, the register wipe dropped from the open
+      for the binary to catch, the wipe's length short, the wipe's array
+      short for the proof to catch, a kernel that calls a function, a tail
+      that loads and stores whole registers (INV-52), each write of the
+      second schedule byte dropped, and the bit dropped from x86-64's set
+      and added to arm64's.
+    - **Cost.** The kernel takes 1,040 lines across five files. The frame
+      wipe costs 16 to 28 ns a call: up to 4 percent at 16 KiB and 23 to
+      27 percent of a 65-byte seal (run 38335404764).
+
+    Rejected:
+
+    - **Adding a step's counters in their own byte order** where the
+      count's last byte cannot carry, which saved 8 byte shuffles a step
+      and took 1 to 4 percent off an AES-128 seal on the 8573C, mixed
+      elsewhere: by the ruling.
+    - **GHASH after a step's rounds**, as `gcm_vaes.c` runs it: 9 to 14
+      percent slower on the 8573C (run 38335404764).
+    - **GHASH interleaved by hand between the rounds in C**, the first
+      prototype's form: 8 to 20 percent slower on the 8573C, and it spilled
+      up to 48 secret values to the stack.
+    - **`CH_CPU_AVX512_IFMA` beside `CH_CPU_VAES` as the switch.** It
+      states no AVX-512BW, and it would tie AES-GCM to the RSA, ChaCha20
+      and Poly1305 kernels, so a caller could not drop one.
+    - **A wipe of the powers alone**, 640 bytes. The register of the first
+      AES pass lives across the loop, and both compilers put it on the
+      stack.
