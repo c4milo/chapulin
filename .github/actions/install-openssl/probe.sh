@@ -16,6 +16,9 @@ openssl x509 -req -in "$tmp/r.csr" -signkey "$tmp/k.pem" \
 openssl x509 -in "$tmp/c.pem" -noout -startdate |
     grep -q "Jan  3 00:00:00 2000" ||
     { echo "the pinned OpenSSL did not honour -not_before"; exit 1; }
-openssl s_server -help 2>&1 | grep -q -- -enable_server_rpk ||
+# grep reads all of the help text. With -q it exits at the match while
+# openssl still writes the options after it, and the test then reads true
+# only because openssl ignores SIGPIPE and exits 0.
+openssl s_server -help 2>&1 | grep -- -enable_server_rpk >/dev/null ||
     { echo "the pinned OpenSSL's s_server has no -enable_server_rpk"; exit 1; }
 echo "issued a certificate at an absolute notBefore, and s_server offers raw public keys"

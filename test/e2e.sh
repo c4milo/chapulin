@@ -676,7 +676,11 @@ expect_fail ca-noncanonical -2 "$DIR/err13" \
 # certificate rather than a failure. So the tests skip on an older
 # OpenSSL rather than test a recipe docs/ca.md does not give. CI pins
 # the development version, so they always run there.
-if "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
+# grep reads all of the help text. With -q it exits at the match while
+# openssl still writes the options after it, and the test then reads true
+# only because openssl ignores SIGPIPE and exits 0. A test that read false
+# would skip the epoch tests, and the suite would still pass.
+if "$OPENSSL" x509 -help 2>&1 | grep -- '-not_before' >/dev/null; then
     RUN_EPOCH_TESTS=yes
 else
     RUN_EPOCH_TESTS=no
