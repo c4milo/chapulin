@@ -174,14 +174,22 @@ Home: github.com/c4milo.
   keys alone on it)
   ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
-  under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
+  under a traffic key, SUITE=aesgcm) with `gcm_ghash.h` (GHASH's bodies
+  and the choice between them, which `gcm.c` alone includes) and with
+  `ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply),
   `gcm_hw.[ch]` (counter mode over whole blocks, and the seal's and the
   open's counter mode and GHASH in one loop) and `gcm_vaes.[ch]` (the
   same three loops two blocks to a 256-bit register on VAES and
   VPCLMULQDQ, x86-64, and the entries that pick between the two for
-  `gcm.c`), all over `ghash_vector.h` (the GHASH steps they share), in a
-  host object alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
+  `gcm.c`), all over `ghash_vector.h` (the GHASH steps they share), and
+  `gcm_avx512.[ch]` with `gcm_avx512_kernel.[ch]` and
+  `gcm_avx512_ghash.h` (the whole seal and the whole open four blocks to
+  a 512-bit register on VAES and VPCLMULQDQ, x86-64, a session whose
+  caller sets CH_CPU_AVX512 beside CH_CPU_VAES and
+  CH_CPU_CONSTANT_TIME_AES; the entries sit apart from the kernel, so
+  that each wipes the stack below the kernel's frames), in a host object
+  alone ← `x25519.[ch]` with `x25519_wide.[ch]` (the
   radix-2^51 field, a host session whose caller sets
   CH_CPU_CONSTANT_TIME_MULTIPLY) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
   key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
@@ -301,7 +309,8 @@ Home: github.com/c4milo.
   through a volatile function pointer so the compiler cannot remove it,
   while the proofs read a byte-loop stub in `proof/` with the same
   contract (docs/decisions.md 91); a kernel that held secrets in 512-bit
-  registers calls `avx512_wipe_registers` before it returns, because C
+  registers, or the entry that calls it, calls `avx512_wipe_registers`
+  before it returns, because C
   names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
   (docs/decisions.md 120 and 121), and `chacha20_avx2.c`,
   `poly1305_avx2.c` and `sha512_avx2.c`, which hold them in 256-bit
@@ -392,12 +401,23 @@ Home: github.com/c4milo.
   their multiplies are 16x16, the size of `ct.h`'s pieces, so no bit
   picks them, and `mlkem_poly.c`'s loops stay the reference and a device
   object's path (docs/decisions.md 101).
-  On x86-64 three more bits each pick a kernel beside a path every
+  On x86-64 four more bits each pick a kernel beside a path every
   CPU runs, and none states a timing: `CH_CPU_AVX2` runs the keystream
   on `chacha20_avx2.c` and ML-KEM's matrix on `keccak_avx2.c`, whose
-  input is public (docs/decisions.md 107), and `CH_CPU_VAES` beside
+  input is public (docs/decisions.md 107), `CH_CPU_VAES` beside
   `CH_CPU_CONSTANT_TIME_AES` runs AES-GCM's whole blocks on `gcm_vaes.c`
-  (docs/decisions.md 90). In an object with SUITE=aesgcm `CH_CPU_AVX2`
+  (docs/decisions.md 90), and `CH_CPU_AVX512` beside those two runs each
+  AES-GCM seal and open whole on `gcm_avx512_kernel.c`, and picks
+  nothing else, so a caller can leave it clear and keep the IFMA kernels
+  (docs/decisions.md 130). Each entry of `gcm_avx512.c` wipes
+  `GCM_AVX512_BELOW_LEN` bytes of the stack below its frame after the
+  kernel. The kernel calls no function, since every other function in
+  its two files carries always_inline, so its frame is all the stack it
+  writes; `lint-stack` holds that frame under the length less 512 bytes,
+  which the Makefile reads from the header, and `lint-stack` and
+  `test/quic-builds.sh` fail where the kernel's object defines another
+  function. In an
+  object with SUITE=aesgcm `CH_CPU_AVX2`
   also runs a session's SHA-384, its transcript hash and HMAC, HKDF and
   the key schedule over it, on `sha512_hw.c` over `sha512_avx2.c`'s
   kernel, whose input is secret under HMAC. The kernel's instructions
@@ -455,7 +475,16 @@ Home: github.com/c4milo.
   one struct the call wipes and in no spill slot the compiler picks
   (docs/decisions.md 83, 110 and 121). After a call of either AVX2
   kernel, each binary reads ymm0 to ymm15 back as zero
-  (docs/decisions.md 129). `bin/x86_kernels_test` counts
+  (docs/decisions.md 129). `bin/gcm_avx512_equiv_test` holds the
+  512-bit AES-GCM kernel to `gcm.c` on `gcm_hw.c`'s loops, and in a
+  second pass with each buffer ending at a page whose next page has no
+  access, measures its frames' depth against the wipe, and searches the
+  stack and reads zmm0 to zmm31 and k1 to k7 back as zero after its
+  entries, on a CPU with what CH_CPU_AVX512 names and in the nightly
+  under SDE (docs/decisions.md 130, INV-52). The `gcm_avx512_wipe`
+  harnesses prove the entries over stubs of the kernel: the kernel's
+  function for the round count, then the stack wipe of that length, then
+  the register wipe. `bin/x86_kernels_test` counts
   which calls run a
   kernel under each `ch_cfg.cpu` value, and `bin/tcp_blocking_loop_host`
   and `bin/webpki_auth_host` count the RSA public operations each caller
@@ -571,13 +600,15 @@ Home: github.com/c4milo.
   fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c` have
-  not joined: the 32-bit specs' cores have no such instructions, and the
+  that grows; `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`,
+  `gcm_avx512.c` and `gcm_avx512_kernel.c` have not joined: the 32-bit
+  specs' cores have no such instructions, and the
   two 64-bit specs, under which `sha256_hw.c`, `sha512_hw.c`'s arm64
   arm and `sha512_avx2.c` hold a branch ceiling through their own target
   attribute, do not list them.
   A host object holds the AES instructions: `aes_hw.c`, `ghash_hw.c`,
-  `gcm_hw.c` and `gcm_vaes.c` turn them on for their own functions alone,
+  `gcm_hw.c`, `gcm_vaes.c` and `gcm_avx512_kernel.c` turn them on for
+  their own functions alone,
   so the rest of the object runs on any CPU of its architecture, and GHASH
   runs on the carry-less multiply, PMULL or PCLMULQDQ, wherever they run.
   A QUIC host object holds `quic_aes_soft.c`'s table beside them, under
@@ -587,9 +618,11 @@ Home: github.com/c4milo.
   instructions under the bit and on the table without it, the Retry key
   runs on the table, and a traffic key runs on the instructions alone.
   `aes_schedule.h` records which cipher expanded each schedule, and the
-  low byte of the session's `ch_cfg.cpu`, from which `gcm_vaes.h`'s
-  `gcm_use_vaes` picks the 256-bit kernels (docs/decisions.md 81, 89 and
-  90). A device object keeps the Makefile AES
+  low two bytes of the session's `ch_cfg.cpu`, from which `gcm_vaes.h`'s
+  `gcm_use_vaes` picks the 256-bit kernels and `gcm_avx512.h`'s
+  `gcm_use_avx512` the 512-bit one, which an Initial key on the
+  instructions runs too (docs/decisions.md 81, 89, 90 and 130). A
+  device object keeps the Makefile AES
   variable, the way TRUST chooses the pinned algorithm: `soft` is this
   S-box, and `extern` takes a caller-supplied `ch_aes_block`, the way
   `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
