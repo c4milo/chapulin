@@ -1944,6 +1944,28 @@ device.
 `ch_pubkey_from_pem` does not exist in a server build. It is the CA mode's
 provisioning reader and a server pins nothing.
 
+Two other calls exist in every server build to provision an identity
+(`pem_files.h`, `docs/decisions.md` 131). `ch_chain_from_pem` decodes a PEM
+chain file into the `ch_cert` array that an identity points at. The caller
+gives a DER room and its length, and an array and its number of entries. The
+call fills them and refuses a chain that does not fit. A chain holds 255
+certificates at most, because `chain_count` is a `uint8_t`. The call reads the
+outer fields of each certificate and nothing else.
+
+`ch_p256_key_from_pem` decodes a P-256 key file into the scalar and the point
+that the ECDSA identity takes. The file holds a PKCS #8 or SEC 1 key. One EC
+PARAMETERS block that names prime256v1 may come before a SEC 1 key, as
+`openssl ecparam -genkey` writes it. The call's first argument is the `cpu`
+value that the sessions take. Under `CH_CPU_CONSTANT_TIME_MULTIPLY` a host
+object computes the point on the wide P-256 field. A device object takes 0. The
+key call also requires that the end-entity certificate carries that point. So
+it closes the first gap that `ch_srv_check` leaves for the ECDSA identity.
+
+Neither call does I/O. The caller reads each file into its own buffer, and
+each call writes into rooms that the caller gives. No session calls either
+one. An RSA identity's key is still the integers that the operator's own
+step writes.
+
 `chapulin.hpp` forks by role. `CLAUDE.md:249-254` says the wrapper adds no logic
 the C core lacks, and a server session is the same RAII shape over one
 different name, so the fork is one forwarding function under
@@ -2638,9 +2660,12 @@ lands. None of them exists today.
   certificate arrives and it reaches no verdict about the peer.
   `rfc9846.txt:2675-2676` makes requesting one a MAY. This is safe because the
   application above the session authenticates its users, and unsafe if an
-  integrator believes TLS did it. A server object links no `x509*.c`, no
-  `pem.c`, no `webpki*.c` and no `rsa_pkcs1.c`, which is what keeps INV-5's
-  "exactly one certificate verifier" true.
+  integrator believes TLS did it. A server object links no `x509.c`, no
+  `webpki*.c` and no `rsa_pkcs1.c`, which is what keeps INV-5's "exactly one
+  certificate verifier" true. For the two PEM calls it links `pem.c`,
+  `base64.c`, `pem_blocks.c`, `x509_der.c`, `x509_pem.c` and `pem_files.c`.
+  They return no verdict on a certificate, and no session calls them
+  (`docs/decisions.md` 131).
 - **Its own chain.** The bytes go out unread. A chain that is malformed,
   expired, wrongly ordered, or whose end-entity key is not the provisioned
   private key produces a handshake every client rejects; that is a provisioning
@@ -3111,8 +3136,9 @@ and selects between them on the CertificateVerify scheme alone. It takes the
 SHOULD at `rfc9846.txt:2954-2960` instead, and the honest cost is a client that
 rejects the chain it receives, conformantly, with `unsupported_certificate`. The
 alternative is to read each identity's chain signatures at provisioning time in
-`ch_srv_check` and intersect them, which means linking an X.509 reader into a
-server build and giving up the claim that a server object links no `x509*.c`.
+`ch_srv_check` and intersect them. A server build would then link an X.509
+verifier, and the claim that a server object links no certificate verifier
+would go.
 
 **Thirteen: do the five new arithmetic files join `BRANCH_SRCS`?** Without
 them, no check in the tree fails when a signer's arithmetic branches on the

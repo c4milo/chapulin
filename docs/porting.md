@@ -648,7 +648,7 @@ One image can link one packaged object of each of two transports: a
 `TRANSPORT=tcp-nonblocking` object beside a `TRANSPORT=quic-nonblocking` one, or a
 `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=quic-nonblocking` one. cocuyo does this for
 DNS over TLS and DNS over QUIC, and a server does it for HTTP/2 beside
-HTTP/3. Six exports that objects of both transports carry take the
+HTTP/3. Nine exports that objects of both transports carry take the
 transport into their symbol names, and a header maps each to the name you
 call:
 
@@ -657,6 +657,9 @@ call:
 | `ch_build` | `ch_build_info_tcp_blocking`, `ch_build_info_tcp_nonblocking`, `ch_build_info_quic_nonblocking` | `build.h` |
 | `ch_srv_check` | `ch_srv_check_tcp_blocking`, `ch_srv_check_tcp_nonblocking`, `ch_srv_check_quic_nonblocking` | `srv.h` |
 | `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tcp_blocking`, `ch_pubkey_from_pem_tcp_nonblocking`, `ch_pubkey_from_pem_quic_nonblocking` | `x509_ca.h` |
+| `ch_chain_from_pem` | `ch_chain_from_pem_tcp_blocking`, `ch_chain_from_pem_tcp_nonblocking`, `ch_chain_from_pem_quic_nonblocking` | `pem_files.h` |
+| `ch_p256_key_from_pem` | `ch_p256_key_from_pem_tcp_blocking`, `ch_p256_key_from_pem_tcp_nonblocking`, `ch_p256_key_from_pem_quic_nonblocking` | `pem_files.h` |
+| `ch_anchors_from_pem` | `ch_anchors_from_pem_tcp_blocking`, `ch_anchors_from_pem_tcp_nonblocking`, `ch_anchors_from_pem_quic_nonblocking` | `pem_files.h` |
 | `ch_ticket_obfuscated_age` | `ch_ticket_obfuscated_age_tcp_blocking`, `ch_ticket_obfuscated_age_tcp_nonblocking`, `ch_ticket_obfuscated_age_quic_nonblocking` | `ticket.h` |
 | `ch_alert_sent` | `ch_alert_sent_tcp_blocking`, `ch_alert_sent_tcp_nonblocking`, `ch_alert_sent_quic_nonblocking` | `alert.h` |
 | `ch_alert_received` | `ch_alert_received_tcp_blocking`, `ch_alert_received_tcp_nonblocking`, `ch_alert_received_quic_nonblocking` | `alert.h` |

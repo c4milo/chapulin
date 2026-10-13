@@ -30,7 +30,8 @@ the time:
 
 ```c
 // Each anchor is the DER subject Name and the DER SubjectPublicKeyInfo
-// cut from a root certificate you embed; 1 to CH_WEBPKI_ANCHOR_MAX (12).
+// cut from a root certificate you embed: one anchor or more.
+// ch_anchors_from_pem fills such an array from a CA bundle file.
 static const ch_trust_anchor roots[] = {
     {amazon_root_ca_1_name, sizeof amazon_root_ca_1_name,
      amazon_root_ca_1_spki, sizeof amazon_root_ca_1_spki},
@@ -50,7 +51,7 @@ ch_cfg cfg = {
 
 The hostname is an ASCII hostname of at most 253 bytes; convert a
 U-label to its A-label first. `ch_connect` returns `CH_EINVAL` before it
-sends a byte when the anchor count is outside 1 to 12, when an anchor
+sends a byte when the anchor count is 0, when an anchor
 has an empty name or key, when the hostname has any other shape, when
 `now_seconds` is 0, when the buffer is under the 12,338-byte floor, when
 the config also sets a pin or an epoch callback, and when it sets a PSK

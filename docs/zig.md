@@ -2,10 +2,12 @@
 
 A Zig program runs chapulin's record-mode and QUIC sessions through Zig
 values, Zig errors and session types it places in its own memory. It
-never builds a `ch_cfg` or writes a C callback. The API is four files at
-the repository root, `chapulin.zig`, `chapulin_record.zig`,
-`chapulin_quic.zig` and `chapulin_ticket.zig`, which holds `Ticket`, and
-it is chapulin.hpp's kind of wrapper: each call
+never builds a `ch_cfg` or writes a C callback. The API is five files at
+the repository root: `chapulin.zig`, `chapulin_record.zig`,
+`chapulin_quic.zig`, `chapulin_ticket.zig` and `chapulin_pem.zig`.
+`chapulin_ticket.zig` holds `Ticket`, and `chapulin_pem.zig` holds
+`Chain`, `EcdsaP256Key` and `Anchors`. The API is chapulin.hpp's kind of
+wrapper: each call
 forwards to the C call of the same name. It adds four things and no
 more:
 
@@ -14,7 +16,8 @@ more:
 - the callbacks C calls, which copy bytes between the caller's slices and
   the session;
 - storage: the receive buffer, the latest ticket, the peer's transport
-  parameters and, under `RAND=session`, the session's `std.Random`.
+  parameters, a P-256 key that a PEM file decodes to and, under
+  `RAND=session`, the session's `std.Random`.
 
 Every TLS rule stays in C. Where a caller needs a record length, a write
 size or a ticket's age, the API calls the C function that computes it
@@ -103,6 +106,8 @@ for a `@compileError` declaration too.
 |---|---|
 | `Client` | a client role: its transport's client entry point, `ch_connect`, `ch_record_init` or `ch_quic_init` |
 | `Server`, `EcdsaP256Identity`, `RsaPssIdentity`, `cert` | a server role (`ch_cfg.srv`) |
+| `Chain`, `EcdsaP256Key` | a server role (`ch_chain_from_pem`, `ch_p256_key_from_pem`) |
+| `Anchors` | `ch_anchors_from_pem` (TRUST=webpki) |
 | `record.Client` | `ch_record_init` |
 | `record.Server` | `ch_srv_record_init` |
 | `record.alert_record_len`, `record.key_update_record_len` | `ch_record_whole_len` |
@@ -113,7 +118,7 @@ for a `@compileError` declaration too.
 | `Trust.pinned` | no `ch_cfg.anchors` |
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
 | `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
-| `Cpu`, and `Client.cpu` and `Server.cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
+| `Cpu`, `cpuBits`, and `Client.cpu`, `Server.cpu` and `EcdsaP256Key.fromPem`'s `cpu` other than `void` | `ch_cfg.cpu` (a host object, `-DCH_CPU_RUNTIME`) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
 | `Server.choose_version` other than `void` | `ch_srv_cfg.choose_version` (a QUIC server role) |
 | `Client.cipher_suites` | `ch_cfg.cipher_suites` (SUITE=aesgcm TRUST=webpki) |
@@ -128,7 +133,8 @@ objects that define it, so `@hasDecl(chapulin.c, name)` answers whether
 the object has that call, and a program that calls one the object lacks
 fails to compile rather than to link. `matches.zig` holds that rule for
 every configuration the check builds, and the script holds it for
-`x509_ca.h` and `drbg.h` where `chapulin.c` is not translated from them
+`x509_ca.h`, `pem_files.h` and `drbg.h` where `chapulin.c` is not
+translated from them
 (How it is checked). `Trust` is declared in every object; its variants
 are the trust mode's. A value field an object lacks has type `void`, so
 a literal that sets it does not compile.
@@ -254,6 +260,49 @@ session that states its multiply signs with them. `toCfg()` answers `error.Inval
 longer than `chain_count`'s `u8` holds, and `check()` runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
 It takes no session.
+
+### PEM files
+
+Three values decode the files an operator holds, through the three calls
+that `pem_files.h` declares (docs/decisions.md 131). None reads a file:
+the program reads it into a slice and passes the slice. Each `fromPem`
+answers `error.Invalid` for a file that the C call refuses.
+
+| Value | C call | What it holds |
+|---|---|---|
+| `Chain` | `ch_chain_from_pem` | `certs`, the entries the call filled, which `EcdsaP256Identity.chain` and `RsaPssIdentity.chain` take; `leaf()` is the end-entity certificate's DER |
+| `EcdsaP256Key` | `ch_p256_key_from_pem` | `private_key` and `public_key`, what `EcdsaP256Identity` points at; `fromPem` takes the `cpu` value and the leaf the key must match |
+| `Anchors` | `ch_anchors_from_pem` | `anchors`, the entries the call filled, which `Trust.web_pki.anchors` takes |
+
+`Chain.fromPem` and `Anchors.fromPem` take two rooms that the program
+places and sizes: a DER room and a slice of entries. The call fills
+them, and refuses a file that does not fit them. A DER room of
+`pem.len / 4 * 3` bytes holds the DER of any file, and a slice of one
+entry for each block holds its entries. A chain holds 255 certificates
+at most. The value's entries point into the DER room, so both rooms
+stay where `fromPem` filled them for as long as a session uses them.
+
+`EcdsaP256Key.fromPem` takes `cpu` first, the `?Cpu` that `Server.cpu`
+takes, in a host object alone, and `void` in every other object. A host
+object refuses null, and computes the point on the wide P-256 field
+under `constant_time_multiply`. `cpuBits` gives the C value a `?Cpu`
+sets. The value holds the private scalar: `wipe()` zeroes it once no
+session uses it. The program wipes the key file's text itself after
+`fromPem` returns, on success and on error. The `defer` below does so.
+
+```zig
+var chain_der: [16384]u8 = undefined;
+var chain_entries: [12]chapulin.c.ch_cert = undefined;
+const chain = try chapulin.Chain.fromPem(chain_file, &chain_der, &chain_entries);
+var key: chapulin.EcdsaP256Key = .{};
+defer std.crypto.secureZero(u8, key_file);
+try key.fromPem(cpu, key_file, chain.leaf());
+const server: chapulin.Server = .{ .ecdsa_p256 = .{
+    .chain = chain.certs,
+    .public_key = &key.public_key,
+    .private_key = &key.private_key,
+}, .cookie_key = &cookie_key, .cpu = cpu };
+```
 
 ### Random bytes
 
@@ -677,7 +726,7 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
 
 The constants a caller sizes storage by keep their C names in
 `chapulin.c`: `CH_TX_PT`, `CH_TX_STAGE`, `CH_MIN_RXBUF`, `CH_ALPN_MAX`,
-`CH_WEBPKI_ANCHOR_MAX`, `CH_SPKI_PIN_MAX`, `CH_TICKET_ID_MAX`,
+`CH_SPKI_PIN_MAX`, `CH_TICKET_ID_MAX`,
 `CH_SRV_COOKIE_KEY_LEN`, `CH_SRV_TICKET_KEY_LEN`, `CH_QUIC_TOKEN_KEY_LEN`,
 `CH_QUIC_TOKEN_MAX`, `CH_TRANSPORT_PARAMS_MAX`, `GCM_TAG`, `SHA256_LEN`
 and the rest. The API's types use them and rename none.
@@ -709,22 +758,29 @@ each through the module alone (INV-36):
   the check can measure: with it and without it, a recompile of
   `matches.zig` took 1.8 to 2.4 s and a warm run of the script 4.6 to
   5.8 s on an M-series Mac at a load average near 20. build.zig
-  translates `x509_ca.h` only for an object that exports
-  `ch_pubkey_from_pem`, and `drbg.h` only for one that exports
-  `ch_drbg_seed`, while a C program of any object can include either
-  one. So where `chapulin.c` leaves one out, the script translates it
-  with `zig translate-c` under the same defines and holds the result to
-  the second rule.
+  translates three headers only for an object that exports a call of
+  theirs. These are `x509_ca.h` for `ch_pubkey_from_pem`, `pem_files.h`
+  for one of its three calls, and `drbg.h` for `ch_drbg_seed`. A C
+  program of any object can include each one. So where `chapulin.c`
+  leaves one out, the script translates it with `zig translate-c` under
+  the same defines and holds the result to the second rule.
 - `unit.zig`, the API's unit tests: each value's `toCfg` against the
   `ch_cfg` written out field by field, the Ticket constructors and their
   bounds, the error of every code, and every declaration the object has,
   compiled. Under `RAND=session`, a client refused at init without a
   `random`, and one whose ClientHello random is the second fill of the
-  `std.Random` it was given.
+  `std.Random` it was given. For each PEM value the object has, a
+  refused file is `error.Invalid`. A DER room one byte short and a slice
+  of no entry are refused too. A refused key is zero, and `wipe()` zeroes
+  the scalar.
 - `loop.zig`, for each ROLE=both object: a client and a server of that
   object against each other. They use the r2 chain, its root_p384
-  anchor, its clock and its leaf key from `test/webpki_corpus.h`, the
-  fixture the C loop tests use. In record mode:
+  anchor, its clock and its leaf key, the fixture the C loop tests use.
+  The chain, the key and the anchor are decoded through `Chain`,
+  `EcdsaP256Key` and `Anchors` from the PEM files of
+  `test/pem_fixtures.h`. The key file holds an EC PARAMETERS block above
+  the key, as `openssl ecparam -genkey` writes it. Each value is held
+  equal to `test/webpki_corpus.h`'s before a session uses it. In record mode:
   - a handshake that selects ALPN `http/1.1` and X25519MLKEM768 and
     reports the server name;
   - a write of three `CH_TX_PT` records and 100 bytes each way;

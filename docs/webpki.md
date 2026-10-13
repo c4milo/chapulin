@@ -339,9 +339,9 @@ The rest of the configuration is the hostname and the clock:
 
 `ch_connect` returns `CH_EINVAL` before it sends a byte when:
 
-- `anchor_count` is outside 1 to `CH_WEBPKI_ANCHOR_MAX`, or any entry has
-  a NULL or empty `name` or `spki`, unless SPKI pins stand alone (see "Raw
-  public keys and SPKI pins");
+- `anchor_count` is 0, or any entry has a NULL or empty `name` or
+  `spki`. Pins that stand alone are the exception (see "Raw public keys
+  and SPKI pins"). No cap bounds the count;
 - the hostname fails `webpki_hostname_ok`, or is unset beside anchors;
 - `now_seconds` is 0 beside anchors;
 - `spki_pin_count` is over `CH_SPKI_PIN_MAX`, or a pin list and its count
@@ -355,7 +355,7 @@ The rest of the configuration is the hostname and the clock:
   `CH_CPU_PROBED` or holds a bit the object does not define for its
   architecture (`cpu_cfg.h`, docs/decisions.md 89).
 
-`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX`, `CH_SPKI_PIN_MAX` and the ten
+`ch_trust_anchor`, `CH_SPKI_PIN_MAX` and the ten
 `ch_cfg` fields exist only in a `TRUST=webpki` build, so the raw and ca
 objects keep the `ch_cfg` and `ch_tls` layout they had before this mode.
 `webpki_cfg.h` declares them and states each field's rule, and
@@ -368,18 +368,78 @@ raw or ca build does not declare either.
 Measured anchor sizes, from the captures: 120 B for a P-384 key, 294 B for
 RSA-2048, 550 B for RSA-4096.
 
-`CH_WEBPKI_ANCHOR_MAX` is 12. The number is a measurement, not a round
-figure. Amazon Trust Services is five roots — Amazon Root CA 1 through 4 plus
-the legacy Starfield Services Root G2 — and AWS documents that an endpoint
-may move between them without notice. Let's Encrypt needs two, ISRG Root X1
-for RSA chains and X2 for ECDSA. Google Trust Services needs GTS Root R1 and
-R4 for the GCS and R2 captures above. That is nine for the endpoints this
-document measures, before a private CA is added, so a cap of four would
-refuse AWS's own recommended set.
+The endpoints this document measures need nine roots. Amazon Trust
+Services is five roots: Amazon Root CA 1 through 4 and the legacy
+Starfield Services Root G2. AWS documents that an endpoint may move
+between them without notice. Let's Encrypt needs two, ISRG Root X1 for
+RSA chains and X2 for ECDSA. Google Trust Services needs GTS Root R1 and
+R4 for the GCS and R2 captures above.
+
+No cap bounds `anchor_count` (`docs/decisions.md` 131). A cap of 12 did
+until 2026-10-13, and it refused a system bundle of 150 roots or more.
+At each step the walk compares each anchor's Name with the issuer's
+Name, and it verifies a signature only under an anchor whose Name
+matches. On an M1 the walk of the r2 chain took 338 µs under 12 anchors
+and 335 µs under 150, a ratio of 0.99. Its root came last each time. The
+two signature checks take that time, and the comparison of the Names
+costs less than their noise.
+
+A step checks the signature under each anchor whose Name is the issuer's
+Name, and then under the next entry. Let k be the largest number of
+anchors that share one Name. A peer then forces at most k + 1 signature
+checks in a step. A walk has `CH_WEBPKI_CHAIN_MAX` steps, and its last
+step checks no next entry, so a walk runs 3(k + 1) - 1 checks at most.
+In Homebrew's bundle of 192 roots, two roots share one Name, so k is 2.
+
+Each client init also hashes the Name and the key of every anchor into
+`ch_tls.ticket_config_hash`, which binds a ticket to the configuration
+(`webpki_ticket.h`). A connect that presents a ticket hashes them twice.
+That cost grows with the count. On the M1 the hash ran 266,000
+instructions under 12 anchors and 3,460,000 under 150. The walk of a
+chain of a P-256 leaf and an RSA-2048 intermediate ran 959,000 and
+968,000. At 150 anchors a full
+handshake took about 190 µs more than at 12, 5% of its 3.5 ms.
 
 Any anchor may certify any name. The mode offers no per-anchor name
 constraint, so an anchor's authority is total: configure only anchors whose
 authority you accept over every name you will connect to.
+
+`ch_anchors_from_pem` (`pem_files.h`, `docs/decisions.md` 131) fills the
+array from a CA bundle file that the caller has read into memory. It
+takes one CERTIFICATE block or more. It reads every block that opens at
+a BEGIN line, or it refuses the file. A BEGIN line is a line that starts
+with `-----BEGIN `, the first 11 bytes of RFC 7468's pre-encapsulation
+boundary, whatever follows them.
+
+- The call reads a block at `-----BEGIN CERTIFICATE-----`. Every other
+  BEGIN line refuses the file. OpenSSL's TRUSTED CERTIFICATE and the
+  legacy X509 CERTIFICATE are such lines. `openssl x509` reads one
+  TRUSTED CERTIFICATE block and writes it as a CERTIFICATE block. The
+  output holds none of the trust fields that OpenSSL adds.
+- `-----BEGIN ` at any other byte of a line refuses the file. Otherwise
+  the call would skip a block behind an indent, or behind a UTF-8
+  byte-order mark that some Windows editors write, with its text. The
+  bundle would then read without that root. So a comment that holds
+  `-----BEGIN ` refuses the file too.
+- Every other line is text, and the call skips it before the blocks,
+  between them and after them. So the name lines that curl's
+  `cacert.pem` carries above each root read. A comment that holds
+  `-----BEGIN` with no space after it is text too.
+- The 11 bytes must match byte for byte. A line that differs inside them
+  is text, for example `-----begin ` or a tab after `BEGIN`. The call
+  then skips that block's body and END line as text too, and reads the
+  bundle without that root. OpenSSL and LibreSSL also read no root from
+  such a block.
+
+The caller gives two rooms and their sizes: a DER room of `der_len`
+bytes and an array of `anchor_max` entries. The call writes each
+certificate's DER into the room and points `name` and `spki` into it. It
+refuses a bundle that does not fit either room, and it does not cut the
+bundle short. A room of `pem_len / 4 * 3` bytes holds the DER of any
+bundle. It reads each certificate's outer fields as far as its key and
+judges nothing else: no signature, date, extension or key algorithm.
+Homebrew's `ca-certificates` bundle of 192 roots decodes whole, and so
+does `/etc/ssl/cert.pem` on macOS, 128 roots under LibreSSL's text lines.
 
 ## Application protocols (ALPN)
 
@@ -618,7 +678,6 @@ measured inputs, and the formula is given.
 | `CH_WEBPKI_CHAIN_MAX` | 3 | measured: the Let's Encrypt capture needs 3 (leaf, YE2, Root YE, then the ISRG Root X2 anchor); the other three need 2 |
 | `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4; the walk's cap, which pins alone do not apply |
 | `CH_TRUST_MIN_RXBUF` | 12338 B | derived: `4 * (3072 + 5) + 8 + 22`, the largest Certificate message plus the record that completes it |
-| `CH_WEBPKI_ANCHOR_MAX` | 12 | measured: 9 roots cover the four endpoints above |
 | `CH_WEBPKI_EXT_COUNT_MAX` | 16 | measured: the S3 leaf carries 10 |
 | `CH_WEBPKI_EXT_TLV_MAX` | 1024 | measured: the S3 leaf's subjectAltName Extension TLV is 653 B |
 | `CH_HOSTNAME_MAX` | 253 | DNS's own limit |

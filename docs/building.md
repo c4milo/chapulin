@@ -23,13 +23,19 @@ Other targets:
   in `ch_cfg.rand_bytes` and `ch_cfg.rand_io`, which grow `ch_cfg`, and
   with it `ch_tls`, by two pointers, and every init call refuses a NULL
   `rand_bytes` (decision 77, [`docs/entropy.md`](entropy.md)). The build record, `ch_pubkey_from_pem`,
-  a server's `ch_srv_check`, a client's `ch_ticket_obfuscated_age` and the
-  two alert calls carry
+  a server's `ch_srv_check`, a client's `ch_ticket_obfuscated_age`, the
+  three PEM calls below and the two alert calls carry
   the transport in their symbol names (`ch_build_info_tcp_nonblocking`,
   `ch_srv_check_quic_nonblocking`), and the headers map the
   names you call to them, so one image links an object of each of two
   transports (decisions 61, 72 and 75, [`docs/porting.md`](porting.md)).
-  `TRUST=webpki` exports the eight calls and no provisioning call.
+  `TRUST=webpki` exports the eight calls and `ch_anchors_from_pem`. That
+  call decodes a CA bundle file into the anchors that `ch_cfg` takes. An
+  object with a server role, `ROLE=server` or `ROLE=both`, exports
+  `ch_chain_from_pem` and `ch_p256_key_from_pem`. They decode a
+  certificate chain file and a P-256 key file into what a server identity
+  takes. So a `ROLE=both TRUST=webpki` object exports all three
+  (`pem_files.h`, decision 131).
   `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
   bytes to `ch_tls`; it is off
   by default, so the figures in [`performance.md`](performance.md) are a build that exports nothing,

@@ -1059,12 +1059,17 @@ Cost, and most of it is this tree's.
   `ch_ticket_obfuscated_age`, `ch_alert_sent` and `ch_alert_received`, which
   both transports export. `PUBLIC` now lists `PUBLIC_ROLE`, which a client
   takes from `PUBLIC_TRANSPORT`, then `PUBLIC_RAND`, `PUBLIC_CA`,
-  `PUBLIC_EXPORT` and `PUBLIC_BUILD`, and gives six names a symbol that
-  carries the transport (`TRANSPORT_NAMED` in the `Makefile`, docs/decisions.md 61).
+  `PUBLIC_PEM`, `PUBLIC_EXPORT` and `PUBLIC_BUILD`. It gives nine names a
+  symbol that carries the transport (`TRANSPORT_NAMED` in the `Makefile`,
+  docs/decisions.md 61).
   The other terms keep their meaning: `ch_pubkey_from_pem` under a CA mode,
   `ch_drbg_seed` and `ch_rand_bytes` under `RAND=drbg` (docs/decisions.md
-  67), and the build record in every object (docs/decisions.md 56). So a QUIC
-  client object exports twenty-two symbols under `TRUST=raw-rsa RAND=extern`,
+  67), and the build record in every object (docs/decisions.md 56).
+  `PUBLIC_PEM` holds `ch_chain_from_pem` and `ch_p256_key_from_pem` under a
+  server role and `ch_anchors_from_pem` under `TRUST=webpki`
+  (docs/decisions.md 131), so a `TRUST=webpki` QUIC client exports
+  `ch_anchors_from_pem` as well. A raw or CA QUIC client holds no PEM
+  call. So it exports twenty-two symbols under `TRUST=raw-rsa RAND=extern`,
   twenty-three under a CA mode, twenty-four under `RAND=drbg`, and
   twenty-five under both (*measured* at `c754665`: `make lib-check
   TRANSPORT=quic-nonblocking` with those variables prints the count). The
