@@ -7268,7 +7268,9 @@ lint-codegen-partition:
 #             a call. softmul.c is that file.
 #   branches  comma-separated opcodes, matched as prefixes the same way:
 #             the conditional-branch mnemonics of the ISA, one of the
-#             BRANCH_OPS lists below. Every file in BRANCH_SRCS holds a
+#             BRANCH_OPS lists below. The recipe escapes each dot in
+#             them, so b.cs matches b.cs and not bics, which sets flags
+#             and branches nowhere. Every file in BRANCH_SRCS holds a
 #             recorded count of them per spec.
 # The arm list carries the Thumb-2 forms whose product or quotient is
 # wider than 32 bits, the DSP ones included, so it holds on an M4 too;
@@ -7390,12 +7392,12 @@ WIDEMUL_SPECS := \
 # the session's multiply bit is the statement about its timing, so counting it
 # would hold nothing. What these specs hold is the branch count, which is the
 # claim that no instruction branches on a word or a scalar bit. arm64 counts
-# b.<cond>, spelled out so the dot cannot match bl, and cbz, cbnz, tbz and
-# tbnz. x86-64 counts every j<cond>, by prefixes that cannot match jmp. A
-# compiler run that emits either family's multiply by a word as a call to
-# __multi3 fails the zero. No gcc spec measures these entries: no CI lane
-# runs a 64-bit gcc through lint-wide-multiply-gcc, and a spec nothing runs
-# would pass unread.
+# the sixteen b.<cond> mnemonics, cbz, cbnz, tbz and tbnz; each dot matches
+# a dot alone, so no token matches bl or bics. x86-64 counts every j<cond>,
+# by prefixes that cannot match jmp. A compiler run that emits either
+# family's multiply by a word as a call to __multi3 fails the zero. No gcc
+# spec measures these entries: no CI lane runs a 64-bit gcc through
+# lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
 #
 # How the branches were read. For each conditional branch, the instruction
 # that sets its flags was found, and each value that instruction reads was
@@ -7742,7 +7744,7 @@ P256_SCALAR_BRANCH_CEILING := \
 QUIC_PACKET_BRANCH_CEILING := \
   m3/quic_packet.c:58 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
-  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:36 x86-64/quic_packet.c@host:34
+  rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:34 x86-64/quic_packet.c@host:34
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
                         mips32r2-gcc-O2/tls_write.c:2
 # The files the branch count covers: the arithmetic under the record
@@ -7827,14 +7829,13 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 #     number inline, a test of the distance, 8 * i, the loop's counter;
 #   - under the Bootlin gcc, which compiles a stack protector in unless
 #     told otherwise, the test of the guard word at seven returns.
-# The arm64 spec's 36 holds two bics, which the dot in its b.cs matches;
-# they set flags and branch nowhere. One kind reads a secret. Under clang
-# for Cortex-M3, four of the 58 are IT blocks whose condition comes from
-# one: the borrow byte_in_use computes in quic_header_unprotect, the two
-# window tests of quic_pn_decode, and quic_key_set_select's choice of a
-# phase. Each is one predicated instruction and none is a branch, the
-# form the arm list counts for the reason it gives. No other spec has a
-# counted instruction on those lines.
+# One kind reads a secret. Under clang for Cortex-M3, four of the 58 are
+# IT blocks whose condition comes from one: the borrow byte_in_use
+# computes in quic_header_unprotect, the two window tests of
+# quic_pn_decode, and quic_key_set_select's choice of a phase. Each is
+# one predicated instruction and none is a branch, the form the arm list
+# counts for the reason it gives. No other spec has a counted instruction
+# on those lines.
 BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c aes.c quic_aes_soft.c quic_packet.c \
                aes_extern.c gcm.c p256_field.c x25519_wide.c chacha20_vector.c chacha20_avx2.c chacha20_avx512.c \
@@ -8152,7 +8153,7 @@ lint-wide-multiply-run:
 	   [ -z "$$calls" ] || pattern="$$pattern$${pattern:+|}[[:space:],(]($$calls)"; \
 	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no token to count"; exit 1; }; \
 	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
-	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
+	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | sed 's/\./\\./g' | paste -sd '|' -))"; \
 	   spattern="[[:space:],(]($(subst $(COMMA),|,$(SHIFT_CALLS)))"; \
 	   ran="$$ran$$arch "; table=""; btable=""; stable=""; \
 	   files="$(WIDEMUL_CEILING)"; level="-Os"; freestanding="-ffreestanding"; \
