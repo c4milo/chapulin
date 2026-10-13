@@ -58,8 +58,8 @@ static uint32_t kept_ticket_server_version(void) {
 }
 
 // A full handshake between this build's client and server, the server
-// choosing version 2 when choose is set, and the one ticket the client
-// took from it.
+// choosing version 2 once when choose is set, and the one ticket the
+// client took from it.
 static void full_handshake_ticket(int choose) {
     ch_cfg scfg;
     ch_cfg ccfg;
@@ -67,7 +67,9 @@ static void full_handshake_ticket(int choose) {
     scfg.srv.choose_version = choose ? choose_version_2 : NULL;
     version_client(&ccfg);
     memset(&kept, 0, sizeof kept);
+    choose_calls = 0;
     CHECK(run_quic(&ccfg, &scfg));
+    CHECK(choose_calls == (choose ? 1U : 0U));
     CHECK(client.t.psk_selected == 0 && server.t.psk_selected == 0);
     take_ticket();
     CHECK(kept.count == 1);
@@ -128,6 +130,7 @@ static void test_ticket_versions(void) {
     version_server(&scfg);
     scfg.srv.choose_version = choose_version_2;
     version_resuming_client(&ccfg);
+    choose_calls = 0;
 #ifdef CH_TRUST_WEBPKI
     // The webpki hello offered the chain path beside the ticket, so the
     // same connection completes as a full handshake that walks the chain,
@@ -142,6 +145,7 @@ static void test_ticket_versions(void) {
     CHECK(ch_quic_state(&server) == CH_ST_FAILED);
     CHECK(ch_quic_alert(&server) == ALERT_MISSING_EXTENSION);
 #endif
+    CHECK(choose_calls == 1);
 
     // The same ticket still resumes when the server keeps version 1.
     version_server(&scfg);
