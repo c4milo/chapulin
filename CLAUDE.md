@@ -769,7 +769,11 @@ Home: github.com/c4milo.
   voice with plain words, following Google's Technical Writing One and
   Two: short sentences with one idea each, terms defined before use,
   lists for list-like content, strong verbs, no rhetorical flourishes or
-  metaphors.
+  metaphors. Write it in ASD-STE100 Simplified Technical English too:
+  descriptive sentences of 25 words or fewer and procedural ones of 20
+  or fewer, one topic in each sentence, simple tenses, one word for one
+  meaning, no -ing form used as a noun or a modifier, and no noun
+  cluster of more than three words.
 - Name what literally happens. The failure mode is a vague spatial
   metaphor standing in for a plain verb: a value "reaches" storage
   instead of being written, a change is "folded in" instead of added, a
