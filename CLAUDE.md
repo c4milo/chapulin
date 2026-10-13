@@ -303,7 +303,10 @@ Home: github.com/c4milo.
   contract (docs/decisions.md 91); a kernel that held secrets in 512-bit
   registers calls `avx512_wipe_registers` before it returns, because C
   names no register and VZEROUPPER and VZEROALL leave zmm16 to zmm31
-  (docs/decisions.md 120 and 121); constant-time selects,
+  (docs/decisions.md 120 and 121), and `chacha20_avx2.c`,
+  `poly1305_avx2.c` and `sha512_avx2.c`, which hold them in 256-bit
+  registers, end with VZEROALL, which writes zero to ymm0 to ymm15
+  (docs/decisions.md 128 and 129); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
   poly1305's final reduction), never an `if`. A mask does not bind the
   compiler: where it can prove a mask is all ones or zero it may write
@@ -450,7 +453,9 @@ Home: github.com/c4milo.
   stack below a call for the powers of r: on x86-64 the three paths read
   their multipliers through volatile pointers, so the powers stay in the
   one struct the call wipes and in no spill slot the compiler picks
-  (docs/decisions.md 83, 110 and 121). `bin/x86_kernels_test` counts
+  (docs/decisions.md 83, 110 and 121). After a call of either AVX2
+  kernel, each binary reads ymm0 to ymm15 back as zero
+  (docs/decisions.md 129). `bin/x86_kernels_test` counts
   which calls run a
   kernel under each `ch_cfg.cpu` value, and `bin/tcp_blocking_loop_host`
   and `bin/webpki_auth_host` count the RSA public operations each caller
