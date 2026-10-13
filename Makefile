@@ -6595,9 +6595,16 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # the fast tier took 1,158 s with one worker, 393 s with five and 489 s
 # with ten.
 VIOLATION_JOBS ?= $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2); echo $$(( n > 1 ? n / 2 : 1 )))
+# VIOLATION_SHARD=K/N runs the Kth of N parts of the fast tier
+# (test/violations.py --shard), and empty runs all of it. CI's mutants
+# job runs the tier as two jobs, 1/2 and 2/2: as one job it checked 529
+# violations in 53 minutes on run 38334786704 and reached its 60-minute
+# limit on run 38338501302.
+VIOLATION_SHARD ?=
 .PHONY: test-invariants-fast
 test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_sign_test_host
-	+python3 test/violations.py --tier=fast --jobs $(VIOLATION_JOBS)
+	+python3 test/violations.py --tier=fast --jobs $(VIOLATION_JOBS) \
+	  $(if $(VIOLATION_SHARD),--shard=$(VIOLATION_SHARD))
 
 # Every violation but the proof-backed ones: the fast tier plus the
 # handshake_sequence_test, diff and e2e-backed violations that cost

@@ -7,6 +7,9 @@ Run from the repository root: python3 test/violations.py [name ...]
     --tier=slow          every other target
     --proof-backed       only the violations proof/prove-one.sh catches
     --not-proof-backed   every other violation
+    --shard=K/N          the Kth selected name in name order and every Nth
+                         after it, so N jobs that pass the same selectors
+                         with K from 1 to N check each violation once
     --jobs N             run N violations at once, each in its own copy of
                          the tree; 1, the default, runs them one at a
                          time in the working tree
@@ -471,6 +474,23 @@ def lint_fast_targets():
                      f"and a CBMC proof does not")
 
 
+def shard_of(argv, names):
+    """names narrowed by argv's --shard=K/N: the Kth in name order and
+    every Nth after it, or every name when argv has no --shard. Taking
+    every Nth name spreads the slow targets, which no name groups, across
+    the N jobs."""
+    value = next((a[len("--shard="):] for a in argv
+                  if a.startswith("--shard=")), None)
+    if value is None:
+        return names
+    match = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        sys.exit(f"test-invariants: --shard takes K/N with 1 <= K <= N, "
+                 f"not {value!r}")
+    k, n = int(match.group(1)), int(match.group(2))
+    return sorted(names)[k - 1::n]
+
+
 def select(argv):
     """The violation names argv picks: the positional names, or every
     file in test/violations/, narrowed by the tier and class selectors."""
@@ -491,6 +511,7 @@ def select(argv):
         names = [n for n in names if proof_backed(catches_of(n))]
     if "--not-proof-backed" in argv:
         names = [n for n in names if not proof_backed(catches_of(n))]
+    names = shard_of(argv, names)
     if not names:
         sys.exit("test-invariants: the selection matches no violation in "
                  "test/violations/")
@@ -725,7 +746,8 @@ def main():
     lint_fast_targets()
     argv, jobs = jobs_option(sys.argv[1:])
     for flag in (a for a in argv if a.startswith("--")):
-        if flag not in OPTIONS and not flag.startswith("--tier="):
+        if (flag not in OPTIONS and not flag.startswith("--tier=")
+                and not flag.startswith("--shard=")):
             # A misspelt selector must not fall through to the whole set.
             sys.exit(f"test-invariants: unknown option {flag}")
     if "--lint-builds" in argv:

@@ -297,7 +297,8 @@ Other targets:
   emulated Cortex-M3, `test/e2e.sh` against real servers, the spec
   differential and the sequence enumeration, and builds the binaries
   those steps run. `make ci-mutants` runs the fast tier of
-  `test/violations/`. `make ci-prove` runs the fast-tier proofs. A CI
+  `test/violations/`, which CI runs as two jobs with
+  `VIOLATION_SHARD=1/2` and `2/2`. `make ci-prove` runs the fast-tier proofs. A CI
   job starts with no `bin/`, so none of the three needs `make check` to
   have run first. `make ci` runs `make check-slow`.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by

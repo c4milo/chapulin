@@ -71,7 +71,7 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   are split by duration, not by importance. CI runs `make check` on a
   pull request. On a push to main and each night it also runs the rest
   of `check-slow`, as three jobs beside that one: `slow` (`make
-  ci-slow`), `mutants` (`make ci-mutants`) and `prove` (`make
+  ci-slow`), `mutants` (`make ci-mutants`, in two shards) and `prove` (`make
   ci-prove`). The slow proof tier runs as `make prove-slow` in CI and
   before a release.
 - `test/docker-check.sh` runs `make check` as CI's check job runs it,

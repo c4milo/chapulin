@@ -721,7 +721,10 @@ jobs:
   # breaks one rule in a copy of the tree, and its catch target must
   # fail. On two workers (test/violations.py --jobs, half the runner's
   # cores) it took 24.6 minutes of run 37167172750's check job, and 20 of
-  # run 37178050965 as this job.
+  # run 37178050965 as this job. With 529 violations it took 53 minutes
+  # of run 38334786704 and reached the job's 60-minute limit on run
+  # 38338501302, so it runs as two jobs, each with every other violation
+  # in name order (VIOLATION_SHARD, test/violations.py --shard).
   #
   # A catch target runs one lint or one script alone, without
   # lint-toolchain's version check. Where this job lacked a tool, the
@@ -735,6 +738,10 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -804,7 +811,9 @@ jobs:
       # One target. test-invariants-fast, which it names, runs one
       # violation per worker itself (test/violations.py --jobs), and -j
       # gives the builds under those workers the runner's cores.
-      - run: make -j"$(nproc)" ci-mutants
+      - run: make -j"$(nproc)" ci-mutants VIOLATION_SHARD="$SHARD/2"
+        env:
+          SHARD: ${{ matrix.shard }}
 
   # `make ci-prove`, the fast tier of the CBMC proofs. proof/run.sh skips
   # a harness whose content key already recorded a success. So the tier
