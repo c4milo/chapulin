@@ -249,7 +249,13 @@ done
 echo
 echo "deepest -fstack-usage frames, mips32r2 -Os (frames, not call-graph"
 echo "peaks; bench/sram.sh walks the host call graph):"
-cat "$TMP"/dev/*.su | sort -t "$(printf '\t')" -k2,2nr | head -10 \
-    | awk -F'\t' '{ printf "  %5d B  %s\n", $2, $1 }'
+# awk prints the first ten lines and reads every line sort writes. GNU
+# sort writes this list, several kilobytes, in more than one write, and
+# head -10 exits after ten lines: a write after that kills sort with
+# SIGPIPE, and under pipefail the script stops before it writes the CSV.
+# In the check image under load, 116 of 400 runs of the head pipeline
+# failed that way.
+cat "$TMP"/dev/*.su | sort -t "$(printf '\t')" -k2,2nr \
+    | awk -F'\t' 'NR <= 10 { printf "  %5d B  %s\n", $2, $1 }'
 mv "$OUT" bench/results-device.csv
 echo "wrote bench/results-device.csv"
