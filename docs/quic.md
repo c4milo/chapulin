@@ -491,7 +491,7 @@ and `aes.c` calls it: that file owns the `aes_public_key`, derives the RFC
 | --- | --- | --- |
 | device, `AES=soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
 | device, `AES=extern` | `aes_extern.c` | forwards to `ch_aes_block`, which the image defines, with a 16-byte or a 32-byte key |
-| host | `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c` and `gcm_vaes.c`, and in a QUIC object `quic_aes_soft.c` | the compiler's AES intrinsics, ARMv8 or x86-64, turned on per function, GHASH on the carry-less multiply, and counter mode and the one-pass seal and open on both; the table beside them for QUIC's public keys; the caller's `CH_CPU_CONSTANT_TIME_AES` bit in `ch_cfg.cpu` picks for each session |
+| host | `aes_hw.c`, `ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `gcm_avx512.c` and `gcm_avx512_kernel.c`, and in a QUIC object `quic_aes_soft.c` | the compiler's AES intrinsics, ARMv8 or x86-64, turned on per function, GHASH on the carry-less multiply, and counter mode and the one-pass seal and open on both, and on x86-64 the whole seal and open on 512-bit registers (decision 130); the table beside them for QUIC's public keys; the caller's `CH_CPU_CONSTANT_TIME_AES` bit in `ch_cfg.cpu` picks for each session |
 
 The host object is the one that changes GHASH and counter mode as well as
 the cipher. For a schedule on the instructions, `gcm.c`'s
@@ -521,9 +521,10 @@ checks the packaged source list per build, and
 `test/violations/aes-two-implementations-in-one-object.violation` is the
 mutant that proves it fires. The host object's QUIC object is the one pair
 admitted (`docs/decisions.md` entries 81 and 89). It holds `aes_hw.c`,
-`ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c` and `quic_aes_soft.c`, whose two
-entries take the names `aes_soft_expand_round_keys` and
-`aes_soft_cipher_block` there, so the five link together. Each
+`ghash_hw.c`, `gcm_hw.c`, `gcm_vaes.c`, `gcm_avx512.c`,
+`gcm_avx512_kernel.c` and `quic_aes_soft.c`, whose two entries take the
+names `aes_soft_expand_round_keys` and `aes_soft_cipher_block` there, so
+the seven link together. Each
 `aes_key_schedule` records the cipher that expanded it, and `aes.c` and
 `gcm.c` run it on that one: an Initial key on the instructions when the
 session's `ch_cfg.cpu` holds `CH_CPU_CONSTANT_TIME_AES` and on the table

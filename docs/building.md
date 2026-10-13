@@ -188,7 +188,13 @@ Other targets:
   `CH_CPU_CONSTANT_TIME_MULTIPLY`, whose statement covers IFMA's 52-bit
   products, the session signs with RSA on `rsa_ifma_sign.c` and runs a
   Poly1305 update of 512 bytes or more on `poly1305_ifma.c` (decisions
-  120 and 121).
+  120 and 121). `CH_CPU_AVX512` says the CPU has AVX-512F, AVX-512BW and
+  AVX-512VL, and VAES and VPCLMULQDQ on the 512-bit registers. It states
+  no timing, and beside `CH_CPU_VAES` and `CH_CPU_CONSTANT_TIME_AES` it
+  runs each AES-GCM seal and open whole, four blocks to a 512-bit
+  register, on `gcm_avx512_kernel.c` (decision 130). It picks nothing
+  else, so you can leave it clear, on an Ice Lake server for instance,
+  and keep the IFMA kernels.
   Set each bit from your probe alone: a session whose bit names
   instructions its CPU lacks faults on the first one. The three hash
   bits say the CPU has the SHA-256, the SHA-512 or the SHA-3

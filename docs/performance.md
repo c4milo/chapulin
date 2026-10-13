@@ -447,7 +447,10 @@ What a row compares:
   `record.c` runs for every record: it expands the key, seals 16,385 bytes with the record's 5-byte
   header as associated data, and wipes the expanded key. On arm64 `bench/record.sh` times AES-GCM
   under `ch_cfg.cpu 0x3`, and the multiply bit changes no AES-GCM path. On an x86-64 CPU with
-  AVX-512 IFMA it times AES-GCM under `0x1f`, and `CH_CPU_AVX512_IFMA` changes no AES-GCM path.
+  AVX-512 IFMA the columns below time AES-GCM under `0x1f`, and `CH_CPU_AVX512_IFMA` changes no
+  AES-GCM path. They were recorded before decision 130, under which `CH_CPU_AVX512` beside the
+  VAES and AES bits runs each seal and open whole on the 512-bit kernel; `bench/record.sh` times
+  that under `0x31f`, and decision 130 holds its figures beside OpenSSL's.
 - **ChaCha20-Poly1305.** One operation of OpenSSL 3.6's `speed -aead` is one update over 16,384
   bytes: ChaCha20 and Poly1305 over them, with no nonce, associated data or tag. chapulin's row is
   its seal or open of one record less the tag's fixed work, which is the same work on the bytes.
@@ -680,7 +683,10 @@ value to the calls a session hands its own to (decision 89). The values are 0x3,
 and the AES bit; 0x7, which adds the multiply bit and so the vector Poly1305 (decision 83); on an
 x86-64 CPU with the instructions, 0x1f, which adds the kernels of decisions 90 and 110; and, on
 one with AVX-512 IFMA, 0x11f, which adds `CH_CPU_AVX512_IFMA` and so the ChaCha20-Poly1305
-kernels of decision 121. It times these on the same buffers:
+kernels of decision 121; and, on one with AVX-512F, AVX-512BW and AVX-512VL, 0x31f, which adds
+`CH_CPU_AVX512` and so the 512-bit AES-GCM kernel of decision 130, for the AES-GCM rows alone.
+Under that value the kernel runs each whole AEAD, and the stage rows still time the VAES loops,
+which it does not call. It times these on the same buffers:
 
 - `rec_seal`, which copies the caller's plaintext into the record and seals it in place, as
   `ch_write` calls it, and `rec_open`, which opens a record in place, as `ch_read` calls it;

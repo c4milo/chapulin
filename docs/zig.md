@@ -300,14 +300,15 @@ the AVX-512 kernels alone, `rsa_ifma.c`, `rsa_ifma_sign.c`,
 and in `avx512_wipe.c`'s block of assembly, as make's does
 (docs/decisions.md 119 to 121).
 
-- **A value states what the caller found.** `Cpu` holds eight bools,
+- **A value states what the caller found.** `Cpu` holds nine bools,
   false by default: `constant_time_aes`, `constant_time_multiply`, `avx2`,
   `vaes`, `constant_time_sha256`, `constant_time_sha512`,
-  `constant_time_sha3` and `avx512_ifma`. `toCfg` writes `CH_CPU_PROBED`
-  and the bit of each one that is true. `Cpu{}` says the caller looked and
-  states nothing more. The five named `constant_time_` state a timing, and
-  `cpu_cfg.h` says what each claims. `avx2`, `vaes` and `avx512_ifma` are
-  x86-64's and say what the CPU has: with `avx2` the session's ChaCha20
+  `constant_time_sha3`, `avx512_ifma` and `avx512`. `toCfg` writes
+  `CH_CPU_PROBED` and the bit of each one that is true. `Cpu{}` says the
+  caller looked and states nothing more. The five named `constant_time_`
+  state a timing, and `cpu_cfg.h` says what each claims. `avx2`, `vaes`,
+  `avx512_ifma` and `avx512` are x86-64's and say what the CPU has: with
+  `avx2` the session's ChaCha20
   runs in 256-bit vectors, and with `vaes` beside `constant_time_aes` its
   AES-GCM runs on VAES and VPCLMULQDQ (docs/decisions.md 90). With `avx2`
   and without `avx512_ifma` the session runs RSA verification's public
@@ -326,6 +327,12 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   (docs/decisions.md 120 and 121). `x509.c` verifies the chain links of
   `TRUST=ca-rsa` with `rsa_pss_verify`, which takes no `cpu`, so they run
   `rsa_mont64.c` whatever the two fields say.
+  `avx512` says the CPU has AVX-512F, AVX-512BW and AVX-512VL, and VAES
+  and VPCLMULQDQ on the 512-bit registers, and beside `vaes` and
+  `constant_time_aes` the session runs each AES-GCM seal and open whole,
+  four blocks to a 512-bit register, on `gcm_avx512_kernel.c`. It picks
+  nothing else, so a caller can leave it clear and keep `avx512_ifma`'s
+  kernels (docs/decisions.md 130).
   The three hash fields say the CPU has the SHA-256, the SHA-512 or the
   SHA-3 instructions. With `constant_time_sha256` the session hashes its
   transcript and derives its keys over SHA-256 on them, and with
@@ -335,8 +342,8 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
   `zig build` compiles is (docs/decisions.md 93 and 99).
 - **A value without one is refused at init.** A null `cpu` leaves the
   field 0, C answers `CH_EINVAL`, and `init` and `Server.check` return
-  `error.Invalid` with nothing sent. So does `avx2`, `vaes` or
-  `avx512_ifma` in an arm64 object, and `constant_time_sha512` or
+  `error.Invalid` with nothing sent. So does `avx2`, `vaes`,
+  `avx512_ifma` or `avx512` in an arm64 object, and `constant_time_sha512` or
   `constant_time_sha3` in an x86-64 one: each object defines its own
   architecture's bits. Both refusals are C's.
 - **The probe is the caller's.** chapulin and its API probe nothing and

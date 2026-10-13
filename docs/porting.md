@@ -103,7 +103,7 @@ AVX-512 IFMA's 52-bit products, which `CH_CPU_AVX512_IFMA` runs beside the bit
 without the bit runs the portable Poly1305 and its 16x16 decomposition
 (decision 83).
 
-On x86-64 three more bits say what the CPU has, and none states a timing.
+On x86-64 four more bits say what the CPU has, and none states a timing.
 `CH_CPU_AVX2` says the CPU has AVX2 and its operating system saves the 256-bit
 registers, and it moves the ChaCha20 keystream to 256-bit vectors, eight blocks
 a pass. In an object with the AES-GCM suites it also moves SHA-384's message
@@ -124,8 +124,12 @@ With `CH_CPU_AVX512_IFMA` the ChaCha20 keystream also runs sixteen blocks a pass
 on `chacha20_avx512.c` in place of the AVX2 kernel, and beside
 `CH_CPU_CONSTANT_TIME_MULTIPLY` the session signs with RSA on `rsa_ifma_sign.c`
 and runs a Poly1305 update of 512 bytes or more on `poly1305_ifma.c` (decisions
-120 and 121). Set each from your probe alone: a session whose bit names
-instructions its CPU lacks faults on the first one.
+120 and 121). `CH_CPU_AVX512` says the CPU has AVX-512F, AVX-512BW and AVX-512VL,
+and VAES and VPCLMULQDQ on the 512-bit registers; beside `CH_CPU_VAES` and
+`CH_CPU_CONSTANT_TIME_AES` it runs each AES-GCM seal and open whole on
+`gcm_avx512_kernel.c`, and it picks nothing else (decision 130). Set each from
+your probe alone: a session whose bit names instructions its CPU lacks faults on
+the first one.
 
 Three bits state the hash instructions: `CH_CPU_CONSTANT_TIME_SHA256` on both
 architectures, and `CH_CPU_CONSTANT_TIME_SHA512` and `CH_CPU_CONSTANT_TIME_SHA3`
