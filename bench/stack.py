@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 # TRANSPORT=tcp-blocking, the one whose calls ENTRIES names.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 CA_ENTRIES = ["_ch_pubkey_from_pem_tcp_blocking"]
+# The PEM calls (pem_files.h): a server role exports the chain and the
+# key call, and a TRUST=webpki object the bundle call. The script
+# measures each where the object defines it, as it measures CA_ENTRIES.
+PEM_ENTRIES = ["_ch_chain_from_pem_tcp_blocking", "_ch_p256_key_from_pem_tcp_blocking",
+               "_ch_anchors_from_pem_tcp_blocking"]
 # A ROLE=server build exports ch_srv_accept where a client exports
 # ch_connect, and shares the other three.
 SERVER_ENTRIES = ["_ch_srv_accept", "_ch_read", "_ch_write", "_ch_close"]
@@ -325,7 +330,8 @@ def main() -> int:
             # not measured, and deepest() would report it as free.
             print(f"stack.py: no frame for {', '.join(missing)}", file=sys.stderr)
             return 1
-        print("\n".join(report(fr, cg, entries + [e for e in CA_ENTRIES if e in fr], pushed)))
+        optional = [e for e in CA_ENTRIES + PEM_ENTRIES if e in fr]
+        print("\n".join(report(fr, cg, entries + optional, pushed)))
     return 0
 
 

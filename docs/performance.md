@@ -209,6 +209,49 @@ itself measures 576 bytes of stack under `TRUST=ca-rsa` and 496 under
 `TRUST=ca-ecdsa`, reported by `bench/stack.py` beside the other public
 calls.
 
+The three calls of `pem_files.h` (decision 131) take their rooms from the
+caller the same way. A host program reads each file into a buffer of its
+own. The call writes the DER into a second room, and the values point
+into that room. So the DER room lives as long as the sessions that use
+it, and the text does not. The caller sizes the rooms, and a call refuses a
+file that does not fit them. A DER room of `pem_len / 4 * 3` bytes holds
+the DER of any file.
+
+| file | text, at most | DER room | entries |
+|---|---|---|---|
+| chain, `ch_chain_from_pem` | the caller's | the caller's | 16 bytes a `ch_cert`, 255 at most |
+| P-256 key, `ch_p256_key_from_pem` | 452 (`CH_PEM_KEY_TEXT_MAX`) | none: 32 for the scalar and 64 for the point | none |
+| CA bundle, `ch_anchors_from_pem` | the caller's | the caller's | 32 bytes a `ch_trust_anchor` |
+
+The sizes of an entry are the arm64 compiler's. Homebrew's
+`ca-certificates` bundle is 289,562 bytes of text. It decodes to 205,893
+bytes of DER and 192 anchors, 6,144 bytes of entries. The QUIC Interop
+Runner's chain of nine certificates is 9,661 bytes of DER.
+
+On arm64 `bench/stack.py` measures 592 bytes of stack for the chain
+call, 1,472 for the key call and 560 for the bundle call. It reports
+them for `ROLE=server TRUST=none`, `TRUST=webpki` and `ROLE=both
+TRUST=webpki`. The chain call's peak is the read of each certificate's
+outer fields.
+
+The key call's figure leaves out one frame. Under
+`CH_CPU_CONSTANT_TIME_MULTIPLY` the call computes the point on the wide
+P-256 field. After each wide operation, `p256_wide_wipe_below` writes
+zero over an array of 3,072 bytes (`P256_WIDE_BELOW_LEN`) in a frame of
+its own. It calls that frame through a volatile function pointer, and
+the walk follows no pointer. So a stack probe measured the key call. It
+filled the stack below a caller and found the deepest byte that the call
+wrote. Apple clang at `-O2` gave these depths:
+
+| object and `cpu` value | stack |
+|---|---:|
+| host object, `CH_CPU_PROBED` and `CH_CPU_CONSTANT_TIME_MULTIPLY` | 3,712 |
+| host object, `CH_CPU_PROBED` alone | 1,352 |
+| device object, 0 | 1,304 |
+
+So a host program that states the multiply bit gives the key call
+3,712 bytes of stack.
+
 ### Compared with other libraries
 
 wolfSSL needs about 6.2 kB of heap plus buffers, and mbedTLS needs 9 to
