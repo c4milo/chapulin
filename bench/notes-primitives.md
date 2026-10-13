@@ -16,6 +16,103 @@ bench/record.sh times AES-GCM and one record's stages, and
 docs/performance.md, "Where a record's time goes", reads its CSVs; this
 note does not repeat them.
 
+## The run of 41878157
+
+The x86-64 CSVs now hold runs of 2026-10-13 on the tree of
+docs/decisions.md 130, 41878157, on an EPYC 7763 and on a Xeon Platinum
+8573C (bench run 38390811369). The run drew no arm64 machine, so
+bench/results-primitives-darwin-arm64-clang.csv keeps the run of
+67da657e. The run counted the same calls as
+bench/results-primitives-calls.csv, so that file keeps its counts.
+Between ff287fcd and this tree two commits changed code that a row runs.
+`chacha20_avx2.c` and `poly1305_avx2.c` write zero to ymm0 to ymm15
+before they return (decision 129). A session with `CH_CPU_AVX512` beside
+the VAES and AES bits runs each AES-GCM seal and open whole on a 512-bit
+kernel (decision 130). On the Xeon the primitives' widest value is now
+`0x33f`, `0x13f` and `CH_CPU_AVX512`, which no row of theirs reads
+(bench/primitives.sh), and the record CSVs add rows under `0x31f`.
+
+What moved by design, on the Xeon Platinum 8573C:
+
+- **AES-GCM with the key set takes 0.48 to 0.54 of its time under `0x1f`
+  in the same run.** Under `0x31f` the key set and a 16 KiB record take
+  1.18 to 1.45 µs under gcc and 1.17 to 1.45 µs under clang, 0.93 to
+  0.94 of OpenSSL 3.6.4's time under gcc and 0.88 to 0.94 under clang.
+  Under `0x1f`, on `gcm_vaes.c`'s loops, the same rows take 2.46 to 2.83
+  µs and 2.33 to 2.76 µs, 1.81 to 1.94 and 1.73 to 1.83 times OpenSSL's
+  time. In the run of ff287fcd the `0x1f` rows read 1.88 to 2.03 times,
+  and in decision 130's run of the kernel after review two jobs on this
+  CPU model read 0.86 to 0.94 under `0x31f`.
+- **Under `0x31f` a 16 KiB AEAD takes 0.46 to 0.54 of the sum of its
+  stage rows.** The kernel runs the whole AEAD, and the stage rows still
+  time the VAES loops, which it does not call (docs/performance.md,
+  "Where a record's time goes"). So at 16 KiB the two check lines that
+  add the seal's or the open's passes to the tag's fixed work read the
+  parts 85% to 117% over the whole under that value, and every other
+  check line under it within 2.6%.
+
+What moved otherwise, on the Xeon Platinum 8573C:
+
+- **This run's runner is again another machine of that model, and a
+  slower one.** OpenSSL's rows in the primitives CSV took 1.03 to 1.04
+  times their time in the run of ff287fcd, and its two RSA signatures
+  1.11 times. chapulin's rows under `0x1` took 1.01 to 1.04 times, 1.035
+  at the median under each compiler. In the record CSVs the rows under
+  `0x3`, which run no 256-bit or 512-bit kernel, took 1.03 to 1.04 times
+  at the median, OpenSSL's ChaCha20-Poly1305 rows 1.03 to 1.04 times and
+  its AES-GCM rows 1.08 to 1.13 times. So the two runs compare by their
+  ratios to OpenSSL, or by a row's move beside 1.035.
+- **Poly1305 on its AVX2 and IFMA kernels takes 1.09 to 1.12 times its
+  time, under both compilers.** Under `0x33f` Poly1305 over 16 KiB takes
+  1.05 µs under gcc where it took 0.94, and 1.04 µs under clang where it
+  took 0.93, and over 1,200 bytes 1.08 and 1.09 times its time.
+  ChaCha20-Poly1305 over 16 KiB takes 1.15 to 1.16 times its time, and
+  ChaCha20 alone 1.03 to 1.04 times. In the record CSVs Poly1305 over 16
+  KiB took 1.11 times its time under `0x11f`, on `poly1305_ifma.c`, and
+  under `0x1f`, on `poly1305_avx2.c`, 1.11 times under gcc and 1.09
+  under clang, each with a spread of 0.3% at most in this run.
+  `poly1305_ifma.c` did not change between the two trees. Decision 129
+  changed `poly1305_avx2.c`, and on the EPYC 7763 its row under `0x1f`
+  moved by 0.1% at most. The run does not show what moved these rows. In
+  the table beside OpenSSL the ChaCha20-Poly1305 open now takes 1.03
+  times OpenSSL's time under gcc where it took 0.93, and 0.99 of it
+  under clang where it took 0.92.
+- **Under clang RSA's signatures take 1.07 and 1.09 times their time**,
+  306 and 751 µs where they took 285 and 686, and under gcc 1.03 and
+  1.05 times, 324 and 773 µs where they took 313 and 733. The server
+  sides of the RSA handshakes moved with them, up to 1.09 times. The two
+  RSA-4096 verifications take 1.07 to 1.09 times their time, and
+  ML-KEM-768's three rows 1.05 to 1.07 times. The run does not show what
+  moved these rows past 1.035.
+- **In the record CSVs the `refill` row takes 1.07 to 1.10 times its
+  time at 16 KiB**, 117 to 120 ns where it took 109: the copy of a
+  sealed record into the buffer each open row opens. Under `0x1f` the
+  AES-GCM stage rows over 16 and 64 KiB took 1.03 to 1.08 times their
+  time, and the whole rows 1.02 to 1.07 times. Under clang and `0x1f`
+  the record layer's own work for a 16 KiB AES-GCM seal takes 141 ns
+  where it took 177 and 180.
+
+On the EPYC 7763:
+
+- **OpenSSL's rows took 0.99 to 1.01 of their time, and under gcc no row
+  of the primitives CSV moved by more than 2%.**
+- **Under clang the RSA handshakes take 0.95 to 0.96 of their time, and
+  the signature's own rows moved by 0.1% at most.** The server sides on
+  the classic group take 1.47 and 4.38 ms where they took 1.54 and 4.62,
+  the figures of the run of 58d534cb. Under clang SHA-256 and SHA-512
+  over 64 bytes take 1.04 and 1.03 times their time, 120 and 211 ns
+  where they took 115 and 204, and their five runs spread by 12% and 6%.
+  No other row under `0x3f` moved by more than 2%.
+- **In the record CSVs no AEAD row over 16 or 64 KiB moved by more than
+  2%** under any value. The record layer's own rows moved by 6.4 ns at
+  most, 0.98 and 1.07 times their time at the ends. The 1 KiB rows and
+  the fixed costs took 0.95 to 1.09 times their time: the most, the
+  Poly1305 tag's fixed work under clang and `0x7`, takes 209 ns where it
+  took 193. The rows that are a difference of two timed rows
+  (bench/record_rows.c) moved by more, and one of them,
+  `counter_mode_tail_shifted` of AES-256 over 64 KiB under clang, reads
+  −5.2 ns.
+
 ## The run of ff287fcd
 
 The x86-64 CSVs now hold runs of 2026-10-12 on the tree of
