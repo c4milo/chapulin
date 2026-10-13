@@ -1,0 +1,18 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_test
+reason: the PrivateKeyInfo SEQUENCE's length is read and not held to the
+  bytes the DER holds, so a key whose length claims a byte fewer than its
+  fields fill reads. test_key_fields writes the longest key with its
+  length one short and requires CH_EINVAL.
+
+--- old
+    if (!x509_read_header(&r, TAG_SEQUENCE, &len) || len != rb_left(&r)) {
+        return 0;
+    }
+    if (!x509_read_exact(&r, pkcs8_version, sizeof pkcs8_version) ||
+--- new
+    if (!x509_read_header(&r, TAG_SEQUENCE, &len)) {
+        return 0;
+    }
+    if (!x509_read_exact(&r, pkcs8_version, sizeof pkcs8_version) ||

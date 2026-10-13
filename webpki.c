@@ -30,10 +30,9 @@
 _Static_assert(CH_WEBPKI_KEY_MAX >= CH_RSA_MODULUS_MAX,
                "webpki_leaf_info.key must hold the widest modulus webpki_read_spki returns");
 // webpki_leaf_info.path_entries holds a count of certificates read, at
-// most CH_WEBPKI_CHAIN_MAX, and anchor_index an index below anchor_count,
-// which ch_connect holds to CH_WEBPKI_ANCHOR_MAX (webpki_cfg.h).
-_Static_assert(CH_WEBPKI_CHAIN_MAX <= UINT8_MAX && CH_WEBPKI_ANCHOR_MAX <= UINT8_MAX,
-               "webpki_leaf_info's path fields are one byte each");
+// most CH_WEBPKI_CHAIN_MAX. anchor_index is a size_t, as anchor_count is,
+// so no assertion bounds it.
+_Static_assert(CH_WEBPKI_CHAIN_MAX <= UINT8_MAX, "webpki_leaf_info.path_entries is one byte");
 
 // One CertificateEntry list, framed but not parsed: one pointer and one
 // length per certificate. The walk indexes this array and parses only
@@ -268,8 +267,12 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
     const webpki_spki leaf_key = cert.spki;
 
     // read counts the certificates parsed so far; the leaf is the first.
-    // CH_WEBPKI_CHAIN_MAX caps them, so an unauthenticated peer forces
-    // at most that many signature checks before the walk gives up.
+    // CH_WEBPKI_CHAIN_MAX caps them. A step checks the signature of the
+    // certificate in hand under each anchor whose Name is its issuer, and
+    // then under the next entry. Let k be the largest number of the
+    // caller's anchors that share one Name. An unauthenticated peer then
+    // forces at most k + 1 signature checks in a step, and
+    // CH_WEBPKI_CHAIN_MAX * (k + 1) - 1 in a walk (docs/webpki.md).
     // below counts the issuers among them that are not self-issued, the
     // number a pathLenConstraint bounds.
     size_t below = 0;
@@ -280,7 +283,7 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
             // The path the pins may name (webpki_pin.h): the read
             // entries, the leaf first, and the anchor that verified.
             out->path_entries = (uint8_t)read;
-            out->anchor_index = (uint8_t)anchor;
+            out->anchor_index = anchor;
             return CH_OK;
         }
         if (read == CH_WEBPKI_CHAIN_MAX || read == entries.count) {

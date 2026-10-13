@@ -11634,3 +11634,315 @@ does nothing more.
     - **A wipe of the powers alone**, 640 bytes. The register of the first
       AES pass lives across the loop, and both compilers put it on the
       stack.
+
+131. **A server role decodes its PEM certificate chain and P-256 private
+    key, and a `TRUST=webpki` object its CA bundle, with three calls.**
+    colibri takes a server's identity as DER certificates, a 64-byte point
+    and a 32-byte scalar. It takes a client's anchors as Name and
+    SubjectPublicKeyInfo TLVs. Operators hold both as PEM files, so every
+    program converted them by hand
+    ([colibri#97](https://github.com/c4milo/colibri/issues/97)). On
+    2026-10-12 Camilo ruled that the decoder belongs here, under this
+    tree's proof rules
+    ([#192](https://github.com/c4milo/chapulin/issues/192)). On 2026-10-13
+    he ruled on six questions that the issue and its first review left
+    open. Later that day he ruled on a seventh, the labels in a bundle,
+    which the second review left open.
+
+    - **The calls.** `ch_chain_from_pem` writes the certificates into a DER
+      room that the caller gives. It reads the outer fields of each one and
+      points a `ch_cert` array at them. `ch_p256_key_from_pem` writes the
+      scalar and its point, and refuses a key whose point is not the point
+      of the end-entity certificate. `ch_anchors_from_pem` writes the roots
+      into a DER room and points a `ch_trust_anchor` array at the subject
+      and the key of each root. Each call returns `CH_OK` or `CH_EINVAL`,
+      does no I/O and keeps no pointer (`pem_files.h`).
+    - **Which objects.** Camilo ruled that every object with a server role
+      holds the chain call and the key call. Every `TRUST=webpki` object
+      holds the bundle call. So colibri's two `ROLE=both TRUST=webpki`
+      objects hold all three. Each symbol names its transport, by entry
+      61's rule. Each header declares a call only under the defines of the
+      objects that define it (INV-36).
+    - **Text outside the blocks.** Camilo ruled that a bundle skips text
+      before its blocks, between them and after them. curl's `cacert.pem`
+      carries a name and a line of `=` above each root. He then ruled that
+      a BEGIN line of any label but CERTIFICATE refuses the bundle, so that
+      no root drops out without an error. The rule has five parts
+      (`pem_blocks.h`):
+      - RFC 7468 section 3 writes a pre-encapsulation boundary as
+        `-----BEGIN `, a label and `-----`. A BEGIN line here is a line
+        that starts with the first 11 bytes, `-----BEGIN `, whatever
+        follows them.
+      - The call reads a block at `-----BEGIN CERTIFICATE-----`. Every
+        other BEGIN line refuses the bundle. OpenSSL's TRUSTED CERTIFICATE
+        and the legacy X509 CERTIFICATE are such lines. So is a broken
+        boundary, for example one with four dashes at its end.
+      - `-----BEGIN ` at any other byte of a line refuses the bundle too.
+        Otherwise a block behind a UTF-8 byte-order mark or an indent
+        would go with its text. The bundle would then read without that
+        root and return `CH_OK`. So a comment that holds `-----BEGIN `
+        refuses the bundle.
+      - Every other line is text, and the call skips it. A comment that
+        holds `-----BEGIN` with no space after it is such a line.
+      - The 11 bytes match byte for byte. RFC 5234 section 2.3 reads a
+        quoted ABNF string without regard to case, so RFC 7468's grammar
+        also admits `-----begin `. The call does not. A line that differs
+        inside the 11 bytes is text: `-----begin `, a tab after `BEGIN`,
+        or four dashes at its start. The call skips the block's body and
+        END line with it, since an END line outside a block is text. So the
+        bundle reads without that root. OpenSSL 4.0.3 and LibreSSL 3.3.6
+        also read no root from such a block.
+
+      So the call reads every block that opens at a BEGIN line, or it
+      refuses the bundle. No such block drops out without an error. A
+      block whose first line breaks inside the 11 bytes drops out, as it
+      does under OpenSSL. `openssl x509` reads one TRUSTED CERTIFICATE
+      block and writes it as a CERTIFICATE block with the same DER. The
+      output holds none of the trust fields that OpenSSL adds. A chain file
+      and a key file stay as strict as `pem_decode_certificate`: CR and LF
+      alone outside the blocks.
+    - **The rooms are the caller's.** Camilo ruled that the caller gives
+      each room and its size. The size of a DER room is its length in
+      bytes. The size of an array is its number of `ch_cert` or
+      `ch_trust_anchor` entries. A call fills the rooms to their sizes and
+      refuses a file that does not fit. It does not cut the file short. The
+      blocks of a file share its DER room, so one certificate may fill it.
+      No compile-time cap remains. `CH_PEM_CHAIN_MAX`,
+      `CH_PEM_CHAIN_DER_MAX`, `CH_PEM_BUNDLE_DER_MAX`, the text caps of a
+      chain and a bundle, and the cap of one block, `CH_PEM_CERT_MAX`, are
+      gone. The text caps came from the fixed rooms. Now the rooms bound
+      each write, and `rbuf` bounds each read. A text cap from the caller's
+      sizes would be a computation that can overflow. It would refuse no
+      file that the rooms take. A file's DER is at most three quarters of
+      its text. So a room of `pem_len / 4 * 3` bytes holds the DER of any
+      file, as `pem_files.h` says. The QUIC Interop Runner's
+      `amplificationlimit` test gives a server a chain of nine
+      certificates, 9,661 bytes. Its leaf of 5,515 bytes carries 24 names.
+      `bin/pem_files_test` reads a leaf of that size.
+    - **The one bound that remains.** A chain holds at most 255
+      certificates, because `ch_identity`'s `chain_count` is a `uint8_t`.
+      A server sends no more. So the chain call refuses a 256th block,
+      whatever entries the caller gives. A count of anchors has no bound:
+      it is a `size_t`, and the call stops at the caller's entries. No
+      computation multiplies a count.
+    - **`ch_cfg` takes any anchor count.** Camilo ruled that a full system
+      bundle must work end to end. So `CH_WEBPKI_ANCHOR_MAX` and its cap of
+      12 on `ch_cfg.anchor_count` are gone. The cap bounded four things.
+      `webpki_cfg.c`'s anchor rule now requires one anchor or more.
+      `webpki_leaf_info.anchor_index` was a `uint8_t`, and is now a
+      `size_t`, as `anchor_count` is. `path_entries` moved beside `alg`, so
+      the struct keeps its size: 536 bytes on arm64 and 524 on a 32-bit
+      target. `ch_tls` keeps its size too. Three proofs read anchors:
+      `quic_config_webpki`, `quic_config_webpki_suite` and
+      `webpki_ticket`. Each now gives the formula an array of 12 entries of
+      its own. The rule reads each entry the same way, so 12 entries stand
+      for any count. The test arrays and the differential take their own
+      sizes. `bin/diff_webpki_chain` adds a row of 40 anchors, in which the
+      anchor that verifies sits past index 12. colibri sizes its array of
+      anchors by `CH_WEBPKI_ANCHOR_MAX` (`src/tls/config.zig`), so its
+      build fails against this tree. Its configuration must take a room
+      that its caller sizes. For example, it can point `ch_cfg.anchors`
+      at the entries that `chapulin.Anchors` filled.
+    - **What the chain walk costs.** At each step the walk compares each
+      anchor's Name with the issuer's Name. It verifies a signature only
+      under an anchor whose Name matches. On the M1, a host object walked
+      the corpus r2 chain under N anchors, its root last. The other anchors
+      came from Homebrew's `ca-certificates` bundle of 192 roots. The load
+      average was near 20. Over 20,001 walks, the median took 338 µs for 12
+      anchors and 335 µs for 150, a ratio of 0.99. The fastest walk
+      took 310 µs and 311 µs. So the comparison of 138 more Names costs
+      less than the noise of the two signature checks, which take the
+      walk's time. That bundle decodes whole, and so does
+      `/etc/ssl/cert.pem`, with 128 roots under LibreSSL's text lines.
+    - **The signature checks a peer forces.** A step checks the signature
+      under each anchor whose Name is the issuer's Name. Then it checks
+      the signature under the next entry. Let k be the largest number of
+      the caller's anchors that share one Name. A peer then forces at most
+      k + 1 checks in a step. A walk has `CH_WEBPKI_CHAIN_MAX` (3) steps,
+      and its last step checks no next entry. So a walk runs 3(k + 1) - 1
+      checks at most. In Homebrew's bundle two
+      roots share one Name, so k is 2. A chain of three certificates
+      whose issuer is that Name each time ran 8 checks before
+      `unknown_ca`. Under one anchor of that Name it ran 5. The cap of 12
+      bounded k before. Now the caller's bundle bounds it.
+    - **What the configuration hash costs.** Each client init hashes the
+      Name and the key of every anchor into `ch_tls.ticket_config_hash`
+      (`webpki_ticket.h`). `ch_connect`, `ch_record_init` and
+      `ch_quic_init` each do so. A connect that presents a ticket hashes
+      them once more, in `webpki_resumption_ok`. The hash takes no `cpu`
+      value, so it runs the portable SHA-256. Its cost grows with the
+      count of anchors, and at 150 anchors it costs more than the walk.
+      The table gives the cost of one call on the M1. The anchors came
+      from curl's `cacert.pem` and generated roots, with 63,424 bytes of
+      Names and keys at 150. The chain held a P-256 leaf and an RSA-2048
+      intermediate. Its P-256 root came last among the anchors. Load does
+      not change an instruction count.
+
+      | one call | 12 anchors | 150 anchors |
+      |---|---:|---:|
+      | `webpki_ticket_config_hash`, instructions | 266,000 | 3,460,000 |
+      | the walk, instructions | 959,000 | 968,000 |
+      | `webpki_ticket_config_hash`, median | 26.8 µs | 348 µs |
+      | the walk, median | 79.2 µs | 79.7 µs |
+
+      A full handshake against this tree's server took 3,535 µs at its
+      fastest under 12 anchors and 3,727 µs under 150. Only a session
+      whose `on_ticket` is set reads the hash (`handshake_post.c`). Every
+      session computes it at init, as before this change.
+      [#194](https://github.com/c4milo/chapulin/issues/194) follows up the
+      cost of this hash at each connect.
+    - **The key call's `cpu` argument.** Camilo ruled that a host object
+      computes the public point on the wide P-256 field when the caller
+      states `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs. The
+      call takes a `uint32_t cpu` as its first argument, the value the
+      `_cpu` entries take. It does not take a `const ch_cfg *` as
+      `ch_srv_check` does. The caller calls it before it can fill a
+      `ch_cfg`, because the configuration points at the key. And the call
+      reads one value. `cpu.h`'s `cpu_value_ok` now holds init's rule for a
+      value, and `cpu_bits_ok` calls it. A host object refuses a value
+      without `CH_CPU_PROBED` or with a bit that it does not define. A
+      device object defines no bit and holds one multiply. So it takes 0
+      alone and refuses every other value. The Zig call takes the same
+      `?Cpu` that `Server.cpu` takes. `bin/pem_files_host` counts the calls
+      into each copy of the P-256 files under each value.
+    - **The EC PARAMETERS block.** Camilo ruled that a key file may hold
+      one EC PARAMETERS block before its EC PRIVATE KEY block. The block
+      must name prime256v1. The Interop Runner's `certs.sh` and `openssl
+      ecparam -genkey` write that shape. `pem.c` reads a fourth label.
+      `x509_pem_parameters_are_p256` compares the block's DER with
+      prime256v1's OBJECT IDENTIFIER, byte for byte. Line breaks that end
+      in LF lie between the two blocks, as between a chain's blocks
+      (`pem_skip_line_breaks`). The call refuses any other curve, explicit
+      parameters and a second block. It refuses the block above a PKCS #8
+      key or below the key, and any text. `CH_PEM_KEY_TEXT_MAX` grows from
+      364 to 452 bytes for the block.
+    - **The files.** `pem.c` reads one block of four labels and keeps
+      `pem_decode_certificate`'s contract. `pem_blocks.c` reads the text
+      around a run of CERTIFICATE blocks under the two text rules. It reads
+      one block a call (`pem_blocks_next`), so the caller decides where the
+      DER of each block goes and counts the blocks. `x509_pem.c` reads the
+      DER: a certificate's outer fields as far as its key, and the EC
+      PARAMETERS DER. It reads a P-256 key in PKCS #8 (RFC 5958) or SEC 1
+      (RFC 5915) form too. `pem_files.c` holds the three calls. The key readers
+      sit with the certificate reader in a certificate file. Both read DER
+      through `x509_der.c`'s canonical readers, which INV-5 confines to the
+      certificate files. Like `x509_ca.c`, the file returns no verdict on a
+      certificate, and no session calls it. `inv-20-pem-files-entry` holds
+      that.
+    - **What a server object now links.** `srv_cfg.h` said that a
+      `ROLE=server` object links no X.509 reader. Its sessions still read
+      none: a chain goes out as the caller provisioned it. The chain call
+      reads the outer fields of each certificate. The key call reads the
+      leaf's outer fields and its key. Each does so once, before any
+      session. So the call refuses a block of other DER or a certificate
+      with bytes after it, and the clients do not have to.
+    - **The key's grammar.** A PKCS #8 key has version 0, the P-256
+      AlgorithmIdentifier and no attributes. An ECPrivateKey has version 1,
+      a 32-byte scalar and an optional public key. Its curve is optional
+      inside PKCS #8 and required outside it (RFC 5915 section 3). `openssl
+      genpkey`, `openssl ec` and `openssl ecparam -genkey` write those
+      shapes, and `test/pem_fixtures/` holds a file of each. The call
+      refuses ENCRYPTED PRIVATE KEY, since this tree holds no password. It
+      refuses another curve or algorithm, a scalar outside 1 to n - 1, and
+      a public key that is not the scalar's point. `p256_ecdh_keygen`
+      computes the point in constant time, whether or not the file carries
+      one.
+    - **The secret.** The base64 text of a key file spells the scalar.
+      `base64.c` gives each byte a class through masks, with
+      no branch and no index. The class of an alphabet character is its
+      value. `=`, CR, LF, `-` and every other byte have a class above 63.
+      `lint-wide-multiply` holds the count of conditional branches in
+      `base64.c` at zero under every spec it measures. `pem.c`'s body loop
+      branches on the class alone. So each of its tests answers the same
+      for all 64 alphabet characters, whatever compare a compiler writes.
+      Its first loop compared the byte itself with `-`, CR, LF and `=`.
+      Every clang build that the review compiled wrote those four tests as
+      one compare at 44: for arm64, x86-64, Cortex-M3 and riscv32. That
+      compare sent `+` (43) apart from the other 63 characters. On an M1, a
+      body of `A` and `+` took 1.52 times as long as a body of `A` and `B`.
+      Once the loop read classes, the ratio was 1.00. gcc kept a chain of
+      equalities, so no gcc lane showed it. A count of branches cannot tell
+      that branch from `pem.c`'s others. So `inv-16-pem-body-class` holds
+      the source. The body loop takes a byte only as `base64_class`'s
+      argument, and it compares nothing with a character constant.
+      `bin/timing`'s `pem_body` row times a body of `A` against random
+      bodies. The call wipes the decoded DER and its copy of the scalar on
+      every path. `bin/pem_files_test` searches the stack below the call
+      for any 8 bytes of the scalar. The call wipes the base64 accumulator
+      on every path too, and that wipe rests on review. The accumulator
+      holds 4 bytes at most. clang for arm64 keeps it in registers, where
+      no search of the stack finds it. `pem.c` moves from `WIDEMUL_PUBLIC`
+      to `WIDEMUL_CEILING` at zero. `base64.c`, `x509_pem.c` and
+      `pem_files.c` join `WIDEMUL_CEILING` at zero. `pem_blocks.c` reads
+      certificates alone, and it joins `WIDEMUL_PUBLIC`.
+    - **Verification.** The CBMC harnesses are these:
+      - `base64` against RFC 4648's table;
+      - `pem`, `pem_one` and `pem_step` over the labels;
+      - `pem_blocks` over both text rules. Under the bundle's rule the
+        scan asks about each byte in turn, from the text's first byte, and
+        stops at the first `-----BEGIN `;
+      - `x509_pem` and `x509_pem_key` over the readers;
+      - `pem_files` and `pem_files_host` over the calls.
+
+      Each layer stands on the proven contracts of its callees. The Lean
+      modules are `Spec/PemBlocks.lean` and `Spec/PemFiles.lean`.
+      `decode?_eq_decodeOne?` carries `Spec.Pem`'s theorems to the
+      certificate label. `readCertificates?_bounds` holds a run's count and
+      room. `chainFromPem?_bounds`, `anchorsFromPem?_bounds` and
+      `keyFromPem?_sound` hold the calls. `readCertificates?_begins` and
+      `anchorsFromPem?_begins` hold the bundle's BEGIN lines over a whole
+      bundle. In a bundle that the model accepts, `-----BEGIN ` starts
+      only at the start of a line, and CERTIFICATE's BEGIN line starts
+      there. `skipText_ended_clear`, `skipText_block_clear` and
+      `readBlock?_begins` hold the steps. `bin/diff_pem_files` holds the C
+      to them, under random rooms and at each limit and one past it.
+      `bin/pem_files_test` decodes real files and checks each limit at its
+      boundary. The files are the r2 chain, its key as three openssl
+      commands wrote it, and a fresh key from `openssl ecparam -genkey`.
+      They include a curl-style bundle of five public roots and root_p384.
+      The Zig loops run their handshakes on the chain, the key and the
+      anchor that the API decoded from those files.
+
+    Rejected:
+
+    - **Text skipped in a chain or a key file**, which Camilo ruled out: a
+      file that holds a key holds nothing else.
+    - **A search of the certificate for the expected key's bytes.** It
+      reads no grammar, and the same bytes in an extension would match.
+    - **Fixed rooms.** The first form gave each call arrays sized by
+      compile-time caps. A chain took twelve certificates in 12,288 bytes,
+      and a bundle took twelve roots of 3,072 bytes each. A system bundle
+      of 150 roots or more did not fit. The cap of 12 on
+      `ch_cfg.anchor_count` refused it too. Camilo's rulings of 2026-10-13
+      replaced them.
+    - **A cap of 255 or 65,535 anchors, from a narrow `anchor_index`.** The
+      field is the one place that stores a count of anchors, and a `size_t`
+      costs no byte there.
+    - **The session's `const ch_cfg *` as the key call's `cpu` argument.**
+      The configuration points at the key, so the caller has no complete
+      `ch_cfg` when it calls.
+    - **No `cpu` argument in a device object.** One signature for every
+      object keeps one Zig call and one C call. A device object takes 0,
+      the value that `cpu.h`'s `CH_CFG_CPU` gives a call in a device
+      object.
+    - **A chain held to the client's limits.** The first form took four
+      certificates of up to 3,072 bytes each, the limits of this tree's
+      client. It refused chains that a server sends.
+    - **A byte-order mark that the call skips.** It widens the grammar for
+      one editor's habit. A refusal of the file reports it, and the
+      operator saves the file again without the mark.
+    - **A bundle that skips a block under another label.** The first form
+      read a TRUSTED CERTIFICATE or X509 CERTIFICATE block as text. A
+      bundle of such blocks then read without those roots and returned
+      `CH_OK`. Camilo ruled it out.
+    - **The whole RFC 7468 boundary as the test of a BEGIN line.** Then a
+      line that starts with `-----BEGIN ` and breaks after those 11 bytes
+      would be text, for example one with four dashes at its end. Its
+      block would go with it, and the bundle would read without that root.
+      The 11-byte test refuses such a line. A line that breaks inside the
+      11 bytes is text under both tests.
+    - **Forwarders of the chain and key calls in `chapulin.hpp`.** The
+      wrapper carries no server API, and no server object runs
+      `cxx-check`. It forwards `ch_anchors_from_pem` as
+      `anchors_from_pem`, which the `TRUST=webpki` build's `cxx-check`
+      runs.

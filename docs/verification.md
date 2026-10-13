@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-103 of the 138 C sources in the tree root are compiled into a
+107 of the 142 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -2446,14 +2446,14 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   which are `webpki_cfg_ok`'s, SPKI pins included, plus RFC 9001's
   (`docs/decisions.md` entry 64). `quic_config_ok`:
   - is safe over any configuration;
-  - reads no anchor or protocol entry past its cap, whatever the count
-    says;
+  - reads no protocol entry past its cap, whatever the count says, and
+    no anchor past the count, which no cap bounds (decision 131);
   - runs `webpki_resumption_ok` only once the pin, hostname and anchor
     rules hold;
   - answers `CH_OK` only for a configuration that keeps the rules
     `webpki_cfg.h` and `quic.h` state: 0 to `CH_SPKI_PIN_MAX` pins;
-    either pins alone or 1 to `CH_WEBPKI_ANCHOR_MAX` anchors with a
-    hostname and a clock; no pin slot; a ticket `webpki_resumption_ok`
+    either pins alone or 1 anchor or more with a hostname and a clock;
+    no pin slot; a ticket `webpki_resumption_ok`
     took or no PSK; with `resumption` set, a ticket age no older than
     the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds, and a
     ticket QUIC version equal to the original version; 1 to
@@ -2476,7 +2476,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
 - **Bound:** every pointer NULL or set, every count and length any
   `size_t`, the ticket age any `uint64_t`, the lifetime and both versions
-  any `uint32_t`, anchor names and keys ≤ 4 B.
+  any `uint32_t`, anchor names and keys ≤ 4 B. A set anchors pointer
+  holds its count, up to the harness's array of 12 entries. The rule
+  reads each entry the same way, so 12 entries stand for any count.
 - **Not proved:** which hostnames pass, which bindings match and which
   names repeat. Those are tested.
 
@@ -2500,26 +2502,46 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 ### Certificates: provisioning and the ca modes
 
+#### base64
+
+- **Harness:** `base64` (fast)
+- **Proves:** `base64_class` returns exactly what RFC 4648 §4's alphabet
+  table returns, on all 256 bytes. It returns a class above 63 of its own
+  for each of `=`, CR, LF and `-`, and one for every other byte. It reads
+  the character through masks alone, because a key file's characters are
+  a secret (decision 131). [Constant-time behavior](#constant-time-behavior)
+  says what holds the emitted code to that.
+- **Bound:** unbounded: one byte, all 256 values.
+
 #### pem_step
 
 - **Harnesses:** `pem_step` (fast), `pem_step_ecdsa` (fast)
 - **Proves:**
-  - `b64_value` returns exactly what RFC 4648 §4's alphabet table
-    returns, on all 256 bytes;
   - `pad_ok` is exactly §3.5's rule;
-  - one body character preserves the decoder's accounting invariant
-    from any state it admits, so induction carries that invariant to any
-    input length.
+  - one body character's class, any byte, keeps the decoder's invariant
+    on its counts from any state it admits. So induction carries that
+    invariant to any input length. `base64_step` accepts no class above
+    63 but `BASE64_PAD`;
+  - each boundary line of each of the four labels is read safely at any
+    input length: CERTIFICATE, PRIVATE KEY, EC PRIVATE KEY and EC
+    PARAMETERS;
+  - `pem_begins_boundary` leaves its reader where it was. It answers 1
+    exactly when the input opens with the 11 bytes of `-----BEGIN `.
 - **Bound:** unbounded: one character, any state.
 
 #### pem
 
-- **Harnesses:** `pem` (fast), `pem_ecdsa` (fast)
+- **Harnesses:** `pem` (fast), `pem_ecdsa` (fast), `pem_one` (fast)
 - **Proves:** the PEM decoder stays safe on hostile bytes at the shipped
   caps and honors its contract: a success yields a non-empty length
   inside the caller's array, every rejection yields zero, and an input
-  over `CH_PEM_MAX` is refused before a byte is read.
-- **Bound:** inputs ≤ 64 B.
+  over `CH_PEM_MAX` is refused before a byte is read. `pem_one` proves
+  the same of `pem_decode_one` under the three labels of a key file. It
+  writes into the key's room of `CH_PEM_KEY_DER_MAX` bytes, or the EC
+  PARAMETERS block's room of `CH_PEM_PARAMETERS_DER_MAX` bytes. An
+  assertion that no block of that label is accepted in that room fails.
+- **Bound:** inputs ≤ 64 B, which holds an accepted block of every
+  label.
   [PEM input longer than 64 bytes](#pem-input-longer-than-64-bytes)
   states what holds past that.
 
@@ -2553,6 +2575,157 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   deliberately returns lengths outside the real range, so the entry's
   own bound check is what keeps the copy in range.
 - **Bound:** any input; decoded certificate ≤ `CH_X509_MAX`.
+
+### Certificates: the PEM files an operator provisions
+
+The three calls of `pem_files.h` (decision 131) are proved in layers.
+Each harness stubs the layer below to the contract that the layer's own
+harness proves.
+
+#### pem_blocks
+
+- **Harness:** `pem_blocks` (fast)
+- **Proves:** `pem_blocks_init` and `pem_blocks_next` stay safe on any
+  text under both text rules and into a room of any size. The driver
+  makes the calls a caller makes, until the text ends or a rule breaks.
+  The two calls honor their contract:
+  - a read names the DER this call appended, 1 byte or more, inside the
+    room, with the writer's sticky error clear;
+  - an end appends nothing and leaves the reader empty;
+  - every call returns one of the three values.
+
+  Under the bundle's rule (decision 131) the scan asks
+  `pem_begins_boundary` about each byte in turn and skips none unasked:
+  - its first question is about the text's first byte. That is the
+    input's first byte, or after a block the byte after the LF that ends
+    the END line's line;
+  - each next question is about the byte after the last one;
+  - a call that ends the run asked about each byte to the end, or had no
+    byte to ask about.
+
+  The scan stops at the first byte where the answer is 1. A block opens
+  only there, and only at the start of a line. A call that met
+  `-----BEGIN ` never returns an end. [pem_step](#pem_step) proves the
+  answer exact, so the text a bundle skips holds no `-----BEGIN `.
+
+  `pem_skip_line_breaks` returns 0, CR or LF over any reader, and stops
+  at the end or at another byte. `pem.c`'s two calls are stubbed to what
+  [pem](#pem) and [pem_step](#pem_step) prove.
+- **Bound:** text ≤ 64 B, which holds two blocks of the stub's 27 bytes
+  and the gaps around them. The driver makes three calls, and a room
+  holds up to 8 bytes. An assertion that no call after the first reads a
+  block fails under each rule. Under the bundle's rule, assertions that
+  `-----BEGIN ` inside a line never refuses, and that the scan after a
+  block never ends the run, fail too. Two mutants of `pem_blocks.c` fail
+  two assertions and no other. One assertion holds the first question,
+  and the other holds a call that asked about no byte. One mutant skips
+  the text's first byte unasked, and the other skips its first line.
+  `bin/pem_files_test` catches both too.
+- **Not proved:** that `pem_read_block` refuses a BEGIN line of another
+  label, since the stub answers either way. `Spec/PemBlocks.lean`'s
+  `readBlock?_begins` proves it of the model's block reader.
+  `readCertificates?_begins` proves the rule over a whole bundle of the
+  model: `-----BEGIN ` starts only at the start of a line, and
+  CERTIFICATE's BEGIN line starts there. `bin/diff_pem_files` and
+  `bin/pem_files_test` hold the C to them.
+
+#### x509_pem
+
+- **Harnesses:** `x509_pem` (fast), `x509_pem_key` (fast)
+- **Proves:**
+  - the certificate walk stays safe on any certificate of up to 2^40
+    bytes. On success it points the subject Name and the
+    SubjectPublicKeyInfo at whole TLVs of two bytes or more inside the
+    certificate, the Name first. The DER primitives are stubbed to what
+    [x509der](#x509der) proves;
+  - the P-256 key compare returns 1 only for exactly 91 bytes, over any
+    input of up to 2^40 bytes;
+  - the PKCS #8 and SEC 1 readers stay safe on any DER of up to one byte
+    past `CH_PEM_KEY_DER_MAX`, over the real primitives. Any point they
+    return lies inside the DER, and a refusal writes no byte of the
+    scalar;
+  - `x509_pem_parameters_are_p256` stays safe on any DER of up to one
+    byte past `CH_PEM_PARAMETERS_DER_MAX`, and answers 1 only for the 10
+    bytes of prime256v1's OBJECT IDENTIFIER.
+- **Bound:** each input is a heap object of its exact length. The
+  certificate walk and the key compare take up to 2^40 bytes, which
+  stands for no cap. The key call passes its caller's leaf with no cap of
+  its own. A
+  key's DER and an EC PARAMETERS DER take up to one byte past their real
+  caps.
+
+#### pem_files
+
+- **Harnesses:** `pem_files` (fast), `pem_files_host` (fast)
+- **Proves:** the three calls stay safe and honor their contracts over
+  any input and any rooms the caller gives. Every reader below them is
+  stubbed to its proven contract, and `p256_ecdh_keygen` to its header's.
+  - A chain's certificates lie back to back inside the caller's DER room,
+    1 to `chain_max` of them, and each one's outer fields were read.
+  - A bundle's Names and keys lie inside the caller's DER room, 1 to
+    `anchor_max` of them.
+  - A key is accepted only under a `cpu` value the object takes and
+    under the text cap. Its point is the one `p256_ecdh_keygen` wrote,
+    under the multiply answer that `cpu` gives, and the leaf was asked
+    about that point and answered yes.
+  - An EC PARAMETERS block is read only at the first byte, and only the
+    EC PRIVATE KEY label and the SEC 1 reader follow it. The check of
+    the block reads the DER that the block wrote, and no other byte of
+    its room.
+  - Every refusal zeroes the key's two outputs and counts 0.
+
+  `pem_files` runs in a device object, where a `cpu` value of 0 alone is
+  taken. `pem_files_host` runs in a host object, where the value needs
+  `CH_CPU_PROBED`, holds no undefined bit, and picks the multiply. The
+  stub of the outer-field reader puts the Name and the key anywhere in
+  the certificate, the Name first, as [x509_pem](#x509_pem) proves.
+- **Bound:** any input; up to 4 entries and 16 bytes of DER room. Each
+  pass of a call's loop over the blocks runs the same steps, so these
+  sizes stand for any rooms a caller gives. Four probes fail in both
+  objects. So the formulas reach a chain and a bundle that fill their
+  entries, and a key with an EC PARAMETERS block and one without.
+- **Not proved:** the composition's values, and the chain's bound of 255
+  certificates, which lies past the formula's entries.
+  `bin/diff_pem_files` holds the three calls to `Spec/PemFiles.lean`.
+  `bin/pem_files_test` decodes real files, holds 255 certificates and
+  refuses 256, and searches the stack the key call leaves.
+- **Violations:** each of these mutants is caught by
+  `bin/pem_files_test`:
+  - the grammar: `inv05-pem-sec1-curve-optional`,
+    `inv05-pem-sec1-curve-unchecked`, `inv05-pem-sec1-trailing-field`,
+    `inv05-pem-pkcs8-outer-length-unchecked`,
+    `inv05-pem-cert-outer-length-unchecked`,
+    `inv05-pem-bundle-lone-cr-ends-line`,
+    `inv05-pem-bundle-inner-begin-skipped` and
+    `inv05-pem-bundle-other-label-skipped`;
+  - the EC PARAMETERS block: `inv05-pem-key-parameters-any-curve`,
+    `inv05-pem-key-parameters-trailing-byte`,
+    `inv05-pem-key-parameters-gap-unchecked` and
+    `inv05-pem-key-parameters-before-pkcs8`;
+  - the caller's rooms and the bound of 255:
+    `inv05-pem-chain-entries-unchecked`,
+    `inv05-pem-anchors-entries-unchecked`,
+    `inv05-pem-chain-count-past-255`,
+    `inv05-pem-chain-room-one-byte-over` and
+    `inv05-pem-anchors-room-one-byte-over`;
+  - the composition: `inv05-pem-key-leaf-unchecked`,
+    `inv05-pem-key-file-point-unchecked`, `inv05-pem-chain-unframed`,
+    `inv05-pem-anchors-skip-non-certificate`,
+    `inv05-pem-chain-skips-text` and `inv14-pem-key-cpu-unchecked`;
+  - the anchor index past one byte: `inv33-webpki-anchor-index-one-byte`;
+  - the wipes: `inv17-pem-key-der-not-wiped` and
+    `inv17-pem-key-scalar-not-wiped`.
+
+  `bin/pem_files_host` catches `inv16-pem-key-multiply-ignores-cpu`.
+  The `pem_files` proof catches `inv05-pem-key-parameters-length-unchecked`.
+  That mutant checks the whole room of the EC PARAMETERS block. Then
+  only a byte that an earlier call left in the room tells it apart, so
+  no test catches it on every compiler.
+  Where the calls live is held by `inv05-pem-reader-in-raw-client`
+  (`make lint-trust-separation`), `inv20-pem-files-called-by-srv`
+  (`make lint-invariants`), `inv35-anchors-not-transport-named`
+  (`lib-check`) and `inv36-header-pem-files-outside-server`
+  (`make lint-zig-build`).
 
 ### Certificates: TRUST=webpki
 
@@ -2888,8 +3061,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   - it answers 0 or 1, and 1 only for a config whose PSK fields are all
     unset or that presents a ticket of the shape `webpki_ticket.h`
     states.
-- **Bound:** hostname ≤ 253 B, 1 to 12 anchors with name and spki ≤ 4 B
-  each, every PSK field NULL or set.
+- **Bound:** hostname ≤ 253 B, 0 to 12 anchors with name and spki ≤ 4 B
+  each, every PSK field NULL or set. No cap bounds the anchor count
+  (decision 131). The hash reads each anchor the same way, so 12 anchors
+  stand for any count.
 - **Not proved:** which bindings match. SHA-256 is the contract stub;
   `test/webpki_resume_cases.h` tests that against a known answer
   computed outside this tree.
@@ -2921,9 +3096,11 @@ shape bounded model checking pays most for. Its cost was measured at
 roughly the third power of the input length, so a proof at the shipped
 3,136-byte cap would not finish.
 
-64 is the lowest bound that still works. The shortest accepting input is
-58 bytes, and at 56 the success arm is unreachable, so its assertion
-passes vacuously while the run still reports success.
+64 is the lowest bound that still works. The shortest CERTIFICATE input
+that the decoder accepts is 57 bytes, and the shortest EC PRIVATE KEY
+input is 63, because the END line needs no terminator. At 56 the success arm is
+unreachable, so its assertion passes vacuously while the run still
+reports success.
 
 `proof/pem_harness.c` states what holds past 64:
 
@@ -2932,8 +3109,17 @@ passes vacuously while the run still reports success.
 - `pem_step` proves the per-character invariant from an arbitrary state.
 
 What does not carry over is the boundary sequence at lengths this bound
-never gets to. `test/diff_pem.h` exercises that up to `CH_PEM_MAX`
-against the Lean oracle instead.
+never gets to. `test/diff_pem.h` runs that up to `CH_PEM_MAX` against the
+Lean oracle instead. `bin/diff_pem_files` does the same for the three
+labels of a key file and for runs of blocks under both text rules. It
+runs each limit of the three calls at its last admitted value and one
+past it:
+
+- a block of 4,096 bytes of DER in a room of that size;
+- a chain whose one certificate fills a room of 12,288 bytes;
+- thirteen blocks in thirteen entries, and in twelve;
+- a chain of 255 certificates, and one of 256;
+- a key file at `CH_PEM_KEY_TEXT_MAX`, with its EC PARAMETERS block.
 
 No fuzz target covers this parser, on purpose. The differential drives
 the same domain against an oracle that checks the verdict and the bytes,
@@ -3436,6 +3622,64 @@ either (INV-26).
 `make timing` checks constant time with a Welch's t-test, which is
 evidence, not proof. P-256 and RSA verification are variable-time on
 purpose, since all of their inputs are public.
+
+#### A key file's characters
+
+A PRIVATE KEY or EC PRIVATE KEY block is the private scalar in base64,
+so each of its characters is a secret (decision 131). `base64.c` maps a
+byte to its class through the sum of nine range masks, with no branch
+and no table. An alphabet character's class is its value. `=`, CR, LF,
+`-` and every other byte have a class above 63. `pem.c`'s body loop
+reads each byte through `base64_class` and branches on the class alone.
+So each of its tests compares the class with a constant above 63. Every
+such test answers the same for all 64 alphabet characters, whatever
+compare a compiler writes for it.
+
+`pem.c`'s first loop compared the byte itself with `-`, CR, LF and `=`.
+Each clang build that the review compiled wrote those tests as one
+compare at 44, for arm64, x86-64, Cortex-M3 and riscv32. That compare
+sent `+` (43) one way and the other 63 characters the other. On an M1, a
+body of `A` and `+` took 1.52 times as long as one of `A` and `B`. gcc
+13.3 and the Arm gcc kept a chain of equalities, so the gcc lanes did
+not show it.
+
+These checks hold the rule:
+
+- `.semgrep/invariants.yml`'s `inv-16-pem-body-class` refuses a byte
+  that `body_loop` takes from `rb_u8` other than as `base64_class`'s
+  argument. It refuses a compare with a character constant in
+  `body_loop` or `base64_step` too. `inv16-pem-body-compares-character`
+  writes the byte's tests back, and `make lint-invariants` catches it.
+- `bin/timing`'s `pem_body` row, which `make timing` runs, times a body
+  of `A` alone against bodies of random alphabet characters.
+- `base64.c` sits in `BRANCH_SRCS`. `make lint-wide-multiply` holds its
+  count of conditional branches at zero under each of the three clang
+  32-bit specs and both 64-bit specs. `lint-wide-multiply-gcc` holds it
+  under the five gcc specs. So a compiler that writes a mask as a jump
+  fails the lint. `inv16-base64-class-branches` writes two of
+  `base64_class`'s ranges as an `if`, and `make lint-wide-multiply`
+  catches it.
+- `pem.c` is not in `BRANCH_SRCS`. Its branches on a class and on the
+  text's structure are legitimate, and a count cannot tell them from a
+  branch on a byte. The Semgrep rule refuses that branch at the source.
+- `pem.c`, `x509_pem.c` and `pem_files.c` hold zero wide multiplies and
+  divisions in `WIDEMUL_CEILING`.
+
+The key call wipes the decoded DER and its copy of the scalar on every
+path. `bin/pem_files_test` searches the 3,072 bytes of stack below the
+key call for any 8 bytes of the scalar, in either byte order. It does so
+after a success and after a refusal. `inv17-pem-key-der-not-wiped` and
+`inv17-pem-key-scalar-not-wiped` each drop one wipe, and the test catches
+each. The call wipes the base64 accumulator on every path too, and that
+wipe rests on review. The accumulator holds 4 bytes at most, under the
+test's runs of 8 bytes. With the wipe removed, clang for arm64 at `-O2`
+keeps it in callee-saved registers. So no search of the stack could find
+it there.
+
+In a host object the key call computes the point under the multiply
+answer that its `cpu` value gives. `bin/pem_files_host` counts the calls
+into each copy of the P-256 files, and
+`inv16-pem-key-multiply-ignores-cpu` fails it.
 
 #### Cores with no hardware multiplier
 
@@ -6247,7 +6491,9 @@ dNSName of its own subjectAltName. Every step of the path is:
 
 `test/webpki_chain_test.c` and `test/diff_webpki_chain.h` add evidence
 at the bytes: the 25 minted chains, the 5 captured ones, and their
-clock, hostname, anchor, entry and byte mutations.
+clock, hostname, anchor, entry and byte mutations. No cap bounds the
+anchor count (decision 131). So each row also runs under 40 anchors, its
+own after decoys, and the anchor that verifies sits past index 12.
 
 ### The quality of the random bytes
 
@@ -6427,7 +6673,20 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
    random length. Each runs with the answer apart from y and over it.
    Then the same 1,838 through `p256_wide_inverse_public` against
    `inversePublic`.
-5. The AVX-512 IFMA rows, where the compiler passes the host test, on
+5. The PEM rows, 6,722 comparisons from the fixed seed, of which 1,689
+   are acceptances. `bin/diff_pem_files` holds `pem.c`'s four labels,
+   `pem_blocks.c`'s two text rules, `x509_pem.c`'s readers and
+   `pem_files.c`'s three calls to `Spec/PemBlocks.lean` and
+   `Spec/PemFiles.lean`. It runs them over random parts, each broken one
+   rule at a time and at random, under random rooms. Each limit runs at
+   its last admitted value and one past it. The limits are the caller's
+   DER room and entries, a chain's 255 certificates, and the key file's
+   text cap.
+   Half of the key files carry an EC PARAMETERS block, whole or broken.
+   A bundle's anchors reply with each Name and key apart. The key rows
+   take their point from `p256_ecdh_keygen`, and the spec takes its own
+   from `Spec.P256.pubKey?`.
+6. The AVX-512 IFMA rows, where the compiler passes the host test, on
    each kernel's text compiled over its lane model: `bin/diff_rsa_ifma`'s
    ([The AVX-512 IFMA public operation](#the-avx-512-ifma-public-operation)),
    and `bin/diff_poly1305_ifma`'s 4,001, which hold `compute_powers` and

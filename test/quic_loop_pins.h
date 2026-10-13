@@ -169,35 +169,6 @@ static void test_pin_count_boundary(void) {
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
 }
 
-// The CH_WEBPKI_ANCHOR_MAX boundary beside a pin, which quic_config.c
-// now takes from webpki_cfg_ok: the root last of CH_WEBPKI_ANCHOR_MAX
-// anchors verifies the chain, and one anchor more is refused.
-static void test_anchor_count_boundary(void) {
-    static ch_trust_anchor many[CH_WEBPKI_ANCHOR_MAX + 1];
-    static ch_quic probe;
-    ch_cfg scfg;
-    ch_cfg ccfg;
-    const webpki_corpus_anchor *impostor = webpki_corpus_anchors_impostor_p384;
-    const webpki_corpus_anchor *root = webpki_corpus_anchors_root_p384;
-    for (size_t i = 0; i < CH_WEBPKI_ANCHOR_MAX; i++) {
-        many[i] = (ch_trust_anchor){impostor->name, impostor->name_len, impostor->spki,
-                                    impostor->spki_len};
-    }
-    many[CH_WEBPKI_ANCHOR_MAX - 1] =
-        (ch_trust_anchor){root->name, root->name_len, root->spki, root->spki_len};
-    many[CH_WEBPKI_ANCHOR_MAX] = many[CH_WEBPKI_ANCHOR_MAX - 1];
-    webpki_server(&scfg, ticket_key);
-    CHECK(r2_pin(0, pins[0]));
-    pinned_client(&ccfg, root, 1);
-    ccfg.anchors = many;
-    ccfg.anchor_count = CH_WEBPKI_ANCHOR_MAX;
-    CHECK(run_quic(&ccfg, &scfg));
-    pinned_client(&ccfg, root, 1);
-    ccfg.anchors = many;
-    ccfg.anchor_count = CH_WEBPKI_ANCHOR_MAX + 1;
-    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
-}
-
 // A pin on a key the walk did not verify is refused with bad_certificate.
 // Under the impostor anchor, which carries the root's Name over another
 // key, then the root, the chain ends at the root: a pin on the root
@@ -223,6 +194,36 @@ static void test_pin_on_unused_anchor(void) {
     ccfg.anchors = both;
     ccfg.anchor_count = 2;
     check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
+}
+
+// 300 anchors beside a pin: no cap bounds the count (docs/decisions.md
+// 131). Five published roots, whose Names are not the issuer's, repeat;
+// the impostor and the root come last, so the root's index, 299, is past
+// what one byte holds. A pin on the root passes only when the walk wrote
+// that index whole, and a pin on the impostor is refused.
+static void test_many_anchors(void) {
+    static ch_trust_anchor many[300];
+    const webpki_corpus_anchor *last[2] = {webpki_corpus_anchors_impostor_p384,
+                                           webpki_corpus_anchors_root_p384};
+    for (size_t i = 0; i < 300; i++) {
+        const webpki_corpus_anchor *a =
+            i < 298 ? &webpki_capture_anchors_published_roots[i % 5] : last[i - 298];
+        many[i] = (ch_trust_anchor){a->name, a->name_len, a->spki, a->spki_len};
+    }
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    webpki_server(&scfg, ticket_key);
+    for (size_t pinned = 0; pinned < 2; pinned++) {
+        anchor_pin(last[1 - pinned], pins[0]);
+        pinned_client(&ccfg, last[1], 1);
+        ccfg.anchors = many;
+        ccfg.anchor_count = 300;
+        if (pinned == 0) {
+            CHECK(run_quic(&ccfg, &scfg));
+        } else {
+            check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
+        }
+    }
 }
 
 // The server's chain with one more CA certificate after the path: the
@@ -485,7 +486,7 @@ static void test_webpki_pins(void) {
     test_pins_with_anchors_offer();
     test_pins_with_anchors();
     test_pin_count_boundary();
-    test_anchor_count_boundary();
+    test_many_anchors();
     test_pin_on_unused_anchor();
     test_pin_beyond_path();
     test_pins_alone();

@@ -1,0 +1,17 @@
+invariant: INV-36
+file: pem_files.h
+catches: test/zig-build-check.sh
+reason: pem_files.h declares the chain and key calls in every build, so
+  a client object, which compiles no pem_files.c server arm, declares
+  them too, and a program that calls one compiles and then fails to link.
+  zig-build-check.sh translates the header under each object's defines
+  and refuses a declaration the object neither exports nor imports.
+
+--- old
+#ifdef CH_ROLE_SERVER
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_chain_from_pem ch_chain_from_pem_quic_nonblocking
+--- new
+#if 1
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_chain_from_pem ch_chain_from_pem_quic_nonblocking

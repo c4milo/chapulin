@@ -57,10 +57,13 @@
 // entry, each at the certificate cap.
 #define DIFF_CHAIN_ENTRIES ((size_t)CH_WEBPKI_FLIGHT_ENTRIES + 1)
 #define DIFF_CHAIN_LIST_MAX (DIFF_CHAIN_ENTRIES * (CH_WEBPKI_CERT_MAX + 5))
+// The most anchors a case carries: a row's anchors after decoys. So the
+// anchor that verifies sits past the twelve that a cap allowed before
+// docs/decisions.md 131. No cap bounds the count in C or in the spec.
+#define DIFF_CHAIN_ANCHORS 40
 // One request line: the op, the clock, the hostname, the anchors and the
 // list, all in hex.
-#define DIFF_CHAIN_ANCHOR_HEX                                                                      \
-    ((size_t)2 * CH_WEBPKI_ANCHOR_MAX * (256 + 2 * CH_WEBPKI_KEY_MAX + 32))
+#define DIFF_CHAIN_ANCHOR_HEX ((size_t)2 * DIFF_CHAIN_ANCHORS * (256 + 2 * CH_WEBPKI_KEY_MAX + 32))
 #define DIFF_CHAIN_PIN_HEX ((size_t)CH_SPKI_PIN_MAX * (2 * SHA256_LEN + 1))
 #define DIFF_CHAIN_LINE_MAX                                                                        \
     ((size_t)2 * DIFF_CHAIN_LIST_MAX + DIFF_CHAIN_ANCHOR_HEX + DIFF_CHAIN_PIN_HEX + 1024)
@@ -111,13 +114,13 @@ static void diff_chain_list(const webpki_corpus_chain *row, const uint8_t **list
 // The C side: the verdict name, and when the chain verified the leaf key,
 // the path and the pin verdict over it.
 static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap) {
-    ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+    ch_trust_anchor anchors[DIFF_CHAIN_ANCHORS];
     ch_cfg cfg;
     webpki_leaf_info leaf;
     uint8_t alert = ALERT_BAD_CERTIFICATE;
     memset(&cfg, 0, sizeof cfg);
-    if (c->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
-        die("webpki_chain: a case over CH_WEBPKI_ANCHOR_MAX anchors");
+    if (c->anchor_count > DIFF_CHAIN_ANCHORS) {
+        die("webpki_chain: a case over DIFF_CHAIN_ANCHORS anchors");
     }
     for (size_t i = 0; i < c->anchor_count; i++) {
         anchors[i].name = c->anchors[i].name;
@@ -141,8 +144,8 @@ static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap
         static char key_hex[2 * CH_WEBPKI_KEY_MAX + 1];
         (void)hex_encode(key_hex, leaf.key, leaf.key_len);
         int pinned = webpki_path_pinned(c->list, c->list_len, &cfg, &leaf);
-        (void)snprintf(reply, cap, "ok %s %s %u %u %d", diff_chain_key_names[leaf.alg], key_hex,
-                       (unsigned)leaf.path_entries, (unsigned)leaf.anchor_index, pinned);
+        (void)snprintf(reply, cap, "ok %s %s %u %zu %d", diff_chain_key_names[leaf.alg], key_hex,
+                       (unsigned)leaf.path_entries, leaf.anchor_index, pinned);
         return;
     }
     if (rc == CH_EPROTO) {
@@ -288,7 +291,7 @@ static void diff_chain_hostnames(const diff_chain_case *base) {
 
 // Each anchor dropped in turn, and the array emptied.
 static void diff_chain_anchor_sets(const diff_chain_case *base) {
-    static webpki_corpus_anchor kept[CH_WEBPKI_ANCHOR_MAX];
+    static webpki_corpus_anchor kept[DIFF_CHAIN_ANCHORS];
     diff_chain_case c = *base;
     c.anchor_count = 0;
     diff_chain_compare(&c);
@@ -309,7 +312,7 @@ static void diff_chain_anchor_sets(const diff_chain_case *base) {
 // under, so each anchor's Name still names an issuer and no anchor
 // verifies one.
 static void diff_chain_anchor_keys(const diff_chain_case *base, const webpki_corpus_anchor *other) {
-    static webpki_corpus_anchor swapped[CH_WEBPKI_ANCHOR_MAX];
+    static webpki_corpus_anchor swapped[DIFF_CHAIN_ANCHORS];
     if (base->anchor_count == 0) {
         return;
     }
@@ -322,6 +325,8 @@ static void diff_chain_anchor_keys(const diff_chain_case *base, const webpki_cor
     c.anchors = swapped;
     diff_chain_compare(&c);
 }
+
+#include "diff_webpki_chain_anchors.h"
 
 // The list cut after each entry, one entry dropped, and the last entry
 // repeated until the list holds one entry past the flight cap.
@@ -420,7 +425,7 @@ static void diff_chain_pin_set(const diff_chain_case *base, const uint8_t pin[SH
 // One row: its own inputs, then one family of mutations at a time.
 static void diff_chain_row(const webpki_corpus_chain *row, size_t row_index,
                            const webpki_corpus_anchor *other) {
-    static uint8_t choices[DIFF_CHAIN_ENTRIES + CH_WEBPKI_ANCHOR_MAX + 1][SHA256_LEN];
+    static uint8_t choices[DIFF_CHAIN_ENTRIES + DIFF_CHAIN_ANCHORS + 1][SHA256_LEN];
     diff_chain_case base;
     base.anchors = row->anchors;
     base.anchor_count = row->anchor_count;
@@ -438,6 +443,7 @@ static void diff_chain_row(const webpki_corpus_chain *row, size_t row_index,
     diff_chain_hostnames(&base);
     diff_chain_anchor_sets(&base);
     diff_chain_anchor_keys(&base, other);
+    diff_chain_many_anchors(&base, other);
     diff_chain_entry_sets(&base);
     diff_chain_bytes(&base);
 }

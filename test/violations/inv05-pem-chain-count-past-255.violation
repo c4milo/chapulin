@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the chain call stops at the caller's entries alone, so a file of
+  256 certificates under 300 entries reads, and its count, cut to
+  ch_identity's uint8_t, is 0. test_chain_counts reads 255 certificates
+  and requires CH_EINVAL for 256.
+
+--- old
+        if (next != PEM_BLOCKS_READ || count == chain_max || count == UINT8_MAX ||
+--- new
+        if (next != PEM_BLOCKS_READ || count == chain_max ||

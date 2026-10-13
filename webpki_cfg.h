@@ -6,9 +6,10 @@
 // stricter than a CH_EINVAL from ch_connect.
 //
 // The fields, at the end of ch_cfg (docs/webpki.md):
-//  - anchors: anchor_count entries, 1 to CH_WEBPKI_ANCHOR_MAX, each with
-//    a non-empty name and spki. The server's chain must verify up to one
-//    of them.
+//  - anchors: anchor_count entries, 1 or more, each with a non-empty name
+//    and spki. The server's chain must verify up to one of them. No cap
+//    bounds the count: the caller's array holds it, and the walk tries
+//    every anchor whose Name is the issuer's (docs/decisions.md 131).
 //  - hostname: hostname_len bytes of an ASCII hostname that
 //    webpki_hostname_ok (webpki.h) accepts: 1 to 253 bytes of
 //    [A-Za-z0-9.-], no NUL, no empty label and no IP literal. A caller
@@ -70,11 +71,6 @@ typedef struct {
     const uint8_t *spki;
     size_t spki_len;
 } ch_trust_anchor;
-
-// Anchors one configuration may carry. The number is a measurement: nine
-// roots cover the endpoints docs/webpki.md captures, five of them Amazon
-// Trust Services'.
-#define CH_WEBPKI_ANCHOR_MAX 12
 
 // SPKI pins one configuration may carry. RFC 7858 §4.2 asks for a
 // primary pin and a backup pin, and a rotation holds the old primary for

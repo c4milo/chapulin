@@ -23,7 +23,9 @@
 //      arithmetic is length-generic by construction (proof/buf_harness.c
 //      checks it at 64 bytes, which is a bound on that harness, not on
 //      the code). The only pointer arithmetic in pem.c is
-//      `end_line + 1` on a static array with compile-time constants.
+//      `end_prefix + 1` on a static array with compile-time constants,
+//      and the index into the four-entry label table, which
+//      pem_read_block's CH_ASSERT holds below PEM_LABEL_COUNT.
 //   2. The accounting invariant is preserved one character at a time,
 //      and proof/pem_step_harness.c proves that step from an ARBITRARY
 //      state rather than from the states this bound reaches. Induction
@@ -37,8 +39,9 @@
 
 #include "pem.c"
 
-// 64, not lower. The shortest accepting input is 58 bytes -- the two
-// boundary lines, their terminators and one base64 quantum -- so at 56
+// 64, not lower. The shortest input that the decoder accepts is 57
+// bytes: the two boundary lines, the BEGIN line's terminator and one
+// base64 quantum. The END line needs no terminator. So at 56
 // the CH_OK arm is unreachable and its assertion passes vacuously while
 // the run still prints VERIFICATION SUCCESSFUL. Confirmed by asserting
 // 0 in that arm: SUCCESS at 56, and a counterexample at 64 and above.

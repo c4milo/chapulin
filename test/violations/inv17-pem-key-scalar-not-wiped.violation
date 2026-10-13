@@ -1,0 +1,13 @@
+invariant: INV-17
+file: pem_files.c
+catches: pem_files_test
+reason: ch_p256_key_from_pem returns with the scalar's working copy on
+  its own stack. pem_files.h promises every copy the call makes is wiped
+  on every path; test_key_wipes searches the stack below the call for
+  eight bytes of the scalar, in either byte order, and finds them.
+
+--- old
+    ct_wipe(der, sizeof der);
+    ct_wipe(scalar, sizeof scalar);
+--- new
+    ct_wipe(der, sizeof der);

@@ -3,8 +3,8 @@
 #ifndef CH_WEBPKI_SESSION_CASES_H
 #define CH_WEBPKI_SESSION_CASES_H
 
-// The anchor rule at its boundaries: 1 to CH_WEBPKI_ANCHOR_MAX entries,
-// and every field of every entry set.
+// The anchor rule at its boundaries: 1 entry or more, and every field of
+// every entry set. No cap bounds the count, so TEST_ANCHORS entries pass.
 static void test_webpki_cfg_anchors(void) {
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
@@ -18,20 +18,20 @@ static void test_webpki_cfg_anchors(void) {
     cfg = valid_cfg(&s);
     cfg.anchor_count = 1;
     CHECK(sends_client_hello(&cfg));
-    // The last valid count works; the first invalid one fails.
-    CHECK(CH_WEBPKI_ANCHOR_MAX == 12);
+    // The count of 13, which the cap of 12 refused before
+    // docs/decisions.md 131, and a count past what one byte holds.
     cfg = valid_cfg(&s);
-    cfg.anchor_count = CH_WEBPKI_ANCHOR_MAX;
+    cfg.anchor_count = 13;
     CHECK(sends_client_hello(&cfg));
     cfg = valid_cfg(&s);
-    cfg.anchor_count = CH_WEBPKI_ANCHOR_MAX + 1;
-    CHECK(refused(&cfg));
+    cfg.anchor_count = TEST_ANCHORS;
+    CHECK(sends_client_hello(&cfg));
     // One field of the last entry of a full table set to NULL or 0, so
     // the rule reads every entry and not only the first.
     for (int field = 0; field < 4; field++) {
         cfg = valid_cfg(&s);
-        cfg.anchor_count = CH_WEBPKI_ANCHOR_MAX;
-        ch_trust_anchor *last = &anchors[CH_WEBPKI_ANCHOR_MAX - 1];
+        cfg.anchor_count = TEST_ANCHORS;
+        ch_trust_anchor *last = &anchors[TEST_ANCHORS - 1];
         last->name = field == 0 ? NULL : last->name;
         last->name_len = field == 1 ? 0 : last->name_len;
         last->spki = field == 2 ? NULL : last->spki;

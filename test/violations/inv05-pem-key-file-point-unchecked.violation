@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the publicKey field an ECPrivateKey carries is no longer compared
+  with the scalar's point, so a file whose two halves disagree decodes.
+  test_key_refusals writes G as the publicKey beside the corpus scalar
+  and requires CH_EINVAL.
+
+--- old
+             (file_point == NULL || ct_memeq(file_point, pub, 64) != 0) &&
+--- new
+             (file_point == NULL || ct_memeq(file_point, pub, 64) != 0 || 1) &&

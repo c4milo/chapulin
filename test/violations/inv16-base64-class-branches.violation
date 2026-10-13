@@ -1,0 +1,21 @@
+invariant: INV-16
+file: base64.c
+catches: test/lint-wide-multiply.sh
+reason: base64_class tests its first two ranges with an if chain, so
+  whether a key file's character is a capital, a small letter or neither
+  decides which path runs, a fact about the scalar's bits. The class is
+  the same, so no test sees it; the branch count does, on every spec,
+  where base64.c's ceiling is zero (docs/decisions.md 131).
+
+--- old
+    uint32_t x = c;
+    uint32_t upper = range_mask(x, 'A', 'Z');
+--- new
+    uint32_t x = c;
+    if (x >= 'A' && x <= 'Z') {
+        return (uint8_t)(x - 'A');
+    }
+    if (x >= 'a' && x <= 'z') {
+        return (uint8_t)(x - 'a' + 26U);
+    }
+    uint32_t upper = range_mask(x, 'A', 'Z');

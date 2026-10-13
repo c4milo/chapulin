@@ -10,6 +10,6 @@ reason: TRANSPORT_NAMED stops naming ch_ticket_obfuscated_age, so PUBLIC
   (docs/decisions.md 61 and 72).
 
 --- old
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age
+                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
 --- new
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem
+                   ch_anchors_from_pem ch_alert_sent ch_alert_received

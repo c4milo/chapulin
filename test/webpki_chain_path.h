@@ -79,7 +79,7 @@ static void test_path_outputs(void) {
         int rc = walk_under(row, row->anchors, row->anchor_count, &leaf);
         if (rc != CH_OK || leaf.path_entries != want->path_entries ||
             leaf.anchor_index != want->anchor_index) {
-            (void)fprintf(stderr, "FAIL %s: rc %d path %u anchor %u, want path %u anchor %u\n",
+            (void)fprintf(stderr, "FAIL %s: rc %d path %u anchor %zu, want path %u anchor %u\n",
                           want->name, rc, leaf.path_entries, leaf.anchor_index, want->path_entries,
                           want->anchor_index);
             failures++;

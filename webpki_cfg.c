@@ -16,13 +16,13 @@
 #include "suite.h"
 #include "webpki_ticket.h"
 
-// The anchor rule: 1 to CH_WEBPKI_ANCHOR_MAX anchors, each carrying a
-// non-empty name and a non-empty spki. The chain walk reads through
-// both pointers of every anchor it consults, so a NULL or empty entry
-// is refused here, before the handshake sends a byte.
+// The anchor rule: 1 or more anchors, each with a non-empty name and a
+// non-empty spki. The chain walk reads through both pointers of every
+// anchor it consults. So the rule refuses a NULL or empty entry here,
+// before the handshake sends a byte. No cap bounds the count: the
+// caller's array holds anchor_count entries (docs/decisions.md 131).
 static int anchors_ok(const ch_cfg *cfg) {
-    if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
-        cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
+    if (cfg->anchors == NULL || cfg->anchor_count == 0) {
         return 0;
     }
     for (size_t i = 0; i < cfg->anchor_count; i++) {

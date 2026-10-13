@@ -110,7 +110,7 @@ static int never_recv(void *io, uint8_t *p, size_t n) {
 }
 
 // One certificate the chain pointer names. No line of the flight reads a
-// byte of it: a ROLE=server object links no X.509 reader at all.
+// byte of it: no session of a ROLE=server object reads a certificate.
 static const uint8_t cert_der[4] = {0x30, 0x02, 0x05, 0x00};
 static const ch_cert chain[1] = {
     {cert_der, sizeof cert_der}

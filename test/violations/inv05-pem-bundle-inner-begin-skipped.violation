@@ -1,0 +1,17 @@
+invariant: INV-5
+file: pem_blocks.c
+catches: pem_files_test
+reason: "-----BEGIN " that does not start its line is skipped as text,
+  with the block's body and END line, so a bundle saved with a
+  byte-order mark, or with a block indented, decodes with a root missing
+  and reports CH_OK. test_bundle_grammar writes each in front of the
+  first and of the second of two blocks and requires CH_EINVAL.
+
+--- old
+        if (pem_begins_boundary(r)) {
+            return line_start ? NEXT_BLOCK : NEXT_REFUSED;
+        }
+--- new
+        if (line_start && pem_begins_boundary(r)) {
+            return NEXT_BLOCK;
+        }

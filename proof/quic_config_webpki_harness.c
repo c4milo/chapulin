@@ -10,16 +10,18 @@
 // The properties, over unconstrained inputs: every pointer field NULL or
 // set, and every count and length any size_t. A set pointer holds its
 // length, which cfg.h makes the caller's requirement, except where a
-// count is capped: anchor_count, spki_pin_count and alpn_count are
-// unconstrained beside arrays that hold CH_WEBPKI_ANCHOR_MAX, CH_SPKI_PIN_MAX
-// and CH_ALPN_MAX entries, so the formula shows the rules read no entry
-// past the cap before they refuse the count. Memory safety and absence of
+// count is capped. spki_pin_count and alpn_count are unconstrained beside
+// arrays that hold CH_SPKI_PIN_MAX and CH_ALPN_MAX entries. So the
+// formula shows the rules read no entry past the cap before they refuse
+// the count. No cap bounds anchor_count (docs/decisions.md 131). So a set
+// anchors pointer holds its count, up to PROOF_ANCHORS entries, the
+// array this formula gives it. Memory safety and absence of
 // UB, which the automatic checks discharge. And the verdict: CH_OK or
 // CH_EINVAL, and CH_OK only for a configuration that holds 0 to
 // CH_SPKI_PIN_MAX pins with a list exactly when it holds a count; either
 // pins alone, with no anchor, no clock read and a hostname unset or of
-// the checked shape, or 1 to CH_WEBPKI_ANCHOR_MAX anchors with a
-// hostname and a clock; no pin slot; PSK fields webpki_resumption_ok
+// the checked shape, or 1 anchor or more with a hostname and a clock;
+// no pin slot; PSK fields webpki_resumption_ok
 // took; with resumption set, a ticket age no older than the ticket's
 // lifetime, and no older than CH_TICKET_LIFETIME_MAX seconds whatever the
 // lifetime, where a lifetime of 0 is none given (handshake_post.h), and a
@@ -57,13 +59,17 @@
 // The bytes behind each anchor's name and spki. Only their pointers and
 // lengths are read here, so four bytes are enough.
 #define ANCHOR_FIELD_MAX 4
+// The entries the formula's anchors array holds. The rule reads each
+// entry up to the count, the same read for every entry, so twelve stand
+// for any count a caller's array holds.
+#define PROOF_ANCHORS 12
 
 static ch_tls t;
 static ch_cfg cfg;
 static uint8_t hostname[CH_HOSTNAME_MAX + 1];
-static uint8_t names[CH_WEBPKI_ANCHOR_MAX][ANCHOR_FIELD_MAX];
-static uint8_t spkis[CH_WEBPKI_ANCHOR_MAX][ANCHOR_FIELD_MAX];
-static ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+static uint8_t names[PROOF_ANCHORS][ANCHOR_FIELD_MAX];
+static uint8_t spkis[PROOF_ANCHORS][ANCHOR_FIELD_MAX];
+static ch_trust_anchor anchors[PROOF_ANCHORS];
 static uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
 static uint8_t alpn_names[CH_ALPN_MAX][CH_ALPN_NAME_MAX];
 static ch_alpn_protocol alpn[CH_ALPN_MAX];
@@ -97,8 +103,8 @@ int webpki_resumption_ok(const ch_cfg *c) {
     __CPROVER_assert(c->hostname_len <= CH_HOSTNAME_MAX &&
                          (c->hostname_len == 0 || __CPROVER_r_ok(c->hostname, c->hostname_len)),
                      "resumption_ok: the hostname rule holds");
-    int counted = c->anchor_count <= CH_WEBPKI_ANCHOR_MAX &&
-                  (c->anchor_count == 0 ||
+    int counted = c->anchor_count == 0 ||
+                  (c->anchor_count <= PROOF_ANCHORS &&
                    __CPROVER_r_ok(c->anchors, c->anchor_count * sizeof c->anchors[0]));
     __CPROVER_assert(counted, "resumption_ok: the anchor count holds");
     __CPROVER_assume(counted);
@@ -156,7 +162,7 @@ static size_t field_len(const uint8_t *p, size_t cap) {
 }
 
 static void havoc_anchors(void) {
-    for (size_t i = 0; i < CH_WEBPKI_ANCHOR_MAX; i++) {
+    for (size_t i = 0; i < PROOF_ANCHORS; i++) {
         const uint8_t *name = maybe(names[i]);
         const uint8_t *spki = maybe(spkis[i]);
         anchors[i] = (ch_trust_anchor){name, field_len(name, ANCHOR_FIELD_MAX), spki,
@@ -164,6 +170,8 @@ static void havoc_anchors(void) {
     }
     cfg.anchors = (nondet_u8() & 1) ? anchors : NULL;
     cfg.anchor_count = nondet_size_t();
+    // A set pointer holds its count, as a caller's array does.
+    __CPROVER_assume(cfg.anchors == NULL || cfg.anchor_count <= PROOF_ANCHORS);
 }
 
 static void havoc_alpn(void) {
@@ -219,8 +227,8 @@ static int trust_holds(void) {
         cfg.hostname != NULL && cfg.hostname_len >= 1 && cfg.hostname_len <= CH_HOSTNAME_MAX;
     int pins_alone = cfg.spki_pin_count > 0 && cfg.anchors == NULL && cfg.anchor_count == 0 &&
                      ((cfg.hostname == NULL && cfg.hostname_len == 0) || hostname_set);
-    int anchored = cfg.anchors != NULL && cfg.anchor_count >= 1 &&
-                   cfg.anchor_count <= CH_WEBPKI_ANCHOR_MAX && hostname_set && cfg.now_seconds != 0;
+    int anchored =
+        cfg.anchors != NULL && cfg.anchor_count >= 1 && hostname_set && cfg.now_seconds != 0;
     int slots_unset = cfg.server_pubkey == NULL && cfg.server_pubkey_len == 0 &&
                       cfg.server_pubkey2 == NULL && cfg.server_pubkey2_len == 0;
     return pins_ok && (pins_alone || anchored) && slots_unset && resumption_called &&

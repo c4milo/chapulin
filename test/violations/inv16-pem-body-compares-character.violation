@@ -1,0 +1,31 @@
+invariant: INV-16
+file: pem.c
+catches: test/lint-invariants.sh
+reason: body_loop tests the byte it read for '-', CR and LF before it
+  takes the byte's class. Apple clang 21 writes these three tests as a
+  chain of equalities, but the first loop pem.c had, which tested '=' the
+  same way, came out of each clang build the review compiled, for arm64,
+  x86-64, Cortex-M3 and riscv32, as one compare at 44 that sent '+'
+  apart from the other 63 characters of a key file. Which form a
+  compiler writes is its choice. No value changes, so no test sees it.
+  inv-16-pem-body-class refuses a byte from rb_u8 that is not
+  base64_class's argument, and a compare with a character constant
+  (docs/decisions.md 131).
+
+--- old
+        uint8_t v = base64_class(rb_u8(r));
+        if (v == BASE64_DASH) {
+            return 1;
+        }
+        if (v == BASE64_CR || v == BASE64_LF) {
+            continue;
+        }
+--- new
+        uint8_t c = rb_u8(r);
+        if (c == '-') {
+            return 1;
+        }
+        if (c == '\r' || c == '\n') {
+            continue;
+        }
+        uint8_t v = base64_class(c);

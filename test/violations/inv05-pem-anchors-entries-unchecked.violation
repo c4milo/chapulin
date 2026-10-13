@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the bundle call stops comparing its count with anchor_max, so a
+  bundle of more roots than the caller's entries writes past the caller's
+  array. test_bundle_counts gives one and thirteen entries and a file of
+  one root more, and requires CH_EINVAL.
+
+--- old
+        if (next != PEM_BLOCKS_READ || count == anchor_max) {
+--- new
+        if (next != PEM_BLOCKS_READ) {

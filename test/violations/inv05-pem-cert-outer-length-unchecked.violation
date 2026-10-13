@@ -1,0 +1,12 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_test
+reason: the Certificate SEQUENCE's length is read and not held to the
+  bytes the certificate holds, so a certificate whose length claims fewer
+  bytes than its fields fill reads. test_certificate_framing shortens the
+  length by one and by two and requires a refusal.
+
+--- old
+    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len) || body_len != rb_left(&r)) {
+--- new
+    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len)) {

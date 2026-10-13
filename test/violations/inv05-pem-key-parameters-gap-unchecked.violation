@@ -1,0 +1,13 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the key call skips the line breaks after an EC PARAMETERS block
+  and does not require them to end in LF, so the key's BEGIN line may
+  follow the END line on the same line, or after a lone CR, which ends no
+  line. The ruling keeps a key file strict (docs/decisions.md 131).
+  test_key_parameters writes both and requires CH_EINVAL.
+
+--- old
+           x509_pem_parameters_are_p256(parameters, w.len) && pem_skip_line_breaks(r) == '\n';
+--- new
+           x509_pem_parameters_are_p256(parameters, w.len) && (pem_skip_line_breaks(r), 1);

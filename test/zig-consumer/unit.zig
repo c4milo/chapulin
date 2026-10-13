@@ -383,6 +383,39 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     session.recordClose();
 }
 
+test "the PEM files: a refusal is error.Invalid, a room is the caller's, and a refused key is zero" {
+    if (!has_server and !has_webpki) return error.SkipZigTest;
+    const not_pem = "-----BEGIN CERTIFICATE-----\nnot base64!\n-----END CERTIFICATE-----\n";
+    // One certificate's outer fields, a one-byte UTF8String subject and a
+    // NULL key: 27 bytes of DER, which both rooms below hold exactly.
+    const one = "-----BEGIN CERTIFICATE-----\nMBkwEgIBATAAMAAwADADDAFhMAIFADAAAwEA\n-----END CERTIFICATE-----\n";
+    var der: [27]u8 = undefined;
+    if (has_server) {
+        var entries: [1]c.ch_cert = undefined;
+        try expectError(error.Invalid, chapulin.Chain.fromPem(not_pem, &der, &entries));
+        const chain = try chapulin.Chain.fromPem(one, &der, &entries);
+        try expectEqual(@as(usize, 1), chain.certs.len);
+        try expectEqual(@as(usize, 27), chain.leaf().len);
+        try expectError(error.Invalid, chapulin.Chain.fromPem(one, der[0..26], &entries));
+        try expectError(error.Invalid, chapulin.Chain.fromPem(one, &der, entries[0..0]));
+        try expectEqual(@as(usize, 0), (chapulin.Chain{}).leaf().len);
+        var key: chapulin.EcdsaP256Key = .{};
+        @memset(&key.private_key, 0x5a);
+        try expectError(error.Invalid, key.fromPem(if (has_cpu) .{} else {}, not_pem, chain.leaf()));
+        try expect(std.mem.allEqual(u8, &key.private_key, 0) and std.mem.allEqual(u8, &key.public_key, 0));
+        @memset(&key.private_key, 0x5a);
+        key.wipe();
+        try expect(std.mem.allEqual(u8, &key.private_key, 0));
+    }
+    if (has_webpki) {
+        var entries: [1]c.ch_trust_anchor = undefined;
+        try expectError(error.Invalid, chapulin.Anchors.fromPem("# a comment, and no block\n", &der, &entries));
+        const anchors = try chapulin.Anchors.fromPem(one, &der, &entries);
+        try expectEqual(@as(usize, 1), anchors.anchors.len);
+        try expectError(error.Invalid, chapulin.Anchors.fromPem(one, der[0..26], &entries));
+    }
+}
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);
@@ -392,8 +425,8 @@ test "every declaration this object has compiles" {
     compile(chapulin, &.{ "fromCode", "buildMatches", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
     try expect(chapulin.buildMatches());
     if (has_client) compile(chapulin, &.{ "Client", "Ticket", "Trust" });
-    if (has_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity" });
-    if (has_webpki) compile(chapulin, &.{ "trustAnchor", "CertType" });
+    if (has_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity", "Chain", "EcdsaP256Key" });
+    if (has_webpki) compile(chapulin, &.{ "trustAnchor", "CertType", "Anchors" });
     if (has_alpn) compile(chapulin, &.{"alpnProtocol"});
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
     const record = [_][]const u8{ "init", "recordIn", "recordState", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };

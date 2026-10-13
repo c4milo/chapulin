@@ -1,0 +1,13 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_test
+reason: x509_pem_parameters_are_p256 reads prime256v1's OID and does not
+  require the DER to end there, so the OID with a byte after it names
+  P-256. pem_files.c's room of 10 bytes refuses such a block before the
+  check, so test_key_parameters asks the check itself about the OID with
+  a zero byte after it.
+
+--- old
+    return x509_read_exact(&r, p256_parameters, sizeof p256_parameters) && rb_left(&r) == 0;
+--- new
+    return x509_read_exact(&r, p256_parameters, sizeof p256_parameters);

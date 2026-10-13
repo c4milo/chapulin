@@ -1,0 +1,15 @@
+invariant: INV-5
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the raw-rsa arm stops filtering the PEM readers, so a raw client,
+  which reads no certificate and decodes no file, packages pem.c,
+  base64.c and x509_der.c. lint-trust-separation's raw-rsa row bans them.
+
+--- old
+PUBLIC_CA :=
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := p256.c
+--- new
+PUBLIC_CA :=
+TRUST_FILTER := x509.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := p256.c

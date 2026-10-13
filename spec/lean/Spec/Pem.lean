@@ -241,7 +241,10 @@ private theorem toList_loop_eq (bs : ByteArray) :
       simp
     · rw [if_neg hi, List.drop_of_length_le (by simp; omega), List.append_nil]
 
-private theorem byteArray_toList_eq (b : ByteArray) : b.toList = b.data.toList := by
+/-- `ByteArray.toList` as the list of the array's data, the form the
+kernel evaluates on a literal. `Spec.PemBlocks` reads boundary lines
+through it too. -/
+theorem byteArray_toList_eq (b : ByteArray) : b.toList = b.data.toList := by
   rw [ByteArray.toList, toList_loop_eq b b.size 0 [] (by omega)]
   rfl
 

@@ -133,8 +133,8 @@ static void base_config(ch_cfg *cfg) {
 }
 
 #ifdef CH_ROLE_SERVER
-// One certificate the chain names. A server object links no X.509
-// reader, so no step here reads a byte of it.
+// One certificate the chain names. No session of a server object reads
+// a certificate, so no step here reads a byte of it.
 static const uint8_t cert_der[4] = {0x30, 0x02, 0x05, 0x00};
 static const ch_cert chain[1] = {
     {cert_der, sizeof cert_der}

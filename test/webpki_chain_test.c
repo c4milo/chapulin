@@ -163,12 +163,13 @@ static size_t frame_list(uint8_t *out, const entries *e) {
     return w.len;
 }
 
+#define CORPUS_ROW_ANCHORS 12 // a corpus row's anchors: 5 at most, and no cap bounds the count
 // A row's configuration: its anchors, its hostname and its clock. The
 // anchors are copied into ch_trust_anchor, which holds the same four
 // fields the corpus header declares for itself.
 static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
-    CHECK(row->anchor_count <= CH_WEBPKI_ANCHOR_MAX);
+    CHECK(row->anchor_count <= CORPUS_ROW_ANCHORS);
     for (size_t i = 0; i < row->anchor_count; i++) {
         anchors[i].name = row->anchors[i].name;
         anchors[i].name_len = row->anchors[i].name_len;
@@ -187,7 +188,7 @@ static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch
 // seeds it.
 static int walk(const webpki_corpus_chain *row, const uint8_t *list, size_t list_len,
                 webpki_leaf_info *leaf, uint8_t *alert) {
-    ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+    ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_cfg cfg;
     row_cfg(row, anchors, &cfg);
     memset(leaf, 0, sizeof *leaf);

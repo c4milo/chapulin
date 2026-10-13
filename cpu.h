@@ -10,12 +10,24 @@
 #include "cfg.h"
 
 #ifdef CH_CPU_RUNTIME
-// Whether cfg->cpu is a value a session takes: it holds CH_CPU_PROBED, and no bit outside
-// CH_CPU_DEFINED, the bits this object defines for its architecture. Every init call and
-// ch_srv_check refuse a configuration this rejects with CH_EINVAL before they send anything. A
-// predicate over the caller's configuration, which holds no secret.
+// Whether cpu is a value this object takes as a description of its CPU. The value holds
+// CH_CPU_PROBED, and no bit outside CH_CPU_DEFINED, the bits this object defines for its
+// architecture. A predicate over the caller's value, which holds no secret.
+static inline int cpu_value_ok(uint32_t cpu) {
+    return (cpu & CH_CPU_PROBED) != 0 && (cpu & ~(uint32_t)CH_CPU_DEFINED) == 0;
+}
+
+// Whether cfg->cpu is a value a session takes, by cpu_value_ok's rule. Every init call and
+// ch_srv_check refuse a configuration this rejects with CH_EINVAL before they send anything.
 static inline int cpu_bits_ok(const ch_cfg *cfg) {
-    return (cfg->cpu & CH_CPU_PROBED) != 0 && (cfg->cpu & ~(uint32_t)CH_CPU_DEFINED) == 0;
+    return cpu_value_ok(cfg->cpu);
+}
+#else
+// A device object defines no bit, not CH_CPU_PROBED either. One call takes a cpu argument in
+// every object, ch_p256_key_from_pem (pem_files.h), and a device object takes 0 from it alone.
+// Every other value holds a bit that this object does not define.
+static inline int cpu_value_ok(uint32_t cpu) {
+    return cpu == 0;
 }
 #endif
 

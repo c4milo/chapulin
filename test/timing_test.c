@@ -251,6 +251,8 @@ static void x_run(void) {
     X25519_BASE(out, x_scalar);
     sink ^= out[0];
 }
+
+#include "timing_pem.h"
 #else
 // The wide P-256 files, through the entries a session calls, under the
 // constant-time answer (widemul.h, docs/decisions.md 94): one fixed scalar
@@ -462,6 +464,7 @@ int main(void) {
     report("poly1305", measure(poly_prep, poly_run, FAST_N, WARMUP));
     report("chacha20_xor", measure(chacha_prep, chacha_run, FAST_N, WARMUP));
     report(X25519_ROW, measure(x_prep, x_run, X25519_N, 32));
+    report("pem_body", measure(pem_prep, pem_run, FAST_N, WARMUP));
 #ifdef TEST_RSA_SIGN64
     rsa_random_modulus(&rsa_mod, RSA_MODULUS_LEN);
     rsa_random_below(rsa_a_fixed, &rsa_mod);

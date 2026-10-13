@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the key call reads an EC PARAMETERS block and does not ask which
+  curve it names, so secp384r1's parameters, or any 10 bytes of DER, pass
+  above a P-256 key. The ruling admits prime256v1's alone
+  (docs/decisions.md 131). test_key_parameters writes secp384r1's and a
+  changed OID and requires CH_EINVAL.
+
+--- old
+    return pem_read_block(r, PEM_LABEL_EC_PARAMETERS, &w) &&
+           x509_pem_parameters_are_p256(parameters, w.len) && pem_skip_line_breaks(r) == '\n';
+--- new
+    (void)x509_pem_parameters_are_p256;
+    return pem_read_block(r, PEM_LABEL_EC_PARAMETERS, &w) && pem_skip_line_breaks(r) == '\n';

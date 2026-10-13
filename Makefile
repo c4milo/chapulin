@@ -263,11 +263,11 @@ SHELLCHECK ?= shellcheck
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
 SRCS := ct.c ct_wipe.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
+        pem.c base64.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha20_avx512.h poly1305.h poly1305_vector.h poly1305_avx2.h poly1305_ifma.h poly1305_ifma_lanes.h poly1305_scalar.h aead.h x25519.h x25519_wide.h p256.h rsa.h rsa_mont64.h rsa_mont64_blocks.h rsa_mont64_addcarry.h rsa_ifma.h rsa_ifma_lanes.h rsa_ifma_product.h rsa_ifma_sign.h avx512_wipe.h rsa_avx2.h rsa_avx2_lanes.h rsa_avx2_number.h ch_assert.h \
-        pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
+        pem.h base64.h pem_blocks.h x509_pem.h pem_files.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h sha512_compress_blocks.h sha512_round_constants.h sha512_avx2.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h rsa_sign64.h mlkem.h mlkem_poly.h mlkem_vector.h mlkem_lanes.h mlkem_zetas.h mlkem_avx2.h keccak_avx2.h keccak_round_constants.h \
         p256_wide_word.h p256_wide_field.h p256_wide_scalar.h p256_wide_inverse.h p256_wide_point.h \
         p256_wide_mul.h p256_wide_table.h p256_wide_wipe.h p256_wide_verify.h p256_wide_verify_point.h \
@@ -465,7 +465,12 @@ AES_SUITE_ENTRY := $(if $(HOST_TARGET),-DCH_SUITE_AES_GCM$(COMMA)-DCH_CPU_RUNTIM
 # so without the role define both runs would read nothing.
 # x509_ca.h declares ch_pubkey_from_pem, whose name carries the
 # transport, only under CH_TRUST_CA, so without that define both runs
-# would read the same text.
+# would read the same text. pem_files.h declares the chain and key calls
+# only under CH_ROLE_SERVER and the bundle call only under
+# CH_TRUST_WEBPKI, and each name carries the transport
+# (docs/decisions.md 131). So its entry names the defines of a ROLE=both
+# TRUST=webpki object, and both runs read all three calls. srv_cfg.h
+# refuses a trust mode in a server-only object.
 QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
                       aes_block.h:$(AES_SUITE_ENTRY) aes_public_key.h:$(AES_SUITE_ENTRY) \
                       aes_traffic_key.h:$(AES_SUITE_ENTRY) aes_schedule.h:$(AES_SUITE_ENTRY) \
@@ -479,7 +484,8 @@ QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
                       gcm_avx512_ghash.h:$(AES_SUITE_ENTRY) \
                       aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
                       quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
-                      x509_ca.h:-DCH_TRUST_CA
+                      x509_ca.h:-DCH_TRUST_CA \
+                      pem_files.h:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI
 # The files this compiler cannot judge, because the build choice they
 # need is one it does not offer. aes_hw.c, ghash_hw.c, ghash_vector.h,
 # gcm_hw.c, gcm_vaes.c, gcm_avx512.c, gcm_avx512_kernel.c and
@@ -625,7 +631,10 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
+TESTH := test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+         test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
+         test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
+         test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
          test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
@@ -744,6 +753,16 @@ P256_ECDH_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
 # secp256r1, the group a ServerHello may then select, and the classic
 # secrets (handshake_groups.h), with the P-256 arithmetic under them.
 WEBPKI_KEX_SRCS := handshake_groups.c $(P256_ECDH_SRCS)
+# The files that decode an operator's PEM files (pem_files.h,
+# docs/decisions.md 131). They are the run of CERTIFICATE blocks, the DER
+# readers of a certificate and a P-256 key, and the three public calls. A TRUST=webpki object holds them
+# for ch_anchors_from_pem. Every object with a server role holds them for
+# ch_chain_from_pem and ch_p256_key_from_pem. Each holds them beside the
+# one-block reader and the DER primitives under them, PEM_READER_SRCS.
+# SRCS lists those three, and the raw modes and TRUST=none filter them
+# out, so a server role adds them back.
+PEM_FILES_SRCS := pem_blocks.c x509_pem.c pem_files.c
+PEM_READER_SRCS := pem.c base64.c x509_der.c
 TRUST ?= raw-rsa
 # Provisioning is a public call only where its parser is linked, so
 # PUBLIC_CA is set by the two ca arms alone.
@@ -751,14 +770,14 @@ ifeq ($(TRUST),raw-rsa)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
 PIN_FILTER := p256.c
 TRUST_ADD :=
 else ifeq ($(TRUST),raw-ecdsa)
 TRUST_DEF :=
 PIN_DEF := -DCH_PIN_ECDSA
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
 PIN_FILTER := rsa.c rsa_mont.c
 TRUST_ADD :=
 else ifeq ($(TRUST),ca-rsa)
@@ -787,7 +806,7 @@ else ifeq ($(TRUST),none)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
 PIN_FILTER :=
 TRUST_ADD :=
 else ifeq ($(TRUST),webpki)
@@ -796,9 +815,11 @@ TRUST_DEF := -DCH_TRUST_WEBPKI
 # filters none out.
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_ca.c
+# x509.c and x509_ca.c are the ca modes' certificate readers. pem.c and
+# base64.c stay, for ch_anchors_from_pem's bundle.
+TRUST_FILTER := x509.c x509_ca.c
 PIN_FILTER :=
-TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(WEBPKI_KEX_SRCS)
+TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(WEBPKI_KEX_SRCS) $(PEM_FILES_SRCS)
 else
 $(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, or TRUST=none for ROLE=server)
 endif
@@ -918,7 +939,11 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # once. lint-stack passes at the 2,560-byte budget because
 # -Wframe-larger-than measures one frame at a time, and docs/server.md
 # measures the sum a deployment has to size its stack from.
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
+#
+# The PEM readers and files are ch_chain_from_pem's and
+# ch_p256_key_from_pem's (pem_files.h). TRUST=none filters the readers
+# out of SRCS with the raw modes, so this adds them back.
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
 ifeq ($(TRANSPORT),quic-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_quic.c is the step table quic_step.c is for a client, and
@@ -998,7 +1023,7 @@ ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
 # Nothing is replaced: ROLE=server filters $(CLIENT_REPLACED) because its
 # srv_*.c files stand in for those drivers, and here both sets compile.
 ROLE_FILTER :=
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS) $(PEM_READER_SRCS) $(PEM_FILES_SRCS)
 ifeq ($(TRANSPORT),quic-nonblocking)
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
@@ -1059,11 +1084,13 @@ LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_D
              $(CPU_RUNTIME_DEF))
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites. A ROLE=both TRUST=webpki
-# object gets the P-256 arithmetic from both its trust mode and its
-# role, so the role's copy of a name the trust mode already added is
-# dropped: ld -r would otherwise see each of those objects twice.
-LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
-            $(TRUST_ADD) $(TRANSPORT_ADD) $(filter-out $(TRUST_ADD),$(ROLE_ADD)) \
+# object gets the P-256 arithmetic and the PEM files from both its trust
+# mode and its role. A ROLE=both object of a ca or webpki mode keeps the
+# PEM readers from SRCS. So the role's copy of a name that SRCS kept or
+# the trust mode added is dropped. ld -r would otherwise see each of
+# those objects twice.
+LIB_KEPT := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS))
+LIB_SRCS := $(LIB_KEPT) $(TRUST_ADD) $(TRANSPORT_ADD) $(filter-out $(LIB_KEPT) $(TRUST_ADD),$(ROLE_ADD)) \
             $(filter-out $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD),$(SUITE_ADD)) $(AES_ADD)
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid. KEX chooses the one group of a raw or ca device
@@ -1963,6 +1990,12 @@ print-aes-runtime-qemu-srcs:
 # rsa_ifma_sign.c, its exponentiations on AVX-512 IFMA, to the host
 # object that holds rsa_sign.c (docs/decisions.md 95 and 120).
 #
+# The TRUST and ROLE rows also hold the PEM files. They hold
+# PEM_READER_SRCS to the ca modes, TRUST=webpki and every server role.
+# They hold PEM_FILES_SRCS to TRUST=webpki and every server role alone. So
+# a raw client packages no PEM text reader, and a ca client packages no
+# PEM call beyond ch_pubkey_from_pem (docs/decisions.md 131).
+#
 # The RAND rows hold each entropy pattern to its one define, and drbg.c,
 # the reference generator, to the RAND=drbg object alone: a RAND=session
 # object packages no generator, because each session names its own source
@@ -2017,11 +2050,15 @@ lint-trust-separation-run:
 	webpki_files=$$(git ls-files 'webpki*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
 	webpki_only="sha512.c sha512_compress_blocks.c p384.c p384_field.c p384_wide_field.c p384_wide_point.c p384_wide_verify.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
-	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
-	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
-	check "TRUST=ca-rsa" "pem.c x509.c x509_der.c x509_ca.c rsa.c rsa_mont.c" "p256.c $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
-	check "TRUST=ca-ecdsa" "pem.c x509.c x509_der.c x509_ca.c p256.c" "rsa.c rsa_mont.c $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
-	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	pem_readers="$(PEM_READER_SRCS)"; pem_files="$(PEM_FILES_SRCS)"; \
+	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c x509.c x509_ca.c $$pem_readers $$pem_files $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c x509.c x509_ca.c $$pem_readers $$pem_files $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "TRUST=ca-rsa" "x509.c x509_ca.c rsa.c rsa_mont.c $$pem_readers" "p256.c $$pem_files $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=ca-ecdsa" "x509.c x509_ca.c p256.c $$pem_readers" "rsa.c rsa_mont.c $$pem_files $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
+	check "TRUST=webpki" "rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$pem_readers $$pem_files $$webpki_only" "x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "ROLE=both TRUST=raw-rsa" "$$pem_readers $$pem_files" "x509.c x509_ca.c $$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "ROLE=both TRUST=ca-ecdsa" "x509.c x509_ca.c $$pem_readers $$pem_files" "$$webpki_files" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_CA" "-DCH_TRUST_WEBPKI"; \
 	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	check "TRUST=raw-rsa" "x25519.c" "x25519_wide.c x25519_native.c" "" "-DCH_X25519_WIDE -DCH_NATIVE_MUL128"; \
@@ -2218,26 +2255,33 @@ print-llvm-nm:
 # against its own headers (build.h, docs/decisions.md 56). No axis
 # changes it, so every variant's list names it.
 PUBLIC_BUILD := ch_build
-# The lists above name each export as its header declares it. Six of
+# The PEM calls (pem_files.h). Every object with a server role exports
+# the chain and the key calls, and every TRUST=webpki object the CA
+# bundle call. So a ROLE=both TRUST=webpki object exports all three
+# (docs/decisions.md 131).
+PUBLIC_PEM := $(if $(filter -DCH_ROLE_SERVER,$(ROLE_DEF)),ch_chain_from_pem ch_p256_key_from_pem) \
+              $(if $(filter webpki,$(TRUST)),ch_anchors_from_pem)
+# The lists above name each export as its header declares it. Nine of
 # those names belong to exports that objects of more than one transport
 # carry: the build record, the server's boot check, the CA provisioning
-# call, the client's ticket age call and the two alert calls. One image
-# may link one object of each transport, so each of the six puts the
-# object's transport in its symbol name, and build.h, srv.h, x509_ca.h,
-# ticket.h and alert.h map the declared name to that symbol name under
-# the consumer's own defines (docs/decisions.md 61, 72 and 75). ch_writable_len needs no such name: the
+# call, the three PEM calls, the client's ticket age call and the two
+# alert calls. One image may link one object of each transport. So each
+# of the nine puts the object's transport in its symbol name. Six
+# headers map the declared name to that symbol name under the consumer's
+# own defines. They are build.h, srv.h, x509_ca.h, pem_files.h, ticket.h
+# and alert.h (docs/decisions.md 61, 72, 75 and 131). ch_writable_len needs no such name: the
 # two TCP transports export it beside ch_write, and decision 61 refuses an
 # image of those two objects for ch_read, ch_write and ch_close already.
 # PUBLIC holds symbol names, because those are what the link keeps and
 # what lib-check reads.
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age \
-                   ch_alert_sent ch_alert_received
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_chain_from_pem ch_p256_key_from_pem \
+                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
 # with underscores, and the build record's symbol is named for its type,
 # ch_build_info: ch_build_info_tcp_blocking, ch_srv_check_tcp_blocking.
 TRANSPORT_SUFFIX := $(subst -,_,$(TRANSPORT))
 transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_SUFFIX)
-PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
+PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
             $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
@@ -3438,7 +3482,7 @@ bin/tcp_blocking_loop_session: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP
 # test/key_limit_cases.h's writes across the ceiling each way
 # (docs/decisions.md 78). bin/webpki_loop_aes runs the same cases over
 # tcp-nonblocking.
-TCP_BLOCKING_KEY_LIMIT_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(TCP_BLOCKING_LOOP_SRCS)) \
+TCP_BLOCKING_KEY_LIMIT_SRCS := $(sort $(filter-out pem.c base64.c x509.c x509_ca.c,$(TCP_BLOCKING_LOOP_SRCS)) \
                                       $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
 bin/tcp_blocking_key_limit: test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) aes.c \
                             $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
@@ -3451,7 +3495,7 @@ bin/tcp_blocking_key_limit: test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KE
 # the ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki object's sources: the server
 # presents the r2 corpus chain with its leaf key, and a server holding
 # another ticket key declines the client's ticket (docs/decisions.md 55).
-WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
+WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c base64.c x509.c x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
                            $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
 bin/webpki_loop_tcp_nonblocking: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3643,6 +3687,32 @@ bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
 
+# The PEM calls against real files and at their boundaries
+# (test/pem_files_test.c). The test compiles as the ROLE=both
+# TRUST=webpki object that exports all three, and as its host object. It
+# links the chain walk, so the anchors a bundle decodes to verify the
+# chains they anchor. It links test/stack_residue.c, which copies the
+# stack the key call leaves. The host binary links the copies that count
+# the calls into the files built on the multiply (widemul_counted). So
+# its rows read which copy computed a key's point under each cpu value.
+# It links the sources those copies call too, PEM_FILES_COUNT_SRCS.
+PEM_FILES_TEST_SRCS := $(sort $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) \
+                         $(WEBPKI_CHAIN_TEST_SRC))
+PEM_FILES_TEST_DEFS := -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(RSA_WIDE_DEF)
+bin/pem_files_test: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ test/pem_files_test.c \
+	  test/stack_residue.c $(PEM_FILES_TEST_SRCS)
+PEM_FILES_COUNT_SRCS := aead.c chacha20.c hkdf.c sha256.c sha3.c ct.c ct_wipe.c buf.c record.c \
+                        p256.c p256_sign.c rsa.c rsa_mont.c
+PEM_FILES_HOST_SRCS := $(sort $(PEM_FILES_TEST_SRCS) $(PEM_FILES_COUNT_SRCS))
+bin/pem_files_host: $(SHA512_AVX2_UNIT)
+bin/pem_files_host: test/pem_files_test.c test/stack_residue.c $(PEM_FILES_HOST_SRCS) $(WIDEMUL_COUNT_UNITS) \
+                    test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ \
+	  test/pem_files_test.c test/stack_residue.c $(call widemul_counted,$(PEM_FILES_HOST_SRCS))
+
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is handshake_parser.c, handshake_parser_ee.c
 # and buf.c.
@@ -3664,7 +3734,7 @@ bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRC
 # sources that object packages. Every webpki client offers the hybrid
 # (docs/decisions.md 53), so the ML-KEM and SHA-3 sources are on the list
 # and there is one build, not one per KEX value.
-WEBPKI_TEST_SRCS := $(filter-out pem.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
+WEBPKI_TEST_SRCS := $(filter-out pem.c base64.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
                     $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS)
 bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3727,10 +3797,11 @@ bin/webpki_session_aes_extern: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) ae
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
+X509STRICT_SRC := test/x509_strict_test.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c \
+                  ct_wipe.c
 
 # The provisioning tool the e2e suite feeds real openssl armour to.
-PEMKEY_SRC := test/pemkey.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
+PEMKEY_SRC := test/pemkey.c pem.c base64.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c ct_wipe.c
 bin/pemkey: $(PEMKEY_SRC) rsa.c rsa_mont.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ $(PEMKEY_SRC) rsa.c rsa_mont.c
@@ -3998,7 +4069,8 @@ bin/webpki_auth_host: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUN
 # and the equivalence test and the two counting tests of its SHA-256 on the
 # CPU's instructions.
 HOST_BINS := $(if $(HOST_TARGET),bin/tcp_blocking_loop_host bin/tcp_nonblocking_loop_host bin/quic_loop_host \
-                                 bin/webpki_session_host bin/webpki_auth_host bin/widemul_runtime_test \
+                                 bin/webpki_session_host bin/webpki_auth_host bin/pem_files_host \
+                                 bin/widemul_runtime_test \
                                  bin/x25519_equiv_test \
                                  bin/p256_equiv_test bin/p256_equiv_test_sum bin/p256_equiv_test_builtin \
                                  bin/p256_verify_equiv_test bin/p384_equiv_test bin/p384_test_host \
@@ -4150,7 +4222,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   sha512_test \
                   hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
                   webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
-                  webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
+                  webpki_chain_test pem_files_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
                   quic_test $(patsubst bin/%,%,$(AES_EXTERN_BINS)) \
                   $(patsubst bin/%,%,$(X86_KERNEL_BINS) $(HOST_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
@@ -4680,8 +4752,8 @@ endif
 # test/diff_writable_len.h compares ch_writable_len at record limits up to
 # 2^14 and across an AES-GCM key's KeyUpdate record. No other row reads
 # CH_TX_PT.
-# The build links pem.c, x509.c and x509_ca.c too, which the webpki
-# object does not package, because test/diff_x509.h drives them.
+# The build links x509.c and x509_ca.c too, which the webpki object does
+# not package, because test/diff_x509.h drives them.
 .PHONY: diff-webpki
 diff-webpki: $(if $(HOST_TARGET),$(SHA512_AVX2_UNIT))
 ifeq ($(LAKE),)
@@ -4722,6 +4794,8 @@ else
 endif
 	$(MAKE) bin/diff_quic_extern
 	./bin/diff_quic_extern
+	$(MAKE) bin/diff_pem_files
+	./bin/diff_pem_files
 ifneq ($(HOST_TARGET),)
 	$(MAKE) bin/diff_x25519_wide
 	./bin/diff_x25519_wide
@@ -4767,6 +4841,17 @@ DIFF_P256_WIDE_SRCS := p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_f
 bin/diff_p256_wide: test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -I. -Itest -o $@ test/diff_p256_wide_test.c $(DIFF_P256_WIDE_SRCS)
+# The PEM arm holds pem.c's four labels, pem_blocks.c's two text rules,
+# x509_pem.c's readers and pem_files.c's three calls against
+# spec/lean/Spec/PemBlocks.lean and spec/lean/Spec/PemFiles.lean. It has
+# its own main, because the calls exist only in an object with a server
+# role and TRUST=webpki, and bin/diff compiles neither. It builds as such
+# a device object's sources (docs/decisions.md 131).
+DIFF_PEM_FILES_SRCS := $(PEM_READER_SRCS) $(PEM_FILES_SRCS) $(P256_ECDH_SRCS) buf.c ct.c ct_wipe.c
+bin/diff_pem_files: test/diff_pem_files_test.c $(DIFF_PEM_FILES_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(PEM_FILES_TEST_DEFS) -I. -Itest -o $@ test/diff_pem_files_test.c \
+	  $(DIFF_PEM_FILES_SRCS)
 # The RSA signers' arm: RSASSA-PSS signatures by spec/lean/Spec/Rsa.lean
 # against the two signers a host object holds, the 64-bit one and the
 # ladder, built as a host object builds them (docs/decisions.md 95). Its
@@ -5832,12 +5917,14 @@ QUIC_SHARED := handshake_flight.c handshake_flight.h
 # so each is a place to look that the prefix does not name, and a file
 # that gains such an arm without joining this list fails the lint. A file
 # that stops carrying one fails it too, so the list never sends a reader
-# to a file that holds nothing.
+# to a file that holds nothing. pem_files.h is in the list for the reason
+# x509_ca.h is. In a QUIC build it gives the symbol names of the three
+# PEM calls the QUIC transport's suffix (docs/decisions.md 131).
 QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
                     handshake_post.c build.h build.c x509_ca.h x509_ca.c \
-                    aes.h aes.c ticket.h alert.h
+                    pem_files.h aes.h aes.c ticket.h alert.h
 # A QUIC host object holds two AES ciphers, the instructions and the table
 # (CH_AES_TWO_CIPHERS, aes.h), so where this compiler passes the host test
 # QUIC_EXTRA_DEFINES judges these three under the host object's suite
@@ -6827,6 +6914,17 @@ lint-impact:
 # quic_token.c is in because the Retry token key, which the caller holds
 # secret, passes through it on its way to hmac_sha256; it multiplies
 # nothing, so its ceiling is zero.
+# pem.c, base64.c, x509_pem.c and pem_files.c are in because
+# ch_p256_key_from_pem passes a private key file through them. pem.c and
+# base64.c decode its text, x509_pem.c copies the scalar out of its DER,
+# and pem_files.c computes the scalar's point. base64.c also takes a
+# count of zero conditional branches, because each character it decodes
+# is a byte of the key file (docs/decisions.md 131). pem.c takes no count
+# of branches. Its body loop branches on the class that base64.c gives a
+# byte, above 63 for every byte outside the alphabet. So each test
+# answers the same for every alphabet character, and a count cannot tell
+# those branches from the parser's others. .semgrep/invariants.yml's
+# inv-16-pem-body-class holds that the loop never tests the byte itself.
 #
 # WIDEMUL_PUBLIC is every other library source, each with the reason it
 # may multiply or divide: its operands are bytes the peer sent in the
@@ -6840,9 +6938,15 @@ lint-impact:
 #     signatures a public chain carries under TRUST=webpki — a CA's key,
 #     a certificate's digest and its signature, every byte from the wire
 #     or from the caller's anchor table, and the client never signs.
-#   pem.c, x509.c, x509_der.c, x509_ca.c: the certificate readers. The
+#   x509.c, x509_der.c, x509_ca.c: the certificate readers. The
 #     certificate is public too (gcc lowers x509_der.c's decimal date
 #     digits to two madd on mips32r2, and nothing there is secret).
+#     x509_pem.c reads a private key's DER through x509_der.c's readers.
+#     They judge its tags and lengths and the constants around the
+#     scalar, and never read the scalar's bytes as values.
+#   pem_blocks.c: the text around a chain's and a bundle's CERTIFICATE
+#     blocks, every byte of it public. pem.c left this list when it began
+#     to decode key files (docs/decisions.md 131).
 #   webpki_spki.c, webpki_sigalg.c: a public chain's keys, signature
 #     algorithms and signatures under TRUST=webpki. The reader doubles a
 #     coordinate length; the dispatch hashes a certificate's TBS bytes
@@ -6963,7 +7067,8 @@ WIDEMUL_CEILING := ct.c:0 ct_wipe.c:0 sha256.c:0 sha3.c:0 hkdf.c:0 chacha20.c:0 
                    srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
-                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0
+                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0 \
+                   pem.c:0 base64.c:0 x509_pem.c:0 pem_files.c:0
 # The wide X25519 field, x25519_wide.c, is one of three secret-bearing sources
 # no spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, and it compiles only in a host object, which
@@ -7094,7 +7199,7 @@ WIDE64_CEILING := x25519_wide.c:0 chacha20_vector.c:0 chacha20_avx2.c:0 chacha20
 # WIDE64_CEILING holds.
 WIDE64_HOST_COPIES := x25519.c mlkem_poly.c ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c \
                       poly1305.c aead.c mlkem.c drbg.c rsa_sign.c aes.c gcm.c p256_field.c \
-                      p256_scalar.c sha512.c quic_packet.c
+                      p256_scalar.c sha512.c quic_packet.c base64.c
 WIDE64_REBUILT := rsa_ifma.c@512:0 rsa_ifma_sign.c@512:0 rsa_avx2.c@512:0 rsa_sign64.c@512:0 \
                   $(addsuffix @host:0,$(WIDE64_HOST_COPIES))
 # The sources the 32-bit specs compile, which lint-runtime-symbols compiles
@@ -7190,8 +7295,9 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    keccak_avx2.c:-DCH_CPU_RUNTIME mlkem_avx2.c:-DCH_CPU_RUNTIME \
                    mlkem_vector.c:-DCH_CPU_RUNTIME \
                    hkdf_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
-                   keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
+                   keysched_hw.c:-DCH_CPU_RUNTIME$(COMMA)-DCH_HASH_SHA384 \
+                   pem_files.c:-DCH_ROLE_SERVER$(COMMA)-DCH_ROLE_BOTH$(COMMA)-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem_blocks.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c $(P384_WIDE_SRCS) rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c \
                   webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
@@ -7849,7 +7955,7 @@ BRANCH_SRCS := ct.c ct_wipe.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.
                rsa_mont64_addcarry.c rsa_sign64.c rsa_ifma.c rsa_ifma.c@512 rsa_avx2.c rsa_avx2.c@512 \
                $(P256_WIDE_SRCS) \
                sha3_hw.c mlkem_hw.c mlkem_poly_hw.c mlkem_vector.c keccak_avx2.c mlkem_avx2.c \
-               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 \
+               avx512_wipe.c rsa_ifma_sign.c rsa_ifma_sign.c@512 rsa_sign64.c@512 base64.c \
                $(addsuffix @host,$(WIDE64_HOST_COPIES))
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
@@ -8005,6 +8111,8 @@ BRANCH_CEILING := \
   m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
   mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
   rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
+  m3/base64.c:0 mips32r2/base64.c:0 rv32imac/base64.c:0 m3-gcc/base64.c:0 mips32r2-gcc/base64.c:0 \
+  mips32r2-gcc-O2/base64.c:0 rv32imac-gcc/base64.c:0 rv32ic-gcc/base64.c:0 \
   arm64/x25519_wide.c:2 x86-64/x25519_wide.c:2 arm64/chacha20_vector.c:40 x86-64/chacha20_vector.c:26 \
   arm64/chacha20_avx2.c:0 x86-64/chacha20_avx2.c:31 \
   arm64/chacha20_avx512.c:0 x86-64/chacha20_avx512.c:77 \
@@ -8026,6 +8134,7 @@ BRANCH_CEILING := \
   arm64/x25519.c@host:8 x86-64/x25519.c@host:12 \
   arm64/mlkem_poly.c@host:56 x86-64/mlkem_poly.c@host:59 \
   arm64/ct.c@host:9 x86-64/ct.c@host:4 arm64/ct_wipe.c@host:1 x86-64/ct_wipe.c@host:1 \
+  arm64/base64.c@host:0 x86-64/base64.c@host:0 \
   arm64/sha256.c@host:28 x86-64/sha256.c@host:35 arm64/sha3.c@host:75 x86-64/sha3.c@host:84 \
   arm64/hkdf.c@host:19 x86-64/hkdf.c@host:19 arm64/chacha20.c@host:1 x86-64/chacha20.c@host:3 \
   arm64/poly1305.c@host:21 x86-64/poly1305.c@host:19 arm64/aead.c@host:4 x86-64/aead.c@host:6 \

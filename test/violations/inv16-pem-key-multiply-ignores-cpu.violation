@@ -1,0 +1,14 @@
+invariant: INV-16
+file: pem_files.c
+catches: pem_files_host
+reason: a host object computes the key's point on ct.h's 16x16
+  decomposition whatever its cpu value states. The point is the same. The
+  ruling puts the point on the wide P-256 field when the value holds
+  CH_CPU_CONSTANT_TIME_MULTIPLY, as p256_sign_cpu signs
+  (docs/decisions.md 131). test_key_cpu counts the calls into each copy
+  and requires the wide files under the bit.
+
+--- old
+#define KEY_WIDEMUL(cpu) widemul_of_cpu(cpu)
+--- new
+#define KEY_WIDEMUL(cpu) ((void)(cpu), WIDEMUL_NOT_STATED)

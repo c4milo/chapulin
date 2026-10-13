@@ -1,0 +1,14 @@
+invariant: INV-14
+file: pem_files.c
+catches: pem_files_test
+reason: ch_p256_key_from_pem stops checking its cpu value, so a device
+  object, which defines no bit, takes any value, and a host object takes
+  a value without CH_CPU_PROBED or with a bit it does not define. The
+  ruling holds the call to init's rule (docs/decisions.md 131).
+  test_key_cpu passes 1, the top bit and every bit to a device object and
+  requires CH_EINVAL.
+
+--- old
+    int ok = cpu_value_ok(cpu) && pem_len <= CH_PEM_KEY_TEXT_MAX &&
+--- new
+    int ok = pem_len <= CH_PEM_KEY_TEXT_MAX &&

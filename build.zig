@@ -72,15 +72,16 @@ const Axis = struct { defs: Names = &.{}, filter: Names = &.{}, add: Names = &.{
 
 // SRCS in the Makefile, in its order.
 const srcs = [_][]const u8{
-    "ct.c",               "ct_wipe.c",             "sha256.c",           "hkdf.c",
-    "chacha20.c",         "poly1305.c",            "aead.c",             "x25519.c",
-    "p256.c",             "rsa.c",                 "rsa_mont.c",         "pem.c",
-    "x509.c",             "x509_der.c",            "x509_ca.c",          "webpki_time.c",
-    "webpki_name.c",      "webpki_spki.c",         "webpki_ext.c",       "buf.c",
-    "record.c",           "keysched.c",            "io.c",               "handshake_message.c",
-    "handshake_parser.c", "handshake_parser_ee.c", "handshake_record.c", "session.c",
-    "handshake_auth.c",   "handshake_flight.c",    "handshake.c",        "handshake_post.c",
-    "tls.c",              "tls_write.c",           "softmul.c",          "build.c",
+    "ct.c",                "ct_wipe.c",          "sha256.c",              "hkdf.c",
+    "chacha20.c",          "poly1305.c",         "aead.c",                "x25519.c",
+    "p256.c",              "rsa.c",              "rsa_mont.c",            "pem.c",
+    "base64.c",            "x509.c",             "x509_der.c",            "x509_ca.c",
+    "webpki_time.c",       "webpki_name.c",      "webpki_spki.c",         "webpki_ext.c",
+    "buf.c",               "record.c",           "keysched.c",            "io.c",
+    "handshake_message.c", "handshake_parser.c", "handshake_parser_ee.c", "handshake_record.c",
+    "session.c",           "handshake_auth.c",   "handshake_flight.c",    "handshake.c",
+    "handshake_post.c",    "tls.c",              "tls_write.c",           "softmul.c",
+    "build.c",
 };
 
 // The Makefile's named lists, each under its Makefile name.
@@ -125,11 +126,20 @@ const p256_wide_srcs = [_][]const u8{
 /// P384_WIDE_SRCS: P-384's field, points and verifier on six 64-bit
 /// words, which a host object holds beside p384.c (docs/decisions.md 97).
 const p384_wide_srcs = [_][]const u8{ "p384_wide_field.c", "p384_wide_point.c", "p384_wide_verify.c" };
-/// TRUST_FILTER's first four names, which every mode but webpki and the
+/// PEM_FILES_SRCS: the files that decode an operator's PEM files
+/// (pem_files.h, docs/decisions.md 131). A TRUST=webpki object and every
+/// server role hold them.
+const pem_files_srcs = [_][]const u8{ "pem_blocks.c", "x509_pem.c", "pem_files.c" };
+/// PEM_READER_SRCS: the one-block reader and the DER primitives under
+/// those files. SRCS lists them, and a server role adds them back where
+/// its trust value filters them out.
+const pem_reader_srcs = [_][]const u8{ "pem.c", "base64.c", "x509_der.c" };
+/// TRUST_FILTER's certificate names, which every mode but webpki and the
 /// ca modes filters out.
-const certificate_srcs = [_][]const u8{ "pem.c", "x509.c", "x509_der.c", "x509_ca.c" };
+const certificate_srcs = pem_reader_srcs ++ [_][]const u8{ "x509.c", "x509_ca.c" };
 /// ROLE_ADD before a transport swaps the server's driver.
-const server_add = srv_srcs ++ [_][]const u8{ "rsa_sign.c", "p256_sign.c" } ++ p256_ecdh_srcs;
+const server_add = srv_srcs ++ [_][]const u8{ "rsa_sign.c", "p256_sign.c" } ++ p256_ecdh_srcs ++
+    pem_reader_srcs ++ pem_files_srcs;
 
 // PUBLIC_TRANSPORT and PUBLIC_ROLE's lists.
 const public_quic = [_][]const u8{
@@ -173,6 +183,10 @@ const public_record_either_role = [_][]const u8{
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_alert;
+/// The PEM calls that a server role exports, and the one that a
+/// TRUST=webpki object exports (pem_files.h).
+const public_pem_server = [_][]const u8{ "ch_chain_from_pem", "ch_p256_key_from_pem" };
+const public_pem_webpki = [_][]const u8{"ch_anchors_from_pem"};
 
 /// One header and the names it declares.
 const Declaration = struct { header: []const u8, names: Names };
@@ -194,6 +208,7 @@ const declarations = [_]Declaration{
     .{ .header = "srv_quic.h", .names = &.{ "ch_srv_quic_init", "ch_srv_quic_crypto_in", "ch_srv_quic_retry_tag" } },
     .{ .header = "quic_token.h", .names = &.{ "ch_srv_quic_token_mint", "ch_srv_quic_token_check" } },
     .{ .header = "x509_ca.h", .names = &.{"ch_pubkey_from_pem"} },
+    .{ .header = "pem_files.h", .names = &(public_pem_server ++ public_pem_webpki) },
     .{ .header = "ticket.h", .names = &public_ticket },
     .{ .header = "alert.h", .names = &public_alert },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
@@ -326,6 +341,7 @@ pub fn build(b: *std.Build) void {
     _ = api_files.addCopyFile(b.path("chapulin_record.zig"), "chapulin_record.zig");
     _ = api_files.addCopyFile(b.path("chapulin_quic.zig"), "chapulin_quic.zig");
     _ = api_files.addCopyFile(b.path("chapulin_ticket.zig"), "chapulin_ticket.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_pem.zig"), "chapulin_pem.zig");
     _ = api_files.add("defines.txt", lines(b, plan.defs));
     const api = b.addModule("chapulin", .{
         .root_source_file = root,
@@ -513,11 +529,13 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     const pin_filter: Names = if (config.role == .both) &.{} else pinFilter(config.trust);
 
     var defs = concat(b, &.{ pinDefs(config.trust), trust.defs, transport.defs, if (host) &.{} else aesDefs(aes), if (config.suite == .aesgcm) &.{"-DCH_SUITE_AES_GCM"} else &.{}, role.defs });
+    // LIB_KEPT: SRCS after every axis's filter.
+    const kept = without(b, &srcs, concat(b, &.{ pin_filter, trust.filter, transport.filter, role.filter }));
     var lib_srcs = concat(b, &.{
-        without(b, &srcs, concat(b, &.{ pin_filter, trust.filter, transport.filter, role.filter })),
+        kept,
         trust.add,
         transport.add,
-        without(b, role.add, trust.add),
+        without(b, role.add, concat(b, &.{ kept, trust.add })),
         without(b, suite_add, concat(b, &.{ trust.add, transport.add, role.add })),
     });
 
@@ -610,7 +628,13 @@ fn computePlan(b: *std.Build, config: Config, target: std.Target) Plan {
     const public_rand: Names = if (config.rand == .drbg) &.{ "ch_drbg_seed", "ch_rand_bytes" } else &.{};
     const public_export: Names = if (config.exporter == .on) &.{"ch_export"} else &.{};
     const public_ca: Names = if (trustsCa(config.trust)) &.{"ch_pubkey_from_pem"} else &.{};
-    const names = concat(b, &.{ role.public, public_rand, public_ca, public_export, &.{"ch_build"} });
+    // PUBLIC_PEM: the chain and the key in every server role, and the CA
+    // bundle in every TRUST=webpki object.
+    const public_pem = concat(b, &.{
+        if (config.role != .client) &public_pem_server else &.{},
+        if (config.trust == .webpki) &public_pem_webpki else &.{},
+    });
+    const names = concat(b, &.{ role.public, public_rand, public_ca, public_pem, public_export, &.{"ch_build"} });
 
     // The hooks the object imports, which the image defines
     // (docs/porting.md) and lib-check admits as undefined. An AES=extern
@@ -684,8 +708,8 @@ fn trustAxis(b: *std.Build, trust: Trust) Axis {
         .@"ca-rsa", .@"ca-ecdsa" => .{ .defs = &.{"-DCH_TRUST_CA"}, .filter = &webpki_srcs },
         .webpki => .{
             .defs = &.{"-DCH_TRUST_WEBPKI"},
-            .filter = &.{ "pem.c", "x509.c", "x509_ca.c" },
-            .add = concat(b, &.{ &webpki_chain_srcs, without(b, &webpki_srcs, &srcs), &webpki_kex_srcs }),
+            .filter = &.{ "x509.c", "x509_ca.c" },
+            .add = concat(b, &.{ &webpki_chain_srcs, without(b, &webpki_srcs, &srcs), &webpki_kex_srcs, &pem_files_srcs }),
         },
     };
 }
@@ -749,10 +773,10 @@ fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
     return role;
 }
 
-/// PUBLIC in the Makefile: each of the six exports that objects of more
+/// PUBLIC in the Makefile: each of the nine exports that objects of more
 /// than one transport carry takes the transport into its symbol name, and
 /// the build record's symbol is named for its type (docs/decisions.md 61,
-/// 72 and 75).
+/// 72, 75 and 131).
 fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
     const suffix = b.dupe(@tagName(transport));
     std.mem.replaceScalar(u8, suffix, '-', '_');
@@ -761,7 +785,8 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         if (std.mem.eql(u8, name, "ch_build")) {
             symbol.* = b.fmt("ch_build_info_{s}", .{suffix});
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
-            std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name))
+            std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name) or
+            contains(&public_pem_server, name) or contains(&public_pem_webpki, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

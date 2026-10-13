@@ -3,12 +3,16 @@
 // which it runs on that path, reads only inside the hostname, the
 // anchors and the SPKI pins the config names.
 //
-// The properties, over unconstrained inputs at the module's real bound: a
-// hostname of 0 to CH_HOSTNAME_MAX bytes, 0 to CH_WEBPKI_ANCHOR_MAX
-// anchors and 0 to CH_SPKI_PIN_MAX pins (a configuration of pins alone
-// has no anchor and may have no hostname), and every PSK field NULL or
-// set, with any length. Memory safety
-// and absence of UB, which the automatic checks discharge.
+// The properties, over unconstrained inputs:
+//  - a hostname of 0 to CH_HOSTNAME_MAX bytes, the module's real bound;
+//  - 0 to CH_SPKI_PIN_MAX pins, the module's real bound;
+//  - 0 to PROOF_ANCHORS anchors, a bound this harness chooses;
+//  - every PSK field NULL or set, with any length.
+// A configuration of pins alone has no anchor and may have no hostname.
+// No cap bounds the anchor count (docs/decisions.md 131), so the anchor
+// bound is the harness's own, 12. The hash reads each anchor the same
+// way. So 12 anchors stand for any count a caller's array holds. Memory
+// safety and absence of UB, which the automatic checks discharge.
 // And the verdict's contract: webpki_resumption_ok answers 0 or 1, and 1
 // only for a config whose PSK fields are all unset or that presents a
 // ticket of the shape webpki_ticket.h states.
@@ -29,11 +33,13 @@
 #include "webpki_ticket.c"
 
 #define ANCHOR_FIELD_MAX 4
+// The entries the formula's anchors array holds.
+#define PROOF_ANCHORS 12
 
 static uint8_t hostname[CH_HOSTNAME_MAX];
-static uint8_t names[CH_WEBPKI_ANCHOR_MAX][ANCHOR_FIELD_MAX];
-static uint8_t spkis[CH_WEBPKI_ANCHOR_MAX][ANCHOR_FIELD_MAX];
-static ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+static uint8_t names[PROOF_ANCHORS][ANCHOR_FIELD_MAX];
+static uint8_t spkis[PROOF_ANCHORS][ANCHOR_FIELD_MAX];
+static ch_trust_anchor anchors[PROOF_ANCHORS];
 static uint8_t psk[SHA256_LEN + 1];
 static uint8_t psk_id[CH_TICKET_ID_MAX + 1];
 static uint8_t binding[SHA256_LEN];
@@ -55,8 +61,8 @@ int main(void) {
     cfg.hostname_len = nondet_size_t();
     __CPROVER_assume(cfg.hostname_len <= CH_HOSTNAME_MAX);
     cfg.anchor_count = nondet_size_t();
-    __CPROVER_assume(cfg.anchor_count <= CH_WEBPKI_ANCHOR_MAX);
-    for (size_t i = 0; i < CH_WEBPKI_ANCHOR_MAX; i++) {
+    __CPROVER_assume(cfg.anchor_count <= PROOF_ANCHORS);
+    for (size_t i = 0; i < PROOF_ANCHORS; i++) {
         fill_nondet(names[i], ANCHOR_FIELD_MAX);
         fill_nondet(spkis[i], ANCHOR_FIELD_MAX);
         size_t name_len = nondet_size_t();

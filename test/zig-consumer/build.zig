@@ -13,9 +13,10 @@
 //!   unit.zig built against the same object.
 //! - Adding `-Dloop` also installs bin/loop, loop.zig built against that
 //!   object, which must be ROLE=both: a client and a server of it run
-//!   against each other through the API. It reads the r2 chain, its
-//!   anchor and the leaf key from webpki_corpus.h, which the script
-//!   copies from test/.
+//!   against each other through the API. It decodes the r2 chain, its
+//!   anchor and the leaf key from the PEM files of pem_fixtures.h through
+//!   the API, and holds each to webpki_corpus.h's; the script copies both
+//!   headers from test/.
 //! - `zig build -Dh2=ROW -Dquic=ROW` installs bin/pair, pair.zig built
 //!   against colibri's tcp-nonblocking object and its QUIC object in one
 //!   image.
@@ -71,7 +72,10 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(unit);
         if (loop) {
             const corpus = b.addTranslateC(.{ .root_source_file = b.path("webpki_corpus.h"), .target = target, .optimize = optimize });
-            program(b, "loop", target, optimize, &imports).addImport("corpus", corpus.createModule());
+            const pem = b.addTranslateC(.{ .root_source_file = b.path("pem_fixtures.h"), .target = target, .optimize = optimize });
+            const loop_module = program(b, "loop", target, optimize, &imports);
+            loop_module.addImport("corpus", corpus.createModule());
+            loop_module.addImport("pem", pem.createModule());
         }
     }
     if (h2 != null and quic != null) {

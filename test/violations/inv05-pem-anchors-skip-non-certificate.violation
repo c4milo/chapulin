@@ -1,0 +1,18 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: a bundle block whose outer fields do not read is skipped, so the
+  bundle decodes with that block's anchor entry unwritten and counted.
+  test_bundle_grammar writes a root and a block of other DER and requires
+  CH_EINVAL.
+
+--- old
+        if (!x509_pem_read_subject_key(cert, cert_len, &a->name, &a->name_len, &a->spki,
+                                       &a->spki_len)) {
+            return CH_EINVAL;
+        }
+--- new
+        if (!x509_pem_read_subject_key(cert, cert_len, &a->name, &a->name_len, &a->spki,
+                                       &a->spki_len)) {
+            (void)0;
+        }

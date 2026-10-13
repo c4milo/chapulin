@@ -1,0 +1,15 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_test
+reason: an ECPrivateKey's parameters field is read for its framing
+  alone, so a key on secp256k1 or any other curve with a 32-byte scalar
+  decodes as a P-256 key. https://github.com/c4milo/chapulin/issues/192
+  asks for another curve to be refused. test_key_fields writes the
+  corpus leaf's scalar under secp256k1's and prime192v1's OIDs and
+  requires CH_EINVAL.
+
+--- old
+    if (has_curve && !x509_read_exact(r, ec_curve, sizeof ec_curve)) {
+--- new
+    (void)ec_curve;
+    if (has_curve && !x509_skip(r, TAG_CURVE)) {

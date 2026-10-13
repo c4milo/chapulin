@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki.h
+catches: pem_files_test
+reason: webpki_leaf_info holds the anchor's index in one byte, as it did
+  under a cap of twelve anchors, so the index of an anchor past 255 is
+  cut to its low byte and the pins read another anchor. No cap bounds the
+  count (docs/decisions.md 131). test_full_bundle verifies the r2 chain
+  under the last of 300 anchors and requires index 299.
+
+--- old
+    size_t anchor_index;
+--- new
+    uint8_t anchor_index;

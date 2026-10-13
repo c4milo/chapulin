@@ -157,7 +157,7 @@ static void pinned_session(ch_tls *t, ch_trust_anchor *anchors, const webpki_cor
 static int pinned_flight(uint8_t cert_type, const webpki_corpus_chain *row, uint16_t scheme,
                          const uint8_t *sig, size_t sig_len, const uint8_t *message,
                          size_t message_len, pin_set pins, size_t pin_count, handshake_state *h) {
-    ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+    ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_tls t;
     pinned_session(&t, anchors, row, cert_type, pins, pin_count);
     uint8_t verify_msg[VERIFY_MSG_MAX];

@@ -161,9 +161,11 @@ static inline void expect(const char *cmd, const char *want) {
     (void)fputs(cmd, to_spec);
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);
-    // Sized for the largest reply any row produces: a sealed full-size
-    // record is 2*(2^14 + overhead) hex characters.
-    static char got[40960];
+    // Sized for the largest reply any row produces. A PEM chain or bundle
+    // of up to 64 KiB of DER replies in 2^17 hex characters and the
+    // separators (test/diff_pem_files_calls.h). A sealed full-size record
+    // is 2*(2^14 + overhead).
+    static char got[262144];
     if (fgets(got, sizeof got, from_spec) == NULL) {
         die("spec process closed the pipe (did spec/lean/.lake/build/bin/diffspec build?)");
     }

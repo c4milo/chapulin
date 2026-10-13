@@ -1,0 +1,16 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the bundle call gives its writer one byte more than der_len, so
+  a bundle one byte over the caller's DER room reads and its last byte
+  lands past the room. test_bundle_room fills a room with one root and
+  with two, and requires CH_EINVAL in a room one byte shorter.
+
+--- old
+    wb_init(&w, der, der_len);
+    pem_blocks blocks;
+    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_SKIPPED);
+--- new
+    wb_init(&w, der, der_len + 1);
+    pem_blocks blocks;
+    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_SKIPPED);

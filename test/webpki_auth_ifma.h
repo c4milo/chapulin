@@ -48,7 +48,7 @@ static unsigned long ifma_calls_of_flight(const char *name, uint32_t bits) {
     if (row == NULL) {
         return 0;
     }
-    ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+    ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_tls t;
     memset(&t, 0, sizeof t);
     row_cfg(row, anchors, &t.cfg);

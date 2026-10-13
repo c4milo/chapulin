@@ -1,0 +1,17 @@
+invariant: INV-20
+file: srv.c
+catches: test/lint-invariants.sh
+reason: ch_srv_check decodes a key file itself, so a library source calls
+  one of pem_files.h's provisioning calls and x509_pem.c's readers run in
+  a call a session's caller makes at boot. inv-20-pem-files-entry
+  refuses any call outside pem_files.c (docs/decisions.md 131).
+
+--- old
+int ch_srv_check(const ch_cfg *cfg) {
+    uint8_t live = srv_identity_live(cfg);
+--- new
+int ch_srv_check(const ch_cfg *cfg) {
+    uint8_t probe[32];
+    uint8_t point[64];
+    (void)ch_p256_key_from_pem(0, NULL, 0, NULL, 0, probe, point);
+    uint8_t live = srv_identity_live(cfg);

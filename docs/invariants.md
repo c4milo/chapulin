@@ -272,13 +272,16 @@ last `ROLE=server` stub, as the entry said it would.
   the build's one algorithm, canonical DER on every decoded field,
   keyUsage and extendedKeyUsage required, no name matching, no
   clock. Any widening of that grammar is the violation, whether it
-  lands inside the verifier or beside it. One other module reads
-  certificate DER: the provisioning reader in `x509_ca.c`, which
-  reaches no verdict — it returns key bytes, never a decision — leaves
-  the certificate's signature, dates and names unread, and is
-  unreachable from any path peer input takes. Raw-pin builds compile
-  neither: they hash the certificate into the transcript and never
-  read it. The `TRUST=webpki` chain verifier ([webpki.md](webpki.md))
+  lands inside the verifier or beside it. Two other modules read
+  certificate DER, and neither returns a verdict. One is the reader in
+  `x509_ca.c`. The other is `x509_pem.c`, which reads for `pem_files.c`'s
+  three calls (docs/decisions.md 131). It reads a provisioned
+  certificate's outer fields as far as its subject and key. It reads a
+  P-256 private key's DER and the DER of an EC PARAMETERS block too. Each
+  returns bytes, never a decision, and leaves the certificate's
+  signature, dates and names unread. No path that peer input takes
+  reaches either. A raw-pin client compiles none of them: it hashes
+  the certificate into the transcript and never reads it. The `TRUST=webpki` chain verifier ([webpki.md](webpki.md))
   is a second verifier with its own public profile: `webpki_time.c`
   reads validity dates, `webpki_name.c` matches hostnames against
   subjectAltName, `webpki_spki.c` reads a public key and
@@ -305,10 +308,15 @@ last `ROLE=server` stub, as the entry said it would.
   every container; rejection precedes interpretation) plus pinned
   profile constants, byte-compared, never matched loosely: the
   verifier's in `x509.c`, the reader's in `x509_ca.c` (version,
-  basicConstraints and keyUsage object identifiers, `cA` TRUE). The
-  reader's containment is a fact about includes: `x509_ca.h` and
-  `pem.h` are included by no library source except `x509_ca.c`
-  itself, so no session reaches it. The `TRUST=webpki` chain
+  basicConstraints and keyUsage object identifiers, `cA` TRUE), and
+  `x509_pem.c`'s P-256 constants (the AlgorithmIdentifier, the
+  SubjectPublicKeyInfo and ECPrivateKey headers, the two versions, and
+  prime256v1's OBJECT IDENTIFIER as an EC PARAMETERS block holds it). The
+  readers' containment is a fact about includes. No library source
+  includes `x509_ca.h` or `pem_files.h` but the file that defines their
+  calls. Only `x509_pem.c` and `pem_files.c` include `x509_pem.h`, and
+  only the PEM files and `x509_ca.c` include `pem.h`. So no session
+  reaches them. The `TRUST=webpki` chain
   verifier reads the same DER through the same primitives in its
   `webpki_*.c` files ([webpki.md](webpki.md)), and only that mode's
   object will package them. The only other DER readers (the `der_parse`
@@ -317,23 +325,26 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
   to identifiers that begin with `x509_`, `asn1_` or `der_`, or carry
   one of the three right after an underscore, outside
-  p256.c, p384.c, x509.c, x509_der.c, x509_ca.c, webpki.h,
-  webpki_time.c, webpki_name.c, webpki_spki.c, webpki_sigalg.c,
-  webpki_ext.c and webpki_cert.c. The rule reads a name component
+  p256.c, p384.c, x509.c, x509_der.c, x509_ca.c, x509_pem.c,
+  pem_files.c, webpki.h, webpki_time.c, webpki_name.c, webpki_spki.c,
+  webpki_sigalg.c, webpki_ext.c and webpki_cert.c. The rule reads a name component
   rather than a substring, because `quic_header_protect` ends "header"
   in the letters the DER prefix spells and is no parser;
   .semgrep/invariants.c holds that case as an `ok:` line.
   Semgrep-structural
-  (`inv-20-provisioning-entry`) holds the containment half. Grammar
+  (`inv-20-provisioning-entry`, `inv-20-pem-files-entry`) holds the
+  containment half. Grammar
   widening inside those files is held by the boundary-pair tests in
-  test/x509_ca_tests.h, test/webpki_spki_test.c,
+  test/x509_ca_tests.h, test/pem_files_test.c,
+  test/pem_files_key_tests.h, test/webpki_spki_test.c,
   test/webpki_cert_mutants.h and test/webpki_ext_mutants.h, by the off-curve
   keys in test/webpki_sigalg_test.c, and by review, as x509.c's always
   has been; the tripwire catches a reader growing outside them. Which
-  object packages which reader is held by `make lint-trust-separation`:
-  the raw and ca objects carry no `webpki_*.c` file and the webpki
-  object carries no `pem.c`, `x509.c` or `x509_ca.c`, with the webpki
-  file list read from git rather than from the Makefile's own filter
+  object packages which reader is held by `make lint-trust-separation`.
+  The raw and ca objects carry no `webpki_*.c` file, and the webpki
+  object carries no `x509.c` or `x509_ca.c`. A raw client carries no
+  `pem.c`, `x509_pem.c` or `pem_files.c`. The lint reads the webpki file
+  list from git rather than from the Makefile's own filter
   (`inv05-webpki-source-in-raw`), and every root `webpki*.c` file git
   tracks must appear in `WEBPKI_SRCS` (`inv05-webpki-source-unlisted`).
   inv05-webpki-leaf-key-reads-extensions makes the pins-alone key reader
@@ -348,9 +359,9 @@ last `ROLE=server` stub, as the entry said it would.
 - **Violation.** A PR accepts a second CertificateEntry, an
   absent-params AlgorithmIdentifier, or an unknown critical
   extension "for compatibility" — or a library source calls
-  `ch_pubkey_from_pem`, putting the provisioning reader on a path
-  peer input can reach, or the reader grows a verdict instead of
-  returning bytes.
+  `ch_pubkey_from_pem` or a `pem_files.h` call. That call puts a reader
+  of provisioned files on a path that peer input can reach. Or a reader
+  grows a verdict and no longer returns bytes alone.
 - See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-6 — PKCS#1 v1.5 as verify only, in rsa_pkcs1.c and its one caller
@@ -389,7 +400,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** `x509_verify_leaf` is the one entry the handshake
   reaches, called only from `handshake_auth.c`. A CA-mode build
   exports a second entry, `ch_pubkey_from_pem`, which firmware calls
-  while provisioning and no library source calls at all. Either way
+  while provisioning and no library source calls at all. A server
+  role and a TRUST=webpki build export the entries `pem_files.h`
+  declares, `ch_chain_from_pem`, `ch_p256_key_from_pem` and
+  `ch_anchors_from_pem`, under the same rule (docs/decisions.md 131). Either way
   the library never reads a clock: certificate validity is CA
   reissuance policy, not a device-side time check.
 - **Mechanism.** Two entries, each contained by a different fact.
@@ -401,7 +415,8 @@ last `ROLE=server` stub, as the entry said it would.
   and neither reads a clock (docs/decisions.md 65). The
   provisioning reader sits above them in `x509_ca.c` as a side
   branch: nothing in the library includes its header, so a session
-  cannot reach it however the firmware uses it. `x509_read_time` checks the Time shape and ignores the
+  cannot reach it however the firmware uses it. `pem_files.c` sits
+  beside it the same way, over `x509_pem.c`. `x509_read_time` checks the Time shape and ignores the
   digits. `x509_read_time_epoch` does read them, but only as a
   counter to compare against stored state (INV-21); nothing
   compares a certificate to now, so no code path wants a clock.
@@ -413,7 +428,11 @@ last `ROLE=server` stub, as the entry said it would.
   `webpki_read_certificate_key` call outside webpki_pin.c, each with its
   definition site excluded. Semgrep-structural
   (`inv-20-provisioning-entry`): no `ch_pubkey_from_pem` call in any
-  library source, with x509_ca.c excluded as the definition site. Semgrep-tripwire
+  library source, with x509_ca.c excluded as the definition site.
+  Semgrep-structural (`inv-20-pem-files-entry`): no call to any of the
+  three `pem_files.h` calls in any library source, with pem_files.c
+  excluded as the definition site; `inv20-pem-files-called-by-srv`
+  adds one to `srv.c` and `test/lint-invariants.sh` objects. Semgrep-tripwire
   (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
   `gettimeofday`, `localtime`, or `gmtime` in library sources,
   complementing `inv-2-freestanding`'s time.h include ban at the
@@ -2154,10 +2173,11 @@ last `ROLE=server` stub, as the entry said it would.
   every function it declares under a `ch_` name is one the object exports
   or imports, so a program that calls a function the object lacks fails to
   compile rather than to link. Its types have the layout the object's
-  build record describes. `chapulin.c` is translated from `x509_ca.h` and
-  `drbg.h` only where the object exports their call, and for any other
-  object each declares no `ch_` function the object lacks, so a C program
-  of that object that calls one fails to compile too. The API declares a
+  build record describes. `chapulin.c` is translated from `x509_ca.h`,
+  `pem_files.h` and `drbg.h` only where the object exports a call of
+  theirs. For any other object, each declares no `ch_` function the
+  object lacks. So a C program of that object that calls one fails to
+  compile too. The API declares a
   Zig call for each C call it covers, forwards to that call, maps each
   code the call returns to one error, builds `ch_cfg` only from the
   fields each value names, and keeps no TLS rule of its own: a record's
@@ -2181,7 +2201,9 @@ last `ROLE=server` stub, as the entry said it would.
   mode, as `x509_ca.h` declares `ch_pubkey_from_pem` under `CH_TRUST_CA`,
   and by entropy pattern, as `drbg.h` declares `ch_drbg_seed` under
   `CH_RAND_DRBG` and `rand.h` declares no `ch_rand_bytes` under
-  `CH_RAND_SESSION`. A test binary that runs the provisioning walk outside a
+  `CH_RAND_SESSION`. `pem_files.h` declares its chain and key calls under
+  `CH_ROLE_SERVER` and its bundle call under `CH_TRUST_WEBPKI`. A test
+  binary that runs the provisioning walk outside a
   CA build defines `CH_X509_CA_TEST`, which no object's defines include.
   `build.zig` copies `chapulin.zig`, `chapulin_record.zig`,
   `chapulin_quic.zig` and `chapulin_ticket.zig` into a directory of the
@@ -2215,10 +2237,12 @@ last `ROLE=server` stub, as the entry said it would.
   byte and `write` must refuse whole an output one byte short of the
   records it seals; and
   `pair.zig` imports the modules of two transports and starts a client on
-  each through its API. Where `chapulin.c` leaves out `x509_ca.h` or
-  `drbg.h`, the script translates that header with `zig translate-c`
-  under the same defines and refuses a `ch_` function the result
-  declares that the object neither exports nor imports. Before
+  each through its API. Where `chapulin.c` leaves out `x509_ca.h`,
+  `pem_files.h` or `drbg.h`, the script translates that header with `zig
+  translate-c` under the same defines. It refuses a `ch_` function the
+  result declares that the object neither exports nor imports.
+  `inv36-header-pem-files-outside-server` declares the chain and key
+  calls in every object, and the script refuses it. Before
   `matches.zig`, `tools/public-constants.py` lists every length and cap
   the public headers' comments name in the regions the object compiles,
   and fails when the consumer cannot see one; `matches.zig` then
@@ -2959,6 +2983,9 @@ last `ROLE=server` stub, as the entry said it would.
   or a bit a later release adds, and in a `SUITE=aesgcm` host object a caller's
   suite list that names an AES-GCM suite under a `ch_cfg.cpu` without
   `CH_CPU_CONSTANT_TIME_AES` (decisions.md 81 and 89).
+  `ch_p256_key_from_pem` takes a `cpu` value and refuses one by the same
+  rule, `cpu.h`'s `cpu_value_ok`. A device object defines no bit, so it
+  takes 0 alone (docs/decisions.md 131).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -3000,8 +3027,9 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_quic_init` applies the same configuration rules through
   `webpki_cfg_ok` (docs/decisions.md 64). bin/quic_loop_webpki holds
   them over QUIC at each boundary: `CH_SPKI_PIN_MAX` pins with anchors
-  and alone, `CH_WEBPKI_ANCHOR_MAX` anchors and `CH_HOSTNAME_MAX` bytes
-  of hostname under pins alone each accepted and one more refused, a
+  and alone, and `CH_HOSTNAME_MAX` bytes of hostname under pins alone,
+  each accepted and one more refused. It takes 300 anchors, since no cap
+  bounds the count (docs/decisions.md 131). It holds a
   pinned session's ticket resumed under its pins and refused under another
   pin set or none, and an ALPN offer of no protocol refused, which RFC
   9001 §8.1 forbids a QUIC client. inv14-quic-spki-pin-cap,
@@ -3227,6 +3255,10 @@ last `ROLE=server` stub, as the entry said it would.
   them `CH_CPU_AVX512_IFMA`, which the rows of the other architecture
   cannot see, so test/host-builds.sh reads `CH_CPU_DEFINED` for both under
   the pinned clang and compares each set with the bits it writes out.
+  test/pem_files_parameters_tests.h holds the key call to the same
+  values in the host binary, and to 0 alone in the device binary.
+  `inv14-pem-key-cpu-unchecked` drops the check, and bin/pem_files_test
+  catches it.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know, or lets a client entry take a PSK
@@ -3293,7 +3325,11 @@ last `ROLE=server` stub, as the entry said it would.
   refused. bin/webpki_chain_test's test/webpki_chain_path.h pins
   `path_entries` and `anchor_index` on the corpus, on the captures, whose
   chains end at anchors 0, 2, 3 and 4, and on a root re-keyed under one
-  Name. The webpki_pin CBMC harness proves both calls memory-safe at their
+  Name. `anchor_index` is a `size_t`, since no cap bounds the anchor count
+  (docs/decisions.md 131). test/quic_loop_pins.h pins the root at index
+  299 of 300 anchors, and test/pem_files_bundle_tests.h verifies the r2
+  chain under the last of 300 decoded roots. `inv33-webpki-anchor-index-one-byte`
+  narrows the field to a byte, and bin/pem_files_test catches it. The webpki_pin CBMC harness proves both calls memory-safe at their
   real bounds and their verdict and alert pairs, that an accepted raw list
   is one entry whose bytes a pin hashes to, and that path pinning parses
   nothing past `path_entries` and hashes the anchor at `anchor_index`.
@@ -3768,7 +3804,27 @@ last `ROLE=server` stub, as the entry said it would.
   the unsigned product with two corrections, each an `if` on an
   operand's sign, which clang for the 32-bit targets lowers to a mask
   and every gcc lowers to two branches in x25519, so the gcc lint sees
-  it.
+  it. `base64.c` holds a count of zero on every spec, because
+  `base64_class` reads each character of a key file (docs/decisions.md
+  131). `inv16-base64-class-branches` writes two of its range masks as
+  an `if` chain, and the count rises. `pem.c`'s body loop branches on the
+  class that `base64_class` gives, never on the byte. Every class outside
+  the alphabet is above 63, so each of its tests answers the same for all
+  64 alphabet characters. Its first loop compared the byte with `-`, CR,
+  LF and `=`. clang wrote those four tests as one compare at 44, which
+  sent `+` apart from the other 63 characters. gcc kept a chain of
+  equalities. A count cannot tell that branch from the loop's others, so
+  `pem.c` is not in `BRANCH_SRCS`. Semgrep-structural
+  (`inv-16-pem-body-class`) holds the source instead. `body_loop` takes a
+  byte from `rb_u8` only as `base64_class`'s argument. Neither
+  `body_loop` nor `base64_step` compares a value with a character
+  constant. `inv16-pem-body-compares-character` writes the byte's tests
+  back, and `make lint-invariants` catches it. In a host object,
+  `ch_p256_key_from_pem` computes the key's point under the multiply
+  answer that its `cpu` value gives (docs/decisions.md 131). It runs the
+  wide P-256 files under `CH_CPU_CONSTANT_TIME_MULTIPLY`, and the files
+  under their own names without it. bin/pem_files_host counts the calls
+  into each copy, and `inv16-pem-key-multiply-ignores-cpu` fails it.
   The same pass counts each file's calls to the compiler runtime's 64-bit
   shift routines, `__ashldi3`, `__lshrdi3` and `__ashrdi3`, and holds each
   count at `SHIFT_CALL_CEILING`, which is zero for a file it does not
@@ -4962,6 +5018,15 @@ last `ROLE=server` stub, as the entry said it would.
   and r^4, when each call ends (decision 83). `bin/poly1305_equiv_test`
   copies the stack below a call and requires none of them there, and
   `poly1305-vector-keeps-powers` drops the wipe and the test catches it.
+  `ch_p256_key_from_pem` wipes the base64 accumulator, the decoded key
+  DER and its copy of the scalar on every path before it returns
+  (docs/decisions.md 131). `bin/pem_files_test` copies the stack below a
+  success and a refusal. It requires no 8 bytes of the scalar there, in
+  either byte order. `inv17-pem-key-der-not-wiped` and
+  `inv17-pem-key-scalar-not-wiped` each drop one wipe, and the test
+  catches each. The accumulator's wipe rests on review. The accumulator
+  holds 4 bytes at most, and clang for arm64 keeps it in registers, where
+  no search of the stack finds it.
   The AVX2 Poly1305 computes r^2 to r^8 and wipes them the same way
   (decision 110). The same binary searches the stack below its calls, and
   `poly1305-avx2-keeps-powers` drops that wipe and the binary's x86-64

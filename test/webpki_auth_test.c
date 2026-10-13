@@ -130,11 +130,12 @@ static const webpki_corpus_chain *chain_named(const char *name) {
     return NULL;
 }
 
+#define CORPUS_ROW_ANCHORS 12 // a corpus row's anchors: 5 at most, and no cap bounds the count
 // A row's configuration: its anchors, its hostname and its clock, as
 // test/webpki_chain_test.c builds them, and in a host object TEST_CPU.
 static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_cfg *cfg) {
     test_cfg_clear(cfg);
-    CHECK(row->anchor_count <= CH_WEBPKI_ANCHOR_MAX);
+    CHECK(row->anchor_count <= CORPUS_ROW_ANCHORS);
     for (size_t i = 0; i < row->anchor_count; i++) {
         anchors[i].name = row->anchors[i].name;
         anchors[i].name_len = row->anchors[i].name_len;
@@ -250,7 +251,7 @@ static void check_vector(const webpki_auth_vector *v) {
         return;
     }
 
-    ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
+    ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_tls t;
     memset(&t, 0, sizeof t);
     row_cfg(row, anchors, &t.cfg);

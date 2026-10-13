@@ -60,11 +60,14 @@
 #define CH_SRV_COOKIE_KEY_LEN 32
 #define CH_SRV_TICKET_KEY_LEN 32
 
-// One certificate, as the DER bytes the caller holds in flash. chapulin
-// writes them out unread: a ROLE=server object links no X.509 reader at
-// all, so nothing here is parsed, and a malformed certificate is the
-// client's to report (docs/server.md, "What the mode does not check,
-// and why that is safe").
+// One certificate, as the DER bytes the caller holds in flash. A session
+// writes them out unread: no session of a ROLE=server object reads a
+// certificate. A malformed one is the client's to report (docs/server.md,
+// "What the mode does not check, and why that is safe").
+// ch_chain_from_pem reads each certificate's outer fields, and
+// ch_p256_key_from_pem reads the end-entity certificate's key. Each does
+// so once, while the firmware provisions, and no session calls either
+// (pem_files.h).
 typedef struct {
     const uint8_t *der;
     size_t len;

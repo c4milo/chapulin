@@ -353,6 +353,55 @@ Spec.Pem.decode?      : (derMax : Nat) → ByteArray → Option ByteArray
                         -- line terminator (§3's ABNF admits it), and an empty
                         -- body is rejected. Line op: `pemdecode <derMax> <hex>`
                         -- → `ok <der>` / `ERR pem reject`.
+Spec.PemBlocks.decodeOne? : (label : List UInt8) → (textMax derMax : Nat) →
+                        ByteArray → Option ByteArray
+                        -- `pem_decode_one`: Spec.Pem.decode?'s grammar for
+                        -- any of the four labels pem.h names (CERTIFICATE,
+                        -- PRIVATE KEY, EC PRIVATE KEY, EC PARAMETERS) under
+                        -- the caller's two caps; decode?_eq_decodeOne? proves
+                        -- it decode? on the CERTIFICATE label. Line op:
+                        -- `pemone <label> <textMax> <derMax> <hex>` → `ok
+                        -- <der>` / `ERR pemone reject`.
+Spec.PemBlocks.readCertificates? : TextRule → (roomMax : Nat) →
+                        ByteArray → Option (List ByteArray)
+                        -- `pem_blocks_next` called until the text ends: one
+                        -- CERTIFICATE block or more, roomMax bytes of DER
+                        -- together, the writer's room. A chain's rule
+                        -- (`refused`) admits CR and LF alone outside the
+                        -- blocks and an LF before each next BEGIN line. A
+                        -- bundle's rule (`skipped`) reads a CERTIFICATE block
+                        -- at each line that starts with "-----BEGIN " and
+                        -- refuses any other BEGIN line, refuses
+                        -- "-----BEGIN " at any other byte, and skips every
+                        -- other line; each END line ends its line. The caller
+                        -- counts the blocks. Line op:
+                        -- `pemcerts <rule> <roomMax> <hex>` → `ok
+                        -- <der>,<der>...` / `ERR pemcerts reject`.
+Spec.PemFiles.readSubjectKey : ByteArray → Option (ByteArray × ByteArray)
+                        -- x509_pem_read_subject_key: a certificate's RFC 5280
+                        -- §4.1 outer fields as far as its key, the subject
+                        -- Name and the SubjectPublicKeyInfo returned whole,
+                        -- nothing judged. Line op: `pemsubjectkey <hex>`.
+Spec.PemFiles.readPkcs8, readSec1 : ByteArray → Option (ByteArray × Option ByteArray)
+                        -- x509_pem_read_pkcs8 and x509_pem_read_sec1: a P-256
+                        -- PrivateKeyInfo of version 0 (RFC 5958 §2) and an
+                        -- ECPrivateKey of version 1 (RFC 5915 §3), the curve
+                        -- optional inside PKCS #8 and required outside it; the
+                        -- 32-byte scalar and any publicKey's X‖Y. Line op:
+                        -- `pemkeyder <pkcs8|sec1> <hex>`.
+Spec.PemFiles.chainFromPem?, anchorsFromPem? : (derLen max : Nat) → ByteArray → ...
+Spec.PemFiles.keyFromPem? : ByteArray → ByteArray → Option (ByteArray × ByteArray)
+                        -- the three calls pem_files.h declares, over the readers
+                        -- above and Spec.P256.pubKey? for the key's point. A
+                        -- chain and a bundle take the caller's DER room and
+                        -- entries; a chain holds 255 certificates at most, and
+                        -- each block's outer fields read. A key's text has
+                        -- its cap, and one EC PARAMETERS block that names
+                        -- prime256v1 may come before a SEC 1 key. Line ops:
+                        -- `pemchain <derLen> <chainMax> <hex>`, `pemanchors
+                        -- <derLen> <anchorMax> <hex>` → `ok <name>
+                        -- <spki>,<name> <spki>...`, `pemkey <hex> <leaf
+                        -- hex>`.
 Spec.X509Ca.caKey?    : Alg → (derMax : Nat) → ByteArray → Option ByteArray
                         -- provisioning: one PEM certificate to the SPKI key
                         -- bytes ch_cfg.server_pubkey takes. Composes
@@ -1019,6 +1068,43 @@ Spec.Pem.b64Value?_inv       a byte that decodes to v IS the v-th alphabet
                              -- character — with b64Value?_table, the accepted
                              -- alphabet is pinned in both directions
 Spec.Pem.b64Value?_lt        b64Value? c = some v → v < 64
+Spec.PemBlocks.decode?_eq_decodeOne?
+                             decode? derMax = decodeOne? on the CERTIFICATE label at
+                             -- pemMax derMax: every Spec.Pem theorem of decode?
+                             -- holds of the four-label reader's certificate arm
+Spec.PemBlocks.readCertificates?_bounds
+                             an accepted run holds one block or more, at most
+                             -- roomMax bytes of DER together, under either rule
+Spec.PemBlocks.skipText_ended_clear
+                             the text a bundle skips to its end holds
+                             -- "-----BEGIN " at no byte
+Spec.PemBlocks.skipText_block_clear
+                             a bundle's block opens at the start of a line where
+                             -- "-----BEGIN " starts, and "-----BEGIN " starts at
+                             -- no byte before it
+Spec.PemBlocks.readBlock?_begins
+                             a block of a label reads only where that label's
+                             -- BEGIN line starts
+Spec.PemBlocks.readCertificates?_begins
+                             in a bundle that the run accepts, "-----BEGIN "
+                             -- starts only at the start of a line, and
+                             -- CERTIFICATE's BEGIN line starts there: a BEGIN
+                             -- line of another label refuses the bundle
+Spec.PemFiles.keyFromPem?_sound
+                             an accepted key's point is pubKey? of its scalar, so
+                             -- the scalar is in 1 to n - 1, and the leaf's
+                             -- SubjectPublicKeyInfo is P-256's with that point
+Spec.PemFiles.chainFromPem?_bounds
+                             an accepted chain holds 1 to chainMax certificates,
+                             -- and 255 at most, of at most derLen bytes together,
+                             -- each of which readSubjectKey reads
+Spec.PemFiles.anchorsFromPem?_bounds
+                             an accepted bundle holds 1 to anchorMax roots
+Spec.PemFiles.anchorsFromPem?_begins
+                             readCertificates?_begins for the bundle call: in an
+                             -- accepted bundle, "-----BEGIN " starts only at the
+                             -- start of a line, and CERTIFICATE's BEGIN line
+                             -- starts there
 Spec.X509Ca.readCertificate_frames
                              an accepted certificate is exactly SEQUENCE(TBS,
                              -- sigAlg, BIT STRING) with the unused-bits octet
@@ -1433,7 +1519,9 @@ means the module's selftest plus the differential oracle carry it;
 | RsaAvx2 | 11 | the AVX2 kernel of `rsa_avx2.c`, modeled from the C with a lane in a `Nat`: a square's rows put in each lane what the multiplication of `a` by itself puts there; no triangle's sum and no sum of the last pass passes `2 ^ 64` at the C's digit widths and counts; `RSA_AVX2_DIGIT_COUNT` leaves `4 m < 2 ^ (D n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-D n) mod m`; and the chain `rsa_avx2_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`. That the instructions compute the lane model's values stays with `bin/rsa_avx2_equiv_test`, and the order in which the C adds a lane's numbers with the C's tests and the differential |
 | RsaIfma | 13 | the AVX-512 IFMA kernels of `rsa_ifma.c` and `rsa_ifma_sign.c` and `rsa_mont.c`'s `power_of_two_mod`, modeled from the C with a lane in a `Nat`: no lane, `digit_zero` or scalar sum passes its C type in 128 rounds or fewer; `RSA_IFMA_DIGIT_COUNT` leaves `4 m < 2 ^ (52 n)`; the almost-Montgomery product of `a` and `b` below `2 m` is below `2 m` and is `a b 2 ^ (-52 n) mod m`; `normalize_digits` keeps its lanes' number modulo `2 ^ (52 count)` and writes digits below `2 ^ 52`, the mask arithmetic of its second loop included; `power_of_two_mod` starts below `m` and writes `2 ^ e mod m`; the chain `rsa_ifma_public` runs computes `base ^ 65537 mod m` for every base below `2 ^ (64 k)`; and signing's 4-bit window, its table and its moves between `rsa_mont64.c`'s domain and the kernel's compute `b ^ e R mod m` for the base `b R mod m` and the exponent's bytes. That the instructions compute the lane model's values stays with `bin/rsa_ifma_equiv_test`, and `times_word_mod`'s division with the C's tests and the differential |
 | Poly1305Ifma | 17 | the AVX-512 IFMA Poly1305 of `poly1305_ifma.c`, modeled from the C with a lane in a `Nat`: from digits within the bounds every operand is below `2 ^ 52` and every sum below `2 ^ 56`, and a group step and a product leave the digits within them again; a group step computes `(h + first) x + second y` and a product `a b` modulo `2 ^ 130 - 5`; `compute_powers` gives lane `l` the power of `r` its blocks are owed; and the loads and both conversions keep their numbers. That the eight lanes' groups add up to the message's polynomial stays with `bin/poly1305_equiv_test`, and that the instructions compute the lane model's values with the same binary on a CPU with AVX-512 IFMA |
-| Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
+| Pem | 11 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, which discharges the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar; a byte string's list is its data's, the form `PemBlocks` reads boundaries in |
+| PemBlocks | 6 | the four-label reader is `Pem.decode?` on the CERTIFICATE label, so `Pem`'s theorems hold of it there. An accepted run of blocks holds one block or more, at most `roomMax` bytes of DER together, under either text rule. The text a bundle skips holds "-----BEGIN " at no byte. A bundle's block opens only at the start of a line where "-----BEGIN " starts. A block reads only under its own label's BEGIN line. In a whole bundle that the run accepts, "-----BEGIN " starts only at the start of a line, and CERTIFICATE's BEGIN line starts there. So a BEGIN line of another label refuses the bundle. Three things stay executable oracle only: the chain's rule between the blocks, the bundle's rule after an END line, and the PRIVATE KEY, EC PRIVATE KEY and EC PARAMETERS arms. `test/diff_pem_files_test.c` builds its texts from random parts and breaks them one rule at a time. It runs them under rooms that every text fits and small ones that a few blocks fill, and at a room's size and one byte under it |
+| PemFiles | 4 | an accepted key's point is its scalar's under `P256.pubKey?`, so the scalar is in range, and the leaf's key is that point. An accepted chain holds one to `chainMax` certificates, and 255 at most, of at most `derLen` bytes together. Each reads as a certificate's outer fields. An accepted bundle holds one to `anchorMax` roots. In it, "-----BEGIN " starts only at the start of a line, and CERTIFICATE's BEGIN line starts there. Three things stay executable oracle only: what the two key forms, the EC PARAMETERS block and the certificate's outer fields admit. The differential builds keys in random shapes of both forms around a drawn scalar whose point a leaf carries, half of them under an EC PARAMETERS block, whole or broken. Its call rows run each limit at its last admitted value and one past it: the caller's DER room and entries, a chain's 255 certificates and the key file's text cap. They reply each anchor's Name and key apart |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |

@@ -230,6 +230,51 @@ rules:
               metavariable: $CALLEE
               regex: ^(?!(mask_of_bit|lanes_zero|lanes_broadcast|lanes_load|lanes_and|lanes_add|lanes_store)$)
 
+  - id: inv-16-pem-body-class
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-16: pem.c reads each byte of a base64 body through base64_class
+      and branches on the class alone. The body of a key file spells its
+      scalar in base64. A compiler may write a compare against the byte
+      itself as one test that splits the alphabet in two. clang wrote the
+      tests for '-', CR, LF and '=' as one compare at 44. That compare sent
+      '+' (43) apart from the other 63 characters (docs/decisions.md 131).
+      Every class outside the alphabet is above 63 (base64.h). So each test
+      on a class answers the same for every alphabet character. body_loop
+      takes a byte from rb_u8 only as base64_class's argument. Neither
+      body_loop nor base64_step compares a value with a character constant.
+    paths:
+      include: [pem.c]
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              static int body_loop(...) {
+                ...
+              }
+          - pattern: rb_u8(...)
+          - pattern-not-inside: base64_class(rb_u8(...))
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  static int body_loop(...) {
+                    ...
+                  }
+              - pattern-inside: |
+                  static int base64_step(...) {
+                    ...
+                  }
+          - pattern-either:
+              - pattern: $A == $C
+              - pattern: $A != $C
+              - pattern: $A < $C
+              - pattern: $A <= $C
+              - pattern: $A > $C
+              - pattern: $A >= $C
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^'
+
   - id: inv-23-no-division-in-mlkem
     languages: [c]
     severity: ERROR
@@ -375,15 +420,19 @@ rules:
       X.509 readers live in x509_der.c behind x509.c's profile walker,
       and the der_parse in p256.c and the one in p384.c each read
       exactly one ECDSA-Sig-Value. x509_ca.c reads the same DER for
-      provisioning and reaches no verdict. The webpki_*.c files read it
-      for the TRUST=webpki chain verifier docs/webpki.md describes,
-      which only that object packages. A call anywhere else is a parser
-      growing. Tripwire grade: this catches honest drift by name, not a
-      reintroduction under another name.
+      provisioning and returns no verdict. x509_pem.c reads the subject
+      and the key of a provisioned certificate, and a P-256 private key.
+      It returns no verdict either. Its one caller is pem_files.c, and no
+      library source calls the calls of pem_files.c (docs/decisions.md
+      131). The webpki_*.c files read it for the TRUST=webpki chain
+      verifier docs/webpki.md describes, which only that object packages.
+      A call anywhere else is a parser growing. Tripwire grade: this
+      catches honest drift by name, not a reintroduction under another
+      name.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
-                x509_der.c, x509_ca.c, webpki.h, webpki_time.c, webpki_name.c,
-                webpki_spki.c, webpki_sigalg.c, webpki_ext.c, webpki_cert.c]
+                x509_der.c, x509_ca.c, x509_pem.c, pem_files.c, webpki.h, webpki_time.c,
+                webpki_name.c, webpki_spki.c, webpki_sigalg.c, webpki_ext.c, webpki_cert.c]
     patterns:
       - pattern: $F(...)
       # The prefix has to start a name component: the whole identifier,
@@ -571,6 +620,25 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, x509_ca.c]
     pattern: ch_pubkey_from_pem(...)
+
+  - id: inv-20-pem-files-entry
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: ch_chain_from_pem, ch_p256_key_from_pem and
+      ch_anchors_from_pem are provisioning calls. A program calls them
+      while it reads its operator's files, and no library source calls
+      them. A call from
+      inside the library would put x509_pem.c's readers on a path peer
+      input can reach, which is the fact INV-5's containment rests on.
+      pem_files.c is excluded because it defines the calls, not because
+      it may call them.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, pem_files.c]
+    pattern-either:
+      - pattern: ch_chain_from_pem(...)
+      - pattern: ch_p256_key_from_pem(...)
+      - pattern: ch_anchors_from_pem(...)
 
   - id: inv-20-no-time-calls
     languages: [c]

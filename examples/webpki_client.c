@@ -12,10 +12,10 @@
  * one:
  *
  *   1. The trust anchors. Instead of one pinned key, ch_cfg.anchors
- *      points at 1 to CH_WEBPKI_ANCHOR_MAX roots, each as two DER
- *      fields cut from the root certificate. Any anchor may certify any
- *      name, so configure only roots whose authority you accept over
- *      every name you will connect to.
+ *      points at one or more roots, each as two DER fields cut from the
+ *      root certificate. Any anchor may certify any name, so configure
+ *      only roots whose authority you accept over every name you will
+ *      connect to.
  *   2. The hostname and the clock. ch_cfg.hostname is the ASCII name
  *      the leaf must carry, sent as the ClientHello's server_name, and
  *      ch_cfg.now_seconds is your clock, compared exactly with no skew
@@ -105,10 +105,13 @@
 // const arrays.
 #define ANCHOR_NAME_MAX 512
 #define ANCHOR_SPKI_MAX (CH_WEBPKI_KEY_MAX + 64)
+// The roots this program reads from its command line. The library takes
+// any count; this program's arrays hold this many.
+#define ANCHOR_COUNT_MAX 12
 
-static uint8_t g_anchor_name[CH_WEBPKI_ANCHOR_MAX][ANCHOR_NAME_MAX];
-static uint8_t g_anchor_spki[CH_WEBPKI_ANCHOR_MAX][ANCHOR_SPKI_MAX];
-static ch_trust_anchor g_anchors[CH_WEBPKI_ANCHOR_MAX];
+static uint8_t g_anchor_name[ANCHOR_COUNT_MAX][ANCHOR_NAME_MAX];
+static uint8_t g_anchor_spki[ANCHOR_COUNT_MAX][ANCHOR_SPKI_MAX];
+static ch_trust_anchor g_anchors[ANCHOR_COUNT_MAX];
 
 // The whole file, or 0 when it does not open, is empty, or does not fit.
 // Measuring first turns a wrong file into a message that names it: a
@@ -337,13 +340,13 @@ static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anch
 }
 
 int main(int argc, char **argv) {
-    // host, port, server-name, then 1 to CH_WEBPKI_ANCHOR_MAX pairs.
-    if (argc < 6 || argc % 2 != 0 || (size_t)(argc - 4) / 2 > CH_WEBPKI_ANCHOR_MAX) {
+    // host, port, server-name, then 1 to ANCHOR_COUNT_MAX pairs.
+    if (argc < 6 || argc % 2 != 0 || (size_t)(argc - 4) / 2 > ANCHOR_COUNT_MAX) {
         (void)fprintf(stderr,
                       "usage: %s host port server-name anchor.name anchor.spki"
                       " [anchor.name anchor.spki ...]\n"
                       "  1 to %d anchors, each cut from a root by examples/webpki-anchor.sh\n",
-                      argv[0], CH_WEBPKI_ANCHOR_MAX);
+                      argv[0], ANCHOR_COUNT_MAX);
         return 2;
     }
     size_t anchor_count = (size_t)(argc - 4) / 2;

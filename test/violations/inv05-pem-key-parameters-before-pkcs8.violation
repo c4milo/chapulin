@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the key call reads a PKCS #8 PRIVATE KEY block under an EC
+  PARAMETERS block in place of a SEC 1 one. The ruling admits the block
+  above an EC PRIVATE KEY block alone, the shape `openssl ecparam -genkey`
+  writes (docs/decisions.md 131). test_key_parameters requires CH_EINVAL
+  for the block above a PKCS #8 key and CH_OK above a SEC 1 key.
+
+--- old
+    return pem_decode_one(rest, rest_len, PEM_LABEL_EC_PRIVATE_KEY, &w) &&
+           x509_pem_read_sec1(der, w.len, scalar, point);
+--- new
+    return pem_decode_one(rest, rest_len, PEM_LABEL_PRIVATE_KEY, &w) &&
+           x509_pem_read_pkcs8(der, w.len, scalar, point);

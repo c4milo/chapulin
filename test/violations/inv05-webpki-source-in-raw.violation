@@ -14,10 +14,10 @@ ifeq ($(TRUST),raw-rsa)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c $(WEBPKI_SRCS)
 --- new
 ifeq ($(TRUST),raw-rsa)
 TRUST_DEF :=
 PIN_DEF :=
 PUBLIC_CA :=
-TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c
+TRUST_FILTER := $(PEM_READER_SRCS) x509.c x509_ca.c

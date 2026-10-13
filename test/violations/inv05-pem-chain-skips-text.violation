@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the chain call reads its file under the bundle's text rule, so
+  the call skips text before, between and after a chain's blocks. The
+  ruling keeps the chain and key files strict, as pem_decode_certificate's
+  file is (docs/decisions.md 131). test_chain_grammar's text rows object.
+
+--- old
+    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_REFUSED);
+--- new
+    pem_blocks_init(&blocks, pem, pem_len, PEM_TEXT_SKIPPED);

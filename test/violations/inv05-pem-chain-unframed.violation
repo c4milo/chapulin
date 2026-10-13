@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the call takes a chain block and does not read its outer fields,
+  so a block of other DER, or a certificate with a byte after it, joins
+  the chain. Every client then refuses the server, and the operator sees
+  no CH_EINVAL at provisioning. test_chain_framing writes both and
+  requires CH_EINVAL.
+
+--- old
+        if (next != PEM_BLOCKS_READ || count == chain_max || count == UINT8_MAX ||
+            !is_certificate(cert, cert_len)) {
+--- new
+        (void)is_certificate;
+        if (next != PEM_BLOCKS_READ || count == chain_max || count == UINT8_MAX) {

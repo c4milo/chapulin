@@ -1,0 +1,12 @@
+invariant: INV-17
+file: pem_files.c
+catches: pem_files_test
+reason: ch_p256_key_from_pem returns with the decoded key DER on its own
+  stack, and that DER holds the scalar whole. test_key_wipes searches the
+  stack below the call and finds it.
+
+--- old
+    ct_wipe(der, sizeof der);
+    ct_wipe(scalar, sizeof scalar);
+--- new
+    ct_wipe(scalar, sizeof scalar);

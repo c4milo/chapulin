@@ -1,0 +1,12 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: the chain call stops comparing its count with chain_max, so a
+  file of more blocks than the caller's entries writes past the caller's
+  array. test_chain_counts gives twelve and thirteen entries and a file
+  of one block more, and requires CH_EINVAL.
+
+--- old
+        if (next != PEM_BLOCKS_READ || count == chain_max || count == UINT8_MAX ||
+--- new
+        if (next != PEM_BLOCKS_READ || count == UINT8_MAX ||

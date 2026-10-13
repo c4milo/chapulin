@@ -127,12 +127,17 @@ typedef struct {
 // key has no path, and webpki_verify_raw_key leaves both at 0. A leaf
 // pinned with no anchor is a path of the leaf alone, and
 // webpki_verify_leaf_pin writes path_entries 1 and anchor_index 0.
+//
+// anchor_index is a size_t, the type of ch_cfg.anchor_count, so every
+// index below a count the caller passes fits it. path_entries sits beside
+// alg, so the wider field leaves the struct's size as it was on 32-bit and
+// 64-bit targets (docs/decisions.md 131).
 typedef struct {
-    uint8_t alg; // WEBPKI_KEY_*
+    uint8_t alg;          // WEBPKI_KEY_*
+    uint8_t path_entries; // 1 to CH_WEBPKI_CHAIN_MAX
     uint8_t key[CH_WEBPKI_KEY_MAX];
     size_t key_len;
-    uint8_t path_entries;
-    uint8_t anchor_index;
+    size_t anchor_index;
 } webpki_leaf_info;
 
 // The walk (docs/webpki.md, "The chain walk"). Reads the Certificate

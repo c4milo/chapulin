@@ -80,6 +80,24 @@ def ifmaBlock (m : ByteArray) (j : Nat) : Spec.Poly1305Ifma.Digits :=
   Spec.Poly1305Ifma.blockDigits (bytesToNatLE (m.extract (16 * j) (16 * j + 8)))
     (bytesToNatLE (m.extract (16 * j + 8) (16 * j + 16)))
 
+/-- A PEM label by the name a `pemone` request gives it. -/
+def pemLabel? : String → Option (List UInt8)
+  | "certificate" => some Spec.PemBlocks.labelCertificate
+  | "private_key" => some Spec.PemBlocks.labelPrivateKey
+  | "ec_private_key" => some Spec.PemBlocks.labelEcPrivateKey
+  | "ec_parameters" => some Spec.PemBlocks.labelEcParameters
+  | _ => none
+
+/-- A text rule by the name a `pemcerts` request gives it. -/
+def pemRule? : String → Option Spec.PemBlocks.TextRule
+  | "refused" => some .refused
+  | "skipped" => some .skipped
+  | _ => none
+
+/-- Byte strings as hex joined by commas, `-` for an empty list. -/
+def emitList (bs : List ByteArray) : String :=
+  if bs.isEmpty then "-" else ",".intercalate (bs.map emit)
+
 /-- Every module's `selftest`, in order: `ok`, or `FAIL` and the first
 module that failed. Each entry is the function, not its result, and
 `never_extract` keeps `dispatch` from lifting `selftestAll ()` into a
@@ -113,6 +131,7 @@ def selftestAll (_ : Unit) : String :=
     ("p384", Spec.P384.selftest),
     ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
+    ("pem_files", Spec.PemFiles.selftest),
     ("x509", Spec.X509.selftest),
     ("x509ca", Spec.X509Ca.selftest),
     ("webpki_time", Spec.WebpkiTime.selftest),
@@ -772,6 +791,61 @@ def dispatch : List String → Option String
     return match cap.bind (fun c => Spec.Pem.decode? c p) with
       | some der => s!"ok {bytesToHex der}"
       | none => "ERR pem reject"
+  -- The PEM provisioning files (docs/decisions.md 131): one block of a
+  -- label under a caller's caps, a run of CERTIFICATE blocks under a
+  -- text rule and a room, the two DER readers, and the three calls
+  -- pem_files.h declares, the chain and the bundle under the caller's
+  -- room and entries. A list replies as hex joined by commas, and an
+  -- anchor as its Name and its key, a space between them.
+  | ["pemone", label, textMax, derMax, pem] => do
+    let l ← pemLabel? label
+    let t ← textMax.toNat?
+    let d ← derMax.toNat?
+    let p ← hexArg? pem
+    return match Spec.PemBlocks.decodeOne? l t d p with
+      | some der => s!"ok {emit der}"
+      | none => "ERR pemone reject"
+  | ["pemcerts", rule, roomMax, pem] => do
+    let r ← pemRule? rule
+    let room ← roomMax.toNat?
+    let p ← hexArg? pem
+    return match Spec.PemBlocks.readCertificates? r room p with
+      | some ders => s!"ok {emitList ders}"
+      | none => "ERR pemcerts reject"
+  | ["pemsubjectkey", cert] => do
+    let c ← hexArg? cert
+    return match Spec.PemFiles.readSubjectKey c with
+      | some (name, spki) => s!"ok {emit name} {emit spki}"
+      | none => "ERR pemsubjectkey reject"
+  | ["pemkeyder", form, der] => do
+    let d ← hexArg? der
+    let read ← match form with
+      | "pkcs8" => some Spec.PemFiles.readPkcs8
+      | "sec1" => some Spec.PemFiles.readSec1
+      | _ => none
+    return match read d with
+      | some (scalar, point) => s!"ok {emit scalar} {emit (point.getD ByteArray.empty)}"
+      | none => "ERR pemkeyder reject"
+  | ["pemchain", derLen, chainMax, pem] => do
+    let d ← derLen.toNat?
+    let m ← chainMax.toNat?
+    let p ← hexArg? pem
+    return match Spec.PemFiles.chainFromPem? d m p with
+      | some certs => s!"ok {emitList certs}"
+      | none => "ERR pemchain reject"
+  | ["pemanchors", derLen, anchorMax, pem] => do
+    let d ← derLen.toNat?
+    let m ← anchorMax.toNat?
+    let p ← hexArg? pem
+    return match Spec.PemFiles.anchorsFromPem? d m p with
+      | some anchors => s!"ok {",".intercalate (anchors.map fun a => s!"{emit a.1} {emit a.2}")}"
+      | none => "ERR pemanchors reject"
+  | ["pemkey", pem, leaf] => do
+    let p ← hexArg? pem
+    let l ← hexArg? leaf
+    return match Spec.PemFiles.keyFromPem? p l with
+      | some (scalar, pub) => s!"ok {emit scalar} {emit pub}"
+      | none => "ERR pemkey reject"
   | ["pemcakey", alg, derMax, pem] => do
     let a ← Spec.X509.algOf? alg
     let cap := derMax.toNat?

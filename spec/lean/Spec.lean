@@ -24,9 +24,11 @@ import Spec.Sha3
 import Spec.Sha512
 import Spec.MlKem
 import Spec.Pem
+import Spec.PemBlocks
 import Spec.X509Der
 import Spec.X509
 import Spec.X509Ca
+import Spec.PemFiles
 import Spec.WebpkiTime
 import Spec.WebpkiName
 import Spec.WebpkiSpki

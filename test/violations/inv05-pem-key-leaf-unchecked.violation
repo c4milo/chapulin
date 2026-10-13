@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_files.c
+catches: pem_files_test
+reason: ch_p256_key_from_pem stops comparing the key with the end-entity
+  certificate, so a key file paired with the wrong chain decodes, and
+  every client refuses the server's CertificateVerify instead of the
+  operator seeing CH_EINVAL at provisioning. test_key_refusals passes the
+  intermediate's certificate and a bare point as the leaf.
+
+--- old
+             (file_point == NULL || ct_memeq(file_point, pub, 64) != 0) &&
+             leaf_holds(leaf, leaf_len, pub);
+--- new
+             (file_point == NULL || ct_memeq(file_point, pub, 64) != 0);
+    (void)leaf_holds;

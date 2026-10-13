@@ -32,6 +32,9 @@ extern "C" {
 #ifdef CH_TRUST_CA
 #include "x509_ca.h"
 #endif
+#ifdef CH_TRUST_WEBPKI
+#include "pem_files.h"
+#endif
 #include "build.h"
 }
 
@@ -546,6 +549,39 @@ inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX
                               uint8_t (&key)[CH_X509_KEY_MAX]) {
     Pubkey result;
     result.value = ch_pubkey_from_pem(pem.data, pem.size, der_scratch, key, &result.size);
+    return result;
+}
+#endif
+
+#ifdef CH_TRUST_WEBPKI
+// Result of a CA bundle decode: the anchor count when ok().
+struct Anchors {
+    int value = 0;
+    size_t count = 0;
+    bool ok() const {
+        return value == CH_OK;
+    }
+    Status error() const {
+        return static_cast<Status>(value);
+    }
+};
+
+// Forwards ch_anchors_from_pem: the CERTIFICATE blocks of a CA bundle
+// file to the anchors that Config::anchors() takes. The call skips the
+// text lines around them and refuses a BEGIN line of any other label.
+// A root that decodes is not authenticated. The call reads no
+// root's signature, dates or extensions. The roots are trusted because
+// an operator placed the file (pem_files.h says the rest). The caller sizes
+// both rooms: der, the DER's bytes, and anchors, anchor_max entries. The
+// call refuses a bundle that does not fit them. The anchors point into
+// der, which must outlive every Session that uses them. The chain and key
+// calls of a server role have no forwarder, because this wrapper carries
+// no server API.
+inline Anchors anchors_from_pem(ConstBytes pem, Bytes der, ch_trust_anchor *anchors,
+                                size_t anchor_max) {
+    Anchors result;
+    result.value = ch_anchors_from_pem(pem.data, pem.size, der.data, der.size, anchors, anchor_max,
+                                       &result.count);
     return result;
 }
 #endif

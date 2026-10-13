@@ -7,6 +7,6 @@ reason: the walk reports anchor 0 whichever anchor verified, so the pins
   real key sits at index 1, object.
 
 --- old
-            out->anchor_index = (uint8_t)anchor;
+            out->anchor_index = anchor;
 --- new
             out->anchor_index = 0;

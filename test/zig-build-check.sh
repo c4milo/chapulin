@@ -210,7 +210,7 @@ stage_package() {
     mkdir -p "$package"
     # shellcheck disable=SC2086 # one path per word, as .paths lists them
     tar -cf - $listed | tar -xf - -C "$package" || fail "copying the package failed"
-    cp test/zig-consumer/* test/webpki_corpus.h "$consumer/" || fail "copying test/zig-consumer failed"
+    cp test/zig-consumer/* test/webpki_corpus.h test/pem_fixtures.h "$consumer/" || fail "copying test/zig-consumer failed"
 }
 
 # The options of one configuration as test/zig-consumer takes them: the
@@ -301,11 +301,13 @@ build_cross() {
     echo "lint-zig-build: $name: zig build ${options[*]} builds the object"
 }
 
-# The public headers whose one call TRUST or RAND decides, so that an
-# object of any transport and role can lack it: x509_ca.h declares the
-# ca modes' ch_pubkey_from_pem, and drbg.h declares RAND=drbg's
-# ch_drbg_seed.
-optional_headers=(x509_ca.h drbg.h)
+# The public headers whose calls TRUST, ROLE or RAND decides, so that an
+# object of any transport can lack them:
+#  - x509_ca.h declares the ca modes' ch_pubkey_from_pem;
+#  - pem_files.h declares a server role's ch_chain_from_pem and
+#    ch_p256_key_from_pem, and TRUST=webpki's ch_anchors_from_pem;
+#  - drbg.h declares RAND=drbg's ch_drbg_seed.
+optional_headers=(x509_ca.h pem_files.h drbg.h)
 
 # check_optional_headers NAME ZIG-OBJECT
 #

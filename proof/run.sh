@@ -601,7 +601,9 @@ launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c bu
 launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 # webpki_ticket: the resumption rule of a TRUST=webpki client
 # (webpki_ticket.h), at a hostname of up to CH_HOSTNAME_MAX bytes and up
-# to CH_WEBPKI_ANCHOR_MAX anchors, over every PSK field NULL or set. buf.c,
+# to 12 anchors, over every PSK field NULL or set. No cap bounds the
+# anchor count since docs/decisions.md 131. The hash reads each anchor
+# the same way, so 12 stand for any count. buf.c,
 # ct.c and hkdf.c are real; SHA-256 is the contract stub in harness.h,
 # which the harness comment prices. The unwindset bounds the hostname
 # loop at 254, the anchor loop at 13 and the pin loop at 5, because symex
@@ -610,7 +612,9 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # context. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
 # /usr/bin/time -l over this script): 942 properties, 9 s, 149 MB. The
 # same formula with its verdict assertion narrowed to an unset config
-# fails, so the formula reaches the ticket path.
+# fails, so the formula reaches the ticket path. With the harness's own
+# bound in place of the cap, on 2026-10-13: 948 properties, 8 s,
+# 0.15 GB.
 launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c hkdf.c
 launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
@@ -1180,31 +1184,132 @@ launch fast full hello_build_suite 400 "fill_nondet.0:321,main.0:9,main.1:4,writ
 # checking pays most for: a per-character state machine over symbolic
 # bytes, measured at roughly the third power of the input length.
 #
-# pem_step carries the weight. It proves b64_value against RFC 4648
-# section 4's table on all 256 bytes, pad_ok against section 3.5, and
-# b64_step's invariant from an ARBITRARY state -- so induction over it
-# holds at any length, not just the driver's bound. Measured 0.3 s,
-# 25 MB, 550 properties.
+# pem_step carries the weight. It proves pad_ok against RFC 4648
+# section 3.5. It proves base64_step's invariant from an ARBITRARY state
+# and any class, so induction over it holds at any length, not just the
+# driver's bound. It proves match_line against both boundaries of each of
+# the four labels. base64 proves base64_class against section 4's table
+# and pem.c's four classes on all 256 bytes, and base64.c holds that
+# function in constant time (docs/decisions.md 131). Measured 0.3 s,
+# 25 MB, 550 properties before the labels. With the labels and the
+# classes, under run.sh (PROVE_ONLY=<name> PROVE_NO_CACHE=1, kissat,
+# capped by resident size), on 2026-10-13 at a load average near 12:
+# pem_step 553 properties, 2 s, 0.22 GB; base64 4 properties, under 1 s.
+# pem_begins_boundary took pem_begins_block's place, and pem_step proves
+# its answer exact. Later on 2026-10-13, at a load average near 56: 556
+# properties, 2 s, 0.11 GB.
 #
 # pem proves the whole entry at the SHIPPED caps with the input length
-# bounded. 64 is the floor: the shortest accepting input is 58 bytes,
-# and at 56 the CH_OK arm is unreachable and its assertion passes
-# vacuously while the run still says SUCCESSFUL (confirmed by asserting
-# 0 there). Measured at 64: 63 s / 1.4 GB rsa, 71 s / 1.5 GB ecdsa, 551
-# properties. Higher bounds converge and cost more without covering a
-# new shape -- 80 is 195 s / 4.6 GB, 160 is 1348 s / 7.3 GB -- and the
+# bounded. 64 is the floor. The shortest input that the decoder accepts is
+# 57 bytes, and at 56 the CH_OK arm is unreachable. Its assertion then
+# passes vacuously while the run still says SUCCESSFUL. An assertion of 0
+# there confirms it. Measured at 64: 63 s / 1.4 GB rsa, 71 s / 1.5 GB
+# ecdsa, 551 properties. Higher bounds converge and cost more, and they
+# cover no new shape: 80 is 195 s / 4.6 GB, 160 is 1348 s / 7.3 GB. The
 # differential in test/diff_pem.h runs the full range to CH_PEM_MAX
 # against the Lean oracle, so the extra bound buys quantum count rather
 # than coverage. What no bound here proves is stated in
-# docs/verification.md.
+# docs/verification.md. Measured with the label table and the wipe of the
+# base64 state (docs/decisions.md 131), on 2026-10-13 at load averages of
+# 12 to 27: pem 553 properties, 121 s, 2.5 GB; pem_ecdsa 553, 114 s,
+# 2.1 GB. With the body loop on base64_class's classes, at load averages
+# of 43 to 80: pem 553, 242 s, 2.2 GB; pem_ecdsa 553, 96 s, 2.4 GB.
+#
+# pem_one drives pem_decode_one over the three labels of a key file, at
+# the same bound. It writes into the key's room or into the EC
+# PARAMETERS block's room of 10 bytes. The bound covers EC PRIVATE KEY.
+# Its boundary lines are 30 and 28 bytes, and the END line needs no
+# terminator. So the shortest input that the decoder accepts is 63
+# bytes. An assertion of 0 in the CH_OK arm, with the label held to EC
+# PRIVATE KEY, fails (138 s, 1.3 GB). So that arm is reached. Measured:
+# 551 properties, 127 s, 2.0 GB at a load average near 25. With the EC
+# PARAMETERS label and its room (docs/decisions.md 131), on 2026-10-13
+# at a load average near 15: 551 properties, 79 s, 3.0 GB. An assertion
+# that no EC PARAMETERS block is accepted in its own room fails (91 s,
+# 2.0 GB). So that arm is reached too.
+#
+# pem_blocks proves pem_blocks_init and pem_blocks_next over 64 bytes of
+# text. Those are the text rules between a chain's and a bundle's blocks,
+# and the name of each block's DER. pem.c's two calls are stubbed to what
+# pem and pem_step prove. 64 bytes hold two of the stub's blocks of 27
+# bytes or more and the gaps around them. The driver calls
+# pem_blocks_next three times: two calls that read a block and one that
+# ends the run. The first form of this proof ran out of cbmc's 256
+# objects. It had a loop over lines around a loop over a line's bytes,
+# and a copy of the reader per byte. The next form had one loop over the
+# bytes and one copy per gap. That was pem_read_certificates, the run's
+# reader before the caller sized its rooms: 478 properties, 187 s,
+# 3.3 GB at a load average near 17. As pem_blocks_next, one block a call
+# into a room of up to 8 bytes (docs/decisions.md 131), on 2026-10-13 at
+# a load average near 16: 504 properties, 164 s, 1.9 GB. A driver of
+# four calls took 184 s and 4.7 GB for the same verdict. An assertion
+# that no call after the first reads a block fails under each rule (30 s
+# and 125 s). So the bound covers the second block.
+# The bundle's rule of 2026-10-13 stops the scan at the first
+# "-----BEGIN ", and the stubs now record what the scan asked. With those
+# assertions, later that day at a load average near 30: 559 properties,
+# 215 s, 2.1 GB. Three probes fail, and no other assertion (502 s,
+# 2.3 GB). One says that no bundle reads a second block. One says that
+# "-----BEGIN " inside a line never refuses. One says that the scan
+# after a block never ends the run. So the formula reaches each new arm.
+# A review then found that no assertion placed the scan's first
+# question: a mutant that skipped the text's first byte unasked passed
+# all 559. The driver now gives the stubs the offset of the text's first
+# byte. Two assertions hold the first question there, and hold that a
+# call that asked about no byte had no text. On 2026-10-14: 574
+# properties, 196 s and 3.8 GB at a load average near 30, and 172 s and
+# 3.2 GB near 45. The form before it took 326 s and 2.4 GB near 35. A
+# driver that computed the offset under the bundle's rule alone took
+# 154 s and 4.4 GB, so the weight is 5. That mutant fails those two
+# assertions and no other (280 s, 2.7 GB). So does a mutant that skips
+# the text's first line (551 s, 3.6 GB).
+#
+# x509_pem proves the certificate walk and the P-256 key compare over any
+# input of up to 2^40 bytes, a heap object of its exact length. The
+# three x509_der.h primitives are stubbed to what x509der proves. 2^40
+# stands for no cap, since the key call passes its caller's leaf with no
+# cap of its own. Measured: 514 properties, 178 s, 0.36 GB at a load
+# average near 13; at 3,073 bytes, 39 s and 0.09 GB. Over the real
+# primitives the walk alone had no verdict in 300 s at a load average
+# near 30. x509_pem_key proves the two key readers over the real
+# primitives and a heap DER of up to one past CH_PEM_KEY_DER_MAX: 1040
+# properties, 16 s, 0.51 GB. It adds x509_pem_parameters_are_p256 over a
+# heap DER of up to one past CH_PEM_PARAMETERS_DER_MAX. On 2026-10-13 at a
+# load average near 15: 1062 properties, 12 s, 0.55 GB.
+#
+# pem_files proves the three calls of pem_files.h, with every reader below
+# them stubbed to what its own harness proves. Its first form gave each
+# call up to twelve entries. Each pass made the four locals that
+# is_certificate passes by address. So the unwindset held the loops over
+# the blocks to 13: 894 properties, 235 s, 1.4 GB at a load average near
+# 26. Now the caller sizes the rooms (docs/decisions.md 131). The harness
+# gives up to 4 entries and 16 bytes of DER. The unwindset holds the loops
+# to 6, one past the fifth block that a call refuses. pem_files_host
+# runs the same harness in a host object, where the cpu value picks the
+# multiply. The stub of x509_pem_parameters_are_p256 requires the DER
+# that pem_read_block wrote, and no other byte of its room
+# (inv05-pem-key-parameters-length-unchecked). On 2026-10-13 at a load
+# average near 33: pem_files 1006 properties, 30 s, 0.73 GB;
+# pem_files_host 1006 properties, 21 s, 0.74 GB.
+# A run with four probes fails each probe in both objects (28 s, 0.9 GB).
+# Two probes accept a chain and a bundle of two or more blocks that fill
+# the caller's entries. Two accept a key under its EC PARAMETERS block and
+# a key alone. So the formulas reach every arm.
 #
 # x509ca proves the provisioning walk over any input, with the DER
 # primitives stubbed to the contracts x509der proves. Measured 7 s /
 # 0.34 GB rsa, 5 s / 0.15 GB ecdsa, 730 properties.
-launch fast full pem_step 66 "" buf.c ct.c proof/ct_wipe_stub.c
-launch fast full pem_step_ecdsa 66 "" buf.c ct.c proof/ct_wipe_stub.c
-launch fast:2 full pem 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c proof/ct_wipe_stub.c
-launch fast:2 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c proof/ct_wipe_stub.c
+launch fast full base64 66 "" base64.c
+launch fast full pem_step 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast full pem_step_ecdsa 66 "" base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast:3 full pem_one 66 "" -DCH_PROOF_PEM_LEN=64 base64.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast:5 full pem_blocks 66 "" -DCH_PROOF_BLOCKS_LEN=64 buf.c
+launch fast full x509_pem 66 "" buf.c
+launch fast full x509_pem_key 33 "ct_memeq.0:22" x509_der.c buf.c ct.c proof/ct_wipe_stub.c
+launch fast:4 full pem_files 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c
+launch fast:4 full pem_files_host 152 "ch_chain_from_pem_tcp_blocking.4:6,ch_anchors_from_pem_tcp_blocking.4:6" -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
 launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c proof/ct_wipe_stub.c
 # The TRUST=webpki pieces that read no certificate. webpki_time proves
@@ -2022,7 +2127,11 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # ct_memeq the same formula took 141 s and 2.67 GB. Narrowing the verdict
 # assertion to exclude pins alone with no hostname, pins beside anchors
 # at both caps, or a presented ticket fails each, so the formula reaches
-# all three. inv14-webpki-cfg-resumption-first fails it.
+# all three. inv14-webpki-cfg-resumption-first fails it. No cap bounds the
+# anchor count since docs/decisions.md 131. So a set anchors pointer
+# holds its count, up to the harness's array of 12. On 2026-10-13 at a
+# load average near 15: 607 properties, 5 s, 0.13 GB;
+# quic_config_webpki_suite 770 properties, 6 s, 0.19 GB.
 launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING quic_config.c webpki_cfg.c
 # quic_config_webpki_suite: the same rules in the SUITE=aesgcm build,
 # which add the client's suite list, ch_cfg.cipher_suites: any code points

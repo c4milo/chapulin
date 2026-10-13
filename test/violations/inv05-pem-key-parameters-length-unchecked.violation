@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_files.c
+catches: proof/prove-one.sh pem_files
+reason: the key call checks the whole room of 10 bytes in place of the
+  DER that the EC PARAMETERS block wrote. A block of the first 9 bytes of
+  prime256v1's OID then names P-256 when an earlier call left 0x07 in
+  the room's last byte. The ruling admits prime256v1's OID alone
+  (docs/decisions.md 131). The pem_files harness requires the check to
+  read the DER that pem_read_block wrote, and no other byte.
+
+--- old
+           x509_pem_parameters_are_p256(parameters, w.len) && pem_skip_line_breaks(r) == '\n';
+--- new
+           x509_pem_parameters_are_p256(parameters, sizeof parameters) &&
+           pem_skip_line_breaks(r) == '\n';

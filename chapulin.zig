@@ -240,6 +240,12 @@ fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
 /// A NewSessionTicket that outlives the session, by value (chapulin_ticket.zig).
 pub const Ticket = @import("chapulin_ticket.zig").Ticket;
 
+/// A server's chain and a client's anchors, each decoded from a PEM file into rooms the caller
+/// places. A server's P-256 key, decoded into the value's own storage (chapulin_pem.zig).
+pub const Chain = @import("chapulin_pem.zig").Chain;
+pub const EcdsaP256Key = @import("chapulin_pem.zig").EcdsaP256Key;
+pub const Anchors = @import("chapulin_pem.zig").Anchors;
+
 /// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
 pub const EcdsaP256Identity = if (has_server) struct {
     /// DER certificates, leaf first: chain, chain_count.
@@ -393,8 +399,10 @@ const CpuBits = struct {
     avx512: bool = false,
 };
 
-/// ch_cfg.cpu for what found states, and 0 for null.
-fn cpuBits(found: ?CpuBits) u32 {
+/// ch_cfg.cpu for what found states, and 0 for null, which every init refuses. EcdsaP256Key.fromPem
+/// passes it to ch_p256_key_from_pem too.
+pub const cpuBits = if (has_cpu) cpuBitsOf else @compileError("cpuBits needs a host object: TRUST=webpki, ROLE=server or ROLE=both on arm64 or x86-64");
+fn cpuBitsOf(found: ?CpuBits) u32 {
     const cpu = found orelse return 0;
     return c.CH_CPU_PROBED | (if (cpu.constant_time_aes) c.CH_CPU_CONSTANT_TIME_AES else 0) |
         (if (cpu.constant_time_multiply) c.CH_CPU_CONSTANT_TIME_MULTIPLY else 0) |

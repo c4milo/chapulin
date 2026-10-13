@@ -1,0 +1,15 @@
+invariant: INV-5
+file: pem_blocks.c
+catches: pem_files_test
+reason: a bundle's END line may end in a lone CR, which ends no line in
+  pem.c, so the bytes after it on the same line are skipped as text
+  instead of refused. test_bundle_grammar writes an END line, a CR and
+  text, and requires CH_EINVAL.
+
+--- old
+    if (c == '\r') {
+        c = rb_u8(r);
+    }
+    return !r->err && c == '\n';
+--- new
+    return !r->err && (c == '\n' || c == '\r');

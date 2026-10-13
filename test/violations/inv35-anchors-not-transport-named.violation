@@ -1,0 +1,13 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: TRANSPORT_NAMED stops naming ch_anchors_from_pem, so PUBLIC lists
+  the name pem_files.h declares while the object defines the name the
+  header maps it to, ch_anchors_from_pem_tcp_nonblocking, and lib-check's
+  export list differs from PUBLIC. An image of two transports needs each
+  object's call under its own name (docs/decisions.md 61 and 131).
+
+--- old
+                   ch_anchors_from_pem ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
+--- new
+                   ch_ticket_obfuscated_age ch_alert_sent ch_alert_received

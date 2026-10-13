@@ -51,17 +51,27 @@ static size_t pem_armor_encode(const uint8_t *src, size_t n, uint8_t *dst) {
     return o;
 }
 
-// Body characters between the two boundaries, wrapped at width (0 for
-// one line). Takes the text as given, so a test can supply a body that
-// is not valid base64.
-static size_t pem_wrap_text(const uint8_t *body, size_t n, size_t width, const char *eol,
-                            uint8_t *dst) {
-    static const char begin[] = "-----BEGIN CERTIFICATE-----";
-    static const char end[] = "-----END CERTIFICATE-----";
+// One boundary line, "-----BEGIN " or "-----END ", the label and five
+// dashes, at dst. Returns its length.
+static size_t pem_armor_boundary(const char *prefix, const char *label, uint8_t *dst) {
+    size_t o = 0;
+    const char *parts[3] = {prefix, label, "-----"};
+    for (size_t p = 0; p < 3; p++) {
+        size_t n = strlen(parts[p]);
+        (void)memcpy(dst + o, parts[p], n);
+        o += n;
+    }
+    return o;
+}
+
+// Body characters between the two boundaries of label, wrapped at width
+// (0 for one line). Takes the text as given, so a test can supply a body
+// that is not valid base64.
+static size_t pem_wrap_label(const char *label, const uint8_t *body, size_t n, size_t width,
+                             const char *eol, uint8_t *dst) {
     size_t eol_len = strlen(eol);
     size_t col = 0;
-    (void)memcpy(dst, begin, sizeof begin - 1);
-    size_t o = sizeof begin - 1;
+    size_t o = pem_armor_boundary("-----BEGIN ", label, dst);
     (void)memcpy(dst + o, eol, eol_len);
     o += eol_len;
     for (size_t i = 0; i < n; i++) {
@@ -76,17 +86,44 @@ static size_t pem_wrap_text(const uint8_t *body, size_t n, size_t width, const c
         (void)memcpy(dst + o, eol, eol_len);
         o += eol_len;
     }
-    (void)memcpy(dst + o, end, sizeof end - 1);
-    o += sizeof end - 1;
+    o += pem_armor_boundary("-----END ", label, dst + o);
     (void)memcpy(dst + o, eol, eol_len);
     return o + eol_len;
 }
 
+// The same for a CERTIFICATE block. It and pem_armor_label are inline. So
+// a file that includes this header and calls neither compiles under
+// -Wunused-function.
+static inline size_t pem_wrap_text(const uint8_t *body, size_t n, size_t width, const char *eol,
+                                   uint8_t *dst) {
+    return pem_wrap_label("CERTIFICATE", body, n, width, eol, dst);
+}
+
+// The largest DER a test armours: past the chain room of 12,288 bytes
+// that the tests give (test/pem_files_test.c). One certificate may fill
+// that room, or be a byte over it.
+#define PEM_ARMOR_DER_MAX 12800
+// The body room pem_armor_label needs: the larger of CH_X509_MAX's body
+// and PEM_ARMOR_DER_MAX's.
+#define PEM_ARMOR_DER_BODY_MAX (4 * ((PEM_ARMOR_DER_MAX + 2) / 3))
+#define PEM_ARMOR_BODY_MAX                                                                         \
+    (CH_PEM_BODY_MAX > PEM_ARMOR_DER_BODY_MAX ? CH_PEM_BODY_MAX : PEM_ARMOR_DER_BODY_MAX)
+
+// src as one block of label in dst. Returns 0 when src is longer than the
+// body room holds, and a test then sees a block that did not decode.
+static inline size_t pem_armor_label(const char *label, const uint8_t *src, size_t n, size_t width,
+                                     const char *eol, uint8_t *dst) {
+    static uint8_t body[PEM_ARMOR_BODY_MAX];
+    if (n > sizeof body / 4 * 3) {
+        return 0;
+    }
+    size_t body_len = pem_armor_encode(src, n, body);
+    return pem_wrap_label(label, body, body_len, width, eol, dst);
+}
+
 // src as one CERTIFICATE block in dst.
 static size_t pem_armor(const uint8_t *src, size_t n, size_t width, const char *eol, uint8_t *dst) {
-    static uint8_t body[CH_PEM_BODY_MAX];
-    size_t body_len = pem_armor_encode(src, n, body);
-    return pem_wrap_text(body, body_len, width, eol, dst);
+    return pem_armor_label("CERTIFICATE", src, n, width, eol, dst);
 }
 
 #endif

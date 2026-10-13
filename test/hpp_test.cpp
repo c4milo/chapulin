@@ -85,6 +85,45 @@ constexpr size_t kPinLen = 384;
 #endif
 #endif
 
+#ifdef CH_TRUST_WEBPKI
+#include "pem_armor.h"
+
+// The CA bundle forwarder, over one synthetic root after a comment line.
+// The root's subject is a one-byte UTF8String and its key is a NULL. Its
+// outer fields are all that ch_anchors_from_pem reads. The anchor points
+// at the two TLVs in der. The call refuses a text cut short, a DER room
+// one byte short and an array of no entry, and then writes no anchor.
+static void test_anchors_from_pem() {
+    static const uint8_t root[] = {0x30, 0x19, 0x30, 0x12, 0x02, 0x01, 0x01, 0x30, 0x00,
+                                   0x30, 0x00, 0x30, 0x00, 0x30, 0x03, 0x0c, 0x01, 0x61,
+                                   0x30, 0x02, 0x05, 0x00, 0x30, 0x00, 0x03, 0x01, 0x00};
+    static const uint8_t name[] = {0x30, 0x03, 0x0c, 0x01, 0x61};
+    static const uint8_t spki[] = {0x30, 0x02, 0x05, 0x00};
+    static uint8_t pem[256];
+    static uint8_t der[sizeof root];
+    static ch_trust_anchor anchors[1];
+    const char comment[] = "# a root\n";
+    std::memcpy(pem, comment, sizeof comment - 1);
+    size_t n = sizeof comment - 1;
+    n += pem_armor(root, sizeof root, 64, "\n", pem + n);
+
+    chapulin::Anchors got = chapulin::anchors_from_pem({pem, n}, der, anchors, 1);
+    CHECK(got.ok() && got.count == 1);
+    CHECK(anchors[0].name_len == sizeof name &&
+          std::memcmp(anchors[0].name, name, sizeof name) == 0);
+    CHECK(anchors[0].spki_len == sizeof spki &&
+          std::memcmp(anchors[0].spki, spki, sizeof spki) == 0);
+
+    got = chapulin::anchors_from_pem({pem, n - 8}, der, anchors, 1);
+    CHECK(!got.ok() && got.error() == chapulin::Status::invalid && got.count == 0);
+    // The rooms are the caller's: a DER room one byte short, and no entry.
+    got = chapulin::anchors_from_pem({pem, n}, {der, sizeof der - 1}, anchors, 1);
+    CHECK(!got.ok() && got.count == 0);
+    got = chapulin::anchors_from_pem({pem, n}, der, anchors, 0);
+    CHECK(!got.ok() && got.count == 0);
+}
+#endif
+
 #ifdef CH_TRUST_CA
 // The provisioning forwarder, against the build's own generated
 // vectors: the CA-shaped intermediate yields its public key, and the
@@ -599,6 +638,9 @@ int main() {
 
 #ifdef CH_TRUST_CA
     test_pubkey_from_pem();
+#endif
+#ifdef CH_TRUST_WEBPKI
+    test_anchors_from_pem();
 #endif
 
     if (failures > 0) {

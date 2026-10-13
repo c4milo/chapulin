@@ -1,0 +1,12 @@
+invariant: INV-5
+file: x509_pem.c
+catches: pem_files_test
+reason: an EC PRIVATE KEY block without its parameters field decodes, but
+  outside PKCS #8 nothing else names the curve, and RFC 5915 section 3
+  requires the field there. test_key_files writes that file and requires
+  CH_EINVAL.
+
+--- old
+    return read_ec_private_key(der, der_len, CURVE_REQUIRED, scalar, point);
+--- new
+    return read_ec_private_key(der, der_len, CURVE_OPTIONAL, scalar, point);

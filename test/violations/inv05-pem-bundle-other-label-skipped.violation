@@ -1,0 +1,14 @@
+invariant: INV-5
+file: pem.c
+catches: pem_files_test
+reason: the bundle's scan looks for the whole BEGIN CERTIFICATE line, as
+  it did before Camilo ruled on 2026-10-13. So a block under another
+  label is text. A bundle that holds a TRUSTED CERTIFICATE or X509
+  CERTIFICATE block then decodes without that root and reports CH_OK
+  (docs/decisions.md 131). test_bundle_grammar writes each label beside
+  a root and requires CH_EINVAL.
+
+--- old
+    return match_bytes(&peek, begin_prefix, sizeof begin_prefix);
+--- new
+    return match_line(&peek, begin_prefix, sizeof begin_prefix, PEM_LABEL_CERTIFICATE);

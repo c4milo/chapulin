@@ -353,7 +353,11 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
 // ALPN rows set the two fields themselves.
 static uint8_t rxbuf[CH_MIN_RXBUF];
 static const uint8_t anchor_der[] = {0x30, 0x00};
-static ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX + 1];
+// The anchors a row may configure. No cap bounds the count
+// (docs/decisions.md 131). So a row may configure more than a system
+// bundle's 150 roots, and more than the 255 that one byte counts.
+#define TEST_ANCHORS 300
+static ch_trust_anchor anchors[TEST_ANCHORS];
 static const uint8_t host[] = {'s', '3', '.', 'e', 'x', 'a', 'm', 'p',
                                'l', 'e', '.', 't', 'e', 's', 't'};
 
