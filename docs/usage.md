@@ -248,6 +248,12 @@ refusal, of the age or of the epoch, means the ticket cannot be used
 again: drop it and connect in full. A `TRUST=webpki` build also takes
 `ticket_binding`.
 
+Under `TRUST=webpki`, set `on_ticket` in the `ch_cfg` that you pass to
+the init call. The init call hashes the configuration that each ticket
+is bound to only when `on_ticket` is set. A session whose init call saw
+no `on_ticket` gives no ticket to anyone, also when you set
+`on_ticket` in the session later ([`docs/webpki.md`](webpki.md)).
+
 ## Sizing buffers in record mode
 
 A `TRANSPORT=tcp-nonblocking` caller owns the socket and hands records to

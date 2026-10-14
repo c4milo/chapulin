@@ -1,0 +1,13 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: Client.toCfg drops the values' ticket when takes_tickets is
+  false. A client that keeps no new tickets then cannot resume the ticket
+  it offers: a TRUST=webpki client runs a full handshake, and a raw or ca
+  client sets no key and init refuses it. Both loops resume a ticket
+  with takes_tickets false, and object.
+
+--- old
+        if (values.ticket) |ticket| {
+--- new
+        if (if (values.takes_tickets) values.ticket else null) |ticket| {

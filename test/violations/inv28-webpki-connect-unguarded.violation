@@ -25,7 +25,13 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+    // The hash every ticket this session receives is bound to. A session
+    // without on_ticket gives no ticket to anyone, so it keeps the zeros
+    // memset wrote and runs no hash here (webpki_ticket.h).
+    t->takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (t->takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+    }
     // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
     // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
@@ -47,7 +53,13 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+    // The hash every ticket this session receives is bound to. A session
+    // without on_ticket gives no ticket to anyone, so it keeps the zeros
+    // memset wrote and runs no hash here (webpki_ticket.h).
+    t->takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (t->takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+    }
     // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
     // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);

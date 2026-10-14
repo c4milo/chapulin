@@ -6,7 +6,7 @@ reason: the configuration hash leaves out the hostname, so a ticket's binding
   The known-answer row and the other-hostname rows object.
 
 --- old
-    hash_len(&s, cfg->hostname_len);
-    sha256_update(&s, lower, cfg->hostname_len);
+    hash_len(cpu, &s, cfg->hostname_len);
+    config_update(cpu, &s, lower, cfg->hostname_len);
 --- new
     (void)lower;

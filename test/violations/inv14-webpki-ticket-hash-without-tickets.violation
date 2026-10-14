@@ -1,0 +1,13 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_session_test
+reason: webpki_takes_tickets answers 1 for every configuration, so every init
+  call hashes the anchors, whether or not the session takes tickets
+  (docs/decisions.md 132). test/webpki_ticket_rows.h's row without
+  on_ticket counts one hash where it requires none.
+
+--- old
+    return cfg->on_ticket != NULL;
+--- new
+    (void)cfg;
+    return 1;

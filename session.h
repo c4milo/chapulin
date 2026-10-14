@@ -314,7 +314,8 @@ typedef struct {
     // SPKI pins, written when the session starts. handshake_post.c binds
     // every ticket the session receives to it, so the binding does not
     // depend on the caller's bytes after ch_connect or ch_quic_init
-    // returns.
+    // returns. A session whose init call saw no on_ticket keeps it all
+    // zero (webpki_takes_tickets).
     uint8_t ticket_config_hash[SHA256_LEN];
     // The certificate type the server's EncryptedExtensions selected
     // (RFC 7250), CH_CERT_TYPE_X509 when it sent none: what the
@@ -327,6 +328,15 @@ typedef struct {
     // persist; the session stays up. Both stay zero outside CA builds.
     uint32_t epoch;
     uint8_t epoch_store_failed;
+#ifdef CH_TRUST_WEBPKI
+    // 1 when the cfg of the init call set on_ticket. The init call then
+    // wrote ticket_config_hash. handshake_post.c gives a ticket to
+    // on_ticket only when this field is 1. So a caller that sets
+    // cfg.on_ticket in this struct after the init call gets no ticket.
+    // The field sits in the padding before epoch_seen, so sizeof(ch_tls)
+    // did not change when it was added.
+    uint8_t takes_tickets;
+#endif
     // What the peer presented and how the rule judged it (CH_EPOCH_* in
     // cfg.h). epoch_seen stays zero when the certificate carried no
     // allowed date; epoch_status is then CH_EPOCH_UNTRUSTED.

@@ -86,15 +86,15 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // derives is one this build holds the salt and labels for.
     q->t.quic_negotiated_version = cfg->quic_original_version;
 #ifdef CH_TRUST_WEBPKI
-    // The hash every ticket this session receives is bound to, taken now
-    // so the binding does not depend on the caller's hostname and anchor
-    // bytes after this call, as ch_connect and ch_record_init take it
-    // (webpki_ticket.h).
-    webpki_ticket_config_hash(cfg, q->t.ticket_config_hash);
+    // A session that takes tickets hashes its configuration now, so the
+    // hash does not read the caller's bytes later (webpki_ticket.h).
+    q->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (q->t.takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(q->t.cfg), cfg, q->t.ticket_config_hash);
+    }
 #endif
-    // 0 is the first protocol in cfg.alpn_protocols, so the
-    // no-selection value has to be written before the parser can report
-    // one.
+    // 0 is the first protocol in cfg.alpn_protocols, so the no-selection
+    // value has to be written before the parser can report one.
     q->t.alpn_selected = CH_ALPN_NONE;
     hsf_begin(&q->hs);
     // Unreachable, for the reason handshake.c's ch_handshake gives: no

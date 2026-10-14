@@ -1,0 +1,13 @@
+invariant: INV-14
+file: quic.c
+catches: quic_loop_webpki
+reason: the webpki ch_quic_init hashes the configuration for a session that
+  takes tickets but leaves ch_tls.takes_tickets at 0. So handshake_post.c
+  gives no ticket to on_ticket, and no QUIC session can resume. The
+  loop's full handshake requires one ticket.
+
+--- old
+    q->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (q->t.takes_tickets) {
+--- new
+    if (webpki_takes_tickets(cfg)) {

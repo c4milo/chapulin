@@ -35,17 +35,41 @@
 // A configuration of SPKI pins alone hashes a hostname_len and an
 // anchor_count of 0. Every input is public, so the hash is too.
 //
+// cpu is the session's ch_cfg.cpu, which CH_CFG_CPU gives (cpu.h). In a
+// host object the hash runs on the SHA-256 instructions when cpu holds
+// CH_CPU_CONSTANT_TIME_SHA256, and on sha256.c otherwise (sha256.h). A
+// device object holds one SHA-256 and reads no value. Both paths write
+// the same bytes, so a ticket bound under one value resumes under any
+// other (docs/decisions.md 132).
+//
 // Requires: cfg->hostname holds hostname_len bytes, cfg->anchors holds
 // anchor_count entries whose pointers hold their lengths, and
 // cfg->spki_pins holds spki_pin_count pins, which the webpki config
-// rules check before any caller runs this.
-void webpki_ticket_config_hash(const ch_cfg *cfg, uint8_t out[SHA256_LEN]);
+// rules check before any caller runs this. In a host object, cpu holds
+// CH_CPU_CONSTANT_TIME_SHA256 only on a CPU with the SHA-256
+// instructions (sha256.h). The library passes a session's value, which
+// cpu_value_ok accepted. A value of 0 runs sha256.c.
+void webpki_ticket_config_hash(uint32_t cpu, const ch_cfg *cfg, uint8_t out[SHA256_LEN]);
+
+// Whether a session under cfg takes the tickets its server sends: whether
+// cfg->on_ticket is set. Every init call writes the answer in
+// ch_tls.takes_tickets, and writes ch_tls.ticket_config_hash only when
+// the answer is 1. In any other session that field stays all zero, and
+// handshake_post.c gives a ticket to no one. This is true also when the
+// caller sets on_ticket in the session after the init call. The init
+// call of a session that takes no tickets hashes the configuration only
+// to check a ticket the session presents, in webpki_resumption_ok
+// (docs/decisions.md 132).
+int webpki_takes_tickets(const ch_cfg *cfg);
 
 // The binding a ticket carries: HMAC-SHA256 keyed by the ticket's PSK,
 // the psk_len bytes at psk, over the label "chapulin webpki ticket" and
 // the hash above. The binding stays SHA-256 whatever hash the PSK came
-// from, because it is this client's own check and no protocol value.
-void webpki_ticket_binding(const uint8_t *psk, size_t psk_len,
+// from, because it is this client's own check and no protocol value. cpu
+// picks the path as for the hash above. The key is secret, and the
+// SHA-256 bit states that the instructions run in constant time
+// (cpu_cfg.h).
+void webpki_ticket_binding(uint32_t cpu, const uint8_t *psk, size_t psk_len,
                            const uint8_t config_hash[SHA256_LEN], uint8_t out[SHA256_LEN]);
 
 // Whether cfg's PSK fields are one this build accepts. Either every PSK
@@ -56,10 +80,15 @@ void webpki_ticket_binding(const uint8_t *psk, size_t psk_len,
 // CH_TICKET_ID_MAX bytes, and a ticket_binding equal, compared in
 // constant time, to the binding recomputed from psk, hostname and
 // anchors. Any other shape is refused: an external PSK has no hostname
-// to bind, and a length set without its pointer is a field missing.
+// to bind, and a length set without its pointer is a field missing. The
+// hash and the binding it recomputes run on the path cfg's own cpu value
+// names, as webpki_ticket_config_hash states.
 //
 // Requires: the hostname, anchor and SPKI pin rules already hold
-// (webpki_cfg.c).
+// (webpki_cfg.c). In a host object, cfg->cpu holds
+// CH_CPU_CONSTANT_TIME_SHA256 only on a CPU with the SHA-256
+// instructions. tlsi_config_ok and quic_config_ok run cpu_value_ok on
+// cfg->cpu before this call, so a value they refuse runs no hash.
 int webpki_resumption_ok(const ch_cfg *cfg);
 
 #endif // CH_TRUST_WEBPKI

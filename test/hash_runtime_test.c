@@ -38,10 +38,12 @@
 // The rows: sha256.h's three entries and sha512.h's five; hkdf.h's five
 // and keysched.h's, at each hash length; p256_sign_cpu, whose RFC 6979
 // nonce runs HMAC-SHA-256; transcript.h's two; a record direction's keying
-// and its KeyUpdate, which read the direction's cpu, under each suite; and
-// in a QUIC build a level's keys, their update and an Initial packet. The
-// Makefile builds the file twice: as a QUIC object with the suites, and as
-// a TCP object with the exporter, whose two entries a QUIC object lacks.
+// and its KeyUpdate, which read the direction's cpu, under each suite; in
+// a QUIC build a level's keys, their update and an Initial packet
+// (test/hash_runtime_quic.h); and in a TRUST=webpki build webpki_ticket.h's
+// three calls (test/hash_runtime_webpki.h). The Makefile builds the file
+// twice: as a QUIC TRUST=webpki object with the suites, and as a TCP
+// object with the exporter, whose two entries a QUIC object lacks.
 //
 // One row computes more than hashes: the Initial packet's seal runs
 // AES-128-GCM, on the path the value's AES and VAES bits pick. That row
@@ -66,10 +68,6 @@
 #include "sha512.h"
 #include "suite.h"
 #include "transcript.h"
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-#include "quic_initial.h"
-#include "quic_keys.h"
-#endif
 
 #if !defined(CH_CPU_RUNTIME) || !defined(CH_SUITE_AES_GCM)
 #error "bin/hash_runtime_test is a host object with the suites: -DCH_CPU_RUNTIME -DCH_SUITE_AES_GCM"
@@ -364,60 +362,26 @@ static void row_record_direction(uint32_t cpu) {
     CHECK(d.cpu == cpu);
 }
 
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-// One level's packet protection keys and header protection key under
-// row_suite, and the key update.
-static void row_quic_keys(uint32_t cpu) {
-    uint8_t traffic_secret[HKDF_HASH_MAX];
-    memcpy(traffic_secret, pseudorandom_key, sizeof traffic_secret);
-    quic_keys k;
-    quic_hp_key h;
-    memset(&k, 0, sizeof k);
-    memset(&h, 0, sizeof h);
-    quic_keys_init_suite(cpu, &k, CH_QUIC_VERSION_1, traffic_secret, row_suite);
-    quic_hp_key_init_suite(cpu, &h, CH_QUIC_VERSION_1, traffic_secret, row_suite);
-    memcpy(output, k.key, sizeof k.key);
-    memcpy(output + sizeof k.key, k.iv, sizeof k.iv);
-    memcpy(output + 64, h.key, sizeof h.key);
-    quic_keys_update(cpu, traffic_secret, &k, CH_QUIC_VERSION_1);
-    memcpy(output + 128, k.key, sizeof k.key);
-    memcpy(output + 128 + sizeof k.key, k.iv, sizeof k.iv);
-    memcpy(output + 192, traffic_secret, sizeof traffic_secret);
-}
-
-// One Initial packet a client seals, whose keys RFC 9001 §5.2 derives with
-// HKDF over SHA-256 whatever suite the session runs. The seal then runs
-// AES-128-GCM: on the AES instructions under the value's AES bit, and on
-// the 256-bit kernels under its VAES bit as well. A CPU without those
-// faults on them, so the row clears the three bits that pick an AES or
-// ChaCha20 path, and the packet is sealed on the table and the portable
-// multiply, which every CPU runs. The value keeps every bit a hash call
-// reads.
-static void row_quic_initial(uint32_t cpu) {
-    static const uint8_t dcid[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08};
-    static const uint8_t hdr[20] = {0xc1, 0x00, 0x00, 0x00, 0x01, 0x08, 0x83, 0x94, 0xc8, 0xf0,
-                                    0x3e, 0x51, 0x57, 0x08, 0x00, 0x00, 0x40, 0x42, 0x00, 0x07};
-    uint32_t no_cipher_bits =
-        cpu & ~(uint32_t)(CH_CPU_CONSTANT_TIME_AES | CH_CPU_AVX2 | CH_CPU_VAES);
-    size_t pkt_len = 0;
-    CHECK(quic_initial_seal(no_cipher_bits, CH_QUIC_ENDPOINT_CLIENT, CH_QUIC_VERSION_1, dcid,
-                            sizeof dcid, 7, 2, hdr, sizeof hdr, input, 48, output, sizeof output,
-                            &pkt_len) == CH_OK);
-}
-#endif
+#include "hash_runtime_quic.h"
+#include "hash_runtime_webpki.h"
 
 // The rows that take no hash length and no suite.
 static const row fixed_rows[] = {
-    {"sha256_update_cpu and sha256_final_cpu", row_sha256_update_final},
-    {"sha256_of_cpu",                          row_sha256_of          },
-    {"sha512_update_cpu and sha512_final_cpu", row_sha512_update_final},
-    {"sha512_update_cpu and sha384_final_cpu", row_sha384_update_final},
-    {"sha512_of_cpu",                          row_sha512_of          },
-    {"sha384_of_cpu",                          row_sha384_of          },
-    {"hmac_sha256_cpu",                        row_hmac_sha256        },
-    {"p256_sign_cpu",                          row_p256_sign          },
+    {"sha256_update_cpu and sha256_final_cpu", row_sha256_update_final      },
+    {"sha256_of_cpu",                          row_sha256_of                },
+    {"sha512_update_cpu and sha512_final_cpu", row_sha512_update_final      },
+    {"sha512_update_cpu and sha384_final_cpu", row_sha384_update_final      },
+    {"sha512_of_cpu",                          row_sha512_of                },
+    {"sha384_of_cpu",                          row_sha384_of                },
+    {"hmac_sha256_cpu",                        row_hmac_sha256              },
+    {"p256_sign_cpu",                          row_p256_sign                },
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-    {"quic_initial_seal",                      row_quic_initial       },
+    {"quic_initial_seal",                      row_quic_initial             },
+#endif
+#ifdef CH_TRUST_WEBPKI
+    {"webpki_ticket_config_hash",              row_webpki_ticket_config_hash},
+    {"webpki_ticket_binding",                  row_webpki_ticket_binding    },
+    {"webpki_resumption_ok",                   row_webpki_resumption_ok     },
 #endif
 };
 
@@ -479,6 +443,7 @@ int main(void) {
     fill(key, sizeof key, 0x11);
     fill(pseudorandom_key, sizeof pseudorandom_key, 0x44);
     fill(transcript_hash, sizeof transcript_hash, 0x55);
+    setup_webpki_rows();
     check_plain_names();
     // The eight bits beside CH_CPU_PROBED are 0x02 to 0x100, so the 256
     // values are the probe's bit and each of 0 to 255 shifted up one.

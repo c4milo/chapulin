@@ -11790,7 +11790,9 @@ does nothing more.
       whose `on_ticket` is set reads the hash (`handshake_post.c`). Every
       session computes it at init, as before this change.
       [#194](https://github.com/c4milo/chapulin/issues/194) follows up the
-      cost of this hash at each connect.
+      cost of this hash at each connect. Entry 132 amends this item: an
+      init call hashes only for a session that takes tickets, on the
+      session's SHA-256 path.
     - **The key call's `cpu` argument.** Camilo ruled that a host object
       computes the public point on the wide P-256 field when the caller
       states `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs. The
@@ -11946,3 +11948,230 @@ does nothing more.
       `cxx-check`. It forwards `ch_anchors_from_pem` as
       `anchors_from_pem`, which the `TRUST=webpki` build's `cxx-check`
       runs.
+132. **A `TRUST=webpki` client hashes its trust anchors at init only when
+    it takes tickets, and its ticket calls run on the session's SHA-256
+    path.** Entry 131 removed the cap of 12 on `ch_cfg.anchor_count`. Its
+    cost item measured the configuration hash that binds a ticket: 266,000
+    instructions under 12 anchors and 3,460,000 under 150, on an M1 Pro.
+    Every client init ran it, on the portable SHA-256
+    ([#194](https://github.com/c4milo/chapulin/issues/194)). On 2026-10-14
+    Camilo asked to address the issue. This entry takes both options that
+    the issue lists, and amends entry 131's cost item.
+
+    - **Which sessions hash at init.** `webpki_takes_tickets` answers
+      whether `ch_cfg.on_ticket` is set. `ch_connect`, `ch_record_init`
+      and `ch_quic_init` write the answer in `ch_tls.takes_tickets`. They
+      write `ch_tls.ticket_config_hash` only when the answer is 1.
+      `handshake_post.c` reads that hash only to bind a ticket that it
+      gives to `on_ticket`. Any other session keeps the zeros that its
+      init call wrote.
+    - **A presented ticket.** `webpki_resumption_ok` hashes the
+      configuration to check the ticket's binding, as before. The check
+      runs whether or not the session takes tickets. So a session that
+      presents a ticket and takes tickets hashes twice, once in the check
+      and once at init. A session that does neither hashes nothing.
+    - **A caller that sets `on_ticket` after init.** The init call copies
+      the configuration into `ch_tls.cfg`, and a caller can write
+      `t->cfg.on_ticket` after the call. Such a session wrote no hash. So
+      `handshake_post.c` gives a ticket to `on_ticket` only when
+      `ch_tls.takes_tickets` is 1, and this session gets no ticket. The
+      tree's own raw-mode tests set `on_ticket` that way. `cfg.h`,
+      `docs/usage.md` and `docs/webpki.md` tell a `TRUST=webpki` caller
+      to set `on_ticket` before the init call. `takes_tickets` sits in
+      the padding after `epoch_store_failed`. `sizeof(ch_tls)` did not
+      change in any `TRUST=webpki` build on arm64, x86-64, i386 or
+      armv7m, and `bench/sram.sh` wrote the same `results-sram.csv`.
+    - **The path.** `webpki_ticket_config_hash` and `webpki_ticket_binding`
+      take the session's `ch_cfg.cpu` first, as the `_cpu` entries of
+      `sha256.h` and `hkdf.h` do. In a host object each runs on
+      `sha256_hw.c` when the value holds `CH_CPU_CONSTANT_TIME_SHA256`, and
+      on `sha256.c` when it does not. A device object holds one SHA-256 and
+      reads no value: `cpu.h`'s `CH_CFG_CPU` gives it 0. The hash reads
+      public bytes. The binding's key is the ticket's PSK, which is secret.
+      The SHA-256 bit states that the instructions run in constant time
+      (`cpu_cfg.h`), as for every HMAC key a session holds. Both paths
+      write the same bytes, so a ticket bound under one value resumes
+      under any other.
+    - **The order of the checks.** `webpki_resumption_ok` now runs the
+      instructions that `cfg->cpu` names, so the cpu rule must hold first.
+      `tlsi_config_ok` and `quic_config_ok` already check `cpu_bits_ok`
+      before `webpki_cfg_ok`. A row of `test/webpki_ticket_rows.h`
+      presents a ticket under `CH_CPU_CONSTANT_TIME_SHA256` alone, a value
+      that the rule refuses. It requires `CH_EINVAL` and no hash from each
+      of the three init calls. The `quic_config_webpki_suite` harness's
+      stub of `webpki_resumption_ok` also asserts the rule.
+    - **The Zig API.** `chapulin.Client` has the field `takes_tickets`.
+      Camilo ruled it on 2026-10-14. `record.Client.init` and
+      `quic.Client.init` set `on_ticket` only when it is true. When it is
+      false, the session keeps no ticket, and `takeTicket` returns null.
+      Its init call then runs no hash, unless the values carry a `ticket`.
+      Then init hashes once to check the ticket's binding, and the ticket
+      still resumes. The field has the name of `ch_tls.takes_tickets`,
+      which records the same choice in C.
+      - **The default is true.** The Zig callers read tickets, so a
+        default of false would drop their tickets with no error. colibri's
+        `take_ticket` in `src/tls/record/record.zig` and
+        `src/tls/quic/quic.zig` calls `takeTicket`. Its client connection
+        reports each ticket as a `ticket` event. cocuyo keeps each ticket
+        and offers it on its next connection to that server.
+        `test/zig-consumer`'s loops resume the ticket that they take.
+      - **Who sets it false.** No caller does yet, other than the
+        `ticketsOff` steps of `loop_record.zig` and `loop_quic.zig`.
+        stompy's S3 client connects through colibri and reads no ticket.
+        colibri can give its client values a field with this name and pass
+        it to `chapulin.Client`. Then stompy can set it false.
+      - **The tests.** In `loop_record.zig` and `loop_quic.zig`, a client
+        with `takes_tickets` false connects to a server that writes a
+        ticket, first with no ticket and then with the ticket that the
+        loop took, which resumes. Each time its session holds no
+        `on_ticket`, and it keeps no ticket. Under TRUST=webpki its
+        `ch_tls.takes_tickets` is 0 and its stored hash is all zero. The
+        client with the default holds 1 and a hash that is not zero, and
+        it resumes its ticket as before. The Zig object exports no hash
+        call to count, so the loops read those fields. The rows of
+        `test/webpki_ticket_rows.h` count the calls in C.
+      - **The violations.** `test/zig-build-check.sh` catches each one.
+        `inv36-zig-api-record-ignores-takes-tickets` and
+        `inv36-zig-api-quic-ignores-takes-tickets` set `on_ticket` when the
+        field is false. `inv36-zig-api-takes-no-tickets-by-default` makes
+        false the default, so the loops take no ticket to resume.
+        `inv36-zig-api-ticket-dropped-without-tickets` drops the ticket of
+        a client whose field is false, so the ticket does not resume.
+    - **What it costs now.** A test program was built from the sources of
+      the `TRANSPORT=tcp-nonblocking TRUST=webpki` host object, at `-O2`
+      with Apple clang 21. It ran on an M1 Pro, and `proc_pid_rusage`'s
+      `ri_instructions` counted 200 calls of each row. The anchors are
+      entry 131's: curl's `cacert.pem` and generated roots, with 4,808
+      bytes of Names and keys at 12 and 63,424 at 150. `ch_cfg.cpu` holds
+      `CH_CPU_PROBED`, and the SHA-256 bit in the rows on the
+      instructions. "Before" is the tree at 237e6e19. The rest of an init
+      is its two key shares and the ClientHello. Load does not change an
+      instruction count.
+
+      | instructions | 12 anchors | 150 anchors |
+      |---|---:|---:|
+      | `webpki_ticket_config_hash`, `sha256.c` | 267,000 | 3,466,000 |
+      | `webpki_ticket_config_hash`, the instructions | 20,600 | 245,000 |
+      | `ch_record_init`, neither, `sha256.c`, before | 11,174,000 | 14,370,000 |
+      | `ch_record_init`, neither, the instructions, before | 11,119,000 | 14,299,000 |
+      | `ch_record_init`, neither, `sha256.c` | 10,899,000 | 10,901,000 |
+      | `ch_record_init`, neither, the instructions | 10,838,000 | 10,840,000 |
+      | `ch_record_init`, `on_ticket`, `sha256.c` | 11,166,000 | 14,369,000 |
+      | `ch_record_init`, `on_ticket`, the instructions | 10,857,000 | 11,081,000 |
+      | `ch_record_init`, a ticket, `sha256.c` | 11,320,000 | 14,518,000 |
+      | `ch_record_init`, a ticket, the instructions | 10,869,000 | 11,095,000 |
+      | `ch_record_init`, a ticket and `on_ticket`, `sha256.c` | 11,586,000 | 17,983,000 |
+      | `ch_record_init`, a ticket and `on_ticket`, the instructions | 10,889,000 | 11,342,000 |
+
+      "Neither" is a configuration with no `on_ticket` that presents no
+      ticket. The SHA-256 bit also moves the rest of an init's SHA-256
+      calls, its transcript and its key schedule, to the instructions. So
+      compare a row on the instructions only with another row on the
+      instructions. On them the hash at init costs 19,000 instructions at
+      12 anchors and 241,000 at 150. The hash on the instructions runs
+      about one thirteenth of the instructions it runs on `sha256.c` at 12
+      anchors, and one fourteenth at 150. At 150 anchors an init of
+      neither runs 3,469,000 fewer instructions than before, the whole
+      hash.
+    - **The tests.** `test/webpki_ticket_count.c` compiles
+      `webpki_ticket.c` with the last call of each hash and the call of
+      each binding renamed. It counts every hash and every binding, the
+      calls that `webpki_ticket.c` makes to itself too, and records each
+      call's `cpu` value. `bin/webpki_session_test`,
+      `bin/webpki_session_host`, `bin/webpki_loop_aes` and
+      `bin/quic_loop_aes` link it, and `test/webpki_ticket_rows.h` runs
+      one init call under each case. The coverage build of
+      `test/webpki_session_test.c` runs the rows too, and reads the
+      stored hash alone, since it counts no call:
+      - no `on_ticket` and no ticket: no hash, and a field of zeros;
+      - `on_ticket`: one hash, on the session's value, with the bytes of
+        `sha256.c`;
+      - a ticket and no `on_ticket`: one hash, the check, a field of
+        zeros, and the ticket accepted;
+      - a ticket and `on_ticket`: two hashes;
+      - in a host object, a ticket under a value that the cpu rule
+        refuses: no hash, and `CH_EINVAL`;
+      - in a host object on a CPU with the instructions, a value with the
+        SHA-256 bit: one hash with `sha256.c`'s bytes, and a ticket bound
+        on `sha256.c` accepted.
+
+      `bin/webpki_loop_aes` and `bin/quic_loop_aes` also count the binding
+      of a received ticket on the session's value. They resume a ticket
+      received with the hash on one path in a session on the other, in
+      both orders. `bin/hash_runtime_test` is now a `TRUST=webpki` object.
+      It counts the SHA-256 calls of the hash, the binding and the check
+      under 257 values. The webpki loops over both transports resume the
+      ticket that a resumed session received. They also resume the ticket
+      that a declined session received. Each binding is the one that
+      `on_ticket` gave. `test/webpki_loop_tickets.h` sets `on_ticket` in
+      the session after `ch_record_init`, and requires that no ticket is
+      given.
+    - **The violations.** A test or a proof catches each one.
+      - `inv14-webpki-ticket-hash-without-tickets`,
+        `inv14-webpki-connect-ticket-hash-without-tickets`,
+        `inv14-webpki-record-init-ticket-hash-without-tickets`,
+        `inv14-quic-ticket-hash-without-tickets` and
+        `inv14-webpki-resumption-hash-without-ticket` hash without
+        tickets.
+      - `inv14-webpki-ticket-hash-skipped-when-presented` skips the hash
+        at init when a session presents a ticket.
+      - `inv14-webpki-late-on-ticket-handed-over` gives a ticket to an
+        `on_ticket` set after the init call.
+      - `inv14-webpki-connect-takes-tickets-unrecorded`,
+        `inv14-webpki-record-init-takes-tickets-unrecorded` and
+        `inv14-quic-takes-tickets-unrecorded` leave
+        `ch_tls.takes_tickets` at 0.
+      - `inv16-webpki-ticket-hash-on-portable`,
+        `inv16-webpki-ticket-binding-on-portable`,
+        `inv16-webpki-resumption-hash-on-portable` and
+        `inv16-webpki-ticket-final-on-portable` leave a call of
+        `webpki_ticket.c` on `sha256.c`.
+      - `inv16-webpki-connect-ticket-hash-without-session-cpu`,
+        `inv16-webpki-record-init-ticket-hash-without-session-cpu`,
+        `inv16-quic-ticket-hash-without-session-cpu` and
+        `inv16-webpki-received-ticket-binding-on-portable` hand a call 0
+        in place of the session's value.
+      - `inv16-webpki-cpu-after-resumption` and
+        `inv16-quic-webpki-cpu-after-resumption` check the value after
+        the web PKI rules.
+    - **The proofs.** Each ran under cbmc 6.11.0 and kissat with
+      `PROVE_NO_CACHE=1` on an M1 Pro.
+      - `webpki_ticket` compiles a device object, in which the new
+        argument reads no value: 954 properties, 8 s, 0.15 GB.
+      - `webpki_ticket_host` compiles the same harness in a host object,
+        over any `ch_cfg.cpu`. Contract stubs stand for the calls on the
+        instructions, which CBMC cannot read. Each stub asserts the bit,
+        and a ticket check under the bit must run them: 970 properties,
+        14 s, 0.25 GB.
+      - `quic_config_webpki` proved 607 properties in 6 s at 0.12 GB,
+        and `quic_config_webpki_suite` 777 in 6 s at 0.15 GB.
+
+    Rejected:
+
+    - **One hash for a session that presents a ticket and takes
+      tickets.** The init call could check the binding against the hash
+      that it stores. That moves the check out of `webpki_cfg_ok`, which
+      both transports and the `quic_config_webpki` proofs hold as one rule
+      set. On the instructions the second hash costs 245,000 instructions
+      at 150 anchors.
+    - **A hash at init for a session that presents a ticket and takes
+      none.** No code reads the field then.
+    - **The check's hash kept for the init call.** `webpki_cfg_ok` answers
+      a question about a `const ch_cfg *` and writes no state.
+    - **The binding on `sha256.c`.** It would leave one HMAC of each
+      ticket off the session's path. Then `bin/hash_runtime_test` could
+      not hold the check's calls to one path.
+    - **Tickets bound to the all-zero hash for a caller that sets
+      `on_ticket` after init.** Such a ticket fails every later init call
+      with `CH_EINVAL`. No ticket at all is the clearer result.
+    - **An all-zero `ch_tls.ticket_config_hash` read as "no hash".** It
+      needs no field. But a reader must know that SHA-256 never writes 32
+      zero bytes in practice, and a field states the decision itself.
+    - **The hash taken when a ticket arrives, in place of at init.** Then
+      no session would hash until a server sends a ticket, and the Zig API
+      would need no field. But the hash would read the hostname, the
+      anchors and the pins after the handshake, through the pointers in
+      `ch_tls.cfg`. A caller that reuses that memory for its next
+      connection could then get a ticket bound to a hostname that the
+      server did not authenticate. RFC 9846 §4.7.1 lets a client resume
+      only with a server name that is valid for the original certificate.

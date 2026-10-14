@@ -14,8 +14,11 @@
 // a client that offers nothing else; an end without it refuses a suite
 // list that names one; and an end that states the hash instructions and
 // one that does not complete a handshake under either suite
-// (check_runtime_hash_bits); and ch_srv_check takes a server that holds an
-// RSA-PSS identity beside the r2 one (check_runtime_server_boot).
+// (check_runtime_hash_bits); a ticket received with the configuration
+// hash on one SHA-256 path resumes with it on the other
+// (check_runtime_tickets_across); test/webpki_ticket_rows.h's rows over
+// ch_record_init; and ch_srv_check takes a server that holds an RSA-PSS
+// identity beside the r2 one (check_runtime_server_boot).
 //
 // With "absent" as its argument the binary runs check_runtime_absent alone,
 // which test/aes-runtime-qemu.sh does on a CPU model without the AES
@@ -31,6 +34,9 @@
 
 #include "rsa_sign_key.h"
 #include "srv.h"
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+#include "webpki_ticket_count.h"
+#endif
 
 // The two values the rows give an end: the AES instructions stated, and
 // the probe's bit alone.
@@ -232,6 +238,67 @@ static void check_runtime_hash_bits(void) {
     check_runtime_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
 }
 
+// A ticket the client received in a session that hashed its
+// configuration on one path resumes a session that hashes it on the
+// other, with the binding on_ticket gave it (docs/decisions.md 132). The
+// two paths write the same bytes, so the check of the presented ticket
+// passes. The rows state the SHA-256 bit where this CPU has the
+// instructions, and skip on a CPU without them.
+static void check_runtime_ticket_across(uint32_t receive_bits, uint32_t present_bits) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg, ticket_key);
+    client_cpu = receive_bits;
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    size_t count = kept.count;
+    CHECK(run(&ccfg, &scfg));
+    CHECK(kept.count == count + 1);
+    client_cpu = present_bits;
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    present_kept(&ccfg);
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1);
+    client_cpu = TEST_CPU;
+}
+
+static void check_runtime_tickets_across(void) {
+    uint32_t sha256_bit = test_cpu_hash_bits() & CH_CPU_CONSTANT_TIME_SHA256;
+    if (sha256_bit == 0) {
+        (void)printf("webpki_loop: SKIP the tickets across the SHA-256 instructions: this CPU "
+                     "lacks them\n");
+        return;
+    }
+    check_runtime_ticket_across(TEST_CPU | sha256_bit, TEST_CPU);
+    check_runtime_ticket_across(TEST_CPU, TEST_CPU | sha256_bit);
+}
+
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+// ch_record_init under test/webpki_ticket_rows.h's rows.
+static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
+    static ch_record probe;
+    int rc = ch_record_init(&probe, cfg);
+    memcpy(stored, probe.t.ticket_config_hash, SHA256_LEN);
+    ch_record_close(&probe);
+    return rc == CH_OK;
+}
+
+#include "webpki_ticket_rows.h"
+
+// handshake_post.c binds the ticket a session receives on that session's
+// ch_cfg.cpu, the value test/webpki_ticket_count.c records. The row runs
+// on every CPU, because TEST_CPU names no hash instruction.
+static void check_runtime_ticket_binding_cpu(void) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg, ticket_key);
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    webpki_ticket_binding_calls = 0;
+    webpki_ticket_binding_cpu = 0;
+    CHECK(run(&ccfg, &scfg));
+    CHECK(webpki_ticket_binding_calls == 1 && webpki_ticket_binding_cpu == ccfg.cpu);
+}
+#endif
+
 static void check_runtime(void) {
     check_runtime_edges();
     check_runtime_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
@@ -241,6 +308,13 @@ static void check_runtime(void) {
     check_runtime_server_without_aes();
     check_runtime_lists();
     check_runtime_hash_bits();
+    check_runtime_tickets_across();
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+    ch_cfg ccfg;
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    check_ticket_rows(&ccfg);
+    check_runtime_ticket_binding_cpu();
+#endif
     check_runtime_server_boot(RUNTIME_ABSENT);
     check_runtime_server_boot(TEST_CPU);
 }

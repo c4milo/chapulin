@@ -49,7 +49,11 @@
 #     declaration the object has, compiled.
 #   - for a ROLE=both object, loop.zig, which runs a client and a server of
 #     the object against each other through the API, over the r2 chain of
-#     test/webpki_corpus.h, which the script copies beside it. Under
+#     test/webpki_corpus.h, which the script copies beside it. In each
+#     transport it resumes the ticket of a client with the default
+#     values. A client whose takes_tickets is false must set no
+#     on_ticket, store no configuration hash and keep no ticket, and its
+#     ticket must still resume (docs/decisions.md 132). Under
 #     SUITE=aesgcm its record-mode loop also has each side write across
 #     its AES-GCM write key's ceiling (loop_key_limit.zig).
 #

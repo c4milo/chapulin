@@ -478,6 +478,7 @@ int main(void) {
 #endif
     test_webpki_multiply_bit();
     test_webpki_cpu_values();
+    test_webpki_ticket_hash();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

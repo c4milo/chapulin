@@ -196,8 +196,9 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     // The caller's description of its CPU, which picks the AES the Initial
-    // packets run on and the suites the hello offers (cpu_cfg.h), before
-    // any rule that reads it.
+    // packets run on, the suites the hello offers and the SHA-256 a
+    // presented ticket's check runs on (cpu_cfg.h), before any rule that
+    // reads it.
     if (!cpu_bits_ok(cfg)) {
         return CH_EINVAL;
     }

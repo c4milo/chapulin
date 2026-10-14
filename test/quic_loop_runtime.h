@@ -21,6 +21,9 @@
 //   - An end that states the hash instructions and one that does not
 //     complete a handshake and hold the same keys, under either suite
 //     (check_quic_hash_bits).
+//   - A ticket received with the configuration hash on one SHA-256 path
+//     resumes with it on the other (check_quic_tickets_across).
+//   - test/webpki_ticket_rows.h's rows over ch_quic_init.
 //
 // test/quic_loop_cpu.h holds the values every init call refuses. With
 // "absent" as its argument the binary runs test_quic_runtime_absent
@@ -32,6 +35,10 @@
 #ifndef CH_TEST_QUIC_LOOP_RUNTIME_H
 #define CH_TEST_QUIC_LOOP_RUNTIME_H
 #if defined(CH_CPU_RUNTIME) && defined(CH_SUITE_AES_GCM)
+
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+#include "webpki_ticket_count.h"
+#endif
 
 // The two values the rows give an end: the AES instructions stated, and
 // the probe's bit alone.
@@ -206,6 +213,68 @@ static void check_quic_hash_bits(void) {
     check_quic_bits(RUNTIME_PRESENT | hash, RUNTIME_PRESENT | hash, SUITE_AES_256_GCM_SHA384);
 }
 
+// A ticket the client received in a session that hashed its
+// configuration on one path resumes a session that hashes it on the
+// other, with the binding on_ticket gave it (docs/decisions.md 132). The
+// rows state the SHA-256 bit where this CPU has the instructions, and
+// skip on a CPU without them.
+static void check_quic_ticket_across(uint32_t receive_bits, uint32_t present_bits) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    webpki_server(&scfg, ticket_key);
+    client_cpu = receive_bits;
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    size_t count = kept.count;
+    CHECK(run_quic(&ccfg, &scfg));
+    take_ticket();
+    CHECK(kept.count == count + 1);
+    client_cpu = present_bits;
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    present_ticket(&ccfg);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1);
+    client_cpu = TEST_CPU;
+}
+
+static void check_quic_tickets_across(void) {
+    uint32_t sha256_bit = test_cpu_hash_bits() & CH_CPU_CONSTANT_TIME_SHA256;
+    if (sha256_bit == 0) {
+        (void)printf("quic_loop: SKIP the tickets across the SHA-256 instructions: this CPU "
+                     "lacks them\n");
+        return;
+    }
+    check_quic_ticket_across(TEST_CPU | sha256_bit, TEST_CPU);
+    check_quic_ticket_across(TEST_CPU, TEST_CPU | sha256_bit);
+}
+
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+// ch_quic_init under test/webpki_ticket_rows.h's rows.
+static int ticket_rows_init(const ch_cfg *cfg, uint8_t stored[SHA256_LEN]) {
+    static ch_quic probe;
+    int rc = ch_quic_init(&probe, cfg);
+    memcpy(stored, probe.t.ticket_config_hash, SHA256_LEN);
+    ch_quic_close(&probe);
+    return rc == CH_OK;
+}
+
+#include "webpki_ticket_rows.h"
+
+// handshake_post.c binds the ticket a session receives on that session's
+// ch_cfg.cpu, the value test/webpki_ticket_count.c records. The row runs
+// on every CPU, because TEST_CPU names no hash instruction.
+static void check_quic_ticket_binding_cpu(void) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    webpki_server(&scfg, ticket_key);
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    CHECK(run_quic(&ccfg, &scfg));
+    webpki_ticket_binding_calls = 0;
+    webpki_ticket_binding_cpu = 0;
+    take_ticket();
+    CHECK(webpki_ticket_binding_calls == 1 && webpki_ticket_binding_cpu == ccfg.cpu);
+}
+#endif
+
 static void test_quic_runtime(void) {
     check_quic_bits(RUNTIME_PRESENT, RUNTIME_PRESENT, SUITE_AES_256_GCM_SHA384);
     check_quic_bits(RUNTIME_ABSENT, RUNTIME_PRESENT, SUITE_CHACHA20_POLY1305_SHA256);
@@ -214,6 +283,13 @@ static void test_quic_runtime(void) {
     check_quic_server_without_aes();
     check_quic_lists();
     check_quic_hash_bits();
+    check_quic_tickets_across();
+#ifdef TEST_WEBPKI_TICKET_COUNTED
+    ch_cfg ccfg;
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    check_ticket_rows(&ccfg);
+    check_quic_ticket_binding_cpu();
+#endif
 }
 
 #endif // CH_CPU_RUNTIME && CH_SUITE_AES_GCM

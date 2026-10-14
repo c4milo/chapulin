@@ -370,8 +370,8 @@ static void test_pins_alone_refusals(void) {
 // its PSK, the binding a caller holds for a ticket that session received.
 static void bind_kept_ticket(const ch_cfg *cfg) {
     uint8_t config_hash[SHA256_LEN];
-    webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, kept.binding);
+    webpki_ticket_config_hash(0, cfg, config_hash);
+    webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
 }
 
 // A pinned session's ticket resumes under the same pins, and the resuming

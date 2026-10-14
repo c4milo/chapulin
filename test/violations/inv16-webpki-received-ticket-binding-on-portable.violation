@@ -1,0 +1,13 @@
+invariant: INV-16
+file: handshake_post.c
+catches: webpki_loop_aes
+reason: handshake_post.c binds a received ticket with 0 in place of the
+  session's ch_cfg.cpu, so the binding's HMAC runs on the portable code
+  whatever the caller states (docs/decisions.md 132).
+  test/webpki_loop_runtime.h reads the value the binding took and
+  objects.
+
+--- old
+    webpki_ticket_binding(CH_CFG_CPU(t->cfg), ticket.psk, ticket.psk_len, t->ticket_config_hash,
+--- new
+    webpki_ticket_binding(0, ticket.psk, ticket.psk_len, t->ticket_config_hash,

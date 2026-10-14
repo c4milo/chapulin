@@ -1,0 +1,15 @@
+invariant: INV-14
+file: quic.c
+catches: quic_loop_aes
+reason: the webpki ch_quic_init hashes the anchors whether or not the
+  session takes tickets (docs/decisions.md 132). test/webpki_ticket_rows.h's
+  row without on_ticket counts one hash where it requires none.
+
+--- old
+    q->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (q->t.takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(q->t.cfg), cfg, q->t.ticket_config_hash);
+    }
+--- new
+    q->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    webpki_ticket_config_hash(CH_CFG_CPU(q->t.cfg), cfg, q->t.ticket_config_hash);

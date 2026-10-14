@@ -16,6 +16,7 @@
 // This server answers a hello that offers no scheme and whose ticket it
 // passes over with missing_extension, so a client that dropped the
 // schemes from its resuming hello fails the decline rows here.
+// test/webpki_loop_tickets.h holds two more ticket rows.
 //
 // It also runs SPKI pins alone against that chain (docs/decisions.md 65):
 // a pin on the leaf's key passes with no hostname, anchor or clock, its
@@ -213,8 +214,20 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     // root_p384. A row that presents the ticket under another name or
     // anchor binds it again, as a caller that stored it there would have.
     uint8_t config_hash[SHA256_LEN];
-    webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, kept.binding);
+    webpki_ticket_config_hash(0, cfg, config_hash);
+    webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
+    cfg->ticket_binding = kept.binding;
+}
+
+// Presents the kept ticket with the binding on_ticket gave it, where
+// client_config binds it again.
+static void present_kept(ch_cfg *cfg) {
+    cfg->psk = kept.psk;
+    cfg->psk_len = kept.psk_len;
+    cfg->psk_id = kept.identity;
+    cfg->psk_id_len = kept.identity_len;
+    cfg->resumption = 1;
+    cfg->obfuscated_age = kept.age_add + 5000;
     cfg->ticket_binding = kept.binding;
 }
 
@@ -319,13 +332,7 @@ static void pins_alone_config(ch_cfg *cfg, int present) {
     cfg->cpu = client_cpu;
 #endif
     if (present) {
-        cfg->psk = kept.psk;
-        cfg->psk_len = kept.psk_len;
-        cfg->psk_id = kept.identity;
-        cfg->psk_id_len = kept.identity_len;
-        cfg->resumption = 1;
-        cfg->obfuscated_age = kept.age_add + 5000;
-        cfg->ticket_binding = kept.binding;
+        present_kept(cfg);
     }
 }
 
@@ -344,8 +351,8 @@ static void test_pins_alone(void) {
     CHECK(kept.count == count + 1);
     uint8_t hash[SHA256_LEN];
     uint8_t binding[SHA256_LEN];
-    webpki_ticket_config_hash(&ccfg, hash);
-    webpki_ticket_binding(kept.psk, kept.psk_len, hash, binding);
+    webpki_ticket_config_hash(0, &ccfg, hash);
+    webpki_ticket_binding(0, kept.psk, kept.psk_len, hash, binding);
     CHECK(memcmp(binding, kept.binding, SHA256_LEN) == 0);
     pins_alone_config(&ccfg, 1);
     CHECK(run(&ccfg, &scfg));
@@ -392,6 +399,7 @@ static void test_pins_alone_large_leaf(void) {
 #include "webpki_loop_order.h"
 #include "webpki_loop_runtime.h"
 #include "webpki_loop_suites.h"
+#include "webpki_loop_tickets.h"
 #include "webpki_loop_tx_record.h"
 
 int main(int argc, char **argv) {
@@ -427,6 +435,16 @@ int main(int argc, char **argv) {
     CHECK(server.t.sigalg == 0 && records_pushed == 4);
     CHECK(kept.count == 2);
 
+    // The ticket the resumed session received resumes in turn, with the
+    // binding on_ticket gave it: a session that presents a ticket and
+    // takes tickets hashes its configuration as a full handshake does
+    // (docs/decisions.md 132).
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    present_kept(&ccfg);
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1);
+    CHECK(kept.count == 3);
+
     // A server with another ticket key declines it, and the connection
     // completes as a full handshake.
     server_config(&scfg, other_ticket_key);
@@ -435,15 +453,17 @@ int main(int argc, char **argv) {
     CHECK(client.t.psk_selected == 0 && server.t.psk_selected == 0);
     CHECK(server.t.sigalg == SIGALG_ECDSA_P256_SHA256 && records_pushed == 8);
     CHECK(client.t.server_cert_type == CH_CERT_TYPE_X509);
-    CHECK(kept.count == 3);
+    CHECK(kept.count == 4);
+    check_declined_ticket_resumes(&scfg);
 
-    // That decline checks the chain as a fresh handshake does. The kept
+    // A decline checks the chain as a fresh handshake does. The kept
     // ticket is the one the server holding other_ticket_key sealed, so
     // the server holding ticket_key is the one that declines it now.
     check_declined_chain_refused(ticket_key, webpki_corpus_anchors_root_p384, "other.example.test",
                                  ALERT_BAD_CERTIFICATE);
     check_declined_chain_refused(ticket_key, webpki_corpus_anchors_impostor_p384, "s3.example.test",
                                  ALERT_UNKNOWN_CA);
+    check_late_on_ticket();
     test_pins_alone();
     test_pins_alone_large_leaf();
     check_offer_orders();

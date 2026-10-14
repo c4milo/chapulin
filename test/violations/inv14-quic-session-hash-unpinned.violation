@@ -8,9 +8,9 @@ reason: ch_quic_init hashes the configuration for its tickets without the
   test/quic_loop_pins.h's pinned resumption rows object.
 
 --- old
-    webpki_ticket_config_hash(cfg, q->t.ticket_config_hash);
+        webpki_ticket_config_hash(CH_CFG_CPU(q->t.cfg), cfg, q->t.ticket_config_hash);
 --- new
-    ch_cfg unpinned = *cfg;
-    unpinned.spki_pins = NULL;
-    unpinned.spki_pin_count = 0;
-    webpki_ticket_config_hash(&unpinned, q->t.ticket_config_hash);
+        ch_cfg unpinned = *cfg;
+        unpinned.spki_pins = NULL;
+        unpinned.spki_pin_count = 0;
+        webpki_ticket_config_hash(CH_CFG_CPU(q->t.cfg), &unpinned, q->t.ticket_config_hash);

@@ -17,6 +17,18 @@
 // only for a config whose PSK fields are all unset or that presents a
 // ticket of the shape webpki_ticket.h states.
 //
+// The webpki_ticket launch line builds a device object, which holds one
+// SHA-256. There the hash and the binding take a cpu argument and read no
+// value (docs/decisions.md 132). The webpki_ticket_host line builds the same
+// harness with -DCH_CPU_RUNTIME, the host arm. Its ch_cfg.cpu takes any
+// 32-bit value, and the hash and the binding run on the path that value
+// names. The host arm's calls on the SHA-256 instructions are contract
+// stubs below, which run the portable call they stand for. Each stub
+// asserts that cfg's value holds CH_CPU_CONSTANT_TIME_SHA256. After a
+// ticket check under that bit, main asserts that the hash ended on the
+// instructions and that the binding ran on them.
+// bin/hash_runtime_test counts which path each call runs on a real CPU.
+//
 // What it does not prove, and why. SHA-256 is the contract stub in
 // harness.h, so hmac_sha256 runs over a digest CBMC picks freshly each
 // call and the binding comparison is unconstrained. Which bindings match is
@@ -44,6 +56,35 @@ static uint8_t psk[SHA256_LEN + 1];
 static uint8_t psk_id[CH_TICKET_ID_MAX + 1];
 static uint8_t binding[SHA256_LEN];
 static uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
+
+#ifdef CH_CPU_RUNTIME
+// cfg's ch_cfg.cpu, and which calls on the instructions ran.
+static uint32_t harness_cpu;
+static int final_ran;
+static int hmac_ran;
+
+// sha256_hw.c and hkdf_hw.c hold intrinsics, which CBMC cannot read.
+// Each has the contract of the portable call it is named for
+// (sha256.h, hkdf.h). So each stub runs that call: harness.h's SHA-256
+// stubs, and hkdf.c's hmac_sha256 over them.
+void sha256_update_hw(sha256 *s, const uint8_t *in, size_t n) {
+    __CPROVER_assert(sha256_on_instructions(harness_cpu), "update_hw: only under the bit");
+    sha256_update(s, in, n);
+}
+
+void sha256_final_hw(sha256 *s, uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(sha256_on_instructions(harness_cpu), "final_hw: only under the bit");
+    final_ran = 1;
+    sha256_final(s, out);
+}
+
+void hmac_sha256_hw(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
+                    uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(sha256_on_instructions(harness_cpu), "hmac_hw: only under the bit");
+    hmac_ran = 1;
+    hmac_sha256(key, key_len, msg, msg_len, out);
+}
+#endif
 
 // A length for a field whose pointer is set: at most the buffer's size.
 // With the pointer NULL, any length at all.
@@ -85,6 +126,10 @@ int main(void) {
     cfg.psk_id_len = field_len(cfg.psk_id, sizeof psk_id);
     cfg.resumption = (int)nondet_u32();
     cfg.ticket_binding = (nondet_u8() & 1) ? binding : NULL;
+#ifdef CH_CPU_RUNTIME
+    harness_cpu = nondet_u32();
+    cfg.cpu = harness_cpu;
+#endif
 
     int ok = webpki_resumption_ok(&cfg);
     __CPROVER_assert(ok == 0 || ok == 1, "the verdict is 0 or 1");
@@ -95,6 +140,10 @@ int main(void) {
                      cfg.psk_id != NULL && cfg.psk_id_len >= 1 &&
                      cfg.psk_id_len <= CH_TICKET_ID_MAX && cfg.ticket_binding != NULL;
         __CPROVER_assert(unset || ticket, "only an unset config or a ticket of the stated shape");
+#ifdef CH_CPU_RUNTIME
+        __CPROVER_assert(unset || !sha256_on_instructions(harness_cpu) || (final_ran && hmac_ran),
+                         "a ticket check under the bit runs on the instructions");
+#endif
     }
 
     return 0;

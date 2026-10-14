@@ -179,7 +179,9 @@
 #   - bin/hash_runtime_test and bin/hash_runtime_exporter_test must pass.
 #     They count the calls into each hash's two paths under every
 #     ch_cfg.cpu value and run no instruction a bit names
-#     (test/hash_runtime_test.c).
+#     (test/hash_runtime_test.c). The first is a QUIC TRUST=webpki object,
+#     as the Makefile builds it, so its rows hold the ticket's hash calls
+#     (docs/decisions.md 132).
 #
 # On a model without AVX-512 IFMA, which rsa_ifma.c's kernel runs:
 #
@@ -790,8 +792,9 @@ fi
 # The two counting binaries for arm64, which alone compiles the SHA-512
 # entries. They run no hash instruction, so the model without FEAT_SHA512
 # runs them.
-"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$arm64_out/hash_runtime_test" \
-    test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
+"$arm64_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
+    -o "$arm64_out/hash_runtime_test" test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" \
+    "${hash_count_quic_srcs[@]}" || exit 1
 "$arm64_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$arm64_out/hash_runtime_exporter_test" \
     test/hash_runtime_test.c "${arm64_hash_count_srcs[@]}" || exit 1
 for b in hash_runtime_test hash_runtime_exporter_test; do
@@ -810,8 +813,9 @@ fi
 build_webpki_loop || exit 1
 "$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_CPU_RUNTIME -DCH_AES_256_TEST \
     -o "$x86_out/quic_test_hw" test/quic_vectors.c "${quic_test_hw_srcs[@]}" || exit 1
-"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING "${runtime[@]}" -o "$x86_out/hash_runtime_test" \
-    test/hash_runtime_test.c "${hash_count_srcs[@]}" "${hash_count_quic_srcs[@]}" || exit 1
+"$x86_cc" "${flags[@]}" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI "${runtime[@]}" \
+    -o "$x86_out/hash_runtime_test" test/hash_runtime_test.c "${hash_count_srcs[@]}" \
+    "${hash_count_quic_srcs[@]}" || exit 1
 "$x86_cc" "${flags[@]}" "${runtime[@]}" "${exporter[@]}" -o "$x86_out/hash_runtime_exporter_test" \
     test/hash_runtime_test.c "${hash_count_srcs[@]}" || exit 1
 loops=(quic_loop_aes webpki_loop_aes)

@@ -614,8 +614,19 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # same formula with its verdict assertion narrowed to an unset config
 # fails, so the formula reaches the ticket path. With the harness's own
 # bound in place of the cap, on 2026-10-13: 948 properties, 8 s,
-# 0.15 GB.
+# 0.15 GB. On 2026-10-14, with the cpu argument (docs/decisions.md 132):
+# 954 properties, 8 s, 0.15 GB.
 launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c proof/ct_wipe_stub.c hkdf.c
+# webpki_ticket_host: the same harness in a host object (-DCH_CPU_RUNTIME),
+# over any 32-bit ch_cfg.cpu. The stubs of the calls on the SHA-256
+# instructions run the portable calls and assert the bit. main asserts
+# that a ticket check under the bit ran them (docs/decisions.md 132). The
+# unwindset is webpki_ticket's: the host arm adds no loop.
+# Measured on 2026-10-14 (cbmc 6.11.0, kissat,
+# PROVE_ONLY=webpki_ticket_host PROVE_NO_CACHE=1 /usr/bin/time -l, M1
+# Pro): 970 properties, 14 s, 0.25 GB. inv16-webpki-ticket-final-on-portable
+# fails it.
+launch fast full webpki_ticket_host 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI -DCH_CPU_RUNTIME buf.c ct.c proof/ct_wipe_stub.c hkdf.c
 launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
@@ -2131,7 +2142,10 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # anchor count since docs/decisions.md 131. So a set anchors pointer
 # holds its count, up to the harness's array of 12. On 2026-10-13 at a
 # load average near 15: 607 properties, 5 s, 0.13 GB;
-# quic_config_webpki_suite 770 properties, 6 s, 0.19 GB.
+# quic_config_webpki_suite 770 properties, 6 s, 0.19 GB. On 2026-10-14,
+# with the cpu rule in the webpki_resumption_ok stub of the host object
+# (docs/decisions.md 132): 607 properties, 6 s, 0.12 GB;
+# quic_config_webpki_suite 777 properties, 6 s, 0.15 GB.
 launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING quic_config.c webpki_cfg.c
 # quic_config_webpki_suite: the same rules in the SUITE=aesgcm build,
 # which add the client's suite list, ch_cfg.cipher_suites: any code points

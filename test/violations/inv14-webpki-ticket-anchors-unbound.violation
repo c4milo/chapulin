@@ -7,9 +7,9 @@ reason: the configuration hash leaves out the anchors, so a ticket issued
   known-answer row and the other-anchor rows object.
 
 --- old
-        hash_len(&s, a->name_len);
-        sha256_update(&s, a->name, a->name_len);
-        hash_len(&s, a->spki_len);
-        sha256_update(&s, a->spki, a->spki_len);
+        hash_len(cpu, &s, a->name_len);
+        config_update(cpu, &s, a->name, a->name_len);
+        hash_len(cpu, &s, a->spki_len);
+        config_update(cpu, &s, a->spki, a->spki_len);
 --- new
         (void)a;

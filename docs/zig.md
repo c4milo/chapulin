@@ -180,6 +180,7 @@ The client's trust, whose variants are the object's trust mode's:
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, `ticket_binding` under TRUST=webpki, and `ticket_quic_version` under `TRANSPORT=quic-nonblocking` |
 | `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
+| `takes_tickets`, true by default | none in `toCfg`: a session's `init` sets `on_ticket` to the API's callback when it is true, and leaves `on_ticket` NULL when it is false |
 | `require_pq`, false by default | `require_pq` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
 | `cipher_suites`, empty for the build's order, SUITE=aesgcm TRUST=webpki alone | `cipher_suites`, `cipher_suite_count` |
@@ -222,11 +223,22 @@ because the bytes it named are valid during `on_ticket` alone.
 A program that copies a Ticket owns zeroing that copy. C never hands
 over a ticket whose lifetime is 0, so `takeTicket` never returns one.
 
+A client session sets `on_ticket` only when the values' `takes_tickets`
+is true, which is the default. Under TRUST=webpki, the init call of a
+session that sets `on_ticket` hashes the hostname, the anchors and the
+SPKI pins. The hash runs on the SHA-256 path that the `cpu` value names,
+and every ticket that the session receives is bound to it
+(docs/decisions.md 132). Set `takes_tickets` to false for a client that
+never offers a ticket. Then `init` runs no hash, the session keeps no
+ticket, and `takeTicket` returns null. A client with `takes_tickets`
+false can still offer a ticket in `ticket`, and the ticket still
+resumes. Its `init` then hashes once, to check the ticket's binding.
+
 A ticket one object received may be offered through another object of
 the same program. A TRUST=webpki client binds a ticket to the hostname,
 the anchors and the SPKI pins (`webpki_ticket.h`), not to the transport
-or the ALPN protocol. A chapulin server passes over a ticket whose ALPN
-protocol is not the connection's (`srv_resume.c`), and the resuming
+or the ALPN protocol. A chapulin server passes over a ticket whose
+ALPN protocol is not the connection's (`srv_resume.c`), and the resuming
 hello still offers the certificate path, so that costs a full handshake
 (docs/decisions.md 55). A QUIC ticket belongs to the QUIC version of the
 connection that received it, `ticket.quic_version` (RFC 9369 §5): a
@@ -463,7 +475,7 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send`, `recv` and `on_ticket`, and under `RAND=session` the values' `random` | Invalid |
+| `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send` and `recv`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
 | `Client.recordOut(output)` | `ch_record_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
@@ -647,7 +659,7 @@ arrived there, the client's ticket slot and the server's current
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready`, `on_transport_params` and `on_ticket`, and under `RAND=session` the values' `random` | Invalid |
+| `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready` and `on_transport_params`, the API's `on_ticket` when `takes_tickets` is true, and under `RAND=session` the values' `random` | Invalid |
 | `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params`, `srv.on_crypto_out` and, when the values carry a `choose_version`, `srv.choose_version`, and under `RAND=session` the values' `random` | Invalid |
 | `initialKeys(dcid)` | `ch_quic_initial_keys` | Invalid |
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
@@ -789,6 +801,14 @@ each through the module alone (INV-36):
   - the ticket taken, rebuilt through `Ticket.fromFields` and resumed;
   - a ticket at exactly its lifetime offered and one millisecond past it
     refused;
+  - a client with `takes_tickets` false, first with no ticket and then
+    with the ticket taken above, which still resumes. Each time it keeps
+    no ticket that the server writes, and its `takeTicket` returns null.
+    Its session holds no `on_ticket`. Under TRUST=webpki its
+    `ch_tls.takes_tickets` is 0 and its stored configuration hash is all
+    zero. The client with the default holds 1 and a hash that is not
+    zero. The Zig object exports no hash call to count, so the loop reads
+    those fields. `bin/webpki_session_test` counts the calls in C;
   - a close in each direction;
   - four refusals: an impostor anchor, a clock of 0, a server output one
     byte short of its flight, and a record header no peer may send;
@@ -822,6 +842,7 @@ each through the module alone (INV-36):
     under the other version;
   - the ticket resumed, and the stale ticket refused with no alert
     chosen;
+  - a client with `takes_tickets` false, checked as in record mode;
   - a server whose `choose_version` answers version 2 from its hook's
     context, once, a client that switches to it, and the packets and the
     key update in version 2;
@@ -846,7 +867,7 @@ machine it is the one build that needs the evex512 feature above, and
 `inv36-zig-x86-64-host-drops-evex512`, which takes the feature off,
 fails it.
 
-Thirteen mutants in `test/violations/` break the API, the module, the
+Seventeen mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script
 catches each. INV-36 names them. The script also catches
 `inv38-zig-writable-len-skips-key-update`, which stops `ch_writable_len`

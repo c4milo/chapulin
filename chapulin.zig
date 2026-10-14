@@ -158,6 +158,9 @@ const ClientValues = struct {
     /// through ch_ticket_obfuscated_age. init answers error.Invalid for an
     /// age above the ticket's lifetime or above seven days (ticket.h).
     ticket_age_ms: u64 = 0,
+    /// A session's init sets on_ticket, which keeps tickets for takeTicket. false leaves it NULL. Then a
+    /// TRUST=webpki init hashes once with a `ticket`, to check its binding, and not at all without one (docs/decisions.md 132).
+    takes_tickets: bool = true,
     /// Refuse a key exchange other than X25519MLKEM768: require_pq.
     require_pq: bool = false,
     /// The QUIC version of the first Initial packet, under TRANSPORT=quic-nonblocking alone:

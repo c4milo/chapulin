@@ -7,7 +7,7 @@ reason: the webpki ch_connect never writes ch_tls.ticket_config_hash, so the
   rows object.
 
 --- old
-    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
-    // psk_ok matters only to a CA build
+    if (t->takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+    }
 --- new
-    // psk_ok matters only to a CA build

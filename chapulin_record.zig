@@ -122,7 +122,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         ticket: if (side == .client) ?chapulin.Ticket else void,
 
         /// Client: Client.toCfg, then ch_record_init with the API's send,
-        /// recv and on_ticket. Server: Server.toCfg, then
+        /// recv and, when the values' takes_tickets is true, on_ticket.
+        /// Server: Server.toCfg, then
         /// ch_srv_record_init with the API's send, recv and on_record_out;
         /// sni_buf is where this connection's server_name is copied
         /// (srv.sni_buf, srv.sni_cap). Under RAND=session each also stores
@@ -164,7 +165,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             self.prepare();
             var cfg = values.toCfg();
             self.setCallbacks(&cfg);
-            cfg.on_ticket = onTicket;
+            if (values.takes_tickets) cfg.on_ticket = onTicket;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_record_init(&self.record, &cfg));
         }

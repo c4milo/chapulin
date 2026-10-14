@@ -154,19 +154,20 @@
 // x86-64 has no Keccak instruction. Arm's list of data-independent-time instructions under
 // PSTATE.DIT names all twelve arm64 instructions, and Intel's DOIT list names the six x86-64
 // ones. As with the AES bit, the statement is the caller's.
-// A session passes its ch_cfg.cpu to every hash call it makes for its transcript, its key
-// schedule and its record and packet keys, through the entries that end sha256.h, sha512.h,
-// hkdf.h, keysched.h and transcript.h. With CH_CPU_CONSTANT_TIME_SHA256 those entries run SHA-256,
-// and HMAC, HKDF and the key schedule over it, on the instructions (sha256_hw.c, hash_hw.h), and
-// without it on sha256.c. With CH_CPU_CONSTANT_TIME_SHA512 an arm64 session runs SHA-384, the
-// hash of TLS_AES_256_GCM_SHA384, and HMAC, HKDF and the key schedule over it on the SHA-512
-// instructions (sha512_hw.c), and without it on sha512.c. Each hash follows its own bit alone. A
-// session whose bit names instructions its CPU lacks faults on the first one. With
+// A session passes its ch_cfg.cpu to every hash call it makes for its transcript, its key schedule
+// and its record and packet keys. Under TRUST=webpki it also passes the value to the hash and the
+// binding of its tickets (webpki_ticket.h). Each call goes through the entries that end sha256.h,
+// sha512.h, hkdf.h, keysched.h and transcript.h. With CH_CPU_CONSTANT_TIME_SHA256 those entries run
+// SHA-256, and HMAC, HKDF and the key schedule over it, on the instructions (sha256_hw.c,
+// hash_hw.h), and without it on sha256.c. With CH_CPU_CONSTANT_TIME_SHA512 an arm64 session runs
+// SHA-384, the hash of TLS_AES_256_GCM_SHA384, and HMAC, HKDF and the key schedule over it on the
+// SHA-512 instructions (sha512_hw.c), and without it on sha512.c. Each hash follows its own bit
+// alone. A session whose bit names instructions its CPU lacks faults on the first one. With
 // CH_CPU_CONSTANT_TIME_SHA3 an arm64 session runs SHA-3, SHAKE and ML-KEM's hashes on the SHA-3
-// instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang
-// compiled it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. A hash call that
-// takes no value runs no hash instruction in any object: a certificate's, a signature's and the
-// DRBG's are such calls, and they run sha256.c, sha512.c and sha3.c.
+// instructions (sha3_hw.c, keccak_hw.h) where the object holds them, which is where clang compiled
+// it (CH_KECCAK_INSTRUCTIONS below), and on sha3.c everywhere else. A hash call that takes no value
+// runs no hash instruction in any object: a certificate's, a signature's and the DRBG's are such
+// calls, and they run sha256.c, sha512.c and sha3.c.
 // No bit picks what sha512.c runs. In a host object its calls compress on
 // sha512_compress_blocks.c, plain C whose operations are 64-bit adds, rotates, shifts and logic,
 // for the calls that take no value and for a session whose value does not send its SHA-384 to

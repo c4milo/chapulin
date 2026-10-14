@@ -2470,7 +2470,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     `CH_CPU_PROBED` and no bit `cpu_cfg.h` leaves undefined for the
     architecture, and without `CH_CPU_CONSTANT_TIME_AES` only for a
     `cipher_suites` that names no AES-GCM suite (`docs/decisions.md`
-    entries 81 and 89).
+    entries 81 and 89). There it also runs `webpki_resumption_ok` only
+    once the cpu rule holds. That check hashes on the path that
+    `ch_cfg.cpu` names (`docs/decisions.md` entry 132).
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
@@ -3052,7 +3054,7 @@ harness proves.
 
 #### webpki_ticket
 
-- **Harness:** `webpki_ticket` (fast)
+- **Harnesses:** `webpki_ticket` (fast), `webpki_ticket_host` (fast)
 - **Proves:** the `TRUST=webpki` resumption rule in `webpki_ticket.c`:
   - the configuration hash reads only inside the hostname and the
     anchors the config names;
@@ -3061,13 +3063,23 @@ harness proves.
   - it answers 0 or 1, and 1 only for a config whose PSK fields are all
     unset or that presents a ticket of the shape `webpki_ticket.h`
     states.
+
+  `webpki_ticket` builds a device object, where the hash and the
+  binding read no `cpu` value (docs/decisions.md 132).
+  `webpki_ticket_host` builds the same harness in a host object, the
+  arm that every `TRUST=webpki` client on arm64 and x86-64 runs. There
+  `ch_cfg.cpu` takes any 32-bit value. The calls on the SHA-256
+  instructions run only under `CH_CPU_CONSTANT_TIME_SHA256`. A ticket
+  check under that bit ends its hash and runs its binding on them.
 - **Bound:** hostname ≤ 253 B, 0 to 12 anchors with name and spki ≤ 4 B
   each, every PSK field NULL or set. No cap bounds the anchor count
   (decision 131). The hash reads each anchor the same way, so 12 anchors
   stand for any count.
-- **Not proved:** which bindings match. SHA-256 is the contract stub;
-  `test/webpki_resume_cases.h` tests that against a known answer
-  computed outside this tree.
+- **Not proved:** which bindings match. SHA-256 is the contract stub,
+  and the calls on the instructions are contract stubs over it.
+  `test/webpki_resume_cases.h` tests the bindings against a known answer
+  computed outside this tree. `bin/hash_runtime_test` counts which path
+  each call runs on a real CPU.
 
 ## Known-answer vectors
 
@@ -5460,12 +5472,14 @@ skips what the CPU has no instructions for, or fails under
   `sha512.h`'s five, `hkdf.h`'s five and `keysched.h`'s eight at each
   hash length, `p256_sign_cpu`, whose RFC 6979 nonce runs sixteen
   HMAC-SHA-256 calls, the transcript, a record direction's keying and
-  KeyUpdate under each suite, and a QUIC level's keys, their update and
-  an Initial packet. Under each value a row must make every SHA-256 call
-  it makes under `CH_CPU_PROBED` alone on the instructions where the
-  value holds the SHA-256 bit and on `sha256.c` where it does not, the
-  same for its SHA-512 calls and the SHA-512 bit, and write the same
-  bytes. An x86-64 binary requires every SHA-512 call on `sha512_hw.c`
+  KeyUpdate under each suite, a QUIC level's keys, their update and an
+  Initial packet. `bin/hash_runtime_test` is a `TRUST=webpki` object, so
+  it also has rows for `webpki_ticket.h`'s configuration hash, binding
+  and check of a presented ticket (docs/decisions.md 132). Under each
+  value a row must make every SHA-256 call it makes under
+  `CH_CPU_PROBED` alone on the instructions where the value holds the
+  SHA-256 bit and on `sha256.c` where it does not, the same for its
+  SHA-512 calls and the SHA-512 bit, and write the same bytes. An x86-64 binary requires every SHA-512 call on `sha512_hw.c`
   where the value holds `CH_CPU_AVX2` and on `sha512.c` where it does
   not.
 - `test/hash-builds.sh`, in `make check`, compiles the hash sources for
@@ -5499,7 +5513,10 @@ The counting tests hold the entries and the calls their rows make. They
 do not hold every call site of a session: a site that hands an entry
 another value than its session's computes the same bytes. The qemu rows
 hold the sites a whole handshake runs, and
-`inv16-transcript-hashed-under-every-bit` is the mutant of one.
+`inv16-transcript-hashed-under-every-bit` is the mutant of one. The
+ticket's sites have a count of their own (docs/decisions.md 132). In
+four session binaries, `test/webpki_ticket_count.c` records the value of
+each configuration hash and of each binding.
 
 The stack checks ran clean under Apple clang 21 on arm64, and in a
 container under gcc 13.3 and clang 18 for arm64 and for x86-64, the

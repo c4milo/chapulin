@@ -1,0 +1,12 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: chapulin.Client's takes_tickets defaults to false. Every Zig
+  caller that does not name the field, colibri among them, then keeps no
+  ticket and takeTicket returns null, with no error. Both loops take the
+  ticket of a client with the default values, and object.
+
+--- old
+    takes_tickets: bool = true,
+--- new
+    takes_tickets: bool = false,

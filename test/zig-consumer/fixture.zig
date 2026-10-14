@@ -199,6 +199,19 @@ pub fn zeroed(value: anytype) bool {
     return std.mem.allEqual(u8, std.mem.asBytes(value), 0);
 }
 
+/// Whether a client's init set on_ticket as its values' takes_tickets
+/// says, and under TRUST=webpki whether it wrote ch_tls.takes_tickets and
+/// stored a configuration hash to match. The Zig object exports no hash
+/// call to count. bin/webpki_session_test counts the calls, and requires
+/// one hash at init exactly when on_ticket is set
+/// (test/webpki_ticket_rows.h).
+pub fn clientTakesTickets(t: *const c.ch_tls, takes: bool) !void {
+    try check((t.cfg.on_ticket != null) == takes, "on_ticket does not follow takes_tickets");
+    if (!has_webpki) return;
+    try check(t.takes_tickets == @intFromBool(takes), "ch_tls.takes_tickets does not follow takes_tickets");
+    try check(zeroed(&t.ticket_config_hash) != takes, "the stored configuration hash does not follow takes_tickets");
+}
+
 pub fn check(ok: bool, what: []const u8) !void {
     if (ok) return;
     std.debug.print("loop: {s}\n", .{what});

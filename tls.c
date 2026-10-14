@@ -340,7 +340,11 @@ void ch_close(ch_tls *t) {
 
 // webpki_ticket.h is included here rather than at the top of the file
 // for the same reason: an include line above the assertions would move
-// them.
+// them. So is cpu.h in a device object, whose ch_connect reads its
+// CH_CFG_CPU too. A host object includes it at the top.
+#ifndef CH_CPU_RUNTIME
+#include "cpu.h"
+#endif
 #include "webpki_ticket.h"
 
 // cfg.h writes CH_TRUST_MIN_RXBUF out as numbers because webpki.h,
@@ -368,7 +372,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 #endif
 #ifdef CH_CPU_RUNTIME
     // The caller's description of its CPU (cpu_cfg.h), before
-    // webpki_cfg_ok's suite rule reads it.
+    // webpki_cfg_ok's suite rule and a presented ticket's check read it.
     if (!cpu_bits_ok(cfg)) {
         return 0;
     }
@@ -391,7 +395,13 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+    // The hash every ticket this session receives is bound to. A session
+    // without on_ticket gives no ticket to anyone, so it keeps the zeros
+    // memset wrote and runs no hash here (webpki_ticket.h).
+    t->takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (t->takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+    }
     // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
     // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);

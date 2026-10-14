@@ -149,7 +149,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         choose: if (side == .server) ?ChooseVersion else void,
 
         /// Client: Client.toCfg, then ch_quic_init with the API's
-        /// on_level_ready, on_transport_params and on_ticket. Server:
+        /// on_level_ready, on_transport_params and, when the values'
+        /// takes_tickets is true, on_ticket. Server:
         /// Server.toCfg, then ch_srv_quic_init with the API's
         /// on_level_ready, on_transport_params, srv.on_crypto_out and,
         /// when the values carry one, srv.choose_version; sni_buf is
@@ -181,7 +182,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             self.prepare(peer_params);
             var cfg = values.toCfg();
             self.setCallbacks(&cfg, transport_params);
-            cfg.on_ticket = onTicket;
+            if (values.takes_tickets) cfg.on_ticket = onTicket;
             chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_quic_init(&self.quic, &cfg));
         }

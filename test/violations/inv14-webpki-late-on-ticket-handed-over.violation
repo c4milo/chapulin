@@ -1,0 +1,16 @@
+invariant: INV-14
+file: handshake_post.c
+catches: webpki_loop_tcp_nonblocking
+reason: handle_ticket gives a ticket to an on_ticket that the caller set in
+  the session after the init call. That init call wrote no
+  ticket_config_hash, so the ticket is bound to the all-zero hash, and
+  every init call that presents it answers CH_EINVAL (docs/decisions.md
+  132). test/webpki_loop_tickets.h's check_late_on_ticket requires that no
+  ticket is given.
+
+--- old
+    if (t->takes_tickets == 0) {
+        return CH_OK;
+    }
+--- new
+    (void)t->takes_tickets;

@@ -80,13 +80,13 @@ static void test_binding_known_answer(void) {
     ch_cfg cfg = base_cfg();
     uint8_t hash[SHA256_LEN];
     uint8_t binding[SHA256_LEN];
-    webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(ticket_psk, SHA256_LEN, hash, binding);
+    webpki_ticket_config_hash(0, &cfg, hash);
+    webpki_ticket_binding(0, ticket_psk, SHA256_LEN, hash, binding);
     CHECK(memcmp(binding, known_binding, SHA256_LEN) == 0);
     // Capitals hash as their lower case, so the binding does not move.
     cfg.hostname = host_capitals;
-    webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(ticket_psk, SHA256_LEN, hash, binding);
+    webpki_ticket_config_hash(0, &cfg, hash);
+    webpki_ticket_binding(0, ticket_psk, SHA256_LEN, hash, binding);
     CHECK(memcmp(binding, known_binding, SHA256_LEN) == 0);
 }
 
@@ -102,8 +102,8 @@ static void test_ticket_shape(void) {
         uint8_t hash[SHA256_LEN];
         uint8_t binding[SHA256_LEN];
         cfg = base_cfg();
-        webpki_ticket_config_hash(&cfg, hash);
-        webpki_ticket_binding(ticket_psk, wrong_lens[i], hash, binding);
+        webpki_ticket_config_hash(0, &cfg, hash);
+        webpki_ticket_binding(0, ticket_psk, wrong_lens[i], hash, binding);
         present(&cfg, ticket_psk, binding);
         cfg.psk_len = wrong_lens[i];
         CHECK(refused(&cfg));
@@ -247,8 +247,8 @@ static void test_resumed_handshake(void) {
           memcmp(received.identity, "ticket-2", 8) == 0);
     uint8_t hash[SHA256_LEN];
     uint8_t binding[SHA256_LEN];
-    webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(received.psk, received.psk_len, hash, binding);
+    webpki_ticket_config_hash(0, &cfg, hash);
+    webpki_ticket_binding(0, received.psk, received.psk_len, hash, binding);
     CHECK(memcmp(binding, received.binding, SHA256_LEN) == 0);
 
     // It resumes the next session under the same name, and no other.

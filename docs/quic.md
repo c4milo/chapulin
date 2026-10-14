@@ -1147,9 +1147,9 @@ a certificate parser in a second language, outside this tree's proofs." §9.5's
 constant-time MUST would be re-argued there with no `lint-wide-multiply`, no
 CBMC harness and no Lean module. And live traffic secrets would leave the
 object. One secret leaves it today, the resumption PSK in `ch_ticket.psk`
-(`ticket.h:41`), through `on_ticket` (`cfg.h:366`, `handshake_post.c:152-158`). It
+(`ticket.h:42`), through `on_ticket` (`cfg.h:363`, `handshake_post.c:163-172`). It
 is a key for a future connection, not a live traffic secret. Secrets enter
-through `ch_cfg.psk` (`cfg.h:328`) and `ch_drbg_seed` (`drbg.h:47`). The
+through `ch_cfg.psk` (`cfg.h:322`) and `ch_drbg_seed` (`drbg.h:47`). The
 rejected split would add one 32-byte traffic secret per level per direction
 to that, and each would be the first live key to leave.
 

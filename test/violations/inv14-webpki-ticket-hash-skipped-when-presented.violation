@@ -1,0 +1,13 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_session_test
+reason: an init call skips the hash when the session presents a ticket, even
+  when it takes tickets. So a resumed session binds the tickets it
+  receives to an all-zero hash, and none of them resumes. The row that
+  presents a ticket and sets on_ticket counts no hash where it requires
+  one.
+
+--- old
+    return cfg->on_ticket != NULL;
+--- new
+    return cfg->on_ticket != NULL && cfg->resumption == 0;

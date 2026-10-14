@@ -2262,7 +2262,7 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Thirteen more break the API, the module, the public headers or
+  to fail. Seventeen more break the API, the module, the public headers or
   the reverse check in `matches.zig`, and `test/zig-build-check.sh`
   catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
@@ -2281,6 +2281,13 @@ last `ROLE=server` stub, as the entry said it would.
   zeroes a copied ticket's QUIC version, so `ch_quic_init` refuses it;
   `inv36-zig-api-ticket-slot-kept` leaves
   the resumption PSK in the slot after `takeTicket` and `recordClose`;
+  `inv36-zig-api-record-ignores-takes-tickets` and
+  `inv36-zig-api-quic-ignores-takes-tickets` set `on_ticket` in a client
+  whose `takes_tickets` is false;
+  `inv36-zig-api-takes-no-tickets-by-default` makes false the default
+  (decisions.md 132);
+  `inv36-zig-api-ticket-dropped-without-tickets` drops the ticket of a
+  client whose `takes_tickets` is false, so the ticket does not resume;
   `inv36-header-client-driver-in-server` declares the client's driver in
   `tcp_nonblocking.h` for a `ROLE=server` object, and
   `inv36-header-connect-in-tcp-nonblocking` declares `ch_connect` in a
@@ -3019,11 +3026,35 @@ last `ROLE=server` stub, as the entry said it would.
   bin/webpki_resume_tcp_nonblocking, one test over both TCP drivers: a binding checked against a known
   answer, the shape rows at each boundary, a ticket refused under
   another hostname, other anchors or another ticket's binding, and a
-  resumed handshake whose own ticket resumes the next one. Ten
-  `inv14-webpki-ticket-`, `inv14-webpki-connect-` and
-  `inv14-webpki-record-init-` violations guard it; the webpki_ticket
-  CBMC harness proves the rule memory-safe and its verdict limited to
-  an unset config or a ticket of the stated shape.
+  resumed handshake whose own ticket resumes the next one. Seventeen
+  violations named `inv14-webpki-ticket-`, `inv14-webpki-connect-` or
+  `inv14-webpki-record-init-` guard it, and the list below names six of
+  them. The webpki_ticket CBMC harness proves the rule memory-safe and
+  its verdict limited to an unset config or a ticket of the stated
+  shape. Its webpki_ticket_host variant proves the same in a host
+  object.
+  Every init call hashes the configuration only for a session that
+  takes tickets, with `on_ticket` set (docs/decisions.md 132). The call
+  writes that answer in `ch_tls.takes_tickets`. handshake_post.c gives a
+  ticket to `on_ticket` only when that field is 1.
+  test/webpki_ticket_rows.h counts every hash of each init call, the
+  check of a presented ticket too. It runs in bin/webpki_session_test,
+  bin/webpki_session_host, bin/webpki_loop_aes and bin/quic_loop_aes.
+  test/webpki_loop_tickets.h requires that a caller who sets `on_ticket`
+  after the init call gets no ticket. The webpki loops over both
+  transports resume the ticket that a resumed session received, and the
+  ticket that a declined session received. These violations require
+  those tests to fail:
+  inv14-webpki-ticket-hash-without-tickets,
+  inv14-webpki-connect-ticket-hash-without-tickets,
+  inv14-webpki-record-init-ticket-hash-without-tickets,
+  inv14-quic-ticket-hash-without-tickets,
+  inv14-webpki-resumption-hash-without-ticket,
+  inv14-webpki-ticket-hash-skipped-when-presented,
+  inv14-webpki-late-on-ticket-handed-over,
+  inv14-webpki-connect-takes-tickets-unrecorded,
+  inv14-webpki-record-init-takes-tickets-unrecorded and
+  inv14-quic-takes-tickets-unrecorded.
   `ch_quic_init` applies the same configuration rules through
   `webpki_cfg_ok` (docs/decisions.md 64). bin/quic_loop_webpki holds
   them over QUIC at each boundary: `CH_SPKI_PIN_MAX` pins with anchors
@@ -4088,7 +4119,9 @@ last `ROLE=server` stub, as the entry said it would.
   pinned clang (docs/verification.md, "The hash instructions").
   `p256_sign_cpu`, which a host object's server signs through, hands
   the session's value to each HMAC of its RFC 6979 nonce
-  (decision 102).
+  (decision 102). A `TRUST=webpki` client hands its value to the hash
+  of its configuration and to the binding of each ticket it receives or
+  presents (decision 132). The binding's key is the ticket's PSK.
   Nineteen violations break those rules.
   `inv16-sha256-instructions-without-bit` inverts the SHA-256 predicate
   and `inv16-sha256-reads-sha512-bit` reads another hash's bit;
@@ -4125,6 +4158,25 @@ last `ROLE=server` stub, as the entry said it would.
   of the length in `sha512_hw.c`'s arm64 arm, which no message under
   2^61 bytes reads, and the binary catches it under `qemu-aarch64` from
   a context that starts at such a byte count.
+  Ten more break the ticket's calls.
+  `inv16-webpki-ticket-hash-on-portable`,
+  `inv16-webpki-ticket-binding-on-portable` and
+  `inv16-webpki-resumption-hash-on-portable` each leave a call of
+  `webpki_ticket.c` on `sha256.c`, and `bin/hash_runtime_test` catches
+  them. `inv16-webpki-ticket-final-on-portable` ends a host object's
+  hash on `sha256.c`, and the webpki_ticket_host harness catches it.
+  `inv16-webpki-connect-ticket-hash-without-session-cpu`,
+  `inv16-webpki-record-init-ticket-hash-without-session-cpu`,
+  `inv16-quic-ticket-hash-without-session-cpu` and
+  `inv16-webpki-received-ticket-binding-on-portable` each hand a call 0
+  in place of the session's value. The values that
+  `test/webpki_ticket_count.c` records catch them.
+  `inv16-quic-webpki-cpu-after-resumption` checks the value after the
+  web PKI rules in `quic_config_ok`, and the `quic_config_webpki_suite`
+  harness catches it. `inv16-webpki-cpu-after-resumption` does the same
+  in `tlsi_config_ok`. The row of test/webpki_ticket_rows.h that
+  presents a ticket under a refused value catches it in
+  bin/webpki_session_host.
   No x86-64 CPU this tree targets has SHA-512 instructions. There a
   host object with `SUITE=aesgcm` holds `sha512_avx2.c`, SHA-512's
   compression function with its message schedule in 256-bit registers,

@@ -23,6 +23,7 @@
 #include "tcp_nonblocking_frame.h"
 #include "tcp_nonblocking_step.h"
 #ifdef CH_TRUST_WEBPKI
+#include "cpu.h"
 #include "webpki_ticket.h"
 #endif
 
@@ -48,7 +49,13 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_TRUST_WEBPKI
-    webpki_ticket_config_hash(cfg, r->t.ticket_config_hash);
+    // The hash every ticket this session receives is bound to, as
+    // ch_connect writes it: only for a session that takes tickets
+    // (webpki_ticket.h).
+    r->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (r->t.takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(r->t.cfg), cfg, r->t.ticket_config_hash);
+    }
 #endif
     r->hs.t = &r->t;
     r->hs.alert = ALERT_DECODE_ERROR;

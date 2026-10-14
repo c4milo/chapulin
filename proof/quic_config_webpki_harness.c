@@ -43,10 +43,13 @@
 // the rules webpki_ticket.h requires before it runs, the hostname, anchor
 // and pin rules, which is what makes webpki_cfg_ok's order a property
 // here, and answers 1 only for the PSK shapes webpki_ticket.h states
-// (webpki_ticket). ct_memeq asserts it may read both names and answers
-// 0 or 1 (ct). The real ct_memeq, compared byte by byte across every pair
-// of eight 32-byte names, took the formula from 2 s and 72 MB to 141 s
-// and 2.7 GB and reached no further code.
+// (webpki_ticket). In the host object the stub also asserts the cpu
+// rule. webpki_resumption_ok hashes on the path ch_cfg.cpu names
+// (docs/decisions.md 132), so quic_config_ok must check the value first,
+// and that order is a property too. ct_memeq asserts it may read both
+// names and answers 0 or 1 (ct). The real ct_memeq, compared byte by
+// byte across every pair of eight 32-byte names, took the formula from
+// 2 s and 72 MB to 141 s and 2.7 GB and reached no further code.
 #include "harness.h"
 
 #include <string.h>
@@ -55,6 +58,9 @@
 #include "quic_version.h"
 #include "webpki.h"
 #include "webpki_ticket.h"
+#ifdef CH_CPU_RUNTIME
+#include "cpu.h"
+#endif
 
 // The bytes behind each anchor's name and spki. Only their pointers and
 // lengths are read here, so four bytes are enough.
@@ -94,6 +100,9 @@ int webpki_hostname_ok(const uint8_t *host, size_t host_len) {
 }
 
 int webpki_resumption_ok(const ch_cfg *c) {
+#ifdef CH_CPU_RUNTIME
+    __CPROVER_assert(cpu_value_ok(c->cpu), "resumption_ok: the cpu rule holds");
+#endif
     __CPROVER_assert((c->spki_pins == NULL) == (c->spki_pin_count == 0) &&
                          c->spki_pin_count <= CH_SPKI_PIN_MAX,
                      "resumption_ok: the pin rule holds");

@@ -6,10 +6,11 @@
 //! way and a tampered one discarded, a key update, the Retry integrity tag
 //! and a Retry token bound to its version, the ticket taken at the 1-RTT
 //! level and resumed through Ticket.fromFields, a stale ticket refused, a
-//! server whose choose_version answers version 2 and a client that
-//! switches to it, that connection's ticket refused in version 1 and
-//! resumed in version 2, and close. Under KEYLOG=on, ch_keylog finds the
-//! client's context through chapulin.hookContext.
+//! client whose takes_tickets is false that keeps no ticket and still
+//! resumes one, a server whose choose_version answers version 2 and a
+//! client that switches to it, that connection's ticket refused in version
+//! 1 and resumed in version 2, and close. Under KEYLOG=on, ch_keylog finds
+//! the client's context through chapulin.hookContext.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
@@ -192,8 +193,30 @@ fn takeTicket() !chapulin.Ticket {
     return taken;
 }
 
+/// A client whose takes_tickets is false, first with no ticket and then
+/// with ticket, which still resumes. Its init sets no on_ticket and stores
+/// no hash, and it keeps none of the server's tickets.
+fn ticketsOff(ticket: *const chapulin.Ticket) !void {
+    var values = clientValues();
+    values.takes_tickets = false;
+    values.ticket_age_ms = 1000;
+    for ([_]?*const chapulin.Ticket{ null, ticket }) |presented| {
+        values.ticket = presented;
+        try handshake(values, null);
+        const resumed = presented != null;
+        try check(client.pskSelected() == resumed and server.pskSelected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
+        try fixture.clientTakesTickets(&client.quic.t, false);
+        try check(sent(.application).len > 0, "the server wrote no ticket");
+        try client.cryptoIn(.application, sent(.application));
+        try check(client.takeTicket() == null, "a client whose takes_tickets is false kept a ticket");
+        client.close();
+        server.close();
+    }
+}
+
 pub fn run() !void {
     try handshake(clientValues(), null);
+    try fixture.clientTakesTickets(&client.quic.t, true);
     try check(std.mem.eql(u8, client.alpnSelected() orelse "", "h3") and std.mem.eql(u8, server.alpnSelected() orelse "", "h3"), "ALPN did not select h3 on both ends");
     const client_saw = (try client.peerTransportParams()) orelse "";
     const server_saw = (try server.peerTransportParams()) orelse "";
@@ -228,6 +251,7 @@ pub fn run() !void {
     try check(client.init(values, &client_params, &client_peer) == error.Invalid and client.state() == .failed, "a stale ticket was not refused");
     // An init refusal sends nothing, so it chose no alert (alert.h).
     try check(client.alertSent() == null and client.alertReceived() == null, "an init refusal reported an alert");
+    try ticketsOff(&ticket);
 
     // The server chooses version 2 once, from its hook's context, and the
     // packets and the key update run in version 2 at both ends.
@@ -251,5 +275,5 @@ pub fn run() !void {
     try check(client.pskSelected() and server.pskSelected() and client.negotiatedVersion() == .v2, "the version 2 ticket did not resume in version 2");
     client.close();
     server.close();
-    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, version 2 chosen by the server and its ticket resumed in version 2, and close\n", .{});
+    std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, version 2 chosen by the server and its ticket resumed in version 2, and close\n", .{});
 }

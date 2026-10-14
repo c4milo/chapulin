@@ -1,0 +1,17 @@
+invariant: INV-16
+file: webpki_ticket.c
+catches: proof/prove-one.sh webpki_ticket_host
+reason: the configuration hash of a host object ends on sha256.c whatever
+  the session's ch_cfg.cpu states (docs/decisions.md 132). The
+  webpki_ticket_host harness asserts that a ticket check under
+  CH_CPU_CONSTANT_TIME_SHA256 ends its hash on the instructions.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    sha256_final_cpu(cpu, s, out);
+#else
+--- new
+#ifdef CH_CPU_RUNTIME
+    (void)cpu;
+    sha256_final(s, out);
+#else

@@ -1,0 +1,15 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: the webpki ch_connect hashes the anchors whether or not the session
+  takes tickets (docs/decisions.md 132). test/webpki_ticket_rows.h's row
+  without on_ticket counts one hash where it requires none.
+
+--- old
+    t->takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (t->takes_tickets) {
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+    }
+--- new
+    t->takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);

@@ -1,0 +1,21 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_session_test
+reason: webpki_resumption_ok hashes the configuration before it asks whether
+  the session presents a ticket, so every init call hashes the anchors
+  again, with or without tickets (docs/decisions.md 132).
+  test/webpki_ticket_rows.h's row with no ticket and no on_ticket counts
+  one hash where it requires none.
+
+--- old
+int webpki_resumption_ok(const ch_cfg *cfg) {
+    if (psk_unset(cfg)) {
+        return 1;
+    }
+--- new
+int webpki_resumption_ok(const ch_cfg *cfg) {
+    uint8_t unused_hash[SHA256_LEN];
+    webpki_ticket_config_hash(CH_CFG_CPU(*cfg), cfg, unused_hash);
+    if (psk_unset(cfg)) {
+        return 1;
+    }

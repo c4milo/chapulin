@@ -1,0 +1,33 @@
+invariant: INV-16
+file: quic_config.c
+catches: proof/prove-one.sh quic_config_webpki_suite
+reason: quic_config_ok checks ch_cfg.cpu after the web PKI rules, so a
+  presented ticket's check hashes on the path a value no rule has taken
+  names, which may run instructions the CPU lacks. webpki_ticket.h
+  requires the cpu rule first, and the quic_config_webpki_suite
+  harness's webpki_resumption_ok stub asserts it.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU, which picks the AES the Initial
+    // packets run on, the suites the hello offers and the SHA-256 a
+    // presented ticket's check runs on (cpu_cfg.h), before any rule that
+    // reads it.
+    if (!cpu_bits_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
+    if (!trust_config_ok(cfg) || !transport_config_ok(cfg) || !alpn_ok(cfg) || cfg->buf == NULL ||
+        cfg->buf_len < CH_MIN_RXBUF) {
+        return CH_EINVAL;
+    }
+--- new
+    if (!trust_config_ok(cfg) || !transport_config_ok(cfg) || !alpn_ok(cfg) || cfg->buf == NULL ||
+        cfg->buf_len < CH_MIN_RXBUF) {
+        return CH_EINVAL;
+    }
+#ifdef CH_CPU_RUNTIME
+    if (!cpu_bits_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif

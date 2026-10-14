@@ -391,14 +391,20 @@ checks in a step. A walk has `CH_WEBPKI_CHAIN_MAX` steps, and its last
 step checks no next entry, so a walk runs 3(k + 1) - 1 checks at most.
 In Homebrew's bundle of 192 roots, two roots share one Name, so k is 2.
 
-Each client init also hashes the Name and the key of every anchor into
-`ch_tls.ticket_config_hash`, which binds a ticket to the configuration
-(`webpki_ticket.h`). A connect that presents a ticket hashes them twice.
-That cost grows with the count. On the M1 the hash ran 266,000
-instructions under 12 anchors and 3,460,000 under 150. The walk of a
-chain of a P-256 leaf and an RSA-2048 intermediate ran 959,000 and
-968,000. At 150 anchors a full
-handshake took about 190 µs more than at 12, 5% of its 3.5 ms.
+A client that takes tickets, with `on_ticket` set, also hashes the Name
+and the key of every anchor at init. The hash goes into
+`ch_tls.ticket_config_hash` and binds a ticket to the configuration
+(`webpki_ticket.h`). A connect that presents a ticket hashes them to
+check its binding. So a connect that presents a ticket and takes tickets
+hashes them twice. A connect that does neither hashes nothing
+(`docs/decisions.md` 132). The cost grows with the count. On the M1,
+`sha256.c` ran the hash in 267,000 instructions under 12 anchors and
+3,466,000 under 150. The SHA-256 instructions ran it in 20,600 and
+245,000. A session runs them when its `ch_cfg.cpu` holds
+`CH_CPU_CONSTANT_TIME_SHA256`. The walk of a chain of a P-256 leaf and
+an RSA-2048 intermediate ran 959,000 and 968,000. Decision 131 measured
+a full handshake that hashed at every init on `sha256.c`. At 150 anchors
+it took about 190 µs more than at 12, 5% of its 3.5 ms.
 
 Any anchor may certify any name. The mode offers no per-anchor name
 constraint, so an anchor's authority is total: configure only anchors whose
@@ -508,6 +514,16 @@ received it, and refuses to present it under any other.
   `psk` to the 32-byte PSK, `psk_id` to the identity, `resumption` to 1,
   `obfuscated_age` as in the other modes, and `ticket_binding` to the
   stored binding.
+- **Which sessions bind tickets.** Set `on_ticket` in the `ch_cfg` that
+  you pass to the init call. A session whose init call saw `on_ticket`
+  hashes its configuration then, and binds each ticket it receives to
+  that hash. A session whose init call saw no `on_ticket` gives no
+  ticket to anyone. That is true also when the caller sets `on_ticket`
+  in the session after the init call. Its init call hashes the
+  configuration only to check a ticket that the session presents. The
+  hash and the binding run on the session's SHA-256 path. So a ticket
+  bound under one `ch_cfg.cpu` resumes under any other
+  (`docs/decisions.md` 132).
 - **What the binding covers.** `webpki_ticket_config_hash` hashes the
   hostname with its ASCII capitals in lower case, then every anchor's
   `name` and `spki` in array order, then the SPKI pins, each field

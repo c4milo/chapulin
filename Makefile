@@ -626,7 +626,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           mlkem_vector.c test/mlkem_vector_equiv_test.c \
           keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
-          test/entropy_recipe.c test/ticket_epoch_test.c $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
+          test/entropy_recipe.c test/ticket_epoch_test.c test/webpki_ticket_count.c \
+          $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C) \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -635,7 +636,8 @@ TESTH := test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h tes
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
-         test/hash_instructions_cpu.h test/hash_runtime_count.h test/sha2_equiv_copies.h \
+         test/hash_instructions_cpu.h test/hash_runtime_count.h test/hash_runtime_quic.h \
+         test/hash_runtime_webpki.h test/sha2_equiv_copies.h \
          test/sha2_equiv_residue.h test/sha2_equiv_sha512.h test/sha2_equiv_copies384.h \
          test/sha2_equiv_residue512.h test/sha2_equiv_residue512_first_arm.h \
          test/sha2_equiv_residue512_avx2.h test/avx2_registers.h test/sha2_equiv_length512.h \
@@ -681,7 +683,8 @@ TESTH := test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h tes
          test/widemul_count_names.h test/tcp_blocking_loop_widemul.h test/tcp_nonblocking_loop_widemul.h \
          test/quic_loop_widemul.h test/webpki_session_widemul.h test/test_cpu.h \
          test/tcp_blocking_loop_cpu.h test/tcp_nonblocking_loop_cpu.h test/quic_loop_cpu.h \
-         test/webpki_session_cpu.h
+         test/webpki_session_cpu.h test/webpki_ticket_count.h test/webpki_ticket_rows.h \
+         test/webpki_loop_tickets.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -3099,9 +3102,10 @@ bin/mlkem_avx2_equiv_test: test/mlkem_avx2_equiv_test.c $(MLKEM_AVX2_EQUIV_TEST_
 # test/hash_runtime_compress_count.c defines sha512_compress_blocks and
 # sha512_compress the same way, in place of sha512_compress_blocks.c, and
 # its counts say which compression function sha512.c's code then called
-# (docs/decisions.md 127). The first binary is a
-# QUIC object with the suites, whose rows hold a record direction and a
-# QUIC level's keys. The second is a TCP object with the suites and the
+# (docs/decisions.md 127). The first binary is a QUIC TRUST=webpki
+# object with the suites. Its rows hold a record direction, a QUIC
+# level's keys and webpki_ticket.h's three calls (docs/decisions.md 132).
+# The second is a TCP object with the suites and the
 # exporter, which a QUIC object does not hold, so the two exporter entries
 # have a row. Both link the P-256 signer, whose nonce's HMACs follow the
 # SHA-256 bit (p256_sign_cpu).
@@ -3112,11 +3116,11 @@ HASH_RUNTIME_TEST_SRCS := test/hash_runtime_count.c test/hash_runtime_compress_c
                           gcm.c aead.c chacha20.c poly1305.c hkdf.c keysched.c sha256.c sha512.c \
                           sha512_compress.c p256_sign.c p256_scalar.c p256_point.c p256_field.c \
                           buf.c ct.c ct_wipe.c))
-HASH_RUNTIME_QUIC_SRCS := quic_packet.c quic_keys.c quic_initial.c quic_aes_soft.c
+HASH_RUNTIME_QUIC_SRCS := quic_packet.c quic_keys.c quic_initial.c quic_aes_soft.c webpki_ticket.c
 bin/hash_runtime_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS) sha256.c \
                        sha512.c sha512_compress_blocks.c hkdf.c keysched.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest -o $@ \
+	$(CC) $(HOST_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI $(HOST_SUITE_DEF) -I. -Itest -o $@ \
 	  test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) $(HASH_RUNTIME_QUIC_SRCS)
 bin/hash_runtime_exporter_test: test/hash_runtime_test.c $(HASH_RUNTIME_TEST_SRCS) sha256.c sha512.c \
                                 sha512_compress_blocks.c hkdf.c keysched.c $(HDRS) $(TESTH)
@@ -3298,13 +3302,16 @@ bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(T
 # colibri links for a suite build: each of the three suites over QUIC, full
 # and resumed, with a key update (test/quic_loop_suites.h), with both ends
 # stating the AES instructions, and the rows of test/quic_loop_runtime.h,
-# which set each end's ch_cfg.cpu with and without the AES bit.
+# which set each end's ch_cfg.cpu with and without the AES bit. It links
+# test/webpki_ticket_count.c in place of webpki_ticket.c, as
+# bin/webpki_loop_aes does, for ch_quic_init (docs/decisions.md 132).
 QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_HW_SRCS) quic_aes_soft.c
 bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h test/quic_loop_runtime.h \
-                   $(call host_srcs,$(QUIC_LOOP_AES_SRCS)) $(HDRS) $(TESTH)
+                   $(call host_srcs,$(QUIC_LOOP_AES_SRCS)) test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(HOST_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c $(call host_srcs,$(QUIC_LOOP_AES_SRCS))
+	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -I. -Itest -o $@ test/quic_loop_test.c \
+	  $(filter-out webpki_ticket.c,$(call host_srcs,$(QUIC_LOOP_AES_SRCS))) test/webpki_ticket_count.c
 # QUIC packet and header protection under the two AES-GCM suites against
 # an independent computation, the key update and the §6.6 count
 # (test/quic_suite_test.c), on the AES instructions of a QUIC host object.
@@ -3525,12 +3532,17 @@ tx-record-check: bin/webpki_loop_tx_record
 # key's ceiling (test/key_limit_cases.h), and test/webpki_loop_runtime.h's
 # rows, which set each end's ch_cfg.cpu with and without the AES bit. A
 # TCP host object holds no table, so the bit chooses the suites alone.
+# It links test/webpki_ticket_count.c in place of webpki_ticket.c
+# (docs/decisions.md 132). The rows of test/webpki_ticket_rows.h then
+# count the hashes of each ch_record_init. The count also records the cpu
+# value of each received ticket's binding.
 WEBPKI_LOOP_AES_SRCS = $(call host_srcs,$(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c)
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h test/webpki_loop_runtime.h \
-                     $(WEBPKI_LOOP_AES_SRCS) $(HDRS) $(TESTH)
+                     $(WEBPKI_LOOP_AES_SRCS) test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(HOST_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_AES_SRCS)
+	  -DTEST_WEBPKI_TICKET_COUNTED $(HOST_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c \
+	  $(filter-out webpki_ticket.c,$(WEBPKI_LOOP_AES_SRCS)) test/webpki_ticket_count.c
 # The same loop on the AES=extern suite object, the rows bin/webpki_loop_aes
 # runs. Both ends run the same hook, so a loop alone cannot tell a wrong
 # cipher from a right one; the vectors and the Wycheproof and e2e tests are
@@ -3731,14 +3743,19 @@ bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRC
 
 # The TRUST=webpki session surface: ch_connect's config rules, the
 # ClientHello bytes and the fail-closed handshake, linked over the
-# sources that object packages. Every webpki client offers the hybrid
+# sources that object packages. It links test/webpki_ticket_count.c in
+# place of webpki_ticket.c, and so does bin/webpki_session_host. The rows
+# of test/webpki_ticket_rows.h then count the hashes of each ch_connect
+# (docs/decisions.md 132). Every webpki client offers the hybrid
 # (docs/decisions.md 53), so the ML-KEM and SHA-3 sources are on the list
 # and there is one build, not one per KEX value.
 WEBPKI_TEST_SRCS := $(filter-out pem.c base64.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
                     $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS)
-bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) test/webpki_ticket_count.c $(HDRS) \
+                         $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DTEST_WEBPKI_TICKET_COUNTED -I. -o $@ test/webpki_session_test.c \
+	  $(filter-out webpki_ticket.c,$(WEBPKI_TEST_SRCS)) test/webpki_ticket_count.c
 # The TRUST=webpki CertificateVerify arm: hsa_server_auth over a corpus
 # chain and the signatures test/webpki_auth_vectors.h carries, linked
 # over the same sources the session test uses, because the flight runs
@@ -4046,10 +4063,12 @@ bin/quic_loop_host: test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS) $(WIDEMUL_COUNT_
 	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/quic_loop_test.c $(call widemul_counted,$(QUIC_LOOP_AES_SRCS))
 bin/webpki_session_host: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(WIDEMUL_COUNT_UNITS) \
-                         test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c $(HDRS) $(TESTH)
+                         test/widemul_runtime_count.c $(RSA_MONT64_SRCS) test/rsa_ifma_count.c \
+                         test/webpki_ticket_count.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DCH_TRUST_WEBPKI -I. -Itest -o $@ test/webpki_session_test.c \
-	  $(call widemul_counted,$(WEBPKI_TEST_SRCS))
+	$(CC) $(HOST_CFLAGS) -DCH_CPU_RUNTIME -DTEST_WIDEMUL_COUNTED -DTEST_WEBPKI_TICKET_COUNTED -DCH_TRUST_WEBPKI \
+	  -I. -Itest -o $@ test/webpki_session_test.c \
+	  $(call widemul_counted,$(filter-out webpki_ticket.c,$(WEBPKI_TEST_SRCS))) test/webpki_ticket_count.c
 # The TRUST=webpki CertificateVerify test as the same host object, on the
 # same counting copies. No mock server signs a CertificateVerify over this
 # client's random ClientHello, so this is the binary whose flight walks a
@@ -5995,7 +6014,10 @@ else
 	# the block that fills the registers and reads them back, are the
 	# design. Leaving the files out keeps the check on every other file.
 	# clang-format and cppcheck still read them. avx512_wipe.c itself has a
-	# pass of its own below with that check off.
+	# pass of its own below with that check off. test/webpki_ticket_count.c
+	# compiles webpki_ticket.c's text with two calls under other names. It
+	# stays out of every pass, for the reason test/aes_equiv_soft.c does
+	# below.
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
 	  test/webpki_resume_test.c test/webpki_session_test.c \
@@ -6022,7 +6044,7 @@ else
 	  mlkem_vector.c test/mlkem_vector_equiv_test.c \
 	  keccak_avx2.c mlkem_avx2.c test/mlkem_avx2_equiv_test.c \
 	  test/x86_kernels_test.c test/x86_kernels_count.c test/rsa_ifma_count.c test/aead_avx512_count.c \
-	  test/gcm_avx512_equiv_test.c \
+	  test/gcm_avx512_equiv_test.c test/webpki_ticket_count.c \
 	  $(RSA_HOST_LINT_C) $(WIDEMUL_HOST_LINT_C) $(HASH_HOST_LINT_C),$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The wide X25519 field. x25519_wide.c guards its body on
@@ -6244,8 +6266,11 @@ else
 	# files they copy follow under the host's own target with the defines
 	# the equivalence test's binary takes, so the pass reads the entries
 	# that end sha256.h, hkdf.h and keysched.h too, and then the two test
-	# mains under their binaries' defines. test/hash_runtime_count.c stays
-	# out of every pass, for the reason test/aes_equiv_soft.c does below.
+	# mains under their binaries' defines. The pass for
+	# test/hash_runtime_test.c also reads webpki_ticket.c, whose host arm
+	# that TRUST=webpki binary calls (docs/decisions.md 132).
+	# test/hash_runtime_count.c stays out of every pass, for the reason
+	# test/aes_equiv_soft.c does below.
 	# sha3_hw.c and ML-KEM's two copies have a body for arm64 under clang
 	# alone (docs/decisions.md 99), which the arm64 pass's target gives
 	# them, and the two Keccak test mains follow under the host's own target.
@@ -6278,8 +6303,9 @@ else
 	    test/mlkem_avx2_equiv_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_CPU_RUNTIME -I. -Itest)
 	@set -e; [ -z "$(HOST_BINS)" ] || \
-	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(HOST_SUITE_DEF) -I. -Itest)
+	  $(call TIDY_EACH,test/hash_runtime_test.c record.c quic_keys.c webpki_ticket.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  $(HOST_SUITE_DEF) -I. -Itest)
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and

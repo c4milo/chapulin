@@ -2,13 +2,14 @@
 //! against each other, through the API alone: the handshake, ALPN, the
 //! server name, data both ways across several records, a write that does
 //! not fit, the exporter, a ticket taken and resumed through
-//! Ticket.fromFields, a stale ticket refused, close in each direction and
-//! recordClose, four refusals, the last of whose alerts the server reads
-//! as the client's fatal alert and does not answer, and each side's
-//! handshake failure before and after its write key, whose alert record the
-//! other side reads. At TX_RECORD=16384 the records carry CH_TX_PT bytes
-//! each. Under SUITE=aesgcm, loop_key_limit.zig then has each side write
-//! across its AES-GCM write key's ceiling.
+//! Ticket.fromFields, a stale ticket refused, a client whose takes_tickets
+//! is false that keeps no ticket and still resumes one, close in each
+//! direction and recordClose, four refusals, the last of whose alerts the
+//! server reads as the client's fatal alert and does not answer, and each
+//! side's handshake failure before and after its write key, whose alert
+//! record the other side reads. At TX_RECORD=16384 the records carry
+//! CH_TX_PT bytes each. Under SUITE=aesgcm, loop_key_limit.zig then has
+//! each side write across its AES-GCM write key's ceiling.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
@@ -164,6 +165,28 @@ fn takeTicket() !chapulin.Ticket {
     try check(fixture.zeroed(&client.ticket), "takeTicket left bytes in the ticket slot");
     try check(taken.ticket.lifetime_s > 0 and taken.ticket.identity == null, "the ticket lost its lifetime or kept an identity pointer");
     return taken;
+}
+
+/// A client whose takes_tickets is false, first with no ticket and then
+/// with taken, which still resumes. Its init sets no on_ticket and stores
+/// no hash, and it keeps none of the server's tickets.
+fn ticketsOff(taken: *const chapulin.Ticket) !void {
+    const ticket = try fixture.stored(taken);
+    var values = clientValues();
+    values.takes_tickets = false;
+    values.ticket_age_ms = 1000;
+    for ([_]?*const chapulin.Ticket{ null, &ticket }) |presented| {
+        values.ticket = presented;
+        try handshake(serverValues(), values);
+        const resumed = presented != null;
+        try check(client.pskSelected() == resumed and server.pskSelected() == resumed, "the PSK selection of a client whose takes_tickets is false does not match its ticket");
+        try fixture.clientTakesTickets(&client.record.t, false);
+        try check(to_client.pending().len > 0, "the server wrote no ticket");
+        _ = try drain(&client, &to_client);
+        try check(to_client.pending().len == 0 and client.takeTicket() == null, "a client whose takes_tickets is false kept a ticket");
+        client.recordClose();
+        server.recordClose();
+    }
 }
 
 /// The client closes its direction, and the server reads that close_notify
@@ -351,14 +374,16 @@ pub fn run() !void {
     try check(std.mem.eql(u8, server.sni() orelse "", fixture.hostname()), "the server did not report the hostname");
     try check(client.group() == .x25519mlkem768 and server.group() == .x25519mlkem768, "the group is not X25519MLKEM768");
     try check(!client.pskSelected() and client.serverCertType() == .x509, "the full handshake reports a PSK or a raw key");
+    try fixture.clientTakesTickets(&client.record.t, true);
     const taken = try takeTicket();
     try exchange();
     try exporter();
     try closeBothWays();
     try resumeTicket(&taken);
+    try ticketsOff(&taken);
     try refusals();
     try failureAlerts();
     try key_limit.run();
     const across = if (key_limit.runs) ", and each side's write across its AES-GCM write key's ceiling under both AES-GCM suites" else "";
-    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, both closes, four refusals and each side's failure alert on each side of its write key{s}\n", .{ c.CH_TX_PT, payload.len, across });
+    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, a client that takes no tickets, first with no ticket and then with one it resumes, both closes, four refusals and each side's failure alert on each side of its write key{s}\n", .{ c.CH_TX_PT, payload.len, across });
 }

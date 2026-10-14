@@ -356,7 +356,10 @@ typedef struct {
     int (*recv)(void *io, uint8_t *p, size_t n);
     void *io;
 
-    // Optional; called once per NewSessionTicket.
+    // Optional; called once per NewSessionTicket. Under TRUST=webpki, set it in the cfg you
+    // pass to ch_connect, ch_record_init or ch_quic_init. Only then does the init call hash
+    // the configuration that each ticket is bound to. A session whose init call saw no
+    // on_ticket gives no ticket to anyone (docs/webpki.md, "Resumption").
     void (*on_ticket)(void *io, const ch_ticket *ticket);
 #ifdef CH_RAND_SESSION
     // This session's source of random bytes (rand.h); every init call refuses a NULL one.

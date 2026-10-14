@@ -1,0 +1,14 @@
+invariant: INV-36
+file: chapulin_quic.zig
+catches: test/zig-build-check.sh
+reason: quic.Client.init sets on_ticket whatever the values'
+  takes_tickets says. A client that asked for no tickets then hashes its
+  hostname, anchors and pins at init under TRUST=webpki, and keeps every
+  ticket the server writes. loop_quic.zig's client with takes_tickets
+  false requires a session with no on_ticket and an empty ticket slot,
+  and objects.
+
+--- old
+            if (values.takes_tickets) cfg.on_ticket = onTicket;
+--- new
+            cfg.on_ticket = onTicket;

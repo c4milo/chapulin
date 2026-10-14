@@ -1,0 +1,13 @@
+invariant: INV-16
+file: webpki_ticket.c
+catches: hash_runtime_test
+reason: the check of a presented ticket hashes the configuration with 0 in
+  place of the configuration's own ch_cfg.cpu, so a resuming session that
+  states the SHA-256 instructions hashes its anchors on the portable code
+  (docs/decisions.md 132). bin/hash_runtime_test's webpki_resumption_ok
+  row counts those calls on the wrong path.
+
+--- old
+    webpki_ticket_config_hash(CH_CFG_CPU(*cfg), cfg, config_hash);
+--- new
+    webpki_ticket_config_hash(0, cfg, config_hash);

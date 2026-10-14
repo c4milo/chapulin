@@ -1,0 +1,18 @@
+invariant: INV-16
+file: webpki_ticket.c
+catches: hash_runtime_test
+reason: the configuration hash runs every update on sha256.c whatever the
+  session's ch_cfg.cpu states, so a session that states the SHA-256
+  instructions hashes its anchors on the portable code
+  (docs/decisions.md 132). bin/hash_runtime_test's
+  webpki_ticket_config_hash row counts those updates on the wrong path.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    sha256_update_cpu(cpu, s, in, n);
+#else
+--- new
+#ifdef CH_CPU_RUNTIME
+    (void)cpu;
+    sha256_update(s, in, n);
+#else

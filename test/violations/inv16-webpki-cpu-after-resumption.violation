@@ -1,0 +1,30 @@
+invariant: INV-16
+file: tls.c
+catches: webpki_session_host
+reason: the webpki tlsi_config_ok checks ch_cfg.cpu after the web PKI rules.
+  So the check of a presented ticket hashes on the path of a value that
+  the cpu rule then refuses, and it can run instructions the CPU lacks.
+  ch_connect and ch_record_init share the order. test/webpki_ticket_rows.h
+  presents a ticket under CH_CPU_CONSTANT_TIME_SHA256 alone and requires
+  CH_EINVAL with no hash.
+
+--- old
+#ifdef CH_CPU_RUNTIME
+    // The caller's description of its CPU (cpu_cfg.h), before
+    // webpki_cfg_ok's suite rule and a presented ticket's check read it.
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
+    return webpki_cfg_ok(cfg) && cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF &&
+           hspost_ticket_age_ok(cfg);
+--- new
+    if (!webpki_cfg_ok(cfg)) {
+        return 0;
+    }
+#ifdef CH_CPU_RUNTIME
+    if (!cpu_bits_ok(cfg)) {
+        return 0;
+    }
+#endif
+    return cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF && hspost_ticket_age_ok(cfg);

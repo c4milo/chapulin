@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tcp_nonblocking.c
+catches: webpki_loop_tcp_nonblocking
+reason: the webpki ch_record_init hashes the configuration for a session
+  that takes tickets but leaves ch_tls.takes_tickets at 0. So
+  handshake_post.c gives no ticket to on_ticket, and no session can
+  resume. The loop's full handshake requires one ticket.
+
+--- old
+    r->t.takes_tickets = (uint8_t)webpki_takes_tickets(cfg);
+    if (r->t.takes_tickets) {
+--- new
+    if (webpki_takes_tickets(cfg)) {

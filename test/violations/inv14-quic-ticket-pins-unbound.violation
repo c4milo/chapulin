@@ -7,10 +7,10 @@ reason: the configuration hash leaves out the SPKI pins, so a ticket a
   test/quic_loop_pins.h's resumption rows under another pin set object.
 
 --- old
-    hash_len(&s, cfg->spki_pin_count);
+    hash_len(cpu, &s, cfg->spki_pin_count);
     const uint8_t *pin = cfg->spki_pins;
     for (size_t i = 0; i < cfg->spki_pin_count; i++) {
-        sha256_update(&s, pin, SHA256_LEN);
+        config_update(cpu, &s, pin, SHA256_LEN);
         pin += SHA256_LEN;
     }
 --- new

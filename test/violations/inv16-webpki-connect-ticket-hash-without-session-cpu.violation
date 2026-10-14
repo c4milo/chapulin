@@ -1,0 +1,12 @@
+invariant: INV-16
+file: tls.c
+catches: webpki_session_host
+reason: the webpki ch_connect hands the configuration hash 0 in place of the
+  session's ch_cfg.cpu, so the hash runs on the portable code whatever
+  the caller states (docs/decisions.md 132). test/webpki_ticket_rows.h
+  reads the value the hash took and objects.
+
+--- old
+        webpki_ticket_config_hash(CH_CFG_CPU(t->cfg), cfg, t->ticket_config_hash);
+--- new
+        webpki_ticket_config_hash(0, cfg, t->ticket_config_hash);

@@ -15,7 +15,9 @@
 #include "record.h"
 #endif
 #ifdef CH_TRUST_WEBPKI
-// handle_ticket binds every ticket, on either transport.
+// handle_ticket binds every ticket, on either transport, on the path the
+// session's ch_cfg.cpu names (cpu.h's CH_CFG_CPU).
+#include "cpu.h"
 #include "webpki_ticket.h"
 #endif
 
@@ -140,6 +142,15 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
         ticket.identity_len > CH_TICKET_ID_MAX) {
         return CH_OK;
     }
+#ifdef CH_TRUST_WEBPKI
+    // The init call wrote no ticket_config_hash when its cfg set no
+    // on_ticket. A caller can still set t->cfg.on_ticket after that
+    // call. Such a session gives no ticket to anyone, because a ticket
+    // bound to the all-zero hash cannot resume (webpki_takes_tickets).
+    if (t->takes_tickets == 0) {
+        return CH_OK;
+    }
+#endif
     ticket.epoch = t->epoch;
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The version this connection negotiated, which RFC 9369 section 5
@@ -152,8 +163,10 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
     KS_RES_PSK_CPU(t->cfg.cpu, ticket.psk_len, t->res_master, nonce, nonce_len, ticket.psk);
 #ifdef CH_TRUST_WEBPKI
     // Binds the ticket to this session's hostname, anchors and SPKI pins,
-    // so no other configuration can present it (webpki_ticket.h).
-    webpki_ticket_binding(ticket.psk, ticket.psk_len, t->ticket_config_hash, ticket.binding);
+    // so no other configuration can present it (webpki_ticket.h). The
+    // init call wrote the hash, because takes_tickets is 1.
+    webpki_ticket_binding(CH_CFG_CPU(t->cfg), ticket.psk, ticket.psk_len, t->ticket_config_hash,
+                          ticket.binding);
 #endif
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);

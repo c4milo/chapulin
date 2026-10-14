@@ -41,26 +41,28 @@ static void webpki_client(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
 static int kept_ticket_bound(const ch_cfg *cfg) {
     uint8_t config_hash[SHA256_LEN];
     uint8_t want[SHA256_LEN];
-    webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, want);
+    webpki_ticket_config_hash(0, cfg, config_hash);
+    webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, want);
     return memcmp(kept.binding, want, sizeof want) == 0;
 }
 
 // A server that declines the ticket, and a client whose trust the r2
 // chain fails: the handshake dies at the Certificate with the walk's
-// alert, which RFC 9001 §4.8 carries as 0x0100 plus the alert.
+// alert, which RFC 9001 §4.8 carries as 0x0100 plus the alert. The
+// server holding other_ticket_key sealed the kept ticket, so the server
+// holding ticket_key declines it.
 static void check_declined_chain_refused(const webpki_corpus_anchor *root, const char *hostname,
                                          uint8_t alert) {
     ch_cfg scfg;
     ch_cfg ccfg;
     uint8_t binding[SHA256_LEN];
     memcpy(binding, kept.binding, sizeof binding);
-    webpki_server(&scfg, other_ticket_key);
+    webpki_server(&scfg, ticket_key);
     webpki_client(&ccfg, root, hostname);
     present_ticket(&ccfg);
     uint8_t config_hash[SHA256_LEN];
-    webpki_ticket_config_hash(&ccfg, config_hash);
-    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, kept.binding);
+    webpki_ticket_config_hash(0, &ccfg, config_hash);
+    webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
     CHECK(!run_quic(&ccfg, &scfg));
     CHECK(ch_quic_state(&client) == CH_ST_FAILED);
     CHECK(ch_quic_error_code(&client) == 0x0100U + alert);
@@ -167,8 +169,17 @@ static void test_webpki_resumption(void) {
     CHECK(server.t.sigalg == SIGALG_ECDSA_P256_SHA256);
     CHECK(handshake_messages() == 4);
     check_keys_agree();
+    take_ticket();
+    CHECK(kept.count == 3 && kept_ticket_bound(&ccfg));
 
-    // That decline checks the chain as a fresh handshake does: the r2
+    // The ticket that the declined session received resumes under the
+    // server that sealed it, with the binding on_ticket gave it.
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    present_ticket(&ccfg);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1);
+
+    // A decline checks the chain as a fresh handshake does: the r2
     // leaf names s3.example.test and no other host, and it verifies under
     // root_p384 and not under an anchor that carries its Name over
     // another key.

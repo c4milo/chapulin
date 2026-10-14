@@ -1,0 +1,12 @@
+invariant: INV-16
+file: webpki_ticket.c
+catches: hash_runtime_test
+reason: a ticket's binding runs its HMAC on sha256.c whatever the session's
+  ch_cfg.cpu states (docs/decisions.md 132). bin/hash_runtime_test's
+  webpki_ticket_binding row counts the HMAC's calls on the wrong path.
+
+--- old
+    hmac_sha256_cpu(cpu, psk, psk_len, msg, w.len, out);
+--- new
+    (void)cpu;
+    hmac_sha256(psk, psk_len, msg, w.len, out);
