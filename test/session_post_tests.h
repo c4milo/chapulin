@@ -247,7 +247,7 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
     return read_ticket_with_lifetime(3600, nonce_len, tail, tail_len, tickets, state, alert);
 }
 
-// RFC 9846 §4.6.1: a ticket_lifetime of 0 says the ticket is to be
+// RFC 9846 §4.7.1: a ticket_lifetime of 0 says the ticket is to be
 // discarded at once (rfc9846.txt:3258-3259). The parser drops it the way
 // it drops a nonce it cannot use: no on_ticket call, and the session reads
 // on. A lifetime of 1 second is the first it hands over. That drop is why

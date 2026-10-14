@@ -10,7 +10,7 @@ const quic = chapulin.quic;
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_quic = @hasField(c.ch_cfg, "quic_original_version");
 
-/// A NewSessionTicket (RFC 9846 §4.6.1) that outlives the session: the
+/// A NewSessionTicket (RFC 9846 §4.7.1) that outlives the session: the
 /// ch_ticket on_ticket received, by value, and the identity bytes it
 /// pointed at. A program that copies a Ticket owns zeroing that copy.
 pub const Ticket = struct {

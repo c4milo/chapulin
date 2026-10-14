@@ -3,7 +3,7 @@ file: tls.c
 catches: unit
 reason: the raw and ca tlsi_config_ok stops asking hspost_ticket_age_ok, so
   ch_connect and ch_record_init offer a ticket older than its lifetime, or
-  kept past the seven days RFC 9846 section 4.6.1 allows any ticket. A
+  kept past the seven days RFC 9846 section 4.7.1 allows any ticket. A
   server that checks its own clock still passes such a ticket over, so the
   handshakes in this tree complete either way; the config rows at each
   boundary object.

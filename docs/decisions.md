@@ -2819,7 +2819,7 @@ does nothing more.
       value to both and the reduction happens here.
     - **`ch_cfg.ticket_age_ms` and `ch_cfg.ticket_lifetime_s`.** RFC 9846
       §4.3.11.1 says a client MUST NOT use a ticket older than its
-      `ticket_lifetime` (`rfc9846.txt:2572-2574`), and §4.6.1 that it MUST
+      `ticket_lifetime` (`rfc9846.txt:2572-2574`), and §4.7.1 that it MUST
       NOT use one more than 7 days after issuance whatever the lifetime
       (`rfc9846.txt:3259-3261`). With `resumption` set, `ch_connect`,
       `ch_record_init` and `ch_quic_init` return `CH_EINVAL` before a byte
@@ -2832,7 +2832,7 @@ does nothing more.
       millisecond. A lifetime of 0 is one the caller did not give, and the
       age is then held to seven days alone. That reading is sound because
       `handle_ticket` now drops a NewSessionTicket whose `ticket_lifetime`
-      is 0, which §4.6.1 says to discard at once
+      is 0, which §4.7.1 says to discard at once
       (`rfc9846.txt:3258-3259`), so no ticket with that lifetime is handed
       to `on_ticket`. A configuration that sets neither field, as every one
       written before them does, is refused nothing. A lifetime above seven

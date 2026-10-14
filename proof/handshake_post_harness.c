@@ -124,7 +124,7 @@ int ch_handshake(ch_tls *t) {
 }
 
 // Every pointer the driver hands the application must be readable, and no
-// ticket it hands over has a lifetime of 0, which RFC 9846 §4.6.1 says to
+// ticket it hands over has a lifetime of 0, which RFC 9846 §4.7.1 says to
 // discard at once and ch_cfg.ticket_lifetime_s reads as none given.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;

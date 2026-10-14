@@ -569,7 +569,7 @@ received it, and refuses to present it under any other.
 - **The ticket's age is checked before a byte is sent.** The caller sets
   `ticket_age_ms` and `ticket_lifetime_s`, as in every mode, and
   `ch_ticket_obfuscated_age` computes `obfuscated_age` from the age. An
-  age above the lifetime, or above the seven days RFC 9846 §4.6.1 allows
+  age above the lifetime, or above the seven days RFC 9846 §4.7.1 allows
   any ticket, is refused with `CH_EINVAL` (docs/decisions.md 72).
 - **A `TRANSPORT=quic-nonblocking` webpki client resumes the same way.**
   `ch_quic_init` takes the configuration hash as `ch_connect` does, so the

@@ -328,7 +328,7 @@ typedef struct {
     // The ticket's age in milliseconds, the time since on_ticket handed it over, and its
     // ch_ticket.lifetime_s in seconds. With resumption set, every client entry refuses with
     // CH_EINVAL, before a byte is sent, an age above the lifetime or above
-    // CH_TICKET_LIFETIME_MAX seconds (RFC 9846 §4.3.11.1 and §4.6.1). A lifetime of 0 is
+    // CH_TICKET_LIFETIME_MAX seconds (RFC 9846 §4.3.11.1 and §4.7.1). A lifetime of 0 is
     // one the caller did not give, since on_ticket is never handed a ticket with that
     // lifetime, and the age is then held to CH_TICKET_LIFETIME_MAX alone.
     uint64_t ticket_age_ms;

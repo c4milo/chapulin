@@ -84,7 +84,7 @@ static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert
 // for a KDF context, identity too big for our ClientHello — return CH_OK
 // with nothing delivered: those messages decode, this client just cannot
 // use them, and a ticket is an optimization. A ticket_lifetime of 0 is
-// dropped the same way: RFC 9846 §4.6.1 says such a ticket is to be
+// dropped the same way: RFC 9846 §4.7.1 says such a ticket is to be
 // discarded at once (rfc9846.txt:3258-3259), and dropping it here is what
 // lets ch_cfg.ticket_lifetime_s read 0 as a lifetime the caller did not
 // give (hspost_ticket_age_ok).

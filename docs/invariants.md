@@ -2936,7 +2936,7 @@ last `ROLE=server` stub, as the entry said it would.
   another (`rfc9369.txt:268-271`); `handle_ticket` writes the connection's
   negotiated version into each `ch_ticket` it hands over. The
   post-handshake parser hands `on_ticket` no NewSessionTicket whose
-  `ticket_lifetime` is 0, which RFC 9846 §4.6.1 says to discard at once,
+  `ticket_lifetime` is 0, which RFC 9846 §4.7.1 says to discard at once,
   and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
   modulo 2^32 (docs/decisions.md 72). In either role the same parser
   refuses a KeyUpdate whose request_update is neither 0 nor 1 with

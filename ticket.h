@@ -1,5 +1,5 @@
 // The resumption ticket a client receives and presents again: what
-// cfg.on_ticket hands over (RFC 9846 §4.6.1), the obfuscated age a
+// cfg.on_ticket hands over (RFC 9846 §4.7.1), the obfuscated age a
 // resuming ClientHello carries (§4.3.11.1), and how long a client keeps
 // one. cfg.h includes this header, because ch_cfg.on_ticket takes a
 // ch_ticket, and it states the ch_cfg fields a resuming client sets:
@@ -18,7 +18,7 @@
 // and every client entry refuses a psk_id_len above it (cfg.h).
 #define CH_TICKET_ID_MAX 320
 
-// The longest a ticket is kept, in seconds. RFC 9846 §4.6.1 forbids a
+// The longest a ticket is kept, in seconds. RFC 9846 §4.7.1 forbids a
 // server a ticket_lifetime above 604800 seconds, 7 days, and forbids a
 // client to use a ticket longer than 7 days after issuance whatever its
 // ticket_lifetime says (rfc9846.txt:3255-3261). ch_cfg.ticket_age_ms is
@@ -27,7 +27,7 @@
 
 // A resumption ticket for on_ticket. Copy what you keep during the callback, and present
 // psk, psk_len and identity on the next connection with resumption = 1 for a cheaper
-// reconnect. A ticket whose lifetime_s is 0 is never handed to on_ticket: RFC 9846 §4.6.1 says
+// reconnect. A ticket whose lifetime_s is 0 is never handed to on_ticket: RFC 9846 §4.7.1 says
 // such a ticket is to be discarded at once (rfc9846.txt:3258-3259), so every ticket handed
 // over has a lifetime of 1 second or more.
 typedef struct {
@@ -35,7 +35,7 @@ typedef struct {
     // overwrites.
     const uint8_t *identity;
     size_t identity_len;
-    // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.6.1):
+    // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.7.1):
     // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which only a
     // SUITE=aesgcm TRUST=webpki client runs. psk_len says which; present it as
     // ch_cfg.psk_len.

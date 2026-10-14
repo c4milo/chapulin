@@ -233,10 +233,10 @@ cfg.obfuscated_age = ch_ticket_obfuscated_age(&kept.ticket, age_ms);
 copy whose `identity` pointer no longer points anywhere serves.
 `ch_connect`, `ch_record_init` and `ch_quic_init` return `CH_EINVAL`,
 before a byte is sent, when the age is above the lifetime or above
-`CH_TICKET_LIFETIME_MAX`, 604,800 seconds, which RFC 9846 §4.6.1 makes the
+`CH_TICKET_LIFETIME_MAX`, 604,800 seconds, which RFC 9846 §4.7.1 makes the
 most any ticket lives. A lifetime of 0 means you gave none, and then the
 seven days alone apply. No ticket with a lifetime of 0 is handed to
-`on_ticket`, because §4.6.1 says to discard one at once.
+`on_ticket`, because §4.7.1 says to discard one at once.
 
 A CA build also takes `ticket_epoch`, the ticket's `epoch`: the stored
 epoch when the ticket arrived. The same three calls return `CH_EINVAL`,

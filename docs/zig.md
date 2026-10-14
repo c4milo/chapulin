@@ -192,13 +192,13 @@ callbacks and `io` to it, and under `RAND=session` its source. With a
 ticket, a raw or ca mode's `toCfg` leaves the two `server_pubkey` slots
 unset, because `ch_cfg` takes one auth mode. The age is the time since `on_ticket` handed the ticket over,
 in milliseconds. C refuses a ticket older than its lifetime or older than
-seven days (`ticket.h`, RFC 9846 §4.3.11.1 and §4.6.1), so `init`
+seven days (`ticket.h`, RFC 9846 §4.3.11.1 and §4.7.1), so `init`
 answers `error.Invalid` for it: an age of exactly the lifetime is still
 offered, and one millisecond more is refused.
 
 ### Ticket
 
-A NewSessionTicket (RFC 9846 §4.6.1) that outlives its session: the
+A NewSessionTicket (RFC 9846 §4.7.1) that outlives its session: the
 `c.ch_ticket` `on_ticket` received, by value, as `ticket`, and the
 identity bytes it pointed at, as `identity`. `ticket.identity` is null,
 because the bytes it named are valid during `on_ticket` alone.

@@ -323,7 +323,7 @@ static void test_connect_cfg(void) {
 
 // The ticket's age against its lifetime, which ch_connect judges before
 // it sends a byte (handshake_post.h). RFC 9846 §4.3.11.1 forbids a ticket
-// older than its ticket_lifetime (rfc9846.txt:2572-2574), and §4.6.1 one
+// older than its ticket_lifetime (rfc9846.txt:2572-2574), and §4.7.1 one
 // kept past 7 days whatever that lifetime says (rfc9846.txt:3259-3261).
 // Each pair is the last age accepted and the first refused; an accepted
 // config passes the checks and then fails at mock_recv with CH_EIO.

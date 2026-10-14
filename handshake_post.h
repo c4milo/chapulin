@@ -25,7 +25,7 @@
 // it sends a byte: ch_connect and ch_record_init through tls.c's
 // tlsi_config_ok, and ch_quic_init through quic_config_ok. RFC 9846
 // §4.3.11.1 says a client MUST NOT use a ticket older than its
-// ticket_lifetime (rfc9846.txt:2572-2574), and §4.6.1 that it MUST NOT use
+// ticket_lifetime (rfc9846.txt:2572-2574), and §4.7.1 that it MUST NOT use
 // one more than 7 days after issuance whatever that lifetime says
 // (rfc9846.txt:3259-3261).
 //
