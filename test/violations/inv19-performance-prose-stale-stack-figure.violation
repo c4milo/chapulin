@@ -1,0 +1,13 @@
+invariant: INV-19
+file: docs/performance.md
+catches: test/lint-bench-numbers.sh
+reason: the prose states a stack figure that bench/results-sram.csv does
+  not hold. Commit 4d32968d moved ch_pubkey_from_pem's peak to 640 bytes
+  under both ca modes, and the prose kept 576 until commit 1bc84ce0,
+  because lint-bench-numbers read the Memory table and no stack figure in
+  the prose. The edit puts 576 back.
+
+--- old
+itself measures 640 bytes of stack under both `TRUST=ca-rsa` and
+--- new
+itself measures 576 bytes of stack under both `TRUST=ca-rsa` and

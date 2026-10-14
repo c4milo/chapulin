@@ -19,6 +19,8 @@ stack_connect_psk,2768
 stack_connect_ca_rsa,5472
 stack_connect_ca_ecdsa,3264
 stack_connect_webpki,16688
+stack_connect_webpki_without_mlkem,8304
+stack_connect_webpki_device_without_mlkem,7344
 stack_read,1712
 stack_connect_pq,16000
 stack_write,944
@@ -28,6 +30,16 @@ session_struct_server_rv32,1824
 static_working_set_server_arm64,4032
 static_working_set_server_rv32,3872
 stack_accept_server,12736
+stack_accept_server_without_rsa_sign64_pss,10464
+stack_accept_server_without_rsa_sign64_pss_srv_kex_share,5744
+stack_accept_server_device,10432
+stack_accept_server_device_without_srv_kex_share,5280
+stack_pubkey_from_pem_ca_rsa,640
+stack_pubkey_from_pem_ca_ecdsa,640
+stack_chain_from_pem,592
+stack_p256_key_from_pem,3760
+stack_p256_key_from_pem_device,1376
+stack_anchors_from_pem,560
 session_struct_server_aes_arm64,2280
 static_working_set_server_aes_arm64,4328
 stack_accept_server_aes,12912

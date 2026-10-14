@@ -5456,6 +5456,9 @@ last `ROLE=server` stub, as the entry said it would.
   for the build it walks. It also checks that the script follows a call
   and a tail call through a volatile function pointer to the function
   the pointer's initializer names, as the stack wipes call their frames.
+  `make lint-bench-numbers` holds each peak that docs/performance.md
+  states, in its table or in its prose, to the bench/results-sram.csv
+  that bench/sram.sh writes.
   `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a target of its own, so plain `make
@@ -5504,4 +5507,8 @@ last `ROLE=server` stub, as the entry said it would.
   `inv19-stack-walk-extra-source` compiles a source the build does not
   package; the walk once did both, and put the `TRUST=raw-ecdsa` peak at
   3,824 bytes where it is 3,104. `make lint-stack-walk` fails on each.
+  A peak in the prose can also disagree with the measurement.
+  `inv19-performance-prose-stale-stack-figure` puts back 576 bytes as
+  `ch_pubkey_from_pem`'s peak in the prose, where the CSV holds 640, and
+  `make lint-bench-numbers` fails.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

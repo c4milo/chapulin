@@ -70,6 +70,7 @@ WRAPPER_GATES = {
     "make lint-frame-align": ["test/lint-frame-align.sh"],
     "make lint-schedule-order": ["test/lint-schedule-order.sh"],
     "make lint-proof-cover": ["test/lint-proof-cover.sh"],
+    "make lint-bench-numbers": ["test/lint-bench-numbers.sh"],
 }
 
 # Targets whose recipe stops unless a variable names what to run, and
@@ -823,7 +824,8 @@ def select_lints(out, changed, csources, lib):
     if any(p.startswith(("docs/", "bench/")) or p == "README.md"
            for p in changed):
         out.add("lint", "make lint-bench-numbers",
-                "the published memory numbers come from bench/")
+                "the published memory numbers come from bench/",
+                ["test/lint-bench-numbers.sh"])
     if "docs/verification.md" in changed:
         out.add("lint", "make proof-coverage",
                 "docs/verification.md must name every launched harness at its tier")

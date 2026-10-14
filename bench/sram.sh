@@ -7,7 +7,8 @@
 # today; the cross-compiled ASIC model (pushkin's device-ram.sh) lands
 # with the bench. Prints the report and writes bench/results-sram.csv,
 # the file make lint-bench-numbers compares against docs/performance.md's
-# Memory table (https://github.com/c4milo/chapulin/issues/90).
+# Memory table (https://github.com/c4milo/chapulin/issues/90) and against
+# each stack figure its prose states.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -187,6 +188,19 @@ echo "-- TRUST=webpki; ch_connect peak includes ML-KEM's K-PKE frames, above the
 stack_report webpki STACK_MAKE=TRUST=webpki
 head -1 "$TMP/webpki.stack"
 grep '^ch_anchors_from_pem' "$TMP/webpki.stack"
+# The walks below measure the figures that docs/performance.md states in
+# the prose under "What the larger builds pay for". STACK_PRUNE removes the
+# functions of the deepest chain, so the walk gives the next deepest one.
+# HOST_TARGET= clears the Makefile's host test, so make packages the
+# device object, which holds no copies over the SHA-3 instructions.
+echo "-- TRUST=webpki without ML-KEM; ch_connect peak = chain walk into a P-384 verify --"
+stack_report webpki_without_mlkem STACK_MAKE=TRUST=webpki \
+    STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk,mlkem_decaps_hw,mlkem_keygen_dk_hw
+head -1 "$TMP/webpki_without_mlkem.stack"
+echo "-- TRUST=webpki device object without ML-KEM; peak = chain walk into an RSA-4096 verify --"
+stack_report webpki_device_without_mlkem "STACK_MAKE=TRUST=webpki HOST_TARGET=" \
+    STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk
+head -1 "$TMP/webpki_device_without_mlkem.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
 stack_report pq STACK_MAKE=KEX=pq
 head -1 "$TMP/pq.stack"
@@ -194,6 +208,22 @@ echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulati
 stack_report server "STACK_MAKE=ROLE=server TRUST=none"
 head -1 "$TMP/server.stack"
 grep '^ch_chain_from_pem\|^ch_p256_key_from_pem' "$TMP/server.stack"
+echo "-- ROLE=server without rsa_sign64_pss; ch_srv_accept peak = the hybrid encapsulation --"
+stack_report server_without_rsa_sign64_pss "STACK_MAKE=ROLE=server TRUST=none" \
+    STACK_PRUNE=rsa_sign64_pss
+head -1 "$TMP/server_without_rsa_sign64_pss.stack"
+echo "-- ROLE=server without rsa_sign64_pss and srv_kex_share; peak = the ECDSA signer --"
+stack_report server_without_rsa_sign64_pss_srv_kex_share "STACK_MAKE=ROLE=server TRUST=none" \
+    STACK_PRUNE=rsa_sign64_pss,srv_kex_share
+head -1 "$TMP/server_without_rsa_sign64_pss_srv_kex_share.stack"
+echo "-- ROLE=server device object; no 64-bit signer and no wide P-256 field --"
+stack_report server_device "STACK_MAKE=ROLE=server TRUST=none HOST_TARGET="
+head -1 "$TMP/server_device.stack"
+grep '^ch_p256_key_from_pem' "$TMP/server_device.stack"
+echo "-- ROLE=server device object without srv_kex_share; peak = rsa_sign.c's ladder --"
+stack_report server_device_without_srv_kex_share "STACK_MAKE=ROLE=server TRUST=none HOST_TARGET=" \
+    STACK_PRUNE=srv_kex_share
+head -1 "$TMP/server_device_without_srv_kex_share.stack"
 echo "-- ROLE=server SUITE=aesgcm; the same walk with SHA-384's schedule and the AES-GCM record path --"
 stack_report server_aes "STACK_MAKE=ROLE=server TRUST=none SUITE=aesgcm"
 head -1 "$TMP/server_aes.stack"
@@ -241,6 +271,8 @@ TMPOUT="$TMP/results-sram.csv"
     row stack_connect_ca_rsa "$(peak ca_rsa ch_connect)"
     row stack_connect_ca_ecdsa "$(peak ca_ecdsa ch_connect)"
     row stack_connect_webpki "$(peak webpki ch_connect)"
+    row stack_connect_webpki_without_mlkem "$(peak webpki_without_mlkem ch_connect)"
+    row stack_connect_webpki_device_without_mlkem "$(peak webpki_device_without_mlkem ch_connect)"
     row stack_read "$(peak default ch_read)"
     row stack_connect_pq "$(peak pq ch_connect)"
     row stack_write "$(peak default ch_write)"
@@ -250,6 +282,19 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_server_arm64 "$((SESSION_SERVER + RXBUF))"
     row static_working_set_server_rv32 "$((SESSION_RV32_SERVER + RXBUF))"
     row stack_accept_server "$(peak server ch_srv_accept)"
+    row stack_accept_server_without_rsa_sign64_pss \
+        "$(peak server_without_rsa_sign64_pss ch_srv_accept)"
+    row stack_accept_server_without_rsa_sign64_pss_srv_kex_share \
+        "$(peak server_without_rsa_sign64_pss_srv_kex_share ch_srv_accept)"
+    row stack_accept_server_device "$(peak server_device ch_srv_accept)"
+    row stack_accept_server_device_without_srv_kex_share \
+        "$(peak server_device_without_srv_kex_share ch_srv_accept)"
+    row stack_pubkey_from_pem_ca_rsa "$(peak ca_rsa ch_pubkey_from_pem_tcp_blocking)"
+    row stack_pubkey_from_pem_ca_ecdsa "$(peak ca_ecdsa ch_pubkey_from_pem_tcp_blocking)"
+    row stack_chain_from_pem "$(peak server ch_chain_from_pem_tcp_blocking)"
+    row stack_p256_key_from_pem "$(peak server ch_p256_key_from_pem_tcp_blocking)"
+    row stack_p256_key_from_pem_device "$(peak server_device ch_p256_key_from_pem_tcp_blocking)"
+    row stack_anchors_from_pem "$(peak webpki ch_anchors_from_pem_tcp_blocking)"
     row session_struct_server_aes_arm64 "$SESSION_SERVER_AES"
     row static_working_set_server_aes_arm64 "$((SESSION_SERVER_AES + RXBUF))"
     row stack_accept_server_aes "$(peak server_aes ch_srv_accept)"

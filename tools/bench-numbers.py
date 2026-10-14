@@ -111,6 +111,49 @@ MEMORY = [
      [["static_working_set_server_host_arm64"]]),
 ]
 
+# The stack figures that the Memory prose states. Each entry is a sentence
+# with {} in place of each figure, and one list per {} of the
+# bench/results-sram.csv quantities that figure states. One figure can
+# state two quantities, such as the one peak "under both" ca modes. Its
+# list names both, and the two must agree. A STACK_MAKE or STACK_PRUNE
+# value in a sentence is the one bench/sram.sh measures the figure with.
+# Commit 4d32968d moved ch_pubkey_from_pem's peak to 640 bytes, and the
+# prose kept 576 and 496 until commit 1bc84ce0, because no check read it.
+STACK_PROSE = [
+    ("The whole chain peaks at {} bytes", [["stack_connect_pq"]]),
+    ("Its `ch_connect` peaks at {} bytes, through ML-KEM's decapsulation",
+     [["stack_connect_webpki"]]),
+    ("(`STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk,mlkem_decaps_hw,mlkem_keygen_dk_hw`) "
+     "the deepest chain is the chain walk into a P-384 verify, at {} bytes",
+     [["stack_connect_webpki_without_mlkem"]]),
+    ("(`STACK_MAKE='TRUST=webpki HOST_TARGET=' STACK_PRUNE=mlkem_decaps,mlkem_keygen_dk`) "
+     "its deepest chain is the chain walk into an RSA-4096 verify on 32-bit words, at {} bytes",
+     [["stack_connect_webpki_device_without_mlkem"]]),
+    ("`ch_srv_accept` peaks at {} bytes in the host object this host builds",
+     [["stack_accept_server"]]),
+    ("(`STACK_PRUNE=rsa_sign64_pss`) the deepest chain is the encapsulation to the "
+     "client's key into K-PKE encrypt and Keccak, at {} bytes",
+     [["stack_accept_server_without_rsa_sign64_pss"]]),
+    ("(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on the wide "
+     "P-256 field, at {} bytes",
+     [["stack_accept_server_without_rsa_sign64_pss_srv_kex_share"]]),
+    ("its `ch_srv_accept` peaks at {} bytes, through the encapsulation "
+     "(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",
+     [["stack_accept_server_device"]]),
+    ("There the signer's deepest chain is `rsa_sign.c`'s ladder, at {} bytes "
+     "(`STACK_PRUNE=srv_kex_share`)",
+     [["stack_accept_server_device_without_srv_kex_share"]]),
+    ("The call itself measures {} bytes of stack under both `TRUST=ca-rsa` and "
+     "`TRUST=ca-ecdsa`",
+     [["stack_pubkey_from_pem_ca_rsa", "stack_pubkey_from_pem_ca_ecdsa"]]),
+    ("On arm64 `bench/stack.py` measures {} bytes of stack for the chain call, {} for "
+     "the key call and {} for the bundle call",
+     [["stack_chain_from_pem"], ["stack_p256_key_from_pem"], ["stack_anchors_from_pem"]]),
+    ("its key call peaks at {} bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`)",
+     [["stack_p256_key_from_pem_device"]]),
+    ("So a host program gives the key call {} bytes of stack", [["stack_p256_key_from_pem"]]),
+]
+
 
 def render_insns(n):
     """Instruction count as the table writes it: thousands under a million."""
@@ -278,9 +321,9 @@ def check_restated(name, text, want):
 
 
 def check_memory(readme):
-    """Each Memory table row, and the prose that repeats a row's figure."""
+    """Each Memory table row, and the figures the Memory prose states."""
     sram = read_csv("bench/results-sram.csv", "bytes")
-    needed = [q for _, columns in MEMORY for cells in columns for q in cells]
+    needed = [q for _, columns in MEMORY + STACK_PROSE for cells in columns for q in cells]
     missing = sorted(set(q for q in needed if q not in sram))
     if missing:
         print("lint-bench-numbers: bench/results-sram.csv lacks %s" % ", ".join(missing))
@@ -297,11 +340,11 @@ def check_memory(readme):
             print("lint-bench-numbers: %r says %s; bench/results-sram.csv renders as %s"
                   % (label, " | ".join(got), " | ".join(want)))
             rc = 1
-    return rc | check_memory_prose(readme, sram)
+    return rc | check_memory_prose(readme, sram) | check_stack_prose(readme, sram)
 
 
 def check_memory_prose(readme, sram):
-    """The two Memory sentences that restate a table figure."""
+    """The two Memory sentences that state what rv32 saves."""
     rc = 0
     # "needs N bytes less than the host figure in either device build":
     # one N for the default and KEX=pq builds, so their differences must
@@ -327,15 +370,34 @@ def check_memory_prose(readme, sram):
               "(TRUST=webpki), the CSV says %d and %d"
               % (m.group(1), m_webpki.group(1), less, less_webpki))
         rc = 1
-    want = "{:,}".format(sram["stack_connect_pq"])
-    m = re.search(r"The whole chain peaks at ([0-9,]+) bytes", readme)
-    if not m:
-        print("lint-bench-numbers: docs/performance.md does not state the KEX=pq stack peak in prose")
-        rc = 1
-    elif m.group(1) != want:
-        print("lint-bench-numbers: docs/performance.md prose says the KEX=pq chain peaks at %s bytes, "
-              "the CSV says %s" % (m.group(1), want))
-        rc = 1
+    return rc
+
+
+def check_stack_prose(readme, sram):
+    """Each sentence of STACK_PROSE, wherever the Memory prose states it,
+    with each figure written as the prose writes a byte count."""
+    rc = 0
+    text = prose(readme)
+    for sentence, figures in STACK_PROSE:
+        for quantities in figures:
+            if len(set(sram[q] for q in quantities)) > 1:
+                print("lint-bench-numbers: bench/results-sram.csv measures %s as %s bytes, and "
+                      "docs/performance.md states one figure for them: %r"
+                      % (" and ".join(quantities),
+                         " and ".join(str(sram[q]) for q in quantities), sentence))
+                rc = 1
+        want = tuple("{:,}".format(sram[quantities[0]]) for quantities in figures)
+        pattern = "([0-9,]+)".join(re.escape(part) for part in sentence.split("{}"))
+        found = re.findall(pattern, text)
+        if not found:
+            print("lint-bench-numbers: docs/performance.md does not state %r" % sentence)
+            rc = 1
+        for got in found:
+            got = got if isinstance(got, tuple) else (got,)
+            if got != want:
+                print("lint-bench-numbers: docs/performance.md says %r; bench/results-sram.csv "
+                      "renders it as %r" % (sentence.format(*got), sentence.format(*want)))
+                rc = 1
     return rc
 
 
