@@ -51,13 +51,15 @@ Home: github.com/c4milo.
   (`srv_kex.[ch]`, docs/decisions.md 54 and 63). secp256r1 runs over the
   constant-time `p256_ecdh.[ch]`, never over `p256.[ch]`, which verifies
   public inputs and branches on them. ch_tls.group reports the group on
-  both sides. No X.509 parsing outside the certificate
-  files: the canonical DER reader in x509_der.[ch], the profile verifier
-  in x509.[ch] and the provisioning reader in x509_ca.[ch] under
-  the ca modes, and the chain verifier in webpki.[ch] with its pieces under
-  TRUST=webpki. x509_ca.[ch] reaches no verdict and no session reaches
-  it (pinned mode hashes
-  the certificate into the transcript, never reads it), no RFC 7250
+  both sides. No X.509 parsing outside the certificate files. These are
+  the canonical DER reader in x509_der.[ch], and the profile verifier in
+  x509.[ch] and the provisioning reader in x509_ca.[ch] under the ca
+  modes. They are also the chain verifier in webpki.[ch] with its pieces
+  under TRUST=webpki, and x509_pem.[ch] under a server role and
+  TRUST=webpki. x509_pem.[ch] reads the DER of the PEM files that an
+  operator holds. x509_ca.[ch] and x509_pem.[ch] return no verdict, and
+  no session calls them. Pinned mode hashes the certificate into the
+  transcript and never reads it. No RFC 7250
   raw-public-key certificate types outside TRUST=webpki (below), no
   0-RTT, no compression, no renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
@@ -228,8 +230,20 @@ Home: github.com/c4milo.
   on six 64-bit words, every session of a host object) +
   `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
-  `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
+  `pem.[ch]` with `base64.[ch]` (RFC 7468 armour of four labels,
+  CERTIFICATE, PRIVATE KEY, EC PRIVATE KEY and EC PARAMETERS, decode
+  only. The base64 text of a key file spells its scalar. So base64.c
+  gives each byte its RFC 4648 class in constant time: its value, or a
+  class above 63. The body loop branches on the class, never on the
+  byte) +
+  `pem_blocks.[ch]` (a run of CERTIFICATE blocks, one block a call, under
+  a chain file's strict text rule or a CA bundle's rule. The bundle's rule
+  skips text lines and refuses a BEGIN line of any other label) +
   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
+  `x509_pem.[ch]` (the DER of the PEM files: a certificate's outer fields
+  as far as its subject and key, a P-256 private key in PKCS #8 or SEC 1
+  form, and an EC PARAMETERS block that names prime256v1; a server role
+  and TRUST=webpki) +
   `x509.[ch]` (profiled certificate verify, the ca modes) +
   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
@@ -280,7 +294,23 @@ Home: github.com/c4milo.
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
   no library source reads it. A CA-mode build exports its
   `ch_pubkey_from_pem` as a fifth public call, which firmware calls
-  while provisioning and no session reaches. A second pair sits off the
+  while provisioning and no session calls. `pem_files.[ch]` sits off
+  the chain the same way. It decodes the files an operator holds. A PEM
+  certificate chain and a P-256 key file decode to what `ch_identity`
+  takes. A CA bundle decodes to what `ch_cfg.anchors` takes. It reads
+  `pem.[ch]`, `pem_blocks.[ch]`, `x509_pem.[ch]` and `p256_ecdh.[ch]`,
+  and no library source reads it. Every object with a server role
+  exports `ch_chain_from_pem` and `ch_p256_key_from_pem`. Every
+  TRUST=webpki object exports `ch_anchors_from_pem`. A program calls
+  them while it reads its files, and no session calls them. None does
+  I/O. Each reads bytes the caller read, and writes into rooms that the
+  caller gives and sizes: a DER room's length and an array's entries. A
+  call refuses a file that does not fit. No cap of this tree bounds a
+  bundle, and a chain holds at most the 255 certificates that
+  `chain_count` holds. The key call takes the session's `cpu` value and
+  wipes every
+  copy of the scalar it makes (docs/decisions.md 131). A third pair sits
+  off the
   chain the same way: `build.[ch]` (the build record — the axes, struct
   sizes and bounds the object was compiled with) reads the public
   headers, and no library source reads it. Every packaged object
@@ -289,9 +319,10 @@ Home: github.com/c4milo.
   `ch_build_info_tcp_nonblocking`, `ch_build_info_quic_nonblocking`;
   build.h maps `ch_build` to the one the consumer's defines select),
   which a consumer compares with its own headers through
-  `ch_build_matches` and no library call reads. `ch_srv_check` and
-  `ch_pubkey_from_pem` carry the transport in their symbol names the
-  same way, so one image links one object of each transport
+  `ch_build_matches` and no library call reads. `ch_srv_check`,
+  `ch_pubkey_from_pem` and the three PEM calls carry the transport in
+  their symbol names the same way. So one image links one object of
+  each transport
   (docs/decisions.md 56 and 61). The Makefile TRANSPORT variable names
   what TLS runs over and who does the I/O: `tcp-blocking` (default),
   `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62). Each
@@ -317,7 +348,8 @@ Home: github.com/c4milo.
   registers, end with VZEROALL, which writes zero to ymm0 to ymm15
   (docs/decisions.md 128 and 129); constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
-  poly1305's final reduction), never an `if`. A mask does not bind the
+  poly1305's final reduction, `base64.c`'s nine character ranges), never
+  an `if`. A mask does not bind the
   compiler: where it can prove a mask is all ones or zero it may write
   the mask as a choice and the choice as a jump, as clang for x86-64 did
   for a sign mask in x25519's `mul` and for a message bit in
@@ -356,9 +388,10 @@ Home: github.com/c4milo.
   fast paths beside the portable code, and each session picks among them
   from `ch_cfg.cpu`, the caller's description of its CPU in `cpu_cfg.h`'s
   bits. The caller probes the CPU and owns PSTATE.DIT and DOITM, and
-  chapulin probes nothing and sets no mode. Every init and `ch_srv_check`
-  refuse a value without `CH_CPU_PROBED` or with a bit the object does
-  not define for its architecture (`cpu.h`). A device object has no
+  chapulin probes nothing and sets no mode. Every init, `ch_srv_check`
+  and `ch_p256_key_from_pem` refuse a value without `CH_CPU_PROBED` or
+  with a bit the object does not define for its architecture (`cpu.h`).
+  The key call takes 0 alone in a device object. A device object has no
   `ch_cfg.cpu`, and the build record's `CH_BUILD_CPU_RUNTIME` tells the
   two layouts apart. No host object takes an `AES` or `WIDEMUL` value,
   and no object takes `X25519` or `CHACHA` (docs/decisions.md 89).
@@ -461,7 +494,10 @@ Home: github.com/c4milo.
   value does not pick `sha512_hw.c` (docs/decisions.md 93 and 127).
   `p256_sign_cpu`, the entry a
   host object's server signs through, hands the session's value to each
-  HMAC of its RFC 6979 nonce (docs/decisions.md 102). CBMC cannot read an
+  HMAC of its RFC 6979 nonce (docs/decisions.md 102).
+  `ch_p256_key_from_pem` computes a key's point on the wide P-256 field
+  under `CH_CPU_CONSTANT_TIME_MULTIPLY`, as `p256_sign_cpu` signs
+  (docs/decisions.md 131). CBMC cannot read an
   intrinsic, so the vector
   paths are held to the portable one by `bin/chacha20_equiv_test`, the RFC
   8439 vectors and the Wycheproof suite, on a CPU with their instructions
