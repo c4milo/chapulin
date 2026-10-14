@@ -5,12 +5,15 @@ Builds the sources the Makefile packages for one build with
 -fstack-usage, extracts the real call graph from the object code (the
 branch relocations `objdump -d -r` prints under every call and tail call
 in an arm64 or x86-64 Mach-O object), and walks the max-weight path under
-each public entry point. Two kinds of call add frames the walk cannot
-count, and the report names both rather than leave them out silently:
-calls through pointers, the caller's send/recv/on_ticket hooks, which the
-object code does not name; and calls to functions no object defines, in
-the C library or the image, such as memcpy and ch_rand_bytes, which have
-no .su line. Each peak leaves out their frames.
+each public entry point. A call through a volatile function pointer has
+no such relocation, so the walk reads its callee from the pointer's
+initializer in the preprocessed source. The stack wipes call their frames
+that way. Two kinds of call add frames the walk cannot count, and the
+report names both rather than leave them out silently: calls through
+other pointers, the caller's send/recv/on_ticket hooks, which the object
+code does not name; and calls to functions no object defines, in the C
+library or the image, such as memcpy and ch_rand_bytes, which have no .su
+line. Each peak leaves out their frames.
 """
 import os
 import re
@@ -77,6 +80,11 @@ class Arch(NamedTuple):
     calls: frozenset[str]
     jumps: frozenset[str]
     return_address: int  # bytes a call pushes that no frame's figure counts
+    # The branches to an address the code loaded: their mnemonics, and the
+    # text objdump prints at the start of the operand of each one.
+    register_calls: frozenset[str]
+    register_jumps: frozenset[str]
+    register_operand: str
 
 
 # The architectures this reads, by the file format objdump names. objdump
@@ -91,17 +99,34 @@ class Arch(NamedTuple):
 # the return address between the two frames, where neither figure counts
 # it. A jump is a tail call and pushes nothing. The caller holds no frame
 # by then, but the walk adds the caller's frame to the callee's depth
-# anyway, which can only overstate a peak.
+# anyway, which can only overstate a peak. A call through a pointer loads
+# the pointer and then branches to the address it holds: blr or br on
+# arm64, and on x86-64 a call or jmp whose operand, a register or a memory
+# address, objdump prints after a *. The relocation under the load names
+# the pointer, and on x86-64 the load can be the branch itself.
 ARCHES = {
     "mach-o arm64": Arch("ARM64_RELOC_BRANCH26", frozenset({"bl"}),
-                         frozenset({"b"}), 0),
+                         frozenset({"b"}), 0, frozenset({"blr"}), frozenset({"br"}), ""),
     "mach-o 64-bit x86-64": Arch("X86_64_RELOC_BRANCH", frozenset({"call", "callq"}),
-                                 frozenset({"jmp", "jmpq"}), 8),
+                                 frozenset({"jmp", "jmpq"}), 8, frozenset({"call", "callq"}),
+                                 frozenset({"jmp", "jmpq"}), "*"),
 }
 # An instruction line of objdump -d -r: address, encoding, mnemonic and
 # operands. objdump prints each relocation on a line of its own under the
 # instruction it applies to, as an address, a type and a symbol.
 INSTRUCTION = re.compile(r"^\s*([0-9a-f]+):\s[0-9a-f ]+\t(\S+)\s*(.*)$")
+RELOCATION = re.compile(r"^\s+[0-9a-f]+:\s+([A-Z0-9_]+)\s+(\S+)$")
+# The declarator of a function pointer whose qualifiers include volatile,
+# such as (*const volatile name)(. chapulin calls a function through such
+# a pointer so that the compiler cannot delete the call or compile the
+# callee into the caller (ct_wipe.c, p256_wide_wipe.c). The walk follows
+# the call to the function the pointer's initializer names, and stops on a
+# declaration of another form. Each one in the tree has this form:
+#     static void (*const volatile wipe_frame_call)(void) = wipe_frame;
+# A pointer declared through a typedef has no such declarator, and the
+# walk does not find it.
+VOLATILE_POINTER = re.compile(r"\(\s*\*\s*((?:(?:const|volatile)\s+)+)(\w+)\s*\)\s*\(")
+INITIALIZER = re.compile(r"[^()]*\)\s*=\s*(\w+)\s*;")
 
 
 def library() -> tuple[list[str], list[str]]:
@@ -138,10 +163,15 @@ def flags_of_its_own() -> dict[str, list[str]]:
 
 
 def build(tmp: Path, srcs: list[str], flags: list[str]) -> None:
+    """Compiles each source to an object in tmp, and writes the text the
+    preprocessor makes of it under the same flags beside the object, from
+    which object_edges reads the volatile function pointers."""
     own = flags_of_its_own()
     for src in srcs:
-        subprocess.run(["cc", *CFLAGS, *own.get(src, []), "-I", str(ROOT), "-c", str(ROOT / src),
-                        *flags], cwd=tmp, check=True, capture_output=True)
+        command = ["cc", *CFLAGS, *own.get(src, []), "-I", str(ROOT), str(ROOT / src), *flags]
+        subprocess.run([*command, "-c"], cwd=tmp, check=True, capture_output=True)
+        subprocess.run([*command, "-E", "-o", Path(src).with_suffix(".i").name], cwd=tmp,
+                       check=True, capture_output=True)
 
 
 def functions(obj: Path) -> list[tuple[int, str, str]]:
@@ -181,20 +211,50 @@ def architecture(obj: Path, listing: str) -> Arch:
     return ARCHES[name]
 
 
-def instructions(listing: str, arch: Arch) -> list[tuple[int, str, str, str | None]]:
-    """Each instruction's address, mnemonic and operands, and the symbol
-    the relocation under it names as a callee, or None."""
-    callee_line = re.compile(r"^\s+[0-9a-f]+:\s+" + re.escape(arch.relocation) + r"\s+(\S+)$")
+def instructions(listing: str, arch: Arch) -> list[tuple[int, str, str, str | None, list[str]]]:
+    """Each instruction's address, mnemonic and operands, the symbol the
+    relocation under it names as a callee, or None, and the symbols the
+    other relocations under it name."""
     out = []
     for line in listing.splitlines():
-        m = callee_line.match(line)
+        m = RELOCATION.match(line)
         if m and out:
-            out[-1] = (*out[-1][:3], m.group(1))
+            if m.group(1) == arch.relocation:
+                out[-1] = (*out[-1][:3], m.group(2), out[-1][4])
+            else:
+                out[-1][4].append(m.group(2))
             continue
         m = INSTRUCTION.match(line)
         if m:
-            out.append((int(m.group(1), 16), m.group(2), m.group(3), None))
+            out.append((int(m.group(1), 16), m.group(2), m.group(3), None, []))
     return out
+
+
+def volatile_pointers(text: str, name: str) -> dict[str, str]:
+    """Each volatile function pointer the preprocessed text declares, as
+    its symbol and the symbol of the function its initializer names. One
+    with no such initializer stops the script, because the walk cannot
+    name the function a call through it runs."""
+    out = {}
+    for m in VOLATILE_POINTER.finditer(text):
+        if "volatile" not in m.group(1).split():
+            continue
+        initializer = INITIALIZER.match(text, m.end())
+        if not initializer:
+            sys.exit(f"stack.py: {name} declares {m.group(2)}, a volatile function pointer "
+                     f"whose initializer names no function")
+        out["_" + m.group(2)] = "_" + initializer.group(1)
+    return out
+
+
+def preprocessed(obj: Path) -> str:
+    """The text the preprocessor made of obj's source, which build writes
+    beside the object."""
+    text = obj.with_suffix(".i")
+    if not text.exists():
+        sys.exit(f"stack.py: no {text.name} beside {obj.name}, so the walk cannot read the "
+                 f"volatile function pointers of its source")
+    return text.read_text()
 
 
 def owner(starts: list[tuple[int, str]], addr: int) -> str | None:
@@ -218,7 +278,12 @@ def object_edges(obj: Path, edges: dict[str, dict[str, int]]) -> Arch:
     # A relocation names a symbol: a static function when obj defines one
     # under it, and otherwise a global function.
     keys = {symbol: key for _, symbol, key in defined}
-    for addr, mnemonic, operands, callee in instructions(listing, arch):
+    pointers = volatile_pointers(preprocessed(obj), obj.with_suffix(".i").name)
+    # The callee of the volatile pointer each function loaded last, until
+    # the function branches to the address the pointer holds.
+    loaded: dict[str, str] = {}
+    used = set()
+    for addr, mnemonic, operands, callee, symbols in instructions(listing, arch):
         fn = owner(starts, addr)
         callees = edges.setdefault(fn, {})
         # A call or jump with no relocation names its own target: the
@@ -231,6 +296,24 @@ def object_edges(obj: Path, edges: dict[str, dict[str, int]]) -> Arch:
         if callee is not None and callee != fn:
             pushed = arch.return_address if mnemonic in arch.calls else 0
             callees[callee] = max(callees.get(callee, 0), pushed)
+        for symbol in symbols:
+            if symbol in pointers:
+                loaded[fn] = keys.get(pointers[symbol], pointers[symbol])
+                used.add(symbol)
+        if fn in loaded and operands.startswith(arch.register_operand) and \
+                mnemonic in arch.register_calls | arch.register_jumps:
+            pushed = arch.return_address if mnemonic in arch.register_calls else 0
+            target = loaded.pop(fn)
+            callees[target] = max(callees.get(target, 0), pushed)
+    # A load with no branch after it, or a pointer no instruction loads,
+    # means the walk misread a call, so the script stops.
+    if loaded:
+        sys.exit(f"stack.py: {', '.join(shown(fn) for fn in loaded)} loads a volatile function "
+                 f"pointer and makes no branch to a loaded address after it")
+    unused = sorted(set(pointers) - used)
+    if unused:
+        sys.exit(f"stack.py: {obj.name} holds {', '.join(s[1:] for s in unused)}, a volatile "
+                 f"function pointer that no instruction loads")
     return arch
 
 

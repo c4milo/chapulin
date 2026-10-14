@@ -1,0 +1,16 @@
+invariant: INV-19
+file: bench/stack.py
+catches: test/lint-stack-walk.sh
+reason: the walk adds no edge for a call through a volatile function
+  pointer, as it did before. The stack wipes call their frames that way,
+  so every peak above a wipe leaves the wipe's frame out. In a host
+  object the walk then put ch_p256_key_from_pem's peak at 1,472 bytes,
+  where the frames through p256_wide_wipe_below add up to 3,760, and the
+  ROLE=server SUITE=aesgcm ch_read peak at 2,192 bytes, where the frames
+  through sha512.c's wipe add up to 2,416.
+
+--- old
+            target = loaded.pop(fn)
+            callees[target] = max(callees.get(target, 0), pushed)
+--- new
+            target = loaded.pop(fn)

@@ -1496,14 +1496,16 @@ the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os: `rsa_pss_sign` 1,072 bytes,
 `rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at -O2 on
 arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the
 TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304.
-A host object's 64-bit signer is four frames on one chain, `rsa_sign64_pss`,
-`rsa_sign64_sp1`, `rsa_sign64_power` and `rsa_mont64_mont_square`, whose frame
-holds a copy of 2a (`docs/decisions.md` 106): under Apple clang 21 at -O2 on
-arm64 they are 1,152, 4,368, 3,408 and 912, so 9,840, at the bound of RSA-3072,
-and 1,408, 5,776, 4,496 and 1,168, so 12,848, at the bound of RSA-4096. That
-chain is the deepest of a host server object: `bench/sram.sh` measures
-`ch_srv_accept`'s peak at 11,840 bytes through it, where the encapsulation's
-chain takes 10,464 (`docs/performance.md`, "What the larger builds pay for").
+A host object's 64-bit signer is five frames on one chain: `rsa_sign64_pss`,
+`rsa_sign64_sp1`, `rsa_sign64_power`, `rsa_mont64_mont_square`, whose frame
+holds a copy of 2a (`docs/decisions.md` 106), and `rsa_mont64_blocks_square`,
+the square in blocks of four words that clang for arm64 runs (118). Under Apple
+clang 21 at -O2 on arm64 they are 1,152, 4,368, 3,408, 912 and 896, so 10,736,
+at the bound of RSA-3072, and 1,408, 5,776, 4,496, 1,168 and 1,152, so 14,000,
+at the bound of RSA-4096. That chain is the deepest of a host server object:
+`bench/sram.sh` measures `ch_srv_accept`'s peak at 12,736 bytes through it,
+where the encapsulation's chain takes 10,464 (`docs/performance.md`, "What the
+larger builds pay for").
 
 Two of those three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a
 device build, and the `ROLE=server` object packages `rsa_sign.c` now. The

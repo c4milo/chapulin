@@ -5453,7 +5453,10 @@ last `ROLE=server` stub, as the entry said it would.
   chain, follows a call and a tail call on a fixture, keeps two static
   functions of one name in two objects apart, names the calls it counts
   no frame for, and compiles the sources and the defines make packages
-  for the build it walks. `make check`
+  for the build it walks. It also checks that the script follows a call
+  and a tail call through a volatile function pointer to the function
+  the pointer's initializer names, as the stack wipes call their frames.
+  `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a target of its own, so plain `make
   check`, the target CI's `check` job runs, holds the 4,096-byte budget
@@ -5490,8 +5493,12 @@ last `ROLE=server` stub, as the entry said it would.
   bench/stack.py read the placeholder target objdump prints on a branch
   at a function's first instruction, as it once did,
   `inv19-stack-walk-static-callee-global` drops every call to a static
-  function, and `inv19-stack-walk-no-build-defines` compiles a
-  `TRUST=raw-ecdsa` walk without `-DCH_PIN_ECDSA`. A peak can read high
+  function, `inv19-stack-walk-no-build-defines` compiles a
+  `TRUST=raw-ecdsa` walk without `-DCH_PIN_ECDSA`, and
+  `inv19-stack-walk-volatile-pointer` drops every call through a volatile
+  function pointer, as the walk once did. That left each stack wipe's
+  frame out, and put `ch_p256_key_from_pem`'s peak at 1,472 bytes where
+  it is 3,760. A peak can read high
   as well. `inv19-stack-walk-static-by-symbol` merges the static
   functions of one name in several objects, and
   `inv19-stack-walk-extra-source` compiles a source the build does not

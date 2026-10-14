@@ -52,10 +52,16 @@ build's defines, and no other source. It treats static functions of one
 name in two objects as two functions: `p256.c` and `p384.c` each define
 a static `point_add`, with different frames. It counts a tail call like
 a call, adding the callee's depth to the caller's whole frame, which can
-only overstate a peak. `make lint-stack-walk` checks that it follows a
-tail call at a function's first instruction, keeps two static functions
-of one name apart, names the calls below that no object defines, and
-compiles what make packages. The RSA verify holds the deepest frames, so
+only overstate a peak. A call through a volatile function pointer has no
+relocation that names its callee. The script reads the callee from the
+pointer's initializer in the preprocessed source, and it stops on such a
+pointer that it cannot read. The stack wipes call their frames this way
+(`p256_wide_wipe.c`, `sha512.c`), so each peak above a wipe counts the
+array the wipe writes. `make lint-stack-walk` checks that the script
+follows a tail call at a function's first instruction and a call through
+a volatile function pointer, keeps two static functions of one name
+apart, names the calls below that no object defines, and compiles what
+make packages. The RSA verify holds the deepest frames, so
 it sets the `ch_connect` peak in the default build; it runs once per
 ticket lifetime, and every byte unwinds before `ch_connect` returns.
 
@@ -84,8 +90,8 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (`KEX=pq`) | 16000 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_write` / `ch_close` | 944 / 896 |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 11840 |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12016 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 12736 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 12912 |
 
 ### What the larger builds pay for
 
@@ -127,20 +133,24 @@ is the widest modulus a public root carries.
 server holds the hybrid ([`docs/decisions.md`](decisions.md) 54). Its
 ServerHello is built in the clear in the same staging array, and the
 hybrid one carries a 1,120-byte share, so the array holds 1,216 bytes of
-message behind the record header. `ch_srv_accept` peaks at 11,840
+message behind the record header. `ch_srv_accept` peaks at 12,736
 bytes in the host object this host builds, through `rsa_sign64.c`'s
 RSA-PSS signer, which holds a modulus record for each prime, the
 signature it checks and a table of sixteen powers
-([`docs/decisions.md`](decisions.md) 95), and whose square holds a copy
-of 2a (106). With that signer pruned from
-the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest chain is the
-encapsulation to the client's key into K-PKE encrypt and Keccak, at
-10,464 bytes, and with the encapsulation pruned as well
-(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is `rsa_sign.c`'s
-ladder, at 5,376. A device object holds the ladder alone: its
-`ch_srv_accept` peaks at 10,432 bytes, through the encapsulation, and
-its signer's chain takes 5,280
-(`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
+([`docs/decisions.md`](decisions.md) 95). Its square holds a copy of 2a
+(106) and calls `rsa_mont64_blocks.c`'s square, which multiplies in
+blocks of four words under clang for arm64 (118). With that signer
+pruned from the call graph (`STACK_PRUNE=rsa_sign64_pss`) the deepest
+chain is the encapsulation to the client's key into K-PKE encrypt and
+Keccak, at 10,464 bytes. With the encapsulation pruned as well
+(`STACK_PRUNE=rsa_sign64_pss,srv_kex_share`) it is the ECDSA signer on
+the wide P-256 field, at 5,744 bytes. After each wide operation,
+`p256_wide_wipe_below` writes zero over the stack below it, in a frame
+of 3,120 bytes. A device object holds neither the 64-bit signer nor the
+wide field: its `ch_srv_accept` peaks at 10,432 bytes, through the
+encapsulation (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`).
+There the signer's deepest chain is `rsa_sign.c`'s ladder, at 5,280
+bytes (`STACK_PRUNE=srv_kex_share`).
 
 **`SUITE=aesgcm`.** `bench/sram.sh` measures a `SUITE=aesgcm` build as the
 host object this host builds for it ([`docs/decisions.md`](decisions.md)
@@ -205,9 +215,9 @@ is live between calls:
 
 The scratch must not be `cfg.buf` while a session is live: `ch_read`
 serves unread plaintext out of that buffer across calls. The call
-itself measures 576 bytes of stack under `TRUST=ca-rsa` and 496 under
+itself measures 640 bytes of stack under both `TRUST=ca-rsa` and
 `TRUST=ca-ecdsa`, reported by `bench/stack.py` beside the other public
-calls.
+calls. Its deepest chain is the read of the PEM block's lines.
 
 The three calls of `pem_files.h` (decision 131) take their rooms from the
 caller the same way. A host program reads each file into a buffer of its
@@ -229,28 +239,18 @@ bytes of DER and 192 anchors, 6,144 bytes of entries. The QUIC Interop
 Runner's chain of nine certificates is 9,661 bytes of DER.
 
 On arm64 `bench/stack.py` measures 592 bytes of stack for the chain
-call, 1,472 for the key call and 560 for the bundle call. It reports
+call, 3,760 for the key call and 560 for the bundle call. It reports
 them for `ROLE=server TRUST=none`, `TRUST=webpki` and `ROLE=both
-TRUST=webpki`. The chain call's peak is the read of each certificate's
-outer fields.
+TRUST=webpki`, the host objects this host builds. The chain call's peak
+is the read of each certificate's outer fields.
 
-The key call's figure leaves out one frame. Under
+The key call's deepest chain ends in a stack wipe. Under
 `CH_CPU_CONSTANT_TIME_MULTIPLY` the call computes the point on the wide
 P-256 field. After each wide operation, `p256_wide_wipe_below` writes
 zero over an array of 3,072 bytes (`P256_WIDE_BELOW_LEN`) in a frame of
-its own. It calls that frame through a volatile function pointer, and
-the walk follows no pointer. So a stack probe measured the key call. It
-filled the stack below a caller and found the deepest byte that the call
-wrote. Apple clang at `-O2` gave these depths:
-
-| object and `cpu` value | stack |
-|---|---:|
-| host object, `CH_CPU_PROBED` and `CH_CPU_CONSTANT_TIME_MULTIPLY` | 3,712 |
-| host object, `CH_CPU_PROBED` alone | 1,352 |
-| device object, 0 | 1,304 |
-
-So a host program that states the multiply bit gives the key call
-3,712 bytes of stack.
+3,120. A device object holds no wide field, and its key call peaks at
+1,376 bytes (`STACK_MAKE='ROLE=server TRUST=none HOST_TARGET='`). So a
+host program gives the key call 3,760 bytes of stack.
 
 ### Compared with other libraries
 

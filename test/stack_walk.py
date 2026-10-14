@@ -23,11 +23,21 @@ each with the frames the .su files give:
   mont_mul() under a TRUST=raw-ecdsa build's p256_ecdsa_verify(), so
   that build's ch_connect peak read 720 bytes high.
 
+- wiped() calls wipe_frame() through a volatile function pointer, and
+  wiped_tail() jumps to it through the same pointer, as the stack wipes
+  of p256_wide_wipe.c and sha512.c do. No relocation names the callee of
+  such a call, and the walk once added no edge for it, so it left the
+  wipes' frames out of every peak. In a host object that put
+  ch_p256_key_from_pem's peak at 1,472 bytes, where the frames through
+  p256_wide_wipe_below add up to 3,760.
+
 It also requires the walks to name sink(), which no object defines, as
 the one call they count no frame for, STACK_PRUNE to take out one static
-helper() by the name the report prints, and stack.py's main() to compile
-the sources make packages for the build it walks, with the defines make
-packages them with.
+helper() by the name the report prints, the script to stop on a volatile
+function pointer whose initializer names no function and on one that no
+instruction loads, and stack.py's main() to compile the sources make
+packages for the build it walks, with the defines make packages them
+with.
 
 CLANG names the compiler, and STACK_NM and STACK_OBJDUMP the tools the
 script reads with. make lint-stack-walk passes the pinned LLVM ones,
@@ -99,7 +109,32 @@ void narrow(void) {
 }
 """
 
-SOURCES = {"fixture.c": FIXTURE, "wide.c": WIDE, "narrow.c": NARROW}
+# wiped() calls wipe_frame() through the pointer and calls sink() after
+# it, so the call stays a call. wiped_tail() does nothing but the call,
+# so clang compiles it to a jump through the pointer.
+WIPED = """\
+void sink(volatile unsigned char *p);
+
+static void wipe_frame(void) {
+    volatile unsigned char below[1024];
+    sink(below);
+}
+
+static void (*const volatile wipe_frame_call)(void) = wipe_frame;
+
+void wiped(void) {
+    volatile unsigned char buf[32];
+    sink(buf);
+    wipe_frame_call();
+    sink(buf);
+}
+
+void wiped_tail(void) {
+    wipe_frame_call();
+}
+"""
+
+SOURCES = {"fixture.c": FIXTURE, "wide.c": WIDE, "narrow.c": NARROW, "wiped.c": WIPED}
 
 # Each walk the check requires: its entry point, the functions on its
 # deepest path, each as the object whose .su file gives its frame and its
@@ -112,6 +147,9 @@ WALKS = [
     ("wide", [("wide", "wide"), ("wide", "helper"), ("fixture", "deep")], 2,
      "wide > wide.o:helper > deep"),
     ("narrow", [("narrow", "narrow"), ("narrow", "helper")], 1, "narrow > narrow.o:helper"),
+    ("wiped", [("wiped", "wiped"), ("wiped", "wipe_frame")], 1, "wiped > wiped.o:wipe_frame"),
+    ("wiped_tail", [("wiped", "wiped_tail"), ("wiped", "wipe_frame")], 0,
+     "wiped_tail > wiped.o:wipe_frame"),
 ]
 
 # The target, its flags beyond the script's, and the bytes a call pushes
@@ -148,10 +186,15 @@ def check(stack, clang: str, triple: str, flags: list[str], pushed: int) -> bool
         # clang calls __stack_chk_fail by default for a Darwin target, and
         # -fno-stack-protector leaves sink() the one function the fixture
         # calls and does not define.
+        # The script reads the volatile function pointers from the text the
+        # preprocessor makes of each source, beside its object.
         for name, text in SOURCES.items():
             (tmp / name).write_text(text)
-            subprocess.run([clang, f"--target={triple}", *stack.CFLAGS, *flags,
-                            "-fno-stack-protector", "-c", name], cwd=tmp, check=True)
+            command = [clang, f"--target={triple}", *stack.CFLAGS, *flags, "-fno-stack-protector",
+                       name]
+            subprocess.run([*command, "-c"], cwd=tmp, check=True)
+            subprocess.run([*command, "-E", "-o", Path(name).with_suffix(".i").name], cwd=tmp,
+                           check=True)
         su = su_frames(tmp)
         frames = stack.frames(tmp)
         edges, entry_pushed = stack.callgraph(tmp)
@@ -166,6 +209,14 @@ def check(stack, clang: str, triple: str, flags: list[str], pushed: int) -> bool
         accepted = stopped(lambda: stack.prune(frames, edges, ["narrow.o:helper"]))
         pruned = [stack.deepest("_" + entry, frames, edges, ())[0] for entry in ("wide", "narrow")]
         refused = stopped(lambda: stack.prune(frames, edges, ["helper"]))
+        # A pointer the walk cannot follow stops the script: one whose
+        # initializer names no function, and one that no instruction of
+        # its object loads.
+        hook = stopped(lambda: stack.volatile_pointers("extern void (*volatile hook)(void);",
+                                                       "hook.i"))
+        with open(tmp / "narrow.i", "a") as text:
+            text.write("static void (*const volatile unused_call)(void) = helper;\n")
+        unused = stopped(lambda: stack.object_edges(tmp / "narrow.o", {}))
     ok = entry_pushed == pushed
     if not ok:
         print(f"lint-stack-walk: {triple}: a call pushes {entry_pushed} B; want {pushed} B")
@@ -194,6 +245,14 @@ def check(stack, clang: str, triple: str, flags: list[str], pushed: int) -> bool
         print(f"lint-stack-walk: {triple}: pruning helper prints {refused}; want the "
               f"message that STACK_PRUNE names no function called helper")
         ok = False
+    stops = [(hook, "stack.py: hook.i declares hook, a volatile function pointer whose "
+                    "initializer names no function"),
+             (unused, "stack.py: narrow.o holds unused_call, a volatile function pointer that "
+                      "no instruction loads")]
+    for got, want in stops:
+        if got != want:
+            print(f"lint-stack-walk: {triple}: the script prints {got}; want {want}")
+            ok = False
     return ok
 
 
