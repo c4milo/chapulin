@@ -7,11 +7,13 @@
 # a percent off the runner's reading. Record what the nightly's own
 # table prints, not a local measurement.
 # proof/coverage.py builds that command from proof/run.sh: the launch
-# line's own sources and flags, then the -D flags launch() adds to every
-# harness. `python3 -u proof/coverage.py --reach --only NAME` measures one
-# harness that way and prints the command it ran, so a floor recorded by
-# hand and the nightly's number come from one command. From 6552715,
-# which added -DCH_NATIVE_WIDEMUL to launch(), until
+# line's own sources and flags, then the -D flags launch() adds to that
+# harness. Those are -DCH_RAND_EXTERN, and -DCH_NATIVE_WIDEMUL for each
+# harness outside a host object, whose launch line does not pass
+# -DCH_CPU_RUNTIME. `python3 -u proof/coverage.py --reach --only NAME`
+# measures one harness that way and prints the command it ran, so a
+# floor recorded by hand and the nightly's number come from one command.
+# From 6552715, which added -DCH_NATIVE_WIDEMUL to launch(), until
 # https://github.com/c4milo/chapulin/issues/113 the cover command left
 # that define out, so the nightly measured poly1305 on ct.h's 16x16
 # decomposition and held it to a floor recorded on the native multiply
@@ -19,6 +21,16 @@
 # form of ct_widemul is one block, so poly1305 measured 149 of 158
 # (94.3%) under both commands on 2026-09-02: the fix moved the command,
 # not a floor.
+#
+# The define dropped out a second time. 82a1e071 moved it from launch()'s
+# args to its widemul_def on 2026-10-03, and proof/coverage.py read args
+# alone until 2026-10-17. Without the define, seven x25519 harnesses
+# counted one more location of ct.h's 16x16 decomposition, and reached
+# one or two more. Run 39059024456 read x25519_tail at 52.6% (110/209)
+# that way. With the define, run 39075335784 read 52.2% (108/207), the
+# floor that bea733df recorded under the define. No other count moved:
+# for every other harness that both runs measured, they printed the same
+# number.
 #
 # The cover command also passes --slice-formula, as run.sh does for every
 # proof. Until 2026-10-01 it did not, so a cover formula kept every value

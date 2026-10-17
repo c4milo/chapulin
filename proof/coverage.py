@@ -97,12 +97,16 @@ def launch_lines():
 
 
 def launch_defines():
-    """The -D flags run.sh's launch() adds to every harness, in order.
+    """The -D flags run.sh's launch() adds to a harness, as (every,
+    widemul, host). launch() adds every, the -D flags of its
+    `local args=(...)`, to each harness. It adds widemul, its
+    `widemul_def`, to each harness whose launch line does not pass host,
+    the define of a host object. added_defines() applies that rule.
 
     Read from run.sh, not kept as a second list here. run.sh is the one
     statement of what each proof compiles: a launch line carries the
-    flags one harness needs, and launch() adds the ones every harness
-    shares. A copy here drifted once: it named -DCH_RAND_EXTERN and left
+    flags one harness needs, and launch() adds the ones the harnesses
+    share. A copy here drifted once: it named -DCH_RAND_EXTERN and left
     out -DCH_NATIVE_WIDEMUL, which 6552715 added to launch(). From then
     on the nightly measured poly1305 on the 16x16 decomposition in ct.h
     and held it to a floor recorded on the native multiply its proof
@@ -111,16 +115,35 @@ def launch_defines():
     each flag from the launch() comment that says why it is there, and
     this script already reads run.sh for the launch lines.
 
+    The define drifted out a second time. 82a1e071 moved it from
+    `local args=(...)` to `widemul_def`, because ct.h refuses it in a
+    host object, and this function read `args` alone. From then the
+    cover command of each harness outside a host object left it out,
+    until this function read `widemul_def` too.
+
     ctwidemul needs no exception: launch() passes it -DCH_NATIVE_WIDEMUL
-    like every other harness, and its source defines CH_CT_WIDEMUL,
-    which ct.h lets win. The cover command copies that, not a rule."""
+    like every other harness outside a host object, and its source
+    defines CH_CT_WIDEMUL, which ct.h lets win. The cover command copies
+    that, not a rule."""
     text = (ROOT / "proof" / "run.sh").read_text()
     m = re.search(r"local args=\((.*?)\)", text, re.S)
-    defines = re.findall(r"(-D\S+)", m.group(1)) if m else []
-    if not defines:
-        sys.exit("proof-coverage: no -D flag found in run.sh's launch() "
-                 "`local args=(...)`; update launch_defines()")
-    return defines
+    every = re.findall(r"(-D\S+)", m.group(1)) if m else []
+    widemul = re.search(r'local widemul_def="(-D[^"\s]+)"', text)
+    host = re.search(r'if \[ "\$arg" = "(-D[^"\s]+)" \]; then\s+widemul_def=""', text)
+    if not every or not widemul or not host:
+        sys.exit("proof-coverage: run.sh's launch() no longer holds a -D flag in "
+                 "`local args=(...)`, a `local widemul_def=\"-D...\"` and the "
+                 "arm that sets it to \"\" for a host define; update "
+                 "launch_defines()")
+    return every, widemul.group(1), host.group(1)
+
+
+def added_defines(shared, flags):
+    """The -D flags launch() adds to a harness whose launch line passes
+    flags, in run.sh's order: shared's every, then its widemul unless
+    flags hold its host define. shared is what launch_defines() returns."""
+    every, widemul, host = shared
+    return every + ([] if host in flags else [widemul])
 
 
 def included_harnesses():
@@ -615,7 +638,7 @@ def reach_command(name, runs, shared_defines, solver=None, object_bits=None):
     _tier, unwind, linked, unwindset, defines = runs[name]
     cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
     cmd += [str(ROOT / src) for src in sorted(linked)]
-    cmd += [*defines, *shared_defines, "-I", str(ROOT),
+    cmd += [*defines, *added_defines(shared_defines, defines), "-I", str(ROOT),
             "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
     if unwindset:
         cmd += ["--unwindset", unwindset]
