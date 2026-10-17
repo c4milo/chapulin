@@ -44,7 +44,10 @@
 #
 # One "name percent" line per harness, and an optional budget=SECONDS field
 # for a harness whose cover run needs longer than proof/coverage.py's
-# REACH_BUDGET_S. A harness absent from this file is
+# REACH_BUDGET_S. An optional solver=cadical field names the SAT solver of
+# a harness whose cover run does not converge on cbmc's default solver,
+# MiniSat 2. REACH_SOLVERS in proof/coverage.py says why the field exists
+# and why CaDiCaL is not the default. A harness absent from this file is
 # measured and reported but carries no floor; the nightly publishes the
 # table, so adding a line is a matter of copying the number it printed.
 # The table is on the run page of the nightly's merge-reach-table job,
@@ -149,6 +152,16 @@ quic_initial 98.8
 # framing rather than a keystream.
 quic_packet 75.8
 record 95.0
+# The six rsa_mont lines took their floors on 2026-10-17 from the
+# nightly runner, under the cover command with --sat-solver cadical. Each
+# took 28 s to 118 s there, and on MiniSat each returned no number in
+# 3000 s. The webpki variants peak at 7.7 GB of the runner's 16 GB.
+rsa_mont_host 28.0 solver=cadical
+rsa_mont_host_webpki 28.0 solver=cadical
+rsa_mont_power 14.3 solver=cadical
+rsa_mont_power_avx2 14.3 solver=cadical
+rsa_mont_power_avx2_webpki 14.3 solver=cadical
+rsa_mont_power_webpki 14.3 solver=cadical
 rsa_mul 32.3
 rsa_mul_webpki 32.3
 rsa_pkcs1 90.3
@@ -161,6 +174,10 @@ rsa_webpki 91.7
 sha3_round 64.1
 sha512 90.9
 sha512_compress 97.1
+# sha512_compress_blocks_advancing took its floor on 2026-10-17 from the
+# nightly runner, on CaDiCaL in 1 s. On MiniSat its cover run returned no
+# number in 1800 s.
+sha512_compress_blocks_advancing 52.2 solver=cadical
 softmul 91.3
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose

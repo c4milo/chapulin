@@ -386,11 +386,51 @@ def main():
         return 1
 
 
+# The SAT solvers a floor line can name in a solver= field. A cover run
+# whose line names none runs on cbmc's default solver, MiniSat 2.
+#
+# run.sh proves under kissat through --external-sat-solver, and cbmc
+# 6.11.0 refuses that flag with --cover. A cover run asks the solver
+# about one formula again for each set of goals that stays open, so cbmc
+# needs a solver that keeps the formula between those calls. For an
+# external solver it stops with "the chosen solver does not support
+# incremental solving". CaDiCaL is in the pinned cbmc release, and it
+# keeps the formula.
+#
+# A goal is covered when the path to it is satisfiable, and each solver
+# decides that for the same formula. So the solver changes the time and
+# the memory of a cover run, not its count. On the nightly runner on
+# 2026-10-17, CaDiCaL printed MiniSat's count for each of the 201
+# harnesses where both solvers printed a number.
+#
+# MiniSat returned no number for rsa_mont_host, rsa_mont_power,
+# rsa_mont_power_avx2 and their webpki variants: in 3000 s, and in 2800 s
+# without its simplifier. Its first query did not return. Their proofs
+# take MiniSat 14 s to 71 s on that runner, because the two formulas ask
+# different questions. rsa_mont_power's proof formula holds 21.8 million
+# clauses, and simplification leaves 84 of its 271,704 checks, which the
+# solver refutes in under a millisecond. Its cover formula holds 28.3
+# million clauses and 48,033 goal instances: the unwound loops copy the
+# 336 goals that the reach table counts. The first query asks for one
+# path to any of them. CaDiCaL finds that path in 1.8 s and measures the
+# harness in 31 s. It measures the other five in 28 s to 118 s, and
+# sha512_compress_blocks_advancing, where MiniSat stopped at 1800 s, in
+# 1 s.
+#
+# CaDiCaL is not the default, because it takes more time or memory on
+# some harnesses. It ran out of memory at 12.2 GB on rsa_ifma_sign_power,
+# which MiniSat measures in 994 s. It took 1707 s on webpki_ext_walk,
+# where MiniSat takes 744 s.
+REACH_SOLVERS = ("cadical",)
+
+
 def floor_lines():
-    """(harness, floor, budget) for every line of reach-floors.txt. budget
-    is the cover run's own wall-clock limit in seconds, from an optional
-    budget=SECONDS field, or None when the line carries none and
-    REACH_BUDGET_S applies."""
+    """(harness, floor, budget, solver) for every line of reach-floors.txt.
+    budget is the cover run's own wall-clock limit in seconds, from an
+    optional budget=SECONDS field, or None when the line carries none and
+    REACH_BUDGET_S applies. solver is the cover run's SAT solver, from an
+    optional solver=NAME field that names one of REACH_SOLVERS, or None
+    when the line carries none and cbmc's default solver applies."""
     path = ROOT / "proof" / "reach-floors.txt"
     if not path.exists():
         return []
@@ -401,24 +441,36 @@ def floor_lines():
             continue
         name, pct, *extra = line.split()
         budget = None
+        solver = None
         for field in extra:
-            if not field.startswith("budget="):
+            key, _, value = field.partition("=")
+            if key == "budget":
+                budget = int(value)
+            elif key == "solver" and value in REACH_SOLVERS:
+                solver = value
+            else:
                 sys.exit(f"proof-coverage: reach-floors.txt gives {name} the field "
-                         f"{field!r}; a line is name, percent and an optional budget=SECONDS")
-            budget = int(field[len("budget="):])
-        entries.append((name, float(pct), budget))
+                         f"{field!r}; a line is name, percent and the optional fields "
+                         f"budget=SECONDS and solver={'|'.join(REACH_SOLVERS)}")
+        entries.append((name, float(pct), budget, solver))
     return entries
 
 
 def reach_floors():
     """Harness -> the lowest reach share it is allowed to report."""
-    return {name: pct for name, pct, _ in floor_lines()}
+    return {name: pct for name, pct, _, _ in floor_lines()}
 
 
 def reach_budgets():
     """Harness -> its cover run's wall-clock limit in seconds, for the
     harnesses whose line names one."""
-    return {name: budget for name, _, budget in floor_lines() if budget is not None}
+    return {name: budget for name, _, budget, _ in floor_lines() if budget is not None}
+
+
+def reach_solvers():
+    """Harness -> its cover run's SAT solver, for the harnesses whose line
+    names one."""
+    return {name: solver for name, _, _, solver in floor_lines() if solver is not None}
 
 
 def reach_not_gated():
@@ -516,9 +568,10 @@ def cap_address_space(cap):
     resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
 
 
-def reach_command(name, runs, shared_defines):
+def reach_command(name, runs, shared_defines, solver=None):
     """The cover command for one harness: what its launch line links and
-    bounds, then the defines launch() adds, in run.sh's order.
+    bounds, then the defines launch() adds, in run.sh's order, and the SAT
+    solver its floor line names, if it names one (REACH_SOLVERS).
 
     --slice-formula is the flag run.sh's BASE passes every proof. A cover
     goal is covered when the path to it is satisfiable, and the slicer
@@ -537,6 +590,8 @@ def reach_command(name, runs, shared_defines):
             "--cover", "location", "--slice-formula", "--unwind", str(unwind)]
     if unwindset:
         cmd += ["--unwindset", unwindset]
+    if solver:
+        cmd += ["--sat-solver", solver]
     return cmd
 
 
@@ -604,6 +659,7 @@ def reach_table(runs, names, only=frozenset(), shard=None):
     stale = []
     floors = reach_floors()
     budgets = reach_budgets()
+    solvers = reach_solvers()
     not_gated = reach_not_gated()
     shared_defines = launch_defines()
     cap = reach_memory_cap()
@@ -615,7 +671,7 @@ def reach_table(runs, names, only=frozenset(), shard=None):
                        "(proof/reach-floors.txt) |")
             print(f"proof-reach: {name} carries no floor, skipped", flush=True)
             continue
-        cmd = reach_command(name, runs, shared_defines)
+        cmd = reach_command(name, runs, shared_defines, solvers.get(name))
         # The log carries the exact command, so a floor can be re-measured
         # by hand under the flags the cover command used and not a
         # reconstruction.
