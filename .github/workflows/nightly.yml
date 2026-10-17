@@ -34,13 +34,16 @@ jobs:
   # harnesses. Each also reads docs/verification.md back against
   # proof/run.sh, so a page that disagrees fails all three.
   #
-  # The estimate for each job takes a harness's time from the last log
-  # that measured it: run 39014749963, else run 37448350680. It counts
-  # 1800 s for each of those six harnesses, and 1800 s for each of the
-  # nine harnesses that neither log reached. That gives 294, 223 and 182
-  # minutes for parts 1, 2 and 3. If the nine take seconds, part 1 takes
-  # 174 minutes. The limit sits above the worst case, and below the 360
-  # minutes that GitHub gives a job on a hosted runner.
+  # With the floors and the skips that proof/reach-floors.txt holds now,
+  # runs 39059024456 and 39075335784 on 2026-10-17 took 96 and 111
+  # minutes for part 1, 114 and 126 for part 2, and 70 and 68 for part 3.
+  # In the second run, rsa_ifma_sign_power, which carries no floor, ran to
+  # the 1800 s budget of a cover run, and in the first it took 1505 s. A
+  # part that the limit stops writes no table, so the limit leaves room
+  # for more such runs. 330 minutes is 2.6 times part 2's 126, and the 204
+  # minutes between them hold about seven more cover runs to that budget.
+  # The limit stays below the 360 minutes that GitHub gives a job on a
+  # hosted runner.
   proof-reach:
     runs-on: ubuntu-24.04
     timeout-minutes: 330

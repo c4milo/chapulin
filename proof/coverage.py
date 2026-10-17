@@ -423,14 +423,30 @@ def main():
 # where MiniSat takes 744 s.
 REACH_SOLVERS = ("cadical",)
 
+# A floor line's object_bits=N field adds --object-bits N to the cover
+# command of that harness alone. cbmc writes an object's number in the
+# top bits of each pointer, 8 by default, so a formula can hold about 256
+# objects. A formula with more stops with "too many addressed objects".
+# On the nightly runner on 2026-10-17, the three rsa_avx2_chain cover
+# runs stopped that way, while their proofs need no such flag (run
+# 39056264441). With N bits for the number, 64 - N bits remain for the
+# offset in an object. The objects of those three harnesses are a few
+# kilobytes, far below what 54 offset bits address. So for them the field
+# changes the encoding of a pointer and no goal's answer. A launch line
+# that passes --object-bits gives it to its cover command already, so its
+# floor line cannot name the field too.
+REACH_DEFAULT_OBJECT_BITS = 8
+
 
 def floor_lines():
-    """(harness, floor, budget, solver) for every line of reach-floors.txt.
-    budget is the cover run's own wall-clock limit in seconds, from an
-    optional budget=SECONDS field, or None when the line carries none and
-    REACH_BUDGET_S applies. solver is the cover run's SAT solver, from an
-    optional solver=NAME field that names one of REACH_SOLVERS, or None
-    when the line carries none and cbmc's default solver applies."""
+    """(harness, floor, budget, solver, object_bits) for every line of
+    reach-floors.txt. budget is the cover run's own wall-clock limit in
+    seconds, from an optional budget=SECONDS field, or None when the line
+    carries none and REACH_BUDGET_S applies. solver is the cover run's SAT
+    solver, from an optional solver=NAME field that names one of
+    REACH_SOLVERS, or None when the line carries none and cbmc's default
+    solver applies. object_bits is the cover run's --object-bits, from an
+    optional object_bits=N field, or None when the line carries none."""
     path = ROOT / "proof" / "reach-floors.txt"
     if not path.exists():
         return []
@@ -442,35 +458,47 @@ def floor_lines():
         name, pct, *extra = line.split()
         budget = None
         solver = None
+        object_bits = None
         for field in extra:
             key, _, value = field.partition("=")
             if key == "budget":
                 budget = int(value)
             elif key == "solver" and value in REACH_SOLVERS:
                 solver = value
+            elif (key == "object_bits" and value.isdigit()
+                  and int(value) > REACH_DEFAULT_OBJECT_BITS):
+                object_bits = int(value)
             else:
                 sys.exit(f"proof-coverage: reach-floors.txt gives {name} the field "
                          f"{field!r}; a line is name, percent and the optional fields "
-                         f"budget=SECONDS and solver={'|'.join(REACH_SOLVERS)}")
-        entries.append((name, float(pct), budget, solver))
+                         f"budget=SECONDS, solver={'|'.join(REACH_SOLVERS)} and "
+                         f"object_bits=N, with N above cbmc's default of "
+                         f"{REACH_DEFAULT_OBJECT_BITS}")
+        entries.append((name, float(pct), budget, solver, object_bits))
     return entries
 
 
 def reach_floors():
     """Harness -> the lowest reach share it is allowed to report."""
-    return {name: pct for name, pct, _, _ in floor_lines()}
+    return {name: pct for name, pct, _, _, _ in floor_lines()}
 
 
 def reach_budgets():
     """Harness -> its cover run's wall-clock limit in seconds, for the
     harnesses whose line names one."""
-    return {name: budget for name, _, budget, _ in floor_lines() if budget is not None}
+    return {name: budget for name, _, budget, _, _ in floor_lines() if budget is not None}
 
 
 def reach_solvers():
     """Harness -> its cover run's SAT solver, for the harnesses whose line
     names one."""
-    return {name: solver for name, _, _, solver in floor_lines() if solver is not None}
+    return {name: solver for name, _, _, solver, _ in floor_lines() if solver is not None}
+
+
+def reach_object_bits():
+    """Harness -> its cover run's --object-bits, for the harnesses whose
+    line names one."""
+    return {name: bits for name, _, _, _, bits in floor_lines() if bits is not None}
 
 
 def reach_not_gated():
@@ -568,10 +596,11 @@ def cap_address_space(cap):
     resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
 
 
-def reach_command(name, runs, shared_defines, solver=None):
+def reach_command(name, runs, shared_defines, solver=None, object_bits=None):
     """The cover command for one harness: what its launch line links and
     bounds, then the defines launch() adds, in run.sh's order, and the SAT
-    solver its floor line names, if it names one (REACH_SOLVERS).
+    solver and the --object-bits its floor line names, if it names them
+    (REACH_SOLVERS, REACH_DEFAULT_OBJECT_BITS).
 
     --slice-formula is the flag run.sh's BASE passes every proof. A cover
     goal is covered when the path to it is satisfiable, and the slicer
@@ -592,6 +621,12 @@ def reach_command(name, runs, shared_defines, solver=None):
         cmd += ["--unwindset", unwindset]
     if solver:
         cmd += ["--sat-solver", solver]
+    if object_bits is not None:
+        if "--object-bits" in defines:
+            sys.exit(f"proof-coverage: {name}'s launch line passes --object-bits, "
+                     "and its line in reach-floors.txt names object_bits too; "
+                     "keep the launch line's")
+        cmd += ["--object-bits", str(object_bits)]
     return cmd
 
 
@@ -660,6 +695,7 @@ def reach_table(runs, names, only=frozenset(), shard=None):
     floors = reach_floors()
     budgets = reach_budgets()
     solvers = reach_solvers()
+    object_bits = reach_object_bits()
     not_gated = reach_not_gated()
     shared_defines = launch_defines()
     cap = reach_memory_cap()
@@ -671,7 +707,8 @@ def reach_table(runs, names, only=frozenset(), shard=None):
                        "(proof/reach-floors.txt) |")
             print(f"proof-reach: {name} carries no floor, skipped", flush=True)
             continue
-        cmd = reach_command(name, runs, shared_defines, solvers.get(name))
+        cmd = reach_command(name, runs, shared_defines, solvers.get(name),
+                            object_bits.get(name))
         # The log carries the exact command, so a floor can be re-measured
         # by hand under the flags the cover command used and not a
         # reconstruction.

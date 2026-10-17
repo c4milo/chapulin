@@ -47,9 +47,13 @@
 # REACH_BUDGET_S. An optional solver=cadical field names the SAT solver of
 # a harness whose cover run does not converge on cbmc's default solver,
 # MiniSat 2. REACH_SOLVERS in proof/coverage.py says why the field exists
-# and why CaDiCaL is not the default. A harness absent from this file is
-# measured and reported but carries no floor; the nightly publishes the
-# table, so adding a line is a matter of copying the number it printed.
+# and why CaDiCaL is not the default. An optional object_bits=N field
+# gives the cover command --object-bits N, for a harness whose cover run
+# stops on cbmc's "too many addressed objects" while its proof does not.
+# proof/coverage.py says why that field changes no count. A harness
+# absent from this file is measured and reported but carries no floor;
+# the nightly publishes the table, so adding a line is a matter of
+# copying the number it printed.
 # The table is on the run page of the nightly's merge-reach-table job,
 # which joins the parts that the three proof-reach jobs measure.
 # Lower a floor only with the reason in the commit body.
@@ -152,6 +156,16 @@ quic_initial 98.8
 # framing rather than a keystream.
 quic_packet 75.8
 record 95.0
+# The three rsa_avx2_chain lines took their floors on 2026-10-17 from the
+# nightly runner, under the cover command with --object-bits 10 (run
+# 39057140598). Each took 68 s to 181 s there on MiniSat, and CaDiCaL
+# gave the same counts. Without the flag, each stopped on "too many
+# addressed objects" in 58 s to 175 s (run 39056264441). rsa_avx2_chain
+# reaches 276 of 492 locations, and rsa_avx2_chain_32, the same harness
+# at 32 words, reaches 276 of 492 too.
+rsa_avx2_chain 56.1 object_bits=10
+rsa_avx2_chain_49_webpki 56.0 object_bits=10
+rsa_avx2_chain_webpki 56.0 object_bits=10
 # The six rsa_mont lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --sat-solver cadical. Each
 # took 28 s to 118 s there, and on MiniSat each returned no number in
@@ -332,6 +346,38 @@ x25519_tail 52.2
 # is, a cover run that returned no usable number in 21 minutes, so it is
 # listed beside that one rather than given more room.
 #
+# Eleven RSA harnesses give no number under the cover command, on
+# MiniSat or on CaDiCaL. The nightly runner measured each one on both
+# solvers on 2026-10-17, under the 13 GiB address-space cap: MiniSat in
+# nightly run 39014749963, CaDiCaL in run 39047611350, and both in run
+# 39056264441, which also kept cbmc's messages. The times and sizes below
+# are from run 39056264441. Their proofs pass. In nightly run
+# 39014749963, the cover runs of these eleven and of the three
+# rsa_avx2_chain harnesses, which now carry floors, took 23 minutes.
+#
+# Two stop on cbmc's "too many addressed objects", which
+# proof/coverage.py reports as not measured. rsa_mont64_blocks stops that
+# way on both solvers, in 178 s and 181 s. rsa_mont64_blocks_webpki stops
+# that way on MiniSat in 335 s, and runs out of memory on CaDiCaL in
+# 327 s. Their launch lines carry no --object-bits, and their proofs need
+# none. With --object-bits 10, both run out of memory on both solvers
+# (run 39057140598), so an object_bits field gives them no number.
+#
+# The other nine run out of memory during propositional reduction on
+# both solvers. They are rsa_mont64_addcarry, rsa_mont64_addcarry_webpki,
+# rsa_mont64_init, rsa_mont64_init_webpki, rsa_mont64_mul,
+# rsa_mont64_mul_webpki, rsa_mont64_public, rsa_mont64_public_webpki and
+# rsa_ifma_sign_power_webpki. Each held 10.3 GiB to 12.7 GiB resident
+# when it stopped, after 59 s to 483 s. On MiniSat, cbmc cut its message
+# short for rsa_mont64_mul_webpki and rsa_mont64_public_webpki, so
+# proof/coverage.py reports those two as not measured.
+#
+# Each of the eleven ran at its launch line's bound alone, and no smaller
+# word count was tried. A floor holds the reach of the bound that a
+# launch line proves. So a smaller word count needs a variant harness
+# with a launch line and a proof of its own, as rsa_avx2_chain_32 is for
+# rsa_avx2_chain, and none of the eleven has one.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_parser_suite
@@ -356,6 +402,17 @@ x25519_tail 52.2
 #   gcm_safety
 #   ghash
 #   rsa
+#   rsa_ifma_sign_power_webpki
+#   rsa_mont64_addcarry
+#   rsa_mont64_addcarry_webpki
+#   rsa_mont64_blocks
+#   rsa_mont64_blocks_webpki
+#   rsa_mont64_init
+#   rsa_mont64_init_webpki
+#   rsa_mont64_mul
+#   rsa_mont64_mul_webpki
+#   rsa_mont64_public
+#   rsa_mont64_public_webpki
 #   sha256
 #   sha3
 #   sha3_stream
