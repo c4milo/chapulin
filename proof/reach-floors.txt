@@ -120,7 +120,31 @@ hybrid_secret 16.6
 key_share 21.9
 keysched 87.0
 p256_mul 86.7
-p256_wide_verify 77.2
+# p256_wide_verify fell from 77.2 to 71.3 when a86cca69 moved the
+# comparison of x with r out of p256_wide_verify.c. It reached 203 of 263
+# locations at 8598a4a5 and reaches 184 of 258 at 6f3bf952, on the runner
+# (runs 39051026225 and 39056351668). It still reaches every location that
+# the verifier runs: all 28 of p256_wide_verify_rs, the p256_scalar.c
+# functions it calls, and each stub location except three. Each of the
+# three sets the condition of a stub's assert to false, and the proof
+# shows that no path runs it.
+# The 13 locations it no longer reaches are ct_memeq's 5 and
+# p256_scalar_to_bytes's 8. The verifier called both to compare the bytes
+# of x mod n with r_be. Now p256_wide_jacobian_x_is_r compares x with r in
+# the field, and the p256_wide_verify_point harness reaches all 18 of its
+# locations. The launch line still links ct.c and p256_scalar.c, so the
+# two functions stay in the model, and no path calls them. The ct and
+# p256_scalar harnesses prove them.
+# a86cca69 also removed double_scalar_mul, the stubs of
+# p256_wide_base_mul, p256_wide_mul, p256_wide_point_from_portable,
+# p256_wide_point_to_portable, p256_wide_point_add and
+# p256_wide_point_affine, and one helper: 42 locations, of which 41 were
+# reached. The stubs of p256_wide_jacobian_from_key,
+# p256_wide_jacobian_double_mul, p256_wide_jacobian_is_infinity and
+# p256_wide_jacobian_x_is_r and two helpers replaced them: 39 locations,
+# of which 37 are reached. p256_wide_verify_rs went from 30 locations to
+# 28.
+p256_wide_verify 71.3
 p384_mul 86.7
 # The four p384_wide harnesses took their floors on 2026-10-05 from an
 # ubuntu 24.04 amd64 container with the pinned cbmc, before any nightly
