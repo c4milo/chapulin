@@ -171,7 +171,16 @@ rsa_webpki 91.7
 # them to. What it leaves out is the rest of the files it compiles: the
 # sponge of sha3.c and of proof/sha3_reference.h, which the sha3 and
 # sha3_stream harnesses and bin/sha3_equiv_test run.
-sha3_round 64.1
+#
+# sha3_round fell from 64.1 to 62.4 when sha3.c gained locations the
+# harness does not reach. It reaches the same 221 locations as at
+# 8598a4a5, of 354 now rather than 345. All nine new locations are in
+# sha3.c. 914adee9 added absorb_whole_blocks, with 9 locations, and took 3
+# from absorb. 02bd558e replaced the loop of lane_to_bytes with eight
+# stores, which added 3. The nightly runner measured the harness at
+# 8598a4a5 and at 6f3bf952 under the cover command on 2026-10-17 (run
+# 39050336463).
+sha3_round 62.4
 sha512 90.9
 sha512_compress 97.1
 # sha512_compress_blocks_advancing took its floor on 2026-10-17 from the
