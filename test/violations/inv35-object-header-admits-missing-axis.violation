@@ -1,0 +1,13 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: The object's header writes a comment where it writes an #error
+  for a define the object lacks. A consumer whose own flags define such
+  an axis then compiles under the header and declares layouts the object
+  does not have, and lib-check's consumer with a transport define the
+  object lacks no longer stops at the header (docs/decisions.md 133).
+
+--- old
+	    printf '#ifdef %s\n#error "the chapulin object was built without %s: drop the define"\n#endif\n' "$$a" "$$a"; \
+--- new
+	    printf '#ifdef %s\n// "the chapulin object was built without %s: drop the define"\n#endif\n' "$$a" "$$a"; \

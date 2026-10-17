@@ -25,14 +25,15 @@
  *
  *   make lib RAND=extern                         # RSA-PSS pins
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -DCH_RAND_EXTERN -I. \
+ *      -I. -include bin/chapulin.h \
  *      -o pinned_client examples/pinned_client.c bin/chapulin.o
  *
  * For P-256 pins, build the library with `make lib TRUST=raw-ecdsa RAND=extern`
- * and add -DCH_PIN_ECDSA to that cc line. RAND=extern and -DCH_RAND_EXTERN
- * declare that this file supplies ch_rand_bytes, which it does below;
- * cfg.h refuses to compile without a declared entropy pattern
- * (docs/entropy.md). -D_DEFAULT_SOURCE is for this file's
+ * and use the same cc line. make lib writes bin/chapulin.h beside
+ * bin/chapulin.o, and it holds the defines the object was built with, so
+ * this file compiles under them and passes none of its own
+ * (docs/building.md). RAND=extern says that this file supplies
+ * ch_rand_bytes, which it does below (docs/entropy.md). -D_DEFAULT_SOURCE is for this file's
  * POSIX sockets, not for chapulin: glibc hides getaddrinfo and
  * getrandom under -std=c11 without it.
  *
@@ -49,6 +50,7 @@
 #include <sys/random.h> // getrandom; macOS has arc4random_buf instead
 #endif
 
+#include "build.h"
 #include "ch_assert.h"
 #include "rand.h"
 #include "tls.h"
@@ -407,6 +409,11 @@ static int exchange(ch_tls *tls) {
 }
 
 int main(int argc, char **argv) {
+    // Headers that do not match the linked object write past its structs (build.h).
+    if (!ch_build_matches(&ch_build)) {
+        (void)fprintf(stderr, "chapulin: the headers do not match the linked object\n");
+        return 2;
+    }
     if (argc != 4 && argc != 5) {
         (void)fprintf(stderr, "usage: %s host port pin-file [next-pin-file]\n", argv[0]);
         return 2;

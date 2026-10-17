@@ -51,15 +51,16 @@
  *
  *   make TRUST=webpki RAND=extern lib
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      $(make -s print-lib-def TRUST=webpki RAND=extern) -I. \
+ *      -I. -include bin/chapulin.h \
  *      -o webpki_client examples/webpki_client.c bin/chapulin.o
  *
- * Pass the library's defines to your own translation units too:
- * -DCH_TRUST_WEBPKI, -DCH_RAND_EXTERN and, on an arm64 or x86-64 host,
- * -DCH_CPU_RUNTIME. The anchor, hostname and clock fields of ch_cfg
- * exist only under the first, CH_MIN_RXBUF depends on it, cfg.h refuses
- * to compile without a declared entropy pattern, and ch_cfg.cpu exists
- * only under the third.
+ * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
+ * library's defines: -DCH_TRUST_WEBPKI, -DCH_RAND_EXTERN and, on an
+ * arm64 or x86-64 host, -DCH_CPU_RUNTIME. So this file compiles under
+ * them and passes none of its own (docs/building.md). The anchor,
+ * hostname and clock fields of ch_cfg exist only under the first,
+ * CH_MIN_RXBUF depends on it, cfg.h refuses to compile without a
+ * declared entropy pattern, and ch_cfg.cpu exists only under the third.
  *
  * Run:
  *
@@ -85,6 +86,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "build.h"
 #include "ch_assert.h"
 #include "rand.h"
 #include "tls.h"
@@ -340,6 +342,11 @@ static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anch
 }
 
 int main(int argc, char **argv) {
+    // Headers that do not match the linked object write past its structs (build.h).
+    if (!ch_build_matches(&ch_build)) {
+        (void)fprintf(stderr, "chapulin: the headers do not match the linked object\n");
+        return 2;
+    }
     // host, port, server-name, then 1 to ANCHOR_COUNT_MAX pairs.
     if (argc < 6 || argc % 2 != 0 || (size_t)(argc - 4) / 2 > ANCHOR_COUNT_MAX) {
         (void)fprintf(stderr,

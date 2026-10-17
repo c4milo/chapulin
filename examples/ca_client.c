@@ -39,14 +39,15 @@
  *   make TRUST=ca-rsa RAND=extern lib     # RSA-PSS chains, the default
  *   make TRUST=ca-ecdsa RAND=extern lib   # P-256 chains instead
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -DCH_TRUST_CA -DCH_RAND_EXTERN -I. \
+ *      -I. -include bin/chapulin.h \
  *      -o ca_client examples/ca_client.c bin/chapulin.o
  *
- * Pass -DCH_TRUST_CA and -DCH_RAND_EXTERN to your own translation units
- * too, not just to the library: CH_MIN_RXBUF depends on the first and
- * this file sizes its receive buffer from that constant, and cfg.h
- * refuses to compile without a declared entropy pattern
- * (docs/entropy.md). RAND has no default for the same reason.
+ * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
+ * defines the object was built with, -DCH_TRUST_CA and -DCH_RAND_EXTERN
+ * here, so this file compiles under them and passes none of its own
+ * (docs/building.md). CH_MIN_RXBUF depends on the first, and this file
+ * sizes its receive buffer from that constant. RAND has no default,
+ * because no build can judge a generator (docs/entropy.md).
  *
  * This builds on a POSIX host and is not a device port. Every line a
  * firmware tree replaces carries a "Replace on a device" comment.
@@ -61,6 +62,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "build.h"
 #include "ch_assert.h"
 #include "rand.h"
 #include "tls.h"
@@ -244,28 +246,18 @@ static int dial(const char *host, const char *port) {
 //     epoch is refused, so one far-future date cannot lock a device out
 //     for good.
 
-// One uint32 is the entire persistent state. Use two storage slots: a
-// power cut during a write can leave a slot unreadable, and a device
-// whose only slot is corrupt fails every later ch_connect. This
-// example loads the highest valid slot and writes the slot holding
-// the older value, so the newer value survives a torn write; the
-// production scheme below adds a checksum per slot.
+// One uint32 is the entire persistent state. This example keeps it in
+// one file, so that it runs on a host.
 //
-// Replace on a device: slot_read and slot_write use a file so the
-// example runs on a host. On a device they read and write a flash word.
-// The epoch changes once per revocation, far inside any flash write
-// budget (docs/ca.md, "Flash wear").
-//
-// Production wants two slots in different erase blocks, each value
-// beside its own checksum, not the one file here: a power cut during a
-// write can leave a slot unreadable, and a device whose only slot is
-// corrupt fails every later ch_connect with CH_EINVAL. Load takes the
-// highest value whose checksum verifies — a stored epoch can be
-// lowered only by reprovisioning, so a bit flip toward a higher bare
-// value stands until then. Store overwrites the slot holding the
-// older value. That is
-// storage engineering rather than anything about this API, so it
-// stays out of the example.
+// Replace on a device: slot_read and epoch_store read and write a flash
+// word. The epoch changes once per revocation, far inside any flash
+// write budget (docs/ca.md, "Flash wear"). Production wants two slots in
+// different erase blocks, each value beside its own checksum: a power
+// cut during a write can leave a slot unreadable, and a device whose
+// only slot is corrupt fails every later ch_connect with CH_EINVAL. Load
+// takes the highest value whose checksum verifies. Nothing lowers a
+// stored epoch but provisioning, so without the checksum a bit flip that
+// raises a value stays. Store overwrites the slot with the older value.
 typedef struct {
     const char *slot_path;
 } epoch_slots;
@@ -415,6 +407,11 @@ static void configure_epoch(ch_cfg *cfg, epoch_slots *slots, char **argv) {
 }
 
 int main(int argc, char **argv) {
+    // Headers that do not match the linked object write past its structs (build.h).
+    if (!ch_build_matches(&ch_build)) {
+        (void)fprintf(stderr, "chapulin: the headers do not match the linked object\n");
+        return 2;
+    }
     if (argc != 4 && argc != 5) {
         (void)fprintf(stderr,
                       "usage: %s host port ca-key-file [epoch-file]\n"

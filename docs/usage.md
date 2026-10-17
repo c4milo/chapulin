@@ -24,6 +24,13 @@ int got = ch_read(&tls, out, sizeof out); // 0: the peer sent close_notify
 ch_close(&tls); // sends this side's close_notify and wipes the keys
 ```
 
+Compile this code under the object's own defines. `make lib` writes
+`bin/chapulin.h` beside `bin/chapulin.o`, and that header defines them
+and includes the object's public headers. Include it before any other
+chapulin header, or compile with `-include bin/chapulin.h`. Then call
+`ch_build_matches(&ch_build)` once at startup, and stop when it returns
+0 ([`docs/building.md`](building.md)).
+
 A `TRUST=webpki` build takes no pin, and a PSK only as a ticket it
 bound itself. It takes the roots it trusts, the server's hostname and
 the time:

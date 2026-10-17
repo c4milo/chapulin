@@ -12175,3 +12175,56 @@ does nothing more.
       connection could then get a ticket bound to a hostname that the
       server did not authenticate. RFC 9846 §4.7.1 lets a client resume
       only with a server name that is valid for the original certificate.
+
+133. **`make lib` writes the object's header, `bin/chapulin.h`, and every
+    example calls `ch_build_matches`.** Entry 56 left the agreement
+    between an object and a consumer's defines to the consumer. The
+    consumer writes the defines by hand, and calls `ch_build_matches`
+    when it chooses to. No example called it. On 2026-10-17 Camilo asked
+    for an API that a caller who is not a security expert uses correctly
+    and securely. A forgotten define has the worst result of any mistake
+    in the build: the object writes past the end of a struct. The build
+    that wrote the object knows its defines, so it writes them down.
+
+    - **The header.** The recipe of each object writes `chapulin.h`
+      beside it, and `make lib` copies it to `bin/chapulin.h`. It defines
+      each name in `LIB_DEF` as `-D` defines it: `1`, or the value after
+      `=`. So a consumer that also passes the flags meets an identical
+      definition, which C allows. Then it includes the object's public
+      headers. Those are the headers that declare a name the object
+      exports or imports, in the order of build.zig's declarations, so
+      the header names what `zig build` translates.
+      `test/zig-build-check.sh` requires make's list and build.zig's
+      `lib-headers.txt` to agree.
+    - **The defines the object lacks.** The header holds an `#error` for
+      each define that changes a layout or a declaration and that the
+      object lacks. These are the twelve axes of `build.h`, with
+      `CH_ROLE_BOTH`, `CH_RAND_EXTERN` and `CH_RAND_DRBG`. So a consumer
+      whose own flags define one stops at compile time. A bound such as
+      `CH_TX_PT` that the consumer sets to another value meets the
+      header's definition, and the compiler reports the redefinition. A
+      bound that the object leaves at its default has no line in the
+      header, and `ch_build_matches` still compares the bounds.
+    - **The checks.** `lib-check` compiles `test/build_test.c` with
+      `-include` and no define of its own, and requires the record that
+      its headers compute. It compiles the program again with a
+      transport define that the object lacks, and requires the header's
+      `#error`. `test/lib-check-webpki-tcp-nonblocking.sh` catches
+      `inv35-object-header-drops-define` and
+      `inv35-object-header-admits-missing-axis`.
+    - **The examples.** `psk_client.c` and `pinned_client.c` compile with
+      `-include` of the header in place of `LIB_DEF`, as their comments
+      tell a reader to. All four examples call `ch_build_matches` at the
+      start of `main` and stop on 0.
+
+    Rejected:
+
+    - **A check inside each init call.** Entry 56's reasons stand.
+    - **`__has_include` in `cfg.h`, so that the headers find the defines
+      themselves.** A stale header from another `make lib` on the include
+      path would then decide the layout, and no line of the consumer's
+      build would name it.
+    - **A header that defines the names and includes nothing.** Then the
+      consumer still picks the headers. A header of another transport
+      declares calls that the object lacks, and the linker reports them
+      in place of the compiler.

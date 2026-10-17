@@ -20,7 +20,11 @@
 # define each fail that consumer. This object is the one whose record
 # carries both a trust bit and a transport bit, and whose ch_tls differs
 # from the default object's. A fifth drops ch_ticket_obfuscated_age from
-# TRANSPORT_NAMED, and the export list no longer matches PUBLIC.
+# TRANSPORT_NAMED, and the export list no longer matches PUBLIC. Two more
+# break the object's header, chapulin.h: one leaves out the transport
+# define, and one writes a comment in place of each #error, so a consumer
+# under the header no longer reads this object's record, or no longer
+# stops at the header.
 # This runs the command make check's check-lib-webpki-tcp-nonblocking
 # target runs, and tools/impact.py runs that target for a source the
 # object packages; the two have to stay the same command, and

@@ -234,15 +234,33 @@ Other targets:
   field. To package a server's portable object on a host, set the host
   test's result empty on the command line: `HOST_TARGET=` for make, and
   `-DHOST_TARGET=` for `zig build`.
+- `make lib` also writes `bin/chapulin.h`, the object's header, beside
+  the object. It defines what `make print-lib-def` prints for the object,
+  as `-D` defines it, and then includes the object's public headers,
+  the ones `zig build` translates. Include it before any other chapulin
+  header, or pass it to the compiler with `-include`. The program then
+  compiles under the object's own defines and passes none itself:
+
+  ```sh
+  make lib TRUST=webpki RAND=extern
+  cc -I. -include bin/chapulin.h -o app app.c bin/chapulin.o
+  ```
+
+  The header holds one `#error` for each layout define the object lacks,
+  so a program whose own flags define one stops at compile time.
+  `lib-check` compiles `test/build_test.c` under the header alone and
+  requires the object's build record, below, and the program compiled
+  with a transport define the object lacks must stop at that `#error`.
+  The examples compile this way (decision 133).
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
-  sizes its buffers from. A program that links the object compiles the
-  headers under defines it writes itself, and a define it forgets
-  changes those sizes while the program still links. So call
-  `ch_build_matches(&ch_build)` once at startup and stop when it returns
-  0; a program in another language compares the same fields with the
-  `CH_BUILD_` macros. `ch_build` is a macro for the transport's record,
+  sizes its buffers from. A program that does not include the object's
+  header compiles the headers under defines it writes itself, and a
+  define it forgets changes those sizes while the program still links.
+  So call `ch_build_matches(&ch_build)` once at startup and stop when it
+  returns 0, as every example does; a program in another language
+  compares the same fields with the `CH_BUILD_` macros. `ch_build` is a macro for the transport's record,
   `ch_build_info_tcp_blocking`, `ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`, and a Zig
   program names that record itself. No library call reads the record,
   and decisions 56 and 61 say what it holds, what it leaves out and why

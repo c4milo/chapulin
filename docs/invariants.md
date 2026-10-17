@@ -2113,7 +2113,12 @@ last `ROLE=server` stub, as the entry said it would.
   field by field, reads equal values exactly when its defines give the
   object's layouts, bounds and axes, and a consumer compiled for another
   transport names another record and does not link. No library source
-  reads the record or calls the comparison.
+  reads the record or calls the comparison. Beside each object, the
+  build writes the object's header, `chapulin.h`. It defines what the
+  object was compiled with and includes the object's public headers. A
+  consumer that compiles under it alone reads a record equal to its
+  headers, and one whose own flags define an axis the object lacks
+  stops at the header's `#error`.
 - **Mechanism.** Each value has one definition. `build.h` writes it as a
   `CH_BUILD_` macro, `build.c` sets the field of the same name from that
   macro, and a consumer's compile computes the same macro under its own
@@ -2147,6 +2152,13 @@ last `ROLE=server` stub, as the entry said it would.
   which drops it from the list, is caught by
   `test/lib-check-webpki-tcp-nonblocking.sh`.
   `test/hpp_test.cpp` calls the C++ forwarder in each `cxx-check` build.
+  `lib-check` compiles `test/build_test.c` twice more under the object's
+  header: with no define of its own, where it must read a record equal
+  to its headers, and with a transport define the object lacks, where it
+  must stop at the header's `#error`. `test/lib-check-webpki-tcp-nonblocking.sh`
+  catches `inv35-object-header-drops-define`, whose header leaves out the
+  object's transport define, and `inv35-object-header-admits-missing-axis`,
+  whose header writes a comment in place of each `#error`.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
   define that moves a public layout without a bit in `CH_BUILD_AXES`,
   adds a public struct or bound that the record does not hold, or gives
@@ -2157,8 +2169,8 @@ last `ROLE=server` stub, as the entry said it would.
 - The record compares layouts and bounds, not behavior, and defines, not
   revisions: headers from another commit are caught only where a size, a
   bound or a bit moved.
-- See [decisions: Engineering](decisions.md#engineering), entries 56 and
-  61.
+- See [decisions: Engineering](decisions.md#engineering), entries 56,
+  61 and 133.
 
 ### INV-36 — build.zig packages the object `make lib` packages
 

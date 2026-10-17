@@ -1,0 +1,13 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: The object's header leaves out the transport define of a
+  tcp-nonblocking object. A consumer that compiles under the header alone
+  then declares the tcp-blocking layout and names the tcp-blocking build
+  record, which this object does not define, so lib-check's consumer
+  under the header fails to link (docs/decisions.md 133).
+
+--- old
+	  for d in $(patsubst -D%,%,$(LIB_DEF)); do \
+--- new
+	  for d in $(patsubst -D%,%,$(filter-out -DCH_TRANSPORT_TCP_NONBLOCKING,$(LIB_DEF))); do \

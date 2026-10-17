@@ -2287,6 +2287,44 @@ transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_
 PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
             $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
+# The hooks the object imports, which the image defines (docs/porting.md):
+# the names lib-check admits as undefined, as build.zig's plan lists them.
+LIB_HOOKS = ch_assert_fail $(if $(filter extern,$(RAND)),ch_rand_bytes) \
+            $(if $(filter -DCH_KEYLOG,$(LIB_DEF)),ch_keylog) \
+            $(if $(filter aes_extern.c,$(LIB_SRCS)),ch_aes_block)
+# The public headers of the object: each header that declares a name the
+# object exports or imports, in the order of build.zig's declarations, so
+# both builds name the same headers (lint-zig-build). DECLARES_<header>
+# lists the names one header declares, under their declared names.
+DECLARES_tls.h := ch_connect ch_read ch_write ch_writable_len ch_close ch_export
+DECLARES_tcp_nonblocking.h := ch_record_init ch_record_in ch_record_out ch_record_state \
+                              ch_record_close ch_record_whole_len
+DECLARES_quic.h := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
+                   ch_quic_switch_version ch_quic_negotiated_version ch_quic_seal \
+                   ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
+                   ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard ch_quic_state \
+                   ch_quic_alert ch_quic_error_code ch_quic_close
+DECLARES_srv.h := ch_srv_accept ch_srv_check
+DECLARES_srv_tcp_nonblocking.h := ch_srv_record_init ch_srv_record_in
+DECLARES_srv_quic.h := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag
+DECLARES_quic_token.h := ch_srv_quic_token_mint ch_srv_quic_token_check
+DECLARES_x509_ca.h := ch_pubkey_from_pem
+DECLARES_pem_files.h := ch_chain_from_pem ch_p256_key_from_pem ch_anchors_from_pem
+DECLARES_ticket.h := ch_ticket_obfuscated_age
+DECLARES_alert.h := ch_alert_sent ch_alert_received
+DECLARES_drbg.h := ch_drbg_seed
+DECLARES_rand.h := ch_rand_bytes
+DECLARES_keylog.h := ch_keylog
+DECLARES_aes_block.h := ch_aes_block
+DECLARES_ch_assert.h := ch_assert_fail
+DECLARES_build.h := ch_build
+LIB_HEADER_ORDER := tls.h tcp_nonblocking.h quic.h srv.h srv_tcp_nonblocking.h srv_quic.h \
+                    quic_token.h x509_ca.h pem_files.h ticket.h alert.h drbg.h rand.h keylog.h \
+                    aes_block.h ch_assert.h build.h
+LIB_DECLARED = $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_PEM) $(PUBLIC_EXPORT) \
+               $(PUBLIC_BUILD) $(LIB_HOOKS)
+LIB_HEADERS = $(foreach h,$(LIB_HEADER_ORDER),$(if $(filter $(DECLARES_$(h)),$(LIB_DECLARED)),$(h)))
+
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
 # writes its objects into the directory the host build uses; a later host
@@ -2384,6 +2422,8 @@ else
 BUILD_TRANSPORT_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRANSPORT_TCP_NONBLOCKING,$(LIB_DEF))
 BUILD_OTHER_RECORD := ch_build_info_tcp_blocking
 endif
+BUILD_HEADER_MOVED_DEF := $(if $(filter -DCH_TRANSPORT_TCP_NONBLOCKING,$(LIB_DEF)), \
+                            -DCH_TRANSPORT_QUIC_NONBLOCKING,-DCH_TRANSPORT_TCP_NONBLOCKING)
 
 # nmedit reads its list from a file, which sits beside the object it
 # edits, so two variants linked at once never read each other's list:
@@ -2397,9 +2437,48 @@ else
 	objcopy $(foreach s,$(PUBLIC),-G $(s)) $@
 endif
 
-.PHONY: lib lib-check cxx-check lib-pair-object
-lib: $(LIB_OBJ)
+# The header a consumer includes before any other chapulin header, or
+# passes to its compiler with -include (docs/building.md, "The object's
+# header"). It defines what LIB_DEF defines, as -D defines it, so a
+# consumer that also passes those flags meets no conflict. Then it
+# includes the object's public headers. A consumer that includes it
+# compiles under the object's own defines, so the two agree on every
+# layout and bound, and needs no define of its own. LIB_HEADER_AXES are
+# the defines that change a layout or a declaration: build.h's axes,
+# CH_ROLE_BOTH and the two RAND patterns that take no bit there. For each
+# axis the object lacks, the header stops a consumer whose own flags
+# define it. The recipe rewrites the file only when its text changes, so
+# an unchanged header keeps its time.
+LIB_HEADER := bin/obj/$(LIB_VARIANT)/chapulin.h
+LIB_HEADER_AXES := CH_TRUST_CA CH_TRUST_WEBPKI CH_PIN_ECDSA CH_KEX_PQ CH_TRANSPORT_QUIC_NONBLOCKING \
+                   CH_TRANSPORT_TCP_NONBLOCKING CH_SUITE_AES_GCM CH_ROLE_SERVER CH_ROLE_BOTH \
+                   CH_EXPORTER CH_KEYLOG CH_RAND_EXTERN CH_RAND_DRBG CH_RAND_SESSION CH_CPU_RUNTIME
+$(LIB_HEADER): FORCE
+	@mkdir -p $(@D)
+	@{ printf '%s\n' '// Written by make: the defines of the chapulin object beside this file, and' \
+	    '// the public headers of that object. Include it before any other chapulin' \
+	    '// header, or pass it to the compiler with -include (docs/building.md).' \
+	    '#ifndef CHAPULIN_H' '#define CHAPULIN_H'; \
+	  for a in $(filter-out $(patsubst -D%,%,$(LIB_DEF)),$(LIB_HEADER_AXES)); do \
+	    printf '#ifdef %s\n#error "the chapulin object was built without %s: drop the define"\n#endif\n' "$$a" "$$a"; \
+	  done; \
+	  for d in $(patsubst -D%,%,$(LIB_DEF)); do \
+	    case "$$d" in *=*) printf '#define %s %s\n' "$${d%%=*}" "$${d#*=}";; \
+	    *) printf '#define %s 1\n' "$$d";; esac; \
+	  done; \
+	  for h in $(LIB_HEADERS); do printf '#include "%s"\n' "$$h"; done; \
+	  printf '%s\n' '#endif'; } > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+
+.PHONY: lib lib-check cxx-check lib-pair-object print-lib-headers
+lib: $(LIB_OBJ) $(LIB_HEADER)
 	@cp $(LIB_OBJ) bin/chapulin.o
+	@cp $(LIB_HEADER) bin/chapulin.h
+
+# test/zig-build-check.sh compares these names with the lib-headers.txt
+# build.zig installs: both builds name the same headers, in one order.
+print-lib-headers:
+	@echo $(LIB_HEADERS)
 
 # test/lib-pair-check.sh links two packaged objects into one image, so it
 # needs each object at a path of its own rather than lib's copy at
@@ -2433,8 +2512,9 @@ cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 # rename: that path holds whole the object of whichever variant finished
 # last.
 LIB_CHECK_DIR := bin/obj/$(LIB_VARIANT)
-lib-check: $(LIB_OBJ)
+lib-check: $(LIB_OBJ) $(LIB_HEADER)
 	@cp $(LIB_OBJ) bin/chapulin.o.$$$$ && mv -f bin/chapulin.o.$$$$ bin/chapulin.o
+	@cp $(LIB_HEADER) bin/chapulin.h.$$$$ && mv -f bin/chapulin.h.$$$$ bin/chapulin.h
 	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSBR]$$/ {print $$3}' | sed 's/^_//' | sort > $(LIB_CHECK_DIR)/exported.txt
 	@printf '%s\n' $(PUBLIC) | sort > $(LIB_CHECK_DIR)/expected.txt
 	@diff -u $(LIB_CHECK_DIR)/expected.txt $(LIB_CHECK_DIR)/exported.txt || { \
@@ -2524,6 +2604,19 @@ endif
 	@grep -q "$(BUILD_OTHER_RECORD)" $(BUILD_TEST)_transport.err || { cat $(BUILD_TEST)_transport.err; \
 	  echo "lib-check: a consumer compiled for another transport failed to link without naming $(BUILD_OTHER_RECORD)"; exit 1; }
 	@echo "lib-check: the build record matches this object's defines, differs from a consumer's with CH_PIN_ECDSA moved, and is not the record a consumer of another transport names"
+# The object's header (LIB_HEADER above), read the way a consumer reads
+# it. test/build_test.c compiled under the header alone, with no define
+# of its own, must read the record its headers compute and exit 0. The
+# same program with a transport define the object lacks must stop at the
+# header's own #error. BUILD_HEADER_MOVED_DEF is that define.
+	@$(CC) $(LIB_CFLAGS) -I. -include $(LIB_HEADER) -o $(BUILD_TEST)_header test/build_test.c $(LIB_OBJ)
+	@$(BUILD_TEST)_header || { echo "lib-check: a consumer compiled under $(LIB_HEADER) alone reads a build record its headers do not compute"; exit 1; }
+	@if $(CC) $(LIB_CFLAGS) -I. -include $(LIB_HEADER) $(BUILD_HEADER_MOVED_DEF) -fsyntax-only test/build_test.c \
+	  2> $(BUILD_TEST)_header.err; then \
+	  echo "lib-check: a consumer with $(BUILD_HEADER_MOVED_DEF) compiled under $(LIB_HEADER), which this object lacks"; exit 1; fi
+	@grep -q 'was built without' $(BUILD_TEST)_header.err || { cat $(BUILD_TEST)_header.err; \
+	  echo "lib-check: a consumer with $(BUILD_HEADER_MOVED_DEF) failed under $(LIB_HEADER), but not at its #error"; exit 1; }
+	@echo "lib-check: a consumer under $(LIB_HEADER) alone reads this object's build record, and one with a transport define the object lacks stops at the header"
 
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.
@@ -6708,10 +6801,12 @@ endif
 # from under the one place a reader learns it from.
 #
 # psk_client and pinned_client link $(LIB_OBJ), so they are built under
-# the variant that built it and compiled under $(LIB_DEF), the defines
-# the object was compiled with. session.h sizes ch_tls.tx by CH_KEX_PQ,
-# so an example compiled without the object's defines declares a ch_tls
-# of another size, and the link still succeeds. The fixed paths e2e.sh
+# the variant that built it and compiled under $(LIB_HEADER) alone, as
+# their comments tell a reader to compile them: the header holds the
+# defines the object was compiled with. session.h sizes ch_tls.tx by
+# CH_KEX_PQ, so an example compiled without the object's defines declares
+# a ch_tls of another size, the link still succeeds, and ch_build_matches
+# stops it at the start of main. The fixed paths e2e.sh
 # runs are copies, refreshed on every invocation the way lib refreshes
 # bin/chapulin.o, because a timestamp cannot say which variant wrote
 # them: `make bin/example_psk RAND=drbg` followed in the same second by
@@ -6722,11 +6817,11 @@ endif
 EXAMPLE_PSK := bin/obj/$(LIB_VARIANT)/example_psk
 EXAMPLE_PINNED := bin/obj/$(LIB_VARIANT)/example_pinned
 
-$(EXAMPLE_PSK): examples/psk_client.c $(LIB_OBJ)
-	$(CC) $(CFLAGS) $(LIB_DEF) -I. -o $@ examples/psk_client.c $(LIB_OBJ)
+$(EXAMPLE_PSK): examples/psk_client.c $(LIB_OBJ) $(LIB_HEADER)
+	$(CC) $(CFLAGS) -I. -include $(LIB_HEADER) -o $@ examples/psk_client.c $(LIB_OBJ)
 
-$(EXAMPLE_PINNED): examples/pinned_client.c $(LIB_OBJ)
-	$(CC) $(CFLAGS) $(LIB_DEF) -I. -o $@ examples/pinned_client.c $(LIB_OBJ)
+$(EXAMPLE_PINNED): examples/pinned_client.c $(LIB_OBJ) $(LIB_HEADER)
+	$(CC) $(CFLAGS) -I. -include $(LIB_HEADER) -o $@ examples/pinned_client.c $(LIB_OBJ)
 
 # Phony on purpose: the file at each path is whichever variant was copied
 # there last, so the copy runs on every invocation instead of when make

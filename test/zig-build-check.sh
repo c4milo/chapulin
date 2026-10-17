@@ -23,6 +23,9 @@
 #     configuration makes, against lib-def.txt;
 #   - the same exports: the names nm -g lists as defined, by lib-check's
 #     rule;
+#   - the same public headers, in one order: make print-lib-headers, which
+#     make's chapulin.h includes, against lib-headers.txt, which chapulin.c
+#     is translated from;
 #   - the same build record: test/build_test.c, compiled under make's
 #     defines and linked against the Zig object, must read the record its
 #     headers compute, as lib-check requires of make's object.
@@ -359,6 +362,8 @@ check() {
     same "$name: build.zig passes other defines than make" \
         "$(printf '%s ' "$make_defs" "$(statement_defs "$3")" | sorted)" "$(sorted < "$out/$name/lib-def.txt")"
     same "$name: the Zig object exports other names than make's" "$(exports "$make_obj")" "$(exports "$zig_obj")"
+    same "$name: build.zig names other public headers than make" \
+        "$(mk print-lib-headers "${vars[@]}" | tr ' ' '\n' | sed '/^$/d')" "$(cat "$out/$name/lib-headers.txt")"
 
     local def_words flag_words
     read -r -a def_words <<< "$make_defs"

@@ -581,13 +581,16 @@ epoch. Neither has a default that is right for every deployment.
 ## Checking the object you link
 
 If you link the packaged object, `bin/chapulin.o`, instead of compiling the
-sources in your own build, you compile against its headers under defines you
-write yourself, and nothing in the link checks that they are the object's
-defines. A define you forget changes the layout of `ch_tls` or `ch_cfg`, or
-the value of `CH_MIN_RXBUF`, on your side only, and the program still links. Every
-packaged object exports its build record (`build.h`): the axes, struct sizes
-and bounds it was compiled with. Compare it once at startup, before the first
-session:
+sources in your own build, you compile against its headers. Nothing in the
+link checks that you compile them under the object's defines. A define you
+forget changes the layout of `ch_tls` or `ch_cfg`, or the value of
+`CH_MIN_RXBUF`, on your side only, and the program still links. So `make lib`
+writes the object's header, `bin/chapulin.h`, which defines what the object
+was compiled with and includes its public headers. Include it before any
+other chapulin header, or compile with `-include bin/chapulin.h`, and pass
+no chapulin define yourself (`docs/building.md`). Every packaged object also
+exports its build record (`build.h`): the axes, struct sizes and bounds it
+was compiled with. Compare it once at startup, before the first session:
 
 ```c
 #include "build.h"

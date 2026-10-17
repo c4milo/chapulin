@@ -17,7 +17,11 @@
  *
  *   make lib RAND=extern
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *       -DCH_RAND_EXTERN -I. examples/psk_client.c bin/chapulin.o -o psk_client
+ *       -I. -include bin/chapulin.h examples/psk_client.c bin/chapulin.o -o psk_client
+ *
+ * make lib writes bin/chapulin.h beside bin/chapulin.o. It holds the
+ * defines the object was built with, so this file compiles under them
+ * and passes none of its own (docs/building.md).
  *
  * Every line below that belongs to this host rather than to firmware is
  * marked SWAP. Those are the parts you replace; the rest is what a
@@ -33,6 +37,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "build.h"
 #include "ch_assert.h"
 #include "rand.h"
 #include "tls.h"
@@ -397,6 +402,11 @@ static int run_session(const char *host, const char *port) {
 }
 
 int main(int argc, char **argv) {
+    // Headers that do not match the linked object write past its structs (build.h).
+    if (!ch_build_matches(&ch_build)) {
+        (void)fprintf(stderr, "chapulin: the headers do not match the linked object\n");
+        return 2;
+    }
     if (argc != 1 && argc != 3) {
         (void)fprintf(stderr, "usage: %s [host port]\n", argv[0]);
         return 2;
