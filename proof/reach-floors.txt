@@ -332,6 +332,38 @@ x25519_tail 52.2
 # is, a cover run that returned no usable number in 21 minutes, so it is
 # listed beside that one rather than given more room.
 #
+# Fourteen RSA harnesses give no number under the cover command, on
+# MiniSat or on CaDiCaL. The nightly runner measured each one on both
+# solvers on 2026-10-17, under the 13 GiB address-space cap: MiniSat in
+# nightly run 39014749963, CaDiCaL in run 39047611350, and both in run
+# 39056264441, which also kept cbmc's messages. The times and sizes below
+# are from run 39056264441. Their proofs pass. Their cover runs took 23
+# minutes of nightly run 39014749963.
+#
+# Five stop on cbmc's "too many addressed objects", which
+# proof/coverage.py reports as not measured. rsa_avx2_chain,
+# rsa_avx2_chain_49_webpki, rsa_avx2_chain_webpki and rsa_mont64_blocks
+# stop that way on both solvers, in 58 s to 181 s.
+# rsa_mont64_blocks_webpki stops that way on MiniSat in 335 s, and runs
+# out of memory on CaDiCaL in 327 s. Their launch lines carry no
+# --object-bits, and their proofs need none.
+#
+# Run 39057140598 added --object-bits 10 to the cover command of these
+# five. The three rsa_avx2_chain harnesses then converge on both solvers,
+# in 63 s to 181 s. rsa_avx2_chain reaches 56.1% (276/492), and its two
+# webpki variants reach 56.0% (282/504). The two rsa_mont64_blocks
+# harnesses then run out of memory on both solvers. Until the cover
+# command of the three carries that flag, they stay on this list.
+#
+# The other nine run out of memory during propositional reduction on
+# both solvers. They are rsa_mont64_addcarry, rsa_mont64_addcarry_webpki,
+# rsa_mont64_init, rsa_mont64_init_webpki, rsa_mont64_mul,
+# rsa_mont64_mul_webpki, rsa_mont64_public, rsa_mont64_public_webpki and
+# rsa_ifma_sign_power_webpki. Each held 10.3 GiB to 12.7 GiB resident
+# when it stopped, after 59 s to 483 s. On MiniSat, cbmc cut its message
+# short for rsa_mont64_mul_webpki and rsa_mont64_public_webpki, so
+# proof/coverage.py reports those two as not measured.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_parser_suite
@@ -356,6 +388,20 @@ x25519_tail 52.2
 #   gcm_safety
 #   ghash
 #   rsa
+#   rsa_avx2_chain
+#   rsa_avx2_chain_49_webpki
+#   rsa_avx2_chain_webpki
+#   rsa_ifma_sign_power_webpki
+#   rsa_mont64_addcarry
+#   rsa_mont64_addcarry_webpki
+#   rsa_mont64_blocks
+#   rsa_mont64_blocks_webpki
+#   rsa_mont64_init
+#   rsa_mont64_init_webpki
+#   rsa_mont64_mul
+#   rsa_mont64_mul_webpki
+#   rsa_mont64_public
+#   rsa_mont64_public_webpki
 #   sha256
 #   sha3
 #   sha3_stream
