@@ -12402,3 +12402,49 @@ does nothing more.
       ticket could read two instants (above).
     - **A value field beside a check for staleness.** No check can tell an
       old instant from a current one.
+
+136. **`ch_cfg.send` returns the bytes it moved, as `recv` does, and
+    chapulin calls it until a record is out.** `send` returned 0 when it
+    had moved all n bytes, and any other value was a failure, a positive
+    count too. A send over POSIX `write` or `send` returns the count, so
+    a caller who wrapped one directly lost the session at its first
+    record. The session failed closed, and the cause was in a comment
+    alone. `recv` already returned 1 to n bytes. On 2026-10-17 Camilo
+    approved the change (entry 133 states the request).
+
+    - **The rule.** `send` returns the bytes it moved, 1 to n, or a
+      negative value for a failure. `io_send_all` calls it until the n
+      bytes are out, as `read_exact` calls `recv`. A count of 0 is a
+      failure, so a send that moves nothing cannot keep the session in
+      that loop. A count above n is a failure too. n is one record, at
+      most 2^14 + 256 + 5 bytes, so every count fits an `int`.
+    - **What stays.** A TRANSPORT=tcp-nonblocking server's
+      `cfg.srv.on_record_out` takes one whole record and returns 0. The
+      server cannot stop in the middle of its flight, so that sink cannot
+      report a short write (srv_cfg.h,
+      [issue 170](https://github.com/c4milo/chapulin/issues/170)). A
+      tcp-nonblocking socket that cannot take a record now still fails
+      the send, as before, so that caller still keeps a queue.
+    - **The callers.** Each example now calls `write` once and returns
+      its count. Each test send returns n, and the Zig API's send returns
+      the length it copied. The C++ wrapper's `Io` states the new rule.
+    - **The proof.** `io_send`, a new harness, proves `io_send_all`
+      against a send that returns any `int`. Each call starts at the
+      first byte not yet moved, and a CH_OK moved all n bytes. It runs
+      apart from `io`, which keeps `io_read_record`: the two loops in one
+      formula kept the solver past 17 minutes. Under cbmc 6.11.0 on an M1
+      Pro, `io_send` proved 113 properties in 9 s at 0.09 GB, and `io`
+      proved 122 properties in 462 s at 3.6 GB.
+
+    `test/io_send_tests.h` drives `io_send_all` over a send that moves 3
+    bytes a call, and over sends that answer 0, n + 1 and -1. Three
+    mutants hold the rule: `io-send-zero-counts-as-progress`,
+    `io-send-count-above-n-accepted` and `io-send-short-write-dropped`.
+
+    Rejected:
+
+    - **Keep 0 for success and document it better.** Each caller who
+      wraps `write` still meets the same failure first.
+    - **Accept 0 and n both as success.** A 0 then means both "all moved"
+      and "nothing moved", and the session cannot tell a stalled socket
+      from a finished one.

@@ -98,7 +98,7 @@ static int keep_send(void *io, const uint8_t *p, size_t n) {
     if (first_sent == 0 && n > 0) {
         first_sent = p[0];
     }
-    return 0;
+    return (int)n;
 }
 
 // No peer answers, so every read fails, and a blocking handshake stops

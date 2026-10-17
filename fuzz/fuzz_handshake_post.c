@@ -41,8 +41,7 @@ static volatile uint64_t g_sink;
 static int send_ok(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
-    (void)n;
-    return 0; // "all n bytes moved" per the ch_cfg contract
+    return (int)n; // every byte moved, per the ch_cfg contract
 }
 
 static void on_ticket(void *io, const ch_ticket *ticket) {

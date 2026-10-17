@@ -109,16 +109,8 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 }
 
 static int io_send(void *ctx, const uint8_t *p, size_t n) {
-    Socket_t s = *(Socket_t *)ctx;
-    size_t off = 0;
-    while (off < n) {
-        BaseType_t r = FreeRTOS_send(s, p + off, n - off, 0);
-        if (r <= 0) {
-            return -1;
-        }
-        off += (size_t)r;
-    }
-    return 0;
+    BaseType_t r = FreeRTOS_send(*(Socket_t *)ctx, p, n, 0);
+    return r > 0 ? (int)r : -1;
 }
 static int io_recv(void *ctx, uint8_t *p, size_t n) {
     Socket_t s = *(Socket_t *)ctx;

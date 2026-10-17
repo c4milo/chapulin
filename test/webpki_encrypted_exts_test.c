@@ -59,8 +59,7 @@ typedef struct {
 static int mock_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
-    (void)n;
-    return 0; // the handler sends nothing; the alert is the caller's job
+    return (int)n; // the handler sends nothing; the alert is the caller's job
 }
 
 static int mock_recv(void *io, uint8_t *p, size_t n) {

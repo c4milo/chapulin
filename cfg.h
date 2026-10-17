@@ -335,8 +335,9 @@ typedef struct {
     uint8_t *buf;
     size_t buf_len;
 
-    // send moves all n bytes and returns 0 — any other value, including a
-    // positive byte count, is failure; recv returns 1..n bytes or -1.
+    // send moves 1 to n bytes and returns how many it moved, as write() does, and chapulin
+    // calls it again for the rest. n is one record, at most 2^14 + 256 + 5 bytes. 0, a
+    // negative value and a count above n are failures. recv returns 1 to n bytes, or -1.
     // Both block, bounded by the caller's socket timeouts.
     int (*send)(void *io, const uint8_t *p, size_t n);
     int (*recv)(void *io, uint8_t *p, size_t n);

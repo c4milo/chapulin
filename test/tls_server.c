@@ -42,16 +42,8 @@ static uint64_t wall_clock(void *clock_io) {
 }
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(const int *)io;
-    while (n > 0) {
-        ssize_t w = write(fd, p, n);
-        if (w <= 0) {
-            return -1;
-        }
-        p += w;
-        n -= (size_t)w;
-    }
-    return 0;
+    ssize_t wrote = write(*(const int *)io, p, n);
+    return wrote > 0 ? (int)wrote : -1;
 }
 
 static int io_recv(void *io, uint8_t *p, size_t n) {

@@ -197,22 +197,15 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // --- Transport -----------------------------------------------------------
 //
 // chapulin moves bytes only through these two callbacks and knows
-// nothing else about the network. send moves all n bytes and returns
-// 0; every other value is a failure. recv returns 1 to n bytes, or -1.
+// nothing else about the network. send returns the 1 to n bytes it
+// moved, and chapulin calls it again for the rest. recv returns 1 to n
+// bytes. -1 from either is a failure.
 // Both block, bounded by the receive timeout dial sets, because the
 // library owns no timer.
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(const int *)io;
-    while (n > 0) {
-        ssize_t wrote = write(fd, p, n);
-        if (wrote <= 0) {
-            return -1;
-        }
-        p += wrote;
-        n -= (size_t)wrote;
-    }
-    return 0;
+    ssize_t wrote = write(*(const int *)io, p, n);
+    return wrote > 0 ? (int)wrote : -1;
 }
 
 static int io_recv(void *io, uint8_t *p, size_t n) {

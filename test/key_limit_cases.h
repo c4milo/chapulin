@@ -42,9 +42,10 @@
 #include "handshake_post.h"
 
 // One direction's records once connected: the bytes one session sent and
-// the other has not read. io_send_all hands cfg.send one whole record per
-// call, so send_len holds the length of each record, the first
-// KEY_LIMIT_SENDS_MAX of them.
+// the other has not read. io_send_all hands cfg.send one whole record,
+// and key_limit_send takes all of it, so each call is one record and
+// send_len holds the length of each, the first KEY_LIMIT_SENDS_MAX of
+// them.
 #define KEY_LIMIT_SENDS_MAX 8
 typedef struct {
     uint8_t bytes[4096];
@@ -66,7 +67,7 @@ static int key_limit_send(key_limit_pipe *pipe, const uint8_t *p, size_t n) {
     }
     pipe->len += n;
     pipe->sends++;
-    return 0;
+    return (int)n;
 }
 
 // Hands over what the pipe holds. No case reads a pipe it left empty.

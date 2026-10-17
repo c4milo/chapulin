@@ -39,7 +39,7 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
         m->tx_len += n;
     }
     m->sent += n;
-    return 0;
+    return (int)n;
 }
 
 static int mock_recv(void *io, uint8_t *p, size_t n) {

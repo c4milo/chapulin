@@ -96,24 +96,16 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // On lwIP these wrap lwip_send and lwip_recv; on a cellular modem they
 // wrap the AT-command driver. Only the contract matters:
 //
-//   send: move all n bytes, then return 0. Every other value is a
-//         failure, including a positive count of bytes moved.
+//   send: move 1 to n bytes and return how many, as write() does.
+//         chapulin calls it again for the rest. Return -1 on error.
 //   recv: return 1 to n bytes, or -1 on error, timeout, or peer close.
 //
 // Both calls block. chapulin has no clock and waits exactly as long as
 // the transport does, so put your timeouts here.
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(const int *)io;
-    while (n > 0) {
-        ssize_t wrote = write(fd, p, n);
-        if (wrote <= 0) {
-            return -1;
-        }
-        p += wrote;
-        n -= (size_t)wrote;
-    }
-    return 0;
+    ssize_t wrote = write(*(const int *)io, p, n);
+    return wrote > 0 ? (int)wrote : -1;
 }
 
 static int io_recv(void *io, uint8_t *p, size_t n) {

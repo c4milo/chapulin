@@ -91,12 +91,12 @@ static int take(wire *w, uint8_t *p, size_t n) {
 
 static int send_to_server(void *io, const uint8_t *p, size_t n) {
     (void)io;
-    return put(&to_server, p, n);
+    return put(&to_server, p, n) == 0 ? (int)n : -1;
 }
 
 static int send_to_client(void *io, const uint8_t *p, size_t n) {
     (void)io;
-    return put(&to_client, p, n);
+    return put(&to_client, p, n) == 0 ? (int)n : -1;
 }
 
 static int read_to_server(void *io, uint8_t *p, size_t n) {

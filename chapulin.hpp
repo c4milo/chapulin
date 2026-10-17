@@ -116,8 +116,9 @@ struct ConstBytes {
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // Blocking I/O plus the random source, matching the C callback contract:
-// send moves all n bytes and returns 0, anything else is failure; recv
-// returns 1..n bytes or -1. Pass captureless functions (or lambdas that
+// send returns the 1 to n bytes it moved, and the C call sends the rest
+// in the next call; recv returns 1 to n bytes; any other value from
+// either is failure. Pass captureless functions (or lambdas that
 // decay to function pointers) and one context. A TRANSPORT=quic-nonblocking object
 // opens no socket and calls neither callback, so this type exists only
 // here.

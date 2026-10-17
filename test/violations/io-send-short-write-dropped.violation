@@ -1,0 +1,14 @@
+invariant: INV-13
+file: io.c
+catches: unit
+reason: io_send_all stops after the first call that moves a byte, so a
+  socket that took part of a record drops the rest, and the session goes
+  on after a cut record. bin/unit's send that moves 3 bytes a call
+  objects.
+
+--- old
+        p += sent;
+        n -= (size_t)sent;
+--- new
+        p += sent;
+        n = 0;

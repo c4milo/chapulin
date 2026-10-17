@@ -571,7 +571,7 @@ last `ROLE=server` stub, as the entry said it would.
   peer's close_notify is neither, and neither is the peer's fatal
   alert, which fails the session with no alert sent (INV-22). The
   `ch_read` that reads either sends nothing, and `ch_close` sends this
-  side's close_notify through `cfg.send` in one call, whenever the
+  side's close_notify through `cfg.send` as one record, whenever the
   caller makes it. A caller whose `cfg.send` holds only input while
   `ch_read` runs, as colibri's does, therefore sees no send it did not
   ask for when the peer closes or aborts.

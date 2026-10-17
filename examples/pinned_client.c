@@ -216,22 +216,14 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // vendor SDK stack replaces them the same way. POSIX sockets appear here
 // because they are the illustration every reader already knows.
 //
-// The contract lives in cfg.h: send moves all n bytes and returns 0, and
-// any other value — a positive byte count included — means failure; recv
-// returns 1 to n bytes, or -1. Both block. chapulin runs no timers, so
+// The contract lives in cfg.h: send returns the 1 to n bytes it moved,
+// and chapulin calls it again for the rest; recv returns 1 to n bytes;
+// -1 from either means failure. Both block. chapulin runs no timers, so
 // the only bound on a stalled peer is the one you set here.
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(const int *)io;
-    while (n > 0) {
-        ssize_t wrote = write(fd, p, n);
-        if (wrote <= 0) {
-            return -1;
-        }
-        p += wrote;
-        n -= (size_t)wrote;
-    }
-    return 0; // every byte moved
+    ssize_t wrote = write(*(const int *)io, p, n);
+    return wrote > 0 ? (int)wrote : -1;
 }
 
 static int io_recv(void *io, uint8_t *p, size_t n) {

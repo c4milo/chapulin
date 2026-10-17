@@ -38,15 +38,23 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     }
 }
 
+// cfg.send: one send(), whose count chapulin reads, and it calls again
+// for the rest (cfg.h).
 static int sock_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(int *)io;
-    size_t off = 0;
-    while (off < n) {
-        ssize_t w = send(fd, p + off, n - off, 0);
+    ssize_t w = send(*(int *)io, p, n, 0);
+    return w > 0 ? (int)w : -1;
+}
+
+// Writes all n bytes that ch_record_out staged, and returns 0, or -1 when
+// the socket refuses them.
+static int sock_write_all(int fd, const uint8_t *p, size_t n) {
+    while (n > 0) {
+        ssize_t w = send(fd, p, n, 0);
         if (w <= 0) {
             return -1;
         }
-        off += (size_t)w;
+        p += w;
+        n -= (size_t)w;
     }
     return 0;
 }
@@ -104,7 +112,7 @@ static int send_staged(ch_record *r, int fd) {
         if (n == 0) {
             return 0;
         }
-        if (sock_send(&fd, out_buf, n) != 0) {
+        if (sock_write_all(fd, out_buf, n) != 0) {
             return 1;
         }
     }

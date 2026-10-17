@@ -170,19 +170,11 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 // block, bounded by a timeout you set, and the client never retries a
 // failure: an I/O error kills the session and the device reconnects.
 
-// send moves all n bytes and returns 0. Every other value is a failure,
-// including a positive byte count.
+// send returns the bytes write() moved, 1 to n, and chapulin calls it
+// again for the rest. -1 is a failure.
 static int io_send(void *io, const uint8_t *p, size_t n) {
-    int fd = *(const int *)io;
-    while (n > 0) {
-        ssize_t wrote = write(fd, p, n);
-        if (wrote <= 0) {
-            return -1;
-        }
-        p += wrote;
-        n -= (size_t)wrote;
-    }
-    return 0;
+    ssize_t wrote = write(*(const int *)io, p, n);
+    return wrote > 0 ? (int)wrote : -1;
 }
 
 // recv returns 1 to n bytes, or -1 on failure or on a closed socket.

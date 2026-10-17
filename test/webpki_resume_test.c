@@ -356,11 +356,11 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
     if (s->hellos < hellos_owed && n > REC_HDR && p[0] == REC_HANDSHAKE &&
         n - REC_HDR <= CH_TX_STAGE) {
         take_hello(s, p + REC_HDR, n - REC_HDR);
-        return 0;
+        return (int)n;
     }
     if (n == REC_HDR + 2 && p[0] == REC_ALERT) {
         s->alert = p[REC_HDR + 1];
-        return 0;
+        return (int)n;
     }
     uint8_t pt[64];
     size_t pt_len = 0;
@@ -369,7 +369,7 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
         type == REC_ALERT && pt_len == 2) {
         s->alert = pt[1];
     }
-    return 0;
+    return (int)n;
 }
 
 // Hands over what the mock holds. Empty, it returns 0 in a tcp-nonblocking build,

@@ -1,0 +1,11 @@
+invariant: INV-13
+file: io.c
+catches: unit
+reason: io_send_all takes a send that answers 0 as progress and calls it
+  again, so a send that moves nothing keeps the session in its loop.
+  bin/unit's send that answers 0 once counts the second call.
+
+--- old
+        if (sent <= 0 || (size_t)sent > n) {
+--- new
+        if (sent < 0 || (size_t)sent > n) {

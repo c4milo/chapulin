@@ -41,8 +41,7 @@ static uint8_t floor_msg[FLOOR_MSG_LEN];
 static int floor_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
-    (void)n;
-    return 0;
+    return (int)n;
 }
 
 static int floor_recv(void *io, uint8_t *p, size_t n) {

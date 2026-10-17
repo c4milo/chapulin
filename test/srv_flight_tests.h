@@ -74,7 +74,7 @@ static int flight_send(void *io, const uint8_t *p, size_t n) {
     }
     memcpy(wire + wire_len, p, n);
     wire_len += n;
-    return 0;
+    return (int)n;
 }
 
 static int flight_recv(void *io, uint8_t *p, size_t n) {

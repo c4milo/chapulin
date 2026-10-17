@@ -55,8 +55,7 @@ static int recv_stream(void *io, uint8_t *p, size_t n) {
 static int send_ok(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
-    (void)n;
-    return 0;
+    return (int)n;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {

@@ -1,6 +1,7 @@
-// Proves: io_read_record and io_send_all are memory-safe and UB-free
-// against a transport that returns anything at all, and a record it
-// accepts lies wholly inside the caller's buffer.
+// Proves: io_read_record is memory-safe and UB-free against a transport
+// that returns anything at all, and a record it accepts lies wholly
+// inside the caller's buffer. io_send_harness.c proves io_send_all: its
+// loop beside this one took the solver past 17 minutes in one formula.
 //
 // The callbacks are the one part of this library somebody else writes, so
 // the recv stub honours no contract: it returns an arbitrary int and
@@ -31,18 +32,10 @@ static int recv_hostile(void *io, uint8_t *p, size_t n) {
     return got;
 }
 
-static int send_hostile(void *io, const uint8_t *p, size_t n) {
-    (void)io;
-    (void)p;
-    (void)n;
-    return nondet_int();
-}
-
 int main(void) {
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.recv = recv_hostile;
-    cfg.send = send_hostile;
 
     size_t cap = nondet_size_t();
     __CPROVER_assume(cap <= sizeof g_buf);
@@ -57,9 +50,5 @@ int main(void) {
         __CPROVER_assert(record_len >= REC_HDR, "io: an accepted record carries a header");
         __CPROVER_assert(record_len <= cap, "io: an accepted record fits the buffer");
     }
-
-    size_t n = nondet_size_t();
-    __CPROVER_assume(n <= sizeof g_buf);
-    (void)io_send_all(&cfg, g_buf, n);
     return 0;
 }

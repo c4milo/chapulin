@@ -118,18 +118,18 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
     if (s->hello_len == 0 && n > REC_HDR && p[0] == REC_HANDSHAKE && n - REC_HDR <= CH_TX_STAGE) {
         memcpy(s->hello, p + REC_HDR, n - REC_HDR);
         s->hello_len = n - REC_HDR;
-        return 0;
+        return (int)n;
     }
     if (s->hrr_len > 0 && s->retry_hello_len == 0 && n > REC_HDR && p[0] == REC_HANDSHAKE &&
         n - REC_HDR <= CH_TX_STAGE) {
         memcpy(s->retry_hello, p + REC_HDR, n - REC_HDR);
         s->retry_hello_len = n - REC_HDR;
         s->retry_record_version = p[2];
-        return 0;
+        return (int)n;
     }
     if (n == REC_HDR + 2 && p[0] == REC_ALERT) {
         s->alert = p[REC_HDR + 1];
-        return 0;
+        return (int)n;
     }
     uint8_t pt[64];
     size_t pt_len = 0;
@@ -138,7 +138,7 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
         type == REC_ALERT && pt_len == 2) {
         s->alert = pt[1];
     }
-    return 0;
+    return (int)n;
 }
 
 static void push_clear(mock_server *s, const uint8_t *msg, size_t n) {

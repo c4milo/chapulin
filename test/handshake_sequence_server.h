@@ -86,19 +86,20 @@ static uint8_t test_pin[TEST_PIN_LEN]; // filled in main; content never verified
 
 static int mock_send(void *io, const uint8_t *p, size_t n) {
     mock_server *s = io;
-    // Each send call carries exactly one record (io_send_all's contract).
+    // Each send call carries exactly one record: io_send_all hands over a
+    // whole record, and this send takes all of it.
     if (n > REC_HDR && p[0] == REC_HANDSHAKE && p[REC_HDR] == HS_CLIENT_HELLO &&
         s->client_hello_count < 2 && n - REC_HDR <= sizeof s->client_hello[0]) {
         memcpy(s->client_hello[s->client_hello_count], p + REC_HDR, n - REC_HDR);
         s->client_hello_len[s->client_hello_count] = n - REC_HDR;
         s->client_hello_count++;
-        return 0;
+        return (int)n;
     }
     // A fatal alert before any keys exist arrives in plaintext.
     if (n == REC_HDR + 2 && p[0] == REC_ALERT && p[REC_HDR] == 2) {
         s->last_alert = p[REC_HDR + 1];
         s->alerts++;
-        return 0;
+        return (int)n;
     }
     // Sealed client records: try the handshake then the application
     // keys — rec_open advances a direction's sequence only on success,
@@ -112,7 +113,7 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
         s->last_alert = pt[1];
         s->alerts++;
     }
-    return 0;
+    return (int)n;
 }
 
 // Queues one record of the given content type under the current phase:

@@ -1,0 +1,12 @@
+invariant: INV-13
+file: io.c
+catches: unit
+reason: io_send_all takes a count above the bytes it handed the send, so
+  the count of bytes left wraps and the loop calls the send past the end
+  of the record. bin/unit's send that answers n + 1 once counts the
+  second call.
+
+--- old
+        if (sent <= 0 || (size_t)sent > n) {
+--- new
+        if (sent <= 0) {

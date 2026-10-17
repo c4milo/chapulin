@@ -36,7 +36,7 @@ static int client_send(void *io, const uint8_t *p, size_t n) {
     }
     memcpy(to_server.bytes + to_server.len, p, n);
     to_server.len += n;
-    return 0;
+    return (int)n;
 }
 
 // Hands over what the client sent, and 0 when it has sent nothing more,
@@ -60,7 +60,7 @@ static int server_send(void *io, const uint8_t *p, size_t n) {
     }
     memcpy(held.bytes + held.len, p, n);
     held.len += n;
-    return 0;
+    return (int)n;
 }
 
 // The server closes its direction first and the client its own after;

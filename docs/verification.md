@@ -1602,12 +1602,21 @@ The entries are grouped by area:
 #### io
 
 - **Harness:** `io` (slow)
-- **Proves:** `io_read_record` and `io_send_all` are memory-safe and
-  UB-free against a transport that returns anything at all, and a record
-  `io_read_record` accepts lies wholly inside the caller's buffer. The
-  recv stub honors no contract: it returns an arbitrary int and writes
-  only the bytes it claims, up to what it was asked for.
+- **Proves:** `io_read_record` is memory-safe and UB-free against a
+  transport that returns anything at all, and a record it accepts lies
+  wholly inside the caller's buffer. The recv stub honors no contract: it
+  returns an arbitrary int and writes only the bytes it claims, up to
+  what it was asked for.
 - **Bound:** buffers ≤ 16 B.
+
+#### io_send
+
+- **Harness:** `io_send` (fast)
+- **Proves:** `io_send_all` is memory-safe and UB-free against a send
+  that returns an arbitrary int. Each send call starts at the first byte
+  not yet moved and is handed every byte left, and a `CH_OK` means the
+  send moved all n bytes.
+- **Bound:** records ≤ 16 B.
 
 #### record
 

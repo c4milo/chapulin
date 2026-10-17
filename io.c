@@ -2,8 +2,20 @@
 
 #include "record.h"
 
+// send returns the bytes it moved, 1 to n, so a socket that takes part of
+// a record gets the rest in the next call. 0, a negative value and a count
+// above n are failures, so a send that moves nothing cannot keep the
+// session in this loop (cfg.h).
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
-    return cfg->send(cfg->io, p, n) == 0 ? CH_OK : CH_EIO;
+    while (n > 0) {
+        int sent = cfg->send(cfg->io, p, n);
+        if (sent <= 0 || (size_t)sent > n) {
+            return CH_EIO;
+        }
+        p += sent;
+        n -= (size_t)sent;
+    }
+    return CH_OK;
 }
 
 static int read_exact(const ch_cfg *cfg, uint8_t *p, size_t n) {

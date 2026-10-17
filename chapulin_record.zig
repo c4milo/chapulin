@@ -85,14 +85,15 @@ const Io = struct {
         io.output = &.{};
     }
 
-    fn put(io: *Io, bytes: []const u8) c_int {
+    /// Copies all of bytes into output, or refuses them whole.
+    fn put(io: *Io, bytes: []const u8) bool {
         if (bytes.len > io.output.len - io.written) {
             io.refused = true;
-            return -1;
+            return false;
         }
         @memcpy(io.output[io.written..][0..bytes.len], bytes);
         io.written += bytes.len;
-        return 0;
+        return true;
     }
 
     fn take(io: *Io, into: []u8) c_int {
@@ -396,16 +397,18 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return @fieldParentPtr("hook", hook);
         }
 
+        /// cfg.send's rule: the count of bytes moved, here all n.
         fn send(io: ?*anyopaque, p: [*c]const u8, n: usize) callconv(.c) c_int {
-            return fromHook(io).io.put(p[0..n]);
+            return if (fromHook(io).io.put(p[0..n])) @intCast(n) else -1;
         }
 
         fn recv(io: ?*anyopaque, p: [*c]u8, n: usize) callconv(.c) c_int {
             return fromHook(io).io.take(p[0..n]);
         }
 
+        /// cfg.srv.on_record_out's rule: 0 for a whole record taken.
         fn onRecordOut(io: ?*anyopaque, p: [*c]const u8, n: usize) callconv(.c) c_int {
-            return fromHook(io).io.put(p[0..n]);
+            return if (fromHook(io).io.put(p[0..n])) 0 else -1;
         }
 
         fn onTicket(io: ?*anyopaque, ticket: [*c]const c.ch_ticket) callconv(.c) void {

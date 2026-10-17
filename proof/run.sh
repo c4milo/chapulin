@@ -904,12 +904,21 @@ launch fast full hkdf 120 "" ct.c proof/ct_wipe_stub.c
 # The SHA-256 proof on the line above measured 282 properties, 2 s,
 # 0.04 GB after hash_len joined the signatures.
 launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" ct.c proof/ct_wipe_stub.c
-# io: 458 s under this script's own flags. The transport shim over the
-# caller's callbacks, proven against a recv that honours no contract: it
-# returns any int, so read_exact's got <= 0 || got > n is under proof
-# rather than assumed. The 16-byte buffer bounds its per-byte loop, which
-# is what sets the unwind.
+# io: 462 s and 3.6 GB under this script's own flags, measured on
+# 2026-10-17 once io_send_all moved to io_send below: 122 properties.
+# The read half of the transport shim over the caller's callbacks,
+# proven against a recv that honours no contract: it returns any int, so
+# read_exact's got <= 0 || got > n is under proof rather than assumed.
+# The 16-byte buffer bounds its per-byte loop, which is what sets the
+# unwind.
 launch slow:4 full io 24 ""
+# io_send: io_send_all against a send that returns any int. A send that
+# moves one byte a call runs the loop once for each of the 16 bytes, and
+# the unwind is one more than that. Measured on 2026-10-17 (cbmc 6.11.0,
+# kissat, /usr/bin/time -l, these flags, M1 Pro): 113 properties, 9 s,
+# 0.09 GB. With an assert of 0 at the CH_OK tail, that assert fails, so
+# the tail is reached.
+launch fast full io_send 17 ""
 # record_whole_len: where a TRANSPORT=tcp-nonblocking caller's record ends,
 # ch_record_whole_len over every n up to 2^20 and every byte, in a heap
 # object CBMC allocates exactly n bytes long, so a read on either side of

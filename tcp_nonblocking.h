@@ -35,8 +35,8 @@
 // direction stays open, so ch_record_state still reports
 // CH_ST_CONNECTED and ch_write still sends. The caller closes its own
 // direction with ch_close, which sends this side's close_notify through
-// cfg.send once and leaves the session CH_ST_CLOSED, whichever side
-// closed first. ch_record_close after it is safe. ch_read calls cfg.send
+// cfg.send as one record and leaves the session CH_ST_CLOSED, whichever
+// side closed first. ch_record_close after it is safe. ch_read calls cfg.send
 // in two cases alone: to answer a KeyUpdate whose sender asked for one
 // (RFC 9846 §4.7.3), and to send the alert of a failure.
 //

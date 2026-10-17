@@ -32,9 +32,9 @@ static uint8_t tx_cli_buf[TX_LOOP_BUF];
 #define TX_TRANSFER (2 * CH_TX_PT + 100)
 
 // One direction's records once connected: what one end's ch_write sent,
-// for the other end's ch_read. io_send_all hands cfg.send one whole record
-// per call, so send_calls counts records and last_len is the length of the
-// last one.
+// for the other end's ch_read. io_send_all hands cfg.send one whole record,
+// and pipe_send takes all of it, so send_calls counts records and last_len
+// is the length of the last one.
 typedef struct {
     uint8_t bytes[4 * TX_LOOP_BUF];
     size_t len;
@@ -53,7 +53,7 @@ static int pipe_send(tx_pipe *pipe, const uint8_t *p, size_t n) {
     pipe->len += n;
     pipe->send_calls++;
     pipe->last_len = n;
-    return 0;
+    return (int)n;
 }
 
 // Hands over what the pipe holds, and 0 when it holds nothing more, which

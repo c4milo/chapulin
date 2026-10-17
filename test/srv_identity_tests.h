@@ -156,9 +156,8 @@ static size_t recv_calls;
 static int count_send(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
-    (void)n;
     send_calls++;
-    return 0;
+    return (int)n;
 }
 
 // It poisons what it was handed, so a session that read on anyway would
