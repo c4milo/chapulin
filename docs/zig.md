@@ -415,9 +415,9 @@ and in `avx512_wipe.c`'s block of assembly, as make's does
 
 ### Codes and reports
 
-- `Group`: `ch_tls.group`'s code points, `x25519`, `x25519mlkem768`,
+- `Group`: `ch_group`'s code points, `x25519`, `x25519mlkem768`,
   `secp256r1`.
-- `Suite`: `ch_tls.suite`'s, `cipher_suites`' and `srv.cipher_suites`' code points.
+- `Suite`: `ch_suite`'s, `cipher_suites`' and `srv.cipher_suites`' code points.
 - `State`: `start`, `connected`, `closed`, `failed`.
 - `CertType`: `x509`, `raw_public_key`.
 - `buildMatches()`: `ch_build_matches` over the object's own record,
@@ -482,7 +482,7 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.outputLen()` | the bytes the last `recordIn` wrote into `output`, which a failed `recordIn` also sets: `Progress.written` on success | none |
-| `Server.sni()` | `sni_buf[0..ch_tls.sni_len]`, null when 0 | none |
+| `Server.sni()` | `sni_buf[0..ch_sni_len]`, null when 0 | none |
 | `recordState()` | `ch_record_state` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
 | `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io |
@@ -491,13 +491,13 @@ after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
 | `close(output)` | `ch_close` | Io |
 | `recordClose()` | `ch_record_close`, then the ticket slot zeroed | none |
 | `exportKeyingMaterial(label, context, out)` | `ch_export` | Invalid |
-| `alpnSelected()` | the name `ch_tls.alpn_selected` indexes; null for `CH_ALPN_NONE` | none |
-| `group()`, `suite()` | `ch_tls.group`, `ch_tls.suite`; null while 0 | none |
-| `pskSelected()`, `serverCertType()`, `peerLimit()`, `readClosed()` | the `ch_tls` fields of those names | none |
+| `alpnSelected()` | the name `ch_alpn_selected` indexes; null for `CH_ALPN_NONE` | none |
+| `group()`, `suite()` | `ch_group`, `ch_suite`; null while 0 | none |
+| `pskSelected()`, `serverCertType()`, `peerLimit()`, `readClosed()` | `ch_psk_selected`, `ch_server_cert_type`, `ch_peer_limit`, `ch_read_closed` | none |
 | `replyLen()` | the bytes the last `read` wrote into `reply`, which a failed read also sets | none |
 
-A client in an object without SUITE=aesgcm offers ChaCha20 alone and
-writes no `ch_tls.suite`, so its `suite()` stays null. A SUITE=aesgcm
+A session in an object without SUITE=aesgcm runs ChaCha20 alone, and
+`ch_suite` answers ChaCha20 for it, before the handshake too. A SUITE=aesgcm
 TRUST=webpki client offers three, in the order `Client.cipher_suites`
 names or, when it is empty, in the build's order: AES-256-GCM first in a
 host object whose `Client.cpu` states `constant_time_aes`, ChaCha20 alone

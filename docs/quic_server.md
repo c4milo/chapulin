@@ -362,7 +362,7 @@ bytes of that call, and colibri sends it in CRYPTO frames in 1-RTT packets
 `early_data`, so no client may send 0-RTT on it. On a later connection that
 presents the ticket, the same calls produce a ServerHello at the Initial
 level and EncryptedExtensions and Finished at the Handshake level, with no
-Certificate and no CertificateVerify, and `ch_tls.psk_selected` reads 1 once
+Certificate and no CertificateVerify, and `ch_psk_selected` reads 1 once
 the handshake is done.
 
 **colibri's client.** Set `cfg.on_ticket`. Once `ch_quic_state` reports
@@ -407,7 +407,7 @@ reconnects without the ticket. A `TRUST=webpki` resuming ClientHello
 offers the five signature schemes beside the ticket, so this server
 sends its certificate and the same connection completes as a full
 handshake, which the client checks against its anchors, hostname and
-clock (`docs/decisions.md` entry 55). `ch_tls.psk_selected` reads 0 on
+clock (`docs/decisions.md` entry 55). `ch_psk_selected` reads 0 on
 both ends.
 
 **What checks it.** `bin/quic_loop_test` runs this tree's QUIC client
@@ -443,8 +443,7 @@ A QUIC server runs the key exchange the other two server drivers run
 any client that lists it, x25519 for one that lists x25519 and not the
 hybrid, and secp256r1 for one that lists neither, and asks with a
 HelloRetryRequest when the hello carried no share for the group it chose.
-`ch_tls.group` reports the group once the ServerHello has gone out, and
-`ch_quic.t.group` is where a caller reads it. No call and no configuration
+`ch_group(&q->t)` reports the group once the ServerHello has gone out. No call and no configuration
 field changed, and `KEX` selects nothing for this build either.
 
 **What changes for colibri.** Three things, and none of them is an API

@@ -5,9 +5,9 @@ is no CA to vouch for a new server key. Instead the config holds up to
 two pins: `server_pubkey` (slot A, the current key) and
 `server_pubkey2` (slot B, the staged next key). The handshake accepts
 a server that proves possession of either one and records which slot
-matched in `ch_tls.pin_slot` (1 = A, 2 = B). That field is public
-information: read it after each connect to watch a rotation move
-through the fleet.
+matched, which `ch_pin_slot` reads (1 = A, 2 = B). That value is
+public information: read it after each connect to watch a rotation
+move through the fleet.
 
 Slot B is optional and follows every slot-A rule — the same length
 limits per build, and the odd-modulus check in the RSA build. Pinned
@@ -84,7 +84,7 @@ Two CA-mode specifics:
   only remedy is this procedure run fleet-wide under pressure: stage
   a new CA key, reissue every server certificate, promote, retire the
   stolen key —
-  then read `ch_tls.epoch` across the fleet and reprovision devices
+  then read `ch_epoch` across the fleet and reprovision devices
   whose marks were walked out of range. Custody rules that keep the
   root offline (see [ca.md](ca.md)) exist so you never run that
   drill for real.

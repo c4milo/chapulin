@@ -647,13 +647,13 @@ class Session {
     // 0 before a pinned handshake completes. Public information, for
     // watching key rotation progress.
     int pin_slot() const {
-        return tls_.pin_slot;
+        return ch_pin_slot(&tls_);
     }
 
     // The key-exchange group that ran (ch_tls.group): Group::none until
     // the handshake accepts the ServerHello's key_share.
     Group group() const {
-        return static_cast<Group>(tls_.group);
+        return static_cast<Group>(ch_group(&tls_));
     }
 
     // Whether a PSK authenticated the handshake (ch_tls.psk_selected):
@@ -661,7 +661,7 @@ class Session {
     // TRUST=webpki a server that declines the ticket gives a full
     // handshake and false.
     bool psk_selected() const {
-        return tls_.psk_selected != 0;
+        return ch_psk_selected(&tls_) != 0;
     }
 
 #ifdef CH_TRUST_WEBPKI
@@ -670,7 +670,7 @@ class Session {
     // given, or alpn_none when the server selected none. Read it after
     // connect() returns Status::ok and branch on it.
     int alpn_selected() const {
-        return tls_.alpn_selected;
+        return ch_alpn_selected(&tls_);
     }
 #endif
 
@@ -679,10 +679,10 @@ class Session {
     // must retry: call epoch_store with tls.epoch until it returns 0,
     // and alert an operator if it keeps failing (docs/ca.md).
     uint32_t epoch() const {
-        return tls_.epoch;
+        return ch_epoch(&tls_);
     }
     bool epoch_store_failed() const {
-        return tls_.epoch_store_failed != 0;
+        return ch_epoch_store_failed(&tls_) != 0;
     }
 
     // What the peer presented and how the rule judged it (CH_EPOCH_*),
@@ -691,10 +691,10 @@ class Session {
     // reissued; CH_EPOCH_UNTRUSTED means the date should never have
     // been issued. Lattice headroom is CH_EPOCH_MAX - epoch().
     uint32_t epoch_seen() const {
-        return tls_.epoch_seen;
+        return ch_epoch_seen(&tls_);
     }
     int epoch_status() const {
-        return tls_.epoch_status;
+        return ch_epoch_status(&tls_);
     }
 
     // Forward alert.h's two calls: the fatal alert this side's failure

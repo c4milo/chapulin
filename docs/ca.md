@@ -254,7 +254,7 @@ The device has no clock, but it can compare numbers. The CA writes
 each server certificate's notBefore as an epoch date, not an issuance
 time, and
 adds one step to revoke. Each device stores the highest epoch it
-has accepted in `ch_tls.epoch`, and refuses any certificate below it
+has accepted, which `ch_epoch` reads, and refuses any certificate below it
 with
 `certificate_revoked`.
 
@@ -426,8 +426,8 @@ problem: reprovision it, or ship it before the fleet moves
   bit flip recoverable in place: a stored epoch can be lowered only by
   reprovisioning, so a flip toward a higher bare value would stand
   until then. Only two bad slots is a real failure.
-- Retry a failed write. `ch_tls.epoch_store_failed` says the value did
-  not persist; call `epoch_store` with `ch_tls.epoch` until it
+- Retry a failed write. `ch_epoch_store_failed` says the value did
+  not persist; call `epoch_store` with `ch_epoch(&tls)` until it
   succeeds. An unwritten epoch is lost at the next power cut, and the
   device trusts revoked certificates again.
 - External PSKs have no certificate, so no epoch applies. Revoke one
@@ -477,11 +477,11 @@ non-blocking client keeps them in its session's `ch_tls` the same way:
 after `ch_record_init` or `ch_quic_init` refuses a configuration, and
 after the handshake it starts has ended.
 
-- `ch_tls.epoch` — this device's stored epoch. Send it with your
+- `ch_epoch(&tls)` — this device's stored epoch. Send it with your
   telemetry. The spread across a fleet is its drift; keep it under
   `CH_EPOCH_BOUND`. Epochs left is `CH_EPOCH_MAX - epoch`.
-- `ch_tls.epoch_seen` — the epoch the peer presented.
-- `ch_tls.epoch_status` — the verdict:
+- `ch_epoch_seen(&tls)` — the epoch the peer presented.
+- `ch_epoch_status(&tls)` — the verdict:
   - `CH_EPOCH_MATCHED` — the peer matches this device.
   - `CH_EPOCH_AHEAD` — the peer is newer, so the device moves up. On a
     resumed session it means the opposite: the ticket knows a newer
@@ -495,7 +495,7 @@ after the handshake it starts has ended.
     ahead. The handshake failed. Never routine: a mis-issued
     certificate, or
     someone trying to strand the device.
-- `ch_tls.epoch_store_failed` — the value did not persist.
+- `ch_epoch_store_failed(&tls)` — the value did not persist.
 
 A certificate that fails either way fails the handshake with
 `CH_EAUTH`, so `epoch_status` is the only way to tell the two apart,

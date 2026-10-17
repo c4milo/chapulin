@@ -360,6 +360,7 @@ static void test_record(void) {
 
 #include "handshake_flight.h"
 #include "psk_decline_tests.h"
+#include "session_report_tests.h"
 
 #include "rsa.h"
 #include "rsa_wide_vectors.h"
@@ -405,6 +406,7 @@ static void test_result_text(void) {
 int main(int argc, char **argv) {
     test_take_cpu(argc, argv);
     test_result_text();
+    test_session_report();
     test_ct();
     test_sha256();
     test_hmac_hkdf();

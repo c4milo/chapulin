@@ -144,7 +144,7 @@ in place of the two shares, with a cookie when the retry sent one. The P-256
 key pair is drawn only then, and the retry wipes the first hello's x25519 and
 ML-KEM key pairs. The ServerHello must select secp256r1, the client checks
 the server's point is on the curve, and the shared secret is its 32-byte X
-coordinate. `ch_tls.group` reports `CH_GROUP_SECP256R1`. That server costs
+coordinate. `ch_group` reports `CH_GROUP_SECP256R1`. That server costs
 one extra round trip.
 
 So a HelloRetryRequest can ask this client for a cookie, for secp256r1, or for
@@ -181,8 +181,8 @@ trade: entry 12's fail-closed property does not survive the second group,
 and secp256r1 is a third classic group beside it.
 A caller that wants it back sets `ch_cfg.require_pq`. The flag drops x25519 and secp256r1 from the hello, so a server
 without the hybrid finds no common group and fails the handshake, and
-`ch_tls.group` must be `CH_GROUP_X25519MLKEM768` when the ServerHello is
-accepted. `ch_tls.group` reports the group the ServerHello selected in every
+the group must be `CH_GROUP_X25519MLKEM768` when the ServerHello is
+accepted. `ch_group` reports the group the ServerHello selected in every
 build, so a caller that does not set the flag can still see which exchange
 ran.
 
@@ -465,9 +465,9 @@ a byte when:
 - any entry has a NULL `name`, an empty one, or one over
   `CH_ALPN_NAME_MAX` bytes;
 - two entries carry the same name. A repeat would make the server's
-  selection name two indices, and `ch_tls.alpn_selected` reports one.
+  selection name two indices, and `ch_alpn_selected` reports one.
 
-`ch_tls.alpn_selected` is the index in `ch_cfg.alpn_protocols` of the
+`ch_alpn_selected` answers the index in `ch_cfg.alpn_protocols` of the
 protocol the server selected, or `CH_ALPN_NONE` when it selected none.
 Read it after `ch_connect` returns `CH_OK` and branch on it. There is no
 copy and no second buffer: the caller already owns the names.
@@ -546,7 +546,7 @@ received it, and refuses to present it under any other.
   as given. A caller that rebuilds its anchor array in a different order
   loses its tickets and makes one full handshake.
 - **ALPN is not bound.** Every handshake, resumed or not, negotiates ALPN
-  again, and `ch_tls.alpn_selected` reports the new answer. RFC 9846 ties
+  again, and `ch_alpn_selected` reports the new answer. RFC 9846 ties
   the application protocol to a ticket only for 0-RTT data, which this
   client never sends.
 - **The resuming hello offers the certificate path too.** It carries
@@ -563,7 +563,7 @@ received it, and refuses to present it under any other.
   names any identity but 0 is refused with `illegal_parameter`.
   `docs/decisions.md` entry 55 says why the hello offers both, and records
   the dns.google measurement behind it.
-- **`ch_tls.psk_selected` says which one happened.** It is 1 when the
+- **`ch_psk_selected` says which one happened.** It is 1 when the
   server selected the ticket and sent no certificate, and 0 when the
   handshake was a full one, whether the hello offered a ticket or not.
 - **The ticket's age is checked before a byte is sent.** The caller sets
@@ -644,7 +644,7 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   (`rfc8310.txt:805-814`), and RFC 7858 §4.2 pins the validated chain. A
   certificate the server sent beyond that path does not count, so a
   pinned certificate appended to a chain another CA signed does not pass.
-- **What the server chose** is `ch_tls.server_cert_type`:
+- **What the server chose** is what `ch_server_cert_type` reports:
   `CH_CERT_TYPE_RAW_PUBLIC_KEY` (2) or `CH_CERT_TYPE_X509` (0).
 - **Refusals.** A key no pin names, a chain under pins alone whose
   leaf key no pin names, and one whose pins name only an intermediate or

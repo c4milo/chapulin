@@ -374,6 +374,7 @@ static void test_server_hello_ends_level(void) {
 // The version rules, which read configure, build_server_hello and CHECK
 // above.
 #include "quic_version_tests.h"
+#include "session_report_tests.h"
 
 // ch_result_text (result.h) for the two codes a QUIC build adds: each has a text of its own,
 // apart from the shared codes' texts and from the text of an unknown code.
@@ -388,6 +389,7 @@ static void test_result_text(void) {
 
 int main(void) {
     test_result_text();
+    test_session_report();
     test_config_refusals();
     test_driver();
     test_server_hello_refused();

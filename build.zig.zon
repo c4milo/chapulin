@@ -228,6 +228,7 @@
         "rsa_sign64.h",
         "session.c",
         "session.h",
+        "session_report.h",
         "sha256.c",
         "sha256.h",
         "sha256_hw.c",

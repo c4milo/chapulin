@@ -44,6 +44,7 @@
 #include "quic_session.h"
 #include "quic_step.h"
 #include "session.h"
+#include "session_report.h"
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Validates the configuration, prepares the state machine and builds the ClientHello into

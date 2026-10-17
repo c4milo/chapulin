@@ -10,6 +10,7 @@
 
 #include "alert.h"
 #include "session.h"
+#include "session_report.h"
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
 // Any error wipes all key material and leaves the session dead. A

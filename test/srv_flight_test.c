@@ -63,6 +63,7 @@ static uint32_t flight_cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
 #define FLIGHT_CPU(cfg) ((void)0)
 #endif
 
+#include "session_report_tests.h"
 #include "srv_flight_kex_tests.h"
 #include "srv_flight_keys_tests.h"
 #include "srv_flight_p256_tests.h"
@@ -72,6 +73,7 @@ static uint32_t flight_cpu = CH_CPU_PROBED | CH_CPU_CONSTANT_TIME_AES;
 #include "srv_resume_tests.h"
 
 int main(void) {
+    test_session_report();
     test_flight_begin();
     test_flight_select();
 #ifdef CH_SUITE_AES_GCM

@@ -67,8 +67,8 @@ keep `ch_ticket.binding` beside the ticket's `psk` and `identity`, and
 present it in `ch_cfg.ticket_binding` with `resumption = 1`. Keep the
 anchors, the hostname and the clock set: a server that declines the
 ticket sends its chain, which the client checks as it checks any chain.
-`ch_tls.psk_selected` is 1 when the server resumed the ticket and 0 when
-the handshake was a full one.
+`ch_psk_selected(&tls)` is 1 when the server resumed the ticket and 0
+when the handshake was a full one.
 `ch_cfg.spki_pins` takes up to four SPKI pins, each the SHA-256 of a DER
 SubjectPublicKeyInfo. With pins set the client offers raw public keys,
 and pins with no anchors need no hostname and no clock.
@@ -96,11 +96,12 @@ static const ch_alpn_protocol protocols[] = {
 cfg.alpn_protocols = protocols;
 cfg.alpn_count = 2;           // 1 to CH_ALPN_MAX (8); names to 32 bytes
 // ... ch_connect ...
-if (tls.alpn_selected == CH_ALPN_NONE) {
+uint8_t index = ch_alpn_selected(&tls);
+if (index == CH_ALPN_NONE) {
     // The server selected none: it sent no ALPN extension at all,
     // which RFC 7301 §3.2 allows. Speak your default or close.
 } else {
-    const ch_alpn_protocol *picked = &protocols[tls.alpn_selected];
+    const ch_alpn_protocol *picked = &protocols[index];
 }
 ```
 
@@ -115,7 +116,7 @@ config that offered none fails it with `unsupported_extension`.
 negotiates here and nowhere else.
 
 Built with `SUITE=aesgcm`, the same client offers three cipher suites,
-and `ch_tls.suite` reports the one the server selected. It offers them
+and `ch_suite(&tls)` reports the one the server selected. It offers them
 in its build's order: `TLS_AES_256_GCM_SHA384`, `TLS_AES_128_GCM_SHA256`,
 then `TLS_CHACHA20_POLY1305_SHA256` in a host object whose `ch_cfg.cpu`
 holds `CH_CPU_CONSTANT_TIME_AES`, ChaCha20 alone in a host object without
@@ -136,7 +137,7 @@ it has; a program that does passes the order it chose.
 [`docs/decisions.md`](decisions.md) entry 80 says why the default order
 depends on the build.
 
-`ch_tls.group` reports the key-exchange group the ServerHello selected:
+`ch_group(&tls)` reports the key-exchange group the ServerHello selected:
 `CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until
 the handshake accepts the ServerHello's key_share. Set
 `ch_cfg.require_pq` and the handshake fails closed when that group is
@@ -187,6 +188,20 @@ Any error kills the session. The stack wipes its keys and you
 reconnect. `ch_result_text(rc)` (`result.h`) gives a short English text
 for each result code, for your log. Devices recover by reconnecting anyway, and the rule removes
 the whole resumable-error state space from the code and the proofs.
+
+Read what a session reports through the calls of `session_report.h`,
+which `tls.h`, `tcp_nonblocking.h` and `quic.h` include:
+
+- `ch_state`, `ch_group`, `ch_suite`, `ch_psk_selected` and `ch_pin_slot`;
+- `ch_epoch`, `ch_epoch_seen`, `ch_epoch_status` and
+  `ch_epoch_store_failed`, the revocation epoch of a CA build;
+- `ch_alpn_selected`, `ch_server_cert_type`, `ch_sni_len`,
+  `ch_read_closed` and `ch_peer_limit`, in the builds that have them.
+
+Read no field of `ch_tls` itself. The struct is public only because you
+allocate it, and its other fields hold the keys and the state of the
+handshake. Each call is `static inline`, so it costs no more than the
+field.
 
 Two calls report what ended a session, for your log (`alert.h`), and
 every object exports both, on every transport:
@@ -250,7 +265,7 @@ A CA build also takes `ticket_epoch`, the ticket's `epoch`: the stored
 epoch when the ticket arrived. The same three calls return `CH_EINVAL`,
 before a byte is sent, when it is below the stored epoch, because an
 epoch bump since then retired the ticket ([`docs/ca.md`](ca.md)). Each
-leaves `CH_EPOCH_REVOKED` in the session's `ch_tls.epoch_status`, which
+leaves `CH_EPOCH_REVOKED` in the session, where `ch_epoch_status` reads it and
 tells this refusal from the others. Either
 refusal, of the age or of the epoch, means the ticket cannot be used
 again: drop it and connect in full. A `TRUST=webpki` build also takes
@@ -356,7 +371,7 @@ hello carries the hybrid share, and after a HelloRetryRequest that asks for
 it when the hello shares x25519 alone. A client that lists x25519 and not
 the hybrid gets x25519. A client that lists secp256r1 and neither of the
 others gets secp256r1, the key exchange RFC 9846 section 9.1 makes a MUST,
-over the constant-time `p256_ecdh.[ch]`. `ch_tls.group` reports which group
+over the constant-time `p256_ecdh.[ch]`. `ch_group` reports which group
 ran, as it does for a client, and [`docs/decisions.md`](decisions.md)
 entries 54 and 63 state the trade. `test/e2e.sh` checks each case against
 OpenSSL's `s_client`, and a resumed handshake runs the hybrid again.

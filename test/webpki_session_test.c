@@ -429,6 +429,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 }
 
 #include "rxbuf_floor_tests.h"
+#include "session_report_tests.h"
 #include "webpki_groups_cases.h"
 #include "webpki_p256_cases.h"
 #include "webpki_pins_cases.h"
@@ -438,6 +439,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 #include "webpki_suite_cases.h"
 
 int main(void) {
+    test_session_report();
     test_webpki_cfg_anchors();
     test_webpki_cfg_clock();
     test_webpki_cfg_hostname();

@@ -248,8 +248,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn sniServer(self: *const Self) ?[]const u8 {
             const t = &self.record.t;
-            if (t.sni_len == 0) return null;
-            return t.cfg.srv.sni_buf[0..t.sni_len];
+            const len = c.ch_sni_len(t);
+            if (len == 0) return null;
+            return t.cfg.srv.sni_buf[0..len];
         }
 
         /// ch_record_state.
@@ -349,39 +350,40 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn alpnSelectedOf(self: *const Self) ?[]const u8 {
             const t = &self.record.t;
-            if (t.alpn_selected == c.CH_ALPN_NONE) return null;
-            const entry = t.cfg.alpn_protocols[t.alpn_selected];
+            const index = c.ch_alpn_selected(t);
+            if (index == c.CH_ALPN_NONE) return null;
+            const entry = t.cfg.alpn_protocols[index];
             return entry.name[0..entry.name_len];
         }
 
         /// ch_tls.group, null while 0.
         pub fn group(self: *const Self) ?chapulin.Group {
-            const code = self.record.t.group;
+            const code = c.ch_group(&self.record.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         fn suiteOf(self: *const Self) ?chapulin.Suite {
-            const code = self.record.t.suite;
+            const code = c.ch_suite(&self.record.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         /// ch_tls.psk_selected: a PSK authenticated the handshake.
         pub fn pskSelected(self: *const Self) bool {
-            return self.record.t.psk_selected != 0;
+            return c.ch_psk_selected(&self.record.t) != 0;
         }
 
         fn serverCertTypeOf(self: *const Self) chapulin.CertType {
-            return @enumFromInt(self.record.t.server_cert_type);
+            return @enumFromInt(c.ch_server_cert_type(&self.record.t));
         }
 
         /// ch_tls.peer_limit: the most plaintext per record the peer takes.
         pub fn peerLimit(self: *const Self) u16 {
-            return self.record.t.peer_limit;
+            return c.ch_peer_limit(&self.record.t);
         }
 
         /// ch_tls.read_closed: the peer's close_notify arrived.
         pub fn readClosed(self: *const Self) bool {
-            return self.record.t.read_closed != 0;
+            return c.ch_read_closed(&self.record.t) != 0;
         }
 
         /// Bytes the last read wrote into reply, which a failed read also sets.

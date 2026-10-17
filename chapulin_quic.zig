@@ -268,8 +268,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         fn sniServer(self: *const Self) ?[]const u8 {
             const t = &self.quic.t;
-            if (t.sni_len == 0) return null;
-            return t.cfg.srv.sni_buf[0..t.sni_len];
+            const len = c.ch_sni_len(t);
+            if (len == 0) return null;
+            return t.cfg.srv.sni_buf[0..len];
         }
 
         /// ch_quic_initial_keys: the Initial keys from the Destination
@@ -400,29 +401,30 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// The protocol ALPN selected, null for CH_ALPN_NONE.
         pub fn alpnSelected(self: *const Self) ?[]const u8 {
             const t = &self.quic.t;
-            if (t.alpn_selected == c.CH_ALPN_NONE) return null;
-            const entry = t.cfg.alpn_protocols[t.alpn_selected];
+            const index = c.ch_alpn_selected(t);
+            if (index == c.CH_ALPN_NONE) return null;
+            const entry = t.cfg.alpn_protocols[index];
             return entry.name[0..entry.name_len];
         }
 
         /// ch_tls.group, null while 0.
         pub fn group(self: *const Self) ?chapulin.Group {
-            const code = self.quic.t.group;
+            const code = c.ch_group(&self.quic.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         fn suiteOf(self: *const Self) ?chapulin.Suite {
-            const code = self.quic.t.suite;
+            const code = c.ch_suite(&self.quic.t);
             return if (code == 0) null else @enumFromInt(code);
         }
 
         /// ch_tls.psk_selected: a PSK authenticated the handshake.
         pub fn pskSelected(self: *const Self) bool {
-            return self.quic.t.psk_selected != 0;
+            return c.ch_psk_selected(&self.quic.t) != 0;
         }
 
         fn serverCertTypeOf(self: *const Self) chapulin.CertType {
-            return @enumFromInt(self.quic.t.server_cert_type);
+            return @enumFromInt(c.ch_server_cert_type(&self.quic.t));
         }
 
         fn fromHook(io: ?*anyopaque) *Self {

@@ -166,6 +166,8 @@ _Static_assert(CH_TX_HELLO <= 0x4000, "a handshake record body caps at 2^14");
 #define CH_ST_CLOSED 2
 #define CH_ST_FAILED 3
 
+// The session. A caller allocates it and reads it through session_report.h's calls and alert.h's,
+// never through a field: every field is the library's (docs/usage.md).
 typedef struct {
     ch_cfg cfg;
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING

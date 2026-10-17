@@ -15,7 +15,7 @@
  *   2. How to size the receive buffer. Pinned mode constrains it in a
  *      way PSK mode does not, and ch_connect cannot check the difference
  *      for you.
- *   3. The two-slot pin, and reading ch_tls.pin_slot after a connect to
+ *   3. The two-slot pin, and reading ch_pin_slot after a connect to
  *      watch a key rotation move through a fleet.
  *
  * This file is written to be read and lifted. It builds; it proves
@@ -340,7 +340,7 @@ static const char *error_text(int rc) {
 // server signs with today; slot B (server_pubkey2) is the next key,
 // staged before the server switches to it. The handshake accepts a
 // server that proves possession of either one and records which matched
-// in ch_tls.pin_slot: 1 for slot A, 2 for slot B, 0 before a pinned
+// in ch_pin_slot: 1 for slot A, 2 for slot B, 0 before a pinned
 // handshake finishes.
 //
 // The pair is what makes a rotation survivable without a CA. Push slot B
@@ -445,7 +445,7 @@ int main(int argc, char **argv) {
     // 1 means slot A authenticated the server, 2 means slot B. Collected
     // across a fleet mid-rotation, the counts say how many devices still
     // reach a server on the old key.
-    (void)fprintf(stderr, "connected, pin slot %u\n", tls.pin_slot);
+    (void)fprintf(stderr, "connected, pin slot %u\n", ch_pin_slot(&tls));
 
     int exit_code = exchange(&tls) == 0 ? 0 : 1;
     // Sends close_notify while the keys are live, then wipes them. Safe

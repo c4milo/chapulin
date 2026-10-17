@@ -123,7 +123,7 @@ static int read_ca_key(const char *path) {
 
 // Rotating the CA key uses a second slot: set cfg.server_pubkey2 to the
 // next CA key and the handshake accepts a chain anchored at either one.
-// ch_tls.pin_slot then reports which answered, 1 or 2, so an operator
+// ch_pin_slot then reports which answered, 1 or 2, so an operator
 // can watch a fleet move over. See docs/rotation.md.
 
 // --- Platform hooks ------------------------------------------------------
@@ -240,8 +240,8 @@ static int dial(const char *host, const char *port) {
 //     holds the leaf key. Certificates are public, so moving on the
 //     certificate alone would let anyone replay one and push a device
 //     past the servers it still needs.
-//   - A failed store does not kill the session. It sets
-//     ch_tls.epoch_store_failed and the application retries.
+//   - A failed store does not kill the session. ch_epoch_store_failed
+//     then reads 1, and the application retries.
 //   - A certificate more than CH_EPOCH_BOUND steps above the stored
 //     epoch is refused, so one far-future date cannot lock a device out
 //     for good.
@@ -321,27 +321,28 @@ static const char *epoch_verdict(uint8_t status) {
 // tells them apart, and they need opposite responses: a revoked server
 // needs reissuing, while an untrusted date means a mis-issued
 // certificate or an attempt to strand the device. Send the numbers with
-// your telemetry — the spread of ch_tls.epoch across a fleet is its
+// your telemetry — the spread of ch_epoch across a fleet is its
 // drift, and it must stay under CH_EPOCH_BOUND.
 static void report_epoch(const ch_tls *tls) {
-    (void)fprintf(stderr, "epoch: stored %u, peer showed %u, %s\n", tls->epoch, tls->epoch_seen,
-                  epoch_verdict(tls->epoch_status));
+    (void)fprintf(stderr, "epoch: stored %u, peer showed %u, %s\n", ch_epoch(tls),
+                  ch_epoch_seen(tls), epoch_verdict(ch_epoch_status(tls)));
 }
 
 // A failed store leaves the session running, so the retry belongs to
 // the application. An unwritten epoch is lost at the next power cut,
 // and the device trusts the revoked certificates again.
 static void retry_epoch_store(const ch_tls *tls, const ch_cfg *cfg) {
-    if (!tls->epoch_store_failed) {
+    if (!ch_epoch_store_failed(tls)) {
         return;
     }
     for (int attempt = 0; attempt < 3; attempt++) {
-        if (cfg->epoch_store(cfg->epoch_io, tls->epoch) == 0) {
-            (void)fprintf(stderr, "epoch %u written on retry\n", tls->epoch);
+        if (cfg->epoch_store(cfg->epoch_io, ch_epoch(tls)) == 0) {
+            (void)fprintf(stderr, "epoch %u written on retry\n", ch_epoch(tls));
             return;
         }
     }
-    (void)fprintf(stderr, "epoch %u still unwritten; keep retrying before power off\n", tls->epoch);
+    (void)fprintf(stderr, "epoch %u still unwritten; keep retrying before power off\n",
+                  ch_epoch(tls));
 }
 
 // --- The session ---------------------------------------------------------
@@ -485,7 +486,8 @@ int main(int argc, char **argv) {
         (void)close(fd);
         return 1;
     }
-    (void)fprintf(stderr, "connected; the chain verified up to CA pin slot %u\n", tls.pin_slot);
+    (void)fprintf(stderr, "connected; the chain verified up to CA pin slot %u\n",
+                  ch_pin_slot(&tls));
     if (cfg.epoch_load != NULL) {
         retry_epoch_store(&tls, &cfg);
     }

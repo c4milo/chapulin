@@ -393,7 +393,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     (void)fprintf(stderr, "connected; the chain verified up to one of %zu anchors, group 0x%04x\n",
-                  anchor_count, (unsigned)tls.group);
+                  anchor_count, (unsigned)ch_group(&tls));
 
     int exit_code = one_exchange(&tls) == 0 ? 0 : 1;
     ch_close(&tls);

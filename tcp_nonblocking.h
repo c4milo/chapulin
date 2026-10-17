@@ -73,6 +73,7 @@
 #include "cfg.h"
 #include "handshake_record.h"
 #include "session.h"
+#include "session_report.h"
 
 // One handshake in progress. It holds everything that survives a return,
 // because the driver returns to its caller between messages: the ch_tls a

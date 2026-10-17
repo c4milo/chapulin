@@ -275,7 +275,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h chacha20_vector.h chacha20_avx2.h chacha
         handshake_flight.h handshake_groups.h quic.h quic_cfg.h quic_session.h quic_version.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h gcm_ghash.h ghash_hw.h ghash_vector.h gcm_hw.h gcm_vaes.h gcm_avx512.h gcm_avx512_kernel.h gcm_avx512_ghash.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
-        alert.h result.h widemul.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h
+        alert.h result.h session_report.h widemul.h widemul_native.h cpu_cfg.h cpu.h hash_hw.h
 
 # The wide P-256 files and the table of multiples of G the base
 # multiplication reads, which a host object holds beside p256_field.c,
@@ -632,7 +632,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/session_report_tests.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \
@@ -6036,7 +6036,7 @@ QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
                     handshake_post.c build.h build.c x509_ca.h x509_ca.c \
-                    pem_files.h aes.h aes.c ticket.h alert.h result.h
+                    pem_files.h aes.h aes.c ticket.h alert.h result.h session_report.h
 # A QUIC host object holds two AES ciphers, the instructions and the table
 # (CH_AES_TWO_CIPHERS, aes.h), so where this compiler passes the host test
 # QUIC_EXTRA_DEFINES judges these three under the host object's suite

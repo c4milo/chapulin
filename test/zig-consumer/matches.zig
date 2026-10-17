@@ -42,8 +42,14 @@ comptime {
 
 /// The calls the public headers define as static inline functions, so
 /// chapulin.c defines each one and no object exports it: build.h's
-/// ch_build_matches and result.h's ch_result_text.
-const inline_calls = [_][]const u8{ "ch_build_matches", "ch_result_text" };
+/// ch_build_matches, result.h's ch_result_text and session_report.h's
+/// read calls.
+const inline_calls = [_][]const u8{
+    "ch_build_matches",    "ch_result_text",  "ch_state",              "ch_group",
+    "ch_suite",            "ch_psk_selected", "ch_pin_slot",           "ch_epoch",
+    "ch_epoch_seen",       "ch_epoch_status", "ch_epoch_store_failed", "ch_alpn_selected",
+    "ch_server_cert_type", "ch_sni_len",      "ch_read_closed",        "ch_peer_limit",
+};
 
 /// Whether chapulin.c declares name as a function under a ch_ name. The
 /// names passed over are ch_build, build.h's macro for the build record,

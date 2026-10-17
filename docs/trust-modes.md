@@ -36,7 +36,7 @@ to the configuration of the session that received it, and refuses any
 other PSK (docs/webpki.md, "Resumption"). Its resuming hello offers the
 certificate path beside the ticket, so a server that declines the ticket
 authenticates with its chain in the same connection, and
-`ch_tls.psk_selected` says which one happened. It also takes SPKI pins, and
+`ch_psk_selected` says which one happened. It also takes SPKI pins, and
 with them RFC 7250 raw public keys, for a DNS-over-TLS or DNS-over-QUIC
 caller: pins alone reach a server whose leaf key the caller pins, sent raw
 or in a certificate (docs/decisions.md 65), and pins beside anchors make a
