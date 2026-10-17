@@ -315,16 +315,6 @@ class Config {
         cfg_.quic_original_version = static_cast<uint32_t>(version);
         return *this;
     }
-
-    // The QUIC version of the ticket resume() presents: the value
-    // ch_ticket::quic_version held (ch_cfg.ticket_quic_version). A ticket
-    // belongs to the version of the connection it arrived on, so init()
-    // refuses a resuming Config whose ticket version is not its
-    // original_version() (RFC 9369 section 5).
-    Config &ticket_quic_version(QuicVersion version) {
-        cfg_.ticket_quic_version = static_cast<uint32_t>(version);
-        return *this;
-    }
 #else
     Config(Bytes recv_buffer, Io io) {
         cfg_.buf = recv_buffer.data;
@@ -347,23 +337,16 @@ class Config {
         return *this;
     }
 
-    // Resume from a stored ticket: its identity and derived PSK, plus the
-    // obfuscated age the ticket carried (ticket_obfuscated_age below).
-    Config &resume(ConstBytes derived_psk, ConstBytes identity, uint32_t obfuscated_age) {
-        psk(derived_psk, identity);
-        cfg_.resumption = 1;
-        cfg_.obfuscated_age = obfuscated_age;
-        return *this;
-    }
-
-    // The stored ticket's age in milliseconds and its lifetime in seconds
-    // (ch_cfg.ticket_age_ms and ch_cfg.ticket_lifetime_s). With resume()
-    // set, the connection is refused before a byte is sent when the age
-    // is above the lifetime or above seven days (ticket.h). A lifetime of
-    // 0 means none was given.
-    Config &ticket_age(uint64_t age_ms, uint32_t lifetime_s) {
+    // Resume from a ticket that ch_ticket_save kept during on_ticket
+    // (ch_cfg.ticket), whose age is age_ms milliseconds on your clock
+    // (ch_cfg.ticket_age_ms). Keep the rest of the Config as it is. The
+    // connection is refused before a byte is sent when the age is above
+    // the ticket's lifetime or above seven days, and on the other rules of
+    // ticket.h: the ticket's epoch, binding and QUIC version. The ticket is
+    // borrowed like every other byte view here.
+    Config &resume(const ch_saved_ticket &ticket, uint64_t age_ms) {
+        cfg_.ticket = &ticket;
         cfg_.ticket_age_ms = age_ms;
-        cfg_.ticket_lifetime_s = lifetime_s;
         return *this;
     }
 
@@ -432,15 +415,6 @@ class Config {
     }
 #endif
 
-    // The epoch a saved ticket was issued under (ch_ticket::epoch).
-    // A resumed session presents no certificate, so this is the only
-    // revocation check left: ch_connect refuses a ticket older than
-    // the stored epoch.
-    Config &ticket_epoch(uint32_t value) {
-        cfg_.ticket_epoch = value;
-        return *this;
-    }
-
     // Fail the handshake unless the key exchange is post-quantum
     // (ch_cfg.require_pq). A KEX=pq or TRUST=webpki build checks the
     // flag against the group the ServerHello selected; a classic raw or
@@ -458,7 +432,7 @@ class Config {
     // server_name; convert a U-label to its A-label first), and the
     // clock its dates are checked against, in seconds since
     // 1970-01-01T00:00:00Z. Set all three, or spki_pins() alone, and no
-    // pinned(); a PSK only through resume() with ticket_binding(). The
+    // pinned(); a PSK only through resume(). The
     // array and the name are borrowed like every other byte view here.
     // ch_connect checks them (docs/webpki.md). ch_cfg has these fields
     // only in a TRUST=webpki build, so the setters exist only there too.
@@ -493,15 +467,6 @@ class Config {
     }
     template <size_t N> Config &spki_pins(const uint8_t (&pins)[N][CH_SPKI_PIN_LEN]) {
         return spki_pins(&pins[0][0], N);
-    }
-
-    // The binding of the ticket resume() presents: the bytes
-    // ch_ticket.binding held. ch_connect refuses a ticket whose binding
-    // does not name this hostname and these anchors (docs/webpki.md,
-    // "Resumption").
-    Config &ticket_binding(const uint8_t (&binding)[SHA256_LEN]) {
-        cfg_.ticket_binding = binding;
-        return *this;
     }
 
     // Application protocols to offer through ALPN (ch_cfg.alpn_protocols
@@ -593,10 +558,16 @@ inline Anchors anchors_from_pem(ConstBytes pem, Bytes der, ch_trust_anchor *anch
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Forwards ch_ticket_obfuscated_age: age_ms plus the ticket's age_add,
-// modulo 2^32, the value Config::resume() takes. It reads age_add alone,
-// so a ticket copied during on_ticket and kept serves (ticket.h).
+// modulo 2^32 (ticket.h). Config::resume() needs none of it: the hello
+// computes the value from the ticket and its age.
 inline uint32_t ticket_obfuscated_age(const ch_ticket &ticket, uint64_t age_ms) {
     return ch_ticket_obfuscated_age(&ticket, age_ms);
+}
+
+// Forwards ch_ticket_save: copies the ticket on_ticket hands over, and the
+// identity bytes it points at, into out, which Config::resume() takes.
+inline Status ticket_save(ch_saved_ticket &out, const ch_ticket &ticket) {
+    return static_cast<Status>(ch_ticket_save(&out, &ticket));
 }
 #endif
 

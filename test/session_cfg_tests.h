@@ -97,17 +97,14 @@ static void test_epoch_cfg(void) {
     // was retired by the bump that raised it, and one at or above it
     // still resumes. The refusal comes before a byte is sent, so its
     // code is CH_EINVAL, as ch_record_init and ch_quic_init answer it
-    // (test/ticket_epoch_test.c), and no alert goes out.
+    // (test/ticket_epoch_test.c), and no alert goes out. The pin stays
+    // set: the hello offers the ticket in its place.
     static uint8_t psk[32] = {1};
-    cfg.server_pubkey = NULL;
-    cfg.server_pubkey_len = 0;
-    cfg.psk = psk;
-    cfg.psk_len = sizeof psk;
-    cfg.psk_id = (const uint8_t *)"d";
-    cfg.psk_id_len = 1;
-    cfg.resumption = 1;
+    static ch_saved_ticket saved;
+    test_ticket_fill(&saved, psk, sizeof psk, (const uint8_t *)"d", 1, 3600);
+    cfg.ticket = &saved;
     epoch_mark = 10;
-    cfg.ticket_epoch = 9;
+    saved.ticket.epoch = 9;
     int sends = m.sends;
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
     CHECK(m.sends == sends);
@@ -115,19 +112,24 @@ static void test_epoch_cfg(void) {
     // The caller sees the verdict on the failing path too.
     CHECK(t.epoch_status == CH_EPOCH_REVOKED);
     CHECK(t.epoch_seen == 9);
-    cfg.ticket_epoch = 10;
+    saved.ticket.epoch = 10;
     CHECK(ch_connect(&t, &cfg) == CH_EIO);
     CHECK(t.epoch_status == CH_EPOCH_MATCHED);
     // A ticket above the stored epoch says that epoch went backwards.
-    cfg.ticket_epoch = 11;
+    saved.ticket.epoch = 11;
     CHECK(ch_connect(&t, &cfg) == CH_EIO);
     CHECK(t.epoch_status == CH_EPOCH_AHEAD);
-    cfg.ticket_epoch = CH_EPOCH_MAX + 1; // corrupt ticket storage
+    saved.ticket.epoch = CH_EPOCH_MAX + 1; // corrupt ticket storage
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
 
     // A fresh external PSK carries no ticket epoch to screen.
-    cfg.resumption = 0;
-    cfg.ticket_epoch = 0;
+    cfg.ticket = NULL;
+    cfg.server_pubkey = NULL;
+    cfg.server_pubkey_len = 0;
+    cfg.psk = psk;
+    cfg.psk_len = sizeof psk;
+    cfg.psk_id = (const uint8_t *)"d";
+    cfg.psk_id_len = 1;
     CHECK(ch_connect(&t, &cfg) == CH_EIO);
 #else
     // Without CA mode there is no epoch to enforce, so a config that
@@ -158,8 +160,12 @@ static void test_hello_staging_boundary(void) {
     cfg.psk = identity; // any non-NULL selects the PSK arm
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
-    cfg.resumption = 1;
-    cfg.obfuscated_age = 0xffffffffU;
+    // A ticket, as hspost_present_ticket leaves the session copy: the
+    // fields above hold its PSK and identity, and this pointer says the
+    // PSK is a ticket's, whose age the hello carries.
+    static ch_saved_ticket saved;
+    saved.ticket.age_add = 0xffffffffU;
+    cfg.ticket = &saved;
 
 #ifdef CH_KEX_PQ
 #define BUILD_HELLO(cap)                                                                           \
@@ -321,88 +327,6 @@ static void test_connect_cfg(void) {
 #endif
 }
 
-// The ticket's age against its lifetime, which ch_connect judges before
-// it sends a byte (handshake_post.h). RFC 9846 §4.3.11.1 forbids a ticket
-// older than its ticket_lifetime (rfc9846.txt:2572-2574), and §4.7.1 one
-// kept past 7 days whatever that lifetime says (rfc9846.txt:3259-3261).
-// Each pair is the last age accepted and the first refused; an accepted
-// config passes the checks and then fails at mock_recv with CH_EIO.
-static void test_ticket_age_cfg(void) {
-    static uint8_t rxbuf[CH_MIN_RXBUF];
-    uint8_t psk[32] = {1};
-    mock_io m = {0};
-    ch_cfg cfg = {0};
-    TEST_CPU_CFG(cfg);
-    ch_tls t;
-    cfg.buf = rxbuf;
-    cfg.buf_len = sizeof rxbuf;
-    cfg.send = mock_send;
-    cfg.recv = mock_recv;
-    cfg.io = &m;
-    cfg.psk = psk;
-    cfg.psk_len = sizeof psk;
-    cfg.psk_id = (const uint8_t *)"ticket";
-    cfg.psk_id_len = 6;
-    cfg.resumption = 1;
-
-    // Neither field set, as in every config written before they existed.
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-
-    // A lifetime of an hour: 3,600,000 ms is offered, one more is not,
-    // and the refusal sends nothing.
-    cfg.ticket_lifetime_s = 3600;
-    cfg.ticket_age_ms = 3600000U;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-    int sends_before = m.sends;
-    cfg.ticket_age_ms = 3600001U;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-    CHECK(m.sends == sends_before);
-    CHECK(t.state == CH_ST_FAILED);
-
-    // No lifetime given: the age is held to CH_TICKET_LIFETIME_MAX alone.
-    cfg.ticket_lifetime_s = 0;
-    cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-    cfg.ticket_age_ms += 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-
-    // A lifetime past 7 days, which a server must not send, keeps the
-    // 7 days all the same.
-    cfg.ticket_lifetime_s = CH_TICKET_LIFETIME_MAX + 1;
-    cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-    cfg.ticket_age_ms += 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-
-    // An age past 2^32 ms, which reads as 5 ms if anything keeps its low
-    // 32 bits alone.
-    cfg.ticket_lifetime_s = 3600;
-    cfg.ticket_age_ms = 0x100000005ULL;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
-
-    // An external PSK carries no ticket, so no age is judged.
-    cfg.resumption = 0;
-    CHECK(ch_connect(&t, &cfg) == CH_EIO);
-}
-
-// ch_ticket_obfuscated_age: the age plus ticket_age_add, modulo 2^32 (RFC
-// 9846 §4.3.11.1, rfc9846.txt:2574-2578). The ticket is one kept after
-// on_ticket returned, with every field but age_add unset.
-static void test_ticket_obfuscated_age(void) {
-    ch_ticket ticket;
-    memset(&ticket, 0, sizeof ticket);
-    ticket.age_add = 7;
-    CHECK(ch_ticket_obfuscated_age(&ticket, 5000) == 5007U);
-    // The sum wraps: 0xfffffff0 + 0x20 is 0x10 modulo 2^32.
-    ticket.age_add = 0xfffffff0U;
-    CHECK(ch_ticket_obfuscated_age(&ticket, 0x0f) == 0xffffffffU);
-    CHECK(ch_ticket_obfuscated_age(&ticket, 0x10) == 0U);
-    CHECK(ch_ticket_obfuscated_age(&ticket, 0x20) == 0x10U);
-    // An age past 2^32 ms contributes its low 32 bits.
-    CHECK(ch_ticket_obfuscated_age(&ticket, 0x100000020ULL) == 0x10U);
-    CHECK(ch_ticket_obfuscated_age(&ticket, UINT64_MAX) == 0xffffffefU);
-}
-
 // The hello a raw or ca build sends. Its ClientHello carries no
 // server_name, its signature_algorithms lists the one scheme the pin can
 // be, and its key_share carries one entry, for the build's one group
@@ -468,8 +392,12 @@ static void test_psk_hello_bytes(void) {
     cfg.psk_len = sizeof psk;
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
-    cfg.resumption = 1;
-    cfg.obfuscated_age = 0x01020304;
+    // The session copy of a presented ticket: the hello carries the age
+    // plus the ticket's age_add, 0x01020304.
+    static ch_saved_ticket saved;
+    saved.ticket.age_add = 0x01020000;
+    cfg.ticket = &saved;
+    cfg.ticket_age_ms = 0x0304;
 #ifdef CH_KEX_PQ
     static uint8_t ek[MLKEM_EK_LEN];
     for (size_t i = 0; i < sizeof ek; i++) {

@@ -85,9 +85,8 @@ static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert
 // with nothing delivered: those messages decode, this client just cannot
 // use them, and a ticket is an optimization. A ticket_lifetime of 0 is
 // dropped the same way: RFC 9846 §4.7.1 says such a ticket is to be
-// discarded at once (rfc9846.txt:3258-3259), and dropping it here is what
-// lets ch_cfg.ticket_lifetime_s read 0 as a lifetime the caller did not
-// give (hspost_ticket_age_ok).
+// discarded at once (rfc9846.txt:3258-3259), and hspost_present_ticket
+// refuses a kept ticket of that lifetime the same way.
 //
 // A message whose own fields do not fill it does not decode at all, so
 // it returns CH_EPROTO with decode_error in *alert, which RFC 9846 §6
@@ -179,7 +178,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *aler
 // together are RFC 9846 §4.3.11.1's sum modulo 2^32 whatever the age.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 uint32_t ch_ticket_obfuscated_age(const ch_ticket *ticket, uint64_t age_ms) {
-    return (uint32_t)age_ms + ticket->age_add;
+    return ticket_obfuscated_age(ticket, age_ms);
 }
 #endif
 

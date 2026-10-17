@@ -191,7 +191,8 @@ static uint8_t g_rxbuf[CH_MIN_RXBUF + 512];
 //
 // A NewSessionTicket carries a PSK derived from this session plus the
 // identity to present it under. So resumption is PSK mode again with
-// different bytes: same call, same fields, one extra flag.
+// other bytes: the same call, and two more fields, the kept ticket and
+// its age.
 //
 // A resumed handshake here costs what a provisioned one costs, because
 // both run x25519. It does rotate the key: each reconnect uses a key
@@ -203,12 +204,8 @@ static uint8_t g_rxbuf[CH_MIN_RXBUF + 512];
 // reconnect uses the provisioned PSK.
 
 typedef struct {
-    uint8_t identity[CH_TICKET_ID_MAX];
-    size_t identity_len;
-    uint8_t psk[SHA256_LEN]; // this device build runs ChaCha20, a SHA-256 suite
-    size_t psk_len;
-    uint32_t age_add;
-    uint32_t arrival_ms;
+    ch_saved_ticket saved; // what ch_ticket_save copies: the ticket and its identity bytes
+    uint32_t arrival_ms;   // when it arrived, on now_ms's clock
     int valid;
 } stored_ticket;
 
@@ -230,18 +227,15 @@ static uint32_t now_ms(void) {
 // Called once per NewSessionTicket. Tickets arrive after the handshake,
 // so this runs inside ch_read, never inside ch_connect: a device that
 // connects and never reads is issued nothing. The ch_ticket and the
-// bytes it points at are valid only during this call, so copy what you
-// keep. This example keeps the newest ticket and overwrites the last.
+// bytes it points at are valid only during this call, so ch_ticket_save
+// copies them. This example keeps the newest ticket and overwrites the
+// last, and records when it arrived, because the next hello states its
+// age.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io; // the pointer cfg.io carries; this example does not need it
-    if (ticket->identity_len > sizeof g_ticket.identity || ticket->psk_len > sizeof g_ticket.psk) {
-        return; // too big to store, so keep the ticket we already have
+    if (ch_ticket_save(&g_ticket.saved, ticket) != CH_OK) {
+        return;
     }
-    memcpy(g_ticket.identity, ticket->identity, ticket->identity_len);
-    g_ticket.identity_len = ticket->identity_len;
-    memcpy(g_ticket.psk, ticket->psk, ticket->psk_len);
-    g_ticket.psk_len = ticket->psk_len;
-    g_ticket.age_add = ticket->age_add;
     g_ticket.arrival_ms = now_ms();
     g_ticket.valid = 1;
 }
@@ -265,28 +259,24 @@ static void forget_ticket(void) {
     memset(&g_ticket, 0, sizeof g_ticket);
 }
 
-// Fills the authentication half of the config. Both branches are PSK
-// mode: a ticket is a PSK the server issued, so resumption changes which
-// bytes go in, not which call runs. Neither branch sets server_pubkey —
-// a config carrying both a PSK and a pinned key is a provisioning
-// mistake, and ch_connect returns CH_EINVAL rather than choosing one.
+// Fills the authentication half of the config. The provisioned PSK is
+// always set. With a stored ticket the hello offers the ticket in its
+// place, so one config serves both kinds of connection. The ticket's age
+// is the one value the caller measures: chapulin reads no clock, and it
+// refuses a ticket past its lifetime or past seven days before it sends
+// a byte. A config carrying both a PSK and a pinned key is a
+// provisioning mistake, and ch_connect returns CH_EINVAL rather than
+// choosing one.
 static void fill_auth(ch_cfg *cfg) {
-    if (!g_ticket.valid) {
-        cfg->psk = g_psk;
-        cfg->psk_len = sizeof g_psk;
-        cfg->psk_id = (const uint8_t *)g_psk_id;
-        cfg->psk_id_len = sizeof g_psk_id - 1; // the text, without its terminator
-        return;
+    cfg->psk = g_psk;
+    cfg->psk_len = sizeof g_psk;
+    cfg->psk_id = (const uint8_t *)g_psk_id;
+    cfg->psk_id_len = sizeof g_psk_id - 1; // the text, without its terminator
+    if (g_ticket.valid) {
+        cfg->ticket = &g_ticket.saved;
+        // A uint32 difference, so the counter's wrap does not matter.
+        cfg->ticket_age_ms = now_ms() - g_ticket.arrival_ms;
     }
-    cfg->psk = g_ticket.psk;
-    cfg->psk_len = g_ticket.psk_len;
-    cfg->psk_id = g_ticket.identity;
-    cfg->psk_id_len = g_ticket.identity_len;
-    cfg->resumption = 1;
-    // The server ages the ticket itself and compares. Claim the ticket's
-    // age in milliseconds plus the age_add it arrived with. The uint32
-    // wrap is deliberate: the protocol defines this field modulo 2^32.
-    cfg->obfuscated_age = now_ms() - g_ticket.arrival_ms + g_ticket.age_add;
 }
 
 // Reads until the reply's newline arrives or the buffer fills. ch_read
@@ -363,13 +353,13 @@ static int run_session(const char *host, const char *port) {
     int rc = ch_connect(&tls, &cfg);
     if (rc == CH_OK) {
         (void)fprintf(stderr, "connected with %s\n",
-                      cfg.resumption ? "a stored ticket" : "the provisioned PSK");
+                      cfg.ticket != NULL ? "a stored ticket" : "the provisioned PSK");
         rc = exchange(&tls);
     }
     if (rc != CH_OK) {
         // SWAP: host logging. A device reports through whatever it already uses.
         (void)fprintf(stderr, "session failed: %d, %s\n", rc, ch_result_text(rc));
-        if (cfg.resumption) {
+        if (cfg.ticket != NULL) {
             forget_ticket();
         }
     }

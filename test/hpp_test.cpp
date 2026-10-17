@@ -259,12 +259,18 @@ static void test_webpki_config(chapulin::Io io) {
     }
     {
         // A ticket whose binding names nothing this config holds.
+        static ch_saved_ticket saved;
+        std::memset(&saved, 0, sizeof saved);
+        std::memcpy(saved.ticket.psk, psk, sizeof psk);
+        saved.ticket.psk_len = sizeof psk;
+        saved.ticket.identity_len = sizeof id;
+        saved.ticket.lifetime_s = 60;
+        std::memcpy(saved.identity, id, sizeof id);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
-        cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id}, 0)
-            .ticket_binding(psk);
-        CHECK(cfg.raw().ticket_binding == psk && cfg.raw().resumption == 1);
+        cfg.resume(saved, 0);
+        CHECK(cfg.raw().ticket == &saved && cfg.raw().ticket_age_ms == 0);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
@@ -503,20 +509,31 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
 
     // A resumed ticket: its age at its lifetime passes the checks and
     // fails at the socket, and one millisecond more is refused before any
-    // I/O. The obfuscated age comes from a ticket with only age_add set.
+    // I/O. ticket_save copies the ticket and its identity bytes, and the
+    // obfuscated age comes from a ticket with only age_add set.
     {
         ch_ticket ticket;
         std::memset(&ticket, 0, sizeof ticket);
         ticket.age_add = 0xfffffff0U;
         CHECK(chapulin::ticket_obfuscated_age(ticket, 0x20) == 0x10U);
+        std::memcpy(ticket.psk, psk, sizeof psk);
+        ticket.psk_len = sizeof psk;
+        ticket.identity = id;
+        ticket.identity_len = sizeof id;
+        ticket.lifetime_s = 60;
+        static ch_saved_ticket saved;
+        CHECK(chapulin::ticket_save(saved, ticket) == chapulin::Status::ok);
+        CHECK(saved.ticket.identity == nullptr && std::memcmp(saved.identity, id, sizeof id) == 0);
+        // The pin stays set: the resumed hello offers the ticket alone.
+        uint8_t pin[kPinLen];
+        std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id},
-                   chapulin::ticket_obfuscated_age(ticket, 60000));
-        cfg.ticket_age(60000, 60);
+        cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
+        cfg.resume(saved, 60000);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
-        cfg.ticket_age(60001, 60);
+        cfg.resume(saved, 60001);
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
 
@@ -547,11 +564,9 @@ static void test_quic() {
     with_source(cfg);
     cfg.transport_params(chapulin::ConstBytes{kParams});
     cfg.original_version(chapulin::QuicVersion::v1);
-    cfg.ticket_quic_version(chapulin::QuicVersion::v2);
     cfg.on_level_ready(level_ready);
     cfg.context(nullptr);
     CHECK(cfg.raw().quic_original_version == CH_QUIC_VERSION_1);
-    CHECK(cfg.raw().ticket_quic_version == CH_QUIC_VERSION_2);
 
     chapulin::Quic q;
     CHECK(q.init(cfg) == chapulin::Status::invalid);

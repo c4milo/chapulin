@@ -288,9 +288,12 @@ static int accept_selected_psk(size_t psk_len, uint16_t suite, uint8_t *alert) {
 #ifdef CH_CPU_RUNTIME
     session.cfg.cpu = TEST_CPU;
 #endif
+    // The session copy of a presented ticket: its PSK in the PSK fields,
+    // beside the ticket pointer.
+    static ch_saved_ticket saved;
     session.cfg.psk = psk;
     session.cfg.psk_len = psk_len;
-    session.cfg.resumption = 1;
+    session.cfg.ticket = &saved;
     info.have_share = 1;
     info.group = CH_GROUP_X25519;
     info.suite = suite;

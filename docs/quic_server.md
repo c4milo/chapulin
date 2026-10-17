@@ -369,23 +369,20 @@ the handshake is done.
 `CH_ST_CONNECTED`, hand every 1-RTT CRYPTO byte to
 `ch_quic_crypto_in(q, CH_LEVEL_APPLICATION, ...)`, and `on_ticket` fires
 once per ticket with its `identity`, `psk`, `age_add` and `quic_version`,
-and under `TRUST=webpki` its `binding`; copy them during the callback. To
-resume, configure the next `ch_quic_init` with `psk` set to the 32-byte PSK,
-`psk_id` to the identity, `resumption` to 1, `ticket_age_ms` to the
-ticket's age in milliseconds, `ticket_lifetime_s` to its `lifetime_s`,
-`obfuscated_age` to `ch_ticket_obfuscated_age` of the ticket and that
-age, and both `ticket_quic_version` and `quic_original_version` to its
-`quic_version`, and offer the same ALPN protocol, because the server
-resumes a ticket only under the protocol it was issued under. A ticket
-belongs to the negotiated version of the connection that received it, so
-RFC 9369 §5 forbids starting a connection in the other version with it
-(`rfc9369.txt:268-271`), and `ch_quic_init` refuses a
-`ticket_quic_version` that is not `quic_original_version`, 0 included. Under `TRUST=raw-ecdsa` leave both `server_pubkey` slots
-unset: a raw-mode configuration authenticates one way, and here that way is
-the PSK. Under `TRUST=webpki` keep the anchors, the hostname and the clock
-as for a full handshake and set `ticket_binding` to the stored binding;
-`ch_quic_init` refuses a ticket whose binding does not match them, which is
-what `docs/webpki.md`, "Resumption", describes for TCP.
+and under `TRUST=webpki` its `binding`; keep it with `ch_ticket_save`
+during the callback. To resume, keep the next `ch_quic_init`'s
+configuration as for a full handshake, and set `ticket` to the kept
+ticket, `ticket_age_ms` to its age in milliseconds, and
+`quic_original_version` to its `quic_version`. Offer the same ALPN
+protocol, because the server resumes a ticket only under the protocol it
+was issued under. A ticket belongs to the negotiated version of the
+connection that received it, so RFC 9369 §5 forbids starting a connection
+in the other version with it (`rfc9369.txt:268-271`), and `ch_quic_init`
+refuses a ticket whose version is not `quic_original_version`, 0 included.
+Under `TRUST=raw-ecdsa` the pins can stay set: the hello offers the ticket
+in their place. Under `TRUST=webpki` keep the anchors, the hostname and the
+clock; `ch_quic_init` refuses a ticket whose binding does not match them,
+which is what `docs/webpki.md`, "Resumption", describes for TCP.
 
 **The ticket's QUIC version.** The server seals into each ticket the
 version the connection negotiated, and a ticket it opens holds only when

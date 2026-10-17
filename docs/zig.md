@@ -178,8 +178,8 @@ The client's trust, whose variants are the object's trust mode's:
 |---|---|
 | `trust` | the fields `Trust` names |
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
-| `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, `ticket_binding` under TRUST=webpki, and `ticket_quic_version` under `TRANSPORT=quic-nonblocking` |
-| `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
+| `ticket`, null by default | `ticket`, the `Ticket`'s own bytes, whose layout is `c.ch_saved_ticket`'s |
+| `ticket_age_ms`, 0 by default | `ticket_age_ms` |
 | `takes_tickets`, true by default | none in `toCfg`: a session's `init` sets `on_ticket` to the API's callback when it is true, and leaves `on_ticket` NULL when it is false |
 | `require_pq`, false by default | `require_pq` |
 | `quic_version`, null by default, `TRANSPORT=quic-nonblocking` alone | `quic_original_version`, the version's code, or 0 for null, which `init` refuses |
@@ -201,8 +201,10 @@ offered, and one millisecond more is refused.
 A NewSessionTicket (RFC 9846 §4.7.1) that outlives its session: the
 `c.ch_ticket` `on_ticket` received, by value, as `ticket`, and the
 identity bytes it pointed at, as `identity`. `ticket.identity` is null,
-because the bytes it named are valid during `on_ticket` alone.
-`ch_ticket_obfuscated_age` reads `age_add` alone, so a copy serves.
+because the bytes it named are valid during `on_ticket` alone. It is an
+extern struct with the layout of `c.ch_saved_ticket` (`ticket.h`), which
+a comptime check holds, so `Client.toCfg` points `ch_cfg.ticket` at it
+as it is, and `saved()` names it as that type.
 
 - `takeTicket()` on a client session moves the latest ticket out.
 - `Ticket.fromFields(.{ .identity, .psk, .age_add, .lifetime_s, .epoch,
@@ -215,10 +217,11 @@ because the bytes it named are valid during `on_ticket` alone.
   alone, and `quic_version`, a `?quic.Version`, under
   `TRANSPORT=quic-nonblocking` alone: null writes 0, which `init` refuses
   as a resuming ticket's version.
-- `Ticket.fromOnTicket(ticket)` copies what `on_ticket` hands over, for a
-  program that writes its own `on_ticket`. It answers null for an
-  identity longer than `CH_TICKET_ID_MAX`, which C drops before
-  `on_ticket`.
+- `Ticket.fromOnTicket(ticket)` copies what `on_ticket` hands over,
+  through `ch_ticket_save`, for a program that writes its own
+  `on_ticket`. It answers null for a ticket that call refuses: an
+  identity that is NULL, empty or longer than `CH_TICKET_ID_MAX`, which C
+  drops before `on_ticket`.
 
 A program that copies a Ticket owns zeroing that copy. C never hands
 over a ticket whose lifetime is 0, so `takeTicket` never returns one.

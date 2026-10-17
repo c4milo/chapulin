@@ -250,9 +250,8 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
 // RFC 9846 §4.7.1: a ticket_lifetime of 0 says the ticket is to be
 // discarded at once (rfc9846.txt:3258-3259). The parser drops it the way
 // it drops a nonce it cannot use: no on_ticket call, and the session reads
-// on. A lifetime of 1 second is the first it hands over. That drop is why
-// ch_cfg.ticket_lifetime_s may read 0 as a lifetime the caller did not
-// give (handshake_post.h).
+// on. A lifetime of 1 second is the first it hands over. A kept ticket of
+// lifetime 0 is refused at every client entry (handshake_post.h).
 static void test_ticket_lifetime_zero(void) {
     int tickets = 0;
     int state = 0;

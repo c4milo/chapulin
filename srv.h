@@ -91,7 +91,7 @@
 // handshake authenticates with a certificate.
 //
 // It returns CH_EINVAL for the client-only fields too, rather than
-// ignoring them: cfg.psk, cfg.psk_id, cfg.resumption, either
+// ignoring them: cfg.psk, cfg.psk_id, cfg.ticket, cfg.ticket_age_ms, either
 // server_pubkey slot, cfg.require_pq and the epoch callbacks all
 // answer "do I trust this peer", which a server that judges no peer
 // key never asks. That is the fail-closed shape a TRUST=webpki build

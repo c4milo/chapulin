@@ -17,12 +17,16 @@
 #include "cfg.h"
 #include "session.h"
 
-// Judges cfg and, under a CA mode, loads the stored revocation epoch
-// into t. ch_quic_init calls it once, before it draws a secret or
-// builds a message, so a refusal leaves nothing to wipe.
+// Judges t->cfg, the session's copy of the caller's configuration, and,
+// under a CA mode, loads the stored revocation epoch into t. It first
+// writes a presented ticket into that copy's PSK fields
+// (hspost_present_ticket, handshake_post.h), so the rules and the
+// handshake read the ticket's PSK. ch_quic_init calls it once, before it
+// draws a secret or builds a message, so a refusal leaves nothing to
+// wipe.
 //
-// Requires: t is the zeroed session whose cfg copy is already written;
-// cfg is not NULL and outlives the session.
+// Requires: t is the zeroed session whose cfg copy is already written,
+// and the pointers in that copy outlive the session.
 //
 // Returns CH_OK when every rule holds, and CH_EINVAL for any refusal. A
 // resuming ticket whose epoch sits below the stored one is a refusal
@@ -31,7 +35,7 @@
 // It writes t->epoch, t->epoch_seen and t->epoch_status under a CA mode
 // and nothing outside t in any build. ch_quic_init keeps those three
 // when it refuses, so they say why (quic_fail.h, quic_refuse_init).
-int quic_config_ok(ch_tls *t, const ch_cfg *cfg);
+int quic_config_ok(ch_tls *t);
 
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

@@ -1,10 +1,9 @@
 // The resumption ticket a client receives and presents again: what
-// cfg.on_ticket hands over (RFC 9846 §4.7.1), the obfuscated age a
-// resuming ClientHello carries (§4.3.11.1), and how long a client keeps
-// one. cfg.h includes this header, because ch_cfg.on_ticket takes a
-// ch_ticket, and it states the ch_cfg fields a resuming client sets:
-// psk, psk_id, resumption, obfuscated_age, ticket_age_ms,
-// ticket_lifetime_s, ticket_epoch and, over QUIC, ticket_quic_version.
+// cfg.on_ticket hands over (RFC 9846 §4.7.1), the copy a client keeps,
+// the obfuscated age a resuming ClientHello carries (§4.3.11.1), and how
+// long a client keeps one. cfg.h includes this header, because ch_cfg
+// takes both types. A resuming client sets two ch_cfg fields: ticket, the
+// kept copy, and ticket_age_ms, its age.
 #ifndef CH_TICKET_H
 #define CH_TICKET_H
 
@@ -12,6 +11,7 @@
 #include <stdint.h>
 
 #include "hkdf.h"
+#include "result.h"
 #include "sha256.h"
 
 // Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped,
@@ -25,11 +25,10 @@
 // held to it in every build.
 #define CH_TICKET_LIFETIME_MAX 604800U
 
-// A resumption ticket for on_ticket. Copy what you keep during the callback, and present
-// psk, psk_len and identity on the next connection with resumption = 1 for a cheaper
-// reconnect. A ticket whose lifetime_s is 0 is never handed to on_ticket: RFC 9846 §4.7.1 says
-// such a ticket is to be discarded at once (rfc9846.txt:3258-3259), so every ticket handed
-// over has a lifetime of 1 second or more.
+// A resumption ticket for on_ticket. Keep it with ch_ticket_save during the callback, and
+// present the kept copy in ch_cfg.ticket for a cheaper reconnect. A ticket whose lifetime_s is
+// 0 is never handed to on_ticket: RFC 9846 §4.7.1 says such a ticket is to be discarded at once
+// (rfc9846.txt:3258-3259), so every ticket handed over has a lifetime of 1 second or more.
 typedef struct {
     // Valid only during the callback: it points into the message, which the next record
     // overwrites.
@@ -37,43 +36,79 @@ typedef struct {
     size_t identity_len;
     // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.7.1):
     // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which only a
-    // SUITE=aesgcm TRUST=webpki client runs. psk_len says which; present it as
-    // ch_cfg.psk_len.
+    // SUITE=aesgcm TRUST=webpki client runs. psk_len says which.
     uint8_t psk[HKDF_HASH_MAX];
     size_t psk_len;
-    // ticket_lifetime in seconds, as the server sent it; present it as
-    // ch_cfg.ticket_lifetime_s.
+    // ticket_lifetime in seconds, as the server sent it. Every client entry refuses the ticket
+    // once ch_cfg.ticket_age_ms is above it or above CH_TICKET_LIFETIME_MAX seconds.
     uint32_t lifetime_s;
-    // ticket_age_add, which ch_ticket_obfuscated_age adds to the ticket's age.
+    // ticket_age_add, which the resuming hello adds to the ticket's age (§4.3.11.1).
     uint32_t age_add;
-    // The stored epoch when the ticket arrived; zero outside CA builds. Present it back in
-    // ch_cfg.ticket_epoch on resumption, so an epoch bump also retires every earlier ticket.
+    // The stored epoch when the ticket arrived; zero outside CA builds. Every client entry
+    // refuses a ticket below the stored epoch, so an epoch bump also retires every earlier
+    // ticket (docs/ca.md).
     uint32_t epoch;
 #ifdef CH_TRUST_WEBPKI
-    uint8_t binding[SHA256_LEN]; // present it in ch_cfg.ticket_binding (webpki_ticket.h)
+    // The configuration the ticket is bound to: every client entry refuses the ticket under
+    // another hostname, other anchors or other pins (webpki_ticket.h).
+    uint8_t binding[SHA256_LEN];
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The negotiated QUIC version of the connection the ticket arrived on, which RFC 9369
-    // section 5 makes the ticket's (rfc9369.txt:268-284). Present it in
-    // ch_cfg.ticket_quic_version, and start the resuming connection in it: ch_quic_init refuses
-    // a ticket whose version is not ch_cfg.quic_original_version.
+    // section 5 makes the ticket's (rfc9369.txt:268-284). Start the resuming connection in it:
+    // ch_quic_init refuses a ticket whose version is not ch_cfg.quic_original_version.
     uint32_t quic_version;
 #endif
 } ch_ticket;
+
+// A ticket kept past on_ticket: the ch_ticket the callback received, whose identity pointer
+// is NULL here, and the identity bytes that pointer named. ch_ticket_save writes one. A copy
+// holds the ticket's PSK, which resumes this client's session with the server, so a caller
+// that discards a kept ticket zeroes it.
+typedef struct {
+    ch_ticket ticket;
+    uint8_t identity[CH_TICKET_ID_MAX];
+} ch_saved_ticket;
+
+// Copies ticket and the identity bytes it points at into out. Call it inside on_ticket, while
+// those bytes are valid. Returns CH_OK. Returns CH_EINVAL, and writes nothing, for a ticket
+// whose identity is NULL or empty, or longer than CH_TICKET_ID_MAX, which on_ticket is never
+// handed. Static inline, so no object exports it.
+static inline int ch_ticket_save(ch_saved_ticket *out, const ch_ticket *ticket) {
+    if (ticket->identity == NULL || ticket->identity_len == 0 ||
+        ticket->identity_len > CH_TICKET_ID_MAX) {
+        return CH_EINVAL;
+    }
+    // A byte loop, so the header needs no <string.h>, which a freestanding
+    // build may lack. It writes through a local pointer: Zig's translate-c
+    // turns out->identity[i] into an expression Zig 0.16 refuses.
+    out->ticket = *ticket;
+    out->ticket.identity = NULL;
+    uint8_t *dst = out->identity;
+    for (size_t i = 0; i < CH_TICKET_ID_MAX; i++) {
+        dst[i] = i < ticket->identity_len ? ticket->identity[i] : 0;
+    }
+    return CH_OK;
+}
+
+// The obfuscated_ticket_age a resuming ClientHello carries: the ticket's age in milliseconds
+// plus its ticket_age_add, modulo 2^32 (RFC 9846 §4.3.11.1, rfc9846.txt:2574-2578). The
+// hello's builder and ch_ticket_obfuscated_age below compute it here.
+static inline uint32_t ticket_obfuscated_age(const ch_ticket *ticket, uint64_t age_ms) {
+    return (uint32_t)age_ms + ticket->age_add;
+}
 
 // A ROLE=server object compiles no client, so it declares no client call,
 // as tls.h declares no ch_connect there.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // The obfuscated_ticket_age a resuming ClientHello carries: the ticket's
 // age in milliseconds plus the ticket's ticket_age_add, modulo 2^32 (RFC
-// 9846 §4.3.11.1, rfc9846.txt:2574-2578). Put the answer in
-// ch_cfg.obfuscated_age.
+// 9846 §4.3.11.1, rfc9846.txt:2574-2578). A resuming client does not need
+// it: the hello computes it from ch_cfg.ticket and ch_cfg.ticket_age_ms.
 //
 // age_ms is the time since on_ticket handed the ticket over, the value
-// ch_cfg.ticket_age_ms takes. It is 64 bits wide, like that field, so a
-// caller passes one value to both: the field keeps an age past 2^32
-// milliseconds, about 49.7 days, stale, and this call reduces the sum
-// modulo 2^32 itself.
+// ch_cfg.ticket_age_ms takes. It is 64 bits wide, like that field, and
+// this call reduces the sum modulo 2^32 itself.
 //
 // It reads ticket->age_add and no other field. A ch_ticket the caller
 // copied during on_ticket and kept serves, although its identity pointer

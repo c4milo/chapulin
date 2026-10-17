@@ -55,6 +55,7 @@
 #include "webpki_ticket.h"
 
 #include "test_cpu.h"
+#include "test_ticket.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -154,9 +155,22 @@ static struct {
     uint8_t psk[HKDF_HASH_MAX];
     size_t psk_len;
     uint32_t age_add;
+    uint32_t lifetime_s;
     uint8_t binding[SHA256_LEN];
     size_t count;
 } kept;
+
+// The ticket a client presents, which ch_cfg.ticket points at. present_with
+// writes kept into it with binding, five seconds after it arrived.
+static ch_saved_ticket presented;
+static void present_with(ch_cfg *cfg, const uint8_t binding[SHA256_LEN]) {
+    test_ticket_fill(&presented, kept.psk, kept.psk_len, kept.identity, kept.identity_len,
+                     kept.lifetime_s);
+    presented.ticket.age_add = kept.age_add;
+    memcpy(presented.ticket.binding, binding, SHA256_LEN);
+    cfg->ticket = &presented;
+    cfg->ticket_age_ms = 5000;
+}
 
 static void keep_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
@@ -167,6 +181,7 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     memcpy(kept.psk, ticket->psk, ticket->psk_len);
     kept.psk_len = ticket->psk_len;
     kept.age_add = ticket->age_add;
+    kept.lifetime_s = ticket->lifetime_s;
     memcpy(kept.binding, ticket->binding, SHA256_LEN);
     kept.count++;
 }
@@ -204,31 +219,18 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     if (!present) {
         return;
     }
-    cfg->psk = kept.psk;
-    cfg->psk_len = kept.psk_len;
-    cfg->psk_id = kept.identity;
-    cfg->psk_id_len = kept.identity_len;
-    cfg->resumption = 1;
-    cfg->obfuscated_age = kept.age_add + 5000;
     // The binding on_ticket handed over names s3.example.test and
     // root_p384. A row that presents the ticket under another name or
     // anchor binds it again, as a caller that stored it there would have.
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(0, cfg, config_hash);
     webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
-    cfg->ticket_binding = kept.binding;
+    present_with(cfg, kept.binding);
 }
 
-// Presents the kept ticket with the binding on_ticket gave it, where
-// client_config binds it again.
+// Presents the kept ticket with the binding on_ticket gave it.
 static void present_kept(ch_cfg *cfg) {
-    cfg->psk = kept.psk;
-    cfg->psk_len = kept.psk_len;
-    cfg->psk_id = kept.identity;
-    cfg->psk_id_len = kept.identity_len;
-    cfg->resumption = 1;
-    cfg->obfuscated_age = kept.age_add + 5000;
-    cfg->ticket_binding = kept.binding;
+    present_with(cfg, kept.binding);
 }
 
 static ch_record client;

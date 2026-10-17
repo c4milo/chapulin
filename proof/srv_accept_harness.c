@@ -39,6 +39,7 @@
 #include "srv_resume.h"
 
 int nondet_int(void);
+uint64_t nondet_u64(void);
 uint16_t nondet_u16(void);
 uint64_t nondet_u64(void);
 
@@ -272,7 +273,9 @@ static void fill_cfg(ch_cfg *cfg, ch_alpn_protocol *protocols, const uint8_t *na
     cfg->psk_len = nondet_size_t();
     cfg->psk_id = (nondet_u8() & 1) ? scratch : NULL;
     cfg->psk_id_len = nondet_size_t();
-    cfg->resumption = nondet_int();
+    static ch_saved_ticket ticket;
+    cfg->ticket = (nondet_u8() & 1) ? &ticket : NULL;
+    cfg->ticket_age_ms = nondet_u64();
     cfg->server_pubkey = (nondet_u8() & 1) ? scratch : NULL;
     cfg->server_pubkey_len = nondet_size_t();
     cfg->server_pubkey2 = (nondet_u8() & 1) ? scratch : NULL;

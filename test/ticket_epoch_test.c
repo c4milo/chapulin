@@ -1,7 +1,7 @@
 // The CA build's ticket epoch rule at the two non-blocking client
 // entries: ch_record_init under TRANSPORT=tcp-nonblocking and
 // ch_quic_init under TRANSPORT=quic-nonblocking. A resumed session
-// presents no certificate, so cfg.ticket_epoch, the stored epoch when the
+// presents no certificate, so the ticket's epoch, the stored epoch when the
 // ticket arrived, is the only revocation check it gets (docs/ca.md). Each
 // entry refuses a ticket below the stored epoch before it stages a byte:
 // CH_EINVAL, the session failed, no alert chosen and no epoch stored
@@ -20,6 +20,7 @@
 #include "cfg.h"
 #include "ch_assert.h"
 #include "test_random.h"
+#include "test_ticket.h"
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "quic.h"
 #else
@@ -128,20 +129,20 @@ static int client_out(uint8_t *out, size_t cap, size_t *out_len) {
 }
 #endif
 
+// The ticket configure presents.
+static ch_saved_ticket saved;
+
 // A configuration that resumes a ticket issued at ticket_epoch, with the
 // epoch callbacks set.
 static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = rxbuf;
     cfg->buf_len = sizeof rxbuf;
-    cfg->psk = psk;
-    cfg->psk_len = sizeof psk;
-    cfg->psk_id = identity;
-    cfg->psk_id_len = sizeof identity;
-    cfg->resumption = 1;
+    test_ticket_fill(&saved, psk, sizeof psk, identity, sizeof identity, 3600);
+    saved.ticket.epoch = ticket_epoch;
+    cfg->ticket = &saved;
     cfg->epoch_load = epoch_load;
     cfg->epoch_store = epoch_store;
-    cfg->ticket_epoch = ticket_epoch;
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     cfg->alpn_protocols = &alpn;
     cfg->alpn_count = 1;
@@ -150,7 +151,7 @@ static void configure(ch_cfg *cfg, uint32_t ticket_epoch) {
     cfg->quic_original_version = CH_QUIC_VERSION_1;
     // A ticket belongs to the version of the connection that received it,
     // and this one resumes a version 1 connection.
-    cfg->ticket_quic_version = CH_QUIC_VERSION_1;
+    saved.ticket.quic_version = CH_QUIC_VERSION_1;
     cfg->on_level_ready = level_ready;
 #else
     cfg->send = fail_send;

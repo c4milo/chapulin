@@ -149,13 +149,10 @@ const ClientValues = struct {
     trust: Trust,
     /// Protocols to offer, most preferred first: alpn_protocols, alpn_count.
     alpn: if (has_alpn) []const c.ch_alpn_protocol else void = if (has_alpn) &.{} else {},
-    /// A ticket to resume with: psk, psk_len, psk_id, psk_id_len, resumption, ticket_epoch,
-    /// ticket_lifetime_s, under TRUST=webpki ticket_binding, and under TRANSPORT=quic-nonblocking
-    /// ticket_quic_version. Under a raw or ca mode it leaves the server_pubkey slots unset, because
-    /// ch_cfg takes one auth mode.
+    /// A ticket to resume with: ticket. The session's init offers it in place of the
+    /// pinned keys under a raw or ca mode, and beside the certificate path under TRUST=webpki.
     ticket: ?*const Ticket = null,
-    /// The ticket's age in milliseconds: ticket_age_ms, and obfuscated_age
-    /// through ch_ticket_obfuscated_age. init answers error.Invalid for an
+    /// The ticket's age in milliseconds: ticket_age_ms. init answers error.Invalid for an
     /// age above the ticket's lifetime or above seven days (ticket.h).
     ticket_age_ms: u64 = 0,
     /// A session's init sets on_ticket, which keeps tickets for takeTicket. false leaves it NULL. Then a
@@ -198,7 +195,7 @@ const ClientValues = struct {
                     cfg.hostname_len = name.len;
                 }
             },
-        } else if (values.ticket == null) {
+        } else {
             const pinned = values.trust.pinned;
             cfg.server_pubkey = pinned.server_pubkey.ptr;
             cfg.server_pubkey_len = pinned.server_pubkey.len;
@@ -211,19 +208,8 @@ const ClientValues = struct {
             cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
             cfg.alpn_count = values.alpn.len;
         }
-        if (values.ticket) |ticket| {
-            cfg.psk = &ticket.ticket.psk;
-            cfg.psk_len = ticket.ticket.psk_len;
-            cfg.psk_id = &ticket.identity;
-            cfg.psk_id_len = ticket.ticket.identity_len;
-            cfg.resumption = 1;
-            cfg.obfuscated_age = c.ch_ticket_obfuscated_age(&ticket.ticket, values.ticket_age_ms);
-            cfg.ticket_age_ms = values.ticket_age_ms;
-            cfg.ticket_lifetime_s = ticket.ticket.lifetime_s;
-            cfg.ticket_epoch = ticket.ticket.epoch;
-            if (has_webpki) cfg.ticket_binding = &ticket.ticket.binding;
-            if (has_quic) cfg.ticket_quic_version = ticket.ticket.quic_version;
-        }
+        if (values.ticket) |ticket| cfg.ticket = ticket.saved();
+        cfg.ticket_age_ms = values.ticket_age_ms;
         cfg.require_pq = @intFromBool(values.require_pq);
         if (has_quic) cfg.quic_original_version = quic.versionCode(values.quic_version);
         if (has_client_suite_order) {

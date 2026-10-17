@@ -362,8 +362,8 @@ objects keep the `ch_cfg` and `ch_tls` layout they had before this mode.
 `webpki_cfg.c` checks the rules. A raw or ca build that sets one of the
 fields fails to compile. `chapulin.hpp` forwards them through
 `Config::anchors`, `Config::hostname`, `Config::now_seconds`,
-`Config::alpn`, `Config::spki_pins` and `Config::ticket_binding`, which a
-raw or ca build does not declare either.
+`Config::alpn` and `Config::spki_pins`, which a raw or ca build does not
+declare either.
 
 Measured anchor sizes, from the captures: 120 B for a P-384 key, 294 B for
 RSA-2048, 550 B for RSA-4096.
@@ -508,12 +508,11 @@ new `server_name` is valid for the certificate of the original session
 hostname, so this mode binds each ticket to the configuration that
 received it, and refuses to present it under any other.
 
-- **What the caller does.** `on_ticket` hands over `ch_ticket.psk`,
-  `identity` and, in this build, `binding`, 32 bytes. The caller stores all
-  three. To resume, it sets the full chain configuration as usual, then
-  `psk` to the 32-byte PSK, `psk_id` to the identity, `resumption` to 1,
-  `obfuscated_age` as in the other modes, and `ticket_binding` to the
-  stored binding.
+- **What the caller does.** `on_ticket` hands over a ticket whose
+  `binding`, in this build, holds 32 more bytes. The caller keeps it with
+  `ch_ticket_save`, as in every mode, and the copy holds the binding. To
+  resume, it sets the full chain configuration as usual, then `ticket` to
+  the kept copy and `ticket_age_ms` to its age.
 - **Which sessions bind tickets.** Set `on_ticket` in the `ch_cfg` that
   you pass to the init call. A session whose init call saw `on_ticket`
   hashes its configuration then, and binds each ticket it receives to
@@ -537,8 +536,8 @@ received it, and refuses to present it under any other.
   these pins. A
   binding from another ticket, because the key is that ticket's PSK. A
   PSK that is not 32 bytes, an identity outside 1 to `CH_TICKET_ID_MAX`
-  bytes, a ticket with no binding, a binding with no ticket, and an
-  external PSK (`resumption` 0). `ch_record_init` applies the same rules.
+  bytes, a ticket of lifetime 0, an external PSK, and an external PSK
+  beside a ticket. `ch_record_init` applies the same rules.
 - **The same name in other capitals resumes.** The chain walk matches
   names without case (RFC 6125 §6.4.1), so `S3.Example.TEST` resumes a
   ticket `s3.example.test` received.
@@ -567,10 +566,10 @@ received it, and refuses to present it under any other.
   server selected the ticket and sent no certificate, and 0 when the
   handshake was a full one, whether the hello offered a ticket or not.
 - **The ticket's age is checked before a byte is sent.** The caller sets
-  `ticket_age_ms` and `ticket_lifetime_s`, as in every mode, and
-  `ch_ticket_obfuscated_age` computes `obfuscated_age` from the age. An
-  age above the lifetime, or above the seven days RFC 9846 §4.7.1 allows
-  any ticket, is refused with `CH_EINVAL` (docs/decisions.md 72).
+  `ticket_age_ms`, as in every mode, and the hello computes the
+  obfuscated age from it and the ticket's `age_add`. An age above the
+  ticket's lifetime, or above the seven days RFC 9846 §4.7.1 allows any
+  ticket, is refused with `CH_EINVAL` (docs/decisions.md 72 and 134).
 - **A `TRANSPORT=quic-nonblocking` webpki client resumes the same way.**
   `ch_quic_init` takes the configuration hash as `ch_connect` does, so the
   tickets a QUIC session hands to `on_ticket` carry a binding to its

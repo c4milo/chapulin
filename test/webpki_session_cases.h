@@ -2,6 +2,7 @@
 // valid_cfg. Included by that file only, after both exist.
 #ifndef CH_WEBPKI_SESSION_CASES_H
 #define CH_WEBPKI_SESSION_CASES_H
+static ch_saved_ticket empty_ticket; // a ticket with no identity, PSK or lifetime
 
 // The anchor rule at its boundaries: 1 entry or more, and every field of
 // every entry set. No cap bounds the count, so TEST_ANCHORS entries pass.
@@ -130,7 +131,7 @@ static void test_webpki_cfg_other_modes(void) {
     cfg.psk_id_len = 1;
     CHECK(refused(&cfg));
     cfg = valid_cfg(&s);
-    cfg.resumption = 1;
+    cfg.ticket = &empty_ticket;
     CHECK(refused(&cfg));
     cfg = valid_cfg(&s);
     cfg.server_pubkey = pin;
@@ -362,12 +363,11 @@ static void test_webpki_hello_boundary(void) {
     ch_cfg cfg = {0};
     TEST_CPU_CFG(cfg);
     cfg.psk = identity;
-    // The longest PSK the build takes, which in a CH_CLIENT_AES_SUITES
-    // build is a SHA-384 one with a 48-byte binder.
+    // The longest PSK: 48 bytes, with a 48-byte binder, in a CH_CLIENT_AES_SUITES build.
     cfg.psk_len = HKDF_HASH_MAX;
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
-    cfg.resumption = 1;
+    cfg.ticket = &empty_ticket; // the session copy of a ticket marks the PSK a ticket's
     cfg.hostname = name;
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;

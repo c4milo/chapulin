@@ -1,0 +1,18 @@
+invariant: INV-14
+file: handshake_post.h
+catches: webpki_resume_test
+reason: hspost_present_ticket writes a ticket over an external PSK in a
+  TRUST=webpki configuration, which takes a PSK only as a ticket it bound
+  itself (webpki_cfg.h). The configuration that asks for an external PSK
+  then resumes the ticket in silence. The row that presents a ticket
+  beside an external PSK requires CH_EINVAL.
+
+--- old
+#ifdef CH_TRUST_WEBPKI
+    if (cfg->psk != NULL || cfg->psk_len != 0 || cfg->psk_id != NULL || cfg->psk_id_len != 0) {
+        return 0;
+    }
+#endif
+--- new
+#ifdef CH_TRUST_WEBPKI
+#endif

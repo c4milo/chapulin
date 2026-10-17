@@ -33,6 +33,7 @@
 #define CH_TEST_WEBPKI_TICKET_ROWS_H
 
 #include "cpu.h"
+#include "test_ticket.h"
 #include "webpki_ticket.h"
 #ifdef TEST_WEBPKI_TICKET_COUNTED
 #include "webpki_ticket_count.h"
@@ -50,23 +51,21 @@ typedef struct {
 
 static const uint8_t ticket_rows_psk[SHA256_LEN] = {0x70, 0x73, 0x6b};
 static const uint8_t ticket_rows_identity[8] = {'t', 'i', 'c', 'k', 'e', 't'};
-static uint8_t ticket_rows_binding[SHA256_LEN];
+static ch_saved_ticket ticket_rows_ticket;
 
 // Presents a ticket under cfg: a PSK, an identity and the binding the
 // portable path computes for cfg's hostname, anchors and pins.
 static void ticket_rows_present(ch_cfg *cfg) {
-    cfg->psk = ticket_rows_psk;
-    cfg->psk_len = sizeof ticket_rows_psk;
-    cfg->psk_id = ticket_rows_identity;
-    cfg->psk_id_len = sizeof ticket_rows_identity;
-    cfg->resumption = 1;
+    test_ticket_fill(&ticket_rows_ticket, ticket_rows_psk, sizeof ticket_rows_psk,
+                     ticket_rows_identity, sizeof ticket_rows_identity, 3600);
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-    cfg->ticket_quic_version = cfg->quic_original_version;
+    ticket_rows_ticket.ticket.quic_version = cfg->quic_original_version;
 #endif
     uint8_t hash[SHA256_LEN];
     webpki_ticket_config_hash(0, cfg, hash);
-    webpki_ticket_binding(0, ticket_rows_psk, sizeof ticket_rows_psk, hash, ticket_rows_binding);
-    cfg->ticket_binding = ticket_rows_binding;
+    webpki_ticket_binding(0, ticket_rows_psk, sizeof ticket_rows_psk, hash,
+                          ticket_rows_ticket.ticket.binding);
+    cfg->ticket = &ticket_rows_ticket;
 }
 
 // One init call on cfg. Where the binary counts, the counts start at 0

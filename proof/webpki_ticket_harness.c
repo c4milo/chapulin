@@ -54,7 +54,8 @@ static uint8_t spkis[PROOF_ANCHORS][ANCHOR_FIELD_MAX];
 static ch_trust_anchor anchors[PROOF_ANCHORS];
 static uint8_t psk[SHA256_LEN + 1];
 static uint8_t psk_id[CH_TICKET_ID_MAX + 1];
-static uint8_t binding[SHA256_LEN];
+// A presented ticket, whose binding webpki_resumption_ok compares.
+static ch_saved_ticket ticket;
 static uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
 
 #ifdef CH_CPU_RUNTIME
@@ -119,13 +120,12 @@ int main(void) {
     __CPROVER_assume(cfg.spki_pin_count <= CH_SPKI_PIN_MAX);
 
     fill_nondet(psk, sizeof psk);
-    fill_nondet(binding, sizeof binding);
+    fill_nondet(ticket.ticket.binding, sizeof ticket.ticket.binding);
     cfg.psk = (nondet_u8() & 1) ? psk : NULL;
     cfg.psk_len = field_len(cfg.psk, sizeof psk);
     cfg.psk_id = (nondet_u8() & 1) ? psk_id : NULL;
     cfg.psk_id_len = field_len(cfg.psk_id, sizeof psk_id);
-    cfg.resumption = (int)nondet_u32();
-    cfg.ticket_binding = (nondet_u8() & 1) ? binding : NULL;
+    cfg.ticket = (nondet_u8() & 1) ? &ticket : NULL;
 #ifdef CH_CPU_RUNTIME
     harness_cpu = nondet_u32();
     cfg.cpu = harness_cpu;
@@ -135,11 +135,12 @@ int main(void) {
     __CPROVER_assert(ok == 0 || ok == 1, "the verdict is 0 or 1");
     if (ok == 1) {
         int unset = cfg.psk == NULL && cfg.psk_len == 0 && cfg.psk_id == NULL &&
-                    cfg.psk_id_len == 0 && cfg.resumption == 0 && cfg.ticket_binding == NULL;
-        int ticket = cfg.resumption != 0 && cfg.psk != NULL && cfg.psk_len == SHA256_LEN &&
-                     cfg.psk_id != NULL && cfg.psk_id_len >= 1 &&
-                     cfg.psk_id_len <= CH_TICKET_ID_MAX && cfg.ticket_binding != NULL;
-        __CPROVER_assert(unset || ticket, "only an unset config or a ticket of the stated shape");
+                    cfg.psk_id_len == 0 && cfg.ticket == NULL;
+        int presented = cfg.ticket != NULL && cfg.psk != NULL && cfg.psk_len == SHA256_LEN &&
+                        cfg.psk_id != NULL && cfg.psk_id_len >= 1 &&
+                        cfg.psk_id_len <= CH_TICKET_ID_MAX;
+        __CPROVER_assert(unset || presented,
+                         "only an unset config or a ticket of the stated shape");
 #ifdef CH_CPU_RUNTIME
         __CPROVER_assert(unset || !sha256_on_instructions(harness_cpu) || (final_ran && hmac_ran),
                          "a ticket check under the bit runs on the instructions");

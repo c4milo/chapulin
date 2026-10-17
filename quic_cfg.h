@@ -18,8 +18,11 @@
 #define CH_QUIC_CFG_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
-// The two result codes below sit beside cfg.h's CH_EINVAL, both int. The CH_QUIC_ prefix says
-// neither has a meaning on the TCP transports, and ch_quic_open alone returns either.
+#include "result.h"
+
+// The two result codes result.h defines for this build sit beside CH_EINVAL, both int. The
+// CH_QUIC_ prefix says neither has a meaning on the TCP transports, and ch_quic_open alone
+// returns either.
 //
 // CH_QUIC_DISCARD leaves the session live, as cfg.h's CH_RECORD_AGAIN does, for a packet the
 // caller drops: one that failed to authenticate, which RFC 9001 §5.5
@@ -32,8 +35,6 @@
 // further packets once failed authentications exceed the AEAD's integrity limit
 // (rfc9001.txt:1823-1827). A call that carries open_failures past it leaves the session
 // dead.
-#define CH_QUIC_DISCARD (-7)
-#define CH_QUIC_AEAD_LIMIT (-8)
 
 // The encryption levels, in the order the handshake reaches them (RFC 9001 §4.1.3,
 // rfc9001.txt:455-460). CH_LEVEL_APPLICATION is QUIC's 1-RTT level; this build offers no

@@ -8,7 +8,6 @@ reason: the TRUST=webpki PSK rule reads only the psk and psk_id
 
 --- old
     return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           cfg->resumption == 0 && cfg->ticket_binding == NULL;
+           cfg->ticket == NULL;
 --- new
-    return cfg->psk == NULL && cfg->psk_id == NULL && cfg->resumption == 0 &&
-           cfg->ticket_binding == NULL;
+    return cfg->psk == NULL && cfg->psk_id == NULL && cfg->ticket == NULL;

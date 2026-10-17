@@ -13,8 +13,8 @@
 <text x="112" y="131" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 3</text>
 <rect x="34" y="154" width="340" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
 <text x="45" y="171" font-size="11.5" fill="#1b1f24">The saved ticket was issued at epoch 2, before</text>
-<text x="45" y="188" font-size="11.5" fill="#1b1f24">the epoch advanced. The application presents it as</text>
-<text x="45" y="205" font-size="11.5" fill="#1b1f24">cfg.ticket_epoch = 2.</text>
+<text x="45" y="188" font-size="11.5" fill="#1b1f24">the epoch advanced. The application presents it in</text>
+<text x="45" y="205" font-size="11.5" fill="#1b1f24">cfg.ticket, and it holds that epoch.</text>
 <rect x="34" y="251" width="314" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
 <text x="45" y="268" font-size="11.5" fill="#1b1f24">ch_connect compares 2 against the stored 3 and</text>
 <text x="45" y="285" font-size="11.5" fill="#1b1f24">refuses: CH_EPOCH_REVOKED, CH_EINVAL.</text>

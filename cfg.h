@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "hkdf.h"
+#include "result.h"
 #include "sha256.h"
 #include "srv_cfg.h"
 #include "ticket.h"
@@ -70,26 +71,6 @@
 #if defined(CH_KEX_PQ) || defined(CH_KEX_TWO_GROUPS)
 #define CH_KEX_HYBRID
 #endif
-
-// The result codes. Each call's header says which it returns and what each
-// leaves; INV-13 is the rule across calls. CH_EINVAL is a refusal on entry:
-// an init call leaves its session failed until the next init, and every
-// other call leaves the session as it was. A call on a session that cannot
-// take it, bytes for one that failed or closed, or ch_read and ch_write
-// before the handshake completes, answers CH_EPROTO, or CH_EINVAL where its
-// header says so, and changes nothing. Every other code leaves the session
-// dead, but those a header names as leaving it live: CH_ECAP for a caller's
-// own short buffer, CH_RECORD_AGAIN and quic_cfg.h's CH_QUIC_DISCARD.
-#define CH_OK 0
-#define CH_EIO (-1)     // transport failed or closed under us, or a server's sink refused
-#define CH_EPROTO (-2)  // peer broke the protocol, or the session cannot take the call
-#define CH_EAUTH (-3)   // authentication failed; session dead
-#define CH_ECAP (-4)    // a buffer too small: the caller's own, or one a message must fit
-#define CH_ECLOSED (-5) // the peer's close_notify; ch_read returns 0 for it, no call returns this
-#define CH_EINVAL (-6)  // configuration or call refused on entry; nothing was sent
-// TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
-// live (tcp_nonblocking.h, INV-13).
-#define CH_RECORD_AGAIN (-9)
 
 // The most plaintext one outgoing record carries, which the peer's
 // record_size_limit may lower; records are staged in the session struct so
@@ -279,8 +260,6 @@ typedef struct {
 // TRANSPORT=quic-nonblocking build.
 #include "quic_cfg.h"
 #endif
-// ch_result_text, the text for each result code above and quic_cfg.h's two.
-#include "result.h"
 // Largest encoded transport-parameters body this tree writes into extension 0x39 (RFC 9001
 // §8.2, rfc9001.txt:1922-1924), in either direction, and declared outside the QUIC guard
 // because srv_build_encrypted_extensions (srv_message.h) writes that extension too.
@@ -297,10 +276,9 @@ typedef struct {
 
 typedef struct {
     // Authentication is one of two modes:
-    //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
-    //    (resumption = 1 and the ticket fields below, ticket.h). Either
-    //    way every client entry refuses with CH_EINVAL a psk_id_len that
-    //    is not 1 to CH_TICKET_ID_MAX bytes, the most a ClientHello holds.
+    //  - PSK: psk/psk_id set, an external PSK. Every client entry refuses
+    //    with CH_EINVAL a psk_id_len that is not 1 to CH_TICKET_ID_MAX
+    //    bytes, the most a ClientHello holds.
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap
@@ -325,16 +303,22 @@ typedef struct {
     size_t psk_len;
     const uint8_t *psk_id;
     size_t psk_id_len;
-    int resumption;
-    uint32_t obfuscated_age; // ch_ticket_obfuscated_age(ticket, ticket_age_ms)
-    // The ticket's age in milliseconds, the time since on_ticket handed it over, and its
-    // ch_ticket.lifetime_s in seconds. With resumption set, every client entry refuses with
-    // CH_EINVAL, before a byte is sent, an age above the lifetime or above
-    // CH_TICKET_LIFETIME_MAX seconds (RFC 9846 §4.3.11.1 and §4.7.1). A lifetime of 0 is
-    // one the caller did not give, since on_ticket is never handed a ticket with that
-    // lifetime, and the age is then held to CH_TICKET_LIFETIME_MAX alone.
+    // A ticket to resume, the copy ch_ticket_save kept (ticket.h), or NULL. Keep the rest of
+    // the configuration as it is: the hello offers the ticket in place of an external PSK, and
+    // in a raw or ca build in place of the pins too, which a declined ticket fails closed. A
+    // TRUST=webpki build offers the ticket beside the certificate path. Every client entry
+    // refuses with CH_EINVAL, before a byte is sent, a ticket with an identity of 0 or more
+    // than CH_TICKET_ID_MAX bytes, with a PSK that is no hash length this build holds, or with
+    // a lifetime of 0, and under TRUST=webpki a ticket beside an external PSK. It refuses the
+    // ticket on the rules ch_ticket's fields state as well: its age, its epoch, its binding
+    // and its QUIC version (ticket.h). The bytes must outlive the session, as every pointer
+    // here must.
+    const ch_saved_ticket *ticket;
+    // The ticket's age in milliseconds: the time since on_ticket handed it over, on the
+    // caller's clock. Every client entry refuses with CH_EINVAL, before a byte is sent, an
+    // age above the ticket's lifetime or above CH_TICKET_LIFETIME_MAX seconds (RFC 9846
+    // §4.3.11.1 and §4.7.1). chapulin reads no clock, so the age is the caller's to measure.
     uint64_t ticket_age_ms;
-    uint32_t ticket_lifetime_s;
     const uint8_t *server_pubkey;
     size_t server_pubkey_len;
 
@@ -379,13 +363,12 @@ typedef struct {
     // Give both or neither. They store one uint32 in whatever persistent memory the device
     // has. Both return 0 on success. A failed load fails ch_connect, so provision the
     // fleet's current count before first use. A failed store keeps the session running and
-    // sets ch_tls.epoch_store_failed; the caller retries. On resumption, pass the saved
-    // ticket's count in ticket_epoch. Only a CH_TRUST_CA build enforces this; other builds
-    // reject a config that sets it rather than ignoring it.
+    // sets what ch_epoch_store_failed reads; the caller retries. A presented ticket carries
+    // the count it arrived under, which the epoch rule judges too. Only a CH_TRUST_CA build
+    // enforces this; other builds reject a config that sets it rather than ignoring it.
     int (*epoch_load)(void *epoch_io, uint32_t *value);
     int (*epoch_store)(void *epoch_io, uint32_t value);
     void *epoch_io;
-    uint32_t ticket_epoch;
 
     // Refuse a key exchange that is not post-quantum: the handshake fails closed unless
     // ch_tls.group is CH_GROUP_X25519MLKEM768, and a TRUST=webpki hello lists the hybrid alone
@@ -402,7 +385,6 @@ typedef struct {
     const uint8_t *hostname;
     size_t hostname_len;
     uint64_t now_seconds;
-    const uint8_t *ticket_binding;
     const uint8_t *spki_pins;
     size_t spki_pin_count;
 #ifdef CH_SUITE_AES_GCM
@@ -437,13 +419,6 @@ typedef struct {
     // The session's negotiated version starts at this value (ch_quic_negotiated_version), and
     // a Retry is checked against this one alone.
     uint32_t quic_original_version;
-
-    // The ticket's QUIC version, ch_ticket.quic_version, which a resuming client sets beside the
-    // other ticket fields. RFC 9369 section 5 forbids a client to start a connection in one QUIC
-    // version with a ticket from a connection in another (rfc9369.txt:268-271), so with
-    // resumption set ch_quic_init returns CH_EINVAL, and sends nothing, when this is not
-    // quic_original_version. 0 names no version, so a ticket presented without it is refused.
-    uint32_t ticket_quic_version;
 
     // The caller's own encoded QUIC transport parameters, the body of the
     // quic_transport_parameters extension. The ClientHello copies these bytes unread into

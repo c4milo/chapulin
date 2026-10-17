@@ -349,20 +349,19 @@ static void retry_epoch_store(const ch_tls *tls, const ch_cfg *cfg) {
 
 // Tickets arrive in CA mode too, so a reconnect resumes over PSK and
 // skips the chain verify entirely. Under CH_TRUST_CA a ticket also
-// carries the epoch it was issued under. Store that beside the ticket
-// and present it back in ch_cfg.ticket_epoch on the next ch_connect: a
-// resumed session shows no certificate, so the ticket's own epoch is
-// the only revocation check left, and advancing the epoch retires
-// every earlier ticket.
+// carries the epoch it was issued under, and ch_ticket_save keeps it
+// with the rest. Present the copy in ch_cfg.ticket on the next
+// ch_connect: a resumed session shows no certificate, so the ticket's
+// own epoch is the only revocation check left, and advancing the epoch
+// retires every earlier ticket.
 //
 // The ch_ticket is valid only during this call. Copy what you keep.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io; // this is cfg.io, the socket pointer
     (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us, epoch %u\n",
                   ticket->identity_len, ticket->lifetime_s, ticket->epoch);
-    // A device copies ticket->identity (identity_len bytes),
-    // ticket->psk (psk_len bytes), ticket->age_add, and
-    // ticket->epoch into persistent storage here.
+    // A device keeps the ticket with ch_ticket_save, and writes the
+    // ch_saved_ticket to persistent storage here.
 }
 
 // One request and one reply, to show that ch_write and ch_read do not

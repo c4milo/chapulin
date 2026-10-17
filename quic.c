@@ -74,7 +74,7 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // invariant this file can restore.
     memset(q, 0, sizeof *q);
     q->t.cfg = *cfg;
-    if (quic_config_ok(&q->t, cfg) != CH_OK) {
+    if (quic_config_ok(&q->t) != CH_OK) {
         // Nothing went out and no secret was drawn. The refused session
         // keeps the epoch fields the check wrote, which say why.
         return quic_refuse_init(q);

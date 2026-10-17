@@ -2708,11 +2708,11 @@ last `ROLE=server` stub, as the entry said it would.
     No call returns `CH_EINVAL` after it has sent a byte: a server
     checks at init every identity fact its flight would otherwise meet
     (INV-14), and its flight answers its own refusals with `CH_EAUTH`
-    (docs/decisions.md 74). A CA build's resuming ticket whose
-    `ticket_epoch` is below the stored epoch is a refusal on entry too
+    (docs/decisions.md 74). A CA build's presented ticket whose
+    `epoch` is below the stored epoch is a refusal on entry too
     (docs/ca.md): `ch_connect`, `ch_record_init` and `ch_quic_init` each
-    return `CH_EINVAL` for it and leave `CH_EPOCH_REVOKED` in
-    `ch_tls.epoch_status`. A first ClientHello too long for `ch_tls.tx`
+    return `CH_EINVAL` for it and leave `CH_EPOCH_REVOKED` in the
+    session, where `ch_epoch_status` reads it. A first ClientHello too long for `ch_tls.tx`
     would be one too, because each client entry builds that hello before
     it sends or stages a byte, but no accepted configuration makes one:
     the configuration check holds a PSK identity to `CH_TICKET_ID_MAX`
@@ -2929,10 +2929,11 @@ last `ROLE=server` stub, as the entry said it would.
   and on every server path, before the duplicate check runs
   (docs/decisions.md 59). Every client entry, `ch_connect`,
   `ch_record_init` and `ch_quic_init`, refuses with `CH_EINVAL` and
-  sends nothing a configuration with `resumption` set whose
-  `ticket_age_ms` is above `ticket_lifetime_s` seconds or above
-  `CH_TICKET_LIFETIME_MAX` seconds, seven days, where a lifetime of 0 is
-  none given (`hspost_ticket_age_ok`, handshake_post.h). Each also
+  sends nothing a configuration whose presented `ticket` has a lifetime
+  of 0 or a PSK of no hash length the build holds
+  (`hspost_present_ticket`), or whose `ticket_age_ms` is above the
+  ticket's `lifetime_s` seconds or above `CH_TICKET_LIFETIME_MAX`
+  seconds, seven days (`hspost_ticket_age_ok`, handshake_post.h). Each also
   refuses, the same way, a PSK whose identity is not 1 to
   `CH_TICKET_ID_MAX` bytes: `psk_id_len_ok` in `tls.c` and
   `quic_config.c` in the raw and ca modes, and `ticket_shape_ok` under
@@ -2941,16 +2942,16 @@ last `ROLE=server` stub, as the entry said it would.
   holds every hello whose identity is in that range, so the bound keeps
   every ClientHello a client builds inside `ch_tls.tx` (docs/decisions.md
   84). `ch_quic_init`
-  also refuses, with `CH_EINVAL` and nothing sent, a configuration with
-  `resumption` set whose `ticket_quic_version` is not its
+  also refuses, with `CH_EINVAL` and nothing sent, a configuration whose
+  presented ticket's `quic_version` is not its
   `quic_original_version`, 0 included, because RFC 9369 §5 forbids a
   client to start a connection in one QUIC version with a ticket from
   another (`rfc9369.txt:268-271`); `handle_ticket` writes the connection's
   negotiated version into each `ch_ticket` it hands over. The
   post-handshake parser hands `on_ticket` no NewSessionTicket whose
   `ticket_lifetime` is 0, which RFC 9846 §4.7.1 says to discard at once,
-  and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
-  modulo 2^32 (docs/decisions.md 72). In either role the same parser
+  and the resuming hello adds the ticket's `age_add` to its age modulo
+  2^32, as `ch_ticket_obfuscated_age` does (docs/decisions.md 72 and 134). In either role the same parser
   refuses a KeyUpdate whose request_update is neither 0 nor 1 with
   illegal_parameter, before it rekeys (§4.7.3, rfc9846.txt:3362-3365):
   `bin/unit` reads 0 and 1 as requests and requires illegal_parameter for

@@ -38,6 +38,7 @@
 #include "srv_quic.h"
 #include "srv_ticket.h"
 #include "test_cpu.h"
+#include "test_ticket.h"
 #include "test_widemul.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
@@ -203,26 +204,22 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 #endif
 }
 
+// The ticket present_ticket writes from kept, which ch_cfg.ticket points
+// at. A row that presents a changed ticket writes this after the call.
+static ch_saved_ticket presented;
+
 // The kept ticket as a resuming client presents it, one second after it
-// arrived, with the QUIC version it arrived in. The obfuscated age comes
-// from a ch_ticket holding the kept age_add and nothing else, as a
-// caller's copy does.
+// arrived, with the QUIC version it arrived in.
 static void present_ticket(ch_cfg *cfg) {
-    cfg->psk = kept.psk;
-    cfg->psk_len = kept.psk_len;
-    cfg->psk_id = kept.identity;
-    cfg->psk_id_len = kept.identity_len;
-    cfg->resumption = 1;
-    cfg->ticket_quic_version = kept.quic_version;
-    ch_ticket ticket;
-    memset(&ticket, 0, sizeof ticket);
-    ticket.age_add = kept.age_add;
-    cfg->ticket_age_ms = 1000;
-    cfg->ticket_lifetime_s = kept.lifetime_s;
-    cfg->obfuscated_age = ch_ticket_obfuscated_age(&ticket, cfg->ticket_age_ms);
+    test_ticket_fill(&presented, kept.psk, kept.psk_len, kept.identity, kept.identity_len,
+                     kept.lifetime_s);
+    presented.ticket.age_add = kept.age_add;
+    presented.ticket.quic_version = kept.quic_version;
 #ifdef CH_TRUST_WEBPKI
-    cfg->ticket_binding = kept.binding;
+    memcpy(presented.ticket.binding, kept.binding, SHA256_LEN);
 #endif
+    cfg->ticket = &presented;
+    cfg->ticket_age_ms = 1000;
 }
 
 // The ticket's age against its lifetime, which ch_quic_init judges before

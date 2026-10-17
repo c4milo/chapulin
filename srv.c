@@ -76,9 +76,10 @@ static int alpn_ok(const ch_cfg *cfg) {
 // rule a TRUST=webpki client applies to the pin fields.
 static int client_fields_unset(const ch_cfg *cfg) {
     return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           cfg->resumption == 0 && cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
-           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0 && cfg->require_pq == 0 &&
-           cfg->epoch_load == NULL && cfg->epoch_store == NULL;
+           cfg->ticket == NULL && cfg->ticket_age_ms == 0 && cfg->server_pubkey == NULL &&
+           cfg->server_pubkey_len == 0 && cfg->server_pubkey2 == NULL &&
+           cfg->server_pubkey2_len == 0 && cfg->require_pq == 0 && cfg->epoch_load == NULL &&
+           cfg->epoch_store == NULL;
 }
 
 // The SNI rule: a name the server cannot report is a name it must not

@@ -6,6 +6,6 @@ reason: the ticket shape admits an identity one byte over CH_TICKET_ID_MAX,
   and the hello does not fit. The first-invalid identity row objects.
 
 --- old
-cfg->psk_id_len <= CH_TICKET_ID_MAX &&
+cfg->psk_id_len <= CH_TICKET_ID_MAX;
 --- new
-cfg->psk_id_len <= CH_TICKET_ID_MAX + 1 &&
+cfg->psk_id_len <= CH_TICKET_ID_MAX + 1;

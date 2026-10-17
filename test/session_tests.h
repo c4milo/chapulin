@@ -9,6 +9,7 @@
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H
 
+#include "test_ticket.h"
 #include "test_widemul.h"
 
 // Mock transport: the "server" is a byte queue we stuff records into.
@@ -112,6 +113,7 @@ static size_t mock_pop_client_record(mock_io *m, size_t at, rec_dir *reader, uin
 #include "session_hello_tests.h"
 #include "session_post_tests.h"
 #include "session_record_end_tests.h"
+#include "session_ticket_tests.h"
 #include "session_write_tests.h"
 
 #endif

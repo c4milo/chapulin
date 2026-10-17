@@ -55,7 +55,7 @@ void hsf_begin(handshake_state *h) {
     widemul_x25519_base(widemul_answer(&t->cfg), h->pub, h->priv);
     if (t->cfg.psk != NULL) {
         KS_EARLY_CPU(t->cfg.cpu, hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len,
-                     t->cfg.resumption, h->early, h->binder_key);
+                     t->cfg.ticket != NULL, h->early, h->binder_key);
     }
     // No PSK: h->early stays zero until hsf_accept_server_hello computes
     // it at the hash of the suite the ServerHello names.

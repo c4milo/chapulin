@@ -1,12 +1,36 @@
-// A short English text for each result code, for a log line. cfg.h defines the codes and
-// includes this header after them, and quic_cfg.h the two that a QUIC build adds. Each
-// call's header states what a code means for that call; the text here is the meaning that
-// every call shares.
-//
-// It is static inline, so no object exports it and an image of two transports holds no
-// second definition to clash with.
+// The result codes, and a short English text for each, for a log line. cfg.h includes this
+// header, and so does ticket.h, whose ch_ticket_save returns a code. Each call's header states
+// what a code means for that call; the text here is the meaning that every call shares.
+// ch_result_text is static inline, so no object exports it and an image of two transports
+// holds no second definition to clash with.
 #ifndef CH_RESULT_H
 #define CH_RESULT_H
+
+// The result codes. Each call's header says which it returns and what each
+// leaves; INV-13 is the rule across calls. CH_EINVAL is a refusal on entry:
+// an init call leaves its session failed until the next init, and every
+// other call leaves the session as it was. A call on a session that cannot
+// take it, bytes for one that failed or closed, or ch_read and ch_write
+// before the handshake completes, answers CH_EPROTO, or CH_EINVAL where its
+// header says so, and changes nothing. Every other code leaves the session
+// dead, but those a header names as leaving it live: CH_ECAP for a caller's
+// own short buffer, CH_RECORD_AGAIN and quic_cfg.h's CH_QUIC_DISCARD.
+#define CH_OK 0
+#define CH_EIO (-1)     // transport failed or closed under us, or a server's sink refused
+#define CH_EPROTO (-2)  // peer broke the protocol, or the session cannot take the call
+#define CH_EAUTH (-3)   // authentication failed; session dead
+#define CH_ECAP (-4)    // a buffer too small: the caller's own, or one a message must fit
+#define CH_ECLOSED (-5) // the peer's close_notify; ch_read returns 0 for it, no call returns this
+#define CH_EINVAL (-6)  // configuration or call refused on entry; nothing was sent
+// TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
+// live (tcp_nonblocking.h, INV-13).
+#define CH_RECORD_AGAIN (-9)
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// The two codes a TRANSPORT=quic-nonblocking build adds, which ch_quic_open alone returns.
+// quic_cfg.h states what each means.
+#define CH_QUIC_DISCARD (-7)
+#define CH_QUIC_AEAD_LIMIT (-8)
+#endif
 
 // The text for rc: a constant string, never NULL. A code no header of this build defines
 // answers "unknown result code".

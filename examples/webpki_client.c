@@ -245,9 +245,10 @@ static int dial(const char *host, const char *port) {
 // --- The session ---------------------------------------------------------
 
 // Tickets arrive bound to this hostname and these anchors. A caller that
-// resumes stores psk, psk_len, identity and binding, and presents them on its next
-// ch_connect under the same hostname and anchors (docs/webpki.md,
-// "Resumption"). This example only reports what arrived.
+// resumes keeps the ticket with ch_ticket_save, and presents the copy in
+// ch_cfg.ticket, with its age, on its next ch_connect under the same
+// hostname and anchors (docs/webpki.md, "Resumption"). This example only
+// reports what arrived.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us\n", ticket->identity_len,
@@ -312,8 +313,8 @@ static int one_exchange(ch_tls *tls) {
 
 // Fills in the config. Every field set here exists in cfg.h under
 // CH_TRUST_WEBPKI, and this mode needs no others. What stays zero is
-// deliberate: this example does not resume, so psk, psk_id, resumption
-// and ticket_binding stay unset, and both pin slots and the epoch
+// deliberate: this example does not resume, so psk, psk_id and ticket
+// stay unset, and both pin slots and the epoch
 // callbacks stay unset because ch_connect refuses a webpki config that
 // sets any of them.
 static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anchor_count,

@@ -12,8 +12,10 @@ const has_quic = @hasField(c.ch_cfg, "quic_original_version");
 
 /// A NewSessionTicket (RFC 9846 §4.7.1) that outlives the session: the
 /// ch_ticket on_ticket received, by value, and the identity bytes it
-/// pointed at. A program that copies a Ticket owns zeroing that copy.
-pub const Ticket = struct {
+/// pointed at. Its layout is c.ch_saved_ticket's (ticket.h), so a Client's
+/// ch_cfg points at it as it is. A program that copies a Ticket owns
+/// zeroing that copy.
+pub const Ticket = extern struct {
     /// The ch_ticket on_ticket received. Its identity pointer is null here, because the bytes it
     /// named are valid during on_ticket alone. psk, psk_len, age_add, lifetime_s, epoch, under
     /// TRUST=webpki binding and under TRANSPORT=quic-nonblocking quic_version are read from it
@@ -21,6 +23,17 @@ pub const Ticket = struct {
     ticket: c.ch_ticket,
     /// The identity bytes, ticket.identity_len of them, presented as psk_id.
     identity: [c.CH_TICKET_ID_MAX]u8,
+
+    comptime {
+        if (@sizeOf(Ticket) != @sizeOf(c.ch_saved_ticket) or
+            @offsetOf(Ticket, "identity") != @offsetOf(c.ch_saved_ticket, "identity"))
+            @compileError("Ticket's layout is not ch_saved_ticket's");
+    }
+
+    /// The c.ch_saved_ticket the Ticket's bytes are, which ch_cfg.ticket takes.
+    pub fn saved(self: *const Ticket) *const c.ch_saved_ticket {
+        return @ptrCast(self);
+    }
 
     /// The fields fromFields takes. binding is the ticket's ch_ticket.binding, which a TRUST=webpki
     /// object alone has, and quic_version its ch_ticket.quic_version, a QUIC object's alone, whose
@@ -64,13 +77,12 @@ pub const Ticket = struct {
     }
 
     /// A copy of the ch_ticket on_ticket hands over, identity bytes and
-    /// all, or null for an identity longer than CH_TICKET_ID_MAX, which C
-    /// drops before on_ticket. The sessions' own on_ticket calls it.
+    /// all, through ch_ticket_save, or null for a ticket that call refuses:
+    /// an identity that is NULL, empty or longer than CH_TICKET_ID_MAX,
+    /// which C drops before on_ticket. The sessions' own on_ticket calls it.
     pub fn fromOnTicket(ticket: *const c.ch_ticket) ?Ticket {
-        if (ticket.identity_len > c.CH_TICKET_ID_MAX or ticket.identity == null) return null;
-        var out: Ticket = .{ .ticket = ticket.*, .identity = @splat(0) };
-        @memcpy(out.identity[0..ticket.identity_len], ticket.identity[0..ticket.identity_len]);
-        out.ticket.identity = null;
+        var out: Ticket = undefined;
+        if (c.ch_ticket_save(@ptrCast(&out), ticket) != c.CH_OK) return null;
         return out;
     }
 };

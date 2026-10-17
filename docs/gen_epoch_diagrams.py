@@ -345,8 +345,8 @@ def resumption_after_bump():
                 ["Device", "Server"])
     d.state(0, "stored epoch = 3")
     d.note(0, ["The saved ticket was issued at epoch 2, before",
-               "the epoch advanced. The application presents it as",
-               "cfg.ticket_epoch = 2."])
+               "the epoch advanced. The application presents it in",
+               "cfg.ticket, and it holds that epoch."])
     d.gap()
     d.note(0, ["ch_connect compares 2 against the stored 3 and",
                "refuses: CH_EPOCH_REVOKED, CH_EINVAL.",

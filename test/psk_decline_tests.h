@@ -21,9 +21,12 @@ static void offer_psk(handshake_state *h, server_hello_info *info, const uint8_t
     memset(h, 0, sizeof *h);
     memset(info, 0, sizeof *info);
     h->t = &decline_session;
+    // The session copy of a presented ticket: its PSK in the PSK fields,
+    // and the ticket pointer that marks the PSK a ticket's.
+    static ch_saved_ticket saved;
     decline_session.cfg.psk = psk;
     decline_session.cfg.psk_len = SHA256_LEN;
-    decline_session.cfg.resumption = 1;
+    decline_session.cfg.ticket = &saved;
     ks_early(SHA256_LEN, psk, SHA256_LEN, 1, h->early, h->binder_key);
     info->have_share = 1;
     info->group = CH_GROUP_X25519;

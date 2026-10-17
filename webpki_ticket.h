@@ -72,12 +72,13 @@ int webpki_takes_tickets(const ch_cfg *cfg);
 void webpki_ticket_binding(uint32_t cpu, const uint8_t *psk, size_t psk_len,
                            const uint8_t config_hash[SHA256_LEN], uint8_t out[SHA256_LEN]);
 
-// Whether cfg's PSK fields are one this build accepts. Either every PSK
-// field is unset: psk and psk_id NULL, psk_len and psk_id_len 0,
-// resumption 0 and ticket_binding NULL. Or cfg presents a ticket:
-// resumption set, a psk of SHA256_LEN bytes, or of SHA384_LEN bytes in a
-// CH_CLIENT_AES_SUITES build (ch_ticket.psk_len), a psk_id of 1 to
-// CH_TICKET_ID_MAX bytes, and a ticket_binding equal, compared in
+// Whether cfg's PSK fields are one this build accepts. cfg is the
+// session's copy, into which hspost_present_ticket wrote a presented
+// ticket's PSK and identity. Either every PSK field is unset: psk and
+// psk_id NULL, psk_len and psk_id_len 0, and ticket NULL. Or cfg presents
+// a ticket: ticket set, a psk of SHA256_LEN bytes, or of SHA384_LEN bytes
+// in a CH_CLIENT_AES_SUITES build (ch_ticket.psk_len), a psk_id of 1 to
+// CH_TICKET_ID_MAX bytes, and the ticket's binding equal, compared in
 // constant time, to the binding recomputed from psk, hostname and
 // anchors. Any other shape is refused: an external PSK has no hostname
 // to bind, and a length set without its pointer is a field missing. The

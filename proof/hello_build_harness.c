@@ -21,6 +21,7 @@
 
 uint32_t nondet_u32(void);
 uint16_t nondet_u16(void);
+uint64_t nondet_u64(void);
 
 #include "handshake_message.c"
 
@@ -68,8 +69,13 @@ int main(void) {
         // with it the drivers' branches for a hello that does not fit are
         // unreachable (docs/decisions.md 84).
         __CPROVER_assume(cfg.psk_id_len <= CH_TICKET_ID_MAX);
-        cfg.resumption = nondet_u8() & 1;
-        cfg.obfuscated_age = nondet_u32();
+        // A presented ticket or none: the builder reads the ticket's
+        // age_add and the age for the obfuscated age, which any values
+        // give.
+        static ch_saved_ticket ticket;
+        ticket.ticket.age_add = nondet_u32();
+        cfg.ticket = (nondet_u8() & 1) ? &ticket : NULL;
+        cfg.ticket_age_ms = nondet_u64();
     }
 
 #ifdef CH_TRUST_WEBPKI

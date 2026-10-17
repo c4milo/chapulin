@@ -19,6 +19,7 @@
 #include "ct.h"
 #include "handshake_flight.h"
 #include "handshake_message.h"
+#include "handshake_post.h"
 #include "record.h"
 #include "tcp_nonblocking_frame.h"
 #include "tcp_nonblocking_step.h"
@@ -34,9 +35,12 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     // tcp_nonblocking.h makes "r and cfg are not NULL" a caller requirement.
     memset(r, 0, sizeof *r);
     r->t.cfg = *cfg;
-    // The callbacks go unused until the handshake is done; ch_read and
-    // ch_write need them after it (tcp_nonblocking.h).
-    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+    // A presented ticket becomes the session copy's PSK, which every rule
+    // below and the handshake read (handshake_post.h). The callbacks go
+    // unused until the handshake is done; ch_read and ch_write need them
+    // after it (tcp_nonblocking.h).
+    if (!hspost_present_ticket(&r->t.cfg) || !tlsi_config_ok(&r->t.cfg) || cfg->send == NULL ||
+        cfg->recv == NULL) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_CPU_RUNTIME
@@ -45,7 +49,7 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     // A CA build loads its revocation epoch before the first message,
     // exactly as ch_connect does; every other build answers CH_OK. The
     // refusal keeps the epoch fields the check wrote, which say why.
-    if (tlsi_epoch_init(&r->t, cfg, cfg->psk != NULL) != CH_OK) {
+    if (tlsi_epoch_init(&r->t, &r->t.cfg, r->t.cfg.psk != NULL) != CH_OK) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_TRUST_WEBPKI

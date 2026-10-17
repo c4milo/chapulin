@@ -51,9 +51,9 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
     }
 }
 
-// Persists one ticket as "identity-hex psk-hex age_add" so a later run can resume with it. A
-// fourth field carries what resumption presents back: the CA build's epoch, for
-// cfg.ticket_epoch, or the webpki build's binding in hex, for cfg.ticket_binding.
+// Persists one ticket as "identity-hex psk-hex age_add lifetime_s" so a later run can resume
+// with it. A fifth field carries the rest of the ticket: the CA build's epoch, or the webpki
+// build's binding in hex.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", ticket->identity_len,
@@ -68,7 +68,7 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     put_hex(f, ticket->identity, ticket->identity_len);
     (void)fputc(' ', f);
     put_hex(f, ticket->psk, ticket->psk_len);
-    (void)fprintf(f, " %u", ticket->age_add);
+    (void)fprintf(f, " %u %u", ticket->age_add, ticket->lifetime_s);
 #ifdef CH_TRUST_CA
     (void)fprintf(f, " %u", ticket->epoch);
 #endif
@@ -121,11 +121,9 @@ static int parse_u32(const char *s, uint32_t *out) {
     return 0;
 }
 
-// Loads a ticket saved by on_ticket. The identity replaces the psk-id, the derived PSK replaces
-// the external one, and obfuscated_age = 0 + age_add (we reconnect within moments, so the true
-// age rounds to zero). The fourth field stays text in extra, which keeps "0" when there is none.
-static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *psk, size_t *psk_len,
-                       uint32_t *age, char extra[2 * SHA256_LEN + 1]) {
+// Loads a ticket saved by on_ticket into saved. The run reconnects within moments, so the
+// ticket's age is 0. The fifth field stays text in extra, which keeps "0" when there is none.
+static int load_ticket(const char *path, ch_saved_ticket *saved, char extra[2 * SHA256_LEN + 1]) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
         return -1;
@@ -136,14 +134,17 @@ static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *p
     char id_hex[2 * CH_TICKET_ID_MAX + 1];
     char psk_hex[2 * 48 + 1];
     char age_str[16];
-    int rc = fscanf(f, "%640s %96s %15s %64s", id_hex, psk_hex, age_str, extra);
+    char lifetime_str[16];
+    int rc = fscanf(f, "%640s %96s %15s %15s %64s", id_hex, psk_hex, age_str, lifetime_str, extra);
     (void)fclose(f);
-    if (rc < 3 || parse_u32(age_str, age) != 0) {
+    memset(saved, 0, sizeof *saved);
+    if (rc < 4 || parse_u32(age_str, &saved->ticket.age_add) != 0 ||
+        parse_u32(lifetime_str, &saved->ticket.lifetime_s) != 0) {
         return -1;
     }
-    *id_len = unhex(id_hex, id, CH_TICKET_ID_MAX);
-    *psk_len = unhex(psk_hex, psk, HKDF_HASH_MAX);
-    return (*id_len > 0 && (*psk_len == SHA256_LEN || *psk_len == HKDF_HASH_MAX)) ? 0 : -1;
+    saved->ticket.identity_len = unhex(id_hex, saved->identity, CH_TICKET_ID_MAX);
+    saved->ticket.psk_len = unhex(psk_hex, saved->ticket.psk, HKDF_HASH_MAX);
+    return saved->ticket.identity_len > 0 ? 0 : -1;
 }
 
 // Owns the "pin:<pubkey-hex>[,<pubkey2-hex>]" form: parses one or two
@@ -212,39 +213,28 @@ static int epoch_store_file(void *io, uint32_t value) {
 }
 #endif
 
-// A ticket file's fourth field: the webpki binding, required, or the epoch, "0" when absent.
-static int load_ticket_extra(const char *extra, ch_cfg *cfg, uint32_t *ticket_epoch) {
+// A ticket file's fifth field: the webpki binding, required, or the epoch, "0" when absent.
+static int load_ticket_extra(const char *extra, ch_saved_ticket *saved) {
 #ifdef CH_TRUST_WEBPKI
-    static uint8_t binding[SHA256_LEN];
-    (void)ticket_epoch;
-    cfg->ticket_binding = binding;
-    return unhex(extra, binding, sizeof binding) == sizeof binding ? 0 : -1;
+    return unhex(extra, saved->ticket.binding, SHA256_LEN) == SHA256_LEN ? 0 : -1;
 #else
-    (void)cfg;
-    return parse_u32(extra, ticket_epoch);
+    return parse_u32(extra, &saved->ticket.epoch);
 #endif
 }
 
-// Owns the "@ticket-file" form: loads a saved ticket into cfg for resumption.
-static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id) {
-    size_t id_len = 0;
-    size_t psk_len = 0;
-    uint32_t age = 0;
-    uint32_t ticket_epoch = 0;
+// Owns the "@ticket-file" form: loads a saved ticket into cfg for resumption. The
+// configuration keeps the rest of what the command line set.
+static int setup_ticket(const char *path, ch_cfg *cfg) {
+    static ch_saved_ticket saved;
     char extra[2 * SHA256_LEN + 1] = "0";
-    if (load_ticket(path, id, &id_len, psk, &psk_len, &age, extra) != 0 ||
-        load_ticket_extra(extra, cfg, &ticket_epoch) != 0) {
+    if (load_ticket(path, &saved, extra) != 0 || load_ticket_extra(extra, &saved) != 0) {
         (void)fprintf(stderr, "bad ticket file: %s\n", path);
         return -1;
     }
-    cfg->psk = psk;
-    cfg->psk_len = psk_len;
-    cfg->psk_id = id;
-    cfg->psk_id_len = id_len;
-    cfg->resumption = 1;
-    cfg->obfuscated_age = age;
-    cfg->ticket_epoch = ticket_epoch;
-    (void)fprintf(stderr, "resuming with a %zu-byte ticket (epoch %u)\n", id_len, ticket_epoch);
+    cfg->ticket = &saved;
+    cfg->ticket_age_ms = 0;
+    (void)fprintf(stderr, "resuming with a %zu-byte ticket (epoch %u)\n", saved.ticket.identity_len,
+                  saved.ticket.epoch);
     return 0;
 }
 
@@ -257,7 +247,7 @@ static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id
 // pinned-key mode, "@file" for a saved ticket, or an external psk-hex +
 // identity pair. The CA-mode build adds its "ca:" form as one more
 // branch here.
-static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uint8_t *id) {
+static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap) {
     if (strncmp(argv[3], "pin:", 4) == 0) {
         return setup_pin(argv[3] + 4, cfg);
     }
@@ -265,7 +255,7 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
     if (strncmp(argv[3], "webpki:", 7) == 0) {
         // "@file" in the psk-id slot resumes a ticket a webpki run saved.
         int rc = setup_webpki(argv[3] + 7, cfg);
-        return rc == 0 && argv[4][0] == '@' ? setup_ticket(argv[4] + 1, cfg, psk, id) : rc;
+        return rc == 0 && argv[4][0] == '@' ? setup_ticket(argv[4] + 1, cfg) : rc;
     }
 #endif
     if (strncmp(argv[3], "ca:", 3) == 0) {
@@ -274,7 +264,7 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
         return setup_pin(argv[3] + 3, cfg);
     }
     if (argv[3][0] == '@') {
-        return setup_ticket(argv[3] + 1, cfg, psk, id);
+        return setup_ticket(argv[3] + 1, cfg);
     }
     cfg->psk = psk;
     cfg->psk_len = unhex(argv[3], psk, psk_cap);
@@ -357,7 +347,6 @@ int main(int argc, char **argv) {
     }
 
     uint8_t psk[64];
-    uint8_t id[CH_TICKET_ID_MAX];
 #ifdef CH_TRUST_CA
     // The CA build's floor covers a two-certificate flight.
     static uint8_t rxbuf[4096];
@@ -368,7 +357,7 @@ int main(int argc, char **argv) {
     static uint8_t rxbuf[2048];
 #endif
     ch_cfg cfg = {0};
-    if (setup_psk(argv, &cfg, psk, sizeof psk, id) != 0) {
+    if (setup_psk(argv, &cfg, psk, sizeof psk) != 0) {
         return 2;
     }
     cfg.buf = rxbuf;
@@ -409,26 +398,26 @@ int main(int argc, char **argv) {
         // e2e asserts on this line. A ticket the stored epoch retired
         // returns CH_EINVAL, the code of every refused configuration, and
         // the epoch status, CH_EPOCH_REVOKED, is what names it.
-        (void)fprintf(stderr, "epoch status %u\n", (unsigned)tls.epoch_status);
+        (void)fprintf(stderr, "epoch status %u\n", (unsigned)ch_epoch_status(&tls));
 #endif
         return 1;
     }
     (void)fprintf(stderr, "connected\n");
     // e2e asserts on this line: the group the ServerHello selected.
-    (void)fprintf(stderr, "group 0x%04x\n", (unsigned)tls.group);
+    (void)fprintf(stderr, "group 0x%04x\n", (unsigned)ch_group(&tls));
     // And on this one: whether the ticket authenticated the handshake or
-    // the server declined it and sent a certificate (ch_tls.psk_selected).
-    (void)fprintf(stderr, "psk selected %u\n", (unsigned)tls.psk_selected);
+    // the server declined it and sent a certificate (ch_psk_selected).
+    (void)fprintf(stderr, "psk selected %u\n", (unsigned)ch_psk_selected(&tls));
 #ifdef CH_SUITE_AES_GCM
     // And the cipher suite, in a build that can negotiate one.
-    (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)tls.suite);
+    (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)ch_suite(&tls));
 #endif
 #ifdef CH_TRUST_WEBPKI
     report_webpki(&cfg, &tls);
 #endif
     if (cfg.server_pubkey != NULL) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.
-        (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);
+        (void)fprintf(stderr, "pin slot %u\n", ch_pin_slot(&tls));
     }
 #ifdef CH_TRUST_CA
     if (cfg.epoch_load != NULL) {

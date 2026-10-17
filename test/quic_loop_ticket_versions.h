@@ -83,14 +83,14 @@ static void check_client_refuses_other_version(uint32_t ticket_version) {
     uint32_t other = ticket_version == CH_QUIC_VERSION_1 ? CH_QUIC_VERSION_2 : CH_QUIC_VERSION_1;
     ch_cfg ccfg;
     version_resuming_client(&ccfg);
-    CHECK(ccfg.ticket_quic_version == ticket_version);
+    CHECK(ccfg.ticket == &presented && presented.ticket.quic_version == ticket_version);
     ccfg.quic_original_version = ticket_version;
     CHECK(ch_quic_init(&probe, &ccfg) == CH_OK);
     ch_quic_close(&probe);
     ccfg.quic_original_version = other;
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL && ch_quic_state(&probe) == CH_ST_FAILED);
     ccfg.quic_original_version = ticket_version;
-    ccfg.ticket_quic_version = 0;
+    presented.ticket.quic_version = 0;
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
 }
 

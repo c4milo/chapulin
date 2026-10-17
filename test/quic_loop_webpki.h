@@ -63,6 +63,7 @@ static void check_declined_chain_refused(const webpki_corpus_anchor *root, const
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(0, &ccfg, config_hash);
     webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
+    memcpy(presented.ticket.binding, kept.binding, SHA256_LEN);
     CHECK(!run_quic(&ccfg, &scfg));
     CHECK(ch_quic_state(&client) == CH_ST_FAILED);
     CHECK(ch_quic_error_code(&client) == 0x0100U + alert);
@@ -96,11 +97,14 @@ static void test_quic_hello_boundary(void) {
         widest[i] = (ch_alpn_protocol){names[i], CH_ALPN_NAME_MAX};
     }
     ch_cfg cfg = {0};
+    // The session copy of a presented ticket: its PSK and identity in the
+    // PSK fields, beside the ticket pointer.
+    static ch_saved_ticket saved;
     cfg.psk = identity;
     cfg.psk_len = HKDF_HASH_MAX;
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
-    cfg.resumption = 1;
+    cfg.ticket = &saved;
     cfg.hostname = name;
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;
@@ -201,12 +205,19 @@ static void test_webpki_resumption(void) {
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
     webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
     present_ticket(&ccfg);
-    ccfg.ticket_binding = NULL;
+    memset(presented.ticket.binding, 0, SHA256_LEN);
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    // The ticket's PSK as an external one, which this mode refuses, and
+    // the same PSK beside the ticket.
     webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
     present_ticket(&ccfg);
-    ccfg.resumption = 0;
-    ccfg.ticket_binding = NULL;
+    ccfg.ticket = NULL;
+    ccfg.psk = presented.ticket.psk;
+    ccfg.psk_len = presented.ticket.psk_len;
+    ccfg.psk_id = presented.identity;
+    ccfg.psk_id_len = presented.ticket.identity_len;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    ccfg.ticket = &presented;
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
     // An offer of no protocol, which webpki_cfg_ok admits over TCP and
     // RFC 9001 §8.1 forbids a QUIC client.

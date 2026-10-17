@@ -12228,3 +12228,92 @@ does nothing more.
       consumer still picks the headers. A header of another transport
       declares calls that the object lacks, and the linker reports them
       in place of the compiler.
+
+134. **A client resumes from one kept ticket, `ch_cfg.ticket`, and its
+    age, `ch_cfg.ticket_age_ms`.** A resuming caller copied eight to eleven
+    fields from the ticket on_ticket handed over: `psk`, `psk_len`, `psk_id`,
+    `psk_id_len`, `resumption`, `obfuscated_age`, `ticket_age_ms`,
+    `ticket_lifetime_s` and `ticket_epoch`, and in two builds
+    `ticket_binding` and `ticket_quic_version`. `examples/psk_client.c` set
+    neither `ticket_age_ms` nor `ticket_lifetime_s`, so its resumption ran
+    without the age rule of RFC 9846 §4.7.1, and the handshake still
+    passed. The identity pointer is valid during the callback alone, and a
+    struct copy kept it. On 2026-10-17 Camilo approved one field for the
+    ticket and one for its age (entry 133 states the request).
+
+    - **The type.** `ticket.h` declares `ch_saved_ticket`: the `ch_ticket`
+      on_ticket received, with its identity pointer NULL, and the identity
+      bytes, `CH_TICKET_ID_MAX` of room. `ch_ticket_save` writes one. It is
+      static inline, so no object exports it, and it copies byte by byte,
+      so the header needs no `<string.h>`. The Zig API's `Ticket` was this
+      shape already. It is now an extern struct with the C type's layout,
+      which a comptime check holds, and `fromOnTicket` calls
+      `ch_ticket_save`.
+    - **The fields.** `ch_cfg` loses `resumption`, `obfuscated_age`,
+      `ticket_lifetime_s`, `ticket_epoch`, `ticket_binding` and
+      `ticket_quic_version`, and gains `ticket`. The hello computes the
+      obfuscated age from the ticket's `age_add` and `ticket_age_ms`.
+      `psk` and `psk_id` stay, for an external PSK.
+    - **The session copy.** Each client entry first runs
+      `hspost_present_ticket` on its own copy of the configuration. It
+      writes the ticket's PSK and identity into the copy's PSK fields, so
+      every rule and the handshake read one PSK, as before. In a raw or ca
+      build it drops the pins from the copy, because that hello offers the
+      ticket alone and a declined ticket fails closed. So the caller keeps
+      one configuration for a full connection and a resumed one. Under
+      TRUST=webpki it refuses a ticket beside an external PSK, because the
+      mode takes a PSK only as a ticket it bound.
+    - **Two new refusals.** A kept ticket of lifetime 0 is refused. A 0 used
+      to mean a lifetime the caller did not give, and the ticket now always
+      carries its own. A PSK length that is no hash length the build holds
+      is refused, which keeps every read of the PSK inside
+      `ch_ticket.psk`. The identity's length meets each entry's rule for a
+      PSK identity, as before, so `hspost_present_ticket` does not check it
+      a second time: a mutant of a second check would go unseen.
+    - **What stays the caller's.** The age. chapulin reads no clock, so
+      `ticket_age_ms` is the one value a caller measures, and an age it
+      forgets reads as 0, a ticket that arrived this millisecond. The
+      examples and the docs set it from the time on_ticket ran.
+    - **What did not change.** `ch_ticket_obfuscated_age` stays exported in
+      every client object, with its transport name. No caller needs it now,
+      and its removal is a change of the export list that can wait.
+
+    The tests present a kept ticket through `test/test_ticket.h`.
+    `test/session_ticket_tests.h` holds ch_connect's ticket rows, and the
+    e2e client stores its ticket file with the lifetime. Four mutants hold
+    the new rules: `inv14-ticket-psk-length-unchecked`,
+    `inv14-ticket-lifetime-zero-offered`, `inv14-ticket-keeps-pins` and
+    `inv14-webpki-ticket-beside-external-psk`. Thirteen others moved to
+    the new text, and all seventeen are caught.
+
+    The ten harnesses that set the changed fields ran under cbmc 6.11.0
+    with `PROVE_NO_CACHE=1` on an M1 Pro, and none failed:
+
+    | harness | properties | time | peak memory |
+    |---|---:|---:|---:|
+    | `hello_build` | 492 | 4 s | 0.12 GB |
+    | `hello_build_webpki` | 608 | 102 s | 0.25 GB |
+    | `hello_build_suite` | 677 | 119 s | 0.25 GB |
+    | `webpki_ticket` | 942 | 8 s | 0.13 GB |
+    | `webpki_ticket_host` | 958 | 12 s | 0.23 GB |
+    | `quic_config_webpki` | 668 | 6 s | 0.21 GB |
+    | `quic_config_webpki_suite` | 838 | 9 s | 0.28 GB |
+    | `srv_accept` | 924 | 27 s | 3.13 GB |
+    | `handshake_psk` | 1867 | 156 s | 8.72 GB |
+    | `handshake_pin` | 1869 | 50 s | 5.36 GB |
+
+    `quic_config_webpki` now also asserts the kept ticket's rule: the PSK
+    length, no external PSK beside it, and the session copy's PSK fields.
+    `bench/sram.sh` measured `ch_tls` 8 bytes smaller in the default build
+    and 16 to 24 bytes smaller in the others, because `ch_cfg`, which
+    `ch_tls` holds, lost five fields and gained one.
+
+    Rejected:
+
+    - **A clock callback that measures the age.** The device modes read no
+      clock, and a millisecond counter that restarts with the device would
+      refuse every ticket after a reboot.
+    - **A save call that records the time.** The caller still passes a
+      clock value, then at two points instead of one.
+    - **The identity inline in `ch_ticket`.** Each NewSessionTicket would
+      put 320 more bytes on the stack of the call that runs on_ticket.

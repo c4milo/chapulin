@@ -145,14 +145,14 @@ static int trust_config_ok(const ch_cfg *cfg) {
 #endif
 
 // Whether cfg may offer its ticket in its original version. Without
-// resumption no ticket goes out. With it, RFC 9369 section 5 forbids a
+// a ticket none goes out. With one, RFC 9369 section 5 forbids a
 // client to start a connection in one QUIC version with a ticket from a
 // connection in another (rfc9369.txt:268-271), so the ticket's version,
 // ch_ticket.quic_version, must be the original version. quic_version_derived
 // admits no original version of 0, so a ticket presented without its
 // version is refused rather than read as version 1 (docs/decisions.md 79).
 static int ticket_version_ok(const ch_cfg *cfg) {
-    return !cfg->resumption || cfg->ticket_quic_version == cfg->quic_original_version;
+    return cfg->ticket == NULL || cfg->ticket->ticket.quic_version == cfg->quic_original_version;
 }
 
 // Loads the stored revocation epoch and checks a resuming ticket
@@ -174,18 +174,19 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     t->epoch = stored;
-    if (cfg->psk == NULL || !cfg->resumption) {
+    if (cfg->ticket == NULL) {
         return CH_OK;
     }
-    if (cfg->ticket_epoch > CH_EPOCH_MAX) {
+    uint32_t ticket_epoch = cfg->ticket->ticket.epoch;
+    if (ticket_epoch > CH_EPOCH_MAX) {
         return CH_EINVAL;
     }
-    t->epoch_seen = cfg->ticket_epoch;
-    if (cfg->ticket_epoch < stored) {
+    t->epoch_seen = ticket_epoch;
+    if (ticket_epoch < stored) {
         t->epoch_status = CH_EPOCH_REVOKED;
         return CH_EINVAL;
     }
-    t->epoch_status = cfg->ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
+    t->epoch_status = ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
     return CH_OK;
 #else
     (void)t;
@@ -193,7 +194,11 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 #endif
 }
 
-int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
+int quic_config_ok(ch_tls *t) {
+    if (!hspost_present_ticket(&t->cfg)) {
+        return CH_EINVAL;
+    }
+    const ch_cfg *cfg = &t->cfg;
 #ifdef CH_CPU_RUNTIME
     // The caller's description of its CPU, which picks the AES the Initial
     // packets run on, the suites the hello offers and the SHA-256 a

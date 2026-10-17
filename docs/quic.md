@@ -2570,8 +2570,8 @@ Read this as part of the profile, not as a list of future work.
   in "Suspending the driver" states where the QUIC arm of `handle_ticket`
   enforces it. RFC 9369 §5's version rule does sit here: `handle_ticket`
   writes the connection's negotiated version into `ch_ticket.quic_version`,
-  and `ch_quic_init` refuses a resuming configuration whose
-  `ticket_quic_version` is not its `quic_original_version`
+  and `ch_quic_init` refuses a resuming configuration whose ticket's
+  `quic_version` is not its `quic_original_version`
   (`rfc9369.txt:268-271`). A client that stores a ticket starts the
   resuming connection in the ticket's version (`docs/decisions.md` 79).
 - **No change to the trust mode.** A QUIC build is still a raw mode, a CA mode or

@@ -21,6 +21,49 @@
 
 #include "session.h"
 
+// Writes the ticket cfg presents into the PSK fields of cfg, which is the
+// session's own copy of the caller's configuration, so every later step
+// reads the ticket's PSK and identity as the PSK it offers. Every client
+// entry calls it on that copy before any other rule: ch_connect and
+// ch_record_init, and ch_quic_init through quic_config_ok. A raw or ca
+// build offers the ticket alone, so the copy drops the pins too, which
+// the resumed handshake never reads. A TRUST=webpki build takes no
+// external PSK, so a ticket beside one is refused.
+//
+// Returns 1 with no ticket, and 1 once it wrote the ticket. Returns 0 for
+// a PSK that is no hash length this build holds, which also keeps every
+// read of the PSK inside ch_ticket.psk, and for a lifetime of 0, which RFC
+// 9846 §4.7.1 says to discard at once (rfc9846.txt:3258-3259). The
+// identity's length is the PSK identity's, so every entry's own rule
+// refuses one of 0 bytes or above CH_TICKET_ID_MAX, as it refuses an
+// external PSK's.
+static inline int hspost_present_ticket(ch_cfg *cfg) {
+    const ch_saved_ticket *saved = cfg->ticket;
+    if (saved == NULL) {
+        return 1;
+    }
+#ifdef CH_TRUST_WEBPKI
+    if (cfg->psk != NULL || cfg->psk_len != 0 || cfg->psk_id != NULL || cfg->psk_id_len != 0) {
+        return 0;
+    }
+#endif
+    size_t psk_len = saved->ticket.psk_len;
+    if ((psk_len != SHA256_LEN && psk_len != HKDF_HASH_MAX) || saved->ticket.lifetime_s == 0) {
+        return 0;
+    }
+    cfg->psk = saved->ticket.psk;
+    cfg->psk_len = psk_len;
+    cfg->psk_id = saved->identity;
+    cfg->psk_id_len = saved->ticket.identity_len;
+#ifndef CH_TRUST_WEBPKI
+    cfg->server_pubkey = NULL;
+    cfg->server_pubkey_len = 0;
+    cfg->server_pubkey2 = NULL;
+    cfg->server_pubkey2_len = 0;
+#endif
+    return 1;
+}
+
 // Whether cfg may offer its ticket, which every client entry asks before
 // it sends a byte: ch_connect and ch_record_init through tls.c's
 // tlsi_config_ok, and ch_quic_init through quic_config_ok. RFC 9846
@@ -29,27 +72,23 @@
 // one more than 7 days after issuance whatever that lifetime says
 // (rfc9846.txt:3259-3261).
 //
-// So with cfg->resumption set it answers 0 when cfg->ticket_age_ms is above
-// cfg->ticket_lifetime_s seconds or above CH_TICKET_LIFETIME_MAX seconds,
-// and 1 when it is at or below both. A lifetime of 0 is one the caller did
-// not give, because handle_ticket hands on_ticket no ticket with that
-// lifetime (ticket.h), and the age is then held to CH_TICKET_LIFETIME_MAX
-// alone. An age of 0 is a ticket that arrived this millisecond. So a
-// configuration that sets neither field, as every one written before the
-// two existed, is refused nothing. Without resumption no ticket is
-// offered, and the answer is 1.
+// So with cfg->ticket set it answers 0 when cfg->ticket_age_ms is above the
+// ticket's lifetime_s seconds or above CH_TICKET_LIFETIME_MAX seconds, and
+// 1 when it is at or below both. hspost_present_ticket refused a lifetime
+// of 0 before this runs. An age of 0 is a ticket that arrived this
+// millisecond. Without a ticket nothing is offered, and the answer is 1.
 //
 // The lifetime is capped before it is scaled, so it is at most
 // 604,800,000 milliseconds, which a uint32_t holds. The product is then a
 // 32-bit multiply, where a 64-bit one is a widening multiply on a 32-bit
 // core, which lint-wide-multiply counts.
 static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
-    if (!cfg->resumption) {
+    if (cfg->ticket == NULL) {
         return 1;
     }
     uint32_t lifetime_s = CH_TICKET_LIFETIME_MAX;
-    if (cfg->ticket_lifetime_s != 0 && cfg->ticket_lifetime_s < lifetime_s) {
-        lifetime_s = cfg->ticket_lifetime_s;
+    if (cfg->ticket->ticket.lifetime_s < lifetime_s) {
+        lifetime_s = cfg->ticket->ticket.lifetime_s;
     }
     uint32_t lifetime_ms = lifetime_s * 1000U;
     return cfg->ticket_age_ms <= lifetime_ms;

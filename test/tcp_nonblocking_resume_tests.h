@@ -16,6 +16,7 @@
 #define CH_TEST_TCP_NONBLOCKING_RESUME_TESTS_H
 
 #include "srv_resume.h"
+#include "test_ticket.h"
 
 static const uint8_t loop_ticket_key[CH_SRV_TICKET_KEY_LEN] = {
     0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70,
@@ -65,25 +66,19 @@ static void take_post_handshake(ch_record *client) {
     CHECK(held.off == held.len);
 }
 
+// The kept ticket that resume_config presents, which ch_cfg.ticket points at.
+static ch_saved_ticket resume_saved;
+
 // The client configuration that presents t five seconds after it arrived:
-// the PSK fields, the age and the lifetime, and no pin. The obfuscated age
-// comes from a ch_ticket holding t's age_add and nothing else, as a
-// caller's kept copy does.
+// the kept ticket and its age. The pin stays set, as a caller keeps its
+// configuration, and the hello offers the ticket in its place.
 static void resume_config(ch_cfg *cfg, const kept_ticket *t) {
     client_config(cfg);
-    cfg->server_pubkey = NULL;
-    cfg->server_pubkey_len = 0;
-    cfg->psk = t->psk;
-    cfg->psk_len = SHA256_LEN;
-    cfg->psk_id = t->identity;
-    cfg->psk_id_len = t->identity_len;
-    cfg->resumption = 1;
-    ch_ticket kept;
-    memset(&kept, 0, sizeof kept);
-    kept.age_add = t->age_add;
+    test_ticket_fill(&resume_saved, t->psk, SHA256_LEN, t->identity, t->identity_len,
+                     t->lifetime_s);
+    resume_saved.ticket.age_add = t->age_add;
+    cfg->ticket = &resume_saved;
     cfg->ticket_age_ms = 5000;
-    cfg->ticket_lifetime_s = t->lifetime_s;
-    cfg->obfuscated_age = ch_ticket_obfuscated_age(&kept, cfg->ticket_age_ms);
 }
 
 // Runs one handshake the server must refuse, and returns the alert it chose.

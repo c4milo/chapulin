@@ -1,0 +1,12 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit
+reason: hspost_present_ticket takes a kept ticket of lifetime 0, which RFC
+  9846 section 4.7.1 says to discard at once (rfc9846.txt:3258-3259). Its
+  age of 0 is at or below that lifetime, so the hello offers it. The
+  unit test's lifetime 0 row requires CH_EINVAL.
+
+--- old
+    if ((psk_len != SHA256_LEN && psk_len != HKDF_HASH_MAX) || saved->ticket.lifetime_s == 0) {
+--- new
+    if (psk_len != SHA256_LEN && psk_len != HKDF_HASH_MAX) {

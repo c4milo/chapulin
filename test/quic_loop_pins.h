@@ -366,12 +366,12 @@ static void test_pins_alone_refusals(void) {
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
 }
 
-// Rewrites the kept ticket's binding to the one cfg's configuration gives
-// its PSK, the binding a caller holds for a ticket that session received.
+// Binds the kept and the presented ticket to cfg's configuration, as a caller holds them.
 static void bind_kept_ticket(const ch_cfg *cfg) {
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(0, cfg, config_hash);
     webpki_ticket_binding(0, kept.psk, kept.psk_len, config_hash, kept.binding);
+    memcpy(presented.ticket.binding, kept.binding, SHA256_LEN);
 }
 
 // A pinned session's ticket resumes under the same pins, and the resuming

@@ -7,6 +7,7 @@ reason: a presented ticket of the right shape passes without its binding being
   other-hostname, other-anchor and other-ticket rows object.
 
 --- old
-    uint32_t same = ct_memeq(expected, cfg->ticket_binding, SHA256_LEN);
+    uint32_t same = ct_memeq(expected, cfg->ticket->ticket.binding, SHA256_LEN);
 --- new
     uint32_t same = 1;
+

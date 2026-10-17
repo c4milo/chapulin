@@ -83,7 +83,8 @@ static uint8_t params[CH_TRANSPORT_PARAMS_MAX];
 static uint8_t rxbuf[4];
 static uint8_t pin_slot[4];
 static uint8_t psk[4];
-static uint8_t binding[SHA256_LEN];
+// The kept ticket a configuration may present, every field nondet.
+static ch_saved_ticket ticket;
 
 // Whether webpki_resumption_ok answered, and what.
 static int resumption_called;
@@ -125,10 +126,9 @@ int webpki_resumption_ok(const ch_cfg *c) {
     resumption_called = 1;
     resumption_verdict = nondet_u8() & 1;
     int unset = c->psk == NULL && c->psk_len == 0 && c->psk_id == NULL && c->psk_id_len == 0 &&
-                c->resumption == 0 && c->ticket_binding == NULL;
-    int ticket =
-        c->resumption != 0 && c->psk != NULL && c->psk_id != NULL && c->ticket_binding != NULL;
-    __CPROVER_assume(!resumption_verdict || unset || ticket);
+                c->ticket == NULL;
+    int presented = c->ticket != NULL && c->psk != NULL && c->psk_id != NULL;
+    __CPROVER_assume(!resumption_verdict || unset || presented);
     return resumption_verdict;
 }
 
@@ -208,11 +208,12 @@ static void havoc_trust(void) {
     cfg.psk_len = field_len(cfg.psk, sizeof psk);
     cfg.psk_id = maybe(psk);
     cfg.psk_id_len = field_len(cfg.psk_id, sizeof psk);
-    cfg.resumption = (int)nondet_u32();
+    ticket.ticket.psk_len = nondet_size_t();
+    ticket.ticket.identity_len = nondet_size_t();
+    ticket.ticket.lifetime_s = nondet_u32();
+    ticket.ticket.quic_version = nondet_u32();
+    cfg.ticket = (nondet_u8() & 1) ? &ticket : NULL;
     cfg.ticket_age_ms = nondet_u64();
-    cfg.ticket_lifetime_s = nondet_u32();
-    cfg.ticket_quic_version = nondet_u32();
-    cfg.ticket_binding = maybe(binding);
     cfg.epoch_load = (nondet_u8() & 1) ? epoch_load : NULL;
     cfg.epoch_store = (nondet_u8() & 1) ? epoch_store : NULL;
     cfg.require_pq = (int)nondet_u32();
@@ -245,21 +246,37 @@ static int trust_holds(void) {
 }
 
 // The ticket age half, as handshake_post.h states it, written out here in
-// seconds and milliseconds rather than read from the predicate.
+// seconds and milliseconds rather than read from the predicate. A
+// lifetime of 0 is refused at every age.
 static int ticket_age_holds(void) {
-    if (cfg.resumption == 0) {
+    if (cfg.ticket == NULL) {
         return 1;
     }
     uint64_t cap_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
-    uint64_t lifetime_ms = (uint64_t)cfg.ticket_lifetime_s * 1000U;
-    return cfg.ticket_age_ms <= cap_ms &&
-           (cfg.ticket_lifetime_s == 0 || cfg.ticket_age_ms <= lifetime_ms);
+    uint64_t lifetime_ms = (uint64_t)ticket.ticket.lifetime_s * 1000U;
+    return ticket.ticket.lifetime_s != 0 && cfg.ticket_age_ms <= cap_ms &&
+           cfg.ticket_age_ms <= lifetime_ms;
 }
 
-// The ticket version half, as cfg.h states it: with resumption set, the
-// ticket's QUIC version is the original version.
+// The ticket version half, as cfg.h states it: a presented ticket's QUIC
+// version is the original version.
 static int ticket_version_holds(void) {
-    return cfg.resumption == 0 || cfg.ticket_quic_version == cfg.quic_original_version;
+    return cfg.ticket == NULL || ticket.ticket.quic_version == cfg.quic_original_version;
+}
+
+// The kept ticket's shape, as handshake_post.h's hspost_present_ticket
+// states it: a PSK of a hash length this build holds, and no external PSK
+// beside it in the caller's configuration. The session copy then holds
+// the ticket's PSK and identity.
+static int ticket_shape_holds(void) {
+    if (cfg.ticket == NULL) {
+        return 1;
+    }
+    size_t psk_len = ticket.ticket.psk_len;
+    return (psk_len == SHA256_LEN || psk_len == HKDF_HASH_MAX) && cfg.psk == NULL &&
+           cfg.psk_len == 0 && cfg.psk_id == NULL && cfg.psk_id_len == 0 &&
+           t.cfg.psk == ticket.ticket.psk && t.cfg.psk_len == psk_len &&
+           t.cfg.psk_id == ticket.identity && t.cfg.psk_id_len == ticket.ticket.identity_len;
 }
 
 // The transport half, as quic.h states it. The original version is held
@@ -349,13 +366,14 @@ int main(void) {
     cfg.cpu = nondet_u32();
 #endif
     t.cfg = cfg;
-    int rc = quic_config_ok(&t, &cfg);
+    int rc = quic_config_ok(&t);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "the verdict is CH_OK or CH_EINVAL");
     if (rc == CH_OK) {
         __CPROVER_assert(trust_holds(), "CH_OK keeps the webpki trust rules");
         __CPROVER_assert(transport_holds(), "CH_OK keeps the QUIC transport rules");
         __CPROVER_assert(ticket_age_holds(), "CH_OK keeps the ticket age rule");
         __CPROVER_assert(ticket_version_holds(), "CH_OK keeps the ticket version rule");
+        __CPROVER_assert(ticket_shape_holds(), "CH_OK keeps the kept ticket rule");
 #ifdef CH_CLIENT_AES_SUITES
         __CPROVER_assert(suites_hold(), "CH_OK keeps the client suite rule");
 #endif

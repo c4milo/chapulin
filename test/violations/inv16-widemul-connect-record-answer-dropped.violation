@@ -13,6 +13,6 @@ reason: the raw and ca ch_connect stops writing the session's ch_cfg.cpu into it
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    int rc = tlsi_epoch_init(t, cfg, psk_ok);
+    int rc = tlsi_epoch_init(t, &t->cfg, psk_ok);
 --- new
-    int rc = tlsi_epoch_init(t, cfg, psk_ok);
+    int rc = tlsi_epoch_init(t, &t->cfg, psk_ok);

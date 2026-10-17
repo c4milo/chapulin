@@ -105,7 +105,8 @@ static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
     size_t ids = wb_mark(w, 2);
     wb_u16(w, (uint16_t)cfg->psk_id_len);
     wb_bytes(w, cfg->psk_id, cfg->psk_id_len);
-    uint32_t age = cfg->resumption ? cfg->obfuscated_age : 0;
+    uint32_t age =
+        cfg->ticket != NULL ? ticket_obfuscated_age(&cfg->ticket->ticket, cfg->ticket_age_ms) : 0;
     wb_u16(w, (uint16_t)(age >> 16));
     wb_u16(w, (uint16_t)age);
     wb_patch16(w, ids);

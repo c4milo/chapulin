@@ -23,7 +23,7 @@ static uint8_t webpki_names[WEBPKI_ANCHORS][20];
 static uint8_t webpki_spkis[WEBPKI_ANCHORS][100];
 static ch_trust_anchor webpki_anchors[WEBPKI_ANCHORS];
 static uint8_t webpki_pins[2][SHA256_LEN];
-static uint8_t webpki_binding[SHA256_LEN];
+static ch_saved_ticket webpki_ticket;
 static ch_cfg webpki_cfg;
 
 static void setup_webpki_rows(void) {
@@ -41,15 +41,17 @@ static void setup_webpki_rows(void) {
     webpki_cfg.anchor_count = WEBPKI_ANCHORS;
     webpki_cfg.spki_pins = (const uint8_t *)webpki_pins;
     webpki_cfg.spki_pin_count = 2;
+    // The session copy of a presented ticket, which webpki_resumption_ok
+    // reads: the ticket's PSK and identity in the PSK fields, and the
+    // ticket with its binding.
     webpki_cfg.psk = key;
     webpki_cfg.psk_len = SHA256_LEN;
     webpki_cfg.psk_id = input;
     webpki_cfg.psk_id_len = 8;
-    webpki_cfg.resumption = 1;
+    webpki_cfg.ticket = &webpki_ticket;
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(0, &webpki_cfg, config_hash);
-    webpki_ticket_binding(0, key, SHA256_LEN, config_hash, webpki_binding);
-    webpki_cfg.ticket_binding = webpki_binding;
+    webpki_ticket_binding(0, key, SHA256_LEN, config_hash, webpki_ticket.ticket.binding);
 }
 
 static void row_webpki_ticket_config_hash(uint32_t cpu) {

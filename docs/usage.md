@@ -63,9 +63,8 @@ has an empty name or key, when the hostname has any other shape, when
 `now_seconds` is 0, when the buffer is under the 12,338-byte floor, when
 the config also sets a pin or an epoch callback, and when it sets a PSK
 that is not a ticket bound to this hostname and these anchors. To resume,
-keep `ch_ticket.binding` beside the ticket's `psk` and `identity`, and
-present it in `ch_cfg.ticket_binding` with `resumption = 1`. Keep the
-anchors, the hostname and the clock set: a server that declines the
+present a kept ticket in `ch_cfg.ticket`, as every mode does (below). Keep
+the anchors, the hostname and the clock set: a server that declines the
 ticket sends its chain, which the client checks as it checks any chain.
 `ch_psk_selected(&tls)` is 1 when the server resumed the ticket and 0
 when the handshake was a full one.
@@ -235,41 +234,52 @@ so send it as it is (`tcp_nonblocking.h`).
 ## Resuming a ticket
 
 `on_ticket` hands over each ticket once (`ticket.h`). Its `identity`
-points into the message and is valid only during the call, so copy the
-`ch_ticket` and the identity bytes, and note when the ticket arrived. To
-resume, present the copy with the ticket's age in milliseconds:
+points into the message and is valid only during the call, so keep the
+ticket with `ch_ticket_save`, which copies the `ch_ticket` and the
+identity bytes into one `ch_saved_ticket`, and note when it arrived:
 
 ```c
-uint64_t age_ms = now_ms() - kept.received_ms;
-cfg.psk = kept.ticket.psk;
-cfg.psk_len = kept.ticket.psk_len;
-cfg.psk_id = kept.identity;
-cfg.psk_id_len = kept.ticket.identity_len;
-cfg.resumption = 1;
-cfg.ticket_age_ms = age_ms;
-cfg.ticket_lifetime_s = kept.ticket.lifetime_s;
-cfg.obfuscated_age = ch_ticket_obfuscated_age(&kept.ticket, age_ms);
+static ch_saved_ticket kept;
+static uint64_t kept_at_ms;
+
+static void on_ticket(void *io, const ch_ticket *ticket) {
+    if (ch_ticket_save(&kept, ticket) == CH_OK) {
+        kept_at_ms = now_ms();
+    }
+}
 ```
 
-`ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age modulo
-2^32, as RFC 9846 §4.3.11.1 asks, and reads `age_add` alone, so a kept
-copy whose `identity` pointer no longer points anywhere serves.
-`ch_connect`, `ch_record_init` and `ch_quic_init` return `CH_EINVAL`,
-before a byte is sent, when the age is above the lifetime or above
-`CH_TICKET_LIFETIME_MAX`, 604,800 seconds, which RFC 9846 §4.7.1 makes the
-most any ticket lives. A lifetime of 0 means you gave none, and then the
-seven days alone apply. No ticket with a lifetime of 0 is handed to
-`on_ticket`, because §4.7.1 says to discard one at once.
+To resume, keep the rest of the configuration as it is, and set two
+fields: the kept ticket and its age in milliseconds.
 
-A CA build also takes `ticket_epoch`, the ticket's `epoch`: the stored
-epoch when the ticket arrived. The same three calls return `CH_EINVAL`,
-before a byte is sent, when it is below the stored epoch, because an
-epoch bump since then retired the ticket ([`docs/ca.md`](ca.md)). Each
-leaves `CH_EPOCH_REVOKED` in the session, where `ch_epoch_status` reads it and
-tells this refusal from the others. Either
-refusal, of the age or of the epoch, means the ticket cannot be used
-again: drop it and connect in full. A `TRUST=webpki` build also takes
-`ticket_binding`.
+```c
+cfg.ticket = &kept;
+cfg.ticket_age_ms = now_ms() - kept_at_ms;
+```
+
+The hello offers the ticket in place of an external PSK, and in a raw or
+ca build in place of the pins too, so one configuration serves a full
+connection and a resumed one. chapulin reads no clock, so the age is the
+one value you measure. `ch_connect`, `ch_record_init` and `ch_quic_init`
+return `CH_EINVAL`, before a byte is sent, when the age is above the
+ticket's lifetime or above `CH_TICKET_LIFETIME_MAX`, 604,800 seconds,
+which RFC 9846 §4.7.1 makes the most any ticket lives. They also refuse a
+kept ticket of lifetime 0, whose PSK has no hash length the build holds,
+or whose identity is empty or longer than `CH_TICKET_ID_MAX`. No ticket
+with a lifetime of 0 is handed to `on_ticket`, because §4.7.1 says to
+discard one at once.
+
+The kept ticket also holds the rest of what each mode checks. In a CA
+build it holds the stored epoch when it arrived, and the same three calls
+return `CH_EINVAL`, before a byte is sent, when that is below the stored
+epoch, because an epoch bump since then retired the ticket
+([`docs/ca.md`](ca.md)). Each leaves `CH_EPOCH_REVOKED` in the session,
+where `ch_epoch_status` reads it and tells this refusal from the others.
+Under `TRUST=webpki` it holds the binding to the hostname, anchors and
+pins that received it, and over QUIC the version of that connection.
+Every such refusal means the ticket cannot be used again: drop it, zero
+it, and connect in full. The ticket holds a PSK, so store it as you store
+a key.
 
 Under `TRUST=webpki`, set `on_ticket` in the `ch_cfg` that you pass to
 the init call. The init call hashes the configuration that each ticket
@@ -333,7 +343,7 @@ first ClientHello arrives ([`docs/decisions.md`](decisions.md) 79). A
 ticket belongs to the negotiated version of the connection that issued
 it: a server passes over a ticket of another version, and a client
 presents one only in a connection that starts in its version
-(`ch_ticket.quic_version`, `ch_cfg.ticket_quic_version`). The Retry token
+(`ch_ticket.quic_version`). The Retry token
 binds the original version through its tag. QUIC version 2 is complete in
 both roles.
 [`docs/quic_server.md`](quic_server.md) states what chapulin owes one,

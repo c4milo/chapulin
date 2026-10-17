@@ -20,9 +20,9 @@
 //    1970-01-01T00:00:00Z. Every certificate the walk reads must be valid
 //    at it, compared exactly with no skew tolerance. 0 means the caller
 //    never set the clock.
-//  - ticket_binding: SHA256_LEN bytes, set with resumption alone: the
-//    ch_ticket.binding of the ticket in psk and psk_id. It must match
-//    this configuration (webpki_ticket.h).
+//  - ticket: a presented ticket's ch_ticket.binding must match this
+//    configuration (webpki_ticket.h), and the configuration sets no
+//    external PSK beside it.
 //  - spki_pins: spki_pin_count SPKI pins, 0 to CH_SPKI_PIN_MAX, of
 //    SHA256_LEN bytes each, back to back: each the SHA-256 of a DER
 //    SubjectPublicKeyInfo (RFC 7858 §4.2). With pins set, the client

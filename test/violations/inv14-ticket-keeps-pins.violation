@@ -1,0 +1,20 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit_ca
+reason: hspost_present_ticket leaves the pins in the session copy beside
+  the ticket's PSK, so a raw or ca configuration that keeps its pins, as
+  cfg.h tells a caller to, carries two auth modes and every client entry
+  refuses it. A caller would then have to clear its pins to resume. The
+  CA unit test presents a ticket beside its pin and requires the
+  handshake to reach the socket.
+
+--- old
+#ifndef CH_TRUST_WEBPKI
+    cfg->server_pubkey = NULL;
+    cfg->server_pubkey_len = 0;
+    cfg->server_pubkey2 = NULL;
+    cfg->server_pubkey2_len = 0;
+#endif
+--- new
+#ifndef CH_TRUST_WEBPKI
+#endif

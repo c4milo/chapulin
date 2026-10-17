@@ -55,14 +55,16 @@ static ch_cfg base_cfg(void) {
     return cfg;
 }
 
-// Presents a ticket: psk as the PSK, an eight-byte identity, and binding.
+// The ticket present writes, which ch_cfg.ticket points at. A row that
+// presents a changed ticket writes this after the call.
+static ch_saved_ticket presented;
+
+// Presents a ticket: psk as the PSK, an eight-byte identity, binding, and
+// a lifetime of seven days, CH_TICKET_LIFETIME_MAX seconds.
 static void present(ch_cfg *cfg, const uint8_t *psk, const uint8_t *binding) {
-    cfg->psk = psk;
-    cfg->psk_len = SHA256_LEN;
-    cfg->psk_id = ticket_id;
-    cfg->psk_id_len = 8;
-    cfg->resumption = 1;
-    cfg->ticket_binding = binding;
+    test_ticket_fill(&presented, psk, SHA256_LEN, ticket_id, 8, CH_TICKET_LIFETIME_MAX);
+    memcpy(presented.ticket.binding, binding, SHA256_LEN);
+    cfg->ticket = &presented;
 }
 
 // Whether the config was refused before a byte left: CH_EINVAL, no send.
@@ -105,37 +107,35 @@ static void test_ticket_shape(void) {
         webpki_ticket_config_hash(0, &cfg, hash);
         webpki_ticket_binding(0, ticket_psk, wrong_lens[i], hash, binding);
         present(&cfg, ticket_psk, binding);
-        cfg.psk_len = wrong_lens[i];
+        presented.ticket.psk_len = wrong_lens[i];
         CHECK(refused(&cfg));
     }
     // The identity is 1 to CH_TICKET_ID_MAX bytes.
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
-    cfg.psk_id_len = CH_TICKET_ID_MAX;
+    memcpy(presented.identity, ticket_id, CH_TICKET_ID_MAX);
+    presented.ticket.identity_len = CH_TICKET_ID_MAX;
     CHECK(resumes(&cfg, ticket_psk));
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
-    cfg.psk_id_len = CH_TICKET_ID_MAX + 1;
+    presented.ticket.identity_len = CH_TICKET_ID_MAX + 1;
     CHECK(refused(&cfg));
-    cfg.psk_id_len = 0;
+    presented.ticket.identity_len = 0;
     CHECK(refused(&cfg));
-    // A field missing: no identity, no PSK, or no binding.
-    cfg.psk_id_len = 8;
-    cfg.psk_id = NULL;
-    CHECK(refused(&cfg));
-    cfg.psk_id = ticket_id;
-    cfg.psk = NULL;
-    CHECK(refused(&cfg));
-    cfg.psk = ticket_psk;
-    cfg.ticket_binding = NULL;
-    CHECK(refused(&cfg));
-    // An external PSK: resumption unset, so no ticket and no hostname.
-    cfg.ticket_binding = known_binding;
-    cfg.resumption = 0;
-    CHECK(refused(&cfg));
-    // A binding with no ticket beside it.
+    // An external PSK, so no ticket and no hostname, and an external PSK
+    // beside the ticket.
     cfg = base_cfg();
-    cfg.ticket_binding = known_binding;
+    cfg.psk = ticket_psk;
+    cfg.psk_len = SHA256_LEN;
+    cfg.psk_id = ticket_id;
+    cfg.psk_id_len = 8;
+    CHECK(refused(&cfg));
+    present(&cfg, ticket_psk, known_binding);
+    CHECK(refused(&cfg));
+    // A ticket of lifetime 0, which RFC 9846 §4.7.1 says to discard.
+    cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    presented.ticket.lifetime_s = 0;
     CHECK(refused(&cfg));
 }
 
@@ -146,15 +146,15 @@ static void test_ticket_age(void) {
     // An hour's lifetime.
     ch_cfg cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
-    cfg.ticket_lifetime_s = 3600;
+    presented.ticket.lifetime_s = 3600;
     cfg.ticket_age_ms = 3600000U;
     CHECK(resumes(&cfg, ticket_psk));
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
-    cfg.ticket_lifetime_s = 3600;
+    presented.ticket.lifetime_s = 3600;
     cfg.ticket_age_ms = 3600001U;
     CHECK(refused(&cfg));
-    // No lifetime given: 7 days, CH_TICKET_LIFETIME_MAX seconds.
+    // A lifetime of 7 days, CH_TICKET_LIFETIME_MAX seconds.
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
     cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;

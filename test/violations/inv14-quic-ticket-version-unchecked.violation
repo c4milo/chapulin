@@ -10,6 +10,7 @@ reason: ticket_version_ok admits every configuration, so a client starts
   0.
 
 --- old
-    return !cfg->resumption || cfg->ticket_quic_version == cfg->quic_original_version;
+    return cfg->ticket == NULL || cfg->ticket->ticket.quic_version == cfg->quic_original_version;
 --- new
     return cfg != NULL;
+

@@ -262,7 +262,7 @@
 // caller chose it and the binder's length shows it on the wire.
 static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
 #ifdef CH_CLIENT_AES_SUITES
-    if (cfg->resumption && cfg->psk_len == SHA384_LEN) {
+    if (cfg->ticket != NULL && cfg->psk_len == SHA384_LEN) {
         return SHA384_LEN;
     }
 #else

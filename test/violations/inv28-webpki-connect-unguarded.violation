@@ -18,7 +18,10 @@ reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING gua
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+    // A presented ticket becomes the session copy's PSK, which every rule
+    // below reads (handshake_post.h).
+    if (!hspost_present_ticket(&t->cfg) || !tlsi_config_ok(&t->cfg) || cfg->send == NULL ||
+        cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
@@ -46,7 +49,10 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+    // A presented ticket becomes the session copy's PSK, which every rule
+    // below reads (handshake_post.h).
+    if (!hspost_present_ticket(&t->cfg) || !tlsi_config_ok(&t->cfg) || cfg->send == NULL ||
+        cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }

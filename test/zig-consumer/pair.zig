@@ -53,9 +53,9 @@ fn clientValues(comptime api: type) api.Client {
 }
 
 /// Whether module api's ch_ticket_obfuscated_age adds a ticket's age_add
-/// to its age modulo 2^32 (RFC 9846 section 4.3.11.1), called directly and
-/// through Client.toCfg. Each module's name maps to its own object's
-/// symbol, so each half calls its own object.
+/// to its age modulo 2^32 (RFC 9846 section 4.3.11.1), and whether
+/// Client.toCfg passes the ticket and its age. Each module's name maps to
+/// its own object's symbol, so each half calls its own object.
 fn ticketAgeAdds(comptime api: type) bool {
     const age_ms: u64 = (1 << 32) + 0x20;
     var direct = std.mem.zeroes(api.c.ch_ticket);
@@ -74,7 +74,7 @@ fn ticketAgeAdds(comptime api: type) bool {
     values.ticket_age_ms = age_ms;
     const cfg = values.toCfg();
     return api.c.ch_ticket_obfuscated_age(&direct, age_ms) == 0x10 and
-        cfg.obfuscated_age == 0x10 and cfg.ticket_age_ms == age_ms;
+        cfg.ticket == ticket.saved() and cfg.ticket_age_ms == age_ms;
 }
 
 // The HTTP/2 half. The first record the client hands out is a handshake

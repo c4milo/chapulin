@@ -264,9 +264,10 @@ Home: github.com/c4milo.
   `handshake.[ch]` (client state machine) ←
   `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
   that arrive after the handshake) with `ticket.h` (the resumption
-  ticket `on_ticket` hands over, `ch_ticket_obfuscated_age` and the
-  seven-day cap; `cfg.h` includes it and `handshake_post.c` defines its
-  one call) ← `tls.[ch]`
+  ticket `on_ticket` hands over, the `ch_saved_ticket` a client keeps
+  through `ch_ticket_save` and presents in `ch_cfg.ticket`,
+  `ch_ticket_obfuscated_age` and the seven-day cap; `cfg.h` includes it
+  and `handshake_post.c` defines its one exported call) ← `tls.[ch]`
   (public API) with `alert.h` (`ch_alert_sent` and `ch_alert_received`:
   the alert a failure chose and the peer's fatal alert; `tls.h` and
   `quic.h` include it, and `tls.c` and `quic.c` define its calls) ←

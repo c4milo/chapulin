@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit
+reason: hspost_present_ticket takes a kept ticket whose PSK length is no
+  hash length this build holds, and a raw or ca build checks a PSK's
+  length only for a 0. The key schedule then reads psk_len bytes from a
+  ch_ticket.psk of HKDF_HASH_MAX bytes, past its end when the length is
+  larger. The unit test's 31-byte PSK row requires CH_EINVAL.
+
+--- old
+    if ((psk_len != SHA256_LEN && psk_len != HKDF_HASH_MAX) || saved->ticket.lifetime_s == 0) {
+--- new
+    if (saved->ticket.lifetime_s == 0) {

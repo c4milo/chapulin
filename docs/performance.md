@@ -20,23 +20,23 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 
 | what | arm64 | rv32 |
 |---|---|---|
-| `ch_tls` session struct (includes 622 B TX staging) | 1160 | 1080 |
+| `ch_tls` session struct (includes 622 B TX staging) | 1152 | 1072 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 | 2048 |
-| **total static working set** | **3208** | **3128** |
-| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2344 | 2264 |
-| **total static working set, `KEX=pq`** (2048 buffer) | **4392** | **4312** |
-| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3064 | 2952 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15290** |
-| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1984 | 1824 |
-| **total static working set, `ROLE=server`** (2048 buffer) | **4032** | **3872** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2280 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4328** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3376 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15714** | — |
-| `ch_tls` under `TRUST=webpki`, host object | 3072 | — |
-| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15410** | — |
-| `ch_tls` under `ROLE=server`, host object | 1992 | — |
-| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
+| **total static working set** | **3200** | **3120** |
+| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2336 | 2256 |
+| **total static working set, `KEX=pq`** (2048 buffer) | **4384** | **4304** |
+| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3048 | 2936 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15386** | **15274** |
+| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1976 | 1816 |
+| **total static working set, `ROLE=server`** (2048 buffer) | **4024** | **3864** |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2264 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4312** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3352 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15690** | — |
+| `ch_tls` under `TRUST=webpki`, host object | 3048 | — |
+| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15386** | — |
+| `ch_tls` under `ROLE=server`, host object | 1976 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4024** | — |
 
 ### Peak stack
 
@@ -84,7 +84,7 @@ The image's C library and the caller's own functions set those frames.
 | peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3104 |
 | peak stack, `ch_connect` (PSK) | 2768 |
-| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3264 |
+| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5456 / 3248 |
 | peak stack, `ch_connect` (`TRUST=webpki`) | 16688 |
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16816 |
 | peak stack, `ch_connect` (`KEX=pq`) | 16000 |

@@ -76,19 +76,10 @@ fn sampleTicket() !chapulin.Ticket {
     return chapulin.Ticket.fromFields(fields);
 }
 
-/// The fields toCfg sets for a ticket, on top of want.
+/// The fields toCfg sets for a ticket, on top of want: the ticket's own bytes and its age.
 fn wantTicket(want: *c.ch_cfg, ticket: *const chapulin.Ticket, age_ms: u64) void {
-    want.psk = &ticket.ticket.psk;
-    want.psk_len = c.SHA256_LEN;
-    want.psk_id = &ticket.identity;
-    want.psk_id_len = "identity".len;
-    want.resumption = 1;
-    want.obfuscated_age = c.ch_ticket_obfuscated_age(&ticket.ticket, age_ms);
+    want.ticket = ticket.saved();
     want.ticket_age_ms = age_ms;
-    want.ticket_lifetime_s = 7200;
-    want.ticket_epoch = 9;
-    if (has_webpki) want.ticket_binding = &ticket.ticket.binding;
-    if (has_quic) want.ticket_quic_version = c.CH_QUIC_VERSION_2;
 }
 
 test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a ticket and require_pq" {
@@ -117,9 +108,10 @@ test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a t
     want.require_pq = 1;
     wantTicket(&want, &ticket, age_ms);
     try expectFields(c.ch_cfg, want, got);
-    // toCfg passes the whole 64-bit age, and the obfuscated age is its sum with
-    // age_add modulo 2^32 (RFC 9846 section 4.3.11.1).
-    try expectEqual(@as(u32, 1234 +% 0xfedc_ba98), got.obfuscated_age);
+    // toCfg passes the whole 64-bit age, and the ticket's own fields, which the C entries read.
+    try expectEqual(age_ms, got.ticket_age_ms);
+    try expectEqual(@as(u32, 7200), got.ticket.*.ticket.lifetime_s);
+    try expectEqual(@as(u32, 9), got.ticket.*.ticket.epoch);
 }
 
 test "Client.toCfg under TRUST=webpki: pins alone, with and without a server name" {
@@ -193,7 +185,7 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
     }
 }
 
-test "Client.toCfg under a raw or ca mode: both pins, and a ticket in their place" {
+test "Client.toCfg under a raw or ca mode: both pins, and a ticket beside them" {
     if (!has_client or has_webpki) return error.SkipZigTest;
     const key = [_]u8{0x11} ** 64;
     const next = [_]u8{0x22} ** 64;
@@ -203,8 +195,11 @@ test "Client.toCfg under a raw or ca mode: both pins, and a ticket in their plac
     want.server_pubkey2 = &next;
     want.server_pubkey2_len = next.len;
     try expectFields(c.ch_cfg, want, (chapulin.Client{ .trust = .{ .pinned = .{ .server_pubkey = &key, .server_pubkey2 = &next } } }).toCfg());
+    // The pin stays set: the C entries offer the ticket in its place.
     const ticket = try sampleTicket();
     want = std.mem.zeroes(c.ch_cfg);
+    want.server_pubkey = &key;
+    want.server_pubkey_len = key.len;
     wantTicket(&want, &ticket, 250);
     const values: chapulin.Client = .{ .trust = .{ .pinned = .{ .server_pubkey = &key } }, .ticket = &ticket, .ticket_age_ms = 250 };
     try expectFields(c.ch_cfg, want, values.toCfg());

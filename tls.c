@@ -51,21 +51,22 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
     // is corrupt ticket storage. Each is refused before a byte is sent,
     // so each returns CH_EINVAL (cfg.h, INV-13), and only the retired
     // ticket sets epoch_status, to CH_EPOCH_REVOKED.
-    if (!psk_ok || !cfg->resumption) {
+    if (!psk_ok || cfg->ticket == NULL) {
         return CH_OK;
     }
-    if (cfg->ticket_epoch > CH_EPOCH_MAX) {
+    uint32_t ticket_epoch = cfg->ticket->ticket.epoch;
+    if (ticket_epoch > CH_EPOCH_MAX) {
         return CH_EINVAL;
     }
-    t->epoch_seen = cfg->ticket_epoch;
-    if (cfg->ticket_epoch < stored) {
+    t->epoch_seen = ticket_epoch;
+    if (ticket_epoch < stored) {
         t->epoch_status = CH_EPOCH_REVOKED;
         return CH_EINVAL;
     }
     // A ticket above the stored epoch means the store lost a bump that
     // an earlier session wrote. The device would again trust the
     // certificates that bump retired. Reported as CH_EPOCH_AHEAD.
-    t->epoch_status = cfg->ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
+    t->epoch_status = ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
     return CH_OK;
 #else
     // No CA mode here, so nothing enforces an epoch. Reject such a
@@ -168,15 +169,18 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    int psk_ok = psk_configured(cfg);
-    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+    // A presented ticket becomes the session copy's PSK, which every rule
+    // below and the handshake read (handshake_post.h).
+    if (!hspost_present_ticket(&t->cfg) || !tlsi_config_ok(&t->cfg) || cfg->send == NULL ||
+        cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+    int psk_ok = psk_configured(&t->cfg);
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    int rc = tlsi_epoch_init(t, cfg, psk_ok);
+    int rc = tlsi_epoch_init(t, &t->cfg, psk_ok);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
         return rc;
@@ -388,7 +392,10 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+    // A presented ticket becomes the session copy's PSK, which every rule
+    // below reads (handshake_post.h).
+    if (!hspost_present_ticket(&t->cfg) || !tlsi_config_ok(&t->cfg) || cfg->send == NULL ||
+        cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }

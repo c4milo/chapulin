@@ -101,10 +101,11 @@ void webpki_ticket_binding(uint32_t cpu, const uint8_t *psk, size_t psk_len,
 #endif
 }
 
-// Every PSK field unset: the full handshake, which checks the chain.
+// Every PSK field unset and no ticket: the full handshake, which checks
+// the chain.
 static int psk_unset(const ch_cfg *cfg) {
     return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           cfg->resumption == 0 && cfg->ticket_binding == NULL;
+           cfg->ticket == NULL;
 }
 
 // A PSK length ks_res_psk writes: the hash length of a suite this client
@@ -120,11 +121,12 @@ static int psk_len_ok(size_t psk_len) {
 
 // The shape of a presented ticket, before its binding is checked: a
 // PSK length ks_res_psk writes and an identity handshake_post.c would
-// have passed to on_ticket.
+// have passed to on_ticket. hspost_present_ticket wrote the ticket's PSK
+// and identity into these fields of the session's copy, so a PSK without
+// a ticket is an external one, which this mode refuses.
 static int ticket_shape_ok(const ch_cfg *cfg) {
-    return cfg->resumption != 0 && cfg->psk != NULL && psk_len_ok(cfg->psk_len) &&
-           cfg->psk_id != NULL && cfg->psk_id_len > 0 && cfg->psk_id_len <= CH_TICKET_ID_MAX &&
-           cfg->ticket_binding != NULL;
+    return cfg->ticket != NULL && cfg->psk != NULL && psk_len_ok(cfg->psk_len) &&
+           cfg->psk_id != NULL && cfg->psk_id_len > 0 && cfg->psk_id_len <= CH_TICKET_ID_MAX;
 }
 
 int webpki_resumption_ok(const ch_cfg *cfg) {
@@ -138,7 +140,7 @@ int webpki_resumption_ok(const ch_cfg *cfg) {
     uint8_t expected[SHA256_LEN];
     webpki_ticket_config_hash(CH_CFG_CPU(*cfg), cfg, config_hash);
     webpki_ticket_binding(CH_CFG_CPU(*cfg), cfg->psk, cfg->psk_len, config_hash, expected);
-    uint32_t same = ct_memeq(expected, cfg->ticket_binding, SHA256_LEN);
+    uint32_t same = ct_memeq(expected, cfg->ticket->ticket.binding, SHA256_LEN);
     ct_wipe(expected, sizeof expected);
     return same != 0;
 }

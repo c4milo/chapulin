@@ -442,7 +442,12 @@ int main(void) {
         __CPROVER_assume(idlen >= 1 && idlen <= sizeof id);
         t.cfg.psk_len = psk_len;
         t.cfg.psk_id_len = idlen;
-        t.cfg.resumption = nondet_u8() & 1;
+        // A presented ticket or an external PSK: the session copy points
+        // at the ticket, whose age_add the hello reads.
+        static ch_saved_ticket ticket;
+        ticket.ticket.age_add = nondet_u32();
+        t.cfg.ticket = (nondet_u8() & 1) ? &ticket : NULL;
+        t.cfg.ticket_age_ms = nondet_u64();
     }
 #else
     {
