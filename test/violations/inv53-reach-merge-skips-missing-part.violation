@@ -1,0 +1,15 @@
+invariant: INV-53
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: the reach merge skips a part that did not report, so the merged
+  table loses that part's harnesses and the merge job stays green. Only
+  the nightly's merge-reach-table job ran the merge before. Now
+  lint-matrix writes the parts with each one absent in turn. It requires
+  a failed merge and a row for each harness of the absent part.
+
+--- old
+        part = parts[k][2] if k in parts else None
+--- new
+        if k not in parts:
+            continue
+        part = parts[k][2]

@@ -308,7 +308,8 @@ def run_steps(name, root, env, say):
 # with the pinned clang and with the Arm GNU gcc the m3 lane pins and
 # answer in seconds, the trust-separation lint script, which reads
 # the Makefile in three, the proof-cover lint script, which asks make for
-# its builds' source lists in under two, the TRUST=webpki frame-budget
+# its builds' source lists in under two, the matrix lint script, which
+# reads the workflows and the Makefile in two, the TRUST=webpki frame-budget
 # script, which compiles that object's sources in two, the stack walk script, which
 # compiles a fixture twice in under one, the QUIC partition lint
 # script, which preprocesses the root sources in three, and the
@@ -338,7 +339,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "sha3_test", "sha3_equiv_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
-                "test/lint-proof-cover.sh",
+                "test/lint-proof-cover.sh", "test/lint-matrix.sh",
                 "test/lint-p256-wide.sh",
                 "test/lint-bench-numbers.sh",
                 "test/lint-frame-align.sh",

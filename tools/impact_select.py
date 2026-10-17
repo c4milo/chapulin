@@ -806,7 +806,8 @@ def select_lints(out, changed, csources, lib):
                 "shellcheck reads every tracked script")
     if any(p.startswith("proof/") for p in changed):
         out.add("lint", "make lint-matrix",
-                "the nightly matrix must name every slow launch line")
+                "the nightly matrix must name every slow launch line",
+                ["test/lint-matrix.sh"])
         out.add("lint", "make lint-proof-cover",
                 "a harness change moves what the signed-overflow claim rests on",
                 ["test/lint-proof-cover.sh"])
@@ -822,7 +823,8 @@ def select_lints(out, changed, csources, lib):
     # --shard, and no recipe names that file for lint-matrix.
     if "test/violations.py" in changed:
         out.add("lint", "make lint-matrix",
-                "each sharded job's parts must split the violations")
+                "each sharded job's parts must split the violations",
+                ["test/lint-matrix.sh"])
     if any(p.startswith("docs/") or p in ("README.md", "SECURITY.md",
                                           "CONTRIBUTING.md") for p in changed):
         out.add("lint", "make lint-docs", "the README must name every document")

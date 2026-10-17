@@ -2501,6 +2501,45 @@ last `ROLE=server` stub, as the entry said it would.
   entry is checked for presence only, so review holds what it says: a
   file that changes shape owes a fresh reading.
 
+### INV-53 — a sharded CI job checks each member of its set in one part
+
+- **Claim.** A CI job that runs as N parts checks each member of its
+  set in exactly one part. The set is a selection of
+  `test/violations.py`, or the harnesses that `proof/coverage.py
+  --reach` measures. When a part of the nightly's `proof-reach` does not
+  report, the merged reach table gives each of its harnesses a row that
+  says so, and the merge fails.
+- **Mechanism.** `make lint-matrix` runs `tools/shard-matrix.py` over
+  each workflow. For each job with a `shard` matrix, it requires the
+  list 1 to N and a step that passes `"$SHARD/N"`. The make target of
+  that step must pass the variable on as the tool's `--shard`, in its
+  own recipe or in the recipe of a phony prerequisite. The lint calls
+  each tool's shard function over the sets of today, and over lists of
+  every length from N to 3N. So a function that drops the last names of
+  a set fails even when N divides the size of each set of today. The
+  lint also writes a part of the reach table for each shard, and calls
+  the merge of `proof/coverage.py` with each part absent in turn. Each
+  merge without a part must return 1 and give each harness of that part
+  its row. Last, a job that needs a sharded job must call `always()` in
+  its own `if:`, so it runs when a part fails or runs out of time.
+- **Check.** Five mutants in `test/violations/` each remove one part of
+  the mechanism, and `test/lint-matrix.sh` catches each one:
+  - `inv53-violation-shard-drops-remainder` makes `shard_of` in
+    `test/violations.py` drop the last names of a set.
+  - `inv53-reach-merge-skips-missing-part` makes the merge skip a part
+    that did not report.
+  - `inv53-reach-merge-job-skips-on-failure` removes `if: always()` from
+    the `merge-reach-table` job.
+  - `inv53-invariants-recipe-drops-shard` and
+    `inv53-reach-recipe-drops-shard` remove the `--shard` argument from
+    the recipes of `test-invariants-not-proof-backed` and `proof-reach`.
+- **Violation.** A PR splits a job with a matrix key other than
+  `shard`, or passes the part to a tool in a form other than
+  `"$SHARD/N"`. The lint reads neither form, so review holds it. A
+  third sharded tool needs an entry in the lint's `TOOLS`, or the lint
+  refuses the job.
+- See [issue 178](https://github.com/c4milo/chapulin/issues/178).
+
 ### INV-49 — an AVX2 kernel whose loop uses 256-bit stack slots aligns its frame
 
 - **Claim.** In `chacha20_avx2.c`, `keccak_avx2.c` and `sha512_avx2.c`,

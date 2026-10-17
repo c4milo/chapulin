@@ -1,0 +1,13 @@
+invariant: INV-53
+file: Makefile
+catches: test/lint-matrix.sh
+reason: test-invariants-not-proof-backed stops passing VIOLATION_SHARD to
+  test/violations.py, so each of the four test-invariants jobs checks the
+  whole class and runs out of time, as the one job did. lint-matrix reads
+  the recipe of the make target that each sharded step runs.
+
+--- old
+	+python3 test/violations.py --not-proof-backed --jobs $(VIOLATION_JOBS) \
+	  $(if $(VIOLATION_SHARD),--shard=$(VIOLATION_SHARD))
+--- new
+	+python3 test/violations.py --not-proof-backed --jobs $(VIOLATION_JOBS)

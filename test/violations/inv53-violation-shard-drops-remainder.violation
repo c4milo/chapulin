@@ -1,0 +1,16 @@
+invariant: INV-53
+file: test/violations.py
+catches: test/lint-matrix.sh
+reason: shard_of drops the last names of a set whose size N does not
+  divide, so a sharded job never checks them. Before the five INV-53
+  files, each selection held a multiple of 4 violations, and a check of
+  those sets alone passed this edit. So lint-matrix also checks shard_of
+  over lists of every length from N to 3N.
+
+--- old
+    k, n = int(match.group(1)), int(match.group(2))
+    return sorted(names)[k - 1::n]
+--- new
+    k, n = int(match.group(1)), int(match.group(2))
+    names = sorted(names)
+    return names[k - 1:len(names) - len(names) % n:n]

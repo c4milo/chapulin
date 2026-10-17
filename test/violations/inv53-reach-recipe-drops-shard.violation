@@ -1,0 +1,13 @@
+invariant: INV-53
+file: Makefile
+catches: test/lint-matrix.sh
+reason: proof-reach stops passing REACH_SHARD to proof/coverage.py, so each
+  of the three proof-reach jobs measures every harness. Each job then
+  passes, and merge-reach-table fails only after hours of runner time.
+  lint-matrix reads the recipe of the make target that each sharded step
+  runs.
+
+--- old
+	python3 -u proof/coverage.py --reach $(if $(REACH_SHARD),--shard=$(REACH_SHARD))
+--- new
+	python3 -u proof/coverage.py --reach

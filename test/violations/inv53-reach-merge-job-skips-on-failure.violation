@@ -1,0 +1,15 @@
+invariant: INV-53
+file: .github/workflows/nightly.yml
+catches: test/lint-matrix.sh
+reason: merge-reach-table loses its if: always(), so GitHub skips it when
+  a proof-reach part fails or runs out of time. Those are the nights when
+  the table must name the part that did not report. lint-matrix requires
+  always() in the if: of each job that needs a sharded job.
+
+--- old
+    needs: proof-reach
+    # Also after a part fails or runs out of time: those are the nights
+    # when the table must say which part is missing.
+    if: always()
+--- new
+    needs: proof-reach
