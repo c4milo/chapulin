@@ -18,6 +18,8 @@
 #include "rsa.h" // CH_RSA_MODULUS_MAX, the widest key webpki_read_spki returns
 #include "sha256.h"
 
+_Static_assert(CH_SPKI_PIN_LEN == SHA256_LEN, "an SPKI pin is one SHA-256 digest");
+
 // The raw entry's bound is the largest SubjectPublicKeyInfo
 // webpki_read_spki accepts, an RSA key at CH_RSA_MODULUS_MAX: 38 bytes
 // of headers, AlgorithmIdentifier, pad octet and exponent around the

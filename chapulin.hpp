@@ -63,6 +63,11 @@ enum class Status : int {
 #endif
 };
 
+// Forwards ch_result_text (result.h): a constant English text for a log line.
+inline const char *status_text(Status status) {
+    return ch_result_text(static_cast<int>(status));
+}
+
 // The key-exchange group ch_tls.group reports: none until the
 // handshake accepts the ServerHello's key_share, then the group the
 // ServerHello selected (cfg.h's CH_GROUP_* code points): the one group a
@@ -486,7 +491,7 @@ class Config {
         cfg_.spki_pin_count = count;
         return *this;
     }
-    template <size_t N> Config &spki_pins(const uint8_t (&pins)[N][SHA256_LEN]) {
+    template <size_t N> Config &spki_pins(const uint8_t (&pins)[N][CH_SPKI_PIN_LEN]) {
         return spki_pins(&pins[0][0], N);
     }
 
@@ -816,7 +821,8 @@ class Quic {
     // Retry's Version field. False means the caller discards the packet,
     // and any version but the original one is false; it is not a session
     // error.
-    bool retry_ok(QuicVersion version, ConstBytes pseudo, const uint8_t (&tag)[GCM_TAG]) const {
+    bool retry_ok(QuicVersion version, ConstBytes pseudo,
+                  const uint8_t (&tag)[CH_QUIC_RETRY_TAG_LEN]) const {
         return ch_quic_retry_ok(&quic_, static_cast<uint32_t>(version), pseudo.data, pseudo.size,
                                 tag) != 0;
     }

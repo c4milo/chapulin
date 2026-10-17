@@ -375,7 +375,19 @@ static void test_server_hello_ends_level(void) {
 // above.
 #include "quic_version_tests.h"
 
+// ch_result_text (result.h) for the two codes a QUIC build adds: each has a text of its own,
+// apart from the shared codes' texts and from the text of an unknown code.
+static void test_result_text(void) {
+    const char *discard = ch_result_text(CH_QUIC_DISCARD);
+    const char *limit = ch_result_text(CH_QUIC_AEAD_LIMIT);
+    CHECK(strcmp(discard, "the packet did not open; drop it") == 0);
+    CHECK(strcmp(limit, "too many packets failed to open; close the connection") == 0);
+    CHECK(strcmp(discard, ch_result_text(CH_EINVAL)) != 0);
+    CHECK(strcmp(limit, ch_result_text(-100)) != 0);
+}
+
 int main(void) {
+    test_result_text();
     test_config_refusals();
     test_driver();
     test_server_hello_refused();

@@ -330,7 +330,7 @@ static const char *error_text(int rc) {
     case CH_EIO:
         return "the transport failed or closed";
     default:
-        return "unexpected";
+        return ch_result_text(rc);
     }
 }
 

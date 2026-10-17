@@ -401,7 +401,7 @@ int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size
 }
 
 uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo, size_t n,
-                         const uint8_t tag[GCM_TAG]) {
+                         const uint8_t tag[CH_QUIC_RETRY_TAG_LEN]) {
     // A client ignores a Retry in any version but the original
     // (rfc9369.txt:221-222). The key and the nonce are the ones the
     // version prints, so no other session field enters the computation.

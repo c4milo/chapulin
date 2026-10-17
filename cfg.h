@@ -279,6 +279,8 @@ typedef struct {
 // TRANSPORT=quic-nonblocking build.
 #include "quic_cfg.h"
 #endif
+// ch_result_text, the text for each result code above and quic_cfg.h's two.
+#include "result.h"
 // Largest encoded transport-parameters body this tree writes into extension 0x39 (RFC 9001
 // §8.2, rfc9001.txt:1922-1924), in either direction, and declared outside the QUIC guard
 // because srv_build_encrypted_extensions (srv_message.h) writes that extension too.

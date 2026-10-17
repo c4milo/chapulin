@@ -77,6 +77,10 @@ typedef struct {
 // a while beside both, so four leaves room for one more.
 #define CH_SPKI_PIN_MAX 4
 
+// The length of one SPKI pin, the SHA-256 of a DER SubjectPublicKeyInfo. webpki_pin.c holds it
+// to SHA256_LEN.
+#define CH_SPKI_PIN_LEN 32
+
 // The CertificateType values of RFC 9846 §4.5.1 (RFC 7250 §3). The client
 // offers them in the server_certificate_type extension, and
 // ch_tls.server_cert_type reports the one the server's

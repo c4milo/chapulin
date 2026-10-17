@@ -40,14 +40,21 @@ comptime {
     }
 }
 
-/// Whether chapulin.c declares name as a function under a ch_ name. Two
-/// names are passed over: ch_build, build.h's macro for the build record,
+/// The calls the public headers define as static inline functions, so
+/// chapulin.c defines each one and no object exports it: build.h's
+/// ch_build_matches and result.h's ch_result_text.
+const inline_calls = [_][]const u8{ "ch_build_matches", "ch_result_text" };
+
+/// Whether chapulin.c declares name as a function under a ch_ name. The
+/// names passed over are ch_build, build.h's macro for the build record,
 /// which translate-c makes a constant Zig refuses to evaluate (hooks.zig),
-/// and ch_build_matches, which build.h defines as a static inline
-/// function, so chapulin.c defines it and no object exports it.
+/// and inline_calls.
 fn isFunction(comptime name: []const u8) bool {
     if (!std.mem.startsWith(u8, name, "ch_")) return false;
-    if (std.mem.eql(u8, name, "ch_build") or std.mem.eql(u8, name, "ch_build_matches")) return false;
+    if (std.mem.eql(u8, name, "ch_build")) return false;
+    for (inline_calls) |call| {
+        if (std.mem.eql(u8, name, call)) return false;
+    }
     return @typeInfo(@TypeOf(@field(c, name))) == .@"fn";
 }
 

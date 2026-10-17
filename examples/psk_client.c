@@ -255,28 +255,6 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
 // what it does after any failure anyway. That rule is why this file has
 // no retry paths.
 
-// SWAP: host logging. A device reports through whatever it already uses.
-static const char *err_name(int rc) {
-    switch (rc) {
-    case CH_OK:
-        return "CH_OK";
-    case CH_EIO:
-        return "CH_EIO: the transport failed or closed";
-    case CH_EPROTO:
-        return "CH_EPROTO: the peer broke the protocol";
-    case CH_EAUTH:
-        return "CH_EAUTH: authentication failed";
-    case CH_ECAP:
-        return "CH_ECAP: our buffer was too small for the peer's message";
-    case CH_ECLOSED:
-        return "CH_ECLOSED: the peer closed cleanly";
-    case CH_EINVAL:
-        return "CH_EINVAL: this config or call is wrong; nothing was sent";
-    default:
-        return "unknown";
-    }
-}
-
 // Drops a stored ticket. A server that restarted, or one that expired
 // the ticket, does not select our identity, and ch_connect returns
 // CH_EAUTH. The ticket is the only thing that changed since the last
@@ -389,7 +367,8 @@ static int run_session(const char *host, const char *port) {
         rc = exchange(&tls);
     }
     if (rc != CH_OK) {
-        (void)fprintf(stderr, "session failed: %s\n", err_name(rc));
+        // SWAP: host logging. A device reports through whatever it already uses.
+        (void)fprintf(stderr, "session failed: %d, %s\n", rc, ch_result_text(rc));
         if (cfg.resumption) {
             forget_ticket();
         }

@@ -90,7 +90,6 @@
 #include "ch_assert.h"
 #include "rand.h"
 #include "tls.h"
-#include "webpki.h"
 
 // --- The trust anchors ---------------------------------------------------
 //
@@ -105,8 +104,10 @@
 // writes, so it can run against a real server and so test/e2e.sh
 // catches it if the API around it changes. A deployment embeds them as
 // const arrays.
+// The SubjectPublicKeyInfo of an RSA-4096 key, the largest key the chain
+// walk reads, is 550 bytes, so 1024 holds every anchor key it can use.
 #define ANCHOR_NAME_MAX 512
-#define ANCHOR_SPKI_MAX (CH_WEBPKI_KEY_MAX + 64)
+#define ANCHOR_SPKI_MAX 1024
 // The roots this program reads from its command line. The library takes
 // any count; this program's arrays hold this many.
 #define ANCHOR_COUNT_MAX 12
@@ -272,7 +273,7 @@ static const char *error_text(int rc) {
     case CH_EIO:
         return "the transport failed or closed";
     default:
-        return "unexpected";
+        return ch_result_text(rc);
     }
 }
 

@@ -361,13 +361,14 @@ int ch_quic_open(ch_quic *q, uint8_t level, uint32_t version, uint8_t *pkt, size
 // chapulin does not parse.
 //
 // Requires: q is initialized; pseudo points at n readable bytes and is the pseudo-packet
-// §5.8 defines, which the caller builds; tag points at GCM_TAG readable bytes. The caller
+// §5.8 defines, which the caller builds; tag points at CH_QUIC_RETRY_TAG_LEN readable bytes,
+// the 16-byte AES-128-GCM tag (quic_cfg.h). The caller
 // checks the pseudo-packet's shape, because a wrong one produces a 0 and no diagnosis.
 //
 // Returns 1 for a matching tag in the original version and 0 otherwise, in a time that
 // depends on n and version alone.
 uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseudo, size_t n,
-                         const uint8_t tag[GCM_TAG]);
+                         const uint8_t tag[CH_QUIC_RETRY_TAG_LEN]);
 
 // Runs RFC 9001 §6's packet-level key update on the 1-RTT keys. It advances the send
 // secret with the negotiated version's "quic ku" label (§6.1, rfc9001.txt:1605-1613;

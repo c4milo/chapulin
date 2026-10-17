@@ -53,6 +53,10 @@
 #define CH_KEY_WRITE 1
 #define CH_QUIC_DCID_MAX 20
 
+// The length of the Retry Integrity Tag that ch_quic_retry_ok reads and ch_srv_quic_retry_tag
+// writes: one 16-byte AES-128-GCM tag (RFC 9001 §5.8, rfc9001.txt:1499-1502).
+#define CH_QUIC_RETRY_TAG_LEN 16
+
 // The Version field values of RFC 9001's QUIC version 1 and RFC 9369's QUIC version 2
 // (rfc9369.txt:137-141), which ch_cfg.quic_original_version and every call that takes a
 // version name. A version is the caller's value, like the level: the caller reads it from

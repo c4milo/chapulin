@@ -19,8 +19,12 @@
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "aes_public_key.h"
+#include "cfg.h"
 #include "ct.h"
 #include "quic_version.h"
+
+// The public length quic_cfg.h gives the tag of ch_quic_retry_ok and ch_srv_quic_retry_tag.
+_Static_assert(CH_QUIC_RETRY_TAG_LEN == GCM_TAG, "the Retry tag is one AES-128-GCM tag");
 
 // RFC 9001 §5.8's printed nonce for QUIC version 1, 0x461599d35d632bf2239825bb
 // (rfc9001.txt:1501-1502). It sits here rather than in the key, because

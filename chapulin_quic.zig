@@ -95,7 +95,7 @@ fn serverOf(comptime receive_len: usize) type {
 /// under version's key and nonce, the original version a Retry is sent in.
 /// error.Invalid for a version the object derives no keys for.
 pub const retryTag = if (has_server) retryTagOf else @compileError("quic.retryTag needs a QUIC server role");
-fn retryTagOf(version: Version, pseudo: []const u8, tag: *[c.GCM_TAG]u8) error{Invalid}!void {
+fn retryTagOf(version: Version, pseudo: []const u8, tag: *[c.CH_QUIC_RETRY_TAG_LEN]u8) error{Invalid}!void {
     return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_retry_tag(@intFromEnum(version), pseudo.ptr, pseudo.len, tag));
 }
 
@@ -330,7 +330,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
 
         /// ch_quic_retry_ok: whether tag is the Retry integrity tag of pseudo
         /// in version, which is false for any version but the original.
-        pub fn retryOk(self: *const Self, version: Version, pseudo: []const u8, tag: *const [c.GCM_TAG]u8) bool {
+        pub fn retryOk(self: *const Self, version: Version, pseudo: []const u8, tag: *const [c.CH_QUIC_RETRY_TAG_LEN]u8) bool {
             return c.ch_quic_retry_ok(&self.quic, @intFromEnum(version), pseudo.ptr, pseudo.len, tag) != 0;
         }
 

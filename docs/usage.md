@@ -123,7 +123,7 @@ that bit, and ChaCha20 first on `AES=extern`. Name another order, or leave
 a suite out, with `ch_cfg.cipher_suites`:
 
 ```c
-static const uint16_t suites[] = {SUITE_AES_128_GCM_SHA256, SUITE_CHACHA20_POLY1305_SHA256};
+static const uint16_t suites[] = {CH_TLS_AES_128_GCM_SHA256, CH_TLS_CHACHA20_POLY1305_SHA256};
 cfg.cipher_suites = suites;
 cfg.cipher_suite_count = 2;   // 1 to 3 suites the build holds, none twice
 ```
@@ -184,7 +184,8 @@ sends a key share that looks uniform, and returns `CH_OK` — so writing
 the choice down is the only part a compiler can hold you to.
 
 Any error kills the session. The stack wipes its keys and you
-reconnect. Devices recover by reconnecting anyway, and the rule removes
+reconnect. `ch_result_text(rc)` (`result.h`) gives a short English text
+for each result code, for your log. Devices recover by reconnecting anyway, and the rule removes
 the whole resumable-error state space from the code and the proofs.
 
 Two calls report what ended a session, for your log (`alert.h`), and

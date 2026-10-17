@@ -151,7 +151,7 @@ are the C types, built by three helpers, so the API copies no list:
 - `alpnProtocol(name)`: a `c.ch_alpn_protocol`;
 - `cert(der)`: a `c.ch_cert`, one certificate of a server's chain.
 
-`SpkiPin` is `[SHA256_LEN]u8`, the SHA-256 of a DER SubjectPublicKeyInfo;
+`SpkiPin` is `[CH_SPKI_PIN_LEN]u8`, the SHA-256 of a DER SubjectPublicKeyInfo;
 a slice of them is `ch_cfg.spki_pins` as it is.
 
 ### Trust
@@ -738,9 +738,9 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
 
 The constants a caller sizes storage by keep their C names in
 `chapulin.c`: `CH_TX_PT`, `CH_TX_STAGE`, `CH_MIN_RXBUF`, `CH_ALPN_MAX`,
-`CH_SPKI_PIN_MAX`, `CH_TICKET_ID_MAX`,
+`CH_SPKI_PIN_MAX`, `CH_SPKI_PIN_LEN`, `CH_TICKET_ID_MAX`,
 `CH_SRV_COOKIE_KEY_LEN`, `CH_SRV_TICKET_KEY_LEN`, `CH_QUIC_TOKEN_KEY_LEN`,
-`CH_QUIC_TOKEN_MAX`, `CH_TRANSPORT_PARAMS_MAX`, `GCM_TAG`, `SHA256_LEN`
+`CH_QUIC_TOKEN_MAX`, `CH_TRANSPORT_PARAMS_MAX`, `CH_QUIC_RETRY_TAG_LEN`
 and the rest. The API's types use them and rename none.
 
 ## Sizes

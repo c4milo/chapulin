@@ -384,10 +384,27 @@ static void test_rsa_device_bound(void) {
           0);
 }
 
+// ch_result_text (result.h): each code a TCP build defines has a text of its own, and a code
+// no header defines answers the text for an unknown code.
+static void test_result_text(void) {
+    static const int codes[] = {CH_OK,   CH_EIO,     CH_EPROTO, CH_EAUTH,
+                                CH_ECAP, CH_ECLOSED, CH_EINVAL, CH_RECORD_AGAIN};
+    const char *unknown = ch_result_text(-100);
+    CHECK(strcmp(unknown, "unknown result code") == 0);
+    CHECK(strcmp(ch_result_text(CH_OK), "success") == 0);
+    for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+        CHECK(strcmp(ch_result_text(codes[i]), unknown) != 0);
+        for (size_t j = 0; j < i; j++) {
+            CHECK(strcmp(ch_result_text(codes[i]), ch_result_text(codes[j])) != 0);
+        }
+    }
+}
+
 // A host binary takes the ch_cfg.cpu value it runs under as its one
 // argument (test/test_cpu.h); every other binary takes none.
 int main(int argc, char **argv) {
     test_take_cpu(argc, argv);
+    test_result_text();
     test_ct();
     test_sha256();
     test_hmac_hkdf();

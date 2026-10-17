@@ -200,6 +200,7 @@
         "rand_draw.h",
         "record.c",
         "record.h",
+        "result.h",
         "rsa.c",
         "rsa.h",
         "rsa_avx2.c",

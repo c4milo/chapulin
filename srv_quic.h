@@ -112,9 +112,10 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
 // the nonce. The call takes no session, so it cannot check that version is
 // the original one: the caller passes cfg.quic_original_version.
 //
-// Requires: n bytes readable at pseudo, GCM_TAG bytes writable at tag.
+// Requires: n bytes readable at pseudo, CH_QUIC_RETRY_TAG_LEN bytes writable at tag
+// (quic_cfg.h).
 //
-// Returns CH_OK and writes GCM_TAG bytes. Returns CH_EINVAL and writes
+// Returns CH_OK and writes CH_QUIC_RETRY_TAG_LEN bytes. Returns CH_EINVAL and writes
 // nothing when this build derives no keys for version (quic_version.h).
 int ch_srv_quic_retry_tag(uint32_t version, const uint8_t *pseudo, size_t n, uint8_t *tag);
 

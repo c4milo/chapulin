@@ -111,7 +111,7 @@ fn certOf(der: []const u8) c.ch_cert {
 }
 
 /// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is ch_cfg.spki_pins as it is.
-pub const SpkiPin = [c.SHA256_LEN]u8;
+pub const SpkiPin = [c.CH_SPKI_PIN_LEN]u8;
 
 /// How a client judges the server. The variants are the object's trust
 /// mode's. Every slice is borrowed and must outlive the session.
@@ -427,9 +427,9 @@ pub const Group = enum(u16) {
 
 /// ch_tls.suite's, cipher_suites' and srv.cipher_suites' code points (suite.h).
 pub const Suite = enum(u16) {
-    chacha20_poly1305_sha256 = c.SUITE_CHACHA20_POLY1305_SHA256,
-    aes_128_gcm_sha256 = c.SUITE_AES_128_GCM_SHA256,
-    aes_256_gcm_sha384 = c.SUITE_AES_256_GCM_SHA384,
+    chacha20_poly1305_sha256 = c.CH_TLS_CHACHA20_POLY1305_SHA256,
+    aes_128_gcm_sha256 = c.CH_TLS_AES_128_GCM_SHA256,
+    aes_256_gcm_sha384 = c.CH_TLS_AES_256_GCM_SHA384,
     _,
 };
 

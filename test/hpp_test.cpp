@@ -626,6 +626,11 @@ int main() {
     // the RAII close path runs here without a crash; the C unit test pins
     // that close wipes the key material.
 
+    // status_text forwards ch_result_text.
+    CHECK(std::strcmp(chapulin::status_text(chapulin::Status::ok), "success") == 0);
+    CHECK(std::strcmp(chapulin::status_text(chapulin::Status::invalid),
+                      ch_result_text(CH_EINVAL)) == 0);
+
     // Read result mapping.
     {
         chapulin::Read r{5};
