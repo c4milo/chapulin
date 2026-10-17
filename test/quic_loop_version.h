@@ -67,22 +67,33 @@ static void check_version_1_refused(void) {
 // A 1-RTT key update at each end in turn (RFC 9001 section 6.2): the
 // server updates and seals under its new phase, the client opens that
 // packet with its next receive set and updates, and the server opens the
-// client's packet under its current set, which its own update made.
+// client's packet under its current set, which its own update made. The
+// caller's header never carries the Key Phase bit the session does: the
+// seal writes the session's bit into its copy and leaves hdr as it was.
 static void check_key_updates(void) {
     static const uint8_t pt[16] = {'u', 'p', 'd', 'a', 't', 'e'};
-    uint8_t hdr[3] = {0x41, 0x00, 0x08};
+    uint8_t hdr[3] = {0x41 | QUIC_KEY_PHASE_BIT, 0x00, 0x07};
     uint8_t pkt[64];
     size_t pkt_len = 0;
     uint8_t key_set = 0;
     uint64_t pn = 0;
     size_t pt_len = 0;
+    CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, 7, 2, hdr, sizeof hdr, pt,
+                       sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(hdr[0] == (0x41 | QUIC_KEY_PHASE_BIT));
+    CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, pkt, pkt_len, 1, 6, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == 7 && (pkt[0] & QUIC_KEY_PHASE_BIT) == 0);
+    hdr[0] = 0x41;
+    hdr[2] = 0x08;
     CHECK(ch_quic_key_update(&server) == CH_OK && ch_quic_key_phase(&server) == 1);
-    hdr[0] |= QUIC_KEY_PHASE_BIT;
     CHECK(ch_quic_seal(&server, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, 8, 2, hdr, sizeof hdr, pt,
                        sizeof pt, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(hdr[0] == 0x41);
     CHECK(ch_quic_open(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, pkt, pkt_len, 1, 7, 0,
                        &key_set, &pn, &pt_len) == CH_OK);
     CHECK(key_set == CH_QUIC_KEY_NEXT && pn == 8 && pt_len == sizeof pt);
+    CHECK((pkt[0] & QUIC_KEY_PHASE_BIT) != 0);
     CHECK(ch_quic_key_update(&client) == CH_OK && ch_quic_key_phase(&client) == 1);
     hdr[2] = 0x09;
     CHECK(ch_quic_seal(&client, CH_LEVEL_APPLICATION, CH_QUIC_VERSION_2, 9, 2, hdr, sizeof hdr, pt,

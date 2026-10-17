@@ -450,6 +450,7 @@ static void run_vectors(void) {
     test_seal_refusals();
     test_open_discards();
     test_handshake_open();
+    test_key_phase_written();
     test_aead_limits();
     test_rfc9369_appendix_a();
 }

@@ -144,12 +144,10 @@ static void mask_pn_field(uint8_t *pkt, size_t pn_off, size_t pn_len,
 }
 
 // From here to quic_keys_select, no entry checks an argument against
-// NULL, and the three entries ch_quic_seal and ch_quic_open reach all
-// do. Each one here writes through every pointer it takes before it can
-// return, so a null faults on the write whatever a check said first,
-// and cppcheck reads the check as redundant for that reason. The three
-// entries are different: they compare lengths first and return before
-// they write a byte.
+// NULL. Each writes through every pointer it takes before it returns, so
+// a null faults whatever a check said, and cppcheck reads such a check
+// as redundant. The three entries below compare lengths first and return
+// before they write a byte, so they do check.
 void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
                   uint8_t mask[QUIC_HP_MASK_LEN]) {
 #ifdef CH_SUITE_AES_GCM
@@ -303,9 +301,10 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 #endif
 }
 
-int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t level,
+                     uint8_t key_phase, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                     size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                     size_t *out_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(hdr != NULL);
@@ -316,17 +315,14 @@ int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t l
     }
     // §5.4.2: the encoded packet number and the protected payload must
     // run at least QUIC_PN_MAX_LEN bytes past the sample
-    // (rfc9001.txt:1283-1286). AEAD_TAG and QUIC_HP_SAMPLE_LEN are both
-    // 16, so the tag alone answers the sample and what is left to
-    // require is pn_len + pt_len >= QUIC_PN_MAX_LEN. The line below
-    // subtracts rather than adds, so a pt_len the caller passed cannot
-    // wrap the sum past the test.
+    // (rfc9001.txt:1283-1286). The 16-byte tag covers the 16-byte sample,
+    // so pn_len + pt_len >= QUIC_PN_MAX_LEN is what is left. The test
+    // subtracts, so a pt_len the caller passed cannot wrap a sum past it.
     if (pt_len < QUIC_PN_MAX_LEN - pn_len) {
         return CH_EINVAL;
     }
-    // The packet is the header, the plaintext and the tag. Each step
-    // takes one of the three out of cap, so no sum of caller lengths
-    // wraps here either.
+    // The packet is the header, the plaintext and the tag. Each test takes
+    // one of them out of cap, so no sum of caller lengths wraps here either.
     if (cap < AEAD_TAG || cap - AEAD_TAG < pt_len || cap - AEAD_TAG - pt_len < hdr_len) {
         return CH_ECAP;
     }
@@ -339,12 +335,17 @@ int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t l
 #endif
     size_t total = hdr_len + pt_len + AEAD_TAG;
 
-    // The writer places the header copy. The AEAD writes the
-    // ciphertext and the tag after it, inside the room the check above
+    // The writer places the header copy, whose short header carries
+    // key_phase's bit whatever hdr holds there (rfc9001.txt:1551-1554),
+    // by mask, since §9.5 covers the bit. The AEAD writes the ciphertext
+    // and the tag after the copy, inside the room the check above
     // proved, so this call cannot overrun and w.err stays clear.
+    uint8_t phase_bit = level == CH_LEVEL_APPLICATION ? QUIC_KEY_PHASE_BIT : 0;
+    uint8_t phase = (uint8_t)((key_phase & 1U) << QUIC_KEY_PHASE_SHIFT);
     wbuf w;
     wb_init(&w, out, cap);
-    wb_bytes(&w, hdr, hdr_len);
+    wb_u8(&w, (uint8_t)((hdr[0] & ~phase_bit) | (phase & phase_bit)));
+    wb_bytes(&w, hdr + 1, hdr_len - 1);
     CH_ASSERT(w.err == 0);
 
     uint8_t nonce[AEAD_NONCE];
@@ -376,13 +377,11 @@ int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t l
 // (rfc9001.txt:1280-1281).
 static int unprotect_header(const quic_hp_key *h, uint8_t *pkt, size_t pkt_len, size_t pn_off,
                             uint8_t level, uint64_t largest_pn, size_t *pn_len, uint64_t *pn) {
-    // The check is a minimum length rather than an rbuf read, because a
-    // packet is not a container with fields that fill it: the
-    // ciphertext runs from the packet number field to the last byte, so
-    // INV-25's reader would have nothing to compare. Subtracting rather
-    // than adding keeps a pn_off the caller passed from wrapping the
-    // sum. It runs before the sample is read, so no byte of a short
-    // packet is read and no byte of its header is written.
+    // A minimum length rather than an rbuf read: the ciphertext runs
+    // from the packet number field to the last byte, so INV-25's reader
+    // would have no field to compare. The subtraction keeps a pn_off the
+    // caller passed from wrapping the sum. No byte of a short packet is
+    // read and no byte of its header is written before this check.
     if (pkt_len < pn_off || pkt_len - pn_off < QUIC_PN_MAX_LEN + QUIC_HP_SAMPLE_LEN) {
         return CH_QUIC_DISCARD;
     }

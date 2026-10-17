@@ -812,7 +812,7 @@ class Quic {
     }
 
     // The Key Phase bit the current 1-RTT send set carries, 0 or 1. The
-    // caller writes it into byte 0 before every short header it seals.
+    // seal writes it into byte 0 of every short header it seals.
     uint8_t key_phase() const {
         return ch_quic_key_phase(&quic_);
     }

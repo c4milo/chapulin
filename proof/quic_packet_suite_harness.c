@@ -218,8 +218,8 @@ int main(void) {
     fill_nondet(pt, sizeof pt);
     aes_ran = 0;
     chacha_ran = 0;
-    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
-                              pt, pt_len, out, cap, &out_len);
+    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u8(), nondet_u64(), pn_len,
+                              hdr, hdr_len, pt, pt_len, out, cap, &out_len);
     if (rc == CH_OK) {
         __CPROVER_assert(aes_ran == aes && chacha_ran == !aes, "seal: the suite's ciphers");
         __CPROVER_assert(k.sealed == (aes ? sealed_before + 1 : sealed_before),

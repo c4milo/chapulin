@@ -7969,7 +7969,7 @@ P256_SCALAR_BRANCH_CEILING := \
   m3/p256_scalar.c:15 mips32r2/p256_scalar.c:14 rv32imac/p256_scalar.c:14 m3-gcc/p256_scalar.c:12 \
   mips32r2-gcc/p256_scalar.c:12 mips32r2-gcc-O2/p256_scalar.c:14 rv32imac-gcc/p256_scalar.c:18 rv32ic-gcc/p256_scalar.c:18
 QUIC_PACKET_BRANCH_CEILING := \
-  m3/quic_packet.c:58 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
+  m3/quic_packet.c:59 mips32r2/quic_packet.c:42 rv32imac/quic_packet.c:46 m3-gcc/quic_packet.c:46 \
   mips32r2-gcc/quic_packet.c:46 mips32r2-gcc-O2/quic_packet.c:52 rv32imac-gcc/quic_packet.c:55 \
   rv32ic-gcc/quic_packet.c:55 arm64/quic_packet.c@host:34 x86-64/quic_packet.c@host:34
 WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
@@ -8042,8 +8042,9 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 #   - loop control over a constant count: the four bytes of a packet
 #     number field, the bytes of the header protection sample and mask,
 #     of the nonce, and of the keys and IVs quic_keys_select copies;
-#   - first_byte_bits' compare of level and the compares of the suite,
-#     both of which the wire carries in the clear;
+#   - first_byte_bits' compare of level, quic_packet_seal's compare of
+#     level, which picks the bit its Key Phase mask covers, and the
+#     compares of the suite, all of which the wire carries in the clear;
 #   - CH_ASSERT's tests of a pointer and of the writer's error;
 #   - the refusals on entry and the §5.4.2 length check. quic_packet_seal
 #     reads pn_len, pt_len, hdr_len and cap there: every call it admits
@@ -8056,7 +8057,7 @@ WIDEMUL_CEILING_SPEC := mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar
 #     number inline, a test of the distance, 8 * i, the loop's counter;
 #   - under the Bootlin gcc, which compiles a stack protector in unless
 #     told otherwise, the test of the guard word at seven returns.
-# One kind reads a secret. Under clang for Cortex-M3, four of the 58 are
+# One kind reads a secret. Under clang for Cortex-M3, four of the 59 are
 # IT blocks whose condition comes from one: the borrow byte_in_use
 # computes in quic_header_unprotect, the two window tests of
 # quic_pn_decode, and quic_key_set_select's choice of a phase. Each is

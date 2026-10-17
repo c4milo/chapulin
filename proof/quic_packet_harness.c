@@ -179,8 +179,8 @@ static void prove_seal(void) {
     fill_nondet(pt, sizeof pt);
     fill_nondet(out, sizeof out);
 
-    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u64(), pn_len, hdr, hdr_len,
-                              pt, pt_len, out, cap, &out_len);
+    int rc = quic_packet_seal(nondet_u32(), &k, &h, nondet_u8(), nondet_u8(), nondet_u64(), pn_len,
+                              hdr, hdr_len, pt, pt_len, out, cap, &out_len);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL || rc == CH_ECAP,
                      "quic_packet_seal: it returns one of the three codes its header names");
     if (rc == CH_OK) {

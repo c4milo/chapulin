@@ -47,7 +47,7 @@ static void test_appendix_a5_packet(void) {
     (void)unhex("4200bff4", hdr);
     (void)unhex("01", pt);
 
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == 21);
     CHECK(eq_hex(out, "4cfe4189655e5cd55c41f69080575d7999c25a5bfb"));
@@ -257,37 +257,38 @@ static void test_seal_refusals(void) {
     (void)unhex("01", pt);
 
     // pn_len + pt_len == QUIC_PN_MAX_LEN seals and one less refuses.
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, QUIC_PN_MAX_LEN,
-                           hdr, sizeof hdr, pt, 0, out, sizeof out, &out_len) == CH_OK);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN,
+                           QUIC_PN_MAX_LEN, hdr, sizeof hdr, pt, 0, out, sizeof out,
+                           &out_len) == CH_OK);
     CHECK(out_len == sizeof hdr + AEAD_TAG);
     memset(out, 0xa5, sizeof out);
     out_len = 0;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, 0, out, sizeof out, &out_len) == CH_EINVAL);
     CHECK(out[0] == 0xa5 && out_len == 0);
 
     // The lengths the header calls invalid.
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, 0, hdr,
                            sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN,
                            QUIC_PN_MAX_LEN + 1, hdr, sizeof hdr, pt, sizeof pt, out, sizeof out,
                            &out_len) == CH_EINVAL);
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr, 2,
-                           pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
+                           2, pt, sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
 
     // The capacity boundary: the exact size seals and one byte less
     // refuses with nothing written.
     size_t whole = sizeof hdr + sizeof pt + AEAD_TAG;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, whole, &out_len) == CH_OK);
     memset(out, 0xa5, sizeof out);
     out_len = 0;
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, whole - 1, &out_len) == CH_ECAP);
     CHECK(out[0] == 0xa5 && out_len == 0);
 
     // A call wrong in both ways answers the argument check.
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, 0, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, 0, hdr,
                            sizeof hdr, pt, sizeof pt, out, 0, &out_len) == CH_EINVAL);
 }
 
@@ -356,6 +357,44 @@ static void test_handshake_open(void) {
     CHECK(pt_len == 1);
     CHECK(eq_hex(pkt, "4200bff4"));
     CHECK(pkt[4] == 0x01);
+}
+
+// The Key Phase bit of the header copy is the key_phase the seal takes,
+// whatever hdr holds there. Appendix A.5's header, whose bit is clear,
+// sealed under key_phase 1 opens under a stored phase of 1 with the
+// current set, and its byte 0 is 0x46. A wrong bit would select the next
+// set, whose zero keys fail the tag. At CH_LEVEL_HANDSHAKE byte 0 goes
+// out as it is: 0x46 sealed under key_phase 0 opens as 0x46. Neither seal
+// writes hdr.
+static void test_key_phase_written(void) {
+    quic_keys k;
+    quic_hp_key h;
+    uint8_t hdr[4];
+    const uint8_t pt[1] = {0x01};
+    uint8_t out[32];
+    size_t out_len = 0;
+    a5_keys(&k, &h);
+    (void)unhex("4200bff4", hdr);
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 1, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
+    CHECK(hdr[0] == 0x42);
+    quic_keys sets[CH_QUIC_KEY_SETS];
+    memset(sets, 0, sizeof sets);
+    memcpy(&sets[CH_QUIC_KEY_CURRENT], &k, sizeof k);
+    uint8_t key_set = 0xff;
+    uint64_t pn = 0;
+    size_t pt_len = 0;
+    CHECK(quic_packet_open_application(TEST_SESSION_CPU, sets, &h, 1, out, out_len, 1, A5_PN - 1, 0,
+                                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(key_set == CH_QUIC_KEY_CURRENT && pn == A5_PN && out[0] == 0x46);
+
+    hdr[0] = 0x46;
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_HANDSHAKE, 0, A5_PN, A5_PN_LEN, hdr,
+                           sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
+    CHECK(hdr[0] == 0x46);
+    CHECK(quic_packet_open_handshake(TEST_SESSION_CPU, &k, &h, out, out_len, 1, A5_PN - 1, &pn,
+                                     &pt_len) == CH_OK);
+    CHECK(pn == A5_PN && out[0] == 0x46);
 }
 
 // RFC 9001 §6.6's two limits, each at the count on either side of it

@@ -32,14 +32,13 @@ static void webpki_server_suite(ch_cfg *cfg, uint16_t suite) {
     cfg->srv.cipher_suite_count = 1;
 }
 
-// The 1-RTT keys agree after a key update: the server updates, seals
-// with the Key Phase bit it now names, and the client opens the packet
-// with its next receive set, which ch_quic_key_update derived at the
-// suite's hash for the suite's AEAD.
+// The 1-RTT keys agree after a key update: the server updates and seals,
+// ch_quic_seal writes the Key Phase bit the server now names, and the
+// client opens the packet with its next receive set, which
+// ch_quic_key_update derived at the suite's hash for the suite's AEAD.
 static void check_keys_agree_after_update(void) {
     CHECK(ch_quic_key_update(&server) == CH_OK);
-    uint8_t hdr[3] = {0x41, 0x00, 0x06};
-    hdr[0] |= (uint8_t)(ch_quic_key_phase(&server) ? QUIC_KEY_PHASE_BIT : 0);
+    static const uint8_t hdr[3] = {0x41, 0x00, 0x06};
     static const uint8_t pt[24] = {'u', 'p', 'd', 'a', 't', 'e'};
     uint8_t pkt[64];
     size_t pkt_len = 0;

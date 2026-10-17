@@ -12448,3 +12448,53 @@ does nothing more.
     - **Accept 0 and n both as success.** A 0 then means both "all moved"
       and "nothing moved", and the session cannot tell a stalled socket
       from a finished one.
+
+137. **`ch_quic_seal` writes the Key Phase bit of a short header
+    itself.** A caller wrote byte 0's Key Phase bit from
+    `ch_quic_key_phase` before each 1-RTT seal, and `ch_quic_seal` sealed
+    the bit it found. A caller that forgot the bit after a key update
+    sent packets under the new keys that named the old phase. The peer
+    tried the wrong keys and dropped each packet, and the sender saw no
+    error. chapulin holds the send keys and the bit that names them, so
+    the seal now writes the bit. On 2026-10-17 Camilo approved the change
+    (entry 133 states the request).
+
+    - **The rule.** `quic_packet_seal` takes `key_phase`, and
+      `ch_quic_seal` passes `ch_quic.key_phase`. At `CH_LEVEL_APPLICATION`
+      byte 0 of the header copy holds `key_phase`'s low bit at
+      `QUIC_KEY_PHASE_BIT` and every other bit as `hdr` holds it. At
+      `CH_LEVEL_HANDSHAKE` byte 0 goes out as it is, because that bit of
+      a long header is a reserved bit. The AEAD reads the copy as the
+      associated data, so the tag covers the bit the packet carries.
+      `hdr` stays as the caller wrote it.
+    - **Constant time.** RFC 9001 §9.5 covers the bit, so the write is a
+      mask on `key_phase`. The one new branch reads `level`, which the
+      wire shows.
+    - **What a caller writes.** Nothing for the Key Phase bit. A caller
+      that still writes `ch_quic_key_phase`'s bit gets the same packet as
+      before.
+    - **The file sizes.** `quic.c`, `quic_packet.c` and `quic_packet.h`
+      were at the 500-line cap, so six comments state the same facts in
+      fewer lines.
+
+    `test/quic_packet_tests.h` seals Appendix A.5's header under each
+    level, and `test/quic_loop_version.h` seals a header with the wrong
+    bit before and after a key update. Three mutants hold the rule:
+    `inv11-quic-seal-key-phase-from-caller`,
+    `inv11-quic-seal-key-phase-on-long-header` and
+    `inv11-quic-seal-key-phase-not-the-sessions`.
+
+    The three harnesses that compile a changed file ran under cbmc 6.11.0
+    with `PROVE_NO_CACHE=1` on an M1 Pro, and none failed. `quic_packet`
+    proved 939 properties in 46 s, `quic_packet_suite` 1176 in 80 s and
+    `quic_driver` 1885 in 426 s, at peaks of about 0.4, 0.7 and 2.3 GB.
+    Under clang for Cortex-M3 `quic_packet.c` gained one counted
+    instruction, an IT block on `level == CH_LEVEL_APPLICATION`, so its
+    ceiling there is 59. gcc for Cortex-M3 still counts 46.
+
+    Rejected:
+
+    - **Refuse a header with the wrong bit.** The caller still owes the
+      bit, and the only gain is a CH_EINVAL in place of a lost packet.
+    - **A copy of the header in `quic.c`.** It needs a cap on the header
+      length, a new refusal and 25 more bytes of stack.

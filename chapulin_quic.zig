@@ -304,7 +304,8 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// admit and RFC 9001 §6.6's confidentiality limit: once a key set
         /// has sealed its limit, ch_quic_seal refuses every later packet
         /// under it until keyUpdate writes a new set (quic.h). It is not an
-        /// error a retry clears.
+        /// error a retry clears. At .application the packet's Key Phase bit
+        /// is keyPhase(), whatever hdr holds there.
         pub fn seal(self: *Self, level: Level, version: Version, pn: u64, pn_len: usize, hdr: []const u8, pt: []const u8, out: []u8) error{ Invalid, Cap }!usize {
             var n: usize = 0;
             try chapulin.fromCode(error{ Invalid, Cap }, c.ch_quic_seal(&self.quic, @intFromEnum(level), @intFromEnum(version), pn, pn_len, hdr.ptr, hdr.len, pt.ptr, pt.len, out.ptr, out.len, &n));

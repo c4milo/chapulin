@@ -1,0 +1,13 @@
+invariant: INV-11
+file: quic.c
+catches: quic_loop_test
+reason: ch_quic_seal hands quic_packet_seal a Key Phase bit of 0 in place
+  of q->key_phase, so after a key update every 1-RTT packet names the
+  first phase while it is sealed under the new keys, and the peer opens
+  none of them. test/quic_loop_version.h updates the server's keys and
+  requires the client to open the next packet with its next set.
+
+--- old
+                                q->key_phase, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap,
+--- new
+                                0, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap,

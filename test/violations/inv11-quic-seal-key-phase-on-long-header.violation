@@ -1,0 +1,13 @@
+invariant: INV-11
+file: quic_packet.c
+catches: quic_test
+reason: quic_packet_seal writes key_phase into bit 2 of byte 0 at the
+  Handshake level too, where a long header holds a reserved bit there and
+  no Key Phase bit, so it rewrites the caller's header. bin/quic_test
+  seals a byte 0 of 0x46 at CH_LEVEL_HANDSHAKE under key_phase 0 and
+  requires it to open as 0x46.
+
+--- old
+    uint8_t phase_bit = level == CH_LEVEL_APPLICATION ? QUIC_KEY_PHASE_BIT : 0;
+--- new
+    uint8_t phase_bit = QUIC_KEY_PHASE_BIT;

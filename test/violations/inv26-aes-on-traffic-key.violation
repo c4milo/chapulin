@@ -10,9 +10,9 @@ reason: the 1-RTT seal path calls aes_encrypt_block on a key set the TLS
   no include; the rule matches the call by name either way.
 
 --- old
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+                     size_t *out_len) {
     CH_ASSERT(k != NULL);
 --- new
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+                     size_t *out_len) {
     CH_ASSERT(k != NULL);
     aes_encrypt_block(k, hdr, out);

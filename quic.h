@@ -195,8 +195,8 @@ uint32_t ch_quic_negotiated_version(const ch_quic *q);
 // pt: it copies the hdr_len header bytes into out, seals pt after them, writes the 16-byte
 // tag, and masks the copy in out. hdr carries the packet number field the caller encoded,
 // so hdr_len counts those bytes, pn_len says how many of the last ones they are, and pn is
-// that same number. At CH_LEVEL_APPLICATION the caller has already written byte 0's Key
-// Phase bit from ch_quic_key_phase, and this call only masks that byte.
+// that same number. At CH_LEVEL_APPLICATION the copy's Key Phase bit is ch_quic_key_phase's,
+// whatever hdr holds there, so a key update needs nothing of the caller's header.
 //
 // version is the QUIC version the packet goes out in: the Version field the caller wrote into
 // a long header, and the negotiated version at CH_LEVEL_APPLICATION, whose short header names
@@ -374,8 +374,8 @@ uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseu
 // Runs RFC 9001 §6's packet-level key update on the 1-RTT keys. It advances the send
 // secret with the negotiated version's "quic ku" label (§6.1, rfc9001.txt:1605-1613;
 // quic_version.h), rewrites the send packet protection key and IV from it under that
-// version's labels, and toggles q->key_phase, the bit the caller must set in
-// byte 0 of every 1-RTT header it seals from then on (rfc9001.txt:1615-1616). On the
+// version's labels, and toggles q->key_phase, the bit ch_quic_seal writes into
+// byte 0 of every 1-RTT header from then on (rfc9001.txt:1615-1616). On the
 // receive side it moves the current set to CH_QUIC_KEY_PREVIOUS and holds it, promotes
 // CH_QUIC_KEY_NEXT to CH_QUIC_KEY_CURRENT, and derives a new next set.
 //
@@ -407,8 +407,8 @@ uint8_t ch_quic_retry_ok(const ch_quic *q, uint32_t version, const uint8_t *pseu
 // then no 1-RTT set to advance.
 int ch_quic_key_update(ch_quic *q);
 
-// Reports q->key_phase, the Key Phase bit the current 1-RTT send set carries, which the
-// caller writes into byte 0 of every short header before it seals it. chapulin holds the
+// Reports q->key_phase, the Key Phase bit the current 1-RTT send set carries, which
+// ch_quic_seal writes into byte 0 of every short header it seals. chapulin holds the
 // send key and the bit that names it, so the two cannot disagree (RFC 9001 §6.1,
 // rfc9001.txt:1615-1616). Requires: q is initialized. Returns 0 or 1, and 0 before the
 // 1-RTT keys exist. It cannot fail and changes nothing.

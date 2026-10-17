@@ -238,7 +238,7 @@ static void test_v2_a5_packet(void) {
     quic_nonce(k.iv, A5_PN, nonce);
     CHECK(eq_hex(nonce, V2_A5_NONCE));
 
-    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, A5_PN, A5_PN_LEN, hdr,
+    CHECK(quic_packet_seal(TEST_SESSION_CPU, &k, &h, CH_LEVEL_APPLICATION, 0, A5_PN, A5_PN_LEN, hdr,
                            sizeof hdr, pt, sizeof pt, out, sizeof out, &out_len) == CH_OK);
     CHECK(out_len == 21 && eq_hex(out, V2_A5_PACKET));
     CHECK(eq_hex(&out[sizeof hdr], V2_A5_CIPHERTEXT));

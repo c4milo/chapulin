@@ -9,6 +9,6 @@ reason: a 1-RTT packet ch_quic_seal seals runs under the probe's bit alone, what
   CH_CPU_CONSTANT_TIME_MULTIPLY to call no file under its own names.
 
 --- old
-        return quic_packet_seal(CH_CFG_CPU(q->t.cfg), &q->app_tx, &q->app_hp_tx, level, pn, pn_len,
+        return quic_packet_seal(CH_CFG_CPU(q->t.cfg), &q->app_tx, &q->app_hp_tx, level,
 --- new
-        return quic_packet_seal(CH_CPU_PROBED, &q->app_tx, &q->app_hp_tx, level, pn, pn_len,
+        return quic_packet_seal(CH_CPU_PROBED, &q->app_tx, &q->app_hp_tx, level,

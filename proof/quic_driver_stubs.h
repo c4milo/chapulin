@@ -106,9 +106,11 @@ int quic_initial_seal(uint8_t endpoint, uint32_t version, const uint8_t *dcid, s
 }
 
 int quic_packet_seal(uint32_t cpu, const quic_keys *k, const quic_hp_key *h, uint8_t level,
-                     uint64_t pn, size_t pn_len, const uint8_t *hdr, size_t hdr_len,
-                     const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+                     uint8_t key_phase, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                     size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                     size_t *out_len) {
     (void)cpu;
+    (void)key_phase;
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(h, sizeof *h), "seal: header key readable");
     __CPROVER_assert(level == CH_LEVEL_HANDSHAKE || level == CH_LEVEL_APPLICATION,

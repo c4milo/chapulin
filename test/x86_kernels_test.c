@@ -341,7 +341,7 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
     size_t pkt_len = 0;
     reset_calls();
 
-    CHECK(quic_packet_seal(cpu, &k, &h, CH_LEVEL_APPLICATION, 5, 2, short_hdr, sizeof short_hdr,
+    CHECK(quic_packet_seal(cpu, &k, &h, CH_LEVEL_APPLICATION, 0, 5, 2, short_hdr, sizeof short_hdr,
                            payload, PAYLOAD, pkt, sizeof pkt, &pkt_len) == CH_OK);
     CHECK(sealed_on(suite, cpu));
     quic_keys sets[CH_QUIC_KEY_SETS];
@@ -355,7 +355,7 @@ static void check_packets(uint16_t suite, uint32_t cpu) {
     CHECK(opened_on(suite, cpu));
     CHECK(pn == 5 && pt_len == PAYLOAD && memcmp(pkt + sizeof short_hdr, payload, PAYLOAD) == 0);
 
-    CHECK(quic_packet_seal(cpu, &k, &h, CH_LEVEL_HANDSHAKE, 5, 2, handshake_hdr,
+    CHECK(quic_packet_seal(cpu, &k, &h, CH_LEVEL_HANDSHAKE, 0, 5, 2, handshake_hdr,
                            sizeof handshake_hdr, payload, PAYLOAD, pkt, sizeof pkt,
                            &pkt_len) == CH_OK);
     CHECK(sealed_on(suite, cpu));

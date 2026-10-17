@@ -1,0 +1,15 @@
+invariant: INV-11
+file: quic_packet.c
+catches: quic_test
+reason: quic_packet_seal keeps the Key Phase bit the caller's header
+  holds instead of the key_phase it takes, so a caller who never set the
+  bit after a key update sends packets that name the old phase, and the
+  peer opens them with the wrong keys. bin/quic_test seals Appendix A.5's
+  header, whose bit is clear, under key_phase 1 and requires it to open
+  under the current set of phase 1.
+
+--- old
+    uint8_t phase = (uint8_t)((key_phase & 1U) << QUIC_KEY_PHASE_SHIFT);
+--- new
+    (void)key_phase;
+    uint8_t phase = (uint8_t)(hdr[0] & QUIC_KEY_PHASE_BIT);

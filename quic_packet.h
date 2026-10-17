@@ -67,10 +67,10 @@
 #define QUIC_PN_LEN_BITS 0x03
 
 // The Key Phase bit of a short header's byte 0, which header
-// protection covers too (RFC 9000 §17.3.1, rfc9000.txt:5515-5519). The
-// sender writes it from ch_quic_key_phase before it calls
-// quic_packet_seal; the receiver reads it after quic_header_unprotect
-// and hands it to quic_key_set_select.
+// protection covers too (RFC 9000 §17.3.1, rfc9000.txt:5515-5519).
+// quic_packet_seal writes it from the key_phase it takes; the receiver
+// reads it after quic_header_unprotect and hands it to
+// quic_key_set_select.
 #define QUIC_KEY_PHASE_BIT 0x04
 
 // The header protection sample: 16 bytes of the packet's ciphertext,
@@ -320,9 +320,9 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 // hdr carries the packet number field the caller encoded, so hdr_len
 // counts those bytes and pn_len says how many of the last ones they
 // are; pn is that same number and it builds the nonce. The packet
-// number offset is hdr_len - pn_len. At CH_LEVEL_APPLICATION the
-// caller has already written byte 0's QUIC_KEY_PHASE_BIT from
-// ch_quic_key_phase, and this call only masks that byte.
+// number offset is hdr_len - pn_len. At CH_LEVEL_APPLICATION the copy's
+// QUIC_KEY_PHASE_BIT is key_phase's low bit, whatever hdr holds there,
+// and at CH_LEVEL_HANDSHAKE byte 0 is copied as it is.
 //
 // The §5.4.2 length rule (rfc9001.txt:1283-1286): the encoded packet
 // number and the protected payload together must run at least
@@ -335,11 +335,11 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 //
 // Requires: cpu is the session's ch_cfg.cpu in a host object, where each
 // AEAD reads its path from it (aead.h, aes.h), and 0 in a device object,
-// which holds one path for each; k and h hold that level's send keys;
-// level is CH_LEVEL_HANDSHAKE or CH_LEVEL_APPLICATION, because
-// quic_initial.c runs the Initial level; hdr points at hdr_len readable
-// bytes; pt points at pt_len readable bytes; out points at cap writable
-// bytes and overlaps neither hdr nor pt; pn is at most 2^62-1.
+// which holds one path for each; k and h hold that level's send keys,
+// and key_phase is the bit k carries, ch_quic.key_phase; level is
+// CH_LEVEL_HANDSHAKE or CH_LEVEL_APPLICATION, because quic_initial.c runs
+// the Initial level; hdr points at hdr_len readable bytes, pt at pt_len,
+// and out at cap writable bytes that overlap neither; pn is below 2^62.
 //
 // Returns CH_OK and writes hdr_len + pt_len + AEAD_TAG bytes into out
 // and that same count into *out_len.
@@ -347,23 +347,23 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 // Returns CH_EINVAL and writes nothing, leaving *out_len alone, when
 // pn_len is 0 or above QUIC_PN_MAX_LEN, when hdr_len is below pn_len,
 // or when the §5.4.2 rule above fails. Returns CH_ECAP and writes
-// nothing, leaving *out_len alone, when cap is below hdr_len + pt_len
-// + AEAD_TAG. The argument checks run first, so a call wrong in both
-// ways returns CH_EINVAL whatever buffer it was given. Neither code
-// touches k or h, and both leave the session live. Those checks branch
-// on lengths the caller passed and produce no packet; every step that
-// does produce bytes runs after them and takes no branch and no memory
-// index on pn or pn_len, which is the §9.5 send rule
-// (rfc9001.txt:2114-2116).
+// nothing, leaving *out_len alone, when cap is below hdr_len + pt_len +
+// AEAD_TAG. The argument checks run first, so a call wrong in both ways
+// returns CH_EINVAL whatever buffer it was given. Neither code touches k
+// or h, and both leave the session live. Those checks branch on lengths
+// the caller passed and produce no packet. Every step that produces
+// bytes runs after them and takes no branch and no memory index on pn,
+// pn_len or key_phase, the §9.5 send rule (rfc9001.txt:2114-2116).
 //
 // Under an AES-GCM suite §6.6's confidentiality limit is this call's:
 // it returns CH_EINVAL and writes nothing for the packet that would
 // bring k->sealed to QUIC_CONFIDENTIALITY_LIMIT (rfc9001.txt:1812-1813),
 // and raises k->sealed for each packet it seals, the one field of k it
 // writes. A key update writes a new set and starts the count again.
-int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
+int quic_packet_seal(uint32_t cpu, quic_keys *k, const quic_hp_key *h, uint8_t level,
+                     uint8_t key_phase, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                     size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                     size_t *out_len);
 
 // Opens one Handshake-level packet in place: it removes header
 // protection, recovers the packet number and removes packet protection,
