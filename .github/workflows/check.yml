@@ -849,12 +849,19 @@ jobs:
       # proof/run.sh skips any harness whose content key already recorded
       # a success; restoring the marker directory makes CI incremental
       # the same way development machines are.
+      #
+      # The prefix names the fast tier. The nightly's prove-slow jobs save
+      # one cache per harness under proofs-<os>-<harness>-, and a
+      # restore-keys prefix of proofs-<os>- also matched those. A run after
+      # a nightly then restored the newest of them, which holds one
+      # harness: run 39048981445 restored handshake_post's cache, proved
+      # all 215 harnesses and took 98 of its 120 minutes.
       - name: Restore proof cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: proofs-${{ runner.os }}-
+          key: proofs-fast-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: proofs-fast-${{ runner.os }}-
 
       # One target. proof/run.sh schedules the proofs by its memory budget,
       # so the step takes no -j.
@@ -870,7 +877,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: proofs-fast-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A failed proof's one-line verdict is not diagnosable from the run
       # output alone; keep the full solver logs.
