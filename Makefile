@@ -5036,9 +5036,17 @@ COV_WEBPKI_SRCS = $(sort $(WEBPKI_TEST_SRCS) $(WEBPKI_SRCS) $(SHA512_TEST_SRCS) 
 # what a passing verdict cannot: whether the bound is large enough to enter
 # the code the harness names. It costs minutes per harness, so the nightly
 # runs it (https://github.com/c4milo/chapulin/issues/55).
+#
+# REACH_SHARD=K/N measures the Kth of N parts of the harnesses
+# (proof/coverage.py --shard), and empty measures all of them. The
+# nightly runs three proof-reach jobs, 1/3 to 3/3, and its
+# merge-reach-table job joins their tables (proof/coverage.py --merge).
+# As one job the measurement took 255 minutes of run 37448350680, and it
+# ran out of its 300 minutes each night from 2026-10-07.
+REACH_SHARD ?=
 .PHONY: proof-reach
 proof-reach:
-	python3 -u proof/coverage.py --reach
+	python3 -u proof/coverage.py --reach $(if $(REACH_SHARD),--shard=$(REACH_SHARD))
 
 .PHONY: proof-coverage
 proof-coverage:
@@ -6794,11 +6802,14 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # the fast tier took 1,158 s with one worker, 393 s with five and 489 s
 # with ten.
 VIOLATION_JOBS ?= $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2); echo $$(( n > 1 ? n / 2 : 1 )))
-# VIOLATION_SHARD=K/N runs the Kth of N parts of the fast tier
-# (test/violations.py --shard), and empty runs all of it. CI's mutants
-# job runs the tier as two jobs, 1/2 and 2/2: as one job it checked 529
-# violations in 53 minutes on run 38334786704 and reached its 60-minute
-# limit on run 38338501302.
+# VIOLATION_SHARD=K/N runs the Kth of N parts of the fast tier or of the
+# not-proof-backed class (test/violations.py --shard), and empty runs all
+# of it. CI's mutants job runs the tier as two jobs, 1/2 and 2/2: as one
+# job it checked 529 violations in 53 minutes on run 38334786704 and
+# reached its 60-minute limit on run 38338501302. The nightly's
+# test-invariants job runs the class as four jobs, 1/4 to 4/4: as one job
+# it took 119 minutes of run 37605840873 for 818 violations, and from
+# 2026-10-08 it reached its 150-minute limit each night.
 VIOLATION_SHARD ?=
 .PHONY: test-invariants-fast
 test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test bin/rsa_equiv_test bin/rsa_sign_equiv_test bin/rsa_sign_test_host
@@ -6807,7 +6818,8 @@ test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa b
 
 # Every violation but the proof-backed ones: the fast tier plus the
 # handshake_sequence_test, diff and e2e-backed violations that cost
-# minutes each. The nightly's test-invariants job runs this.
+# minutes each. The nightly's test-invariants job runs this in four
+# parts (VIOLATION_SHARD).
 .PHONY: test-invariants-not-proof-backed
 test-invariants-not-proof-backed: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa
 ifeq ($(LAKE),)
@@ -6820,7 +6832,8 @@ else
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	$(call REQUIRE_MATHLIB,test-invariants-not-proof-backed)
 	cd spec/lean && $(LAKE) build
-	+python3 test/violations.py --not-proof-backed --jobs $(VIOLATION_JOBS)
+	+python3 test/violations.py --not-proof-backed --jobs $(VIOLATION_JOBS) \
+	  $(if $(VIOLATION_SHARD),--shard=$(VIOLATION_SHARD))
 endif
 
 # The proof-backed violations, whose target is proof/prove-one.sh running
@@ -6851,9 +6864,14 @@ test-invariants:
 
 # The nightly runs one job per slow proof, from a static matrix. A
 # launch line added without a matching matrix entry would simply never
-# run in CI, and nothing would say so.
+# run in CI, and nothing would say so. A sharded job can fail the same
+# way: a shard that its matrix leaves out never runs, and the job stays
+# green on the parts that it ran. tools/shard-matrix.py requires each
+# shard list to be 1 to N, where the job passes "$SHARD/N", and requires
+# the N parts to split their set.
 .PHONY: lint-matrix
 lint-matrix:
+	@python3 tools/shard-matrix.py
 	@a=$$(awk '$$1=="launch" && $$2 ~ /^slow/ {print $$4}' proof/run.sh | sort | tr '\n' ' '); \
 	 b=$$(sed -n 's/.*proof: \[\(.*\)\]/\1/p' .github/workflows/nightly.yml \
 	      | tr -d ' ' | tr ',' '\n' | sort | tr '\n' ' '); \
