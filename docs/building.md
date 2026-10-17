@@ -337,6 +337,14 @@ Other targets:
   installed, which reaches the same verdicts faster;
   `PROVE_SOLVER=builtin` and `PROVE_SOLVER=smt2` pick the other back
   ends.
+- `make test-invariants-not-proof-backed` runs every violation in
+  `test/violations/` but the proof-backed ones. The nightly runs it as
+  four jobs, with `VIOLATION_SHARD=1/4` to `4/4`.
+- `make proof-reach` measures, for each harness, the share of its
+  program locations that `cbmc --cover location` reaches at its bound.
+  The nightly runs it as three jobs, with `REACH_SHARD=1/3` to `3/3`,
+  and its `merge-reach-table` job joins their parts into one table
+  (`python3 proof/coverage.py --merge`).
 - `make timing` runs the constant-time check. Run it on an idle
   machine.
 - `make fuzz` smoke-runs the libFuzzer harnesses.
