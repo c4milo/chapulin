@@ -18,5 +18,7 @@ reason: gcm_open decrypts while it hashes, so a tag that does not match
     }
 --- new
     if (!ok) {
+        (void)pt;
+        (void)n;
         return 0;
     }
