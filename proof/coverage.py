@@ -21,6 +21,18 @@ small to reach the interesting code still reports success. Pass
 --reach to measure that with `cbmc --cover location`; it is slow, so
 it stays off by default.
 
+    --reach              add the reachability table, one cover run per
+                         harness
+    --only HARNESS       with --reach, measure this harness alone
+                         (repeatable)
+    --shard=K/N          with --reach, measure the Kth harness in name
+                         order and every Nth after it, as
+                         test/violations.py --shard takes violations, so
+                         N jobs with K from 1 to N measure each harness
+                         once
+    --merge DIR          join the shards' reports under DIR into one
+                         table; run no cbmc
+
 Writes bin/proof-coverage.md and prints a summary. It also reads
 docs/verification.md back against proof/run.sh and fails where the two
 disagree; see doc_problems().
@@ -202,6 +214,31 @@ def doc_problems(runs, uncovered):
     return out
 
 
+def shard_option(value):
+    """(K, N) from a --shard value, which is K/N with 1 <= K <= N."""
+    match = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        raise argparse.ArgumentTypeError(
+            f"--shard takes K/N with 1 <= K <= N, not {value!r}")
+    return int(match.group(1)), int(match.group(2))
+
+
+def reach_names(runs, only=frozenset(), shard=None):
+    """The harnesses a --reach run measures, in name order: each launched
+    harness whose file exists, or each one that `only` names. shard,
+    (K, N), keeps the Kth of them and every Nth after it. That is what
+    test/violations.py --shard keeps of the violations, so N jobs with K
+    from 1 to N measure each harness once, and harnesses next to each
+    other in name order go to different jobs."""
+    names = [name for name in sorted(runs)
+             if (ROOT / "proof" / f"{name}_harness.c").exists()
+             and (not only or name in only)]
+    if shard is None:
+        return names
+    k, n = shard
+    return names[k - 1::n]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reach", action="store_true",
@@ -211,7 +248,23 @@ def main():
                          "under the cover command; this is how one floor "
                          "gets re-measured by hand. A harness the floors file "
                          "lists as carrying no floor runs when named here.")
+    ap.add_argument("--shard", type=shard_option, metavar="K/N",
+                    help="with --reach, measure the Kth harness in name order "
+                         "and every Nth after it; the nightly's proof-reach "
+                         "jobs run K from 1 to N")
+    ap.add_argument("--merge", metavar="DIR",
+                    help="join the reports that the shards of a --reach run "
+                         "wrote under DIR into one table; runs no cbmc")
     args = ap.parse_args()
+    if args.merge is not None:
+        if args.reach or args.only or args.shard:
+            sys.exit("proof-coverage: --merge reads the shards' reports and "
+                     "measures nothing, so it takes no --reach, --only or "
+                     "--shard")
+        return merge_reports(pathlib.Path(args.merge), launch_lines())
+    if args.shard and not args.reach:
+        sys.exit("proof-coverage: --shard chooses what --reach measures; "
+                 "add --reach")
     # A missing cbmc is a setup error, not a measurement: without this
     # the nightly's spec-coverage job, which installs no cbmc, died in a
     # traceback, and a stub on PATH would read as 0.0% under a floor.
@@ -224,6 +277,12 @@ def main():
         if name not in runs:
             sys.exit(f"proof-coverage: --only {name} matches no launch line "
                      "in proof/run.sh")
+    measured = reach_names(runs, set(args.only), args.shard) if args.reach else []
+    if args.reach and not measured:
+        # An empty selection measures nothing, and a job that measured
+        # nothing must not pass as if it measured its share.
+        sys.exit("proof-reach: the --only and --shard selection holds no "
+                 "harness to measure")
     shared = included_harnesses()
     proven = {}   # library file -> harnesses that compile it and run
     dormant = []  # harness with no launch line and no harness including it
@@ -285,7 +344,8 @@ def main():
 
     reach_dead, reach_fell, reach_stale = [], [], []
     if args.reach:
-        reach_lines, reach_dead, reach_fell, reach_stale = reach_table(runs, set(args.only))
+        reach_lines, reach_dead, reach_fell, reach_stale = reach_table(
+            runs, measured, set(args.only), args.shard)
         lines += reach_lines
 
     REPORT.parent.mkdir(exist_ok=True)
@@ -486,12 +546,53 @@ STALE_UNWINDSET = re.compile(
     re.M)
 
 
-def reach_table(runs, only=frozenset()):
-    """Per harness, the share of its goto locations CBMC can reach at
-    the configured bound. A low number means the bound stops the proof
-    short of the code it claims to cover. A non-empty `only` restricts
-    the run to those harnesses and lets one the floors file lists
-    as carrying no floor run."""
+REACH_TITLE = "Reachability at the configured bounds"
+# The heading of a shard's part. --merge reads the shard and the count
+# back from it, so each part names the harnesses that it measures.
+PART_HEADING = re.compile(
+    r"^### " + REACH_TITLE + r", shard ([0-9]+) of ([0-9]+)$", re.M)
+# One row of the reach table: the harness and the cell beside it.
+REACH_ROW = re.compile(r"^\| `([a-z0-9_]+)` \| (.*) \|$", re.M)
+# A cell of a harness that reached none of its locations.
+DEAD_CELL = re.compile(r"^[0-9.]+% \(0/[1-9][0-9]*\)")
+
+
+def reach_intro(shard=None):
+    """The reach table's heading and the text above its rows. A shard's
+    heading names the shard and the count."""
+    title = REACH_TITLE
+    if shard is not None:
+        title += f", shard {shard[0]} of {shard[1]}"
+    lines = [f"### {title}", "",
+             "`cbmc --cover location`: the share of program locations the",
+             "harness can reach. A low number means the unwind bound stops",
+             "short of the code the harness claims to prove.", ""]
+    if shard is not None:
+        k, n = shard
+        lines += [f"This part holds shard {k} of {n} (`--shard={k}/{n}`): the",
+                  f"harnesses at positions {k}, {k + n}, {k + 2 * n} and so on "
+                  "in name order.", ""]
+    return lines
+
+
+TABLE_HEAD = ["| harness | locations reached |", "| --- | --- |"]
+
+
+def dead_line(dead):
+    """The line under the table that names the harnesses that reach
+    nothing, or no line when there are none."""
+    if not dead:
+        return []
+    return ["**Reaches nothing at its bound:** " +
+            ", ".join(f"`{n}`" for n in dead) + ".", ""]
+
+
+def reach_table(runs, names, only=frozenset(), shard=None):
+    """Per harness in names, the share of its goto locations CBMC can
+    reach at the configured bound. A low number means the bound stops
+    the proof short of the code it claims to cover. A non-empty `only`
+    lets a harness the floors file lists as carrying no floor run.
+    shard, (K, N), names the part of the harnesses that names holds."""
     dead = []
     fell = []
     stale = []
@@ -501,15 +602,8 @@ def reach_table(runs, only=frozenset()):
     shared_defines = launch_defines()
     cap = reach_memory_cap()
     limit = functools.partial(cap_address_space, cap) if cap else None
-    out = ["### Reachability at the configured bounds", "",
-           "`cbmc --cover location`: the share of program locations the",
-           "harness can reach. A low number means the unwind bound stops",
-           "short of the code the harness claims to prove.", "",
-           "| harness | locations reached |", "| --- | --- |"]
-    for name in sorted(runs):
-        harness = ROOT / "proof" / f"{name}_harness.c"
-        if not harness.exists() or (only and name not in only):
-            continue
+    out = reach_intro(shard) + TABLE_HEAD
+    for name in names:
         if name in not_gated and name not in only:
             out.append(f"| `{name}` | no floor: cover does not converge "
                        "(proof/reach-floors.txt) |")
@@ -575,10 +669,100 @@ def reach_table(runs, only=frozenset()):
         if reached == 0 and total > 0:
             dead.append(name)
     out.append("")
-    if dead:
-        out += ["**Reaches nothing at its bound:** " +
-                ", ".join(f"`{n}`" for n in dead) + ".", ""]
+    out += dead_line(dead)
     return out, dead, fell, stale
+
+
+def read_parts(directory):
+    """Shard -> (count, head, rows, path) for each report under directory
+    that a shard of a --reach run wrote. head is the report above its
+    reach table, and rows maps each harness to its cell. A file that is
+    no shard's part, or a second part of one shard, ends the merge."""
+    parts = {}
+    paths = sorted(directory.rglob(REPORT.name)) if directory.is_dir() else []
+    for path in paths:
+        if path.resolve() == REPORT.resolve():
+            continue  # the merge's own output, from an earlier merge
+        text = path.read_text()
+        m = PART_HEADING.search(text)
+        if not m:
+            sys.exit(f"proof-reach-merge: {path} holds no shard's part of "
+                     "the reach table")
+        k, count = int(m.group(1)), int(m.group(2))
+        if not 1 <= k <= count:
+            sys.exit(f"proof-reach-merge: {path} names shard {k} of {count}")
+        if k in parts:
+            sys.exit(f"proof-reach-merge: {path} and {parts[k][3]} both hold "
+                     f"shard {k}")
+        parts[k] = (count, text[:m.start()], dict(REACH_ROW.findall(text, m.end())), path)
+    return parts
+
+
+def shard_rows(runs, shard, part, rows, status, problems):
+    """Add one shard's rows to rows, its line to status, and what is wrong
+    with its part to problems. part maps each harness to its cell, or is
+    None when the shard wrote no report."""
+    k, count = shard
+    names = reach_names(runs, shard=shard)
+    if part is None:
+        status.append(f"- shard {k} of {count}: **did not report**, so its "
+                      f"{len(names)} harnesses have no number")
+        problems.append(f"shard {k} of {count} did not report; its "
+                        f"{len(names)} harnesses have no row")
+        for name in names:
+            rows[name] = f"**no report**: shard {k} of {count} did not report"
+        return
+    for name in sorted(set(part) - set(names)):
+        problems.append(f"shard {k}'s part holds {name}, which shard {k} "
+                        f"of {count} does not measure in this checkout")
+    for name in names:
+        if name not in part:
+            problems.append(f"shard {k}'s part has no row for {name}")
+        rows[name] = part.get(name, f"**no row** in shard {k}'s part")
+    status.append(f"- shard {k} of {count}: {len(names)} harnesses")
+
+
+def merge_reports(directory, runs):
+    """Join the reports that the shards of a --reach run wrote under
+    directory into one report at REPORT, with one reach table. A shard
+    whose job stopped before it wrote its report, as a job that runs out
+    of time does, gets a row for each of its harnesses that says so. The
+    merge then returns 1, because the table is incomplete.
+
+    The parts come from one commit, so the text above each reach table
+    is the same in all of them, and the merge keeps the first. Each
+    shard's harnesses come from this checkout's proof/run.sh, so a part
+    that holds another set of harnesses fails the merge too."""
+    parts = read_parts(directory)
+    REPORT.parent.mkdir(exist_ok=True)
+    if not parts:
+        REPORT.write_text("\n".join(
+            [f"### {REACH_TITLE}", "",
+             f"No shard wrote its part of the table under `{directory}`."]) + "\n")
+        print(f"proof-reach-merge: no shard reported under {directory}")
+        return 1
+    counts = sorted({count for count, _, _, _ in parts.values()})
+    if len(counts) != 1:
+        sys.exit("proof-reach-merge: the parts name different shard counts: "
+                 + ", ".join(map(str, counts)))
+    count = counts[0]
+    rows, status, problems = {}, [], []
+    for k in range(1, count + 1):
+        part = parts[k][2] if k in parts else None
+        shard_rows(runs, (k, count), part, rows, status, problems)
+    dead = [name for name, cell in sorted(rows.items()) if DEAD_CELL.match(cell)]
+    lines = parts[min(parts)][1].rstrip("\n").split("\n") + [""]
+    lines += reach_intro()
+    lines += [f"This table joins the parts of {count} shards "
+              "(`proof/coverage.py --merge`):", ""] + status + [""]
+    lines += TABLE_HEAD + [f"| `{name}` | {cell} |" for name, cell in sorted(rows.items())]
+    lines += [""] + dead_line(dead)
+    REPORT.write_text("\n".join(lines) + "\n")
+    print(f"proof-reach-merge: {len(parts)} of {count} shards reported, "
+          f"{len(rows)} rows -> {REPORT.relative_to(ROOT)}")
+    for problem in problems:
+        print(f"proof-reach-merge: {problem}")
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

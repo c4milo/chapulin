@@ -24,9 +24,31 @@ jobs:
   # names. A passing verdict cannot answer that, and the tree has shipped
   # proofs that passed while proving less than they claimed (7206f4c,
   # 93e9504). Slow, so it runs here rather than in check.
+  #
+  # As one job it took 255 minutes of run 37448350680 on 2026-10-06. From
+  # 2026-10-07 it ran out of its 300 minutes each night. On run
+  # 39014749963, five harnesses added after 2026-10-06 each ran to the
+  # 1800 s budget, and the limit stopped the job in the sixth. So it runs
+  # as three jobs, each with every third harness in name order
+  # (REACH_SHARD, proof/coverage.py --shard). Each job fails on its own
+  # harnesses alone.
+  #
+  # The estimate for each job takes a harness's time from the last log
+  # that measured it: run 39014749963, else run 37448350680. It counts
+  # 1800 s for each of those six harnesses, and 1800 s for each of the
+  # nine harnesses that neither log reached. That gives 294, 223 and 182
+  # minutes for parts 1, 2 and 3. If the nine take seconds, part 1 takes
+  # 174 minutes. The limit sits above the worst case, and below the 360
+  # minutes that GitHub gives a job on a hosted runner.
   proof-reach:
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 330
+    strategy:
+      # Each part runs to its own verdict, and a part that fails costs
+      # the other two nothing.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -35,7 +57,44 @@ jobs:
         with:
           version: ${{ env.CBMC_VERSION }}
           sha256: ${{ env.CBMC_DEB_SHA256 }}
-      - run: make proof-reach
+      - run: make proof-reach REACH_SHARD="$SHARD/3"
+        env:
+          SHARD: ${{ matrix.shard }}
+      # proof/coverage.py writes bin/proof-coverage.md when the last cover
+      # run ends, so a part that the limit stops renders and uploads
+      # nothing, and merge-reach-table names it.
+      - name: Render this part of the reachability table on the run page
+        if: always()
+        run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Upload this part of the reachability table
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proof-reach-part-${{ matrix.shard }}
+          path: bin/proof-coverage.md
+          if-no-files-found: ignore
+
+  # One reachability table from the three parts of proof-reach, on this
+  # job's run page. A part that did not report gets a row for each of its
+  # harnesses that says so, and the job then fails, because the table is
+  # incomplete (proof/coverage.py --merge).
+  merge-reach-table:
+    needs: proof-reach
+    # Also after a part fails or runs out of time: those are the nights
+    # when the table must say which part is missing.
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the parts of the reachability table
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: proof-reach-part-*
+          path: bin/proof-reach-parts
+      - name: Merge the parts into one table
+        if: always()
+        run: python3 proof/coverage.py --merge bin/proof-reach-parts
       - name: Render the reachability table on the run page
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
@@ -180,13 +239,31 @@ jobs:
   # (https://github.com/c4milo/chapulin/issues/144).
   test-invariants:
     runs-on: ubuntu-24.04
-    # One violation at a time, the set of 313 took 77 minutes of run
-    # 36253195895, 37 of them in the two handshake_sequence_test mutants.
-    # The target now runs one violation per core (test/violations.py
-    # --jobs) and hands out the slow tier first, so those two run beside
-    # the rest. No run has timed that yet, so the limit stays where the
-    # serial figures put it.
+    # On two workers (test/violations.py --jobs, half the runner's cores)
+    # the whole class took 119 minutes of run 37605840873 for 818
+    # violations. From 2026-10-08 it reached its 150-minute limit each
+    # night, and run 39014749963 checked 368 of 1068. So the class runs as
+    # four jobs, each with every fourth violation in name order
+    # (VIOLATION_SHARD, test/violations.py --shard). Each job hands out its
+    # slow tier first, as the whole class did.
+    #
+    # The estimate for each job replays its order on two workers. A
+    # violation takes its longest time on runs 38704265421, 38871556573 and
+    # 39014749963, or on the mutants jobs of check run 39012751222 for the
+    # fast tier. A violation that none of those runs reached takes 1.5
+    # times its time on run 37605840873, or else the longest time of its
+    # catch target. That gives 60, 86, 77 and 67 minutes for parts 1 to 4,
+    # and 55, 68, 59 and 60 at the median time. The setup adds 9 minutes
+    # before the first violation. So the slowest part takes 95 minutes, and
+    # the limit is about 1.6 times that, for a slow runner and for the
+    # violations that the class gains.
     timeout-minutes: 150
+    strategy:
+      # Each part runs to its own verdict, and a part that fails costs
+      # the other three nothing.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -290,17 +367,22 @@ jobs:
       - name: Break every invariant but the proof-backed ones and see what objects
         run: |
           set -o pipefail
-          SDE64="$HOME/sde/sde64" make test-invariants-not-proof-backed 2>&1 | tee /tmp/invariants.out
+          SDE64="$HOME/sde/sde64" make test-invariants-not-proof-backed \
+            VIOLATION_SHARD="$SHARD/4" 2>&1 | tee /tmp/invariants.out
+        env:
+          SHARD: ${{ matrix.shard }}
       - name: Put the tally on the run page
         if: always()
         run: |
           {
-            echo '### test-invariants'
+            echo "### test-invariants, shard $SHARD of 4"
             echo
             echo '```'
             cat /tmp/invariants.out 2>/dev/null || echo '(the run produced no output)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          SHARD: ${{ matrix.shard }}
 
   # The proof-backed violations: each names proof/prove-one.sh as its
   # catch target, which runs one x25519 ladder harness through
@@ -630,7 +712,7 @@ jobs:
   # lint-nightly-report (tools/nightly-report.py) holds the list equal
   # to the job set.
   report:
-    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki, rsa-ifma-sde]
+    needs: [proof-reach, merge-reach-table, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki, rsa-ifma-sde]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

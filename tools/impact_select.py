@@ -818,6 +818,11 @@ def select_lints(out, changed, csources, lib):
     if any(p.startswith("test/violations/") for p in changed):
         out.add("lint", "make lint-violation-builds",
                 "a script target must name the binaries it runs")
+    # tools/shard-matrix.py splits the violations through test/violations.py
+    # --shard, and no recipe names that file for lint-matrix.
+    if "test/violations.py" in changed:
+        out.add("lint", "make lint-matrix",
+                "each sharded job's parts must split the violations")
     if any(p.startswith("docs/") or p in ("README.md", "SECURITY.md",
                                           "CONTRIBUTING.md") for p in changed):
         out.add("lint", "make lint-docs", "the README must name every document")
