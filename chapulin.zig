@@ -38,6 +38,8 @@ const has_client_suite_order = @hasField(c.ch_cfg, "cipher_suites");
 const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 // A host object: each session states what the caller found about its CPU in ch_cfg (cpu_cfg.h).
 const has_cpu = @hasField(c.ch_cfg, "cpu");
+// TRUST=webpki or a server role: the session reads the caller's clock (cfg.h).
+const has_clock = @hasField(c.ch_cfg, "clock_io");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's Status names it. Each call's
 /// error set is the part of this one its C call returns. CH_RECORD_AGAIN and CH_ECLOSED are no
@@ -121,8 +123,8 @@ pub const Trust = if (has_webpki) union(enum) {
         anchors: []const c.ch_trust_anchor,
         /// The name the leaf must carry, also sent as server_name: hostname, hostname_len.
         server_name: []const u8,
-        /// Seconds since 1970-01-01T00:00:00Z: now_seconds.
-        now_seconds: u64,
+        /// The caller's clock, which each init calls once: now_seconds, clock_io.
+        clock: Clock,
         /// Pins the verified path must also match: spki_pins, spki_pin_count.
         pins: []const SpkiPin = &.{},
     },
@@ -185,7 +187,7 @@ const ClientValues = struct {
                 cfg.anchor_count = web.anchors.len;
                 cfg.hostname = web.server_name.ptr;
                 cfg.hostname_len = web.server_name.len;
-                cfg.now_seconds = web.now_seconds;
+                setClock(&cfg, web.clock);
                 setPins(&cfg, web.pins);
             },
             .pins => |pinned| {
@@ -220,6 +222,18 @@ const ClientValues = struct {
         return cfg;
     }
 };
+
+/// ch_cfg.now_seconds and clock_io (cfg.h): a function that answers the seconds since
+/// 1970-01-01T00:00:00Z, and its context. Each init calls it once for the whole connection.
+pub const Clock = if (has_clock) struct {
+    now_seconds: *const fn (clock_io: ?*anyopaque) callconv(.c) u64,
+    clock_io: ?*anyopaque = null,
+} else @compileError("Clock needs TRUST=webpki or a server role");
+
+fn setClock(cfg: *c.ch_cfg, clock: Clock) void {
+    cfg.now_seconds = clock.now_seconds;
+    cfg.clock_io = clock.clock_io;
+}
 
 fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
     cfg.spki_pins = if (pins.len == 0) null else @ptrCast(pins.ptr);
@@ -267,8 +281,8 @@ const ServerValues = struct {
     cookie_key: *const [c.CH_SRV_COOKIE_KEY_LEN]u8,
     /// The key tickets are sealed under, null for no tickets: srv.ticket_key.
     ticket_key: ?*const [c.CH_SRV_TICKET_KEY_LEN]u8 = null,
-    /// The caller's clock for this connection, 0 for none: srv.now_seconds.
-    now_seconds: u64,
+    /// The caller's clock, which each init calls once, null for no tickets: now_seconds.
+    clock: ?Clock = null,
     /// Protocols to select from, in this server's order: alpn_protocols, alpn_count.
     alpn: []const c.ch_alpn_protocol = &.{},
     /// Refuse a ClientHello with no server_name: srv.require_server_name.
@@ -311,7 +325,7 @@ const ServerValues = struct {
         };
         cfg.srv.cookie_key = values.cookie_key;
         cfg.srv.ticket_key = if (values.ticket_key) |key| key else null;
-        cfg.srv.now_seconds = values.now_seconds;
+        if (values.clock) |clock| setClock(&cfg, clock);
         cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
         cfg.alpn_count = values.alpn.len;
         cfg.srv.require_server_name = @intFromBool(values.require_server_name);

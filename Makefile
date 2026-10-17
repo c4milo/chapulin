@@ -632,7 +632,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
+TESTH := test/session_report_tests.h test/session_ticket_tests.h test/test_ticket.h test/test_clock.h test/pem_fixtures.h test/pem_files_der.h test/pem_files_key_tests.h test/pem_files_chain_tests.h \
          test/pem_files_bundle_tests.h test/pem_files_parameters_tests.h \
          test/diff_pem_files_calls.h test/timing_pem.h test/diff_webpki_chain_anchors.h \
          test/test_random.h test/test_widemul.h test/test_aead.h test/test_hash.h test/x86_kernels_cpu.h \

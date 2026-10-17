@@ -378,13 +378,25 @@ typedef struct {
     uint32_t cpu; // what the caller states about this CPU, a host object alone (cpu_cfg.h)
 #endif
 
+#if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
+    // The caller's clock, in the builds that read one: a TRUST=webpki client and a server
+    // role. Each init call calls now_seconds once, with clock_io, and judges the whole
+    // connection at the instant it answers, in seconds since 1970-01-01T00:00:00Z: Unix
+    // time. chapulin reads no clock of its own. A webpki client checks each certificate's
+    // dates at that instant, and a server dates the tickets it issues and judges the tickets
+    // it is offered by it, so every server that shares a ticket key needs the same clock. A
+    // NULL now_seconds is no clock: a webpki client with anchors refuses it with CH_EINVAL,
+    // and a server issues no ticket and accepts none, as it does for a clock that answers 0.
+    uint64_t (*now_seconds)(void *clock_io);
+    void *clock_io;
+#endif
+
 #ifdef CH_TRUST_WEBPKI
     // Web PKI trust, and a SUITE=aesgcm client's suite order: webpki_cfg.h states the rules.
     const ch_trust_anchor *anchors;
     size_t anchor_count;
     const uint8_t *hostname;
     size_t hostname_len;
-    uint64_t now_seconds;
     const uint8_t *spki_pins;
     size_t spki_pin_count;
 #ifdef CH_SUITE_AES_GCM
@@ -460,5 +472,13 @@ typedef struct {
     ch_srv_cfg srv; // this endpoint's identities, cookie key and SNI buffer (srv_cfg.h)
 #endif
 } ch_cfg;
+
+#if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
+// The instant cfg's clock answers, and 0 when cfg sets no clock. Each init call calls it
+// once and keeps the answer in ch_tls.now_seconds, which every later step reads.
+static inline uint64_t cfg_clock_read(const ch_cfg *cfg) {
+    return cfg->now_seconds != NULL ? cfg->now_seconds(cfg->clock_io) : 0;
+}
+#endif
 
 #endif

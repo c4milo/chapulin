@@ -13,6 +13,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
+#include "test_clock.h"
 #include "test_random.h"
 #include "tls.h"
 #ifdef CH_TRUST_WEBPKI

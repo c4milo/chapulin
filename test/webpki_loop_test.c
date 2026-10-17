@@ -54,6 +54,7 @@
 #include "tls.h"
 #include "webpki_ticket.h"
 
+#include "test_clock.h"
 #include "test_cpu.h"
 #include "test_ticket.h"
 
@@ -160,8 +161,7 @@ static struct {
     size_t count;
 } kept;
 
-// The ticket a client presents, which ch_cfg.ticket points at. present_with
-// writes kept into it with binding, five seconds after it arrived.
+// The ticket a client presents. present_with writes kept into it, aged five seconds.
 static ch_saved_ticket presented;
 static void present_with(ch_cfg *cfg, const uint8_t binding[SHA256_LEN]) {
     test_ticket_fill(&presented, kept.psk, kept.psk_len, kept.identity, kept.identity_len,
@@ -195,7 +195,7 @@ static void server_config(ch_cfg *cfg, const uint8_t *key) {
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->srv.ticket_key = key;
-    cfg->srv.now_seconds = LOOP_NOW;
+    test_clock_set(cfg, test_server_seconds(), LOOP_NOW);
     CHECK(r2_identity(&cfg->srv.ecdsa_p256));
 #ifdef CH_CPU_RUNTIME
     cfg->cpu = server_cpu;

@@ -2,7 +2,6 @@
 // valid_cfg. Included by that file only, after both exist.
 #ifndef CH_WEBPKI_SESSION_CASES_H
 #define CH_WEBPKI_SESSION_CASES_H
-static ch_saved_ticket empty_ticket; // a ticket with no identity, PSK or lifetime
 
 // The anchor rule at its boundaries: 1 entry or more, and every field of
 // every entry set. No cap bounds the count, so TEST_ANCHORS entries pass.
@@ -41,16 +40,17 @@ static void test_webpki_cfg_anchors(void) {
     }
 }
 
-// The clock rule at its boundary: now_seconds 0 is an unset clock and is
-// refused; 1, the first second after it, passes the config check and
-// the handshake goes on to send its hello.
+// The clock rule at its boundary: a NULL now_seconds and a clock that answers 0 are unset
+// clocks, and each is refused; 1 passes, and the handshake sends its hello.
 static void test_webpki_cfg_clock(void) {
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
-    cfg.now_seconds = 0;
+    cfg.now_seconds = NULL;
+    CHECK(refused(&cfg));
+    test_clock_set(&cfg, test_client_seconds(), 0);
     CHECK(refused(&cfg));
     cfg = valid_cfg(&s);
-    cfg.now_seconds = 1;
+    test_clock_set(&cfg, test_client_seconds(), 1);
     CHECK(sends_client_hello(&cfg));
     CHECK(s.hello_len > 0);
 }

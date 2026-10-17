@@ -212,7 +212,7 @@ static void fill_session(void) {
     h.t = &t;
     fill_nondet(ticket_key, sizeof ticket_key);
     t.cfg.srv.ticket_key = nondet_int() ? ticket_key : NULL;
-    t.cfg.srv.now_seconds = nondet_u64();
+    t.now_seconds = nondet_u64();
     fill_nondet(names[0], sizeof names[0]);
     fill_nondet(names[1], sizeof names[1]);
     for (size_t i = 0; i < 2; i++) {
@@ -281,7 +281,7 @@ static void prove_select(void) {
                          "no authentication path is one of the two alerts");
     }
     if (sel.psk_selected) {
-        __CPROVER_assert(t.cfg.srv.ticket_key != NULL && t.cfg.srv.now_seconds != 0,
+        __CPROVER_assert(t.cfg.srv.ticket_key != NULL && t.now_seconds != 0,
                          "a ticket is selected only with a key and a clock");
         __CPROVER_assert((ch.psk_modes & SRV_PSK_DHE_KE) != 0, "only under psk_dhe_ke");
     }
@@ -292,8 +292,8 @@ static void prove_issue(void) {
     // srv_select_auth admitted a resumed handshake's ticket inside its
     // lifetime, which is the contract srv_resume.c asserts.
     if (t.psk_selected) {
-        __CPROVER_assume(t.cfg.srv.now_seconds >= h.ticket_auth_seconds &&
-                         t.cfg.srv.now_seconds - h.ticket_auth_seconds <= SRV_TICKET_LIFETIME);
+        __CPROVER_assume(t.now_seconds >= h.ticket_auth_seconds &&
+                         t.now_seconds - h.ticket_auth_seconds <= SRV_TICKET_LIFETIME);
     }
     sends = 0;
 
@@ -302,7 +302,7 @@ static void prove_issue(void) {
     __CPROVER_assert(rc == CH_OK || rc == CH_EIO || rc == CH_ECAP,
                      "issue answers one of its three codes");
     __CPROVER_assert(sends <= 1, "one ticket per connection");
-    if (t.cfg.srv.ticket_key == NULL || t.cfg.srv.now_seconds == 0) {
+    if (t.cfg.srv.ticket_key == NULL || t.now_seconds == 0) {
         __CPROVER_assert(sends == 0 && rc == CH_OK, "no key or no clock issues nothing");
     }
     if (rc == CH_ECAP) {

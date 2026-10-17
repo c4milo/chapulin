@@ -27,6 +27,7 @@
 #include "cfg.h"
 #include "lib_pair.h"
 #include "session.h"
+#include "test_clock.h"
 // A QUIC object has no call tls.h declares, and build.h brings in quic.h,
 // so this file reads tls.h only for the TCP transports, as srv.h and
 // chapulin.hpp do (INV-27).
@@ -232,7 +233,7 @@ static void client_config(ch_cfg *cfg) {
     cfg->anchor_count = 1;
     cfg->hostname = hostname;
     cfg->hostname_len = sizeof hostname;
-    cfg->now_seconds = 1789000000U;
+    test_clock_set(cfg, test_client_seconds(), 1789000000U);
 #else
     cfg->psk = psk;
     cfg->psk_len = sizeof psk;

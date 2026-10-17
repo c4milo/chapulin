@@ -1,0 +1,12 @@
+invariant: INV-14
+file: srv_quic.c
+catches: quic_loop_test
+reason: ch_srv_quic_init reads no instant from the caller's clock, so the
+  session's instant stays 0, and the QUIC server issues no ticket and
+  accepts none. A full handshake still completes, so only resumption
+  notices: the QUIC loop resumes the ticket the server issued, and
+  objects.
+
+--- old
+    q->t.now_seconds = cfg_clock_read(cfg); // the instant every ticket rule reads
+--- new

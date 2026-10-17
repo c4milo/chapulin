@@ -18,8 +18,8 @@
  *      connect to.
  *   2. The hostname and the clock. ch_cfg.hostname is the ASCII name
  *      the leaf must carry, sent as the ClientHello's server_name, and
- *      ch_cfg.now_seconds is your clock, compared exactly with no skew
- *      tolerance.
+ *      ch_cfg.now_seconds is your clock, a function ch_connect calls
+ *      once, compared exactly with no skew tolerance.
  *   3. CH_MIN_RXBUF is 12,338 bytes. The build derives it from the
  *      largest chain it admits, and this file sizes its buffer from the
  *      constant.
@@ -244,6 +244,14 @@ static int dial(const char *host, const char *port) {
 
 // --- The session ---------------------------------------------------------
 
+// The clock (ch_cfg.now_seconds): Unix time, which each ch_connect reads
+// once. A clock read at each connection never goes stale, as a value kept
+// in a reused config would.
+static uint64_t wall_clock(void *clock_io) {
+    (void)clock_io;
+    return (uint64_t)time(NULL);
+}
+
 // Tickets arrive bound to this hostname and these anchors. A caller that
 // resumes keeps the ticket with ch_ticket_save, and presents the copy in
 // ch_cfg.ticket, with its age, on its next ch_connect under the same
@@ -325,10 +333,10 @@ static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anch
     // any other shape before it sends a byte.
     cfg->hostname = (const uint8_t *)server_name;
     cfg->hostname_len = strlen(server_name);
-    // Your clock, compared exactly against every certificate's validity.
-    // 0 is refused as an unset clock, so a host whose clock is not set
-    // fails here rather than mid-handshake.
-    cfg->now_seconds = (uint64_t)time(NULL);
+    // Your clock, which ch_connect calls once and compares exactly
+    // against every certificate's validity. A NULL clock is refused, so a
+    // config that never set one fails here rather than mid-handshake.
+    cfg->now_seconds = wall_clock;
     cfg->buf = rxbuf;
     cfg->buf_len = rxbuf_len;
     cfg->send = io_send;

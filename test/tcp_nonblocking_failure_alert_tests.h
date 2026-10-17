@@ -284,7 +284,7 @@ static void server_sink_fails_ticket(ch_record *client, ch_record *server, const
                                      const ch_cfg *scfg) {
     ch_cfg tickets = *scfg;
     tickets.srv.ticket_key = failure_ticket_key;
-    tickets.srv.now_seconds = 1700000000U;
+    test_clock_set(&tickets, test_server_seconds(), 1700000000U);
     start_pair(client, server, ccfg, &tickets);
     CHECK(client_to_server(client, server));
     CHECK(server_to_client(client));

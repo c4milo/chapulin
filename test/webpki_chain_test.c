@@ -180,7 +180,6 @@ static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch
     cfg->anchor_count = row->anchor_count;
     cfg->hostname = (const uint8_t *)row->hostname;
     cfg->hostname_len = strlen(row->hostname);
-    cfg->now_seconds = row->now_seconds;
 }
 
 // One walk over a list, under a row's configuration. Returns the return
@@ -193,7 +192,7 @@ static int walk(const webpki_corpus_chain *row, const uint8_t *list, size_t list
     row_cfg(row, anchors, &cfg);
     memset(leaf, 0, sizeof *leaf);
     *alert = ALERT_BAD_CERTIFICATE;
-    return webpki_verify_chain(list, list_len, &cfg, leaf, alert);
+    return webpki_verify_chain(list, list_len, &cfg, row->now_seconds, leaf, alert);
 }
 
 // One corpus row: the walk over its own message must reach the verdict

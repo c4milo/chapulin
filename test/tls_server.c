@@ -12,7 +12,7 @@
 // priv-hex is the 32-byte P-256 private scalar and pub-hex the 64-byte
 // X||Y point, both as hex. The ticket key and the cookie key are drawn
 // fresh at start, so tickets live as long as this process, and the clock
-// is time(), which is what ch_srv_cfg.now_seconds asks for.
+// is time(), which is what ch_cfg.now_seconds asks for.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -33,6 +33,12 @@
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
+}
+
+// The clock every connection's init call reads: Unix time.
+static uint64_t wall_clock(void *clock_io) {
+    (void)clock_io;
+    return (uint64_t)time(NULL);
 }
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
@@ -193,7 +199,7 @@ int main(int argc, char **argv) {
         cfg.srv.ecdsa_p256.pub_len = sizeof pub;
         cfg.srv.cookie_key = cookie_key;
         cfg.srv.ticket_key = ticket_key;
-        cfg.srv.now_seconds = (uint64_t)time(NULL);
+        cfg.now_seconds = wall_clock;
 #ifdef CH_CPU_RUNTIME
         // bin/tlsserver_aes, a host object, runs on a CPU with the AES
         // instructions, and e2e drives its AES-GCM suites (cpu_cfg.h).

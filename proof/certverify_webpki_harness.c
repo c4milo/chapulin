@@ -125,10 +125,11 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 }
 
 int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
-                        webpki_leaf_info *leaf, uint8_t *alert) {
+                        uint64_t now_seconds, webpki_leaf_info *leaf, uint8_t *alert) {
     (void)list;
     (void)list_len;
     (void)cfg;
+    (void)now_seconds;
     (void)leaf;
     (void)alert;
     return CH_EAUTH; // main drives check_certificate_verify, not the walk

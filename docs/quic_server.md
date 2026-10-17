@@ -353,8 +353,8 @@ refuses 0-RTT. `docs/server.md`, "Resumption", states the server's rules and
 endpoint does with them.
 
 **colibri's server.** Set `cfg.srv.ticket_key` to 32 bytes of key held for
-the deployment, and write the clock into `cfg.srv.now_seconds` before each
-`ch_srv_quic_init`. The call to `ch_srv_quic_crypto_in` that delivers the
+the deployment, and point `cfg.now_seconds` at a clock, which each
+`ch_srv_quic_init` calls once. The call to `ch_srv_quic_crypto_in` that delivers the
 client Finished then pushes one NewSessionTicket through
 `cfg.srv.on_crypto_out` at `CH_LEVEL_APPLICATION`, after the Handshake-level
 bytes of that call, and colibri sends it in CRYPTO frames in 1-RTT packets

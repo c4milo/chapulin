@@ -19,8 +19,9 @@
 // UB, which the automatic checks discharge. And the verdict: CH_OK or
 // CH_EINVAL, and CH_OK only for a configuration that holds 0 to
 // CH_SPKI_PIN_MAX pins with a list exactly when it holds a count; either
-// pins alone, with no anchor, no clock read and a hostname unset or of
-// the checked shape, or 1 anchor or more with a hostname and a clock;
+// pins alone, with no anchor, no clock needed and a hostname unset or of
+// the checked shape, or 1 anchor or more with a hostname and a clock
+// whose answer, the session's instant, is not 0;
 // no pin slot; PSK fields webpki_resumption_ok
 // took; with resumption set, a ticket age no older than the ticket's
 // lifetime, and no older than CH_TICKET_LIFETIME_MAX seconds whatever the
@@ -193,10 +194,16 @@ static void havoc_alpn(void) {
     cfg.alpn_count = nondet_size_t();
 }
 
+// The caller's clock, which answers any instant.
+static uint64_t harness_clock(void *clock_io) {
+    (void)clock_io;
+    return nondet_u64();
+}
+
 static void havoc_trust(void) {
     cfg.hostname = maybe(hostname);
     cfg.hostname_len = field_len(cfg.hostname, sizeof hostname);
-    cfg.now_seconds = (uint64_t)nondet_i64();
+    cfg.now_seconds = (nondet_u8() & 1) ? harness_clock : NULL;
     havoc_anchors();
     cfg.spki_pins = maybe((const uint8_t *)pins);
     cfg.spki_pin_count = nondet_size_t();
@@ -237,8 +244,8 @@ static int trust_holds(void) {
         cfg.hostname != NULL && cfg.hostname_len >= 1 && cfg.hostname_len <= CH_HOSTNAME_MAX;
     int pins_alone = cfg.spki_pin_count > 0 && cfg.anchors == NULL && cfg.anchor_count == 0 &&
                      ((cfg.hostname == NULL && cfg.hostname_len == 0) || hostname_set);
-    int anchored =
-        cfg.anchors != NULL && cfg.anchor_count >= 1 && hostname_set && cfg.now_seconds != 0;
+    int anchored = cfg.anchors != NULL && cfg.anchor_count >= 1 && hostname_set &&
+                   cfg.now_seconds != NULL && t.now_seconds != 0;
     int slots_unset = cfg.server_pubkey == NULL && cfg.server_pubkey_len == 0 &&
                       cfg.server_pubkey2 == NULL && cfg.server_pubkey2_len == 0;
     return pins_ok && (pins_alone || anchored) && slots_unset && resumption_called &&

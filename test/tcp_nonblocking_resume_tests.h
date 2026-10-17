@@ -102,7 +102,7 @@ static void test_resumption(void) {
     // from a server that sent its Certificate and CertificateVerify.
     server_config(&scfg);
     scfg.srv.ticket_key = loop_ticket_key;
-    scfg.srv.now_seconds = LOOP_NOW;
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW);
     client_config(&ccfg);
     io_calls = 0;
     tickets_kept = 0;
@@ -123,7 +123,7 @@ static void test_resumption(void) {
     // exporter secret. The server issues a fresh ticket whose lifetime ends
     // where the first one's does.
     resume_config(&ccfg, &first);
-    scfg.srv.now_seconds = LOOP_NOW + 5;
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 5);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
     CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
     CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
@@ -147,12 +147,12 @@ static void test_resumption(void) {
     // The lifetime's exact boundary on the server's clock: the first
     // ticket resumes at the last valid second and not one second later.
     resume_config(&ccfg, &first);
-    scfg.srv.now_seconds = (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME;
+    test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
     CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
     // At the end of its lifetime the chain has nothing left to give.
     CHECK(to_client.len == 0 && records_pushed == 3);
-    scfg.srv.now_seconds = (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME + 1;
+    test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME + 1);
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
 
     // The same boundary on the client's side, which judges the ticket's
@@ -161,7 +161,7 @@ static void test_resumption(void) {
     // is refused by ch_record_init, which leaves nothing to collect.
     resume_config(&ccfg, &first);
     ccfg.ticket_age_ms = (uint64_t)first.lifetime_s * 1000U;
-    scfg.srv.now_seconds = (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME;
+    test_clock_set(&scfg, test_server_seconds(), (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
     CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
     ccfg.ticket_age_ms += 1;
@@ -174,11 +174,11 @@ static void test_resumption(void) {
     resume_config(&ccfg, &first);
 
     // A ticket issued after the server's clock reads is refused.
-    scfg.srv.now_seconds = LOOP_NOW - 1;
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW - 1);
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
 
     // A server holding another ticket key cannot open the ticket.
-    scfg.srv.now_seconds = LOOP_NOW + 5;
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 5);
     scfg.srv.ticket_key = other_loop_ticket_key;
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
     scfg.srv.ticket_key = loop_ticket_key;
@@ -200,7 +200,7 @@ static void test_resumption(void) {
     // No clock: the full handshake completes and no ticket follows it, and
     // the ticket a client presents is not judged.
     client_config(&ccfg);
-    scfg.srv.now_seconds = 0;
+    test_clock_set(&scfg, test_server_seconds(), 0);
     (void)run_handshake(&client, &server, &ccfg, &scfg);
     CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
     CHECK(records_pushed == 5 && to_client.len == 0);

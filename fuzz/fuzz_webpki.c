@@ -84,9 +84,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     cfg.anchor_count = sizeof anchors / sizeof anchors[0];
     cfg.hostname = hostname;
     cfg.hostname_len = sizeof hostname - 1;
-    cfg.now_seconds = FUZZ_NOW_SECONDS;
     // The caller's seed, per the webpki.h contract.
     uint8_t alert = ALERT_BAD_CERTIFICATE;
-    (void)webpki_verify_chain(data, size, &cfg, &leaf, &alert);
+    (void)webpki_verify_chain(data, size, &cfg, FUZZ_NOW_SECONDS, &leaf, &alert);
     return 0;
 }

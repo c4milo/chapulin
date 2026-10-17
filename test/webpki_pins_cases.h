@@ -26,7 +26,7 @@ static ch_cfg pins_alone_cfg(mock_server *s) {
     cfg.anchor_count = 0;
     cfg.hostname = NULL;
     cfg.hostname_len = 0;
-    cfg.now_seconds = 0;
+    cfg.now_seconds = NULL;
     cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = 1;
     return cfg;
@@ -98,9 +98,9 @@ static void test_webpki_pins_with_anchors(void) {
     cfg = valid_cfg(&s);
     cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = 1;
-    cfg.now_seconds = 0;
+    cfg.now_seconds = NULL;
     CHECK(refused(&cfg));
-    cfg.now_seconds = 1789000000U;
+    test_clock_set(&cfg, test_client_seconds(), 1789000000U);
     cfg.hostname = NULL;
     cfg.hostname_len = 0;
     CHECK(refused(&cfg));

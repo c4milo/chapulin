@@ -41,15 +41,6 @@ static int hostname_ok(const ch_cfg *cfg) {
     return cfg->hostname != NULL && webpki_hostname_ok(cfg->hostname, cfg->hostname_len);
 }
 
-// The clock rule: now_seconds 0 is the value a caller who never set the
-// field leaves there, so it is refused as an unset clock. It names
-// 1970-01-01T00:00:00Z, a moment no certificate the walk admits is
-// valid at, so the refusal turns a certain CH_EAUTH mid-handshake into
-// a CH_EINVAL that names the config.
-static int clock_set(const ch_cfg *cfg) {
-    return cfg->now_seconds != 0;
-}
-
 // The pin slot rule: this mode reads neither server_pubkey slot, so a
 // config that sets one, or only its length, is a provisioning mistake,
 // not a second trust path.
@@ -76,16 +67,16 @@ static int pins_alone(const ch_cfg *cfg) {
 }
 
 // The trust rule. Anchors take a hostname for the leaf to name and a
-// clock for the dates to meet. Pins alone take neither: nothing checks
-// a name or a date on a raw public key or on a pinned leaf, so the clock
-// is not read, and a hostname, which is then only the server_name to
-// send, may be unset. One that is set must still have the shape
-// webpki_hostname_ok checks.
+// clock for the dates to meet, which webpki_clock_ok checks once the init
+// call has read it. Pins alone take neither: nothing checks a name or a
+// date on a raw public key or on a pinned leaf, and a hostname, which is
+// then only the server_name to send, may be unset. One that is set must
+// still have the shape webpki_hostname_ok checks.
 static int trust_ok(const ch_cfg *cfg) {
     if (pins_alone(cfg)) {
         return (cfg->hostname == NULL && cfg->hostname_len == 0) || hostname_ok(cfg);
     }
-    return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg);
+    return anchors_ok(cfg) && hostname_ok(cfg);
 }
 
 // One offered ALPN protocol name: a non-NULL pointer and 1 to
@@ -187,6 +178,13 @@ static int client_suites_ok(const ch_cfg *cfg) {
     return 1;
 }
 #endif
+
+// The clock rule. A NULL now_seconds, which a caller who never set the
+// field leaves there, reads as 0 through cfg_clock_read, so this one test
+// refuses both no clock and a clock that answers 0.
+int webpki_clock_ok(const ch_cfg *cfg, uint64_t now_seconds) {
+    return pins_alone(cfg) || now_seconds != 0;
+}
 
 // Every rule above holds, and the PSK fields are unset or present a
 // ticket bound to this configuration, which webpki_resumption_ok checks

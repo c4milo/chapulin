@@ -247,7 +247,7 @@ static void copy_leaf_key(const webpki_spki *leaf_key, webpki_leaf_info *out) {
 }
 
 int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
-                        webpki_leaf_info *out, uint8_t *alert) {
+                        uint64_t now_seconds, webpki_leaf_info *out, uint8_t *alert) {
     certificate_list entries;
     // The caller seeds an alert, and read_entries writes its own on
     // every refusal: a refusal that names its alert here is one the
@@ -258,7 +258,7 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
     }
     // The one division in the mode, on the caller's clock and never on
     // peer input (docs/webpki.md, "Validity").
-    uint64_t now = webpki_pack_seconds(cfg->now_seconds);
+    uint64_t now = webpki_pack_seconds(now_seconds);
     webpki_cert cert;
     rc = read_leaf(&entries, cfg, now, &cert, alert);
     if (rc != CH_OK) {

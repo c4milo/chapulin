@@ -122,6 +122,21 @@ fn decodeFiles() void {
 
 pub const Anchor = enum { root, impostor };
 
+/// A clock that answers the u64 its clock_io points at, so a test sets the instant an init
+/// call reads by writing that variable, and a client and a server read one each.
+pub fn clockAt(seconds: *const u64) chapulin.Clock {
+    return .{ .now_seconds = readSeconds, .clock_io = @constCast(seconds) };
+}
+
+fn readSeconds(clock_io: ?*anyopaque) callconv(.c) u64 {
+    const seconds: *const u64 = @ptrCast(@alignCast(clock_io.?));
+    return seconds.*;
+}
+
+/// The instants the fixture's client and server clocks answer.
+pub var client_seconds: u64 = 0;
+pub var server_seconds: u64 = 0;
+
 /// A client of this object's trust mode that accepts the r2 server: the
 /// root anchor, the hostname and the row's clock under TRUST=webpki, and
 /// the leaf's point pinned under TRUST=raw-ecdsa. anchor picks the
@@ -135,7 +150,10 @@ pub fn trust(anchor: Anchor, now_seconds: ?u64) chapulin.Trust {
             .impostor => &anchors.impostor,
         },
         .server_name = hostname(),
-        .now_seconds = now_seconds orelse r2Row().now_seconds,
+        .clock = blk: {
+            client_seconds = now_seconds orelse r2Row().now_seconds;
+            break :blk clockAt(&client_seconds);
+        },
     } };
 }
 
@@ -172,7 +190,10 @@ pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Serve
         },
         .cookie_key = &cookie_key,
         .ticket_key = &ticket_key,
-        .now_seconds = now_seconds,
+        .clock = blk: {
+            server_seconds = now_seconds;
+            break :blk clockAt(&server_seconds);
+        },
         .alpn = alpn,
         .random = serverRandom(),
         .cpu = cpuAnswer(),

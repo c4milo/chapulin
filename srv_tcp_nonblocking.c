@@ -258,6 +258,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     if (!srv_config_ok(cfg)) {
         return tcp_nonblocking_refuse_init(r);
     }
+    r->t.now_seconds = cfg_clock_read(cfg); // the instant every ticket rule reads
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(&r->t);
 #endif

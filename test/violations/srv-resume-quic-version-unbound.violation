@@ -12,6 +12,6 @@ reason: the ticket walk holds each ticket to its own QUIC version rather
   requires a TCP server to pass over a ticket that records version 1.
 
 --- old
-            ticket_holds(c, cfg, ch, sel, session_quic_version(t))) {
+            ticket_holds(c, cfg, ch, sel, session_quic_version(t), t->now_seconds)) {
 --- new
-            ticket_holds(c, cfg, ch, sel, c->quic_version)) {
+            ticket_holds(c, cfg, ch, sel, c->quic_version, t->now_seconds)) {

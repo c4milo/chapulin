@@ -67,7 +67,10 @@ static int setup_webpki(char *spec, ch_cfg *cfg) {
         cfg->hostname = (const uint8_t *)host;
         cfg->hostname_len = strlen(host);
     }
-    cfg->now_seconds = now != NULL ? strtoull(now, NULL, 10) : 0;
+    cfg->now_seconds = NULL;
+    if (now != NULL) {
+        test_clock_set(cfg, test_client_seconds(), strtoull(now, NULL, 10));
+    }
     if (setup_pins(cfg) != 0) {
         return -1;
     }

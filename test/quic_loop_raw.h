@@ -34,7 +34,7 @@ static void test_raw_resumption(void) {
     client_config(&ccfg, &server_alpn[0]);
     present_ticket(&ccfg);
     check_ticket_age(&ccfg);
-    scfg.srv.now_seconds = LOOP_NOW + 30;
+    test_clock_set(&scfg, test_server_seconds(), LOOP_NOW + 30);
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);
     CHECK(handshake_messages() == 2);
@@ -53,7 +53,7 @@ static void test_raw_resumption(void) {
     CHECK(ch_quic_alert(&server) == ALERT_MISSING_EXTENSION);
 
     // No clock: the full handshake completes and no ticket follows.
-    scfg.srv.now_seconds = 0;
+    test_clock_set(&scfg, test_server_seconds(), 0);
     client_config(&ccfg, &server_alpn[0]);
     ccfg.server_pubkey = p256_sign_vectors[0].pub;
     ccfg.server_pubkey_len = sizeof p256_sign_vectors[0].pub;

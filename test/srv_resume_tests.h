@@ -113,7 +113,7 @@ static void resume_reset(selection *sel, uint64_t now) {
         resume_hash[i] = (uint8_t)(0x30 + i);
     }
     sess.cfg.srv.ticket_key = resume_key;
-    sess.cfg.srv.now_seconds = now;
+    sess.now_seconds = now;
     memset(sel, 0, sizeof *sel);
     sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
     sel->hash_len = SHA256_LEN;

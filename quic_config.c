@@ -240,6 +240,12 @@ int quic_config_ok(ch_tls *t) {
         return CH_EINVAL;
     }
 #endif
+#ifdef CH_TRUST_WEBPKI
+    t->now_seconds = cfg_clock_read(cfg); // the instant the chain walk judges at
+    if (!webpki_clock_ok(cfg, t->now_seconds)) {
+        return CH_EINVAL;
+    }
+#endif
     return epoch_init(t, cfg);
 }
 

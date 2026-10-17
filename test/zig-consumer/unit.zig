@@ -27,6 +27,16 @@ const has_cpu = @hasField(c.ch_cfg, "cpu");
 
 /// Fails naming the first ch_cfg field whose value differs, nested ones
 /// included.
+/// A clock that answers the u64 its clock_io points at (fixture.zig's clockAt).
+fn readSeconds(clock_io: ?*anyopaque) callconv(.c) u64 {
+    const seconds: *const u64 = @ptrCast(@alignCast(clock_io.?));
+    return seconds.*;
+}
+
+fn clockAt(seconds: *const u64) chapulin.Clock {
+    return .{ .now_seconds = readSeconds, .clock_io = @constCast(seconds) };
+}
+
 fn expectFields(comptime T: type, want: T, got: T) !void {
     inline for (@typeInfo(T).@"struct".fields) |field| {
         const w = @field(want, field.name);
@@ -88,8 +98,10 @@ test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a t
     const alpn = [_]c.ch_alpn_protocol{ chapulin.alpnProtocol(alpn_names[0]), chapulin.alpnProtocol(alpn_names[1]) };
     const ticket = try sampleTicket();
     const age_ms: u64 = (1 << 32) + 1234;
+    const seconds: u64 = 1782864000;
+    const clock = clockAt(&seconds);
     const got = (chapulin.Client{
-        .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .now_seconds = 1782864000, .pins = &pins } },
+        .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .clock = clock, .pins = &pins } },
         .alpn = &alpn,
         .ticket = &ticket,
         .ticket_age_ms = age_ms,
@@ -100,7 +112,8 @@ test "Client.toCfg under TRUST=webpki: anchors, hostname, clock, pins, ALPN, a t
     want.anchor_count = 1;
     want.hostname = "s3.example.test";
     want.hostname_len = "s3.example.test".len;
-    want.now_seconds = 1782864000;
+    want.now_seconds = clock.now_seconds;
+    want.clock_io = clock.clock_io;
     want.spki_pins = @ptrCast(&pins);
     want.spki_pin_count = 2;
     want.alpn_protocols = &alpn;
@@ -179,7 +192,7 @@ test "Client.toCfg and Server.toCfg in a host object: CH_CPU_PROBED and each bit
         }
         if (has_server) {
             const key = [_]u8{7} ** c.CH_SRV_COOKIE_KEY_LEN;
-            const values: chapulin.Server = .{ .cookie_key = &key, .now_seconds = 1, .cpu = description };
+            const values: chapulin.Server = .{ .cookie_key = &key, .cpu = description };
             try expectEqual(code, (try values.toCfg()).cpu);
         }
     }
@@ -215,12 +228,14 @@ test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and
     const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
     const ticket_key = [_]u8{0x35} ** c.CH_SRV_TICKET_KEY_LEN;
     const alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(alpn_names[1])};
+    const seconds: u64 = 1700000000;
+    const clock = clockAt(&seconds);
     var values: chapulin.Server = .{
         .ecdsa_p256 = .{ .chain = &chain, .public_key = &point, .private_key = &scalar },
         .rsa_pss = .{ .chain = chain[1..], .public_key = &modulus, .private_key = &rsa_key },
         .cookie_key = &cookie_key,
         .ticket_key = &ticket_key,
-        .now_seconds = 1700000000,
+        .clock = clock,
         .alpn = &alpn,
         .require_server_name = true,
     };
@@ -231,7 +246,8 @@ test "Server.toCfg: both identities, the keys, the clock, ALPN, the SNI rule and
     want.srv.rsa_pss = .{ .chain = chain[1..].ptr, .chain_count = 1, .priv = &rsa_key, .priv_len = @sizeOf(c.ch_rsa_priv), .@"pub" = &modulus, .pub_len = 256 };
     want.srv.cookie_key = &cookie_key;
     want.srv.ticket_key = &ticket_key;
-    want.srv.now_seconds = 1700000000;
+    want.now_seconds = clock.now_seconds;
+    want.clock_io = clock.clock_io;
     want.alpn_protocols = &alpn;
     want.alpn_count = 1;
     want.srv.require_server_name = 1;
@@ -263,7 +279,7 @@ test "Client.toCfg and Server.toCfg under TRANSPORT=quic-nonblocking: the origin
     }
     if (has_server) {
         const cookie_key = [_]u8{0x34} ** c.CH_SRV_COOKIE_KEY_LEN;
-        var values: chapulin.Server = .{ .cookie_key = &cookie_key, .now_seconds = 0 };
+        var values: chapulin.Server = .{ .cookie_key = &cookie_key };
         try expectEqual(@as(u32, 0), (try values.toCfg()).quic_original_version);
         values.quic_version = .v1;
         try expectEqual(@as(u32, c.CH_QUIC_VERSION_1), (try values.toCfg()).quic_original_version);
@@ -356,7 +372,8 @@ test "RAND=session: init refuses a value with no random, and a session draws fro
     // certificate arrives here.
     const placeholder = [_]u8{ 0x30, 0x00 };
     const anchors = [_]c.ch_trust_anchor{chapulin.trustAnchor(&placeholder, &placeholder)};
-    var values: chapulin.Client = .{ .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "dns.example", .now_seconds = 1789000000 } } };
+    const seconds: u64 = 1789000000;
+    var values: chapulin.Client = .{ .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "dns.example", .clock = clockAt(&seconds) } } };
     // A host object's init refuses a value without CH_CPU_PROBED, so the
     // value states the probe's bit, and the first refusal is the random's.
     if (comptime has_cpu) values.cpu = .{};

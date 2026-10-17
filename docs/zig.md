@@ -154,6 +154,12 @@ are the C types, built by three helpers, so the API copies no list:
 `SpkiPin` is `[CH_SPKI_PIN_LEN]u8`, the SHA-256 of a DER SubjectPublicKeyInfo;
 a slice of them is `ch_cfg.spki_pins` as it is.
 
+`Clock` is the caller's clock, in a `TRUST=webpki` or server object
+alone. Its `now_seconds` is a C function that answers seconds since
+1970-01-01T00:00:00Z, and its `clock_io`, null by default, is the
+argument it gets. Each `init` calls it once and judges the whole
+connection at that answer.
+
 ### Trust
 
 The client's trust, whose variants are the object's trust mode's:
@@ -162,7 +168,7 @@ The client's trust, whose variants are the object's trust mode's:
 |---|---|---|
 | `web_pki` | `anchors` | `anchors`, `anchor_count` |
 | | `server_name` | `hostname`, `hostname_len` |
-| | `now_seconds` | `now_seconds` |
+| | `clock`, a `Clock` | `now_seconds`, `clock_io` |
 | | `pins`, empty by default | `spki_pins`, `spki_pin_count` |
 | `pins` | `pins` | `spki_pins`, `spki_pin_count` |
 | | `server_name`, optional | `hostname`, `hostname_len` |
@@ -257,7 +263,7 @@ over.
 | `rsa_pss`, null by default | `srv.rsa_pss`: `chain`, `chain_count`, `priv`, `priv_len = @sizeOf(c.ch_rsa_priv)`, `pub`, `pub_len` |
 | `cookie_key` | `srv.cookie_key` |
 | `ticket_key`, null for no tickets | `srv.ticket_key` |
-| `now_seconds`, 0 for no clock | `srv.now_seconds` |
+| `clock`, null for no clock | `now_seconds`, `clock_io` |
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `require_server_name` | `srv.require_server_name` |
 | `cipher_suites`, empty for the default order | `srv.cipher_suites`, `srv.cipher_suite_count` |
@@ -522,7 +528,7 @@ const anchors = [_]chapulin.c.ch_trust_anchor{chapulin.trustAnchor(root_name, ro
 const alpn = [_]chapulin.c.ch_alpn_protocol{chapulin.alpnProtocol("http/1.1")};
 
 try client.init(.{
-    .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .now_seconds = now } },
+    .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "s3.example.test", .clock = .{ .now_seconds = wallClock } } },
     .alpn = &alpn,
 });
 send(output[0..try client.recordOut(&output)]); // the ClientHello
@@ -813,8 +819,9 @@ each through the module alone (INV-36):
     zero. The Zig object exports no hash call to count, so the loop reads
     those fields. `bin/webpki_session_test` counts the calls in C;
   - a close in each direction;
-  - four refusals: an impostor anchor, a clock of 0, a server output one
-    byte short of its flight, and a record header no peer may send;
+  - four refusals: an impostor anchor, a clock that answers 0, a server
+    output one byte short of its flight, and a record header no peer may
+    send;
   - `alertSent` after the first and the last refusal, and the server
     reading the alert each one sent as the client's fatal alert:
     `alertReceived` names it and the server sends nothing back;

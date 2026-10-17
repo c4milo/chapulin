@@ -33,7 +33,7 @@ chapulin header, or compile with `-include bin/chapulin.h`. Then call
 
 A `TRUST=webpki` build takes no pin, and a PSK only as a ticket it
 bound itself. It takes the roots it trusts, the server's hostname and
-the time:
+a clock, a function that answers Unix time in seconds:
 
 ```c
 // Each anchor is the DER subject Name and the DER SubjectPublicKeyInfo
@@ -44,10 +44,14 @@ static const ch_trust_anchor roots[] = {
      amazon_root_ca_1_spki, sizeof amazon_root_ca_1_spki},
 };
 static uint8_t rxbuf[CH_MIN_RXBUF]; // 12,338 bytes in this mode
+static uint64_t wall_clock(void *clock_io) {
+    (void)clock_io;
+    return (uint64_t)time(NULL);
+}
 ch_cfg cfg = {
     .anchors = roots, .anchor_count = 1,
     .hostname = (const uint8_t *)"s3.amazonaws.com", .hostname_len = 16,
-    .now_seconds = (uint64_t)time(NULL), // your clock; compared exactly
+    .now_seconds = wall_clock, // each init call calls it once
     .buf = rxbuf, .buf_len = sizeof rxbuf,
     .send = my_send, .recv = my_recv, .io = &sock,
 #ifdef CH_CPU_RUNTIME
@@ -56,12 +60,17 @@ ch_cfg cfg = {
 };
 ```
 
+Each init call calls `now_seconds` once, with `clock_io`, and checks
+every certificate at that answer. So one configuration that you fill at
+startup serves every connection.
+
 The hostname is an ASCII hostname of at most 253 bytes; convert a
 U-label to its A-label first. `ch_connect` returns `CH_EINVAL` before it
 sends a byte when the anchor count is 0, when an anchor
 has an empty name or key, when the hostname has any other shape, when
-`now_seconds` is 0, when the buffer is under the 12,338-byte floor, when
-the config also sets a pin or an epoch callback, and when it sets a PSK
+`now_seconds` is NULL or answers 0, when the buffer is under the
+12,338-byte floor, when the config also sets a pin or an epoch
+callback, and when it sets a PSK
 that is not a ticket bound to this hostname and these anchors. To resume,
 present a kept ticket in `ch_cfg.ticket`, as every mode does (below). Keep
 the anchors, the hostname and the clock set: a server that declines the
@@ -359,7 +368,7 @@ QUIC test.
 
 The `ROLE=server` build is implemented and completes a handshake;
 [`docs/server.md`](server.md) records its design. Given a ticket key
-and the caller's clock (`ch_cfg.srv.ticket_key`, `ch_cfg.srv.now_seconds`),
+and the caller's clock (`ch_cfg.srv.ticket_key`, `ch_cfg.now_seconds`),
 it issues one resumption ticket per connection and resumes its own tickets
 under `psk_dhe_ke`, with no Certificate, over all three transports;
 `test/e2e.sh` has OpenSSL's `s_client` and this tree's client each resume

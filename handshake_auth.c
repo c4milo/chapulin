@@ -262,7 +262,7 @@ static int webpki_server_key(handshake_state *h, const uint8_t *list, size_t lis
     if (cfg->anchor_count == 0) {
         return webpki_verify_leaf_pin(list, list_len, cfg, &h->leaf, &h->alert);
     }
-    int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
+    int rc = webpki_verify_chain(list, list_len, cfg, h->t->now_seconds, &h->leaf, &h->alert);
     if (rc != CH_OK) {
         return rc;
     }

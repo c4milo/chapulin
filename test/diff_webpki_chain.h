@@ -132,11 +132,10 @@ static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap
     cfg.anchor_count = c->anchor_count;
     cfg.hostname = (const uint8_t *)c->hostname;
     cfg.hostname_len = strlen(c->hostname);
-    cfg.now_seconds = c->now_seconds;
     cfg.spki_pins = (const uint8_t *)c->pins;
     cfg.spki_pin_count = c->pin_count;
     memset(&leaf, 0, sizeof leaf);
-    int rc = webpki_verify_chain(c->list, c->list_len, &cfg, &leaf, &alert);
+    int rc = webpki_verify_chain(c->list, c->list_len, &cfg, c->now_seconds, &leaf, &alert);
     if (rc == CH_OK) {
         if (leaf.alg > WEBPKI_KEY_P384 || leaf.key_len > CH_WEBPKI_KEY_MAX) {
             die("webpki_chain: an accepted chain outside webpki.h's ranges");

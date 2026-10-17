@@ -28,6 +28,7 @@
 #include "keysched.h"
 #include "p256_sign.h"
 #include "record.h"
+#include "test_clock.h"
 #include "test_random.h"
 #include "test_ticket.h"
 #include "test_widemul.h"

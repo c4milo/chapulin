@@ -16,10 +16,10 @@
 //    with an internationalized name converts each U-label to its A-label
 //    first. A dNSName in the leaf's subjectAltName must match it, and the
 //    client sends it as the ClientHello's server_name.
-//  - now_seconds: the caller's clock, in seconds since
-//    1970-01-01T00:00:00Z. Every certificate the walk reads must be valid
-//    at it, compared exactly with no skew tolerance. 0 means the caller
-//    never set the clock.
+//  - now_seconds and clock_io, in cfg.h: the caller's clock, a function
+//    that answers seconds since 1970-01-01T00:00:00Z. The init call calls
+//    it once, and every certificate the walk reads must be valid at that
+//    answer, compared exactly with no skew tolerance. NULL is no clock.
 //  - ticket: a presented ticket's ch_ticket.binding must match this
 //    configuration (webpki_ticket.h), and the configuration sets no
 //    external PSK beside it.
@@ -29,10 +29,11 @@
 //    offers RFC 7250 raw public keys and X.509 after them, and a server
 //    key is accepted only when a pin names it (webpki_pin.h). Pins
 //    without anchors are a whole configuration: the server then proves
-//    it holds a pinned key, sent raw or as the key of a leaf certificate,
-//    and the client reads no clock and takes a hostname only as the
-//    server_name to send. Such a pin names a leaf key, so it breaks when
-//    the operator rotates that key; RFC 7858 §4.2 asks for a backup pin.
+//    it holds a pinned key, sent raw or as the key of a leaf certificate.
+//    The client then checks no date, so it needs no clock, and it takes a
+//    hostname only as the server_name to send. Such a pin names a leaf
+//    key, so it breaks when the operator rotates that key; RFC 7858 §4.2
+//    asks for a backup pin.
 //    Pins alone take a Certificate message of any number of entries,
 //    each of up to 16375 bytes, the most one entry holds in the 16 KiB
 //    body a handshake message may take, where CH_MIN_RXBUF holds the message
@@ -49,8 +50,9 @@
 //    offered (docs/decisions.md 80).
 //
 // ch_connect returns CH_EINVAL before it sends a byte when any of those
-// rules fails, when now_seconds is 0 in a configuration with anchors,
-// and for any other PSK, a pin slot (server_pubkey) or an epoch callback.
+// rules fails, when a configuration with anchors has no clock or its
+// clock answers 0, and for any other PSK, a pin slot (server_pubkey) or
+// an epoch callback.
 // ch_record_init and ch_quic_init apply the same rules, so each field
 // means the same thing on every transport (docs/decisions.md 64).
 #ifndef CH_WEBPKI_CFG_H

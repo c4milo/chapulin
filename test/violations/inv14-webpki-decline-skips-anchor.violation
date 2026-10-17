@@ -9,12 +9,12 @@ reason: the chain walk's verdict is dropped when the hello offered a
   unknown_ca and objects.
 
 --- old
-    int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
+    int rc = webpki_verify_chain(list, list_len, cfg, h->t->now_seconds, &h->leaf, &h->alert);
     if (rc != CH_OK) {
         return rc;
     }
 --- new
-    int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
+    int rc = webpki_verify_chain(list, list_len, cfg, h->t->now_seconds, &h->leaf, &h->alert);
     if (rc != CH_OK && cfg->psk == NULL) {
         return rc;
     }

@@ -158,7 +158,8 @@ last `ROLE=server` stub, as the entry said it would.
   - `srv_send_new_session_ticket` in `srv_resume.c` draws 24 bytes in
     one call per ticket: the ticket's AEAD nonce, its `ticket_age_add`
     and its `ticket_nonce`. It draws only when the caller set
-    `cfg.srv.ticket_key` and `cfg.srv.now_seconds`.
+    `cfg.srv.ticket_key` and a clock, `cfg.now_seconds`, that answered
+    a nonzero instant.
   - `sign_rsa_pss` in `srv_auth.c` draws the 32-byte RSA-PSS salt each
     time the server signs with its RSA identity, and hands it to
     `rsa_pss_sign`, which draws nothing itself (decisions.md 77).
@@ -2868,8 +2869,8 @@ last `ROLE=server` stub, as the entry said it would.
   also refuses a config that sets a pin or an epoch callback, or a
   length field of one of them, a PSK that is not a ticket bound to the
   config's hostname, anchors and SPKI pins (`webpki_resumption_ok`,
-  webpki_ticket.h), a config whose clock (`now_seconds`) is 0 while it
-  sets anchors, and a
+  webpki_ticket.h), a config that sets anchors and no clock
+  (`now_seconds`) or a clock that answers 0, and a
   server_name acknowledgement that carries data. Its EncryptedExtensions
   parser also refuses a server_name acknowledgement when the ClientHello
   sent no server_name, which a configuration without a hostname does,

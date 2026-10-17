@@ -340,6 +340,7 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
         // dead state is the whole answer.
         return quic_refuse_init(q);
     }
+    q->t.now_seconds = cfg_clock_read(cfg); // the instant every ticket rule reads
     q->hs.t = &q->t;
     // The description a failure carries when no handler chose a more
     // specific one, seeded the way srv_handshake.c seeds it.

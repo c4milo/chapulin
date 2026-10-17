@@ -51,7 +51,7 @@ static unsigned long ifma_calls_of_flight(const char *name, uint32_t bits) {
     ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_tls t;
     memset(&t, 0, sizeof t);
-    row_cfg(row, anchors, &t.cfg);
+    row_session(row, anchors, &t);
     t.cfg.cpu = TEST_CPU | bits;
     handshake_state h;
     uint8_t verify_msg[VERIFY_MSG_MAX];

@@ -53,6 +53,10 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         return tcp_nonblocking_refuse_init(r);
     }
 #ifdef CH_TRUST_WEBPKI
+    r->t.now_seconds = cfg_clock_read(cfg); // the instant the chain walk judges at
+    if (!webpki_clock_ok(cfg, r->t.now_seconds)) {
+        return tcp_nonblocking_refuse_init(r);
+    }
     // The hash every ticket this session receives is bound to, as
     // ch_connect writes it: only for a session that takes tickets
     // (webpki_ticket.h).

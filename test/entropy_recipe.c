@@ -21,6 +21,7 @@
 #include "ch_assert.h"
 #include "drbg.h"
 #include "rand.h"
+#include "test_clock.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -125,7 +126,7 @@ int main(void) {
     cfg.anchor_count = 1;
     cfg.hostname = hostname;
     cfg.hostname_len = sizeof hostname;
-    cfg.now_seconds = 1789000000U;
+    test_clock_set(&cfg, test_client_seconds(), 1789000000U);
 #else
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;

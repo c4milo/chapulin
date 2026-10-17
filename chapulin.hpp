@@ -265,7 +265,7 @@ struct Read {
 
 // Builds a ch_cfg for exactly one auth mode. Construct with a receive
 // buffer and I/O, then call psk() or pinned() — not both. A TRUST=webpki
-// build calls anchors(), hostname() and now_seconds() instead.
+// build calls anchors(), hostname() and clock() instead.
 class Config {
   public:
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -322,6 +322,18 @@ class Config {
         cfg_.send = io.send;
         cfg_.recv = io.recv;
         cfg_.io = io.ctx;
+    }
+#endif
+
+#if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
+    // The caller's clock (ch_cfg.now_seconds and clock_io): a function
+    // that answers the seconds since 1970-01-01T00:00:00Z, and the context
+    // it receives. Each init calls it once and judges the whole connection
+    // at that instant (cfg.h).
+    Config &clock(uint64_t (*now)(void *ctx), void *ctx) {
+        cfg_.now_seconds = now;
+        cfg_.clock_io = ctx;
+        return *this;
     }
 #endif
 
@@ -448,11 +460,6 @@ class Config {
     Config &hostname(ConstBytes name) {
         cfg_.hostname = name.data;
         cfg_.hostname_len = name.size;
-        return *this;
-    }
-
-    Config &now_seconds(uint64_t seconds) {
-        cfg_.now_seconds = seconds;
         return *this;
     }
 

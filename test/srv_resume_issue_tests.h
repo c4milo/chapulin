@@ -48,7 +48,7 @@ static void test_resume_after_retry(void) {
         resume_hash[i] = (uint8_t)(0x30 + i);
     }
     sess.cfg.srv.ticket_key = resume_key;
-    sess.cfg.srv.now_seconds = RESUME_AUTH;
+    sess.now_seconds = RESUME_AUTH;
     resume_ticket(ticket, resume_key, RESUME_AUTH, CH_ALPN_NONE);
     resume_binder(binder);
     // cookie_echo is file-scope, so flight_hello never points at this frame.
@@ -98,7 +98,7 @@ static void resume_connected(uint64_t now, rec_dir *client_rd) {
     rec_dir rd;
     auth_flight(&sel, &rd);
     sess.cfg.srv.ticket_key = resume_key;
-    sess.cfg.srv.now_seconds = now;
+    sess.now_seconds = now;
     CHECK(srv_send_finished(&hs) == CH_OK);
     feed_client_finished(1);
     CHECK(srv_read_client_finished(&hs) == CH_OK);
@@ -194,7 +194,7 @@ static void test_resume_issue(void) {
 
     // No clock or no key: no ticket, and no error.
     resume_connected(RESUME_AUTH, &client_rd);
-    sess.cfg.srv.now_seconds = 0;
+    sess.now_seconds = 0;
     CHECK(srv_send_new_session_ticket(&hs) == CH_OK && wire_len == 0);
     resume_connected(RESUME_AUTH, &client_rd);
     sess.cfg.srv.ticket_key = NULL;

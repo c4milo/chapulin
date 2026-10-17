@@ -37,6 +37,14 @@ const anchor_spki = [_]u8{ 0x30, 0x00 };
 const hostname = "dns.example";
 
 /// The values both clients set, in the Client of module api.
+/// The instant both halves' clients judge at, which readSeconds answers.
+const client_seconds: u64 = 1789000000;
+
+fn readSeconds(clock_io: ?*anyopaque) callconv(.c) u64 {
+    const seconds: *const u64 = @ptrCast(@alignCast(clock_io.?));
+    return seconds.*;
+}
+
 fn clientValues(comptime api: type) api.Client {
     const anchors = struct {
         const list = [_]api.c.ch_trust_anchor{api.trustAnchor(&anchor_name, &anchor_spki)};
@@ -44,7 +52,7 @@ fn clientValues(comptime api: type) api.Client {
     var values: api.Client = .{ .trust = .{ .web_pki = .{
         .anchors = &anchors.list,
         .server_name = hostname,
-        .now_seconds = 1789000000,
+        .clock = .{ .now_seconds = readSeconds, .clock_io = @constCast(&client_seconds) },
     } } };
     // A host object takes a description of the CPU, and the probe's bit
     // alone describes any CPU (cpu_cfg.h).

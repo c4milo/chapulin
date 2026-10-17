@@ -402,6 +402,11 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
+    t->now_seconds = cfg_clock_read(cfg); // the instant the chain walk judges at
+    if (!webpki_clock_ok(cfg, t->now_seconds)) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
     // The hash every ticket this session receives is bound to. A session
     // without on_ticket gives no ticket to anyone, so it keeps the zeros
     // memset wrote and runs no hash here (webpki_ticket.h).

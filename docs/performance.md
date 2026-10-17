@@ -16,7 +16,7 @@ The session struct is measured twice, once native on arm64 and once for
 rv32ic. The byte-count constants do not move, only the pointer fields,
 so a 32-bit device needs 80 bytes less than the host figure in either device
 build. `TRUST=webpki` adds pointer-sized fields to `ch_cfg`, pointers
-and `size_t` lengths, so that build needs 112 bytes less than the host figure on rv32.
+and `size_t` lengths, so that build needs 120 bytes less than the host figure on rv32.
 
 | what | arm64 | rv32 |
 |---|---|---|
@@ -25,18 +25,18 @@ and `size_t` lengths, so that build needs 112 bytes less than the host figure on
 | **total static working set** | **3200** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2336 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4384** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3048 | 2936 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15386** | **15274** |
-| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1976 | 1816 |
-| **total static working set, `ROLE=server`** (2048 buffer) | **4024** | **3864** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2264 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4312** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3352 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15690** | — |
-| `ch_tls` under `TRUST=webpki`, host object | 3048 | — |
-| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15386** | — |
-| `ch_tls` under `ROLE=server`, host object | 1976 | — |
-| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4024** | — |
+| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3064 | 2944 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15282** |
+| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1992 | 1824 |
+| **total static working set, `ROLE=server`** (2048 buffer) | **4040** | **3872** |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2280 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4328** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3368 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15706** | — |
+| `ch_tls` under `TRUST=webpki`, host object | 3064 | — |
+| **total static working set, `TRUST=webpki`, host object** (12338 buffer, its floor) | **15402** | — |
+| `ch_tls` under `ROLE=server`, host object | 1992 | — |
+| **total static working set, `ROLE=server`, host object** (2048 buffer) | **4040** | — |
 
 ### Peak stack
 

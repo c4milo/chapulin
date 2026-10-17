@@ -13,6 +13,6 @@ reason: the webpki ch_connect stops writing the session's ch_cfg.cpu into its re
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif
-    // The hash every ticket this session receives is bound to. A session
+    t->now_seconds = cfg_clock_read(cfg); // the instant the chain walk judges at
 --- new
-    // The hash every ticket this session receives is bound to. A session
+    t->now_seconds = cfg_clock_read(cfg); // the instant the chain walk judges at

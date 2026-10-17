@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "sha256.h"
+#include "test_clock.h"
 #include "webpki.h"
 #include "webpki_corpus.h"
 
@@ -53,7 +54,10 @@ static void r2_trust(ch_cfg *cfg, const webpki_corpus_anchor *root_anchor, const
     cfg->anchor_count = 1;
     cfg->hostname = (const uint8_t *)hostname;
     cfg->hostname_len = strlen(hostname);
-    cfg->now_seconds = row != NULL ? row->now_seconds : 0;
+    cfg->now_seconds = NULL;
+    if (row != NULL) {
+        test_clock_set(cfg, test_client_seconds(), row->now_seconds);
+    }
 }
 
 #ifdef CH_ROLE_SERVER

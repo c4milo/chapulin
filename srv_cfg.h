@@ -1,10 +1,11 @@
 // What a ROLE=server build adds to the caller's configuration: the
 // certificate chains and private keys this endpoint proves itself with,
-// the key its HelloRetryRequest cookie is minted under, the key and the
-// clock its resumption tickets need, and where to put the server_name a
-// client sent. cfg.h includes this header and
-// ch_cfg carries one ch_srv_cfg member, so a ROLE=client build declares
-// none of it and keeps the ch_cfg layout it had.
+// the key its HelloRetryRequest cookie is minted under, the key its
+// resumption tickets need, and where to put the server_name a client
+// sent. The clock the tickets are dated by is ch_cfg.now_seconds. cfg.h
+// includes this header and ch_cfg carries one ch_srv_cfg member, so a
+// ROLE=client build declares none of it and keeps the ch_cfg layout it
+// had.
 //
 // It sits beside cfg.h rather than inside it for one measured reason:
 // cfg.h is 498 lines against the 500-line cap CLAUDE.md sets and
@@ -173,15 +174,10 @@ typedef struct {
     // rotate.
     const uint8_t *ticket_key;
 
-    // The caller's clock at the start of this connection, in seconds,
-    // from the same epoch on every server that shares ticket_key; Unix
-    // time is the plain choice. chapulin reads no clock of its own: it
-    // writes this instant into every ticket it issues and judges every
-    // ticket it is offered against it, so the caller writes it before
-    // each ch_srv_accept, ch_srv_record_init or ch_srv_quic_init. 0 means
-    // no clock, and a server with no clock issues no ticket and accepts
-    // none, because it could not tell a fresh ticket from an expired one.
-    uint64_t now_seconds;
+    // The clock the tickets are dated by is ch_cfg.now_seconds (cfg.h),
+    // which each init call reads once. A server with no clock issues no
+    // ticket and accepts none, because it could not tell a fresh ticket
+    // from an expired one.
 
 #ifdef CH_SUITE_AES_GCM
     // The cipher suites this server selects from, in its order of
@@ -216,7 +212,7 @@ typedef struct {
     // at CH_LEVEL_INITIAL and the rest of the flight at
     // CH_LEVEL_HANDSHAKE, so a caller needs a buffer per level rather than
     // one shared. docs/quic_server.md item 4 states the whole decision.
-    // With ticket_key and now_seconds set, the call that delivers the
+    // With ticket_key and a clock set, the call that delivers the
     // client Finished also produces one NewSessionTicket at
     // CH_LEVEL_APPLICATION, which the caller sends in 1-RTT CRYPTO frames
     // (RFC 9001 section 4.5).
@@ -271,7 +267,7 @@ typedef struct {
     // ClientHello produces the whole flight; the caller writes them in
     // the order they come. Each call carries one record, so a caller that
     // writes them separately still sends a legal stream. With ticket_key
-    // and now_seconds set, the call that delivers the client Finished
+    // and a clock set, the call that delivers the client Finished
     // also produces one NewSessionTicket record, sealed under the
     // application write key.
     //

@@ -131,10 +131,13 @@ static const webpki_corpus_chain *chain_named(const char *name) {
 }
 
 #define CORPUS_ROW_ANCHORS 12 // a corpus row's anchors: 5 at most, and no cap bounds the count
-// A row's configuration: its anchors, its hostname and its clock, as
-// test/webpki_chain_test.c builds them, and in a host object TEST_CPU.
-static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_cfg *cfg) {
+// A row's session: its anchors and its hostname in the session's
+// configuration, as test/webpki_chain_test.c builds them, and in a host
+// object TEST_CPU; and its clock's instant, which an init call reads.
+static void row_session(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_tls *t) {
+    ch_cfg *cfg = &t->cfg;
     test_cfg_clear(cfg);
+    t->now_seconds = row->now_seconds;
     CHECK(row->anchor_count <= CORPUS_ROW_ANCHORS);
     for (size_t i = 0; i < row->anchor_count; i++) {
         anchors[i].name = row->anchors[i].name;
@@ -146,7 +149,6 @@ static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch
     cfg->anchor_count = row->anchor_count;
     cfg->hostname = (const uint8_t *)row->hostname;
     cfg->hostname_len = strlen(row->hostname);
-    cfg->now_seconds = row->now_seconds;
 }
 
 // The verdict a row's expected name stands for: what hsa_server_auth
@@ -254,7 +256,7 @@ static void check_vector(const webpki_auth_vector *v) {
     ch_trust_anchor anchors[CORPUS_ROW_ANCHORS];
     ch_tls t;
     memset(&t, 0, sizeof t);
-    row_cfg(row, anchors, &t.cfg);
+    row_session(row, anchors, &t);
     handshake_state h;
     uint8_t verify_msg[VERIFY_MSG_MAX];
     size_t verify_len = 0;

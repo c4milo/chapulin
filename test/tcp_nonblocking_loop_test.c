@@ -63,6 +63,7 @@
 #include "rsa_sign_key.h"
 #include "srv_tcp_nonblocking.h"
 #include "tcp_nonblocking.h"
+#include "test_clock.h"
 #include "test_cpu.h"
 #include "test_widemul.h"
 #include "tls.h"

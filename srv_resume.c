@@ -24,10 +24,11 @@
 // The bytes of ticket_age_add in a NewSessionTicket.
 #define TICKET_AGE_ADD_LEN 4
 
-// Whether this configuration can judge a ticket: a key to open it with
-// and a clock to date it by. Both issuing and accepting ask it.
-static int tickets_on(const ch_srv_cfg *srv) {
-    return srv->ticket_key != NULL && srv->now_seconds != 0;
+// Whether this session can judge a ticket: a key to open it with, and the
+// instant its init call read from the caller's clock to date it by. Both
+// issuing and accepting ask it.
+static int tickets_on(const ch_tls *t) {
+    return t->cfg.srv.ticket_key != NULL && t->now_seconds != 0;
 }
 
 // Whether the client offered a PSK this server may select: pre_shared_key,
@@ -85,12 +86,11 @@ static uint32_t session_quic_version(const ch_tls *t) {
 
 // Whether an opened ticket may resume this handshake: every test
 // srv_resume.h lists after the open. quic_version is the session's,
-// session_quic_version's answer.
+// session_quic_version's answer, and now_seconds the session's instant.
 static int ticket_holds(const srv_ticket_contents *c, const ch_cfg *cfg, const client_hello *ch,
-                        const selection *sel, uint32_t quic_version) {
-    return ticket_fresh(c->auth_seconds, cfg->srv.now_seconds) &&
-           ticket_suite_matches(c->suite, sel) && ticket_alpn_matches(c, cfg, ch->alpn_selected) &&
-           c->quic_version == quic_version;
+                        const selection *sel, uint32_t quic_version, uint64_t now_seconds) {
+    return ticket_fresh(c->auth_seconds, now_seconds) && ticket_suite_matches(c->suite, sel) &&
+           ticket_alpn_matches(c, cfg, ch->alpn_selected) && c->quic_version == quic_version;
 }
 
 // Walks the client's identities in its order and stops at the first
@@ -114,7 +114,7 @@ static int find_ticket(const ch_tls *t, const client_hello *ch, const selection 
         if (identity_len == SRV_TICKET_LEN &&
             srv_ticket_open(widemul_answer(cfg), cfg->srv.ticket_key, identity, identity_len, c) ==
                 CH_OK &&
-            ticket_holds(c, cfg, ch, sel, session_quic_version(t))) {
+            ticket_holds(c, cfg, ch, sel, session_quic_version(t), t->now_seconds)) {
             *index = i;
             return 1;
         }
@@ -205,7 +205,7 @@ static int select_ticket(handshake_state *h, const client_hello *ch, selection *
 int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel) {
     sel->psk_selected = 0;
     sel->psk_identity = 0;
-    if (tickets_on(&h->t->cfg.srv) && ticket_offered(ch)) {
+    if (tickets_on(h->t) && ticket_offered(ch)) {
         int rc = select_ticket(h, ch, sel);
         if (rc != CH_OK) {
             return rc;
@@ -283,15 +283,14 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
 
 int srv_send_new_session_ticket(handshake_state *h) {
     ch_tls *t = h->t;
-    const ch_srv_cfg *srv = &t->cfg.srv;
-    if (!tickets_on(srv)) {
+    if (!tickets_on(t)) {
         return CH_OK;
     }
     // A full handshake proved the certificate now. A resumed one proved
     // nothing new, so its ticket keeps the instant the resumed ticket
     // carried, and srv_select_auth admitted that ticket only inside the
     // lifetime, which keeps the subtraction below from wrapping.
-    uint64_t now = srv->now_seconds;
+    uint64_t now = t->now_seconds;
     uint64_t auth_seconds = t->psk_selected ? h->ticket_auth_seconds : now;
     CH_ASSERT(ticket_fresh(auth_seconds, now));
     uint64_t spent = now - auth_seconds;

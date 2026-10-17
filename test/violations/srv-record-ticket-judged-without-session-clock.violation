@@ -1,0 +1,12 @@
+invariant: INV-14
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: ch_srv_record_init reads no instant from the caller's clock, so the
+  session's instant stays 0, and the server issues no ticket and accepts
+  none. A full handshake still completes, so only resumption notices:
+  test/tcp_nonblocking_resume_tests.h requires a ticket after the full
+  handshake, and objects.
+
+--- old
+    r->t.now_seconds = cfg_clock_read(cfg); // the instant every ticket rule reads
+--- new

@@ -21,6 +21,7 @@
 #include "handshake_parser.h"
 #include "keysched.h"
 #include "record.h"
+#include "test_clock.h"
 #include "test_cpu.h"
 #include "test_random.h"
 #include "tls.h"
@@ -404,7 +405,7 @@ static ch_cfg valid_cfg(mock_server *s) {
     cfg.anchor_count = 2;
     cfg.hostname = host;
     cfg.hostname_len = sizeof host;
-    cfg.now_seconds = 1789000000U;
+    test_clock_set(&cfg, test_client_seconds(), 1789000000U);
     TEST_CPU_CFG(cfg);
     return cfg;
 }
@@ -427,6 +428,8 @@ static int sends_client_hello(const ch_cfg *cfg) {
     int rc = ch_connect(&t, cfg);
     return rc == CH_EIO && s->hello_len > 0;
 }
+
+static ch_saved_ticket empty_ticket; // a ticket with no identity, PSK or lifetime
 
 #include "rxbuf_floor_tests.h"
 #include "session_report_tests.h"

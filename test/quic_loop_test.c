@@ -37,6 +37,7 @@
 #include "rand.h"
 #include "srv_quic.h"
 #include "srv_ticket.h"
+#include "test_clock.h"
 #include "test_cpu.h"
 #include "test_ticket.h"
 #include "test_widemul.h"
@@ -168,7 +169,7 @@ static void server_config(ch_cfg *cfg) {
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_crypto_out = sink;
     cfg->srv.ticket_key = ticket_key;
-    cfg->srv.now_seconds = LOOP_NOW;
+    test_clock_set(cfg, test_server_seconds(), LOOP_NOW);
     cfg->srv.ecdsa_p256.chain = chain;
     cfg->srv.ecdsa_p256.chain_count = 1;
     cfg->srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;

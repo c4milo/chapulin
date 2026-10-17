@@ -7,8 +7,8 @@
 // The server issues one ticket per connection, full or resumed, and
 // accepts one of its own tickets as a PSK under psk_dhe_ke alone. It
 // accepts no external PSK, sends no early_data extension anywhere, and
-// reads no clock: the caller writes the instant into
-// ch_cfg.srv.now_seconds before each connection, and 0 there means no
+// reads no clock of its own: each init call reads the caller's clock,
+// ch_cfg.now_seconds, once into ch_tls.now_seconds, and 0 there means no
 // clock, which issues no ticket and accepts none.
 //
 // What a ticket binds, and why each term:
@@ -69,7 +69,7 @@
 // cover the HelloRetryRequest.
 //
 // A ticket is considered when all four hold: cfg.srv.ticket_key is set;
-// cfg.srv.now_seconds is not 0; the hello carried pre_shared_key; and its
+// t->now_seconds is not 0; the hello carried pre_shared_key; and its
 // psk_key_exchange_modes listed psk_dhe_ke. RFC 9846 §4.3.9 forbids a
 // server to select a mode the client did not list (rfc9846.txt:2307-2308),
 // and psk_ke runs no key exchange, which this server never does, so a
@@ -144,7 +144,7 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel);
 // was first issued.
 //
 // It sends nothing and returns CH_OK when cfg.srv.ticket_key is NULL, when
-// cfg.srv.now_seconds is 0, or when a resumed chain has no lifetime left.
+// t->now_seconds is 0, or when a resumed chain has no lifetime left.
 // A server with no clock issues no ticket, because it could never judge
 // one.
 //

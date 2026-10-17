@@ -737,8 +737,9 @@ under `RAND=session`, from the session's own `cfg.rand_bytes`:
   ClientHello, for the ServerHello random, the ML-KEM encapsulation where it
   selects X25519MLKEM768, the P-256 key share where it selects secp256r1 and
   the salt where it signs with RSA-PSS; and in the
-  call that delivers the client Finished when `cfg.srv.ticket_key` and
-  `cfg.srv.now_seconds` are set, for the ticket's AEAD nonce,
+  call that delivers the client Finished when `cfg.srv.ticket_key` is set
+  and the clock `cfg.now_seconds` answered a nonzero instant, for the
+  ticket's AEAD nonce,
   `ticket_age_add` and `ticket_nonce`.
 - **Never** for a key update, a QUIC Retry token, header protection, or a
   packet seal or open.

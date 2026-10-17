@@ -334,8 +334,10 @@ The rest of the configuration is the hostname and the clock:
 
 - `ch_cfg.hostname` and `ch_cfg.hostname_len`: the ASCII hostname the
   leaf must name, sent as the ClientHello's `server_name`.
-- `ch_cfg.now_seconds`: seconds since 1970-01-01T00:00:00Z. 0 means the
-  caller never set the clock.
+- `ch_cfg.now_seconds` and `ch_cfg.clock_io`: the caller's clock, a
+  function that answers seconds since 1970-01-01T00:00:00Z. Each init
+  call calls it once, with `clock_io`, and checks every certificate of
+  the connection at that answer. NULL means no clock.
 
 `ch_connect` returns `CH_EINVAL` before it sends a byte when:
 
@@ -343,7 +345,7 @@ The rest of the configuration is the hostname and the clock:
   `spki`. Pins that stand alone are the exception (see "Raw public keys
   and SPKI pins"). No cap bounds the count;
 - the hostname fails `webpki_hostname_ok`, or is unset beside anchors;
-- `now_seconds` is 0 beside anchors;
+- `now_seconds` is NULL beside anchors, or it answers 0;
 - `spki_pin_count` is over `CH_SPKI_PIN_MAX`, or a pin list and its count
   disagree about whether pins are set;
 - a PSK field is set and the fields do not present a ticket bound to this
@@ -355,13 +357,14 @@ The rest of the configuration is the hostname and the clock:
   `CH_CPU_PROBED` or holds a bit the object does not define for its
   architecture (`cpu_cfg.h`, docs/decisions.md 89).
 
-`ch_trust_anchor`, `CH_SPKI_PIN_MAX` and the ten
-`ch_cfg` fields exist only in a `TRUST=webpki` build, so the raw and ca
-objects keep the `ch_cfg` and `ch_tls` layout they had before this mode.
+`ch_trust_anchor`, `CH_SPKI_PIN_MAX` and the `ch_cfg` fields above
+exist only in a `TRUST=webpki` build, and the two clock fields also in
+a server role. So the raw and ca client objects keep the `ch_cfg` and
+`ch_tls` layout they had before this mode.
 `webpki_cfg.h` declares them and states each field's rule, and
 `webpki_cfg.c` checks the rules. A raw or ca build that sets one of the
 fields fails to compile. `chapulin.hpp` forwards them through
-`Config::anchors`, `Config::hostname`, `Config::now_seconds`,
+`Config::anchors`, `Config::hostname`, `Config::clock`,
 `Config::alpn` and `Config::spki_pins`, which a raw or ca build does not
 declare either.
 
@@ -798,7 +801,7 @@ Read this list as part of the profile, not as a list of future work.
   anchor array changing, is not checked again until the next full
   handshake. A server that declines the ticket gives that full handshake
   in the same connection.
-- **No clock-skew tolerance.** `now_seconds` is compared exactly. As
+- **No clock-skew tolerance.** The clock's answer is compared exactly. As
   certificate lifetimes shorten, a fleet whose clock drifts turns a soft
   failure into a hard one, so the caller owns keeping the clock right.
 - **Pins alone check no name, no date and no chain above the leaf.** Under

@@ -264,7 +264,9 @@ int main(void) {
     verified_key = NULL;
     verified_key_len = 0;
 
-    int rc = webpki_verify_chain(list, list_len, &cfg, &out, &alert);
+    // webpki_pack_seconds is stubbed above and answers any instant, so the
+    // instant passed here is any value too.
+    int rc = webpki_verify_chain(list, list_len, &cfg, nondet_u64(), &out, &alert);
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO || rc == CH_EAUTH,
                      "walk: CH_OK, CH_EPROTO or CH_EAUTH");
     if (rc != CH_OK) {

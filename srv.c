@@ -210,6 +210,7 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+    t->now_seconds = cfg_clock_read(cfg); // the instant every ticket rule reads
 #ifdef CH_CPU_RUNTIME
     tlsi_record_cpu(t);
 #endif

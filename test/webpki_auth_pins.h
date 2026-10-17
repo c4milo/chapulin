@@ -141,7 +141,7 @@ static void pinned_session(ch_tls *t, ch_trust_anchor *anchors, const webpki_cor
                            uint8_t cert_type, pin_set pins, size_t pin_count) {
     memset(t, 0, sizeof *t);
     if (row != NULL) {
-        row_cfg(row, anchors, &t->cfg);
+        row_session(row, anchors, t);
     }
     // ISO C has no implicit conversion that adds const to an array's
     // element type, so the pins take the field's type by cast.

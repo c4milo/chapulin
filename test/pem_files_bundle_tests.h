@@ -16,13 +16,13 @@ static int anchors_verify(const webpki_corpus_chain *row, size_t anchor_count,
     cfg.anchor_count = anchor_count;
     cfg.hostname = text(row->hostname);
     cfg.hostname_len = strlen(row->hostname);
-    cfg.now_seconds = row->now_seconds;
     webpki_leaf_info leaf;
     memset(&leaf, 0, sizeof leaf);
     uint8_t alert = 0;
     // The list after the message's 4-byte header, 1-byte context and
     // 3-byte list length.
-    int rc = webpki_verify_chain(row->message + 8, row->message_len - 8, &cfg, &leaf, &alert);
+    int rc = webpki_verify_chain(row->message + 8, row->message_len - 8, &cfg, row->now_seconds,
+                                 &leaf, &alert);
     *anchor_index = leaf.anchor_index;
     return rc == CH_OK;
 }

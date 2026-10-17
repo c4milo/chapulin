@@ -51,7 +51,7 @@ static ch_cfg base_cfg(void) {
     cfg.anchor_count = 2;
     cfg.hostname = host;
     cfg.hostname_len = sizeof host;
-    cfg.now_seconds = 1789000000U;
+    test_clock_set(&cfg, test_client_seconds(), 1789000000U);
     return cfg;
 }
 

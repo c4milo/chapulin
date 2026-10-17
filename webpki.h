@@ -142,7 +142,8 @@ typedef struct {
 
 // The walk (docs/webpki.md, "The chain walk"). Reads the Certificate
 // message's CertificateEntry list, verifies the leaf's profile,
-// validity and hostname, then walks issuers until an anchor both names
+// validity at now_seconds and hostname, then walks issuers until an
+// anchor both names
 // the issuer and verifies the signature, consulting the anchors before
 // reading each next entry. Entries after the terminating certificate
 // are sized by read_entries and not parsed. The caller seeds *alert
@@ -182,8 +183,10 @@ typedef struct {
 // CH_WEBPKI_CHAIN_MAX with the leaf counted, and out->anchor_index is
 // the index in cfg->anchors of the first anchor whose subject Name is the
 // last one's issuer Name and whose key verifies its signature.
+// now_seconds is the session's instant, ch_tls.now_seconds, which the
+// init call read from cfg's clock.
 int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
-                        webpki_leaf_info *out, uint8_t *alert);
+                        uint64_t now_seconds, webpki_leaf_info *out, uint8_t *alert);
 
 // One CertificateEntry of RFC 9846 §4.5.1 from r: a u24 length of 1 to
 // cert_max, that many bytes, and a u16 extensions vector that must be
@@ -356,11 +359,19 @@ int webpki_hostname_ok(const uint8_t *host, size_t host_len);
 // Defined in webpki_name.c.
 int webpki_match_san(const uint8_t *san, size_t san_len, const uint8_t *host, size_t host_len);
 
-// Whether cfg meets every configuration rule of this mode: the anchors,
-// hostname and clock, or SPKI pins alone (webpki_cfg.h); the PSK fields
+// Whether cfg meets every configuration rule of this mode but the clock's:
+// the anchors and hostname, or SPKI pins alone (webpki_cfg.h); the PSK fields
 // (webpki_ticket.h); both pin slots unset; the ALPN offer; and under
 // SUITE=aesgcm the suite list (webpki_cfg.h). Reads the caller's
 // configuration alone. Defined in webpki_cfg.c.
 int webpki_cfg_ok(const ch_cfg *cfg);
+
+// Whether now_seconds, the instant the init call read from cfg's clock,
+// may judge cfg's chains: any instant under SPKI pins alone, which read no
+// date, and any but 0 beside anchors. No clock reads as 0. A clock that
+// answers 0 names 1970-01-01T00:00:00Z, at which no certificate the walk
+// admits is valid, so each client init refuses it with CH_EINVAL rather
+// than fail later with CH_EAUTH. Defined in webpki_cfg.c.
+int webpki_clock_ok(const ch_cfg *cfg, uint64_t now_seconds);
 
 #endif

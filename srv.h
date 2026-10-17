@@ -42,7 +42,7 @@
 // requirement that the client send server_name (§9.2 makes requiring
 // it a MAY). docs/server.md lists every one with its RFC line.
 //
-// It resumes. With cfg.srv.ticket_key and cfg.srv.now_seconds set, it
+// It resumes. With cfg.srv.ticket_key and a clock, cfg.now_seconds, set, it
 // issues one NewSessionTicket after every handshake and accepts its own
 // tickets as PSKs under psk_dhe_ke, with a key exchange and no
 // Certificate; ch_tls.psk_selected tells a resumed session from a full
@@ -86,9 +86,10 @@
 // cfg.rand_bytes is NULL, because the server draws its key share before
 // it reads a byte (rand.h).
 //
-// A NULL cfg.srv.ticket_key or a cfg.srv.now_seconds of 0 is not
-// refused: the server then issues no ticket and accepts none, and every
-// handshake authenticates with a certificate.
+// A NULL cfg.srv.ticket_key, a NULL cfg.now_seconds or a clock that
+// answers 0 is not refused: the server then issues no ticket and accepts
+// none, and every handshake authenticates with a certificate. The call
+// reads the clock once, before it reads a byte, into ch_tls.now_seconds.
 //
 // It returns CH_EINVAL for the client-only fields too, rather than
 // ignoring them: cfg.psk, cfg.psk_id, cfg.ticket, cfg.ticket_age_ms, either

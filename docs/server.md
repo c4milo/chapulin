@@ -2674,11 +2674,12 @@ lands. None of them exists today.
   error, and `ch_srv_check` catches the signer half of it at boot.
   `rfc9846.txt:2921-2926` and `:1931-1933` are provisioning checks, not runtime
   ones, when the identity is fixed at build time.
-- **Time.** It reads no clock. It verifies no certificate validity, and the
-  cookie carries no timestamp. The one instant it uses is the caller's:
-  `ch_cfg.srv.now_seconds`, which dates the tickets it issues and judges
-  the ones it is offered. A caller that leaves it 0 gets no tickets at all
-  ("Resumption" below).
+- **Time.** It reads no clock of its own. It verifies no certificate
+  validity, and the cookie carries no timestamp. The one instant it uses
+  is the answer of the caller's clock, `ch_cfg.now_seconds`, which each
+  init call calls once. That instant dates the tickets the server issues
+  and judges the ones it is offered. A caller that sets no clock gets no
+  tickets at all ("Resumption" below).
 - **Cookie freshness.** A captured cookie is replayable. The attacker gains one
   skipped round trip on a handshake that fails at the Finished regardless. A
   4-byte caller-supplied epoch in the cookie body would close it and is
@@ -2901,13 +2902,14 @@ every rule this section summarizes.
 **What the caller supplies.** `ch_cfg.srv.ticket_key`, 32 bytes of
 ChaCha20-Poly1305 key (`CH_SRV_TICKET_KEY_LEN`), one per deployment and not the
 cookie key; NULL issues no ticket and accepts none. And
-`ch_cfg.srv.now_seconds`, its clock in seconds at the start of the
-connection, from one epoch on every server that shares the key; 0 means no
-clock, and a server with no clock issues no ticket and accepts none, because
-it could not tell a fresh ticket from an expired one. The instant is a
-configuration field rather than an argument to `ch_srv_accept`,
-`ch_srv_record_init` and `ch_srv_quic_init`, so the three calls keep their
-signatures; `ch_cfg.now_seconds` is the client's precedent.
+`ch_cfg.now_seconds` with `ch_cfg.clock_io`, its clock: a function that
+answers seconds from one epoch on every server that shares the key. Each of
+`ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` calls it once
+and keeps the answer in `ch_tls.now_seconds`, which every ticket rule of
+the connection reads. NULL, or a clock that answers 0, means no clock. A
+server with no clock issues no ticket and accepts none, because it could
+not tell a fresh ticket from an expired one. A webpki client reads the same
+two fields (docs/decisions.md 135).
 
 **What the server issues.** One NewSessionTicket per connection, full or
 resumed, after the client Finished verifies (`rfc9846.txt:3194-3196`), under

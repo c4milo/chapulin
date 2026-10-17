@@ -325,6 +325,12 @@ typedef struct {
     // like alpn_selected; the caller may read it once connected.
     uint8_t server_cert_type;
 #endif
+#if defined(CH_TRUST_WEBPKI) || defined(CH_ROLE_SERVER)
+    // The instant the init call read from cfg.now_seconds, 0 for no clock
+    // (cfg_clock_read, cfg.h). The chain walk and the ticket rules read it,
+    // so one connection is judged at one instant.
+    uint64_t now_seconds;
+#endif
     // Highest epoch accepted: loaded at ch_connect, raised once a verified
     // leaf authenticates the server. epoch_store_failed marks a failed
     // persist; the session stays up. Both stay zero outside CA builds.

@@ -12317,3 +12317,88 @@ does nothing more.
       clock value, then at two points instead of one.
     - **The identity inline in `ch_ticket`.** Each NewSessionTicket would
       put 320 more bytes on the stack of the call that runs on_ticket.
+
+135. **The caller's clock is a function, `ch_cfg.now_seconds`, that each
+    init call calls once.** A TRUST=webpki client read its clock from the
+    value `ch_cfg.now_seconds`, and a server from `ch_cfg.srv.now_seconds`.
+    A caller that fills one configuration at start and passes it to every
+    connection keeps one instant for the life of the process. Such a
+    server writes that instant into each ticket it issues and judges each
+    ticket against it, so no ticket ever expires, and a stolen ticket
+    resumes until the ticket key changes. Such a client checks every chain
+    at that instant, so it accepts a certificate after its notAfter. On
+    2026-10-17 Camilo approved a clock callback for both (entry 133 states
+    the request).
+
+    - **The fields.** `ch_cfg` holds `uint64_t (*now_seconds)(void
+      *clock_io)` and `clock_io` in every build that reads a clock: a
+      TRUST=webpki client and a server role. `ch_srv_cfg` loses its
+      `now_seconds`, so a `ROLE=both` object has one clock for both roles.
+      C refuses an integer for a function pointer, so a caller that still
+      assigns a number gets a diagnostic.
+    - **One read per connection.** Each init call reads the clock once,
+      through `cfg_clock_read`, into `ch_tls.now_seconds`, and every later
+      step reads that field: the chain walk, which now takes the instant as
+      an argument, and the server's ticket rules. So one connection is
+      judged at one instant. A server that read the clock again could see
+      a ticket expire between the judge and the issue. The issue's
+      `CH_ASSERT` would then stop the program.
+    - **No clock.** A NULL `now_seconds` is no clock, and
+      `cfg_clock_read` answers 0 for it. A webpki client with anchors
+      refuses an instant of 0 with `CH_EINVAL` in all three client init
+      calls (`webpki_clock_ok`). That one test refuses both no clock and
+      a clock that answers 0, so `clock_set`, the NULL test in
+      `webpki_cfg_ok`, duplicated it and went. A client under SPKI pins
+      alone checks no date and needs no clock. A server with no clock
+      issues no ticket and accepts none, as before.
+    - **The APIs.** `chapulin.Clock` holds the two fields, and
+      `Trust.web_pki.clock` and `Server.clock` take one. `Config::clock`
+      sets both fields in the C++ wrapper.
+    - **What a caller writes.** A function that answers Unix time:
+
+      ```c
+      static uint64_t wall_clock(void *clock_io) {
+          (void)clock_io;
+          return (uint64_t)time(NULL);
+      }
+      cfg.now_seconds = wall_clock;
+      ```
+
+    The tests point the clock at a variable through `test/test_clock.h`.
+    `srv-resume-issues-without-clock` and four other mutants moved to the
+    new text. `inv14-webpki-clock-unset` went with `clock_set`: no test
+    could tell the two rules apart, so the mutant ran unguarded. Four new
+    mutants hold the new rules. `inv14-webpki-clock-zero-accepted` drops
+    `webpki_clock_ok`. `srv-resume-ticket-judged-without-session-clock`,
+    `srv-record-ticket-judged-without-session-clock` and
+    `srv-quic-ticket-judged-without-session-clock` each drop one server
+    init call's read. `quic_config_webpki` now also asserts that an
+    anchored configuration passes only with an instant other than 0.
+
+    The harnesses that compile a changed source ran under cbmc 6.11.0
+    with `PROVE_NO_CACHE=1` on an M1 Pro, and none failed:
+
+    | harness | properties | time | peak memory |
+    |---|---:|---:|---:|
+    | `quic_config_webpki` | 693 | 10 s | 0.24 GB |
+    | `quic_config_webpki_suite` | 863 | 12 s | 0.27 GB |
+    | `webpki_pin` | 1390 | 33 s | 0.58 GB |
+    | `webpki_leaf_pin` | 1263 | 86 s | 3.09 GB |
+    | `certverify_webpki` | 814 | 3 s | 0.05 GB |
+    | `webpki_chain` | 1170 | 76 s | 3.86 GB |
+    | `srv_resume` | 1072 | 132 s | 4.71 GB |
+    | `srv_accept` | 943 | 29 s | 3.16 GB |
+
+    `bench/sram.sh` measured `ch_tls` 16 bytes larger on arm64 and 8 on
+    rv32 in each TRUST=webpki and server build. The clock is now a
+    function pointer and its argument where it was one value, and
+    `ch_tls` holds the instant.
+
+    Rejected:
+
+    - **A clock argument to each init call.** It changes six signatures,
+      and a caller still passes a value it may have computed once.
+    - **A call of the clock at each use.** The judge and the issue of one
+      ticket could read two instants (above).
+    - **A value field beside a check for staleness.** No check can tell an
+      old instant from a current one.

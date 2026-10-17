@@ -199,6 +199,12 @@ static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
 // is set and non-empty, and every handshake here stops at the failing
 // send, before a certificate arrives.
 static const uint8_t kHost[] = {'s', '3', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
+
+// The instant the webpki configs' clock answers, and the clock that reads it.
+static uint64_t clock_seconds = 1789000000U;
+static uint64_t test_clock(void *clock_io) {
+    return *static_cast<const uint64_t *>(clock_io);
+}
 static const uint8_t kAnchorName[] = {0x30, 0x00};
 static const uint8_t kAnchorSpki[] = {0x30, 0x00};
 static const ch_trust_anchor kAnchors[2] = {
@@ -231,17 +237,17 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         CHECK(cfg.raw().anchors == kAnchors && cfg.raw().anchor_count == 2);
         CHECK(cfg.raw().hostname == kHost && cfg.raw().hostname_len == sizeof kHost);
-        CHECK(cfg.raw().now_seconds == 1789000000U);
+        CHECK(cfg.raw().now_seconds == test_clock && cfg.raw().clock_io == &clock_seconds);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
     }
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
@@ -268,7 +274,7 @@ static void test_webpki_config(chapulin::Io io) {
         std::memcpy(saved.identity, id, sizeof id);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         cfg.resume(saved, 0);
         CHECK(cfg.raw().ticket == &saved && cfg.raw().ticket_age_ms == 0);
         chapulin::Session s;
@@ -277,7 +283,7 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         cfg.pinned(chapulin::ConstBytes{psk, sizeof psk});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
@@ -285,7 +291,7 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(0);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(nullptr, nullptr);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
@@ -299,7 +305,7 @@ static void test_webpki_config(chapulin::Io io) {
 #ifdef CH_RAND_SESSION
         cfg.rand_bytes(session_fill, &session_ctx);
 #endif
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         CHECK(cfg.raw().cpu == 0);
         chapulin::Session unset;
         CHECK(unset.connect(cfg) == chapulin::Status::invalid);
@@ -373,7 +379,7 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         cfg.alpn(kAlpn);
         CHECK(cfg.raw().alpn_protocols == kAlpn && cfg.raw().alpn_count == 2);
         chapulin::Session s;
@@ -383,7 +389,7 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         with_source(cfg);
-        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).clock(test_clock, &clock_seconds);
         cfg.alpn(kAlpnTooLong, 1);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
