@@ -799,9 +799,15 @@ Home: github.com/c4milo.
   in constant time over the truncated ClientHello before it accepts one
   of its own tickets (docs/server.md, "Resumption"). Both roles: the
   message before each key change ends its record, or the connection ends
-  with unexpected_message (RFC 9846 §5.1, INV-39). Over QUIC both roles
-  refuse a TLS KeyUpdate as a connection error and update packet keys
-  instead (RFC 9001 §6), and a server sends no change_cipher_spec (§8.4).
+  with unexpected_message (RFC 9846 §5.1, INV-39). A KeyUpdate that asks
+  for an answer gets one KeyUpdate before this side's next data record,
+  from ch_write, and one answer serves a run of requests (§4.7.3). ch_read
+  reads at most CH_KEY_UPDATE_RUN_MAX KeyUpdates with no record of
+  application data of one byte or more between them, and the next one
+  ends the connection with unexpected_message and CH_KEY_UPDATE_LIMIT
+  (docs/decisions.md 138, INV-55). Over QUIC both roles refuse a TLS
+  KeyUpdate as a connection error and update packet keys instead (RFC
+  9001 §6), and a server sends no change_cipher_spec (§8.4).
 - Write all prose — README, docs, comments, commit messages — in active
   voice with plain words, following Google's Technical Writing One and
   Two: short sentences with one idea each, terms defined before use,
