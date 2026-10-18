@@ -1,0 +1,13 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: main no longer reads the failed floors when it chooses its exit
+  status. reach_table still lists each failed floor, but the proof-reach
+  job then passes for a floored harness that gave no number or fell
+  under its floor. lint-matrix runs main over a stand-in for cbmc and
+  requires exit 1 for each such harness.
+
+--- old
+    if reach_dead or reach_fell or reach_stale or doc:
+--- new
+    if reach_dead or reach_stale or doc:

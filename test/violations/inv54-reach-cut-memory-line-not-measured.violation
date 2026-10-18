@@ -1,0 +1,13 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: reach_failure stops reading "Out of memory" alone. Under the
+  address-space cap cbmc cuts its other memory lines short, so the reach
+  table then says "not measured" for a run that ran out of memory, as it
+  did for two RSA harnesses in run 39056264441. lint-matrix gives
+  reach_table those two runs' stderr and requires the memory cell.
+
+--- old
+REACH_MEMORY_TEXTS = ("ran out of memory", "Out of memory", "bad_alloc")
+--- new
+REACH_MEMORY_TEXTS = ("ran out of memory", "bad_alloc")

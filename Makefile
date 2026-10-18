@@ -6966,6 +6966,11 @@ test-invariants:
 # the N parts to split their set. It also requires the recipe of the job's
 # make target to pass the part to the tool, merges reach parts with each
 # part absent, and requires always() in a job that needs a sharded job.
+# Last, it gives proof/coverage.py's reach_table the stderr that cbmc
+# wrote for each cause of a missing number, and requires the cell that
+# names the cause. It also runs main over the same stderr, and requires
+# exit 1 for a floored harness with no number or one under its floor
+# (INV-54).
 .PHONY: lint-matrix
 lint-matrix:
 	@python3 tools/shard-matrix.py

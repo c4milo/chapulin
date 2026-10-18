@@ -2540,6 +2540,47 @@ last `ROLE=server` stub, as the entry said it would.
   refuses the job.
 - See [issue 178](https://github.com/c4milo/chapulin/issues/178).
 
+### INV-54 — the reach table names why a cover run gave no number
+
+- **Claim.** When a cover run of `proof/coverage.py --reach` gives no
+  number, its row in the reach table and its log line name the cause.
+  The causes are memory, cbmc's object limit, a signal and the budget
+  of the run. The row says "not measured" only for a run that shows
+  none of them. A harness with a floor fails the check on each cause.
+- **Mechanism.** `reach_failure` reads the stderr and the exit status
+  of cbmc. A line that holds a text of `REACH_MEMORY_TEXTS` gives
+  memory, and a line that holds `REACH_OBJECT_LIMIT_TEXT` gives the
+  object limit. Either one voids a summary line that cbmc writes after
+  it. `failure_cell` writes the row. For the object limit, the row
+  names the `--object-bits` of the run and the place that sets a
+  larger value. Under the address-space cap, cbmc can cut a memory line
+  short. In run 39056264441 it wrote "Solver ran out " and then "Out of
+  memory" whole, so each text is enough alone.
+- **Check.** `make lint-matrix` runs `tools/shard-matrix.py`, which
+  calls `reach_table` with a stand-in for cbmc. The stand-in returns
+  the stderr lines that cbmc 6.11.0 wrote on the nightly runner, and a
+  case for each other cause. The lint requires each row, a log line
+  that starts with it, and a failed floor for each case with a floor.
+  A proof-reach job reads the exit status of `main`, not the table. So
+  the lint also runs `main` with `--reach --only epoch` over the same
+  stand-in. It requires exit 1 for a floored harness that gives no
+  number or a number under its floor. It requires exit 0 for a number
+  over the floor and for a harness with no floor.
+  Four mutants in `test/violations/` each remove one part of the
+  mechanism, and `test/lint-matrix.sh` catches each one:
+  - `inv54-reach-cut-memory-line-not-measured` removes "Out of memory"
+    from the memory texts.
+  - `inv54-reach-object-limit-not-measured` stops the read of the
+    object limit.
+  - `inv54-reach-floored-failure-passes` lets a harness with a floor
+    and no number pass.
+  - `inv54-reach-floor-exit-passes` removes the failed floors from the
+    exit status of `main`.
+- **Violation.** A PR bumps cbmc, and the new cbmc writes another
+  message. The stand-in holds the lines of cbmc 6.11.0, so the lint
+  stays green while the nightly says "not measured" again. Review holds
+  a bump: copy the stderr of a cover run that fails into `LABEL_CASES`.
+
 ### INV-49 — an AVX2 kernel whose loop uses 256-bit stack slots aligns its frame
 
 - **Claim.** In `chacha20_avx2.c`, `keccak_avx2.c` and `sha512_avx2.c`,

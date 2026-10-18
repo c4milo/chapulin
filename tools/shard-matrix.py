@@ -24,10 +24,21 @@ a set whose size N does not divide. For test/violations.py the check
 covers every selection that its class and tier options make, since a
 Makefile target passes one of them.
 
-Last, it writes a part of the reach table for each shard of
+Then it writes a part of the reach table for each shard of
 proof/coverage.py, as the proof-reach jobs do, and calls the function of
 --merge. With every part it must return 0. With one part absent it must
 return 1 and give each harness of that part a row that says so.
+
+Then it holds the cells that each part writes for a cover run that
+gives no number. It calls proof/coverage.py's reach_table with a stand-in
+for cbmc, which returns the stderr texts that cbmc wrote on the nightly
+runner. Each cause needs its own cell and log line, and a harness with a
+floor fails on each cause (LABEL_CASES).
+
+Last, it runs proof/coverage.py's main over the same stand-in. A
+proof-reach job reads the exit status of main, not the table. A floored
+harness that gives no number, or a number under its floor, needs exit 1
+(EXIT_CASES).
 
 Run through `make lint-matrix`.
 """
@@ -36,8 +47,10 @@ import contextlib
 import importlib.util
 import io
 import re
+import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -367,6 +380,238 @@ def merge_problems(coverage, count):
     return out
 
 
+class Case:
+    """One cover run that the stand-in for cbmc gives reach_table: what
+    cbmc wrote and its exit status, and the cell the table must give it.
+    returncode None stands for a run that its budget stops. floored gives
+    the harness a floor of 50%, and number says that the run gives a
+    number. flags are the launch line's flags, and floor_bits and budget
+    are the fields of the harness's line in reach-floors.txt."""
+
+    def __init__(self, name, stderr, cell, *, returncode=6, stdout="",
+                 floored=True, number=False, flags=(), floor_bits=None,
+                 budget=None):
+        self.name, self.stderr, self.cell = name, stderr, cell
+        self.returncode, self.stdout = returncode, stdout
+        self.floored, self.number = floored, number
+        self.flags, self.floor_bits, self.budget = flags, floor_bits, budget
+
+
+# The lines that start the stderr of each cover run. The rsa_mont64
+# harnesses got the second warning twice.
+COVER_WARNINGS = [
+    "--cover is incompatible with --unwinding-assertions, so "
+    "unwinding-assertions will be defaulted to false",
+    "**** WARNING: Use --unwinding-assertions to obtain sound verification "
+    "results"]
+RSA_WARNINGS = COVER_WARNINGS + COVER_WARNINGS[1:]
+OBJECT_LIMIT = ("too many addressed objects: maximum number of objects is set "
+                "to 2^n={} (with n={}); use the `--object-bits n` option to "
+                "increase the maximum number")
+# The nightly runner's address-space cap, which label_problems gives
+# reach_table in place of the cap of this machine.
+LABEL_CAP = 13 * 1024 ** 3
+MEMORY_CELL = "out of memory under the 13 GiB address-space cap"
+# Each way a cover run gives no number, and the cell for each. The texts
+# of the first four and of "objects" are what cbmc 6.11.0 wrote on the
+# nightly runner in run 39056264441, line for line. Until this check,
+# reach_table said "not measured" for "objects" and for the two cases
+# whose lines cbmc cut short.
+LABEL_CASES = [
+    # rsa_mont64_mul on MiniSat.
+    Case("memory_whole", RSA_WARNINGS + [
+        "SAT checker ran out of memory",
+        "Solver ran out of memory during propositional reduction.",
+        "Try reducing the problem size or increasing available memory.",
+        "Out of memory"], MEMORY_CELL),
+    # rsa_mont64_mul on CaDiCaL.
+    Case("memory_cadical", RSA_WARNINGS + [
+        "Solver ran out of memory during propositional reduction.",
+        "Try reducing the problem size or increasing available memory.",
+        "Out of memory"], MEMORY_CELL),
+    # rsa_mont64_mul_webpki on MiniSat: cbmc cut three lines short.
+    Case("memory_cut", RSA_WARNINGS + [
+        "SAT checker ran", "Solver ran out ", "Try reducing th",
+        "Out of memory"], MEMORY_CELL),
+    # rsa_mont64_public_webpki on MiniSat: cbmc cut two lines short.
+    Case("memory_cut_public", RSA_WARNINGS + [
+        "Solver ran out ", "Try reducing th", "Out of memory"], MEMORY_CELL),
+    # hello_build under a 12 GB cap on 2026-09-02: a summary of zero after
+    # the memory line, and exit 0 (proof/coverage.py, reach_memory_cap).
+    Case("memory_covered", ["Solver ran out of memory"], MEMORY_CELL,
+         returncode=0, stdout="** 0 of 182 covered (0.0%)\n"),
+    # What libstdc++ writes when std::bad_alloc ends a process, which then
+    # stops on SIGABRT.
+    Case("memory_abort", [
+        "terminate called after throwing an instance of 'std::bad_alloc'",
+        "  what():  std::bad_alloc"], MEMORY_CELL, returncode=-6),
+    # rsa_avx2_chain on either solver, with no --object-bits.
+    Case("objects", COVER_WARNINGS + [
+        "Ignoring block 21 location 824 product_group (missing source location)",
+        "Ignoring block 22 location 832 product_group (missing source location)",
+        OBJECT_LIMIT.format(256, 8)],
+         "too many addressed objects at --object-bits 8; add object_bits=N to "
+         "its line in proof/reach-floors.txt"),
+    Case("objects_floor_bits", [OBJECT_LIMIT.format(1024, 10)],
+         "too many addressed objects at --object-bits 10; raise object_bits "
+         "on its line in proof/reach-floors.txt", floor_bits=10),
+    Case("objects_launch_bits", [OBJECT_LIMIT.format(512, 9)],
+         "too many addressed objects at --object-bits 9; raise --object-bits "
+         "on its launch line in proof/run.sh", flags=("--object-bits", "9")),
+    Case("signal", [], "killed by SIGKILL", returncode=-9),
+    Case("unmeasured", COVER_WARNINGS + ["a line that names no cause"],
+         "not measured, exit 6"),
+    Case("timeout", [], "timed out at 60 s", returncode=None, budget=60),
+    # With no floor, a run that gives no number fails nothing.
+    Case("memory_no_floor", ["Out of memory"], MEMORY_CELL, floored=False),
+    Case("number", COVER_WARNINGS, "52.2% (121/232) (floor 50.0%)",
+         returncode=0, stdout="** 121 of 232 covered (52.2%)\n", number=True),
+]
+
+
+def stand_in_cbmc(cases):
+    """A stand-in for subprocess.run that returns, for the cover command
+    of each case's harness, what that case says cbmc wrote."""
+    def run(command, **_options):
+        case = cases[Path(command[1]).name[:-len("_harness.c")]]
+        if case.returncode is None:
+            raise subprocess.TimeoutExpired(command, case.budget)
+        stderr = "".join(f"{line}\n" for line in case.stderr)
+        return subprocess.CompletedProcess(command, case.returncode,
+                                           case.stdout, stderr)
+    return run
+
+
+@contextlib.contextmanager
+def stand_ins(coverage, cases, floors):
+    """Inside the with block, proof/coverage.py runs the stand-in for
+    cbmc over cases, reads floors as its floor lines and takes LABEL_CAP
+    as its cap. It reads cbmc, the floors file and the cap through three
+    module names, and the block replaces them."""
+    saved = coverage.subprocess, coverage.floor_lines, coverage.reach_memory_cap
+    coverage.subprocess = types.SimpleNamespace(
+        run=stand_in_cbmc(cases), TimeoutExpired=subprocess.TimeoutExpired)
+    coverage.floor_lines = lambda: floors
+    coverage.reach_memory_cap = lambda: LABEL_CAP
+    try:
+        yield
+    finally:
+        coverage.subprocess, coverage.floor_lines, coverage.reach_memory_cap = saved
+
+
+def labelled_table(coverage):
+    """reach_table's rows, its log lines and its failed floors for the
+    cases of LABEL_CASES."""
+    cases = {case.name: case for case in LABEL_CASES}
+    runs = {case.name: ("fast", 1, set(), "", list(case.flags))
+            for case in LABEL_CASES}
+    floors = [(case.name, 50.0, case.budget, None, case.floor_bits)
+              for case in LABEL_CASES if case.floored]
+    output = io.StringIO()
+    with stand_ins(coverage, cases, floors), contextlib.redirect_stdout(output):
+        table, _dead, fell, _stale = coverage.reach_table(runs, sorted(cases))
+    rows = dict(coverage.REACH_ROW.findall("\n".join(table)))
+    return rows, output.getvalue().splitlines(), {name: got for name, got, _ in fell}
+
+
+def label_problems(coverage):
+    """Where reach_table gives a case of LABEL_CASES the wrong cell, no
+    log line that starts with its cell, or the wrong verdict on its
+    floor."""
+    rows, log, failed = labelled_table(coverage)
+    out = []
+    for case in LABEL_CASES:
+        where = f"proof/coverage.py reach_table: {case.name}"
+        if rows.get(case.name) != case.cell:
+            out.append(f"{where} gets the cell {rows.get(case.name)!r}, not "
+                       f"{case.cell!r}")
+        start = f"proof-reach: {case.name} {case.cell}"
+        if not case.number and not any(line.startswith(start) for line in log):
+            out.append(f"{where} gets no log line that starts with {start!r}")
+        fails = case.floored and not case.number
+        if fails and failed.get(case.name) != case.cell:
+            out.append(f"{where} has a floor and gives no number, and the check "
+                       f"does not fail it with its cell")
+        if not fails and case.name in failed:
+            out.append(f"{where} fails the check, and it has no floor or gives "
+                       "a number")
+    return out
+
+
+# The harness that exit_problems names to proof/coverage.py's main. main
+# measures only a harness with a launch line and a harness file, and
+# make proof-reach-smoke measures this one.
+EXIT_HARNESS = "epoch"
+# The cover runs that exit_problems gives main for EXIT_HARNESS, and the
+# exit status that main must return for each. reach_table lists a failed
+# floor for a run that its budget stops, for a run that gives no number
+# and for a number under the floor. main must fail on each of the three.
+EXIT_CASES = [
+    (Case("exit_memory", ["Out of memory"], MEMORY_CELL), 1),
+    (Case("exit_timeout", [], "timed out at 60 s", returncode=None,
+          budget=60), 1),
+    (Case("exit_below_floor", COVER_WARNINGS,
+          "40.0% (40/100) **below its 50.0% floor**", returncode=0,
+          stdout="** 40 of 100 covered (40.0%)\n", number=True), 1),
+    (Case("exit_number", COVER_WARNINGS, "52.2% (121/232) (floor 50.0%)",
+          returncode=0, stdout="** 121 of 232 covered (52.2%)\n",
+          number=True), 0),
+    (Case("exit_no_floor", ["Out of memory"], MEMORY_CELL, floored=False), 0),
+]
+
+
+def main_status(coverage, case):
+    """What proof/coverage.py's main returns for --reach --only
+    EXIT_HARNESS when the stand-in for cbmc gives case, the cell that
+    its report gives the harness, and its log. main returns None for a
+    pass, and this gives 0 for it. The report goes to a temporary
+    directory under bin/, so bin/proof-coverage.md stays as it is."""
+    floors = [(EXIT_HARNESS, 50.0, case.budget, None, None)] if case.floored else []
+    saved = sys.argv, coverage.shutil, coverage.REPORT
+    output = io.StringIO()
+    (ROOT / "bin").mkdir(exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(dir=ROOT / "bin") as tmp, \
+                stand_ins(coverage, {EXIT_HARNESS: case}, floors), \
+                contextlib.redirect_stdout(output):
+            sys.argv = ["proof/coverage.py", "--reach", "--only", EXIT_HARNESS]
+            # main stops when cbmc is not on PATH, and the stand-in
+            # needs no cbmc.
+            coverage.shutil = types.SimpleNamespace(which=lambda tool: tool)
+            coverage.REPORT = Path(tmp) / saved[2].name
+            try:
+                status = coverage.main()
+            except SystemExit as stop:
+                status = f"an exit with {stop.code!r}"
+            report = coverage.REPORT.read_text() if coverage.REPORT.exists() else ""
+    finally:
+        sys.argv, coverage.shutil, coverage.REPORT = saved
+    rows = dict(coverage.REACH_ROW.findall(report))
+    return (0 if status is None else status), rows.get(EXIT_HARNESS), \
+        output.getvalue().splitlines()
+
+
+def exit_problems(coverage):
+    """Where proof/coverage.py's main gives a case of EXIT_CASES the
+    wrong exit status, or its report gives the case the wrong cell.
+    A proof-reach job reads the exit status of main, not the table, so
+    a failed floor that main does not read fails nothing."""
+    out = []
+    for case, want in EXIT_CASES:
+        status, cell, log = main_status(coverage, case)
+        where = f"proof/coverage.py main: {case.name}"
+        if status != want:
+            # The lines that can give main a reason to fail: the verdict
+            # on the harness, and each problem of docs/verification.md.
+            said = [line for line in log if line.startswith(
+                (f"proof-coverage: {EXIT_HARNESS} ", "proof-coverage: docs/"))]
+            out.append(f"{where} returns {status!r}, not {want}; main printed "
+                       f"{said!r}")
+        if cell != case.cell:
+            out.append(f"{where} gets the cell {cell!r}, not {case.cell!r}")
+    return out
+
+
 def tool_problems(tool, count):
     """Where the tool's shard function does not split its sets into count
     parts, and for proof/coverage.py, where its merge of the parts is
@@ -408,13 +653,17 @@ def main():
         problems += needs_problems(rel, jobs)
     for tool, count in sorted(runs):
         problems += tool_problems(tool, count)
+    coverage = load("proof/coverage.py", "coverage")
+    problems += label_problems(coverage) + exit_problems(coverage)
     for problem in problems:
         print(f"lint-matrix: {problem}")
     if problems:
         return 1
     print("lint-matrix: each sharded job runs every part once, the parts "
           "split their sets, and the reach parts merge: "
-          + ", ".join(f"{tool} in {n}" for tool, n in sorted(runs)))
+          + ", ".join(f"{tool} in {n}" for tool, n in sorted(runs))
+          + f"; the reach table names the cause in {len(LABEL_CASES)} cases, "
+          f"and main's exit status follows the floor in {len(EXIT_CASES)}")
     return 0
 
 

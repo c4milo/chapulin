@@ -1,0 +1,14 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: reach_failure stops reading cbmc's "too many addressed objects",
+  so the reach table says "not measured" for a run that the object limit
+  stopped, and names no object_bits field. lint-matrix gives reach_table
+  the line that cbmc wrote for rsa_avx2_chain and requires the cell for
+  the object limit.
+
+--- old
+    for cause, texts in (("memory", REACH_MEMORY_TEXTS),
+                         ("objects", (REACH_OBJECT_LIMIT_TEXT,))):
+--- new
+    for cause, texts in (("memory", REACH_MEMORY_TEXTS),):

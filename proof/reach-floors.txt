@@ -391,13 +391,13 @@ x25519_tail 52.2
 # 39014749963, the cover runs of these eleven and of the three
 # rsa_avx2_chain harnesses, which now carry floors, took 23 minutes.
 #
-# Two stop on cbmc's "too many addressed objects", which
-# proof/coverage.py reports as not measured. rsa_mont64_blocks stops that
-# way on both solvers, in 178 s and 181 s. rsa_mont64_blocks_webpki stops
-# that way on MiniSat in 335 s, and runs out of memory on CaDiCaL in
-# 327 s. Their launch lines carry no --object-bits, and their proofs need
-# none. With --object-bits 10, both run out of memory on both solvers
-# (run 39057140598), so an object_bits field gives them no number.
+# Two stop on cbmc's "too many addressed objects". rsa_mont64_blocks
+# stops that way on both solvers, in 178 s and 181 s.
+# rsa_mont64_blocks_webpki stops that way on MiniSat in 335 s, and runs
+# out of memory on CaDiCaL in 327 s. Their launch lines carry no
+# --object-bits, and their proofs need none. With --object-bits 10, both
+# run out of memory on both solvers (run 39057140598), so an object_bits
+# field gives them no number.
 #
 # The other nine run out of memory during propositional reduction on
 # both solvers. They are rsa_mont64_addcarry, rsa_mont64_addcarry_webpki,
@@ -405,8 +405,8 @@ x25519_tail 52.2
 # rsa_mont64_mul_webpki, rsa_mont64_public, rsa_mont64_public_webpki and
 # rsa_ifma_sign_power_webpki. Each held 10.3 GiB to 12.7 GiB resident
 # when it stopped, after 59 s to 483 s. On MiniSat, cbmc cut its message
-# short for rsa_mont64_mul_webpki and rsa_mont64_public_webpki, so
-# proof/coverage.py reports those two as not measured.
+# short for rsa_mont64_mul_webpki and rsa_mont64_public_webpki, and then
+# wrote "Out of memory" whole.
 #
 # Each of the eleven ran at its launch line's bound alone, and no smaller
 # word count was tried. A floor holds the reach of the bound that a

@@ -1,0 +1,16 @@
+invariant: INV-54
+file: proof/coverage.py
+catches: test/lint-matrix.sh
+reason: a floored harness whose cover run gives no number stops failing
+  the check, so a floor that nobody measured stays green. lint-matrix
+  gives reach_table a floored run for each cause and requires a failed
+  floor with the cell of that cause.
+
+--- old
+            if name in floors:
+                fell.append((name, cell, floors[name]))
+            continue
+        print(f"proof-reach: {name} {m.group(3)}%", flush=True)
+--- new
+            continue
+        print(f"proof-reach: {name} {m.group(3)}%", flush=True)

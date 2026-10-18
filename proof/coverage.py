@@ -45,6 +45,7 @@ import re
 import resource
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -85,7 +86,7 @@ def launch_lines():
         # Every flag the launch line carries, -D, -I and otherwise: a launch
         # line that needs --object-bits to prove needs it to cover too,
         # or cbmc stops with "too many addressed objects" and the harness
-        # reports not measured -- which is how handshake_record's floor
+        # reports no number -- which is how handshake_record's floor
         # went unenforced (https://github.com/c4milo/chapulin/issues/57).
         # The rsa_ifma lines' -Itest finds the lane model their sources
         # include, so the cover command cannot compile them without it.
@@ -389,12 +390,14 @@ def main():
         print(f"proof-coverage: {name} reaches no code at its bound; the "
               f"proof passes without entering what it names")
     for name, got, floor in reach_fell:
-        # got is a percentage, or the words for why there is none: a run
-        # that returned no number is a failed check too, and saying "0.0%"
-        # for it sent a reader after the bound instead of the runner.
+        # got is a percentage, or the table's cell that says why there is
+        # none: a run that returned no number is a failed check too, and
+        # saying "0.0%" for it sent a reader after the bound instead of
+        # the runner.
         if isinstance(got, str):
-            print(f"proof-coverage: {name} {got}, so its recorded {floor}% "
-                  f"floor was not measured; the check fails until it is")
+            print(f"proof-coverage: {name} gave no number ({got}), so its "
+                  f"recorded {floor}% floor was not measured; the check fails "
+                  f"until it is")
             continue
         print(f"proof-coverage: {name} reaches {got}% of its locations, under "
               f"its recorded {floor}% floor; the bound no longer enters what "
@@ -459,6 +462,13 @@ REACH_SOLVERS = ("cadical",)
 # that passes --object-bits gives it to its cover command already, so its
 # floor line cannot name the field too.
 REACH_DEFAULT_OBJECT_BITS = 8
+
+# The start of the line cbmc writes to stderr when a formula holds more
+# than 2^N objects under --object-bits N. cbmc then stops with exit 6.
+# In run 39056264441 the line was "too many addressed objects: maximum
+# number of objects is set to 2^n=256 (with n=8); use the
+# `--object-bits n` option to increase the maximum number".
+REACH_OBJECT_LIMIT_TEXT = "too many addressed objects"
 
 
 def floor_lines():
@@ -584,8 +594,9 @@ REACH_BUDGET_S = 1800
 # A 12 GB cap was tried after the 2026-09-02 runner death, and 0ab9862
 # dropped it: under it cbmc printed "Solver ran out of memory" and then
 # "0 of 182 covered" with exit 0 for hello_build, which needed more, and
-# the check took the 0 as a number. reach_table now reads that message and
-# reports "over memory", and with --slice-formula hello_build needs 76 MB.
+# the check took the 0 as a number. reach_failure now reads that message
+# and reach_table reports the run as out of memory. With --slice-formula,
+# hello_build needs 76 MB.
 # Without a cap, only the no-floor list kept a cover run from using up the
 # runner's memory, and a harness missing from that list ended the job
 # before it wrote the table: hello_build_suite did that on three nightly
@@ -664,6 +675,91 @@ STALE_UNWINDSET = re.compile(
     r"^loop identifier (\S+) (?:for non-existent function )?provided with unwindset",
     re.M)
 
+# cbmc's summary line for a cover run that finished, such as
+# "** 121 of 232 covered (52.2%)".
+COVERED = re.compile(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)")
+
+# The texts that tell reach_failure that a cover run ran out of memory.
+# cbmc 6.11.0 wrote these four lines to stderr for rsa_mont64_mul on the
+# nightly runner, under the 13 GiB cap (run 39056264441):
+#
+#     SAT checker ran out of memory
+#     Solver ran out of memory during propositional reduction.
+#     Try reducing the problem size or increasing available memory.
+#     Out of memory
+#
+# It then stopped with exit 6. Only MiniSat writes the first line. Under
+# the cap, cbmc can cut a line short. In the same run it wrote 15
+# characters of each of the first three lines for rsa_mont64_mul_webpki,
+# such as "Solver ran out ". A libstdc++ string holds 15 characters
+# without heap memory. The last line has 13 characters, and it came
+# through whole. So each text below is enough alone. libstdc++ writes
+# "std::bad_alloc" when that exception ends a process, which then stops
+# on SIGABRT.
+REACH_MEMORY_TEXTS = ("ran out of memory", "Out of memory", "bad_alloc")
+
+
+def reach_failure(stderr, returncode, covered):
+    """Why a cover run gave no number, as (cause, line), or None when it
+    gave one. covered is whether its stdout holds a COVERED line.
+
+    The cause is "memory" when a line of stderr holds a text of
+    REACH_MEMORY_TEXTS, or "objects" when a line holds
+    REACH_OBJECT_LIMIT_TEXT, and line is the first such line. Either
+    cause voids a COVERED line, because cbmc can write one after a
+    failure: reach_memory_cap's comment gives a case. With no such line
+    and no COVERED line, the cause is "signal" when a signal stopped
+    cbmc, and line is None. Else the cause is "unmeasured", and line is
+    the last line of stderr, or None when stderr is empty.
+
+    reach_table once reported a signal as memory. A signal alone does not
+    say which limit stopped cbmc, so the row now names the signal."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    for cause, texts in (("memory", REACH_MEMORY_TEXTS),
+                         ("objects", (REACH_OBJECT_LIMIT_TEXT,))):
+        for line in lines:
+            if any(text in line for text in texts):
+                return cause, line
+    if covered:
+        return None
+    if returncode < 0:
+        return "signal", None
+    return "unmeasured", lines[-1] if lines else None
+
+
+def failure_cell(name, cause, returncode, runs, object_bits, cap):
+    """The reach table's cell for a cover run of name that gave no
+    number, for a cause from reach_failure. object_bits is the field of
+    the harness's line in reach-floors.txt, or None. cap is the cover
+    run's address-space cap in bytes, or None (reach_memory_cap).
+
+    For the object limit, the cell names the --object-bits of the cover
+    run and the place that sets a larger value: the launch line when it
+    passes the flag, else the harness's line in reach-floors.txt
+    (reach_command)."""
+    if cause == "memory":
+        if cap is None:
+            return "out of memory"
+        return f"out of memory under the {cap // 1024 ** 3} GiB address-space cap"
+    if cause == "objects":
+        flags = runs[name][4]
+        if "--object-bits" in flags:
+            bits = flags[flags.index("--object-bits") + 1]
+            return (f"too many addressed objects at --object-bits {bits}; "
+                    "raise --object-bits on its launch line in proof/run.sh")
+        if object_bits is not None:
+            return (f"too many addressed objects at --object-bits {object_bits}; "
+                    "raise object_bits on its line in proof/reach-floors.txt")
+        return (f"too many addressed objects at --object-bits "
+                f"{REACH_DEFAULT_OBJECT_BITS}; add object_bits=N to its line in "
+                "proof/reach-floors.txt")
+    if cause == "signal":
+        try:
+            return f"killed by {signal.Signals(-returncode).name}"
+        except ValueError:
+            return f"killed by signal {-returncode}"
+    return f"not measured, exit {returncode}"
+
 
 REACH_TITLE = "Reachability at the configured bounds"
 # The heading of a shard's part. --merge reads the shard and the count
@@ -741,13 +837,14 @@ def reach_table(runs, names, only=frozenset(), shard=None):
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=budget,
                                  preexec_fn=limit)
         except subprocess.TimeoutExpired:
-            out.append(f"| `{name}` | timed out at {budget} s |")
-            print(f"proof-reach: {name} timed out at {budget} s", flush=True)
+            cell = f"timed out at {budget} s"
+            out.append(f"| `{name}` | {cell} |")
+            print(f"proof-reach: {name} {cell}", flush=True)
             # The same rule as the no-number branch below: a floored
             # harness that returns no number fails the check. Before this
             # a timeout skipped the floor check and the run stayed green.
             if name in floors:
-                fell.append((name, "timed out", floors[name]))
+                fell.append((name, cell, floors[name]))
             continue
         stale_ids = STALE_UNWINDSET.findall(res.stderr)
         if stale_ids:
@@ -758,20 +855,23 @@ def reach_table(runs, names, only=frozenset(), shard=None):
                   "line in proof/run.sh", flush=True)
             stale.append(name)
             continue
-        m = re.search(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)", res.stdout)
-        # cbmc prints "ran out of memory" and then a summary of zero goals
-        # reached with exit 0, so the summary is read only when the solver
-        # did not say that.
-        out_of_memory = "ran out of memory" in res.stderr or "bad_alloc" in res.stderr
-        if not m or out_of_memory:
-            why = "over memory" if out_of_memory or res.returncode < 0 else "not measured"
-            out.append(f"| `{name}` | {why} |")
-            print(f"proof-reach: {name} {why}", flush=True)
+        m = COVERED.search(res.stdout)
+        failure = reach_failure(res.stderr, res.returncode, m is not None)
+        if failure:
+            # The cell names the cause, and the log adds the line that
+            # cbmc wrote for it. Before this, both said "not measured" for
+            # the object limit and for a memory line that cbmc cut short.
+            cause, line = failure
+            cell = failure_cell(name, cause, res.returncode, runs,
+                                object_bits.get(name), cap)
+            out.append(f"| `{name}` | {cell} |")
+            said = f"; cbmc wrote {line!r}" if line else ""
+            print(f"proof-reach: {name} {cell}{said}", flush=True)
             # A harness with a floor that returns no number is a failed
             # check, not a blank: the floor exists to notice regressions,
             # and a silent blank is how one went unnoticed.
             if name in floors:
-                fell.append((name, why, floors[name]))
+                fell.append((name, cell, floors[name]))
             continue
         print(f"proof-reach: {name} {m.group(3)}%", flush=True)
         reached, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)
