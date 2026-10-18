@@ -2466,7 +2466,7 @@ launch fast full p256_wide_inverse_round 33 "" -DCH_CPU_RUNTIME
 # line runs without --unsigned-overflow-check, as p256_scalar's does:
 # p256_scalar.c builds its masks and its borrows from sums that wrap on
 # purpose, and p256_wide_verify.c adds nothing itself.
-launch fast full p256_wide_verify 65 "" p256_scalar.c ct.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
+launch fast full p256_wide_verify 65 "" p256_scalar.c proof/ct_wipe_stub.c -DCH_CPU_RUNTIME
 # The verifier's variable-time points, p256_wide_verify_point.c
 # (docs/decisions.md 104), in two harnesses over proof/p256_wide_field_stubs.h,
 # as p384_wide_point and p384_wide_digits split P-384's: the formulas, the

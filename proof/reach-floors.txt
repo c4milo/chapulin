@@ -195,13 +195,13 @@ p256_wide_sqr 95.1
 # functions it calls, and each stub location except three. Each of the
 # three sets the condition of a stub's assert to false, and the proof
 # shows that no path runs it.
-# The 13 locations it no longer reaches are ct_memeq's 5 and
+# The 13 locations it no longer reached were ct_memeq's 5 and
 # p256_scalar_to_bytes's 8. The verifier called both to compare the bytes
 # of x mod n with r_be. Now p256_wide_jacobian_x_is_r compares x with r in
 # the field, and the p256_wide_verify_point harness reaches all 18 of its
-# locations. The launch line still links ct.c and p256_scalar.c, so the
-# two functions stay in the model, and no path calls them. The ct and
-# p256_scalar harnesses prove them.
+# locations. The launch line still links p256_scalar.c, so
+# p256_scalar_to_bytes stays in the model, and no path calls it. The ct and
+# p256_scalar harnesses prove the two functions.
 # a86cca69 also removed double_scalar_mul, the stubs of
 # p256_wide_base_mul, p256_wide_mul, p256_wide_point_from_portable,
 # p256_wide_point_to_portable, p256_wide_point_add and
@@ -211,7 +211,12 @@ p256_wide_sqr 95.1
 # p256_wide_jacobian_x_is_r and two helpers replaced them: 39 locations,
 # of which 37 are reached. p256_wide_verify_rs went from 30 locations to
 # 28.
-p256_wide_verify 71.3
+# On 2026-10-18 a commit removed ct.c from the launch line. ct.c holds
+# ct_memeq alone, and no function in this harness calls it. So the floor
+# went from 71.3 to 72.7, because the model no longer holds ct_memeq's 5
+# locations. The harness reaches 184 of 253 locations on the runner (run
+# 39117500983).
+p256_wide_verify 72.7
 p256_wide_verify_digits 64.8
 p256_wide_verify_point 70.7
 p256_wide_wipe 61.1
