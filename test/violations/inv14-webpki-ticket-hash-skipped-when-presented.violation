@@ -10,4 +10,4 @@ reason: an init call skips the hash when the session presents a ticket, even
 --- old
     return cfg->on_ticket != NULL;
 --- new
-    return cfg->on_ticket != NULL && cfg->resumption == 0;
+    return cfg->on_ticket != NULL && cfg->ticket == NULL;

@@ -67,12 +67,12 @@ static ch_cert r2_chain[2];
 static ch_cert r2_large_chain[2];
 
 // Splits message, a Certificate message of message_len bytes, into its two
-// entries in chain, through the rbuf reader: the 4-byte handshake header,
+// entries, written to entries, through the rbuf reader: the 4-byte handshake header,
 // the empty certificate_request_context, the 3-byte list length, then per
 // entry a 3-byte length, the certificate and an empty extensions vector
 // (RFC 9846 §4.5.1). Returns 0 when the message does not frame two
 // entries.
-static int r2_split(const uint8_t *message, size_t message_len, ch_cert chain[2]) {
+static int r2_split(const uint8_t *message, size_t message_len, ch_cert entries[2]) {
     rbuf r;
     rb_init(&r, message, message_len);
     (void)rb_bytes(&r, 4);
@@ -81,19 +81,19 @@ static int r2_split(const uint8_t *message, size_t message_len, ch_cert chain[2]
     size_t count = 0;
     while (rb_left(&r) > 0 && count < 2 && !r.err) {
         size_t len = rb_u24(&r);
-        chain[count].der = rb_bytes(&r, len);
-        chain[count].len = len;
+        entries[count].der = rb_bytes(&r, len);
+        entries[count].len = len;
         (void)rb_bytes(&r, rb_u16(&r));
         count++;
     }
     return !r.err && rb_left(&r) == 0 && count == 2 && list_len + 8 == message_len;
 }
 
-// Provisions id, a server's ecdsa_p256 slot, with chain and the r2 leaf
-// key, webpki_corpus_server_priv and webpki_corpus_server_pub.
-static void r2_key_identity(ch_identity *id, const ch_cert *chain) {
+// Provisions id, a server's ecdsa_p256 slot, with the two certificates and
+// the r2 leaf key, webpki_corpus_server_priv and webpki_corpus_server_pub.
+static void r2_key_identity(ch_identity *id, const ch_cert *certificates) {
     memset(id, 0, sizeof *id);
-    id->chain = chain;
+    id->chain = certificates;
     id->chain_count = 2;
     id->priv = webpki_corpus_server_priv;
     id->priv_len = sizeof webpki_corpus_server_priv;

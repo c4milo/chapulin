@@ -1,9 +1,13 @@
 invariant: INV-14
 file: webpki_ticket.c
-catches: webpki_resume_test
+catches: proof/prove-one.sh webpki_ticket
 reason: the ticket shape accepts a PSK of any non-zero length, though
   ks_res_psk writes exactly a suite's hash length, SHA256_LEN in this
-  build. The one-short and one-over rows object.
+  build. Through an init call hspost_present_ticket refuses that length
+  first, so no session test sees this rule: webpki_resume_test's
+  one-short and one-over rows pass with it broken. The webpki_ticket
+  harness calls webpki_resumption_ok directly, and its stated shape
+  requires SHA256_LEN.
 
 --- old
     return psk_len == SHA256_LEN;
