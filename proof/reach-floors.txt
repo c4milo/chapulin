@@ -95,15 +95,43 @@
 # 43 locations to the handlers and the driver, and the harness enters
 # none of them. The handshake_psk and handshake_pin launch lines link
 # handshake_flight.c and prove the handlers.
+#
+# On 2026-10-18, 145 harnesses with no floor took the number that nightly
+# run 39109704185 printed for each, at 14bcfc6d. Their lines carry no
+# comment of their own. Four of them reach less than 20%, because each
+# includes whole files and calls a small part of them. Each reaches every
+# location of the functions that it calls (run 39117830669):
+#   - mlkem_basemul reaches 37 of 285: the 9 of its own file, and the 28
+#     of mlk_poly_basemul and the three functions below it.
+#   - x25519_wide_sqr reaches 48 of 287: the 8 of main, and the 40 of sqr
+#     and the two functions below it.
+#   - rsa_avx2_number reaches 64 of 549: the 27 of main and the stubs that
+#     write its inputs, and the 37 of the three conversions and the
+#     functions below them. No lane operation runs.
+#     rsa_avx2_number_webpki, the same harness up to 64 words, reaches 64
+#     of 561.
+# srv_parser_frozen reaches 40.7% where srv_parser_walk reaches 78.6%,
+# because it drives the duplicate check and the walk of the frozen digest
+# alone. The rest of srv_parser.c is the walk harness's.
+# rsa_ifma_sign_wipe, rsa_ifma_sign_wipe_webpki and srv_parser_count
+# printed 3.3%, 3.2% and 17.2% in that run. They carry no floor until the
+# cause of that low reach is known.
 
 aead 97.4
 aead_forge 96.9
 aead_overlap 97.4
+aes_extern 95.6
+aes_runtime 94.3
+aes_traffic 69.1
+base64 94.1
 buf 90.2
 certparse 29.1
 certparse_webpki 26.3
+certverify_webpki 38.2
 chacha20 98.1
 ct 94.1
+ct_wipe 90.9
+ctwidemul 92.9
 drbg 81.7
 # eeparse_webpki fell from 29.5 to 29.4 when handshake_parser.c gained
 # parse_alpn: this harness drives the block with an empty ALPN offer, so
@@ -117,6 +145,9 @@ eeparse_alpn 33.3
 # outside the epoch arm it drives, so the share fell with the arm reached
 # whole. Local reading after that change, cbmc 6.11.0 on arm64 macOS.
 epoch 34.4
+gcm_avx512_wipe 97.2
+gcm_avx512_wipe_quic 96.8
+handshake_groups 92.5
 handshake_record 85.5
 hello_build 76.9
 # hello_build_suite and hello_build_webpki took their floors on 2026-10-01
@@ -128,10 +159,34 @@ hello_build 76.9
 hello_build_suite 85.9
 hello_build_webpki 84.3
 hkdf 52.3
+hkdf384 65.0
 hybrid_secret 16.6
+io_send 42.1
 key_share 21.9
+key_share_webpki 37.5
 keysched 87.0
+keysched384 68.1
+mlkem_basemul 13.0
+p256_ecdh 79.7
+p256_field 95.5
 p256_mul 86.7
+p256_point 61.0
+p256_point_ladder 51.3
+p256_scalar 93.0
+p256_sign 75.2
+p256_wide_digit 65.6
+p256_wide_field 77.5
+p256_wide_field_mul 64.7
+p256_wide_inverse 53.4
+p256_wide_inverse_range 93.8
+p256_wide_inverse_round 83.3
+p256_wide_inverse_steps 48.3
+p256_wide_mul 77.5
+p256_wide_point 97.5
+p256_wide_row 96.2
+p256_wide_row_sum 95.7
+p256_wide_scalar 96.0
+p256_wide_sqr 95.1
 # p256_wide_verify fell from 77.2 to 71.3 when a86cca69 moved the
 # comparison of x with r out of p256_wide_verify.c. It reached 203 of 263
 # locations at 8598a4a5 and reaches 184 of 258 at 6f3bf952, on the runner
@@ -157,6 +212,9 @@ p256_mul 86.7
 # of which 37 are reached. p256_wide_verify_rs went from 30 locations to
 # 28.
 p256_wide_verify 71.3
+p256_wide_verify_digits 64.8
+p256_wide_verify_point 70.7
+p256_wide_wipe 61.1
 p384_mul 86.7
 # The four p384_wide harnesses took their floors on 2026-10-05 from an
 # ubuntu 24.04 amd64 container with the pinned cbmc, before any nightly
@@ -179,19 +237,40 @@ p384_wide_verify 63.4
 # time that each part takes and the limit that holds it.
 pem 74.6 budget=2700
 pem_ecdsa 74.6 budget=2700
+pem_blocks 74.1
+pem_files 83.2
+pem_files_host 83.3
+pem_one 71.8
+pem_step 51.4
+pem_step_ecdsa 51.4
 poly1305 94.3
-# quic_initial carries a floor where the other four TRANSPORT=quic-nonblocking
-# harnesses carry none: its cover command converges in seconds, because
-# every call it makes is a stub and the formula holds length checks
-# alone.
+poly1305_ifma_blocks 99.2
+poly1305_ifma_lanes 96.3
+poly1305_ifma_product 51.6
+poly1305_ifma_sums 74.4
+quic_config_webpki 97.4
+quic_config_webpki_suite 96.8
+quic_driver 75.0
+# quic_initial carries a floor where five other TRANSPORT=quic-nonblocking
+# harnesses carry none: aes, aes256, gcm_refusal, gcm_safety and ghash,
+# listed below. Its cover command converges in seconds, because every
+# call it makes is a stub and the formula holds length checks alone.
 quic_initial 98.8
-# quic_packet is the one TRANSPORT=quic-nonblocking harness whose cover command
-# converges: 34 s and 0.75 GB against the 1800 s budget, where the aes
-# harness returned no number in 21 minutes. Its proof is cheap for the same
-# reason -- ChaCha20 and the AEAD are stubs, so the formula holds
-# framing rather than a keystream.
+quic_keys 75.6
+quic_keys_suite 87.1
+# quic_packet's cover command converges in 34 s and 0.75 GB against the
+# 1800 s budget, where the aes harness returned no number in 21 minutes.
+# Its proof is cheap for the same reason -- ChaCha20 and the AEAD are
+# stubs, so the formula holds framing rather than a keystream.
 quic_packet 75.8
+quic_packet_suite 68.8
+quic_retry 94.0
+quic_step 91.0
+quic_step_ca 91.1
+quic_token 71.7
 record 95.0
+record_suite 95.3
+record_whole_len 30.9
 # The three rsa_avx2_chain lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --object-bits 10 (run
 # 39057140598). Each took 68 s to 181 s there on MiniSat, and CaDiCaL
@@ -202,6 +281,39 @@ record 95.0
 rsa_avx2_chain 56.1 object_bits=10
 rsa_avx2_chain_49_webpki 56.0 object_bits=10
 rsa_avx2_chain_webpki 56.0 object_bits=10
+rsa_avx2_chain_32 56.1
+rsa_avx2_lanes 95.7
+rsa_avx2_number 11.7
+rsa_avx2_number_webpki 11.4
+rsa_avx2_sums_multiply_2 32.0
+rsa_avx2_sums_multiply_2_webpki 31.3
+rsa_avx2_sums_multiply_3 32.0
+rsa_avx2_sums_multiply_3_webpki 31.3
+rsa_avx2_sums_square_2 39.8
+rsa_avx2_sums_square_2_webpki 38.9
+rsa_avx2_sums_square_3 40.0
+rsa_avx2_sums_square_3_webpki 39.1
+rsa_ifma_lanes 97.1
+rsa_ifma_product 35.5
+rsa_ifma_product_webpki 35.1
+rsa_ifma_public 48.7
+rsa_ifma_public_5 48.0
+rsa_ifma_public_webpki 48.0
+rsa_ifma_sign_pair 29.7
+rsa_ifma_sign_pair_webpki 28.2
+rsa_ifma_sign_select 22.3
+rsa_ifma_sign_select_webpki 21.8
+rsa_ifma_sign_setup 24.7
+rsa_ifma_sign_setup_webpki 24.4
+rsa_ifma_sums 42.4
+rsa_mont64_addcarry_sums 43.4
+rsa_mont64_blocks_sums 43.1
+rsa_mont64_mul128 66.7
+rsa_mont64_ops 45.7
+rsa_mont64_ops_webpki 45.7
+rsa_mont64_step 80.0
+rsa_mont64_step_sum 80.0
+rsa_mont64_sums 62.8
 # The six rsa_mont lines took their floors on 2026-10-17 from the
 # nightly runner, under the cover command with --sat-solver cadical. Each
 # took 28 s to 118 s there, and on MiniSat each returned no number in
@@ -212,10 +324,20 @@ rsa_mont_power 14.3 solver=cadical
 rsa_mont_power_avx2 14.3 solver=cadical
 rsa_mont_power_avx2_webpki 14.3 solver=cadical
 rsa_mont_power_webpki 14.3 solver=cadical
+rsa_mont_power_value 39.8
 rsa_mul 32.3
 rsa_mul_webpki 32.3
 rsa_pkcs1 90.3
 rsa_pkcs1_webpki 90.3
+rsa_sign 62.1
+rsa_sign64_crt 62.6
+rsa_sign64_crt_webpki 62.6
+rsa_sign64_ifma 35.1
+rsa_sign64_ifma_webpki 35.1
+rsa_sign64_power 28.9
+rsa_sign64_power_webpki 28.9
+rsa_sign64_window 20.6
+rsa_sign64_window_webpki 20.6
 rsa_webpki 91.7
 # sha3_round reaches the round, the 24 of them and the reference it holds
 # them to. What it leaves out is the rest of the files it compiles: the
@@ -233,11 +355,26 @@ rsa_webpki 91.7
 sha3_round 62.4
 sha512 90.9
 sha512_compress 97.1
+sha512_compress_blocks 99.0
 # sha512_compress_blocks_advancing took its floor on 2026-10-17 from the
 # nightly runner, on CaDiCaL in 1 s. On MiniSat its cover run returned no
 # number in 1800 s.
 sha512_compress_blocks_advancing 52.2 solver=cadical
+sha512_compress_blocks_steps 57.0
+sha512_host 98.6
 softmul 91.3
+srv_accept 95.1
+srv_auth 92.8
+srv_cookie 62.2
+srv_kex 94.7
+srv_parser_ext 72.4
+srv_parser_frozen 40.7
+srv_parser_walk 78.6
+srv_resume 84.3
+srv_select_runtime 95.2
+srv_select_suite 96.6
+srv_ticket 81.0
+transcript384 38.7
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose
 # leaf key a pin names (docs/decisions.md 65). webpki_cert.c gained
@@ -250,25 +387,46 @@ softmul 91.3
 # arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
 # before, already under the 56.5 recorded here.
 webpki_cert 56.1
+webpki_cert_key 46.9
 webpki_chain 80.5
 webpki_ext 40.0
 webpki_ext_one 51.4
 webpki_ext_walk 54.8
+webpki_leaf_pin 40.7
 webpki_name 24.2
 webpki_pin 54.7
 webpki_san 29.8
 webpki_sigalg 44.5
 webpki_spki 41.4
+webpki_ticket 57.1
+webpki_ticket_host 61.4
 webpki_time 33.3
+writable_len 82.5
+writable_len_suite 85.3
+writable_len_suite_any 41.8
+x25519 25.6
+x25519_mul_alias_a 27.0
+x25519_mul_alias_b 27.0
+x25519_mul_inputs_alias 26.6
+x25519_ops 49.5
+x25519_sqr 26.6
 x25519_tail 52.2
+x25519_wide_invert 52.6
+x25519_wide_mul 25.0
+x25519_wide_mul128 66.7
+x25519_wide_ops 46.7
+x25519_wide_sqr 16.7
+x25519_wide_step 58.3
+x25519_wide_tail 57.5
+x509_pem 55.5
+x509_pem_key 34.0
+x509ca 75.5
+x509ca_ecdsa 75.5
+x509der 83.4
+x509der_ecdsa 82.9
+x509parse 84.2
+x509parse_ecdsa 83.9
 
-# srv_parser_walk and srv_parser_frozen carry no floor yet. Under the cover
-# command on a development machine on 2026-09-24 (arm64 macOS, cbmc
-# 6.11.0, other formulas solving beside them) both converged, at 78.0% and
-# 41.8%, in 1273 s for the two together. frozen reaches less because it
-# drives the duplicate check and the frozen digest's walk alone, and the
-# rest of srv_parser.c is the walk harness's. Copy the nightly's numbers
-# here once its table prints them.
 # No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
 # same solver cost that makes the proof slow makes counting its
