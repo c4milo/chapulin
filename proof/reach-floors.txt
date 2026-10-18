@@ -306,6 +306,23 @@ rsa_ifma_public_5 48.0
 rsa_ifma_public_webpki 48.0
 rsa_ifma_sign_pair 29.7
 rsa_ifma_sign_pair_webpki 28.2
+# rsa_ifma_sign_power carries its own budget, 3600 s, as pem does. Its
+# nightly cover runs took 994 s and 1505 s (runs 39014749963 and
+# 39059024456), and then passed 1800 s twice (runs 39075335784 and
+# 39109704185). Under a 3000 s budget on 2026-10-18, it took 1496 s on an
+# AMD EPYC 9V74 runner, and 1857 s and 1874 s on two AMD EPYC 7763
+# runners (run 39117500983). Each run reached 261 of 495 locations, and
+# held 11.0 GiB resident at its peak, under the 13 GiB cap. In nightly
+# run 39127791858 on a scratch branch, it took 1648 s and reached 261
+# again.
+#
+# This harness's own runs span 994 s to 1874 s, 1.89 times. Over 19 cover
+# runs of 60 s or more, the part-3 runner of run 39127791858 was a median
+# 1.42 times slower than that of run 39109704185, and at most 1.86 times.
+# With a floor, a run that passes its budget fails the nightly. So the
+# budget is 3600 s, 1.92 times the slowest run. At 1.86 times, 1874 s
+# becomes 3486 s, which is under it.
+rsa_ifma_sign_power 52.7 budget=3600
 rsa_ifma_sign_select 22.3
 rsa_ifma_sign_select_webpki 21.8
 rsa_ifma_sign_setup 24.7

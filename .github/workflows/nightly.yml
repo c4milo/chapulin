@@ -37,11 +37,12 @@ jobs:
   # With the floors and the skips that proof/reach-floors.txt holds now,
   # runs 39059024456 and 39075335784 on 2026-10-17 took 96 and 111
   # minutes for part 1, 114 and 126 for part 2, and 70 and 68 for part 3.
-  # In the second run, rsa_ifma_sign_power, which carries no floor, ran to
-  # the 1800 s budget of a cover run, and in the first it took 1505 s. A
-  # part that the limit stops writes no table, so the limit leaves room
-  # for more such runs. 330 minutes is 2.6 times part 2's 126, and the 204
-  # minutes between them hold about seven more cover runs to that budget.
+  # In the second run, rsa_ifma_sign_power ran to the 1800 s budget of a
+  # cover run, and in the first it took 1505 s. Its floor line now gives
+  # it 3600 s, so it can add 30 minutes to part 2, which then takes 156.
+  # A part that the limit stops writes no table, so the limit leaves room
+  # for more such runs. 330 minutes is 2.1 times 156, and the 174 minutes
+  # between them hold about five more cover runs to the 1800 s budget.
   # The limit stays below the 360 minutes that GitHub gives a job on a
   # hosted runner.
   proof-reach:
